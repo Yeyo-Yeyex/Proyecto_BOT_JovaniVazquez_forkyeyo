@@ -6,6 +6,7 @@ __pycache__/
 
 # Configuración local con secretos
 .env
+.data/
 
 # Artefactos de build/empaquetado
 build/

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -42,7 +43,13 @@ def main() -> int:
     configure_logging(config.log_level)
 
     try:
-        asyncio.run(start_bot(config.token, command_prefix=config.command_prefix))
+        asyncio.run(
+            start_bot(
+                config.token,
+                command_prefix=config.command_prefix,
+                database_path=Path.cwd() / ".data" / "message_stats.sqlite3",
+            )
+        )
     except KeyboardInterrupt:
         logger.info("Apagado solicitado por el usuario (Ctrl+C).")
     except Exception:

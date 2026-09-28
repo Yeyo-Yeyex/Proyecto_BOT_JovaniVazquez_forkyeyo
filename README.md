@@ -3,7 +3,8 @@
 Bot de Discord escrito en Python, con arquitectura modular basada en
 `discord.py`. Las normas de estructura, límites y documentación del
 proyecto están definidas en [Biblia.txt](./Biblia.txt); léelo antes de
-añadir funcionalidades nuevas.
+añadir funcionalidades nuevas. El alcance funcional previsto se describe
+en [FUNCIONALIDADES.md](./FUNCIONALIDADES.md).
 
 ## Requisitos
 
@@ -47,6 +48,28 @@ python -m bot
 
 - Comando de aplicación `/ping`: responde con la latencia de la conexión
   con Discord, de forma efímera.
+- `/nivel [miembro]`: consulta el nivel y el progreso de un miembro.
+- `/ranking [página]`: muestra la clasificación del servidor.
+- Los avisos de subida de nivel se publican en el canal donde el mensaje
+  concedió el nivel.
+- El ranking resuelve nombres visibles del servidor incluso para miembros
+  que todavía no estén en la caché local del bot, y lo presenta en un embed
+  con podio, progreso visual y paginación.
+- Bienvenida/despedida y música aún no están implementadas. Consulta
+  [FUNCIONALIDADES.md](./FUNCIONALIDADES.md).
+
+La importación histórica de este servidor ya se completó y la activación de
+niveles ya se ejecutó. Los comandos temporales de importación/activación y los
+comandos de configuración y estado de niveles no están disponibles. Los
+recuentos y niveles existentes permanecen guardados. Los mensajes nuevos dan
+15–25 XP aleatorios como máximo una vez cada 60 segundos por miembro y servidor.
+
+Los datos persistentes viven en `.data/message_stats.sqlite3`, localmente en
+la máquina de ejecución y excluidos de Git; inclúyelos en las copias de
+seguridad del despliegue.
+
+Tras actualizar el código, reinicia el bot para que sincronice y retire los
+comandos antiguos de Discord.
 
 ## Pruebas y calidad
 
