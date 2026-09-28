@@ -1,0 +1,6 @@
+{
+    // Permite que VS Code inyecte las variables de .env en las terminales
+    // integradas del editor. No afecta al arranque del bot en producción:
+    // src/bot/__main__.py ya carga .env por su cuenta con python-dotenv.
+    "python.terminal.useEnvFile": true
+}

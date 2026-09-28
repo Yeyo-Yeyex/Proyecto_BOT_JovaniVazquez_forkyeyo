@@ -1,0 +1,197 @@
+# Biblia del proyecto: bot de Discord
+
+Este documento define la estructura, los límites y las normas técnicas del bot. Debe consultarse antes de añadir funcionalidades o cambiar la arquitectura. Las decisiones de producto (nombre, funciones, permisos y persistencia definitiva) se concretarán cuando se definan los requisitos.
+
+## 1. Objetivo y principios
+
+El proyecto será un bot de Discord desarrollado en Python, organizado para que sus funciones puedan crecer sin convertir el punto de entrada en un bloque monolítico.
+
+Principios obligatorios:
+
+1. **Simplicidad antes que infraestructura:** no añadir capas, servicios ni dependencias sin una necesidad concreta.
+2. **Responsabilidades separadas:** Discord, lógica de negocio, configuración y persistencia no deben mezclarse.
+3. **Asincronía de extremo a extremo:** no bloquear el event loop con operaciones de disco, red o cálculos prolongados.
+4. **Seguridad por defecto:** secretos fuera del código y permisos mínimos para el bot.
+5. **Fallos visibles:** registrar y comunicar los errores de forma útil; no ocultarlos ni convertirlos en éxitos falsos.
+6. **Cambios verificables:** toda funcionalidad nueva debe incluir pruebas adecuadas y documentación cuando cambie el uso o la configuración.
+7. **Compatibilidad con Discord:** respetar límites de tasa, intents, permisos y políticas de la API.
+8. **Código documentado:** todo archivo del proyecto debe dejar claro para qué existe y toda lógica no trivial debe estar explicada de forma útil y mantenible.
+
+## 2. Tecnologías y convenciones
+
+- **Lenguaje:** Python 3.12 o superior, salvo que el entorno de despliegue requiera una versión distinta.
+- **Librería de Discord:** `discord.py` 2.x. Usar sus comandos de aplicación (slash commands) como interfaz principal.
+- **Gestión de dependencias:** mantener las dependencias directas y sus versiones en `pyproject.toml`; usar un lockfile si el gestor elegido lo genera.
+- **Estilo:** seguir PEP 8, usar anotaciones de tipos en interfaces y funciones públicas, y preferir nombres descriptivos en inglés en el código.
+- **Idioma visible:** mensajes, ayuda y textos destinados a usuarios se definirán en español, salvo que se acuerde internacionalización.
+- **Formato y análisis:** configurar un formateador y un linter (por ejemplo, Ruff) en el proyecto; no introducir herramientas duplicadas sin motivo.
+- **Interfaz del bot:** preferir interacciones y respuestas efímeras cuando el contenido sea privado o solo relevante para quien ejecuta el comando.
+- **Documentación del código:** documentar cada archivo, módulo, clase y función pública según las normas de la sección 8.1.
+
+No fijar versiones de paquetes al azar ni añadir una dependencia para una tarea que pueda resolverse claramente con la biblioteca estándar o con herramientas ya instaladas.
+
+## 3. Estructura de referencia
+
+```text
+.
+├── src/
+│   └── bot/
+│       ├── __init__.py
+│       ├── __main__.py          # Inicio ejecutable: python -m bot
+│       ├── app.py               # Construcción y ciclo de vida del cliente
+│       ├── config.py            # Lectura y validación de configuración
+│       ├── logging_config.py    # Configuración común de logs
+│       ├── cogs/                # Comandos y eventos agrupados por dominio
+│       │   ├── __init__.py
+│       │   └── ...              # Ej.: general.py, moderation.py
+│       ├── services/            # Casos de uso y lógica de negocio
+│       ├── repositories/        # Acceso a datos, si la persistencia lo requiere
+│       ├── models/              # Tipos y modelos compartidos, si son necesarios
+│       └── utils/               # Utilidades pequeñas, genéricas y reutilizables
+├── tests/
+│   ├── unit/
+│   └── integration/
+├── .env.example                # Nombres y ejemplos no secretos
+├── .gitignore
+├── pyproject.toml
+└── README.md
+```
+
+La estructura es una guía, no una obligación de crear carpetas vacías desde el primer día. Añadir un módulo cuando exista una responsabilidad real que ubicar en él. No crear un directorio genérico para una única función trivial.
+
+## 4. Límites y responsabilidades
+
+### Punto de entrada y aplicación
+
+- `__main__.py` inicia el proceso y delega la construcción y ejecución del bot.
+- `app.py` configura el cliente, registra extensiones y gestiona el arranque y cierre ordenados.
+- El token no se escribe ni se proporciona como literal en estos archivos.
+- El arranque debe fallar claramente si falta una configuración obligatoria.
+
+### Configuración
+
+- `config.py` es el único lugar que interpreta variables de entorno y valida su formato.
+- La aplicación recibe una configuración validada; los módulos no deben leer variables de entorno dispersas.
+- Mantener `.env.example` actualizado con los nombres requeridos y valores ficticios. No guardar `.env` en el repositorio.
+- Separar configuración local de producción; no introducir secretos en argumentos, logs, capturas ni mensajes de error.
+
+### Cogs y comandos
+
+- Cada cog agrupa comandos y eventos de un mismo dominio funcional; evitar un cog único que crezca sin límite.
+- Los cogs adaptan las interacciones de Discord a llamadas de servicios. No alojan reglas de negocio complejas ni consultas de persistencia extensas.
+- Validar entradas, permisos y contexto en el límite del comando. Comprobar los permisos requeridos también en Discord cuando corresponda.
+- Responder a las interacciones dentro de los plazos de Discord; diferir la respuesta antes de trabajo que pueda tardar.
+- Dar respuestas de error claras y seguras. No mostrar trazas, tokens ni datos internos a usuarios.
+- Registrar listeners con moderación: evitar trabajo repetido por cada evento y evitar respuestas o efectos duplicados.
+
+### Servicios
+
+- `services/` contiene los casos de uso y las reglas de negocio, independientes de detalles de presentación de Discord siempre que sea práctico.
+- Los servicios reciben dependencias explícitas; no crean clientes globales ni leen configuración directamente.
+- No duplicar reglas entre comandos. Extraerlas cuando más de una funcionalidad las necesite o cuando su complejidad lo justifique.
+
+### Persistencia
+
+- No introducir una base de datos hasta que exista una necesidad funcional de conservar datos entre reinicios.
+- Cuando se añada persistencia, aislarla detrás de repositorios y definir el ciclo de vida de conexiones y migraciones.
+- Las operaciones de base de datos deben ser asíncronas o ejecutarse fuera del event loop si el controlador es síncrono.
+- No guardar datos personales innecesarios. Definir retención y borrado cuando el bot almacene datos de usuarios.
+
+### Utilidades y modelos
+
+- `utils/` se reserva para funciones pequeñas y sin estado que sean realmente compartidas; no debe convertirse en un cajón de sastre.
+- Modelos y tipos compartidos deben reflejar conceptos del proyecto, no envolver tipos simples sin aportar validación o significado.
+
+### Documentación obligatoria
+
+- Todo archivo de código debe comenzar con una docstring de módulo que explique su responsabilidad. Si un archivo tiene un formato que no admite docstrings, documentar su propósito en el lugar apropiado del propio archivo (por ejemplo, comentarios de configuración) o en la documentación asociada.
+- Cada clase y función pública debe tener una docstring que describa su propósito, parámetros relevantes, resultado y errores importantes cuando no sean evidentes por sus tipos o contrato.
+- Los comandos y eventos de Discord deben documentar qué hacen, sus requisitos de permisos/intents y cualquier efecto visible o persistente relevante.
+- Los comentarios dentro del código deben explicar **por qué** existe una decisión, una restricción o un caso no obvio; no repetir literalmente lo que ya expresa el código.
+- Los archivos de configuración deben explicar las opciones no evidentes, los valores aceptados y si una opción es sensible u opcional. Nunca incluir credenciales reales como ejemplo.
+- Las pruebas deben indicar mediante nombres descriptivos qué comportamiento o caso límite verifican. Añadir una nota cuando el escenario no se entienda claramente a partir del nombre y el test.
+- Mantener README y ejemplos de configuración al día cuando cambien la instalación, el arranque, las variables de entorno, los comandos o el comportamiento operativo.
+- La documentación debe ser breve, precisa y mantenerse junto con el cambio que documenta. No aceptar archivos nuevos sin propósito documentado ni cambios de lógica no trivial sin explicación suficiente.
+- No añadir comentarios redundantes a líneas obvias: la exigencia es que cada archivo y comportamiento relevante sean comprensibles, no comentar cada instrucción mecánica.
+
+## 5. Normas de rendimiento y concurrencia
+
+- No usar `time.sleep`, `requests` ni lecturas/escrituras de archivos bloqueantes dentro de una coroutine.
+- Usar `asyncio.sleep` para esperas y clientes asíncronos para I/O. Para trabajo bloqueante inevitable, usar un executor o una alternativa asíncrona adecuada.
+- No hacer llamadas de red o consultas repetidas dentro de bucles si se pueden agrupar, reutilizar o almacenar en caché con una caducidad explícita.
+- Mantener las tareas en segundo plano identificables y cancelables; cerrarlas durante el apagado.
+- Aplicar límites a concurrencia, reintentos y tamaño de lotes. Los reintentos deben respetar `Retry-After` y no multiplicar efectos no idempotentes.
+- No crear cachés globales sin política de caducidad y límites de memoria.
+- Evitar consultas redundantes a Discord: aprovechar los datos de la interacción y las cachés de la librería cuando sean suficientes.
+
+## 6. Seguridad y permisos
+
+- El token del bot y cualquier credencial son secretos. Usar variables de entorno o un gestor de secretos del entorno de despliegue.
+- Revocar y rotar inmediatamente un token expuesto; no confiar en borrarlo del historial como única medida.
+- Solicitar solo los intents y permisos necesarios. Los intents privilegiados deben habilitarse tanto en el portal de Discord como en el código cuando proceda.
+- Comprobar autorización en el servidor, no solo ocultando botones o comandos en la interfaz.
+- No construir consultas, rutas, menciones ni contenido privilegiado directamente a partir de entrada no validada.
+- Desactivar menciones accidentales al reenviar contenido de usuarios cuando corresponda (`AllowedMentions`).
+- No registrar tokens, secretos, contenido sensible ni datos personales completos. Preferir identificadores solo cuando sean necesarios para diagnosticar.
+- Tratar contenido, adjuntos, nombres y mensajes de Discord como entrada no confiable.
+
+## 7. Errores, logs y observabilidad
+
+- Usar el módulo `logging` de Python y una configuración centralizada; no usar `print` como sistema de logs de producción.
+- Incluir contexto útil (comando, servidor o identificador de interacción cuando sea apropiado), sin registrar secretos.
+- Capturar excepciones únicamente cuando se puedan manejar, contextualizar o registrar. No usar `except Exception: pass`.
+- Los errores esperados deben producir mensajes comprensibles para el usuario; los errores inesperados deben quedar registrados con su traza en los logs internos.
+- El apagado debe cerrar el cliente y los recursos compartidos de forma ordenada.
+
+## 8. Pruebas y calidad
+
+- Añadir pruebas unitarias para validación, reglas de negocio y transformaciones con comportamiento significativo.
+- Las pruebas no deben requerir un token real ni conectarse a Discord. Aislar API, reloj, red y persistencia mediante dependencias sustituibles.
+- Añadir pruebas de integración para interacciones entre componentes cuando exista una frontera relevante.
+- Antes de integrar un cambio, ejecutar las pruebas afectadas, el formateador y el linter configurados.
+- No afirmar que una funcionalidad está probada si solo se ha verificado visualmente o mediante una ejecución manual.
+- Mantener los ejemplos y la documentación coherentes con el comportamiento implementado.
+
+### 8.1. Estándar de documentación por archivo
+
+Como mínimo, cada archivo nuevo o modificado debe cumplir lo siguiente:
+
+| Tipo de archivo | Documentación requerida |
+|---|---|
+| Módulo Python | Docstring inicial que describa su responsabilidad y límites |
+| Clase o función pública | Docstring con propósito y contrato; incluir parámetros, retorno y errores relevantes cuando corresponda |
+| Lógica compleja o no obvia | Comentario breve que explique la razón, el caso límite o la restricción |
+| Prueba | Nombre que identifique el comportamiento probado y el caso relevante |
+| Configuración | Comentarios o documentación para opciones no evidentes, valores válidos y secretos |
+| Script operativo | Instrucciones de uso, entradas, efectos y requisitos importantes en el propio archivo o documentación vinculada |
+| Documentación / ejemplos | Explicar su propósito y mantenerlos consistentes con el comportamiento actual |
+
+La revisión de cada cambio debe comprobar expresamente que no se han añadido archivos sin documentar y que la documentación modificada sigue siendo correcta.
+
+## 9. Configuración mínima prevista
+
+El proyecto podrá requerir estas variables a medida que se implementen sus funciones:
+
+| Variable | Uso | Regla |
+|---|---|---|
+| `DISCORD_TOKEN` | Autenticación del bot | Obligatoria para ejecutar; secreta y nunca versionada |
+| `LOG_LEVEL` | Nivel de logs | Opcional, con un valor por defecto seguro y documentado |
+| `DATABASE_URL` | Conexión a datos | Añadir solo si se incorpora persistencia |
+
+No introducir valores de configuración sin uso. Documentar cualquier nueva variable en `.env.example` y en el README.
+
+## 10. Criterios para aceptar cambios
+
+Una funcionalidad está lista cuando:
+
+1. Cumple el requisito definido y respeta los límites de este documento.
+2. Valida permisos, entradas y errores en los puntos adecuados.
+3. No bloquea el event loop ni hace trabajo repetido innecesario.
+4. Tiene pruebas proporcionales al riesgo y al comportamiento añadido.
+5. No incorpora secretos ni permisos/intents que no necesite.
+6. Actualiza la documentación y los ejemplos de configuración afectados.
+7. Puede arrancar y cerrarse limpiamente en el entorno previsto.
+
+## 11. Evolución de esta biblia
+
+Esta guía puede cambiar cuando haya una necesidad concreta, pero los cambios de arquitectura, dependencias, almacenamiento, permisos o manejo de datos deben quedar documentados y motivados. No mantener una regla que contradiga deliberadamente el código: actualizar ambos en el mismo cambio.

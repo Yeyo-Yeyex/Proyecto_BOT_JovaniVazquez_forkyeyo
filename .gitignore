@@ -1,0 +1,26 @@
+# Entorno de Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Configuración local con secretos
+.env
+
+# Artefactos de build/empaquetado
+build/
+dist/
+*.egg-info/
+
+# Cachés de herramientas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Archivos de editor/SO
+# Se comparte .vscode/settings.json (configuración de equipo), pero se
+# ignoran los archivos personales de cada desarrollador.
+.vscode/*
+!.vscode/settings.json
+.idea/
+.DS_Store
