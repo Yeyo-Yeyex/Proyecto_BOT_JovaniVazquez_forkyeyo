@@ -1,8 +1,8 @@
 # Especificación funcional del bot
 
-Este documento describe las funcionalidades que se quieren construir y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
+Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-Las funciones de este documento son objetivos, no funcionalidades ya disponibles, salvo la preparación del recuento de mensajes descrita en la sección 4.0. También está disponible el comando `/ping`.
+La bienvenida/despedida descrita en la sección 3 y los comandos `/ping`, `/nivel` y `/ranking` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -26,20 +26,19 @@ Las comprobaciones de permisos deben hacerse en el servidor en cada operación p
 
 ### 3.1. Bienvenida
 
-Cuando una persona se una a un servidor que tenga la función habilitada, el bot deberá:
+Implementación actual:
 
-1. Enviar un mensaje al canal de bienvenida configurado.
-2. Mencionar al nuevo miembro de forma intencional y segura.
-3. Permitir que el servidor personalice el texto con, como mínimo, el nombre visible del miembro y del servidor.
-4. No enviar nada si la función no está configurada, el canal ya no existe o el bot no tiene permisos para escribir en él; registrar el problema sin detener el bot.
+- Cuando una persona se una, el bot envía a `#chat-general` un mensaje con formato que pregunta **¿QUIÉN ERES?**.
+- El mensaje menciona intencionalmente al nuevo miembro y adjunta `src/bot/assets/bienvenida.mp4`.
+- Si el canal o el vídeo no están disponibles, o el bot no puede enviar el mensaje, registra el problema y no detiene el bot.
 
 ### 3.2. Despedida
 
-Cuando una persona abandone un servidor que tenga la función habilitada, el bot deberá enviar un mensaje al canal de despedidas configurado. El texto podrá personalizarse con el nombre disponible del miembro y del servidor. No se debe asumir que Discord seguirá proporcionando todos los datos del miembro después de que se haya ido.
+Cuando una persona abandone el servidor, el bot publica en `#chat-general` una despedida con su nombre visible y una frase humorística elegida aleatoriamente de `src/bot/assets/despedidas.txt`. Ese archivo es texto plano editable (una frase por línea; las líneas vacías o que empiezan por `#` se ignoran) y se relee en cada despedida, sin reiniciar el bot. Las menciones están desactivadas para evitar notificaciones accidentales.
 
 ### 3.3. Configuración
 
-Los administradores podrán:
+La configuración por servidor aún no está disponible. Como siguiente mejora, los administradores podrán:
 
 - Elegir por separado el canal de bienvenida y el de despedida.
 - Activar o desactivar cada tipo de mensaje independientemente.
@@ -51,8 +50,8 @@ Los mensajes deben limitar menciones accidentales a usuarios o roles. Si una pla
 ### 3.4. Criterios de aceptación
 
 - Un ingreso produce como máximo una bienvenida y una salida produce como máximo una despedida.
-- Cada mensaje se envía únicamente al canal configurado para ese servidor.
-- La configuración de un servidor no afecta a otros servidores.
+- Cada mensaje se envía únicamente al canal `#chat-general` del servidor donde ocurrió el evento.
+- Los eventos de miembros requieren habilitar el intent privilegiado `Server Members Intent` en el portal de Discord y en el código.
 - La función tolera canales eliminados y permisos revocados sin detener el bot.
 
 ## 4. Sistema de niveles por mensajes
@@ -114,49 +113,54 @@ Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles m
 
 ## 5. Música
 
-### 5.1. Comandos previstos
+### 5.1. Comandos implementados
 
-- `/reproducir consulta`: reproduce una búsqueda o fuente admitida por el proveedor que se elija.
-- `/pausar` y `/reanudar`: controlan la reproducción actual.
-- `/saltar`: pasa a la siguiente pista.
-- `/cola`: muestra la pista actual y las siguientes, con paginación si hace falta.
-- `/quitar posición`: elimina una pista de la cola, con autorización adecuada.
-- `/limpiar`: vacía la cola con autorización adecuada.
-- `/parar`: detiene la reproducción y desconecta al bot.
-- `/volumen valor`: cambia el volumen dentro de un rango acotado.
+Cada comando existe en tres formas equivalentes que comparten exactamente la misma lógica interna (no hay duplicación de reglas de negocio): el comando de aplicación completo (`/reproducir`), su alias corto de aplicación registrado como un segundo slash command independiente (`/p`), y un comando de texto clásico con el prefijo `º` (o el configurado en `COMMAND_PREFIX`, `!` por defecto) que admite tanto el nombre completo como los alias corto e inglés (`ºreproducir`, `ºp`, `ºplay`). Los tres puntos de entrada delegan en el mismo método `_*_impl`, que recibe un `MusicResponder` — una abstracción (`InteractionResponder`/`ContextResponder` en `bot.cogs.music`) que oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
 
-La cola y el reproductor serán independientes por servidor. Como regla inicial, las acciones de música solo se permitirán a miembros conectados al mismo canal de voz que el bot. Los comandos que inician reproducción requerirán conexión a un canal de voz.
+- `/reproducir consulta` (`/p`; texto `ºreproducir`/`ºp`/`ºplay`): busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
+- `/pausar` (`/pausa`; texto `ºpausar`/`ºpausa`/`ºpause`) y `/reanudar` (`/rs`; texto `ºreanudar`/`ºrs`/`ºresume`): controlan la reproducción actual.
+- `/saltar` (`/s`; texto `ºsaltar`/`ºs`/`ºskip`): detiene la pista en curso; la cola continúa automáticamente con la siguiente.
+- `/cola` (`/q`; texto `ºcola`/`ºq`/`ºqueue`): muestra la pista actual y hasta diez pistas siguientes (con el resto resumido en un contador).
+- `/quitar posición` (`/rm`; texto `ºquitar`/`ºrm`/`ºremove`): elimina una pista de la cola por su posición (1 = la siguiente).
+- `/limpiar` (`/cl`; texto `ºlimpiar`/`ºcl`/`ºclear`): vacía la cola sin afectar a la pista en curso.
+- `/parar` (`/stop`; texto `ºparar`/`ºstop`): detiene la reproducción, vacía la cola y desconecta al bot del canal de voz.
+- `/volumen valor` (`/vol`; texto `ºvolumen`/`ºvol`/`ºvolume`): cambia el volumen (1-200 %), incluso con una pista ya sonando.
+
+La cola y el reproductor son independientes por servidor (`GuildMusicState` en `bot.cogs.music`). Las acciones de control (todas salvo `/reproducir`, que además puede conectar al bot, y `/cola`, de solo lectura) exigen que quien las use esté conectado al mismo canal de voz que el bot.
+
+Los comandos de texto con prefijo requieren el intent privilegiado **Message Content** habilitado en el portal de desarrolladores de Discord (además del ya requerido **Server Members**); sin él, el bot no puede leer el contenido de los mensajes y esos comandos no se dispararán (los comandos de aplicación `/` no se ven afectados).
 
 ### 5.2. Comportamiento y límites
 
-- Informar con claridad si la entrada no se puede reproducir, el bot no puede conectarse o el servidor no dispone de permisos suficientes.
-- Al terminar una pista, reproducir la siguiente de la cola; si no quedan pistas, desconectarse tras un periodo de inactividad configurable o permanecer conectado según la decisión de implementación.
-- Limitar duración y tamaño de cola para evitar consumo ilimitado de recursos.
-- Validar URL, consulta y metadatos antes de mostrarlos o procesarlos; escapar contenido no confiable.
-- Cerrar procesos, conexiones y tareas de reproducción al saltar, parar, desconectar o cerrar el bot.
-- La cola en memoria puede perderse al reiniciar durante el MVP; no persistir audio ni historiales salvo que se defina un requisito separado.
-- La fuente, librería de extracción/reproducción y requisitos de despliegue quedan pendientes de decisión técnica. Solo se admitirán fuentes compatibles con sus condiciones de uso y con las políticas de Discord; no se intentará eludir DRM, controles de acceso ni restricciones de proveedores.
+- Se informa con un mensaje claro si la consulta no se puede resolver, la pista dura demasiado, la cola está llena o el miembro no está en el canal de voz adecuado.
+- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `/parar` es la única acción que corta ese encadenamiento.
+- Duración máxima por pista: 30 minutos (`MAX_TRACK_DURATION_SECONDS`); se rechazan también los directos, al no tener duración conocida. Tamaño máximo de cola: 50 pistas por servidor (`MAX_QUEUE_SIZE`).
+- El bot abandona el canal de voz automáticamente si se queda sin oyentes humanos, o tras 5 minutos de inactividad sin pistas en cola (`IDLE_DISCONNECT_SECONDS`).
+- Todas las conexiones de voz, procesos de `ffmpeg` y temporizadores de inactividad se cierran al detener, saltar, desconectar o descargar el cog (`cog_unload`).
+- La cola vive en memoria y se pierde al reiniciar el bot; no se persiste audio ni historial de reproducción.
+- Solo se admiten fuentes resueltas por `yt-dlp` (típicamente YouTube); no se intenta eludir restricciones de acceso, DRM ni condiciones de uso de los proveedores.
+- Para evitar el `403 Forbidden` que YouTube devuelve si `ffmpeg` solicita el flujo sin las cabeceras HTTP originales, `yt-dlp` se configura para resolver con el cliente `android` y las cabeceras (`http_headers`) que devuelve se reenvían a `ffmpeg` mediante `-headers` al reproducir.
 
 ### 5.3. Criterios de aceptación
 
-- Dos servidores pueden reproducir música y mantener colas simultáneas sin interferirse.
+- Dos servidores pueden reproducir música y mantener colas simultáneas sin interferirse (estado indexado por ID de servidor).
 - La reproducción y la cola avanzan correctamente al terminar, saltar, detener o fallar una pista.
 - Los errores de conexión o de fuente no bloquean otros comandos ni dejan al bot en un estado irrecuperable.
 - Usuarios no conectados al canal de voz adecuado reciben una respuesta clara y no alteran la reproducción.
-- Límites de cola y duración se aplican antes de aceptar trabajo adicional.
+- Los límites de cola y duración se aplican antes de aceptar trabajo adicional.
 
 ## 6. Persistencia y aislamiento por servidor
 
-Las preferencias de bienvenida/despedida y los datos del sistema de niveles deben persistir. La tecnología de almacenamiento se decidirá al implementar estas funciones y deberá seguir la separación de repositorios definida en `Biblia.txt`.
+La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
 
 Toda configuración de servidor debe estar asociada al ID de ese servidor. El bot no debe usar valores de un servidor como valores implícitos para otro. Los datos de progresión se limitarán a lo necesario para operar las funciones descritas y deben poder eliminarse si el bot deja de prestar servicio en un servidor.
 
 ## 7. Orden de implementación
 
-1. **Bienvenida y despedida:** eventos, configuración por servidor y mensajes personalizables.
+1. **Bienvenida y despedida:** eventos y mensajes básicos en `#chat-general` (implementado); configuración por servidor y mensajes personalizables pendientes.
 2. **Preparación de niveles:** importar y guardar agregados de mensajes históricos y contar actividad nueva. (Implementado.)
 3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos de nivel/ranking y configuración. (Implementado.)
-4. **Música:** seleccionar fuente/proveedor y estrategia de despliegue antes de implementar el reproductor; después, reproducción y controles de cola.
+4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 
@@ -164,9 +168,8 @@ Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los c
 
 Estas decisiones no impiden documentar el alcance, pero deben resolverse antes de cerrar la implementación correspondiente:
 
-- Plantillas y formato visual definitivos para bienvenida/despedida.
+- Configuración por servidor y plantillas personalizables para bienvenida/despedida.
 - Si se ofrecerá una herramienta administrativa para reiniciar la progresión.
-- Fuente de audio admitida, comportamiento de búsqueda, límites de pista/cola y estrategia de despliegue.
-- Si moderadores podrán controlar música iniciada por otros miembros o solo el miembro solicitante.
+- Si moderadores podrán controlar música iniciada por otros miembros, o si el control seguirá limitado a "cualquiera en el mismo canal de voz" (comportamiento actual).
 
 Las decisiones pendientes no bloquean las funciones ya implementadas, pero deben resolverse antes de cerrar la funcionalidad correspondiente.

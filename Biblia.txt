@@ -128,7 +128,7 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 
 - El token del bot y cualquier credencial son secretos. Usar variables de entorno o un gestor de secretos del entorno de despliegue.
 - Revocar y rotar inmediatamente un token expuesto; no confiar en borrarlo del historial como única medida.
-- Solicitar solo los intents y permisos necesarios. Los intents privilegiados deben habilitarse tanto en el portal de Discord como en el código cuando proceda.
+- Solicitar solo los intents y permisos necesarios. Los intents privilegiados deben habilitarse tanto en el portal de Discord como en el código cuando proceda. Para eventos de entrada/salida de miembros se necesita `Server Members Intent`.
 - Comprobar autorización en el servidor, no solo ocultando botones o comandos en la interfaz.
 - No construir consultas, rutas, menciones ni contenido privilegiado directamente a partir de entrada no validada.
 - Desactivar menciones accidentales al reenviar contenido de usuarios cuando corresponda (`AllowedMentions`).

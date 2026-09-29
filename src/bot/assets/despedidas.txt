@@ -1,0 +1,19 @@
+# Frases de despedida del bot (una por línea).
+#
+# Este archivo lo puede editar cualquier persona sin tocar código: añade,
+# quita o reescribe líneas y los cambios se aplican en la siguiente
+# despedida, sin reiniciar el bot. Las líneas vacías y las que empiezan
+# por "#" se ignoran. Cada frase se muestra después del nombre del
+# miembro, por ejemplo: "👋 **Nombre** <frase>".
+#
+# Mantén el tono como burla ligera y exagerada (sátira de servidor), sin
+# insultos reales, ataques personales, discriminación ni nada que pueda
+# interpretarse como acoso.
+huyó más rápido que su propia sombra al ver un botón de 'salir'.
+se rindió antes que un tamagotchi mal cuidado.
+abandona la partida con el mismo nivel de compromiso que tenía con el gimnasio.
+se marcha dejando su reputación en modo avión permanentemente.
+sale por patas como si el servidor fuera un examen sorpresa.
+se despide con la épica de quien pierde al piedra, papel o tijera contra la nada.
+abandona la nave antes de que se hundiera él solito.
+se esfuma con más misterio que su última tarea entregada a tiempo.

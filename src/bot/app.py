@@ -23,19 +23,40 @@ logger = logging.getLogger(__name__)
 INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.general",
     "bot.cogs.message_stats",
+    "bot.cogs.welcome",
+    "bot.cogs.music",
 )
+
+# Prefijo adicional, fijo y siempre activo, para invocar comandos de texto
+# clásicos (p. ej. "ºp cancion") además del prefijo configurable y de los
+# comandos de aplicación ("/reproducir"). No sustituye a ninguno de los dos.
+EXTRA_TEXT_COMMAND_PREFIX = "º"
 
 
 def build_intents() -> discord.Intents:
-    """Crea los intents mínimos necesarios para la funcionalidad actual.
+    """Crea los intents requeridos por las funciones actuales.
 
-    Solo se solicitan los intents por defecto (no privilegiados). Si una
-    funcionalidad futura necesita leer el contenido de los mensajes o el
-    listado de miembros, deberá habilitarse aquí y también en el portal
-    de desarrolladores de Discord (ver Biblia.txt, sección 6 "Seguridad
-    y permisos").
+    El intent privilegiado de miembros permite recibir eventos de entrada
+    y salida; también debe habilitarse en el portal de desarrolladores.
+    El intent privilegiado de contenido de mensajes es necesario para que
+    el bot pueda leer comandos de texto con prefijo (p. ej. "ºp"); debe
+    habilitarse igualmente como "Message Content Intent" en el portal.
     """
-    return discord.Intents.default()
+    intents = discord.Intents.default()
+    intents.members = True
+    intents.message_content = True
+    return intents
+
+
+def _build_command_prefixes(configured_prefix: str) -> tuple[str, ...]:
+    """Combina el prefijo configurable con el prefijo fijo `º`.
+
+    Ambos quedan siempre activos y funcionan de forma intercambiable;
+    se evita duplicar el prefijo si coinciden.
+    """
+    if configured_prefix == EXTRA_TEXT_COMMAND_PREFIX:
+        return (configured_prefix,)
+    return (configured_prefix, EXTRA_TEXT_COMMAND_PREFIX)
 
 
 class BotClient(commands.Bot):
@@ -48,7 +69,7 @@ class BotClient(commands.Bot):
     def __init__(self, *, command_prefix: str, database_path: Path) -> None:
         self.message_stats = MessageStatsRepository(database_path)
         super().__init__(
-            command_prefix=command_prefix,
+            command_prefix=_build_command_prefixes(command_prefix),
             intents=build_intents(),
             # El texto de ayuda por defecto de discord.py no está en
             # español ni pensado para slash commands; se desactiva.
