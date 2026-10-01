@@ -22,6 +22,7 @@ from bot.services.levels import (
     MIN_MESSAGE_XP,
     calculate_level_progress,
 )
+from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -263,34 +264,32 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="nivel", description="Consulta tu nivel o el de otro miembro.")
-    @app_commands.guild_only()
-    async def level(
+    async def _level_impl(
         self,
-        interaction: discord.Interaction,
-        miembro: discord.Member | None = None,
+        responder: CommandResponder,
+        miembro: discord.Member | None,
     ) -> None:
-        """Muestra nivel, XP total y avance hacia el siguiente nivel."""
-        guild = interaction.guild
+        """Lógica compartida entre `/nivel` y `ºnivel`."""
+        guild = responder.guild
         if guild is None:
-            await interaction.response.send_message(
-                "Este comando solo está disponible dentro de un servidor.",
-                ephemeral=True,
-            )
+            await responder.send_error("Este comando solo está disponible dentro de un servidor.")
             return
 
-        member = miembro or interaction.user
+        member = miembro or responder.member
+        if member is None:
+            await responder.send_error("No se pudo identificar a quién consultar.")
+            return
+
         settings = await self.repository.level_settings(guild.id)
         if settings is None or not settings.historical_seeded:
-            await interaction.response.send_message(
-                "Los niveles todavía no están inicializados en este servidor.",
-                ephemeral=True,
+            await responder.send_error(
+                "Los niveles todavía no están inicializados en este servidor."
             )
             return
 
         total_xp = await self.repository.member_xp(guild.id, member.id)
         progress = calculate_level_progress(total_xp)
-        await interaction.response.send_message(
+        await responder.send(
             f"**{discord.utils.escape_markdown(member.display_name)}** — "
             f"nivel **{progress.level}**, {total_xp:,} XP. "
             f"Progreso: {progress.xp_in_level:,}/{progress.xp_for_next_level:,} XP "
@@ -299,27 +298,37 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="ranking", description="Muestra el ranking de niveles del servidor.")
+    @app_commands.command(name="nivel", description="Consulta tu nivel o el de otro miembro.")
     @app_commands.guild_only()
-    async def ranking(
+    async def level(
         self,
         interaction: discord.Interaction,
-        pagina: app_commands.Range[int, 1, 100] = 1,
+        miembro: discord.Member | None = None,
     ) -> None:
-        """Muestra hasta diez perfiles por página, ordenados por XP."""
-        guild = interaction.guild
+        """Muestra nivel, XP total y avance hacia el siguiente nivel."""
+        await self._level_impl(InteractionResponder(interaction), miembro)
+
+    @commands.command(name="nivel")
+    @commands.guild_only()
+    async def level_text(
+        self,
+        ctx: commands.Context,
+        miembro: discord.Member | None = None,
+    ) -> None:
+        """Versión de texto (`ºnivel`) de `/nivel`."""
+        await self._level_impl(ContextResponder(ctx), miembro)
+
+    async def _ranking_impl(self, responder: CommandResponder, pagina: int) -> None:
+        """Lógica compartida entre `/ranking` y `ºranking`."""
+        guild = responder.guild
         if guild is None:
-            await interaction.response.send_message(
-                "Este comando solo está disponible dentro de un servidor.",
-                ephemeral=True,
-            )
+            await responder.send_error("Este comando solo está disponible dentro de un servidor.")
             return
 
         settings = await self.repository.level_settings(guild.id)
         if settings is None or not settings.historical_seeded:
-            await interaction.response.send_message(
-                "Los niveles todavía no están inicializados en este servidor.",
-                ephemeral=True,
+            await responder.send_error(
+                "Los niveles todavía no están inicializados en este servidor."
             )
             return
 
@@ -328,13 +337,10 @@ class MessageStats(commands.Cog):
             guild.id, page_size, (pagina - 1) * page_size
         )
         if not entries:
-            await interaction.response.send_message(
-                f"No hay perfiles en la página {pagina}.",
-                ephemeral=True,
-            )
+            await responder.send_error(f"No hay perfiles en la página {pagina}.")
             return
 
-        await interaction.response.defer()
+        await responder.start_progress("🔄 Preparando el ranking...")
         name_semaphore = asyncio.Semaphore(5)
 
         async def resolve_entry(position: int, entry: tuple[int, int]) -> tuple[int, str, int]:
@@ -353,11 +359,29 @@ class MessageStats(commands.Cog):
             )
         )
 
-        await interaction.edit_original_response(
-            content=None,
+        await responder.finish(
             embed=build_ranking_embed(guild, pagina, resolved_entries),
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+    @app_commands.command(name="ranking", description="Muestra el ranking de niveles del servidor.")
+    @app_commands.guild_only()
+    async def ranking(
+        self,
+        interaction: discord.Interaction,
+        pagina: app_commands.Range[int, 1, 100] = 1,
+    ) -> None:
+        """Muestra hasta diez perfiles por página, ordenados por XP."""
+        await self._ranking_impl(InteractionResponder(interaction), pagina)
+
+    @commands.command(name="ranking")
+    @commands.guild_only()
+    async def ranking_text(self, ctx: commands.Context, pagina: int = 1) -> None:
+        """Versión de texto (`ºranking`) de `/ranking`."""
+        if not (1 <= pagina <= 100):
+            await ctx.send("La página debe estar entre 1 y 100.")
+            return
+        await self._ranking_impl(ContextResponder(ctx), pagina)
 
     async def _resolve_display_name(self, guild: discord.Guild, user_id: int) -> str:
         """Resuelve el nombre actual del miembro o su nombre global de Discord.

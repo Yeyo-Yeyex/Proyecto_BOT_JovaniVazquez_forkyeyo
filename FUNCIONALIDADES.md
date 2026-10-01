@@ -12,7 +12,7 @@ Crear un bot de Discord en español que aporte a los servidores:
 - Progresión de niveles basada en la participación mediante mensajes.
 - Reproducción y control de música en canales de voz.
 
-La interfaz principal serán comandos de aplicación (`/`) y, cuando corresponda, botones o menús de Discord. Los mensajes automáticos y avisos se enviarán en los canales configurados.
+La interfaz usa comandos de aplicación (`/`) y sus equivalentes de texto con el prefijo `º` (además del prefijo configurable), junto con botones o menús de Discord cuando corresponda. Los mensajes automáticos y avisos se enviarán en los canales configurados.
 
 ## 2. Usuarios y permisos
 
@@ -87,8 +87,12 @@ La importación no concede experiencia por sí sola. Al activar el sistema, el r
 
 ### 4.2. Comandos previstos
 
-- `/nivel [miembro]`: muestra el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
-- `/ranking [página]`: muestra los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
+- `/nivel [miembro]` y `ºnivel [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
+- `/ranking [página]` y `ºranking [página]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
+- `/ping` y `ºping`: comprueban la latencia del bot.
+- `/ayuda` y `ºayuda` (alias `ºhelp`): listan dinámicamente los comandos slash y de texto, sus argumentos y alias.
+
+Los comandos slash y de texto comparten la misma lógica de negocio; solamente cambia el adaptador usado para responder a Discord. El prefijo `º` está siempre activo y se combina con `COMMAND_PREFIX` (por defecto `!`). Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
 Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles mensajes` y `/niveles activar` se retiraron del menú una vez completada la preparación del servidor inicial. La activación del sistema no se ofrece como comando público permanente.
 

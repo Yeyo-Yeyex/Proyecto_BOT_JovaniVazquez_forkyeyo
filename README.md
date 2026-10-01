@@ -39,9 +39,8 @@ pip install -e ".[dev]"
 2. Completa `DISCORD_TOKEN` con el token de tu bot. Nunca lo subas al
    repositorio.
 3. Ajusta `LOG_LEVEL` y `COMMAND_PREFIX` si lo necesitas (ambos son
-   opcionales). `COMMAND_PREFIX` afecta solo a los comandos de texto
-   clásicos (música); el prefijo `º` está siempre disponible además del
-   configurado, no lo sustituye.
+   opcionales). `COMMAND_PREFIX` se añade al prefijo clásico fijo `º`;
+   ambos permiten invocar por texto los comandos slash.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo
@@ -55,10 +54,15 @@ python -m bot
 
 ## Funcionalidad actual
 
-- Comando de aplicación `/ping`: responde con la latencia de la conexión
-  con Discord, de forma efímera.
-- `/nivel [miembro]`: consulta el nivel y el progreso de un miembro.
-- `/ranking [página]`: muestra la clasificación del servidor.
+- Todos los comandos slash también se pueden invocar como comandos de
+  texto usando `º` (o el valor configurado en `COMMAND_PREFIX`):
+  - `/ping` → `ºping`: responde con la latencia de la conexión con Discord.
+  - `/nivel [miembro]` → `ºnivel [miembro]`: consulta el nivel y el
+    progreso de un miembro.
+  - `/ranking [página]` → `ºranking [página]`: muestra la clasificación
+    del servidor.
+  - `/ayuda` → `ºayuda` (alias `ºhelp`): muestra todos los comandos,
+    argumentos y alias disponibles.
 - Los avisos de subida de nivel se publican en el canal donde el mensaje
   concedió el nivel.
 - Al entrar alguien, el bot pregunta **¿QUIÉN ERES?** y adjunta el vídeo
@@ -68,12 +72,10 @@ python -m bot
 - El ranking resuelve nombres visibles del servidor incluso para miembros
   que todavía no estén en la caché local del bot, y lo presenta en un embed
   con podio, progreso visual y paginación.
-- Música en canales de voz, sencilla y por servidor. Cada comando funciona
-  de tres formas equivalentes: como comando de aplicación completo
-  (`/reproducir`), como su alias corto de aplicación (`/p`) y como comando
-  de texto clásico con el prefijo `º` (o el prefijo configurado, `!` por
-  defecto), aceptando también el nombre completo y el alias en inglés
-  (`ºreproducir`, `ºp`, `ºplay`):
+- Música en canales de voz, sencilla y por servidor. Además de cada
+  comando de aplicación completo (`/reproducir`) y sus alias cortos de
+  aplicación (`/p`), también funciona en texto con `º` o el prefijo
+  configurado, aceptando nombre completo y alias:
   - `/reproducir <consulta>` (`/p`, `ºreproducir`/`ºp`/`ºplay`): busca o
     resuelve un enlace (vía `yt-dlp`) y lo reproduce; si ya hay algo
     sonando, lo añade a la cola.

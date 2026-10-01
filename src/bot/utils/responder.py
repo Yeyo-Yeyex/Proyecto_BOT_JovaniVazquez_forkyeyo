@@ -1,0 +1,151 @@
+"""Adaptador común para responder a comandos de aplicación y de texto.
+
+Todos los comandos del bot admiten dos formas de invocación equivalentes:
+como comando de aplicación (`/comando`) y como comando de texto clásico
+con un prefijo (por ejemplo `ºcomando`). Ambas comparten exactamente la
+misma lógica de negocio; lo único que cambia es cómo se envía la
+respuesta a Discord (`discord.Interaction` frente a `commands.Context`).
+
+`CommandResponder` oculta esa diferencia detrás de una interfaz única,
+para que los cogs no dupliquen sus reglas entre las dos variantes (ver
+Biblia.txt, norma "No duplicar reglas entre comandos").
+"""
+
+from __future__ import annotations
+
+import abc
+
+import discord
+from discord.ext import commands
+
+
+class CommandResponder(abc.ABC):
+    """Interfaz común para responder tanto a interacciones como a mensajes."""
+
+    #: Servidor en el que se invocó el comando, o `None` fuera de un servidor.
+    guild: discord.Guild | None
+    #: Miembro que invocó el comando, si se pudo resolver como tal.
+    member: discord.Member | None
+    #: Canal en el que se invocó el comando, para reutilizarlo si hace falta.
+    channel: discord.abc.Messageable | None
+
+    @abc.abstractmethod
+    async def send(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        ephemeral: bool = False,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        """Envía una respuesta definitiva de una sola vez (sin progreso previo).
+
+        `ephemeral` solo tiene efecto en comandos de aplicación: los
+        comandos de texto no pueden ocultar su respuesta a otros miembros.
+        """
+
+    @abc.abstractmethod
+    async def send_error(self, content: str) -> None:
+        """Informa de un error de forma visible solo para quien invocó el comando."""
+
+    @abc.abstractmethod
+    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
+        """Marca el inicio de una operación que puede tardar."""
+
+    @abc.abstractmethod
+    async def finish(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        """Sustituye el aviso de progreso por el resultado final."""
+
+
+class InteractionResponder(CommandResponder):
+    """Adaptador de `CommandResponder` para comandos de aplicación (`/...`)."""
+
+    def __init__(self, interaction: discord.Interaction) -> None:
+        self._interaction = interaction
+        self.guild = interaction.guild
+        member = interaction.user
+        self.member = member if isinstance(member, discord.Member) else None
+        self.channel = interaction.channel
+
+    async def send(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        ephemeral: bool = False,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        kwargs: dict[str, object] = {"content": content, "embed": embed, "ephemeral": ephemeral}
+        if allowed_mentions is not None:
+            kwargs["allowed_mentions"] = allowed_mentions
+        if self._interaction.response.is_done():
+            await self._interaction.followup.send(**kwargs)
+        else:
+            await self._interaction.response.send_message(**kwargs)
+
+    async def send_error(self, content: str) -> None:
+        await self.send(content, ephemeral=True)
+
+    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
+        # Discord no admite un texto de "cargando" personalizado para
+        # comandos de aplicación; `defer` ya muestra el indicador nativo.
+        await self._interaction.response.defer(thinking=True)
+
+    async def finish(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        kwargs: dict[str, object] = {"content": content, "embed": embed}
+        if allowed_mentions is not None:
+            kwargs["allowed_mentions"] = allowed_mentions
+        await self._interaction.edit_original_response(**kwargs)
+
+
+class ContextResponder(CommandResponder):
+    """Adaptador de `CommandResponder` para comandos de texto con prefijo (`º...`)."""
+
+    def __init__(self, ctx: commands.Context) -> None:
+        self._ctx = ctx
+        self.guild = ctx.guild
+        self.member = ctx.author if isinstance(ctx.author, discord.Member) else None
+        self.channel = ctx.channel
+        self._progress_message: discord.Message | None = None
+
+    async def send(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        ephemeral: bool = False,  # noqa: ARG002 - los mensajes de texto no admiten ocultarse.
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        await self._ctx.send(content, embed=embed, allowed_mentions=allowed_mentions)
+
+    async def send_error(self, content: str) -> None:
+        await self._ctx.send(content)
+
+    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
+        self._progress_message = await self._ctx.send(placeholder)
+
+    async def finish(
+        self,
+        content: str | None = None,
+        *,
+        embed: discord.Embed | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        if self._progress_message is not None:
+            await self._progress_message.edit(
+                content=content, embed=embed, allowed_mentions=allowed_mentions
+            )
+        else:
+            await self._ctx.send(content, embed=embed, allowed_mentions=allowed_mentions)

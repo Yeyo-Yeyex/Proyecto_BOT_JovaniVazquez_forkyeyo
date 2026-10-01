@@ -10,13 +10,13 @@ distinto y por eso se reencola con `asyncio.run_coroutine_threadsafe`.
 Cada acción admite dos interfaces equivalentes: comandos de aplicación
 (`/reproducir`, `/p`, ...) y comandos de texto con el prefijo configurado
 (por ejemplo `ºreproducir`, `ºp`, `ºplay`). Ambas comparten exactamente la
-misma lógica de negocio a través de `MusicResponder`, una abstracción que
-oculta si el origen fue una `discord.Interaction` o un mensaje de texto.
+misma lógica de negocio a través de `CommandResponder`
+(`bot.utils.responder`), una abstracción compartida con el resto de cogs
+que oculta si el origen fue una `discord.Interaction` o un mensaje de texto.
 """
 
 from __future__ import annotations
 
-import abc
 import asyncio
 import logging
 
@@ -40,6 +40,7 @@ from bot.services.music import (
     volume_percent_to_factor,
 )
 from bot.services.music_source import extract_track_info
+from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
 
@@ -50,91 +51,6 @@ IDLE_DISCONNECT_SECONDS = 5 * 60
 # Reconectar el flujo de audio ante cortes de red transitorios del origen.
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
-
-
-class MusicResponder(abc.ABC):
-    """Interfaz común para responder tanto a interacciones como a mensajes.
-
-    Los comandos de música tienen dos puntos de entrada (slash command o
-    comando de texto con prefijo) que comparten toda la lógica de negocio;
-    esta clase abstrae las diferencias de la API de respuesta de
-    `discord.py` entre ambos, para no duplicar reglas (ver Biblia.txt).
-    """
-
-    guild: discord.Guild | None
-    member: discord.Member | None
-    channel: discord.abc.Messageable | None
-
-    @abc.abstractmethod
-    async def send_error(self, content: str) -> None:
-        """Informa de un error de forma visible solo para quien invocó el comando."""
-
-    @abc.abstractmethod
-    async def send(self, content: str) -> None:
-        """Envía una respuesta definitiva de una sola vez (sin progreso previo)."""
-
-    @abc.abstractmethod
-    async def start_progress(self) -> None:
-        """Marca el inicio de una operación que puede tardar (p. ej. buscar audio)."""
-
-    @abc.abstractmethod
-    async def finish(self, content: str) -> None:
-        """Sustituye el aviso de progreso por el resultado final."""
-
-
-class InteractionResponder(MusicResponder):
-    """Adaptador de `MusicResponder` para comandos de aplicación (`/...`)."""
-
-    def __init__(self, interaction: discord.Interaction) -> None:
-        self._interaction = interaction
-        self.guild = interaction.guild
-        member = interaction.user
-        self.member = member if isinstance(member, discord.Member) else None
-        self.channel = interaction.channel
-
-    async def send_error(self, content: str) -> None:
-        if self._interaction.response.is_done():
-            await self._interaction.followup.send(content, ephemeral=True)
-        else:
-            await self._interaction.response.send_message(content, ephemeral=True)
-
-    async def send(self, content: str) -> None:
-        if self._interaction.response.is_done():
-            await self._interaction.followup.send(content)
-        else:
-            await self._interaction.response.send_message(content)
-
-    async def start_progress(self) -> None:
-        await self._interaction.response.defer(thinking=True)
-
-    async def finish(self, content: str) -> None:
-        await self._interaction.edit_original_response(content=content)
-
-
-class ContextResponder(MusicResponder):
-    """Adaptador de `MusicResponder` para comandos de texto con prefijo (`º...`)."""
-
-    def __init__(self, ctx: commands.Context) -> None:
-        self._ctx = ctx
-        self.guild = ctx.guild
-        self.member = ctx.author if isinstance(ctx.author, discord.Member) else None
-        self.channel = ctx.channel
-        self._progress_message: discord.Message | None = None
-
-    async def send_error(self, content: str) -> None:
-        await self._ctx.send(content)
-
-    async def send(self, content: str) -> None:
-        await self._ctx.send(content)
-
-    async def start_progress(self) -> None:
-        self._progress_message = await self._ctx.send("🔎 Buscando...")
-
-    async def finish(self, content: str) -> None:
-        if self._progress_message is not None:
-            await self._progress_message.edit(content=content)
-        else:
-            await self._ctx.send(content)
 
 
 class GuildMusicState:
@@ -170,7 +86,7 @@ class Music(commands.Cog):
             self._states[guild_id] = state
         return state
 
-    async def _require_connected_state(self, responder: MusicResponder) -> GuildMusicState | None:
+    async def _require_connected_state(self, responder: CommandResponder) -> GuildMusicState | None:
         """Valida contexto de servidor, conexión de voz y canal del miembro.
 
         Responde con un mensaje de error y devuelve `None` si algo falla,
@@ -224,7 +140,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºreproducir`, `ºp`, `ºplay`) de `/reproducir`."""
         await self._play_impl(ContextResponder(ctx), consulta)
 
-    async def _play_impl(self, responder: MusicResponder, consulta: str) -> None:
+    async def _play_impl(self, responder: CommandResponder, consulta: str) -> None:
         """Lógica compartida por todas las variantes de reproducir una pista."""
         guild = responder.guild
         if guild is None:
@@ -445,7 +361,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºpausar`, `ºpausa`, `ºpause`) de `/pausar`."""
         await self._pause_impl(ContextResponder(ctx))
 
-    async def _pause_impl(self, responder: MusicResponder) -> None:
+    async def _pause_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de pausar."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -476,7 +392,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºreanudar`, `ºrs`, `ºresume`) de `/reanudar`."""
         await self._resume_impl(ContextResponder(ctx))
 
-    async def _resume_impl(self, responder: MusicResponder) -> None:
+    async def _resume_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de reanudar."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -507,7 +423,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºsaltar`, `ºs`, `ºskip`) de `/saltar`."""
         await self._skip_impl(ContextResponder(ctx))
 
-    async def _skip_impl(self, responder: MusicResponder) -> None:
+    async def _skip_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de saltar."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -540,7 +456,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºparar`, `ºstop`) de `/parar`."""
         await self._stop_impl(ContextResponder(ctx))
 
-    async def _stop_impl(self, responder: MusicResponder) -> None:
+    async def _stop_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de parar."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -569,7 +485,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºcola`, `ºq`, `ºqueue`) de `/cola`."""
         await self._queue_impl(ContextResponder(ctx))
 
-    async def _queue_impl(self, responder: MusicResponder) -> None:
+    async def _queue_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de mostrar la cola."""
         guild = responder.guild
         if guild is None:
@@ -619,7 +535,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºquitar`, `ºrm`, `ºremove`) de `/quitar`."""
         await self._remove_impl(ContextResponder(ctx), posicion)
 
-    async def _remove_impl(self, responder: MusicResponder, posicion: int) -> None:
+    async def _remove_impl(self, responder: CommandResponder, posicion: int) -> None:
         """Lógica compartida por todas las variantes de quitar una pista."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -652,7 +568,7 @@ class Music(commands.Cog):
         """Versión de texto (`ºlimpiar`, `ºcl`, `ºclear`) de `/limpiar`."""
         await self._clear_impl(ContextResponder(ctx))
 
-    async def _clear_impl(self, responder: MusicResponder) -> None:
+    async def _clear_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida por todas las variantes de limpiar la cola."""
         state = await self._require_connected_state(responder)
         if state is None:
@@ -698,7 +614,7 @@ class Music(commands.Cog):
 
     async def _volume_impl(
         self,
-        responder: MusicResponder,
+        responder: CommandResponder,
         valor: int,
     ) -> None:
         """Lógica compartida por todas las variantes de ajustar el volumen."""

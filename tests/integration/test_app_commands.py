@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 
 from bot.app import BotClient, _build_command_prefixes, build_intents
+from bot.cogs.general import build_help_embed
 
 
 def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
@@ -25,6 +26,7 @@ def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
 
             assert root_commands.keys() == {
                 "ping",
+                "ayuda",
                 "nivel",
                 "ranking",
                 "reproducir",
@@ -51,6 +53,10 @@ def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
 
             text_commands = {command.name for command in client.commands}
             assert text_commands == {
+                "ping",
+                "ayuda",
+                "nivel",
+                "ranking",
                 "reproducir",
                 "pausar",
                 "reanudar",
@@ -63,6 +69,7 @@ def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
             }
             text_aliases = {alias for command in client.commands for alias in command.aliases}
             assert text_aliases == {
+                "help",
                 "p",
                 "play",
                 "pausa",
@@ -81,6 +88,26 @@ def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
                 "vol",
                 "volume",
             }
+
+            text_invocations = text_commands | text_aliases
+            assert root_commands.keys() <= text_invocations
+
+            help_embed = build_help_embed(client)
+            assert len(help_embed.fields) <= 25
+            assert len(help_embed.description or "") <= 4096
+            assert all(len(field.name) <= 256 for field in help_embed.fields)
+            assert all(len(field.value) <= 1024 for field in help_embed.fields)
+            total_embed_characters = (
+                len(help_embed.title or "")
+                + len(help_embed.description or "")
+                + len(help_embed.footer.text or "")
+                + sum(len(field.name) + len(field.value) for field in help_embed.fields)
+            )
+            assert total_embed_characters <= 6000
+            help_text = "\n".join(field.value for field in help_embed.fields)
+            assert "/ayuda" in help_text
+            assert "ºayuda" in help_text
+            assert "ºplay" in help_text
         finally:
             await client.close()
 

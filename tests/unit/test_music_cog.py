@@ -67,7 +67,7 @@ async def test_pausar_sin_conexion_de_voz_responde_error() -> None:
     await cog.pause.callback(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once()
-    message = interaction.response.send_message.await_args.args[0]
+    message = interaction.response.send_message.await_args.kwargs["content"]
     assert "no está conectado" in message
 
 
@@ -85,7 +85,7 @@ async def test_pausar_con_miembro_en_otro_canal_responde_error() -> None:
     await cog.pause.callback(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once()
-    message = interaction.response.send_message.await_args.args[0]
+    message = interaction.response.send_message.await_args.kwargs["content"]
     assert "mismo canal de voz" in message
     state.voice_client.pause.assert_not_called()
 
@@ -122,7 +122,7 @@ async def test_saltar_sin_reproduccion_responde_error() -> None:
     await cog.skip.callback(cog, interaction)
 
     state.voice_client.stop.assert_not_called()
-    message = interaction.response.send_message.await_args.args[0]
+    message = interaction.response.send_message.await_args.kwargs["content"]
     assert "no hay ninguna pista" in message.lower()
 
 
@@ -173,7 +173,7 @@ async def test_quitar_posicion_invalida_responde_error() -> None:
 
     await cog.remove.callback(cog, interaction, 3)
 
-    message = interaction.response.send_message.await_args.args[0]
+    message = interaction.response.send_message.await_args.kwargs["content"]
     assert "posición 3" in message
 
 
@@ -339,7 +339,7 @@ async def test_alias_q_muestra_la_misma_cola_que_el_comando_cola() -> None:
 
     await cog.queue_short.callback(cog, interaction)
 
-    message = interaction.response.send_message.await_args.args[0]
+    message = interaction.response.send_message.await_args.kwargs["content"]
     assert "En curso" in message
 
 
