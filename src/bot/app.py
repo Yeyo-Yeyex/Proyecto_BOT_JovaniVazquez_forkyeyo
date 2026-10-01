@@ -22,14 +22,16 @@ logger = logging.getLogger(__name__)
 # incorpore una funcionalidad nueva agrupada por dominio.
 INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.general",
+    "bot.cogs.errors",
     "bot.cogs.message_stats",
     "bot.cogs.welcome",
     "bot.cogs.music",
+    "bot.cogs.images",
 )
 
 # Prefijo adicional, fijo y siempre activo, para invocar comandos de texto
-# clásicos (p. ej. "ºp cancion") además del prefijo configurable y de los
-# comandos de aplicación ("/reproducir"). No sustituye a ninguno de los dos.
+# clásicos (p. ej. "ºplay cancion") además del prefijo configurable y de los
+# comandos de aplicación ("/play"). No sustituye a ninguno de los dos.
 EXTRA_TEXT_COMMAND_PREFIX = "º"
 
 
@@ -39,7 +41,7 @@ def build_intents() -> discord.Intents:
     El intent privilegiado de miembros permite recibir eventos de entrada
     y salida; también debe habilitarse en el portal de desarrolladores.
     El intent privilegiado de contenido de mensajes es necesario para que
-    el bot pueda leer comandos de texto con prefijo (p. ej. "ºp"); debe
+    el bot pueda leer comandos de texto con prefijo (p. ej. "ºplay"); debe
     habilitarse igualmente como "Message Content Intent" en el portal.
     """
     intents = discord.Intents.default()

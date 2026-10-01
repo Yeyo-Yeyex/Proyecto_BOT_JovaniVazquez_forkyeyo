@@ -7,10 +7,9 @@ ajenos al event loop; este cog las aísla con `asyncio.to_thread` y con el
 patrón `after=` de `discord.py`, que llama a nuestro código desde un hilo
 distinto y por eso se reencola con `asyncio.run_coroutine_threadsafe`.
 
-Cada acción admite dos interfaces equivalentes: comandos de aplicación
-(`/reproducir`, `/p`, ...) y comandos de texto con el prefijo configurado
-(por ejemplo `ºreproducir`, `ºp`, `ºplay`). Ambas comparten exactamente la
-misma lógica de negocio a través de `CommandResponder`
+Cada acción tiene un único nombre corto, idéntico en las dos interfaces:
+comando de aplicación (`/play`) y comando de texto (`ºplay`). Ambas
+comparten exactamente la misma lógica de negocio a través de `CommandResponder`
 (`bot.utils.responder`), una abstracción compartida con el resto de cogs
 que oculta si el origen fue una `discord.Interaction` o un mensaje de texto.
 """
@@ -63,7 +62,7 @@ class GuildMusicState:
         self.volume_percent: int = DEFAULT_VOLUME_PERCENT
         self.lock = asyncio.Lock()
         self.idle_task: asyncio.Task[None] | None = None
-        # Un `/parar` deliberado pone esto en True para que el callback de
+        # Un `/stop` deliberado pone esto en True para que el callback de
         # fin de pista no encadene la siguiente canción de la cola.
         self.stopping = False
         # Canal donde se pidió la última pista, para poder avisar de
@@ -114,30 +113,17 @@ class Music(commands.Cog):
 
         return state
 
-    @app_commands.command(
-        name="reproducir",
-        description="Reproduce una canción por búsqueda o enlace en tu canal de voz.",
-    )
+    @app_commands.command(name="play", description="Reproduce una canción o la añade a la cola.")
     @app_commands.guild_only()
     @app_commands.describe(consulta="Nombre de la canción o enlace a reproducir.")
     async def play(self, interaction: discord.Interaction, consulta: str) -> None:
         """Une el bot al canal de voz del miembro y encola o reproduce la pista."""
         await self._play_impl(InteractionResponder(interaction), consulta)
 
-    @app_commands.command(
-        name="p",
-        description="Alias corto de /reproducir: reproduce una canción por búsqueda o enlace.",
-    )
-    @app_commands.guild_only()
-    @app_commands.describe(consulta="Nombre de la canción o enlace a reproducir.")
-    async def play_short(self, interaction: discord.Interaction, consulta: str) -> None:
-        """Alias corto de `/reproducir`."""
-        await self._play_impl(InteractionResponder(interaction), consulta)
-
-    @commands.command(name="reproducir", aliases=["p", "play"])
+    @commands.command(name="play")
     @commands.guild_only()
     async def play_text(self, ctx: commands.Context, *, consulta: str) -> None:
-        """Versión de texto (`ºreproducir`, `ºp`, `ºplay`) de `/reproducir`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._play_impl(ContextResponder(ctx), consulta)
 
     async def _play_impl(self, responder: CommandResponder, consulta: str) -> None:
@@ -275,7 +261,7 @@ class Music(commands.Cog):
         state.voice_client.play(volume_source, after=_after_playback)
 
     async def _advance(self, guild_id: int, error: Exception | None) -> None:
-        """Continúa la cola tras el fin de una pista, salvo que sea un `/parar`."""
+        """Continúa la cola tras el fin de una pista, salvo que sea un `/stop`."""
         state = self._states.get(guild_id)
         if state is None:
             return
@@ -341,24 +327,16 @@ class Music(commands.Cog):
                 logger.warning("Error al desconectar del canal de voz", exc_info=True)
             state.voice_client = None
 
-    @app_commands.command(name="pausar", description="Pausa la pista que se está reproduciendo.")
+    @app_commands.command(name="pause", description="Pausa la canción actual.")
     @app_commands.guild_only()
     async def pause(self, interaction: discord.Interaction) -> None:
         """Pausa la reproducción actual sin vaciar la cola."""
         await self._pause_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="pausa", description="Alias corto de /pausar: pausa la pista actual."
-    )
-    @app_commands.guild_only()
-    async def pause_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/pausar`."""
-        await self._pause_impl(InteractionResponder(interaction))
-
-    @commands.command(name="pausar", aliases=["pausa", "pause"])
+    @commands.command(name="pause")
     @commands.guild_only()
     async def pause_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºpausar`, `ºpausa`, `ºpause`) de `/pausar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._pause_impl(ContextResponder(ctx))
 
     async def _pause_impl(self, responder: CommandResponder) -> None:
@@ -372,24 +350,16 @@ class Music(commands.Cog):
         state.voice_client.pause()
         await responder.send("⏸️ Reproducción pausada.")
 
-    @app_commands.command(name="reanudar", description="Reanuda la pista pausada.")
+    @app_commands.command(name="resume", description="Reanuda la canción pausada.")
     @app_commands.guild_only()
     async def resume(self, interaction: discord.Interaction) -> None:
         """Reanuda la reproducción si estaba en pausa."""
         await self._resume_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="rs", description="Alias corto de /reanudar: reanuda la pista pausada."
-    )
-    @app_commands.guild_only()
-    async def resume_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/reanudar`."""
-        await self._resume_impl(InteractionResponder(interaction))
-
-    @commands.command(name="reanudar", aliases=["rs", "resume"])
+    @commands.command(name="resume")
     @commands.guild_only()
     async def resume_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºreanudar`, `ºrs`, `ºresume`) de `/reanudar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._resume_impl(ContextResponder(ctx))
 
     async def _resume_impl(self, responder: CommandResponder) -> None:
@@ -403,24 +373,16 @@ class Music(commands.Cog):
         state.voice_client.resume()
         await responder.send("▶️ Reproducción reanudada.")
 
-    @app_commands.command(name="saltar", description="Salta a la siguiente pista de la cola.")
+    @app_commands.command(name="skip", description="Salta a la siguiente canción.")
     @app_commands.guild_only()
     async def skip(self, interaction: discord.Interaction) -> None:
         """Detiene la pista actual; el callback de fin de pista encola la siguiente."""
         await self._skip_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="s", description="Alias corto de /saltar: salta a la siguiente pista."
-    )
-    @app_commands.guild_only()
-    async def skip_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/saltar`."""
-        await self._skip_impl(InteractionResponder(interaction))
-
-    @commands.command(name="saltar", aliases=["s", "skip"])
+    @commands.command(name="skip")
     @commands.guild_only()
     async def skip_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºsaltar`, `ºs`, `ºskip`) de `/saltar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._skip_impl(ContextResponder(ctx))
 
     async def _skip_impl(self, responder: CommandResponder) -> None:
@@ -436,24 +398,16 @@ class Music(commands.Cog):
         state.voice_client.stop()
         await responder.send("⏭️ Pista saltada.")
 
-    @app_commands.command(name="parar", description="Detiene la música y desconecta al bot.")
+    @app_commands.command(name="stop", description="Detiene la música y desconecta al bot.")
     @app_commands.guild_only()
     async def stop(self, interaction: discord.Interaction) -> None:
         """Vacía la cola, detiene la reproducción y desconecta del canal de voz."""
         await self._stop_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="stop", description="Alias corto de /parar: detiene la música y desconecta al bot."
-    )
-    @app_commands.guild_only()
-    async def stop_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/parar`."""
-        await self._stop_impl(InteractionResponder(interaction))
-
-    @commands.command(name="parar", aliases=["stop"])
+    @commands.command(name="stop")
     @commands.guild_only()
     async def stop_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºparar`, `ºstop`) de `/parar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._stop_impl(ContextResponder(ctx))
 
     async def _stop_impl(self, responder: CommandResponder) -> None:
@@ -465,24 +419,16 @@ class Music(commands.Cog):
             await self._disconnect(state)
         await responder.send("⏹️ Música detenida y bot desconectado.")
 
-    @app_commands.command(name="cola", description="Muestra la pista actual y las siguientes.")
+    @app_commands.command(name="queue", description="Muestra la canción actual y la cola.")
     @app_commands.guild_only()
     async def queue_(self, interaction: discord.Interaction) -> None:
         """Lista la pista en curso y hasta diez pistas siguientes."""
         await self._queue_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="q", description="Alias corto de /cola: muestra la pista actual y las siguientes."
-    )
-    @app_commands.guild_only()
-    async def queue_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/cola`."""
-        await self._queue_impl(InteractionResponder(interaction))
-
-    @commands.command(name="cola", aliases=["q", "queue"])
+    @commands.command(name="queue")
     @commands.guild_only()
     async def queue_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºcola`, `ºq`, `ºqueue`) de `/cola`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._queue_impl(ContextResponder(ctx))
 
     async def _queue_impl(self, responder: CommandResponder) -> None:
@@ -513,26 +459,17 @@ class Music(commands.Cog):
 
         await responder.send("\n".join(lines))
 
-    @app_commands.command(name="quitar", description="Quita una pista de la cola por posición.")
+    @app_commands.command(name="remove", description="Quita una canción de la cola.")
     @app_commands.guild_only()
-    @app_commands.describe(posicion="Posición de la pista en /cola, empezando en 1.")
+    @app_commands.describe(posicion="Posición en /queue, empezando en 1.")
     async def remove(self, interaction: discord.Interaction, posicion: int) -> None:
         """Elimina la pista en la posición indicada sin afectar a la actual."""
         await self._remove_impl(InteractionResponder(interaction), posicion)
 
-    @app_commands.command(
-        name="rm", description="Alias corto de /quitar: quita una pista de la cola por posición."
-    )
-    @app_commands.guild_only()
-    @app_commands.describe(posicion="Posición de la pista en /cola, empezando en 1.")
-    async def remove_short(self, interaction: discord.Interaction, posicion: int) -> None:
-        """Alias corto de `/quitar`."""
-        await self._remove_impl(InteractionResponder(interaction), posicion)
-
-    @commands.command(name="quitar", aliases=["rm", "remove"])
+    @commands.command(name="remove")
     @commands.guild_only()
     async def remove_text(self, ctx: commands.Context, posicion: int) -> None:
-        """Versión de texto (`ºquitar`, `ºrm`, `ºremove`) de `/quitar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._remove_impl(ContextResponder(ctx), posicion)
 
     async def _remove_impl(self, responder: CommandResponder, posicion: int) -> None:
@@ -548,24 +485,16 @@ class Music(commands.Cog):
                 return
         await responder.send(f"🗑️ Se quitó de la cola: **{track.title}**.")
 
-    @app_commands.command(name="limpiar", description="Vacía la cola sin detener la pista actual.")
+    @app_commands.command(name="clear", description="Vacía la cola sin parar la canción actual.")
     @app_commands.guild_only()
     async def clear(self, interaction: discord.Interaction) -> None:
         """Vacía la cola de pistas pendientes."""
         await self._clear_impl(InteractionResponder(interaction))
 
-    @app_commands.command(
-        name="cl", description="Alias corto de /limpiar: vacía la cola sin detener la pista actual."
-    )
-    @app_commands.guild_only()
-    async def clear_short(self, interaction: discord.Interaction) -> None:
-        """Alias corto de `/limpiar`."""
-        await self._clear_impl(InteractionResponder(interaction))
-
-    @commands.command(name="limpiar", aliases=["cl", "clear"])
+    @commands.command(name="clear")
     @commands.guild_only()
     async def clear_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºlimpiar`, `ºcl`, `ºclear`) de `/limpiar`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         await self._clear_impl(ContextResponder(ctx))
 
     async def _clear_impl(self, responder: CommandResponder) -> None:
@@ -577,7 +506,7 @@ class Music(commands.Cog):
             state.queue.clear()
         await responder.send("🧹 Cola vaciada.")
 
-    @app_commands.command(name="volumen", description="Cambia el volumen de reproducción (1-200%).")
+    @app_commands.command(name="volume", description="Cambia el volumen (1-200%).")
     @app_commands.guild_only()
     @app_commands.describe(valor="Porcentaje de volumen entre 1 y 200.")
     async def volume(
@@ -588,23 +517,10 @@ class Music(commands.Cog):
         """Ajusta el volumen, incluso mientras una pista ya se reproduce."""
         await self._volume_impl(InteractionResponder(interaction), valor)
 
-    @app_commands.command(
-        name="vol", description="Alias corto de /volumen: cambia el volumen (1-200%)."
-    )
-    @app_commands.guild_only()
-    @app_commands.describe(valor="Porcentaje de volumen entre 1 y 200.")
-    async def volume_short(
-        self,
-        interaction: discord.Interaction,
-        valor: app_commands.Range[int, MIN_VOLUME_PERCENT, MAX_VOLUME_PERCENT],
-    ) -> None:
-        """Alias corto de `/volumen`."""
-        await self._volume_impl(InteractionResponder(interaction), valor)
-
-    @commands.command(name="volumen", aliases=["vol", "volume"])
+    @commands.command(name="volume")
     @commands.guild_only()
     async def volume_text(self, ctx: commands.Context, valor: int) -> None:
-        """Versión de texto (`ºvolumen`, `ºvol`, `ºvolume`) de `/volumen`."""
+        """Versión de texto (`º`) del comando slash homónimo."""
         if not (MIN_VOLUME_PERCENT <= valor <= MAX_VOLUME_PERCENT):
             await ctx.send(
                 f"El volumen debe estar entre {MIN_VOLUME_PERCENT} y {MAX_VOLUME_PERCENT}%."

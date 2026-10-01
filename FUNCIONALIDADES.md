@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3 y los comandos `/ping`, `/nivel` y `/ranking` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top` y `magik`, y los comandos de música están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -11,6 +11,7 @@ Crear un bot de Discord en español que aporte a los servidores:
 - Mensajes de bienvenida y despedida.
 - Progresión de niveles basada en la participación mediante mensajes.
 - Reproducción y control de música en canales de voz.
+- Efectos de imagen divertidos, como la deformación `magik`.
 
 La interfaz usa comandos de aplicación (`/`) y sus equivalentes de texto con el prefijo `º` (además del prefijo configurable), junto con botones o menús de Discord cuando corresponda. Los mensajes automáticos y avisos se enviarán en los canales configurados.
 
@@ -85,14 +86,14 @@ La importación no concede experiencia por sí sola. Al activar el sistema, el r
 
 **Fórmula MVP implementada:** nivel 1 requiere 100 XP acumulados; el nivel 2 requiere 300 XP totales, el nivel 3 requiere 600 XP, y cada nivel sucesivo añade 100 XP más que el umbral del anterior.
 
-### 4.2. Comandos previstos
+### 4.2. Comandos implementados
 
-- `/nivel [miembro]` y `ºnivel [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
-- `/ranking [página]` y `ºranking [página]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
+- `/level [miembro]` y `ºlevel [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
+- `/top [pagina]` y `ºtop [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
 - `/ping` y `ºping`: comprueban la latencia del bot.
-- `/ayuda` y `ºayuda` (alias `ºhelp`): listan dinámicamente los comandos slash y de texto, sus argumentos y alias.
+- `/help` y `ºhelp`: listan todos los comandos agrupados por categoría, una línea por comando.
 
-Los comandos slash y de texto comparten la misma lógica de negocio; solamente cambia el adaptador usado para responder a Discord. El prefijo `º` está siempre activo y se combina con `COMMAND_PREFIX` (por defecto `!`). Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
+**Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `º`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo `º` está siempre activo y se combina con `COMMAND_PREFIX` (por defecto `!`). Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
 Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles mensajes` y `/niveles activar` se retiraron del menú una vez completada la preparación del servidor inicial. La activación del sistema no se ofrece como comando público permanente.
 
@@ -119,25 +120,25 @@ Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles m
 
 ### 5.1. Comandos implementados
 
-Cada comando existe en tres formas equivalentes que comparten exactamente la misma lógica interna (no hay duplicación de reglas de negocio): el comando de aplicación completo (`/reproducir`), su alias corto de aplicación registrado como un segundo slash command independiente (`/p`), y un comando de texto clásico con el prefijo `º` (o el configurado en `COMMAND_PREFIX`, `!` por defecto) que admite tanto el nombre completo como los alias corto e inglés (`ºreproducir`, `ºp`, `ºplay`). Los tres puntos de entrada delegan en el mismo método `_*_impl`, que recibe un `MusicResponder` — una abstracción (`InteractionResponder`/`ContextResponder` en `bot.cogs.music`) que oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
+Cada acción tiene un único nombre, igual en `/` y en `º` (por ejemplo `/play` y `ºplay`). Ambas interfaces reutilizan la misma lógica interna; el adaptador compartido `CommandResponder` (`InteractionResponder`/`ContextResponder` en `bot.utils.responder`) oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
 
-- `/reproducir consulta` (`/p`; texto `ºreproducir`/`ºp`/`ºplay`): busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
-- `/pausar` (`/pausa`; texto `ºpausar`/`ºpausa`/`ºpause`) y `/reanudar` (`/rs`; texto `ºreanudar`/`ºrs`/`ºresume`): controlan la reproducción actual.
-- `/saltar` (`/s`; texto `ºsaltar`/`ºs`/`ºskip`): detiene la pista en curso; la cola continúa automáticamente con la siguiente.
-- `/cola` (`/q`; texto `ºcola`/`ºq`/`ºqueue`): muestra la pista actual y hasta diez pistas siguientes (con el resto resumido en un contador).
-- `/quitar posición` (`/rm`; texto `ºquitar`/`ºrm`/`ºremove`): elimina una pista de la cola por su posición (1 = la siguiente).
-- `/limpiar` (`/cl`; texto `ºlimpiar`/`ºcl`/`ºclear`): vacía la cola sin afectar a la pista en curso.
-- `/parar` (`/stop`; texto `ºparar`/`ºstop`): detiene la reproducción, vacía la cola y desconecta al bot del canal de voz.
-- `/volumen valor` (`/vol`; texto `ºvolumen`/`ºvol`/`ºvolume`): cambia el volumen (1-200 %), incluso con una pista ya sonando.
+- `play consulta`: busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
+- `pause` y `resume`: controlan la reproducción actual.
+- `skip`: detiene la pista en curso; la cola continúa automáticamente con la siguiente.
+- `queue`: muestra la pista actual y hasta diez pistas siguientes (con el resto resumido en un contador).
+- `remove posicion`: elimina una pista de la cola por su posición (1 = la siguiente).
+- `clear`: vacía la cola sin afectar a la pista en curso.
+- `stop`: detiene la reproducción, vacía la cola y desconecta al bot del canal de voz.
+- `volume valor`: cambia el volumen (1-200 %), incluso con una pista ya sonando.
 
-La cola y el reproductor son independientes por servidor (`GuildMusicState` en `bot.cogs.music`). Las acciones de control (todas salvo `/reproducir`, que además puede conectar al bot, y `/cola`, de solo lectura) exigen que quien las use esté conectado al mismo canal de voz que el bot.
+La cola y el reproductor son independientes por servidor (`GuildMusicState` en `bot.cogs.music`). Las acciones de control (todas salvo `play`, que además puede conectar al bot, y `queue`, de solo lectura) exigen que quien las use esté conectado al mismo canal de voz que el bot.
 
 Los comandos de texto con prefijo requieren el intent privilegiado **Message Content** habilitado en el portal de desarrolladores de Discord (además del ya requerido **Server Members**); sin él, el bot no puede leer el contenido de los mensajes y esos comandos no se dispararán (los comandos de aplicación `/` no se ven afectados).
 
 ### 5.2. Comportamiento y límites
 
 - Se informa con un mensaje claro si la consulta no se puede resolver, la pista dura demasiado, la cola está llena o el miembro no está en el canal de voz adecuado.
-- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `/parar` es la única acción que corta ese encadenamiento.
+- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `stop` es la única acción que corta ese encadenamiento.
 - Duración máxima por pista: 30 minutos (`MAX_TRACK_DURATION_SECONDS`); se rechazan también los directos, al no tener duración conocida. Tamaño máximo de cola: 50 pistas por servidor (`MAX_QUEUE_SIZE`).
 - El bot abandona el canal de voz automáticamente si se queda sin oyentes humanos, o tras 5 minutos de inactividad sin pistas en cola (`IDLE_DISCONNECT_SECONDS`).
 - Todas las conexiones de voz, procesos de `ffmpeg` y temporizadores de inactividad se cierran al detener, saltar, desconectar o descargar el cog (`cog_unload`).
@@ -153,22 +154,58 @@ Los comandos de texto con prefijo requieren el intent privilegiado **Message Con
 - Usuarios no conectados al canal de voz adecuado reciben una respuesta clara y no alteran la reproducción.
 - Los límites de cola y duración se aplican antes de aceptar trabajo adicional.
 
-## 6. Persistencia y aislamiento por servidor
+## 6. Imagen: `magik`
+
+### 6.1. Comportamiento
+
+`/magik [imagen] [miembro]` y `ºmagik [miembro]` deforman una imagen con **seam carving** (reescalado consciente del contenido), la técnica del comando `magik` de Dank Memer. A diferencia de estirar o recortar, el algoritmo calcula la "energía" de cada píxel (el contraste con sus vecinos) y elimina repetidamente la **costura** —un camino continuo de píxeles de arriba abajo— de menor energía acumulada. Se pierden primero las zonas planas y se conservan los bordes y las formas; al eliminar la mitad del ancho y del alto y volver a ampliar la imagen, los objetos se deforman y "derriten".
+
+La imagen se elige, por orden de prioridad:
+
+1. Un archivo de imagen adjunto (en `/magik`, el parámetro `imagen`; en `ºmagik`, el adjunto del mensaje o el del mensaje al que se responde).
+2. El avatar del miembro indicado.
+3. El avatar de quien ejecuta el comando.
+
+La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fotograma y se respeta la rotación EXIF de las fotos de móvil. En `ºmagik` el resultado se envía como un mensaje nuevo y el aviso «Distorsionando…» se borra.
+
+### 6.2. Límites y seguridad
+
+- Solo se aceptan adjuntos de Discord y avatares; **nunca URLs arbitrarias**, para que el bot no pueda usarse para hacer peticiones a destinos elegidos por el usuario.
+- Se comprueba el tipo declarado (`image/*`) y el tamaño (máximo 8 MB) antes de descargar, y las dimensiones de la cabecera (máximo 25 megapíxeles) antes de decodificar, para evitar "bombas de descompresión".
+- El procesado trabaja sobre una versión reducida (lado mayor de 320 px), se ejecuta fuera del event loop (`asyncio.to_thread`) y se limita a 2 trabajos simultáneos en todo el bot.
+- Enfriamiento de 5 segundos por usuario.
+- El bot necesita el permiso **Adjuntar archivos** en el canal. Si falta, el comando lo indica con un mensaje claro.
+- Los errores (archivo ilegible, demasiado grande, fallo de descarga o de envío, fallo inesperado) se comunican con un mensaje claro, sin trazas; el aviso de progreso nunca se queda colgado.
+
+### 6.3. Criterios de aceptación
+
+- El resultado conserva los objetos de bordes marcados y sacrifica antes el fondo plano.
+- La misma imagen produce siempre el mismo resultado.
+- Una imagen inválida, truncada, demasiado pequeña o demasiado grande nunca provoca una excepción sin controlar.
+- `/magik` y `ºmagik` comparten exactamente la misma lógica y el mismo nombre.
+- Una prueba de integración con objetos reales de discord.py (servidor, canal y mensaje con adjunto) recorre todo el camino de `ºmagik`: adjunto, procesado, envío y errores.
+
+### 6.4. Errores en comandos de texto y de aplicación
+
+Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar de quedarse en silencio: argumento que falta o no válido, uso fuera de un servidor, o un fallo inesperado (que además se registra en el log con su traza). Escribir el prefijo seguido de algo que no es un comando no provoca ninguna respuesta.
+
+## 7. Persistencia y aislamiento por servidor
 
 La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
 
 Toda configuración de servidor debe estar asociada al ID de ese servidor. El bot no debe usar valores de un servidor como valores implícitos para otro. Los datos de progresión se limitarán a lo necesario para operar las funciones descritas y deben poder eliminarse si el bot deja de prestar servicio en un servidor.
 
-## 7. Orden de implementación
+## 8. Orden de implementación
 
 1. **Bienvenida y despedida:** eventos y mensajes básicos en `#chat-general` (implementado); configuración por servidor y mensajes personalizables pendientes.
 2. **Preparación de niveles:** importar y guardar agregados de mensajes históricos y contar actividad nueva. (Implementado.)
-3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos de nivel/ranking y configuración. (Implementado.)
+3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `level`/`top` y configuración. (Implementado.)
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
+5. **Imagen:** comando `magik` con seam carving. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 
-## 8. Decisiones pendientes
+## 9. Decisiones pendientes
 
 Estas decisiones no impiden documentar el alcance, pero deben resolverse antes de cerrar la implementación correspondiente:
 

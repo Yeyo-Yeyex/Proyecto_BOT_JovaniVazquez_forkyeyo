@@ -1,4 +1,4 @@
-"""Pruebas de `/nivel`, `/ranking` y sus equivalentes de texto (`ºnivel`, `ºranking`)."""
+"""Pruebas de `/level`, `/top` y sus equivalentes de texto (`ºlevel`, `ºtop`)."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def make_member(display_name: str = "Miembro de prueba", member_id: int = 99) ->
 
 @pytest.mark.asyncio
 async def test_nivel_text_usa_al_autor_cuando_no_se_indica_miembro() -> None:
-    """`ºnivel` sin argumentos consulta el nivel de quien lo invoca."""
+    """`ºlevel` sin argumentos consulta el nivel de quien lo invoca."""
     repository = make_seeded_repository()
     cog = MessageStats(MagicMock(), repository)
     autor = make_member("Autor del mensaje", member_id=42)
@@ -74,7 +74,7 @@ async def test_nivel_text_usa_al_autor_cuando_no_se_indica_miembro() -> None:
 
 @pytest.mark.asyncio
 async def test_nivel_text_admite_consultar_a_otro_miembro() -> None:
-    """`ºnivel @otro` consulta el nivel del miembro indicado, no del autor."""
+    """`ºlevel @otro` consulta el nivel del miembro indicado, no del autor."""
     repository = make_seeded_repository()
     cog = MessageStats(MagicMock(), repository)
     autor = make_member("Autor", member_id=1)
@@ -90,7 +90,7 @@ async def test_nivel_text_admite_consultar_a_otro_miembro() -> None:
 
 @pytest.mark.asyncio
 async def test_nivel_avisa_si_los_niveles_no_estan_inicializados() -> None:
-    """`/nivel` informa con claridad cuando el servidor aún no tiene historial de niveles."""
+    """`/level` informa con claridad cuando el servidor aún no tiene historial de niveles."""
     repository = make_seeded_repository()
     repository.level_settings = AsyncMock(return_value=None)
     cog = MessageStats(MagicMock(), repository)
@@ -104,7 +104,7 @@ async def test_nivel_avisa_si_los_niveles_no_estan_inicializados() -> None:
 
 @pytest.mark.asyncio
 async def test_ranking_text_valida_el_rango_de_pagina_antes_de_consultar() -> None:
-    """`ºranking` rechaza páginas fuera de rango sin llegar a consultar el repositorio."""
+    """`ºtop` rechaza páginas fuera de rango sin llegar a consultar el repositorio."""
     repository = make_seeded_repository()
     cog = MessageStats(MagicMock(), repository)
     ctx = make_context(member=make_member())
@@ -119,7 +119,7 @@ async def test_ranking_text_valida_el_rango_de_pagina_antes_de_consultar() -> No
 
 @pytest.mark.asyncio
 async def test_ranking_text_edita_el_mensaje_de_progreso_con_el_embed_final() -> None:
-    """`ºranking` muestra un aviso de progreso y lo sustituye por el embed final."""
+    """`ºtop` muestra un aviso de progreso y lo sustituye por el embed final."""
     repository = make_seeded_repository()
     cog = MessageStats(MagicMock(), repository)
     cog._resolve_display_name = AsyncMock(side_effect=["Primero", "Segundo"])
@@ -138,7 +138,7 @@ async def test_ranking_text_edita_el_mensaje_de_progreso_con_el_embed_final() ->
 
 @pytest.mark.asyncio
 async def test_ranking_edita_la_respuesta_diferida_con_el_embed_final() -> None:
-    """`/ranking` diferido resuelve nombres y edita la respuesta original con el embed."""
+    """`/top` diferido resuelve nombres y edita la respuesta original con el embed."""
     repository = make_seeded_repository()
     cog = MessageStats(MagicMock(), repository)
     cog._resolve_display_name = AsyncMock(side_effect=["Primero", "Segundo"])

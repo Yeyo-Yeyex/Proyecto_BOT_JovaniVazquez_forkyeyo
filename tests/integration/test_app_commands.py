@@ -5,12 +5,34 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from bot.app import BotClient, _build_command_prefixes, build_intents
+from discord import app_commands
+
+from bot.app import INITIAL_EXTENSIONS, BotClient, _build_command_prefixes, build_intents
 from bot.cogs.general import build_help_embed
 
+# Máxima longitud de un nombre de comando: deben ser cortos y fáciles de teclear.
+MAX_COMMAND_NAME_LENGTH = 8
 
-def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
-    """Los cogs se cargan juntos y exponen los comandos de niveles sin colisiones."""
+EXPECTED_COMMANDS = {
+    "ping",
+    "help",
+    "level",
+    "top",
+    "play",
+    "pause",
+    "resume",
+    "skip",
+    "stop",
+    "queue",
+    "remove",
+    "clear",
+    "volume",
+    "magik",
+}
+
+
+def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: Path) -> None:
+    """`/x` y `ºx` son el mismo comando: mismos nombres, cortos, planos y sin alias."""
 
     async def load_cogs() -> None:
         client = BotClient(
@@ -18,100 +40,56 @@ def test_cogs_registran_comandos_unicos_y_esperados(tmp_path: Path) -> None:
             database_path=tmp_path / "message_stats.sqlite3",
         )
         try:
-            await client.load_extension("bot.cogs.general")
-            await client.load_extension("bot.cogs.message_stats")
-            await client.load_extension("bot.cogs.welcome")
-            await client.load_extension("bot.cogs.music")
-            root_commands = {command.name: command for command in client.tree.get_commands()}
+            for extension in INITIAL_EXTENSIONS:
+                await client.load_extension(extension)
 
-            assert root_commands.keys() == {
-                "ping",
-                "ayuda",
-                "nivel",
-                "ranking",
-                "reproducir",
-                "p",
-                "pausar",
-                "pausa",
-                "reanudar",
-                "rs",
-                "saltar",
-                "s",
-                "cola",
-                "q",
-                "quitar",
-                "rm",
-                "limpiar",
-                "cl",
-                "parar",
-                "stop",
-                "volumen",
-                "vol",
-            }
+            slash = client.tree.get_commands()
+            slash_names = {command.name for command in slash}
+            text_names = {command.name for command in client.commands}
+
+            assert slash_names == EXPECTED_COMMANDS
+            assert text_names == slash_names
+            assert all(isinstance(command, app_commands.Command) for command in slash)
+            assert all(not command.aliases for command in client.commands)
+            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in slash_names)
             assert client.get_cog("Welcome") is not None
             assert client.get_cog("Music") is not None
-
-            text_commands = {command.name for command in client.commands}
-            assert text_commands == {
-                "ping",
-                "ayuda",
-                "nivel",
-                "ranking",
-                "reproducir",
-                "pausar",
-                "reanudar",
-                "saltar",
-                "parar",
-                "cola",
-                "quitar",
-                "limpiar",
-                "volumen",
-            }
-            text_aliases = {alias for command in client.commands for alias in command.aliases}
-            assert text_aliases == {
-                "help",
-                "p",
-                "play",
-                "pausa",
-                "pause",
-                "rs",
-                "resume",
-                "s",
-                "skip",
-                "stop",
-                "q",
-                "queue",
-                "rm",
-                "remove",
-                "cl",
-                "clear",
-                "vol",
-                "volume",
-            }
-
-            text_invocations = text_commands | text_aliases
-            assert root_commands.keys() <= text_invocations
-
-            help_embed = build_help_embed(client)
-            assert len(help_embed.fields) <= 25
-            assert len(help_embed.description or "") <= 4096
-            assert all(len(field.name) <= 256 for field in help_embed.fields)
-            assert all(len(field.value) <= 1024 for field in help_embed.fields)
-            total_embed_characters = (
-                len(help_embed.title or "")
-                + len(help_embed.description or "")
-                + len(help_embed.footer.text or "")
-                + sum(len(field.name) + len(field.value) for field in help_embed.fields)
-            )
-            assert total_embed_characters <= 6000
-            help_text = "\n".join(field.value for field in help_embed.fields)
-            assert "/ayuda" in help_text
-            assert "ºayuda" in help_text
-            assert "ºplay" in help_text
         finally:
             await client.close()
 
     asyncio.run(load_cogs())
+
+
+def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path) -> None:
+    """La ayuda lista cada comando una vez, agrupada, y cabe en un embed."""
+
+    async def check_help() -> None:
+        client = BotClient(
+            command_prefix="!",
+            database_path=tmp_path / "message_stats.sqlite3",
+        )
+        try:
+            for extension in INITIAL_EXTENSIONS:
+                await client.load_extension(extension)
+
+            embed = build_help_embed(client)
+            text = "\n".join(field.value for field in embed.fields)
+
+            assert [field.name for field in embed.fields] == [
+                "🎵 Música",
+                "🎨 Imagen",
+                "📊 Niveles",
+                "⚙️ General",
+            ]
+            for name in EXPECTED_COMMANDS:
+                assert text.count(f"**{name}**") == 1
+            assert len(text.splitlines()) == len(EXPECTED_COMMANDS)
+            assert all(len(field.value) <= 1024 for field in embed.fields)
+            assert len(embed) <= 6000
+        finally:
+            await client.close()
+
+    asyncio.run(check_help())
 
 
 def test_build_intents_habilita_eventos_de_miembros() -> None:

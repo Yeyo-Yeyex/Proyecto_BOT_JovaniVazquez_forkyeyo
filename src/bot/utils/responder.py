@@ -59,8 +59,12 @@ class CommandResponder(abc.ABC):
         *,
         embed: discord.Embed | None = None,
         allowed_mentions: discord.AllowedMentions | None = None,
+        file: discord.File | None = None,
     ) -> None:
-        """Sustituye el aviso de progreso por el resultado final."""
+        """Sustituye el aviso de progreso por el resultado final.
+
+        `file` adjunta un archivo (por ejemplo una imagen generada).
+        """
 
 
 class InteractionResponder(CommandResponder):
@@ -103,10 +107,13 @@ class InteractionResponder(CommandResponder):
         *,
         embed: discord.Embed | None = None,
         allowed_mentions: discord.AllowedMentions | None = None,
+        file: discord.File | None = None,
     ) -> None:
         kwargs: dict[str, object] = {"content": content, "embed": embed}
         if allowed_mentions is not None:
             kwargs["allowed_mentions"] = allowed_mentions
+        if file is not None:
+            kwargs["attachments"] = [file]
         await self._interaction.edit_original_response(**kwargs)
 
 
@@ -142,10 +149,26 @@ class ContextResponder(CommandResponder):
         *,
         embed: discord.Embed | None = None,
         allowed_mentions: discord.AllowedMentions | None = None,
+        file: discord.File | None = None,
     ) -> None:
-        if self._progress_message is not None:
+        if file is not None:
+            # Añadir un archivo editando un mensaje es más frágil (exige permisos
+            # extra y no siempre se refleja bien en todos los clientes): se envía
+            # un mensaje nuevo con el archivo y se retira el aviso de progreso.
+            await self._ctx.send(content, embed=embed, allowed_mentions=allowed_mentions, file=file)
+            await self._discard_progress()
+        elif self._progress_message is not None:
             await self._progress_message.edit(
                 content=content, embed=embed, allowed_mentions=allowed_mentions
             )
         else:
             await self._ctx.send(content, embed=embed, allowed_mentions=allowed_mentions)
+
+    async def _discard_progress(self) -> None:
+        """Borra el aviso de progreso; si no se puede, no es un error."""
+        if self._progress_message is None:
+            return
+        try:
+            await self._progress_message.delete()
+        except discord.HTTPException:
+            pass  # Sin permiso o ya borrado: el resultado ya se envió.

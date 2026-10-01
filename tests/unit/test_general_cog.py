@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.general: `/ping` y el comando de ayuda (`/ayuda`)."""
+"""Pruebas de bot.cogs.general: `/ping` y el comando de ayuda (`/help`)."""
 
 from __future__ import annotations
 
@@ -69,8 +69,8 @@ async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -
 
 
 @pytest.mark.asyncio
-async def test_ayuda_responde_con_un_embed_de_forma_efimera() -> None:
-    """`/ayuda` construye y envía el embed de ayuda de forma efímera."""
+async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
+    """`/help` construye y envía el embed de ayuda de forma efímera."""
     real_bot = commands.Bot(command_prefix="!", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
     await real_bot.add_cog(cog)
@@ -85,9 +85,10 @@ async def test_ayuda_responde_con_un_embed_de_forma_efimera() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ayuda_text_usa_el_alias_help() -> None:
-    """`ºhelp` es un alias de `ºayuda` y también envía el embed."""
-    assert "help" in General.help_command_text.aliases
+async def test_help_text_se_llama_igual_que_el_slash_y_sin_alias() -> None:
+    """`ºhelp` usa el mismo nombre que `/help`, sin alias en otro idioma."""
+    assert General.help_command_text.name == "help"
+    assert not General.help_command_text.aliases
 
     real_bot = commands.Bot(command_prefix="!", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
@@ -100,19 +101,36 @@ async def test_ayuda_text_usa_el_alias_help() -> None:
     assert ctx.send.await_args.kwargs["embed"] is not None
 
 
-def test_build_help_embed_lista_comandos_de_aplicacion_y_de_texto() -> None:
-    """El embed de ayuda incluye tanto comandos slash como comandos de texto."""
-    real_bot = commands.Bot(
-        command_prefix=("!", "º"),
-        intents=discord.Intents.none(),
-        help_command=None,
-    )
+async def make_bot_with_commands() -> commands.Bot:
+    """Bot real con un comando slash y su gemelo de texto, en cogs distintos."""
+    bot = commands.Bot(command_prefix=("!", "º"), intents=discord.Intents.none(), help_command=None)
+    await bot.add_cog(General(bot))
+    return bot
 
-    @real_bot.command(name="ejemplo")
-    async def _ejemplo(ctx: commands.Context) -> None:
-        """Comando de texto de ejemplo."""
 
-    embed = build_help_embed(real_bot)
+@pytest.mark.asyncio
+async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos() -> None:
+    """Como `/x` y `ºx` son iguales, la ayuda lista cada nombre una sola vez."""
+    bot = await make_bot_with_commands()
 
-    assert "º" in embed.description
-    assert any("ejemplo" in (field.value or "") for field in embed.fields)
+    embed = build_help_embed(bot)
+
+    text = "\n".join(field.value for field in embed.fields)
+    assert text.count("**ping**") == 1
+    assert text.count("**help**") == 1
+    assert "/ping" not in text
+    assert "ºping" not in text
+    assert "alias" not in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_build_help_embed_agrupa_por_categoria_con_descripcion_corta() -> None:
+    """La ayuda agrupa por categoría y cada línea es nombre + descripción breve."""
+    bot = await make_bot_with_commands()
+
+    embed = build_help_embed(bot)
+
+    assert [field.name for field in embed.fields] == ["⚙️ General"]
+    lines = embed.fields[0].value.splitlines()
+    assert len(lines) == 2
+    assert all(len(line) <= 80 for line in lines)

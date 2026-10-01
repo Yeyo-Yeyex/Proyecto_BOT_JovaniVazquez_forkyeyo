@@ -269,7 +269,7 @@ class MessageStats(commands.Cog):
         responder: CommandResponder,
         miembro: discord.Member | None,
     ) -> None:
-        """Lógica compartida entre `/nivel` y `ºnivel`."""
+        """Lógica compartida entre `/level` y `ºlevel`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -298,7 +298,7 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="nivel", description="Consulta tu nivel o el de otro miembro.")
+    @app_commands.command(name="level", description="Consulta tu nivel o el de otro miembro.")
     @app_commands.guild_only()
     async def level(
         self,
@@ -308,18 +308,18 @@ class MessageStats(commands.Cog):
         """Muestra nivel, XP total y avance hacia el siguiente nivel."""
         await self._level_impl(InteractionResponder(interaction), miembro)
 
-    @commands.command(name="nivel")
+    @commands.command(name="level")
     @commands.guild_only()
     async def level_text(
         self,
         ctx: commands.Context,
         miembro: discord.Member | None = None,
     ) -> None:
-        """Versión de texto (`ºnivel`) de `/nivel`."""
+        """Versión de texto (`ºlevel`) de `/level`."""
         await self._level_impl(ContextResponder(ctx), miembro)
 
     async def _ranking_impl(self, responder: CommandResponder, pagina: int) -> None:
-        """Lógica compartida entre `/ranking` y `ºranking`."""
+        """Lógica compartida entre `/top` y `ºtop`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -364,7 +364,7 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="ranking", description="Muestra el ranking de niveles del servidor.")
+    @app_commands.command(name="top", description="Muestra el ranking del servidor.")
     @app_commands.guild_only()
     async def ranking(
         self,
@@ -374,10 +374,10 @@ class MessageStats(commands.Cog):
         """Muestra hasta diez perfiles por página, ordenados por XP."""
         await self._ranking_impl(InteractionResponder(interaction), pagina)
 
-    @commands.command(name="ranking")
+    @commands.command(name="top")
     @commands.guild_only()
     async def ranking_text(self, ctx: commands.Context, pagina: int = 1) -> None:
-        """Versión de texto (`ºranking`) de `/ranking`."""
+        """Versión de texto (`ºtop`) de `/top`."""
         if not (1 <= pagina <= 100):
             await ctx.send("La página debe estar entre 1 y 100.")
             return
