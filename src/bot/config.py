@@ -23,7 +23,7 @@ DEFAULT_LOG_LEVEL = "INFO"
 
 # Prefijo usado únicamente como respaldo si los comandos de aplicación
 # (slash commands) no están disponibles en algún contexto de desarrollo.
-DEFAULT_COMMAND_PREFIX = "!"
+DEFAULT_COMMAND_PREFIX = "."
 
 
 @dataclass(frozen=True, slots=True)

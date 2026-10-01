@@ -118,7 +118,7 @@ class InteractionResponder(CommandResponder):
 
 
 class ContextResponder(CommandResponder):
-    """Adaptador de `CommandResponder` para comandos de texto con prefijo (`º...`)."""
+    """Adaptador de `CommandResponder` para comandos de texto con prefijo (`....`)."""
 
     def __init__(self, ctx: commands.Context) -> None:
         self._ctx = ctx

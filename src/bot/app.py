@@ -32,7 +32,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
 # Prefijo adicional, fijo y siempre activo, para invocar comandos de texto
 # clásicos (p. ej. "ºplay cancion") además del prefijo configurable y de los
 # comandos de aplicación ("/play"). No sustituye a ninguno de los dos.
-EXTRA_TEXT_COMMAND_PREFIX = "º"
+EXTRA_TEXT_COMMAND_PREFIX = "."
 
 
 def build_intents() -> discord.Intents:
