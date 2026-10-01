@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+.data
+.env
+build
+dist
+*.egg-info
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests
+*.md
+Biblia.txt

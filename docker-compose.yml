@@ -1,0 +1,35 @@
+# Despliegue del bot: `docker compose up -d --build`
+# Requiere un archivo .env junto a este (copia .env.example y pon el token).
+services:
+  bot:
+    build: .
+    image: bot-jovani-vazquez:latest
+    container_name: bot-jovani-vazquez
+    # Arranca con el NAS y se reinicia solo si falla; no si lo paras a mano.
+    restart: unless-stopped
+    env_file: .env
+    # tini como PID 1: reenvía señales y recoge los procesos ffmpeg huérfanos.
+    init: true
+    # SIGINT = el mismo apagado ordenado que Ctrl+C.
+    stop_signal: SIGINT
+    stop_grace_period: 20s
+    volumes:
+      # Niveles y estadísticas (SQLite). Sobrevive a reconstrucciones.
+      - bot-data:/app/.data
+    # El bot es ligero; los límites evitan que un fallo acapare el NAS.
+    mem_limit: 768m
+    cpus: 2.0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Sin esto los logs crecen sin límite en el disco del NAS.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bot-data:
+    name: bot-jovani-vazquez-data

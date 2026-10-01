@@ -124,6 +124,47 @@ empiezan por `#` se ignoran). El archivo se relee en cada despedida, así que
 los cambios se aplican sin reiniciar el bot. Si el archivo falta o queda
 vacío, se usa una frase de reserva para no dejar la despedida sin texto.
 
+## Despliegue con Docker (NAS)
+
+El bot corre bien en cualquier equipo x86_64 con Docker, por ejemplo un NAS
+UGREEN DXP2800 (Intel N100): consume poca CPU y memoria y no necesita abrir
+puertos, porque solo hace conexiones salientes a Discord y a las fuentes de
+audio. La imagen incluye `ffmpeg` y `libopus`.
+
+1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
+2. Crea el archivo de configuración y pon tu token:
+   ```bash
+   cp .env.example .env
+   nano .env            # DISCORD_TOKEN=...
+   chmod 600 .env
+   ```
+3. Construye y arranca en segundo plano:
+   ```bash
+   docker compose up -d --build     # o `docker-compose` si tu NAS solo trae esa versión
+   docker compose logs -f           # ver el log; Ctrl+C solo sale del log
+   ```
+   Si prefieres la interfaz gráfica, la app Docker del NAS puede crear un
+   proyecto a partir de este `docker-compose.yml`.
+
+`restart: unless-stopped` hace que el bot arranque con el NAS y se levante
+solo si falla; no se reinicia si lo paras a mano (`docker compose stop`). Con
+un token inválido el contenedor se reiniciará en bucle: revisa el log.
+
+**Actualizar el bot:** `git pull && docker compose up -d --build`.
+
+**Si la música deja de funcionar**, casi siempre es que `yt-dlp` se ha quedado
+anticuado (YouTube cambia a menudo). Reconstruye sin caché para traer la
+última versión: `docker compose build --no-cache && docker compose up -d`.
+
+**Datos y copia de seguridad:** niveles y estadísticas viven en el volumen
+`bot-jovani-vazquez-data` (sobrevive a reconstrucciones y actualizaciones).
+Para copiarlo:
+```bash
+docker run --rm -v bot-jovani-vazquez-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/bot-data.tgz -C /data .
+```
+La cola de música está en memoria y se pierde al reiniciar el contenedor.
+
 ## Pruebas y calidad
 
 ```bash
@@ -160,6 +201,8 @@ src/bot/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
     └── despedidas.txt  # Frases de despedida, editables sin tocar código
 ```
+
+En la raíz: `Dockerfile`, `docker-compose.yml` y `.env.example` para el despliegue.
 
 Consulta [Biblia.txt](./Biblia.txt) para el detalle completo de la
 estructura de referencia, los límites entre capas y las normas de
