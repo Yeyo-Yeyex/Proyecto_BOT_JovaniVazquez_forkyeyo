@@ -169,6 +169,39 @@ class EconomyService:
             entries.append(LedgerEntry(payout, f"{game}:premio"))
         return await self.repository.apply(guild_id, user_id, entries)
 
+    async def place_bet(self, guild_id: int, user_id: int, *, game: str, stake: int) -> int:
+        """Cobra una apuesta de un juego que se resuelve más tarde (p. ej. blackjack).
+
+        A diferencia de `settle_bet`, el premio se paga después con
+        `pay_winnings`, cuando el juego termina. Así el dinero en juego sale
+        del saldo desde el primer momento y no se puede gastar dos veces.
+
+        Returns:
+            El saldo tras cobrar.
+
+        Raises:
+            InsufficientFundsError: Si el saldo no cubre la apuesta.
+        """
+        if stake <= 0:
+            raise ValueError("La apuesta debe ser positiva.")
+        return await self.repository.apply(
+            guild_id, user_id, [LedgerEntry(-stake, f"{game}:apuesta")]
+        )
+
+    async def pay_winnings(self, guild_id: int, user_id: int, *, game: str, amount: int) -> int:
+        """Paga lo devuelto por un juego ya cobrado con `place_bet`.
+
+        Returns:
+            El saldo tras pagar (sin cambios si `amount` es 0).
+
+        Raises:
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        if amount < 0:
+            raise ValueError("El premio no puede ser negativo.")
+        entries = [LedgerEntry(amount, f"{game}:premio")] if amount else []
+        return await self.repository.apply(guild_id, user_id, entries)
+
     async def claim_daily(self, guild_id: int, user_id: int) -> DailyResult:
         """Cobra la recompensa diaria si ya toca; si no, informa de cuándo."""
         now = self._clock()

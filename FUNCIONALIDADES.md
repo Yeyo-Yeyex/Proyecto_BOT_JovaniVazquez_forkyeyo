@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta (`ruleta`, `saldo`, `daily`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `daily`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -259,7 +259,13 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Animación: GIF de ~2 s donde la bola gira y cae en su casilla, seguido del resultado. Los 38 GIF se precalculan al arrancar y se reutilizan.
 - Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos canales.
 
-### 6 ter.3. Criterios de aceptación
+### 6 ter.3. Blackjack
+
+- `blackjack [cantidad]` (atajo `.bj`) reparte al momento en una mesa propia (imagen con las cartas y botones) que solo pulsa su dueño. Acciones: pedir, plantarse, doblar y separar; al acabar, repartir otra mano en el mismo mensaje y cambiar la apuesta con ½, ×2 y all-in.
+- Reglas: zapato de 6 barajas, barajado con `secrets` en cada mano (no se pueden contar cartas). La banca mira si tiene blackjack con un as o un 10 a la vista y se planta en 17, también blando. Blackjack paga 3:2 (redondeando hacia abajo). Doblar con cualquier par de cartas, también tras separar. Separar una vez dos cartas del mismo valor; los ases separados reciben una carta y su 21 no es blackjack. Sin seguro ni rendición. Ventaja de la casa ≈ 0,5 % con estrategia básica.
+- Dinero: la apuesta se cobra al repartir y el extra al doblar o separar (`place_bet`); el premio se paga al acabar la mano (`pay_winnings`). Si la mesa caduca (3 min sin uso) o el bot se apaga de forma ordenada con una mano a medias, la mano se planta, juega la banca y se paga. Si el proceso muere de golpe, lo apostado en esa mano se pierde y queda en el libro de movimientos.
+
+### 6 ter.4. Criterios de aceptación
 
 - Ningún saldo puede quedar negativo ni gastarse dos veces, aunque se pulsen botones a la vez.
 - Solo el dueño de una mesa puede apostar en ella.
@@ -324,7 +330,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
-7. **Economía y casino:** yapdollars, `daily`, `saldo` y ruleta americana. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
+7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana y blackjack. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.

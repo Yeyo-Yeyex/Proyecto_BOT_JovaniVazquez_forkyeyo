@@ -227,6 +227,20 @@ def insufficient_text(balance: int, needed: int | None = None) -> str:
     return f"No te llega: tienes {format_amount(balance)}. Baja la ficha o pulsa 💰 All-in."
 
 
+def casino_channel_error(
+    channel_ids: frozenset[int], channel: object, game: str = "El casino"
+) -> str | None:
+    """Mensaje de error si `channel` no es un canal de casino; `None` si vale.
+
+    Lo comparten todos los juegos: con `CASINO_CHANNEL_IDS` vacío se puede
+    jugar en cualquier canal.
+    """
+    if not channel_ids or getattr(channel, "id", None) in channel_ids:
+        return None
+    allowed = " ".join(f"<#{cid}>" for cid in sorted(channel_ids))
+    return f"{game} se juega en {allowed}."
+
+
 def parse_command_args(
     amount_text: str | None, bet_text: str | None, balance: int
 ) -> tuple[int, list[Bet]]:
@@ -687,13 +701,7 @@ class Casino(commands.Cog):
         return SpinResult(outcome=outcome, balance=balance, media=media)
 
     def _casino_channel_error(self, channel: object) -> str | None:
-        if not self.casino_channel_ids:
-            return None
-        channel_id = getattr(channel, "id", None)
-        if channel_id in self.casino_channel_ids:
-            return None
-        allowed = " ".join(f"<#{cid}>" for cid in sorted(self.casino_channel_ids))
-        return f"La ruleta se juega en {allowed}."
+        return casino_channel_error(self.casino_channel_ids, channel, "La ruleta")
 
     # -- ruleta ---------------------------------------------------------------------
 
