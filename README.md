@@ -64,12 +64,22 @@ python -m bot
 
   | Categoría | Comandos |
   |---|---|
-  | 🎵 Música | `play <consulta>` · `pause` · `resume` · `skip` · `stop` · `queue` · `remove <posicion>` · `clear` · `volume <1-200>` |
+  | ⚙️ General | `help` · `ping` |
+  | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
+  | 📊 Niveles | `level [miembro]` · `top [pagina]` |
+  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `ruleta [cantidad] [apuesta]` · `saldo [miembro]` · `daily` |
-  | ⚙️ General | `ping` · `help` |
+  | 🛡️ Admin | `ban` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+
+  La ayuda cabe en un solo embed: categorías con los nombres en orden
+  alfabético, sin descripciones. La categoría Admin solo la ve quien es
+  administrador.
+- Los **comandos de administración** solo los pueden usar miembros con el
+  permiso Administrador (se comprueba en cada uso, no solo ocultándolos del
+  menú). Respetan la jerarquía de roles, dejan el motivo y el autor en el
+  registro de auditoría y avisan si al bot le falta un permiso. Detalle de
+  cada uno en [FUNCIONALIDADES.md](./FUNCIONALIDADES.md#6-quater-administración).
 
 - `magik` deforma una imagen con *seam carving* (reescalado consciente del
   contenido, el mismo efecto que Dank Memer): en vez de estirar o recortar,
@@ -84,7 +94,7 @@ python -m bot
   canal; si falta, `magik` lo explica en lugar de quedarse colgado.
 - Los **108 efectos de imagen de Dank Memer** (`trigger`, `slap`, `wanted`,
   `changemymind`, `brain`, `tweet`, `crab`...) funcionan como comandos de
-  texto con su nombre original. `.help` y `.memes` los listan agrupados y
+  texto con su nombre original. `.help` y `.memes` los listan por tipo y
   `.memes <efecto>` explica uno. Reglas comunes:
   - `@alguien` (o responder a su mensaje) usa su avatar; una imagen adjunta
     lo sustituye. En los de dos personas (`slap`, `spank`, `bed`...) tú eres
@@ -168,7 +178,11 @@ sección: sin él, el bot no puede leer el contenido de mensajes normales y
 esos comandos simplemente no se dispararán (los comandos de aplicación `/`
 no lo necesitan). El bot también necesita ver `#chat-general` y tener permiso
 para enviar mensajes y adjuntar archivos, además de permisos de **Conectar**
-y **Hablar** en los canales de voz donde se vaya a usar la música.
+y **Hablar** en los canales de voz donde se vaya a usar la música. Para los
+comandos de administración necesita además Gestionar mensajes, Aislar
+temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar
+apodos y Gestionar roles, y su rol debe estar por encima de los roles que
+vaya a moderar.
 
 Las frases de despedida se editan directamente en
 `src/bot/assets/despedidas.txt`, una por línea (las líneas vacías y las que
@@ -237,6 +251,7 @@ src/bot/
 ├── logging_config.py   # Configuración centralizada de logging
 ├── cogs/                # Comandos y eventos agrupados por dominio
 │   ├── general.py       # Comandos generales (ping, help)
+│   ├── admin.py         # Moderación solo para administradores
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py      # Bienvenidas y despedidas
@@ -250,6 +265,7 @@ src/bot/
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
+│   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)
 │   ├── memes/           # Efectos de Dank Memer: registro, utilidades y efectos

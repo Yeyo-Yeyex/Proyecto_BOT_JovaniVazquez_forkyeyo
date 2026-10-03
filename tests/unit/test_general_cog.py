@@ -116,24 +116,60 @@ async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos()
     embed = build_help_embed(bot)
 
     text = "\n".join(field.value for field in embed.fields)
-    assert text.count("**ping**") == 1
-    assert text.count("**help**") == 1
+    assert text.count("`ping`") == 1
+    assert text.count("`help`") == 1
     assert "/ping" not in text
     assert ".ping" not in text
-    assert "alias" not in text.lower()
 
 
 @pytest.mark.asyncio
-async def test_build_help_embed_agrupa_por_categoria_con_descripcion_corta() -> None:
-    """La ayuda agrupa por categoría y cada línea es nombre + descripción breve."""
+async def test_build_help_embed_solo_nombres_ordenados_sin_descripcion() -> None:
+    """Cada categoría es una línea de nombres en orden alfabético, sin descripciones."""
     bot = await make_bot_with_commands()
 
     embed = build_help_embed(bot)
 
-    assert [field.name for field in embed.fields] == ["⚙️ General"]
-    lines = embed.fields[0].value.splitlines()
-    assert len(lines) == 2
-    assert all(len(line) <= 80 for line in lines)
+    assert [field.name for field in embed.fields] == ["⚙️ General (2)"]
+    assert embed.fields[0].value == "`help` · `ping`"
+
+
+class FakeAdminCog(commands.Cog, name="Admin"):
+    """Cog mínimo con el nombre del de administración, para probar la ayuda."""
+
+    @commands.command(name="kick")
+    async def kick(self, ctx: commands.Context) -> None:
+        """Comando de prueba."""
+
+
+@pytest.mark.asyncio
+async def test_build_help_embed_solo_ensena_admin_a_administradores() -> None:
+    """La categoría Admin aparece con `include_admin=True` y al final."""
+    bot = await make_bot_with_commands()
+    await bot.add_cog(FakeAdminCog())
+
+    normal = build_help_embed(bot)
+    admin = build_help_embed(bot, include_admin=True)
+
+    assert all("Admin" not in field.name for field in normal.fields)
+    assert admin.fields[-1].name == "🛡️ Admin (1)"
+    assert admin.fields[-1].value == "`kick`"
+
+
+@pytest.mark.asyncio
+async def test_help_de_un_administrador_incluye_la_categoria_admin() -> None:
+    """`/help` decide si enseña la categoría Admin según los permisos de quien la pide."""
+    bot = await make_bot_with_commands()
+    await bot.add_cog(FakeAdminCog())
+    cog = bot.get_cog("General")
+    interaction = make_interaction()
+    admin = MagicMock(spec=discord.Member)
+    admin.guild_permissions = discord.Permissions(administrator=True)
+    interaction.user = admin
+
+    await cog.help_command.callback(cog, interaction)
+
+    embed = interaction.response.send_message.call_args.kwargs["embed"]
+    assert embed.fields[-1].name.startswith("🛡️ Admin")
 
 
 def test_chunk_names_parte_los_nombres_sin_pasar_del_limite_de_un_campo() -> None:

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 GENERIC_ERROR = "Algo salió mal ejecutando el comando. Inténtalo de nuevo."
 GUILD_ONLY_ERROR = "Este comando solo está disponible dentro de un servidor."
+ADMIN_ONLY_ERROR = "Solo los administradores pueden usar este comando."
 
 
 def describe_command_error(error: commands.CommandError) -> str | None:
@@ -36,6 +37,8 @@ def describe_command_error(error: commands.CommandError) -> str | None:
         return f"Falta el argumento `{error.param.name}`. Escribe `help` para ver cómo se usa."
     if isinstance(error, commands.UserInputError):
         return "No entendí algún argumento. Escribe `help` para ver cómo se usa."
+    if isinstance(error, commands.MissingPermissions):
+        return ADMIN_ONLY_ERROR
     if isinstance(error, commands.CheckFailure):
         return "No puedes usar este comando aquí."
     return GENERIC_ERROR
@@ -45,6 +48,8 @@ def describe_app_command_error(error: app_commands.AppCommandError) -> str:
     """Mensaje para el usuario de un error de comando de aplicación."""
     if isinstance(error, app_commands.NoPrivateMessage):
         return GUILD_ONLY_ERROR
+    if isinstance(error, app_commands.MissingPermissions):
+        return ADMIN_ONLY_ERROR
     if isinstance(error, app_commands.CheckFailure):
         return "No puedes usar este comando aquí."
     return GENERIC_ERROR

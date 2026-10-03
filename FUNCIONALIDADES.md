@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música y la economía con la ruleta (`ruleta`, `saldo`, `daily`) están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta (`ruleta`, `saldo`, `daily`) y los comandos de administración están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -91,7 +91,7 @@ La importación no concede experiencia por sí sola. Al activar el sistema, el r
 - `/level [miembro]` y `.level [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
 - `/top [pagina]` y `.top [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
 - `/ping` y `.ping`: comprueban la latencia del bot.
-- `/help` y `.help`: listan todos los comandos agrupados por categoría, una línea por comando.
+- `/help` y `.help`: listan todos los comandos en un solo embed, por categorías (General, Música, Niveles, Casino, Entradas, Imagen y sus cuatro tipos de efecto), solo por nombre, sin descripción ni argumentos y en orden alfabético dentro de cada categoría. La categoría Admin solo aparece si quien pide la ayuda es administrador.
 
 **Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `.`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo de texto es `.` por defecto y se puede cambiar con `COMMAND_PREFIX`; los comandos `/` funcionan siempre, sea cual sea el prefijo. Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
@@ -174,7 +174,7 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 
 ### 6.2. Efectos de Dank Memer
 
-Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.help` los lista solo por nombre y agrupados por tipo (con una línea por efecto no cabrían en un embed); `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
+Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.help` los lista en subcategorías de Imagen según su tipo; `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
 
 Lectura de argumentos:
 
@@ -264,6 +264,32 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Solo el dueño de una mesa puede apostar en ella.
 - Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
 - Al salir el bot de un servidor se borra su economía.
+## 6 quater. Administración
+
+### 6 quater.1. Comandos
+
+Todos funcionan con `/` y con `.`, con el mismo nombre:
+
+| Comando | Qué hace |
+|---|---|
+| `purge <cantidad> [miembro]` | Borra hasta 100 mensajes del canal (solo los de ese miembro, si se indica). Ignora los de más de 14 días. |
+| `mute <miembro> <duración> [motivo]` | Aislamiento temporal de Discord. Duración: `10m`, `2h`, `1d`, `1h30m`; sin unidad, minutos; máximo 28 días. |
+| `unmute <miembro>` | Quita el aislamiento. |
+| `kick <miembro> [motivo]` | Expulsa del servidor. |
+| `ban <miembro> [motivo]` | Banea sin borrar mensajes anteriores. |
+| `unban <id>` | Levanta un baneo (ID numérico o mención). |
+| `lock` / `unlock` | Quita o devuelve a `@everyone` el permiso de escribir y crear hilos en el canal actual. |
+| `slow <segundos>` | Modo lento del canal (0-21600; 0 lo quita). |
+| `say <texto>` | El bot escribe el texto. En `.say` se borra tu mensaje; `/say` admite otro canal. Nunca menciona a `@everyone`, `@here` ni roles. |
+| `nick <miembro> [apodo]` | Cambia el apodo; sin apodo, lo quita. |
+| `role <miembro> <rol>` | Da el rol si no lo tiene; si lo tiene, se lo quita. |
+
+### 6 quater.2. Autorización y seguridad
+
+- Solo los miembros con el permiso **Administrador** pueden usarlos. Se comprueba en el servidor en cada invocación (`cog_check` y `interaction_check`); que Discord oculte los `/` a los demás (`default_permissions`) es solo estética.
+- Se replica la jerarquía de Discord antes de llamar a la API: nadie actúa sobre sí mismo (salvo `nick`), sobre el bot ni sobre el dueño, ni sobre alguien con un rol igual o superior al suyo o al del bot. El dueño del servidor está por encima de esa regla.
+- Cada acción queda en el registro de auditoría con el motivo y quién la pidió.
+- El bot necesita, según el comando: Gestionar mensajes, Aislar temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar apodos y Gestionar roles. Si le falta alguno, responde que no tiene permiso en vez de fallar en silencio.
 
 ## 7. Persistencia y aislamiento por servidor
 
@@ -288,7 +314,7 @@ Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los c
 Estas decisiones no impiden documentar el alcance, pero deben resolverse antes de cerrar la implementación correspondiente:
 
 - Configuración por servidor y plantillas personalizables para bienvenida/despedida.
-- Si se ofrecerá una herramienta administrativa para reiniciar la progresión.
+- Si se ofrecerá una herramienta administrativa para reiniciar la progresión (los comandos de administración actuales no tocan los niveles).
 - Si moderadores podrán controlar música iniciada por otros miembros, o si el control seguirá limitado a "cualquiera en el mismo canal de voz" (comportamiento actual).
 
 Las decisiones pendientes no bloquean las funciones ya implementadas, pero deben resolverse antes de cerrar la funcionalidad correspondiente.
