@@ -30,6 +30,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Music": "🎵 Música",
     "MessageStats": "📊 Niveles",
     "Casino": "🎰 Casino",
+    "Blackjack": "🎰 Casino",
     "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen",
     "Fun": "🗼 Diversión",
@@ -86,7 +87,9 @@ def build_help_embed(bot: commands.Bot, *, include_admin: bool = False) -> disco
         else:
             categories.setdefault(_category_title(command), []).append(command.name)
 
-    ordered = [*HELP_CATEGORIES.values()]
+    # Varios cogs pueden compartir categoría (la ruleta y el blackjack van en
+    # Casino): cada título se recorre una sola vez.
+    ordered = list(dict.fromkeys(HELP_CATEGORIES.values()))
     sections: list[tuple[str, list[str]]] = []
     for title in ordered:
         sections.append((title, categories.get(title, [])))

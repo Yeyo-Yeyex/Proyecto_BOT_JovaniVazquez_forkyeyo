@@ -67,7 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `saldo [miembro]` |
+  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `bj [cantidad]` · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -136,6 +136,17 @@ python -m bot
   con `+`, la cantidad es por apuesta; con `all` se reparte el saldo).
   Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
   CPU), así que una tirada no dibuja nada.
+- **Blackjack** (`bj`): reparte al momento con la apuesta indicada
+  (`.bj 500`, `.bj all`) y se juega con botones: 🃏 Pedir, ✋ Plantarse,
+  ⏫ Doblar y ✂️ Separar. Al terminar, 🃏 Repartir juega otra mano en el mismo
+  mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
+  (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
+  pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
+  en 17 (también blando) y mira si tiene blackjack, blackjack paga 3:2,
+  doblar con dos cartas (también tras separar), separar una vez; sin seguro
+  ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
+  el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
+  mano a medias, se planta y se paga.
 - `babel` es un teléfono escacharrado con traductores: pasa el texto por 99
   idiomas elegidos al azar y lo devuelve al español, para ver qué queda.
   Responde con el antes, el después y la ruta de idiomas. `.babel` sin texto,
@@ -285,6 +296,7 @@ src/bot/
 │   ├── welcome.py      # Bienvenidas y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
+│   ├── blackjack.py     # Blackjack con botones (bj)
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
@@ -292,6 +304,8 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
+│   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
+│   ├── cards_render.py  # Imagen de la mesa de blackjack
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)

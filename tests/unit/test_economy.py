@@ -241,3 +241,32 @@ def test_all_in_con_saldo_cero_no_es_una_apuesta_valida() -> None:
 
 def test_format_amount_usa_punto_de_miles() -> None:
     assert format_amount(1234567) == "1.234.567 Y$"
+
+
+async def test_place_bet_cobra_y_pay_winnings_paga_despues(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+
+    after_bet = await service.place_bet(GUILD, USER, game="blackjack", stake=300)
+    after_pay = await service.pay_winnings(GUILD, USER, game="blackjack", amount=750)
+
+    assert after_bet == STARTING_BALANCE - 300
+    assert after_pay == STARTING_BALANCE + 450
+    assert ledger_sum(tmp_path) == after_pay
+
+
+async def test_place_bet_sin_saldo_no_cobra(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+
+    with pytest.raises(InsufficientFundsError):
+        await service.place_bet(GUILD, USER, game="blackjack", stake=STARTING_BALANCE + 1)
+
+    assert await service.balance(GUILD, USER) == STARTING_BALANCE
+
+
+async def test_pay_winnings_de_cero_no_anota_nada(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+    await service.place_bet(GUILD, USER, game="blackjack", stake=100)
+
+    balance = await service.pay_winnings(GUILD, USER, game="blackjack", amount=0)
+
+    assert balance == STARTING_BALANCE - 100
