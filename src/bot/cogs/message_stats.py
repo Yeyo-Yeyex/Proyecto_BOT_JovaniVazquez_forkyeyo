@@ -269,7 +269,7 @@ class MessageStats(commands.Cog):
         responder: CommandResponder,
         miembro: discord.Member | None,
     ) -> None:
-        """Lógica compartida entre `/level` y `ºlevel`."""
+        """Lógica compartida entre `/level` y `.level`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -315,11 +315,11 @@ class MessageStats(commands.Cog):
         ctx: commands.Context,
         miembro: discord.Member | None = None,
     ) -> None:
-        """Versión de texto (`ºlevel`) de `/level`."""
+        """Versión de texto (`.level`) de `/level`."""
         await self._level_impl(ContextResponder(ctx), miembro)
 
     async def _ranking_impl(self, responder: CommandResponder, pagina: int) -> None:
-        """Lógica compartida entre `/top` y `ºtop`."""
+        """Lógica compartida entre `/top` y `.top`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -377,7 +377,7 @@ class MessageStats(commands.Cog):
     @commands.command(name="top")
     @commands.guild_only()
     async def ranking_text(self, ctx: commands.Context, pagina: int = 1) -> None:
-        """Versión de texto (`ºtop`) de `/top`."""
+        """Versión de texto (`.top`) de `/top`."""
         if not (1 <= pagina <= 100):
             await ctx.send("La página debe estar entre 1 y 100.")
             return

@@ -13,7 +13,7 @@ def test_load_config_lee_token_obligatorio() -> None:
 
     assert config.token == "token-de-prueba"
     assert config.log_level == "INFO"
-    assert config.command_prefix == "!"
+    assert config.command_prefix == "."
 
 
 def test_load_config_falla_sin_token() -> None:
@@ -46,3 +46,10 @@ def test_load_config_respeta_command_prefix_personalizado() -> None:
     config = load_config({"DISCORD_TOKEN": "t", "COMMAND_PREFIX": "?"})
 
     assert config.command_prefix == "?"
+
+
+def test_load_config_usa_el_punto_si_command_prefix_esta_vacio() -> None:
+    """`COMMAND_PREFIX=` vacío no deja al bot sin comandos de texto."""
+    config = load_config({"DISCORD_TOKEN": "t", "COMMAND_PREFIX": "  "})
+
+    assert config.command_prefix == "."

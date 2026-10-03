@@ -44,7 +44,7 @@ async def test_interaction_finish_sin_archivo_no_toca_los_adjuntos() -> None:
 
 @pytest.mark.asyncio
 async def test_context_finish_con_archivo_envia_mensaje_nuevo_y_borra_el_progreso() -> None:
-    """`ºcomando`: el archivo va en un mensaje nuevo y el aviso de progreso se borra."""
+    """`.comando`: el archivo va en un mensaje nuevo y el aviso de progreso se borra."""
     progress = MagicMock()
     progress.delete = AsyncMock()
     ctx = MagicMock()

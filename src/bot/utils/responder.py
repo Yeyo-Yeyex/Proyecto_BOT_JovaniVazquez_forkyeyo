@@ -2,7 +2,7 @@
 
 Todos los comandos del bot admiten dos formas de invocación equivalentes:
 como comando de aplicación (`/comando`) y como comando de texto clásico
-con un prefijo (por ejemplo `ºcomando`). Ambas comparten exactamente la
+con un prefijo (por ejemplo `.comando`). Ambas comparten exactamente la
 misma lógica de negocio; lo único que cambia es cómo se envía la
 respuesta a Discord (`discord.Interaction` frente a `commands.Context`).
 

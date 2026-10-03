@@ -24,7 +24,7 @@ def make_interaction() -> MagicMock:
 
 
 def make_context() -> MagicMock:
-    """Crea un `commands.Context` de prueba para invocar comandos de texto (`º...`)."""
+    """Crea un `commands.Context` de prueba para invocar comandos de texto (`....`)."""
     ctx = MagicMock()
     ctx.guild = SimpleNamespace(id=1)
     ctx.author = None
@@ -54,7 +54,7 @@ async def test_ping_responde_de_forma_efimera_con_la_latencia() -> None:
 
 @pytest.mark.asyncio
 async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -> None:
-    """`ºping` comparte la lógica de `/ping` a través de `ContextResponder`."""
+    """`.ping` comparte la lógica de `/ping` a través de `ContextResponder`."""
     fake_bot = MagicMock()
     fake_bot.latency = 0.05
 
@@ -71,7 +71,7 @@ async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -
 @pytest.mark.asyncio
 async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
     """`/help` construye y envía el embed de ayuda de forma efímera."""
-    real_bot = commands.Bot(command_prefix="!", intents=discord.Intents.none(), help_command=None)
+    real_bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
     await real_bot.add_cog(cog)
     interaction = make_interaction()
@@ -86,11 +86,11 @@ async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
 
 @pytest.mark.asyncio
 async def test_help_text_se_llama_igual_que_el_slash_y_sin_alias() -> None:
-    """`ºhelp` usa el mismo nombre que `/help`, sin alias en otro idioma."""
+    """`.help` usa el mismo nombre que `/help`, sin alias en otro idioma."""
     assert General.help_command_text.name == "help"
     assert not General.help_command_text.aliases
 
-    real_bot = commands.Bot(command_prefix="!", intents=discord.Intents.none(), help_command=None)
+    real_bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
     await real_bot.add_cog(cog)
     ctx = make_context()
@@ -103,14 +103,14 @@ async def test_help_text_se_llama_igual_que_el_slash_y_sin_alias() -> None:
 
 async def make_bot_with_commands() -> commands.Bot:
     """Bot real con un comando slash y su gemelo de texto, en cogs distintos."""
-    bot = commands.Bot(command_prefix=("!", "º"), intents=discord.Intents.none(), help_command=None)
+    bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     await bot.add_cog(General(bot))
     return bot
 
 
 @pytest.mark.asyncio
 async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos() -> None:
-    """Como `/x` y `ºx` son iguales, la ayuda lista cada nombre una sola vez."""
+    """Como `/x` y `.x` son iguales, la ayuda lista cada nombre una sola vez."""
     bot = await make_bot_with_commands()
 
     embed = build_help_embed(bot)
@@ -119,7 +119,7 @@ async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos()
     assert text.count("**ping**") == 1
     assert text.count("**help**") == 1
     assert "/ping" not in text
-    assert "ºping" not in text
+    assert ".ping" not in text
     assert "alias" not in text.lower()
 
 

@@ -1,7 +1,7 @@
 """Cog con comandos generales: `/ping` y `/help`.
 
 Cada comando tiene un único nombre corto, idéntico en las dos interfaces:
-comando de aplicación (`/ping`) y comando de texto (`ºping`). Ambas
+comando de aplicación (`/ping`) y comando de texto (`.ping`). Ambas
 comparten la misma lógica a través de `CommandResponder`
 (`bot.utils.responder`).
 """
@@ -15,6 +15,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.config import DEFAULT_COMMAND_PREFIX
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,16 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
 
     Los comandos se leen de `bot.commands` y `bot.tree` en vez de mantener
     una lista escrita a mano, para que la ayuda nunca se desincronice de lo
-    realmente registrado. Como `/nombre` y `ºnombre` son idénticos, cada
+    realmente registrado. Como `/nombre` y `.nombre` son idénticos, cada
     comando aparece una sola vez.
     """
+    prefix = _text_prefix(bot)
     embed = discord.Embed(
         title="📖 Comandos",
-        description="Funcionan igual con `/` y con `º`.  Ej: `ºplay despacito`",
+        description=(
+            f"Funcionan igual con `/` y con `{prefix}`. "
+            f"Ej: `/play despacito` o `{prefix}play despacito`"
+        ),
         color=EMBED_COLOR,
     )
 
@@ -86,6 +91,20 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
         embed.add_field(name=title, value="\n".join(lines), inline=False)
 
     return embed
+
+
+def _text_prefix(bot: commands.Bot) -> str:
+    """Prefijo de texto con el que se mostrarán los ejemplos de la ayuda.
+
+    Se lee del propio bot para que la ayuda no se desincronice si cambia
+    `COMMAND_PREFIX`. Si hubiera varios prefijos, se muestra el primero.
+    """
+    prefix = bot.command_prefix
+    if isinstance(prefix, str):
+        return prefix
+    if isinstance(prefix, (list, tuple)) and prefix:
+        return str(prefix[0])
+    return DEFAULT_COMMAND_PREFIX
 
 
 def _category_key(command: commands.Command) -> str | None:
@@ -108,7 +127,7 @@ class General(commands.Cog):
         self.bot = bot
 
     async def _ping_impl(self, responder: CommandResponder) -> None:
-        """Lógica compartida entre `/ping` y `ºping`."""
+        """Lógica compartida entre `/ping` y `.ping`."""
         start = time.perf_counter()
         latency_ms = round(self.bot.latency * 1000)
         elapsed_ms = round((time.perf_counter() - start) * 1000)
@@ -130,11 +149,11 @@ class General(commands.Cog):
 
     @commands.command(name="ping")
     async def ping_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºping`) de `/ping`."""
+        """Versión de texto (`.ping`) de `/ping`."""
         await self._ping_impl(ContextResponder(ctx))
 
     async def _help_impl(self, responder: CommandResponder) -> None:
-        """Lógica compartida entre `/help` y `ºhelp`."""
+        """Lógica compartida entre `/help` y `.help`."""
         await responder.send(embed=build_help_embed(self.bot), ephemeral=True)
 
     @app_commands.command(name="help", description="Muestra todos los comandos.")
@@ -144,7 +163,7 @@ class General(commands.Cog):
 
     @commands.command(name="help")
     async def help_command_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`ºhelp`) de `/help`."""
+        """Versión de texto (`.help`) de `/help`."""
         await self._help_impl(ContextResponder(ctx))
 
 

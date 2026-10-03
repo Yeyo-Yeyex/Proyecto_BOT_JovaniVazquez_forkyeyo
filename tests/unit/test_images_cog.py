@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.images: `/magik` y `ºmagik` comparten lógica y validaciones."""
+"""Pruebas de bot.cogs.images: `/magik` y `.magik` comparten lógica y validaciones."""
 
 from __future__ import annotations
 
@@ -242,7 +242,7 @@ async def test_magik_no_deja_colgado_el_progreso_ante_un_error_inesperado(
 
 
 def test_magik_tiene_el_mismo_nombre_en_slash_y_texto() -> None:
-    """`/magik` y `ºmagik` se llaman igual y el de texto no tiene alias."""
+    """`/magik` y `.magik` se llaman igual y el de texto no tiene alias."""
     cog = Images(MagicMock())
 
     assert [c.name for c in cog.get_app_commands()] == ["magik"]
@@ -295,7 +295,7 @@ def make_text_context(
 
 @pytest.mark.asyncio
 async def test_texto_prefiere_el_adjunto_del_propio_mensaje() -> None:
-    """`ºmagik` con una imagen adjunta usa esa imagen."""
+    """`.magik` con una imagen adjunta usa esa imagen."""
     cog = Images(MagicMock())
     cog._magik_impl = AsyncMock()
     own = make_attachment()
@@ -334,7 +334,7 @@ async def test_texto_ignora_adjuntos_que_no_son_imagen() -> None:
 
 @pytest.mark.asyncio
 async def test_texto_con_miembro_usa_su_avatar() -> None:
-    """`ºmagik @alguien` deforma el avatar del miembro mencionado."""
+    """`.magik @alguien` deforma el avatar del miembro mencionado."""
     cog = Images(MagicMock())
     cog._magik_impl = AsyncMock()
     member = MagicMock()

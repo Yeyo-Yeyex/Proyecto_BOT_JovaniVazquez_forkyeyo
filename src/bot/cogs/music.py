@@ -8,7 +8,7 @@ patrón `after=` de `discord.py`, que llama a nuestro código desde un hilo
 distinto y por eso se reencola con `asyncio.run_coroutine_threadsafe`.
 
 Cada acción tiene un único nombre corto, idéntico en las dos interfaces:
-comando de aplicación (`/play`) y comando de texto (`ºplay`). Ambas
+comando de aplicación (`/play`) y comando de texto (`.play`). Ambas
 comparten exactamente la misma lógica de negocio a través de `CommandResponder`
 (`bot.utils.responder`), una abstracción compartida con el resto de cogs
 que oculta si el origen fue una `discord.Interaction` o un mensaje de texto.
@@ -123,7 +123,7 @@ class Music(commands.Cog):
     @commands.command(name="play")
     @commands.guild_only()
     async def play_text(self, ctx: commands.Context, *, consulta: str) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._play_impl(ContextResponder(ctx), consulta)
 
     async def _play_impl(self, responder: CommandResponder, consulta: str) -> None:
@@ -336,7 +336,7 @@ class Music(commands.Cog):
     @commands.command(name="pause")
     @commands.guild_only()
     async def pause_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._pause_impl(ContextResponder(ctx))
 
     async def _pause_impl(self, responder: CommandResponder) -> None:
@@ -359,7 +359,7 @@ class Music(commands.Cog):
     @commands.command(name="resume")
     @commands.guild_only()
     async def resume_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._resume_impl(ContextResponder(ctx))
 
     async def _resume_impl(self, responder: CommandResponder) -> None:
@@ -382,7 +382,7 @@ class Music(commands.Cog):
     @commands.command(name="skip")
     @commands.guild_only()
     async def skip_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._skip_impl(ContextResponder(ctx))
 
     async def _skip_impl(self, responder: CommandResponder) -> None:
@@ -407,7 +407,7 @@ class Music(commands.Cog):
     @commands.command(name="stop")
     @commands.guild_only()
     async def stop_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._stop_impl(ContextResponder(ctx))
 
     async def _stop_impl(self, responder: CommandResponder) -> None:
@@ -428,7 +428,7 @@ class Music(commands.Cog):
     @commands.command(name="queue")
     @commands.guild_only()
     async def queue_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._queue_impl(ContextResponder(ctx))
 
     async def _queue_impl(self, responder: CommandResponder) -> None:
@@ -469,7 +469,7 @@ class Music(commands.Cog):
     @commands.command(name="remove")
     @commands.guild_only()
     async def remove_text(self, ctx: commands.Context, posicion: int) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._remove_impl(ContextResponder(ctx), posicion)
 
     async def _remove_impl(self, responder: CommandResponder, posicion: int) -> None:
@@ -494,7 +494,7 @@ class Music(commands.Cog):
     @commands.command(name="clear")
     @commands.guild_only()
     async def clear_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         await self._clear_impl(ContextResponder(ctx))
 
     async def _clear_impl(self, responder: CommandResponder) -> None:
@@ -520,7 +520,7 @@ class Music(commands.Cog):
     @commands.command(name="volume")
     @commands.guild_only()
     async def volume_text(self, ctx: commands.Context, valor: int) -> None:
-        """Versión de texto (`º`) del comando slash homónimo."""
+        """Versión de texto (`.`) del comando slash homónimo."""
         if not (MIN_VOLUME_PERCENT <= valor <= MAX_VOLUME_PERCENT):
             await ctx.send(
                 f"El volumen debe estar entre {MIN_VOLUME_PERCENT} y {MAX_VOLUME_PERCENT}%."

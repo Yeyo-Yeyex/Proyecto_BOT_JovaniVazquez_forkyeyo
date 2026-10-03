@@ -1,9 +1,9 @@
-"""Integración de `ºmagik` con objetos reales de discord.py.
+"""Integración de `.magik` con objetos reales de discord.py.
 
 Se construyen un servidor, un canal y un mensaje reales (con un adjunto) y se
 procesan con `bot.get_context` + `bot.invoke`, igual que lo haría el gateway.
 Solo se sustituye la capa de red (`bot.http`). Así se comprueba todo el camino
-real: prefijo `º`, conversión de argumentos, lectura del adjunto, procesado,
+real: prefijo `.`, conversión de argumentos, lectura del adjunto, procesado,
 envío del archivo y gestión de errores; justo lo que los mocks no ven.
 """
 
@@ -56,7 +56,7 @@ class Harness:
     """Bot real con la red sustituida y un canal de servidor real."""
 
     def __init__(self, tmp_path: Path) -> None:
-        self.bot = BotClient(command_prefix="!", database_path=tmp_path / "stats.sqlite3")
+        self.bot = BotClient(command_prefix=".", database_path=tmp_path / "stats.sqlite3")
         self.sent: list[dict] = []
         self.deleted: list[int] = []
         self.channel: discord.TextChannel | None = None
@@ -189,8 +189,8 @@ async def harness(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_magik_con_imagen_adjunta_envia_el_png_y_borra_el_progreso(harness: Harness) -> None:
-    """`ºmagik` + imagen: aviso de progreso, mensaje nuevo con `magik.png` y aviso borrado."""
-    await harness.say("ºmagik")
+    """`.magik` + imagen: aviso de progreso, mensaje nuevo con `magik.png` y aviso borrado."""
+    await harness.say(".magik")
 
     assert harness.sent[0]["content"] == "🌀 Distorsionando..."
     assert harness.sent[1]["files"] == ["magik.png"]
@@ -200,7 +200,7 @@ async def test_magik_con_imagen_adjunta_envia_el_png_y_borra_el_progreso(harness
 @pytest.mark.asyncio
 async def test_magik_sin_adjunto_usa_el_avatar_y_tambien_responde(harness: Harness) -> None:
     """Sin imagen adjunta se cae al avatar de quien escribe (descargado por la CDN)."""
-    await harness.say("ºmagik", attach_image=False)
+    await harness.say(".magik", attach_image=False)
 
     assert harness.sent[-1]["files"] == ["magik.png"]
 
@@ -210,22 +210,22 @@ async def test_magik_sin_permiso_para_adjuntar_explica_que_activar(harness: Harn
     """Si el bot no puede adjuntar archivos, lo dice en vez de quedarse en «Distorsionando…»."""
     harness.forbid_files = True
 
-    await harness.say("ºmagik")
+    await harness.say(".magik")
 
     assert "Adjuntar archivos" in harness.sent[-1]["content"]
 
 
 @pytest.mark.asyncio
 async def test_un_comando_de_texto_sin_argumentos_obligatorios_responde(harness: Harness) -> None:
-    """`ºplay` sin nada ya no se ignora: explica qué falta."""
-    await harness.say("ºplay", attach_image=False)
+    """`.play` sin nada ya no se ignora: explica qué falta."""
+    await harness.say(".play", attach_image=False)
 
     assert "consulta" in harness.sent[-1]["content"]
 
 
 @pytest.mark.asyncio
 async def test_un_mensaje_con_prefijo_pero_sin_comando_se_ignora(harness: Harness) -> None:
-    """`ºloquesea` no existe: el bot no contesta nada."""
-    await harness.say("ºloquesea", attach_image=False)
+    """`.loquesea` no existe: el bot no contesta nada."""
+    await harness.say(".loquesea", attach_image=False)
 
     assert harness.sent == []
