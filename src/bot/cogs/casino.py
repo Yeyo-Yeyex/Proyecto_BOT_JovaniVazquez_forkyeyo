@@ -1,4 +1,4 @@
-"""Casino y economía: `ruleta`, `saldo` y `daily`.
+"""Casino y economía: `ruleta`, `saldo` e `imv` (la recompensa diaria).
 
 Todo el dinero se mueve con `EconomyService` (`bot.economy`), que es la
 misma economía que usará cualquier juego o sistema futuro. Este cog solo
@@ -41,6 +41,7 @@ from bot.services.economy import (
     format_amount,
     is_all_in,
     parse_amount,
+    tax_line,
 )
 from bot.services.roulette import (
     COLOR_EMOJI,
@@ -78,6 +79,8 @@ REVEAL_MARGIN_SECONDS = 0.4
 HISTORY_SIZE = 12
 
 GIF_NAME = "ruleta.gif"
+
+
 PNG_NAME = "ruleta.png"
 
 COLOR_IDLE = discord.Color.from_rgb(43, 45, 49)
@@ -192,7 +195,7 @@ def table_embed(
     elif multi and outcome is not None:
         description += "\n\n🧩 Pon fichas para la siguiente tirada o pulsa 🔁 Repetir."
     if balance == 0:
-        description += "\n\n**Estás a cero.** `daily` te recarga."
+        description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🎰 Ruleta americana", description=description, color=embed_color)
     embed.add_field(name="Saldo", value=format_amount(balance))
     embed.add_field(name="Ficha", value=format_amount(stake))
@@ -221,7 +224,7 @@ def spinning_embed(*, owner: str, wagers: Sequence[Wager], history: Iterable[int
 def insufficient_text(balance: int, needed: int | None = None) -> str:
     """Aviso cuando lo apostado supera el saldo."""
     if balance == 0:
-        return "Estás a cero. Usa `daily` para recargar."
+        return "Estás a cero. Usa `imv` para recargar."
     if needed is not None:
         return f"Necesitas {format_amount(needed)} y tienes {format_amount(balance)}."
     return f"No te llega: tienes {format_amount(balance)}. Baja la ficha o pulsa 💰 All-in."
@@ -866,7 +869,7 @@ class Casino(commands.Cog):
         """Versión de texto (`.saldo [@miembro]`) de `/saldo`."""
         await self._saldo_impl(ContextResponder(ctx), ctx.author, miembro)
 
-    # -- daily ----------------------------------------------------------------------
+    # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def _daily_impl(self, responder: CommandResponder, user: discord.abc.User) -> None:
         if responder.guild is None:
@@ -875,33 +878,36 @@ class Casino(commands.Cog):
         result = await self.economy.claim_daily(responder.guild.id, user.id)
         next_at = f"<t:{int(result.next_claim_at)}:R>"
         if not result.claimed:
-            await responder.send_error(f"Ya cobraste hoy. Vuelve {next_at}.")
+            await responder.send_error(f"Ya cobraste el IMV hoy. Vuelve {next_at}.")
             return
         streak = (
             f"🔥 Racha de {result.streak} días" if result.streak >= 2 else "Primer día de racha"
         )
         embed = discord.Embed(
             description=(
-                f"# {CURRENCY_EMOJI} +{format_amount(result.amount)}\n"
+                f"# {CURRENCY_EMOJI} +{format_amount(result.amount - result.tax)}\n"
                 f"{streak} · Saldo: **{format_amount(result.balance)}**\n"
-                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}. "
-                f"Si pasan más de 48 h, la racha se pierde."
+                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))} "
+                f"brutos. Si pasan más de 48 h, la racha se pierde.\n"
+                f"{tax_line(result.amount, result.tax, result.rate)}"
             ),
             color=COLOR_WIN,
         )
-        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+        embed.set_author(name=f"IMV de {user.display_name}", icon_url=user.display_avatar.url)
         await responder.send(embed=embed)
 
-    @app_commands.command(name="daily", description=f"Cobra tus {CURRENCY_NAME} diarios.")
+    @app_commands.command(
+        name="imv", description=f"Cobra tu Ingreso Mínimo Vital diario en {CURRENCY_NAME}."
+    )
     @app_commands.guild_only()
-    async def daily(self, interaction: discord.Interaction) -> None:
-        """Cobra la recompensa diaria; cada día seguido paga más (hasta un tope)."""
+    async def imv(self, interaction: discord.Interaction) -> None:
+        """Cobra el IMV; cada día seguido paga más (hasta un tope), menos IRPF."""
         await self._daily_impl(InteractionResponder(interaction), interaction.user)
 
-    @commands.command(name="daily")
+    @commands.command(name="imv")
     @commands.guild_only()
-    async def daily_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.daily`) de `/daily`."""
+    async def imv_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.imv`) de `/imv`."""
         await self._daily_impl(ContextResponder(ctx), ctx.author)
 
     @commands.Cog.listener()

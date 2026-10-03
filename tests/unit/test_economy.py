@@ -23,6 +23,7 @@ from bot.services.economy import (
     daily_amount,
     format_amount,
     parse_amount,
+    tax_line,
 )
 
 GUILD = 1
@@ -270,3 +271,67 @@ async def test_pay_winnings_de_cero_no_anota_nada(tmp_path: Path) -> None:
     balance = await service.pay_winnings(GUILD, USER, game="blackjack", amount=0)
 
     assert balance == STARTING_BALANCE - 100
+
+
+# -- IRPF ----------------------------------------------------------------------------
+
+
+def ledger_reasons(tmp_path: Path, user_id: int = USER) -> list[tuple[str, int]]:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        rows = connection.execute(
+            "SELECT reason, delta FROM economy_ledger WHERE guild_id = ? AND user_id = ? "
+            "ORDER BY id",
+            (GUILD, user_id),
+        ).fetchall()
+    return [(str(reason), int(delta)) for reason, delta in rows]
+
+
+async def test_imv_retiene_irpf_cuando_la_renta_reciente_es_alta(tmp_path: Path) -> None:
+    clock = FakeClock()
+    service = await make_service(tmp_path, clock)
+    # Un mes de ingresos previos sube la renta proyectada.
+    await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
+    clock.now += 60
+
+    result = await service.claim_daily(GUILD, USER)
+
+    assert result.claimed
+    assert result.tax > 0
+    assert 0 < result.rate < 0.5
+    assert ("imv", daily_amount(1)) in ledger_reasons(tmp_path)
+    assert ("irpf:imv", -result.tax) in ledger_reasons(tmp_path)
+    assert ledger_sum(tmp_path) == result.balance
+
+
+async def test_primer_imv_de_alguien_nuevo_no_paga_irpf(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+
+    result = await service.claim_daily(GUILD, USER)
+
+    assert result.tax == 0
+    assert result.balance == STARTING_BALANCE + daily_amount(1)
+
+
+async def test_ingresos_de_hace_mas_de_30_dias_no_cuentan(tmp_path: Path) -> None:
+    clock = FakeClock()
+    service = await make_service(tmp_path, clock)
+    await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
+    clock.now += 31 * 24 * 3600
+
+    result = await service.pay_income(GUILD, USER, gross=500, concept="nivel:21")
+
+    assert result.tax == 0
+
+
+async def test_recaudacion_del_servidor(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+    first = await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
+    second = await service.pay_income(GUILD, USER + 1, gross=30_000, concept="nivel:20")
+
+    assert await service.tax_collected(GUILD, since=0) == first.tax + second.tax > 0
+    assert await service.tax_collected(GUILD + 1, since=0) == 0
+
+
+def test_linea_de_impuestos() -> None:
+    assert "Perro Sanxe se lleva 324 Y$" in tax_line(1_500, 324, 0.216)
+    assert "no te retiene nada" in tax_line(500, 0, 0.0)

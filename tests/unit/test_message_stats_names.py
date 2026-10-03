@@ -32,8 +32,8 @@ async def test_level_up_announcement_uses_message_channel() -> None:
 async def test_on_message_pasa_el_canal_que_otorgo_el_nivel() -> None:
     """El evento de mensaje envía al anuncio el canal exacto que concedió XP."""
     repository = MagicMock()
-    repository.award_message_xp = AsyncMock(
-        return_value=SimpleNamespace(previous_xp=90, total_xp=110)
+    repository.grant_activity = AsyncMock(
+        return_value={200: SimpleNamespace(previous_xp=90, total_xp=110)}
     )
     cog = MessageStats(MagicMock(), repository)
     cog._announce_level_up = AsyncMock()
@@ -50,7 +50,7 @@ async def test_on_message_pasa_el_canal_que_otorgo_el_nivel() -> None:
 
     await cog.on_message(message)
 
-    cog._announce_level_up.assert_awaited_once_with(guild, channel, member, 1)
+    cog._announce_level_up.assert_awaited_once_with(guild, channel, member, 1, reward=None)
 
 
 @pytest.mark.asyncio

@@ -32,7 +32,7 @@ EXPECTED_COMMANDS = {
     "ruleta",
     "babel",
     "saldo",
-    "daily",
+    "imv",
     "blackjack",
 }
 

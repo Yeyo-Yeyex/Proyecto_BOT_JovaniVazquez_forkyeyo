@@ -1,7 +1,7 @@
 """Reglas de la economía del bot: la moneda, los yapdollars, y cómo se mueven.
 
 Este es el único punto de entrada al dinero para el resto del bot. El casino,
-la recompensa diaria y cualquier sistema futuro (tienda, trabajos, premios
+el IMV (la recompensa diaria) y cualquier sistema futuro (tienda, trabajos, premios
 por nivel) deben llamar a `EconomyService` en vez de tocar saldos, para que
 todas las reglas compartan la misma moneda, el mismo libro de movimientos y
 las mismas garantías de atomicidad (ver `bot.repositories.economy`).
@@ -23,6 +23,12 @@ from bot.repositories.economy import (
     InsufficientFundsError,
     LedgerEntry,
 )
+from bot.services.taxes import (
+    PROJECTION_WINDOW_SECONDS,
+    TAX_COLLECTOR,
+    compute_withholding,
+    format_rate,
+)
 
 __all__ = [
     "BalanceLimitError",
@@ -31,11 +37,13 @@ __all__ = [
     "CURRENCY_SYMBOL",
     "DailyResult",
     "EconomyService",
+    "IncomeResult",
     "InsufficientFundsError",
     "STARTING_BALANCE",
     "format_amount",
     "is_all_in",
     "parse_amount",
+    "tax_line",
 ]
 
 CURRENCY_NAME = "yapdollars"
@@ -45,7 +53,8 @@ CURRENCY_EMOJI = "🪙"
 #: Saldo con el que empieza cualquier miembro la primera vez que usa la economía.
 STARTING_BALANCE = 1_000
 
-#: Recompensa diaria: base más un extra por cada día seguido, con tope.
+#: IMV (recompensa diaria): base más un extra por cada día seguido, con tope.
+#: Son cantidades brutas: al cobrar se retiene IRPF (ver `bot.services.taxes`).
 DAILY_BASE = 500
 DAILY_STREAK_BONUS = 100
 DAILY_MAX_BONUS = 1_000
@@ -59,6 +68,22 @@ DAILY_STREAK_WINDOW_SECONDS = 48 * 3600
 def format_amount(amount: int) -> str:
     """Formatea una cantidad al estilo español: `1.250 Y$`."""
     return f"{amount:,}".replace(",", ".") + f" {CURRENCY_SYMBOL}"
+
+
+def tax_line(gross: int, tax: int, rate: float) -> str:
+    """Línea pequeña (subtexto de Discord) con lo que se queda Hacienda.
+
+    La usan el IMV, los premios por nivel y cualquier cobro con retención.
+    """
+    if tax <= 0:
+        return (
+            f"-# 🐶 {TAX_COLLECTOR} no te retiene nada: con tu renta de los últimos "
+            "30 días no llegas al mínimo. Disfrútalo mientras dure."
+        )
+    return (
+        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
+        f"({format_rate(rate)} de {format_amount(gross)})."
+    )
 
 
 _ALL_IN_WORDS = {"all", "allin", "all-in", "todo", "max"}
@@ -100,12 +125,36 @@ def parse_amount(text: str, balance: int) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class IncomeResult:
+    """Un ingreso cobrado con su retención de IRPF.
+
+    Attributes:
+        gross: Cantidad bruta.
+        tax: Retención que se queda Hacienda.
+        rate: Tipo de retención aplicado (0–1).
+        balance: Saldo tras cobrar.
+    """
+
+    gross: int
+    tax: int
+    rate: float
+    balance: int
+
+    @property
+    def net(self) -> int:
+        """Lo que llega al bolsillo."""
+        return self.gross - self.tax
+
+
+@dataclass(frozen=True, slots=True)
 class DailyResult:
-    """Resultado de intentar cobrar la recompensa diaria.
+    """Resultado de intentar cobrar el IMV (la recompensa diaria).
 
     Attributes:
         claimed: Si se ha cobrado ahora.
-        amount: Cantidad cobrada (0 si no se cobró).
+        amount: Cantidad bruta cobrada (0 si no se cobró).
+        tax: Retención de IRPF sobre `amount`.
+        rate: Tipo de retención aplicado (0–1).
         balance: Saldo tras la operación.
         streak: Racha de días seguidos tras la operación.
         next_claim_at: Momento (epoch) desde el que se puede volver a cobrar.
@@ -116,10 +165,12 @@ class DailyResult:
     balance: int
     streak: int
     next_claim_at: float
+    tax: int = 0
+    rate: float = 0.0
 
 
 def daily_amount(streak: int) -> int:
-    """Cantidad de la recompensa diaria para una racha (1 = primer día)."""
+    """Cantidad bruta del IMV para una racha (1 = primer día)."""
     return DAILY_BASE + min((streak - 1) * DAILY_STREAK_BONUS, DAILY_MAX_BONUS)
 
 
@@ -202,8 +253,38 @@ class EconomyService:
         entries = [LedgerEntry(amount, f"{game}:premio")] if amount else []
         return await self.repository.apply(guild_id, user_id, entries)
 
+    @staticmethod
+    def _withhold(gross: int, recent_income: int) -> int:
+        return compute_withholding(gross, recent_income).tax
+
+    async def pay_income(
+        self, guild_id: int, user_id: int, *, gross: int, concept: str
+    ) -> IncomeResult:
+        """Paga un ingreso sujeto a IRPF (p. ej. el premio por subir de nivel).
+
+        Args:
+            gross: Cantidad bruta; debe ser positiva.
+            concept: Motivo corto y estable para el libro, p. ej. `"nivel:12"`.
+        """
+        if gross <= 0:
+            raise ValueError("El ingreso debe ser positivo.")
+        tax, balance = await self.repository.credit_income(
+            guild_id,
+            user_id,
+            gross=gross,
+            concept=concept,
+            now=self._clock(),
+            withhold=self._withhold,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+        return IncomeResult(gross=gross, tax=tax, rate=tax / gross, balance=balance)
+
+    async def tax_collected(self, guild_id: int, since: float) -> int:
+        """Lo que lleva retenido Hacienda en el servidor desde `since`."""
+        return await self.repository.tax_collected(guild_id, since)
+
     async def claim_daily(self, guild_id: int, user_id: int) -> DailyResult:
-        """Cobra la recompensa diaria si ya toca; si no, informa de cuándo."""
+        """Cobra el IMV si ya toca; si no, informa de cuándo."""
         now = self._clock()
 
         def decide(previous: DailyClaim | None) -> tuple[int, int] | None:
@@ -216,9 +297,16 @@ class EconomyService:
                 streak = previous.streak + 1 if elapsed <= DAILY_STREAK_WINDOW_SECONDS else 1
             return daily_amount(streak), streak
 
-        claimed = await self.repository.claim_daily(guild_id, user_id, now=now, decide=decide)
+        claimed = await self.repository.claim_daily(
+            guild_id,
+            user_id,
+            now=now,
+            decide=decide,
+            withhold=self._withhold,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
         if claimed is not None:
-            amount, balance = claimed
+            amount, tax, balance = claimed
             state = await self.repository.daily_state(guild_id, user_id)
             assert state is not None  # se acaba de escribir en la misma operación
             return DailyResult(
@@ -227,6 +315,8 @@ class EconomyService:
                 balance=balance,
                 streak=state.streak,
                 next_claim_at=now + DAILY_COOLDOWN_SECONDS,
+                tax=tax,
+                rate=tax / amount,
             )
 
         state = await self.repository.daily_state(guild_id, user_id)

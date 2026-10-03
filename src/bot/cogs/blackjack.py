@@ -165,7 +165,7 @@ def table_embed(
         description = headline or result_headline(game)
         color = COLOR_WIN if game.net > 0 else COLOR_PUSH if game.net == 0 else COLOR_LOSS
     if balance == 0 and (game is None or game.settled):
-        description += "\n\n**Estás a cero.** `daily` te recarga."
+        description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🃏 Blackjack", description=description, color=color)
     embed.add_field(name="Saldo", value=format_amount(balance))
     playing = game is not None and not game.settled

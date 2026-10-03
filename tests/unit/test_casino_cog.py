@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.casino: mesa de ruleta, `ruleta`, `saldo` y `daily`.
+"""Pruebas de bot.cogs.casino: mesa de ruleta, `ruleta`, `saldo` y `imv`.
 
 Se usa la economía real sobre un SQLite temporal (para comprobar que el
 dinero se mueve de verdad), una rueda trucada y un renderizador falso.
@@ -148,9 +148,9 @@ def test_texto_de_apuesta_perdida_muestra_lo_perdido() -> None:
     assert "-250 Y$" in text
 
 
-def test_mesa_a_cero_sugiere_daily() -> None:
+def test_mesa_a_cero_sugiere_imv() -> None:
     embed = table_embed(owner="Diego", balance=0, stake=100, history=[])
-    assert "daily" in (embed.description or "")
+    assert "imv" in (embed.description or "")
     assert embed.image.url == f"attachment://{PNG_NAME}"
 
 

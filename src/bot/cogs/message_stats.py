@@ -1,4 +1,15 @@
-"""Registro de mensajes, experiencia y comandos de consulta de niveles."""
+"""Registro de mensajes, experiencia y comandos de consulta de niveles.
+
+Fuentes de XP en vivo (las reglas están en `bot.services.levels`):
+
+- `on_message`: XP por mensaje, bonus del primer mensaje del día y racha.
+- `on_raw_reaction_add`: XP para el autor de un mensaje cuando otro reacciona.
+- `_voice_tick`: cada minuto, XP para quien está en voz sin mutear. Lee la
+  caché de estados de voz de discord.py, así que no hace llamadas a la API.
+  La misma tarea anuncia la hora feliz.
+
+Subir de nivel paga yapdollars con retención de IRPF (`EconomyService`).
+"""
 
 from __future__ import annotations
 
@@ -7,20 +18,39 @@ import logging
 import random
 import sqlite3
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
-from bot.repositories.message_stats import MessageStatsRepository
+from bot.repositories.message_stats import LevelAward, MessageStatsRepository
+from bot.services.economy import (
+    CURRENCY_EMOJI,
+    BalanceLimitError,
+    EconomyService,
+    IncomeResult,
+    format_amount,
+    tax_line,
+)
 from bot.services.levels import (
+    HAPPY_HOUR_MULTIPLIER,
     MAX_MESSAGE_XP,
+    MAX_VOICE_XP,
     MIN_MESSAGE_XP,
+    MIN_VOICE_XP,
+    MemberActivity,
     calculate_level_progress,
+    happy_hour,
+    is_happy_hour,
+    local_day,
+    message_award,
+    reaction_award,
+    rewards_between,
+    voice_award,
 )
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -31,6 +61,9 @@ logger = logging.getLogger(__name__)
 
 RANK_MEDALS = ("🥇", "🥈", "🥉")
 RANKING_PAGE_SIZE = 10
+#: Reacciones (mensaje, quien reacciona) ya premiadas que se recuerdan para
+#: que quitar y volver a poner la misma reacción no dé XP otra vez.
+REACTION_MEMORY = 5_000
 
 
 def build_ranking_embed(
@@ -99,14 +132,31 @@ def _format_progress_bar(current_xp: int, required_xp: int, width: int = 10) -> 
 class MessageStats(commands.Cog):
     """Registra XP por mensaje y expone consultas de nivel y ranking."""
 
-    def __init__(self, bot: commands.Bot, repository: MessageStatsRepository) -> None:
+    def __init__(
+        self,
+        bot: commands.Bot,
+        repository: MessageStatsRepository,
+        economy: EconomyService | None = None,
+    ) -> None:
         self.bot = bot
         self.repository = repository
+        self.economy = economy
         self._scan_tasks: dict[int, asyncio.Task[None]] = {}
+        self._rewarded_reactions: OrderedDict[tuple[int, int], None] = OrderedDict()
+        #: Último día (ISO) en que se anunció la hora feliz, por servidor.
+        self._happy_hour_announced: dict[int, str] = {}
+
+    async def cog_load(self) -> None:
+        """Arranca la tarea de XP por voz."""
+        self._voice_tick.start()
+
+    async def cog_unload(self) -> None:
+        """Detiene la tarea de XP por voz."""
+        self._voice_tick.cancel()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        """Guarda cada mensaje nuevo elegible como agregado, sin su contenido."""
+        """Da XP por mensaje (con su enfriamiento); nunca guarda el contenido."""
         if (
             message.guild is None
             or message.author.bot
@@ -115,24 +165,167 @@ class MessageStats(commands.Cog):
         ):
             return
 
-        award = await self.repository.award_message_xp(
-            message.guild.id,
-            message.author.id,
-            random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP),
-            time.time(),
-        )
-        if award is None:
-            return
+        guild_id = message.guild.id
+        now = time.time()
+        base_xp = random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP)
+        happy = is_happy_hour(guild_id, now)
 
+        def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
+            return message_award(
+                state, now=now, cooldown_seconds=cooldown, base_xp=base_xp, happy=happy
+            )
+
+        awards = await self.repository.grant_activity(guild_id, [message.author.id], decide)
+        award = awards.get(message.author.id)
+        if award is not None:
+            await self._handle_level_up(message.guild, message.channel, message.author, award)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        """Da XP al autor de un mensaje cuando otra persona reacciona."""
+        author_id = payload.message_author_id
+        if (
+            payload.guild_id is None
+            or author_id is None
+            or author_id == payload.user_id
+            or payload.member is None
+            or payload.member.bot
+        ):
+            return
+        guild = self.bot.get_guild(payload.guild_id)
+        if guild is None:
+            return
+        author = guild.get_member(author_id)
+        if author is None or author.bot:
+            return
+        key = (payload.message_id, payload.user_id)
+        if key in self._rewarded_reactions:
+            return
+        self._rewarded_reactions[key] = None
+        if len(self._rewarded_reactions) > REACTION_MEMORY:
+            self._rewarded_reactions.popitem(last=False)
+
+        now = time.time()
+
+        def decide(_user_id: int, state: MemberActivity, _cooldown: int) -> MemberActivity | None:
+            return reaction_award(state, now=now)
+
+        awards = await self.repository.grant_activity(guild.id, [author_id], decide)
+        award = awards.get(author_id)
+        channel = guild.get_channel_or_thread(payload.channel_id)
+        if award is not None and isinstance(channel, discord.abc.Messageable):
+            await self._handle_level_up(guild, channel, author, award)
+
+    # -- Voz y hora feliz ---------------------------------------------------------------
+
+    @tasks.loop(seconds=60)
+    async def _voice_tick(self) -> None:
+        """Cada minuto: XP por voz y aviso de la hora feliz."""
+        try:
+            enabled = await self.repository.enabled_guild_ids()
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo leer qué servidores tienen niveles")
+            return
+        now = time.time()
+        for guild in self.bot.guilds:
+            if guild.id not in enabled:
+                continue
+            try:
+                await self._announce_happy_hour_if_due(guild, now)
+                for channel in guild.voice_channels:
+                    await self._award_voice_channel(guild, channel, now)
+            except Exception:
+                # Una excepción sin capturar pararía la tarea para siempre; se
+                # registra y el siguiente minuto se vuelve a intentar.
+                logger.exception("Error dando XP de voz en el servidor %s", guild.id)
+
+    @_voice_tick.before_loop
+    async def _before_voice_tick(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def _award_voice_channel(
+        self, guild: discord.Guild, channel: discord.VoiceChannel, now: float
+    ) -> None:
+        """Da XP de voz a quien esté hablando de verdad en `channel`."""
+        if guild.afk_channel is not None and channel.id == guild.afk_channel.id:
+            return
+        eligible = [member for member in channel.members if is_voice_active(member)]
+        # Hace falta alguien más para que cuente: nadie farmea solo.
+        if len(eligible) < 2:
+            return
+        happy = is_happy_hour(guild.id, now)
+        base = {member.id: random.randint(MIN_VOICE_XP, MAX_VOICE_XP) for member in eligible}
+
+        def decide(user_id: int, state: MemberActivity, _cooldown: int) -> MemberActivity:
+            return voice_award(state, now=now, base_xp=base[user_id], happy=happy)
+
+        awards = await self.repository.grant_activity(guild.id, list(base), decide)
+        by_id = {member.id: member for member in eligible}
+        for user_id, award in awards.items():
+            await self._handle_level_up(guild, channel, by_id[user_id], award)
+
+    async def _announce_happy_hour_if_due(self, guild: discord.Guild, now: float) -> None:
+        """Avisa una vez al día, al empezar la hora feliz, en el canal del sistema."""
+        if not is_happy_hour(guild.id, now):
+            return
+        today = local_day(now).isoformat()
+        if self._happy_hour_announced.get(guild.id) == today:
+            return
+        self._happy_hour_announced[guild.id] = today
+        channel = guild.system_channel
+        if channel is None:
+            return
+        end = happy_hour(guild.id, local_day(now)) + 1
+        try:
+            await channel.send(
+                f"🎉 **¡Hora feliz!** Hasta las {end % 24:02d}:00 los mensajes y la voz "
+                f"dan XP ×{HAPPY_HOUR_MULTIPLIER}."
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning(
+                "No se pudo anunciar la hora feliz en el servidor %s", guild.id, exc_info=True
+            )
+
+    # -- Subidas de nivel ---------------------------------------------------------------
+
+    async def _handle_level_up(
+        self,
+        guild: discord.Guild,
+        channel: discord.abc.Messageable,
+        member: discord.abc.User,
+        award: LevelAward,
+    ) -> None:
+        """Si `award` hace subir de nivel, paga el premio y lo anuncia."""
         previous_level = calculate_level_progress(award.previous_xp).level
         current_level = calculate_level_progress(award.total_xp).level
-        if current_level > previous_level:
-            await self._announce_level_up(
-                message.guild,
-                message.channel,
-                message.author,
-                current_level,
+        if current_level <= previous_level:
+            return
+        reward = await self._pay_level_reward(guild, member, previous_level, current_level)
+        await self._announce_level_up(guild, channel, member, current_level, reward=reward)
+
+    async def _pay_level_reward(
+        self,
+        guild: discord.Guild,
+        member: discord.abc.User,
+        previous_level: int,
+        current_level: int,
+    ) -> IncomeResult | None:
+        """Paga los yapdollars de los niveles alcanzados; `None` si no se pudo."""
+        gross = rewards_between(previous_level, current_level)
+        if self.economy is None or gross <= 0:
+            return None
+        try:
+            return await self.economy.pay_income(
+                guild.id, member.id, gross=gross, concept=f"nivel:{current_level}"
             )
+        except (OSError, sqlite3.Error, BalanceLimitError):
+            logger.exception(
+                "No se pudo pagar el premio de nivel %s a %s en el servidor %s",
+                current_level,
+                member.id,
+                guild.id,
+            )
+            return None
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
@@ -431,12 +624,22 @@ class MessageStats(commands.Cog):
         channel: discord.abc.Messageable,
         member: discord.abc.User,
         level: int,
+        *,
+        reward: IncomeResult | None = None,
     ) -> None:
-        """Publica el aviso en el mismo canal donde se ganó el nivel."""
+        """Publica el aviso en el canal donde se ganó el nivel, con el premio cobrado."""
+        text = (
+            f"¡{discord.utils.escape_markdown(member.display_name)} "
+            f"ha alcanzado el nivel **{level}**!"
+        )
+        if reward is not None:
+            text += (
+                f" {CURRENCY_EMOJI} +{format_amount(reward.net)}\n"
+                f"{tax_line(reward.gross, reward.tax, reward.rate)}"
+            )
         try:
             await channel.send(
-                f"¡{discord.utils.escape_markdown(member.display_name)} "
-                f"ha alcanzado el nivel **{level}**!",
+                text,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except (discord.Forbidden, discord.HTTPException):
@@ -605,7 +808,17 @@ class MessageStats(commands.Cog):
             self._scan_tasks.pop(guild_id, None)
 
 
+def is_voice_active(member: discord.Member) -> bool:
+    """Si un miembro cuenta para el XP de voz: persona, sin mute ni ensordecer."""
+    voice = member.voice
+    return (
+        not member.bot
+        and voice is not None
+        and not (voice.self_mute or voice.self_deaf or voice.mute or voice.deaf)
+    )
+
+
 async def setup(bot: commands.Bot) -> None:
     """Registra los comandos de estadísticas y el contador de mensajes en vivo."""
     repository = bot.message_stats
-    await bot.add_cog(MessageStats(bot, repository))
+    await bot.add_cog(MessageStats(bot, repository, getattr(bot, "economy", None)))

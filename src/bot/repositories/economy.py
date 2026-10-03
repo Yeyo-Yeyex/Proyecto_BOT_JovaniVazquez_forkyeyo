@@ -11,7 +11,10 @@ Modelo de datos:
   libro: siempre coincide con la suma de sus movimientos.
 - `economy_ledger`: una fila por movimiento (positivo o negativo) con su
   motivo y el saldo resultante. Permite auditar y revertir errores.
-- `economy_daily`: última recompensa diaria reclamada y racha actual.
+- `economy_daily`: último IMV (la recompensa diaria) reclamado y racha actual.
+- `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
+  retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
+  y, en el futuro, para la declaración anual.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -156,6 +159,19 @@ class EconomyRepository:
                     streak INTEGER NOT NULL,
                     PRIMARY KEY (guild_id, user_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS economy_tax_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    concept TEXT NOT NULL,
+                    gross INTEGER NOT NULL,
+                    withheld INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_tax_records_member
+                    ON economy_tax_records (guild_id, user_id, created_at);
                 """
             )
         finally:
@@ -284,7 +300,124 @@ class EconomyRepository:
         )
         return balance
 
-    # -- Recompensa diaria ---------------------------------------------------------
+    # -- Ingresos con retención -----------------------------------------------------
+
+    def _credit_income_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        """Ingresa `gross`, retiene lo que diga `withhold` y lo registra.
+
+        En el libro quedan dos movimientos, como en una nómina: el bruto
+        (`concept`) y la retención (`irpf:concept`).
+
+        Args:
+            withhold: Recibe `(bruto, ingresos de la ventana)` y devuelve la
+                retención en Y$. La regla vive en `bot.services.taxes`.
+            window_seconds: Ventana hacia atrás cuyos ingresos se pasan a
+                `withhold`.
+
+        Returns:
+            `(retención, saldo_final)`.
+        """
+        (recent,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND created_at > ?
+            """,
+            (guild_id, user_id, now - window_seconds),
+        ).fetchone()
+        tax = max(0, min(gross, withhold(gross, int(recent))))
+        entries = [LedgerEntry(gross, concept)]
+        if tax:
+            entries.append(LedgerEntry(-tax, f"irpf:{concept}"))
+        balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        connection.execute(
+            """
+            INSERT INTO economy_tax_records
+                (guild_id, user_id, created_at, concept, gross, withheld)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (guild_id, user_id, now, concept, gross, tax),
+        )
+        return tax, balance
+
+    async def credit_income(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        """Versión atómica e independiente de `_credit_income_in`.
+
+        Returns:
+            `(retención, saldo_final)`.
+        """
+        return await self._run(
+            self._credit_income_sync,
+            guild_id,
+            user_id,
+            gross,
+            concept,
+            now,
+            withhold,
+            window_seconds,
+        )
+
+    def _credit_income_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        with self._transaction() as connection:
+            return self._credit_income_in(
+                connection,
+                guild_id,
+                user_id,
+                gross=gross,
+                concept=concept,
+                now=now,
+                withhold=withhold,
+                window_seconds=window_seconds,
+            )
+
+    async def tax_collected(self, guild_id: int, since: float) -> int:
+        """Total retenido en el servidor desde `since` (epoch)."""
+        return await self._run(self._tax_collected_sync, guild_id, since)
+
+    def _tax_collected_sync(self, guild_id: int, since: float) -> int:
+        connection = self._connect()
+        try:
+            (total,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(withheld), 0) FROM economy_tax_records
+                WHERE guild_id = ? AND created_at >= ?
+                """,
+                (guild_id, since),
+            ).fetchone()
+            return int(total)
+        finally:
+            connection.close()
+
+    # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def claim_daily(
         self,
@@ -293,18 +426,25 @@ class EconomyRepository:
         *,
         now: float,
         decide: Callable[[DailyClaim | None], tuple[int, int] | None],
-    ) -> tuple[int, int] | None:
-        """Cobra la recompensa diaria de forma atómica.
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int, int] | None:
+        """Cobra el IMV de forma atómica, con su retención de IRPF.
 
         La regla (espera, racha y cantidad) la pone el servicio a través de
         `decide`: recibe el estado anterior y devuelve `(cantidad, racha)` o
         `None` si todavía no toca. Se evalúa dentro de la transacción para
         que dos `.daily` simultáneos no cobren dos veces.
 
+        `withhold` y `window_seconds` funcionan como en `credit_income`.
+
         Returns:
-            `(cantidad, saldo_final)` si se cobró; `None` si `decide` lo rechazó.
+            `(bruto, retención, saldo_final)` si se cobró; `None` si `decide`
+            lo rechazó.
         """
-        return await self._run(self._claim_daily_sync, guild_id, user_id, now, decide)
+        return await self._run(
+            self._claim_daily_sync, guild_id, user_id, now, decide, withhold, window_seconds
+        )
 
     def _claim_daily_sync(
         self,
@@ -312,14 +452,23 @@ class EconomyRepository:
         user_id: int,
         now: float,
         decide: Callable[[DailyClaim | None], tuple[int, int] | None],
-    ) -> tuple[int, int] | None:
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int, int] | None:
         with self._transaction() as connection:
             decision = decide(self._daily_state_in(connection, guild_id, user_id))
             if decision is None:
                 return None
             amount, streak = decision
-            balance = self._apply_in_transaction(
-                connection, guild_id, user_id, (LedgerEntry(amount, "daily"),)
+            tax, balance = self._credit_income_in(
+                connection,
+                guild_id,
+                user_id,
+                gross=amount,
+                concept="imv",
+                now=now,
+                withhold=withhold,
+                window_seconds=window_seconds,
             )
             connection.execute(
                 """
@@ -331,7 +480,7 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, now, streak),
             )
-            return amount, balance
+            return amount, tax, balance
 
     async def daily_state(self, guild_id: int, user_id: int) -> DailyClaim | None:
         """Devuelve la última recompensa diaria reclamada, si existe."""
@@ -367,6 +516,11 @@ class EconomyRepository:
 
     def _delete_guild_data_sync(self, guild_id: int) -> None:
         with self._transaction() as connection:
-            for table in ("economy_wallets", "economy_ledger", "economy_daily"):
+            for table in (
+                "economy_wallets",
+                "economy_ledger",
+                "economy_daily",
+                "economy_tax_records",
+            ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
