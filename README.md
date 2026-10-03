@@ -67,7 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `imv` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `imv` · `hacienda` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -116,14 +116,18 @@ python -m bot
     MIT de [imgen](https://github.com/DankMemer/imgen).
 - **Economía (yapdollars):** una sola moneda, ficticia y no comprable,
   para todo el bot. Cada miembro empieza con 1.000 Y$ por servidor y
-  `imv` (Ingreso Mínimo Vital, antes `daily`) paga 500 Y$ brutos más 100
-  por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
+  `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
+  más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
   pierde tras 48 h).
-- **IRPF:** el IMV y los premios por subir de nivel tributan. La retención
+- **IRPF y Hacienda:** los premios por subir de nivel tributan; el IMV está
+  exento, como el real (art. 7.y LIRPF). La retención
   proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
   la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
   por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
-  muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo movimiento queda en
+  muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
+  retenido entra en la cuenta del Estado (`user_id = 0` en
+  `economy_wallets`), y `hacienda` muestra a cualquiera su saldo, lo
+  recaudado este año y desde siempre, y quién más ha pagado. Todo movimiento queda en
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una

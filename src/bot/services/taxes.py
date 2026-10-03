@@ -1,17 +1,21 @@
 """Hacienda del bot: IRPF a la española sobre los ingresos en yapdollars.
 
 Primer bloque del sistema de impuestos. De momento solo calcula la retención
-de IRPF que se aplica al cobrar ingresos (el IMV y los premios por subir de
-nivel). Está pensado para crecer: la tabla `economy_tax_records` guarda cada
+de IRPF que se aplica al cobrar ingresos (los premios por subir de nivel; el
+IMV está exento, como el real, por el art. 7.y LIRPF). Lo retenido va a la
+cuenta del Estado (`STATE_ACCOUNT_ID` en `bot.repositories.economy`).
+
+Está pensado para crecer: la tabla `economy_tax_records` guarda cada
 ingreso con su retención, así que más adelante se puede hacer la declaración
 anual (cuota real del ejercicio frente a lo ya retenido) sin migrar datos.
 
 Cómo se calcula, imitando el sistema real:
 
 1. Los yapdollars se convierten a euros con `YAPDOLLARS_PER_EURO`. Con 10 Y$
-   por euro, alguien que cobra el IMV todos los días a racha máxima acaba el
-   año con unos 55.000 €, una renta media-alta: cae en los tramos del medio
-   de la escala, que es donde la retención se nota.
+   por euro, un ingreso diario del orden del IMV a racha máxima (1.500 Y$)
+   equivaldría a unos 55.000 € al año, así que las rentas del juego caen en
+   los tramos donde la escala real tiene sentido. Ajustar este valor cuando
+   haya más fuentes de ingresos sujetos.
 2. Se proyecta la renta anual a partir de lo cobrado en los últimos 30 días
    (incluido el cobro actual). Es la misma idea que las retenciones de una
    nómina: Hacienda estima tu renta del año y te retiene a cuenta.
@@ -25,8 +29,6 @@ Cómo se calcula, imitando el sistema real:
 
 Simplificaciones conocidas: no hay reducción por rendimientos del trabajo,
 ni mínimos familiares, ni límite excluyente de retención (art. 81 RIRPF).
-Y en la vida real el Ingreso Mínimo Vital está exento de IRPF (art. 7.y
-LIRPF); aquí tributa porque así es más divertido.
 """
 
 from __future__ import annotations

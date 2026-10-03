@@ -16,12 +16,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import discord
+
 from bot.repositories.economy import (
+    STATE_ACCOUNT_ID,
     BalanceLimitError,
     DailyClaim,
     EconomyRepository,
     InsufficientFundsError,
     LedgerEntry,
+    Treasury,
 )
 from bot.services.taxes import (
     PROJECTION_WINDOW_SECONDS,
@@ -40,10 +44,13 @@ __all__ = [
     "IncomeResult",
     "InsufficientFundsError",
     "STARTING_BALANCE",
+    "STATE_ACCOUNT_ID",
+    "Treasury",
     "format_amount",
     "is_all_in",
     "parse_amount",
     "tax_line",
+    "treasury_embed",
 ]
 
 CURRENCY_NAME = "yapdollars"
@@ -54,7 +61,7 @@ CURRENCY_EMOJI = "🪙"
 STARTING_BALANCE = 1_000
 
 #: IMV (recompensa diaria): base más un extra por cada día seguido, con tope.
-#: Son cantidades brutas: al cobrar se retiene IRPF (ver `bot.services.taxes`).
+#: Exento de IRPF, como el real (art. 7.y LIRPF).
 DAILY_BASE = 500
 DAILY_STREAK_BONUS = 100
 DAILY_MAX_BONUS = 1_000
@@ -73,7 +80,7 @@ def format_amount(amount: int) -> str:
 def tax_line(gross: int, tax: int, rate: float) -> str:
     """Línea pequeña (subtexto de Discord) con lo que se queda Hacienda.
 
-    La usan el IMV, los premios por nivel y cualquier cobro con retención.
+    La usan los premios por nivel y cualquier otro cobro con retención.
     """
     if tax <= 0:
         return (
@@ -84,6 +91,33 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
         f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
         f"({format_rate(rate)} de {format_amount(gross)})."
     )
+
+
+def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> discord.Embed:
+    """Tarjeta pública de la cuenta del Estado.
+
+    Args:
+        names: Nombre a mostrar de cada `user_id` de `top_contributors`.
+    """
+    embed = discord.Embed(
+        title="🏛️ Hacienda",
+        description=(
+            f"Saldo de la cuenta del Estado: **{format_amount(treasury.balance)}**\n"
+            f"Recaudado en {year}: **{format_amount(treasury.collected_since)}**\n"
+            f"Recaudado desde siempre: {format_amount(treasury.collected_total)}"
+        ),
+        color=discord.Color.from_rgb(170, 21, 27),
+    )
+    if treasury.top_contributors:
+        medals = ("🥇", "🥈", "🥉")
+        lines = [
+            f"{medals[i] if i < len(medals) else f'{i + 1}.'} {names[user_id]} · "
+            f"{format_amount(paid)}"
+            for i, (user_id, paid) in enumerate(treasury.top_contributors)
+        ]
+        embed.add_field(name="Quién más ha pagado", value="\n".join(lines), inline=False)
+    embed.set_footer(text=f"Dinero en manos de {TAX_COLLECTOR}. Ya veremos qué hace con él.")
+    return embed
 
 
 _ALL_IN_WORDS = {"all", "allin", "all-in", "todo", "max"}
@@ -152,9 +186,7 @@ class DailyResult:
 
     Attributes:
         claimed: Si se ha cobrado ahora.
-        amount: Cantidad bruta cobrada (0 si no se cobró).
-        tax: Retención de IRPF sobre `amount`.
-        rate: Tipo de retención aplicado (0–1).
+        amount: Cantidad cobrada (0 si no se cobró).
         balance: Saldo tras la operación.
         streak: Racha de días seguidos tras la operación.
         next_claim_at: Momento (epoch) desde el que se puede volver a cobrar.
@@ -165,12 +197,10 @@ class DailyResult:
     balance: int
     streak: int
     next_claim_at: float
-    tax: int = 0
-    rate: float = 0.0
 
 
 def daily_amount(streak: int) -> int:
-    """Cantidad bruta del IMV para una racha (1 = primer día)."""
+    """Cantidad del IMV para una racha (1 = primer día)."""
     return DAILY_BASE + min((streak - 1) * DAILY_STREAK_BONUS, DAILY_MAX_BONUS)
 
 
@@ -279,9 +309,9 @@ class EconomyService:
         )
         return IncomeResult(gross=gross, tax=tax, rate=tax / gross, balance=balance)
 
-    async def tax_collected(self, guild_id: int, since: float) -> int:
-        """Lo que lleva retenido Hacienda en el servidor desde `since`."""
-        return await self.repository.tax_collected(guild_id, since)
+    async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
+        """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""
+        return await self.repository.treasury(guild_id, since, top)
 
     async def claim_daily(self, guild_id: int, user_id: int) -> DailyResult:
         """Cobra el IMV si ya toca; si no, informa de cuándo."""
@@ -297,16 +327,9 @@ class EconomyService:
                 streak = previous.streak + 1 if elapsed <= DAILY_STREAK_WINDOW_SECONDS else 1
             return daily_amount(streak), streak
 
-        claimed = await self.repository.claim_daily(
-            guild_id,
-            user_id,
-            now=now,
-            decide=decide,
-            withhold=self._withhold,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
-        )
+        claimed = await self.repository.claim_daily(guild_id, user_id, now=now, decide=decide)
         if claimed is not None:
-            amount, tax, balance = claimed
+            amount, balance = claimed
             state = await self.repository.daily_state(guild_id, user_id)
             assert state is not None  # se acaba de escribir en la misma operación
             return DailyResult(
@@ -315,8 +338,6 @@ class EconomyService:
                 balance=balance,
                 streak=state.streak,
                 next_claim_at=now + DAILY_COOLDOWN_SECONDS,
-                tax=tax,
-                rate=tax / amount,
             )
 
         state = await self.repository.daily_state(guild_id, user_id)

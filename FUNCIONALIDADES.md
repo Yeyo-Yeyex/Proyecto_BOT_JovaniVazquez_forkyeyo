@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `imv`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `imv`, `hacienda`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -248,8 +248,10 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 - Una única moneda para todo el bot, los **yapdollars** (`Y$`). Es ficticia: no se compra con dinero real ni se canjea por nada con valor económico. Mantenerlo así es una condición de diseño, porque una moneda comprable o canjeable convertiría el casino en juego con premio en el sentido legal (art. 3.a de la Ley 13/2011, de regulación del juego).
 - Saldo por servidor y usuario. El primer uso abre el monedero con 1.000 Y$.
-- `imv` (Ingreso Mínimo Vital, antes `daily`): 500 Y$ brutos más 100 por cada día seguido, con tope de 1.500 Y$. Se puede cobrar cada 20 h; la racha se pierde si pasan más de 48 h.
-- IRPF: el IMV y los premios por nivel llevan retención. Se proyecta la renta anual con los ingresos de los últimos 30 días (10 Y$ = 1 €) y se aplican la escala estatal (art. 63.1 LIRPF) y la de Canarias (Ley 9/2025), descontando los mínimos personales (art. 57 LIRPF y art. 18 quater del D. Leg. 1/2009 de Canarias). El tipo es cuota / base con dos decimales (art. 86 RIRPF). Cada cobro muestra lo que se lleva Perro Sanxe. Cada ingreso queda en `economy_tax_records` para poder hacer más adelante la declaración anual. En la realidad el IMV está exento (art. 7.y LIRPF); aquí tributa a propósito.
+- `imv` (Ingreso Mínimo Vital, antes `daily`): exento de IRPF como el real (art. 7.y LIRPF). Paga 500 Y$ más 100 por cada día seguido, con tope de 1.500 Y$. Se puede cobrar cada 20 h; la racha se pierde si pasan más de 48 h.
+- IRPF: los premios por nivel llevan retención. Se proyecta la renta anual con los ingresos de los últimos 30 días (10 Y$ = 1 €) y se aplican la escala estatal (art. 63.1 LIRPF) y la de Canarias (Ley 9/2025), descontando los mínimos personales (art. 57 LIRPF y art. 18 quater del D. Leg. 1/2009 de Canarias). El tipo es cuota / base con dos decimales (art. 86 RIRPF). Cada cobro muestra lo que se lleva Perro Sanxe. Cada ingreso queda en `economy_tax_records` para poder hacer más adelante la declaración anual.
+- Cuenta del Estado: todo lo retenido entra en un monedero propio del servidor (`user_id = 0`), que empieza a 0 y tiene su propio libro de movimientos. Qué se hace con ese dinero está por decidir.
+- `hacienda`: muestra a cualquiera el saldo del Estado, lo recaudado este año y desde siempre, y los 5 que más han pagado.
 - `saldo [miembro]`: muestra el saldo.
 - Cualquier función que dé o quite dinero (juegos, tienda, premios futuros) debe hacerlo a través de `EconomyService`. Cada movimiento se guarda en un libro con su motivo y el saldo resultante, y se aplica en una transacción que impide saldos negativos y dobles gastos.
 

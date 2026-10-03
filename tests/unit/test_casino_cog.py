@@ -526,3 +526,28 @@ async def test_comando_con_varias_apuestas_sin_saldo_avisa_del_total(tmp_path: P
 
     send.assert_not_awaited()
     assert "1.200 Y$" in send_error.await_args.args[0]
+
+
+async def test_imv_avisa_de_que_esta_exento(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    responder = RecordingResponder()
+    user = make_user()
+    user.display_avatar.url = "https://example.invalid/a.png"
+
+    await cog._daily_impl(responder, user)  # type: ignore[arg-type]
+
+    assert "exento" in responder.sent[0]["embed"].description
+
+
+async def test_hacienda_muestra_la_cuenta_del_estado(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    await cog.economy.pay_income(1, 10, gross=30_000, concept="nivel:20")
+    responder = RecordingResponder()
+    responder.guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+
+    await cog._hacienda_impl(responder)  # type: ignore[arg-type]
+
+    embed = responder.sent[0]["embed"]
+    assert embed.title == "🏛️ Hacienda"
+    assert "Quién más ha pagado" in embed.fields[0].name
+    assert "<@10>" in embed.fields[0].value

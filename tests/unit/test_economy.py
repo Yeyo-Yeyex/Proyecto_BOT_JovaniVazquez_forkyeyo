@@ -19,6 +19,7 @@ from bot.services.economy import (
     DAILY_COOLDOWN_SECONDS,
     DAILY_STREAK_WINDOW_SECONDS,
     STARTING_BALANCE,
+    STATE_ACCOUNT_ID,
     EconomyService,
     daily_amount,
     format_amount,
@@ -286,30 +287,31 @@ def ledger_reasons(tmp_path: Path, user_id: int = USER) -> list[tuple[str, int]]
     return [(str(reason), int(delta)) for reason, delta in rows]
 
 
-async def test_imv_retiene_irpf_cuando_la_renta_reciente_es_alta(tmp_path: Path) -> None:
+async def test_imv_esta_exento_aunque_la_renta_sea_alta(tmp_path: Path) -> None:
     clock = FakeClock()
     service = await make_service(tmp_path, clock)
-    # Un mes de ingresos previos sube la renta proyectada.
     await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
+    before = await service.treasury(GUILD, since=0)
     clock.now += 60
 
     result = await service.claim_daily(GUILD, USER)
 
     assert result.claimed
-    assert result.tax > 0
-    assert 0 < result.rate < 0.5
     assert ("imv", daily_amount(1)) in ledger_reasons(tmp_path)
-    assert ("irpf:imv", -result.tax) in ledger_reasons(tmp_path)
-    assert ledger_sum(tmp_path) == result.balance
+    assert not any(reason == "irpf:imv" for reason, _ in ledger_reasons(tmp_path))
+    assert (await service.treasury(GUILD, since=0)).balance == before.balance
 
 
-async def test_primer_imv_de_alguien_nuevo_no_paga_irpf(tmp_path: Path) -> None:
-    service = await make_service(tmp_path)
+async def test_el_imv_no_cuenta_para_la_renta_que_tributa(tmp_path: Path) -> None:
+    clock = FakeClock()
+    service = await make_service(tmp_path, clock)
+    for _ in range(30):
+        await service.claim_daily(GUILD, USER)
+        clock.now += DAILY_COOLDOWN_SECONDS
 
-    result = await service.claim_daily(GUILD, USER)
+    result = await service.pay_income(GUILD, USER, gross=500, concept="nivel:2")
 
     assert result.tax == 0
-    assert result.balance == STARTING_BALANCE + daily_amount(1)
 
 
 async def test_ingresos_de_hace_mas_de_30_dias_no_cuentan(tmp_path: Path) -> None:
@@ -323,13 +325,31 @@ async def test_ingresos_de_hace_mas_de_30_dias_no_cuentan(tmp_path: Path) -> Non
     assert result.tax == 0
 
 
-async def test_recaudacion_del_servidor(tmp_path: Path) -> None:
+async def test_lo_retenido_va_a_la_cuenta_del_estado(tmp_path: Path) -> None:
     service = await make_service(tmp_path)
     first = await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
-    second = await service.pay_income(GUILD, USER + 1, gross=30_000, concept="nivel:20")
+    second = await service.pay_income(GUILD, USER + 1, gross=60_000, concept="nivel:25")
 
-    assert await service.tax_collected(GUILD, since=0) == first.tax + second.tax > 0
-    assert await service.tax_collected(GUILD + 1, since=0) == 0
+    treasury = await service.treasury(GUILD, since=0)
+
+    assert first.tax > 0 and second.tax > first.tax
+    assert treasury.balance == treasury.collected_total == first.tax + second.tax
+    assert treasury.top_contributors == ((USER + 1, second.tax), (USER, first.tax))
+    # La cuenta del Estado abre a 0, sin saldo de bienvenida, y cuadra con su libro.
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == treasury.balance
+    assert (await service.treasury(GUILD + 1, since=0)).balance == 0
+
+
+async def test_recaudacion_desde_una_fecha(tmp_path: Path) -> None:
+    clock = FakeClock()
+    service = await make_service(tmp_path, clock)
+    old = await service.pay_income(GUILD, USER, gross=30_000, concept="nivel:20")
+    clock.now += 1_000
+
+    treasury = await service.treasury(GUILD, since=clock.now)
+
+    assert treasury.collected_total == old.tax
+    assert treasury.collected_since == 0
 
 
 def test_linea_de_impuestos() -> None:

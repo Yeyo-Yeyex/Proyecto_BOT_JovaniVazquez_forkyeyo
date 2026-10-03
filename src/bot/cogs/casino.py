@@ -1,4 +1,4 @@
-"""Casino y economía: `ruleta`, `saldo` e `imv` (la recompensa diaria).
+"""Casino y economía: `ruleta`, `saldo`, `imv` (la recompensa diaria) y `hacienda`.
 
 Todo el dinero se mueve con `EconomyService` (`bot.economy`), que es la
 misma economía que usará cualquier juego o sistema futuro. Este cog solo
@@ -25,6 +25,7 @@ import random
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -41,8 +42,9 @@ from bot.services.economy import (
     format_amount,
     is_all_in,
     parse_amount,
-    tax_line,
+    treasury_embed,
 )
+from bot.services.levels import TIMEZONE
 from bot.services.roulette import (
     COLOR_EMOJI,
     OUTSIDE_BETS,
@@ -60,6 +62,7 @@ from bot.services.roulette import (
     pretty,
 )
 from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
+from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -885,11 +888,12 @@ class Casino(commands.Cog):
         )
         embed = discord.Embed(
             description=(
-                f"# {CURRENCY_EMOJI} +{format_amount(result.amount - result.tax)}\n"
+                f"# {CURRENCY_EMOJI} +{format_amount(result.amount)}\n"
                 f"{streak} · Saldo: **{format_amount(result.balance)}**\n"
-                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))} "
-                f"brutos. Si pasan más de 48 h, la racha se pierde.\n"
-                f"{tax_line(result.amount, result.tax, result.rate)}"
+                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}. "
+                f"Si pasan más de 48 h, la racha se pierde.\n"
+                f"-# 🐶 {TAX_COLLECTOR} no puede tocarlo: el IMV está exento de IRPF "
+                "(art. 7.y LIRPF)."
             ),
             color=COLOR_WIN,
         )
@@ -901,7 +905,7 @@ class Casino(commands.Cog):
     )
     @app_commands.guild_only()
     async def imv(self, interaction: discord.Interaction) -> None:
-        """Cobra el IMV; cada día seguido paga más (hasta un tope), menos IRPF."""
+        """Cobra el IMV; cada día seguido paga más (hasta un tope). Exento de IRPF."""
         await self._daily_impl(InteractionResponder(interaction), interaction.user)
 
     @commands.command(name="imv")
@@ -909,6 +913,41 @@ class Casino(commands.Cog):
     async def imv_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.imv`) de `/imv`."""
         await self._daily_impl(ContextResponder(ctx), ctx.author)
+
+    # -- Hacienda ------------------------------------------------------------------
+
+    async def _hacienda_impl(self, responder: CommandResponder) -> None:
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("La economía solo funciona dentro de un servidor.")
+            return
+        now = datetime.now(TIMEZONE)
+        year_start = datetime(now.year, 1, 1, tzinfo=TIMEZONE).timestamp()
+        treasury = await self.economy.treasury(guild.id, since=year_start)
+        names = {}
+        for user_id, _paid in treasury.top_contributors:
+            member = guild.get_member(user_id)
+            names[user_id] = (
+                discord.utils.escape_markdown(member.display_name)
+                if member is not None
+                else f"<@{user_id}>"
+            )
+        await responder.send(
+            embed=treasury_embed(treasury, year=now.year, names=names),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @app_commands.command(name="hacienda", description="Cuánto ha recaudado el Estado.")
+    @app_commands.guild_only()
+    async def hacienda(self, interaction: discord.Interaction) -> None:
+        """Muestra la cuenta del Estado: saldo, recaudación y quién más paga."""
+        await self._hacienda_impl(InteractionResponder(interaction))
+
+    @commands.command(name="hacienda")
+    @commands.guild_only()
+    async def hacienda_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.hacienda`) de `/hacienda`."""
+        await self._hacienda_impl(ContextResponder(ctx))
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:

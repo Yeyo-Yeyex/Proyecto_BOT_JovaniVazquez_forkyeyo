@@ -11,7 +11,10 @@ Modelo de datos:
   libro: siempre coincide con la suma de sus movimientos.
 - `economy_ledger`: una fila por movimiento (positivo o negativo) con su
   motivo y el saldo resultante. Permite auditar y revertir errores.
-- `economy_daily`: último IMV (la recompensa diaria) reclamado y racha actual.
+- `economy_daily`: último IMV (la recompensa diaria, exenta de IRPF)
+  reclamado y racha actual.
+- `economy_wallets` con `user_id = STATE_ACCOUNT_ID`: la cuenta del Estado,
+  donde acaba todo lo recaudado. Empieza en 0, no con el saldo de bienvenida.
 - `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
   retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
   y, en el futuro, para la declaración anual.
@@ -36,6 +39,11 @@ T = TypeVar("T")
 # Límite de seguridad muy por debajo del máximo de INTEGER en SQLite (2^63).
 # Ningún uso normal se acerca; existe para que una racha absurda no desborde.
 MAX_BALANCE = 10**15
+
+#: `user_id` de la cuenta del Estado en `economy_wallets`. Ningún usuario de
+#: Discord tiene id 0, así que no choca con nadie. Recibe todo lo que se
+#: recauda; qué se hace con ese dinero está por decidir.
+STATE_ACCOUNT_ID = 0
 
 
 class InsufficientFundsError(Exception):
@@ -73,6 +81,24 @@ class DailyClaim:
 
     last_claimed_at: float
     streak: int
+
+
+@dataclass(frozen=True, slots=True)
+class Treasury:
+    """Resumen de la cuenta del Estado de un servidor.
+
+    Attributes:
+        balance: Saldo actual de la cuenta.
+        collected_total: Todo lo recaudado desde siempre.
+        collected_since: Lo recaudado desde el instante pedido (p. ej. el año).
+        top_contributors: `(user_id, total retenido)` de quienes más han
+            pagado, de más a menos.
+    """
+
+    balance: int
+    collected_total: int
+    collected_since: int
+    top_contributors: tuple[tuple[int, int], ...]
 
 
 class EconomyRepository:
@@ -317,7 +343,8 @@ class EconomyRepository:
         """Ingresa `gross`, retiene lo que diga `withhold` y lo registra.
 
         En el libro quedan dos movimientos, como en una nómina: el bruto
-        (`concept`) y la retención (`irpf:concept`).
+        (`concept`) y la retención (`irpf:concept`). La retención entra en la
+        cuenta del Estado en la misma transacción.
 
         Args:
             withhold: Recibe `(bruto, ingresos de la ventana)` y devuelve la
@@ -340,6 +367,8 @@ class EconomyRepository:
         if tax:
             entries.append(LedgerEntry(-tax, f"irpf:{concept}"))
         balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        if tax:
+            self._credit_state_in(connection, guild_id, tax, f"irpf:{concept}")
         connection.execute(
             """
             INSERT INTO economy_tax_records
@@ -399,21 +428,54 @@ class EconomyRepository:
                 window_seconds=window_seconds,
             )
 
-    async def tax_collected(self, guild_id: int, since: float) -> int:
-        """Total retenido en el servidor desde `since` (epoch)."""
-        return await self._run(self._tax_collected_sync, guild_id, since)
+    def _credit_state_in(
+        self, connection: sqlite3.Connection, guild_id: int, amount: int, reason: str
+    ) -> None:
+        """Ingresa `amount` en la cuenta del Estado (se abre a 0 si no existía)."""
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance)
+            VALUES (?, ?, 0)
+            """,
+            (guild_id, STATE_ACCOUNT_ID),
+        )
+        self._apply_in_transaction(
+            connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(amount, reason),)
+        )
 
-    def _tax_collected_sync(self, guild_id: int, since: float) -> int:
+    async def treasury(self, guild_id: int, since: float, top: int) -> Treasury:
+        """Saldo y recaudación de la cuenta del Estado del servidor."""
+        return await self._run(self._treasury_sync, guild_id, since, top)
+
+    def _treasury_sync(self, guild_id: int, since: float, top: int) -> Treasury:
         connection = self._connect()
         try:
-            (total,) = connection.execute(
-                """
-                SELECT COALESCE(SUM(withheld), 0) FROM economy_tax_records
-                WHERE guild_id = ? AND created_at >= ?
-                """,
-                (guild_id, since),
+            row = connection.execute(
+                "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+                (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
-            return int(total)
+            total, recent = connection.execute(
+                """
+                SELECT COALESCE(SUM(withheld), 0),
+                       COALESCE(SUM(CASE WHEN created_at >= ? THEN withheld END), 0)
+                FROM economy_tax_records WHERE guild_id = ?
+                """,
+                (since, guild_id),
+            ).fetchone()
+            contributors = connection.execute(
+                """
+                SELECT user_id, SUM(withheld) AS paid FROM economy_tax_records
+                WHERE guild_id = ? GROUP BY user_id HAVING paid > 0
+                ORDER BY paid DESC, user_id ASC LIMIT ?
+                """,
+                (guild_id, top),
+            ).fetchall()
+            return Treasury(
+                balance=int(row["balance"]) if row else 0,
+                collected_total=int(total),
+                collected_since=int(recent),
+                top_contributors=tuple((int(r["user_id"]), int(r["paid"])) for r in contributors),
+            )
         finally:
             connection.close()
 
@@ -426,25 +488,21 @@ class EconomyRepository:
         *,
         now: float,
         decide: Callable[[DailyClaim | None], tuple[int, int] | None],
-        withhold: Callable[[int, int], int],
-        window_seconds: float,
-    ) -> tuple[int, int, int] | None:
-        """Cobra el IMV de forma atómica, con su retención de IRPF.
+    ) -> tuple[int, int] | None:
+        """Cobra el IMV de forma atómica. Está exento de IRPF (art. 7.y LIRPF).
 
         La regla (espera, racha y cantidad) la pone el servicio a través de
         `decide`: recibe el estado anterior y devuelve `(cantidad, racha)` o
         `None` si todavía no toca. Se evalúa dentro de la transacción para
         que dos `.daily` simultáneos no cobren dos veces.
 
-        `withhold` y `window_seconds` funcionan como en `credit_income`.
+        Al estar exento no deja registro en `economy_tax_records`: no cuenta
+        para la renta con la que se calculan las retenciones.
 
         Returns:
-            `(bruto, retención, saldo_final)` si se cobró; `None` si `decide`
-            lo rechazó.
+            `(cantidad, saldo_final)` si se cobró; `None` si `decide` lo rechazó.
         """
-        return await self._run(
-            self._claim_daily_sync, guild_id, user_id, now, decide, withhold, window_seconds
-        )
+        return await self._run(self._claim_daily_sync, guild_id, user_id, now, decide)
 
     def _claim_daily_sync(
         self,
@@ -452,23 +510,14 @@ class EconomyRepository:
         user_id: int,
         now: float,
         decide: Callable[[DailyClaim | None], tuple[int, int] | None],
-        withhold: Callable[[int, int], int],
-        window_seconds: float,
-    ) -> tuple[int, int, int] | None:
+    ) -> tuple[int, int] | None:
         with self._transaction() as connection:
             decision = decide(self._daily_state_in(connection, guild_id, user_id))
             if decision is None:
                 return None
             amount, streak = decision
-            tax, balance = self._credit_income_in(
-                connection,
-                guild_id,
-                user_id,
-                gross=amount,
-                concept="imv",
-                now=now,
-                withhold=withhold,
-                window_seconds=window_seconds,
+            balance = self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(amount, "imv"),)
             )
             connection.execute(
                 """
@@ -480,7 +529,7 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, now, streak),
             )
-            return amount, tax, balance
+            return amount, balance
 
     async def daily_state(self, guild_id: int, user_id: int) -> DailyClaim | None:
         """Devuelve la última recompensa diaria reclamada, si existe."""
