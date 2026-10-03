@@ -174,7 +174,7 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 
 ### 6.2. Efectos de Dank Memer
 
-Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; para no inundar la ayuda van ocultos y se listan con `.memes` (o `.memes <efecto>` para ver el uso de uno).
+Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.help` los lista solo por nombre y agrupados por tipo (con una línea por efecto no cabrían en un embed); `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
 
 Lectura de argumentos:
 

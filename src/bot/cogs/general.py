@@ -34,6 +34,16 @@ HELP_CATEGORIES: dict[str, str] = {
 }
 OTHER_CATEGORY = "📦 Otros"
 
+# Clave de `Command.extras` para los comandos que la ayuda lista en bloque,
+# solo por nombre, bajo el título indicado (los 108 efectos de imagen: con
+# una línea cada uno no cabrían en los 6000 caracteres de un embed).
+COMPACT_GROUP_KEY = "help_group"
+# Clave opcional de `Command.extras`: posición del grupo en la ayuda (menor, antes).
+COMPACT_ORDER_KEY = "help_order"
+
+# Máximo de caracteres de un campo de embed (límite de Discord).
+FIELD_LIMIT = 1024
+
 
 def _format_arguments(bot: commands.Bot, command: commands.Command) -> str:
     """Devuelve los argumentos como `<obligatorio> [opcional]`, o cadena vacía.
@@ -65,8 +75,9 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
     Los comandos se leen de `bot.commands` y `bot.tree` en vez de mantener
     una lista escrita a mano, para que la ayuda nunca se desincronice de lo
     realmente registrado. Como `/nombre` y `.nombre` son idénticos, cada
-    comando aparece una sola vez. Los comandos ocultos (los 108 efectos de
-    imagen) no se listan aquí: tienen su propia lista en `.memes`.
+    comando aparece una sola vez. Los que declaran `extras["help_group"]`
+    (los efectos de imagen) se listan solo por nombre, agrupados, justo
+    después de su categoría.
     """
     prefix = _text_prefix(bot)
     embed = discord.Embed(
@@ -78,21 +89,47 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
         color=EMBED_COLOR,
     )
 
-    by_category: dict[str, list[str]] = {}
+    visible = [c for c in bot.commands if not c.hidden]
+    detailed = [c for c in visible if COMPACT_GROUP_KEY not in c.extras]
+    groups: dict[str, list[str]] = {}
+    for command in sorted(
+        (c for c in visible if COMPACT_GROUP_KEY in c.extras),
+        key=lambda c: (c.extras.get(COMPACT_ORDER_KEY, 0), c.name),
+    ):
+        groups.setdefault(command.extras[COMPACT_GROUP_KEY], []).append(command.name)
+
     for cog_name, title in (*HELP_CATEGORIES.items(), (None, OTHER_CATEGORY)):
+        lines = []
         for command in sorted(
-            (c for c in bot.commands if not c.hidden and _category_key(c) == cog_name),
+            (c for c in detailed if _category_key(c) == cog_name),
             key=lambda c: _definition_index(bot, c),
         ):
             arguments = _format_arguments(bot, command)
             arguments = f" `{arguments}`" if arguments else ""
-            line = f"**{command.name}**{arguments} — {_describe(bot, command)}"
-            by_category.setdefault(title, []).append(line)
-
-    for title, lines in by_category.items():
-        embed.add_field(name=title, value="\n".join(lines), inline=False)
+            lines.append(f"**{command.name}**{arguments} — {_describe(bot, command)}")
+        if lines:
+            embed.add_field(name=title, value="\n".join(lines), inline=False)
+        if cog_name == "Images":
+            for group, names in groups.items():
+                for value in _chunk_names(names):
+                    embed.add_field(name=f"{group} ({len(names)})", value=value, inline=False)
 
     return embed
+
+
+def _chunk_names(names: list[str]) -> list[str]:
+    """Une los nombres con ` · ` en trozos que caben en un campo de embed."""
+    chunks: list[str] = []
+    current = ""
+    for name in names:
+        candidate = f"{current} · {name}" if current else name
+        if len(candidate) > FIELD_LIMIT:
+            chunks.append(current)
+            candidate = name
+        current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _text_prefix(bot: commands.Bot) -> str:
