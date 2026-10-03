@@ -67,6 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
+  | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
@@ -119,6 +120,14 @@ python -m bot
   `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
   más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
   pierde tras 48 h).
+- **Cumpleaños:** `cumple 14/02` guarda el tuyo (solo día y mes; una vez
+  puesto, solo un administrador lo cambia) y `cumples` lista los próximos.
+  Ese día (hora canaria) el bot lo anuncia en `#chat-general` y el
+  cumpleañero recibe 3.000 Y$. Felicitarle, con el botón 🎉 o con un mensaje
+  que le mencione o le responda y suene a felicitación, da 500 Y$ a quien
+  felicita y 100 Y$ más al cumpleañero, una vez por persona. Si existe un rol
+  llamado `🎂 Cumpleañero`, el bot se lo pone durante el día (necesita
+  **Gestionar roles**). Los regalos no tributan IRPF.
 - **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del

@@ -14,6 +14,7 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.message_stats import MessageStatsRepository
@@ -34,6 +35,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.casino",
     "bot.cogs.blackjack",
     "bot.cogs.renta",
+    "bot.cogs.birthdays",
     "bot.cogs.fun",
     "bot.cogs.admin",
 )
@@ -75,6 +77,7 @@ class BotClient(commands.Bot):
             EconomyRepository(database_path, starting_balance=STARTING_BALANCE)
         )
         self.casino_channel_ids = casino_channel_ids
+        self.birthdays = BirthdayRepository(database_path)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -96,6 +99,7 @@ class BotClient(commands.Bot):
         await self.message_stats.initialize()
         await self.message_stats.recover_interrupted_imports()
         await self.economy.repository.initialize()
+        await self.birthdays.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)

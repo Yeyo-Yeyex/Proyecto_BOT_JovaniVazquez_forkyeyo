@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `imv`, `hacienda`, `renta`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -255,6 +255,15 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - `hacienda`: muestra a cualquiera el saldo del Estado, lo recaudado este año y desde siempre, y los 5 que más han pagado.
 - `saldo [miembro]`: muestra el saldo.
 - Cualquier función que dé o quite dinero (juegos, tienda, premios futuros) debe hacerlo a través de `EconomyService`. Cada movimiento se guarda en un libro con su motivo y el saldo resultante, y se aplica en una transacción que impide saldos negativos y dobles gastos.
+
+### 6 ter.1 bis. Cumpleaños
+
+- `cumple [dd/mm] [miembro]`: sin argumentos muestra el tuyo; con fecha lo guarda; con miembro, consulta el suyo. Solo se guarda día y mes. Una vez puesto, solo un administrador puede cambiarlo (o ponérselo a otro), para que nadie cobre el regalo varias veces.
+- `cumples`: próximos 10 cumpleaños del servidor.
+- El día del cumpleaños (hora canaria; el 29/02 se celebra el 28/02 en años no bisiestos) el bot lo anuncia en `#chat-general` (o en el canal del sistema) con un botón 🎉 Felicitar y le da 3.000 Y$ al cumpleañero. Se comprueba cada 5 minutos y se guarda qué cumpleaños ya se celebraron, así que un reinicio no paga dos veces.
+- Felicitar (botón o mensaje que mencione o responda al cumpleañero y suene a felicitación) da 500 Y$ a quien felicita y 100 Y$ al cumpleañero, una vez por persona y año. El bot reacciona 🎉 a los mensajes que cuentan.
+- Si el servidor tiene un rol llamado `🎂 Cumpleañero`, el bot se lo pone durante el día y lo quita al siguiente. No crea el rol.
+- Los regalos no tributan IRPF; cuando exista el Impuesto de Sucesiones y Donaciones se aplicará aquí.
 
 ### 6 ter.2. Ruleta americana
 
