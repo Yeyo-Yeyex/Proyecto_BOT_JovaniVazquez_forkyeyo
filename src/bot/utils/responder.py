@@ -49,8 +49,14 @@ class CommandResponder(abc.ABC):
         """Informa de un error de forma visible solo para quien invocó el comando."""
 
     @abc.abstractmethod
-    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
-        """Marca el inicio de una operación que puede tardar."""
+    async def start_progress(
+        self, placeholder: str = "🔎 Buscando...", *, ephemeral: bool = False
+    ) -> None:
+        """Marca el inicio de una operación que puede tardar.
+
+        Con `ephemeral=True`, en comandos de aplicación tanto el aviso como el
+        resultado final (`finish`) solo los ve quien invocó el comando.
+        """
 
     @abc.abstractmethod
     async def finish(
@@ -96,10 +102,12 @@ class InteractionResponder(CommandResponder):
     async def send_error(self, content: str) -> None:
         await self.send(content, ephemeral=True)
 
-    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
+    async def start_progress(
+        self, placeholder: str = "🔎 Buscando...", *, ephemeral: bool = False
+    ) -> None:
         # Discord no admite un texto de "cargando" personalizado para
         # comandos de aplicación; `defer` ya muestra el indicador nativo.
-        await self._interaction.response.defer(thinking=True)
+        await self._interaction.response.defer(thinking=True, ephemeral=ephemeral)
 
     async def finish(
         self,
@@ -140,7 +148,12 @@ class ContextResponder(CommandResponder):
     async def send_error(self, content: str) -> None:
         await self._ctx.send(content)
 
-    async def start_progress(self, placeholder: str = "🔎 Buscando...") -> None:
+    async def start_progress(
+        self,
+        placeholder: str = "🔎 Buscando...",
+        *,
+        ephemeral: bool = False,  # noqa: ARG002 - los mensajes de texto no admiten ocultarse.
+    ) -> None:
         self._progress_message = await self._ctx.send(placeholder)
 
     async def finish(

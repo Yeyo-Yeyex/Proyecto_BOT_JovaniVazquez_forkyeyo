@@ -27,6 +27,7 @@ EMBED_COLOR = discord.Color.blurple()
 # nuevo que no esté aquí aparece igualmente, al final, como "Otros".
 HELP_CATEGORIES: dict[str, str] = {
     "Music": "🎵 Música",
+    "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen",
     "MessageStats": "📊 Niveles",
     "General": "⚙️ General",

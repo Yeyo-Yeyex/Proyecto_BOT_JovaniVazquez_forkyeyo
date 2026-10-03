@@ -141,6 +141,8 @@ Los comandos de texto con prefijo requieren el intent privilegiado **Message Con
 - Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `stop` es la única acción que corta ese encadenamiento.
 - Duración máxima por pista: 30 minutos (`MAX_TRACK_DURATION_SECONDS`); se rechazan también los directos, al no tener duración conocida. Tamaño máximo de cola: 50 pistas por servidor (`MAX_QUEUE_SIZE`).
 - El bot abandona el canal de voz automáticamente si se queda sin oyentes humanos, o tras 5 minutos de inactividad sin pistas en cola (`IDLE_DISCONNECT_SECONDS`).
+- El bot se conecta ensordecido (`self_deaf=True`): Discord deja de reenviarle el audio de los participantes, que no usa, y el tráfico de bajada en voz cae a casi cero.
+- Si al pedir música el bot está en voz por un sonido de entrada (sección 6 bis), lo corta y conecta la música: la música tiene prioridad.
 - Todas las conexiones de voz, procesos de `ffmpeg` y temporizadores de inactividad se cierran al detener, saltar, desconectar o descargar el cog (`cog_unload`).
 - La cola vive en memoria y se pierde al reiniciar el bot; no se persiste audio ni historial de reproducción.
 - Solo se admiten fuentes resueltas por `yt-dlp` (típicamente YouTube); no se intenta eludir restricciones de acceso, DRM ni condiciones de uso de los proveedores.
@@ -189,6 +191,31 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 
 Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar de quedarse en silencio: argumento que falta o no válido, uso fuera de un servidor, o un fallo inesperado (que además se registra en el log con su traza). Escribir el prefijo seguido de algo que no es un comando no provoca ninguna respuesta.
 
+## 6 bis. Sonidos de entrada
+
+### 6 bis.1. Comportamiento
+
+- Cada miembro configura su sonido con `entrada` (`/entrada` o `.entrada`). Sin argumentos muestra su estado; `archivo` sube un audio; `volumen` lo ajusta (10-200 %); `borrar` lo elimina. En texto, el audio va adjunto al mensaje y el argumento es el volumen o `borrar`.
+- Al subirlo se responde con una vista previa del clip ya procesado (efímera en `/entrada`).
+- Cuando el miembro entra o se mueve a un canal de voz (salvo el canal AFK), el bot se conecta ensordecido, reproduce el clip y sale. Si entran varias personas seguidas, los sonidos se encolan (máximo 5 por servidor) y se reutiliza la conexión.
+- Si el bot ya está en voz por la música, el sonido de entrada no suena.
+- Cada persona dispara su sonido como mucho una vez cada 30 s (`COOLDOWN_SECONDS`).
+
+### 6 bis.2. Límites, rendimiento y seguridad
+
+- Duración máxima: 3 s (`MAX_CLIP_SECONDS`, con 0,1 s de tolerancia por redondeo). Tamaño máximo del adjunto: 8 MB.
+- Todo el trabajo pesado se hace al subir: `ffmpeg` convierte el audio una vez a Ogg/Opus 48 kHz estéreo con paquetes de 20 ms, normaliza la sonoridad (-16 LUFS) y aplica el volumen con un limitador para que el 200 % no sature. Al reproducir no se lanza ningún proceso: `OpusPacketSource` entrega los paquetes Opus del archivo directamente a `discord.py`.
+- `ffmpeg` y `ffprobe` se ejecutan sin shell, con tiempo máximo y con `-protocol_whitelist file`, para que un adjunto manipulado no pueda hacerles abrir URLs.
+- Se guardan solo la fuente normalizada, el clip final y el volumen, en `.data/entradas/<servidor>/<miembro>.*`. `borrar` elimina los tres archivos. No se guarda el adjunto original ni su nombre.
+- Requiere los permisos **Conectar** y **Hablar** en los canales de voz; si faltan, o el canal está lleno, el sonido se omite.
+
+### 6 bis.3. Criterios de aceptación
+
+- Un audio de más de 3 s o que no sea audio se rechaza con un mensaje claro y sin guardar nada.
+- Cambiar el volumen regenera el clip sin volver a subir el audio.
+- Silenciarse, ensordecerse o emitir pantalla dentro del mismo canal no dispara el sonido.
+- El bot no interrumpe ni se cruza con la música.
+
 ## 7. Persistencia y aislamiento por servidor
 
 La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
@@ -202,6 +229,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `level`/`top` y configuración. (Implementado.)
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving. (Implementado.)
+6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

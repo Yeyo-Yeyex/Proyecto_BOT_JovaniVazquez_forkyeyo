@@ -1,0 +1,236 @@
+"""Preparación y reproducción ligera de los sonidos de entrada al canal de voz.
+
+El bot corre en un NAS, así que el diseño minimiza el trabajo en cada
+reproducción y lo concentra en el momento de subir el sonido:
+
+1. Al subir un audio, `ffmpeg` lo convierte UNA vez a Ogg/Opus a 48 kHz
+   estéreo con paquetes de 20 ms (el formato exacto que transmite Discord)
+   y normaliza su sonoridad, para que el 100 % suene parecido para todos.
+2. Al cambiar el volumen se vuelve a generar el clip final a partir de esa
+   fuente; el volumen queda "horneado" en el archivo.
+3. Al reproducir no se lanza `ffmpeg`: `OpusPacketSource` lee los paquetes
+   Opus del archivo y se los entrega a `discord.py` tal cual. Sin
+   decodificar, sin recodificar y sin procesos externos.
+
+Los adjuntos de Discord son entrada no confiable: `ffmpeg` y `ffprobe` se
+lanzan con `-protocol_whitelist file` para que un archivo manipulado (por
+ejemplo, una lista HLS) no pueda hacer que lean URLs de red.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import logging
+from pathlib import Path
+
+import discord
+from discord.oggparse import OggError, OggStream
+
+logger = logging.getLogger(__name__)
+
+#: Duración máxima del clip. Se deja un margen mínimo por el redondeo de los
+#: contenedores (un audio de "3 s" puede medir 3,02 s).
+MAX_CLIP_SECONDS = 3.0
+CLIP_DURATION_TOLERANCE_SECONDS = 0.1
+
+#: Tamaño máximo del adjunto. 3 s de WAV a 96 kHz/24 bits ocupan ~1,7 MB;
+#: 8 MB deja sitio para formatos poco eficientes sin aceptar archivos absurdos.
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+
+MIN_VOLUME_PERCENT = 10
+MAX_VOLUME_PERCENT = 200
+DEFAULT_VOLUME_PERCENT = 100
+
+#: Sonoridad objetivo (LUFS) de la normalización y techo del limitador. El
+#: limitador evita que el 200 % sature: sube el volumen percibido sin clipping.
+TARGET_LOUDNESS_LUFS = -16
+LIMITER_CEILING = 0.95
+
+#: Tiempo máximo para cualquier llamada a ffmpeg/ffprobe sobre un clip corto.
+FFMPEG_TIMEOUT_SECONDS = 30
+
+#: Cabeceras Ogg/Opus que no son audio y no deben enviarse a Discord.
+_OPUS_HEADER_PREFIXES = (b"OpusHead", b"OpusTags")
+
+
+class EntranceSoundError(Exception):
+    """Error esperado al preparar un sonido; su mensaje es apto para el usuario."""
+
+
+def validate_volume(volume_percent: int) -> int:
+    """Comprueba que el volumen esté en el rango admitido y lo devuelve.
+
+    Raises:
+        EntranceSoundError: Si está fuera de `MIN_VOLUME_PERCENT`-`MAX_VOLUME_PERCENT`.
+    """
+    if not MIN_VOLUME_PERCENT <= volume_percent <= MAX_VOLUME_PERCENT:
+        raise EntranceSoundError(
+            f"El volumen debe estar entre {MIN_VOLUME_PERCENT} y {MAX_VOLUME_PERCENT} %."
+        )
+    return volume_percent
+
+
+async def _run(*args: str) -> bytes:
+    """Ejecuta un binario sin shell y devuelve su salida estándar.
+
+    Raises:
+        EntranceSoundError: Si el proceso falla o supera el tiempo máximo.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=FFMPEG_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise EntranceSoundError("El audio tardó demasiado en procesarse.") from None
+    if process.returncode != 0:
+        # stderr puede ser largo; basta el final para diagnosticar.
+        logger.warning("%s falló (%s): %s", args[0], process.returncode, stderr[-500:])
+        raise EntranceSoundError("No pude leer ese archivo de audio.")
+    return stdout
+
+
+async def probe_audio_duration(path: Path) -> float:
+    """Devuelve la duración en segundos del primer flujo de audio de `path`.
+
+    Raises:
+        EntranceSoundError: Si no es un audio legible o no tiene duración.
+    """
+    output = await _run(
+        "ffprobe",
+        "-v", "error",
+        "-protocol_whitelist", "file",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=duration:format=duration",
+        "-of", "json",
+        str(path),
+    )  # fmt: skip
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        raise EntranceSoundError("No pude leer ese archivo de audio.") from None
+    streams = data.get("streams") or []
+    if not streams:
+        raise EntranceSoundError("Ese archivo no contiene audio.")
+    # Algunos contenedores solo informan la duración a nivel de formato.
+    for raw in (streams[0].get("duration"), (data.get("format") or {}).get("duration")):
+        try:
+            duration = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if duration > 0:
+            return duration
+    raise EntranceSoundError("No pude saber cuánto dura ese audio.")
+
+
+def check_duration(duration_seconds: float) -> None:
+    """Rechaza clips más largos que `MAX_CLIP_SECONDS` (con su tolerancia).
+
+    Raises:
+        EntranceSoundError: Con la duración real, para que el usuario sepa cuánto recortar.
+    """
+    if duration_seconds > MAX_CLIP_SECONDS + CLIP_DURATION_TOLERANCE_SECONDS:
+        raise EntranceSoundError(
+            f"El audio dura {duration_seconds:.1f} s y el máximo es "
+            f"{MAX_CLIP_SECONDS:.0f} s. Recórtalo y vuelve a subirlo."
+        )
+
+
+def _opus_output_args(bitrate_kbps: int) -> tuple[str, ...]:
+    """Argumentos de salida comunes: Opus 48 kHz estéreo en paquetes de 20 ms."""
+    return (
+        "-ar", "48000",
+        "-ac", "2",
+        "-c:a", "libopus",
+        "-b:a", f"{bitrate_kbps}k",
+        "-frame_duration", "20",
+        "-map_metadata", "-1",
+        "-f", "ogg",
+    )  # fmt: skip
+
+
+async def build_source_clip(upload_path: Path, output_path: Path) -> None:
+    """Convierte el adjunto subido en la fuente normalizada del sonido.
+
+    Se guarda a 128 kbps para que regenerarla con otro volumen apenas pierda
+    calidad. `-t` corta igualmente en el máximo por si `ffprobe` se quedara corto.
+    """
+    await _run(
+        "ffmpeg", "-y", "-v", "error",
+        "-protocol_whitelist", "file",
+        "-i", str(upload_path),
+        "-map", "0:a:0", "-vn", "-sn", "-dn",
+        "-t", str(MAX_CLIP_SECONDS),
+        "-af", f"loudnorm=I={TARGET_LOUDNESS_LUFS}:TP=-1.5:LRA=11",
+        *_opus_output_args(128),
+        str(output_path),
+    )  # fmt: skip
+
+
+async def render_clip(source_path: Path, output_path: Path, volume_percent: int) -> None:
+    """Genera el clip final con el volumen aplicado, listo para enviarse a Discord.
+
+    `level=false` desactiva el auto-nivel de `alimiter`, que si no volvería a
+    subir o bajar el volumen por su cuenta y anularía el ajuste del usuario.
+    """
+    validate_volume(volume_percent)
+    gain = volume_percent / 100
+    await _run(
+        "ffmpeg", "-y", "-v", "error",
+        "-protocol_whitelist", "file",
+        "-i", str(source_path),
+        "-af", f"volume={gain:.2f},alimiter=limit={LIMITER_CEILING}:level=false",
+        *_opus_output_args(96),
+        str(output_path),
+    )  # fmt: skip
+
+
+def read_opus_packets(data: bytes) -> list[bytes]:
+    """Extrae los paquetes de audio Opus de un archivo Ogg ya en memoria.
+
+    Se descartan las cabeceras `OpusHead` y `OpusTags`, que describen el
+    flujo pero no son audio.
+
+    Raises:
+        EntranceSoundError: Si el archivo no es un Ogg válido o está vacío.
+    """
+    try:
+        packets = [
+            packet
+            for packet in OggStream(io.BytesIO(data)).iter_packets()
+            if not packet.startswith(_OPUS_HEADER_PREFIXES)
+        ]
+    except OggError:
+        raise EntranceSoundError("El sonido guardado está dañado. Vuelve a subirlo.") from None
+    if not packets:
+        raise EntranceSoundError("El sonido guardado está vacío. Vuelve a subirlo.")
+    return packets
+
+
+class OpusPacketSource(discord.AudioSource):
+    """Fuente de audio que entrega paquetes Opus ya codificados.
+
+    `discord.py` llama a `read()` cada 20 ms desde su hilo de reproducción.
+    Como `is_opus()` devuelve `True`, envía cada paquete sin tocarlo: no hay
+    codificación en el proceso del bot ni proceso `ffmpeg` hijo.
+    """
+
+    def __init__(self, packets: list[bytes]) -> None:
+        self._packets = iter(packets)
+
+    def read(self) -> bytes:
+        """Devuelve el siguiente paquete, o `b""` al terminar."""
+        return next(self._packets, b"")
+
+    def is_opus(self) -> bool:
+        """Indica a `discord.py` que los datos ya están en Opus."""
+        return True

@@ -26,7 +26,7 @@ def make_track(title: str = "Canción de prueba", duration: int = 120) -> Track:
 def make_interaction(*, guild_id: int = 1, member: object | None = None) -> MagicMock:
     """Crea una interacción de prueba con respuesta y edición simuladas."""
     interaction = MagicMock()
-    interaction.guild = SimpleNamespace(id=guild_id)
+    interaction.guild = SimpleNamespace(id=guild_id, voice_client=None)
     interaction.user = member
     interaction.channel = MagicMock()
     interaction.response.send_message = AsyncMock()
@@ -48,7 +48,7 @@ def make_voice_member(channel: object) -> SimpleNamespace:
 def make_context(*, guild_id: int = 1, member: object | None = None) -> MagicMock:
     """Crea un `commands.Context` de prueba para invocar comandos de texto (`....`)."""
     ctx = MagicMock()
-    ctx.guild = SimpleNamespace(id=guild_id)
+    ctx.guild = SimpleNamespace(id=guild_id, voice_client=None)
     ctx.author = member
     ctx.channel = MagicMock()
     progress_message = MagicMock()

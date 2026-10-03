@@ -15,6 +15,7 @@ MAX_COMMAND_NAME_LENGTH = 8
 
 EXPECTED_COMMANDS = {
     "ping",
+    "entrada",
     "help",
     "level",
     "top",
@@ -77,6 +78,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
 
             assert [field.name for field in embed.fields] == [
                 "🎵 Música",
+                "🔔 Entradas",
                 "🎨 Imagen",
                 "📊 Niveles",
                 "⚙️ General",
