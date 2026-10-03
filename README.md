@@ -126,8 +126,14 @@ python -m bot
   1-18/19-36, docenas, columnas, 0 y 00; 🎯 **Números** abre un formulario
   para plenos, caballos, transversales, cuadros, seisenas y la línea
   0-00-1-2-3. Con ½, ×2 y 💰 All-in se cambia la ficha; 🔁 Repetir y
-  ⏫ Doblar repiten la última apuesta. Atajos de texto:
-  `.ruleta 500`, `.ruleta all rojo`, `.ruleta 50 17-20`, `.ruleta rojo`.
+  ⏫ Doblar repiten la última tirada.
+  🧩 **Varias** cambia al modo de varias apuestas: cada botón pone una
+  ficha (pulsar dos veces la misma apila fichas), 🎰 **Girar** las juega
+  todas en la misma tirada y 🗑️ las quita. Hasta 10 apuestas distintas;
+  todo se cobra y se paga en una sola operación y el resultado marca qué
+  entró. Atajos de texto: `.ruleta 500`, `.ruleta all rojo`,
+  `.ruleta 50 17-20`, `.ruleta rojo`, `.ruleta 100 rojo + 17 + d2` (varias
+  con `+`, la cantidad es por apuesta; con `all` se reparte el saldo).
   Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
   CPU), así que una tirada no dibuja nada.
 - `babel` es un teléfono escacharrado con traductores: pasa el texto por 99

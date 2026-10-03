@@ -34,6 +34,7 @@ __all__ = [
     "InsufficientFundsError",
     "STARTING_BALANCE",
     "format_amount",
+    "is_all_in",
     "parse_amount",
 ]
 
@@ -64,6 +65,11 @@ _ALL_IN_WORDS = {"all", "allin", "all-in", "todo", "max"}
 _HALF_WORDS = {"mitad", "half"}
 _SUFFIXES = {"k": 1_000, "m": 1_000_000}
 _SUFFIXED = re.compile(r"^(\d+(?:[.,]\d+)?)([km])$")
+
+
+def is_all_in(text: str) -> bool:
+    """Si el texto pide apostar todo el saldo (`all`, `todo`, `max`…)."""
+    return text.strip().lower().replace(" ", "") in _ALL_IN_WORDS
 
 
 def parse_amount(text: str, balance: int) -> int:

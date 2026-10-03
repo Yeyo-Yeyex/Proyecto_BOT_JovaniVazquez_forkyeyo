@@ -4,13 +4,16 @@ Todo el dinero se mueve con `EconomyService` (`bot.economy`), que es la
 misma economía que usará cualquier juego o sistema futuro. Este cog solo
 traduce botones y comandos a llamadas al servicio y pinta el resultado.
 
-La ruleta es americana (0 y 00), individual e instantánea: cada jugador abre
-su propia mesa, un mensaje con botones que solo él puede pulsar. Cada clic
-en una apuesta cobra, gira y paga en el acto. Si `CASINO_CHANNEL_IDS` está
-configurado, la ruleta solo se abre en esos canales.
+La ruleta es americana (0 y 00) e individual: cada jugador abre su propia
+mesa, un mensaje con botones que solo él puede pulsar. Tiene dos modos:
 
-Permisos que necesita el bot en el canal: enviar mensajes, insertar enlaces
-(embeds) y adjuntar archivos (el GIF de la rueda).
+- **Rápido** (por defecto): cada clic en una apuesta cobra, gira y paga.
+- **Varias apuestas**: cada clic pone una ficha en la mesa y 🎰 Girar las
+  juega todas en la misma tirada.
+
+Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos
+canales. Permisos que necesita el bot en el canal: enviar mensajes,
+insertar enlaces (embeds) y adjuntar archivos (el GIF de la rueda).
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import io
 import logging
 import random
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +39,7 @@ from bot.services.economy import (
     InsufficientFundsError,
     daily_amount,
     format_amount,
+    is_all_in,
     parse_amount,
 )
 from bot.services.roulette import (
@@ -43,12 +47,15 @@ from bot.services.roulette import (
     OUTSIDE_BETS,
     POCKETS,
     Bet,
-    SpinOutcome,
+    RoundOutcome,
+    Wager,
     Wheel,
+    add_wager,
     color,
     label,
     parse_bet,
-    play,
+    parse_bets,
+    play_round,
     pretty,
 )
 from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
@@ -92,19 +99,56 @@ def history_line(history: Iterable[int]) -> str:
     return "Últimos: " + " · ".join(items) if items else "Aún no ha salido ningún número."
 
 
-def result_text(outcome: SpinOutcome, rng: random.Random | None = None) -> str:
-    """Bloque grande con el número y lo ganado o perdido."""
+def wagers_total(wagers: Sequence[Wager]) -> int:
+    """Suma de las fichas de varias apuestas."""
+    return sum(w.stake for w in wagers)
+
+
+def wagers_lines(wagers: Sequence[Wager]) -> str:
+    """Una línea por apuesta: `🔴 Rojo · 100 Y$`."""
+    return "\n".join(f"{w.bet.name} · {format_amount(w.stake)}" for w in wagers)
+
+
+def result_text(outcome: RoundOutcome, rng: random.Random | None = None) -> str:
+    """Bloque grande con el número y lo ganado o perdido.
+
+    Con una sola apuesta es una frase; con varias, además, una línea por
+    apuesta marcando cuál ha entrado.
+    """
     rng = rng or random.Random()
     lines = [f"# {pretty(outcome.pocket)}"]
     if outcome.won:
-        if outcome.bet.payout >= 8:
+        if outcome.max_payout >= 8:
             lines.append(f"## {rng.choice(BIG_WIN_LINES)} +{format_amount(outcome.net)}")
         else:
             lines.append(f"### {rng.choice(WIN_LINES)} +{format_amount(outcome.net)}")
-        lines.append(f"{outcome.bet.name} paga {outcome.bet.payout}:1")
+    elif outcome.total_return:
+        # Ha acertado algo, pero menos de lo apostado en total.
+        lines.append(
+            f"### -{format_amount(-outcome.net)} · Recuperas "
+            f"{format_amount(outcome.total_return)} de {format_amount(outcome.stake)}"
+        )
+    elif outcome.net == 0:
+        lines.append("### Te quedas igual.")
     else:
         lines.append(f"### -{format_amount(outcome.stake)} · {rng.choice(LOSS_LINES)}")
-        lines.append(f"Ibas a {outcome.bet.name}")
+
+    if len(outcome.wagers) == 1:
+        (wager,) = outcome.wagers
+        if outcome.won:
+            lines.append(f"{wager.bet.name} paga {wager.bet.payout}:1")
+        else:
+            lines.append(f"Ibas a {wager.bet.name}")
+        return "\n".join(lines)
+
+    for wager, returned in zip(outcome.wagers, outcome.returns, strict=True):
+        if returned:
+            gain = returned - wager.stake
+            lines.append(
+                f"✅ {wager.bet.name} · {format_amount(wager.stake)} → +{format_amount(gain)}"
+            )
+        else:
+            lines.append(f"❌ {wager.bet.name} · {format_amount(wager.stake)}")
     return "\n".join(lines)
 
 
@@ -114,25 +158,39 @@ def table_embed(
     balance: int,
     stake: int,
     history: Iterable[int],
-    outcome: SpinOutcome | None = None,
+    outcome: RoundOutcome | None = None,
     streak: int = 0,
     text: str | None = None,
+    multi: bool = False,
+    slip: Sequence[Wager] = (),
 ) -> discord.Embed:
-    """Embed de la mesa en reposo: tras abrirla o tras una tirada.
+    """Embed de la mesa en reposo: tras abrirla, tras una tirada o al poner fichas.
 
     Args:
         text: Texto ya calculado del resultado. Se pasa aparte para que no
             cambie la frase aleatoria al tocar la ficha después de una tirada.
+        multi: Si la mesa está en modo varias apuestas.
+        slip: Fichas puestas y aún no jugadas (modo varias apuestas).
     """
-    if outcome is None:
-        description = (
-            "Pulsa una apuesta y la rueda gira al momento.\n"
-            "🎯 **Números** para plenos, caballos, cuadros…"
-        )
-        embed_color = COLOR_IDLE
-    else:
+    if outcome is not None:
         description = text or result_text(outcome)
         embed_color = COLOR_WIN if outcome.won else COLOR_LOSS
+    elif multi:
+        description = "Cada apuesta que pulses pone una ficha. Luego, 🎰 **Girar**."
+        embed_color = COLOR_IDLE
+    else:
+        description = (
+            "Pulsa una apuesta y la rueda gira al momento.\n"
+            "🎯 **Números** para plenos, caballos, cuadros…\n"
+            "🧩 **Varias** para jugar varias apuestas en la misma tirada."
+        )
+        embed_color = COLOR_IDLE
+    if multi and slip:
+        description += (
+            f"\n\n**🧩 En la mesa** ({format_amount(wagers_total(slip))})\n{wagers_lines(slip)}"
+        )
+    elif multi and outcome is not None:
+        description += "\n\n🧩 Pon fichas para la siguiente tirada o pulsa 🔁 Repetir."
     if balance == 0:
         description += "\n\n**Estás a cero.** `daily` te recarga."
     embed = discord.Embed(title="🎰 Ruleta americana", description=description, color=embed_color)
@@ -144,11 +202,15 @@ def table_embed(
     return embed
 
 
-def spinning_embed(*, owner: str, bet: Bet, stake: int, history: Iterable[int]) -> discord.Embed:
+def spinning_embed(*, owner: str, wagers: Sequence[Wager], history: Iterable[int]) -> discord.Embed:
     """Embed mientras la bola gira: solo dice a qué se ha apostado."""
+    if len(wagers) == 1:
+        bets = f"**{wagers[0].bet.name}** · {format_amount(wagers[0].stake)}"
+    else:
+        bets = f"{wagers_lines(wagers)}\n**Total** · {format_amount(wagers_total(wagers))}"
     embed = discord.Embed(
         title="🎰 Ruleta americana",
-        description=f"# 🌀 Girando…\n**{bet.name}** · {format_amount(stake)}",
+        description=f"# 🌀 Girando…\n{bets}",
         color=COLOR_SPIN,
     )
     embed.set_image(url=f"attachment://{GIF_NAME}")
@@ -156,40 +218,53 @@ def spinning_embed(*, owner: str, bet: Bet, stake: int, history: Iterable[int]) 
     return embed
 
 
-def insufficient_text(balance: int) -> str:
-    """Aviso cuando la ficha supera el saldo."""
+def insufficient_text(balance: int, needed: int | None = None) -> str:
+    """Aviso cuando lo apostado supera el saldo."""
     if balance == 0:
         return "Estás a cero. Usa `daily` para recargar."
+    if needed is not None:
+        return f"Necesitas {format_amount(needed)} y tienes {format_amount(balance)}."
     return f"No te llega: tienes {format_amount(balance)}. Baja la ficha o pulsa 💰 All-in."
 
 
 def parse_command_args(
     amount_text: str | None, bet_text: str | None, balance: int
-) -> tuple[int, Bet | None]:
-    """Interpreta `ruleta [cantidad] [apuesta]`.
+) -> tuple[int, list[Bet]]:
+    """Interpreta `ruleta [cantidad] [apuesta + apuesta + …]`.
 
-    Si el primer argumento no es una cantidad pero sí una apuesta
-    (`.ruleta rojo`), se juega con la ficha por defecto.
+    La cantidad es la ficha de cada apuesta. Con `all` y varias apuestas, el
+    saldo se reparte a partes iguales. Si el primer argumento no es una
+    cantidad pero sí una apuesta (`.ruleta rojo + 17`), se juega con la
+    ficha por defecto.
+
+    Returns:
+        `(ficha, apuestas)`; la lista está vacía si solo se abre la mesa.
 
     Raises:
         ValueError: Con un mensaje mostrable si algo no se entiende.
     """
     default_stake = max(1, min(DEFAULT_STAKE, balance))
     if not amount_text:
-        return default_stake, parse_bet(bet_text) if bet_text else None
+        return default_stake, parse_bets(bet_text) if bet_text else []
     try:
         stake = parse_amount(amount_text, balance)
     except ValueError:
-        if bet_text:
-            raise
+        whole = f"{amount_text} {bet_text or ''}".strip()
         try:
-            return default_stake, parse_bet(amount_text)
+            return default_stake, parse_bets(whole)
         except ValueError:
+            if bet_text:
+                raise
             raise ValueError(
                 f"No entiendo `{amount_text}`. Ejemplos: `ruleta 500`, `ruleta all rojo`, "
-                "`ruleta 50 17`."
+                "`ruleta 50 17 + rojo`."
             ) from None
-    return stake, parse_bet(bet_text) if bet_text else None
+    bets = parse_bets(bet_text) if bet_text else []
+    if len(bets) > 1 and is_all_in(amount_text):
+        stake = balance // len(bets)
+        if stake == 0:
+            raise ValueError(insufficient_text(balance, len(bets)))
+    return stake, bets
 
 
 # -- Mesa ---------------------------------------------------------------------------
@@ -199,7 +274,7 @@ def parse_command_args(
 class SpinResult:
     """Tirada ya cobrada y pagada, lista para mostrarse."""
 
-    outcome: SpinOutcome
+    outcome: RoundOutcome
     balance: int
     media: SpinMedia
 
@@ -221,21 +296,23 @@ class NumberBetModal(discord.ui.Modal, title="🎯 Apuesta a números"):
         self.table = table
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Valida la apuesta y, si es legal, gira con ella."""
+        """Valida la apuesta y la juega (o la pone en la mesa en modo varias)."""
         try:
             bet = parse_bet(self.numbers.value)
         except ValueError as error:
             await interaction.response.send_message(str(error), ephemeral=True)
             return
-        await self.table.play(interaction, bet)
+        await self.table.choose(interaction, bet)
 
 
 class RouletteTable(discord.ui.View):
     """Mesa de ruleta de un jugador: un mensaje con botones.
 
-    Solo su dueño puede pulsarla. Guarda la ficha actual, la última apuesta
-    (para repetir/doblar) y la racha de aciertos. No guarda dinero: el saldo
-    se lee y se cambia siempre a través de la economía.
+    Solo su dueño puede pulsarla. Guarda la ficha actual, el modo (rápido o
+    varias apuestas), las fichas puestas sin jugar, la última tirada (para
+    repetir/doblar) y la racha. No guarda dinero: el saldo se lee y se
+    cambia siempre a través de la economía, y las fichas puestas no se
+    cobran hasta pulsar Girar.
     """
 
     def __init__(self, cog: Casino, *, guild_id: int, owner: discord.abc.User, stake: int) -> None:
@@ -244,8 +321,10 @@ class RouletteTable(discord.ui.View):
         self.guild_id = guild_id
         self.owner = owner
         self.stake = stake
-        self.last_bet: Bet | None = None
-        self.last_outcome: SpinOutcome | None = None
+        self.multi = False
+        self.slip: tuple[Wager, ...] = ()
+        self.last_wagers: tuple[Wager, ...] = ()
+        self.last_outcome: RoundOutcome | None = None
         self.last_text: str | None = None
         self.streak = 0
         self.message: discord.Message | None = None
@@ -275,7 +354,7 @@ class RouletteTable(discord.ui.View):
         bet = OUTSIDE_BETS[key] if key in OUTSIDE_BETS else parse_bet(key)
 
         async def callback(interaction: discord.Interaction) -> None:
-            await self.play(interaction, bet)
+            await self.choose(interaction, bet)
 
         self._add(text, row, callback, style=style, custom_id=f"bet:{bet.key}")
 
@@ -306,15 +385,27 @@ class RouletteTable(discord.ui.View):
         self.double_button = self._add(
             "⏫ Doblar", 3, self._double_and_repeat, style=blue, custom_id="double"
         )
+        self.mode_button = self._add("🧩 Varias", 4, self._toggle_mode, custom_id="mode")
+        self.spin_button = self._add("🎰 Girar", 4, self._spin_slip, style=green, custom_id="spin")
+        self.clear_button = self._add("🗑️ Quitar fichas", 4, self._clear_slip, custom_id="clear")
         self._set_enabled(True)
 
     def _set_enabled(self, enabled: bool) -> None:
+        """Activa o desactiva los botones según el estado de la mesa."""
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = not enabled
-        if enabled and self.last_bet is None:
+        self.mode_button.label = "🧩 Varias: sí" if self.multi else "🧩 Varias"
+        self.mode_button.style = (
+            discord.ButtonStyle.success if self.multi else discord.ButtonStyle.secondary
+        )
+        if not enabled:
+            return
+        if not self.last_wagers:
             self.repeat_button.disabled = True
             self.double_button.disabled = True
+        self.spin_button.disabled = not (self.multi and self.slip)
+        self.clear_button.disabled = not self.slip
 
     # -- Ciclo de vida --------------------------------------------------------------
 
@@ -346,9 +437,14 @@ class RouletteTable(discord.ui.View):
 
     # -- Juego ----------------------------------------------------------------------
 
-    async def current_embed(self) -> discord.Embed:
+    async def balance(self) -> int:
+        """Saldo actual del dueño de la mesa."""
+        return await self.cog.economy.balance(self.guild_id, self.owner.id)
+
+    async def current_embed(self, balance: int | None = None) -> discord.Embed:
         """Embed de reposo con el saldo actual."""
-        balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
+        if balance is None:
+            balance = await self.balance()
         return table_embed(
             owner=self.owner.display_name,
             balance=balance,
@@ -357,10 +453,34 @@ class RouletteTable(discord.ui.View):
             outcome=self.last_outcome,
             streak=self.streak,
             text=self.last_text,
+            multi=self.multi,
+            slip=self.slip,
         )
 
-    async def play(self, interaction: discord.Interaction, bet: Bet) -> None:
-        """Cobra, gira y paga `bet` con la ficha actual, editando la mesa."""
+    async def choose(self, interaction: discord.Interaction, bet: Bet) -> None:
+        """Respuesta a pulsar una apuesta: girar ya o poner la ficha, según el modo."""
+        if not self.multi:
+            await self.play(interaction, (Wager(bet, self.stake),))
+            return
+        if self._busy:
+            await interaction.response.defer()
+            return
+        balance = await self.balance()
+        needed = wagers_total(self.slip) + self.stake
+        if needed > balance:
+            await interaction.response.send_message(
+                insufficient_text(balance, needed), ephemeral=True
+            )
+            return
+        try:
+            self.slip = add_wager(self.slip, bet, self.stake)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        await self._refresh(interaction, balance)
+
+    async def play(self, interaction: discord.Interaction, wagers: Sequence[Wager]) -> None:
+        """Cobra, gira y paga las apuestas, editando la mesa."""
         if self._busy:
             # Doble clic mientras gira: se ignora sin mostrar error.
             await interaction.response.defer()
@@ -368,10 +488,10 @@ class RouletteTable(discord.ui.View):
         self._busy = True
         try:
             try:
-                result = await self.cog.spin(self.guild_id, self.owner.id, bet, self.stake)
+                result = await self.cog.spin(self.guild_id, self.owner.id, wagers)
             except InsufficientFundsError as error:
                 await interaction.response.send_message(
-                    insufficient_text(error.balance), ephemeral=True
+                    insufficient_text(error.balance, wagers_total(wagers)), ephemeral=True
                 )
                 return
             except BalanceLimitError:
@@ -397,15 +517,14 @@ class RouletteTable(discord.ui.View):
         al editar, el saldo sigue siendo correcto.
         """
         outcome = result.outcome
-        self.last_bet = outcome.bet
+        self.last_wagers = outcome.wagers
+        self.slip = ()
         self._set_enabled(False)
-        history = list(self.cog.history(self.guild_id))
         await first_edit(
             embed=spinning_embed(
                 owner=self.owner.display_name,
-                bet=outcome.bet,
-                stake=outcome.stake,
-                history=history,
+                wagers=outcome.wagers,
+                history=self.cog.history(self.guild_id),
             ),
             attachments=[discord.File(io.BytesIO(result.media.gif), filename=GIF_NAME)],
             view=self,
@@ -418,62 +537,74 @@ class RouletteTable(discord.ui.View):
         self.last_text = result_text(outcome)
         self._set_enabled(True)
         await final_edit(
-            embed=table_embed(
-                owner=self.owner.display_name,
-                balance=result.balance,
-                stake=self.stake,
-                history=self.cog.history(self.guild_id),
-                outcome=outcome,
-                streak=self.streak,
-                text=self.last_text,
-            ),
+            embed=await self.current_embed(result.balance),
             attachments=[discord.File(io.BytesIO(result.media.png), filename=PNG_NAME)],
             view=self,
         )
 
-    async def _refresh(self, interaction: discord.Interaction) -> None:
-        """Actualiza la mesa tras cambiar la ficha, sin tocar la imagen."""
-        await interaction.response.edit_message(embed=await self.current_embed(), view=self)
+    async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
+        """Actualiza la mesa (ficha, modo, fichas puestas) sin tocar la imagen."""
+        self._set_enabled(True)
+        await interaction.response.edit_message(embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
 
     async def _open_numbers(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(NumberBetModal(self))
+
+    def _free_balance(self, balance: int) -> int:
+        """Saldo que queda sin comprometer por las fichas ya puestas."""
+        return max(0, balance - wagers_total(self.slip))
 
     async def _halve(self, interaction: discord.Interaction) -> None:
         self.stake = max(1, self.stake // 2)
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
-        balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
-        # Si el doble no cabe, se queda en todo el saldo: es lo que se busca.
-        self.stake = max(1, min(self.stake * 2, balance))
-        await self._refresh(interaction)
+        balance = await self.balance()
+        # Si el doble no cabe, se queda en lo que queda libre: es lo que se busca.
+        self.stake = max(1, min(self.stake * 2, self._free_balance(balance)))
+        await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
-        balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
-        if balance == 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+        balance = await self.balance()
+        free = self._free_balance(balance)
+        if free == 0:
+            await interaction.response.send_message(insufficient_text(free), ephemeral=True)
             return
-        self.stake = balance
-        await self._refresh(interaction)
+        # En modo varias, all-in es "todo lo que queda" para la siguiente ficha.
+        self.stake = free
+        await self._refresh(interaction, balance)
 
     async def _repeat(self, interaction: discord.Interaction) -> None:
-        if self.last_bet is not None:
-            await self.play(interaction, self.last_bet)
+        if self.last_wagers:
+            await self.play(interaction, self.last_wagers)
 
     async def _double_and_repeat(self, interaction: discord.Interaction) -> None:
-        if self.last_bet is None:
+        if not self.last_wagers:
             return
-        balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
-        if self.stake * 2 > balance:
+        doubled = tuple(Wager(w.bet, w.stake * 2) for w in self.last_wagers)
+        balance = await self.balance()
+        if wagers_total(doubled) > balance:
             await interaction.response.send_message(
-                f"Para doblar necesitas {format_amount(self.stake * 2)} y tienes "
-                f"{format_amount(balance)}.",
+                "No te llega para doblar. " + insufficient_text(balance, wagers_total(doubled)),
                 ephemeral=True,
             )
             return
         self.stake *= 2
-        await self.play(interaction, self.last_bet)
+        await self.play(interaction, doubled)
+
+    async def _toggle_mode(self, interaction: discord.Interaction) -> None:
+        self.multi = not self.multi
+        self.slip = ()
+        await self._refresh(interaction)
+
+    async def _spin_slip(self, interaction: discord.Interaction) -> None:
+        if self.slip:
+            await self.play(interaction, self.slip)
+
+    async def _clear_slip(self, interaction: discord.Interaction) -> None:
+        self.slip = ()
+        await self._refresh(interaction)
 
 
 # -- Cog ----------------------------------------------------------------------------
@@ -537,19 +668,20 @@ class Casino(commands.Cog):
         """Añade un número al historial del servidor."""
         self._history.setdefault(guild_id, deque(maxlen=HISTORY_SIZE)).appendleft(pocket)
 
-    async def spin(self, guild_id: int, user_id: int, bet: Bet, stake: int) -> SpinResult:
+    async def spin(self, guild_id: int, user_id: int, wagers: Sequence[Wager]) -> SpinResult:
         """Juega una tirada: decide el número y mueve el dinero de forma atómica.
 
-        El número se decide antes de cobrar, pero solo se muestra si el cobro
+        Todas las apuestas se cobran y se pagan en una sola operación. El
+        número se decide antes de cobrar, pero solo se muestra si el cobro
         sale bien; así no se puede "ver" el resultado sin pagarlo.
 
         Raises:
-            InsufficientFundsError: Si el saldo no cubre la ficha.
+            InsufficientFundsError: Si el saldo no cubre el total apostado.
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
-        outcome = play(self.wheel, bet, stake)
+        outcome = play_round(self.wheel, wagers)
         balance = await self.economy.settle_bet(
-            guild_id, user_id, game=GAME, stake=stake, payout=outcome.total_return
+            guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
         media = await asyncio.to_thread(self.renderer.media, outcome.pocket)
         return SpinResult(outcome=outcome, balance=balance, media=media)
@@ -591,29 +723,33 @@ class Casino(commands.Cog):
 
         balance = await self.economy.balance(guild.id, user.id)
         try:
-            stake, bet = parse_command_args(amount_text, bet_text, balance)
+            stake, bets = parse_command_args(amount_text, bet_text, balance)
         except ValueError as error:
             await send_error(str(error))
             return
-        if stake > balance:
-            await send_error(insufficient_text(balance))
+        needed = stake * max(1, len(bets))
+        if needed > balance:
+            await send_error(insufficient_text(balance, needed if len(bets) > 1 else None))
             return
 
         table = RouletteTable(self, guild_id=guild.id, owner=user, stake=stake)
-        if bet is None:
+        if not bets:
             png = await asyncio.to_thread(self.renderer.idle_png)
             table.message = await send(
-                embed=await table.current_embed(),
+                embed=await table.current_embed(balance),
                 file=discord.File(io.BytesIO(png), filename=PNG_NAME),
                 view=table,
             )
             return
 
-        # Apuesta escrita en el propio comando: la mesa nace ya girando.
+        # Apuestas escritas en el propio comando: la mesa nace ya girando.
+        # Con varias, la mesa queda en modo varias para seguir igual.
+        table.multi = len(bets) > 1
+        wagers = tuple(Wager(bet, stake) for bet in bets)
         try:
-            result = await self.spin(guild.id, user.id, bet, stake)
+            result = await self.spin(guild.id, user.id, wagers)
         except InsufficientFundsError as error:
-            await send_error(insufficient_text(error.balance))
+            await send_error(insufficient_text(error.balance, wagers_total(wagers)))
             return
         except BalanceLimitError:
             await send_error("La banca no puede pagar tanto. Baja la ficha.")
@@ -631,8 +767,8 @@ class Casino(commands.Cog):
 
     @app_commands.command(name="ruleta", description="Ruleta americana con tus yapdollars.")
     @app_commands.describe(
-        cantidad="Ficha: 500, 2k, all… (por defecto 100)",
-        apuesta="Opcional, gira ya: rojo, par, 1-18, d2, c3, 17, 17-20…",
+        cantidad="Ficha por apuesta: 500, 2k, all… (por defecto 100)",
+        apuesta="Opcional, gira ya: rojo, 17, d2, 17-20… Varias con +: rojo + 17",
     )
     @app_commands.guild_only()
     async def ruleta(
@@ -666,7 +802,10 @@ class Casino(commands.Cog):
     async def ruleta_text(
         self, ctx: commands.Context, cantidad: str | None = None, *, apuesta: str | None = None
     ) -> None:
-        """Versión de texto: `.ruleta`, `.ruleta 500`, `.ruleta all rojo`, `.ruleta 50 17-20`."""
+        """Versión de texto: `.ruleta`, `.ruleta 500`, `.ruleta all rojo`, `.ruleta 50 17 + rojo`.
+
+        Varias apuestas se separan con `+`; la cantidad es la ficha de cada una.
+        """
 
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)
