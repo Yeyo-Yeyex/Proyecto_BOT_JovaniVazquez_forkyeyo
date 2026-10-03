@@ -1,6 +1,6 @@
 """Sonidos de entrada: cada miembro sube un audio corto que suena al entrar a voz.
 
-Comando: `/entrada` (y `ºentrada`/`.entrada` en texto), con un único nombre
+Comando: `/entrada` (y `.entrada` en texto), con un único nombre
 para subir, ajustar el volumen, borrar y consultar el sonido propio.
 
 Comportamiento en voz, pensado para gastar lo mínimo en el NAS:
@@ -126,7 +126,7 @@ class Entrance(commands.Cog):
         volume: int | None,
         delete: bool,
     ) -> None:
-        """Lógica compartida entre `/entrada` y `ºentrada`."""
+        """Lógica compartida entre `/entrada` y `.entrada`."""
         guild, member = responder.guild, responder.member
         if guild is None or member is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -270,7 +270,7 @@ class Entrance(commands.Cog):
     @commands.command(name="entrada")
     @commands.guild_only()
     async def entrada_text(self, ctx: commands.Context, opcion: str | None = None) -> None:
-        """Versión de texto (`ºentrada`) de `/entrada`.
+        """Versión de texto (`.entrada`) de `/entrada`.
 
         El audio va adjunto al propio mensaje; `opcion` es un volumen o `borrar`.
         """
