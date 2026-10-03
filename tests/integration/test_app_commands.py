@@ -30,6 +30,7 @@ EXPECTED_COMMANDS = {
     "clear",
     "volume",
     "ruleta",
+    "babel",
     "saldo",
     "daily",
 }
@@ -123,6 +124,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "🎨 Imagen · avatar + texto (10)",
                 "🎨 Imagen · texto (49)",
                 "🎨 Imagen · vídeo (3)",
+                "🗼 Diversión (1)",
             ]
             # Cada comando aparece una vez, solo por nombre y sin descripción.
             everyone = EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS | set(EFFECTS)

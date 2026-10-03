@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta (`ruleta`, `saldo`, `daily`) y los comandos de administración están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta (`ruleta`, `saldo`, `daily`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -291,6 +291,24 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 - Cada acción queda en el registro de auditoría con el motivo y quién la pidió.
 - El bot necesita, según el comando: Gestionar mensajes, Aislar temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar apodos y Gestionar roles. Si le falta alguno, responde que no tiene permiso en vez de fallar en silencio.
 
+## 6 quinquies. Diversión: `babel`
+
+### 6 quinquies.1. Comportamiento
+
+- `/babel texto` (o `.babel texto`) traduce el texto en cadena por 99 idiomas distintos elegidos al azar en cada tirada y termina en español: 100 traducciones. Cada salto parte del idioma anterior, no del español, para que el sentido se degrade.
+- `.babel` sin texto, respondiendo a un mensaje, usa el texto de ese mensaje. En `.babel`, las menciones se traducen como el nombre visible.
+- Mientras trabaja, edita el aviso cada 10 vueltas con el idioma por el que va. Al acabar muestra un embed con el texto original, el resultado y la ruta de códigos de idioma.
+- **Modo nombres:** si el texto son solo menciones de miembros y canales (`.babel @Ana #general`, máximo 10), se cambia el apodo de esos miembros y el nombre de esos canales por su versión tras las 100 traducciones. Los nombres se traducen juntos, uno por línea, en una sola tirada; una vuelta que junta o parte líneas se descarta. El adorno inicial (emojis, separadores) no se traduce y se conserva. En los canales, los guiones se traducen como espacios.
+- Permisos del modo nombres, iguales a los de Discord: el propio apodo requiere **Cambiar apodo**; el de otro, **Gestionar apodos** y un rol superior (el dueño del servidor está exento de la jerarquía, pero su apodo no se puede cambiar); un canal, **Gestionar canales** en ese canal. El bot necesita esos mismos permisos y un rol superior al de los miembros que renombra. Los objetivos no permitidos se listan con su motivo y el resto se renombra.
+- Discord solo permite renombrar un canal 2 veces cada 10 minutos: el bot lleva la cuenta en memoria y lo avisa antes de empezar. No hay comando para deshacer. Si la tirada no consigue volver al español, no se renombra nada.
+- Las traducciones se piden en el momento a Google Translate (endpoint público `translate_a/single`, `client=gtx`), sin clave. No hay frases predefinidas.
+
+### 6 quinquies.2. Límites y fallos
+
+- Máximo 300 caracteres de texto y una sola tirada a la vez en todo el bot; si hay otra en curso, se avisa y no se encola.
+- Un idioma que falla se salta. Si Google limita la tasa (HTTP 429 o redirección a su captcha) o fallan 5 idiomas seguidos, la cadena se corta, se intenta una última traducción al español y el embed avisa de que dio menos vueltas.
+- Las respuestas se envían con las menciones desactivadas.
+
 ## 7. Persistencia y aislamiento por servidor
 
 La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
@@ -306,6 +324,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo` y ruleta americana. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
+8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

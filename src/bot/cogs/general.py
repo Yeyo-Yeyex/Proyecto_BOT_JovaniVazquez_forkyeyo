@@ -32,6 +32,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Casino": "🎰 Casino",
     "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen",
+    "Fun": "🗼 Diversión",
 }
 OTHER_CATEGORY = "📦 Otros"
 # Categoría de los comandos de administración: solo se muestra a quien es

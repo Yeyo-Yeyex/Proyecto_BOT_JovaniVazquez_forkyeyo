@@ -69,6 +69,7 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
+  | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | 🛡️ Admin | `ban` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
 
@@ -129,6 +130,27 @@ python -m bot
   `.ruleta 500`, `.ruleta all rojo`, `.ruleta 50 17-20`, `.ruleta rojo`.
   Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
   CPU), así que una tirada no dibuja nada.
+- `babel` es un teléfono escacharrado con traductores: pasa el texto por 99
+  idiomas elegidos al azar y lo devuelve al español, para ver qué queda.
+  Responde con el antes, el después y la ruta de idiomas. `.babel` sin texto,
+  respondiendo a un mensaje, traduce ese mensaje. Máximo 300 caracteres y una
+  tirada a la vez en todo el bot (son 100 peticiones seguidas y tardan unos
+  segundos). Usa el endpoint público de Google Translate, sin clave ni coste,
+  pero sin garantías: si Google limita la IP, la tirada se corta, vuelve al
+  español desde donde iba y lo avisa.
+  - Si solo le das menciones (`.babel @Ana @Luis #general`, hasta 10), en
+    vez de enseñar el resultado **cambia de verdad** el apodo de esos
+    miembros y el nombre de esos canales. Conserva emojis y separadores del
+    principio del nombre (`🎮・juegos` → `🎮・<traducción>`). Todos los nombres
+    viajan juntos en la misma tirada de 100 traducciones.
+  - Exige los mismos permisos que Discord para hacerlo a mano: tu apodo,
+    **Cambiar apodo**; el de otro, **Gestionar apodos** y un rol por encima
+    del suyo; un canal, **Gestionar canales**. El bot necesita **Gestionar
+    apodos** y **Gestionar canales** y estar por encima de los roles de
+    quienes renombra. Al dueño del servidor no se le puede cambiar el apodo.
+  - Discord solo deja renombrar un canal 2 veces cada 10 minutos; el bot lo
+    avisa en vez de quedarse esperando. No hay comando para deshacer: el
+    apodo se quita desde Discord y el canal se renombra a mano.
 - Si un comando de texto falla (falta un argumento, un error inesperado…) el
   bot responde con un mensaje claro; los errores internos se guardan en el log.
 - Los avisos de subida de nivel se publican en el canal donde el mensaje
