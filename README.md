@@ -55,14 +55,15 @@ python -m bot
 ## Funcionalidad actual
 
 - Cada comando tiene **un único nombre corto, igual con `/` y con `.`**
-  (`/play despacito` = `.play despacito`). Escribe `/help` o `.help` para ver
-  la lista:
+  (`/play despacito` = `.play despacito`), salvo los de imagen, que solo
+  existen con `.` para dejar los slash commands al resto del bot. Escribe
+  `/help` o `.help` para ver la lista:
 
   | Categoría | Comandos |
   |---|---|
   | 🎵 Música | `play <consulta>` · `pause` · `resume` · `skip` · `stop` · `queue` · `remove <posicion>` · `clear` · `volume <1-200>` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
-  | 🎨 Imagen | `magik [imagen] [miembro]` |
+  | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | ⚙️ General | `ping` · `help` |
 
@@ -70,13 +71,34 @@ python -m bot
   contenido, el mismo efecto que Dank Memer): en vez de estirar o recortar,
   elimina primero los caminos de píxeles menos importantes y vuelve a
   ampliar, así que las formas se "derriten". Usa, por orden: la imagen
-  adjunta (en `.magik`, también la del mensaje al que respondes), el avatar
-  del miembro indicado o el tuyo. Ejemplos: `/magik imagen:<archivo>`,
+  adjunta (también la del mensaje al que respondes), el avatar del miembro
+  indicado o el tuyo. Ejemplos: `.magik` con una foto adjunta,
   `.magik @alguien`, o responde a una foto con `.magik`. Solo acepta
   adjuntos de Discord y avatares (nunca enlaces externos), hasta 8 MB, con
   5 segundos de espera entre usos por usuario. Respeta la rotación de las
   fotos de móvil. El bot necesita el permiso **Adjuntar archivos** en el
   canal; si falta, `magik` lo explica en lugar de quedarse colgado.
+- Los **108 efectos de imagen de Dank Memer** (`trigger`, `slap`, `wanted`,
+  `changemymind`, `brain`, `tweet`, `crab`...) funcionan como comandos de
+  texto con su nombre original. `.memes` los lista agrupados y
+  `.memes <efecto>` explica uno. Reglas comunes:
+  - `@alguien` (o responder a su mensaje) usa su avatar; una imagen adjunta
+    lo sustituye. En los de dos personas (`slap`, `spank`, `bed`...) tú eres
+    la primera y el mencionado la segunda.
+  - Los textos múltiples se separan con `|`: `.brain agua | zumo | café | café a las 3`.
+    En los efectos de solo texto, `@alguien` se escribe con su nombre.
+  - Comparten con `magik` el límite de 8 MB, los 5 s de espera por usuario
+    y un máximo de 2 trabajos a la vez en todo el bot.
+  - `crab`, `letmein` y `scaryabove` devuelven MP4 (los genera `ffmpeg`,
+    ya incluido en la imagen Docker); `trigger`, `dank`, `salty`, `airpods`,
+    `america`, `communism` y `kowalski` devuelven GIF.
+  - Diferencias con Dank Memer: los emojis del texto no se dibujan (los
+    personalizados salen como `:nombre:`), `dream` es una imitación ligera
+    sin TensorFlow, y `radialblur` y `warp` están reimplementados con numpy.
+    No se incluyen `profile` (la ficha de la economía de Dank Memer) ni
+    `yomomma` (solo devuelve un chiste de texto).
+  - Las plantillas (~27 MB) están en `src/bot/assets/memes`, con la licencia
+    MIT de [imgen](https://github.com/DankMemer/imgen).
 - Si un comando de texto falla (falta un argumento, un error inesperado…) el
   bot responde con un mensaje claro; los errores internos se guardan en el log.
 - Los avisos de subida de nivel se publican en el canal donde el mensaje
@@ -195,18 +217,21 @@ src/bot/
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py      # Bienvenidas y despedidas
-│   ├── images.py        # Comandos de imagen (magik)
+│   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
 ├── services/            # Lógica de negocio pura, sin discord.py
 │   ├── levels.py        # Cálculo de niveles y progreso
+│   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)
+│   ├── memes/           # Efectos de Dank Memer: registro, utilidades y efectos
 │   ├── music.py          # Pistas, cola y límites (testable sin red)
 │   └── music_source.py   # Extracción de audio con yt-dlp (bloqueante)
 └── assets/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
-    └── despedidas.txt  # Frases de despedida, editables sin tocar código
+    ├── despedidas.txt  # Frases de despedida, editables sin tocar código
+    └── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
 ```
 
 En la raíz: `Dockerfile`, `docker-compose.yml` y `.env.example` para el despliegue.

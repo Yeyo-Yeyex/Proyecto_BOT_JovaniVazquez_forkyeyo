@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top` y `magik`, y los comandos de música están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, y los comandos de música están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -11,7 +11,7 @@ Crear un bot de Discord en español que aporte a los servidores:
 - Mensajes de bienvenida y despedida.
 - Progresión de niveles basada en la participación mediante mensajes.
 - Reproducción y control de música en canales de voz.
-- Efectos de imagen divertidos, como la deformación `magik`.
+- Efectos de imagen divertidos: la deformación `magik` y los 108 efectos de Dank Memer.
 
 La interfaz usa comandos de aplicación (`/`) y sus equivalentes de texto con el prefijo `.` (configurable con `COMMAND_PREFIX`), junto con botones o menús de Discord cuando corresponda. Los mensajes automáticos y avisos se enviarán en los canales configurados.
 
@@ -156,38 +156,62 @@ Los comandos de texto con prefijo requieren el intent privilegiado **Message Con
 - Usuarios no conectados al canal de voz adecuado reciben una respuesta clara y no alteran la reproducción.
 - Los límites de cola y duración se aplican antes de aceptar trabajo adicional.
 
-## 6. Imagen: `magik`
+## 6. Imagen: `magik` y efectos de Dank Memer
 
-### 6.1. Comportamiento
+Todos los comandos de imagen son **solo de texto** (prefijo `.`). Los slash commands se reservan para el resto del bot, y Discord limita a 100 los comandos de `/` de un bot: no cabrían.
 
-`/magik [imagen] [miembro]` y `.magik [miembro]` deforman una imagen con **seam carving** (reescalado consciente del contenido), la técnica del comando `magik` de Dank Memer. A diferencia de estirar o recortar, el algoritmo calcula la "energía" de cada píxel (el contraste con sus vecinos) y elimina repetidamente la **costura** —un camino continuo de píxeles de arriba abajo— de menor energía acumulada. Se pierden primero las zonas planas y se conservan los bordes y las formas; al eliminar la mitad del ancho y del alto y volver a ampliar la imagen, los objetos se deforman y "derriten".
+### 6.1. Comportamiento de `magik`
+
+`.magik [miembro]` deforma una imagen con **seam carving** (reescalado consciente del contenido), la técnica del comando `magik` de Dank Memer. A diferencia de estirar o recortar, el algoritmo calcula la "energía" de cada píxel (el contraste con sus vecinos) y elimina repetidamente la **costura** —un camino continuo de píxeles de arriba abajo— de menor energía acumulada. Se pierden primero las zonas planas y se conservan los bordes y las formas; al eliminar la mitad del ancho y del alto y volver a ampliar la imagen, los objetos se deforman y "derriten".
 
 La imagen se elige, por orden de prioridad:
 
-1. Un archivo de imagen adjunto (en `/magik`, el parámetro `imagen`; en `.magik`, el adjunto del mensaje o el del mensaje al que se responde).
+1. Un archivo de imagen adjunto al mensaje o al mensaje al que se responde.
 2. El avatar del miembro indicado.
 3. El avatar de quien ejecuta el comando.
 
-La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fotograma y se respeta la rotación EXIF de las fotos de móvil. En `.magik` el resultado se envía como un mensaje nuevo y el aviso «Distorsionando…» se borra.
+La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fotograma y se respeta la rotación EXIF de las fotos de móvil. El resultado se envía como un mensaje nuevo y el aviso «Distorsionando…» se borra.
 
-### 6.2. Límites y seguridad
+### 6.2. Efectos de Dank Memer
+
+Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; para no inundar la ayuda van ocultos y se listan con `.memes` (o `.memes <efecto>` para ver el uso de uno).
+
+Lectura de argumentos:
+
+- **Avatares.** Una mención (`@alguien`) o responder a su mensaje elige el avatar; sin ninguna, se usa el de quien escribe. Una imagen adjunta (al mensaje o al respondido) sustituye al avatar del objetivo. En los efectos de dos personas, la primera es quien escribe y la segunda el objetivo; mencionando a dos, se usan esas dos. Sin objetivo, el bot explica el uso.
+- **Textos.** El texto que queda tras quitar las menciones. Los efectos de varios campos los separan con `|` (`.brain agua | zumo | café | café a las 3`). Si faltan o sobran, el bot responde con el uso y un ejemplo. Máximo 300 caracteres por campo. En los efectos sin avatar, una mención se escribe con el nombre visible de esa persona (`.changemymind @Ana tiene razón`).
+- **Nombres.** Los efectos que muestran un nombre (`tweet`, `quote`, `youtube`, `obama`, `byemom`, `sword`) usan el nombre visible y el de usuario del objetivo, o de quien escribe.
+
+Formatos: PNG o JPEG según la plantilla; GIF en `trigger`, `dank`, `salty`, `airpods`, `america`, `communism` y `kowalski`; MP4 en `crab`, `letmein` y `scaryabove`, que se componen con `ffmpeg` (ya presente en la imagen Docker por la música), con 90 s de tiempo máximo y 2 hilos.
+
+Diferencias conscientes con el original:
+
+- Los emojis del texto no se dibujan como imágenes (exigía ~60 MB de PNG): los personalizados de Discord se escriben como `:nombre:` y los Unicode se quitan, porque las fuentes no tienen esos glifos.
+- `dream` usaba DeepDream con TensorFlow; aquí es una imitación con Pillow y numpy (detalle amplificado a varias escalas, rotación de tono y saturación). `radialblur` y `warp` usaban ImageMagick y GraphicsMagick; se reimplementan con numpy.
+- No se incluyen `profile` (la ficha del sistema de economía de Dank Memer, que este bot aún no tiene) ni `yomomma` (solo devuelve un chiste en inglés, no una imagen).
+
+Las plantillas y fuentes viven en `src/bot/assets/memes` (~27 MB): solo las que usa algún efecto, con los BMP pasados a PNG sin pérdida y las fotos opacas grandes a JPEG de calidad 92.
+
+### 6.3. Límites y seguridad comunes
 
 - Solo se aceptan adjuntos de Discord y avatares; **nunca URLs arbitrarias**, para que el bot no pueda usarse para hacer peticiones a destinos elegidos por el usuario.
 - Se comprueba el tipo declarado (`image/*`) y el tamaño (máximo 8 MB) antes de descargar, y las dimensiones de la cabecera (máximo 25 megapíxeles) antes de decodificar, para evitar "bombas de descompresión".
-- El procesado trabaja sobre una versión reducida (lado mayor de 320 px), se ejecuta fuera del event loop (`asyncio.to_thread`) y se limita a 2 trabajos simultáneos en todo el bot.
-- Enfriamiento de 5 segundos por usuario.
+- `magik` trabaja sobre una versión reducida (lado mayor de 320 px). Todo el procesado se ejecuta fuera del event loop (`asyncio.to_thread`) y se limita a 2 trabajos simultáneos en todo el bot.
+- Enfriamiento de 5 segundos por usuario, compartido entre `magik` y todos los efectos.
+- Los efectos trabajan las fotos de usuario a 1024 px de lado como máximo.
 - El bot necesita el permiso **Adjuntar archivos** en el canal. Si falta, el comando lo indica con un mensaje claro.
 - Los errores (archivo ilegible, demasiado grande, fallo de descarga o de envío, fallo inesperado) se comunican con un mensaje claro, sin trazas; el aviso de progreso nunca se queda colgado.
 
-### 6.3. Criterios de aceptación
+### 6.4. Criterios de aceptación
 
 - El resultado conserva los objetos de bordes marcados y sacrifica antes el fondo plano.
 - La misma imagen produce siempre el mismo resultado.
 - Una imagen inválida, truncada, demasiado pequeña o demasiado grande nunca provoca una excepción sin controlar.
-- `/magik` y `.magik` comparten exactamente la misma lógica y el mismo nombre.
-- Una prueba de integración con objetos reales de discord.py (servidor, canal y mensaje con adjunto) recorre todo el camino de `.magik`: adjunto, procesado, envío y errores.
+- Ningún comando de imagen ocupa un slash command.
+- Cada uno de los 108 efectos genera un archivo válido de menos de 8 MB con su ejemplo (prueba automática que los ejecuta todos).
+- Una prueba de integración con objetos reales de discord.py (servidor, canal y mensaje con adjunto) recorre todo el camino de `.magik` y de los efectos: adjunto, menciones, textos con `|`, procesado, envío, enfriamiento compartido y errores.
 
-### 6.4. Errores en comandos de texto y de aplicación
+### 6.5. Errores en comandos de texto y de aplicación
 
 Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar de quedarse en silencio: argumento que falta o no válido, uso fuera de un servidor, o un fallo inesperado (que además se registra en el log con su traza). Escribir el prefijo seguido de algo que no es un comando no provoca ninguna respuesta.
 
@@ -228,7 +252,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 2. **Preparación de niveles:** importar y guardar agregados de mensajes históricos y contar actividad nueva. (Implementado.)
 3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `level`/`top` y configuración. (Implementado.)
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
-5. **Imagen:** comando `magik` con seam carving. (Implementado.)
+5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
