@@ -26,7 +26,14 @@ from bot.cogs.casino import (
 )
 from bot.repositories.economy import EconomyRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, SpinOutcome, Wheel, parse_bet
+from bot.services.roulette import (
+    DOUBLE_ZERO,
+    OUTSIDE_BETS,
+    RoundOutcome,
+    Wager,
+    Wheel,
+    parse_bet,
+)
 from bot.services.roulette_render import SpinMedia
 
 GUILD_ID = 1
@@ -90,28 +97,28 @@ def attachment_names(call) -> list[str]:  # noqa: ANN001
 
 
 def test_ruleta_sin_argumentos_usa_la_ficha_por_defecto() -> None:
-    assert parse_command_args(None, None, 1000) == (100, None)
+    assert parse_command_args(None, None, 1000) == (100, [])
 
 
 def test_ruleta_con_poco_saldo_baja_la_ficha_por_defecto() -> None:
-    assert parse_command_args(None, None, 40) == (40, None)
+    assert parse_command_args(None, None, 40) == (40, [])
 
 
 def test_ruleta_con_cantidad_y_apuesta() -> None:
-    stake, bet = parse_command_args("all", "rojo", 777)
+    stake, bets = parse_command_args("all", "rojo", 777)
     assert stake == 777
-    assert bet is OUTSIDE_BETS["red"]
+    assert bets == [OUTSIDE_BETS["red"]]
 
 
 def test_ruleta_con_solo_una_apuesta_juega_con_la_ficha_por_defecto() -> None:
-    stake, bet = parse_command_args("rojo", None, 1000)
+    stake, bets = parse_command_args("rojo", None, 1000)
     assert stake == 100
-    assert bet is OUTSIDE_BETS["red"]
+    assert bets == [OUTSIDE_BETS["red"]]
 
 
 def test_ruleta_numero_solo_se_entiende_como_cantidad() -> None:
     """`.ruleta 17` es una ficha de 17, no un pleno: la cantidad va primero."""
-    assert parse_command_args("17", None, 1000) == (17, None)
+    assert parse_command_args("17", None, 1000) == (17, [])
 
 
 def test_ruleta_con_argumento_incomprensible_da_ejemplos() -> None:
@@ -123,7 +130,7 @@ def test_ruleta_con_argumento_incomprensible_da_ejemplos() -> None:
 
 
 def test_texto_de_pleno_ganado_es_de_gran_premio() -> None:
-    outcome = SpinOutcome(17, parse_bet("17"), 100, 3600)
+    outcome = RoundOutcome(17, (Wager(parse_bet("17"), 100),), (3600,))
 
     text = result_text(outcome, random.Random(0))
 
@@ -133,7 +140,7 @@ def test_texto_de_pleno_ganado_es_de_gran_premio() -> None:
 
 
 def test_texto_de_apuesta_perdida_muestra_lo_perdido() -> None:
-    outcome = SpinOutcome(DOUBLE_ZERO, OUTSIDE_BETS["red"], 250, 0)
+    outcome = RoundOutcome(DOUBLE_ZERO, (Wager(OUTSIDE_BETS["red"], 250),), (0,))
 
     text = result_text(outcome, random.Random(0))
 
@@ -160,7 +167,7 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
     interaction = make_interaction()
 
-    await table.play(interaction, parse_bet("17"))
+    await table.choose(interaction, parse_bet("17"))
 
     first = interaction.response.edit_message.await_args
     assert attachment_names(first) == [GIF_NAME]
@@ -177,7 +184,7 @@ async def test_apuesta_perdida_reinicia_la_racha(tmp_path: Path) -> None:
     table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
     table.streak = 3
 
-    await table.play(make_interaction(), OUTSIDE_BETS["red"])
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
 
     assert table.streak == 0
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100
@@ -188,7 +195,7 @@ async def test_sin_saldo_no_gira_y_avisa_en_privado(tmp_path: Path) -> None:
     table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=STARTING_BALANCE + 1)
     interaction = make_interaction()
 
-    await table.play(interaction, OUTSIDE_BETS["red"])
+    await table.choose(interaction, OUTSIDE_BETS["red"])
 
     interaction.response.edit_message.assert_not_awaited()
     assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
@@ -201,7 +208,7 @@ async def test_clic_mientras_gira_se_ignora(tmp_path: Path) -> None:
     table._busy = True
     interaction = make_interaction()
 
-    await table.play(interaction, OUTSIDE_BETS["red"])
+    await table.choose(interaction, OUTSIDE_BETS["red"])
 
     interaction.response.defer.assert_awaited_once()
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
@@ -239,7 +246,7 @@ async def test_x2_no_pasa_del_saldo(tmp_path: Path) -> None:
 async def test_doblar_juega_la_ultima_apuesta_con_el_doble(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, pocket=1)
     table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
-    await table.play(make_interaction(), OUTSIDE_BETS["red"])
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
 
     await table._double_and_repeat(make_interaction())
 
@@ -251,7 +258,7 @@ async def test_doblar_juega_la_ultima_apuesta_con_el_doble(tmp_path: Path) -> No
 async def test_doblar_sin_saldo_suficiente_no_cambia_la_ficha(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, pocket=1)
     table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=STARTING_BALANCE)
-    table.last_bet = OUTSIDE_BETS["black"]
+    table.last_wagers = (Wager(OUTSIDE_BETS["black"], STARTING_BALANCE),)
     interaction = make_interaction()
 
     await table._double_and_repeat(interaction)
@@ -366,3 +373,156 @@ async def test_daily_dos_veces_seguidas_solo_paga_una(tmp_path: Path) -> None:
 
     assert len(responder.sent) == 1
     assert "Ya cobraste" in responder.errors[0]
+
+
+# -- Varias apuestas ----------------------------------------------------------------
+
+
+def test_ruleta_con_varias_apuestas_por_texto() -> None:
+    stake, bets = parse_command_args("50", "rojo + 17 + d2", 1000)
+    assert stake == 50
+    assert [b.key for b in bets] == ["red", "in:17", "dozen2"]
+
+
+def test_ruleta_all_con_varias_apuestas_reparte_el_saldo() -> None:
+    stake, bets = parse_command_args("all", "rojo + negro + 0", 1000)
+    assert stake == 333
+    assert len(bets) == 3
+
+
+def test_ruleta_varias_apuestas_sin_cantidad() -> None:
+    stake, bets = parse_command_args("rojo", "+ 17", 1000)
+    assert stake == 100
+    assert [b.key for b in bets] == ["red", "in:17"]
+
+
+def test_texto_de_varias_apuestas_marca_cada_una() -> None:
+    outcome = RoundOutcome(
+        1,
+        (Wager(OUTSIDE_BETS["red"], 100), Wager(parse_bet("17"), 50)),
+        (200, 0),
+    )
+
+    text = result_text(outcome, random.Random(0))
+
+    assert "✅ 🔴 Rojo · 100 Y$ → +100 Y$" in text
+    assert "❌ Pleno 17 · 50 Y$" in text
+    assert "+50 Y$" in text.splitlines()[1]
+
+
+def test_texto_de_acierto_parcial_dice_cuanto_recuperas() -> None:
+    outcome = RoundOutcome(
+        1,
+        (Wager(OUTSIDE_BETS["red"], 10), Wager(parse_bet("17"), 100)),
+        (20, 0),
+    )
+
+    text = result_text(outcome, random.Random(0))
+
+    assert "-90 Y$" in text
+    assert "Recuperas 20 Y$ de 110 Y$" in text
+
+
+async def test_modo_varias_pone_fichas_sin_cobrar(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table._toggle_mode(make_interaction())
+
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+    await table.choose(make_interaction(), parse_bet("1"))
+
+    assert [(w.bet.key, w.stake) for w in table.slip] == [("red", 100), ("in:1", 100)]
+    assert not table.spin_button.disabled
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+
+
+async def test_girar_juega_todas_las_fichas_en_una_tirada(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=1)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    table.multi = True
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+    await table.choose(make_interaction(), parse_bet("17"))
+    interaction = make_interaction()
+
+    await table._spin_slip(interaction)
+
+    assert attachment_names(interaction.response.edit_message.await_args) == [GIF_NAME]
+    # Rojo 100 gana +100; pleno 17 pierde 100: se queda igual.
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+    assert table.slip == ()
+    assert len(table.last_wagers) == 2
+    assert cog.history(GUILD_ID) == [1]
+
+
+async def test_no_se_pueden_poner_mas_fichas_que_saldo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=600)
+    table.multi = True
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+    interaction = make_interaction()
+
+    await table.choose(interaction, OUTSIDE_BETS["black"])
+
+    assert len(table.slip) == 1
+    assert "Necesitas 1.200 Y$" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_all_in_en_modo_varias_usa_lo_que_queda_libre(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=300)
+    table.multi = True
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+
+    await table._all_in(make_interaction())
+
+    assert table.stake == STARTING_BALANCE - 300
+
+
+async def test_doblar_dobla_todas_las_apuestas_de_la_ultima_tirada(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=1)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    table.multi = True
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+    await table.choose(make_interaction(), OUTSIDE_BETS["odd"])
+    await table._spin_slip(make_interaction())
+
+    await table._double_and_repeat(make_interaction())
+
+    assert [w.stake for w in table.last_wagers] == [200, 200]
+    # Primera tirada: +200. Segunda (doble): +400.
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 600
+
+
+async def test_cambiar_de_modo_quita_las_fichas_puestas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    table.multi = True
+    await table.choose(make_interaction(), OUTSIDE_BETS["red"])
+
+    await table._toggle_mode(make_interaction())
+
+    assert not table.multi
+    assert table.slip == ()
+    assert table.spin_button.disabled
+
+
+async def test_comando_con_varias_apuestas_gira_y_deja_la_mesa_en_modo_varias(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, pocket=1)
+
+    send, send_error, _ = await run_command(cog, channel_id=1, amount="100", bet="rojo + impar")
+
+    send_error.assert_not_awaited()
+    table = send.await_args.kwargs["view"]
+    assert table.multi
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 200
+
+
+async def test_comando_con_varias_apuestas_sin_saldo_avisa_del_total(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+
+    send, send_error, _ = await run_command(cog, channel_id=1, amount="600", bet="rojo + negro")
+
+    send.assert_not_awaited()
+    assert "1.200 Y$" in send_error.await_args.args[0]

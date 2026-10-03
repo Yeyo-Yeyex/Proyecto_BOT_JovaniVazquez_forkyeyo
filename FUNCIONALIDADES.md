@@ -253,7 +253,8 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.2. Ruleta americana
 
 - Rueda con 0 y 00. Pagos estándar: pleno 35:1, caballo 17:1, transversal y trío 11:1, cuadro 8:1, línea de cinco (0-00-1-2-3) 6:1, seisena 5:1, docena y columna 2:1, rojo/negro, par/impar y 1-18/19-36 1:1. La ventaja de la casa es del 5,26 % (7,89 % en la línea de cinco) y una prueba lo verifica para cada apuesta.
-- Individual e instantánea: `ruleta [cantidad] [apuesta]` abre una mesa propia con botones. Cada apuesta pulsada cobra, gira y paga en el acto. Cantidades: `500`, `2k`, `all`/`todo` (all-in), `mitad`.
+- Individual: `ruleta [cantidad] [apuesta]` abre una mesa propia con botones. En el modo rápido (por defecto), cada apuesta pulsada cobra, gira y paga en el acto. Cantidades: `500`, `2k`, `all`/`todo` (all-in), `mitad`.
+- Varias apuestas en la misma tirada: con 🧩 **Varias**, cada botón pone una ficha en la mesa sin cobrar nada y 🎰 **Girar** las juega todas con un solo número. Hasta 10 apuestas distintas; las fichas en la misma apuesta se apilan. No se pueden poner más fichas que saldo. El total se cobra y los premios se pagan en una sola transacción. Por texto: `ruleta 100 rojo + 17 + d2` (ficha por apuesta; `all` reparte el saldo a partes iguales).
 - El resultado sale de `secrets` (no predecible) y se decide antes de cobrar, pero solo se muestra si el cobro sale bien.
 - Animación: GIF de ~2 s donde la bola gira y cae en su casilla, seguido del resultado. Los 38 GIF se precalculan al arrancar y se reutilizan.
 - Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos canales.

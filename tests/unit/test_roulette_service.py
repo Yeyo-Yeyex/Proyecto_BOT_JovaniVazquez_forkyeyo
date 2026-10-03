@@ -144,3 +144,79 @@ def test_wheel_por_defecto_cubre_las_38_casillas() -> None:
     wheel = Wheel()
     seen = {wheel.spin() for _ in range(5000)}
     assert seen == set(POCKETS)
+
+
+# -- Varias apuestas en una tirada --------------------------------------------------
+
+
+def test_add_wager_apila_fichas_en_la_misma_apuesta() -> None:
+    from bot.services.roulette import add_wager
+
+    slip = add_wager((), OUTSIDE_BETS["red"], 100)
+    slip = add_wager(slip, parse_bet("17"), 50)
+    slip = add_wager(slip, OUTSIDE_BETS["red"], 100)
+
+    assert [(w.bet.key, w.stake) for w in slip] == [("red", 200), ("in:17", 50)]
+
+
+def test_add_wager_limita_las_apuestas_distintas() -> None:
+    from bot.services.roulette import MAX_WAGERS, add_wager
+
+    slip = ()
+    for number in range(1, MAX_WAGERS + 1):
+        slip = add_wager(slip, parse_bet(str(number)), 1)
+    with pytest.raises(ValueError, match="Como mucho"):
+        add_wager(slip, parse_bet("30"), 1)
+
+
+def test_play_round_paga_cada_apuesta_con_el_mismo_numero() -> None:
+    from bot.services.roulette import Wager, play_round
+
+    outcome = play_round(
+        Wheel(lambda n: 1),
+        [
+            Wager(OUTSIDE_BETS["red"], 100),
+            Wager(parse_bet("1"), 50),
+            Wager(OUTSIDE_BETS["even"], 30),
+        ],
+    )
+
+    assert outcome.returns == (200, 1800, 0)
+    assert outcome.stake == 180
+    assert outcome.net == 1820
+    assert outcome.max_payout == 35
+    assert outcome.won
+
+
+def test_play_round_acierto_parcial_no_cuenta_como_ganada() -> None:
+    from bot.services.roulette import Wager, play_round
+
+    outcome = play_round(
+        Wheel(lambda n: 1), [Wager(OUTSIDE_BETS["red"], 10), Wager(parse_bet("17"), 100)]
+    )
+
+    assert outcome.total_return == 20
+    assert outcome.net == -90
+    assert not outcome.won
+
+
+def test_play_round_sin_apuestas_falla() -> None:
+    from bot.services.roulette import play_round
+
+    with pytest.raises(ValueError):
+        play_round(Wheel(lambda n: 1), [])
+
+
+def test_parse_bets_separa_con_mas() -> None:
+    from bot.services.roulette import parse_bets
+
+    bets = parse_bets("rojo + 17 + 13-14-15")
+
+    assert [b.key for b in bets] == ["red", "in:17", "in:13-14-15"]
+
+
+def test_parse_bets_rechaza_repetidas() -> None:
+    from bot.services.roulette import parse_bets
+
+    with pytest.raises(ValueError, match="repetidas"):
+        parse_bets("rojo + roja")

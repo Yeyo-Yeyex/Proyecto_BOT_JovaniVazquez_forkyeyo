@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 DOUBLE_ZERO = 37
@@ -233,27 +233,109 @@ class Wheel:
         return POCKETS[self._randbelow(len(POCKETS))]
 
 
-@dataclass(frozen=True, slots=True)
-class SpinOutcome:
-    """Resultado de una tirada para una apuesta concreta."""
+#: Máximo de apuestas distintas en una misma tirada. Con 10 líneas el
+#: resultado sigue cabiendo de sobra en un embed y se lee de un vistazo.
+MAX_WAGERS = 10
 
-    pocket: int
+
+@dataclass(frozen=True, slots=True)
+class Wager:
+    """Fichas puestas sobre una apuesta: qué y cuánto."""
+
     bet: Bet
     stake: int
-    total_return: int
+
+
+@dataclass(frozen=True, slots=True)
+class RoundOutcome:
+    """Resultado de una tirada con una o varias apuestas a la vez.
+
+    Attributes:
+        pocket: Casilla ganadora.
+        wagers: Apuestas jugadas, en el orden en que se pusieron.
+        returns: Lo devuelto por cada apuesta (apuesta incluida; 0 si pierde),
+            en el mismo orden que `wagers`.
+    """
+
+    pocket: int
+    wagers: tuple[Wager, ...]
+    returns: tuple[int, ...]
 
     @property
-    def won(self) -> bool:
-        """Si la apuesta ha ganado."""
-        return self.total_return > 0
+    def stake(self) -> int:
+        """Total apostado en la tirada."""
+        return sum(w.stake for w in self.wagers)
+
+    @property
+    def total_return(self) -> int:
+        """Total devuelto al jugador."""
+        return sum(self.returns)
 
     @property
     def net(self) -> int:
-        """Ganancia (positiva) o pérdida (negativa) neta."""
+        """Ganancia (positiva) o pérdida (negativa) neta de la tirada."""
         return self.total_return - self.stake
 
+    @property
+    def won(self) -> bool:
+        """Si la tirada deja al jugador con más de lo que apostó."""
+        return self.net > 0
 
-def play(wheel: Wheel, bet: Bet, stake: int) -> SpinOutcome:
-    """Gira la rueda y calcula lo que corresponde pagar."""
+    @property
+    def max_payout(self) -> int:
+        """Pago "a uno" más alto entre las apuestas acertadas (0 si ninguna)."""
+        return max(
+            (w.bet.payout for w, r in zip(self.wagers, self.returns, strict=True) if r),
+            default=0,
+        )
+
+
+def add_wager(wagers: Sequence[Wager], bet: Bet, stake: int) -> tuple[Wager, ...]:
+    """Añade fichas a una apuesta, apilándolas si ya estaba en la mesa.
+
+    Raises:
+        ValueError: Si se supera `MAX_WAGERS` apuestas distintas.
+    """
+    if stake <= 0:
+        raise ValueError("La ficha tiene que ser mayor que cero.")
+    result = list(wagers)
+    for index, wager in enumerate(result):
+        if wager.bet == bet:
+            result[index] = Wager(bet, wager.stake + stake)
+            return tuple(result)
+    if len(result) >= MAX_WAGERS:
+        raise ValueError(f"Como mucho {MAX_WAGERS} apuestas distintas por tirada.")
+    result.append(Wager(bet, stake))
+    return tuple(result)
+
+
+def play_round(wheel: Wheel, wagers: Sequence[Wager]) -> RoundOutcome:
+    """Gira la rueda una vez y calcula el pago de cada apuesta.
+
+    Raises:
+        ValueError: Si no hay apuestas.
+    """
+    if not wagers:
+        raise ValueError("No hay ninguna apuesta en la mesa.")
     pocket = wheel.spin()
-    return SpinOutcome(pocket, bet, stake, bet.total_return(stake, pocket))
+    returns = tuple(w.bet.total_return(w.stake, pocket) for w in wagers)
+    return RoundOutcome(pocket, tuple(wagers), returns)
+
+
+def play(wheel: Wheel, bet: Bet, stake: int) -> RoundOutcome:
+    """Atajo de `play_round` para una sola apuesta."""
+    return play_round(wheel, [Wager(bet, stake)])
+
+
+def parse_bets(text: str) -> list[Bet]:
+    """Interpreta varias apuestas separadas por `+`: `rojo + 17 + d2`.
+
+    Raises:
+        ValueError: Si alguna no es válida, hay repetidas o son demasiadas.
+    """
+    bets = [parse_bet(part) for part in text.split("+")]
+    if len({bet.key for bet in bets}) != len(bets):
+        raise ValueError("Hay apuestas repetidas. Pon cada una una sola vez.")
+    if len(bets) > MAX_WAGERS:
+        raise ValueError(f"Como mucho {MAX_WAGERS} apuestas distintas por tirada.")
+    return bets
