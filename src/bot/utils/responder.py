@@ -59,6 +59,15 @@ class CommandResponder(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def update_progress(self, content: str) -> None:
+        """Cambia el texto del aviso de progreso por `content`.
+
+        Para operaciones largas que quieren contar por dónde van. Quien la
+        llame debe espaciar las actualizaciones: cada una es una edición de
+        mensaje y Discord limita su ritmo.
+        """
+
+    @abc.abstractmethod
     async def finish(
         self,
         content: str | None = None,
@@ -109,6 +118,9 @@ class InteractionResponder(CommandResponder):
         # comandos de aplicación; `defer` ya muestra el indicador nativo.
         await self._interaction.response.defer(thinking=True, ephemeral=ephemeral)
 
+    async def update_progress(self, content: str) -> None:
+        await self._interaction.edit_original_response(content=content)
+
     async def finish(
         self,
         content: str | None = None,
@@ -155,6 +167,12 @@ class ContextResponder(CommandResponder):
         ephemeral: bool = False,  # noqa: ARG002 - los mensajes de texto no admiten ocultarse.
     ) -> None:
         self._progress_message = await self._ctx.send(placeholder)
+
+    async def update_progress(self, content: str) -> None:
+        if self._progress_message is None:
+            self._progress_message = await self._ctx.send(content)
+        else:
+            await self._progress_message.edit(content=content)
 
     async def finish(
         self,

@@ -37,6 +37,9 @@ class FakeResponder(CommandResponder):
     async def start_progress(self, placeholder: str = "") -> None:
         self.progress.append(placeholder)
 
+    async def update_progress(self, content: str) -> None:
+        self.progress.append(content)
+
     async def finish(self, content=None, **kwargs) -> None:  # noqa: ANN001
         self.finished.append({"content": content, **kwargs})
 
