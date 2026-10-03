@@ -14,8 +14,10 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.message_stats import MessageStatsRepository
+from bot.services.economy import STARTING_BALANCE, EconomyService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.music",
     "bot.cogs.entrance",
     "bot.cogs.images",
+    "bot.cogs.casino",
 )
 
 
@@ -54,8 +57,20 @@ class BotClient(commands.Bot):
     arranque (`start_bot`) para mantener `__main__.py` mínimo.
     """
 
-    def __init__(self, *, command_prefix: str, database_path: Path) -> None:
+    def __init__(
+        self,
+        *,
+        command_prefix: str,
+        database_path: Path,
+        casino_channel_ids: frozenset[int] = frozenset(),
+    ) -> None:
         self.message_stats = MessageStatsRepository(database_path)
+        # Única puerta al dinero del bot: el casino y cualquier sistema futuro
+        # que dé o quite yapdollars deben pasar por aquí (ver services/economy).
+        self.economy = EconomyService(
+            EconomyRepository(database_path, starting_balance=STARTING_BALANCE)
+        )
+        self.casino_channel_ids = casino_channel_ids
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -76,6 +91,7 @@ class BotClient(commands.Bot):
         """
         await self.message_stats.initialize()
         await self.message_stats.recover_interrupted_imports()
+        await self.economy.repository.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)
@@ -90,17 +106,29 @@ class BotClient(commands.Bot):
         logger.info("Sesión iniciada como %s (ID: %s)", self.user, self.user.id)
 
 
-async def start_bot(token: str, *, command_prefix: str, database_path: Path) -> None:
+async def start_bot(
+    token: str,
+    *,
+    command_prefix: str,
+    database_path: Path,
+    casino_channel_ids: frozenset[int] = frozenset(),
+) -> None:
     """Crea el cliente y lo ejecuta hasta que se detenga o falle.
 
     Args:
         token: Token de autenticación del bot. Nunca se registra en logs.
         command_prefix: Prefijo de los comandos de texto (por defecto `.`).
         database_path: Ubicación de la base de datos persistente del bot.
+        casino_channel_ids: Canales donde se permiten los juegos del casino
+            (vacío = cualquiera).
 
     Raises:
         discord.LoginFailure: Si el token es inválido.
     """
-    client = BotClient(command_prefix=command_prefix, database_path=database_path)
+    client = BotClient(
+        command_prefix=command_prefix,
+        database_path=database_path,
+        casino_channel_ids=casino_channel_ids,
+    )
     async with client:
         await client.start(token)

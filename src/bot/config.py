@@ -37,11 +37,14 @@ class BotConfig:
         command_prefix: Prefijo de los comandos de texto. Cada comando
             funciona igual con este prefijo (`.play`) y como comando de
             aplicación (`/play`).
+        casino_channel_ids: Canales donde se permiten los juegos del casino.
+            Vacío significa "cualquier canal".
     """
 
     token: str
     log_level: str = DEFAULT_LOG_LEVEL
     command_prefix: str = DEFAULT_COMMAND_PREFIX
+    casino_channel_ids: frozenset[int] = frozenset()
 
 
 def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConfig:
@@ -55,8 +58,8 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
         Una instancia de :class:`BotConfig` lista para usar.
 
     Raises:
-        ConfigError: Si falta ``DISCORD_TOKEN`` o si ``LOG_LEVEL`` no es un
-            nivel de log válido.
+        ConfigError: Si falta ``DISCORD_TOKEN``, si ``LOG_LEVEL`` no es un
+            nivel de log válido o si ``CASINO_CHANNEL_IDS`` no son IDs.
     """
     source = env if env is not None else os.environ
 
@@ -78,4 +81,33 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
     # en el .env) dejaría el bot sin comandos de texto; se usa el punto.
     command_prefix = source.get("COMMAND_PREFIX", "").strip() or DEFAULT_COMMAND_PREFIX
 
-    return BotConfig(token=token, log_level=log_level, command_prefix=command_prefix)
+    casino_channel_ids = _parse_channel_ids(
+        "CASINO_CHANNEL_IDS", source.get("CASINO_CHANNEL_IDS", "")
+    )
+
+    return BotConfig(
+        token=token,
+        log_level=log_level,
+        command_prefix=command_prefix,
+        casino_channel_ids=casino_channel_ids,
+    )
+
+
+def _parse_channel_ids(name: str, raw: str) -> frozenset[int]:
+    """Lee una lista de IDs de canal separados por comas.
+
+    Raises:
+        ConfigError: Si algún elemento no es un ID numérico de Discord.
+    """
+    ids: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not part.isdigit():
+            raise ConfigError(
+                f"{name} inválido: '{part}' no es un ID de canal. "
+                "Usa IDs numéricos separados por comas."
+            )
+        ids.add(int(part))
+    return frozenset(ids)

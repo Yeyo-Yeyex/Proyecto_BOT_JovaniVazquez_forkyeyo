@@ -53,3 +53,19 @@ def test_load_config_usa_el_punto_si_command_prefix_esta_vacio() -> None:
     config = load_config({"DISCORD_TOKEN": "t", "COMMAND_PREFIX": "  "})
 
     assert config.command_prefix == "."
+
+
+def test_load_config_sin_canales_de_casino_permite_cualquier_canal() -> None:
+    """Sin CASINO_CHANNEL_IDS la lista queda vacía (sin restricción)."""
+    assert load_config({"DISCORD_TOKEN": "t"}).casino_channel_ids == frozenset()
+
+
+def test_load_config_lee_canales_de_casino_separados_por_comas() -> None:
+    config = load_config({"DISCORD_TOKEN": "t", "CASINO_CHANNEL_IDS": " 123, 456 ,"})
+
+    assert config.casino_channel_ids == frozenset({123, 456})
+
+
+def test_load_config_rechaza_canales_de_casino_no_numericos() -> None:
+    with pytest.raises(ConfigError, match="CASINO_CHANNEL_IDS"):
+        load_config({"DISCORD_TOKEN": "t", "CASINO_CHANNEL_IDS": "#casino"})

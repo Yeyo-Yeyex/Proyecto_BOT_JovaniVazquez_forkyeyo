@@ -29,6 +29,9 @@ EXPECTED_COMMANDS = {
     "remove",
     "clear",
     "volume",
+    "ruleta",
+    "saldo",
+    "daily",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
@@ -94,6 +97,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "📝 Solo texto (49)",
                 "🎬 Vídeo (3)",
                 "📊 Niveles",
+                "🎰 Casino",
                 "⚙️ General",
             ]
             for name in EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS:
