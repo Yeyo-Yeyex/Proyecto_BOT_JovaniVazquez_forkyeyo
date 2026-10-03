@@ -21,8 +21,8 @@ VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 # Valor por defecto seguro: suficiente para operar sin generar ruido excesivo.
 DEFAULT_LOG_LEVEL = "INFO"
 
-# Prefijo usado únicamente como respaldo si los comandos de aplicación
-# (slash commands) no están disponibles en algún contexto de desarrollo.
+# Prefijo de los comandos de texto (".play", ".help"...). Los comandos de
+# aplicación ("/play") funcionan siempre, con independencia de este valor.
 DEFAULT_COMMAND_PREFIX = "."
 
 
@@ -34,9 +34,9 @@ class BotConfig:
         token: Token de autenticación del bot de Discord. Es secreto y
             nunca debe registrarse en logs ni exponerse en mensajes.
         log_level: Nivel de log a usar en toda la aplicación.
-        command_prefix: Prefijo de comandos de texto, usado solo como
-            respaldo de desarrollo; la interfaz principal son los
-            comandos de aplicación (slash commands).
+        command_prefix: Prefijo de los comandos de texto. Cada comando
+            funciona igual con este prefijo (`.play`) y como comando de
+            aplicación (`/play`).
     """
 
     token: str
@@ -74,6 +74,8 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
             f"Valores permitidos: {', '.join(sorted(VALID_LOG_LEVELS))}."
         )
 
-    command_prefix = source.get("COMMAND_PREFIX", DEFAULT_COMMAND_PREFIX)
+    # Un COMMAND_PREFIX vacío o con espacios (p. ej. una línea `COMMAND_PREFIX=`
+    # en el .env) dejaría el bot sin comandos de texto; se usa el punto.
+    command_prefix = source.get("COMMAND_PREFIX", "").strip() or DEFAULT_COMMAND_PREFIX
 
     return BotConfig(token=token, log_level=log_level, command_prefix=command_prefix)

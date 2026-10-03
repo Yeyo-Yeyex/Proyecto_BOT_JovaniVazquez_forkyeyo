@@ -1,9 +1,9 @@
 """Comandos de imagen: `magik` deforma una imagen o un avatar.
 
-`/magik` y `ºmagik` son el mismo comando: comparten la lógica a través de
+`/magik` y `.magik` son el mismo comando: comparten la lógica a través de
 `CommandResponder` (`bot.utils.responder`). La imagen se toma, por orden:
 
-1. Un archivo adjunto (en `/magik`, el parámetro `imagen`; en `ºmagik`, el
+1. Un archivo adjunto (en `/magik`, el parámetro `imagen`; en `.magik`, el
    adjunto del propio mensaje o del mensaje al que se responde).
 2. El avatar del miembro indicado.
 3. El avatar de quien ejecuta el comando.
@@ -79,7 +79,7 @@ class Images(commands.Cog):
         return max(0.0, COOLDOWN_SECONDS - elapsed)
 
     async def _magik_impl(self, responder: CommandResponder, source: ImageSource) -> None:
-        """Lógica compartida entre `/magik` y `ºmagik`."""
+        """Lógica compartida entre `/magik` y `.magik`."""
         member = responder.member
         if responder.guild is None or member is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -158,7 +158,7 @@ class Images(commands.Cog):
     async def magik_text(
         self, ctx: commands.Context, miembro: discord.Member | None = None
     ) -> None:
-        """Versión de texto (`ºmagik`) de `/magik`.
+        """Versión de texto (`.magik`) de `/magik`.
 
         Usa el adjunto del mensaje, o el del mensaje al que se responde.
         """

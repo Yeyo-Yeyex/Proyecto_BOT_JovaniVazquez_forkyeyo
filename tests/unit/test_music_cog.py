@@ -46,7 +46,7 @@ def make_voice_member(channel: object) -> SimpleNamespace:
 
 
 def make_context(*, guild_id: int = 1, member: object | None = None) -> MagicMock:
-    """Crea un `commands.Context` de prueba para invocar comandos de texto (`º...`)."""
+    """Crea un `commands.Context` de prueba para invocar comandos de texto (`....`)."""
     ctx = MagicMock()
     ctx.guild = SimpleNamespace(id=guild_id)
     ctx.author = member
@@ -283,7 +283,7 @@ def test_guild_music_state_valores_por_defecto() -> None:
 
 
 # Contrato de nombres: cada acción tiene UN solo nombre corto, idéntico en
-# el comando de aplicación (`/play`) y en el de texto (`ºplay`), sin alias.
+# el comando de aplicación (`/play`) y en el de texto (`.play`), sin alias.
 MUSIC_COMMAND_NAMES = {
     "play",
     "pause",
@@ -298,7 +298,7 @@ MUSIC_COMMAND_NAMES = {
 
 
 def test_cada_comando_de_musica_tiene_el_mismo_nombre_en_slash_y_texto() -> None:
-    """El menú `/` y el prefijo `º` exponen exactamente los mismos nombres."""
+    """El menú `/` y el prefijo `.` exponen exactamente los mismos nombres."""
     cog = Music(MagicMock())
 
     slash_names = {command.name for command in cog.get_app_commands()}
@@ -319,7 +319,7 @@ def test_los_comandos_de_texto_de_musica_no_definen_alias() -> None:
 async def test_comando_de_texto_reproducir_encola_la_pista_igual_que_el_slash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`ºplay` reproduce una pista igual que `/play`."""
+    """`.play` reproduce una pista igual que `/play`."""
     cog = Music(MagicMock())
     channel = MagicMock(name="canal-de-voz")
     voice_client = MagicMock()
@@ -354,7 +354,7 @@ async def test_comando_de_texto_reproducir_encola_la_pista_igual_que_el_slash(
 
 @pytest.mark.asyncio
 async def test_comando_de_texto_pausar_pausa_igual_que_el_slash() -> None:
-    """`ºpause` pausa la reproducción igual que `/pause`."""
+    """`.pause` pausa la reproducción igual que `/pause`."""
     cog = Music(MagicMock())
     channel = MagicMock(name="canal-compartido")
     state = cog._get_state(1)
@@ -371,7 +371,7 @@ async def test_comando_de_texto_pausar_pausa_igual_que_el_slash() -> None:
 
 @pytest.mark.asyncio
 async def test_comando_de_texto_volumen_valida_rango_antes_de_delegar() -> None:
-    """`ºvolume` rechaza valores fuera de rango sin llegar a `_volume_impl`."""
+    """`.volume` rechaza valores fuera de rango sin llegar a `_volume_impl`."""
     cog = Music(MagicMock())
     ctx = make_context(member=make_voice_member(MagicMock()))
 

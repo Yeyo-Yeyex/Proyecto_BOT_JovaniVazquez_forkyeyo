@@ -7,7 +7,7 @@ from pathlib import Path
 
 from discord import app_commands
 
-from bot.app import INITIAL_EXTENSIONS, BotClient, _build_command_prefixes, build_intents
+from bot.app import INITIAL_EXTENSIONS, BotClient, build_intents
 from bot.cogs.general import build_help_embed
 
 # Máxima longitud de un nombre de comando: deben ser cortos y fáciles de teclear.
@@ -32,11 +32,11 @@ EXPECTED_COMMANDS = {
 
 
 def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: Path) -> None:
-    """`/x` y `ºx` son el mismo comando: mismos nombres, cortos, planos y sin alias."""
+    """`/x` y `.x` son el mismo comando: mismos nombres, cortos, planos y sin alias."""
 
     async def load_cogs() -> None:
         client = BotClient(
-            command_prefix="!",
+            command_prefix=".",
             database_path=tmp_path / "message_stats.sqlite3",
         )
         try:
@@ -65,7 +65,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
 
     async def check_help() -> None:
         client = BotClient(
-            command_prefix="!",
+            command_prefix=".",
             database_path=tmp_path / "message_stats.sqlite3",
         )
         try:
@@ -102,11 +102,14 @@ def test_build_intents_habilita_contenido_de_mensajes() -> None:
     assert build_intents().message_content
 
 
-def test_build_command_prefixes_combina_prefijo_configurado_y_fijo() -> None:
-    """El prefijo `º` siempre está disponible además del configurado."""
-    assert _build_command_prefixes("!") == ("!", "º")
+def test_el_bot_usa_unicamente_el_prefijo_configurado(tmp_path: Path) -> None:
+    """No hay prefijos ocultos: solo el configurado activa comandos de texto."""
 
+    async def check_prefix() -> None:
+        client = BotClient(command_prefix=".", database_path=tmp_path / "s.sqlite3")
+        try:
+            assert client.command_prefix == "."
+        finally:
+            await client.close()
 
-def test_build_command_prefixes_evita_duplicados() -> None:
-    """Si el prefijo configurado ya es `º`, no se repite."""
-    assert _build_command_prefixes("º") == ("º",)
+    asyncio.run(check_prefix())

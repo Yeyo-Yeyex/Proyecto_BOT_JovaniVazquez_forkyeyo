@@ -39,8 +39,8 @@ pip install -e ".[dev]"
 2. Completa `DISCORD_TOKEN` con el token de tu bot. Nunca lo subas al
    repositorio.
 3. Ajusta `LOG_LEVEL` y `COMMAND_PREFIX` si lo necesitas (ambos son
-   opcionales). `COMMAND_PREFIX` se añade al prefijo clásico fijo `º`;
-   ambos permiten invocar por texto los mismos comandos que `/`.
+   opcionales). `COMMAND_PREFIX` es el prefijo de los comandos de texto
+   (por defecto `.`); con él se invocan los mismos comandos que con `/`.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo
@@ -54,8 +54,8 @@ python -m bot
 
 ## Funcionalidad actual
 
-- Cada comando tiene **un único nombre corto, igual con `/` y con `º`**
-  (`/play despacito` = `ºplay despacito`). Escribe `/help` o `ºhelp` para ver
+- Cada comando tiene **un único nombre corto, igual con `/` y con `.`**
+  (`/play despacito` = `.play despacito`). Escribe `/help` o `.help` para ver
   la lista:
 
   | Categoría | Comandos |
@@ -69,9 +69,9 @@ python -m bot
   contenido, el mismo efecto que Dank Memer): en vez de estirar o recortar,
   elimina primero los caminos de píxeles menos importantes y vuelve a
   ampliar, así que las formas se "derriten". Usa, por orden: la imagen
-  adjunta (en `ºmagik`, también la del mensaje al que respondes), el avatar
+  adjunta (en `.magik`, también la del mensaje al que respondes), el avatar
   del miembro indicado o el tuyo. Ejemplos: `/magik imagen:<archivo>`,
-  `ºmagik @alguien`, o responde a una foto con `ºmagik`. Solo acepta
+  `.magik @alguien`, o responde a una foto con `.magik`. Solo acepta
   adjuntos de Discord y avatares (nunca enlaces externos), hasta 8 MB, con
   5 segundos de espera entre usos por usuario. Respeta la rotación de las
   fotos de móvil. El bot necesita el permiso **Adjuntar archivos** en el
@@ -110,7 +110,7 @@ comandos antiguos de Discord.
 
 Para recibir eventos de entrada y salida, habilita **Server Members Intent**
 en la sección *Bot* del [portal de desarrolladores de Discord](https://discord.com/developers/applications).
-Para que funcionen los comandos de texto con prefijo `º` (o el prefijo
+Para que funcionen los comandos de texto con prefijo `.` (o el prefijo
 configurado), habilita también **Message Content Intent** en esa misma
 sección: sin él, el bot no puede leer el contenido de mensajes normales y
 esos comandos simplemente no se dispararán (los comandos de aplicación `/`
@@ -185,13 +185,13 @@ src/bot/
 ├── logging_config.py   # Configuración centralizada de logging
 ├── cogs/                # Comandos y eventos agrupados por dominio
 │   ├── general.py       # Comandos generales (ping, help)
-│   ├── errors.py        # Mensajes claros ante errores de comandos (/ y º)
+│   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py      # Bienvenidas y despedidas
 │   ├── images.py        # Comandos de imagen (magik)
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
-│   └── responder.py     # Adaptador común: misma lógica para / y º
+│   └── responder.py     # Adaptador común: misma lógica para / y .
 ├── services/            # Lógica de negocio pura, sin discord.py
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)

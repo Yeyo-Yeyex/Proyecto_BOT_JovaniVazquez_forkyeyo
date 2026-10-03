@@ -1,4 +1,4 @@
-"""Gestión centralizada de errores de comandos de texto (`º`) y de aplicación (`/`).
+"""Gestión centralizada de errores de comandos de texto (`.`) y de aplicación (`/`).
 
 Sin este cog, los errores de comandos de texto (un argumento mal escrito, un
 miembro que no existe, un fallo inesperado) solo aparecen en el log y el

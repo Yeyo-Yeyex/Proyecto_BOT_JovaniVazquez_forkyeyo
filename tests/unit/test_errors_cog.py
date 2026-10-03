@@ -19,7 +19,7 @@ from bot.cogs.errors import (
 
 
 def test_un_mensaje_que_no_es_un_comando_no_recibe_respuesta() -> None:
-    """Escribir `ºloquesea` sin que exista el comando no provoca ninguna respuesta."""
+    """Escribir `.loquesea` sin que exista el comando no provoca ninguna respuesta."""
     assert describe_command_error(commands.CommandNotFound()) is None
 
 

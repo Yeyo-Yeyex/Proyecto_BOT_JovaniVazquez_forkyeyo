@@ -13,7 +13,7 @@ Crear un bot de Discord en español que aporte a los servidores:
 - Reproducción y control de música en canales de voz.
 - Efectos de imagen divertidos, como la deformación `magik`.
 
-La interfaz usa comandos de aplicación (`/`) y sus equivalentes de texto con el prefijo `º` (además del prefijo configurable), junto con botones o menús de Discord cuando corresponda. Los mensajes automáticos y avisos se enviarán en los canales configurados.
+La interfaz usa comandos de aplicación (`/`) y sus equivalentes de texto con el prefijo `.` (configurable con `COMMAND_PREFIX`), junto con botones o menús de Discord cuando corresponda. Los mensajes automáticos y avisos se enviarán en los canales configurados.
 
 ## 2. Usuarios y permisos
 
@@ -88,12 +88,12 @@ La importación no concede experiencia por sí sola. Al activar el sistema, el r
 
 ### 4.2. Comandos implementados
 
-- `/level [miembro]` y `ºlevel [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
-- `/top [pagina]` y `ºtop [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
-- `/ping` y `ºping`: comprueban la latencia del bot.
-- `/help` y `ºhelp`: listan todos los comandos agrupados por categoría, una línea por comando.
+- `/level [miembro]` y `.level [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
+- `/top [pagina]` y `.top [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
+- `/ping` y `.ping`: comprueban la latencia del bot.
+- `/help` y `.help`: listan todos los comandos agrupados por categoría, una línea por comando.
 
-**Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `º`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo `º` está siempre activo y se combina con `COMMAND_PREFIX` (por defecto `!`). Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
+**Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `.`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo de texto es `.` por defecto y se puede cambiar con `COMMAND_PREFIX`; los comandos `/` funcionan siempre, sea cual sea el prefijo. Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
 Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles mensajes` y `/niveles activar` se retiraron del menú una vez completada la preparación del servidor inicial. La activación del sistema no se ofrece como comando público permanente.
 
@@ -120,7 +120,7 @@ Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles m
 
 ### 5.1. Comandos implementados
 
-Cada acción tiene un único nombre, igual en `/` y en `º` (por ejemplo `/play` y `ºplay`). Ambas interfaces reutilizan la misma lógica interna; el adaptador compartido `CommandResponder` (`InteractionResponder`/`ContextResponder` en `bot.utils.responder`) oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
+Cada acción tiene un único nombre, igual en `/` y en `.` (por ejemplo `/play` y `.play`). Ambas interfaces reutilizan la misma lógica interna; el adaptador compartido `CommandResponder` (`InteractionResponder`/`ContextResponder` en `bot.utils.responder`) oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
 
 - `play consulta`: busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
 - `pause` y `resume`: controlan la reproducción actual.
@@ -158,15 +158,15 @@ Los comandos de texto con prefijo requieren el intent privilegiado **Message Con
 
 ### 6.1. Comportamiento
 
-`/magik [imagen] [miembro]` y `ºmagik [miembro]` deforman una imagen con **seam carving** (reescalado consciente del contenido), la técnica del comando `magik` de Dank Memer. A diferencia de estirar o recortar, el algoritmo calcula la "energía" de cada píxel (el contraste con sus vecinos) y elimina repetidamente la **costura** —un camino continuo de píxeles de arriba abajo— de menor energía acumulada. Se pierden primero las zonas planas y se conservan los bordes y las formas; al eliminar la mitad del ancho y del alto y volver a ampliar la imagen, los objetos se deforman y "derriten".
+`/magik [imagen] [miembro]` y `.magik [miembro]` deforman una imagen con **seam carving** (reescalado consciente del contenido), la técnica del comando `magik` de Dank Memer. A diferencia de estirar o recortar, el algoritmo calcula la "energía" de cada píxel (el contraste con sus vecinos) y elimina repetidamente la **costura** —un camino continuo de píxeles de arriba abajo— de menor energía acumulada. Se pierden primero las zonas planas y se conservan los bordes y las formas; al eliminar la mitad del ancho y del alto y volver a ampliar la imagen, los objetos se deforman y "derriten".
 
 La imagen se elige, por orden de prioridad:
 
-1. Un archivo de imagen adjunto (en `/magik`, el parámetro `imagen`; en `ºmagik`, el adjunto del mensaje o el del mensaje al que se responde).
+1. Un archivo de imagen adjunto (en `/magik`, el parámetro `imagen`; en `.magik`, el adjunto del mensaje o el del mensaje al que se responde).
 2. El avatar del miembro indicado.
 3. El avatar de quien ejecuta el comando.
 
-La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fotograma y se respeta la rotación EXIF de las fotos de móvil. En `ºmagik` el resultado se envía como un mensaje nuevo y el aviso «Distorsionando…» se borra.
+La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fotograma y se respeta la rotación EXIF de las fotos de móvil. En `.magik` el resultado se envía como un mensaje nuevo y el aviso «Distorsionando…» se borra.
 
 ### 6.2. Límites y seguridad
 
@@ -182,8 +182,8 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 - El resultado conserva los objetos de bordes marcados y sacrifica antes el fondo plano.
 - La misma imagen produce siempre el mismo resultado.
 - Una imagen inválida, truncada, demasiado pequeña o demasiado grande nunca provoca una excepción sin controlar.
-- `/magik` y `ºmagik` comparten exactamente la misma lógica y el mismo nombre.
-- Una prueba de integración con objetos reales de discord.py (servidor, canal y mensaje con adjunto) recorre todo el camino de `ºmagik`: adjunto, procesado, envío y errores.
+- `/magik` y `.magik` comparten exactamente la misma lógica y el mismo nombre.
+- Una prueba de integración con objetos reales de discord.py (servidor, canal y mensaje con adjunto) recorre todo el camino de `.magik`: adjunto, procesado, envío y errores.
 
 ### 6.4. Errores en comandos de texto y de aplicación
 

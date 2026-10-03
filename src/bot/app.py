@@ -29,11 +29,6 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.images",
 )
 
-# Prefijo adicional, fijo y siempre activo, para invocar comandos de texto
-# clásicos (p. ej. "ºplay cancion") además del prefijo configurable y de los
-# comandos de aplicación ("/play"). No sustituye a ninguno de los dos.
-EXTRA_TEXT_COMMAND_PREFIX = "."
-
 
 def build_intents() -> discord.Intents:
     """Crea los intents requeridos por las funciones actuales.
@@ -41,24 +36,13 @@ def build_intents() -> discord.Intents:
     El intent privilegiado de miembros permite recibir eventos de entrada
     y salida; también debe habilitarse en el portal de desarrolladores.
     El intent privilegiado de contenido de mensajes es necesario para que
-    el bot pueda leer comandos de texto con prefijo (p. ej. "ºplay"); debe
+    el bot pueda leer comandos de texto con prefijo (p. ej. ".play"); debe
     habilitarse igualmente como "Message Content Intent" en el portal.
     """
     intents = discord.Intents.default()
     intents.members = True
     intents.message_content = True
     return intents
-
-
-def _build_command_prefixes(configured_prefix: str) -> tuple[str, ...]:
-    """Combina el prefijo configurable con el prefijo fijo `º`.
-
-    Ambos quedan siempre activos y funcionan de forma intercambiable;
-    se evita duplicar el prefijo si coinciden.
-    """
-    if configured_prefix == EXTRA_TEXT_COMMAND_PREFIX:
-        return (configured_prefix,)
-    return (configured_prefix, EXTRA_TEXT_COMMAND_PREFIX)
 
 
 class BotClient(commands.Bot):
@@ -71,7 +55,7 @@ class BotClient(commands.Bot):
     def __init__(self, *, command_prefix: str, database_path: Path) -> None:
         self.message_stats = MessageStatsRepository(database_path)
         super().__init__(
-            command_prefix=_build_command_prefixes(command_prefix),
+            command_prefix=command_prefix,
             intents=build_intents(),
             # El texto de ayuda por defecto de discord.py no está en
             # español ni pensado para slash commands; se desactiva.
@@ -106,7 +90,7 @@ async def start_bot(token: str, *, command_prefix: str, database_path: Path) -> 
 
     Args:
         token: Token de autenticación del bot. Nunca se registra en logs.
-        command_prefix: Prefijo de comandos de texto de respaldo.
+        command_prefix: Prefijo de los comandos de texto (por defecto `.`).
         database_path: Ubicación de la base de datos persistente del bot.
 
     Raises:
