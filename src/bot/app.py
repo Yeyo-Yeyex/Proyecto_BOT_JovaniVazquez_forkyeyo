@@ -14,6 +14,7 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.message_stats import MessageStatsRepository
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.message_stats",
     "bot.cogs.welcome",
     "bot.cogs.music",
+    "bot.cogs.entrance",
     "bot.cogs.images",
 )
 
@@ -54,6 +56,9 @@ class BotClient(commands.Bot):
 
     def __init__(self, *, command_prefix: str, database_path: Path) -> None:
         self.message_stats = MessageStatsRepository(database_path)
+        # Los sonidos de entrada viven junto a la base de datos, en el mismo
+        # volumen persistente (`.data/entradas/`).
+        self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
         super().__init__(
             command_prefix=command_prefix,
             intents=build_intents(),

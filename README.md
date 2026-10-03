@@ -61,6 +61,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 🎵 Música | `play <consulta>` · `pause` · `resume` · `skip` · `stop` · `queue` · `remove <posicion>` · `clear` · `volume <1-200>` |
+  | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🎨 Imagen | `magik [imagen] [miembro]` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | ⚙️ General | `ping` · `help` |
@@ -93,7 +94,13 @@ python -m bot
   controlar la reproducción desde el mismo canal de voz en el que está el
   bot. Las pistas están limitadas a 30 minutos y la cola, a 50 elementos por
   servidor. El bot abandona el canal automáticamente si se queda sin oyentes
-  humanos o tras 5 minutos de inactividad.
+  humanos o tras 5 minutos de inactividad. Se conecta ensordecido para que
+  Discord no le envíe el audio de los demás.
+- Sonidos de entrada: cada miembro sube con `entrada` un audio de hasta 3 s
+  que suena cuando entra a un canal de voz, con volumen ajustable (10-200 %).
+  El bot entra, lo reproduce y se va; no suena si el bot ya está poniendo
+  música. Los clips se guardan en `.data/entradas/` (mismo volumen Docker
+  que la base de datos).
 
 La importación histórica de este servidor ya se completó y la activación de
 niveles ya se ejecutó. Los comandos temporales de importación/activación y los

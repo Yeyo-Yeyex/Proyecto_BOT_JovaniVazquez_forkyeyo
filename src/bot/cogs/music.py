@@ -149,7 +149,13 @@ class Music(commands.Cog):
 
         if state.voice_client is None:
             try:
-                state.voice_client = await member.voice.channel.connect()
+                if guild.voice_client is not None:
+                    # Conexión ajena a la música: un sonido de entrada de pocos
+                    # segundos (`bot.cogs.entrance`). La música tiene prioridad.
+                    await guild.voice_client.disconnect(force=True)
+                # Ensordecido: Discord deja de enviar al bot el audio de los
+                # demás, que no necesita, y la bajada en voz cae a casi cero.
+                state.voice_client = await member.voice.channel.connect(self_deaf=True)
             except (discord.ClientException, TimeoutError) as error:
                 logger.warning(
                     "No se pudo conectar al canal de voz %s del servidor %s: %s",
