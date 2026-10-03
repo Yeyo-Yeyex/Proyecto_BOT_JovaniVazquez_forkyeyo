@@ -34,6 +34,22 @@ EXPECTED_COMMANDS = {
     "daily",
 }
 
+# Comandos de administración (cog `Admin`): también con `/` y con `.`.
+ADMIN_COMMANDS = {
+    "purge",
+    "mute",
+    "unmute",
+    "kick",
+    "ban",
+    "unban",
+    "lock",
+    "unlock",
+    "slow",
+    "say",
+    "nick",
+    "role",
+}
+
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
 TEXT_ONLY_COMMANDS = {"magik", "memes"}
 
@@ -55,7 +71,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             text_names = {c.name for c in client.commands}
             effects = {c.name for c in client.commands if "help_group" in c.extras}
 
-            assert slash_names == EXPECTED_COMMANDS
+            assert slash_names == EXPECTED_COMMANDS | ADMIN_COMMANDS
             assert text_names == slash_names | TEXT_ONLY_COMMANDS | set(EFFECTS)
             # Los efectos conservan el nombre de Dank Memer (algunos de más de
             # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
@@ -65,6 +81,12 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects)
             assert client.get_cog("Welcome") is not None
             assert client.get_cog("Music") is not None
+            # Los de administración no aparecen en el menú `/` de quien no es admin.
+            for command in slash:
+                if command.name in ADMIN_COMMANDS:
+                    assert command.default_permissions is not None
+                    assert command.default_permissions.administrator
+                    assert command.guild_only
         finally:
             await client.close()
 
@@ -84,29 +106,39 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 await client.load_extension(extension)
 
             embed = build_help_embed(client)
-            detailed = [f for f in embed.fields if "(" not in f.name or "prefijo" in f.name]
-            text = "\n".join(field.value for field in detailed)
-            listed = " · ".join(f.value for f in embed.fields if f not in detailed).split(" · ")
+            admin_embed = build_help_embed(client, include_admin=True)
+
+            def listed(fields: list) -> list[str]:
+                values = " · ".join(field.value for field in fields)
+                return [name.strip("`") for name in values.split(" · ")]
 
             assert [field.name for field in embed.fields] == [
-                "🎵 Música",
-                "🔔 Entradas",
-                "🎨 Imagen (solo con prefijo)",
-                "🖼️ Con avatar (46)",
-                "💬 Avatar + texto (10)",
-                "📝 Solo texto (49)",
-                "🎬 Vídeo (3)",
-                "📊 Niveles",
-                "🎰 Casino",
-                "⚙️ General",
+                "⚙️ General (2)",
+                "🎵 Música (9)",
+                "📊 Niveles (2)",
+                "🎰 Casino (3)",
+                "🔔 Entradas (1)",
+                "🎨 Imagen (2)",
+                "🎨 Imagen · avatar (46)",
+                "🎨 Imagen · avatar + texto (10)",
+                "🎨 Imagen · texto (49)",
+                "🎨 Imagen · vídeo (3)",
             ]
-            for name in EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS:
-                assert text.count(f"**{name}**") == 1
-            assert len(text.splitlines()) == len(EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS)
-            # Cada efecto aparece una vez, solo por nombre.
-            assert sorted(listed) == sorted(EFFECTS)
-            assert all(len(field.value) <= 1024 for field in embed.fields)
-            assert len(embed) <= 6000
+            # Cada comando aparece una vez, solo por nombre y sin descripción.
+            everyone = EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS | set(EFFECTS)
+            assert sorted(listed(embed.fields)) == sorted(everyone)
+            assert "—" not in "".join(field.value for field in embed.fields)
+            # Dentro de cada categoría, en orden alfabético.
+            for field in embed.fields:
+                names = listed([field])
+                assert names == sorted(names)
+            # La categoría de administración solo se enseña a administradores.
+            assert admin_embed.fields[-1].name == f"🛡️ Admin ({len(ADMIN_COMMANDS)})"
+            assert set(listed([admin_embed.fields[-1]])) == ADMIN_COMMANDS
+            for result in (embed, admin_embed):
+                assert all(len(field.value) <= 1024 for field in result.fields)
+                assert len(result) <= 6000
+                assert len(result.fields) <= 25
         finally:
             await client.close()
 

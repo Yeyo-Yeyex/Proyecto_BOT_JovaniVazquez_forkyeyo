@@ -317,11 +317,12 @@ async def test_memes_lista_los_efectos_en_un_embed(harness: Harness) -> None:
 
 @pytest.mark.asyncio
 async def test_la_ayuda_lista_los_efectos_por_nombre(harness: Harness) -> None:
-    """`.help` muestra `memes` con su descripción y los efectos en bloque, solo por nombre."""
+    """`.help` muestra `memes` y los efectos, todos solo por nombre."""
     await harness.say(".help", attach_image=False)
 
     fields = harness.sent[0]["embeds"][0]["fields"]
     text = "\n".join(field["value"] for field in fields)
-    assert "**memes**" in text
-    assert any("trigger" in f["value"].split(" · ") for f in fields)
-    assert any("changemymind" in f["value"].split(" · ") for f in fields)
+    names = [name.strip("`") for name in text.replace("\n", " · ").split(" · ")]
+    assert "memes" in names
+    assert "trigger" in names
+    assert "changemymind" in names

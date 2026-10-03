@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs.errors import (
+    ADMIN_ONLY_ERROR,
     GENERIC_ERROR,
     GUILD_ONLY_ERROR,
     Errors,
@@ -42,6 +43,16 @@ def test_fuera_de_un_servidor_se_avisa() -> None:
     """Los comandos solo de servidor lo explican."""
     assert describe_command_error(commands.NoPrivateMessage()) == GUILD_ONLY_ERROR
     assert describe_app_command_error(app_commands.NoPrivateMessage()) == GUILD_ONLY_ERROR
+
+
+def test_sin_permiso_de_administrador_se_dice_claramente() -> None:
+    """Los comandos de admin explican por qué no se pueden usar, en `.` y en `/`."""
+    assert describe_command_error(commands.MissingPermissions(["administrator"])) == (
+        ADMIN_ONLY_ERROR
+    )
+    assert describe_app_command_error(app_commands.MissingPermissions(["administrator"])) == (
+        ADMIN_ONLY_ERROR
+    )
 
 
 def test_un_fallo_inesperado_no_revela_detalles_internos() -> None:

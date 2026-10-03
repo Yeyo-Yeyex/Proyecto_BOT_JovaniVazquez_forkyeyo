@@ -66,6 +66,14 @@ Work = Callable[[list[bytes]], tuple[bytes, str]]
 _MENTION = re.compile(r"<@!?(\d+)>")
 
 # Títulos de cada grupo en `.memes`, por `Effect.kind`.
+# Nombre corto de cada tipo en `/help`, donde aparece como "🎨 Imagen · <tipo>".
+KIND_HELP_LABELS: dict[str, str] = {
+    "avatar": "avatar",
+    "mixed": "avatar + texto",
+    "text": "texto",
+    "video": "vídeo",
+}
+
 KIND_TITLES: dict[str, str] = {
     "avatar": "🖼️ Con avatar",
     "mixed": "💬 Avatar + texto",
@@ -243,9 +251,9 @@ class Images(commands.Cog):
             callback,
             name=effect.name,
             help=effect.description,
-            # La ayuda general los lista en bloque, solo por nombre.
+            # La ayuda los reparte en subcategorías de "Imagen" según su tipo.
             extras={
-                COMPACT_GROUP_KEY: KIND_TITLES[effect.kind],
+                COMPACT_GROUP_KEY: KIND_HELP_LABELS[effect.kind],
                 COMPACT_ORDER_KEY: list(KIND_TITLES).index(effect.kind),
             },
         )

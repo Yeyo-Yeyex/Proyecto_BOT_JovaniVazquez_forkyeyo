@@ -26,96 +26,91 @@ EMBED_COLOR = discord.Color.blurple()
 # Orden y título de cada categoría de la ayuda, por nombre de cog. Un cog
 # nuevo que no esté aquí aparece igualmente, al final, como "Otros".
 HELP_CATEGORIES: dict[str, str] = {
+    "General": "⚙️ General",
     "Music": "🎵 Música",
-    "Entrance": "🔔 Entradas",
-    "Images": "🎨 Imagen (solo con prefijo)",
     "MessageStats": "📊 Niveles",
     "Casino": "🎰 Casino",
-    "General": "⚙️ General",
+    "Entrance": "🔔 Entradas",
+    "Images": "🎨 Imagen",
 }
 OTHER_CATEGORY = "📦 Otros"
+# Categoría de los comandos de administración: solo se muestra a quien es
+# administrador, para no enseñar a todo el mundo comandos que no puede usar.
+ADMIN_COG = "Admin"
+ADMIN_CATEGORY = "🛡️ Admin"
 
-# Clave de `Command.extras` para los comandos que la ayuda lista en bloque,
-# solo por nombre, bajo el título indicado (los 108 efectos de imagen: con
-# una línea cada uno no cabrían en los 6000 caracteres de un embed).
+# Clave de `Command.extras` para los comandos que la ayuda lista en una
+# subcategoría propia, con el título indicado (los efectos de imagen, que se
+# reparten por tipo justo después de "Imagen").
 COMPACT_GROUP_KEY = "help_group"
 # Clave opcional de `Command.extras`: posición del grupo en la ayuda (menor, antes).
 COMPACT_ORDER_KEY = "help_order"
 
 # Máximo de caracteres de un campo de embed (límite de Discord).
 FIELD_LIMIT = 1024
+# Separador entre nombres de comando dentro de una categoría.
+SEPARATOR = " · "
 
 
-def _format_arguments(bot: commands.Bot, command: commands.Command) -> str:
-    """Devuelve los argumentos como `<obligatorio> [opcional]`, o cadena vacía.
+def build_help_embed(bot: commands.Bot, *, include_admin: bool = False) -> discord.Embed:
+    """Construye la ayuda en un solo embed: categorías con nombres de comando.
 
-    Se leen del comando de aplicación homónimo, que es la fuente de verdad
-    de los nombres de parámetros; si no existe, se usa la firma del texto.
-    """
-    slash = bot.tree.get_command(command.name)
-    if isinstance(slash, app_commands.Command):
-        parts = [
-            f"<{parameter.name}>" if parameter.required else f"[{parameter.name}]"
-            for parameter in slash.parameters
-        ]
-        return " ".join(parts)
-    return command.signature
+    Todas las categorías tienen el mismo formato: un campo por categoría con
+    los nombres en orden alfabético, sin descripción ni argumentos. Los
+    comandos se leen de `bot.commands` en vez de una lista escrita a mano,
+    para que la ayuda nunca se desincronice de lo registrado. Como `/nombre`
+    y `.nombre` son idénticos, cada comando aparece una sola vez.
 
-
-def _describe(bot: commands.Bot, command: commands.Command) -> str:
-    """Descripción corta del comando, tomada del comando de aplicación homónimo."""
-    slash = bot.tree.get_command(command.name)
-    if isinstance(slash, app_commands.Command) and slash.description:
-        return slash.description
-    return (command.help or "").splitlines()[0] if command.help else "Sin descripción."
-
-
-def build_help_embed(bot: commands.Bot) -> discord.Embed:
-    """Construye la ayuda: una línea corta por comando, agrupada por categoría.
-
-    Los comandos se leen de `bot.commands` y `bot.tree` en vez de mantener
-    una lista escrita a mano, para que la ayuda nunca se desincronice de lo
-    realmente registrado. Como `/nombre` y `.nombre` son idénticos, cada
-    comando aparece una sola vez. Los que declaran `extras["help_group"]`
-    (los efectos de imagen) se listan solo por nombre, agrupados, justo
-    después de su categoría.
+    Args:
+        bot: Cliente con los cogs ya cargados.
+        include_admin: Si se añade la categoría de administración (solo
+            para quien tiene permiso de administrador).
     """
     prefix = _text_prefix(bot)
     embed = discord.Embed(
         title="📖 Comandos",
         description=(
-            f"Funcionan igual con `/` y con `{prefix}`. "
-            f"Ej: `/play despacito` o `{prefix}play despacito`"
+            f"Con `/` o con `{prefix}` · los de imagen, solo con `{prefix}` · "
+            f"`{prefix}memes efecto` explica un efecto"
         ),
         color=EMBED_COLOR,
     )
 
     visible = [c for c in bot.commands if not c.hidden]
-    detailed = [c for c in visible if COMPACT_GROUP_KEY not in c.extras]
+    categories: dict[str, list[str]] = {}
     groups: dict[str, list[str]] = {}
-    for command in sorted(
-        (c for c in visible if COMPACT_GROUP_KEY in c.extras),
-        key=lambda c: (c.extras.get(COMPACT_ORDER_KEY, 0), c.name),
-    ):
-        groups.setdefault(command.extras[COMPACT_GROUP_KEY], []).append(command.name)
+    for command in sorted(visible, key=lambda c: c.extras.get(COMPACT_ORDER_KEY, 0)):
+        if COMPACT_GROUP_KEY in command.extras:
+            groups.setdefault(command.extras[COMPACT_GROUP_KEY], []).append(command.name)
+        else:
+            categories.setdefault(_category_title(command), []).append(command.name)
 
-    for cog_name, title in (*HELP_CATEGORIES.items(), (None, OTHER_CATEGORY)):
-        lines = []
-        for command in sorted(
-            (c for c in detailed if _category_key(c) == cog_name),
-            key=lambda c: _definition_index(bot, c),
-        ):
-            arguments = _format_arguments(bot, command)
-            arguments = f" `{arguments}`" if arguments else ""
-            lines.append(f"**{command.name}**{arguments} — {_describe(bot, command)}")
-        if lines:
-            embed.add_field(name=title, value="\n".join(lines), inline=False)
-        if cog_name == "Images":
-            for group, names in groups.items():
-                for value in _chunk_names(names):
-                    embed.add_field(name=f"{group} ({len(names)})", value=value, inline=False)
+    ordered = [*HELP_CATEGORIES.values()]
+    sections: list[tuple[str, list[str]]] = []
+    for title in ordered:
+        sections.append((title, categories.get(title, [])))
+        if title == HELP_CATEGORIES["Images"]:
+            sections.extend((f"{title} · {group}", names) for group, names in groups.items())
+    sections.append((OTHER_CATEGORY, categories.get(OTHER_CATEGORY, [])))
+    if include_admin:
+        sections.append((ADMIN_CATEGORY, categories.get(ADMIN_CATEGORY, [])))
+
+    for title, names in sections:
+        if not names:
+            continue
+        chunks = _chunk_names([f"`{name}`" for name in sorted(names)])
+        for index, value in enumerate(chunks):
+            name = f"{title} ({len(names)})" if index == 0 else f"{title} (cont.)"
+            embed.add_field(name=name, value=value, inline=False)
 
     return embed
+
+
+def _category_title(command: commands.Command) -> str:
+    """Título de la categoría a la que pertenece el comando."""
+    if command.cog_name == ADMIN_COG:
+        return ADMIN_CATEGORY
+    return HELP_CATEGORIES.get(command.cog_name or "", OTHER_CATEGORY)
 
 
 def _chunk_names(names: list[str]) -> list[str]:
@@ -123,7 +118,7 @@ def _chunk_names(names: list[str]) -> list[str]:
     chunks: list[str] = []
     current = ""
     for name in names:
-        candidate = f"{current} · {name}" if current else name
+        candidate = f"{current}{SEPARATOR}{name}" if current else name
         if len(candidate) > FIELD_LIMIT:
             chunks.append(current)
             candidate = name
@@ -147,17 +142,9 @@ def _text_prefix(bot: commands.Bot) -> str:
     return DEFAULT_COMMAND_PREFIX
 
 
-def _category_key(command: commands.Command) -> str | None:
-    """Nombre de cog si tiene categoría conocida; `None` para "Otros"."""
-    return command.cog_name if command.cog_name in HELP_CATEGORIES else None
-
-
-def _definition_index(bot: commands.Bot, command: commands.Command) -> int:
-    """Posición del comando en su cog, para respetar el orden de definición."""
-    cog = bot.get_cog(command.cog_name) if command.cog_name else None
-    if cog is None:
-        return 0
-    return cog.get_commands().index(command)
+def is_admin(member: discord.Member | None) -> bool:
+    """Indica si el miembro tiene el permiso de administrador en su servidor."""
+    return member is not None and member.guild_permissions.administrator
 
 
 class General(commands.Cog):
@@ -194,7 +181,8 @@ class General(commands.Cog):
 
     async def _help_impl(self, responder: CommandResponder) -> None:
         """Lógica compartida entre `/help` y `.help`."""
-        await responder.send(embed=build_help_embed(self.bot), ephemeral=True)
+        embed = build_help_embed(self.bot, include_admin=is_admin(responder.member))
+        await responder.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="help", description="Muestra todos los comandos.")
     async def help_command(self, interaction: discord.Interaction) -> None:
