@@ -134,3 +134,16 @@ async def test_build_help_embed_agrupa_por_categoria_con_descripcion_corta() -> 
     lines = embed.fields[0].value.splitlines()
     assert len(lines) == 2
     assert all(len(line) <= 80 for line in lines)
+
+
+def test_chunk_names_parte_los_nombres_sin_pasar_del_limite_de_un_campo() -> None:
+    """Una lista larga de nombres se reparte en varios campos de como mucho 1024 caracteres."""
+    from bot.cogs.general import FIELD_LIMIT, _chunk_names
+
+    names = [f"efecto{i:03d}" for i in range(200)]
+
+    chunks = _chunk_names(names)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= FIELD_LIMIT for chunk in chunks)
+    assert " · ".join(chunks).split(" · ") == names

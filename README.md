@@ -80,7 +80,7 @@ python -m bot
   canal; si falta, `magik` lo explica en lugar de quedarse colgado.
 - Los **108 efectos de imagen de Dank Memer** (`trigger`, `slap`, `wanted`,
   `changemymind`, `brain`, `tweet`, `crab`...) funcionan como comandos de
-  texto con su nombre original. `.memes` los lista agrupados y
+  texto con su nombre original. `.help` y `.memes` los listan agrupados y
   `.memes <efecto>` explica uno. Reglas comunes:
   - `@alguien` (o responder a su mensaje) usa su avatar; una imagen adjunta
     lo sustituye. En los de dos personas (`slap`, `spank`, `bed`...) tú eres

@@ -4,8 +4,8 @@ Todos son **solo comandos de texto** (`.trigger @alguien`): los slash commands
 se reservan para el resto del bot, y Discord además limita un bot a 100
 comandos de `/`. Cada efecto se registra como un comando de texto con el
 nombre que tiene en Dank Memer, generado desde `bot.services.memes.EFFECTS`.
-Para no inundar la ayuda general, esos comandos van ocultos y se listan con
-`.memes`.
+En `.help` aparecen solo por nombre, agrupados por tipo (con una línea cada
+uno no cabrían en un embed); `.memes efecto` explica cómo se usa cada uno.
 
 Cómo se leen los argumentos de un efecto (ver :func:`parse_arguments`):
 
@@ -40,6 +40,7 @@ from dataclasses import dataclass
 import discord
 from discord.ext import commands
 
+from bot.cogs.general import COMPACT_GROUP_KEY, COMPACT_ORDER_KEY
 from bot.services.image_input import MAX_INPUT_BYTES, ImageTooLargeError, InvalidImageError
 from bot.services.magik import apply_magik
 from bot.services.memes import EFFECTS, Effect, MemeInputError, build_request, render
@@ -223,7 +224,7 @@ class Images(commands.Cog):
         self._last_use: dict[int, float] = {}
 
     async def cog_load(self) -> None:
-        """Registra un comando de texto oculto por cada efecto de `EFFECTS`."""
+        """Registra un comando de texto por cada efecto de `EFFECTS`."""
         for effect in EFFECTS.values():
             self.bot.add_command(self._build_effect_command(effect))
 
@@ -238,7 +239,16 @@ class Images(commands.Cog):
         async def callback(ctx: commands.Context, *, argumentos: str = "") -> None:
             await self.run_effect(ctx, effect, argumentos)
 
-        command = commands.Command(callback, name=effect.name, help=effect.description, hidden=True)
+        command = commands.Command(
+            callback,
+            name=effect.name,
+            help=effect.description,
+            # La ayuda general los lista en bloque, solo por nombre.
+            extras={
+                COMPACT_GROUP_KEY: KIND_TITLES[effect.kind],
+                COMPACT_ORDER_KEY: list(KIND_TITLES).index(effect.kind),
+            },
+        )
         return commands.guild_only()(command)
 
     def _cooldown_remaining(self, user_id: int) -> float:

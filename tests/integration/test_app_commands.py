@@ -49,17 +49,17 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
 
             slash = client.tree.get_commands()
             slash_names = {command.name for command in slash}
-            visible = {c.name for c in client.commands if not c.hidden}
-            hidden = {c.name for c in client.commands if c.hidden}
+            text_names = {c.name for c in client.commands}
+            effects = {c.name for c in client.commands if "help_group" in c.extras}
 
             assert slash_names == EXPECTED_COMMANDS
-            assert visible == slash_names | TEXT_ONLY_COMMANDS
-            # Los efectos conservan el nombre de Dank Memer (algunos de más
-            # de 8 letras) y van ocultos: no ocupan sitio en `/` ni en la ayuda.
-            assert hidden == set(EFFECTS)
+            assert text_names == slash_names | TEXT_ONLY_COMMANDS | set(EFFECTS)
+            # Los efectos conservan el nombre de Dank Memer (algunos de más de
+            # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
+            assert effects == set(EFFECTS)
             assert all(isinstance(command, app_commands.Command) for command in slash)
             assert all(not command.aliases for command in client.commands)
-            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in visible)
+            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects)
             assert client.get_cog("Welcome") is not None
             assert client.get_cog("Music") is not None
         finally:
@@ -81,18 +81,26 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 await client.load_extension(extension)
 
             embed = build_help_embed(client)
-            text = "\n".join(field.value for field in embed.fields)
+            detailed = [f for f in embed.fields if "(" not in f.name or "prefijo" in f.name]
+            text = "\n".join(field.value for field in detailed)
+            listed = " · ".join(f.value for f in embed.fields if f not in detailed).split(" · ")
 
             assert [field.name for field in embed.fields] == [
                 "🎵 Música",
                 "🔔 Entradas",
                 "🎨 Imagen (solo con prefijo)",
+                "🖼️ Con avatar (46)",
+                "💬 Avatar + texto (10)",
+                "📝 Solo texto (49)",
+                "🎬 Vídeo (3)",
                 "📊 Niveles",
                 "⚙️ General",
             ]
             for name in EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS:
                 assert text.count(f"**{name}**") == 1
             assert len(text.splitlines()) == len(EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS)
+            # Cada efecto aparece una vez, solo por nombre.
+            assert sorted(listed) == sorted(EFFECTS)
             assert all(len(field.value) <= 1024 for field in embed.fields)
             assert len(embed) <= 6000
         finally:

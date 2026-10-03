@@ -316,10 +316,12 @@ async def test_memes_lista_los_efectos_en_un_embed(harness: Harness) -> None:
 
 
 @pytest.mark.asyncio
-async def test_la_ayuda_no_lista_los_efectos_ocultos(harness: Harness) -> None:
-    """`.help` muestra `memes` pero no los 108 efectos uno a uno."""
+async def test_la_ayuda_lista_los_efectos_por_nombre(harness: Harness) -> None:
+    """`.help` muestra `memes` con su descripción y los efectos en bloque, solo por nombre."""
     await harness.say(".help", attach_image=False)
 
-    text = "\n".join(field["value"] for field in harness.sent[0]["embeds"][0]["fields"])
+    fields = harness.sent[0]["embeds"][0]["fields"]
+    text = "\n".join(field["value"] for field in fields)
     assert "**memes**" in text
-    assert "**trigger**" not in text
+    assert any("trigger" in f["value"].split(" · ") for f in fields)
+    assert any("changemymind" in f["value"].split(" · ") for f in fields)
