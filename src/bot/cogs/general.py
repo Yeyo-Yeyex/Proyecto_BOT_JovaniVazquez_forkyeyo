@@ -30,6 +30,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen (solo con prefijo)",
     "MessageStats": "📊 Niveles",
+    "Casino": "🎰 Casino",
     "General": "⚙️ General",
 }
 OTHER_CATEGORY = "📦 Otros"

@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, y los comandos de música están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música y la economía con la ruleta (`ruleta`, `saldo`, `daily`) están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -240,6 +240,31 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Silenciarse, ensordecerse o emitir pantalla dentro del mismo canal no dispara el sonido.
 - El bot no interrumpe ni se cruza con la música.
 
+## 6 ter. Economía y casino
+
+### 6 ter.1. Economía: yapdollars
+
+- Una única moneda para todo el bot, los **yapdollars** (`Y$`). Es ficticia: no se compra con dinero real ni se canjea por nada con valor económico. Mantenerlo así es una condición de diseño, porque una moneda comprable o canjeable convertiría el casino en juego con premio en el sentido legal (art. 3.a de la Ley 13/2011, de regulación del juego).
+- Saldo por servidor y usuario. El primer uso abre el monedero con 1.000 Y$.
+- `daily`: 500 Y$ más 100 por cada día seguido, con tope de 1.500 Y$. Se puede cobrar cada 20 h; la racha se pierde si pasan más de 48 h.
+- `saldo [miembro]`: muestra el saldo.
+- Cualquier función que dé o quite dinero (juegos, tienda, premios futuros) debe hacerlo a través de `EconomyService`. Cada movimiento se guarda en un libro con su motivo y el saldo resultante, y se aplica en una transacción que impide saldos negativos y dobles gastos.
+
+### 6 ter.2. Ruleta americana
+
+- Rueda con 0 y 00. Pagos estándar: pleno 35:1, caballo 17:1, transversal y trío 11:1, cuadro 8:1, línea de cinco (0-00-1-2-3) 6:1, seisena 5:1, docena y columna 2:1, rojo/negro, par/impar y 1-18/19-36 1:1. La ventaja de la casa es del 5,26 % (7,89 % en la línea de cinco) y una prueba lo verifica para cada apuesta.
+- Individual e instantánea: `ruleta [cantidad] [apuesta]` abre una mesa propia con botones. Cada apuesta pulsada cobra, gira y paga en el acto. Cantidades: `500`, `2k`, `all`/`todo` (all-in), `mitad`.
+- El resultado sale de `secrets` (no predecible) y se decide antes de cobrar, pero solo se muestra si el cobro sale bien.
+- Animación: GIF de ~2 s donde la bola gira y cae en su casilla, seguido del resultado. Los 38 GIF se precalculan al arrancar y se reutilizan.
+- Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos canales.
+
+### 6 ter.3. Criterios de aceptación
+
+- Ningún saldo puede quedar negativo ni gastarse dos veces, aunque se pulsen botones a la vez.
+- Solo el dueño de una mesa puede apostar en ella.
+- Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
+- Al salir el bot de un servidor se borra su economía.
+
 ## 7. Persistencia y aislamiento por servidor
 
 La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
@@ -254,6 +279,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
+7. **Economía y casino:** yapdollars, `daily`, `saldo` y ruleta americana. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

@@ -41,6 +41,9 @@ pip install -e ".[dev]"
 3. Ajusta `LOG_LEVEL` y `COMMAND_PREFIX` si lo necesitas (ambos son
    opcionales). `COMMAND_PREFIX` es el prefijo de los comandos de texto
    (por defecto `.`); con él se invocan los mismos comandos que con `/`.
+4. `CASINO_CHANNEL_IDS` (opcional) limita la ruleta a esos canales: IDs
+   separados por comas. En nuestro servidor, `#casino` es
+   `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo
@@ -65,6 +68,7 @@ python -m bot
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
+  | 🎰 Casino | `ruleta [cantidad] [apuesta]` · `saldo [miembro]` · `daily` |
   | ⚙️ General | `ping` · `help` |
 
 - `magik` deforma una imagen con *seam carving* (reescalado consciente del
@@ -99,6 +103,22 @@ python -m bot
     `yomomma` (solo devuelve un chiste de texto).
   - Las plantillas (~27 MB) están en `src/bot/assets/memes`, con la licencia
     MIT de [imgen](https://github.com/DankMemer/imgen).
+- **Economía (yapdollars):** una sola moneda, ficticia y no comprable,
+  para todo el bot. Cada miembro empieza con 1.000 Y$ por servidor y
+  `daily` paga 500 Y$ más 100 por cada día seguido (tope 1.500 Y$; se
+  cobra cada 20 h y la racha se pierde tras 48 h). Todo movimiento queda en
+  un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
+  vez no pueden gastar dos veces el mismo dinero.
+- **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
+  mesa con botones que solo puede usar quien la abre. Cada clic en una
+  apuesta cobra, gira (GIF de 2 s) y paga. Botones: rojo/negro, par/impar,
+  1-18/19-36, docenas, columnas, 0 y 00; 🎯 **Números** abre un formulario
+  para plenos, caballos, transversales, cuadros, seisenas y la línea
+  0-00-1-2-3. Con ½, ×2 y 💰 All-in se cambia la ficha; 🔁 Repetir y
+  ⏫ Doblar repiten la última apuesta. Atajos de texto:
+  `.ruleta 500`, `.ruleta all rojo`, `.ruleta 50 17-20`, `.ruleta rojo`.
+  Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
+  CPU), así que una tirada no dibuja nada.
 - Si un comando de texto falla (falta un argumento, un error inesperado…) el
   bot responde con un mensaje claro; los errores internos se guardan en el log.
 - Los avisos de subida de nivel se publican en el canal donde el mensaje
@@ -129,6 +149,9 @@ niveles ya se ejecutó. Los comandos temporales de importación/activación y lo
 comandos de configuración y estado de niveles no están disponibles. Los
 recuentos y niveles existentes permanecen guardados. Los mensajes nuevos dan
 15–25 XP aleatorios como máximo una vez cada 60 segundos por miembro y servidor.
+
+La economía usa el mismo archivo SQLite (tablas `economy_*`). Si el bot sale
+de un servidor, se borran sus saldos y su libro de movimientos.
 
 Los datos persistentes viven en `.data/message_stats.sqlite3`, localmente en
 la máquina de ejecución y excluidos de Git; inclúyelos en las copias de
@@ -218,11 +241,15 @@ src/bot/
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py      # Bienvenidas y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
+│   ├── casino.py        # Ruleta con botones, saldo y daily
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
 ├── services/            # Lógica de negocio pura, sin discord.py
 │   ├── levels.py        # Cálculo de niveles y progreso
+│   ├── economy.py       # Yapdollars: única puerta al dinero del bot
+│   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
+│   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)
 │   ├── memes/           # Efectos de Dank Memer: registro, utilidades y efectos

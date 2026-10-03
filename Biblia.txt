@@ -179,6 +179,7 @@ El proyecto podrá requerir estas variables a medida que se implementen sus func
 | `DISCORD_TOKEN` | Autenticación del bot | Obligatoria para ejecutar; secreta y nunca versionada |
 | `LOG_LEVEL` | Nivel de logs | Opcional, con un valor por defecto seguro y documentado |
 | `DATABASE_URL` | Conexión a datos | Añadir solo si se incorpora persistencia |
+| `CASINO_CHANNEL_IDS` | Canales donde se permiten los juegos del casino | Opcional; IDs separados por comas, vacío = cualquier canal |
 
 No introducir valores de configuración sin uso. Documentar cualquier nueva variable en `.env.example` y en el README.
 
