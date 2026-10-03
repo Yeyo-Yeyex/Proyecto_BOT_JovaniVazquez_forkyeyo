@@ -1,4 +1,4 @@
-"""Integración de `.magik` con objetos reales de discord.py.
+"""Integración de los comandos de imagen (`.magik` y los efectos) con objetos reales de discord.py.
 
 Se construyen un servidor, un canal y un mensaje reales (con un adjunto) y se
 procesan con `bot.get_context` + `bot.invoke`, igual que lo haría el gateway.
@@ -107,7 +107,11 @@ class Harness:
                 raise discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "permisos")
             content = (params.payload or {}).get("content", "")
             self.sent.append(
-                {"content": content, "files": [f.filename for f in params.files or []]}
+                {
+                    "content": content,
+                    "files": [f.filename for f in params.files or []],
+                    "embeds": (params.payload or {}).get("embeds", []),
+                }
             )
             return bot_message("50", content)
 
@@ -124,8 +128,13 @@ class Harness:
         bot.http.delete_message = delete_message
         bot.http.get_from_cdn = AsyncMock(return_value=png_bytes())
 
-    async def say(self, content: str, *, attach_image: bool = True) -> None:
-        """El usuario 5 escribe `content` (con o sin imagen adjunta) y se procesa."""
+    async def say(
+        self, content: str, *, attach_image: bool = True, mentions: list[dict] | None = None
+    ) -> None:
+        """El usuario 5 escribe `content` (con o sin imagen adjunta) y se procesa.
+
+        `mentions` son los usuarios que Discord declara mencionados en el mensaje.
+        """
         attachments = []
         if attach_image:
             attachments = [
@@ -158,7 +167,7 @@ class Harness:
                 "content": content,
                 "tts": False,
                 "mention_everyone": False,
-                "mentions": [],
+                "mentions": mentions or [],
                 "mention_roles": [],
                 "pinned": False,
                 "type": 0,
@@ -229,3 +238,88 @@ async def test_un_mensaje_con_prefijo_pero_sin_comando_se_ignora(harness: Harnes
     await harness.say(".loquesea", attach_image=False)
 
     assert harness.sent == []
+
+
+OTHER_USER = {"id": "6", "username": "otro", "discriminator": "0", "avatar": None}
+
+
+@pytest.mark.asyncio
+async def test_un_efecto_de_texto_envia_la_imagen_generada(harness: Harness) -> None:
+    """`.changemymind texto` genera la plantilla con el texto y la envía como JPEG."""
+    await harness.say(".changemymind la piña va en la pizza", attach_image=False)
+
+    assert harness.sent[0]["content"] == "🎨 Generando..."
+    assert harness.sent[1]["files"] == ["changemymind.jpg"]
+    assert harness.deleted == [50]
+
+
+@pytest.mark.asyncio
+async def test_un_efecto_animado_usa_el_avatar_de_quien_escribe(harness: Harness) -> None:
+    """Sin menciones ni adjuntos, `.trigger` usa el avatar del autor y devuelve un GIF."""
+    await harness.say(".trigger", attach_image=False)
+
+    assert harness.sent[-1]["files"] == ["trigger.gif"]
+
+
+@pytest.mark.asyncio
+async def test_un_efecto_de_dos_avatares_con_mencion(harness: Harness) -> None:
+    """`.slap @otro` combina el avatar del autor y el del mencionado."""
+    await harness.say(".slap <@6>", attach_image=False, mentions=[OTHER_USER])
+
+    assert harness.sent[-1]["files"] == ["slap.png"]
+
+
+@pytest.mark.asyncio
+async def test_un_efecto_de_dos_avatares_sin_objetivo_explica_el_uso(harness: Harness) -> None:
+    """`.slap` sin nadie a quien pegar responde con el uso, sin generar nada."""
+    await harness.say(".slap", attach_image=False)
+
+    assert len(harness.sent) == 1
+    assert "Menciona a alguien" in harness.sent[0]["content"]
+    assert "`.slap @miembro`" in harness.sent[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_faltan_textos_separados_por_barra(harness: Harness) -> None:
+    """`.brain` pide cuatro textos separados con `|` y lo dice si faltan."""
+    await harness.say(".brain uno | dos", attach_image=False)
+
+    assert "Falta texto" in harness.sent[0]["content"]
+    assert "<texto1> | <texto2> | <texto3> | <texto4>" in harness.sent[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_varios_textos_separados_por_barra_generan_la_imagen(harness: Harness) -> None:
+    """Con los cuatro textos, `.brain` genera su imagen."""
+    await harness.say(".brain uno | dos | tres | cuatro", attach_image=False)
+
+    assert harness.sent[-1]["files"] == ["brain.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_el_enfriamiento_es_comun_a_todos_los_comandos_de_imagen(harness: Harness) -> None:
+    """Tras `.magik`, un efecto inmediato del mismo usuario tiene que esperar."""
+    await harness.say(".magik")
+    await harness.say(".trigger", attach_image=False)
+
+    assert "Espera" in harness.sent[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_memes_lista_los_efectos_en_un_embed(harness: Harness) -> None:
+    """`.memes` envía la lista agrupada de efectos."""
+    await harness.say(".memes", attach_image=False)
+
+    embed = harness.sent[0]["embeds"][0]
+    assert "efectos de imagen" in embed["title"]
+    assert any("trigger" in field["value"] for field in embed["fields"])
+
+
+@pytest.mark.asyncio
+async def test_la_ayuda_no_lista_los_efectos_ocultos(harness: Harness) -> None:
+    """`.help` muestra `memes` pero no los 108 efectos uno a uno."""
+    await harness.say(".help", attach_image=False)
+
+    text = "\n".join(field["value"] for field in harness.sent[0]["embeds"][0]["fields"])
+    assert "**memes**" in text
+    assert "**trigger**" not in text

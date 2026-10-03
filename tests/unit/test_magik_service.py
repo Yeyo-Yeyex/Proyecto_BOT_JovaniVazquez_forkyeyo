@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from bot.services import magik
+from bot.services import image_input, magik
 from bot.services.magik import (
     MAX_INPUT_BYTES,
     WORKING_MAX_SIDE,
@@ -174,7 +174,7 @@ def test_un_archivo_demasiado_pesado_se_rechaza_sin_decodificarlo() -> None:
 
 def test_una_imagen_con_demasiados_pixeles_se_rechaza(monkeypatch: pytest.MonkeyPatch) -> None:
     """Las dimensiones de la cabecera se comprueban antes de decodificar los píxeles."""
-    monkeypatch.setattr(magik, "MAX_INPUT_PIXELS", 100)
+    monkeypatch.setattr(image_input, "MAX_INPUT_PIXELS", 100)
 
     with pytest.raises(ImageTooLargeError):
         apply_magik(png_bytes(64, 64))

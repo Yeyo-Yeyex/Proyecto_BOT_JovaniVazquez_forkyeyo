@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.images: `/magik` y `.magik` comparten lógica y validaciones."""
+"""Pruebas de bot.cogs.images: `.magik`, sus validaciones y la lógica común de imagen."""
 
 from __future__ import annotations
 
@@ -241,41 +241,13 @@ async def test_magik_no_deja_colgado_el_progreso_ante_un_error_inesperado(
     assert "fallo interno" not in responder.finished[0]["content"]
 
 
-def test_magik_tiene_el_mismo_nombre_en_slash_y_texto() -> None:
-    """`/magik` y `.magik` se llaman igual y el de texto no tiene alias."""
+def test_los_comandos_de_imagen_son_solo_de_texto() -> None:
+    """Imagen no ocupa slash commands: `magik` y `memes` existen solo con prefijo y sin alias."""
     cog = Images(MagicMock())
 
-    assert [c.name for c in cog.get_app_commands()] == ["magik"]
-    assert [c.name for c in cog.get_commands()] == ["magik"]
-    assert not cog.get_commands()[0].aliases
-
-
-@pytest.mark.asyncio
-async def test_slash_usa_la_imagen_adjunta_antes_que_el_avatar() -> None:
-    """Con `imagen`, no se usa ningún avatar."""
-    cog = Images(MagicMock())
-    cog._magik_impl = AsyncMock()
-    attachment = make_attachment()
-
-    await cog.magik.callback(cog, MagicMock(), attachment, MagicMock())
-
-    assert cog._magik_impl.await_args.args[1] is attachment
-
-
-@pytest.mark.asyncio
-async def test_slash_sin_imagen_usa_el_avatar_del_miembro_indicado() -> None:
-    """Sin adjunto, `miembro` decide el avatar; si no, el de quien ejecuta."""
-    cog = Images(MagicMock())
-    cog._magik_impl = AsyncMock()
-    member = MagicMock()
-    interaction = MagicMock()
-
-    await cog.magik.callback(cog, interaction, None, member)
-    await cog.magik.callback(cog, interaction, None, None)
-
-    first, second = (call.args[1] for call in cog._magik_impl.await_args_list)
-    assert first is member.display_avatar.replace.return_value
-    assert second is interaction.user.display_avatar.replace.return_value
+    assert cog.get_app_commands() == []
+    assert [c.name for c in cog.get_commands()] == ["magik", "memes"]
+    assert all(not c.aliases for c in cog.get_commands())
 
 
 def make_text_context(

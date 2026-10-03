@@ -9,6 +9,7 @@ from discord import app_commands
 
 from bot.app import INITIAL_EXTENSIONS, BotClient, build_intents
 from bot.cogs.general import build_help_embed
+from bot.services.memes import EFFECTS
 
 # Máxima longitud de un nombre de comando: deben ser cortos y fáciles de teclear.
 MAX_COMMAND_NAME_LENGTH = 8
@@ -28,8 +29,10 @@ EXPECTED_COMMANDS = {
     "remove",
     "clear",
     "volume",
-    "magik",
 }
+
+# Comandos de imagen: solo de texto, para reservar los slash commands al resto.
+TEXT_ONLY_COMMANDS = {"magik", "memes"}
 
 
 def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: Path) -> None:
@@ -46,13 +49,17 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
 
             slash = client.tree.get_commands()
             slash_names = {command.name for command in slash}
-            text_names = {command.name for command in client.commands}
+            visible = {c.name for c in client.commands if not c.hidden}
+            hidden = {c.name for c in client.commands if c.hidden}
 
             assert slash_names == EXPECTED_COMMANDS
-            assert text_names == slash_names
+            assert visible == slash_names | TEXT_ONLY_COMMANDS
+            # Los efectos conservan el nombre de Dank Memer (algunos de más
+            # de 8 letras) y van ocultos: no ocupan sitio en `/` ni en la ayuda.
+            assert hidden == set(EFFECTS)
             assert all(isinstance(command, app_commands.Command) for command in slash)
             assert all(not command.aliases for command in client.commands)
-            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in slash_names)
+            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in visible)
             assert client.get_cog("Welcome") is not None
             assert client.get_cog("Music") is not None
         finally:
@@ -79,13 +86,13 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
             assert [field.name for field in embed.fields] == [
                 "🎵 Música",
                 "🔔 Entradas",
-                "🎨 Imagen",
+                "🎨 Imagen (solo con prefijo)",
                 "📊 Niveles",
                 "⚙️ General",
             ]
-            for name in EXPECTED_COMMANDS:
+            for name in EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS:
                 assert text.count(f"**{name}**") == 1
-            assert len(text.splitlines()) == len(EXPECTED_COMMANDS)
+            assert len(text.splitlines()) == len(EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS)
             assert all(len(field.value) <= 1024 for field in embed.fields)
             assert len(embed) <= 6000
         finally:

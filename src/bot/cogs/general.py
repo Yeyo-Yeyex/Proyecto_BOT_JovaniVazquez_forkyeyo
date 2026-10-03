@@ -28,7 +28,7 @@ EMBED_COLOR = discord.Color.blurple()
 HELP_CATEGORIES: dict[str, str] = {
     "Music": "🎵 Música",
     "Entrance": "🔔 Entradas",
-    "Images": "🎨 Imagen",
+    "Images": "🎨 Imagen (solo con prefijo)",
     "MessageStats": "📊 Niveles",
     "General": "⚙️ General",
 }
@@ -65,7 +65,8 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
     Los comandos se leen de `bot.commands` y `bot.tree` en vez de mantener
     una lista escrita a mano, para que la ayuda nunca se desincronice de lo
     realmente registrado. Como `/nombre` y `.nombre` son idénticos, cada
-    comando aparece una sola vez.
+    comando aparece una sola vez. Los comandos ocultos (los 108 efectos de
+    imagen) no se listan aquí: tienen su propia lista en `.memes`.
     """
     prefix = _text_prefix(bot)
     embed = discord.Embed(
@@ -80,7 +81,7 @@ def build_help_embed(bot: commands.Bot) -> discord.Embed:
     by_category: dict[str, list[str]] = {}
     for cog_name, title in (*HELP_CATEGORIES.items(), (None, OTHER_CATEGORY)):
         for command in sorted(
-            (c for c in bot.commands if _category_key(c) == cog_name),
+            (c for c in bot.commands if not c.hidden and _category_key(c) == cog_name),
             key=lambda c: _definition_index(bot, c),
         ):
             arguments = _format_arguments(bot, command)
