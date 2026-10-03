@@ -67,7 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `bj [cantidad]` · `saldo [miembro]` |
+  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -136,7 +136,7 @@ python -m bot
   con `+`, la cantidad es por apuesta; con `all` se reparte el saldo).
   Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
   CPU), así que una tirada no dibuja nada.
-- **Blackjack** (`bj`): reparte al momento con la apuesta indicada
+- **Blackjack** (`/blackjack`, `.blackjack` o `.bj`): reparte al momento con la apuesta indicada
   (`.bj 500`, `.bj all`) y se juega con botones: 🃏 Pedir, ✋ Plantarse,
   ⏫ Doblar y ✂️ Separar. Al terminar, 🃏 Repartir juega otra mano en el mismo
   mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen

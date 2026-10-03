@@ -87,6 +87,7 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 - Comandos de administración (cog `Admin`): solo para miembros con el permiso Administrador, comprobado en el servidor en cada uso (`cog_check` e `interaction_check`), no solo con `default_permissions`. La categoría Admin de la ayuda solo se muestra a administradores.
 - Nombres de comandos: cortos (máximo 8 caracteres), de una sola palabra, reconocibles y consistentes entre sí. Cada comando tiene UN único nombre, idéntico en su versión de aplicación (`/play`) y en su versión de texto con prefijo (`.play`). Sin alias que cambien el nombre según la interfaz, sin grupos ni subcomandos y sin variantes duplicadas "cortas/largas": el menú de `/` debe quedarse limpio. La ayuda (`/help`) se genera desde los comandos registrados y los lista una sola vez.
 - Excepción, los comandos de imagen: son **solo de texto** (`.magik`, `.memes` y los efectos de Dank Memer), porque Discord limita un bot a 100 slash commands y los efectos son más de 100. Los efectos conservan el nombre que tienen en Dank Memer aunque pase de 8 caracteres (`.changemymind`), y `/help` los reparte en subcategorías de Imagen según su tipo (`Command.extras["help_group"]`). `.memes <efecto>` explica cada uno. El resto de la norma (sin alias, sin grupos, un nombre por comando) se mantiene.
+- Excepción, el blackjack: se llama `blackjack` (`/blackjack` y `.blackjack`, aunque pase de 8 caracteres) y tiene el atajo de texto `.bj`. Es el único alias permitido; el menú de `/` solo muestra `/blackjack`.
 
 ### Servicios
 

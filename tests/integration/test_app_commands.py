@@ -33,7 +33,7 @@ EXPECTED_COMMANDS = {
     "babel",
     "saldo",
     "daily",
-    "bj",
+    "blackjack",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
@@ -79,8 +79,13 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
             assert effects == set(EFFECTS)
             assert all(isinstance(command, app_commands.Command) for command in slash)
-            assert all(not command.aliases for command in client.commands)
-            assert all(len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects)
+            # Única excepción acordada: `.blackjack` con su atajo `.bj`.
+            aliases = {c.name: c.aliases for c in client.commands if c.aliases}
+            assert aliases == {"blackjack": ["bj"]}
+            long_names = {"blackjack"}
+            assert all(
+                len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects - long_names
+            )
             assert client.get_cog("Welcome") is not None
             assert client.get_cog("Music") is not None
             # Los de administración no aparecen en el menú `/` de quien no es admin.

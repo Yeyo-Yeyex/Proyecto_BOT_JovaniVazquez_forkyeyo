@@ -1,4 +1,4 @@
-"""Blackjack con botones: comando `bj`.
+"""Blackjack con botones: comando `blackjack` (y `.bj` como atajo de texto).
 
 Sigue las mismas normas que la ruleta (`bot.cogs.casino`): mesa individual
 que solo pulsa su dueño, dinero siempre a través de `EconomyService`,
@@ -527,7 +527,7 @@ class Blackjack(commands.Cog):
         send: Callable[..., Awaitable[discord.Message]],
         send_error: Callable[[str], Awaitable[None]],
     ) -> None:
-        """Lógica compartida entre `/bj` y `.bj`: abre la mesa y reparte ya."""
+        """Lógica compartida entre `/blackjack`, `.blackjack` y `.bj`: abre la mesa y reparte ya."""
         if guild is None:
             await send_error("El blackjack solo se juega dentro de un servidor.")
             return
@@ -565,11 +565,13 @@ class Blackjack(commands.Cog):
         self.tables.add(table)
 
     @app_commands.command(
-        name="bj", description="Blackjack con tus yapdollars: reparte al momento."
+        name="blackjack", description="Blackjack con tus yapdollars: reparte al momento."
     )
     @app_commands.describe(cantidad="Apuesta: 500, 2k, all… (por defecto 100)")
     @app_commands.guild_only()
-    async def bj(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
+    async def blackjack(
+        self, interaction: discord.Interaction, cantidad: str | None = None
+    ) -> None:
         """Reparte una mano de blackjack con botones para jugarla.
 
         Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado.
@@ -589,10 +591,12 @@ class Blackjack(commands.Cog):
             send_error=InteractionResponder(interaction).send_error,
         )
 
-    @commands.command(name="bj")
+    # Única excepción a la norma de un nombre por comando (ver Biblia.txt):
+    # `.bj` es el atajo de siempre y `.blackjack` el nombre que se busca.
+    @commands.command(name="blackjack", aliases=["bj"])
     @commands.guild_only()
-    async def bj_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.bj`, `.bj 500`, `.bj all`."""
+    async def blackjack_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
+        """Versión de texto: `.bj`, `.bj 500`, `.blackjack all`."""
 
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)

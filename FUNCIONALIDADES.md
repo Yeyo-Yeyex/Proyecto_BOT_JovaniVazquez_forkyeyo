@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `bj`, `saldo`, `daily`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `daily`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -261,7 +261,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.3. Blackjack
 
-- `bj [cantidad]` reparte al momento en una mesa propia (imagen con las cartas y botones) que solo pulsa su dueño. Acciones: pedir, plantarse, doblar y separar; al acabar, repartir otra mano en el mismo mensaje y cambiar la apuesta con ½, ×2 y all-in.
+- `blackjack [cantidad]` (atajo `.bj`) reparte al momento en una mesa propia (imagen con las cartas y botones) que solo pulsa su dueño. Acciones: pedir, plantarse, doblar y separar; al acabar, repartir otra mano en el mismo mensaje y cambiar la apuesta con ½, ×2 y all-in.
 - Reglas: zapato de 6 barajas, barajado con `secrets` en cada mano (no se pueden contar cartas). La banca mira si tiene blackjack con un as o un 10 a la vista y se planta en 17, también blando. Blackjack paga 3:2 (redondeando hacia abajo). Doblar con cualquier par de cartas, también tras separar. Separar una vez dos cartas del mismo valor; los ases separados reciben una carta y su 21 no es blackjack. Sin seguro ni rendición. Ventaja de la casa ≈ 0,5 % con estrategia básica.
 - Dinero: la apuesta se cobra al repartir y el extra al doblar o separar (`place_bet`); el premio se paga al acabar la mano (`pay_winnings`). Si la mesa caduca (3 min sin uso) o el bot se apaga de forma ordenada con una mano a medias, la mano se planta, juega la banca y se paga. Si el proceso muere de golpe, lo apostado en esa mano se pierde y queda en el libro de movimientos.
 
