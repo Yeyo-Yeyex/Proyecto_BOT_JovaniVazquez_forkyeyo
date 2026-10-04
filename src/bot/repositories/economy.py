@@ -26,6 +26,11 @@ Modelo de datos:
   y, en el futuro, para la declaración anual.
 - `economy_wealth_weeks` y `economy_wealth_tax`: semanas en las que ya se
   cobró el Impuesto sobre el Patrimonio y lo que pagó cada uno.
+- `economy_wallets` con `user_id = SLOTS_POT_ACCOUNT_ID`: el bote común de la
+  tragaperras. Crece con una parte de cada apuesta y se lo lleva entero
+  quien saque el jackpot; la casa lo vuelve a sembrar al vaciarse.
+- `economy_slots_jackpots`: cada jackpot de la tragaperras (quién, cuánto y
+  cuándo), para enseñar el último en la máquina.
 - `economy_donations`: donativos a las ONGs. Cada ONG tiene su monedero con
   un `user_id` negativo (ver `bot.services.donations`), así el dinero donado
   no desaparece: se queda en la ONG, que es lo que ella quería.
@@ -55,6 +60,10 @@ MAX_BALANCE = 10**15
 #: Discord tiene id 0, así que no choca con nadie. Recibe todo lo que se
 #: recauda; qué se hace con ese dinero está por decidir.
 STATE_ACCOUNT_ID = 0
+
+#: `user_id` del bote de la tragaperras. Negativo, como las ONGs (que usan
+#: -1, -2…), para que no pague Patrimonio ni salga en las cuentas de miembros.
+SLOTS_POT_ACCOUNT_ID = -100
 
 
 class InsufficientFundsError(Exception):
@@ -109,6 +118,30 @@ class BetSettlement:
     tax_delta: int = 0
     day_net: int = 0
     day_withheld: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SlotsSettlement:
+    """Resultado de mover el dinero de una tirada de tragaperras.
+
+    Attributes:
+        bet: Saldo e IRPF del jugador, como en cualquier apuesta.
+        jackpot: Lo que se ha llevado del bote (0 si no hay jackpot).
+        pot: Bote tras la tirada (ya resembrado si se vació).
+    """
+
+    bet: BetSettlement
+    jackpot: int
+    pot: int
+
+
+@dataclass(frozen=True, slots=True)
+class JackpotRecord:
+    """Un jackpot de la tragaperras."""
+
+    user_id: int
+    amount: int
+    won_at: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +308,14 @@ class EconomyRepository:
                     withheld INTEGER NOT NULL DEFAULT 0 CHECK (withheld >= 0),
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (guild_id, user_id, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_slots_jackpots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    won_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_wealth_weeks (
@@ -623,65 +664,248 @@ class EconomyRepository:
         window_seconds: float,
     ) -> BetSettlement:
         with self._transaction() as connection:
-            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
-            connection.execute(
-                """
-                INSERT INTO economy_gambling_days (guild_id, user_id, day, net, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(guild_id, user_id, day) DO UPDATE SET
-                    net = net + excluded.net, updated_at = excluded.updated_at
-                """,
-                (guild_id, user_id, day, sum(entry.delta for entry in entries), now),
+            return self._settle_gamble_in(
+                connection,
+                guild_id,
+                user_id,
+                entries,
+                day=day,
+                now=now,
+                adjust_tax=adjust_tax,
+                day_tax=day_tax,
+                window_seconds=window_seconds,
             )
+
+    def _settle_gamble_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        entries: Sequence[LedgerEntry],
+        *,
+        day: str,
+        now: float,
+        adjust_tax: bool,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> BetSettlement:
+        """Cuerpo de `settle_gamble` dentro de una transacción ya abierta."""
+        balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        connection.execute(
+            """
+            INSERT INTO economy_gambling_days (guild_id, user_id, day, net, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id, day) DO UPDATE SET
+                net = net + excluded.net, updated_at = excluded.updated_at
+            """,
+            (guild_id, user_id, day, sum(entry.delta for entry in entries), now),
+        )
+        row = connection.execute(
+            """
+            SELECT net, withheld FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND day = ?
+            """,
+            (guild_id, user_id, day),
+        ).fetchone()
+        net, withheld = int(row["net"]), int(row["withheld"])
+        if not adjust_tax:
+            return BetSettlement(balance, 0, net, withheld)
+
+        others = self._recent_taxable_in(
+            connection, guild_id, user_id, now - window_seconds, exclude_day=day
+        )
+        delta = max(0, day_tax(max(net, 0), others)) - withheld
+        if delta > 0:
+            # Nunca deja al jugador en negativo; lo que falte se cobra en
+            # el siguiente ajuste, porque el objetivo se recalcula siempre.
+            delta = min(delta, balance)
+            if delta:
+                balance = self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(-delta, "irpf:juego"),)
+                )
+                self._credit_state_in(connection, guild_id, delta, "irpf:juego")
+        elif delta < 0:
+            refund = min(-delta, self._state_balance_in(connection, guild_id))
+            delta = -refund
+            if refund:
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    STATE_ACCOUNT_ID,
+                    (LedgerEntry(-refund, "devolucion:irpf:juego"),),
+                )
+                balance = self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    user_id,
+                    (LedgerEntry(refund, "devolucion:irpf:juego"),),
+                )
+        withheld += delta
+        connection.execute(
+            """
+            UPDATE economy_gambling_days SET withheld = ?
+            WHERE guild_id = ? AND user_id = ? AND day = ?
+            """,
+            (withheld, guild_id, user_id, day),
+        )
+        return BetSettlement(balance, delta, net, withheld)
+
+    # -- Tragaperras -----------------------------------------------------------------
+
+    def _pot_in(self, connection: sqlite3.Connection, guild_id: int, seed: int) -> int:
+        """Saldo del bote; lo crea con `seed` la primera vez."""
+        row = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (guild_id, SLOTS_POT_ACCOUNT_ID),
+        ).fetchone()
+        if row is not None:
+            return int(row["balance"])
+        connection.execute(
+            "INSERT INTO economy_wallets (guild_id, user_id, balance) VALUES (?, ?, 0)",
+            (guild_id, SLOTS_POT_ACCOUNT_ID),
+        )
+        if not seed:
+            return 0
+        return self._apply_in_transaction(
+            connection, guild_id, SLOTS_POT_ACCOUNT_ID, (LedgerEntry(seed, "bote:semilla"),)
+        )
+
+    async def slots_pot(self, guild_id: int, *, seed: int) -> int:
+        """Bote actual de la tragaperras; lo siembra con `seed` si no existía."""
+        return await self._run(self._slots_pot_sync, guild_id, seed)
+
+    def _slots_pot_sync(self, guild_id: int, seed: int) -> int:
+        with self._transaction() as connection:
+            return self._pot_in(connection, guild_id, seed)
+
+    async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
+        """Último jackpot del servidor, si ha habido alguno."""
+        return await self._run(self._last_jackpot_sync, guild_id)
+
+    def _last_jackpot_sync(self, guild_id: int) -> JackpotRecord | None:
+        connection = self._connect()
+        try:
             row = connection.execute(
                 """
-                SELECT net, withheld FROM economy_gambling_days
-                WHERE guild_id = ? AND user_id = ? AND day = ?
+                SELECT user_id, amount, won_at FROM economy_slots_jackpots
+                WHERE guild_id = ? ORDER BY id DESC LIMIT 1
                 """,
-                (guild_id, user_id, day),
+                (guild_id,),
             ).fetchone()
-            net, withheld = int(row["net"]), int(row["withheld"])
-            if not adjust_tax:
-                return BetSettlement(balance, 0, net, withheld)
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return JackpotRecord(int(row["user_id"]), int(row["amount"]), float(row["won_at"]))
 
-            others = self._recent_taxable_in(
-                connection, guild_id, user_id, now - window_seconds, exclude_day=day
+    async def settle_slots(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        game: str,
+        stake: int,
+        payout: int,
+        share: int,
+        jackpot: bool,
+        seed: int,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> SlotsSettlement:
+        """Cobra una tirada, paga la línea y mueve el bote, todo en una transacción.
+
+        Para el jugador es una apuesta más (`settle_gamble`): la apuesta, el
+        premio y, si hay jackpot, el bote entran en su neto de juego del día
+        y en su IRPF. Del dinero apostado, `share` pasa al bote; el resto se
+        lo queda la casa. Con jackpot, el jugador se lleva el bote entero
+        (con la parte de esta misma tirada) y la casa lo vuelve a sembrar.
+
+        Args:
+            stake: Apuesta cobrada; 0 en un giro gratis.
+            payout: Lo que devuelve la línea, apuesta incluida.
+            share: Parte de `stake` que va al bote.
+            seed: Lo que pone la casa en un bote nuevo o recién vaciado.
+
+        Raises:
+            InsufficientFundsError: Si el jugador no cubre la apuesta. No se
+                mueve nada, tampoco el bote.
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        return await self._run(
+            self._settle_slots_sync,
+            guild_id,
+            user_id,
+            game,
+            stake,
+            payout,
+            share,
+            jackpot,
+            seed,
+            day,
+            now,
+            day_tax,
+            window_seconds,
+        )
+
+    def _settle_slots_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        game: str,
+        stake: int,
+        payout: int,
+        share: int,
+        jackpot: bool,
+        seed: int,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> SlotsSettlement:
+        if stake < 0 or payout < 0 or not 0 <= share <= stake:
+            raise ValueError("Movimiento de tragaperras inválido.")
+        with self._transaction() as connection:
+            pot = self._pot_in(connection, guild_id, seed)
+            won = pot + share if jackpot else 0
+            entries = []
+            if stake:
+                entries.append(LedgerEntry(-stake, f"{game}:apuesta"))
+            if payout:
+                entries.append(LedgerEntry(payout, f"{game}:premio"))
+            if won:
+                entries.append(LedgerEntry(won, f"{game}:bote"))
+            bet = self._settle_gamble_in(
+                connection,
+                guild_id,
+                user_id,
+                entries,
+                day=day,
+                now=now,
+                adjust_tax=True,
+                day_tax=day_tax,
+                window_seconds=window_seconds,
             )
-            delta = max(0, day_tax(max(net, 0), others)) - withheld
-            if delta > 0:
-                # Nunca deja al jugador en negativo; lo que falte se cobra en
-                # el siguiente ajuste, porque el objetivo se recalcula siempre.
-                delta = min(delta, balance)
-                if delta:
-                    balance = self._apply_in_transaction(
-                        connection, guild_id, user_id, (LedgerEntry(-delta, "irpf:juego"),)
-                    )
-                    self._credit_state_in(connection, guild_id, delta, "irpf:juego")
-            elif delta < 0:
-                refund = min(-delta, self._state_balance_in(connection, guild_id))
-                delta = -refund
-                if refund:
-                    self._apply_in_transaction(
-                        connection,
-                        guild_id,
-                        STATE_ACCOUNT_ID,
-                        (LedgerEntry(-refund, "devolucion:irpf:juego"),),
-                    )
-                    balance = self._apply_in_transaction(
-                        connection,
-                        guild_id,
-                        user_id,
-                        (LedgerEntry(refund, "devolucion:irpf:juego"),),
-                    )
-            withheld += delta
-            connection.execute(
-                """
-                UPDATE economy_gambling_days SET withheld = ?
-                WHERE guild_id = ? AND user_id = ? AND day = ?
-                """,
-                (withheld, guild_id, user_id, day),
-            )
-            return BetSettlement(balance, delta, net, withheld)
+            pot_moves = []
+            if share:
+                pot_moves.append(LedgerEntry(share, f"{game}:aporte"))
+            if won:
+                pot_moves.append(LedgerEntry(-won, f"{game}:bote"))
+                if seed:
+                    pot_moves.append(LedgerEntry(seed, "bote:semilla"))
+                connection.execute(
+                    """
+                    INSERT INTO economy_slots_jackpots (guild_id, user_id, amount, won_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, won, now),
+                )
+            if pot_moves:
+                pot = self._apply_in_transaction(
+                    connection, guild_id, SLOTS_POT_ACCOUNT_ID, pot_moves
+                )
+            return SlotsSettlement(bet=bet, jackpot=won, pot=pot)
 
     # -- Declaración semanal -------------------------------------------------------
 
@@ -1214,6 +1438,7 @@ class EconomyRepository:
                 "economy_wealth_weeks",
                 "economy_wealth_tax",
                 "economy_donations",
+                "economy_slots_jackpots",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

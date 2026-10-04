@@ -27,7 +27,9 @@ from bot.repositories.economy import (
     DonationReceipt,
     EconomyRepository,
     InsufficientFundsError,
+    JackpotRecord,
     LedgerEntry,
+    SlotsSettlement,
     Treasury,
     WealthCharge,
     WealthRun,
@@ -62,6 +64,8 @@ __all__ = [
     "EconomyService",
     "IncomeResult",
     "InsufficientFundsError",
+    "JackpotRecord",
+    "SlotsSettlement",
     "STARTING_BALANCE",
     "STATE_ACCOUNT_ID",
     "Treasury",
@@ -379,6 +383,68 @@ class EconomyService:
             raise ValueError("El premio no puede ser negativo.")
         entries = [LedgerEntry(amount, f"{game}:premio")] if amount else []
         return await self._gamble(guild_id, user_id, entries, adjust_tax=True)
+
+    async def play_slots(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        game: str,
+        stake: int,
+        payout: int,
+        share: int,
+        jackpot: bool,
+        seed: int,
+    ) -> SlotsSettlement:
+        """Cobra y paga una tirada de tragaperras y mueve el bote común.
+
+        Tratamiento fiscal: juego, igual que `settle_bet`. Los premios de
+        máquinas y casinos son ganancia patrimonial que va a la base general
+        (art. 33.1 LIRPF) y las pérdidas solo compensan ganancias de juego
+        (art. 33.5.d LIRPF): por eso entra en la retención diaria del casino y
+        en la declaración semanal. El jackpot también: el gravamen especial
+        del 20 % (disposición adicional 33ª LIRPF) es solo para loterías del
+        Estado, ONCE y Cruz Roja, no para tragaperras.
+
+        La parte de la apuesta que va al bote no es un impuesto ni sale del
+        bolsillo del jugador aparte: es dinero de la apuesta que la casa no
+        se queda. Un giro gratis (`stake=0`) no aporta nada.
+
+        Args:
+            game: Motivo corto para el libro (`"tragaperras"`).
+            stake: Apuesta; 0 en los giros gratis.
+            payout: Lo que devuelve la línea, apuesta incluida.
+            share: Parte de la apuesta que va al bote.
+            jackpot: Si se lleva el bote entero.
+            seed: Lo que pone la casa en un bote nuevo o recién vaciado.
+
+        Raises:
+            InsufficientFundsError: Si el saldo no cubre la apuesta.
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        now = self._clock()
+        return await self.repository.settle_slots(
+            guild_id,
+            user_id,
+            game=game,
+            stake=stake,
+            payout=payout,
+            share=share,
+            jackpot=jackpot,
+            seed=seed,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+
+    async def slots_pot(self, guild_id: int, *, seed: int) -> int:
+        """Bote común de la tragaperras del servidor (lo siembra si es nuevo)."""
+        return await self.repository.slots_pot(guild_id, seed=seed)
+
+    async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
+        """Último jackpot de la tragaperras del servidor."""
+        return await self.repository.last_jackpot(guild_id)
 
     async def grant(self, guild_id: int, user_id: int, *, amount: int, reason: str) -> int:
         """Da dinero que no es renta (p. ej. un regalo de cumpleaños): sin IRPF.

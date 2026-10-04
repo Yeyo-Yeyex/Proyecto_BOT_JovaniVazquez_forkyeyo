@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -37,12 +38,14 @@ from bot.services.achievements import (
     newly_unlocked,
     progress,
     roulette_stats,
+    slots_stats,
     total_reward,
 )
 from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
+from bot.services.slots import REEL_STRIPS, Kind, spin_at
 
 GUILD = 1
 USER = 10
@@ -78,6 +81,13 @@ PRODUCED_STATS = {
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
     "casino_all_in_wins", "casino_broke", "casino_bet_666", "casino_bet_42",
     "casino_win_streak_max", "casino_loss_streak_max", "tax_refunds",
+    # Tragaperras (cogs/slots.py: slots_stats y el botón de Auto)
+    "slots_spins", "slots_wins", "slots_jackpots", "slots_jackpot_max", "slots_win_max",
+    *(f"slots_three_{symbol}" for symbol in "CLGBD7"),
+    "slots_ldw", "slots_near_miss", "slots_anticipation", "slots_scatter_tease",
+    "slots_free_triggers", "slots_free_spins", "slots_hot_spins", "slots_hot_big",
+    "slots_wild_wins", "slots_turbo", "slots_auto", "slots_session_max", "slots_pot_fed",
+    "slots_night",
     UNLOCKED_STAT,
 }  # fmt: skip
 
@@ -148,8 +158,9 @@ def test_un_logro_combinado_necesita_todas_sus_condiciones() -> None:
     assert "versatile" in newly_unlocked({"roulette_spins": 3, "bj_hands": 1}, [])
 
 
-def test_los_juegos_que_no_existen_no_desbloquean_nada() -> None:
-    assert "slots_1" not in newly_unlocked({"slots_spins": 50}, [])
+def test_la_tragaperras_ya_desbloquea_sus_logros() -> None:
+    """Era la categoría "próximamente"; desde que existe la máquina, cuenta."""
+    assert "slots_1" in newly_unlocked({"slots_spins": 50}, [])
 
 
 def test_el_progreso_no_pasa_de_la_meta() -> None:
@@ -687,3 +698,71 @@ async def test_una_mano_de_blackjack_cuenta_para_los_logros(
     assert profile.stats["bj_hands"] == 1
     assert profile.stats["bj_naturals"] == 1
     assert {"bj_1", "natural_1"} <= set(profile.unlocked)
+
+
+# -- Tragaperras -----------------------------------------------------------------------
+
+
+def _slots_stops(predicate) -> tuple[int, int, int]:  # noqa: ANN001
+    for stops in itertools.product(*(range(len(s)) for s in REEL_STRIPS)):
+        if predicate(spin_at(stops)):
+            return stops
+    raise AssertionError("Ninguna parada cumple la condición")
+
+
+def test_tragaperras_cuenta_el_medio_premio_como_ganar_perdiendo() -> None:
+    spin = spin_at(_slots_stops(lambda s: s.kind == Kind.CHERRY))
+    delta = slots_stats(
+        spin,
+        stake=100,
+        payout=50,
+        jackpot=0,
+        free=False,
+        hot=False,
+        turbo=True,
+        session_spins=1,
+        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+    )
+    assert delta.add["slots_ldw"] == 1
+    assert "slots_wins" not in delta.add
+    assert delta.add["slots_turbo"] == 1
+    assert delta.add["slots_pot_fed"] == 3
+
+
+def test_tragaperras_cuenta_trios_bote_y_noche() -> None:
+    spin = spin_at(_slots_stops(lambda s: s.is_jackpot))
+    delta = slots_stats(
+        spin,
+        stake=100,
+        payout=0,
+        jackpot=80_000,
+        free=False,
+        hot=False,
+        turbo=False,
+        session_spins=7,
+        when=datetime(2026, 1, 1, 4, tzinfo=TIMEZONE),
+    )
+    assert delta.add["slots_jackpots"] == 1
+    assert delta.peak["slots_jackpot_max"] == 80_000
+    assert delta.peak["slots_win_max"] == 79_900
+    assert delta.add["slots_night"] == 1
+    assert delta.peak["slots_session_max"] == 7
+    assert "jackpot_50k" in newly_unlocked({"slots_jackpots": 1, "slots_jackpot_max": 80_000}, [])
+
+
+def test_giro_gratis_no_aporta_al_bote_y_cualquier_premio_es_ganar() -> None:
+    spin = spin_at(_slots_stops(lambda s: s.kind == Kind.CHERRY), count_scatters=False)
+    delta = slots_stats(
+        spin,
+        stake=100,
+        payout=50,
+        jackpot=0,
+        free=True,
+        hot=False,
+        turbo=False,
+        session_spins=2,
+        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+    )
+    assert delta.add["slots_wins"] == 1
+    assert delta.add["slots_free_spins"] == 1
+    assert "slots_pot_fed" not in delta.add
