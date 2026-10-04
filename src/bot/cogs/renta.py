@@ -34,6 +34,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot.cogs import achievements as logros
+from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
     EconomyService,
@@ -201,6 +203,16 @@ class Renta(commands.Cog):
                 )
             except discord.HTTPException:
                 logger.warning("No se pudo anunciar la declaración", exc_info=True)
+        await logros.track(
+            self.bot,
+            guild.id,
+            interaction.user,
+            channel,
+            StatDelta(
+                add={"renta_filed": 1, "renta_refunded": claim.refunded},
+                peak={"balance_max": claim.balance},
+            ),
+        )
 
     # -- Comando -----------------------------------------------------------------------
 

@@ -32,8 +32,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.repositories.birthdays import BirthdayRepository
+from bot.services.achievements import StatDelta
 from bot.services.birthdays import (
     BIRTHDAY_GIFT,
     GREETED_BONUS,
@@ -149,7 +151,17 @@ class Birthdays(commands.Cog):
         await self.economy.grant(
             guild.id, birthday_user_id, amount=GREETED_BONUS, reason="cumple:felicitado"
         )
+        logros.note(self.bot, guild.id, greeter.id, StatDelta(add={"greetings_sent": 1}))
+        logros.note(self.bot, guild.id, birthday_user_id, StatDelta(add={"greetings_received": 1}))
         return GreetOutcome.OK
+
+    def is_birthday_today(self, guild_id: int, user_id: int) -> bool:
+        """Si hoy (hora canaria) es el cumpleaños de `user_id`, según el último repaso.
+
+        Lo usan los logros para no consultar la base de datos en cada mensaje.
+        """
+        cached = self._today.get(guild_id)
+        return cached is not None and cached[0] == local_day(time.time()) and user_id in cached[1]
 
     async def greet_from_button(
         self, interaction: discord.Interaction, birthday_user_id: int, year: int

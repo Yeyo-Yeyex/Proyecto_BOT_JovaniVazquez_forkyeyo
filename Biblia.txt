@@ -110,6 +110,15 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 5. **Gancho de la Renta en toda acción con dinero.** Toda acción de usuario que gane o gaste dinero y llegue como interacción (botón o slash command) llama a `renta.remind(bot, interaction)` (`bot.cogs.renta`) después de responder a la interacción: avisa una vez por campaña, en un mensaje que solo ve el usuario, de que tiene la declaración pendiente. Si la acción muestra un resultado, añade además `await renta.hint(bot, guild_id, user_id)` cuando no sea `None`. Los comandos de texto no admiten mensajes efímeros; su aviso llega con el primer botón que pulse el usuario.
 6. **Pruebas.** Cada flujo de dinero nuevo prueba que el libro cuadra con el saldo, que el Estado recibe exactamente lo retenido y, si hay devoluciones, que salen de la cuenta del Estado.
 
+### Logros
+
+Todo juego o acción nueva que se pueda contar debe alimentar los logros (`bot.cogs.achievements`):
+
+1. **Juegos del casino:** al terminar cada jugada, y después de enseñar el resultado (un aviso antes destriparía la tirada), llamar a `achievements.casino_play(bot, guild_id, user, canal, delta, net=neto)`. `delta` sale de `casino_stats(...)` más las estadísticas propias del juego, calculadas con una función pura en `services/achievements.py` (como `roulette_stats` o `blackjack_stats`).
+2. **Otras acciones:** `achievements.track(...)` si el aviso debe salir ya (IMV, renta, subir de nivel) o `achievements.note(...)` si basta con la escritura de cada minuto (cosas frecuentes como mensajes o reacciones).
+3. **Nunca romper al que llama:** estas funciones no lanzan y no hacen nada si el cog de logros no está cargado.
+4. **Catálogo:** un logro nuevo es una fila en `_build_catalog`. Los `id` no se cambian nunca (son lo que se guarda). Una estadística nueva debe añadirse al conjunto `PRODUCED_STATS` de `tests/unit/test_achievements.py`, que comprueba que ningún logro dependa de algo que nadie suma.
+
 ### Persistencia
 
 - No introducir una base de datos hasta que exista una necesidad funcional de conservar datos entre reinicios.

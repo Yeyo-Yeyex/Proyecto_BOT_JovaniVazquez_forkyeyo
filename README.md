@@ -68,6 +68,7 @@ python -m bot
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
+  | 🏆 Logros | `logros [miembro]` |
   | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
@@ -177,6 +178,28 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
+- **Logros** (`logros [miembro]`): 208 logros en 11 categorías (chat,
+  horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
+  tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
+  🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
+  mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
+  millón de IRPF; 16 son secretos y se ven como `???` hasta conseguirlos.
+  Los 9 de la tragaperras salen como "próximamente" y no cuentan hasta que
+  exista el juego. Cada logro paga yapdollars según su rareza (50, 200, 750,
+  2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
+  donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
+  conseguidos, los más cercanos y el más raro), un menú por categorías con
+  el progreso de cada uno y el porcentaje del servidor que lo tiene, y un
+  botón 🏆 Ranking por puntos.
+  - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
+    minuto en una sola escritura por servidor. Del mensaje solo se miran
+    propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.
+  - La voz cuenta un minuto cada minuto a quien está en llamada (aunque
+    tenga el micro silenciado) con al menos otra persona que no esté
+    ensordecida. El canal AFK no cuenta.
+  - La primera vez que el bot ve a alguien recupera sus mensajes del
+    historial importado y su nivel, así que los veteranos cobran de golpe
+    lo que ya tenían.
 - `babel` es un teléfono escacharrado con traductores: pasa el texto por 99
   idiomas elegidos al azar y lo devuelve al español, para ver qué queda.
   Responde con el antes, el después y la ruta de idiomas. `.babel` sin texto,
@@ -340,11 +363,13 @@ src/bot/
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── blackjack.py     # Blackjack con botones (bj)
+│   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
 ├── services/            # Lógica de negocio pura, sin discord.py
 │   ├── levels.py        # Cálculo de niveles y progreso
+│   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)

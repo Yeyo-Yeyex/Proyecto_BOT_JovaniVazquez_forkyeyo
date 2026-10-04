@@ -28,8 +28,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
+from bot.services.achievements import blackjack_stats, casino_stats
 from bot.services.blackjack import (
     Action,
     BlackjackGame,
@@ -205,6 +207,8 @@ class BlackjackTable(discord.ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        #: Mano ya pagada que falta contar para los logros, con su saldo e IRPF.
+        self._to_track: tuple[BlackjackGame, int, int] | None = None
         self._build_buttons()
 
     # -- Botones --------------------------------------------------------------------
@@ -309,6 +313,7 @@ class BlackjackTable(discord.ui.View):
         while game.dealer_should_draw():
             game.dealer_draw()
         await self._settle(game)
+        await self._track()
 
     # -- Juego ----------------------------------------------------------------------
 
@@ -419,6 +424,7 @@ class BlackjackTable(discord.ui.View):
             attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
             view=self,
         )
+        await self._track()
 
     async def _settle(self, game: BlackjackGame) -> int:
         """Decide la mano, paga y actualiza la racha. Devuelve el saldo final.
@@ -430,15 +436,18 @@ class BlackjackTable(discord.ui.View):
             return await self.balance()
         payout = game.settle()
         tax_note: str | None = None
+        tax_delta = 0
         try:
             settlement = await self.cog.economy.pay_winnings(
                 self.guild_id, self.owner.id, game=GAME, amount=payout
             )
             balance = settlement.balance
             tax_note = gambling_tax_line(settlement)
+            tax_delta = settlement.tax_delta
         except BalanceLimitError:
             logger.warning("Premio de blackjack por encima del saldo máximo; no se paga.")
             balance = await self.balance()
+        self._to_track = (game, balance, tax_delta)
         if game.net > 0:
             self.streak += 1
         elif game.net < 0:
@@ -449,6 +458,31 @@ class BlackjackTable(discord.ui.View):
         if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
             self.headline += f"\n{renta_hint}"
         return balance
+
+    async def _track(self) -> None:
+        """Cuenta la última mano pagada para los logros (una sola vez).
+
+        Se llama después de enseñar el resultado, para que el aviso de un
+        logro no se adelante a las cartas de la banca.
+        """
+        if self._to_track is None:
+            return
+        game, balance, tax_delta = self._to_track
+        self._to_track = None
+        delta = blackjack_stats(game)
+        delta.merge(
+            casino_stats(
+                stake=game.total_stake, net=game.net, balance_after=balance, tax_delta=tax_delta
+            )
+        )
+        await logros.casino_play(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            getattr(self.message, "channel", None),
+            delta,
+            net=game.net,
+        )
 
     # -- Fichas y repartir ----------------------------------------------------------
 

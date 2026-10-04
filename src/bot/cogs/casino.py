@@ -32,7 +32,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
 from bot.cogs import renta
+from bot.services.achievements import StatDelta, casino_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
@@ -301,6 +303,8 @@ class SpinResult:
     media: SpinMedia
     #: Línea de IRPF de esta tirada (retención o devolución), si la hay.
     tax_note: str | None = None
+    #: IRPF retenido (positivo) o devuelto (negativo) en esta tirada.
+    tax_delta: int = 0
 
 
 EditFn = Callable[..., Awaitable[Any]]
@@ -557,6 +561,7 @@ class RouletteTable(discord.ui.View):
         await asyncio.sleep(SPIN_SECONDS + REVEAL_MARGIN_SECONDS)
 
         self.cog.record(self.guild_id, outcome.pocket)
+        previous_pocket = self.last_outcome.pocket if self.last_outcome is not None else None
         self.streak = self.streak + 1 if outcome.won else 0
         self.last_outcome = outcome
         self.last_text = result_text(outcome)
@@ -569,6 +574,24 @@ class RouletteTable(discord.ui.View):
             embed=await self.current_embed(result.balance),
             attachments=[discord.File(io.BytesIO(result.media.png), filename=PNG_NAME)],
             view=self,
+        )
+        # Después de enseñar el número: un aviso de logro antes destriparía la tirada.
+        delta = roulette_stats(outcome, table_streak=self.streak, previous_pocket=previous_pocket)
+        delta.merge(
+            casino_stats(
+                stake=outcome.stake,
+                net=outcome.net,
+                balance_after=result.balance,
+                tax_delta=result.tax_delta,
+            )
+        )
+        await logros.casino_play(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            getattr(self.message, "channel", None),
+            delta,
+            net=outcome.net,
         )
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
@@ -718,6 +741,7 @@ class Casino(commands.Cog):
             balance=settlement.balance,
             media=media,
             tax_note=gambling_tax_line(settlement),
+            tax_delta=settlement.tax_delta,
         )
 
     def _casino_channel_error(self, channel: object) -> str | None:
@@ -890,6 +914,7 @@ class Casino(commands.Cog):
     # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def _daily_impl(self, responder: CommandResponder, user: discord.abc.User) -> None:
+        """Cobra el IMV, lo enseña y lo cuenta para los logros de Economía."""
         if responder.guild is None:
             await responder.send_error("La economía solo funciona dentro de un servidor.")
             return
@@ -914,6 +939,16 @@ class Casino(commands.Cog):
         )
         embed.set_author(name=f"IMV de {user.display_name}", icon_url=user.display_avatar.url)
         await responder.send(embed=embed)
+        await logros.track(
+            self.bot,
+            responder.guild.id,
+            user,
+            responder.channel,
+            StatDelta(
+                add={"imv_claims": 1},
+                peak={"imv_streak_max": result.streak, "balance_max": result.balance},
+            ),
+        )
 
     @app_commands.command(
         name="imv", description=f"Cobra tu Ingreso Mínimo Vital diario en {CURRENCY_NAME}."

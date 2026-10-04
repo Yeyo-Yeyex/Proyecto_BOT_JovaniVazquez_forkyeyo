@@ -1,0 +1,658 @@
+"""Pruebas de los logros: catálogo, reglas, repositorio, cog y premios con IRPF."""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import discord
+import pytest
+
+from bot.cogs.achievements import (
+    Achievements,
+    category_embed,
+    format_value,
+    summary_embed,
+    unlock_embed,
+)
+from bot.repositories.achievements import AchievementRepository, Profile
+from bot.repositories.economy import EconomyRepository
+from bot.repositories.message_stats import MessageStatsRepository
+from bot.services.achievements import (
+    AVAILABLE,
+    BY_ID,
+    CATALOG,
+    CATEGORIES,
+    MESSAGES_TOTAL_STAT,
+    UNLOCKED_STAT,
+    StatDelta,
+    blackjack_stats,
+    casino_stats,
+    is_laugh,
+    message_stats,
+    newly_unlocked,
+    progress,
+    roulette_stats,
+    total_reward,
+)
+from bot.services.blackjack import BlackjackGame, Card, Hand
+from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
+from bot.services.levels import TIMEZONE
+from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
+
+GUILD = 1
+USER = 10
+
+# Todas las estadísticas que produce algún sitio del bot. Si un logro usa
+# otra, nadie la sumaría nunca y sería imposible de conseguir.
+PRODUCED_STATS = {
+    # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
+    *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
+    "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
+    "msg_links", "msg_xd", "msg_laughs", "msg_attachments", "msg_stickers", "msg_replies",
+    "msg_mentions", "msg_happy_hour", "msg_leet", "msg_new_year", "msg_halloween",
+    "msg_christmas", "msg_canarias", "msg_own_birthday", "msg_bot_call", "msg_sanxe",
+    "messages_imported", MESSAGES_TOTAL_STAT,
+    "voice_minutes", "voice_muted", "voice_stream", "voice_video", "voice_night",
+    "voice_alone", "voice_session_max", "voice_crowd_max",
+    "reactions_given", "reactions_received", "reactions_on_message_max",
+    # Cumpleaños, niveles, IMV, renta y premios
+    "greetings_sent", "greetings_received", "level_max", "activity_streak_max",
+    "imv_claims", "imv_streak_max", "renta_filed", "renta_refunded", "tax_paid",
+    "balance_max",
+    # Casino
+    "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
+    "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",
+    "roulette_streak_max", "roulette_repeat_pocket",
+    "bj_hands", "bj_wins", "bj_naturals", "bj_double_wins", "bj_splits", "bj_split_sweeps",
+    "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
+    "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
+    "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
+    "casino_all_in_wins", "casino_broke", "casino_bet_666", "casino_bet_42",
+    "casino_win_streak_max", "casino_loss_streak_max", "tax_refunds",
+    UNLOCKED_STAT,
+}  # fmt: skip
+
+
+# -- Catálogo --------------------------------------------------------------------------
+
+
+def test_el_catalogo_es_grande_y_los_ids_no_se_repiten() -> None:
+    assert len(CATALOG) >= 200
+    assert len(BY_ID) == len(CATALOG)
+
+
+def test_todos_los_logros_disponibles_usan_estadisticas_que_alguien_suma() -> None:
+    missing = {stat for a in AVAILABLE for stat, _goal in a.conditions} - PRODUCED_STATS
+    assert missing == set()
+
+
+def test_cada_categoria_tiene_logros_y_cabe_en_un_embed() -> None:
+    profile = Profile(stats={}, unlocked={})
+    for category in CATEGORIES:
+        embed = category_embed(category, "Diego", profile, {}, 10)
+        assert embed.description is not None
+        assert len(embed.description) <= 4096
+        assert len(embed) <= 6000
+
+
+def test_completista_pide_todos_los_logros_normales() -> None:
+    normal = [a for a in AVAILABLE if a.category != "meta"]
+    assert BY_ID["completionist"].goal == len(normal)
+
+
+def test_las_metas_de_cada_estadistica_van_de_menor_a_mayor() -> None:
+    by_stat: dict[str, list[int]] = {}
+    for a in CATALOG:
+        if len(a.conditions) == 1:
+            by_stat.setdefault(a.stat, []).append(a.goal)
+    for goals in by_stat.values():
+        assert goals == sorted(goals)
+
+
+# -- Reglas ----------------------------------------------------------------------------
+
+
+def test_un_logro_salta_al_llegar_a_la_meta_y_no_antes() -> None:
+    assert "chat_100" not in newly_unlocked({"messages": 99}, [])
+    assert "chat_100" in newly_unlocked({"messages": 100}, [])
+
+
+def test_los_mensajes_importados_cuentan_para_los_logros_de_chat() -> None:
+    new = newly_unlocked({"messages": 10, "messages_imported": 995}, [])
+    assert "chat_1k" in new
+    assert "chat_5k" not in new
+
+
+def test_lo_ya_desbloqueado_no_se_repite() -> None:
+    assert newly_unlocked({"messages": 5}, ["chat_1"]) == []
+
+
+def test_coleccionista_cuenta_los_logros_que_saltan_a_la_vez() -> None:
+    nine = [a.id for a in AVAILABLE if a.category != "meta" and a.id != "chat_1"][:9]
+    new = newly_unlocked({"messages": 1}, nine)
+    assert "chat_1" in new
+    assert "meta_10" in new
+
+
+def test_un_logro_combinado_necesita_todas_sus_condiciones() -> None:
+    assert "versatile" not in newly_unlocked({"roulette_spins": 3}, [])
+    assert "versatile" in newly_unlocked({"roulette_spins": 3, "bj_hands": 1}, [])
+
+
+def test_los_juegos_que_no_existen_no_desbloquean_nada() -> None:
+    assert "slots_1" not in newly_unlocked({"slots_spins": 50}, [])
+
+
+def test_el_progreso_no_pasa_de_la_meta() -> None:
+    assert progress(BY_ID["chat_100"], {"messages": 250}) == (100, 100)
+
+
+def test_el_premio_depende_de_la_rareza() -> None:
+    assert total_reward(["chat_1", "chat_10k"]) == (
+        BY_ID["chat_1"].rarity.reward + BY_ID["chat_10k"].rarity.reward
+    )
+
+
+# -- Qué cuenta cada cosa --------------------------------------------------------------
+
+
+def at(hour: int, minute: int = 0, *, month: int = 3, day: int = 10) -> datetime:
+    return datetime(2026, month, day, hour, minute, tzinfo=TIMEZONE)
+
+
+def test_mensaje_de_madrugada_largo_con_enlace() -> None:
+    text = "mira https://example.com " + "a" * 600
+    stats = message_stats(text, when=at(3))
+    assert stats["messages"] == 1
+    assert stats["msg_night"] == 1
+    assert stats["msg_long"] == 1
+    assert stats["msg_links"] == 1
+    assert "msg_morning" not in stats
+
+
+def test_gritos_preguntas_y_mensajes_cortos() -> None:
+    assert message_stats("NO ME LO PUEDO CREER", when=at(12))["msg_caps"] == 1
+    assert "msg_caps" not in message_stats("OK", when=at(12))
+    assert message_stats("¿vienes?", when=at(12))["msg_questions"] == 1
+    assert message_stats("k", when=at(12))["msg_short"] == 1
+
+
+@pytest.mark.parametrize("text", ["jajaja", "JAJAJ", "jsjsjs", "jejeje", "lol que bueno"])
+def test_risas_que_cuentan(text: str) -> None:
+    assert is_laugh(text)
+
+
+@pytest.mark.parametrize("text", ["ja", "jamón", "jeans", "hola"])
+def test_palabras_que_no_son_risas(text: str) -> None:
+    assert not is_laugh(text)
+
+
+def test_xd_cuenta_solo_como_palabra() -> None:
+    assert message_stats("xddd", when=at(12))["msg_xd"] == 1
+    assert "msg_xd" not in message_stats("exdirector", when=at(12))
+
+
+def test_fechas_y_horas_secretas() -> None:
+    assert message_stats("hola", when=at(13, 37))["msg_leet"] == 1
+    assert message_stats("hola", when=at(0, 5, month=1, day=1))["msg_new_year"] == 1
+    assert message_stats("hola", when=at(18, month=10, day=31))["msg_halloween"] == 1
+    assert message_stats("hola", when=at(18, month=5, day=30))["msg_canarias"] == 1
+    assert message_stats("hola", when=at(18), own_birthday=True)["msg_own_birthday"] == 1
+    assert message_stats("ese Perro Sanxe", when=at(18))["msg_sanxe"] == 1
+    assert message_stats("oye jovani", when=at(18))["msg_bot_call"] == 1
+
+
+def test_casino_detecta_all_in_ruina_y_cifras_secretas() -> None:
+    lost = casino_stats(stake=666, net=-666, balance_after=0)
+    assert lost.add["casino_all_in"] == 1
+    assert lost.add["casino_broke"] == 1
+    assert lost.add["casino_bet_666"] == 1
+    assert lost.peak["casino_loss_max"] == 666
+    assert "casino_all_in_wins" not in lost.add
+
+    won = casino_stats(stake=500, net=500, balance_after=1_000, tax_delta=40)
+    assert won.add["casino_all_in_wins"] == 1
+    assert won.peak["casino_win_max"] == 500
+    assert won.add["tax_paid"] == 40
+
+    partial = casino_stats(stake=100, net=-100, balance_after=900, tax_delta=-20)
+    assert "casino_all_in" not in partial.add
+    assert partial.add["tax_refunds"] == 1
+
+
+def outcome(pocket: int, *bets: tuple[str, int]) -> RoundOutcome:
+    wagers = tuple(
+        Wager(OUTSIDE_BETS[key] if key in OUTSIDE_BETS else parse_bet(key), stake)
+        for key, stake in bets
+    )
+    returns = tuple(w.bet.total_return(w.stake, pocket) for w in wagers)
+    return RoundOutcome(pocket=pocket, wagers=wagers, returns=returns)
+
+
+def test_ruleta_pleno_color_y_deja_vu() -> None:
+    round_ = outcome(17, ("17", 10), ("black", 10), ("red", 10))
+    delta = roulette_stats(round_, table_streak=2, previous_pocket=17)
+    assert delta.add["roulette_spins"] == 1
+    assert delta.add["roulette_wins"] == 1
+    assert delta.add["roulette_straight_wins"] == 1
+    assert delta.add["roulette_color_wins"] == 1
+    assert delta.add["roulette_repeat_pocket"] == 1
+    assert delta.peak["roulette_wagers_max"] == 3
+    assert delta.peak["roulette_streak_max"] == 2
+
+
+def test_ruleta_doble_cero() -> None:
+    delta = roulette_stats(outcome(DOUBLE_ZERO, ("00", 10)), table_streak=1, previous_pocket=None)
+    assert delta.add["roulette_green_wins"] == 1
+    assert delta.add["roulette_double_zero_wins"] == 1
+
+
+def card(rank: int) -> Card:
+    return Card(rank, 0)
+
+
+def settled_game(hands: list[list[int]], dealer: list[int], **flags: bool) -> BlackjackGame:
+    game = BlackjackGame(stake=100, shoe=[])
+    game.hands = [Hand([card(r) for r in ranks], 100, done=True, **flags) for ranks in hands]
+    game.dealer = [card(r) for r in dealer]
+    game.hole_revealed = True
+    game.settle()
+    return game
+
+
+def test_blackjack_natural() -> None:
+    delta = blackjack_stats(settled_game([[1, 13]], [9, 8]))
+    assert delta.add["bj_hands"] == 1
+    assert delta.add["bj_naturals"] == 1
+    assert delta.add["bj_wins"] == 1
+
+
+def test_blackjack_kamikaze_con_17_duro() -> None:
+    delta = blackjack_stats(settled_game([[10, 7, 3]], [10, 8]))
+    assert delta.add["bj_kamikaze"] == 1
+    assert "bj_kamikaze" not in blackjack_stats(settled_game([[10, 6, 4]], [10, 8])).add
+
+
+def test_blackjack_cinco_cartas_y_banca_pasada() -> None:
+    delta = blackjack_stats(settled_game([[2, 3, 2, 4, 5]], [10, 6, 10]))
+    assert delta.peak["bj_cards_max"] == 5
+    assert delta.add["bj_dealer_busts"] == 1
+
+
+def test_blackjack_por_los_pelos() -> None:
+    delta = blackjack_stats(settled_game([[10, 10]], [10, 5, 6]))
+    assert delta.add["bj_bad_beat"] == 1
+    assert "bj_wins" not in delta.add
+
+
+def test_blackjack_separar_y_ganar_las_dos() -> None:
+    delta = blackjack_stats(settled_game([[10, 9], [10, 8]], [10, 7], from_split=True))
+    assert delta.add["bj_splits"] == 1
+    assert delta.add["bj_split_sweeps"] == 1
+
+
+# -- Repositorio -----------------------------------------------------------------------
+
+
+async def make_repository(tmp_path: Path) -> AchievementRepository:
+    repository = AchievementRepository(tmp_path / "bot.db")
+    await repository.initialize()
+    return repository
+
+
+async def test_sumas_y_maximos_se_guardan(tmp_path: Path) -> None:
+    repository = await make_repository(tmp_path)
+    for value in (5, 3):
+        await repository.record(
+            GUILD,
+            {USER: StatDelta(add={"messages": 2}, peak={"level_max": value})},
+            newly_unlocked,
+            now=1.0,
+        )
+    profile = await repository.profile(GUILD, USER)
+    assert profile.stats["messages"] == 4
+    assert profile.stats["level_max"] == 5
+    assert set(profile.unlocked) >= {"chat_1", "level_5"}
+
+
+async def test_un_logro_se_desbloquea_una_sola_vez(tmp_path: Path) -> None:
+    repository = await make_repository(tmp_path)
+    delta = {USER: StatDelta(add={"messages": 1})}
+    first = await repository.record(GUILD, delta, newly_unlocked, now=1.0)
+    second = await repository.record(GUILD, delta, newly_unlocked, now=2.0)
+    assert first == {USER: ["chat_1"]}
+    assert second == {}
+
+
+async def test_escrituras_simultaneas_no_duplican_logros(tmp_path: Path) -> None:
+    repository = await make_repository(tmp_path)
+    results = await asyncio.gather(
+        *(
+            repository.record(GUILD, {USER: StatDelta(add={"messages": 1})}, newly_unlocked, now=1)
+            for _ in range(5)
+        )
+    )
+    unlocked = [i for result in results for i in result.get(USER, [])]
+    assert unlocked.count("chat_1") == 1
+    assert (await repository.profile(GUILD, USER)).stats["messages"] == 5
+
+
+async def test_borrar_servidor_elimina_sus_logros(tmp_path: Path) -> None:
+    repository = await make_repository(tmp_path)
+    await repository.record(GUILD, {USER: StatDelta(add={"messages": 1})}, newly_unlocked, now=1)
+    await repository.delete_guild_data(GUILD)
+    assert await repository.profile(GUILD, USER) == Profile(stats={}, unlocked={})
+    assert await repository.guild_unlocks(GUILD) == ([], 0)
+
+
+# -- Cog -------------------------------------------------------------------------------
+
+
+def make_bot(*guilds: object) -> MagicMock:
+    bot = MagicMock()
+    bot.guilds = list(guilds)
+    by_id = {g.id: g for g in guilds}  # type: ignore[attr-defined]
+    bot.get_guild = lambda guild_id: by_id.get(guild_id)
+    bot.get_cog = lambda _name: None
+    bot.user = SimpleNamespace(id=999)
+    return bot
+
+
+async def make_cog(
+    tmp_path: Path, *guilds: object, message_stats: MessageStatsRepository | None = None
+) -> tuple[Achievements, AchievementRepository, EconomyService]:
+    repository = await make_repository(tmp_path)
+    economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await economy_repository.initialize()
+    economy = EconomyService(economy_repository)
+    cog = Achievements(make_bot(*guilds), repository, economy=economy, message_stats=message_stats)
+    return cog, repository, economy
+
+
+def ledger_sum(tmp_path: Path, user_id: int) -> int:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(delta), 0) FROM economy_ledger WHERE guild_id = ? AND user_id = ?",
+            (GUILD, user_id),
+        ).fetchone()
+    return int(total)
+
+
+class FakeChannel(discord.abc.Messageable):
+    """Canal mínimo que guarda lo enviado."""
+
+    def __init__(self, channel_id: int = 50) -> None:
+        self.id = channel_id
+        self.send = AsyncMock()  # type: ignore[method-assign]
+
+    async def _get_channel(self) -> FakeChannel:  # pragma: no cover - no se usa
+        return self
+
+
+async def test_desbloquear_paga_con_irpf_y_el_libro_cuadra(tmp_path: Path) -> None:
+    cog, _repository, economy = await make_cog(tmp_path)
+    channel = FakeChannel()
+
+    ids = await cog.apply(GUILD, USER, StatDelta(add={"messages": 10_000}), channel)
+
+    gross = total_reward(ids)
+    balance = await economy.balance(GUILD, USER)
+    treasury = await economy.treasury(GUILD, since=0)
+    assert "chat_10k" in ids
+    assert balance == STARTING_BALANCE + gross - treasury.collected_total
+    assert ledger_sum(tmp_path, USER) == balance
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == treasury.balance
+    embed = channel.send.await_args.kwargs["embed"]
+    assert "logros desbloqueados" in embed.title
+    assert "Perro Sanxe" in embed.description
+    # La retención cuenta para "Contribuyente" y compañía en la siguiente escritura.
+    assert cog._pending[GUILD][USER].add["tax_paid"] == treasury.collected_total
+
+
+async def test_sin_logro_nuevo_no_se_paga_ni_se_avisa(tmp_path: Path) -> None:
+    cog, _repository, economy = await make_cog(tmp_path)
+    channel = FakeChannel()
+    await cog.apply(GUILD, USER, StatDelta(add={"messages": 1}), channel)
+    channel.send.reset_mock()
+    before = await economy.balance(GUILD, USER)
+
+    assert await cog.apply(GUILD, USER, StatDelta(add={"messages": 1}), channel) == []
+
+    assert await economy.balance(GUILD, USER) == before
+    channel.send.assert_not_awaited()
+
+
+def voice_member(user_id: int, *, bot: bool = False, **flags: bool) -> SimpleNamespace:
+    state = {
+        "self_mute": False,
+        "self_deaf": False,
+        "mute": False,
+        "deaf": False,
+        "self_stream": False,
+        "self_video": False,
+        **flags,
+    }
+    return SimpleNamespace(id=user_id, bot=bot, voice=SimpleNamespace(**state))
+
+
+def voice_guild(*channels: SimpleNamespace, afk: SimpleNamespace | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=GUILD, voice_channels=list(channels), afk_channel=afk, system_channel=None
+    )
+
+
+NOON = datetime(2026, 3, 10, 12, tzinfo=TIMEZONE).timestamp()
+
+
+async def test_voz_cuenta_minutos_con_gente_y_sesiones_seguidas(tmp_path: Path) -> None:
+    channel = SimpleNamespace(
+        id=70,
+        members=[
+            voice_member(1, self_mute=True, self_stream=True),
+            voice_member(2),
+            voice_member(3, self_deaf=True),
+            voice_member(4, bot=True),
+        ],
+    )
+    cog, _repository, _economy = await make_cog(tmp_path, voice_guild(channel))
+
+    cog.collect_voice(NOON)
+    cog.collect_voice(NOON + 60)
+
+    first = cog._pending[GUILD][1]
+    assert first.add == {"voice_minutes": 2, "voice_muted": 2, "voice_stream": 2}
+    assert first.peak["voice_session_max"] == 2
+    assert first.peak["voice_crowd_max"] == 2
+    assert cog._pending[GUILD][2].add == {"voice_minutes": 2}
+    assert 3 not in cog._pending[GUILD]
+    assert 4 not in cog._pending[GUILD]
+
+
+async def test_salir_de_la_llamada_reinicia_la_sesion(tmp_path: Path) -> None:
+    channel = SimpleNamespace(id=70, members=[voice_member(1), voice_member(2)])
+    cog, _repository, _economy = await make_cog(tmp_path, voice_guild(channel))
+    cog.collect_voice(NOON)
+    channel.members = [voice_member(2)]
+    cog.collect_voice(NOON + 60)
+    channel.members = [voice_member(1), voice_member(2)]
+
+    cog.collect_voice(NOON + 120)
+
+    assert cog._sessions[(GUILD, 1)] == 1
+    assert cog._pending[GUILD][2].add["voice_alone"] == 1
+
+
+async def test_el_canal_afk_no_cuenta(tmp_path: Path) -> None:
+    afk = SimpleNamespace(id=71, members=[voice_member(1), voice_member(2)])
+    cog, _repository, _economy = await make_cog(tmp_path, voice_guild(afk, afk=afk))
+    cog.collect_voice(NOON)
+    assert cog._pending == {}
+
+
+def reaction(*, message_id: int = 7, user_id: int = 2, author_id: int = 1) -> SimpleNamespace:
+    return SimpleNamespace(
+        guild_id=GUILD,
+        message_id=message_id,
+        user_id=user_id,
+        message_author_id=author_id,
+        channel_id=50,
+        member=SimpleNamespace(id=user_id, bot=False),
+    )
+
+
+async def test_reacciones_una_por_persona_y_mensaje(tmp_path: Path) -> None:
+    guild = SimpleNamespace(id=GUILD, get_member=lambda uid: SimpleNamespace(id=uid, bot=False))
+    cog, _repository, _economy = await make_cog(tmp_path, guild)
+
+    await cog.on_raw_reaction_add(reaction(user_id=2))  # type: ignore[arg-type]
+    await cog.on_raw_reaction_add(reaction(user_id=2))  # type: ignore[arg-type]
+    await cog.on_raw_reaction_add(reaction(user_id=3))  # type: ignore[arg-type]
+    await cog.on_raw_reaction_add(reaction(user_id=1))  # type: ignore[arg-type]
+
+    author = cog._pending[GUILD][1]
+    assert author.add == {"reactions_received": 2}
+    assert author.peak["reactions_on_message_max"] == 2
+    assert cog._pending[GUILD][2].add == {"reactions_given": 1}
+
+
+async def test_rachas_de_casino_entre_juegos(tmp_path: Path) -> None:
+    cog, repository, _economy = await make_cog(tmp_path)
+    for _ in range(5):
+        await cog.casino_play(GUILD, USER, None, StatDelta(), net=-10)
+    await cog.casino_play(GUILD, USER, None, StatDelta(), net=50)
+
+    profile = await repository.profile(GUILD, USER)
+    assert profile.stats["casino_loss_streak_max"] == 5
+    assert profile.stats["casino_win_streak_max"] == 1
+    assert "lstreak_5" in profile.unlocked
+
+
+async def test_la_primera_vez_se_recupera_el_historial_y_el_nivel(tmp_path: Path) -> None:
+    stats = MessageStatsRepository(tmp_path / "bot.db")
+    await stats.initialize()
+    assert await stats.start_import(GUILD, [20], cutoff_id=500)
+    await stats.save_channel_counts(GUILD, 20, {USER: 1_200})
+    await stats.finish_import(GUILD)
+    await stats.enable_levels(GUILD, historical_xp_per_message=20)
+    cog, repository, _economy = await make_cog(tmp_path, message_stats=stats)
+
+    cog.note(GUILD, USER, StatDelta(add={"messages": 1}), 50)
+    await cog.flush()
+    cog.note(GUILD, USER, StatDelta(add={"messages": 1}), 50)
+    await cog.flush()
+
+    profile = await repository.profile(GUILD, USER)
+    assert profile.stats["messages"] == 2
+    assert profile.stats["messages_imported"] == 1_200
+    assert profile.stats["level_max"] > 0
+    assert "chat_1k" in profile.unlocked
+
+
+async def test_flush_avisa_en_el_canal_del_ultimo_mensaje(tmp_path: Path) -> None:
+    channel = FakeChannel(55)
+    guild = SimpleNamespace(
+        id=GUILD,
+        get_channel_or_thread=lambda cid: channel if cid == 55 else None,
+        get_member=lambda _uid: None,
+        system_channel=None,
+    )
+    cog, _repository, _economy = await make_cog(tmp_path, guild)
+
+    cog.note(GUILD, USER, StatDelta(add={"messages": 1}), 55)
+    await cog.flush()
+
+    channel.send.assert_awaited_once()
+    assert cog._pending.get(GUILD, {}).get(USER) is not None  # el IRPF del premio
+
+
+# -- Presentación ----------------------------------------------------------------------
+
+
+def test_formato_de_horas_y_dinero() -> None:
+    assert format_value(45, "min") == "45 min"
+    assert format_value(90, "min") == "1,5 h"
+    assert format_value(60_000, "min") == "1.000 h"
+    assert format_value(12_500, "money") == "12.500 Y$"
+    assert format_value(1_234) == "1.234"
+
+
+def test_aviso_de_muchos_logros_se_resume() -> None:
+    ids = [a.id for a in AVAILABLE[:12]]
+    embed = unlock_embed("Diego", None, ids, None)
+    assert "12 logros" in embed.title
+    assert "y 4 más" in (embed.description or "")
+
+
+def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
+    category = next(c for c in CATEGORIES if c.key == "time")
+    hidden = category_embed(category, "Diego", Profile({}, {}), {}, 5)
+    shown = category_embed(category, "Diego", Profile({}, {"leet": 1.0}), {"leet": 1}, 5)
+    assert "1337" not in (hidden.description or "")
+    assert "1337" in (shown.description or "")
+
+
+def test_resumen_sugiere_los_logros_mas_cercanos() -> None:
+    embed = summary_embed("Diego", None, Profile({"messages": 95}, {}), {}, 3)
+    near = next(f for f in embed.fields if f.name == "Casi lo tienes")
+    assert "Ya se te oye" in near.value
+
+
+# -- Ganchos en los juegos -------------------------------------------------------------
+
+
+async def test_una_tirada_de_ruleta_cuenta_para_los_logros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import bot.cogs.casino as casino_module
+    from bot.cogs.casino import Casino, RouletteTable
+    from bot.services.roulette import Wheel
+    from tests.unit.test_casino_cog import FakeRenderer, make_interaction, make_user
+
+    monkeypatch.setattr(casino_module, "SPIN_SECONDS", 0)
+    monkeypatch.setattr(casino_module, "REVEAL_MARGIN_SECONDS", 0)
+    achievements, repository, economy = await make_cog(tmp_path)
+    bot = MagicMock()
+    bot.get_cog = lambda name: achievements if name == "Achievements" else None
+    casino = Casino(bot, economy=economy, renderer=FakeRenderer(), wheel=Wheel(lambda _n: 17))  # type: ignore[arg-type]
+    table = RouletteTable(casino, guild_id=GUILD, owner=make_user(USER), stake=100)
+    table.message = SimpleNamespace(channel=FakeChannel())  # type: ignore[assignment]
+
+    await table.choose(make_interaction(USER), parse_bet("17"))
+
+    profile = await repository.profile(GUILD, USER)
+    assert profile.stats["roulette_spins"] == 1
+    assert profile.stats["roulette_straight_wins"] == 1
+    assert profile.stats["casino_win_max"] == 3_500
+    assert {"rl_1", "pleno_1", "bigwin_1k"} <= set(profile.unlocked)
+    table.message.channel.send.assert_awaited_once()  # type: ignore[union-attr]
+
+
+async def test_una_mano_de_blackjack_cuenta_para_los_logros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tests.unit.test_blackjack_cog as bj_tests
+    from bot.cogs.blackjack import Blackjack
+
+    achievements, repository, economy = await make_cog(tmp_path)
+    bot = MagicMock()
+    bot.get_cog = lambda name: achievements if name == "Achievements" else None
+    blackjack = Blackjack(
+        bot,
+        economy=economy,
+        renderer=bj_tests.FakeRenderer(),  # type: ignore[arg-type]
+        shoe_factory=bj_tests.stacked(bj_tests.c(1), bj_tests.c(9), bj_tests.c(13), bj_tests.c(8)),
+    )
+    owner = MagicMock(spec=discord.Member, id=USER, display_name="Diego", bot=False)
+    monkeypatch.setattr(bj_tests, "make_user", lambda user_id=USER: owner)
+
+    await bj_tests.open_table(blackjack)
+
+    profile = await repository.profile(GUILD, USER)
+    assert profile.stats["bj_hands"] == 1
+    assert profile.stats["bj_naturals"] == 1
+    assert {"bj_1", "natural_1"} <= set(profile.unlocked)

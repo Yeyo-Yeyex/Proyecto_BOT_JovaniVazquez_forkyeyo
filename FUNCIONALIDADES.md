@@ -286,6 +286,19 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Solo el dueño de una mesa puede apostar en ella.
 - Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
 - Al salir el bot de un servidor se borra su economía.
+
+### 6 ter.5. Logros
+
+- `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
+- 208 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Los 9 de la tragaperras se muestran como "próximamente" y no se pueden conseguir ni cuentan para el total (199) hasta que exista el juego; entonces basta con que el juego sume `slots_spins`, `slots_wins`, `slots_jackpots` y `slots_win_max` y quitar `upcoming` de su categoría.
+- Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
+- Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
+- 16 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, nivel y racha de días, cada tirada de ruleta y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
+- Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
+- La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
+- Se anuncia en el canal donde se consiguió (en voz, el chat del canal de voz; si no se sabe, el canal del sistema). Con más de 8 a la vez, el aviso los resume.
+- Al salir el bot de un servidor se borran sus logros.
 ## 6 quater. Administración
 
 ### 6 quater.1. Comandos
@@ -347,6 +360,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana y blackjack. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
+9. **Logros:** 208 logros con premios en yapdollars, `logros` y ranking. (Implementado; los de la tragaperras esperan al juego.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 
