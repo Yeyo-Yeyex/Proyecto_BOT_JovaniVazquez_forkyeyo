@@ -11,10 +11,14 @@ Botones:
 - 🔁 **Ráfaga ×5**: cinco tandas seguidas con un solo resumen y una sola imagen.
 - ⚡ **Turbo**: sin animación, solo la imagen final (más rápido y casi sin datos).
 - **½**, **×2**, 💰 **All-in**: cambian la apuesta. 📋 **Premios**: la tabla.
+- Menú de **tablero**: 🌸 Sakura, 🏮 Clásica, 🐉 Dragón, 👹 Oni o 🎲 Al azar
+  (cada tanda en uno distinto). Todos devuelven lo mismo de media; cambia el
+  riesgo. También se elige al abrir: `.pachinko 500 oni`.
 
-La animación es un GIF que se monta en cada tanda (~0,5 s de CPU fuera del
-event loop y 130-330 KB). Al acabar se cambia por el PNG final, como en la
-tragaperras. El turbo se recuerda por miembro en memoria hasta reiniciar.
+La animación es un GIF que se monta en cada tanda (~0,8 s de CPU fuera del
+event loop y 130-370 KB). Al acabar se cambia por el PNG final, como en la
+tragaperras. El turbo y el tablero se recuerdan por miembro en memoria hasta
+reiniciar.
 
 Si `CASINO_CHANNEL_IDS` está configurado, la máquina solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes, insertar
@@ -52,11 +56,18 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pachinko import (
     BALLS,
-    FEVER_BALLS,
+    BOARDS,
+    DEFAULT_BOARD,
     MIN_STAKE,
+    Board,
     Kind,
     PachinkoMachine,
     Volley,
+    atari_value,
+    atari_volley_chance,
+    decimal,
+    expected_return,
+    find_board,
     hold_bar,
     payout,
     paytable_lines,
@@ -83,6 +94,10 @@ BURST_VOLLEYS = 5
 SHOUT_MULTIPLIER = 20
 #: Premios gordos encadenados que se anuncian en el canal aunque paguen poco.
 SHOUT_RUSH = 5
+
+#: Valor del menú para jugar cada tanda en un tablero al azar.
+RANDOM_BOARD = "azar"
+RANDOM_WORDS = frozenset({"azar", "random", "aleatorio", "sorpresa"})
 
 GIF_NAME = "pachinko.gif"
 PNG_NAME = "pachinko.png"
@@ -148,11 +163,16 @@ def _digits(volley: Volley) -> str | None:
     return " ".join(str(d) for d in best.digits)
 
 
-def result_text(play: PachinkoPlay, rng: random.Random | None = None) -> str:
+def result_text(
+    play: PachinkoPlay, rng: random.Random | None = None, *, random_board: bool = False
+) -> str:
     """Bloque grande con lo que ha pasado en la tanda.
 
     Como en la tragaperras, una tanda que devuelve algo se celebra aunque
     devuelva menos de lo apostado: lo cobrado es real y el saldo lo dice todo.
+
+    Args:
+        random_board: Si el jugador eligió 🎲 Al azar: se dice qué tablero salió.
     """
     rng = rng or random.Random()
     volley = play.volley
@@ -190,6 +210,8 @@ def result_text(play: PachinkoPlay, rng: random.Random | None = None) -> str:
         )
     if volley.corners:
         lines.append("⭐ ¡Bola en la esquina!")
+    if random_board:
+        lines.append(f"🎲 Ha tocado {volley.board.title} ({volley.board.risk}).")
     return "\n".join(lines)
 
 
@@ -231,31 +253,47 @@ def tax_note(plays: list[PachinkoPlay]) -> str | None:
     return None
 
 
+def board_label(board: Board | None) -> str:
+    """Nombre del tablero elegido para títulos y menús; `None` es 🎲 Al azar."""
+    return "🎲 Al azar" if board is None else board.title
+
+
 def machine_embed(
     *,
     owner: str,
     balance: int,
     stake: int,
     turbo: bool,
+    board: Board | None,
     text: str | None = None,
     won: bool | None = None,
 ) -> discord.Embed:
-    """Embed de la máquina parada: al abrirla o tras una tanda."""
+    """Embed de la máquina parada: al abrirla o tras una tanda.
+
+    Args:
+        board: Tablero elegido; `None` si cada tanda sale en uno al azar.
+    """
     if text is None:
+        if board is None:
+            intro = "Cada tanda cae en un tablero distinto: puede tocar Sakura o puede tocar Oni."
+        else:
+            intro = f"**{board.title}** · {board.risk}. {board.blurb}"
         description = (
-            f"Pulsa 🎯 **Lanzar**: {BALLS} bolas bajan por los clavos.\n"
+            f"{intro}\n\nPulsa 🎯 **Lanzar**: {BALLS} bolas bajan por los clavos. "
             "Las que entran en **START** juegan en la pantalla: tres iguales es "
-            f"**ATARI** (+{FEVER_BALLS} bolas) y los impares traen **RUSH**."
+            "**ATARI** y los impares traen **RUSH**. Cambia de tablero en el menú."
         )
     else:
         description = text
     if balance < MIN_STAKE:
         description += "\n\n**No te llega para una tanda.** `imv` te recarga."
     color = COLOR_IDLE if won is None else COLOR_WIN if won else COLOR_LOSS
-    embed = discord.Embed(title="🌸 Pachinko", description=description, color=color)
+    embed = discord.Embed(
+        title=f"🌸 Pachinko · {board_label(board)}", description=description, color=color
+    )
     embed.add_field(name="Saldo", value=format_amount(balance))
     embed.add_field(name="Apuesta", value=f"{format_amount(stake)} ({BALLS} bolas)")
-    embed.add_field(name="Bola", value=format_amount(stake // BALLS))
+    embed.add_field(name="Riesgo", value="sorpresa" if board is None else board.risk)
     embed.set_image(url=f"attachment://{PNG_NAME}")
     footer = f"Máquina de {owner}"
     if turbo:
@@ -264,10 +302,10 @@ def machine_embed(
     return embed
 
 
-def launching_embed(*, owner: str, stake: int, held: int) -> discord.Embed:
+def launching_embed(*, owner: str, stake: int, held: int, board: Board) -> discord.Embed:
     """Embed mientras caen las bolas."""
     embed = discord.Embed(
-        title="🌸 Pachinko",
+        title=f"🌸 Pachinko · {board.title}",
         description=f"# 🎯 ¡Bolas fuera!\n{format_amount(stake)} · reserva {hold_bar(held)}",
         color=COLOR_SPIN,
     )
@@ -276,13 +314,62 @@ def launching_embed(*, owner: str, stake: int, held: int) -> discord.Embed:
     return embed
 
 
-def paytable_embed() -> discord.Embed:
-    """Tabla de premios (se manda en privado)."""
-    return discord.Embed(
-        title="📋 Premios del pachinko",
-        description="\n".join(paytable_lines()),
-        color=COLOR_WIN,
-    )
+def boards_summary() -> list[str]:
+    """Una línea por tablero: riesgo, cada cuánto hay atari y cuánto paga."""
+    lines = []
+    for board in BOARDS.values():
+        every = round(1 / float(atari_volley_chance(board)))
+        value = float(atari_value(board))
+        back = float(expected_return(board)) * 100
+        lines.append(
+            f"**{board.title}** · {board.risk} · atari cada ~{every} tandas, "
+            f"×{decimal(value)} de media · devuelve {decimal(back)} %"
+        )
+    return lines
+
+
+def paytable_embed(board: Board | None) -> discord.Embed:
+    """Tabla de premios del tablero elegido y resumen de todos (se manda en privado)."""
+    if board is None:
+        description = "🎲 Cada tanda cae en uno de estos tableros:\n\n"
+    else:
+        description = "\n".join(paytable_lines(board)) + "\n\n**Todos los tableros**\n"
+    description += "\n".join(boards_summary())
+    return discord.Embed(title="📋 Premios del pachinko", description=description, color=COLOR_WIN)
+
+
+def parse_args(first: str | None, second: str | None) -> tuple[str | None, str | None]:
+    """Separa la cantidad y el tablero de `.pachinko`, en cualquier orden.
+
+    Returns:
+        `(texto de la cantidad, clave del tablero o RANDOM_BOARD)`; cada uno
+        puede ser `None` si no se ha escrito.
+
+    Raises:
+        ValueError: Si hay dos tableros o dos cantidades.
+    """
+    amount: str | None = None
+    board: str | None = None
+    for word in (first, second):
+        if not word:
+            continue
+        if word.lower() in RANDOM_WORDS:
+            found = RANDOM_BOARD
+        else:
+            match = find_board(word)
+            found = match.key if match else None
+        if found is not None:
+            if board is not None:
+                raise ValueError("Elige un solo tablero: sakura, clasica, dragon, oni o azar.")
+            board = found
+        else:
+            if amount is not None:
+                raise ValueError(
+                    "No entiendo eso. Ejemplos: `.pachinko 500`, `.pachinko 500 oni`, "
+                    "`.pachinko sakura`."
+                )
+            amount = word
+    return amount, board
 
 
 def parse_stake(amount_text: str | None, balance: int) -> int:
@@ -314,7 +401,13 @@ class PachinkoView(discord.ui.View):
     """
 
     def __init__(
-        self, cog: Pachinko, *, guild_id: int, owner: discord.abc.User, stake: int
+        self,
+        cog: Pachinko,
+        *,
+        guild_id: int,
+        owner: discord.abc.User,
+        stake: int,
+        board_key: str | None = None,
     ) -> None:
         super().__init__(timeout=MACHINE_TIMEOUT)
         self.cog = cog
@@ -322,6 +415,8 @@ class PachinkoView(discord.ui.View):
         self.owner = owner
         self.stake = stake
         self.turbo = cog.turbo_default(guild_id, owner.id)
+        #: Clave del tablero elegido o `RANDOM_BOARD`.
+        self.board_key = board_key or cog.board_default(guild_id, owner.id)
         self.session_volleys = 0
         self.last_text: str | None = None
         self.last_won: bool | None = None
@@ -357,13 +452,46 @@ class PachinkoView(discord.ui.View):
         self._add("×2", 1, self._double_stake, custom_id="x2")
         self._add("💰 All-in", 1, self._all_in, custom_id="allin")
         self._add("📋 Premios", 1, self._paytable, custom_id="paytable")
+        self.board_select: discord.ui.Select = discord.ui.Select(
+            placeholder="Elige tablero", row=2, custom_id=f"{GAME}:board", options=[]
+        )
+        self.board_select.callback = self._choose_board  # type: ignore[method-assign]
+        self.add_item(self.board_select)
         self._set_enabled(True)
+
+    @property
+    def board(self) -> Board | None:
+        """Tablero elegido; `None` con 🎲 Al azar."""
+        return BOARDS.get(self.board_key)
+
+    def _board_options(self) -> list[discord.SelectOption]:
+        options = [
+            discord.SelectOption(
+                label=f"{board.name} · {board.risk}",
+                value=board.key,
+                emoji=board.emoji,
+                description=board.blurb[:100],
+                default=board.key == self.board_key,
+            )
+            for board in BOARDS.values()
+        ]
+        options.append(
+            discord.SelectOption(
+                label="Al azar · sorpresa",
+                value=RANDOM_BOARD,
+                emoji="🎲",
+                description="Cada tanda cae en un tablero distinto.",
+                default=self.board_key == RANDOM_BOARD,
+            )
+        )
+        return options
 
     def _set_enabled(self, enabled: bool) -> None:
         """Activa o desactiva los botones y pone al día sus etiquetas."""
         for item in self.children:
-            if isinstance(item, discord.ui.Button):
+            if isinstance(item, discord.ui.Button | discord.ui.Select):
                 item.disabled = not enabled
+        self.board_select.options = self._board_options()
         self.launch_button.label = f"🎯 Lanzar · {format_amount(self.stake)}"
         self.turbo_button.label = "⚡ Turbo: sí" if self.turbo else "⚡ Turbo"
         self.turbo_button.style = (
@@ -385,7 +513,7 @@ class PachinkoView(discord.ui.View):
     async def on_timeout(self) -> None:
         """Desactiva los botones al cerrar la máquina por inactividad."""
         for item in self.children:
-            if isinstance(item, discord.ui.Button):
+            if isinstance(item, discord.ui.Button | discord.ui.Select):
                 item.disabled = True
         try:
             if self._last_interaction is not None:
@@ -412,6 +540,7 @@ class PachinkoView(discord.ui.View):
             balance=balance,
             stake=self.stake,
             turbo=self.turbo,
+            board=self.board,
             text=text if text is not None else self.last_text,
             won=self.last_won,
         )
@@ -422,10 +551,12 @@ class PachinkoView(discord.ui.View):
         Raises:
             InsufficientFundsError, BalanceLimitError: Como `Pachinko.play`.
         """
+        board = self.board or self.cog.machine.random_board()
         play = await self.cog.play(
             self.guild_id,
             self.owner.id,
             stake=self.stake,
+            board=board,
             turbo=turbo,
             render=render,
             session_volleys=self.session_volleys + 1,
@@ -475,7 +606,10 @@ class PachinkoView(discord.ui.View):
             self._set_enabled(False)
             await first_edit(
                 embed=launching_embed(
-                    owner=self.owner.display_name, stake=play.stake, held=len(play.volley.draws)
+                    owner=self.owner.display_name,
+                    stake=play.stake,
+                    held=len(play.volley.draws),
+                    board=play.volley.board,
                 ),
                 attachments=[discord.File(io.BytesIO(play.media.gif), filename=GIF_NAME)],
                 view=self,
@@ -485,7 +619,7 @@ class PachinkoView(discord.ui.View):
         else:
             edit = first_edit
 
-        text = result_text(play)
+        text = result_text(play, random_board=self.board is None)
         if note := tax_note([play]):
             text += f"\n{note}"
         if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
@@ -618,7 +752,28 @@ class PachinkoView(discord.ui.View):
         await self._refresh(interaction, balance)
 
     async def _paytable(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(embed=paytable_embed(), ephemeral=True)
+        await interaction.response.send_message(embed=paytable_embed(self.board), ephemeral=True)
+
+    async def _choose_board(self, interaction: discord.Interaction) -> None:
+        """Cambia de tablero y enseña la máquina nueva parada."""
+        if self._busy:
+            await interaction.response.defer()
+            return
+        values = self.board_select.values
+        if values and (values[0] in BOARDS or values[0] == RANDOM_BOARD):
+            self.board_key = values[0]
+        self.cog.set_board_default(self.guild_id, self.owner.id, self.board_key)
+        self.last_text = None
+        self.last_won = None
+        self._set_enabled(True)
+        board = self.board or self.cog.machine.random_board()
+        png = await asyncio.to_thread(self.cog.renderer.idle_png, board)
+        await interaction.response.edit_message(
+            embed=await self.current_embed(),
+            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+            view=self,
+        )
+        self._last_interaction = interaction
 
 
 # -- Cog ----------------------------------------------------------------------------
@@ -644,12 +799,13 @@ class Pachinko(commands.Cog, name="Pachinko"):
         # Turbo por (servidor, miembro). Crece como mucho hasta el número de
         # miembros que han jugado; se pierde al reiniciar.
         self._turbo: dict[tuple[int, int], bool] = {}
-        self._warm_task: asyncio.Task[bytes] | None = None
+        self._board: dict[tuple[int, int], str] = {}
+        self._warm_task: asyncio.Task[None] | None = None
 
     async def cog_load(self) -> None:
-        """Prepara las piezas del dibujo en segundo plano."""
+        """Prepara las piezas de todos los tableros en segundo plano (~0,3 s de CPU)."""
         self._warm_task = asyncio.create_task(
-            asyncio.to_thread(self.renderer.idle_png), name="pachinko-warm-up"
+            asyncio.to_thread(self.renderer.warm_up), name="pachinko-warm-up"
         )
 
     async def cog_unload(self) -> None:
@@ -665,12 +821,21 @@ class Pachinko(commands.Cog, name="Pachinko"):
         """Recuerda el turbo para la próxima máquina del miembro."""
         self._turbo[(guild_id, user_id)] = turbo
 
+    def board_default(self, guild_id: int, user_id: int) -> str:
+        """Tablero (o `RANDOM_BOARD`) que eligió el miembro la última vez."""
+        return self._board.get((guild_id, user_id), DEFAULT_BOARD)
+
+    def set_board_default(self, guild_id: int, user_id: int, board_key: str) -> None:
+        """Recuerda el tablero para la próxima máquina del miembro."""
+        self._board[(guild_id, user_id)] = board_key
+
     async def play(
         self,
         guild_id: int,
         user_id: int,
         *,
         stake: int,
+        board: Board,
         turbo: bool,
         render: bool = True,
         session_volleys: int = 1,
@@ -690,7 +855,7 @@ class Pachinko(commands.Cog, name="Pachinko"):
         """
         if stake < MIN_STAKE:
             raise ValueError(f"La tanda mínima es {MIN_STAKE}.")
-        volley = self.machine.launch()
+        volley = self.machine.launch(board)
         won = payout(volley, stake)
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=stake, payout=won
@@ -724,13 +889,16 @@ class Pachinko(commands.Cog, name="Pachinko"):
                 else "ATARI"
             )
             text = (
-                f"📣 🌸 {_digits(volley)} ¡{user.mention} ha sacado **{name} ×{volley.jackpots}** "
-                f"en el pachinko! Se lleva **{format_amount(play.net)}**. "
-                f"{TAX_COLLECTOR} ya está contando bolas."
+                f"📣 {volley.board.emoji} {_digits(volley)} ¡{user.mention} ha sacado "
+                f"**{name} ×{volley.jackpots}** en el pachinko {volley.board.name}! "
+                f"Se lleva **{format_amount(play.net)}**. {TAX_COLLECTOR} ya está contando bolas."
             )
         elif big:
             amount = format_amount(play.net)
-            text = f"📣 🌸 ¡{user.mention} acaba de ganar **{amount}** en el pachinko!"
+            text = (
+                f"📣 {volley.board.emoji} ¡{user.mention} acaba de ganar **{amount}** en el "
+                f"pachinko {volley.board.name}!"
+            )
         else:
             return
         try:
@@ -751,8 +919,14 @@ class Pachinko(commands.Cog, name="Pachinko"):
         amount_text: str | None,
         send: Callable[..., Awaitable[discord.Message]],
         send_error: Callable[[str], Awaitable[None]],
+        board_key: str | None = None,
     ) -> None:
-        """Lógica compartida entre `/pachinko` y `.pachinko`: abre la máquina."""
+        """Lógica compartida entre `/pachinko` y `.pachinko`: abre la máquina.
+
+        Args:
+            board_key: Tablero pedido (o `RANDOM_BOARD`); sin él, el último que
+                eligió el miembro.
+        """
         if guild is None:
             await send_error("El pachinko solo se juega dentro de un servidor.")
             return
@@ -769,8 +943,11 @@ class Pachinko(commands.Cog, name="Pachinko"):
             await send_error(insufficient_text(balance, stake))
             return
 
-        view = PachinkoView(self, guild_id=guild.id, owner=user, stake=stake)
-        png = await asyncio.to_thread(self.renderer.idle_png)
+        if board_key is not None:
+            self.set_board_default(guild.id, user.id, board_key)
+        view = PachinkoView(self, guild_id=guild.id, owner=user, stake=stake, board_key=board_key)
+        board = view.board or self.machine.random_board()
+        png = await asyncio.to_thread(self.renderer.idle_png, board)
         view.message = await send(
             embed=await view.current_embed(balance=balance),
             file=discord.File(io.BytesIO(png), filename=PNG_NAME),
@@ -778,9 +955,26 @@ class Pachinko(commands.Cog, name="Pachinko"):
         )
 
     @app_commands.command(name="pachinko", description="Pachinko japonés con reach y rush.")
-    @app_commands.describe(cantidad="Apuesta por tanda de 10 bolas: 500, 2k, all… (100)")
+    @app_commands.describe(
+        cantidad="Apuesta por tanda de 10 bolas: 500, 2k, all… (100)",
+        mapa="Tablero: de Sakura (riesgo bajo) a Oni (extremo); por defecto, el último",
+    )
+    @app_commands.choices(
+        mapa=[
+            *(
+                app_commands.Choice(name=f"{b.title} · {b.risk}", value=b.key)
+                for b in BOARDS.values()
+            ),
+            app_commands.Choice(name="🎲 Al azar", value=RANDOM_BOARD),
+        ]
+    )
     @app_commands.guild_only()
-    async def pachinko(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
+    async def pachinko(
+        self,
+        interaction: discord.Interaction,
+        cantidad: str | None = None,
+        mapa: str | None = None,
+    ) -> None:
         """Abre una máquina de pachinko con botones.
 
         Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado. Las
@@ -798,23 +992,36 @@ class Pachinko(commands.Cog, name="Pachinko"):
             amount_text=cantidad,
             send=send,
             send_error=InteractionResponder(interaction).send_error,
+            board_key=mapa,
         )
 
     @commands.command(name="pachinko")
     @commands.guild_only()
-    async def pachinko_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.pachinko` o `.pachinko 500`."""
+    async def pachinko_text(
+        self, ctx: commands.Context, primero: str | None = None, segundo: str | None = None
+    ) -> None:
+        """Versión de texto: `.pachinko`, `.pachinko 500`, `.pachinko 500 oni`, `.pachinko azar`.
+
+        La cantidad y el tablero van en cualquier orden.
+        """
 
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)
 
+        responder = ContextResponder(ctx)
+        try:
+            amount_text, board_key = parse_args(primero, segundo)
+        except ValueError as error:
+            await responder.send_error(str(error))
+            return
         await self._pachinko_impl(
             guild=ctx.guild,
             channel=ctx.channel,
             user=ctx.author,
-            amount_text=cantidad,
+            amount_text=amount_text,
             send=send,
-            send_error=ContextResponder(ctx).send_error,
+            send_error=responder.send_error,
+            board_key=board_key,
         )
 
 

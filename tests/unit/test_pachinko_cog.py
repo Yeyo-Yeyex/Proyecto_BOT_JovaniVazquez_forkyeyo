@@ -22,11 +22,15 @@ from bot.cogs.pachinko import (
     BURST_VOLLEYS,
     GIF_NAME,
     PNG_NAME,
+    RANDOM_BOARD,
     Pachinko,
     PachinkoPlay,
     PachinkoView,
     burst_text,
+    machine_embed,
+    parse_args,
     parse_stake,
+    paytable_embed,
     result_text,
 )
 from bot.repositories.economy import EconomyRepository
@@ -34,11 +38,13 @@ from bot.services.achievements import pachinko_stats
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.pachinko import (
-    FEVER_BALLS,
+    BOARDS,
+    CLASSIC,
     MIN_STAKE,
-    ROWS,
-    START_POCKET,
+    ONI,
+    SAKURA,
     Ball,
+    Board,
     Draw,
     Kind,
     PachinkoMachine,
@@ -53,18 +59,28 @@ CASINO_CHANNEL = 555
 MISS = Draw((1, 2, 3), Kind.MISS, False, 0)
 
 
-def ball_in(pocket: int) -> Ball:
-    return Ball((1,) * pocket + (0,) * (ROWS - pocket))
+START_POCKET = CLASSIC.start_pocket
+FEVER_BALLS = CLASSIC.fever_balls
 
 
-#: Diez bolas en OUT: no devuelve nada.
-BLANK = build_volley([ball_in(3)] * 10, lambda: MISS)
-#: Un rush de 4 premios gordos: 4 × 30 bolas.
+def ball_in(pocket: int, board: Board = CLASSIC) -> Ball:
+    return Ball((1,) * pocket + (0,) * (board.rows - pocket))
+
+
+def blank(board: Board = CLASSIC) -> Volley:
+    """Diez bolas en OUT: no devuelve nada."""
+    return build_volley(board, [ball_in(3, board)] * 10, lambda: MISS)
+
+
+BLANK = blank()
+#: Un rush de 4 premios gordos en la Clásica: 4 × 30 bolas.
 RUSH = build_volley(
-    [ball_in(START_POCKET)] + [ball_in(3)] * 9, lambda: Draw((5, 5, 5), Kind.RUSH, True, 4)
+    CLASSIC,
+    [ball_in(START_POCKET)] + [ball_in(3)] * 9,
+    lambda: Draw((5, 5, 5), Kind.RUSH, True, 4),
 )
 #: Devuelve algo, pero menos de lo apostado (3 bolas de 10).
-SMALL = build_volley([ball_in(1)] + [ball_in(3)] * 9, lambda: MISS)
+SMALL = build_volley(CLASSIC, [ball_in(1)] + [ball_in(3)] * 9, lambda: MISS)
 
 
 class FakeRenderer:
@@ -76,19 +92,24 @@ class FakeRenderer:
     def still_png(self, volley) -> bytes:  # noqa: ANN001
         return b"STILL"
 
-    def idle_png(self) -> bytes:
-        return b"IDLE"
+    def idle_png(self, board) -> bytes:  # noqa: ANN001
+        return f"IDLE:{board.key}".encode()
 
 
 class RiggedMachine(PachinkoMachine):
-    """Lanza las tandas que se le digan, en orden; después, siempre `BLANK`."""
+    """Lanza las tandas que se le digan, en orden; después, tandas en blanco.
+
+    Apunta en `boards` el tablero que pide cada tanda.
+    """
 
     def __init__(self, sequence: Iterable[Volley] = ()) -> None:
         super().__init__()
         self.sequence = list(sequence)
+        self.boards: list[str] = []
 
-    def launch(self) -> Volley:
-        return self.sequence.pop(0) if self.sequence else BLANK
+    def launch(self, board: Board) -> Volley:
+        self.boards.append(board.key)
+        return self.sequence.pop(0) if self.sequence else blank(board)
 
 
 @pytest.fixture(autouse=True)
@@ -176,7 +197,7 @@ def test_devolver_menos_de_lo_apostado_se_celebra_como_premio() -> None:
 
 
 def test_la_reserva_llena_lo_dice() -> None:
-    volley = build_volley([ball_in(START_POCKET)] * 6 + [ball_in(3)] * 4, lambda: MISS)
+    volley = build_volley(CLASSIC, [ball_in(START_POCKET)] * 6 + [ball_in(3)] * 4, lambda: MISS)
     assert "limbo" in result_text(make_play(volley), random.Random(0))
 
 
@@ -295,7 +316,9 @@ async def test_la_rafaga_juega_cinco_tandas_con_una_sola_edicion(tmp_path: Path)
 
 async def test_la_rafaga_para_con_un_atari_y_lo_anuncia(tmp_path: Path) -> None:
     long_rush = build_volley(
-        [ball_in(START_POCKET)] + [ball_in(3)] * 9, lambda: Draw((3, 3, 3), Kind.RUSH, True, 5)
+        CLASSIC,
+        [ball_in(START_POCKET)] + [ball_in(3)] * 9,
+        lambda: Draw((3, 3, 3), Kind.RUSH, True, 5),
     )
     cog = await make_cog(tmp_path, [BLANK, long_rush])
     view = make_view(cog)
@@ -325,6 +348,77 @@ async def test_la_mitad_no_baja_del_minimo(tmp_path: Path) -> None:
     assert view.stake == MIN_STAKE
 
 
+# -- Tableros -----------------------------------------------------------------------
+
+
+async def test_la_maquina_empieza_en_la_clasica(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = make_view(cog)
+    assert view.board is CLASSIC
+    await view._launch(make_interaction())
+    assert cog.machine.boards == ["clasica"]
+
+
+async def test_elegir_tablero_cambia_la_imagen_y_las_tandas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = make_view(cog)
+    view.board_select._values = ["oni"]  # lo que Discord rellena al elegir
+    interaction = make_interaction()
+
+    await view._choose_board(interaction)
+
+    kwargs = interaction.response.edit_message.await_args.kwargs
+    assert kwargs["attachments"][0].filename == PNG_NAME
+    assert "Oni" in kwargs["embed"].title
+    assert [o.default for o in view.board_select.options if o.value == "oni"] == [True]
+    await view._launch(make_interaction())
+    assert cog.machine.boards == ["oni"]
+    # Se recuerda para la próxima máquina.
+    assert make_view(cog).board is ONI
+
+
+async def test_al_azar_cada_tanda_cae_en_un_tablero(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    picks = iter([0, 3, 1, 2, 0])
+    cog.machine._randbelow = lambda n: next(picks)  # type: ignore[attr-defined]
+    view = PachinkoView(cog, guild_id=GUILD_ID, owner=make_user(), stake=10, board_key=RANDOM_BOARD)
+    assert view.board is None
+
+    await view._burst(make_interaction())
+
+    assert cog.machine.boards == ["sakura", "oni", "clasica", "dragon", "sakura"]
+    assert "Al azar" in (await view.current_embed()).title
+
+
+def test_el_texto_dice_que_tablero_ha_tocado_al_azar() -> None:
+    volley = blank(ONI)
+    text = result_text(make_play(volley), random.Random(0), random_board=True)
+    assert "Oni" in text
+
+
+def test_la_tabla_de_premios_resume_todos_los_tableros() -> None:
+    text = paytable_embed(SAKURA).description
+    assert all(board.name in text for board in BOARDS.values())
+    assert "Sakura" in paytable_embed(None).description
+
+
+def test_el_embed_dice_el_riesgo() -> None:
+    embed = machine_embed(owner="Diego", balance=1_000, stake=100, turbo=False, board=ONI)
+    assert "Oni" in embed.title
+    assert any(field.value == ONI.risk for field in embed.fields)
+
+
+def test_cantidad_y_tablero_en_cualquier_orden() -> None:
+    assert parse_args("500", "oni") == ("500", "oni")
+    assert parse_args("Dragón", "2k") == ("2k", "dragon")
+    assert parse_args("azar", None) == (None, RANDOM_BOARD)
+    assert parse_args(None, None) == (None, None)
+    with pytest.raises(ValueError):
+        parse_args("oni", "sakura")
+    with pytest.raises(ValueError):
+        parse_args("500", "600")
+
+
 # -- Comando ------------------------------------------------------------------------
 
 
@@ -344,6 +438,24 @@ async def test_pachinko_abre_la_maquina_parada(tmp_path: Path) -> None:
     kwargs = send.await_args.kwargs
     assert kwargs["file"].filename == PNG_NAME
     assert kwargs["view"].stake == 250
+
+
+async def test_pachinko_con_tablero_lo_abre_y_lo_recuerda(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    send = AsyncMock(return_value=MagicMock())
+
+    await cog._pachinko_impl(
+        guild=MagicMock(id=GUILD_ID),
+        channel=MagicMock(id=CASINO_CHANNEL),
+        user=make_user(),
+        amount_text=None,
+        send=send,
+        send_error=AsyncMock(),
+        board_key="sakura",
+    )
+
+    assert send.await_args.kwargs["view"].board is SAKURA
+    assert cog.board_default(GUILD_ID, OWNER_ID) == "sakura"
 
 
 async def test_pachinko_fuera_del_casino_se_rechaza(tmp_path: Path) -> None:
@@ -397,6 +509,8 @@ def test_estadisticas_de_un_rush() -> None:
     assert delta.peak["pachinko_renchan_max"] == 4
     assert delta.peak["pachinko_win_max"] == 1_100
     assert "pachinko_super" not in delta.add
+    assert delta.add["pachinko_board_clasica"] == 1
+    assert delta.add["pachinko_atari_clasica"] == 1
 
 
 def test_estadisticas_de_una_tanda_en_blanco() -> None:

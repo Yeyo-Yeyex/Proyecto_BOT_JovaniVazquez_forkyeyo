@@ -70,7 +70,7 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `saldo [miembro]` · `slots [cantidad]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad] [mapa]` · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -222,25 +222,32 @@ python -m bot
   que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.
-- **Pachinko** (`/pachinko`, `.pachinko [cantidad]`): una máquina japonesa
-  propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10 bolas que
-  rebotan por 10 filas de clavos hasta 11 bolsillos (×10 en las esquinas, ×3,
-  ×1, OUT y START en el centro). Cada bola en START gana una tirada de la
+- **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
+  japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
+  bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
+  esquinas pagan más; OUT nada y START, en el centro, juega en la pantalla).
+  Cuatro tableros con su propio tema, elegibles en un menú o al abrir
+  (`.pachinko 500 oni`): 🌸 Sakura (8 filas, riesgo bajo, atari cada ~7
+  tandas), 🏮 Clásica (10 filas, medio), 🐉 Dragón (10 filas, alto, esquinas
+  de ×50) y 👹 Oni (12 filas, extremo, atari cada ~39 tandas que paga ×30 de
+  media). Con 🎲 Al azar cada tanda cae en uno. Todos devuelven entre el
+  94,3 y el 95,2 %: el tablero cambia el riesgo, no la ventaja de la casa. Cada bola en START gana una tirada de la
   pantalla (reserva de 4): tres iguales es **ATARI** (+30 bolas), los impares
   encadenan premios en un **RUSH** y el 7 es el **SUPER RUSH**. El reach
   (dos iguales y el centro frenando) es espectáculo y no cambia nada.
   Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
-  Devuelve el 94,6 % (calculado con fracciones exactas en las pruebas) y hay
-  un atari cada ~17 tandas. El GIF (130-330 KB, ~0,5 s de CPU) tiene
-  bombillas que persiguen, molinillos, rótulo de neón y la pantalla jugando
+  Los números salen de fracciones exactas en las pruebas. El GIF (130-370 KB,
+  ~0,8 s de CPU) tiene
+  bombillas que persiguen, adornos que se mueven (molinillos, flores,
+  perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
   y los SUPER RUSH, los rush de 5 o más y los premios de ×20 se anuncian.
-- **Logros** (`logros [miembro]`): 344 logros en 14 categorías (chat,
+- **Logros** (`logros [miembro]`): 351 logros en 14 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, Crash, Minas, pachinko, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 35 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 36 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -453,8 +460,8 @@ src/bot/
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
-│   ├── pachinko.py      # Clavos, bolsillos, sorteo, rush y retorno exacto
-│   ├── pachinko_render.py # GIF neón de cada tanda del pachinko
+│   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
+│   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
