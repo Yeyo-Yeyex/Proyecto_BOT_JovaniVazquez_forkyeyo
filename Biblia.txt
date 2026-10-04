@@ -95,6 +95,21 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 - Los servicios reciben dependencias explícitas; no crean clientes globales ni leen configuración directamente.
 - No duplicar reglas entre comandos. Extraerlas cuando más de una funcionalidad las necesite o cuando su complejidad lo justifique.
 
+### Dinero, impuestos y la Renta
+
+El dinero del bot (yapdollars) imita la economía española: todo lo que se gana o se gasta tiene tratamiento fiscal y Hacienda (Perro Sanxe) está presente. Cualquier funcionalidad nueva que mueva dinero (juegos, tienda, trabajos, premios, transferencias entre usuarios…) debe cumplir estas reglas:
+
+1. **Solo a través de `EconomyService`** (`bot.economy`). Nunca tocar `economy_wallets` ni `economy_ledger` desde otro sitio. Cada movimiento lleva un motivo corto y estable (`"juego:apuesta"`, `"tienda:compra"`).
+2. **Decidir y documentar su tratamiento fiscal.** En la docstring del método que mueve el dinero, indicar cuál de estos aplica y por qué, citando la norma real (ley y artículo) en la que se inspira:
+   - Renta sujeta a IRPF con retención: `EconomyService.pay_income` (p. ej. premios por nivel).
+   - Juego: `settle_bet`, o `place_bet` + `pay_winnings` si el resultado llega después. Así entra en la retención diaria y en la declaración semanal del casino.
+   - Exento: un método sin retención (p. ej. el IMV, art. 7.y LIRPF). Exento no significa olvidado: hay que justificarlo.
+   - Otro impuesto (IVA en compras, Sucesiones y Donaciones en regalos, etc.): las reglas van en `services/taxes.py` y el cobro en el repositorio de economía, dentro de la misma transacción que el movimiento.
+3. **Lo recaudado va a la cuenta del Estado** (`STATE_ACCOUNT_ID`), en la misma transacción, con su propio movimiento en el libro. El dinero de impuestos nunca se destruye, y las devoluciones salen de esa cuenta. `hacienda` debe reflejar cualquier impuesto nuevo.
+4. **Mostrar la mordida.** Si el usuario paga o recupera impuestos, el resultado lo dice con una línea pequeña de subtexto (`tax_line`, `gambling_tax_line` o una equivalente) que nombra a `TAX_COLLECTOR`.
+5. **Gancho de la Renta en toda acción con dinero.** Toda acción de usuario que gane o gaste dinero y llegue como interacción (botón o slash command) llama a `renta.remind(bot, interaction)` (`bot.cogs.renta`) después de responder a la interacción: avisa una vez por campaña, en un mensaje que solo ve el usuario, de que tiene la declaración pendiente. Si la acción muestra un resultado, añade además `await renta.hint(bot, guild_id, user_id)` cuando no sea `None`. Los comandos de texto no admiten mensajes efímeros; su aviso llega con el primer botón que pulse el usuario.
+6. **Pruebas.** Cada flujo de dinero nuevo prueba que el libro cuadra con el saldo, que el Estado recibe exactamente lo retenido y, si hay devoluciones, que salen de la cuenta del Estado.
+
 ### Persistencia
 
 - No introducir una base de datos hasta que exista una necesidad funcional de conservar datos entre reinicios.
@@ -197,6 +212,7 @@ Una funcionalidad está lista cuando:
 5. No incorpora secretos ni permisos/intents que no necesite.
 6. Actualiza la documentación y los ejemplos de configuración afectados.
 7. Puede arrancar y cerrarse limpiamente en el entorno previsto.
+8. Si mueve dinero, cumple las reglas de "Dinero, impuestos y la Renta" (sección 4).
 
 ## 11. Evolución de esta biblia
 
