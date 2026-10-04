@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash y Minas (`ruleta`, `blackjack`/`.bj`, `slots`, `crash`, `minas`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `slots`, `crash`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -319,20 +319,32 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Los cobros de ×25 o más se anuncian en el canal.
 - Logros: 25 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, pisar justo después de la segura, tan cerca, ×5 a ×1.000, 10, 15 y 20 casillas en una partida, ganar con 23 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
 
-### 6 ter.7. Criterios de aceptación
+### 6 ter.7. Pachinko
+
+- `pachinko [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$; mínimo, 10 Y$ (una bola tiene que valer al menos 1 Y$).
+- Cada tanda lanza 10 bolas. Cada una rebota en 10 filas de clavos a cara o cruz y cae en uno de 11 bolsillos (tablero de Galton): ×10 bolas en las esquinas (1 de cada 1.024), ×3 en los siguientes, ×1, OUT y la ranura START en el centro (24,6 %). Una bola vale la apuesta entre 10 y el pago se redondea una vez por tanda.
+- Cada bola en START gana una tirada del sorteo de la pantalla, con reserva de 4 como en las máquinas reales (保留); las que entran con la reserva llena se pierden. Atari (tres iguales): 1 de cada 40 tiradas, +30 bolas por premio gordo. Con número par paga uno; con impar es un **RUSH** que encadena premios con 3/5 de seguir (hasta 10); con el 7, **SUPER RUSH** con 4/5 (hasta 15).
+- Reach: cuando no toca, 1 de cada 6 tiradas enseña dos números iguales y el del centro frena y para al lado. Se decide después del resultado y no cambia la probabilidad; la tabla de premios lo dice.
+- Números (pruebas con fracciones exactas y una simulación): devuelve el 94,6 % (57,6 % los bolsillos y 37,0 % los ataris), un atari cada ~17 tandas y 2,1 premios gordos de media por atari. Casi todas las tandas devuelven algo, pero solo una de cada diez llega a lo apostado.
+- Animación: GIF por tanda (130-330 KB, ~0,5 s de CPU fuera del event loop) con bombillas que persiguen por el borde y el marco de la pantalla, rótulo de neón, molinillos, bolas rebotando y la pantalla jugando la reserva mientras siguen cayendo. En el reach las bombillas corren y sale el cartel; en el atari la pantalla se pone dorada, las bombillas hacen arcoíris, llueven bolas y sube el contador del rush. El último fotograma es el PNG final con las bolas contadas en cada bolsillo. Turbo y Ráfaga mandan solo el PNG. Bolsillos distinguibles por forma (estrella, rombo, círculo, aspa, tulipán) y texto.
+- Dinero: `settle_bet` cobra, paga y ajusta el IRPF en una transacción. Fiscalidad del juego (art. 33.1 y 33.5.d LIRPF), línea de Perro Sanxe en el resultado, aviso de la Renta en cada botón.
+- Los SUPER RUSH, los rush de 5 premios o más y las ganancias de ×20 la apuesta se anuncian en el canal.
+- Logros: 30 en la categoría 🌸 Pachinko (tandas, bolas por START, reach, reach perdidos, ataris, rush, 7️⃣7️⃣7️⃣, renchan de 3 a 15, esquinas, reserva llena, bolas al limbo, tanda en blanco, premios grandes, sesión larga, Ráfaga, turbo y de madrugada) y *Ludópata integral* en 💰 Casino por jugar a los seis juegos.
+
+### 6 ter.8. Criterios de aceptación
 
 - Ningún saldo puede quedar negativo ni gastarse dos veces, aunque se pulsen botones a la vez.
 - Solo el dueño de una mesa puede apostar en ella.
 - Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
 - Al salir el bot de un servidor se borra su economía.
 
-### 6 ter.8. Logros
+### 6 ter.9. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 313 logros en 13 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 344 logros en 14 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
-- 31 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- 35 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
 - Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, Patrimonio pagado, donativos, nivel y racha de días, cada tirada de ruleta y tragaperras y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
 - Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
 - La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
@@ -400,7 +412,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
-7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash y Minas. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
+7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash, Minas y pachinko. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
 9. **Logros:** 313 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 
