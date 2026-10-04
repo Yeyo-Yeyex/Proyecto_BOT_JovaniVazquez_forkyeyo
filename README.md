@@ -74,7 +74,7 @@ python -m bot
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `ban` · `bienv` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+  | 🛡️ Admin | `ban` · `bienv` · `kick` · `lock` · `mute` · `nick` · `niveles` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es

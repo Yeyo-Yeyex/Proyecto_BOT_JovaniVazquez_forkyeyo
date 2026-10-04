@@ -58,19 +58,19 @@ Los ajustes se guardan por servidor en SQLite (`welcome_settings`), junto a la �
 
 ### 4.0. Preparación: importación del historial
 
-La progresión se preparó con una importación histórica puntual, ya completada en el servidor inicial. Sus comandos de mantenimiento se retiraron después de activar los niveles:
+Los niveles vienen apagados en cada servidor. Un administrador los pone en marcha con el comando `niveles` (sección 6 quater): `/niveles accion:importar` o `.niveles importar` recorre el historial y, la primera vez que termina, enciende los niveles solo y lo anuncia en el canal donde se pidió. Mientras están apagados nadie gana XP y `level`/`top` responden que están apagados.
 
-- La importación se inició manualmente y se ejecutó en segundo plano; no se ejecuta automáticamente al arrancar el bot.
+- La importación se inicia a mano y corre en segundo plano; no se ejecuta sola al arrancar el bot. Si el bot se reinicia a medias, `importar` la reanuda desde los canales que faltaban.
 - El bot recorre canales de texto, hilos activos y hilos archivados que pueda enumerar y leer. En hilos privados depende de que el bot esté unido al hilo o tenga permiso para administrar hilos. El resultado no puede incluir canales eliminados ni canales con permisos insuficientes.
 - Se requieren `Ver canal` y `Leer el historial de mensajes` en cada canal o hilo. Leer mensajes de un hilo privado puede requerir, además, que el bot sea miembro del hilo o tenga permisos de administración de hilos.
 - Se cuentan mensajes escritos por usuarios; se excluyen bots, webhooks y mensajes de sistema. Se cuentan mensajes aunque solo contengan un adjunto, porque el cálculo no debe depender del intent privilegiado `MESSAGE_CONTENT`.
 - Se guarda únicamente un total agregado por ID de servidor y usuario. No se persisten contenidos, adjuntos ni IDs individuales de mensajes.
 - La base SQLite local vive en `.data/message_stats.sqlite3`, está excluida de Git y persiste entre reinicios en el mismo entorno. Debe incluirse en las copias de seguridad del despliegue si se quiere conservar el progreso.
-- El proceso guarda cada canal de forma atómica, evita sumar dos veces canales ya completados y puede reanudarse después de un reinicio. Los canales inaccesibles se reportan como fallidos; una importación parcial no debe presentarse como completa.
-- `/niveles importacion` muestra los mensajes revisados y los mensajes de usuarios contados. El contador se persiste cada 100 mensajes y al cerrar cada canal; por ello el valor puede retrasarse hasta el siguiente lote. Los mensajes de bots/sistema cuentan como revisados, pero no como mensajes de usuario elegibles.
-- Se fija un instante de corte al iniciar: los mensajes anteriores se agregan como históricos y los mensajes posteriores se cuentan en vivo, para evitar duplicarlos mientras avanza el recorrido. Mensajes enviados mientras el bot está apagado después del corte no pueden contabilizarse en vivo.
+- El proceso guarda cada canal de forma atómica, evita sumar dos veces canales ya completados y puede reanudarse después de un reinicio. Los canales inaccesibles se reportan como fallidos y la importación queda como parcial. Una importación parcial también enciende los niveles (si no, bastaría un canal sin permiso para dejarlos apagados para siempre); el estado dice cuántos canales faltan. Si luego se da el permiso y se repite `importar`, esos canales suman su XP al momento.
+- `niveles` sin acción muestra el estado: canales revisados y mensajes de usuarios contados. El contador se persiste cada 100 mensajes y al cerrar cada canal; por ello el valor puede retrasarse hasta el siguiente lote. Los mensajes de bots/sistema cuentan como revisados, pero no como mensajes de usuario elegibles.
+- Se fija un instante de corte al iniciar: los mensajes anteriores se agregan como históricos y los mensajes posteriores se cuentan en vivo, para evitar duplicarlos mientras avanza el recorrido. Los mensajes escritos entre el corte y el final de la importación no cuentan: el historial ya no los ve y los niveles aún no están encendidos.
 
-La importación no concede experiencia por sí sola. Al activar el sistema, el recuento importado más los mensajes nuevos registrados en vivo hasta ese momento se convirtieron una sola vez en **20 XP por mensaje**; los mensajes posteriores reciben XP en vivo solo cuando el sistema está activo. El recuento actual no es un libro de auditoría: no puede corregir cambios retroactivos del historial una vez importado.
+Al encender los niveles por primera vez, el recuento importado se convierte una sola vez en **20 XP por mensaje**. Esa XP no paga premios por nivel: los yapdollars solo llegan con las subidas que vengan después; los mensajes posteriores reciben XP en vivo solo cuando el sistema está activo. El recuento actual no es un libro de auditoría: no puede corregir cambios retroactivos del historial una vez importado.
 
 ### 4.1. Progresión
 
@@ -94,14 +94,14 @@ La importación no concede experiencia por sí sola. Al activar el sistema, el r
 
 **Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `.`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo de texto es `.` por defecto y se puede cambiar con `COMMAND_PREFIX`; los comandos `/` funcionan siempre, sea cual sea el prefijo. Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
-Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles mensajes` y `/niveles activar` se retiraron del menú una vez completada la preparación del servidor inicial. La activación del sistema no se ofrece como comando público permanente.
+La puesta en marcha y los ajustes (importar, encender, apagar, canal de avisos y enfriamiento) están en el comando de administración `niveles`, que solo ven y usan los administradores.
 
 ### 4.3. Avisos y persistencia
 
-- Al subir de nivel, el bot envía un aviso en el canal donde se ganó la XP (el chat del canal de voz si fue por voz). Solo se muestra el nombre visible, sin activar menciones.
+- Al subir de nivel, el bot envía un aviso en el canal de avisos elegido con `niveles`; si no hay ninguno o se ha borrado, en el canal donde se ganó la XP (el chat del canal de voz si fue por voz). Solo se muestra el nombre visible, sin activar menciones.
 - Subir al nivel N paga 100 × N Y$ brutos (el doble en múltiplos de 5), con retención de IRPF.
 - Fuentes de XP además de los mensajes: +50 XP por el primer mensaje del día, 4–6 XP por minuto en voz (sin mute, fuera del AFK y con alguien más sin mutear), +5 XP por reacción recibida de otro (tope 100 al día), racha de +2 % por día seguido escribiendo (tope +20 %) y una hora feliz diaria con XP ×2.
-- No hay comandos públicos para consultar el estado ni para cambiar el canal de avisos, el enfriamiento o la activación del sistema.
+- El estado, el canal de avisos, el enfriamiento y la activación solo se tocan con el comando de administración `niveles`.
 - La experiencia, el nivel y los ajustes por servidor deben conservarse después de reiniciar el bot.
 - La XP inicial se calcula una sola vez al activar el sistema, usando 20 XP por mensaje contado hasta ese momento; desactivar y reactivar no vuelve a conceder esa XP.
 - El ranking no debe mostrar datos de otros servidores.
@@ -112,7 +112,7 @@ Los comandos temporales `/niveles importar`, `/niveles importacion`, `/niveles m
 
 - Un mensaje elegible otorga experiencia como máximo una vez durante el periodo de enfriamiento.
 - Mensajes de bots, webhooks y mensajes de sistema no generan experiencia.
-- La XP histórica no se inicializa antes de una importación completa ni se duplica al reactivar.
+- La XP histórica no se inicializa antes de que termine una importación (completa o parcial) ni se duplica al reactivar.
 - El nivel y el progreso mostrado coinciden con los valores persistidos.
 - Reiniciar el bot no borra niveles ni configuración.
 - El ranking y las consultas siempre están limitados al servidor de la interacción.
@@ -359,6 +359,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `nick <miembro> [apodo]` | Cambia el apodo; sin apodo, lo quita. |
 | `role <miembro> <rol>` | Da el rol si no lo tiene; si lo tiene, se lo quita. |
 | `bienv [gif] [canal]` | GIF y canal de la bienvenida; sin argumentos, enseña los actuales. Responde con una vista previa (en `/`, solo la ves tú). Ver sección 3.3. |
+| `niveles [acción] [canal] [segundos]` | Sin argumentos, enseña el estado de los niveles. Acciones: `importar` (lee el historial y, al acabar la primera vez, enciende los niveles), `activar`, `desactivar` (no borra XP) y `mismo` (avisos donde se sube). Un canal fija dónde se anuncian las subidas; unos segundos (10–3600), el enfriamiento del XP por mensaje. En `.niveles` van en cualquier orden. Ver sección 4.0. |
 
 ### 6 quater.2. Autorización y seguridad
 
@@ -410,7 +411,7 @@ Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los c
 Estas decisiones no impiden documentar el alcance, pero deben resolverse antes de cerrar la implementación correspondiente:
 
 - Si la bienvenida y la despedida podrán desactivarse o ir a canales distintos.
-- Si se ofrecerá una herramienta administrativa para reiniciar la progresión (los comandos de administración actuales no tocan los niveles).
+- Si se ofrecerá una herramienta administrativa para reiniciar la progresión (`niveles` enciende, apaga y configura, pero no borra progreso).
 - Si moderadores podrán controlar música iniciada por otros miembros, o si el control seguirá limitado a "cualquiera en el mismo canal de voz" (comportamiento actual).
 
 Las decisiones pendientes no bloquean las funciones ya implementadas, pero deben resolverse antes de cerrar la funcionalidad correspondiente.

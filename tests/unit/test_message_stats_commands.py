@@ -99,7 +99,8 @@ async def test_nivel_avisa_si_los_niveles_no_estan_inicializados() -> None:
     await cog.level.callback(cog, interaction, None)
 
     message = interaction.response.send_message.await_args.kwargs["content"]
-    assert "no están inicializados" in message
+    assert "apagados" in message
+    assert "/niveles" in message
 
 
 @pytest.mark.asyncio

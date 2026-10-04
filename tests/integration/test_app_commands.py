@@ -60,6 +60,7 @@ ADMIN_COMMANDS = {
     "say",
     "nick",
     "role",
+    "niveles",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.

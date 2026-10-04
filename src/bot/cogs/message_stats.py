@@ -9,6 +9,11 @@ Fuentes de XP en vivo (las reglas están en `bot.services.levels`):
   La misma tarea anuncia la hora feliz.
 
 Subir de nivel paga yapdollars con retención de IRPF (`EconomyService`).
+
+Nada de esto corre hasta que un administrador enciende los niveles con el
+comando `niveles` (cog `Admin`), que usa `start_import`, `activate` y
+`overview` de este cog. La importación del historial convierte cada mensaje
+antiguo en XP y, la primera vez que termina, enciende los niveles sola.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
-from bot.repositories.message_stats import LevelAward, MessageStatsRepository
+from bot.repositories.message_stats import ImportStatus, LevelAward, MessageStatsRepository
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -40,6 +45,7 @@ from bot.services.economy import (
 )
 from bot.services.levels import (
     HAPPY_HOUR_MULTIPLIER,
+    HISTORICAL_XP_PER_MESSAGE,
     MAX_MESSAGE_XP,
     MAX_VOICE_XP,
     MIN_MESSAGE_XP,
@@ -62,6 +68,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RANK_MEDALS = ("🥇", "🥈", "🥉")
+NOT_READY = (
+    "Los niveles están apagados en este servidor. "
+    "Un administrador los enciende con `/niveles` (o `.niveles`)."
+)
 RANKING_PAGE_SIZE = 10
 #: Reacciones (mensaje, quien reacciona) ya premiadas que se recuerdan para
 #: que quitar y volver a poner la misma reacción no dé XP otra vez.
@@ -129,6 +139,36 @@ def _format_progress_bar(current_xp: int, required_xp: int, width: int = 10) -> 
     """Representa el progreso del nivel como una barra compacta."""
     filled = min(width, int(current_xp / required_xp * width))
     return "█" * filled + "░" * (width - filled)
+
+
+def _describe_import(status: ImportStatus | None, *, running: bool) -> str:
+    """Una línea con el estado de la importación del historial."""
+    if status is None:
+        return "sin importar"
+    progress = (
+        f"{status.scanned_channels}/{status.total_channels} canales, "
+        f"{status.messages_counted:,} mensajes contados"
+    )
+    if status.status == "running" and running:
+        return f"⏳ importando ({progress})"
+    if status.status == "completed":
+        return f"✅ importado ({progress})"
+    if status.status == "partial":
+        return (
+            f"⚠️ importado a medias ({progress}); {status.failed_channels} sin permiso de "
+            "«Leer el historial de mensajes». Dale el permiso y repite `importar` para sumarlos."
+        )
+    return f"⏸️ cortado a medias ({progress})"
+
+
+IMPORT_DONE_LINES = (
+    "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. "
+    "Mirad dónde estáis con `.level` y `.top`, mi gente.",
+    "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están "
+    "encendidos; a partir de ya, cada mensaje y cada rato en voz suma. `.top` pa' ver quién manda.",
+    "Acho, esto ya es oficial: niveles encendidos. Conté {mensajes} mensajes en {canales} "
+    "canales con mi cafecito al lado. Subid de nivel, que cada nivel paga yapdollars.",
+)
 
 
 class MessageStats(commands.Cog):
@@ -309,12 +349,23 @@ class MessageStats(commands.Cog):
         if current_level <= previous_level:
             return
         reward = await self._pay_level_reward(guild, member, previous_level, current_level)
+        channel = self._announce_target(guild, award, channel)
         await self._announce_level_up(guild, channel, member, current_level, reward=reward)
         delta = StatDelta(peak={"level_max": current_level})
         if reward is not None:
             delta.add["tax_paid"] = reward.tax
             delta.peak["balance_max"] = reward.balance
         await logros.track(self.bot, guild.id, member, channel, delta)
+
+    @staticmethod
+    def _announce_target(
+        guild: discord.Guild, award: LevelAward, fallback: discord.abc.Messageable
+    ) -> discord.abc.Messageable:
+        """Canal de anuncios configurado con `niveles`, o donde se subió si no hay."""
+        if award.announce_channel_id is None:
+            return fallback
+        channel = guild.get_channel(award.announce_channel_id)
+        return channel if isinstance(channel, discord.abc.Messageable) else fallback
 
     async def _pay_level_reward(
         self,
@@ -346,107 +397,102 @@ class MessageStats(commands.Cog):
         await self.repository.delete_guild_data(guild.id)
         logger.info("Se eliminaron las estadísticas del servidor %s", guild.id)
 
-    async def import_history(self, interaction: discord.Interaction) -> None:
-        """Inicia o reanuda una importación histórica en segundo plano.
+    # -- Administración (la usa el comando `niveles` del cog Admin) --------------------
 
-        Requiere permiso de administrar el servidor. La tarea se separa de
-        la interacción para que pueda durar más que el tiempo de respuesta
-        de un comando de Discord.
+    async def start_import(
+        self,
+        guild: discord.Guild,
+        report_to: discord.abc.Messageable | None = None,
+    ) -> str:
+        """Inicia o reanuda la importación del historial en segundo plano.
+
+        La tarea se separa del comando porque puede durar mucho más que una
+        interacción de Discord. Al terminar, si es la primera vez, enciende
+        los niveles y lo anuncia en `report_to`.
+
+        Returns:
+            Texto para quien pidió la importación.
         """
-        guild = interaction.guild
-        if guild is None:
-            await interaction.response.send_message(
-                "Este comando solo está disponible dentro de un servidor.",
-                ephemeral=True,
-            )
-            return
-
         current_task = self._scan_tasks.get(guild.id)
         if current_task is not None and not current_task.done():
-            await interaction.response.send_message(
-                "Ya hay una importación en curso. Consulta `/niveles importacion`.",
-                ephemeral=True,
-            )
-            return
-
-        existing_status = await self.repository.import_status(guild.id)
-        if existing_status is not None and existing_status.status in {
-            "running",
-            "completed",
-        }:
-            if existing_status.status == "completed":
-                text = (
-                    "La importación histórica de este servidor ya terminó. "
-                    "No se repetirá para evitar duplicar recuentos."
-                )
-            else:
-                text = "Ya existe una importación activa. Consulta `/niveles importacion`."
-            await interaction.response.send_message(text, ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        channels = await self._discover_readable_channels(guild)
-        cutoff_id = discord.utils.time_snowflake(datetime.now(UTC), high=False)
-        started = await self.repository.start_import(guild.id, list(channels), cutoff_id)
-        if not started:
-            status = await self.repository.import_status(guild.id)
-            if status is not None and status.status == "completed":
-                message = (
-                    "La importación histórica de este servidor ya terminó. "
-                    "No se repetirá para evitar duplicar recuentos."
-                )
-            else:
-                message = "Ya existe una importación activa. Consulta `/niveles importacion`."
-            await interaction.edit_original_response(content=message)
-            return
-
-        task = asyncio.create_task(
-            self._run_import(guild, channels),
-            name=f"message-history-import:{guild.id}",
-        )
-        self._scan_tasks[guild.id] = task
-        await interaction.edit_original_response(
-            content=(
-                f"Importación iniciada para {len(channels)} canales e hilos "
-                "accesibles. Puedes consultar el avance con "
-                "`/niveles importacion`."
-            )
-        )
-
-    async def import_status(self, interaction: discord.Interaction) -> None:
-        """Muestra el estado persistido de la importación del servidor actual."""
-        guild = interaction.guild
-        if guild is None:
-            await interaction.response.send_message(
-                "Este comando solo está disponible dentro de un servidor.",
-                ephemeral=True,
-            )
-            return
+            return "⏳ Ya hay una importación en curso; mira cómo va con `/niveles`."
 
         status = await self.repository.import_status(guild.id)
-        if status is None:
-            text = "Todavía no se ha iniciado una importación histórica."
-        else:
-            labels = {
-                "running": "en curso",
-                "completed": "completada",
-                "partial": "parcial",
-                "interrupted": "interrumpida; puedes reanudarla con `/niveles importar`",
-            }
-            text = (
-                f"Importación {labels.get(status.status, status.status)}: "
-                f"{status.scanned_channels}/{status.total_channels} canales "
-                f"completados; {status.messages_scanned:,} mensajes revisados, "
-                f"{status.messages_counted:,} de usuarios contados; "
-                f"{status.failed_channels} canales con errores."
-            )
-            if status.failed_channels:
-                text += (
-                    " Revisa los permisos `Ver canal` y `Leer el historial "
-                    "de mensajes` en los canales afectados."
-                )
+        if status is not None and status.status == "completed":
+            return "✅ El historial ya está importado entero; no se repite para no contar doble."
+        if status is not None and status.status == "running":
+            # La base de datos dice que sigue, pero no hay tarea viva: el bot
+            # se reinició a medias. Se marca como interrumpida para reanudarla.
+            await self.repository.mark_import_interrupted(guild.id)
 
-        await interaction.response.send_message(text, ephemeral=True)
+        channels = await self._discover_readable_channels(guild)
+        cutoff_id = discord.utils.time_snowflake(datetime.now(UTC), high=False)
+        if not await self.repository.start_import(guild.id, list(channels), cutoff_id):
+            return "⏳ Ya hay una importación en curso; mira cómo va con `/niveles`."
+
+        self._scan_tasks[guild.id] = asyncio.create_task(
+            self._run_import(guild, channels, report_to),
+            name=f"message-history-import:{guild.id}",
+        )
+        resumed = status is not None
+        return (
+            f"{'🔁 Importación reanudada' if resumed else '📥 Importación iniciada'}: "
+            f"{len(channels)} canales e hilos. Cuando acabe, los niveles se encienden solos "
+            "y lo aviso en este canal."
+        )
+
+    async def activate(self, guild: discord.Guild) -> str:
+        """Enciende los niveles; la primera vez convierte el historial en XP.
+
+        Returns:
+            Texto para quien lo pidió.
+        """
+        enabled, seeded = await self.repository.enable_levels(
+            guild.id, historical_xp_per_message=HISTORICAL_XP_PER_MESSAGE
+        )
+        if enabled:
+            text = "🟢 Niveles encendidos."
+            if seeded:
+                text += f" {seeded:,} perfiles con su XP del historial."
+            return text
+        status = await self.repository.import_status(guild.id)
+        if status is not None and status.status == "running":
+            return "⏳ La importación sigue en marcha; al acabar se encienden solos."
+        return (
+            "Primero hay que importar el historial: "
+            "`/niveles accion:importar` o `.niveles importar`."
+        )
+
+    async def overview(self, guild: discord.Guild) -> str:
+        """Resumen del estado de los niveles del servidor, para administradores."""
+        settings = await self.repository.level_settings(guild.id)
+        status = await self.repository.import_status(guild.id)
+        running = guild.id in self._scan_tasks and not self._scan_tasks[guild.id].done()
+
+        lines = [
+            "📊 **Niveles:** "
+            + ("🟢 encendidos" if settings is not None and settings.enabled else "🔴 apagados")
+        ]
+        lines.append(f"Historial: {_describe_import(status, running=running)}")
+        cooldown = settings.cooldown_seconds if settings is not None else None
+        if cooldown is not None:
+            lines.append(f"XP por mensaje: como mucho una vez cada {cooldown} s")
+        channel_id = settings.announce_channel_id if settings is not None else None
+        target = guild.get_channel(channel_id) if channel_id is not None else None
+        if channel_id is None:
+            lines.append("Anuncios de nivel: en el canal donde se sube")
+        elif target is None:
+            lines.append("Anuncios de nivel: ⚠️ el canal elegido ya no existe; se usa el de subida")
+        else:
+            lines.append(f"Anuncios de nivel: {target.mention}")
+        start = happy_hour(guild.id, local_day(time.time()))
+        lines.append(f"Hora feliz de hoy: {start:02d}:00–{(start + 1) % 24:02d}:00")
+
+        if status is None:
+            lines.append("\nSiguiente paso: `/niveles accion:importar` (o `.niveles importar`).")
+        elif not running and status.status == "interrupted":
+            lines.append("\nSe cortó a medias: `/niveles accion:importar` la reanuda.")
+        return "\n".join(lines)
 
     async def message_count(
         self,
@@ -488,9 +534,7 @@ class MessageStats(commands.Cog):
 
         settings = await self.repository.level_settings(guild.id)
         if settings is None or not settings.historical_seeded:
-            await responder.send_error(
-                "Los niveles todavía no están inicializados en este servidor."
-            )
+            await responder.send_error(NOT_READY)
             return
 
         total_xp = await self.repository.member_xp(guild.id, member.id)
@@ -533,9 +577,7 @@ class MessageStats(commands.Cog):
 
         settings = await self.repository.level_settings(guild.id)
         if settings is None or not settings.historical_seeded:
-            await responder.send_error(
-                "Los niveles todavía no están inicializados en este servidor."
-            )
+            await responder.send_error(NOT_READY)
             return
 
         page_size = RANKING_PAGE_SIZE
@@ -727,6 +769,7 @@ class MessageStats(commands.Cog):
         self,
         guild: discord.Guild,
         channels: dict[int, discord.abc.Messageable],
+        report_to: discord.abc.Messageable | None = None,
     ) -> None:
         """Cuenta cada canal pendiente y guarda su agregado de forma reanudable."""
         guild_id = guild.id
@@ -803,6 +846,7 @@ class MessageStats(commands.Cog):
                     final_status.total_channels,
                     final_status.failed_channels,
                 )
+                await self._activate_after_import(guild, final_status, report_to)
         except asyncio.CancelledError:
             raise
         except (OSError, sqlite3.Error):
@@ -819,6 +863,44 @@ class MessageStats(commands.Cog):
             await self.repository.mark_import_interrupted(guild_id)
         finally:
             self._scan_tasks.pop(guild_id, None)
+
+    async def _activate_after_import(
+        self,
+        guild: discord.Guild,
+        status: ImportStatus,
+        report_to: discord.abc.Messageable | None,
+    ) -> None:
+        """Enciende los niveles la primera vez que termina una importación.
+
+        Si ya se habían encendido antes (una reimportación de canales que
+        fallaron), no se tocan: un administrador pudo haberlos apagado.
+        """
+        settings = await self.repository.level_settings(guild.id)
+        if settings is not None and settings.historical_seeded:
+            return
+        enabled, _seeded = await self.repository.enable_levels(
+            guild.id, historical_xp_per_message=HISTORICAL_XP_PER_MESSAGE
+        )
+        if not enabled or report_to is None:
+            return
+        text = random.choice(IMPORT_DONE_LINES).format(
+            mensajes=f"{status.messages_counted:,}",
+            canales=status.scanned_channels,
+        )
+        if status.failed_channels:
+            text += (
+                f"\n⚠️ {status.failed_channels} canales no los pude leer por permisos; "
+                "un admin puede darme «Leer el historial de mensajes» "
+                "y repetir `.niveles importar`."
+            )
+        try:
+            await report_to.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning(
+                "No se pudo anunciar el fin de la importación en el servidor %s",
+                guild.id,
+                exc_info=True,
+            )
 
 
 def is_voice_active(member: discord.Member) -> bool:

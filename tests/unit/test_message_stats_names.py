@@ -33,7 +33,11 @@ async def test_on_message_pasa_el_canal_que_otorgo_el_nivel() -> None:
     """El evento de mensaje envía al anuncio el canal exacto que concedió XP."""
     repository = MagicMock()
     repository.grant_activity = AsyncMock(
-        return_value={200: SimpleNamespace(previous_xp=90, total_xp=110, streak_days=1)}
+        return_value={
+            200: SimpleNamespace(
+                previous_xp=90, total_xp=110, streak_days=1, announce_channel_id=None
+            )
+        }
     )
     cog = MessageStats(MagicMock(), repository)
     cog._announce_level_up = AsyncMock()
