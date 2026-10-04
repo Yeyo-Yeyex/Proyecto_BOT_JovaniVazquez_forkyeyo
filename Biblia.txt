@@ -112,7 +112,11 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
 ### Logros
 
-Todo juego o acción nueva que se pueda contar debe alimentar los logros (`bot.cogs.achievements`):
+**Cada funcionalidad del bot tiene logros asociados.** Una funcionalidad nueva no está terminada hasta que tiene los suyos en el catálogo (en su propia categoría o en una existente) y los alimenta. Si se cambia una funcionalidad, se revisan sus logros en el mismo cambio. Excepciones: los comandos de administración y las utilidades internas (`help`, `ping`).
+
+Funcionalidades que todavía no los tienen y deben tenerlos: música, imagen (`magik` y efectos), sonidos de entrada y `babel`. Al tocar cualquiera de ellas, se añaden.
+
+Cómo alimentar los logros (`bot.cogs.achievements`):
 
 1. **Juegos del casino:** al terminar cada jugada, y después de enseñar el resultado (un aviso antes destriparía la tirada), llamar a `achievements.casino_play(bot, guild_id, user, canal, delta, net=neto)`. `delta` sale de `casino_stats(...)` más las estadísticas propias del juego, calculadas con una función pura en `services/achievements.py` (como `roulette_stats` o `blackjack_stats`).
 2. **Otras acciones:** `achievements.track(...)` si el aviso debe salir ya (IMV, renta, subir de nivel) o `achievements.note(...)` si basta con la escritura de cada minuto (cosas frecuentes como mensajes o reacciones).
@@ -222,6 +226,7 @@ Una funcionalidad está lista cuando:
 6. Actualiza la documentación y los ejemplos de configuración afectados.
 7. Puede arrancar y cerrarse limpiamente en el entorno previsto.
 8. Si mueve dinero, cumple las reglas de "Dinero, impuestos y la Renta" (sección 4).
+9. Tiene logros asociados y los alimenta, según la sección "Logros" (sección 4).
 
 ## 11. Evolución de esta biblia
 

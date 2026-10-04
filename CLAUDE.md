@@ -11,8 +11,9 @@ Lo que más se olvida:
   manda lo recaudado a la cuenta del Estado y, si es una interacción (botón o
   slash), llama a `renta.remind(bot, interaction)` para el aviso de la Renta. Detalle
   en la sección "Dinero, impuestos y la Renta" de `Biblia.txt`.
-- **Logros:** cada juego o acción contable nueva alimenta los logros (`casino_play`,
-  `track` o `note` de `bot.cogs.achievements`). Sección "Logros" de `Biblia.txt`.
+- **Logros:** cada funcionalidad del bot tiene logros asociados; una nueva no está
+  terminada sin los suyos. Se alimentan con `casino_play`, `track` o `note` de
+  `bot.cogs.achievements`. Sección "Logros" de `Biblia.txt`.
 - **Comandos:** un solo nombre de 8 caracteres como máximo, idéntico con `/` y con `.`,
   sin alias ni subcomandos.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
