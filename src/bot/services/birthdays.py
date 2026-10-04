@@ -3,10 +3,14 @@
 Solo se guarda día y mes, nunca el año de nacimiento: no hace falta para
 felicitar y así el bot no sabe la edad de nadie.
 
-Dinero (yapdollars). Tratamiento fiscal: exento de IRPF, porque lo que
-tributa por el Impuesto sobre Sucesiones y Donaciones no está sujeto al IRPF
-(art. 6.4 de la Ley 35/2006) y un regalo es una donación (art. 3.1.b de la
-Ley 29/1987). El ISD aún no existe en el bot; cuando exista, se aplicará aquí:
+Dinero (yapdollars). Tratamiento fiscal: IRPF con retención. El dinero no
+sale del monedero de otro miembro, lo pone el bot (el servidor), así que no es
+una donación entre particulares sujeta al Impuesto sobre Sucesiones y
+Donaciones (art. 3.1.b de la Ley 29/1987 se refiere a adquisiciones de
+personas físicas a título gratuito entre vivos). Lo que una persona recibe
+gratis de una entidad es una ganancia patrimonial (art. 33.1 de la Ley
+35/2006 del IRPF) que se integra en la base general. Se cobra con
+`EconomyService.pay_income`, que retiene y manda la retención al Estado:
 
 - El día del cumpleaños, el cumpleañero recibe `BIRTHDAY_GIFT`.
 - Cada persona que le felicita recibe `GREETER_REWARD` y le suma

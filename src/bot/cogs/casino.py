@@ -66,7 +66,7 @@ from bot.services.roulette import (
     pretty,
 )
 from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
-from bot.services.taxes import TAX_COLLECTOR
+from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -886,12 +886,16 @@ class Casino(commands.Cog):
             await responder.send_error("Los bots no tienen monedero.")
             return
         balance = await self.economy.balance(responder.guild.id, who.id)
-        embed = discord.Embed(
-            description=(
-                f"{CURRENCY_EMOJI} **{who.display_name}** tiene **{format_amount(balance)}**"
-            ),
-            color=COLOR_WIN,
-        )
+        description = f"{CURRENCY_EMOJI} **{who.display_name}** tiene **{format_amount(balance)}**"
+        # El Patrimonio se cobra el lunes sobre el saldo de ese momento: avisarlo
+        # aquí es lo que empuja a gastar antes.
+        if wealth := wealth_tax(balance):
+            description += (
+                f"\n-# 🐶 Si el lunes sigue ahí, {TAX_COLLECTOR} se lleva "
+                f"{format_amount(wealth)} de Patrimonio (lo que pase de "
+                f"{format_amount(WEALTH_MINIMUM)})."
+            )
+        embed = discord.Embed(description=description, color=COLOR_WIN)
         await responder.send(embed=embed)
 
     @app_commands.command(name="saldo", description=f"Muestra tus {CURRENCY_NAME} o los de otro.")

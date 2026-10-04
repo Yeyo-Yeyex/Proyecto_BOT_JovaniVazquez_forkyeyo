@@ -18,11 +18,12 @@ caducan a las 24 horas y la bienvenida se quedaría sin GIF.
 
 Dinero (yapdollars). Saludar con el botón 👋 da un regalo simbólico, como
 felicitar un cumpleaños: `GREETER_GIFT` a quien saluda y `WELCOMED_GIFT` al
-recién llegado. Tratamiento fiscal: exento de IRPF, igual que los regalos de
-cumpleaños, porque lo que tributa por el Impuesto sobre Sucesiones y
-Donaciones no está sujeto al IRPF (art. 6.4 de la Ley 35/2006) y un regalo es
-una donación (art. 3.1.b de la Ley 29/1987). El ISD aún no existe en el bot;
-cuando exista, se aplicará aquí. Se paga con `EconomyService.grant`.
+recién llegado. Tratamiento fiscal: IRPF con retención. El dinero lo pone el
+bot, no otro miembro, así que no es una donación entre particulares sujeta
+al Impuesto sobre Sucesiones y Donaciones (art. 3.1.b de la Ley 29/1987),
+sino una ganancia patrimonial (art. 33.1 de la Ley 35/2006 del IRPF). Se
+cobra con `EconomyService.pay_income`; con cantidades tan pequeñas casi
+nunca se retiene nada, salvo a quien ya pasa del mínimo.
 """
 
 from __future__ import annotations

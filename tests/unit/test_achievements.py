@@ -66,6 +66,8 @@ PRODUCED_STATS = {
     "balance_max",
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
+    # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
+    "wealth_tax_paid", "wealth_tax_weeks", "donated", "ongs_supported",
     # Casino
     "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",

@@ -600,6 +600,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000, "tax_100k", "Favorito de Perro Sanxe", "Paga 100.000 Y$ de IRPF.", E),
         (1_000_000, "tax_1m", "Mecenas del Estado", "Paga 1.000.000 Y$ de IRPF.", L),
     ], unit="money")  # fmt: skip
+    a += _tiers("economy", "wealth_tax_paid", [
+        (1, "wealth_1", "Grande de España", "Paga el Impuesto sobre el Patrimonio.", R),
+        (10_000, "wealth_10k", "Fortuna amenazada", "Paga 10.000 Y$ de Patrimonio.", E),
+        (100_000, "wealth_100k", "Perro Sanxe te pone velas",
+         "Paga 100.000 Y$ de Patrimonio.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "wealth_tax_weeks", [
+        (10, "wealth_10w", "Rico de toda la vida", "Paga Patrimonio 10 semanas.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "donated", [
+        (1, "donate_1", "Alma caritativa", "Dona a una ONG.", C),
+        (10_000, "donate_10k", "Filántropo de postureo", "Dona 10.000 Y$ a ONGs.", R),
+        (100_000, "donate_100k", "Mecenas del chiringuito", "Dona 100.000 Y$ a ONGs.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "ongs_supported", [
+        (4, "donate_all", "Accionista del tercer sector", "Dona a las 4 ONGs.", R),
+    ])  # fmt: skip
     a += _tiers("economy", "tax_refunds", [
         (1, "refund_day", "Desgravación", "Recupera IRPF del casino perdiendo el mismo día.", C),
     ])  # fmt: skip

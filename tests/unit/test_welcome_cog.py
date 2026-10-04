@@ -204,7 +204,7 @@ async def test_saludar_suma_al_contador_y_a_los_logros(tmp_path: Path, tracked: 
     assert delta.add == {"welcomes_given": 1}
 
 
-async def test_saludar_regala_a_los_dos_sin_irpf_y_avisa_de_la_renta(
+async def test_saludar_regala_a_los_dos_y_avisa_de_la_renta(
     tmp_path: Path, tracked: AsyncMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
@@ -224,10 +224,33 @@ async def test_saludar_regala_a_los_dos_sin_irpf_y_avisa_de_la_renta(
     assert await economy.balance(GUILD, NEWCOMER) == STARTING_BALANCE + WELCOMED_GIFT
     for user_id in (1, NEWCOMER):
         assert ledger_sum(tmp_path, user_id) == await economy.balance(GUILD, user_id)
-    # Exento: el Estado no recibe nada.
+    # Por debajo del mínimo personal no se retiene nada.
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == 0
     assert "+200 Y$" in interaction.followup.send.await_args.args[0]
     remind.assert_awaited_once()
+
+
+async def test_saludar_por_encima_del_minimo_retiene_irpf_para_el_estado(
+    tmp_path: Path, tracked: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await economy_repository.initialize()
+    economy = EconomyService(economy_repository)
+    await economy.pay_income(GUILD, 1, gross=20_000, concept="nivel:20")
+    state_before = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    cog = await greet_cog(tmp_path, now=JOINED + 60)
+    cog.economy = economy
+    monkeypatch.setattr(welcome.renta, "remind", AsyncMock())
+    monkeypatch.setattr(welcome.renta, "hint", AsyncMock(return_value=None))
+    interaction = make_interaction(1)
+    interaction.followup.send = AsyncMock()
+
+    await cog.greet_from_button(interaction, NEWCOMER, int(JOINED))
+
+    tax = tracked.await_args.args[4].add["tax_paid"]
+    assert tax > 0
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state_before == tax
+    assert "Perro Sanxe se lleva" in interaction.followup.send.await_args.args[0]
 
 
 async def test_un_saludo_repetido_no_paga_otra_vez(tmp_path: Path, tracked: AsyncMock) -> None:

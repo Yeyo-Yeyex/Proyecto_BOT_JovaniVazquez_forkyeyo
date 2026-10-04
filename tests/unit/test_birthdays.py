@@ -124,8 +124,8 @@ async def test_felicitar_paga_a_ambos_una_sola_vez(tmp_path: Path) -> None:
     await repository.set_birthday(GUILD, 10, 4, 10, overwrite=False)
     guild = SimpleNamespace(id=GUILD)
 
-    first = await cog.greet(guild, 10, user(20), TODAY)  # type: ignore[arg-type]
-    second = await cog.greet(guild, 10, user(20), TODAY)  # type: ignore[arg-type]
+    first = (await cog.greet(guild, 10, user(20), TODAY)).outcome  # type: ignore[arg-type]
+    second = (await cog.greet(guild, 10, user(20), TODAY)).outcome  # type: ignore[arg-type]
 
     assert first is GreetOutcome.OK
     assert second is GreetOutcome.REPEATED
@@ -138,8 +138,8 @@ async def test_no_se_puede_felicitar_a_uno_mismo_ni_fuera_de_fecha(tmp_path: Pat
     await repository.set_birthday(GUILD, 10, 5, 10, overwrite=False)
     guild = SimpleNamespace(id=GUILD)
 
-    assert await cog.greet(guild, 10, user(10), TODAY) is GreetOutcome.SELF  # type: ignore[arg-type]
-    assert await cog.greet(guild, 10, user(20), TODAY) is GreetOutcome.NOT_TODAY  # type: ignore[arg-type]
+    assert (await cog.greet(guild, 10, user(10), TODAY)).outcome is GreetOutcome.SELF  # type: ignore[arg-type]
+    assert (await cog.greet(guild, 10, user(20), TODAY)).outcome is GreetOutcome.NOT_TODAY  # type: ignore[arg-type]
     assert await economy.balance(GUILD, 20) == STARTING_BALANCE
 
 
@@ -202,7 +202,8 @@ async def test_el_cumpleanero_cobra_el_regalo_y_se_anuncia_una_sola_vez(
     await cog._check_guild(guild, TODAY)  # type: ignore[arg-type]
     await cog._check_guild(guild, TODAY)  # type: ignore[arg-type]
 
-    cog._announce.assert_awaited_once_with(guild, member, 2026)
+    cog._announce.assert_awaited_once()
+    assert cog._announce.await_args.args[:3] == (guild, member, 2026)
     assert await economy.balance(GUILD, 10) == STARTING_BALANCE + BIRTHDAY_GIFT
     assert await economy.balance(GUILD, 11) == STARTING_BALANCE
     assert cog._today[GUILD] == (TODAY, frozenset({10}))
@@ -247,3 +248,20 @@ async def test_cumple_no_deja_cambiarlo_a_un_miembro_pero_si_a_un_admin(tmp_path
     assert "administrador" in second.errors[0]
     assert "administrador" in other.errors[0]
     assert (await repository.get_birthday(GUILD, 10)).day == 15  # type: ignore[union-attr]
+
+
+async def test_felicitar_por_encima_del_minimo_retiene_irpf_para_el_estado(
+    tmp_path: Path,
+) -> None:
+    """El regalo lo pone el bot: es ganancia patrimonial (art. 33.1 LIRPF), no donación."""
+    cog, repository, economy = await make_cog(tmp_path)
+    await repository.set_birthday(GUILD, 10, 4, 10, overwrite=False)
+    await economy.pay_income(GUILD, 20, gross=20_000, concept="nivel:20")
+    collected = (await economy.treasury(GUILD, since=0)).collected_total
+    guild = SimpleNamespace(id=GUILD)
+
+    greeting = await cog.greet(guild, 10, user(20), TODAY)  # type: ignore[arg-type]
+
+    assert greeting.income is not None and greeting.income.tax > 0
+    after = await economy.treasury(GUILD, since=0)
+    assert after.collected_total - collected == greeting.income.tax

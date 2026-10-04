@@ -69,7 +69,7 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -128,7 +128,8 @@ python -m bot
   que le mencione o le responda y suene a felicitación, da 500 Y$ a quien
   felicita y 100 Y$ más al cumpleañero, una vez por persona. Si existe un rol
   llamado `🎂 Cumpleañero`, el bot se lo pone durante el día (necesita
-  **Gestionar roles**). Los regalos no tributan IRPF.
+  **Gestionar roles**). Los regalos pagan IRPF con retención (ganancia
+  patrimonial, art. 33.1 LIRPF), aunque solo muerde a quien ya pasa del mínimo.
 - **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del
@@ -151,6 +152,17 @@ python -m bot
   recaudado este año y desde siempre, y quién más ha pagado. Todo movimiento queda en
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
+- **Impuesto sobre el Patrimonio:** cada lunes se cobra lo que pase de
+  70.000 Y$ con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley 19/1991),
+  tramos escalados al mismo factor que el mínimo. `saldo` avisa de lo que te
+  tocaría y el bot anuncia quién ha pagado. La primera semana tras desplegarlo
+  no cobra.
+- **IGIC:** el impuesto al consumo es el canario, al 7 %, para cuando haya
+  tienda (`taxes.igic`).
+- **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
+  que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
+  la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
+  10 % de lo que ganes esa semana y sin pasar del IRPF pagado.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
   mesa con botones que solo puede usar quien la abre. Cada clic en una
   apuesta cobra, gira (GIF de 2 s) y paga. Botones: rojo/negro, par/impar,
@@ -178,7 +190,7 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
-- **Logros** (`logros [miembro]`): 213 logros en 11 categorías (chat,
+- **Logros** (`logros [miembro]`): 221 logros en 11 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
@@ -371,6 +383,8 @@ src/bot/
 │   ├── welcome.py       # Bienvenidas (GIF, frases, botón 👋) y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
+│   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
+│   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
@@ -380,6 +394,8 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
+│   ├── taxes.py         # IRPF, Patrimonio, IGIC y deducción por donativos
+│   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack

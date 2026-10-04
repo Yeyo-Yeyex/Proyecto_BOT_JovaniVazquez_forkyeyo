@@ -10,8 +10,8 @@ El mensaje lleva el botón **👋 Dar la bienvenida**: cada miembro puede
 pulsarlo una vez durante el primer día del recién llegado. El botón cuenta
 los saludos y alimenta los logros de Social (`welcomes_given` y, si se
 saluda en el primer minuto, `welcomes_fast`). Saludar da un regalo
-simbólico a los dos, exento de IRPF como los de cumpleaños (detalle y
-norma en `bot.services.welcome`), y por eso lleva el aviso de la Renta.
+simbólico a los dos, con retención de IRPF como los de cumpleaños (detalle
+y norma en `bot.services.welcome`), y por eso lleva el aviso de la Renta.
 
 La configuración (`bienv`) es un comando de administración y vive en el
 cog `Admin`; aquí solo se lee.
@@ -43,7 +43,9 @@ from bot.services.economy import (
     CURRENCY_EMOJI,
     BalanceLimitError,
     EconomyService,
+    IncomeResult,
     format_amount,
+    tax_line,
 )
 from bot.services.welcome import (
     GREETER_GIFT,
@@ -363,12 +365,15 @@ class Welcome(commands.Cog):
         # Editar el mensaje con el contador es la confirmación pública: una sola
         # llamada a Discord, sin mensajes extra en el canal.
         await interaction.response.edit_message(view=greet_view(newcomer_id, joined_at, count))
-        paid = await self._pay_greeting(guild.id, newcomer_id, greeter.id)
-        if paid:
+        incomes = await self._pay_greeting(guild.id, newcomer_id, greeter.id)
+        delta = StatDelta(add={"welcomes_given": 1})
+        if incomes is not None:
+            mine, theirs = incomes
             text = (
                 f"👋 ¡Wepa! Saludo entregado. {CURRENCY_EMOJI} +{format_amount(GREETER_GIFT)} "
-                f"para ti y +{format_amount(WELCOMED_GIFT)} para <@{newcomer_id}>, "
-                "para que se estrene en la ruleta."
+                f"brutos para ti y +{format_amount(WELCOMED_GIFT)} para <@{newcomer_id}>, "
+                "para que se estrene en la ruleta.\n"
+                f"{tax_line(mine.gross, mine.tax, mine.rate)}"
             )
             hint = await renta.hint(self.bot, guild.id, greeter.id)
             if hint is not None:
@@ -381,30 +386,39 @@ class Welcome(commands.Cog):
                 logger.warning("No se pudo confirmar el regalo de bienvenida", exc_info=True)
             # Saludar da dinero: gancho de la Renta (ver Biblia.txt, sección 4).
             await renta.remind(self.bot, interaction)
-        delta = StatDelta(add={"welcomes_given": 1})
+            delta.add["tax_paid"] = mine.tax
+            delta.peak["balance_max"] = mine.balance
+            if theirs.tax:
+                logros.note(
+                    self.bot, guild.id, newcomer_id, StatDelta(add={"tax_paid": theirs.tax})
+                )
         if is_fast_greeting(joined_at=joined_at, now=now):
             delta.add["welcomes_fast"] = 1
         await logros.track(self.bot, guild.id, greeter, interaction.channel, delta)
 
-    async def _pay_greeting(self, guild_id: int, newcomer_id: int, greeter_id: int) -> bool:
-        """Paga el regalo simbólico de un saludo a los dos (exento, ver el servicio).
+    async def _pay_greeting(
+        self, guild_id: int, newcomer_id: int, greeter_id: int
+    ) -> tuple[IncomeResult, IncomeResult] | None:
+        """Paga el regalo de un saludo a los dos, con retención de IRPF (ver el servicio).
 
         Returns:
-            Si se pagó. Un fallo se registra y no impide contar el saludo.
+            `(lo de quien saluda, lo del recién llegado)`, o `None` si no hay
+            economía o falla el pago. Un fallo se registra y no impide contar
+            el saludo.
         """
         if self.economy is None:
-            return False
+            return None
         try:
-            await self.economy.grant(
-                guild_id, greeter_id, amount=GREETER_GIFT, reason="bienv:saludar"
+            mine = await self.economy.pay_income(
+                guild_id, greeter_id, gross=GREETER_GIFT, concept="bienv:saludar"
             )
-            await self.economy.grant(
-                guild_id, newcomer_id, amount=WELCOMED_GIFT, reason="bienv:saludado"
+            theirs = await self.economy.pay_income(
+                guild_id, newcomer_id, gross=WELCOMED_GIFT, concept="bienv:saludado"
             )
         except (OSError, sqlite3.Error, BalanceLimitError):
             logger.exception("No se pudo pagar el regalo de bienvenida")
-            return False
-        return True
+            return None
+        return mine, theirs
 
     # -- Salida -----------------------------------------------------------------------
 

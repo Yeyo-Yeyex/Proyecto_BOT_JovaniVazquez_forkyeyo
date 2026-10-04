@@ -178,3 +178,108 @@ def weekly_refund(net: int, withheld: int, other_recent_income: int) -> int:
 def format_rate(rate: float) -> str:
     """`0.1934` → `19,34 %`."""
     return f"{rate * 100:.2f}".replace(".", ",") + " %"
+
+
+# -- Impuesto sobre el Patrimonio -------------------------------------------------------
+#
+# Grava lo que se tiene, no lo que se gana: castiga el dinero quieto y por eso
+# empuja a gastarlo. Canarias no tiene tarifa propia ni bonificación general,
+# así que se aplica la escala estatal del art. 30 de la Ley 19/1991 con el
+# mínimo exento de 700.000 € (art. 28 de la Ley 19/1991 y art. 29 del Decreto
+# Legislativo 1/2009 de Canarias).
+#
+# Escala del juego: el mínimo exento real (700.000 €) equivale a 70.000 Y$, y
+# todos los tramos se escalan con el mismo factor (`WEALTH_SCALE`, 1 Y$ = 10 €
+# en este impuesto). Los tipos son los reales. Es otra escala que la del IRPF
+# (10 Y$ = 1 €) a propósito: con la del IRPF el mínimo serían 7 millones y no lo
+# pagaría nadie.
+#
+# El ejercicio dura una semana, como la renta del casino: cada lunes se cobra
+# la cuota anual completa sobre el saldo de ese momento. No se aplica el límite
+# conjunto con el IRPF del art. 31 de la Ley 19/1991.
+
+#: Mínimo exento en yapdollars.
+WEALTH_MINIMUM = 70_000
+#: Mínimo exento real, en euros.
+WEALTH_MINIMUM_EUR = 700_000.0
+#: Yapdollars por euro en este impuesto.
+WEALTH_SCALE = WEALTH_MINIMUM / WEALTH_MINIMUM_EUR
+
+#: Escala estatal, art. 30 de la Ley 19/1991: (desde €, tipo marginal).
+WEALTH_BRACKETS: tuple[tuple[float, float], ...] = (
+    (0.0, 0.002),
+    (167_129.45, 0.003),
+    (334_252.88, 0.005),
+    (668_499.75, 0.009),
+    (1_336_999.51, 0.013),
+    (2_673_999.01, 0.017),
+    (5_347_998.03, 0.021),
+    (10_695_996.06, 0.035),
+)
+
+
+def wealth_tax(balance: int) -> int:
+    """Cuota semanal del Impuesto sobre el Patrimonio para un saldo, en Y$.
+
+    La base liquidable es lo que pasa del mínimo exento; se pasa a euros con
+    `WEALTH_SCALE`, se le aplica la escala real y se vuelve a yapdollars.
+    """
+    base = balance - WEALTH_MINIMUM
+    if base <= 0:
+        return 0
+    return round(apply_scale(base / WEALTH_SCALE, WEALTH_BRACKETS) * WEALTH_SCALE)
+
+
+# -- IGIC: el impuesto al consumo ---------------------------------------------------
+#
+# En Canarias no hay IVA: las compras pagan el Impuesto General Indirecto
+# Canario, con un tipo general del 7 % (art. 27 de la Ley 4/2012 de Canarias),
+# frente al 21 % del IVA peninsular. Cualquier compra futura (tienda, servicios
+# del bot) lo cobra con `igic` y lo manda al Estado. Los donativos no lo pagan:
+# el IGIC grava entregas y servicios a título oneroso (art. 4 de la Ley
+# 20/1991) y un donativo no tiene contraprestación.
+
+#: Tipo general del IGIC.
+IGIC_GENERAL_RATE = 0.07
+
+
+def igic(base: int, rate: float = IGIC_GENERAL_RATE) -> int:
+    """IGIC de una compra con base imponible `base` Y$, redondeado al Y$."""
+    if base <= 0:
+        return 0
+    return round(base * rate)
+
+
+# -- Deducción por donativos ---------------------------------------------------------
+#
+# Art. 19.1 de la Ley 49/2002 (redacción del Real Decreto-ley 6/2023): se
+# deduce de la cuota del IRPF el 80 % de los primeros 250 € donados y el 40 %
+# del resto. La base de la deducción no puede pasar del 10 % de la base
+# liquidable (art. 69.1 LIRPF) y la deducción no puede dejar la cuota en
+# negativo: si no has pagado IRPF, no recuperas nada. No se aplica el 45 % por
+# donar tres años seguidos a la misma entidad.
+#
+# En el bot la cuota es el IRPF retenido en la semana, y la deducción sale a
+# devolver en la renta del lunes junto con lo del casino.
+
+DONATION_FULL_RATE = 0.80
+DONATION_FULL_LIMIT = 250 * YAPDOLLARS_PER_EURO
+DONATION_REST_RATE = 0.40
+DONATION_BASE_LIMIT = 0.10
+
+
+def donation_deduction(donated: int, base: int, tax_paid: int) -> int:
+    """Lo que se recupera en la renta por los donativos de una semana.
+
+    Args:
+        donated: Donado en la semana.
+        base: Renta sujeta de la semana (ingresos brutos más ganancia neta
+            del casino), para el límite del 10 %.
+        tax_paid: IRPF pagado en la semana y no devuelto por otra vía.
+    """
+    eligible = min(donated, int(base * DONATION_BASE_LIMIT))
+    if eligible <= 0 or tax_paid <= 0:
+        return 0
+    first = min(eligible, DONATION_FULL_LIMIT)
+    deduction = first * DONATION_FULL_RATE + (eligible - first) * DONATION_REST_RATE
+    return min(round(deduction), tax_paid)
