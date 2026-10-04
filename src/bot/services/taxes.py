@@ -233,14 +233,54 @@ def wealth_tax(balance: int) -> int:
 # -- IGIC: el impuesto al consumo ---------------------------------------------------
 #
 # En Canarias no hay IVA: las compras pagan el Impuesto General Indirecto
-# Canario, con un tipo general del 7 % (art. 27 de la Ley 4/2012 de Canarias),
-# frente al 21 % del IVA peninsular. Cualquier compra futura (tienda, servicios
-# del bot) lo cobra con `igic` y lo manda al Estado. Los donativos no lo pagan:
-# el IGIC grava entregas y servicios a título oneroso (art. 4 de la Ley
-# 20/1991) y un donativo no tiene contraprestación.
+# Canario. Los tipos están en la Ley 4/2012 de Canarias, que los sacó del
+# antiguo art. 27 de la Ley 20/1991: el general del 7 % (art. 51), frente al
+# 21 % del IVA peninsular, el cero (art. 52), el reducido del 3 % (art. 54) y
+# los incrementados del 9,5 % (art. 59.3) y del 15 % (arts. 56.1 y 59.4; era
+# el 13,5 % hasta 2020), que es el de las joyas y otros lujos. La tienda deja
+# elegir el tipo de cada artículo (`IGIC_RATES`); por defecto, el general.
+#
+# Los descuentos que se aplican en el momento de la venta no forman parte de
+# la base imponible (art. 22 de la Ley 20/1991): con una rebaja, el IGIC se
+# calcula sobre el precio rebajado.
+#
+# Los donativos no lo pagan: el IGIC grava entregas y servicios a título
+# oneroso (art. 4 de la Ley 20/1991) y un donativo no tiene contraprestación.
 
+
+@dataclass(frozen=True, slots=True)
+class IgicRate:
+    """Un tipo del IGIC.
+
+    Attributes:
+        key: Identificador estable; es lo que se guarda en cada artículo.
+        label: Nombre corto para la interfaz.
+        rate: Tipo (0–1).
+        law: Artículo que lo fija.
+        example: Qué paga ese tipo en la vida real, para elegir con criterio.
+    """
+
+    key: str
+    label: str
+    rate: float
+    law: str
+    example: str
+
+
+IGIC_RATES: tuple[IgicRate, ...] = (
+    IgicRate("cero", "Tipo cero", 0.0, "art. 52 de la Ley 4/2012", "pan, leche, libros"),
+    IgicRate("reducido", "Reducido", 0.03, "art. 54 de la Ley 4/2012", "industria y transporte"),
+    IgicRate("general", "General", 0.07, "art. 51 de la Ley 4/2012", "casi todo"),
+    IgicRate(
+        "incrementado", "Incrementado", 0.095, "art. 59.3 de la Ley 4/2012", "coches de hasta 11 CV"
+    ),
+    IgicRate("lujo", "Lujo", 0.15, "arts. 56.1 y 59.4 de la Ley 4/2012", "joyas y yates"),
+)
+IGIC_BY_KEY: dict[str, IgicRate] = {r.key: r for r in IGIC_RATES}
+#: Tipo por defecto de cualquier compra.
+IGIC_DEFAULT = IGIC_BY_KEY["general"]
 #: Tipo general del IGIC.
-IGIC_GENERAL_RATE = 0.07
+IGIC_GENERAL_RATE = IGIC_DEFAULT.rate
 
 
 def igic(base: int, rate: float = IGIC_GENERAL_RATE) -> int:

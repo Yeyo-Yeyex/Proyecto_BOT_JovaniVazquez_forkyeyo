@@ -33,6 +33,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import shop as tienda
 from bot.repositories.message_stats import ImportStatus, LevelAward, MessageStatsRepository
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
@@ -209,7 +210,9 @@ class MessageStats(commands.Cog):
 
         guild_id = message.guild.id
         now = time.time()
-        base_xp = random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP)
+        # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop).
+        boost = tienda.xp_multiplier(self.bot, guild_id, message.author.id, now)
+        base_xp = round(random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP) * boost)
         happy = is_happy_hour(guild_id, now)
 
         def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
@@ -302,7 +305,13 @@ class MessageStats(commands.Cog):
         if len(eligible) < 2:
             return
         happy = is_happy_hour(guild.id, now)
-        base = {member.id: random.randint(MIN_VOICE_XP, MAX_VOICE_XP) for member in eligible}
+        base = {
+            member.id: round(
+                random.randint(MIN_VOICE_XP, MAX_VOICE_XP)
+                * tienda.xp_multiplier(self.bot, guild.id, member.id, now)
+            )
+            for member in eligible
+        }
 
         def decide(user_id: int, state: MemberActivity, _cooldown: int) -> MemberActivity:
             return voice_award(state, now=now, base_xp=base[user_id], happy=happy)

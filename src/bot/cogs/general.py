@@ -37,6 +37,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Pachinko": "🎰 Casino",
     "Renta": "🎰 Casino",
     "Donaciones": "🎰 Casino",
+    "Tienda": "🛍️ Tienda",
     "Birthdays": "🎂 Cumpleaños",
     "Achievements": "🏆 Logros",
     "Entrance": "🔔 Entradas",

@@ -2,7 +2,7 @@
 
 Comandos (todos con `/` y con `.`, mismo nombre):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
-`slow`, `say`, `nick`, `role`, `bienv`, `niveles`.
+`slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `catalogo`.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -13,7 +13,8 @@ estética (ver Biblia.txt, sección 6).
 Permisos que necesita el bot, según el comando: Gestionar mensajes
 (`purge`), Aislar temporalmente a miembros (`mute`/`unmute`), Expulsar
 (`kick`), Banear (`ban`/`unban`), Gestionar canales (`lock`/`unlock`/
-`slow`), Gestionar apodos (`nick`) y Gestionar roles (`role`). Si falta
+`slow`), Gestionar apodos (`nick`) y Gestionar roles (`role` y los roles
+que se venden con `catalogo`). Si falta
 alguno, el comando lo dice en vez de fallar en silencio.
 
 Cada acción queda en el registro de auditoría de Discord con el motivo y
@@ -791,6 +792,32 @@ class Admin(commands.Cog):
             await responder.finish(text, allowed_mentions=mentions)
         else:
             await responder.send(text, ephemeral=True, allowed_mentions=mentions)
+
+    # --- catalogo ---------------------------------------------------------
+
+    @app_commands.command(
+        name="catalogo", description="Monta la tienda: roles, XP y coleccionables."
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def catalogo(self, interaction: discord.Interaction) -> None:
+        """Abre la trastienda (solo la ves tú): crear, editar, rebajar y retirar artículos."""
+        shop = self.bot.get_cog("Tienda")
+        if shop is None:
+            await InteractionResponder(interaction).send_error(
+                "La tienda no está disponible ahora mismo."
+            )
+            return
+        await shop.open_admin_panel(interaction=interaction)  # type: ignore[attr-defined]
+
+    @commands.command(name="catalogo")
+    async def catalogo_text(self, ctx: commands.Context) -> None:
+        """Versión de texto: deja el panel en el canal, pero solo tú lo puedes tocar."""
+        shop = self.bot.get_cog("Tienda")
+        if shop is None:
+            await ctx.send("La tienda no está disponible ahora mismo.")
+            return
+        await shop.open_admin_panel(ctx=ctx)  # type: ignore[attr-defined]
 
 
 async def setup(bot: commands.Bot) -> None:

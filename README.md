@@ -70,11 +70,12 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad] [mapa]` · `saldo [miembro]` · `slots [cantidad]` |
+  | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `ban` · `bienv` · `kick` · `lock` · `mute` · `nick` · `niveles` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+  | 🛡️ Admin | `ban` · `bienv` · `catalogo` · `kick` · `lock` · `mute` · `nick` · `niveles` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -158,8 +159,36 @@ python -m bot
   tramos escalados al mismo factor que el mínimo. `saldo` avisa de lo que te
   tocaría y el bot anuncia quién ha pagado. La primera semana tras desplegarlo
   no cobra.
-- **IGIC:** el impuesto al consumo es el canario, al 7 %, para cuando haya
-  tienda (`taxes.igic`).
+- **IGIC:** el impuesto al consumo es el canario, no el IVA. Lo pagan las
+  compras de la tienda, al tipo de cada artículo: cero, reducido (3 %),
+  general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),
+  como en los arts. 51 a 59 de la Ley 4/2012 de Canarias.
+- **Tienda** (`tienda`): El Colmado de Jovani. Escaparate con pestañas
+  (🎭 roles, ⚡ potenciadores de XP, 💎 coleccionables), cada artículo con su
+  botón **Comprar**, rebajas tachadas, existencias que quedan y etiquetas de
+  🆕 nuevo y 🔥 lo más vendido. Los precios van sin IGIC; la caja enseña el
+  ticket (precio, rebaja, base, IGIC y total) y pide confirmar. Al pagar
+  llega una factura simplificada que solo ve el comprador y un aviso público
+  en el canal. Cualquiera puede comprar desde el escaparate de otro: la caja
+  se abre solo para quien pulsa.
+  - Roles para siempre o alquilados (volver a comprar alarga el alquiler; al
+    vencer, el bot los quita). Si no puede dar el rol, devuelve todo, IGIC
+    incluido.
+  - Potenciadores: multiplican el XP de mensajes y voz (de ×1,1 a ×3) un
+    tiempo; si ya tienes uno, el nuevo se pone a la cola.
+  - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
+    numerada ("nº 3 de 10").
+  - `mochila [miembro]` enseña lo que tiene alguien; su dueño puede ponerse y
+    quitarse los roles que compró para siempre.
+  - La base de cada venta va a la caja de la tienda (`user_id = -200`) y el
+    IGIC al Estado; `hacienda` lo cuenta como recaudado.
+- **Trastienda** (`catalogo`, solo administradores): panel con botones para
+  poner a la venta roles, potenciadores y coleccionables, y editar cada
+  artículo (precio, descripción, duración, multiplicador, existencias, máximo
+  por persona, nivel mínimo, rebaja con fecha de fin, tipo de IGIC, ocultarlo
+  o retirarlo). Todo se configura desde Discord, sin tocar código. No deja
+  vender roles por encima del del bot ni con permisos de moderación o
+  administración. El bot necesita **Gestionar roles**.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
@@ -242,12 +271,12 @@ python -m bot
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
   y los SUPER RUSH, los rush de 5 o más y los premios de ×20 se anuncian.
-- **Logros** (`logros [miembro]`): 351 logros en 14 categorías (chat,
+- **Logros** (`logros [miembro]`): 377 logros en 15 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
-  tragaperras, Crash, Minas, pachinko, economía y coleccionista), con cinco rarezas: ▫️ común,
+  tragaperras, Crash, Minas, pachinko, tienda, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 36 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 38 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -436,6 +465,8 @@ src/bot/
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
+│   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
+│   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
@@ -451,6 +482,7 @@ src/bot/
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
 │   ├── taxes.py         # IRPF, Patrimonio, IGIC y deducción por donativos
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
+│   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack

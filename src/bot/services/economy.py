@@ -12,14 +12,17 @@ La moneda es ficticia: no se compra ni se canjea por nada con valor real.
 from __future__ import annotations
 
 import re
+import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import TypeVar
 
 import discord
 
 from bot.repositories.economy import (
+    SHOP_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     BalanceLimitError,
     BetSettlement,
@@ -67,6 +70,7 @@ __all__ = [
     "JackpotRecord",
     "SlotsSettlement",
     "STARTING_BALANCE",
+    "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
     "Treasury",
     "format_amount",
@@ -78,6 +82,8 @@ __all__ = [
     "tax_line",
     "treasury_embed",
 ]
+
+T = TypeVar("T")
 
 CURRENCY_NAME = "yapdollars"
 CURRENCY_SYMBOL = "Y$"
@@ -163,8 +169,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
         value=(
             "IRPF con retención en premios, niveles, cumpleaños y saludos · IRPF del "
             "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
-            f"de {format_amount(WEALTH_MINIMUM)} · IGIC del {IGIC_GENERAL_RATE:.0%} en "
-            "las compras, cuando haya tienda · Los donativos a ONGs desgravan en la renta"
+            f"de {format_amount(WEALTH_MINIMUM)} · IGIC en las compras de la `tienda` "
+            f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
         ).replace("%", " %"),
         inline=False,
     )
@@ -553,6 +559,77 @@ class EconomyService:
             amount=amount,
             week=week_start(local_day(now)).isoformat(),
             now=now,
+        )
+
+    async def purchase(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        base: int,
+        tax: int,
+        concept: str,
+        reserve: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, int]:
+        """Cobra una compra de la tienda con su IGIC.
+
+        Tratamiento fiscal: IGIC. Una compra es una entrega de bienes o una
+        prestación de servicios a título oneroso hecha en Canarias (art. 4 de
+        la Ley 20/1991), así que paga IGIC al tipo del artículo (arts. 51 a 59
+        de la Ley 4/2012; ver `bot.services.taxes.IGIC_RATES`) sobre la base
+        ya rebajada (art. 22 de la Ley 20/1991). No hay IRPF: gastar no es
+        renta. La base va a la caja de la tienda (`SHOP_ACCOUNT_ID`) y el
+        IGIC al Estado, en la misma transacción.
+
+        Args:
+            base: Base imponible (precio tras la rebaja); positiva.
+            tax: IGIC de esa base.
+            concept: Motivo corto y estable para el libro (`"rol"`, `"xp"`…).
+            reserve: Comprobaciones y apuntes de la tienda dentro de la
+                transacción (ver `EconomyRepository.purchase`).
+
+        Returns:
+            `(lo que devuelva reserve, saldo final)`.
+
+        Raises:
+            InsufficientFundsError: Si no le llega. No se mueve nada.
+        """
+        return await self.repository.purchase(
+            guild_id,
+            user_id,
+            base=base,
+            tax=tax,
+            concept=concept,
+            now=self._clock(),
+            reserve=reserve,
+        )
+
+    async def refund_purchase(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        base: int,
+        tax: int,
+        concept: str,
+        release: Callable[[sqlite3.Connection], None],
+    ) -> int:
+        """Devuelve una compra que no se pudo entregar (p. ej. un rol que no se pudo dar).
+
+        Es una factura rectificativa: la caja devuelve la base y el Estado
+        el IGIC, que deja de contar como recaudado.
+
+        Returns:
+            El saldo final.
+        """
+        return await self.repository.refund_purchase(
+            guild_id,
+            user_id,
+            base=base,
+            tax=tax,
+            concept=concept,
+            now=self._clock(),
+            release=release,
         )
 
     async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:
