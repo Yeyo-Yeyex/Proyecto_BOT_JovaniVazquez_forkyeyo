@@ -1,0 +1,27 @@
+# Frases de bienvenida del bot (una por línea).
+#
+# Se puede editar sin tocar código: los cambios se aplican en la siguiente
+# entrada, sin reiniciar el bot. Las líneas vacías y las que empiezan por
+# "#" se ignoran. {usuario} se cambia por la mención del recién llegado; si
+# una frase no lo lleva, la mención va delante.
+#
+# Las frases de debajo de la línea [vuelta] son para quien ya había estado
+# en el servidor, se fue y ha vuelto.
+#
+# Tono: el del bot, chulesco y de coña, como las despedidas. Sin insultos
+# reales, ataques personales ni nada que suene a acoso.
+¿QUIÉN ERES, {usuario}? Bueno, da igual: pasa, siéntate y no toques nada.
+Atención, que ha llegado {usuario}. Esto se pone serio, chavales.
+{usuario} acaba de entrar. Ya somos uno más para la ruleta.
+Mira quién ha aparecido: {usuario}. Aquí se viene a yapear, que lo sepas.
+Bienvenido, {usuario}. Tienes 1.000 yapdollars esperándote; la casa siempre gana, pero tú inténtalo.
+{usuario} ha entrado por la puerta grande. Por la pequeña no cabía con tanta aura.
+Ojo, {usuario} en el servidor. Que alguien le explique cómo va esto antes de que pregunte.
+{usuario}, has llegado al mejor sitio de Discord. Lo digo yo, que soy un bot y no miento.
+Llega {usuario}. Primer consejo: cobra el IMV todos los días. Segundo consejo: no le hagas caso al primero, ve al casino.
+Se abre la puerta y entra {usuario}. Que suene la música, que esto es un evento.
+[vuelta]
+¿{usuario} otra vez por aquí? Sabía que no podías vivir sin nosotros.
+Ha vuelto {usuario}. Hacemos como que no ha pasado nada.
+{usuario} regresa. El hijo pródigo, pero con menos dignidad.
+Mira quién vuelve con el rabo entre las piernas: {usuario}. Pasa, pasa.

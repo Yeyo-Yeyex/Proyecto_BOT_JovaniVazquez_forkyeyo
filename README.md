@@ -73,7 +73,7 @@ python -m bot
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `ban` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+  | 🛡️ Admin | `ban` · `bienv` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -178,12 +178,12 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
-- **Logros** (`logros [miembro]`): 208 logros en 11 categorías (chat,
+- **Logros** (`logros [miembro]`): 213 logros en 11 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 16 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 18 son secretos y se ven como `???` hasta conseguirlos.
   Los 9 de la tragaperras salen como "próximamente" y no cuentan hasta que
   exista el juego. Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
@@ -225,9 +225,13 @@ python -m bot
   bot responde con un mensaje claro; los errores internos se guardan en el log.
 - Los avisos de subida de nivel se publican en el canal donde se ganó el XP
   (el chat del canal de voz si fue hablando) e incluyen el premio cobrado.
-- Al entrar alguien, el bot pregunta **¿QUIÉN ERES?** y adjunta el vídeo
-  `src/bot/assets/bienvenida.mp4` en `#chat-general`. Al salir, publica una
-  despedida con una frase aleatoria tomada de
+- Al entrar alguien, el bot le saluda con una frase de
+  `src/bot/assets/bienvenidas.txt` y el GIF del servidor (sin GIF, el vídeo
+  `src/bot/assets/bienvenida.mp4`) en el canal de bienvenida, que por
+  defecto es `#chat-general`. Si ya había estado, usa las frases de vuelta.
+  Los demás pueden pulsar **👋 Dar la bienvenida** durante su primer día,
+  lo que cuenta para logros. Un administrador cambia el GIF y el canal con
+  `bienv`. Al salir, publica una despedida con una frase aleatoria tomada de
   `src/bot/assets/despedidas.txt` en ese mismo canal.
 - `top` resuelve nombres visibles del servidor incluso para miembros que
   todavía no estén en la caché local del bot, y lo presenta en un embed con
@@ -288,6 +292,10 @@ comandos de administración necesita además Gestionar mensajes, Aislar
 temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar
 apodos y Gestionar roles, y su rol debe estar por encima de los roles que
 vaya a moderar.
+
+Las frases de bienvenida se editan en `src/bot/assets/bienvenidas.txt` con
+las mismas reglas; `{usuario}` se cambia por la mención y lo que va tras la
+línea `[vuelta]` es para quien vuelve al servidor.
 
 Las frases de despedida se editan directamente en
 `src/bot/assets/despedidas.txt`, una por línea (las líneas vacías y las que
@@ -359,7 +367,7 @@ src/bot/
 │   ├── admin.py         # Moderación solo para administradores
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
-│   ├── welcome.py      # Bienvenidas y despedidas
+│   ├── welcome.py       # Bienvenidas (GIF, frases, botón 👋) y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── blackjack.py     # Blackjack con botones (bj)
@@ -376,6 +384,7 @@ src/bot/
 │   ├── cards_render.py  # Imagen de la mesa de blackjack
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
+│   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)
 │   ├── memes/           # Efectos de Dank Memer: registro, utilidades y efectos
@@ -383,6 +392,7 @@ src/bot/
 │   └── music_source.py   # Extracción de audio con yt-dlp (bloqueante)
 └── assets/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
+    ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
     └── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
 ```

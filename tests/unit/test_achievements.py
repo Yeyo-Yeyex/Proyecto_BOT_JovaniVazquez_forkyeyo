@@ -64,6 +64,8 @@ PRODUCED_STATS = {
     "greetings_sent", "greetings_received", "level_max", "activity_streak_max",
     "imv_claims", "imv_streak_max", "renta_filed", "renta_refunded", "tax_paid",
     "balance_max",
+    # Bienvenida (botón 👋 de cogs/welcome.py)
+    "welcomes_given", "welcomes_fast",
     # Casino
     "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",
@@ -412,6 +414,33 @@ async def test_desbloquear_paga_con_irpf_y_el_libro_cuadra(tmp_path: Path) -> No
     assert "Perro Sanxe" in embed.description
     # La retención cuenta para "Contribuyente" y compañía en la siguiente escritura.
     assert cog._pending[GUILD][USER].add["tax_paid"] == treasury.collected_total
+
+
+async def test_la_primera_retencion_dispara_el_discurso_de_perro_sanxe(tmp_path: Path) -> None:
+    """El gancho de la primera retención: un ingreso que supera el mínimo personal
+    retiene IRPF, eso suma `tax_paid` y salta `tax_first` con su discurso, una vez."""
+    cog, _repository, economy = await make_cog(tmp_path)
+    channel = FakeChannel()
+    small = await economy.pay_income(GUILD, USER, gross=1_000, concept="nivel:1")
+    assert small.tax == 0  # por debajo del mínimo, Perro Sanxe no toca nada
+
+    big = await economy.pay_income(GUILD, USER, gross=10_000, concept="nivel:10")
+    assert big.tax > 0
+    ids = await cog.apply(GUILD, USER, StatDelta(add={"tax_paid": big.tax}), channel)
+
+    assert "tax_first" in ids
+    description = channel.send.await_args.kwargs["embed"].description or ""
+    assert "te ha encontrado" in description
+    assert "Bienvenido a España" in description
+
+    channel.send.reset_mock()
+    later = await cog.apply(GUILD, USER, StatDelta(add={"tax_paid": 5}), channel)
+    assert "tax_first" not in later
+
+
+def test_la_primera_retencion_no_se_anuncia_sin_pagar() -> None:
+    assert "tax_first" not in newly_unlocked({"tax_paid": 0, "balance_max": 1}, [])
+    assert BY_ID["tax_first"].secret
 
 
 async def test_sin_logro_nuevo_no_se_paga_ni_se_avisa(tmp_path: Path) -> None:

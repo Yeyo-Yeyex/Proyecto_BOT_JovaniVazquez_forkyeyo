@@ -44,6 +44,7 @@ EXPECTED_COMMANDS = {
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
 ADMIN_COMMANDS = {
     "purge",
+    "bienv",
     "mute",
     "unmute",
     "kick",

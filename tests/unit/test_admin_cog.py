@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,6 +13,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs.admin import BOT_FORBIDDEN, SAY_MENTIONS, Admin
+from bot.cogs.welcome import Welcome
+from bot.repositories.welcome import WelcomeRepository, WelcomeSettings
 
 
 def make_member(member_id: int, position: int, *, admin: bool = False) -> MagicMock:
@@ -257,3 +260,67 @@ async def test_role_alterna_y_respeta_la_jerarquia(guild: SimpleNamespace) -> No
     await cog.role_text.callback(cog, ctx, target, rol=high)
     target.add_roles.assert_not_awaited()
     assert "tuyo" in last_message(ctx)
+
+
+# -- bienv ------------------------------------------------------------------------
+
+
+async def make_bienv(tmp_path: Path, guild: SimpleNamespace) -> tuple[Admin, WelcomeRepository]:
+    """Admin con la bienvenida real (repositorio en disco) y #chat-general."""
+    repository = WelcomeRepository(tmp_path / "bot.db")
+    await repository.initialize()
+    chat = MagicMock(spec=discord.TextChannel)
+    chat.name = "chat-general"
+    chat.mention = "#chat-general"
+    chat.permissions_for = lambda _member: discord.Permissions(send_messages=True)
+    guild.text_channels = [chat]
+    guild.get_channel = lambda _id: None
+    bot = MagicMock()
+    bot.welcome = repository
+    welcome = Welcome(bot, repository)
+    bot.get_cog = lambda name: welcome if name == "Welcome" else None
+    return Admin(bot), repository
+
+
+async def test_bienv_guarda_un_gif_valido(guild: SimpleNamespace, tmp_path: Path) -> None:
+    cog, repository = await make_bienv(tmp_path, guild)
+    ctx = make_ctx(guild, make_member(1, 20, admin=True))
+    gif = "https://media.tenor.com/x/kratos.gif"
+
+    await cog.bienv_text.callback(cog, ctx, None, gif=gif)
+
+    assert (await repository.settings(guild.id)).gif_url == gif
+    assert "Bienvenida actualizada" in last_message(ctx)
+    assert ctx.send.await_args.kwargs["embed"].image.url == gif
+
+
+async def test_bienv_rechaza_un_adjunto_de_discord(guild: SimpleNamespace, tmp_path: Path) -> None:
+    cog, repository = await make_bienv(tmp_path, guild)
+    ctx = make_ctx(guild, make_member(1, 20, admin=True))
+
+    await cog.bienv_text.callback(
+        cog, ctx, None, gif="https://cdn.discordapp.com/attachments/1/2/a.gif"
+    )
+
+    assert "caducan" in last_message(ctx)
+    assert (await repository.settings(guild.id)).gif_url is None
+
+
+async def test_bienv_quitar_vuelve_al_video(guild: SimpleNamespace, tmp_path: Path) -> None:
+    cog, repository = await make_bienv(tmp_path, guild)
+    await repository.save_settings(guild.id, WelcomeSettings(gif_url="https://x.com/a.gif"))
+    ctx = make_ctx(guild, make_member(1, 20, admin=True))
+
+    await cog.bienv_text.callback(cog, ctx, None, gif="quitar")
+
+    assert (await repository.settings(guild.id)).gif_url is None
+    assert "vídeo de Kratos" in last_message(ctx)
+
+
+async def test_bienv_sin_argumentos_solo_muestra(guild: SimpleNamespace, tmp_path: Path) -> None:
+    cog, _repository = await make_bienv(tmp_path, guild)
+    ctx = make_ctx(guild, make_member(1, 20, admin=True))
+
+    await cog.bienv_text.callback(cog, ctx, None, gif="")
+
+    assert last_message(ctx).startswith("👋 Bienvenida actual.")

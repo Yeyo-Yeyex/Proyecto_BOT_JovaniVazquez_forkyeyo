@@ -27,31 +27,30 @@ Las comprobaciones de permisos deben hacerse en el servidor en cada operación p
 
 ### 3.1. Bienvenida
 
-Implementación actual:
-
-- Cuando una persona se una, el bot envía a `#chat-general` un mensaje con formato que pregunta **¿QUIÉN ERES?**.
-- El mensaje menciona intencionalmente al nuevo miembro y adjunta `src/bot/assets/bienvenida.mp4`.
-- Si el canal o el vídeo no están disponibles, o el bot no puede enviar el mensaje, registra el problema y no detiene el bot.
+- Cuando una persona se une, el bot publica en el canal de bienvenida (el configurado con `bienv`; si no hay o se ha borrado, `#chat-general`) una frase al azar de `src/bot/assets/bienvenidas.txt` que menciona al recién llegado.
+- Con un GIF configurado, va debajo de la frase: los enlaces directos (`.gif`, `media.tenor.com`, `i.giphy.com`) dentro de un embed; las páginas de Tenor o Giphy (lo que da "Copiar enlace" en el selector de GIF de Discord), como enlace suelto que Discord despliega. Sin GIF se adjunta `src/bot/assets/bienvenida.mp4`, como antes.
+- `bienvenidas.txt` es texto editable, se relee en cada entrada y admite `{usuario}` (la mención). Las frases tras la línea `[vuelta]` son para quien ya había estado en el servidor y vuelve.
+- El mensaje lleva un botón **👋 Dar la bienvenida**. Cada miembro puede pulsarlo una vez durante el primer día del recién llegado; el botón muestra cuántos le han saludado. No da dinero: cuenta para los logros de Social (*Comité de bienvenida*, *Relaciones públicas*, *Portero de discoteca* y el secreto *Más rápido que Hacienda*, por saludar en el primer minuto). El botón sigue funcionando tras reiniciar el bot.
+- Las menciones se limitan al recién llegado. Si el canal, el vídeo o el GIF no están disponibles, o el bot no puede enviar el mensaje, registra el problema y no detiene el bot.
 
 ### 3.2. Despedida
 
-Cuando una persona abandone el servidor, el bot publica en `#chat-general` una despedida con su nombre visible y una frase humorística elegida aleatoriamente de `src/bot/assets/despedidas.txt`. Ese archivo es texto plano editable (una frase por línea; las líneas vacías o que empiezan por `#` se ignoran) y se relee en cada despedida, sin reiniciar el bot. Las menciones están desactivadas para evitar notificaciones accidentales.
+Cuando una persona abandone el servidor, el bot publica en el canal de bienvenida una despedida con su nombre visible y una frase humorística elegida aleatoriamente de `src/bot/assets/despedidas.txt`. Ese archivo es texto plano editable (una frase por línea; las líneas vacías o que empiezan por `#` se ignoran) y se relee en cada despedida, sin reiniciar el bot. Las menciones están desactivadas para evitar notificaciones accidentales.
 
 ### 3.3. Configuración
 
-La configuración por servidor aún no está disponible. Como siguiente mejora, los administradores podrán:
+Comando de administración `bienv` (ver sección 6 quater):
 
-- Elegir por separado el canal de bienvenida y el de despedida.
-- Activar o desactivar cada tipo de mensaje independientemente.
-- Cambiar las plantillas de texto.
-- Consultar la configuración actual.
+- `bienv` sin argumentos enseña el canal y el GIF actuales y una vista previa.
+- `bienv gif:<enlace>` (o `.bienv <enlace>`) cambia el GIF; `quitar` vuelve al vídeo. Se rechazan los enlaces que no son `https`, los que no parecen un GIF y los adjuntos de Discord, porque caducan a las 24 horas.
+- `bienv canal:#canal` (o `.bienv #canal`) cambia el canal de bienvenida y despedida.
 
-Los mensajes deben limitar menciones accidentales a usuarios o roles. Si una plantilla incluye variables desconocidas o supera límites de Discord, la configuración debe rechazarse con un error comprensible, no fallar al procesar un evento.
+Los ajustes se guardan por servidor en SQLite (`welcome_settings`), junto a la última entrada de cada miembro (`welcome_joins`, para saber si vuelve y para el plazo del botón) y quién ha saludado a quién (`welcome_greetings`). Solo se guardan IDs y marcas de tiempo, y todo se borra si el bot sale del servidor.
 
 ### 3.4. Criterios de aceptación
 
 - Un ingreso produce como máximo una bienvenida y una salida produce como máximo una despedida.
-- Cada mensaje se envía únicamente al canal `#chat-general` del servidor donde ocurrió el evento.
+- Cada mensaje se envía únicamente al canal de bienvenida del servidor donde ocurrió el evento.
 - Los eventos de miembros requieren habilitar el intent privilegiado `Server Members Intent` en el portal de Discord y en el código.
 - La función tolera canales eliminados y permisos revocados sin detener el bot.
 
@@ -290,14 +289,15 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.5. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 208 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Los 9 de la tragaperras se muestran como "próximamente" y no se pueden conseguir ni cuentan para el total (199) hasta que exista el juego; entonces basta con que el juego sume `slots_spins`, `slots_wins`, `slots_jackpots` y `slots_win_max` y quitar `upcoming` de su categoría.
+- 213 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Los 9 de la tragaperras se muestran como "próximamente" y no se pueden conseguir ni cuentan para el total (204) hasta que exista el juego; entonces basta con que el juego sume `slots_spins`, `slots_wins`, `slots_jackpots` y `slots_win_max` y quitar `upcoming` de su categoría.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
-- 16 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
-- Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, nivel y racha de días, cada tirada de ruleta y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
+- 18 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, nivel y racha de días, cada tirada de ruleta y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
 - Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
 - La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
 - Se anuncia en el canal donde se consiguió (en voz, el chat del canal de voz; si no se sabe, el canal del sistema). Con más de 8 a la vez, el aviso los resume.
+- Un logro puede llevar un texto propio (`story`) que sale en su aviso. Como cada logro se desbloquea una sola vez, sirve de gancho de "la primera vez que…". Lo usa *Bienvenido a España* (secreto): la primera vez que a alguien le retienen IRPF, venga de donde venga el dinero, Perro Sanxe le explica que ha pasado del mínimo personal (55.500 Y$ al año, unos 4.561 Y$ cada 30 días), que desde ahora se lleva parte de cada ganancia y que lo retenido de más en el casino vuelve con la `renta`. Al entrar al servidor no se dice nada de esto. Quien ya había pagado IRPF antes de este cambio lo recibe con su siguiente acción.
 - Al salir el bot de un servidor se borran sus logros.
 ## 6 quater. Administración
 
@@ -318,6 +318,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `say <texto>` | El bot escribe el texto. En `.say` se borra tu mensaje; `/say` admite otro canal. Nunca menciona a `@everyone`, `@here` ni roles. |
 | `nick <miembro> [apodo]` | Cambia el apodo; sin apodo, lo quita. |
 | `role <miembro> <rol>` | Da el rol si no lo tiene; si lo tiene, se lo quita. |
+| `bienv [gif] [canal]` | GIF y canal de la bienvenida; sin argumentos, enseña los actuales. Responde con una vista previa (en `/`, solo la ves tú). Ver sección 3.3. |
 
 ### 6 quater.2. Autorización y seguridad
 
@@ -346,13 +347,13 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 
 ## 7. Persistencia y aislamiento por servidor
 
-La bienvenida/despedida usa actualmente el canal `#chat-general` y textos definidos por el bot, por lo que no necesita configuración persistida. Si se añade personalización, sus preferencias deberán persistir por servidor. Los datos del sistema de niveles ya se guardan en SQLite.
+El canal y el GIF de bienvenida se guardan por servidor en SQLite, igual que los datos del sistema de niveles.
 
 Toda configuración de servidor debe estar asociada al ID de ese servidor. El bot no debe usar valores de un servidor como valores implícitos para otro. Los datos de progresión se limitarán a lo necesario para operar las funciones descritas y deben poder eliminarse si el bot deja de prestar servicio en un servidor.
 
 ## 8. Orden de implementación
 
-1. **Bienvenida y despedida:** eventos y mensajes básicos en `#chat-general` (implementado); configuración por servidor y mensajes personalizables pendientes.
+1. **Bienvenida y despedida:** frases editables, GIF y canal configurables con `bienv`, vuelta de antiguos miembros y botón de saludo con logros. (Implementado.) Pendiente: activar o desactivar cada mensaje y separar el canal de despedida.
 2. **Preparación de niveles:** importar y guardar agregados de mensajes históricos y contar actividad nueva. (Implementado.)
 3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `level`/`top` y configuración. (Implementado.)
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
@@ -360,7 +361,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana y blackjack. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 208 logros con premios en yapdollars, `logros` y ranking. (Implementado; los de la tragaperras esperan al juego.)
+9. **Logros:** 213 logros con premios en yapdollars, `logros` y ranking. (Implementado; los de la tragaperras esperan al juego.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 
@@ -368,7 +369,7 @@ Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los c
 
 Estas decisiones no impiden documentar el alcance, pero deben resolverse antes de cerrar la implementación correspondiente:
 
-- Configuración por servidor y plantillas personalizables para bienvenida/despedida.
+- Si la bienvenida y la despedida podrán desactivarse o ir a canales distintos.
 - Si se ofrecerá una herramienta administrativa para reiniciar la progresión (los comandos de administración actuales no tocan los niveles).
 - Si moderadores podrán controlar música iniciada por otros miembros, o si el control seguirá limitado a "cualquiera en el mismo canal de voz" (comportamiento actual).
 

@@ -149,6 +149,7 @@ def unlock_embed(
     ]
     if len(achievements) > ANNOUNCE_LIMIT:
         lines.append(f"…y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos con `logros`.")
+    lines += [f"\n{a.story}" for a in achievements[:ANNOUNCE_LIMIT] if a.story]
     if income is not None:
         lines.append(
             f"\n{CURRENCY_EMOJI} **+{format_amount(income.net)}**\n"
