@@ -50,6 +50,8 @@ class LevelAward:
     total_xp: int
     cooldown_seconds: int
     announce_channel_id: int | None
+    #: Días seguidos con actividad tras esta concesión.
+    streak_days: int = 0
 
 
 class MessageStatsRepository:
@@ -790,6 +792,7 @@ class MessageStatsRepository:
                     total_xp=updated.total_xp,
                     cooldown_seconds=cooldown,
                     announce_channel_id=settings["announce_channel_id"],
+                    streak_days=updated.streak_days,
                 )
             connection.commit()
             return awards

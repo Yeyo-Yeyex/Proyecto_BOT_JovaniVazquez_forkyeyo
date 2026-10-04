@@ -349,6 +349,7 @@ class RecordingResponder:
 
     def __init__(self) -> None:
         self.guild = SimpleNamespace(id=GUILD_ID)
+        self.channel = None
         self.sent: list[dict] = []
         self.errors: list[str] = []
 

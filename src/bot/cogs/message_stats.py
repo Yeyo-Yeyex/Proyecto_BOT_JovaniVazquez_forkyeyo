@@ -27,7 +27,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot.cogs import achievements as logros
 from bot.repositories.message_stats import LevelAward, MessageStatsRepository
+from bot.services.achievements import StatDelta
 from bot.services.economy import (
     CURRENCY_EMOJI,
     BalanceLimitError,
@@ -178,6 +180,12 @@ class MessageStats(commands.Cog):
         awards = await self.repository.grant_activity(guild_id, [message.author.id], decide)
         award = awards.get(message.author.id)
         if award is not None:
+            logros.note(
+                self.bot,
+                guild_id,
+                message.author.id,
+                StatDelta(peak={"activity_streak_max": award.streak_days}),
+            )
             await self._handle_level_up(message.guild, message.channel, message.author, award)
 
     @commands.Cog.listener()
@@ -302,6 +310,11 @@ class MessageStats(commands.Cog):
             return
         reward = await self._pay_level_reward(guild, member, previous_level, current_level)
         await self._announce_level_up(guild, channel, member, current_level, reward=reward)
+        delta = StatDelta(peak={"level_max": current_level})
+        if reward is not None:
+            delta.add["tax_paid"] = reward.tax
+            delta.peak["balance_max"] = reward.balance
+        await logros.track(self.bot, guild.id, member, channel, delta)
 
     async def _pay_level_reward(
         self,
