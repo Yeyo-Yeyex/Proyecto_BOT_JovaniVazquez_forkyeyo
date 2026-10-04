@@ -29,6 +29,7 @@ from enum import Enum
 
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.crash import Seat as CrashSeat
+from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
 from bot.services.mines import Status as MinesStatus
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
@@ -746,7 +747,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "boom_100", "Saltaminas", "Pisa 100 minas.", R),
     ])  # fmt: skip
     a += _tiers("mines", "mines_first_boom", [
-        (1, "boom_first", "A la primera", "Pisa una mina en la primera casilla.", C, True),
+        (1, "boom_first", "A la primera",
+         "Pisa una mina justo después de la casilla segura.", C, True),
     ])  # fmt: skip
     a += _tiers("mines", "mines_almost", [
         (1, "boom_almost", "Tan cerca", "Pisa una mina cuando solo quedaba una casilla buena.",
@@ -763,7 +765,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000, "mines_richer", "Filón", "Gana 100.000 Y$ en una partida de Minas.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("mines", "mines_24", [
-        (1, "mines_24", "Ruleta rusa al revés", "Gana con 24 minas en el tablero.", E),
+        (1, "mines_24", "Ruleta rusa al revés", "Gana con 23 minas, el máximo.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_clear", [
         (1, "mines_clear", "Desminado", "Destapa todas las casillas buenas.", R),
@@ -771,6 +773,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", "mines_clear_hard", [
         (1, "mines_clear_5", "Artificiero de élite",
          "Destapa todas las casillas buenas con 5 minas o más.", M, True),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_streak_max", [
+        (10, "mines_streak_10", "Pisando firme", "Destapa 10 casillas en una partida.", C),
+        (15, "mines_streak_15", "Detector humano", "Destapa 15 casillas en una partida.", R),
+        (20, "mines_streak_20", "Pies de plomo", "Destapa 20 casillas en una partida.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_random", [
         (50, "mines_dice", "Que decida el destino", "Destapa 50 casillas con 🎲.", C),
@@ -1236,7 +1243,7 @@ def crash_stats(seat: CrashSeat, *, crash_cents: int, players: int, last_out: bo
 
 def mines_stats(game: MinesGame) -> StatDelta:
     """Contadores de una partida de Minas terminada (sin lo común del casino)."""
-    delta = StatDelta(add={"mines_games": 1})
+    delta = StatDelta(add={"mines_games": 1}, peak={"mines_streak_max": game.gems})
     add = delta.add
 
     def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
@@ -1250,11 +1257,12 @@ def mines_stats(game: MinesGame) -> StatDelta:
         delta.peak["mines_mult_max"] = game.cents
         if game.net > 0:
             delta.peak["mines_win_max"] = game.net
-        bump("mines_24", game.mines == 24)
+        bump("mines_24", game.mines == MINES_MAX)
         bump("mines_clear", game.cleared)
         bump("mines_clear_hard", game.cleared and game.mines >= 5)
     elif game.status is MinesStatus.BUSTED:
         bump("mines_booms")
-        bump("mines_first_boom", game.gems == 0)
+        # La primera casilla es segura: "a la primera" es la que va justo después.
+        bump("mines_first_boom", game.gems == 1)
         bump("mines_almost", game.gems >= 1 and game.safe_total - game.gems == 1)
     return delta

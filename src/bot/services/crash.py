@@ -8,8 +8,9 @@ Cómo funciona una ronda:
 
 1. Antes de despegar se sortea el punto de explosión (`crash_point`). Nadie
    lo ve hasta que explota.
-2. El multiplicador sube con el tiempo según `multiplier_at`: 2x a los 4,5 s,
-   10x a los 15 s, 100x a los 30 s.
+2. El multiplicador sube con el tiempo según `multiplier_at`: arranca lento y
+   acelera. 1,5x a los 5,5 s, 2x a los 8 s, 5x a los 15 s, 10x a los 19 s,
+   100x a los 31 s.
 3. Cada jugador puede retirarse cuando quiera (o fijar un auto-retiro). Si se
    retira antes de la explosión, cobra apuesta × multiplicador; si no, lo
    pierde todo.
@@ -35,9 +36,13 @@ RTP_CENTS = 99
 MAX_CENTS = 100_000
 #: El auto-retiro más bajo posible. 1,00x no tiene sentido: no ganas nada.
 MIN_AUTO_CENTS = 101
-#: Velocidad de la curva: el multiplicador se duplica cada 4,5 s.
-DOUBLING_SECONDS = 4.5
-GROWTH_PER_SECOND = math.log(2) / DOUBLING_SECONDS
+#: Forma de la curva: multiplicador = e^(k · t^p). Con p > 1 la subida empieza
+#: lenta (más segundos entre 1x y 2x, donde se decide casi todo) y se dispara
+#: después. Con p = 1 sería una exponencial normal, que se duplica a ritmo fijo.
+CURVE_POWER = 1.4
+#: Segundos hasta 2x; fija `k`.
+DOUBLE_AT_SECONDS = 8.0
+CURVE_SCALE = math.log(2) / DOUBLE_AT_SECONDS**CURVE_POWER
 
 
 def crash_point(u: float) -> int:
@@ -55,18 +60,25 @@ def crash_point(u: float) -> int:
     return max(100, min(MAX_CENTS, cents))
 
 
+def curve(seconds: float) -> float:
+    """Multiplicador exacto (sin redondear ni tope) tras `seconds` de vuelo."""
+    if seconds <= 0:
+        return 1.0
+    return math.exp(CURVE_SCALE * seconds**CURVE_POWER)
+
+
 def multiplier_at(seconds: float) -> int:
     """Multiplicador (centésimas, redondeado hacia abajo) tras `seconds` de vuelo."""
     if seconds <= 0:
         return 100
     if seconds >= seconds_to(MAX_CENTS):
         return MAX_CENTS
-    return min(MAX_CENTS, max(100, math.floor(100 * math.exp(GROWTH_PER_SECOND * seconds))))
+    return min(MAX_CENTS, max(100, math.floor(100 * curve(seconds))))
 
 
 def seconds_to(cents: int) -> float:
     """Segundos de vuelo hasta que el multiplicador llega a `cents`."""
-    return math.log(max(cents, 100) / 100) / GROWTH_PER_SECOND
+    return (math.log(max(cents, 100) / 100) / CURVE_SCALE) ** (1 / CURVE_POWER)
 
 
 def payout(stake: int, cents: int) -> int:

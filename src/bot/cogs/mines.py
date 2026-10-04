@@ -1,17 +1,22 @@
 """Minas: `minas`, un tablero de 5×5 con diamantes y minas escondidas.
 
 Cada jugador abre su propio tablero, que solo él puede pulsar. `minas 500 5`
-cobra 500 Y$ y coloca 5 minas al momento. Cada casilla segura (💎) sube el
-multiplicador; 💰 **Cobrar** se lleva apuesta × multiplicador, y pisar una 💣
-lo pierde todo. 🎲 **Al azar** destapa una casilla cualquiera.
+cobra 500 Y$ y juega con 5 minas. La primera casilla siempre es segura y
+devuelve la apuesta; cada casilla segura después sube el multiplicador.
+💰 **Cobrar** se lleva apuesta × multiplicador, y pisar una 💣 lo pierde
+todo. 🎲 **Al azar** destapa una casilla cualquiera.
+
+Mientras se juega, el texto lleva la cuenta de casillas (💎 7/23), lo que
+añadiría la siguiente y su probabilidad, frases al pasar por 3, 5, 10,
+medio tablero… y el aviso de récord personal de casillas en una partida.
 
 Al acabar, el tablero enseña dónde estaban las minas y deja jugar otra con
-🔁, cambiar la apuesta (½, ×2, 💰 All-in) y el número de minas (💣, que
-recorre 1, 3, 5, 10, 15, 20 y 24).
+🔁, cambiar la apuesta (½, ×2, 💰 All-in) y elegir de 1 a 23 minas en un
+menú que dice cuánto paga cada opción (más minas, más riesgo, más pago).
 
 El tablero usa los componentes nuevos de Discord (`LayoutView`): un bloque
-con el texto y las 25 casillas como botones, más una fila de controles. Son
-39 de los 40 componentes que admite un mensaje. No hay imágenes: cada clic
+con el texto y las 25 casillas como botones, una fila de botones y el menú
+de minas. Son los 40 componentes que admite un mensaje. No hay imágenes: cada clic
 es una edición de texto y botones, así que es instantáneo y casi no gasta
 ancho de banda.
 
@@ -53,13 +58,16 @@ from bot.services.economy import (
 )
 from bot.services.mines import (
     DEFAULT_MINES,
-    MINE_CHOICES,
+    MAX_MINES,
+    MIN_MINES,
     SIZE,
     MinesError,
     MinesGame,
     Status,
+    check_mines,
     format_multiplier,
-    next_mine_choice,
+    milestone,
+    risk_summary,
 )
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -87,7 +95,8 @@ COLOR_CASHED = discord.Color.from_rgb(255, 196, 0)
 # Textos en el tono de Jovani Vázquez.
 CASH_LINES = ("¡Wepa!", "¡Cobras, mi amor!", "¡Eso es!", "¡Qué olfato!")
 BOOM_LINES = ("¡BOOM!", "¡Ay, bendito!", "¡Kaboom!", "¡Se acabó la fiesta!")
-GEM_LINES = ("💎 ¡Limpio!", "💎 ¡Otra!", "💎 ¡Sigue, sigue!", "💎 ¡Wepa!")
+#: Estadística de logros con el récord de casillas en una partida.
+RECORD_STAT = "mines_streak_max"
 
 
 def percent(chance: float) -> str:
@@ -116,6 +125,8 @@ class MinesBoard(ui.LayoutView):
         self.note: str | None = None
         self.message: discord.Message | None = None
         self.channel: object = None
+        #: Récord de casillas del dueño al empezar la partida en curso.
+        self.record_before = 0
         self._lock = asyncio.Lock()
         self._last_interaction: discord.Interaction | None = None
 
@@ -133,22 +144,44 @@ class MinesBoard(ui.LayoutView):
                 lines.append(
                     f"# {format_multiplier(game.cents)} · {format_amount(game.cashout_value)}"
                 )
+                progress = f"{GEM} **{game.gems}/{game.safe_total}**"
+                if cheer := milestone(game.gems, game.safe_total):
+                    progress += f" · {cheer}"
+                lines.append(progress)
+                if self.record_before and game.gems > self.record_before:
+                    lines.append(
+                        f"🏅 ¡Récord personal! Antes llegabas a {self.record_before} casillas."
+                    )
             else:
                 lines.append("# Elige una casilla")
-            if game.next_cents is not None:
+                lines.append(f"-# La primera siempre es buena {GEM} y te devuelve la apuesta.")
+            if game.gems and game.next_value is not None:
+                extra = game.next_value - game.cashout_value
                 lines.append(
-                    f"-# Siguiente: {format_multiplier(game.next_cents)} · "
-                    f"{percent(float(game.safe_chance))} de que sea buena"
+                    f"-# Siguiente: {format_multiplier(game.next_cents or 0)} "
+                    f"(+{format_amount(extra)}) · {percent(float(game.safe_chance))} "
+                    "de que sea buena"
                 )
         elif game.status is Status.CASHED:
+            sign = "+" if game.net >= 0 else "-"
             lines.append(
-                f"# {GEM} {random.choice(CASH_LINES)} +{format_amount(game.net)}\n"
-                f"Cobras **{format_amount(game.payout)}** en {format_multiplier(game.cents)}"
+                f"# {GEM} {random.choice(CASH_LINES)} {sign}{format_amount(abs(game.net))}\n"
+                f"Cobras **{format_amount(game.payout)}** en {format_multiplier(game.cents)} "
+                f"con {GEM} {game.gems}/{game.safe_total}"
             )
+            if cheer := milestone(game.gems, game.safe_total):
+                lines.append(cheer)
+            if self.record_before and game.gems > self.record_before:
+                lines.append(f"🏅 ¡Récord personal: {game.gems} casillas!")
         else:
             lines.append(f"# {BOOM} {random.choice(BOOM_LINES)} -{format_amount(game.stake)}")
             if game.gems:
-                lines.append(f"Te ibas a llevar {format_amount(game.cashout_value)}.")
+                lines.append(
+                    f"Llegaste a {GEM} {game.gems}/{game.safe_total}. "
+                    f"Te ibas a llevar {format_amount(game.cashout_value)}."
+                )
+            if self.record_before and game.gems > self.record_before:
+                lines.append(f"🏅 Aun así, récord personal: {game.gems} casillas.")
         if self.note:
             lines.append(self.note)
         stake = game.stake if game is not None and game.playing else self.stake
@@ -239,15 +272,37 @@ class MinesBoard(ui.LayoutView):
             controls.add_item(self.control_button("½", "half", self._halve))
             controls.add_item(self.control_button("×2", "x2", self._double))
             controls.add_item(self.control_button("💰 All-in", "allin", self._all_in))
-            controls.add_item(
-                self.control_button(f"💣 {self.mines}", "mines", self._cycle_mines, style=blue)
-            )
         self.add_item(controls)
+        if game is None or not game.playing:
+            mines_row: ui.ActionRow = ui.ActionRow()
+            mines_row.add_item(self.mines_select())
+            self.add_item(mines_row)
+
+    def mines_select(self) -> ui.Select:
+        """Menú de 1 a 23 minas, con lo que paga cada opción."""
+        options = [
+            discord.SelectOption(
+                label=f"💣 {m} mina{'s' if m != 1 else ''}",
+                value=str(m),
+                description=risk_summary(m),
+                default=m == self.mines,
+            )
+            for m in range(MIN_MINES, MAX_MINES + 1)
+        ]
+        select: ui.Select = ui.Select(
+            custom_id=f"{GAME}:mines", options=options, placeholder="Elige cuántas minas"
+        )
+
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._choose_mines(interaction, int(select.values[0]))
+
+        select.callback = callback  # type: ignore[method-assign]
+        return select
 
     def disable_all(self) -> None:
-        """Apaga todos los botones (tablero caducado)."""
+        """Apaga todos los botones y el menú (tablero caducado)."""
         for item in self.walk_children():
-            if isinstance(item, ui.Button):
+            if isinstance(item, ui.Button | ui.Select):
                 item.disabled = True
 
     # -- Ciclo de vida ----------------------------------------------------------------
@@ -311,6 +366,7 @@ class MinesBoard(ui.LayoutView):
             return insufficient_text(error.balance, self.stake)
         self.balance = settlement.balance
         self.game = MinesGame.new(self.stake, self.mines, self.cog.rng)
+        self.record_before = await self.cog.record(self.guild_id, self.owner.id)
         self.note = None
         self.rebuild()
         return None
@@ -337,8 +393,9 @@ class MinesBoard(ui.LayoutView):
     async def _after_game(
         self, interaction: discord.Interaction, game: MinesGame, settlement: BetSettlement | None
     ) -> None:
-        """Lo que va después de enseñar el final: renta, logros y anuncio."""
+        """Lo que va después de enseñar el final: renta, récord, logros y anuncio."""
         await renta.remind(self.cog.bot, interaction)
+        self.cog.note_record(self.guild_id, self.owner.id, game.gems)
         delta = mines_stats(game)
         delta.merge(
             casino_stats(
@@ -466,12 +523,18 @@ class MinesBoard(ui.LayoutView):
         self.stake = balance
         await self._refresh(interaction)
 
-    async def _cycle_mines(self, interaction: discord.Interaction) -> None:
+    async def _choose_mines(self, interaction: discord.Interaction, mines: int) -> None:
+        """Menú 💣: cambia las minas de la siguiente partida."""
         if not self._idle():
             await interaction.response.defer()
             return
-        self.mines = next_mine_choice(self.mines)
-        self.cog.set_mines(self.guild_id, self.owner.id, self.mines)
+        try:
+            check_mines(mines)
+        except ValueError:
+            await interaction.response.defer()
+            return
+        self.mines = mines
+        self.cog.set_mines(self.guild_id, self.owner.id, mines)
         await self._refresh(interaction)
 
 
@@ -488,6 +551,7 @@ class Mines(commands.Cog, name="Minas"):
         economy: EconomyService,
         casino_channel_ids: frozenset[int] = frozenset(),
         rng: random.Random | None = None,
+        load_record: Callable[[int, int], Awaitable[int]] | None = None,
     ) -> None:
         self.bot = bot
         self.economy = economy
@@ -499,6 +563,29 @@ class Mines(commands.Cog, name="Minas"):
         self.boards: set[MinesBoard] = set()
         # Minas elegidas por (servidor, miembro); se pierden al reiniciar.
         self._mines: dict[tuple[int, int], int] = {}
+        # Récord de casillas por (servidor, miembro). Se lee una vez de los
+        # logros (`mines_streak_max`, que sobrevive a reinicios) y luego se
+        # lleva en memoria. Crece como mucho hasta los miembros que han jugado.
+        self._records: dict[tuple[int, int], int] = {}
+        self._load_record = load_record
+
+    async def record(self, guild_id: int, user_id: int) -> int:
+        """Récord de casillas de un miembro en una partida (0 si no se sabe)."""
+        key = (guild_id, user_id)
+        if key not in self._records:
+            value = 0
+            if self._load_record is not None:
+                try:
+                    value = await self._load_record(guild_id, user_id)
+                except Exception:
+                    logger.exception("No se pudo leer el récord de Minas de %s", user_id)
+            self._records[key] = value
+        return self._records[key]
+
+    def note_record(self, guild_id: int, user_id: int, gems: int) -> None:
+        """Apunta las casillas de una partida terminada si baten el récord."""
+        key = (guild_id, user_id)
+        self._records[key] = max(self._records.get(key, 0), gems)
 
     def mines_for(self, guild_id: int, user_id: int) -> int:
         """Número de minas que eligió un miembro la última vez."""
@@ -556,10 +643,12 @@ class Mines(commands.Cog, name="Minas"):
         if error := casino_channel_error(self.casino_channel_ids, channel, "Minas"):
             await send_error(error)
             return
-        if mines is not None and mines not in MINE_CHOICES:
-            choices = ", ".join(str(m) for m in MINE_CHOICES)
-            await send_error(f"Las minas pueden ser {choices}.")
-            return
+        if mines is not None:
+            try:
+                check_mines(mines)
+            except ValueError as error:
+                await send_error(str(error))
+                return
         balance = await self.economy.balance(guild.id, user.id)
         try:
             stake = (
@@ -601,9 +690,9 @@ class Mines(commands.Cog, name="Minas"):
         if text is None:
             return None
         value = text.strip().lower().removesuffix("m")
-        if not value.isdigit() or int(value) not in MINE_CHOICES:
-            choices = ", ".join(str(m) for m in MINE_CHOICES)
-            raise ValueError(f"Las minas pueden ser {choices}.")
+        if not value.isdigit():
+            raise ValueError(f"Las minas van de {MIN_MINES} a {MAX_MINES}.")
+        check_mines(int(value))
         return int(value)
 
     @app_commands.command(
@@ -611,15 +700,14 @@ class Mines(commands.Cog, name="Minas"):
     )
     @app_commands.describe(
         cantidad="Apuesta: 500, 2k, all… (por defecto 100)",
-        minas="Cuántas minas hay en el tablero (por defecto, las de la última vez o 3)",
+        minas="De 1 a 23: más minas, más riesgo y más pago (por defecto, las de la última vez o 2)",
     )
-    @app_commands.choices(minas=[app_commands.Choice(name=str(m), value=m) for m in MINE_CHOICES])
     @app_commands.guild_only()
     async def minas(
         self,
         interaction: discord.Interaction,
         cantidad: str | None = None,
-        minas: int | None = None,
+        minas: app_commands.Range[int, MIN_MINES, MAX_MINES] | None = None,
     ) -> None:
         """Abre un tablero de Minas y empieza la partida.
 
@@ -671,4 +759,16 @@ class Mines(commands.Cog, name="Minas"):
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
     """Registra el cog con la economía compartida del bot."""
-    await bot.add_cog(Mines(bot, economy=bot.economy, casino_channel_ids=bot.casino_channel_ids))
+
+    async def load_record(guild_id: int, user_id: int) -> int:
+        profile = await bot.achievements.profile(guild_id, user_id)
+        return profile.stats.get(RECORD_STAT, 0)
+
+    await bot.add_cog(
+        Mines(
+            bot,
+            economy=bot.economy,
+            casino_channel_ids=bot.casino_channel_ids,
+            load_record=load_record,
+        )
+    )

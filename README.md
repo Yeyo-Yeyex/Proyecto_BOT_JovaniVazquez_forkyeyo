@@ -208,19 +208,21 @@ python -m bot
 - **Crash** (`/crash`, `.crash [cantidad] [auto]`): un cohete compartido
   por canal. En el embarque (7-10 s) se entra con 🚀 o con `.crash 500 2x`
   (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.
-  Luego el multiplicador sube (2x a los 4,5 s, 10x a los 15 s, tope en
-  1.000x) y 💸 Retirar cobra apuesta × multiplicador; quien sigue dentro
-  cuando explota, lo pierde. Devuelve el 99 % de media y el 1 % de las
+  Luego el multiplicador sube, lento al principio y cada vez más rápido
+  (2x a los 8 s, 10x a los 19 s, tope en 1.000x) y 💸 Retirar cobra
+  apuesta × multiplicador; quien sigue dentro cuando explota, lo pierde. Devuelve el 99 % de media y el 1 % de las
   rondas explota en 1,00x. Al explotar sale una gráfica con la curva y quién
   saltó dónde, y el mismo mensaje abre la ronda siguiente. Una edición por
   segundo durante el vuelo y una imagen por ronda.
 - **Minas** (`/minas`, `.minas [cantidad] [minas]`): un tablero de 5×5 propio
-  con 1 a 24 minas. Cada 💎 sube el multiplicador, 💰 Cobrar se lo lleva y una
-  💣 lo pierde todo; 🎲 destapa una al azar. Enseña el multiplicador de la
-  siguiente casilla y la probabilidad de que sea buena. Devuelve el 99 % de
-  media, sin imágenes (cada clic es una edición instantánea), y los cobros
-  de ×25 o más se anuncian en el canal.
-- **Logros** (`logros [miembro]`): 310 logros en 13 categorías (chat,
+  con 1 a 23 minas (2 por defecto). La primera casilla siempre es buena y
+  devuelve la apuesta; desde ahí cada 💎 sube el multiplicador, 💰 Cobrar se
+  lo lleva y una 💣 lo pierde todo. Más minas, más pago por casilla: un menú
+  enseña lo que paga cada opción. El texto cuenta las casillas (💎 7/23), lo
+  que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
+  tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
+  imágenes, y los cobros de ×25 o más se anuncian en el canal.
+- **Logros** (`logros [miembro]`): 313 logros en 13 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, Crash, Minas, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer

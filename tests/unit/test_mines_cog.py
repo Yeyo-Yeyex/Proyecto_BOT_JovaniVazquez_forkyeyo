@@ -17,7 +17,7 @@ from discord import ui
 from bot.cogs.mines import BOOM, GEM, MINE, Mines, MinesBoard
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.mines import MinesGame, Status, payout
+from bot.services.mines import MinesGame, Status, multiplier_cents, payout
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -67,7 +67,7 @@ async def open_board(cog: Mines, *, amount: str = "100", mines: int | None = 3) 
 
 
 def place(board: MinesBoard, mines: set[int]) -> MinesGame:
-    """Recoloca las minas de la partida en curso donde diga la prueba."""
+    """Coloca las minas donde diga la prueba (el primer clic debe ir fuera)."""
     assert board.game is not None
     board.game.mine_tiles = frozenset(mines)
     board.game.mines = len(mines)
@@ -106,6 +106,8 @@ async def test_minas_cobra_y_dibuja_25_casillas_mas_controles(tmp_path: Path) ->
     assert board.total_children_count <= 40
     labels = [b.label for b in all_buttons if b.label]
     assert labels[0] == "💰 Cobrar" and "🎲 Al azar" in labels
+    # En plena partida no hay menú de minas.
+    assert not [i for i in board.walk_children() if isinstance(i, ui.Select)]
 
 
 async def test_casilla_buena_sube_y_cobrar_paga(tmp_path: Path) -> None:
@@ -154,11 +156,12 @@ async def test_cobrar_sin_destapar_no_hace_nada(tmp_path: Path) -> None:
 
 async def test_limpiar_el_tablero_cobra_solo(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
-    board = await open_board(cog, mines=24)
-    place(board, set(range(1, 25)))
+    board = await open_board(cog, mines=23)
+    place(board, set(range(2, 25)))
     await board._reveal(make_interaction(), 0)
+    await board._reveal(make_interaction(), 1)
     assert board.game is not None and board.game.status is Status.CASHED
-    assert board.game.payout == 2_475
+    assert board.game.payout == 2_376
 
 
 async def test_al_azar_destapa_una_casilla(tmp_path: Path) -> None:
@@ -181,9 +184,13 @@ async def test_jugar_otra_vuelve_a_cobrar_y_las_minas_se_cambian(tmp_path: Path)
     cog = await make_cog(tmp_path)
     board = await open_board(cog)
     place(board, {0, 1, 2})
+    await board._reveal(make_interaction(), 9)
     await board._reveal(make_interaction(), 0)  # boom
-    await board._cycle_mines(make_interaction())
+    (select,) = [i for i in board.walk_children() if isinstance(i, ui.Select)]
+    assert len(select.options) == 23
+    await board._choose_mines(make_interaction(), 5)
     assert board.mines == 5 and cog.mines_for(GUILD_ID, OWNER_ID) == 5
+    assert board.total_children_count <= 40
     await board._double(make_interaction())
     assert board.stake == 200
     await board._again(make_interaction())
@@ -204,6 +211,7 @@ async def test_jugar_otra_sin_saldo_avisa(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     board = await open_board(cog, amount="all")
     place(board, {0, 1, 2})
+    await board._reveal(make_interaction(), 9)
     await board._reveal(make_interaction(), 0)
     interaction = make_interaction()
     await board._again(interaction)
@@ -246,12 +254,13 @@ async def test_minas_no_permitidas_se_rechazan(tmp_path: Path) -> None:
         channel=None,
         user=make_user(),
         amount_text="100",
-        mines=7,
+        mines=24,
         send=AsyncMock(),
         send_error=errors,
     )
     errors.assert_awaited_once()
     assert Mines.parse_mines("5") == 5
+    assert Mines.parse_mines("7m") == 7
     assert Mines.parse_mines(None) is None
 
 
@@ -282,3 +291,47 @@ async def test_cobro_enorme_se_anuncia(tmp_path: Path) -> None:
     game.cash_out()  # ×40,9
     await cog.shout(game, make_user(), channel)
     channel.send.assert_awaited_once()
+
+
+async def test_la_primera_casilla_es_segura_y_devuelve_la_apuesta(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    for _ in range(20):
+        board = await open_board(cog, amount="1", mines=23)
+        await board._reveal(make_interaction(), 12)
+        assert board.game is not None and board.game.playing
+        assert board.game.cashout_value == 1
+        await board._cash_out(make_interaction())
+        cog.boards.clear()
+
+
+async def test_el_texto_cuenta_casillas_y_lo_que_suma_la_siguiente(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    board = await open_board(cog, mines=3)
+    assert "La primera siempre es buena" in board.header()
+    place(board, {0, 1, 2})
+    for tile in (10, 11, 12):
+        await board._reveal(make_interaction(), tile)
+    text = board.header()
+    assert "💎 **3/22**" in text and "¡Tres limpias!" in text
+    extra = payout(100, 3, 4) - payout(100, 3, 3)
+    assert f"(+{extra} Y$)" in text
+    assert f"×{multiplier_cents(3, 4) // 100}," in text
+
+
+async def test_batir_el_record_se_avisa(tmp_path: Path) -> None:
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    load = AsyncMock(return_value=2)
+    cog = Mines(
+        MagicMock(), economy=EconomyService(repository), rng=random.Random(7), load_record=load
+    )
+    board = await open_board(cog, mines=1)
+    place(board, {0})
+    for tile in (5, 6):
+        await board._reveal(make_interaction(), tile)
+    assert "Récord personal" not in board.header()
+    await board._reveal(make_interaction(), 7)
+    assert "🏅 ¡Récord personal!" in board.header()
+    await board._cash_out(make_interaction())
+    assert await cog.record(GUILD_ID, OWNER_ID) == 3
+    load.assert_awaited_once()  # el récord se lee una vez y luego va en memoria

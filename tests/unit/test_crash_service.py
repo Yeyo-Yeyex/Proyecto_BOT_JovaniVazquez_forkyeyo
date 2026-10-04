@@ -40,10 +40,13 @@ def test_el_1_por_ciento_explota_en_1x_y_hay_tope() -> None:
         crash_point(1.0)
 
 
-def test_la_curva_duplica_cada_45_segundos() -> None:
+def test_la_curva_empieza_lenta_y_acelera() -> None:
     assert multiplier_at(0) == 100
-    assert multiplier_at(4.5) in (199, 200)
-    assert multiplier_at(15) == pytest.approx(1_008, abs=2)
+    assert multiplier_at(8) in (199, 200)
+    assert seconds_to(150) == pytest.approx(5.5, abs=0.1)
+    assert seconds_to(1_000) == pytest.approx(18.9, abs=0.1)
+    # Duplicar cuesta cada vez menos: 1x→2x tarda más que 10x→20x.
+    assert seconds_to(200) > 2 * (seconds_to(2_000) - seconds_to(1_000))
     assert multiplier_at(10_000) == MAX_CENTS
     for cents in (150, 200, 1_000):
         assert multiplier_at(seconds_to(cents) + 1e-6) == cents

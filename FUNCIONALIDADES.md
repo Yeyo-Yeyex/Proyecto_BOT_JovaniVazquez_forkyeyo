@@ -300,7 +300,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 - `crash [cantidad] [auto]` abre la mesa de Crash del canal o entra en la ronda que esté embarcando. La mesa es compartida: una ronda por canal y cualquiera se sube. `.crash 500 2x` entra con 500 Y$ y auto-retiro en 2x; el orden de los dos argumentos da igual y `no` quita el auto-retiro. Si el cohete está en el aire, quien escribe `crash` entra en la ronda siguiente.
 - Embarque: 10 s la primera ronda y 7 s las siguientes, con cuenta atrás que Discord mueve solo (marca de tiempo relativa, sin editar el mensaje). Botones: 🚀 Entrar (con tu ficha), ½, ×2, 💰 All-in y 🎯 Auto (formulario). La ficha y el auto-retiro de cada miembro se recuerdan entre rondas, en memoria. Si un embarque termina sin nadie, la mesa se cierra.
-- Vuelo: el multiplicador sube de forma exponencial, se duplica cada 4,5 s (2x a los 4,5 s, 10x a los 15 s, 100x a los 30 s) y tiene tope en 1.000x. 💸 Retirar cobra apuesta × multiplicador del instante en que llega la pulsación. El auto-retiro cobra justo su objetivo aunque el bot edite a saltos. Si ya no queda nadie dentro, el cohete salta directo a su punto de explosión.
+- Vuelo: el multiplicador es e^(k·t^1,4): empieza lento y acelera, para que la tensión dure donde se decide casi todo (1,5x a los 5,5 s, 2x a los 8 s, 5x a los 15 s, 10x a los 19 s, 100x a los 31 s) y tiene tope en 1.000x. 💸 Retirar cobra apuesta × multiplicador del instante en que llega la pulsación. El auto-retiro cobra justo su objetivo aunque el bot edite a saltos. Si ya no queda nadie dentro, el cohete salta directo a su punto de explosión.
 - Punto de explosión: se sortea al abrir el embarque con `secrets` y P(llegar a x) = 0,99 / x. Retirarse siempre en el mismo multiplicador devuelve el 99 % de media, sea cual sea; el 1 % de las rondas explota en 1,00x. Una prueba lo comprueba con 200.000 puntos.
 - Mensaje: durante el vuelo, texto con el multiplicador en grande, una estela que sube (un bloque por segundo) y la lista de pasajeros. Una edición por segundo como mucho, sin encadenar una sobre otra. Al explotar, una gráfica PNG (~15 KB, ~60 ms de CPU) con la curva, un punto por cada retirada con su nombre y una estrella en la explosión, más la tira de las últimas 10 rondas. Si otros mensajes han enterrado la mesa, la ronda siguiente se manda abajo y la vieja pierde los botones.
 - Dinero: la apuesta se cobra al entrar (`place_bet`) y se paga al retirarse o al explotar (`pay_winnings`, con 0 si explota). Fiscalmente es juego, como el resto del casino (art. 33.1 y 33.5.d LIRPF). El resultado de la ronda dice lo que Perro Sanxe retiene o devuelve a cada uno y quien se retira a mano lo ve además en privado. Si el bot se apaga de forma ordenada, en embarque devuelve lo apostado y en vuelo retira a todos en el multiplicador del momento.
@@ -308,13 +308,16 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.6. Minas
 
-- `minas [cantidad] [minas]` cobra y abre un tablero de 5×5 propio que solo pulsa su dueño. Minas a elegir: 1, 3, 5, 10, 15, 20 o 24 (por defecto, las de la última vez o 3). Apuesta por defecto, 100 Y$.
-- Cada casilla segura (💎) sube el multiplicador; 💰 Cobrar se lleva apuesta × multiplicador y una 💣 lo pierde todo. 🎲 Al azar destapa una casilla cualquiera. El texto dice el multiplicador actual, el de la siguiente casilla y la probabilidad de que sea buena. Al acabar se ve dónde estaban las minas (💥 la que se pisó) y, si explotó, cuánto se iba a llevar. 🔁 Jugar, ½, ×2, 💰 All-in y 💣 (recorre las opciones) preparan la siguiente.
-- Multiplicador tras k casillas con m minas: 0,99 × C(25, k) / C(25 − m, k), con fracciones exactas y tope en ×10.000. Cobrar en cualquier momento devuelve el 99 % de media; una prueba lo verifica para cada número de minas y cada k. Las minas se colocan con `secrets` al empezar y no se mueven.
-- Mensaje: componentes nuevos de Discord (`LayoutView`), un bloque con el texto y las 25 casillas como botones más una fila de controles (39 de los 40 componentes que admite un mensaje). Sin imágenes: cada clic es una edición instantánea.
+- `minas [cantidad] [minas]` cobra y abre un tablero de 5×5 propio que solo pulsa su dueño. Minas: de 1 a 23 (por defecto, las de la última vez o 2). Apuesta por defecto, 100 Y$.
+- La primera casilla siempre es buena, como en el Buscaminas de Windows: las minas se colocan con `secrets` entre las otras 24 justo después del primer clic y desde ahí no se mueven. Como no tiene riesgo, paga ×1 (devuelve la apuesta). Mediana de casillas buenas antes de explotar: 13 con 1 mina, 7 con 2, 5 con 3 y 3 con 5.
+- Cada casilla buena después sube el multiplicador; 💰 Cobrar se lleva apuesta × multiplicador y una 💣 lo pierde todo. 🎲 Al azar destapa una casilla cualquiera.
+- Multiplicador tras k casillas (contando la segura) con m minas: 0,99 × C(24, k − 1) / C(24 − m, k − 1), con fracciones exactas y tope en ×10.000. Cobrar en cualquier momento desde la segunda casilla devuelve el 99 % de media, y para la misma casilla más minas pagan más (con 2 minas la segunda paga ×1,08; con 10, ×1,69; con 23, ×23,76). Una prueba lo verifica para cada número de minas y cada k.
+- Al terminar, un menú elige de 1 a 23 minas y enseña lo que paga cada opción (segunda casilla, quinta y tablero entero), además de 🔁 Jugar, ½, ×2 y 💰 All-in.
+- Progreso: el texto cuenta las casillas (💎 7/23), dice el multiplicador y lo que sumaría la siguiente casilla con su probabilidad, celebra las casillas 3, 5, 7, 10, 15 y 20, el medio tablero y la última buena, y avisa al batir el récord personal de casillas en una partida. El récord sale de la estadística de logros `mines_streak_max`, así que sobrevive a los reinicios. Al explotar dice hasta dónde llegaste y cuánto te ibas a llevar.
+- Mensaje: componentes nuevos de Discord (`LayoutView`), un bloque con el texto y las 25 casillas como botones, una fila de botones y el menú de minas: los 40 componentes que admite un mensaje. Sin imágenes: cada clic es una edición instantánea.
 - Dinero: la apuesta se cobra al empezar (`place_bet`) y se paga al cobrar o al explotar (`pay_winnings`, con 0 si explota). Fiscalidad del juego, con la línea de Perro Sanxe en el resultado. Si el tablero caduca (3 min) o el bot se apaga con una partida a medias, se cobra sola; sin casillas destapadas, se devuelve la apuesta.
 - Los cobros de ×25 o más se anuncian en el canal.
-- Logros: 22 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, a la primera, tan cerca, ×5 a ×1.000, ganar con 24 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
+- Logros: 25 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, pisar justo después de la segura, tan cerca, ×5 a ×1.000, 10, 15 y 20 casillas en una partida, ganar con 23 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
 
 ### 6 ter.7. Criterios de aceptación
 
@@ -326,7 +329,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.8. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 310 logros en 13 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 313 logros en 13 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
 - 31 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
@@ -398,7 +401,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash y Minas. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 310 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
+9. **Logros:** 313 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

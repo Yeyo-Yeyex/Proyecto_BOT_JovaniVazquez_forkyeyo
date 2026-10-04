@@ -94,7 +94,7 @@ PRODUCED_STATS = {
     "crash_party_max",
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
     "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
-    "mines_clear_hard", "mines_random",
+    "mines_clear_hard", "mines_random", "mines_streak_max",
     UNLOCKED_STAT,
 }  # fmt: skip
 
