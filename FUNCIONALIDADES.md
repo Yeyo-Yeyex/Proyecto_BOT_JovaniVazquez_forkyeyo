@@ -321,15 +321,24 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.7. Pachinko
 
-- `pachinko [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$; mínimo, 10 Y$ (una bola tiene que valer al menos 1 Y$).
-- Cada tanda lanza 10 bolas. Cada una rebota en 10 filas de clavos a cara o cruz y cae en uno de 11 bolsillos (tablero de Galton): ×10 bolas en las esquinas (1 de cada 1.024), ×3 en los siguientes, ×1, OUT y la ranura START en el centro (24,6 %). Una bola vale la apuesta entre 10 y el pago se redondea una vez por tanda.
-- Cada bola en START gana una tirada del sorteo de la pantalla, con reserva de 4 como en las máquinas reales (保留); las que entran con la reserva llena se pierden. Atari (tres iguales): 1 de cada 40 tiradas, +30 bolas por premio gordo. Con número par paga uno; con impar es un **RUSH** que encadena premios con 3/5 de seguir (hasta 10); con el 7, **SUPER RUSH** con 4/5 (hasta 15).
+- `pachinko [cantidad] [mapa]` abre una máquina propia con botones que solo pulsa su dueño: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½, ×2, 💰 All-in, 📋 Premios (en privado) y un menú de tablero. Cantidad y tablero van en cualquier orden (`.pachinko oni 500`); en `/pachinko`, `mapa` es una lista. Apuesta por defecto, 100 Y$; mínimo, 10 Y$ (una bola tiene que valer al menos 1 Y$).
+- Cada tanda lanza 10 bolas. Cada una rebota a cara o cruz en cada fila de clavos y cae en el bolsillo que corresponde a sus rebotes a la derecha (tablero de Galton). El del centro es la ranura START. Una bola vale la apuesta entre 10 y el pago se redondea una vez por tanda.
+- Cada bola en START gana una tirada del sorteo de la pantalla, con reserva de 4 como en las máquinas reales (保留); las que entran con la reserva llena se pierden. Tres iguales es atari: con número par paga un premio gordo; con impar es un **RUSH** que encadena premios; con el 7, **SUPER RUSH**, con más probabilidad de seguir y más tope.
 - Reach: cuando no toca, 1 de cada 6 tiradas enseña dos números iguales y el del centro frena y para al lado. Se decide después del resultado y no cambia la probabilidad; la tabla de premios lo dice.
-- Números (pruebas con fracciones exactas y una simulación): devuelve el 94,6 % (57,6 % los bolsillos y 37,0 % los ataris), un atari cada ~17 tandas y 2,1 premios gordos de media por atari. Casi todas las tandas devuelven algo, pero solo una de cada diez llega a lo apostado.
-- Animación: GIF por tanda (130-330 KB, ~0,5 s de CPU fuera del event loop) con bombillas que persiguen por el borde y el marco de la pantalla, rótulo de neón, molinillos, bolas rebotando y la pantalla jugando la reserva mientras siguen cayendo. En el reach las bombillas corren y sale el cartel; en el atari la pantalla se pone dorada, las bombillas hacen arcoíris, llueven bolas y sube el contador del rush. El último fotograma es el PNG final con las bolas contadas en cada bolsillo. Turbo y Ráfaga mandan solo el PNG. Bolsillos distinguibles por forma (estrella, rombo, círculo, aspa, tulipán) y texto.
+- Tableros (`bot.services.pachinko.BOARDS`). Todos devuelven lo mismo de media y cambia el riesgo. Números con fracciones exactas en las pruebas, que también comprueban que el riesgo sube en orden:
+
+  | Tablero | Filas | Bolsillos (de la esquina al centro) | Atari | Bolas por premio | Rush / super rush | Retorno | Atari cada | Atari medio |
+  |---|---|---|---|---|---|---|---|---|
+  | 🌸 Sakura | 8 | ×5, ×3, ×2, OUT | 1/16 | 11 | 1/2 hasta 5 · 2/3 hasta 7 | 95,2 % | 7 tandas | ×1,8 |
+  | 🏮 Clásica | 10 | ×10, ×3, ×1, OUT, ×1 | 1/40 | 30 | 3/5 hasta 10 · 4/5 hasta 15 | 94,6 % | 17 tandas | ×6,3 |
+  | 🐉 Dragón | 10 | ×50, ×4, ×1, OUT | 1/50 | 69 | 3/5 hasta 10 · 4/5 hasta 15 | 94,4 % | 22 tandas | ×14,4 |
+  | 👹 Oni | 12 | ×100, ×10, ×2, OUT | 1/84 | 100 | 3/4 hasta 15 · 6/7 hasta 25 | 94,3 % | 39 tandas | ×29,6 |
+
+- Por qué se elige y no sale solo al azar: el tablero decide el riesgo, y que te cambien el riesgo sin elegirlo sería injusto. Quien quiera sorpresa tiene 🎲 Al azar en el menú (cada tanda en un tablero distinto, y el resultado dice cuál tocó). El tablero elegido se recuerda por miembro hasta reiniciar el bot; por defecto, la Clásica.
+- Animación: GIF por tanda (130-370 KB, ~0,8 s de CPU fuera del event loop) con bombillas que persiguen por el borde y el marco de la pantalla, rótulo de neón, adornos que se mueven, bolas rebotando y la pantalla jugando la reserva mientras siguen cayendo. Cada tablero tiene su tema: Sakura rosa con flores de cerezo, Clásica morada con molinillos, Dragón turquesa con perlas de tres comas y Oni rojo con llamas. Con más filas, los clavos se juntan para que quepa todo. En el reach las bombillas corren y sale el cartel; en el atari la pantalla se pone dorada, las bombillas hacen arcoíris, llueven bolas y sube el contador del rush. El último fotograma es el PNG final con las bolas contadas en cada bolsillo. Turbo y Ráfaga mandan solo el PNG. Bolsillos distinguibles por forma (estrella, rombo, círculo, aspa y tulipán) y texto.
 - Dinero: `settle_bet` cobra, paga y ajusta el IRPF en una transacción. Fiscalidad del juego (art. 33.1 y 33.5.d LIRPF), línea de Perro Sanxe en el resultado, aviso de la Renta en cada botón.
-- Los SUPER RUSH, los rush de 5 premios o más y las ganancias de ×20 la apuesta se anuncian en el canal.
-- Logros: 30 en la categoría 🌸 Pachinko (tandas, bolas por START, reach, reach perdidos, ataris, rush, 7️⃣7️⃣7️⃣, renchan de 3 a 15, esquinas, reserva llena, bolas al limbo, tanda en blanco, premios grandes, sesión larga, Ráfaga, turbo y de madrugada) y *Ludópata integral* en 💰 Casino por jugar a los seis juegos.
+- Los SUPER RUSH, los rush de 5 premios o más y las ganancias de ×20 la apuesta se anuncian en el canal, con el tablero.
+- Logros: 37 en la categoría 🌸 Pachinko (tandas, bolas por START, reach, reach perdidos, ataris, rush, 7️⃣7️⃣7️⃣, renchan de 3 a 25, esquinas, reserva llena, bolas al limbo, tanda en blanco, premios grandes, sesión larga, Ráfaga, turbo, de madrugada, 100 tandas en Sakura y en Oni, ataris en Dragón y en Oni y jugar en los cuatro tableros) y *Ludópata integral* en 💰 Casino por jugar a los seis juegos.
 
 ### 6 ter.7 bis. Tienda: El Colmado de Jovani
 

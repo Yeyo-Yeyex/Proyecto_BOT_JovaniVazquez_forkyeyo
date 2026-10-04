@@ -33,6 +33,7 @@ from bot.services.crash import Seat as CrashSeat
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
 from bot.services.mines import Status as MinesStatus
+from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
@@ -833,8 +834,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (3, "pachi_ren_3", "Renchan", "Encadena 3 premios gordos en un rush.", R),
         (5, "pachi_ren_5", "Racha imparable", "Encadena 5 premios gordos.", E),
         (10, "pachi_ren_10", "Lluvia de bolas", "Encadena 10 premios gordos.", L),
-        (15, "pachi_ren_15", "Fiebre total", "Encadena 15 premios gordos, el máximo.", M, True),
+        (15, "pachi_ren_15", "Fiebre total", "Encadena 15 premios gordos.", M, True),
+        (25, "pachi_ren_25", "El oni sonríe", "Encadena 25 premios gordos, el máximo (Oni).",
+         M, True),
     ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_board_sakura", [
+        (100, "pachi_hanami", "Hanami", "Lanza 100 tandas en el tablero Sakura.", C),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_board_oni", [
+        (100, "pachi_infierno", "Bajada a los infiernos", "Lanza 100 tandas en el tablero Oni.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_atari_dragon", [
+        (1, "pachi_dragon", "Perla del dragón", "Saca un atari en el tablero Dragón.", R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_atari_oni", [
+        (1, "pachi_oni", "Domador de onis", "Saca un atari en el tablero Oni.", E),
+        (10, "pachi_oni_10", "Amigo de los demonios", "Saca 10 ataris en el tablero Oni.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pachi_tourist",
+        name="Turista de salones",
+        description="Juega en los cuatro tableros del pachinko.",
+        category="pachinko",
+        rarity=R,
+        conditions=tuple((f"pachinko_board_{key}", 1) for key in PACHINKO_BOARDS),
+    ))  # fmt: skip
     a += _tiers("pachinko", "pachinko_corners", [
         (1, "pachi_corner", "Esquinita", "Mete una bola en un bolsillo de esquina.", C),
         (25, "pachi_corner_25", "Francotirador", "Mete 25 bolas en las esquinas.", E),
@@ -1401,6 +1426,9 @@ def pachinko_stats(
     bump("pachinko_blank", volley.total_balls == 0)
     bump("pachinko_turbo", turbo)
     bump("pachinko_night", 3 <= when.hour < 6)
+    key = volley.board.key
+    bump(f"pachinko_board_{key}")
+    bump(f"pachinko_atari_{key}", amount=sum(1 for d in volley.draws if d.atari))
     return delta
 
 
