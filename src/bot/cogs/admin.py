@@ -2,7 +2,7 @@
 
 Comandos (todos con `/` y con `.`, mismo nombre):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
-`slow`, `say`, `nick`, `role`.
+`slow`, `say`, `nick`, `role`, `bienv`.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -30,6 +30,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.repositories.welcome import WelcomeSettings
 from bot.services.moderation import (
     MAX_PURGE,
     MAX_SLOWMODE_SECONDS,
@@ -38,6 +39,7 @@ from bot.services.moderation import (
     parse_duration,
     parse_user_id,
 )
+from bot.services.welcome import GifError, classify_gif
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ AUDIT_REASON_LIMIT = 512
 MAX_NICK_LENGTH = 32
 # `say` puede mencionar usuarios, pero nunca @everyone, @here ni roles.
 SAY_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
+# Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
+GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 
 PurgeableChannel = discord.TextChannel | discord.Thread | discord.VoiceChannel
 
@@ -583,6 +587,88 @@ class Admin(commands.Cog):
                 f"🏷️ Rol {role.mention} {verb} {member.mention}.",
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+
+    # --- bienv ------------------------------------------------------------
+
+    @app_commands.command(name="bienv", description="Configura el GIF y el canal de bienvenida.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        gif="Enlace de Tenor, Giphy o .gif; «quitar» vuelve al vídeo.",
+        canal="Canal donde se da la bienvenida.",
+    )
+    async def bienv(
+        self,
+        interaction: discord.Interaction,
+        gif: app_commands.Range[str, 1, 512] | None = None,
+        canal: discord.TextChannel | None = None,
+    ) -> None:
+        """Cambia el GIF o el canal de bienvenida y enseña cómo queda (solo a ti)."""
+        await self._bienv_impl(InteractionResponder(interaction), gif, canal)
+
+    @commands.command(name="bienv")
+    async def bienv_text(
+        self,
+        ctx: commands.Context,
+        canal: discord.TextChannel | None = None,
+        *,
+        gif: str = "",
+    ) -> None:
+        """Versión de texto: `.bienv`, `.bienv <enlace>`, `.bienv quitar`, `.bienv #canal`."""
+        await self._bienv_impl(ContextResponder(ctx), gif.strip() or None, canal)
+
+    async def _bienv_impl(
+        self,
+        responder: CommandResponder,
+        gif: str | None,
+        channel: discord.TextChannel | None,
+    ) -> None:
+        """Guarda lo que haya cambiado y responde con el resumen y una vista previa.
+
+        Sin argumentos solo enseña la configuración actual.
+        """
+        guild = responder.guild
+        member = responder.member
+        repository = getattr(self.bot, "welcome", None)
+        welcome = self.bot.get_cog("Welcome")
+        if guild is None or member is None or repository is None or welcome is None:
+            await responder.send_error("La bienvenida no está disponible ahora mismo.")
+            return
+        current: WelcomeSettings = await repository.settings(guild.id)
+        gif_url = current.gif_url
+        if gif is not None:
+            if gif.lower() in GIF_RESET_WORDS:
+                gif_url = None
+            else:
+                try:
+                    classify_gif(gif)
+                except GifError as error:
+                    await responder.send_error(str(error))
+                    return
+                gif_url = gif.strip()
+        updated = WelcomeSettings(
+            gif_url=gif_url,
+            channel_id=channel.id if channel is not None else current.channel_id,
+        )
+        if updated != current:
+            await repository.save_settings(guild.id, updated)
+
+        target = welcome.welcome_channel(guild, updated)
+        lines = ["✅ Bienvenida actualizada." if updated != current else "👋 Bienvenida actual."]
+        lines.append(f"Canal: {target.mention if target else '⚠️ ninguno (crea #chat-general)'}")
+        lines.append(
+            f"GIF: <{gif_url}>" if gif_url else "GIF: ninguno, se manda el vídeo de Kratos."
+        )
+        if target is not None and not target.permissions_for(guild.me).send_messages:
+            lines.append("⚠️ No puedo escribir en ese canal; revisa mis permisos.")
+        content, embed = await welcome.preview(member, updated)
+        lines += ["", "**Así se verá:**", content]
+        await responder.send(
+            "\n".join(lines),
+            embed=embed,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

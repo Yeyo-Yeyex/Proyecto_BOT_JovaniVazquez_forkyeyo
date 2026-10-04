@@ -19,6 +19,7 @@ from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.message_stats import MessageStatsRepository
+from bot.repositories.welcome import WelcomeRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.casino",
     "bot.cogs.blackjack",
     "bot.cogs.renta",
+    "bot.cogs.patrimonio",
+    "bot.cogs.donations",
     "bot.cogs.birthdays",
     "bot.cogs.achievements",
     "bot.cogs.fun",
@@ -81,6 +84,7 @@ class BotClient(commands.Bot):
         self.casino_channel_ids = casino_channel_ids
         self.birthdays = BirthdayRepository(database_path)
         self.achievements = AchievementRepository(database_path)
+        self.welcome = WelcomeRepository(database_path)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -104,6 +108,7 @@ class BotClient(commands.Bot):
         await self.economy.repository.initialize()
         await self.birthdays.initialize()
         await self.achievements.initialize()
+        await self.welcome.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)

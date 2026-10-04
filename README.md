@@ -69,11 +69,11 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `ban` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+  | 🛡️ Admin | `ban` · `bienv` · `kick` · `lock` · `mute` · `nick` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -128,7 +128,8 @@ python -m bot
   que le mencione o le responda y suene a felicitación, da 500 Y$ a quien
   felicita y 100 Y$ más al cumpleañero, una vez por persona. Si existe un rol
   llamado `🎂 Cumpleañero`, el bot se lo pone durante el día (necesita
-  **Gestionar roles**). Los regalos no tributan IRPF.
+  **Gestionar roles**). Los regalos pagan IRPF con retención (ganancia
+  patrimonial, art. 33.1 LIRPF), aunque solo muerde a quien ya pasa del mínimo.
 - **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del
@@ -151,6 +152,17 @@ python -m bot
   recaudado este año y desde siempre, y quién más ha pagado. Todo movimiento queda en
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
+- **Impuesto sobre el Patrimonio:** cada lunes se cobra lo que pase de
+  70.000 Y$ con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley 19/1991),
+  tramos escalados al mismo factor que el mínimo. `saldo` avisa de lo que te
+  tocaría y el bot anuncia quién ha pagado. La primera semana tras desplegarlo
+  no cobra.
+- **IGIC:** el impuesto al consumo es el canario, al 7 %, para cuando haya
+  tienda (`taxes.igic`).
+- **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
+  que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
+  la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
+  10 % de lo que ganes esa semana y sin pasar del IRPF pagado.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
   mesa con botones que solo puede usar quien la abre. Cada clic en una
   apuesta cobra, gira (GIF de 2 s) y paga. Botones: rojo/negro, par/impar,
@@ -178,12 +190,12 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
-- **Logros** (`logros [miembro]`): 208 logros en 11 categorías (chat,
+- **Logros** (`logros [miembro]`): 221 logros en 11 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 16 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 18 son secretos y se ven como `???` hasta conseguirlos.
   Los 9 de la tragaperras salen como "próximamente" y no cuentan hasta que
   exista el juego. Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
@@ -225,9 +237,14 @@ python -m bot
   bot responde con un mensaje claro; los errores internos se guardan en el log.
 - Los avisos de subida de nivel se publican en el canal donde se ganó el XP
   (el chat del canal de voz si fue hablando) e incluyen el premio cobrado.
-- Al entrar alguien, el bot pregunta **¿QUIÉN ERES?** y adjunta el vídeo
-  `src/bot/assets/bienvenida.mp4` en `#chat-general`. Al salir, publica una
-  despedida con una frase aleatoria tomada de
+- Al entrar alguien, el bot le saluda con una frase de
+  `src/bot/assets/bienvenidas.txt` y el GIF del servidor (sin GIF, el vídeo
+  `src/bot/assets/bienvenida.mp4`) en el canal de bienvenida, que por
+  defecto es `#chat-general`. Si ya había estado, usa las frases de vuelta.
+  Los demás pueden pulsar **👋 Dar la bienvenida** durante su primer día:
+  200 Y$ para quien saluda y 100 Y$ para el nuevo, sin IRPF (como los
+  regalos de cumpleaños), y cuenta para logros. Un administrador cambia el GIF y el canal con
+  `bienv`. Al salir, publica una despedida con una frase aleatoria tomada de
   `src/bot/assets/despedidas.txt` en ese mismo canal.
 - `top` resuelve nombres visibles del servidor incluso para miembros que
   todavía no estén en la caché local del bot, y lo presenta en un embed con
@@ -288,6 +305,10 @@ comandos de administración necesita además Gestionar mensajes, Aislar
 temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar
 apodos y Gestionar roles, y su rol debe estar por encima de los roles que
 vaya a moderar.
+
+Las frases de bienvenida se editan en `src/bot/assets/bienvenidas.txt` con
+las mismas reglas; `{usuario}` se cambia por la mención y lo que va tras la
+línea `[vuelta]` es para quien vuelve al servidor.
 
 Las frases de despedida se editan directamente en
 `src/bot/assets/despedidas.txt`, una por línea (las líneas vacías y las que
@@ -359,9 +380,11 @@ src/bot/
 │   ├── admin.py         # Moderación solo para administradores
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
-│   ├── welcome.py      # Bienvenidas y despedidas
+│   ├── welcome.py       # Bienvenidas (GIF, frases, botón 👋) y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
+│   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
+│   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
@@ -371,11 +394,14 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
+│   ├── taxes.py         # IRPF, Patrimonio, IGIC y deducción por donativos
+│   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
+│   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
 │   ├── magik.py         # Seam carving con Pillow y numpy (testable sin Discord)
 │   ├── memes/           # Efectos de Dank Memer: registro, utilidades y efectos
@@ -383,6 +409,7 @@ src/bot/
 │   └── music_source.py   # Extracción de audio con yt-dlp (bloqueante)
 └── assets/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
+    ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
     └── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
 ```

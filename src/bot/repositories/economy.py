@@ -24,6 +24,11 @@ Modelo de datos:
 - `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
   retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
   y, en el futuro, para la declaración anual.
+- `economy_wealth_weeks` y `economy_wealth_tax`: semanas en las que ya se
+  cobró el Impuesto sobre el Patrimonio y lo que pagó cada uno.
+- `economy_donations`: donativos a las ONGs. Cada ONG tiene su monedero con
+  un `user_id` negativo (ver `bot.services.donations`), así el dinero donado
+  no desaparece: se queda en la ONG, que es lo que ella quería.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -122,6 +127,46 @@ class Treasury:
     collected_total: int
     collected_since: int
     top_contributors: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WealthCharge:
+    """Lo que pagó un miembro de Impuesto sobre el Patrimonio en una semana."""
+
+    user_id: int
+    balance: int
+    tax: int
+
+
+@dataclass(frozen=True, slots=True)
+class WealthRun:
+    """Resultado de pasar el Patrimonio por un servidor.
+
+    Attributes:
+        done_before: La semana ya estaba cobrada; no se ha tocado nada.
+        activation: Era la primera vez en este servidor: se marca la semana
+            sin cobrar, para que nadie pague por sorpresa al desplegar.
+        charges: Quién ha pagado, de más a menos.
+    """
+
+    done_before: bool = False
+    activation: bool = False
+    charges: tuple[WealthCharge, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DonationReceipt:
+    """Resultado de un donativo.
+
+    Attributes:
+        balance: Saldo de quien dona tras donar.
+        ongs_supported: A cuántas ONGs distintas ha donado ya.
+        donated_week: Lo que lleva donado esta semana.
+    """
+
+    balance: int
+    ongs_supported: int
+    donated_week: int
 
 
 class EconomyRepository:
@@ -231,6 +276,36 @@ class EconomyRepository:
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (guild_id, user_id, day)
                 );
+
+                CREATE TABLE IF NOT EXISTS economy_wealth_weeks (
+                    guild_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    processed_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_wealth_tax (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    balance INTEGER NOT NULL,
+                    tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_donations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    ong TEXT NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    week_start TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_donations_member
+                    ON economy_donations (guild_id, user_id, week_start);
 
                 CREATE TABLE IF NOT EXISTS economy_declarations (
                     guild_id INTEGER NOT NULL,
@@ -621,38 +696,56 @@ class EconomyRepository:
         refund_for: Callable[[int, int, int], int],
         window_seconds: float,
         keep: int,
+        deduction_for: Callable[[int, int, int], int] | None = None,
     ) -> None:
         """Crea las declaraciones de semanas cerradas que falten y caduca las viejas.
 
         Se calcula al vuelo cuando el usuario juega o pregunta, así no hace
-        falta ninguna tarea que recorra a todo el mundo cada lunes.
+        falta ninguna tarea que recorra a todo el mundo cada lunes. Hay
+        declaración en las semanas con casino o con donativos.
 
         Args:
             current_week: Lunes (ISO) de la semana en curso; solo se declaran
                 las anteriores.
             week_end: Fin (epoch) de una semana dado su lunes ISO.
             refund_for: Recibe `(neto, retenido, renta de otros ingresos en los
-                30 días previos al cierre)` y devuelve lo que sale a devolver.
+                30 días previos al cierre)` y devuelve lo que sale a devolver
+                del casino.
             keep: Cuántas declaraciones pendientes se guardan como máximo; las
                 más antiguas caducan y el dinero se queda en el Estado.
+            deduction_for: Recibe `(donado, base de la semana, IRPF pagado y no
+                devuelto)` y devuelve la deducción por donativos. `None`, sin
+                deducción.
         """
         # `date(day, '-6 days', 'weekday 1')` es el lunes de la semana de `day`.
         weeks = connection.execute(
             """
-            SELECT date(day, '-6 days', 'weekday 1') AS week,
-                   SUM(net) AS net, SUM(withheld) AS withheld
-            FROM economy_gambling_days
-            WHERE guild_id = ? AND user_id = ? AND day < ?
-            GROUP BY week
-            HAVING week NOT IN (
-                SELECT week_start FROM economy_declarations
-                WHERE guild_id = ? AND user_id = ?
+            SELECT week FROM (
+                SELECT date(day, '-6 days', 'weekday 1') AS week FROM economy_gambling_days
+                WHERE guild_id = :guild AND user_id = :user AND day < :current
+                UNION
+                SELECT week_start AS week FROM economy_donations
+                WHERE guild_id = :guild AND user_id = :user AND week_start < :current
             )
+            WHERE week NOT IN (
+                SELECT week_start FROM economy_declarations
+                WHERE guild_id = :guild AND user_id = :user
+            )
+            ORDER BY week
             """,
-            (guild_id, user_id, current_week, guild_id, user_id),
+            {"guild": guild_id, "user": user_id, "current": current_week},
         ).fetchall()
-        for row in weeks:
-            end = week_end(row["week"])
+        for (week,) in weeks:
+            end = week_end(week)
+            start = end - 7 * 86_400
+            net, withheld = connection.execute(
+                """
+                SELECT COALESCE(SUM(net), 0), COALESCE(SUM(withheld), 0)
+                FROM economy_gambling_days
+                WHERE guild_id = ? AND user_id = ? AND date(day, '-6 days', 'weekday 1') = ?
+                """,
+                (guild_id, user_id, week),
+            ).fetchone()
             (others,) = connection.execute(
                 """
                 SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
@@ -660,13 +753,25 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, end - window_seconds, end),
             ).fetchone()
-            refund = max(0, refund_for(int(row["net"]), int(row["withheld"]), int(others)))
+            refund = max(0, refund_for(int(net), int(withheld), int(others)))
+            if deduction_for is not None:
+                refund += self._donation_refund_in(
+                    connection,
+                    guild_id,
+                    user_id,
+                    week=week,
+                    start=start,
+                    end=end,
+                    gambling_net=int(net),
+                    gambling_withheld=int(withheld) - refund,
+                    deduction_for=deduction_for,
+                )
             connection.execute(
                 """
                 INSERT INTO economy_declarations (guild_id, user_id, week_start, refund, status)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (guild_id, user_id, row["week"], refund, "pending" if refund else "none"),
+                (guild_id, user_id, week, refund, "pending" if refund else "none"),
             )
         connection.execute(
             """
@@ -679,6 +784,44 @@ class EconomyRepository:
             """,
             (guild_id, user_id, guild_id, user_id, keep),
         )
+
+    @staticmethod
+    def _donation_refund_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        week: str,
+        start: float,
+        end: float,
+        gambling_net: int,
+        gambling_withheld: int,
+        deduction_for: Callable[[int, int, int], int],
+    ) -> int:
+        """Deducción por los donativos de `week`, limitada por el IRPF de esa semana.
+
+        La cuota es lo retenido en la semana (ingresos más casino, ya sin lo que
+        devuelve el casino) y la base, la renta sujeta de la semana.
+        """
+        (donated,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) FROM economy_donations
+            WHERE guild_id = ? AND user_id = ? AND week_start = ?
+            """,
+            (guild_id, user_id, week),
+        ).fetchone()
+        if not donated:
+            return 0
+        gross, income_withheld = connection.execute(
+            """
+            SELECT COALESCE(SUM(gross), 0), COALESCE(SUM(withheld), 0) FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+            """,
+            (guild_id, user_id, start, end),
+        ).fetchone()
+        base = int(gross) + max(gambling_net, 0)
+        tax_paid = int(income_withheld) + max(gambling_withheld, 0)
+        return max(0, deduction_for(int(donated), base, tax_paid))
 
     @staticmethod
     def _pending_in(
@@ -786,12 +929,15 @@ class EconomyRepository:
                 "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
                 (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
-            # Retenciones de ingresos y del casino, en una sola vista.
+            # Retenciones de ingresos y del casino y el Patrimonio, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, withheld, updated_at AS at FROM economy_gambling_days
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_wealth_tax
                 WHERE guild_id = :guild
             """
             total, recent = connection.execute(
@@ -816,6 +962,159 @@ class EconomyRepository:
                 collected_since=int(recent),
                 top_contributors=tuple((int(r["user_id"]), int(r["paid"])) for r in contributors),
             )
+        finally:
+            connection.close()
+
+    # -- Impuesto sobre el Patrimonio -------------------------------------------------
+
+    async def charge_wealth_tax(
+        self,
+        guild_id: int,
+        *,
+        week: str,
+        now: float,
+        tax_for: Callable[[int], int],
+    ) -> WealthRun:
+        """Cobra el Patrimonio de `week` a todos los miembros del servidor, una vez.
+
+        Todo va en una transacción: o pagan todos o nadie, y la semana queda
+        marcada. Lo cobrado va a la cuenta del Estado. Las cuentas especiales
+        (Estado y ONGs, con `user_id` <= 0) no pagan.
+
+        Args:
+            week: Lunes ISO de la semana que se cierra.
+            tax_for: Cuota en Y$ para un saldo (regla en `bot.services.taxes`).
+        """
+        return await self._run(self._charge_wealth_sync, guild_id, week, now, tax_for)
+
+    def _charge_wealth_sync(
+        self, guild_id: int, week: str, now: float, tax_for: Callable[[int], int]
+    ) -> WealthRun:
+        with self._transaction() as connection:
+            done = connection.execute(
+                "SELECT 1 FROM economy_wealth_weeks WHERE guild_id = ? AND week_start = ?",
+                (guild_id, week),
+            ).fetchone()
+            if done is not None:
+                return WealthRun(done_before=True)
+            (previous,) = connection.execute(
+                "SELECT COUNT(*) FROM economy_wealth_weeks WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+            connection.execute(
+                "INSERT INTO economy_wealth_weeks (guild_id, week_start, processed_at) "
+                "VALUES (?, ?, ?)",
+                (guild_id, week, now),
+            )
+            if not previous:
+                return WealthRun(activation=True)
+            wallets = connection.execute(
+                """
+                SELECT user_id, balance FROM economy_wallets
+                WHERE guild_id = ? AND user_id > 0 AND balance > 0
+                """,
+                (guild_id,),
+            ).fetchall()
+            charges = []
+            for row in wallets:
+                user_id, balance = int(row["user_id"]), int(row["balance"])
+                tax = min(balance, max(0, tax_for(balance)))
+                if not tax:
+                    continue
+                self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(-tax, "patrimonio"),)
+                )
+                self._credit_state_in(connection, guild_id, tax, "patrimonio")
+                connection.execute(
+                    """
+                    INSERT INTO economy_wealth_tax
+                        (guild_id, user_id, week_start, balance, tax, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, week, balance, tax, now),
+                )
+                charges.append(WealthCharge(user_id, balance, tax))
+            charges.sort(key=lambda c: (-c.tax, c.user_id))
+            return WealthRun(charges=tuple(charges))
+
+    # -- Donativos ---------------------------------------------------------------------
+
+    async def donate(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        ong: str,
+        ong_account: int,
+        amount: int,
+        week: str,
+        now: float,
+    ) -> DonationReceipt:
+        """Pasa `amount` del miembro a la cuenta de la ONG y apunta el donativo.
+
+        Raises:
+            InsufficientFundsError: Si no tiene tanto. No se mueve nada.
+        """
+        return await self._run(
+            self._donate_sync, guild_id, user_id, ong, ong_account, amount, week, now
+        )
+
+    def _donate_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        ong: str,
+        ong_account: int,
+        amount: int,
+        week: str,
+        now: float,
+    ) -> DonationReceipt:
+        if ong_account >= 0:
+            raise ValueError("Las cuentas de ONG tienen id negativo.")
+        with self._transaction() as connection:
+            balance = self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-amount, f"donativo:{ong}"),)
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance) "
+                "VALUES (?, ?, 0)",
+                (guild_id, ong_account),
+            )
+            self._apply_in_transaction(
+                connection, guild_id, ong_account, (LedgerEntry(amount, "donativo"),)
+            )
+            connection.execute(
+                """
+                INSERT INTO economy_donations
+                    (guild_id, user_id, ong, amount, week_start, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, ong, amount, week, now),
+            )
+            ongs, week_total = connection.execute(
+                """
+                SELECT COUNT(DISTINCT ong),
+                       COALESCE(SUM(CASE WHEN week_start = ? THEN amount END), 0)
+                FROM economy_donations WHERE guild_id = ? AND user_id = ?
+                """,
+                (week, guild_id, user_id),
+            ).fetchone()
+            return DonationReceipt(balance, int(ongs), int(week_total))
+
+    async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:
+        """Por ONG: `(total recaudado, donantes distintos)` en el servidor."""
+        return await self._run(self._ong_totals_sync, guild_id)
+
+    def _ong_totals_sync(self, guild_id: int) -> dict[str, tuple[int, int]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT ong, SUM(amount) AS total, COUNT(DISTINCT user_id) AS donors
+                FROM economy_donations WHERE guild_id = ? GROUP BY ong
+                """,
+                (guild_id,),
+            ).fetchall()
+            return {str(r["ong"]): (int(r["total"]), int(r["donors"])) for r in rows}
         finally:
             connection.close()
 
@@ -912,6 +1211,9 @@ class EconomyRepository:
                 "economy_tax_records",
                 "economy_gambling_days",
                 "economy_declarations",
+                "economy_wealth_weeks",
+                "economy_wealth_tax",
+                "economy_donations",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

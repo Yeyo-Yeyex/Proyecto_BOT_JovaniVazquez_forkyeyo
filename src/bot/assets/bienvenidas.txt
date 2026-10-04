@@ -1,0 +1,32 @@
+# Frases de bienvenida del bot (una por línea).
+#
+# Se puede editar sin tocar código: los cambios se aplican en la siguiente
+# entrada, sin reiniciar el bot. Las líneas vacías y las que empiezan por
+# "#" se ignoran. {usuario} se cambia por la mención del recién llegado; si
+# una frase no lo lleva, la mención va delante.
+#
+# Las frases de debajo de la línea [vuelta] son para quien ya había estado
+# en el servidor, se fue y ha vuelto.
+#
+# Tono: el de Jovani Vázquez, el cantante boricua de las canciones de café,
+# mango y desayunos. Alegre, exagerado, cariñoso y cantarín ("wepa", "ay,
+# bendito", "mi amor", "acho"), siempre de buen rollo. Sin insultos reales,
+# ataques personales ni nada que suene a acoso. No copies letras de sus
+# canciones enteras: guiños sí, estrofas no.
+¡Wepaaa! Llegó {usuario} y esto ya es un fiestón. Que alguien le prepare un cafecito, que viene de lejos.
+¡Ay, bendito! Mira quién llegó: {usuario}. Pasa, mi amor, que aquí hay café, hay mango y hay ruleta.
+¿QUIÉN ERES, {usuario}? No importa, papi: aquí se viene a gozar. Siéntate y pide un café.
+Atención, atención: {usuario} en el servidor. Esto lo celebro con un desayuno con huevo y todo.
+¡Brutal! {usuario} se unió. Te tengo 1.000 yapdollars guardaditos; gástalos con cariño, que la ruleta no perdona.
+{usuario}, bienvenido a la casa. Aquí hay más ritmo que en un jingle de los buenos.
+Llegó {usuario} y yo quisiera ser una mosca para ver la cara que pone cuando vea este servidor.
+¡Acho, {usuario}! Entraste justo a tiempo: el café está caliente y el casino, abierto.
+Que suene el reguetón, que ha llegado {usuario}. Esto es un evento, mi gente.
+{usuario} entró y el servidor ya huele a café recién colado. Ponte cómodo, que aquí nadie muerde.
+¡Wepa, {usuario}! Primer consejo de la casa: cobra el IMV todos los días. Segundo: un jugo de china antes de ir al casino.
+Se abrió la puerta y entró {usuario} con más sabor que un mango maduro. ¡Bienvenido, mi amor!
+[vuelta]
+¡Ay, mira quién volvió! {usuario}, sabía que no podías vivir sin este sabor.
+{usuario} ha vuelto, como el café de la mañana: siempre vuelve.
+¡Wepa, {usuario} de regreso! Aquí no se juzga, aquí se goza.
+¡Bendito, {usuario}! Te fuiste, pero el corazón se quedó aquí. Pasa, que te guardé un cafecito.

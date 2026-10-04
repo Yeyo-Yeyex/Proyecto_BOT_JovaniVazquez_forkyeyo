@@ -25,6 +25,7 @@ import logging
 import re
 import sqlite3
 import time
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,14 @@ from bot.services.birthdays import (
     is_greeting,
     parse_birthday,
 )
-from bot.services.economy import CURRENCY_EMOJI, EconomyService, format_amount
+from bot.services.economy import (
+    CURRENCY_EMOJI,
+    BalanceLimitError,
+    EconomyService,
+    IncomeResult,
+    format_amount,
+    tax_line,
+)
 from bot.services.levels import local_day
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -68,6 +76,14 @@ class GreetOutcome(enum.Enum):
     SELF = enum.auto()
     NOT_TODAY = enum.auto()
     REPEATED = enum.auto()
+
+
+@dataclass(frozen=True, slots=True)
+class Greeting:
+    """Resultado de una felicitación: si contó y lo que cobró quien felicita."""
+
+    outcome: GreetOutcome
+    income: IncomeResult | None = None
 
 
 class GreetButton(
@@ -133,27 +149,43 @@ class Birthdays(commands.Cog):
 
     async def greet(
         self, guild: discord.Guild, birthday_user_id: int, greeter: discord.abc.User, today: date
-    ) -> GreetOutcome:
-        """Registra y paga una felicitación si es válida."""
+    ) -> Greeting:
+        """Registra y paga una felicitación si es válida (IRPF, ver el servicio)."""
         if greeter.bot or greeter.id == birthday_user_id:
-            return GreetOutcome.SELF
+            return Greeting(GreetOutcome.SELF)
         birthday = await self.repository.get_birthday(guild.id, birthday_user_id)
         if birthday is None or not is_birthday(birthday.day, birthday.month, today):
-            return GreetOutcome.NOT_TODAY
+            return Greeting(GreetOutcome.NOT_TODAY)
         first = await self.repository.add_greeting(
             guild.id, birthday_user_id, today.year, greeter.id
         )
         if not first:
-            return GreetOutcome.REPEATED
-        await self.economy.grant(
-            guild.id, greeter.id, amount=GREETER_REWARD, reason="cumple:felicitar"
+            return Greeting(GreetOutcome.REPEATED)
+        income = await self._pay(guild.id, greeter.id, GREETER_REWARD, "cumple:felicitar")
+        bonus = await self._pay(guild.id, birthday_user_id, GREETED_BONUS, "cumple:felicitado")
+        logros.note(
+            self.bot,
+            guild.id,
+            greeter.id,
+            StatDelta(add={"greetings_sent": 1, "tax_paid": income.tax if income else 0}),
         )
-        await self.economy.grant(
-            guild.id, birthday_user_id, amount=GREETED_BONUS, reason="cumple:felicitado"
+        logros.note(
+            self.bot,
+            guild.id,
+            birthday_user_id,
+            StatDelta(add={"greetings_received": 1, "tax_paid": bonus.tax if bonus else 0}),
         )
-        logros.note(self.bot, guild.id, greeter.id, StatDelta(add={"greetings_sent": 1}))
-        logros.note(self.bot, guild.id, birthday_user_id, StatDelta(add={"greetings_received": 1}))
-        return GreetOutcome.OK
+        return Greeting(GreetOutcome.OK, income)
+
+    async def _pay(
+        self, guild_id: int, user_id: int, gross: int, concept: str
+    ) -> IncomeResult | None:
+        """Cobra un regalo de cumpleaños como ganancia patrimonial con retención."""
+        try:
+            return await self.economy.pay_income(guild_id, user_id, gross=gross, concept=concept)
+        except (OSError, sqlite3.Error, BalanceLimitError):
+            logger.exception("No se pudo pagar %s a %s", concept, user_id)
+            return None
 
     def is_birthday_today(self, guild_id: int, user_id: int) -> bool:
         """Si hoy (hora canaria) es el cumpleaños de `user_id`, según el último repaso.
@@ -171,15 +203,18 @@ class Birthdays(commands.Cog):
         if guild is None:
             return
         today = local_day(time.time())
-        outcome = (
-            GreetOutcome.NOT_TODAY
+        greeting = (
+            Greeting(GreetOutcome.NOT_TODAY)
             if year != today.year
             else await self.greet(guild, birthday_user_id, interaction.user, today)
         )
+        outcome = greeting.outcome
+        income = greeting.income
         texts = {
             GreetOutcome.OK: (
-                f"🎉 ¡Felicitado! {CURRENCY_EMOJI} +{format_amount(GREETER_REWARD)} para ti "
-                f"y +{format_amount(GREETED_BONUS)} para <@{birthday_user_id}>."
+                f"🎉 ¡Felicitado! {CURRENCY_EMOJI} +{format_amount(GREETER_REWARD)} brutos para "
+                f"ti y +{format_amount(GREETED_BONUS)} para <@{birthday_user_id}>."
+                + (f"\n{tax_line(income.gross, income.tax, income.rate)}" if income else "")
             ),
             GreetOutcome.SELF: "No puedes felicitarte a ti mismo. Buen intento.",
             GreetOutcome.NOT_TODAY: "Este cumpleaños ya pasó.",
@@ -213,7 +248,7 @@ class Birthdays(commands.Cog):
         greeted = False
         for user_id in targets:
             try:
-                outcome = await self.greet(message.guild, user_id, message.author, today)
+                outcome = (await self.greet(message.guild, user_id, message.author, today)).outcome
             except (OSError, sqlite3.Error):
                 logger.exception("No se pudo registrar una felicitación")
                 continue
@@ -253,12 +288,20 @@ class Birthdays(commands.Cog):
         await self._sync_role(guild, members)
         for member in members:
             if await self.repository.mark_celebrated(guild.id, member.id, today.year):
-                await self.economy.grant(
-                    guild.id, member.id, amount=BIRTHDAY_GIFT, reason="cumple:regalo"
-                )
-                await self._announce(guild, member, today.year)
+                income = await self._pay(guild.id, member.id, BIRTHDAY_GIFT, "cumple:regalo")
+                if income is not None:
+                    logros.note(
+                        self.bot, guild.id, member.id, StatDelta(add={"tax_paid": income.tax})
+                    )
+                await self._announce(guild, member, today.year, income)
 
-    async def _announce(self, guild: discord.Guild, member: discord.Member, year: int) -> None:
+    async def _announce(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        year: int,
+        income: IncomeResult | None = None,
+    ) -> None:
         channel = (
             discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
             or guild.system_channel
@@ -273,6 +316,7 @@ class Birthdays(commands.Cog):
                 f"Felicítale con el botón o escribiéndole: quien felicite se lleva "
                 f"{format_amount(GREETER_REWARD)} y le suma {format_amount(GREETED_BONUS)} "
                 "más al cumpleañero."
+                + (f"\n{tax_line(income.gross, income.tax, income.rate)}" if income else "")
             ),
             color=COLOR,
         )

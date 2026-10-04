@@ -28,6 +28,7 @@ from enum import Enum
 
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
+from bot.services.taxes import STATE_PERSONAL_MINIMUM, TAX_COLLECTOR, YAPDOLLARS_PER_EURO
 
 # -- Rarezas ---------------------------------------------------------------------------
 
@@ -103,6 +104,9 @@ class Achievement:
         unit: Cómo se muestra el progreso (`"min"` pasa minutos a horas,
             `"money"` formatea yapdollars).
         secret: Se muestra como `???` hasta que alguien lo desbloquea.
+        story: Texto largo que acompaña al aviso de desbloqueo. Convierte el
+            logro en un gancho de "la primera vez que…": como cada logro se
+            desbloquea una sola vez por miembro, el texto sale una sola vez.
     """
 
     id: str
@@ -113,6 +117,7 @@ class Achievement:
     conditions: tuple[tuple[str, int], ...]
     unit: str = ""
     secret: bool = False
+    story: str | None = None
 
     @property
     def stat(self) -> str:
@@ -162,6 +167,33 @@ def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -
             )
         )
     return built
+
+
+#: Renta anual en Y$ a partir de la cual empieza la retención: el mínimo
+#: personal estatal (art. 57 LIRPF) al cambio del juego. El autonómico de
+#: Canarias es algo mayor, así que la primera mordida siempre es la estatal.
+FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
+#: Lo mismo en la ventana de 30 días que usa la retención (`compute_withholding`).
+FIRST_TAX_MONTHLY = FIRST_TAX_YEARLY * 30 // 365
+
+
+def _thousands(value: int) -> str:
+    return f"{value:,}".replace(",", ".")
+
+
+#: Discurso del logro `tax_first`: el aviso de la primera retención. No se
+#: dice al entrar al servidor; salta la primera vez que alguien gana lo
+#: bastante para pagar, venga de donde venga el dinero (casino, niveles,
+#: premios de logros), porque todos esos caminos suman `tax_paid`.
+FIRST_TAX_STORY = (
+    f"🐶 **¡Ay, bendito! {TAX_COLLECTOR} te encontró.** Hasta hoy cobrabas limpito "
+    f"porque no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, "
+    f"unos {_thousands(FIRST_TAX_MONTHLY)} Y$ cada 30 días. Te pasaste, mi amor, y "
+    "desde hoy cada premio, cada nivel y cada pelotazo del casino pasa antes por su "
+    "cartera. Cuanto más ganas, más se lleva.\n"
+    "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
+    "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
+)
 
 
 def _build_catalog() -> tuple[Achievement, ...]:
@@ -327,6 +359,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("social", "greetings_received", [
         (5, "greeted_5", "Querido", "Recibe 5 felicitaciones de cumpleaños.", C),
         (20, "greeted_20", "Popular", "Recibe 20 felicitaciones de cumpleaños.", R),
+    ])  # fmt: skip
+    a += _tiers("social", "welcomes_given", [
+        (1, "welcome_1", "Comité de bienvenida", "Dale la bienvenida a alguien nuevo.", C),
+        (5, "welcome_5", "Relaciones públicas", "Da la bienvenida a 5 personas.", R),
+        (20, "welcome_20", "Portero de discoteca", "Da la bienvenida a 20 personas.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "welcomes_fast", [
+        (1, "welcome_fast", "Más rápido que Hacienda",
+         "Da la bienvenida a alguien en su primer minuto en el servidor.", R, True),
     ])  # fmt: skip
     a += _tiers("social", "msg_bot_call", [
         (1, "bot_call", "¿Me llamabas?", "Menciona al bot o di su nombre.", C, True),
@@ -543,12 +584,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (30, "imvs_30", "Disciplina", "Cobra el IMV 30 días seguidos.", R),
         (100, "imvs_100", "Inquebrantable", "Cobra el IMV 100 días seguidos.", E),
     ])  # fmt: skip
+    a.append(Achievement(
+        id="tax_first",
+        name="Bienvenido a España",
+        description="Paga IRPF por primera vez.",
+        category="economy",
+        rarity=C,
+        conditions=(("tax_paid", 1),),
+        secret=True,
+        story=FIRST_TAX_STORY,
+    ))  # fmt: skip
     a += _tiers("economy", "tax_paid", [
         (1_000, "tax_1k", "Contribuyente", "Paga 1.000 Y$ de IRPF.", C),
         (10_000, "tax_10k", "Patriota fiscal", "Paga 10.000 Y$ de IRPF.", R),
         (100_000, "tax_100k", "Favorito de Perro Sanxe", "Paga 100.000 Y$ de IRPF.", E),
         (1_000_000, "tax_1m", "Mecenas del Estado", "Paga 1.000.000 Y$ de IRPF.", L),
     ], unit="money")  # fmt: skip
+    a += _tiers("economy", "wealth_tax_paid", [
+        (1, "wealth_1", "Grande de España", "Paga el Impuesto sobre el Patrimonio.", R),
+        (10_000, "wealth_10k", "Fortuna amenazada", "Paga 10.000 Y$ de Patrimonio.", E),
+        (100_000, "wealth_100k", "Perro Sanxe te pone velas",
+         "Paga 100.000 Y$ de Patrimonio.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "wealth_tax_weeks", [
+        (10, "wealth_10w", "Rico de toda la vida", "Paga Patrimonio 10 semanas.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "donated", [
+        (1, "donate_1", "Alma caritativa", "Dona a una ONG.", C),
+        (10_000, "donate_10k", "Filántropo de postureo", "Dona 10.000 Y$ a ONGs.", R),
+        (100_000, "donate_100k", "Mecenas del chiringuito", "Dona 100.000 Y$ a ONGs.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "ongs_supported", [
+        (4, "donate_all", "Accionista del tercer sector", "Dona a las 4 ONGs.", R),
+    ])  # fmt: skip
     a += _tiers("economy", "tax_refunds", [
         (1, "refund_day", "Desgravación", "Recupera IRPF del casino perdiendo el mismo día.", C),
     ])  # fmt: skip

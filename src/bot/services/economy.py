@@ -24,19 +24,26 @@ from bot.repositories.economy import (
     BalanceLimitError,
     BetSettlement,
     DailyClaim,
+    DonationReceipt,
     EconomyRepository,
     InsufficientFundsError,
     LedgerEntry,
     Treasury,
+    WealthCharge,
+    WealthRun,
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
+    IGIC_GENERAL_RATE,
     MAX_PENDING_DECLARATIONS,
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
+    WEALTH_MINIMUM,
     compute_withholding,
+    donation_deduction,
     format_rate,
     gambling_day_tax,
+    wealth_tax,
     weekly_refund,
 )
 
@@ -48,6 +55,9 @@ __all__ = [
     "CURRENCY_SYMBOL",
     "DailyResult",
     "Declaration",
+    "DonationReceipt",
+    "WealthCharge",
+    "WealthRun",
     "RentaClaim",
     "EconomyService",
     "IncomeResult",
@@ -144,6 +154,16 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             for i, (user_id, paid) in enumerate(treasury.top_contributors)
         ]
         embed.add_field(name="Quién más ha pagado", value="\n".join(lines), inline=False)
+    embed.add_field(
+        name="Qué se cobra",
+        value=(
+            "IRPF con retención en premios, niveles, cumpleaños y saludos · IRPF del "
+            "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
+            f"de {format_amount(WEALTH_MINIMUM)} · IGIC del {IGIC_GENERAL_RATE:.0%} en "
+            "las compras, cuando haya tienda · Los donativos a ONGs desgravan en la renta"
+        ).replace("%", " %"),
+        inline=False,
+    )
     embed.set_footer(text=f"Dinero en manos de {TAX_COLLECTOR}. Ya veremos qué hace con él.")
     return embed
 
@@ -407,6 +427,7 @@ class EconomyService:
             "refund_for": weekly_refund,
             "window_seconds": PROJECTION_WINDOW_SECONDS,
             "keep": MAX_PENDING_DECLARATIONS,
+            "deduction_for": donation_deduction,
         }
 
     async def pending_declarations(self, guild_id: int, user_id: int) -> list[Declaration]:
@@ -424,6 +445,53 @@ class EconomyService:
             refunded=total,
             balance=balance,
         )
+
+    async def charge_wealth_tax(self, guild_id: int) -> tuple[date, WealthRun]:
+        """Cobra el Impuesto sobre el Patrimonio de la semana que acaba de cerrar.
+
+        Tratamiento fiscal: Impuesto sobre el Patrimonio (Ley 19/1991), escala
+        y mínimo en `bot.services.taxes.wealth_tax`. Lo recaudado va al Estado.
+        Es idempotente: si la semana ya se cobró, no hace nada.
+
+        Returns:
+            `(lunes de la semana cobrada, resultado)`.
+        """
+        now = self._clock()
+        week = week_start(local_day(now)) - timedelta(days=7)
+        run = await self.repository.charge_wealth_tax(
+            guild_id, week=week.isoformat(), now=now, tax_for=wealth_tax
+        )
+        return week, run
+
+    async def donate(
+        self, guild_id: int, user_id: int, *, ong_key: str, ong_account: int, amount: int
+    ) -> DonationReceipt:
+        """Dona `amount` a una ONG. Es un gasto: el dinero se queda en la ONG.
+
+        Tratamiento fiscal: sin IGIC ni Donaciones (ver `bot.services.donations`);
+        desgrava en el IRPF (art. 19.1 de la Ley 49/2002) y la deducción sale a
+        devolver en la renta de la semana (`donation_deduction`), desde la
+        cuenta del Estado.
+
+        Raises:
+            InsufficientFundsError: Si no le llega el saldo.
+        """
+        if amount <= 0:
+            raise ValueError("El donativo debe ser positivo.")
+        now = self._clock()
+        return await self.repository.donate(
+            guild_id,
+            user_id,
+            ong=ong_key,
+            ong_account=ong_account,
+            amount=amount,
+            week=week_start(local_day(now)).isoformat(),
+            now=now,
+        )
+
+    async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:
+        """Por ONG: `(recaudado, donantes)` en el servidor."""
+        return await self.repository.ong_totals(guild_id)
 
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""

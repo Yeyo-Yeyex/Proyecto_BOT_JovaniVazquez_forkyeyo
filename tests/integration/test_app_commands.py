@@ -39,11 +39,13 @@ EXPECTED_COMMANDS = {
     "blackjack",
     "cumple",
     "cumples",
+    "donar",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
 ADMIN_COMMANDS = {
     "purge",
+    "bienv",
     "mute",
     "unmute",
     "kick",
@@ -128,7 +130,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "⚙️ General (2)",
                 "🎵 Música (9)",
                 "📊 Niveles (2)",
-                "🎰 Casino (6)",
+                "🎰 Casino (7)",
                 "🎂 Cumpleaños (2)",
                 "🏆 Logros (1)",
                 "🔔 Entradas (1)",
