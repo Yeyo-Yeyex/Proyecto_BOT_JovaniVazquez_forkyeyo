@@ -2,7 +2,7 @@
 
 Comandos (todos con `/` y con `.`, mismo nombre):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
-`slow`, `say`, `nick`, `role`, `bienv`.
+`slow`, `say`, `nick`, `role`, `bienv`, `niveles`.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -31,6 +31,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.repositories.welcome import WelcomeSettings
+from bot.services.levels import MAX_XP_COOLDOWN_SECONDS, MIN_XP_COOLDOWN_SECONDS
 from bot.services.moderation import (
     MAX_PURGE,
     MAX_SLOWMODE_SECONDS,
@@ -60,6 +61,14 @@ MAX_NICK_LENGTH = 32
 SAY_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
+
+# Acciones de `niveles`; "mismo" vuelve a anunciar donde se sube de nivel.
+LEVEL_ACTIONS = ("importar", "activar", "desactivar", "mismo")
+NIVELES_USAGE = (
+    "Uso: `.niveles` (estado), `.niveles importar`, `.niveles activar`, "
+    "`.niveles desactivar`, `.niveles #canal`, `.niveles mismo` o `.niveles <segundos>` "
+    f"({MIN_XP_COOLDOWN_SECONDS}–{MAX_XP_COOLDOWN_SECONDS})."
+)
 
 PurgeableChannel = discord.TextChannel | discord.Thread | discord.VoiceChannel
 
@@ -669,6 +678,119 @@ class Admin(commands.Cog):
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+    # --- niveles ----------------------------------------------------------
+
+    @app_commands.command(name="niveles", description="Enciende, apaga y configura los niveles.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        accion="Qué hacer; sin acción solo enseña el estado.",
+        canal="Canal donde anunciar las subidas de nivel.",
+        cooldown="Segundos entre mensajes que dan XP.",
+    )
+    @app_commands.choices(
+        accion=[
+            app_commands.Choice(name="Importar el historial y encender", value="importar"),
+            app_commands.Choice(name="Encender", value="activar"),
+            app_commands.Choice(name="Apagar (no borra nada)", value="desactivar"),
+            app_commands.Choice(name="Anunciar donde se sube de nivel", value="mismo"),
+        ]
+    )
+    async def niveles(
+        self,
+        interaction: discord.Interaction,
+        accion: app_commands.Choice[str] | None = None,
+        canal: discord.TextChannel | None = None,
+        cooldown: app_commands.Range[int, MIN_XP_COOLDOWN_SECONDS, MAX_XP_COOLDOWN_SECONDS]
+        | None = None,
+    ) -> None:
+        """Cambia lo que se pida y responde con el estado de los niveles (solo a ti)."""
+        action = accion.value if accion is not None else None
+        await self._niveles_impl(InteractionResponder(interaction), action, canal, cooldown)
+
+    @commands.command(name="niveles")
+    async def niveles_text(self, ctx: commands.Context, *args: str) -> None:
+        """Versión de texto; acepta en cualquier orden una acción, un #canal y unos segundos."""
+        action: str | None = None
+        channel: discord.TextChannel | None = None
+        cooldown: int | None = None
+        for arg in args:
+            word = arg.lower()
+            if word in LEVEL_ACTIONS and action is None:
+                action = word
+                continue
+            if arg.isdigit() and cooldown is None:
+                cooldown = int(arg)
+                if not MIN_XP_COOLDOWN_SECONDS <= cooldown <= MAX_XP_COOLDOWN_SECONDS:
+                    await ctx.send(NIVELES_USAGE)
+                    return
+                continue
+            try:
+                converted = await commands.TextChannelConverter().convert(ctx, arg)
+            except commands.BadArgument:
+                converted = None
+            if converted is None or channel is not None:
+                await ctx.send(NIVELES_USAGE)
+                return
+            channel = converted
+        await self._niveles_impl(ContextResponder(ctx), action, channel, cooldown)
+
+    async def _niveles_impl(
+        self,
+        responder: CommandResponder,
+        action: str | None,
+        channel: discord.TextChannel | None,
+        cooldown: int | None,
+    ) -> None:
+        """Aplica la acción y los ajustes pedidos y termina con el estado actual.
+
+        Las acciones las ejecuta el cog `MessageStats`, que es quien lleva la
+        importación del historial y el XP.
+        """
+        guild = responder.guild
+        stats = self.bot.get_cog("MessageStats")
+        if guild is None or stats is None:
+            await responder.send_error("Los niveles no están disponibles ahora mismo.")
+            return
+        repository = stats.repository  # type: ignore[attr-defined]
+        if action == "mismo" and channel is not None:
+            await responder.send_error("Elige un canal o «mismo», no las dos cosas.")
+            return
+
+        lines: list[str] = []
+        if channel is not None:
+            await repository.set_level_announce_channel(guild.id, channel.id)
+            lines.append(f"📣 Las subidas de nivel se anunciarán en {channel.mention}.")
+            if not channel.permissions_for(guild.me).send_messages:
+                lines.append("⚠️ No puedo escribir en ese canal; revisa mis permisos.")
+        if cooldown is not None:
+            await repository.set_level_cooldown(guild.id, cooldown)
+            lines.append(f"⏱️ Un mensaje dará XP como mucho cada {cooldown} s.")
+
+        progress = action == "importar"
+        if action == "importar":
+            # Buscar hilos archivados puede tardar más de los 3 s de una interacción.
+            await responder.start_progress("🔎 Buscando canales e hilos...", ephemeral=True)
+            lines.append(await stats.start_import(guild, responder.channel))  # type: ignore[attr-defined]
+        elif action == "activar":
+            lines.append(await stats.activate(guild))  # type: ignore[attr-defined]
+        elif action == "desactivar":
+            await repository.disable_levels(guild.id)
+            lines.append("🔴 Niveles apagados. El XP guardado se queda donde está.")
+        elif action == "mismo":
+            await repository.set_level_announce_channel(guild.id, None)
+            lines.append("📣 Las subidas de nivel se anunciarán donde se suba.")
+
+        if lines:
+            lines.append("")
+        lines.append(await stats.overview(guild))  # type: ignore[attr-defined]
+        text = "\n".join(lines)
+        mentions = discord.AllowedMentions.none()
+        if progress:
+            await responder.finish(text, allowed_mentions=mentions)
+        else:
+            await responder.send(text, ephemeral=True, allowed_mentions=mentions)
 
 
 async def setup(bot: commands.Bot) -> None:

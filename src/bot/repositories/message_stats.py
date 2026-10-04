@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from bot.services.levels import MemberActivity
+from bot.services.levels import HISTORICAL_XP_PER_MESSAGE, MemberActivity
 
 T = TypeVar("T")
 
@@ -345,6 +345,27 @@ class MessageStatsRepository:
                 """,
                 [(guild_id, user_id, count) for user_id, count in counts.items() if count > 0],
             )
+            # Si el historial ya se convirtió en XP (niveles activados tras una
+            # importación parcial), los canales que se importan después suman
+            # su XP aquí mismo; si no, se quedarían fuera para siempre.
+            seeded = connection.execute(
+                "SELECT historical_seeded FROM guild_level_settings WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
+            if seeded is not None and seeded["historical_seeded"]:
+                connection.executemany(
+                    """
+                    INSERT INTO member_levels (guild_id, user_id, total_xp)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                        total_xp = total_xp + excluded.total_xp
+                    """,
+                    [
+                        (guild_id, user_id, count * HISTORICAL_XP_PER_MESSAGE)
+                        for user_id, count in counts.items()
+                        if count > 0
+                    ],
+                )
             connection.execute(
                 """
                 UPDATE message_import_channels
@@ -548,7 +569,8 @@ class MessageStatsRepository:
     ) -> tuple[bool, int]:
         """Activa niveles y convierte el historial a XP una sola vez.
 
-        La activación se permite solo tras una importación histórica completa.
+        La activación se permite tras una importación histórica terminada,
+        completa o parcial (con canales que no se pudieron leer).
         Cada mensaje histórico equivale al valor medio de la XP por mensaje.
 
         Returns:
@@ -566,7 +588,11 @@ class MessageStatsRepository:
             status = connection.execute(
                 "SELECT status FROM message_imports WHERE guild_id = ?", (guild_id,)
             ).fetchone()
-            if status is None or status["status"] != "completed":
+            # Una importación parcial también vale: basta un canal sin permiso
+            # de leer el historial para que no sea completa, y eso no puede
+            # dejar los niveles apagados para siempre. Los canales que falten
+            # se suman después con su XP (`_save_channel_counts_sync`).
+            if status is None or status["status"] not in {"completed", "partial"}:
                 connection.rollback()
                 return False, 0
 
