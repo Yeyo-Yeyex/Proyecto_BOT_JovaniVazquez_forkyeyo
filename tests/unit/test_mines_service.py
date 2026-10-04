@@ -28,24 +28,32 @@ def fixed(mines: set[int], stake: int = 100) -> MinesGame:
 
 
 @pytest.mark.parametrize("mines", MINE_CHOICES)
-def test_cobrar_tras_k_casillas_devuelve_el_99_por_ciento(mines: int) -> None:
+def test_cobrar_pronto_paga_menos_y_nunca_se_gana_a_la_larga(mines: int) -> None:
     # Valor esperado exacto de "destapar k y cobrar": P(sobrevivir k) × mult.
+    previous_mult, previous_expected = Fraction(0), Fraction(0)
     for k in range(1, TILES - mines + 1):
         survive = Fraction(math.comb(TILES - mines, k), math.comb(TILES, k))
         mult = multiplier(mines, k)
-        if mult < MAX_MULTIPLIER:
-            assert survive * mult == Fraction(99, 100)
-        else:
-            assert survive * mult <= Fraction(99, 100)
+        expected = survive * mult
+        assert expected < 1
+        assert mult >= previous_mult
+        if 1 < mult < MAX_MULTIPLIER:
+            assert expected == 1 - Fraction(13, 100) * survive
+            # Fuera del suelo de ×1, cuanto más se arriesga, mejor retorno.
+            assert expected >= previous_expected
+            previous_expected = expected
+        previous_mult = mult
 
 
 def test_multiplicadores_conocidos() -> None:
-    assert multiplier_cents(1, 1) == 103  # 0,99 × 25/24
-    assert multiplier_cents(3, 1) == 112
-    assert multiplier_cents(24, 1) == 2_475
+    assert multiplier_cents(1, 1) == 100  # 25/24 − 0,13 < 1: se queda en ×1
+    assert multiplier_cents(3, 1) == 100  # 25/22 − 0,13 = 1,006
+    assert multiplier_cents(3, 2) == 116
+    assert multiplier_cents(3, 10) == 492
+    assert multiplier_cents(24, 1) == 2_487
     assert multiplier(3, 0) == 1
     assert multiplier(10, 15) == MAX_MULTIPLIER
-    assert payout(100, 24, 1) == 2_475
+    assert payout(100, 24, 1) == 2_487
     assert format_multiplier(2_475) == "×24,75"
 
 
@@ -102,7 +110,7 @@ def test_limpiar_el_tablero() -> None:
     game = fixed(set(range(1, 25)))
     assert game.reveal(0)
     assert game.cleared and game.next_cents is None
-    assert game.cash_out() == 2_475
+    assert game.cash_out() == 2_487
 
 
 def test_al_azar_elige_una_cerrada_y_lo_cuenta() -> None:

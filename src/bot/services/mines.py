@@ -9,13 +9,18 @@ quiera, y si pisa una mina lo pierde todo. Las minas se colocan al empezar
 con el azar del sistema operativo, antes del primer clic, y no se mueven.
 
 El multiplicador tras `k` casillas seguras con `m` minas es el inverso de
-la probabilidad de haber llegado hasta ahí, por el retorno al jugador:
+la probabilidad de haber llegado hasta ahí (lo justo) menos una cantidad
+fija, y nunca baja de ×1:
 
-    0,99 × C(25, k) / C(25 − m, k)
+    C(25, k) / C(25 − m, k) − 0,13
 
-Así que cobrar en cualquier momento devuelve de media el 99 % de lo
-apostado, se juegue como se juegue. Se calcula con fracciones exactas
-para que el pago no dependa de redondeos de coma flotante.
+Restar lo mismo a todos los multiplicadores castiga sobre todo los pequeños:
+cobrar tras una o dos casillas casi no da nada, y la ventaja de la casa se
+va a 0 cuanto más se arriesga. Con P = probabilidad de haber sobrevivido, el
+retorno medio de cobrar ahí es 1 − 0,13 · P: un 88 % si cobras con 3 minas
+tras la primera casilla, un 97 % tras la décima. Nunca pasa del 100 %, así
+que ninguna forma de jugar gana a la larga. Se calcula con fracciones
+exactas para que el pago no dependa de redondeos de coma flotante.
 """
 
 from __future__ import annotations
@@ -31,8 +36,8 @@ TILES = SIZE * SIZE
 #: Minas que se pueden elegir. El botón 💣 las recorre en este orden.
 MINE_CHOICES: tuple[int, ...] = (1, 3, 5, 10, 15, 20, 24)
 DEFAULT_MINES = 3
-#: Retorno al jugador: 99 %.
-RTP = Fraction(99, 100)
+#: Lo que se resta al multiplicador justo. Más alto = cobrar pronto paga menos.
+EARLY_PENALTY = Fraction(13, 100)
 #: Tope del multiplicador (×10.000). Con muchas minas la fórmula da millones;
 #: el tope casi no cambia el retorno (hace falta muchísima suerte para
 #: llegar) y evita que una partida rompa la economía del servidor.
@@ -52,7 +57,7 @@ def multiplier(mines: int, revealed: int) -> Fraction:
     if revealed == 0:
         return Fraction(1)
     fair = Fraction(math.comb(TILES, revealed), math.comb(TILES - mines, revealed))
-    return min(RTP * fair, MAX_MULTIPLIER)
+    return min(max(fair - EARLY_PENALTY, Fraction(1)), MAX_MULTIPLIER)
 
 
 def multiplier_cents(mines: int, revealed: int) -> int:

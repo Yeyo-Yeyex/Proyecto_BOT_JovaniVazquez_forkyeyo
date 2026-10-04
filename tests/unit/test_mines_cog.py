@@ -158,7 +158,7 @@ async def test_limpiar_el_tablero_cobra_solo(tmp_path: Path) -> None:
     place(board, set(range(1, 25)))
     await board._reveal(make_interaction(), 0)
     assert board.game is not None and board.game.status is Status.CASHED
-    assert board.game.payout == 2_475
+    assert board.game.payout == 2_487
 
 
 async def test_al_azar_destapa_una_casilla(tmp_path: Path) -> None:

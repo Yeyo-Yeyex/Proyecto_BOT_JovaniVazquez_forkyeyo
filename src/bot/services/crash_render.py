@@ -28,7 +28,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from bot.services.crash import format_multiplier, seconds_to
+from bot.services.crash import curve, format_multiplier, seconds_to
 
 FONT_PATH = (
     Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
@@ -98,14 +98,13 @@ class CrashRenderer:
         self._grid(draw, top_cents, py, x0, x1)
 
         if crash_cents > 100:
-            # Curva muestreada a intervalos de tiempo iguales: el multiplicador
-            # en el paso i es crash^(i/steps), que es la misma exponencial.
+            # Curva muestreada a intervalos de tiempo iguales, con la misma
+            # fórmula que el vuelo (`crash.curve`).
             steps = 160
-            growth = math.log(crash_cents / 100)
-            points = [
-                (px(duration * i / steps), py(100 * math.exp(growth * i / steps)))
-                for i in range(steps + 1)
-            ]
+            points = []
+            for i in range(steps + 1):
+                t = duration * i / steps
+                points.append((px(t), py(min(100 * curve(t), crash_cents))))
             fill = [*points, (points[-1][0], y0), (x0, y0)]
             draw.polygon(fill, fill=(*CURVE_FILL, 38))
             draw.line(points, fill=CURVE, width=5 * s, joint="curve")
