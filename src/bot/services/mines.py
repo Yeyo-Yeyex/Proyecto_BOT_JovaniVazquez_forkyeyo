@@ -3,24 +3,26 @@
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.mines`) cobra al
 empezar, paga al retirarse y pinta el tablero con botones.
 
-El jugador elige cuántas minas hay (`MINE_CHOICES`) y va destapando
-casillas. Cada casilla segura sube el multiplicador; puede cobrar cuando
-quiera, y si pisa una mina lo pierde todo. Las minas se colocan al empezar
-con el azar del sistema operativo, antes del primer clic, y no se mueven.
+El jugador elige cuántas minas hay (de 1 a 23) y va destapando casillas.
+Cada casilla segura sube el multiplicador; puede cobrar cuando quiera, y si
+pisa una mina lo pierde todo.
 
-El multiplicador tras `k` casillas seguras con `m` minas es el inverso de
-la probabilidad de haber llegado hasta ahí (lo justo) menos una cantidad
-fija, y nunca baja de ×1:
+**La primera casilla siempre es segura**, como en el Buscaminas de Windows:
+las minas se colocan, con el azar del sistema operativo, entre las otras 24
+casillas justo después del primer clic, y a partir de ahí no se mueven.
+Como esa casilla no tiene riesgo, paga ×1 (devuelve la apuesta). Por eso el
+máximo son 23 minas: con 24 no quedaría ninguna casilla buena tras la primera.
 
-    C(25, k) / C(25 − m, k) − 0,13
+Desde la segunda casilla, el multiplicador es el inverso de la probabilidad
+de haber llegado hasta ahí, por el retorno al jugador. Tras `k` casillas
+(contando la primera) con `m` minas:
 
-Restar lo mismo a todos los multiplicadores castiga sobre todo los pequeños:
-cobrar tras una o dos casillas casi no da nada, y la ventaja de la casa se
-va a 0 cuanto más se arriesga. Con P = probabilidad de haber sobrevivido, el
-retorno medio de cobrar ahí es 1 − 0,13 · P: un 88 % si cobras con 3 minas
-tras la primera casilla, un 97 % tras la décima. Nunca pasa del 100 %, así
-que ninguna forma de jugar gana a la larga. Se calcula con fracciones
-exactas para que el pago no dependa de redondeos de coma flotante.
+    0,99 × C(24, k − 1) / C(24 − m, k − 1)
+
+Así que cobrar en cualquier momento a partir de la segunda devuelve de media
+el 99 % de lo apostado, se juegue como se juegue, y más minas = más riesgo =
+más multiplicador por casilla. Se calcula con fracciones exactas para que el
+pago no dependa de redondeos de coma flotante.
 """
 
 from __future__ import annotations
@@ -33,31 +35,52 @@ from fractions import Fraction
 
 SIZE = 5
 TILES = SIZE * SIZE
-#: Minas que se pueden elegir. El botón 💣 las recorre en este orden.
-MINE_CHOICES: tuple[int, ...] = (1, 3, 5, 10, 15, 20, 24)
-DEFAULT_MINES = 3
-#: Lo que se resta al multiplicador justo. Más alto = cobrar pronto paga menos.
-EARLY_PENALTY = Fraction(13, 100)
+MIN_MINES = 1
+#: 24 casillas tras la primera y al menos una buena: como mucho 23 minas.
+MAX_MINES = TILES - 2
+#: Con 2 minas la mitad de las partidas pasan de 7 casillas.
+DEFAULT_MINES = 2
+#: Retorno al jugador desde la segunda casilla: 99 %.
+RTP = Fraction(99, 100)
 #: Tope del multiplicador (×10.000). Con muchas minas la fórmula da millones;
 #: el tope casi no cambia el retorno (hace falta muchísima suerte para
 #: llegar) y evita que una partida rompa la economía del servidor.
 MAX_MULTIPLIER = Fraction(10_000)
 
 
+def check_mines(mines: int) -> None:
+    """Comprueba que el número de minas cabe en el tablero.
+
+    Raises:
+        ValueError: Con un mensaje mostrable si no está entre 1 y 23.
+    """
+    if not MIN_MINES <= mines <= MAX_MINES:
+        raise ValueError(f"Las minas van de {MIN_MINES} a {MAX_MINES}.")
+
+
+def survival(mines: int, revealed: int) -> Fraction:
+    """Probabilidad de destapar `revealed` casillas buenas seguidas.
+
+    La primera es segura, así que el riesgo empieza en la segunda.
+    """
+    if revealed <= 1:
+        return Fraction(1)
+    others = TILES - 1
+    return Fraction(math.comb(others - mines, revealed - 1), math.comb(others, revealed - 1))
+
+
 def multiplier(mines: int, revealed: int) -> Fraction:
-    """Multiplicador exacto tras `revealed` casillas seguras (1 si ninguna).
+    """Multiplicador exacto tras `revealed` casillas seguras (×1 con 0 o 1).
 
     Raises:
         ValueError: Si los números no caben en el tablero.
     """
-    if not 1 <= mines < TILES:
-        raise ValueError("Número de minas fuera de rango.")
+    check_mines(mines)
     if not 0 <= revealed <= TILES - mines:
         raise ValueError("Más casillas seguras de las que hay.")
-    if revealed == 0:
+    if revealed <= 1:
         return Fraction(1)
-    fair = Fraction(math.comb(TILES, revealed), math.comb(TILES - mines, revealed))
-    return min(max(fair - EARLY_PENALTY, Fraction(1)), MAX_MULTIPLIER)
+    return min(RTP / survival(mines, revealed), MAX_MULTIPLIER)
 
 
 def multiplier_cents(mines: int, revealed: int) -> int:
@@ -74,14 +97,6 @@ def format_multiplier(cents: int) -> str:
     """`124` → `×1,24`; los miles llevan punto."""
     whole, frac = divmod(cents, 100)
     return "×" + f"{whole:,}".replace(",", ".") + f",{frac:02d}"
-
-
-def next_mine_choice(mines: int) -> int:
-    """La siguiente opción de minas tras `mines`, volviendo a la primera."""
-    if mines not in MINE_CHOICES:
-        return DEFAULT_MINES
-    index = MINE_CHOICES.index(mines)
-    return MINE_CHOICES[(index + 1) % len(MINE_CHOICES)]
 
 
 class Status(Enum):
@@ -102,32 +117,34 @@ class MinesGame:
 
     Attributes:
         stake: Lo apostado (ya cobrado por la economía).
-        mine_tiles: Posiciones de las minas (0–24, por filas).
+        mine_tiles: Posiciones de las minas (0–24, por filas). Vacío hasta el
+            primer clic, que es cuando se colocan.
         revealed: Casillas seguras destapadas, en el orden en que se abrieron.
         exploded: La mina que se pisó, si se pisó alguna.
         random_picks: Cuántas casillas se abrieron con 🎲 (para los logros).
+        rng: Azar con el que se colocan las minas al primer clic.
     """
 
     stake: int
     mines: int
-    mine_tiles: frozenset[int]
+    mine_tiles: frozenset[int] = frozenset()
     revealed: list[int] = field(default_factory=list)
     status: Status = Status.PLAYING
     exploded: int | None = None
     random_picks: int = 0
+    rng: random.Random = field(default_factory=random.SystemRandom, repr=False)
 
     @classmethod
     def new(cls, stake: int, mines: int, rng: random.Random) -> MinesGame:
-        """Coloca las minas al azar y empieza la partida.
+        """Empieza una partida; las minas se colocan en el primer clic.
 
         Raises:
-            ValueError: Si la apuesta no es positiva o las minas no son válidas.
+            ValueError: Si la apuesta no es positiva o las minas no caben.
         """
         if stake <= 0:
             raise ValueError("La apuesta debe ser positiva.")
-        if mines not in MINE_CHOICES:
-            raise ValueError("Número de minas no permitido.")
-        return cls(stake=stake, mines=mines, mine_tiles=frozenset(rng.sample(range(TILES), mines)))
+        check_mines(mines)
+        return cls(stake=stake, mines=mines, rng=rng)
 
     # -- Estado -----------------------------------------------------------------------
 
@@ -171,7 +188,9 @@ class MinesGame:
 
     @property
     def safe_chance(self) -> Fraction:
-        """Probabilidad de que la siguiente casilla sea segura."""
+        """Probabilidad de que la siguiente casilla sea segura (1 en la primera)."""
+        if self.gems == 0:
+            return Fraction(1)
         hidden = TILES - self.gems
         return Fraction(self.safe_total - self.gems, hidden)
 
@@ -179,6 +198,13 @@ class MinesGame:
     def cashout_value(self) -> int:
         """Lo que se cobraría ahora mismo."""
         return payout(self.stake, self.mines, self.gems)
+
+    @property
+    def next_value(self) -> int | None:
+        """Lo que se cobraría tras la siguiente casilla buena."""
+        if self.cleared:
+            return None
+        return payout(self.stake, self.mines, self.gems + 1)
 
     @property
     def payout(self) -> int:
@@ -194,11 +220,17 @@ class MinesGame:
 
     # -- Acciones ---------------------------------------------------------------------
 
+    def _place_mines(self, first: int) -> None:
+        """Coloca las minas entre las casillas que no son la del primer clic."""
+        others = [t for t in range(TILES) if t != first]
+        self.mine_tiles = frozenset(self.rng.sample(others, self.mines))
+
     def reveal(self, tile: int, *, random_pick: bool = False) -> bool:
         """Destapa `tile`. Devuelve `True` si era segura.
 
-        Si era la última casilla segura no cobra sola: el cog llama a
-        `cash_out` justo después (`cleared`).
+        En el primer clic coloca las minas, así que siempre es segura. Si era
+        la última casilla segura no cobra sola: el cog llama a `cash_out`
+        justo después (`cleared`).
 
         Raises:
             MinesError: Si la partida terminó o la casilla ya estaba abierta.
@@ -209,6 +241,8 @@ class MinesGame:
             raise MinesError("Esa casilla no existe.")
         if tile in self.revealed:
             raise MinesError("Esa casilla ya está destapada.")
+        if not self.mine_tiles:
+            self._place_mines(tile)
         if random_pick:
             self.random_picks += 1
         if tile in self.mine_tiles:
@@ -240,3 +274,42 @@ class MinesGame:
         if not self.playing:
             raise MinesError("La partida ya ha terminado.")
         return rng.choice(self.hidden)
+
+
+# -- Mensajes de progreso -----------------------------------------------------------------
+
+
+def milestone(gems: int, safe_total: int) -> str | None:
+    """Frase para las casillas que merecen celebrarse; `None` para el resto.
+
+    Se dicen al llegar, no después, para que avanzar se note casilla a casilla.
+    """
+    if gems == safe_total:
+        return "🏁 ¡TABLERO LIMPIO!"
+    if gems == safe_total - 1 and gems > 1:
+        return "😰 Solo queda una buena…"
+    if safe_total >= 6 and gems == (safe_total + 1) // 2:
+        return "🌓 ¡Medio tablero!"
+    return {
+        3: "🔥 ¡Tres limpias!",
+        5: "🔥🔥 ¡Racha de cinco!",
+        7: "💪 ¡Siete, mi amor!",
+        10: "🚀 ¡Diez casillas!",
+        15: "👑 ¡Quince! Esto ya es leyenda.",
+        20: "🤯 ¡VEINTE!",
+    }.get(gems)
+
+
+def risk_summary(mines: int) -> str:
+    """Resumen de una opción de minas para el menú: pagos de ejemplo y techo.
+
+    Ejemplo: `2ª ×1,03 · 5ª ×1,35 · todo ×276`.
+    """
+    safe = TILES - mines
+    parts = [f"2ª {format_multiplier(multiplier_cents(mines, 2))}"]
+    if safe >= 5:
+        parts.append(f"5ª {format_multiplier(multiplier_cents(mines, 5))}")
+    top = multiplier(mines, safe)
+    top_text = format_multiplier(multiplier_cents(mines, safe)).split(",")[0]
+    parts.append(f"todo {top_text}" + ("+" if top >= MAX_MULTIPLIER else ""))
+    return " · ".join(parts)
