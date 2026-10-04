@@ -11,7 +11,8 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
-`blackjack_stats`, `slots_stats`, `casino_stats`) y se lo pasan al cog de logros.
+`blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `casino_stats`) y se
+lo pasan al cog de logros.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
 Si usa una estadística nueva, el juego que la produce tiene que sumarla.
@@ -27,6 +28,9 @@ from datetime import datetime
 from enum import Enum
 
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
+from bot.services.crash import Seat as CrashSeat
+from bot.services.mines import MinesGame
+from bot.services.mines import Status as MinesStatus
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
@@ -89,6 +93,8 @@ CATEGORIES: tuple[Category, ...] = (
     Category("blackjack", "🃏 Blackjack"),
     Category("casino", "💰 Casino"),
     Category("slots", "🎰 Tragaperras"),
+    Category("crash", "🚀 Crash"),
+    Category("mines", "💣 Minas"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -670,6 +676,117 @@ def _build_catalog() -> tuple[Achievement, ...]:
         conditions=(("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1)),
     ))  # fmt: skip
 
+    # 🚀 Crash --------------------------------------------------------------------------
+    a += _tiers("crash", "crash_rounds", [
+        (1, "crash_1", "Despegue", "Juega tu primera ronda de Crash.", C),
+        (100, "crash_100", "Piloto", "Juega 100 rondas de Crash.", R),
+        (1_000, "crash_1k", "Astronauta", "Juega 1.000 rondas de Crash.", E),
+        (5_000, "crash_5k", "Vives en órbita", "Juega 5.000 rondas de Crash.", L),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_cashouts", [
+        (10, "crashc_10", "Paracaidista", "Retírate a tiempo 10 veces.", C),
+        (100, "crashc_100", "Saltador profesional", "Retírate a tiempo 100 veces.", R),
+        (1_000, "crashc_1k", "Siempre a tiempo", "Retírate a tiempo 1.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_cashout_max", [
+        (200, "crash_x2", "Doble o nada", "Retírate en 2x o más.", C),
+        (1_000, "crash_x10", "Diez veces", "Retírate en 10x o más.", R),
+        (5_000, "crash_x50", "Estratosfera", "Retírate en 50x o más.", E),
+        (10_000, "crash_x100", "Centenario", "Retírate en 100x o más.", L),
+        (100_000, "crash_x1000", "Hasta la Luna", "Retírate en 1.000x.", M, True),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_win_max", [
+        (10_000, "crash_fuel", "Combustible", "Gana 10.000 Y$ en una ronda de Crash.", R),
+        (100_000, "crash_gold", "Cohete de oro", "Gana 100.000 Y$ en una ronda de Crash.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("crash", "crash_auto", [
+        (10, "crasha_10", "Control de crucero", "Cobra 10 veces con el auto-retiro.", C),
+        (100, "crasha_100", "Sin manos", "Cobra 100 veces con el auto-retiro.", R),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_close", [
+        (1, "crash_close", "Por los pelos", "Retírate a menos de un 5 % de la explosión.", R),
+        (10, "crash_close_10", "Nervios de acero", "Retírate por los pelos 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_last_out", [
+        (1, "crash_last", "El último en saltar",
+         "Sé el último en retirarse con más gente aún dentro.", R),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_instant", [
+        (1, "crash_ramp", "Ni despegó", "Pierde en una ronda que explota en 1,00x.", C, True),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_greedy", [
+        (1, "crash_greedy", "La avaricia rompe el saco",
+         "Pierde en una ronda que llegó a 10x.", R, True),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_moon", [
+        (1, "crash_moon", "Testigo lunar", "Juega una ronda que llega a 100x.", E, True),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_party_max", [
+        (3, "crash_crew", "Tripulación", "Juega una ronda con 3 personas.", C),
+        (6, "crash_charter", "Vuelo chárter", "Juega una ronda con 6 personas.", R),
+    ])  # fmt: skip
+
+    # 💣 Minas --------------------------------------------------------------------------
+    a += _tiers("mines", "mines_games", [
+        (1, "mines_1", "Zapador", "Juega tu primera partida de Minas.", C),
+        (100, "mines_100", "Artificiero", "Juega 100 partidas de Minas.", R),
+        (1_000, "mines_1k", "Campo minado", "Juega 1.000 partidas de Minas.", E),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_gems", [
+        (100, "gems_100", "Buscador", "Destapa 100 diamantes.", C),
+        (1_000, "gems_1k", "Minero", "Destapa 1.000 diamantes.", R),
+        (10_000, "gems_10k", "Mina de diamantes", "Destapa 10.000 diamantes.", E),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_cashouts", [
+        (10, "minesc_10", "Retirada a tiempo", "Cobra 10 partidas de Minas.", C),
+        (100, "minesc_100", "Sangre fría", "Cobra 100 partidas de Minas.", R),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_booms", [
+        (1, "boom_1", "Boom", "Pisa una mina.", C),
+        (100, "boom_100", "Saltaminas", "Pisa 100 minas.", R),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_first_boom", [
+        (1, "boom_first", "A la primera", "Pisa una mina en la primera casilla.", C, True),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_almost", [
+        (1, "boom_almost", "Tan cerca", "Pisa una mina cuando solo quedaba una casilla buena.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_mult_max", [
+        (500, "mines_x5", "Cinco veces", "Cobra en ×5 o más.", C),
+        (2_000, "mines_x20", "Veinte veces", "Cobra en ×20 o más.", R),
+        (10_000, "mines_x100", "Cien veces", "Cobra en ×100 o más.", E),
+        (100_000, "mines_x1000", "Mil veces", "Cobra en ×1.000 o más.", L),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_win_max", [
+        (10_000, "mines_rich", "Veta de oro", "Gana 10.000 Y$ en una partida de Minas.", R),
+        (100_000, "mines_richer", "Filón", "Gana 100.000 Y$ en una partida de Minas.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("mines", "mines_24", [
+        (1, "mines_24", "Ruleta rusa al revés", "Gana con 24 minas en el tablero.", E),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_clear", [
+        (1, "mines_clear", "Desminado", "Destapa todas las casillas buenas.", R),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_clear_hard", [
+        (1, "mines_clear_5", "Artificiero de élite",
+         "Destapa todas las casillas buenas con 5 minas o más.", M, True),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_random", [
+        (50, "mines_dice", "Que decida el destino", "Destapa 50 casillas con 🎲.", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="casino_all_games",
+        name="Todoterreno",
+        description="Juega a la ruleta, al blackjack, a la tragaperras, al Crash y a Minas.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1),
+        ),
+    ))  # fmt: skip
+
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
         (10_000, "rich_10k", "Clase media", "Ten 10.000 Y$ a la vez.", C),
@@ -1081,4 +1198,63 @@ def slots_stats(
     bump("slots_turbo", turbo)
     bump("slots_pot_fed", amount=0 if free else slots_pot_share(stake))
     bump("slots_night", 3 <= when.hour < 6)
+    return delta
+
+
+def crash_stats(seat: CrashSeat, *, crash_cents: int, players: int, last_out: bool) -> StatDelta:
+    """Contadores de un jugador en una ronda de Crash ya pagada (sin lo común del casino).
+
+    Args:
+        seat: Su asiento, con el multiplicador al que se retiró (si lo hizo).
+        crash_cents: Punto de explosión de la ronda.
+        players: Jugadores de la ronda.
+        last_out: Si fue el último en retirarse quedando gente dentro.
+    """
+    delta = StatDelta(add={"crash_rounds": 1}, peak={"crash_party_max": players})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            add[stat] = add.get(stat, 0) + 1
+
+    cashed = seat.cashed_cents
+    if cashed is not None:
+        bump("crash_cashouts")
+        delta.peak["crash_cashout_max"] = cashed
+        if seat.net > 0:
+            delta.peak["crash_win_max"] = seat.net
+        bump("crash_auto", seat.by_auto)
+        # A menos de un 5 % de la explosión: 2,00x con explosión en 2,09x.
+        bump("crash_close", crash_cents * 100 <= cashed * 105)
+        bump("crash_last_out", last_out)
+    else:
+        bump("crash_instant", crash_cents == 100)
+        bump("crash_greedy", crash_cents >= 1_000)
+    bump("crash_moon", crash_cents >= 10_000)
+    return delta
+
+
+def mines_stats(game: MinesGame) -> StatDelta:
+    """Contadores de una partida de Minas terminada (sin lo común del casino)."""
+    delta = StatDelta(add={"mines_games": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("mines_gems", amount=game.gems)
+    bump("mines_random", amount=game.random_picks)
+    if game.status is MinesStatus.CASHED:
+        bump("mines_cashouts")
+        delta.peak["mines_mult_max"] = game.cents
+        if game.net > 0:
+            delta.peak["mines_win_max"] = game.net
+        bump("mines_24", game.mines == 24)
+        bump("mines_clear", game.cleared)
+        bump("mines_clear_hard", game.cleared and game.mines >= 5)
+    elif game.status is MinesStatus.BUSTED:
+        bump("mines_booms")
+        bump("mines_first_boom", game.gems == 0)
+        bump("mines_almost", game.gems >= 1 and game.safe_total - game.gems == 1)
     return delta

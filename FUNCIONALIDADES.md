@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack y la tragaperras (`ruleta`, `blackjack`/`.bj`, `slots`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash y Minas (`ruleta`, `blackjack`/`.bj`, `slots`, `crash`, `minas`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -296,20 +296,40 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Los botes y los premios de ×50 o más se anuncian en el canal.
 - Logros: 50 en la categoría 🎰 Tragaperras (tríos de cada símbolo, botes, medio premio, por un pelo, giros gratis, máquina caliente, turbo, Auto, sesiones largas, aportes al bote, de madrugada…) y *Trilero* en 💰 Casino por jugar a los tres juegos.
 
-### 6 ter.5. Criterios de aceptación
+### 6 ter.5. Crash
+
+- `crash [cantidad] [auto]` abre la mesa de Crash del canal o entra en la ronda que esté embarcando. La mesa es compartida: una ronda por canal y cualquiera se sube. `.crash 500 2x` entra con 500 Y$ y auto-retiro en 2x; el orden de los dos argumentos da igual y `no` quita el auto-retiro. Si el cohete está en el aire, quien escribe `crash` entra en la ronda siguiente.
+- Embarque: 10 s la primera ronda y 7 s las siguientes, con cuenta atrás que Discord mueve solo (marca de tiempo relativa, sin editar el mensaje). Botones: 🚀 Entrar (con tu ficha), ½, ×2, 💰 All-in y 🎯 Auto (formulario). La ficha y el auto-retiro de cada miembro se recuerdan entre rondas, en memoria. Si un embarque termina sin nadie, la mesa se cierra.
+- Vuelo: el multiplicador sube de forma exponencial, se duplica cada 4,5 s (2x a los 4,5 s, 10x a los 15 s, 100x a los 30 s) y tiene tope en 1.000x. 💸 Retirar cobra apuesta × multiplicador del instante en que llega la pulsación. El auto-retiro cobra justo su objetivo aunque el bot edite a saltos. Si ya no queda nadie dentro, el cohete salta directo a su punto de explosión.
+- Punto de explosión: se sortea al abrir el embarque con `secrets` y P(llegar a x) = 0,99 / x. Retirarse siempre en el mismo multiplicador devuelve el 99 % de media, sea cual sea; el 1 % de las rondas explota en 1,00x. Una prueba lo comprueba con 200.000 puntos.
+- Mensaje: durante el vuelo, texto con el multiplicador en grande, una estela que sube (un bloque por segundo) y la lista de pasajeros. Una edición por segundo como mucho, sin encadenar una sobre otra. Al explotar, una gráfica PNG (~15 KB, ~60 ms de CPU) con la curva, un punto por cada retirada con su nombre y una estrella en la explosión, más la tira de las últimas 10 rondas. Si otros mensajes han enterrado la mesa, la ronda siguiente se manda abajo y la vieja pierde los botones.
+- Dinero: la apuesta se cobra al entrar (`place_bet`) y se paga al retirarse o al explotar (`pay_winnings`, con 0 si explota). Fiscalmente es juego, como el resto del casino (art. 33.1 y 33.5.d LIRPF). El resultado de la ronda dice lo que Perro Sanxe retiene o devuelve a cada uno y quien se retira a mano lo ve además en privado. Si el bot se apaga de forma ordenada, en embarque devuelve lo apostado y en vuelo retira a todos en el multiplicador del momento.
+- Logros: 24 en la categoría 🚀 Crash (rondas, retiradas, 2x a 1.000x, auto-retiro, por los pelos, el último en saltar, ni despegó, la avaricia rompe el saco, rondas de 100x, rondas con 3 y 6 personas…).
+
+### 6 ter.6. Minas
+
+- `minas [cantidad] [minas]` cobra y abre un tablero de 5×5 propio que solo pulsa su dueño. Minas a elegir: 1, 3, 5, 10, 15, 20 o 24 (por defecto, las de la última vez o 3). Apuesta por defecto, 100 Y$.
+- Cada casilla segura (💎) sube el multiplicador; 💰 Cobrar se lleva apuesta × multiplicador y una 💣 lo pierde todo. 🎲 Al azar destapa una casilla cualquiera. El texto dice el multiplicador actual, el de la siguiente casilla y la probabilidad de que sea buena. Al acabar se ve dónde estaban las minas (💥 la que se pisó) y, si explotó, cuánto se iba a llevar. 🔁 Jugar, ½, ×2, 💰 All-in y 💣 (recorre las opciones) preparan la siguiente.
+- Multiplicador tras k casillas con m minas: 0,99 × C(25, k) / C(25 − m, k), con fracciones exactas y tope en ×10.000. Cobrar en cualquier momento devuelve el 99 % de media; una prueba lo verifica para cada número de minas y cada k. Las minas se colocan con `secrets` al empezar y no se mueven.
+- Mensaje: componentes nuevos de Discord (`LayoutView`), un bloque con el texto y las 25 casillas como botones más una fila de controles (39 de los 40 componentes que admite un mensaje). Sin imágenes: cada clic es una edición instantánea.
+- Dinero: la apuesta se cobra al empezar (`place_bet`) y se paga al cobrar o al explotar (`pay_winnings`, con 0 si explota). Fiscalidad del juego, con la línea de Perro Sanxe en el resultado. Si el tablero caduca (3 min) o el bot se apaga con una partida a medias, se cobra sola; sin casillas destapadas, se devuelve la apuesta.
+- Los cobros de ×25 o más se anuncian en el canal.
+- Logros: 22 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, a la primera, tan cerca, ×5 a ×1.000, ganar con 24 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
+
+### 6 ter.7. Criterios de aceptación
 
 - Ningún saldo puede quedar negativo ni gastarse dos veces, aunque se pulsen botones a la vez.
 - Solo el dueño de una mesa puede apostar en ella.
 - Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
 - Al salir el bot de un servidor se borra su economía.
 
-### 6 ter.6. Logros
+### 6 ter.8. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 263 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 310 logros en 13 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
-- 24 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- 31 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
 - Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, Patrimonio pagado, donativos, nivel y racha de días, cada tirada de ruleta y tragaperras y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
 - Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
 - La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
@@ -376,9 +396,9 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
-7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack y tragaperras. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
+7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash y Minas. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 263 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
+9. **Logros:** 310 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

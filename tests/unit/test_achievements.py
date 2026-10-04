@@ -88,6 +88,13 @@ PRODUCED_STATS = {
     "slots_free_triggers", "slots_free_spins", "slots_hot_spins", "slots_hot_big",
     "slots_wild_wins", "slots_turbo", "slots_auto", "slots_session_max", "slots_pot_fed",
     "slots_night",
+    # Crash (cogs/crash.py: crash_stats) y Minas (cogs/mines.py: mines_stats)
+    "crash_rounds", "crash_cashouts", "crash_cashout_max", "crash_win_max", "crash_auto",
+    "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",
+    "crash_party_max",
+    "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
+    "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
+    "mines_clear_hard", "mines_random",
     UNLOCKED_STAT,
 }  # fmt: skip
 
