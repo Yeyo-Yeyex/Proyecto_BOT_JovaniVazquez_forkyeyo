@@ -18,6 +18,9 @@ Modelo de datos:
 - `economy_gambling_days`: resultado neto del casino por usuario y día
   (premios menos apuestas) y lo retenido sobre él. La retención siempre
   corresponde a la ganancia neta del día: si después se pierde, se devuelve.
+- `economy_declarations`: declaración semanal del casino por usuario y
+  semana (lunes ISO): lo que sale a devolver y si está pendiente,
+  presentada, caducada o sin nada que devolver (`none`).
 - `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
   retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
   y, en el futuro, para la declaración anual.
@@ -227,6 +230,17 @@ class EconomyRepository:
                     withheld INTEGER NOT NULL DEFAULT 0 CHECK (withheld >= 0),
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (guild_id, user_id, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_declarations (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    refund INTEGER NOT NULL CHECK (refund >= 0),
+                    status TEXT NOT NULL
+                        CHECK (status IN ('pending', 'claimed', 'expired', 'none')),
+                    claimed_at REAL,
+                    PRIMARY KEY (guild_id, user_id, week_start)
                 );
                 """
             )
@@ -594,6 +608,150 @@ class EconomyRepository:
             )
             return BetSettlement(balance, delta, net, withheld)
 
+    # -- Declaración semanal -------------------------------------------------------
+
+    def _sync_declarations_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        current_week: str,
+        week_end: Callable[[str], float],
+        refund_for: Callable[[int, int, int], int],
+        window_seconds: float,
+        keep: int,
+    ) -> None:
+        """Crea las declaraciones de semanas cerradas que falten y caduca las viejas.
+
+        Se calcula al vuelo cuando el usuario juega o pregunta, así no hace
+        falta ninguna tarea que recorra a todo el mundo cada lunes.
+
+        Args:
+            current_week: Lunes (ISO) de la semana en curso; solo se declaran
+                las anteriores.
+            week_end: Fin (epoch) de una semana dado su lunes ISO.
+            refund_for: Recibe `(neto, retenido, renta de otros ingresos en los
+                30 días previos al cierre)` y devuelve lo que sale a devolver.
+            keep: Cuántas declaraciones pendientes se guardan como máximo; las
+                más antiguas caducan y el dinero se queda en el Estado.
+        """
+        # `date(day, '-6 days', 'weekday 1')` es el lunes de la semana de `day`.
+        weeks = connection.execute(
+            """
+            SELECT date(day, '-6 days', 'weekday 1') AS week,
+                   SUM(net) AS net, SUM(withheld) AS withheld
+            FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND day < ?
+            GROUP BY week
+            HAVING week NOT IN (
+                SELECT week_start FROM economy_declarations
+                WHERE guild_id = ? AND user_id = ?
+            )
+            """,
+            (guild_id, user_id, current_week, guild_id, user_id),
+        ).fetchall()
+        for row in weeks:
+            end = week_end(row["week"])
+            (others,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND created_at <= ?
+                """,
+                (guild_id, user_id, end - window_seconds, end),
+            ).fetchone()
+            refund = max(0, refund_for(int(row["net"]), int(row["withheld"]), int(others)))
+            connection.execute(
+                """
+                INSERT INTO economy_declarations (guild_id, user_id, week_start, refund, status)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, row["week"], refund, "pending" if refund else "none"),
+            )
+        connection.execute(
+            """
+            UPDATE economy_declarations SET status = 'expired'
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending' AND week_start NOT IN (
+                SELECT week_start FROM economy_declarations
+                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+                ORDER BY week_start DESC LIMIT ?
+            )
+            """,
+            (guild_id, user_id, guild_id, user_id, keep),
+        )
+
+    @staticmethod
+    def _pending_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int
+    ) -> list[tuple[str, int]]:
+        rows = connection.execute(
+            """
+            SELECT week_start, refund FROM economy_declarations
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+            ORDER BY week_start
+            """,
+            (guild_id, user_id),
+        ).fetchall()
+        return [(str(r["week_start"]), int(r["refund"])) for r in rows]
+
+    async def pending_declarations(
+        self, guild_id: int, user_id: int, **rules: object
+    ) -> list[tuple[str, int]]:
+        """Declaraciones pendientes `(lunes ISO, a devolver)`, de la más antigua a la última.
+
+        `rules` son los argumentos con nombre de `_sync_declarations_in`.
+        """
+        return await self._run(self._pending_sync, guild_id, user_id, rules)
+
+    def _pending_sync(
+        self, guild_id: int, user_id: int, rules: dict[str, object]
+    ) -> list[tuple[str, int]]:
+        with self._transaction() as connection:
+            self._sync_declarations_in(connection, guild_id, user_id, **rules)  # type: ignore[arg-type]
+            return self._pending_in(connection, guild_id, user_id)
+
+    async def claim_declarations(
+        self, guild_id: int, user_id: int, *, now: float, **rules: object
+    ) -> tuple[list[tuple[str, int]], int, int]:
+        """Presenta todas las declaraciones pendientes y paga la devolución.
+
+        El dinero sale de la cuenta del Estado, que es donde está lo retenido.
+
+        Returns:
+            `(semanas presentadas, total devuelto, saldo final)`.
+        """
+        return await self._run(self._claim_sync, guild_id, user_id, now, rules)
+
+    def _claim_sync(
+        self, guild_id: int, user_id: int, now: float, rules: dict[str, object]
+    ) -> tuple[list[tuple[str, int]], int, int]:
+        with self._transaction() as connection:
+            self._sync_declarations_in(connection, guild_id, user_id, **rules)  # type: ignore[arg-type]
+            pending = self._pending_in(connection, guild_id, user_id)
+            total = min(
+                sum(refund for _, refund in pending), self._state_balance_in(connection, guild_id)
+            )
+            connection.execute(
+                """
+                UPDATE economy_declarations SET status = 'claimed', claimed_at = ?
+                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+                """,
+                (now, guild_id, user_id),
+            )
+            if total:
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    STATE_ACCOUNT_ID,
+                    (LedgerEntry(-total, "devolucion:renta"),),
+                )
+                balance = self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(total, "devolucion:renta"),)
+                )
+            else:
+                balance = self._ensure_wallet(connection, guild_id, user_id)
+            return pending, total, balance
+
     @staticmethod
     def _state_balance_in(connection: sqlite3.Connection, guild_id: int) -> int:
         row = connection.execute(
@@ -753,6 +911,7 @@ class EconomyRepository:
                 "economy_daily",
                 "economy_tax_records",
                 "economy_gambling_days",
+                "economy_declarations",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

@@ -15,6 +15,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
 import discord
 
@@ -28,13 +29,15 @@ from bot.repositories.economy import (
     LedgerEntry,
     Treasury,
 )
-from bot.services.levels import local_day
+from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
+    MAX_PENDING_DECLARATIONS,
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
     compute_withholding,
     format_rate,
     gambling_day_tax,
+    weekly_refund,
 )
 
 __all__ = [
@@ -44,6 +47,8 @@ __all__ = [
     "CURRENCY_NAME",
     "CURRENCY_SYMBOL",
     "DailyResult",
+    "Declaration",
+    "RentaClaim",
     "EconomyService",
     "IncomeResult",
     "InsufficientFundsError",
@@ -51,6 +56,8 @@ __all__ = [
     "STATE_ACCOUNT_ID",
     "Treasury",
     "format_amount",
+    "week_label",
+    "week_start",
     "gambling_tax_line",
     "is_all_in",
     "parse_amount",
@@ -202,6 +209,39 @@ class IncomeResult:
 
 
 @dataclass(frozen=True, slots=True)
+class Declaration:
+    """Declaración semanal pendiente: la semana (lunes) y lo que sale a devolver."""
+
+    week_start: date
+    refund: int
+
+
+@dataclass(frozen=True, slots=True)
+class RentaClaim:
+    """Resultado de presentar la renta."""
+
+    declarations: tuple[Declaration, ...]
+    refunded: int
+    balance: int
+
+
+def week_start(day: date) -> date:
+    """Lunes de la semana de `day`."""
+    return day - timedelta(days=day.weekday())
+
+
+def week_label(start: date) -> str:
+    """`2026-09-28` → `28/09–04/10`."""
+    end = start + timedelta(days=6)
+    return f"{start:%d/%m}–{end:%d/%m}"
+
+
+def _week_end(week_iso: str) -> float:
+    start = datetime.combine(date.fromisoformat(week_iso), datetime.min.time(), TIMEZONE)
+    return (start + timedelta(days=7)).timestamp()
+
+
+@dataclass(frozen=True, slots=True)
 class DailyResult:
     """Resultado de intentar cobrar el IMV (la recompensa diaria).
 
@@ -345,6 +385,31 @@ class EconomyService:
             window_seconds=PROJECTION_WINDOW_SECONDS,
         )
         return IncomeResult(gross=gross, tax=tax, rate=tax / gross, balance=balance)
+
+    def _renta_rules(self) -> dict[str, object]:
+        return {
+            "current_week": week_start(local_day(self._clock())).isoformat(),
+            "week_end": _week_end,
+            "refund_for": weekly_refund,
+            "window_seconds": PROJECTION_WINDOW_SECONDS,
+            "keep": MAX_PENDING_DECLARATIONS,
+        }
+
+    async def pending_declarations(self, guild_id: int, user_id: int) -> list[Declaration]:
+        """Declaraciones de semanas cerradas que salen a devolver y no se han presentado."""
+        rows = await self.repository.pending_declarations(guild_id, user_id, **self._renta_rules())
+        return [Declaration(date.fromisoformat(week), refund) for week, refund in rows]
+
+    async def claim_declarations(self, guild_id: int, user_id: int) -> RentaClaim:
+        """Presenta las declaraciones pendientes y cobra la devolución."""
+        rows, total, balance = await self.repository.claim_declarations(
+            guild_id, user_id, now=self._clock(), **self._renta_rules()
+        )
+        return RentaClaim(
+            declarations=tuple(Declaration(date.fromisoformat(w), r) for w, r in rows),
+            refunded=total,
+            balance=balance,
+        )
 
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""

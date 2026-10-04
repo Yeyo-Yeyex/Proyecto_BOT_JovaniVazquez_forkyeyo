@@ -67,7 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `imv` · `hacienda` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -123,7 +123,15 @@ python -m bot
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del
   mismo día: si pierdes después de ganar, Hacienda te devuelve lo retenido
-  de más. La retención
+  de más.
+- **Campaña de la Renta:** cada lunes se cierra la semana anterior y las
+  pérdidas de unos días compensan las ganancias de otros. Lo retenido de más
+  sale a devolver, y se cobra presentando la declaración: con `renta` o con
+  el aviso (solo lo ves tú) que sale la primera vez que juegas en la semana.
+  Al presentar, el bot lo anuncia en el canal. Se guardan sin caducidad las 2
+  últimas semanas pendientes; si se acumula otra, la más antigua se pierde.
+  El bot crea un evento de Discord por campaña (necesita **Gestionar
+  eventos**). La retención
   proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
   la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
   por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro

@@ -32,6 +32,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import renta
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
@@ -530,6 +531,7 @@ class RouletteTable(discord.ui.View):
             )
         finally:
             self._busy = False
+        await renta.remind(self.cog.bot, interaction)
 
     async def show_spin(
         self, result: SpinResult, *, first_edit: EditFn, final_edit: EditFn
@@ -560,6 +562,8 @@ class RouletteTable(discord.ui.View):
         self.last_text = result_text(outcome)
         if result.tax_note:
             self.last_text += f"\n{result.tax_note}"
+        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            self.last_text += f"\n{renta_hint}"
         self._set_enabled(True)
         await final_edit(
             embed=await self.current_embed(result.balance),
@@ -820,6 +824,7 @@ class Casino(commands.Cog):
             send=send,
             send_error=InteractionResponder(interaction).send_error,
         )
+        await renta.remind(self.bot, interaction)
 
     @commands.command(name="ruleta")
     @commands.guild_only()

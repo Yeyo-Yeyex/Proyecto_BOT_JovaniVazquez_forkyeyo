@@ -28,6 +28,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.blackjack import (
     Action,
@@ -393,6 +394,8 @@ class BlackjackTable(discord.ui.View):
                 )
         finally:
             self._busy = False
+        if game.settled:
+            await renta.remind(self.cog.bot, interaction)
 
     async def _finish(self, first_edit: EditFn, next_edit: EditFn) -> None:
         """Turno de la banca carta a carta y pago final."""
@@ -443,6 +446,8 @@ class BlackjackTable(discord.ui.View):
         self.headline = result_headline(game)
         if tax_note:
             self.headline += f"\n{tax_note}"
+        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            self.headline += f"\n{renta_hint}"
         return balance
 
     # -- Fichas y repartir ----------------------------------------------------------
@@ -483,6 +488,7 @@ class BlackjackTable(discord.ui.View):
                 await interaction.response.send_message(error, ephemeral=True)
         finally:
             self._busy = False
+        await renta.remind(self.cog.bot, interaction)
 
 
 # -- Cog ----------------------------------------------------------------------------
@@ -596,6 +602,7 @@ class Blackjack(commands.Cog):
             send=send,
             send_error=InteractionResponder(interaction).send_error,
         )
+        await renta.remind(self.bot, interaction)
 
     # Única excepción a la norma de un nombre por comando (ver Biblia.txt):
     # `.bj` es el atajo de siempre y `.blackjack` el nombre que se busca.

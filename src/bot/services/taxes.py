@@ -159,6 +159,22 @@ def gambling_day_tax(net_gain: int, other_recent_income: int) -> int:
     return compute_withholding(net_gain, other_recent_income).tax
 
 
+#: Declaraciones pendientes que se guardan como máximo. Cuando sale a devolver
+#: una semana más, la más antigua caduca y el dinero se queda en el Estado.
+MAX_PENDING_DECLARATIONS = 2
+
+
+def weekly_refund(net: int, withheld: int, other_recent_income: int) -> int:
+    """Lo que sale a devolver en la declaración semanal del casino.
+
+    Durante la semana se retiene día a día (`gambling_day_tax`). Al cerrarla,
+    las pérdidas de un día compensan las ganancias de otro: se calcula la
+    retención que tocaría sobre el neto de la semana y se devuelve lo que se
+    retuvo de más. Nunca sale a pagar.
+    """
+    return max(0, withheld - gambling_day_tax(max(net, 0), other_recent_income))
+
+
 def format_rate(rate: float) -> str:
     """`0.1934` → `19,34 %`."""
     return f"{rate * 100:.2f}".replace(".", ",") + " %"
