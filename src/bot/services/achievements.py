@@ -11,7 +11,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
-`blackjack_stats`, `casino_stats`) y se lo pasan al cog de logros.
+`blackjack_stats`, `slots_stats`, `casino_stats`) y se lo pasan al cog de logros.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
 Si usa una estadística nueva, el juego que la produce tiene que sumarla.
@@ -28,6 +28,10 @@ from enum import Enum
 
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
+from bot.services.slots import WILD as SLOT_WILD
+from bot.services.slots import Kind as SlotKind
+from bot.services.slots import Spin
+from bot.services.slots import pot_share as slots_pot_share
 from bot.services.taxes import STATE_PERSONAL_MINIMUM, TAX_COLLECTOR, YAPDOLLARS_PER_EURO
 
 # -- Rarezas ---------------------------------------------------------------------------
@@ -84,7 +88,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("roulette", "🎡 Ruleta"),
     Category("blackjack", "🃏 Blackjack"),
     Category("casino", "💰 Casino"),
-    Category("slots", "🎰 Tragaperras", upcoming=True),
+    Category("slots", "🎰 Tragaperras"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -546,24 +550,125 @@ def _build_catalog() -> tuple[Achievement, ...]:
         )
     )
 
-    # 🎰 Tragaperras (próximamente) -------------------------------------------------------
+    # 🎰 Tragaperras ---------------------------------------------------------------------
     a += _tiers("slots", "slots_spins", [
         (1, "slots_1", "Tirar de la palanca", "Juega tu primera tirada en la tragaperras.", C),
         (100, "slots_100", "Enganchado", "Juega 100 tiradas en la tragaperras.", C),
         (1_000, "slots_1k", "Zombi de la máquina", "Juega 1.000 tiradas.", E),
         (10_000, "slots_10k", "La máquina te conoce", "Juega 10.000 tiradas.", L),
+        (50_000, "slots_50k", "Parte del mobiliario", "Juega 50.000 tiradas.", M),
     ])  # fmt: skip
     a += _tiers("slots", "slots_wins", [
         (10, "slotsw_10", "Tilín tilín", "Gana 10 tiradas en la tragaperras.", C),
         (100, "slotsw_100", "Luces y campanas", "Gana 100 tiradas en la tragaperras.", R),
+        (1_000, "slotsw_1k", "Máquina de premios", "Gana 1.000 tiradas en la tragaperras.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_jackpots", [
         (1, "jackpot_1", "¡JACKPOT!", "Saca el premio gordo de la tragaperras.", E),
         (5, "jackpot_5", "Rey del jackpot", "Saca el premio gordo 5 veces.", L),
     ])  # fmt: skip
+    a += _tiers("slots", "slots_jackpot_max", [
+        (50_000, "jackpot_50k", "Bote gordo", "Llévate un bote de 50.000 Y$ o más.", L),
+        (250_000, "jackpot_250k", "Bote histórico", "Llévate un bote de 250.000 Y$ o más.", M),
+    ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_win_max", [
         (10_000, "slots_rain", "Lluvia de monedas", "Gana 10.000 Y$ en una tirada.", R),
+        (100_000, "slots_storm", "Tormenta de monedas", "Gana 100.000 Y$ en una tirada.", L),
     ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_three_C", [
+        (1, "slots_cherries", "Fruta prohibida", "Saca 🍒 🍒 🍒 en la línea.", C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_three_L", [
+        (1, "slots_lemons", "Limonada", "Saca 🍋 🍋 🍋 en la línea.", C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_three_G", [
+        (1, "slots_grapes", "Vendimia", "Saca 🍇 🍇 🍇 en la línea.", C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_three_B", [
+        (1, "slots_bells", "Campanadas", "Saca 🔔 🔔 🔔 en la línea.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_three_D", [
+        (1, "slots_diamonds", "Diamantes en bruto", "Saca 💎 💎 💎 en la línea.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_three_7", [
+        (1, "slots_777", "Siete vidas", "Saca 7️⃣ 7️⃣ 7️⃣ en la línea.", L),
+        (5, "slots_777_5", "Lucky seven", "Saca 7️⃣ 7️⃣ 7️⃣ cinco veces.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="slots_fruit_shop",
+        name="Frutería completa",
+        description="Saca un trío de cada: 🍒, 🍋, 🍇, 🔔, 💎 y 7️⃣.",
+        category="slots",
+        rarity=L,
+        conditions=tuple((f"slots_three_{s}", 1) for s in "CLGBD7"),
+    ))  # fmt: skip
+    a += _tiers("slots", "slots_ldw", [
+        (1, "ldw_1", "Ganar perdiendo", "Cobra un premio más pequeño que tu apuesta.", C, True),
+        (100, "ldw_100", "Me sale a cuenta", "Cobra 100 premios más pequeños que tu apuesta.", R),
+        (1_000, "ldw_1k", "Contabilidad creativa",
+         "Cobra 1.000 premios más pequeños que tu apuesta.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_near_miss", [
+        (1, "nearmiss_1", "Por un pelo", "Quédate a un símbolo de un premio gordo.", C),
+        (25, "nearmiss_25", "¡Ay, bendito!", "Quédate 25 veces a un símbolo del premio gordo.", R),
+        (100, "nearmiss_100", "La próxima sí", "Quédate 100 veces a un símbolo.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_anticipation", [
+        (10, "antic_10", "Corazón en un puño", "Ve frenar despacio el tercer rodillo 10 veces.", C),
+        (100, "antic_100", "Taquicardia", "Ve frenar despacio el tercer rodillo 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_scatter_tease", [
+        (10, "tease_10", "Te faltó una entrada", "Saca dos 🎟️ y no el tercero 10 veces.", C, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_free_triggers", [
+        (1, "free_1", "Entrada VIP", "Consigue giros gratis.", C),
+        (10, "free_10", "Pase de temporada", "Consigue giros gratis 10 veces.", R),
+        (50, "free_50", "Abono vitalicio", "Consigue giros gratis 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_free_spins", [
+        (100, "freespin_100", "Barra libre", "Juega 100 giros gratis.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_hot_spins", [
+        (1, "hot_1", "Al rojo vivo", "Juega una tirada con la máquina caliente.", C),
+        (50, "hot_50", "Quemado", "Juega 50 tiradas con la máquina caliente.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_hot_big", [
+        (1, "hot_big", "Fuego real", "Gana ×20 o más con la máquina caliente.", E, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_wild_wins", [
+        (10, "wild_10", "Comodín al rescate", "Gana 10 tiradas gracias al 🃏.", C),
+        (100, "wild_100", "Amigo del comodín", "Gana 100 tiradas gracias al 🃏.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_turbo", [
+        (100, "turbo_100", "Sin frenos", "Juega 100 tiradas en modo turbo.", C),
+        (1_000, "turbo_1k", "Turbodiésel", "Juega 1.000 tiradas en modo turbo.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_auto", [
+        (1, "auto_1", "Piloto automático", "Usa Auto ×10.", C),
+        (50, "auto_50", "Ni lo miro", "Usa Auto ×10 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_session_max", [
+        (100, "session_100", "Una más y lo dejo", "Juega 100 tiradas sin cerrar la máquina.", R,
+         True),
+        (500, "session_500", "Sin pestañear", "Juega 500 tiradas sin cerrar la máquina.", E, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_pot_fed", [
+        (1_000, "pot_1k", "Alimentador del bote", "Aporta 1.000 Y$ al bote.", C),
+        (10_000, "pot_10k", "Mecenas del bote", "Aporta 10.000 Y$ al bote.", R),
+        (100_000, "pot_100k", "El bote es tuyo (o casi)", "Aporta 100.000 Y$ al bote.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_night", [
+        (1, "slots_night", "Ludopatía nocturna", "Juega a la tragaperras entre las 3 y las 6.", C,
+         True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="casino_trilero",
+        name="Trilero",
+        description="Juega a la ruleta, al blackjack y a la tragaperras.",
+        category="casino",
+        rarity=R,
+        conditions=(("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1)),
+    ))  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
@@ -921,3 +1026,59 @@ def _kamikaze(cards: list, doubled: bool, busted: bool) -> bool:
         return False
     total, soft = hand_total(cards[:-1])
     return total >= 17 and not soft
+
+
+def slots_stats(
+    spin: Spin,
+    *,
+    stake: int,
+    payout: int,
+    jackpot: int,
+    free: bool,
+    hot: bool,
+    turbo: bool,
+    session_spins: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una tirada de tragaperras (sin lo común del casino).
+
+    Args:
+        stake: Apuesta de la tirada; en un giro gratis, la que lo activó.
+        payout: Lo que ha devuelto la línea (con la máquina caliente incluida).
+        jackpot: Lo que se ha llevado del bote (0 si nada).
+        free: Si era un giro gratis.
+        hot: Si la máquina estaba caliente.
+        session_spins: Tiradas en esta máquina, contando esta.
+        when: Hora local de la tirada.
+    """
+    delta = StatDelta(add={"slots_spins": 1}, peak={"slots_session_max": session_spins})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    paid_stake = 0 if free else stake
+    won = payout + jackpot
+    net = won - paid_stake
+    bump("slots_wins", net > 0)
+    bump("slots_ldw", 0 < won < paid_stake)
+    if net > 0:
+        delta.peak["slots_win_max"] = net
+    if jackpot:
+        bump("slots_jackpots")
+        delta.peak["slots_jackpot_max"] = jackpot
+    if spin.kind == SlotKind.THREE and spin.symbol is not None:
+        bump(f"slots_three_{spin.symbol}")
+    bump("slots_near_miss", spin.near_miss)
+    bump("slots_anticipation", spin.anticipation and not turbo)
+    bump("slots_scatter_tease", spin.scatters == 2)
+    bump("slots_free_triggers", spin.triggers_free_spins)
+    bump("slots_free_spins", free)
+    bump("slots_hot_spins", hot)
+    bump("slots_hot_big", hot and stake > 0 and payout >= 20 * stake)
+    bump("slots_wild_wins", payout > 0 and SLOT_WILD in spin.line)
+    bump("slots_turbo", turbo)
+    bump("slots_pot_fed", amount=0 if free else slots_pot_share(stake))
+    bump("slots_night", 3 <= when.hour < 6)
+    return delta

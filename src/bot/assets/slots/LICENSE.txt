@@ -1,0 +1,15 @@
+Símbolos de la tragaperras (bot.services.slots_render).
+
+Cada PNG es un símbolo de 50×50 px con fondo transparente, ya al tamaño con
+el que se pinta en los rodillos.
+
+- cherry, lemon, grape, bell, diamond, wild (comodín, 🃏) y scatter (entrada):
+  emojis de Noto Color Emoji (Google), dibujados con la fuente y reducidos.
+  Las imágenes de Noto Emoji se distribuyen con licencia Apache 2.0 y la
+  fuente con la SIL Open Font License 1.1:
+  https://github.com/googlefonts/noto-emoji
+- seven: un "7" rojo con borde dorado dibujado con Montserrat Bold
+  (assets/memes/fonts/MontserratBold.ttf, SIL Open Font License 1.1).
+
+Si se cambia un símbolo, debe seguir distinguiéndose por la forma y no solo
+por el color (hay jugadores con deuteranopia).

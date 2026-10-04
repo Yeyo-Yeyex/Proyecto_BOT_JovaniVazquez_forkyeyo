@@ -41,7 +41,8 @@ pip install -e ".[dev]"
 3. Ajusta `LOG_LEVEL` y `COMMAND_PREFIX` si lo necesitas (ambos son
    opcionales). `COMMAND_PREFIX` es el prefijo de los comandos de texto
    (por defecto `.`); con él se invocan los mismos comandos que con `/`.
-4. `CASINO_CHANNEL_IDS` (opcional) limita la ruleta a esos canales: IDs
+4. `CASINO_CHANNEL_IDS` (opcional) limita los juegos del casino (ruleta,
+   blackjack y tragaperras) a esos canales: IDs
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
 
@@ -69,7 +70,7 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -190,14 +191,27 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
-- **Logros** (`logros [miembro]`): 221 logros en 11 categorías (chat,
+- **Tragaperras** (`/slots`, `.slots [cantidad]`): una máquina de 3 rodillos
+  con botones que solo usa quien la abre. Paga la fila del medio; las filas
+  de arriba y abajo se ven para que se note cuándo has estado cerca.
+  Botones: 🎰 Tirar, 🔁 Auto ×10 (diez tiradas con un solo resumen),
+  ⚡ Turbo (sin animación), ½ / ×2 / 💰 All-in y 📋 Premios. Premios:
+  🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🃏 comodín
+  y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 3 % de
+  cada apuesta y vuelve a 5.000 Y$ al vaciarse. Tres 🎟️ en cualquier fila dan
+  5 giros gratis, y cada 5 tiradas con premio la máquina se calienta y la
+  siguiente paga ×2. Devuelve ~94 % de lo apostado contando el bote. El GIF
+  (~150 KB, ~0,1 s de CPU) se monta en cada tirada con piezas precalculadas:
+  los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
+  tercero frena despacio. Los premios tributan como el resto del casino, el
+  bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
+- **Logros** (`logros [miembro]`): 263 logros en 11 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
   tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 18 son secretos y se ven como `???` hasta conseguirlos.
-  Los 9 de la tragaperras salen como "próximamente" y no cuentan hasta que
-  exista el juego. Cada logro paga yapdollars según su rareza (50, 200, 750,
+  millón de IRPF; 24 son secretos y se ven como `???` hasta conseguirlos.
+  Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
   conseguidos, los más cercanos y el más raro), un menú por categorías con
@@ -386,6 +400,7 @@ src/bot/
 │   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── blackjack.py     # Blackjack con botones (bj)
+│   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
@@ -400,6 +415,8 @@ src/bot/
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
+│   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
+│   ├── slots_render.py  # GIF de cada tirada con piezas precalculadas
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)
@@ -411,7 +428,8 @@ src/bot/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
     ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
-    └── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
+    ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
+    └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```
 
 En la raíz: `Dockerfile`, `docker-compose.yml` y `.env.example` para el despliegue.

@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta y el blackjack (`ruleta`, `blackjack`/`.bj`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack y la tragaperras (`ruleta`, `blackjack`/`.bj`, `slots`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -282,21 +282,35 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Reglas: zapato de 6 barajas, barajado con `secrets` en cada mano (no se pueden contar cartas). La banca mira si tiene blackjack con un as o un 10 a la vista y se planta en 17, también blando. Blackjack paga 3:2 (redondeando hacia abajo). Doblar con cualquier par de cartas, también tras separar. Separar una vez dos cartas del mismo valor; los ases separados reciben una carta y su 21 no es blackjack. Sin seguro ni rendición. Ventaja de la casa ≈ 0,5 % con estrategia básica.
 - Dinero: la apuesta se cobra al repartir y el extra al doblar o separar (`place_bet`); el premio se paga al acabar la mano (`pay_winnings`). Si la mesa caduca (3 min sin uso) o el bot se apaga de forma ordenada con una mano a medias, la mano se planta, juega la banca y se paga. Si el proceso muere de golpe, lo apostado en esa mano se pierde y queda en el libro de movimientos.
 
-### 6 ter.4. Criterios de aceptación
+### 6 ter.4. Tragaperras
+
+- `slots [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎰 Tirar, 🔁 Auto ×10, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$.
+- 3 rodillos y 3 filas a la vista; solo paga la del medio. Cada rodillo es una tira fija de símbolos y la parada de cada uno sale del azar del sistema operativo (`random.SystemRandom`, como `secrets`). Las tiras son distintas: el primer rodillo lleva más 🃏 y 7️⃣ que el tercero, así que quedarse a uno del premio gordo pasa a menudo y el premio, poco.
+- Premios (veces la apuesta, con la apuesta incluida): 🍒 en el primer rodillo ×0,5; 🍒 🍒 ×2; 🍒🍒🍒 y 🍋🍋🍋 ×4; 🍇 ×10; 🔔 ×20; 💎 ×60; 7️⃣ ×200. 🃏 es comodín (menos para 🎟️) y 🃏 🃏 🃏 se lleva el bote.
+- Bote común por servidor: el 3 % de cada apuesta pagada va al bote (monedero `SLOTS_POT_ACCOUNT_ID`). Quien saca 🃏 🃏 🃏 se lo lleva entero y la casa pone 5.000 Y$ para empezar otro. La máquina enseña el bote y el último ganador.
+- Giros gratis: 3 🎟️ en cualquier fila dan 5 giros con la apuesta que los activó. Durante los giros gratis los 🎟️ no cuentan. Si la máquina se cierra o el bot se apaga con giros pendientes, se juegan solos y se pagan.
+- Máquina caliente: cada tirada con premio (también el medio premio de la 🍒) llena una barra de 5; llena, la siguiente tirada paga la línea ×2. La barra se guarda por miembro en memoria.
+- Retorno: la línea devuelve ~83 %; con giros gratis y máquina caliente, ~91 %; con el bote, ~94 % (una prueba lo calcula). El 31 % de las tiradas paga algo, pero dos de cada tres de esos premios son menores que la apuesta, y la máquina los celebra igual. Jackpot: 1 de cada 14.400 tiradas; giros gratis: 1 de cada 133.
+- Dinero: cada tirada cobra, paga y mueve el bote en una sola transacción (`EconomyService.play_slots`). Fiscalmente es juego, como la ruleta: ganancia patrimonial en la base general (art. 33.1 LIRPF) con las pérdidas del día compensando (art. 33.5.d LIRPF). El jackpot también: el gravamen especial del 20 % (disposición adicional 33ª LIRPF) solo es para loterías del Estado, ONCE y Cruz Roja.
+- Animación: un GIF de 2-3 s por tirada (~150 KB, ~0,1 s de CPU), montado con piezas precalculadas. Los rodillos paran de izquierda a derecha con rebote; si los dos primeros prometen algo gordo, el tercero gira más y su ventana se ilumina; si la línea paga, parpadea. Al acabar se cambia por el PNG final. ⚡ Turbo y Auto solo mandan el PNG (~5 KB).
+- Los botes y los premios de ×50 o más se anuncian en el canal.
+- Logros: 50 en la categoría 🎰 Tragaperras (tríos de cada símbolo, botes, medio premio, por un pelo, giros gratis, máquina caliente, turbo, Auto, sesiones largas, aportes al bote, de madrugada…) y *Trilero* en 💰 Casino por jugar a los tres juegos.
+
+### 6 ter.5. Criterios de aceptación
 
 - Ningún saldo puede quedar negativo ni gastarse dos veces, aunque se pulsen botones a la vez.
 - Solo el dueño de una mesa puede apostar en ella.
 - Una apuesta ilegal en el tapete se rechaza con un ejemplo de formato válido.
 - Al salir el bot de un servidor se borra su economía.
 
-### 6 ter.5. Logros
+### 6 ter.6. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 221 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Los 9 de la tragaperras se muestran como "próximamente" y no se pueden conseguir ni cuentan para el total (212) hasta que exista el juego; entonces basta con que el juego sume `slots_spins`, `slots_wins`, `slots_jackpots` y `slots_win_max` y quitar `upcoming` de su categoría.
+- 263 logros en 11 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
-- 18 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
-- Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, Patrimonio pagado, donativos, nivel y racha de días, cada tirada de ruleta y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
+- 24 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, Patrimonio pagado, donativos, nivel y racha de días, cada tirada de ruleta y tragaperras y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada y saldo máximo.
 - Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
 - La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
 - Se anuncia en el canal donde se consiguió (en voz, el chat del canal de voz; si no se sabe, el canal del sistema). Con más de 8 a la vez, el aviso los resume.
@@ -362,9 +376,9 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
-7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana y blackjack. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
+7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack y tragaperras. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 221 logros con premios en yapdollars, `logros` y ranking. (Implementado; los de la tragaperras esperan al juego.)
+9. **Logros:** 263 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
 

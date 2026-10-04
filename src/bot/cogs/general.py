@@ -31,6 +31,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "MessageStats": "📊 Niveles",
     "Casino": "🎰 Casino",
     "Blackjack": "🎰 Casino",
+    "Tragaperras": "🎰 Casino",
     "Renta": "🎰 Casino",
     "Donaciones": "🎰 Casino",
     "Birthdays": "🎂 Cumpleaños",

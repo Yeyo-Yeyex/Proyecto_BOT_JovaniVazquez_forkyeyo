@@ -44,4 +44,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bot = ["assets/*.mp4", "assets/*.txt", "assets/memes/**/*"]
+bot = ["assets/*.mp4", "assets/*.txt", "assets/memes/**/*", "assets/slots/*"]
