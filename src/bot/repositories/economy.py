@@ -31,6 +31,10 @@ Modelo de datos:
   quien saque el jackpot; la casa lo vuelve a sembrar al vaciarse.
 - `economy_slots_jackpots`: cada jackpot de la tragaperras (quién, cuánto y
   cuándo), para enseñar el último en la máquina.
+- `economy_wallets` con `user_id = SHOP_ACCOUNT_ID`: la caja de la tienda, que
+  se queda con la base imponible de lo que se vende.
+- `economy_consumption_tax`: el IGIC de cada compra de la tienda (y, con signo
+  negativo, el de cada devolución), para que `hacienda` lo cuente.
 - `economy_donations`: donativos a las ONGs. Cada ONG tiene su monedero con
   un `user_id` negativo (ver `bot.services.donations`), así el dinero donado
   no desaparece: se queda en la ONG, que es lo que ella quería.
@@ -64,6 +68,10 @@ STATE_ACCOUNT_ID = 0
 #: `user_id` del bote de la tragaperras. Negativo, como las ONGs (que usan
 #: -1, -2…), para que no pague Patrimonio ni salga en las cuentas de miembros.
 SLOTS_POT_ACCOUNT_ID = -100
+
+#: `user_id` de la caja de la tienda: recibe la base imponible de cada compra
+#: (el IGIC va al Estado). Así lo gastado no desaparece del libro.
+SHOP_ACCOUNT_ID = -200
 
 
 class InsufficientFundsError(Exception):
@@ -347,6 +355,16 @@ class EconomyRepository:
 
                 CREATE INDEX IF NOT EXISTS economy_donations_member
                     ON economy_donations (guild_id, user_id, week_start);
+
+                CREATE TABLE IF NOT EXISTS economy_consumption_tax (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    concept TEXT NOT NULL,
+                    base INTEGER NOT NULL,
+                    tax INTEGER NOT NULL,
+                    created_at REAL NOT NULL
+                );
 
                 CREATE TABLE IF NOT EXISTS economy_declarations (
                     guild_id INTEGER NOT NULL,
@@ -1153,7 +1171,7 @@ class EconomyRepository:
                 "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
                 (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
-            # Retenciones de ingresos y del casino y el Patrimonio, en una sola vista.
+            # Retenciones de ingresos y del casino, Patrimonio e IGIC, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
@@ -1162,6 +1180,9 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_wealth_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_consumption_tax
                 WHERE guild_id = :guild
             """
             total, recent = connection.execute(
@@ -1324,6 +1345,134 @@ class EconomyRepository:
             ).fetchone()
             return DonationReceipt(balance, int(ongs), int(week_total))
 
+    # -- Compras de la tienda --------------------------------------------------------
+
+    def _open_empty_wallet(
+        self, connection: sqlite3.Connection, guild_id: int, account_id: int
+    ) -> None:
+        """Abre a 0 una cuenta que no es de un miembro (sin saldo de bienvenida)."""
+        connection.execute(
+            "INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance) VALUES (?, ?, 0)",
+            (guild_id, account_id),
+        )
+
+    async def purchase(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        base: int,
+        tax: int,
+        concept: str,
+        now: float,
+        reserve: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, int]:
+        """Cobra una compra: la base a la caja de la tienda y el IGIC al Estado.
+
+        `reserve` lo pone la tienda y corre dentro de la misma transacción,
+        antes del cobro: comprueba existencias y límites y apunta la venta. Si
+        lanza, o si al miembro no le llega, no se mueve nada.
+
+        Returns:
+            `(lo que devuelva reserve, saldo final)`.
+
+        Raises:
+            InsufficientFundsError: Si no le llega el saldo.
+        """
+        return await self._run(
+            self._purchase_sync, guild_id, user_id, base, tax, concept, now, reserve
+        )
+
+    def _purchase_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        base: int,
+        tax: int,
+        concept: str,
+        now: float,
+        reserve: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, int]:
+        if base <= 0 or tax < 0:
+            raise ValueError("Una compra necesita base positiva e IGIC no negativo.")
+        with self._transaction() as connection:
+            result = reserve(connection)
+            entries = [LedgerEntry(-base, f"tienda:{concept}")]
+            if tax:
+                entries.append(LedgerEntry(-tax, "tienda:igic"))
+            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+            self._open_empty_wallet(connection, guild_id, SHOP_ACCOUNT_ID)
+            self._apply_in_transaction(
+                connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(base, "tienda:venta"),)
+            )
+            if tax:
+                self._credit_state_in(connection, guild_id, tax, "igic:tienda")
+            connection.execute(
+                """
+                INSERT INTO economy_consumption_tax
+                    (guild_id, user_id, concept, base, tax, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, concept, base, tax, now),
+            )
+            return result, balance
+
+    async def refund_purchase(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        base: int,
+        tax: int,
+        concept: str,
+        now: float,
+        release: Callable[[sqlite3.Connection], None],
+    ) -> int:
+        """Deshace una compra: la caja devuelve la base y el Estado el IGIC.
+
+        `release` lo pone la tienda (marca la venta como devuelta y repone la
+        unidad) y corre en la misma transacción.
+
+        Returns:
+            El saldo final del miembro.
+        """
+        return await self._run(
+            self._refund_purchase_sync, guild_id, user_id, base, tax, concept, now, release
+        )
+
+    def _refund_purchase_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        base: int,
+        tax: int,
+        concept: str,
+        now: float,
+        release: Callable[[sqlite3.Connection], None],
+    ) -> int:
+        with self._transaction() as connection:
+            release(connection)
+            self._open_empty_wallet(connection, guild_id, SHOP_ACCOUNT_ID)
+            self._apply_in_transaction(
+                connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(-base, "tienda:devolucion"),)
+            )
+            entries = [LedgerEntry(base, f"devolucion:{concept}")]
+            if tax:
+                self._apply_in_transaction(
+                    connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(-tax, "igic:devolucion"),)
+                )
+                entries.append(LedgerEntry(tax, "devolucion:igic"))
+                # Factura rectificativa: el IGIC devuelto resta de lo recaudado.
+                connection.execute(
+                    """
+                    INSERT INTO economy_consumption_tax
+                        (guild_id, user_id, concept, base, tax, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, concept, -base, -tax, now),
+                )
+            return self._apply_in_transaction(connection, guild_id, user_id, entries)
+
     async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:
         """Por ONG: `(total recaudado, donantes distintos)` en el servidor."""
         return await self._run(self._ong_totals_sync, guild_id)
@@ -1439,6 +1588,7 @@ class EconomyRepository:
                 "economy_wealth_tax",
                 "economy_donations",
                 "economy_slots_jackpots",
+                "economy_consumption_tax",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

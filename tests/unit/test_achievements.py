@@ -71,6 +71,11 @@ PRODUCED_STATS = {
     "welcomes_given", "welcomes_fast",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
     "wealth_tax_paid", "wealth_tax_weeks", "donated", "ongs_supported",
+    # Tienda (cogs/shop.py: shop_stats)
+    "shop_purchases", "shop_spent", "shop_igic", "shop_roles", "shop_renewals", "shop_boosts",
+    "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",
+    "shop_luxury", "shop_big_buy_max", "shop_limited", "shop_first_serial", "shop_last_unit",
+    "shop_broke_buy",
     # Casino
     "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",

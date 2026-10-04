@@ -12,7 +12,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `pachinko_stats`,
-`casino_stats`) y se
+`casino_stats`, `shop_stats`) y se
 lo pasan al cog de logros.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
@@ -100,6 +100,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("crash", "🚀 Crash"),
     Category("mines", "💣 Minas"),
     Category("pachinko", "🌸 Pachinko"),
+    Category("shop", "🛍️ Tienda"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -940,6 +941,74 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000, "renta_100k", "Hacienda somos todos", "Recupera 100.000 Y$ con la renta.", E),
     ], unit="money")  # fmt: skip
 
+    # 🛍️ Tienda ---------------------------------------------------------------------------
+    a += _tiers("shop", "shop_purchases", [
+        (1, "shop_1", "Estrenando cartera", "Compra algo en la tienda.", C),
+        (10, "shop_10", "Cliente fijo", "Haz 10 compras en la tienda.", C),
+        (50, "shop_50", "Comprador compulsivo", "Haz 50 compras en la tienda.", R),
+        (200, "shop_200", "Tarjeta de socio", "Haz 200 compras en la tienda.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_spent", [
+        (10_000, "spend_10k", "Consumista", "Gasta 10.000 Y$ en la tienda.", C),
+        (100_000, "spend_100k", "Motor de la economía", "Gasta 100.000 Y$ en la tienda.", R),
+        (1_000_000, "spend_1m", "El PIB eres tú", "Gasta 1.000.000 Y$ en la tienda.", E),
+        (10_000_000, "spend_10m", "Ballena", "Gasta 10.000.000 Y$ en la tienda.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("shop", "shop_igic", [
+        (1_000, "igic_1k", "Aquí hasta el café paga", "Paga 1.000 Y$ de IGIC.", C),
+        (25_000, "igic_25k", "Sostén del Cabildo", "Paga 25.000 Y$ de IGIC.", R),
+        (250_000, "igic_250k", "Contribuyente canario de honor", "Paga 250.000 Y$ de IGIC.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("shop", "shop_roles", [
+        (1, "shoprole_1", "Con estilo", "Cómprate un rol.", C),
+        (5, "shoprole_5", "Armario lleno", "Compra 5 roles.", R),
+        (20, "shoprole_20", "Camaleón", "Compra 20 roles.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_renewals", [
+        (3, "renew_3", "Inquilino fiel", "Renueva un alquiler de rol 3 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_boosts", [
+        (1, "boost_1", "Turbo", "Compra un potenciador de XP.", C),
+        (10, "boost_10", "Dopado", "Compra 10 potenciadores de XP.", R),
+        (50, "boost_50", "Nitro humano", "Compra 50 potenciadores de XP.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_boost_queue_max", [
+        (3, "boost_queue", "Turbo en cola", "Ten 3 potenciadores esperando turno a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_collection_max", [
+        (1, "collect_1", "Primera pieza", "Consigue un coleccionable.", C),
+        (5, "collect_5", "Vitrina", "Ten 5 coleccionables distintos.", R),
+        (15, "collect_15", "Museo privado", "Ten 15 coleccionables distintos.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_sale_buys", [
+        (1, "sale_1", "Cazador de rebajas", "Compra algo rebajado.", C),
+        (10, "sale_10", "Black Friday", "Compra 10 cosas rebajadas.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_discount_max", [
+        (50, "sale_half", "A mitad de precio", "Compra algo con un 50 % de rebaja o más.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_luxury", [
+        (1, "luxury_1", "Nuevo rico", "Compra algo que paga el IGIC de lujo (15 %).", R),
+        (10, "luxury_10", "Clase alta", "Compra 10 cosas con IGIC de lujo.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_big_buy_max", [
+        (50_000, "bigbuy_50k", "Capricho caro", "Paga 50.000 Y$ de una sola vez.", R),
+        (500_000, "bigbuy_500k", "Tarjeta negra", "Paga 500.000 Y$ de una sola vez.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("shop", "shop_limited", [
+        (1, "limited_1", "Edición limitada", "Compra una unidad de una edición limitada.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_first_serial", [
+        (1, "serial_1", "Unidad nº 1", "Llévate la primera unidad de una edición limitada.", E,
+         True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_last_unit", [
+        (1, "last_unit", "El último mohicano", "Llévate la última unidad de algo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_broke_buy", [
+        (1, "broke_buy", "Lo quiero, lo tengo", "Gástate todo tu saldo en una compra.", L, True),
+    ])  # fmt: skip
+
     # 🏆 Coleccionista --------------------------------------------------------------------
     a += _tiers("meta", UNLOCKED_STAT, [
         (10, "meta_10", "Cazador de logros", "Desbloquea 10 logros.", C),
@@ -1392,4 +1461,60 @@ def mines_stats(game: MinesGame) -> StatDelta:
         # La primera casilla es segura: "a la primera" es la que va justo después.
         bump("mines_first_boom", game.gems == 1)
         bump("mines_almost", game.gems >= 1 and game.safe_total - game.gems == 1)
+    return delta
+
+
+def shop_stats(
+    *,
+    kind: str,
+    total: int,
+    tax: int,
+    discount_pct: int,
+    luxury: bool,
+    serial: int | None,
+    last_unit: bool,
+    renewed: bool,
+    collection: int,
+    queued_boosts: int,
+    balance_after: int,
+) -> StatDelta:
+    """Estadísticas de una compra de la tienda.
+
+    Args:
+        kind: Tipo de artículo (`"rol"`, `"xp"` u `"objeto"`).
+        total: Lo pagado, IGIC incluido.
+        tax: IGIC pagado.
+        discount_pct: Rebaja aplicada en %.
+        luxury: Si pagó el IGIC de lujo.
+        serial: Número de serie de la unidad, si era limitada.
+        last_unit: Si se llevó la última unidad.
+        renewed: Si alargó un alquiler de rol.
+        collection: Coleccionables distintos que tiene tras comprar.
+        queued_boosts: Potenciadores suyos sin acabar (en marcha o en cola).
+        balance_after: Saldo tras pagar.
+    """
+    delta = StatDelta(
+        add={"shop_purchases": 1, "shop_spent": total, "shop_igic": tax},
+        peak={"shop_big_buy_max": total},
+    )
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            delta.add[stat] = delta.add.get(stat, 0) + 1
+
+    bump("shop_roles", kind == "rol")
+    bump("shop_renewals", renewed)
+    bump("shop_boosts", kind == "xp")
+    bump("shop_sale_buys", discount_pct > 0)
+    bump("shop_luxury", luxury)
+    bump("shop_limited", serial is not None)
+    bump("shop_first_serial", serial == 1)
+    bump("shop_last_unit", last_unit)
+    bump("shop_broke_buy", balance_after == 0)
+    if discount_pct:
+        delta.peak["shop_discount_max"] = discount_pct
+    if kind == "objeto":
+        delta.peak["shop_collection_max"] = collection
+    if kind == "xp":
+        delta.peak["shop_boost_queue_max"] = queued_boosts
     return delta
