@@ -70,7 +70,7 @@ python -m bot
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` · `slots [cantidad]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -205,12 +205,27 @@ python -m bot
   los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
   tercero frena despacio. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
-- **Logros** (`logros [miembro]`): 263 logros en 11 categorías (chat,
+- **Crash** (`/crash`, `.crash [cantidad] [auto]`): un cohete compartido
+  por canal. En el embarque (7-10 s) se entra con 🚀 o con `.crash 500 2x`
+  (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.
+  Luego el multiplicador sube (2x a los 4,5 s, 10x a los 15 s, tope en
+  1.000x) y 💸 Retirar cobra apuesta × multiplicador; quien sigue dentro
+  cuando explota, lo pierde. Devuelve el 99 % de media y el 1 % de las
+  rondas explota en 1,00x. Al explotar sale una gráfica con la curva y quién
+  saltó dónde, y el mismo mensaje abre la ronda siguiente. Una edición por
+  segundo durante el vuelo y una imagen por ronda.
+- **Minas** (`/minas`, `.minas [cantidad] [minas]`): un tablero de 5×5 propio
+  con 1 a 24 minas. Cada 💎 sube el multiplicador, 💰 Cobrar se lo lleva y una
+  💣 lo pierde todo; 🎲 destapa una al azar. Enseña el multiplicador de la
+  siguiente casilla y la probabilidad de que sea buena. Devuelve el 99 % de
+  media, sin imágenes (cada clic es una edición instantánea), y los cobros
+  de ×25 o más se anuncian en el canal.
+- **Logros** (`logros [miembro]`): 310 logros en 13 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
-  tragaperras, economía y coleccionista), con cinco rarezas: ▫️ común,
+  tragaperras, Crash, Minas, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 24 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 31 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -401,6 +416,8 @@ src/bot/
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
+│   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
+│   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
@@ -417,6 +434,9 @@ src/bot/
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
 │   ├── slots_render.py  # GIF de cada tirada con piezas precalculadas
+│   ├── crash.py         # Punto de explosión, curva del cohete y ronda
+│   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
+│   ├── mines.py         # Multiplicadores exactos y partida de Minas
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)

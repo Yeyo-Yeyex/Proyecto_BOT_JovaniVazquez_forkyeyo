@@ -11,8 +11,9 @@ Qué se cuenta y cómo:
 - **Voz** (`_tick`, cada minuto): lee la caché de estados de voz de
   discord.py, sin llamadas a la API. Un minuto cuenta si hay al menos dos
   personas sin ensordecer en el canal y no es el canal AFK.
-- **Juegos y economía**: la ruleta, el blackjack, el IMV, la renta, los
-  niveles y los cumpleaños llaman a `track`, `casino_play` o `note` de este
+- **Juegos y economía**: los juegos del casino (ruleta, blackjack,
+  tragaperras, Crash y Minas), el IMV, la renta, los niveles y los
+  cumpleaños llaman a `track`, `casino_play` o `note` de este
   módulo al terminar cada acción. Si el cog no está cargado no pasa nada, y
   un fallo aquí nunca rompe el juego que lo llama.
 
