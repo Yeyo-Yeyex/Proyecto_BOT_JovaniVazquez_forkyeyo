@@ -32,7 +32,9 @@ EXPECTED_COMMANDS = {
     "ruleta",
     "babel",
     "saldo",
-    "daily",
+    "imv",
+    "hacienda",
+    "renta",
     "blackjack",
 }
 
@@ -123,7 +125,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "⚙️ General (2)",
                 "🎵 Música (9)",
                 "📊 Niveles (2)",
-                "🎰 Casino (4)",
+                "🎰 Casino (6)",
                 "🔔 Entradas (1)",
                 "🎨 Imagen (2)",
                 "🎨 Imagen · avatar (46)",

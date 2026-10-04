@@ -1,4 +1,4 @@
-"""Casino y economía: `ruleta`, `saldo` y `daily`.
+"""Casino y economía: `ruleta`, `saldo`, `imv` (la recompensa diaria) y `hacienda`.
 
 Todo el dinero se mueve con `EconomyService` (`bot.economy`), que es la
 misma economía que usará cualquier juego o sistema futuro. Este cog solo
@@ -25,12 +25,14 @@ import random
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import renta
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
@@ -39,9 +41,12 @@ from bot.services.economy import (
     InsufficientFundsError,
     daily_amount,
     format_amount,
+    gambling_tax_line,
     is_all_in,
     parse_amount,
+    treasury_embed,
 )
+from bot.services.levels import TIMEZONE
 from bot.services.roulette import (
     COLOR_EMOJI,
     OUTSIDE_BETS,
@@ -59,6 +64,7 @@ from bot.services.roulette import (
     pretty,
 )
 from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
+from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -78,6 +84,8 @@ REVEAL_MARGIN_SECONDS = 0.4
 HISTORY_SIZE = 12
 
 GIF_NAME = "ruleta.gif"
+
+
 PNG_NAME = "ruleta.png"
 
 COLOR_IDLE = discord.Color.from_rgb(43, 45, 49)
@@ -192,7 +200,7 @@ def table_embed(
     elif multi and outcome is not None:
         description += "\n\n🧩 Pon fichas para la siguiente tirada o pulsa 🔁 Repetir."
     if balance == 0:
-        description += "\n\n**Estás a cero.** `daily` te recarga."
+        description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🎰 Ruleta americana", description=description, color=embed_color)
     embed.add_field(name="Saldo", value=format_amount(balance))
     embed.add_field(name="Ficha", value=format_amount(stake))
@@ -221,7 +229,7 @@ def spinning_embed(*, owner: str, wagers: Sequence[Wager], history: Iterable[int
 def insufficient_text(balance: int, needed: int | None = None) -> str:
     """Aviso cuando lo apostado supera el saldo."""
     if balance == 0:
-        return "Estás a cero. Usa `daily` para recargar."
+        return "Estás a cero. Usa `imv` para recargar."
     if needed is not None:
         return f"Necesitas {format_amount(needed)} y tienes {format_amount(balance)}."
     return f"No te llega: tienes {format_amount(balance)}. Baja la ficha o pulsa 💰 All-in."
@@ -291,6 +299,8 @@ class SpinResult:
     outcome: RoundOutcome
     balance: int
     media: SpinMedia
+    #: Línea de IRPF de esta tirada (retención o devolución), si la hay.
+    tax_note: str | None = None
 
 
 EditFn = Callable[..., Awaitable[Any]]
@@ -521,6 +531,7 @@ class RouletteTable(discord.ui.View):
             )
         finally:
             self._busy = False
+        await renta.remind(self.cog.bot, interaction)
 
     async def show_spin(
         self, result: SpinResult, *, first_edit: EditFn, final_edit: EditFn
@@ -549,6 +560,10 @@ class RouletteTable(discord.ui.View):
         self.streak = self.streak + 1 if outcome.won else 0
         self.last_outcome = outcome
         self.last_text = result_text(outcome)
+        if result.tax_note:
+            self.last_text += f"\n{result.tax_note}"
+        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            self.last_text += f"\n{renta_hint}"
         self._set_enabled(True)
         await final_edit(
             embed=await self.current_embed(result.balance),
@@ -694,11 +709,16 @@ class Casino(commands.Cog):
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
         outcome = play_round(self.wheel, wagers)
-        balance = await self.economy.settle_bet(
+        settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
         media = await asyncio.to_thread(self.renderer.media, outcome.pocket)
-        return SpinResult(outcome=outcome, balance=balance, media=media)
+        return SpinResult(
+            outcome=outcome,
+            balance=settlement.balance,
+            media=media,
+            tax_note=gambling_tax_line(settlement),
+        )
 
     def _casino_channel_error(self, channel: object) -> str | None:
         return casino_channel_error(self.casino_channel_ids, channel, "La ruleta")
@@ -804,6 +824,7 @@ class Casino(commands.Cog):
             send=send,
             send_error=InteractionResponder(interaction).send_error,
         )
+        await renta.remind(self.bot, interaction)
 
     @commands.command(name="ruleta")
     @commands.guild_only()
@@ -866,7 +887,7 @@ class Casino(commands.Cog):
         """Versión de texto (`.saldo [@miembro]`) de `/saldo`."""
         await self._saldo_impl(ContextResponder(ctx), ctx.author, miembro)
 
-    # -- daily ----------------------------------------------------------------------
+    # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def _daily_impl(self, responder: CommandResponder, user: discord.abc.User) -> None:
         if responder.guild is None:
@@ -875,7 +896,7 @@ class Casino(commands.Cog):
         result = await self.economy.claim_daily(responder.guild.id, user.id)
         next_at = f"<t:{int(result.next_claim_at)}:R>"
         if not result.claimed:
-            await responder.send_error(f"Ya cobraste hoy. Vuelve {next_at}.")
+            await responder.send_error(f"Ya cobraste el IMV hoy. Vuelve {next_at}.")
             return
         streak = (
             f"🔥 Racha de {result.streak} días" if result.streak >= 2 else "Primer día de racha"
@@ -885,24 +906,63 @@ class Casino(commands.Cog):
                 f"# {CURRENCY_EMOJI} +{format_amount(result.amount)}\n"
                 f"{streak} · Saldo: **{format_amount(result.balance)}**\n"
                 f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}. "
-                f"Si pasan más de 48 h, la racha se pierde."
+                f"Si pasan más de 48 h, la racha se pierde.\n"
+                f"-# 🐶 {TAX_COLLECTOR} no puede tocarlo: el IMV está exento de IRPF "
+                "(art. 7.y LIRPF)."
             ),
             color=COLOR_WIN,
         )
-        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+        embed.set_author(name=f"IMV de {user.display_name}", icon_url=user.display_avatar.url)
         await responder.send(embed=embed)
 
-    @app_commands.command(name="daily", description=f"Cobra tus {CURRENCY_NAME} diarios.")
+    @app_commands.command(
+        name="imv", description=f"Cobra tu Ingreso Mínimo Vital diario en {CURRENCY_NAME}."
+    )
     @app_commands.guild_only()
-    async def daily(self, interaction: discord.Interaction) -> None:
-        """Cobra la recompensa diaria; cada día seguido paga más (hasta un tope)."""
+    async def imv(self, interaction: discord.Interaction) -> None:
+        """Cobra el IMV; cada día seguido paga más (hasta un tope). Exento de IRPF."""
         await self._daily_impl(InteractionResponder(interaction), interaction.user)
 
-    @commands.command(name="daily")
+    @commands.command(name="imv")
     @commands.guild_only()
-    async def daily_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.daily`) de `/daily`."""
+    async def imv_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.imv`) de `/imv`."""
         await self._daily_impl(ContextResponder(ctx), ctx.author)
+
+    # -- Hacienda ------------------------------------------------------------------
+
+    async def _hacienda_impl(self, responder: CommandResponder) -> None:
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("La economía solo funciona dentro de un servidor.")
+            return
+        now = datetime.now(TIMEZONE)
+        year_start = datetime(now.year, 1, 1, tzinfo=TIMEZONE).timestamp()
+        treasury = await self.economy.treasury(guild.id, since=year_start)
+        names = {}
+        for user_id, _paid in treasury.top_contributors:
+            member = guild.get_member(user_id)
+            names[user_id] = (
+                discord.utils.escape_markdown(member.display_name)
+                if member is not None
+                else f"<@{user_id}>"
+            )
+        await responder.send(
+            embed=treasury_embed(treasury, year=now.year, names=names),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @app_commands.command(name="hacienda", description="Cuánto ha recaudado el Estado.")
+    @app_commands.guild_only()
+    async def hacienda(self, interaction: discord.Interaction) -> None:
+        """Muestra la cuenta del Estado: saldo, recaudación y quién más paga."""
+        await self._hacienda_impl(InteractionResponder(interaction))
+
+    @commands.command(name="hacienda")
+    @commands.guild_only()
+    async def hacienda_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.hacienda`) de `/hacienda`."""
+        await self._hacienda_impl(ContextResponder(ctx))
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:

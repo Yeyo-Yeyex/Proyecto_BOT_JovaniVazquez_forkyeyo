@@ -28,6 +28,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.blackjack import (
     Action,
@@ -42,6 +43,7 @@ from bot.services.economy import (
     EconomyService,
     InsufficientFundsError,
     format_amount,
+    gambling_tax_line,
     parse_amount,
 )
 from bot.utils.responder import ContextResponder, InteractionResponder
@@ -165,7 +167,7 @@ def table_embed(
         description = headline or result_headline(game)
         color = COLOR_WIN if game.net > 0 else COLOR_PUSH if game.net == 0 else COLOR_LOSS
     if balance == 0 and (game is None or game.settled):
-        description += "\n\n**Estás a cero.** `daily` te recarga."
+        description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🃏 Blackjack", description=description, color=color)
     embed.add_field(name="Saldo", value=format_amount(balance))
     playing = game is not None and not game.settled
@@ -392,6 +394,8 @@ class BlackjackTable(discord.ui.View):
                 )
         finally:
             self._busy = False
+        if game.settled:
+            await renta.remind(self.cog.bot, interaction)
 
     async def _finish(self, first_edit: EditFn, next_edit: EditFn) -> None:
         """Turno de la banca carta a carta y pago final."""
@@ -425,10 +429,13 @@ class BlackjackTable(discord.ui.View):
         if game.settled:
             return await self.balance()
         payout = game.settle()
+        tax_note: str | None = None
         try:
-            balance = await self.cog.economy.pay_winnings(
+            settlement = await self.cog.economy.pay_winnings(
                 self.guild_id, self.owner.id, game=GAME, amount=payout
             )
+            balance = settlement.balance
+            tax_note = gambling_tax_line(settlement)
         except BalanceLimitError:
             logger.warning("Premio de blackjack por encima del saldo máximo; no se paga.")
             balance = await self.balance()
@@ -437,6 +444,10 @@ class BlackjackTable(discord.ui.View):
         elif game.net < 0:
             self.streak = 0
         self.headline = result_headline(game)
+        if tax_note:
+            self.headline += f"\n{tax_note}"
+        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            self.headline += f"\n{renta_hint}"
         return balance
 
     # -- Fichas y repartir ----------------------------------------------------------
@@ -477,6 +488,7 @@ class BlackjackTable(discord.ui.View):
                 await interaction.response.send_message(error, ephemeral=True)
         finally:
             self._busy = False
+        await renta.remind(self.cog.bot, interaction)
 
 
 # -- Cog ----------------------------------------------------------------------------
@@ -590,6 +602,7 @@ class Blackjack(commands.Cog):
             send=send,
             send_error=InteractionResponder(interaction).send_error,
         )
+        await renta.remind(self.bot, interaction)
 
     # Única excepción a la norma de un nombre por comando (ver Biblia.txt):
     # `.bj` es el atajo de siempre y `.blackjack` el nombre que se busca.

@@ -11,7 +11,19 @@ Modelo de datos:
   libro: siempre coincide con la suma de sus movimientos.
 - `economy_ledger`: una fila por movimiento (positivo o negativo) con su
   motivo y el saldo resultante. Permite auditar y revertir errores.
-- `economy_daily`: última recompensa diaria reclamada y racha actual.
+- `economy_daily`: último IMV (la recompensa diaria, exenta de IRPF)
+  reclamado y racha actual.
+- `economy_wallets` con `user_id = STATE_ACCOUNT_ID`: la cuenta del Estado,
+  donde acaba todo lo recaudado. Empieza en 0, no con el saldo de bienvenida.
+- `economy_gambling_days`: resultado neto del casino por usuario y día
+  (premios menos apuestas) y lo retenido sobre él. La retención siempre
+  corresponde a la ganancia neta del día: si después se pierde, se devuelve.
+- `economy_declarations`: declaración semanal del casino por usuario y
+  semana (lunes ISO): lo que sale a devolver y si está pendiente,
+  presentada, caducada o sin nada que devolver (`none`).
+- `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
+  retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
+  y, en el futuro, para la declaración anual.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -33,6 +45,11 @@ T = TypeVar("T")
 # Límite de seguridad muy por debajo del máximo de INTEGER en SQLite (2^63).
 # Ningún uso normal se acerca; existe para que una racha absurda no desborde.
 MAX_BALANCE = 10**15
+
+#: `user_id` de la cuenta del Estado en `economy_wallets`. Ningún usuario de
+#: Discord tiene id 0, así que no choca con nadie. Recibe todo lo que se
+#: recauda; qué se hace con ese dinero está por decidir.
+STATE_ACCOUNT_ID = 0
 
 
 class InsufficientFundsError(Exception):
@@ -70,6 +87,41 @@ class DailyClaim:
 
     last_claimed_at: float
     streak: int
+
+
+@dataclass(frozen=True, slots=True)
+class BetSettlement:
+    """Resultado de mover dinero de una apuesta, con el IRPF del día.
+
+    Attributes:
+        balance: Saldo final del jugador.
+        tax_delta: Retención aplicada ahora; negativa si es una devolución.
+        day_net: Resultado neto del casino hoy (premios menos apuestas).
+        day_withheld: Total retenido hoy tras este movimiento.
+    """
+
+    balance: int
+    tax_delta: int = 0
+    day_net: int = 0
+    day_withheld: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class Treasury:
+    """Resumen de la cuenta del Estado de un servidor.
+
+    Attributes:
+        balance: Saldo actual de la cuenta.
+        collected_total: Todo lo recaudado desde siempre.
+        collected_since: Lo recaudado desde el instante pedido (p. ej. el año).
+        top_contributors: `(user_id, total retenido)` de quienes más han
+            pagado, de más a menos.
+    """
+
+    balance: int
+    collected_total: int
+    collected_since: int
+    top_contributors: tuple[tuple[int, int], ...]
 
 
 class EconomyRepository:
@@ -155,6 +207,40 @@ class EconomyRepository:
                     last_claimed_at REAL NOT NULL,
                     streak INTEGER NOT NULL,
                     PRIMARY KEY (guild_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_tax_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    concept TEXT NOT NULL,
+                    gross INTEGER NOT NULL,
+                    withheld INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_tax_records_member
+                    ON economy_tax_records (guild_id, user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS economy_gambling_days (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    net INTEGER NOT NULL DEFAULT 0,
+                    withheld INTEGER NOT NULL DEFAULT 0 CHECK (withheld >= 0),
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_declarations (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    refund INTEGER NOT NULL CHECK (refund >= 0),
+                    status TEXT NOT NULL
+                        CHECK (status IN ('pending', 'claimed', 'expired', 'none')),
+                    claimed_at REAL,
+                    PRIMARY KEY (guild_id, user_id, week_start)
                 );
                 """
             )
@@ -284,7 +370,456 @@ class EconomyRepository:
         )
         return balance
 
-    # -- Recompensa diaria ---------------------------------------------------------
+    # -- Ingresos con retención -----------------------------------------------------
+
+    def _credit_income_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        """Ingresa `gross`, retiene lo que diga `withhold` y lo registra.
+
+        En el libro quedan dos movimientos, como en una nómina: el bruto
+        (`concept`) y la retención (`irpf:concept`). La retención entra en la
+        cuenta del Estado en la misma transacción.
+
+        Args:
+            withhold: Recibe `(bruto, ingresos de la ventana)` y devuelve la
+                retención en Y$. La regla vive en `bot.services.taxes`.
+            window_seconds: Ventana hacia atrás cuyos ingresos se pasan a
+                `withhold`.
+
+        Returns:
+            `(retención, saldo_final)`.
+        """
+        recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
+        tax = max(0, min(gross, withhold(gross, recent)))
+        entries = [LedgerEntry(gross, concept)]
+        if tax:
+            entries.append(LedgerEntry(-tax, f"irpf:{concept}"))
+        balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        if tax:
+            self._credit_state_in(connection, guild_id, tax, f"irpf:{concept}")
+        connection.execute(
+            """
+            INSERT INTO economy_tax_records
+                (guild_id, user_id, created_at, concept, gross, withheld)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (guild_id, user_id, now, concept, gross, tax),
+        )
+        return tax, balance
+
+    async def credit_income(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        """Versión atómica e independiente de `_credit_income_in`.
+
+        Returns:
+            `(retención, saldo_final)`.
+        """
+        return await self._run(
+            self._credit_income_sync,
+            guild_id,
+            user_id,
+            gross,
+            concept,
+            now,
+            withhold,
+            window_seconds,
+        )
+
+    def _credit_income_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        gross: int,
+        concept: str,
+        now: float,
+        withhold: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> tuple[int, int]:
+        with self._transaction() as connection:
+            return self._credit_income_in(
+                connection,
+                guild_id,
+                user_id,
+                gross=gross,
+                concept=concept,
+                now=now,
+                withhold=withhold,
+                window_seconds=window_seconds,
+            )
+
+    @staticmethod
+    def _recent_taxable_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        since: float,
+        *,
+        exclude_day: str | None = None,
+    ) -> int:
+        """Renta sujeta desde `since`: ingresos con retención más días de casino en positivo."""
+        (income,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND created_at > ?
+            """,
+            (guild_id, user_id, since),
+        ).fetchone()
+        (gambling,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(MAX(net, 0)), 0) FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND updated_at > ? AND day != ?
+            """,
+            (guild_id, user_id, since, exclude_day or ""),
+        ).fetchone()
+        return int(income) + int(gambling)
+
+    # -- Casino con IRPF -----------------------------------------------------------
+
+    async def settle_gamble(
+        self,
+        guild_id: int,
+        user_id: int,
+        entries: Sequence[LedgerEntry],
+        *,
+        day: str,
+        now: float,
+        adjust_tax: bool,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> BetSettlement:
+        """Mueve el dinero de una apuesta y ajusta el IRPF del día, todo atómico.
+
+        El resultado neto del día cambia en la suma de `entries`. Si
+        `adjust_tax`, la retención del día se recalcula para que sea siempre
+        la que corresponde a la ganancia neta: se cobra la diferencia o, si
+        las pérdidas la han reducido, se devuelve desde la cuenta del Estado.
+
+        Args:
+            day: Día (ISO, hora canaria) al que se imputa el movimiento.
+            adjust_tax: `False` para cobrar una apuesta cuyo resultado llega
+                después (blackjack): la retención se ajusta al pagar.
+            day_tax: Recibe `(ganancia neta del día ≥ 0, renta de los otros
+                días de la ventana)` y devuelve la retención total del día.
+
+        Raises:
+            InsufficientFundsError: Si el jugador no cubre la apuesta.
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        return await self._run(
+            self._settle_gamble_sync,
+            guild_id,
+            user_id,
+            tuple(entries),
+            day,
+            now,
+            adjust_tax,
+            day_tax,
+            window_seconds,
+        )
+
+    def _settle_gamble_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        entries: tuple[LedgerEntry, ...],
+        day: str,
+        now: float,
+        adjust_tax: bool,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> BetSettlement:
+        with self._transaction() as connection:
+            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+            connection.execute(
+                """
+                INSERT INTO economy_gambling_days (guild_id, user_id, day, net, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id, day) DO UPDATE SET
+                    net = net + excluded.net, updated_at = excluded.updated_at
+                """,
+                (guild_id, user_id, day, sum(entry.delta for entry in entries), now),
+            )
+            row = connection.execute(
+                """
+                SELECT net, withheld FROM economy_gambling_days
+                WHERE guild_id = ? AND user_id = ? AND day = ?
+                """,
+                (guild_id, user_id, day),
+            ).fetchone()
+            net, withheld = int(row["net"]), int(row["withheld"])
+            if not adjust_tax:
+                return BetSettlement(balance, 0, net, withheld)
+
+            others = self._recent_taxable_in(
+                connection, guild_id, user_id, now - window_seconds, exclude_day=day
+            )
+            delta = max(0, day_tax(max(net, 0), others)) - withheld
+            if delta > 0:
+                # Nunca deja al jugador en negativo; lo que falte se cobra en
+                # el siguiente ajuste, porque el objetivo se recalcula siempre.
+                delta = min(delta, balance)
+                if delta:
+                    balance = self._apply_in_transaction(
+                        connection, guild_id, user_id, (LedgerEntry(-delta, "irpf:juego"),)
+                    )
+                    self._credit_state_in(connection, guild_id, delta, "irpf:juego")
+            elif delta < 0:
+                refund = min(-delta, self._state_balance_in(connection, guild_id))
+                delta = -refund
+                if refund:
+                    self._apply_in_transaction(
+                        connection,
+                        guild_id,
+                        STATE_ACCOUNT_ID,
+                        (LedgerEntry(-refund, "devolucion:irpf:juego"),),
+                    )
+                    balance = self._apply_in_transaction(
+                        connection,
+                        guild_id,
+                        user_id,
+                        (LedgerEntry(refund, "devolucion:irpf:juego"),),
+                    )
+            withheld += delta
+            connection.execute(
+                """
+                UPDATE economy_gambling_days SET withheld = ?
+                WHERE guild_id = ? AND user_id = ? AND day = ?
+                """,
+                (withheld, guild_id, user_id, day),
+            )
+            return BetSettlement(balance, delta, net, withheld)
+
+    # -- Declaración semanal -------------------------------------------------------
+
+    def _sync_declarations_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        current_week: str,
+        week_end: Callable[[str], float],
+        refund_for: Callable[[int, int, int], int],
+        window_seconds: float,
+        keep: int,
+    ) -> None:
+        """Crea las declaraciones de semanas cerradas que falten y caduca las viejas.
+
+        Se calcula al vuelo cuando el usuario juega o pregunta, así no hace
+        falta ninguna tarea que recorra a todo el mundo cada lunes.
+
+        Args:
+            current_week: Lunes (ISO) de la semana en curso; solo se declaran
+                las anteriores.
+            week_end: Fin (epoch) de una semana dado su lunes ISO.
+            refund_for: Recibe `(neto, retenido, renta de otros ingresos en los
+                30 días previos al cierre)` y devuelve lo que sale a devolver.
+            keep: Cuántas declaraciones pendientes se guardan como máximo; las
+                más antiguas caducan y el dinero se queda en el Estado.
+        """
+        # `date(day, '-6 days', 'weekday 1')` es el lunes de la semana de `day`.
+        weeks = connection.execute(
+            """
+            SELECT date(day, '-6 days', 'weekday 1') AS week,
+                   SUM(net) AS net, SUM(withheld) AS withheld
+            FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND day < ?
+            GROUP BY week
+            HAVING week NOT IN (
+                SELECT week_start FROM economy_declarations
+                WHERE guild_id = ? AND user_id = ?
+            )
+            """,
+            (guild_id, user_id, current_week, guild_id, user_id),
+        ).fetchall()
+        for row in weeks:
+            end = week_end(row["week"])
+            (others,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND created_at <= ?
+                """,
+                (guild_id, user_id, end - window_seconds, end),
+            ).fetchone()
+            refund = max(0, refund_for(int(row["net"]), int(row["withheld"]), int(others)))
+            connection.execute(
+                """
+                INSERT INTO economy_declarations (guild_id, user_id, week_start, refund, status)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, row["week"], refund, "pending" if refund else "none"),
+            )
+        connection.execute(
+            """
+            UPDATE economy_declarations SET status = 'expired'
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending' AND week_start NOT IN (
+                SELECT week_start FROM economy_declarations
+                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+                ORDER BY week_start DESC LIMIT ?
+            )
+            """,
+            (guild_id, user_id, guild_id, user_id, keep),
+        )
+
+    @staticmethod
+    def _pending_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int
+    ) -> list[tuple[str, int]]:
+        rows = connection.execute(
+            """
+            SELECT week_start, refund FROM economy_declarations
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+            ORDER BY week_start
+            """,
+            (guild_id, user_id),
+        ).fetchall()
+        return [(str(r["week_start"]), int(r["refund"])) for r in rows]
+
+    async def pending_declarations(
+        self, guild_id: int, user_id: int, **rules: object
+    ) -> list[tuple[str, int]]:
+        """Declaraciones pendientes `(lunes ISO, a devolver)`, de la más antigua a la última.
+
+        `rules` son los argumentos con nombre de `_sync_declarations_in`.
+        """
+        return await self._run(self._pending_sync, guild_id, user_id, rules)
+
+    def _pending_sync(
+        self, guild_id: int, user_id: int, rules: dict[str, object]
+    ) -> list[tuple[str, int]]:
+        with self._transaction() as connection:
+            self._sync_declarations_in(connection, guild_id, user_id, **rules)  # type: ignore[arg-type]
+            return self._pending_in(connection, guild_id, user_id)
+
+    async def claim_declarations(
+        self, guild_id: int, user_id: int, *, now: float, **rules: object
+    ) -> tuple[list[tuple[str, int]], int, int]:
+        """Presenta todas las declaraciones pendientes y paga la devolución.
+
+        El dinero sale de la cuenta del Estado, que es donde está lo retenido.
+
+        Returns:
+            `(semanas presentadas, total devuelto, saldo final)`.
+        """
+        return await self._run(self._claim_sync, guild_id, user_id, now, rules)
+
+    def _claim_sync(
+        self, guild_id: int, user_id: int, now: float, rules: dict[str, object]
+    ) -> tuple[list[tuple[str, int]], int, int]:
+        with self._transaction() as connection:
+            self._sync_declarations_in(connection, guild_id, user_id, **rules)  # type: ignore[arg-type]
+            pending = self._pending_in(connection, guild_id, user_id)
+            total = min(
+                sum(refund for _, refund in pending), self._state_balance_in(connection, guild_id)
+            )
+            connection.execute(
+                """
+                UPDATE economy_declarations SET status = 'claimed', claimed_at = ?
+                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+                """,
+                (now, guild_id, user_id),
+            )
+            if total:
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    STATE_ACCOUNT_ID,
+                    (LedgerEntry(-total, "devolucion:renta"),),
+                )
+                balance = self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(total, "devolucion:renta"),)
+                )
+            else:
+                balance = self._ensure_wallet(connection, guild_id, user_id)
+            return pending, total, balance
+
+    @staticmethod
+    def _state_balance_in(connection: sqlite3.Connection, guild_id: int) -> int:
+        row = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (guild_id, STATE_ACCOUNT_ID),
+        ).fetchone()
+        return int(row["balance"]) if row else 0
+
+    def _credit_state_in(
+        self, connection: sqlite3.Connection, guild_id: int, amount: int, reason: str
+    ) -> None:
+        """Ingresa `amount` en la cuenta del Estado (se abre a 0 si no existía)."""
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance)
+            VALUES (?, ?, 0)
+            """,
+            (guild_id, STATE_ACCOUNT_ID),
+        )
+        self._apply_in_transaction(
+            connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(amount, reason),)
+        )
+
+    async def treasury(self, guild_id: int, since: float, top: int) -> Treasury:
+        """Saldo y recaudación de la cuenta del Estado del servidor."""
+        return await self._run(self._treasury_sync, guild_id, since, top)
+
+    def _treasury_sync(self, guild_id: int, since: float, top: int) -> Treasury:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+                (guild_id, STATE_ACCOUNT_ID),
+            ).fetchone()
+            # Retenciones de ingresos y del casino, en una sola vista.
+            taxes = """
+                SELECT user_id, withheld, created_at AS at FROM economy_tax_records
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, withheld, updated_at AS at FROM economy_gambling_days
+                WHERE guild_id = :guild
+            """
+            total, recent = connection.execute(
+                f"""
+                SELECT COALESCE(SUM(withheld), 0),
+                       COALESCE(SUM(CASE WHEN at >= :since THEN withheld END), 0)
+                FROM ({taxes})
+                """,
+                {"guild": guild_id, "since": since},
+            ).fetchone()
+            contributors = connection.execute(
+                f"""
+                SELECT user_id, SUM(withheld) AS paid FROM ({taxes})
+                GROUP BY user_id HAVING paid > 0
+                ORDER BY paid DESC, user_id ASC LIMIT :top
+                """,
+                {"guild": guild_id, "top": top},
+            ).fetchall()
+            return Treasury(
+                balance=int(row["balance"]) if row else 0,
+                collected_total=int(total),
+                collected_since=int(recent),
+                top_contributors=tuple((int(r["user_id"]), int(r["paid"])) for r in contributors),
+            )
+        finally:
+            connection.close()
+
+    # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def claim_daily(
         self,
@@ -294,12 +829,15 @@ class EconomyRepository:
         now: float,
         decide: Callable[[DailyClaim | None], tuple[int, int] | None],
     ) -> tuple[int, int] | None:
-        """Cobra la recompensa diaria de forma atómica.
+        """Cobra el IMV de forma atómica. Está exento de IRPF (art. 7.y LIRPF).
 
         La regla (espera, racha y cantidad) la pone el servicio a través de
         `decide`: recibe el estado anterior y devuelve `(cantidad, racha)` o
         `None` si todavía no toca. Se evalúa dentro de la transacción para
         que dos `.daily` simultáneos no cobren dos veces.
+
+        Al estar exento no deja registro en `economy_tax_records`: no cuenta
+        para la renta con la que se calculan las retenciones.
 
         Returns:
             `(cantidad, saldo_final)` si se cobró; `None` si `decide` lo rechazó.
@@ -319,7 +857,7 @@ class EconomyRepository:
                 return None
             amount, streak = decision
             balance = self._apply_in_transaction(
-                connection, guild_id, user_id, (LedgerEntry(amount, "daily"),)
+                connection, guild_id, user_id, (LedgerEntry(amount, "imv"),)
             )
             connection.execute(
                 """
@@ -367,6 +905,13 @@ class EconomyRepository:
 
     def _delete_guild_data_sync(self, guild_id: int) -> None:
         with self._transaction() as connection:
-            for table in ("economy_wallets", "economy_ledger", "economy_daily"):
+            for table in (
+                "economy_wallets",
+                "economy_ledger",
+                "economy_daily",
+                "economy_tax_records",
+                "economy_gambling_days",
+                "economy_declarations",
+            ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.casino: mesa de ruleta, `ruleta`, `saldo` y `daily`.
+"""Pruebas de bot.cogs.casino: mesa de ruleta, `ruleta`, `saldo` y `imv`.
 
 Se usa la economía real sobre un SQLite temporal (para comprobar que el
 dinero se mueve de verdad), una rueda trucada y un renderizador falso.
@@ -35,6 +35,7 @@ from bot.services.roulette import (
     parse_bet,
 )
 from bot.services.roulette_render import SpinMedia
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -148,9 +149,9 @@ def test_texto_de_apuesta_perdida_muestra_lo_perdido() -> None:
     assert "-250 Y$" in text
 
 
-def test_mesa_a_cero_sugiere_daily() -> None:
+def test_mesa_a_cero_sugiere_imv() -> None:
     embed = table_embed(owner="Diego", balance=0, stake=100, history=[])
-    assert "daily" in (embed.description or "")
+    assert "imv" in (embed.description or "")
     assert embed.image.url == f"attachment://{PNG_NAME}"
 
 
@@ -315,7 +316,12 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
 
     assert [f.filename for f in send.await_args.kwargs["files"]] == [GIF_NAME]
     assert attachment_names(message.edit.await_args) == [PNG_NAME]
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36
+    # Gana 35.000 netos en el día: paga IRPF sobre ellos y la mesa lo dice.
+    gain = STARTING_BALANCE * 35
+    tax = gambling_day_tax(gain, 0)
+    assert tax > 0
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36 - tax
+    assert "Perro Sanxe" in message.edit.await_args.kwargs["embed"].description
 
 
 async def test_ruleta_con_mas_de_lo_que_tienes_avisa(tmp_path: Path) -> None:
@@ -526,3 +532,28 @@ async def test_comando_con_varias_apuestas_sin_saldo_avisa_del_total(tmp_path: P
 
     send.assert_not_awaited()
     assert "1.200 Y$" in send_error.await_args.args[0]
+
+
+async def test_imv_avisa_de_que_esta_exento(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    responder = RecordingResponder()
+    user = make_user()
+    user.display_avatar.url = "https://example.invalid/a.png"
+
+    await cog._daily_impl(responder, user)  # type: ignore[arg-type]
+
+    assert "exento" in responder.sent[0]["embed"].description
+
+
+async def test_hacienda_muestra_la_cuenta_del_estado(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    await cog.economy.pay_income(1, 10, gross=30_000, concept="nivel:20")
+    responder = RecordingResponder()
+    responder.guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+
+    await cog._hacienda_impl(responder)  # type: ignore[arg-type]
+
+    embed = responder.sent[0]["embed"]
+    assert embed.title == "🏛️ Hacienda"
+    assert "Quién más ha pagado" in embed.fields[0].name
+    assert "<@10>" in embed.fields[0].value

@@ -67,7 +67,7 @@ python -m bot
   | ⚙️ General | `help` · `ping` |
   | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
   | 📊 Niveles | `level [miembro]` · `top [pagina]` |
-  | 🎰 Casino | `daily` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
+  | 🎰 Casino | `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `saldo [miembro]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -116,8 +116,29 @@ python -m bot
     MIT de [imgen](https://github.com/DankMemer/imgen).
 - **Economía (yapdollars):** una sola moneda, ficticia y no comprable,
   para todo el bot. Cada miembro empieza con 1.000 Y$ por servidor y
-  `daily` paga 500 Y$ más 100 por cada día seguido (tope 1.500 Y$; se
-  cobra cada 20 h y la racha se pierde tras 48 h). Todo movimiento queda en
+  `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
+  más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
+  pierde tras 48 h).
+- **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
+  diaria del casino tributan; el IMV está exento, como el real (art. 7.y
+  LIRPF). En el casino, las pérdidas del día compensan las ganancias del
+  mismo día: si pierdes después de ganar, Hacienda te devuelve lo retenido
+  de más.
+- **Campaña de la Renta:** cada lunes se cierra la semana anterior y las
+  pérdidas de unos días compensan las ganancias de otros. Lo retenido de más
+  sale a devolver, y se cobra presentando la declaración: con `renta` o con
+  el aviso (solo lo ves tú) que sale la primera vez que juegas en la semana.
+  Al presentar, el bot lo anuncia en el canal. Se guardan sin caducidad las 2
+  últimas semanas pendientes; si se acumula otra, la más antigua se pierde.
+  El bot crea un evento de Discord por campaña (necesita **Gestionar
+  eventos**). La retención
+  proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
+  la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
+  por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
+  muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
+  retenido entra en la cuenta del Estado (`user_id = 0` en
+  `economy_wallets`), y `hacienda` muestra a cualquiera su saldo, lo
+  recaudado este año y desde siempre, y quién más ha pagado. Todo movimiento queda en
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
@@ -170,8 +191,8 @@ python -m bot
     apodo se quita desde Discord y el canal se renombra a mano.
 - Si un comando de texto falla (falta un argumento, un error inesperado…) el
   bot responde con un mensaje claro; los errores internos se guardan en el log.
-- Los avisos de subida de nivel se publican en el canal donde el mensaje
-  concedió el nivel.
+- Los avisos de subida de nivel se publican en el canal donde se ganó el XP
+  (el chat del canal de voz si fue hablando) e incluyen el premio cobrado.
 - Al entrar alguien, el bot pregunta **¿QUIÉN ERES?** y adjunta el vídeo
   `src/bot/assets/bienvenida.mp4` en `#chat-general`. Al salir, publica una
   despedida con una frase aleatoria tomada de
@@ -196,8 +217,21 @@ python -m bot
 La importación histórica de este servidor ya se completó y la activación de
 niveles ya se ejecutó. Los comandos temporales de importación/activación y los
 comandos de configuración y estado de niveles no están disponibles. Los
-recuentos y niveles existentes permanecen guardados. Los mensajes nuevos dan
-15–25 XP aleatorios como máximo una vez cada 60 segundos por miembro y servidor.
+recuentos y niveles existentes permanecen guardados. Fuentes de XP:
+
+- Mensajes: 15–25 XP, como máximo una vez cada 60 segundos por miembro.
+- Primer mensaje del día (hora canaria): +50 XP.
+- Voz: 4–6 XP por minuto sin mute ni ensordecido, fuera del canal AFK y con
+  al menos otra persona sin mutear en el canal.
+- Reacciones recibidas de otros: +5 XP, con tope de 100 XP al día.
+- Racha: cada día seguido escribiendo suma un 2 % al XP de mensajes y voz,
+  hasta +20 %.
+- Hora feliz: una hora al día (entre las 12:00 y las 23:00, distinta cada
+  día) con XP ×2 en mensajes y voz. Se anuncia en el canal del sistema del
+  servidor.
+
+Subir al nivel N paga 100 × N Y$ brutos, el doble en los múltiplos de 5. Los
+niveles que ya tenía cada uno antes de este cambio no se pagan.
 
 La economía usa el mismo archivo SQLite (tablas `economy_*`). Si el bot sale
 de un servidor, se borran sus saldos y su libro de movimientos.

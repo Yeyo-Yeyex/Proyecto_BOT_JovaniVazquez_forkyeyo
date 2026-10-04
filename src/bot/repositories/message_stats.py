@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
+
+from bot.services.levels import MemberActivity
 
 T = TypeVar("T")
 
@@ -42,7 +44,7 @@ class LevelSettings:
 
 @dataclass(frozen=True, slots=True)
 class LevelAward:
-    """Resultado de intentar conceder experiencia por un mensaje."""
+    """Experiencia concedida a un miembro (por mensaje, voz o reacción)."""
 
     previous_xp: int
     total_xp: int
@@ -129,6 +131,23 @@ class MessageStatsRepository:
                 );
                 """
             )
+            level_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(member_levels)").fetchall()
+            }
+            # Columnas añadidas con la racha, el bonus diario y el XP por
+            # reacciones; las bases de datos antiguas se amplían en el sitio.
+            for column, definition in (
+                ("last_active_day", "TEXT"),
+                ("streak_days", "INTEGER NOT NULL DEFAULT 0"),
+                ("reaction_day", "TEXT"),
+                ("reaction_xp", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in level_columns:
+                    # `column` y `definition` salen de una tupla fija del código.
+                    connection.execute(
+                        f"ALTER TABLE member_levels ADD COLUMN {column} {definition}"
+                    )
             columns = {
                 row["name"]
                 for row in connection.execute(
@@ -674,15 +693,33 @@ class MessageStatsRepository:
                 (cooldown_seconds, guild_id),
             )
 
-    async def award_message_xp(
-        self, guild_id: int, user_id: int, xp_amount: int, now: float
-    ) -> LevelAward | None:
-        """Concede XP con enfriamiento atómico si los niveles están activos."""
-        return await self._run(self._award_message_xp_sync, guild_id, user_id, xp_amount, now)
+    async def grant_activity(
+        self,
+        guild_id: int,
+        user_ids: Sequence[int],
+        decide: Callable[[int, MemberActivity, int], MemberActivity | None],
+    ) -> dict[int, LevelAward]:
+        """Aplica una regla de XP a uno o varios miembros en una sola transacción.
 
-    def _award_message_xp_sync(
-        self, guild_id: int, user_id: int, xp_amount: int, now: float
-    ) -> LevelAward | None:
+        La regla la pone `bot.services.levels`: `decide` recibe el id del
+        miembro, su estado actual y el enfriamiento del servidor, y devuelve el
+        estado nuevo o `None` si no toca dar nada. Se evalúa dentro de la
+        transacción para que dos eventos simultáneos no se pisen. Se agrupan
+        varios miembros (p. ej. todo un canal de voz) para escribir una sola
+        vez por minuto.
+
+        Returns:
+            Resultado por miembro al que se le dio XP. Vacío si los niveles
+            del servidor están desactivados.
+        """
+        return await self._run(self._grant_activity_sync, guild_id, tuple(user_ids), decide)
+
+    def _grant_activity_sync(
+        self,
+        guild_id: int,
+        user_ids: tuple[int, ...],
+        decide: Callable[[int, MemberActivity, int], MemberActivity | None],
+    ) -> dict[int, LevelAward]:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             settings = connection.execute(
@@ -694,43 +731,79 @@ class MessageStatsRepository:
             ).fetchone()
             if settings is None or not settings["enabled"]:
                 connection.rollback()
-                return None
+                return {}
 
-            previous = connection.execute(
-                """
-                SELECT total_xp, last_awarded_at FROM member_levels
-                WHERE guild_id = ? AND user_id = ?
-                """,
-                (guild_id, user_id),
-            ).fetchone()
             cooldown = int(settings["cooldown_seconds"])
-            if (
-                previous is not None
-                and previous["last_awarded_at"] is not None
-                and now - previous["last_awarded_at"] < cooldown
-            ):
-                connection.rollback()
-                return None
-
-            previous_xp = int(previous["total_xp"]) if previous is not None else 0
-            total_xp = previous_xp + xp_amount
-            connection.execute(
-                """
-                INSERT INTO member_levels (guild_id, user_id, total_xp, last_awarded_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                    total_xp = excluded.total_xp,
-                    last_awarded_at = excluded.last_awarded_at
-                """,
-                (guild_id, user_id, total_xp, now),
-            )
+            awards: dict[int, LevelAward] = {}
+            for user_id in user_ids:
+                row = connection.execute(
+                    """
+                    SELECT total_xp, last_awarded_at, last_active_day, streak_days,
+                           reaction_day, reaction_xp
+                    FROM member_levels WHERE guild_id = ? AND user_id = ?
+                    """,
+                    (guild_id, user_id),
+                ).fetchone()
+                previous = (
+                    MemberActivity(
+                        total_xp=int(row["total_xp"]),
+                        last_awarded_at=row["last_awarded_at"],
+                        last_active_day=row["last_active_day"],
+                        streak_days=int(row["streak_days"]),
+                        reaction_day=row["reaction_day"],
+                        reaction_xp=int(row["reaction_xp"]),
+                    )
+                    if row is not None
+                    else MemberActivity()
+                )
+                updated = decide(user_id, previous, cooldown)
+                if updated is None:
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO member_levels (
+                        guild_id, user_id, total_xp, last_awarded_at, last_active_day,
+                        streak_days, reaction_day, reaction_xp
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                        total_xp = excluded.total_xp,
+                        last_awarded_at = excluded.last_awarded_at,
+                        last_active_day = excluded.last_active_day,
+                        streak_days = excluded.streak_days,
+                        reaction_day = excluded.reaction_day,
+                        reaction_xp = excluded.reaction_xp
+                    """,
+                    (
+                        guild_id,
+                        user_id,
+                        updated.total_xp,
+                        updated.last_awarded_at,
+                        updated.last_active_day,
+                        updated.streak_days,
+                        updated.reaction_day,
+                        updated.reaction_xp,
+                    ),
+                )
+                awards[user_id] = LevelAward(
+                    previous_xp=previous.total_xp,
+                    total_xp=updated.total_xp,
+                    cooldown_seconds=cooldown,
+                    announce_channel_id=settings["announce_channel_id"],
+                )
             connection.commit()
-            return LevelAward(
-                previous_xp=previous_xp,
-                total_xp=total_xp,
-                cooldown_seconds=cooldown,
-                announce_channel_id=settings["announce_channel_id"],
-            )
+            return awards
+
+    async def enabled_guild_ids(self) -> set[int]:
+        """Servidores con el sistema de niveles activo."""
+        return await self._run(self._enabled_guild_ids_sync)
+
+    def _enabled_guild_ids_sync(self) -> set[int]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT guild_id FROM guild_level_settings WHERE enabled = 1"
+            ).fetchall()
+            return {int(row["guild_id"]) for row in rows}
 
     async def member_xp(self, guild_id: int, user_id: int) -> int:
         """Devuelve XP acumulada por un miembro; los perfiles ausentes empiezan en cero."""

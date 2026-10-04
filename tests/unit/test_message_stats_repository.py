@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -12,6 +13,7 @@ import pytest
 
 from bot.cogs.message_stats import MessageStats
 from bot.repositories.message_stats import MessageStatsRepository
+from bot.services.levels import MemberActivity
 
 
 class FakeHistoryChannel:
@@ -250,6 +252,58 @@ async def test_activar_niveles_convierte_historial_una_sola_vez(tmp_path: Path) 
     assert settings.historical_seeded is True
 
 
+def add_xp(xp: int, *, now: float):
+    """Regla mínima de prueba: suma `xp` respetando el enfriamiento."""
+
+    def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
+        if state.last_awarded_at is not None and now - state.last_awarded_at < cooldown:
+            return None
+        return replace(state, total_xp=state.total_xp + xp, last_awarded_at=now)
+
+    return decide
+
+
+@pytest.mark.asyncio
+async def test_grant_activity_conserva_racha_y_reacciones(tmp_path: Path) -> None:
+    """Los campos nuevos (racha, reacciones) se guardan y se releen tal cual."""
+    repository = MessageStatsRepository(tmp_path / "stats.sqlite3")
+    await repository.initialize()
+    assert await repository.start_import(10, [20], cutoff_id=500)
+    await repository.save_channel_counts(10, 20, {30: 1})
+    await repository.finish_import(10)
+    await repository.enable_levels(10, historical_xp_per_message=20)
+
+    def first(_user_id: int, state: MemberActivity, _cooldown: int) -> MemberActivity:
+        return replace(
+            state,
+            total_xp=50,
+            last_active_day="2026-10-04",
+            streak_days=3,
+            reaction_day="2026-10-04",
+            reaction_xp=15,
+        )
+
+    seen: list[MemberActivity] = []
+
+    def second(_user_id: int, state: MemberActivity, _cooldown: int) -> None:
+        seen.append(state)
+
+    await repository.grant_activity(10, [30, 31], first)
+    awards = await repository.grant_activity(10, [30], second)
+
+    assert awards == {}
+    assert seen == [
+        MemberActivity(
+            total_xp=50,
+            last_active_day="2026-10-04",
+            streak_days=3,
+            reaction_day="2026-10-04",
+            reaction_xp=15,
+        )
+    ]
+    assert await repository.enabled_guild_ids() == {10}
+
+
 @pytest.mark.asyncio
 async def test_xp_obedece_enfriamiento_y_aislamiento_por_servidor(
     tmp_path: Path,
@@ -262,14 +316,12 @@ async def test_xp_obedece_enfriamiento_y_aislamiento_por_servidor(
     await repository.finish_import(10)
     await repository.enable_levels(10, historical_xp_per_message=20)
 
-    assert await repository.award_message_xp(11, 30, 20, now=100) is None
-    first = await repository.award_message_xp(10, 30, 20, now=100)
-    assert first is not None
+    assert await repository.grant_activity(11, [30], add_xp(20, now=100)) == {}
+    first = (await repository.grant_activity(10, [30], add_xp(20, now=100)))[30]
     assert first.previous_xp == 20
     assert first.total_xp == 40
-    assert await repository.award_message_xp(10, 30, 20, now=159) is None
-    second = await repository.award_message_xp(10, 30, 20, now=160)
-    assert second is not None
+    assert await repository.grant_activity(10, [30], add_xp(20, now=159)) == {}
+    second = (await repository.grant_activity(10, [30], add_xp(20, now=160)))[30]
     assert second.total_xp == 60
 
 
@@ -286,7 +338,7 @@ async def test_canal_de_anuncios_y_ranking_son_por_servidor(tmp_path: Path) -> N
 
     await repository.set_level_announce_channel(10, 99)
     await repository.set_level_cooldown(10, 120)
-    await repository.award_message_xp(10, 30, 20, now=100)
+    await repository.grant_activity(10, [30], add_xp(20, now=100))
 
     settings = await repository.level_settings(10)
     assert settings is not None
