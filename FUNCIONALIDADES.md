@@ -285,9 +285,9 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.4. Tragaperras
 
 - `slots [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎰 Tirar, 🔁 Auto ×10, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$.
-- 3 rodillos y 3 filas a la vista; solo paga la del medio. Cada rodillo es una tira fija de símbolos y la parada de cada uno sale del azar del sistema operativo (`random.SystemRandom`, como `secrets`). Las tiras son distintas: el primer rodillo lleva más 🎤 y 7️⃣ que el tercero, así que quedarse a uno del premio gordo pasa a menudo y el premio, poco.
-- Premios (veces la apuesta, con la apuesta incluida): 🍒 en el primer rodillo ×0,5; 🍒 🍒 ×2; 🍒🍒🍒 y 🍋🍋🍋 ×4; 🍇 ×10; 🔔 ×20; 💎 ×60; 7️⃣ ×200. 🎤 es comodín (menos para 🎟️) y 🎤 🎤 🎤 se lleva el bote.
-- Bote común por servidor: el 3 % de cada apuesta pagada va al bote (monedero `SLOTS_POT_ACCOUNT_ID`). Quien saca 🎤 🎤 🎤 se lo lleva entero y la casa pone 5.000 Y$ para empezar otro. La máquina enseña el bote y el último ganador.
+- 3 rodillos y 3 filas a la vista; solo paga la del medio. Cada rodillo es una tira fija de símbolos y la parada de cada uno sale del azar del sistema operativo (`random.SystemRandom`, como `secrets`). Las tiras son distintas: el primer rodillo lleva más 🃏 y 7️⃣ que el tercero, así que quedarse a uno del premio gordo pasa a menudo y el premio, poco.
+- Premios (veces la apuesta, con la apuesta incluida): 🍒 en el primer rodillo ×0,5; 🍒 🍒 ×2; 🍒🍒🍒 y 🍋🍋🍋 ×4; 🍇 ×10; 🔔 ×20; 💎 ×60; 7️⃣ ×200. 🃏 es comodín (menos para 🎟️) y 🃏 🃏 🃏 se lleva el bote.
+- Bote común por servidor: el 3 % de cada apuesta pagada va al bote (monedero `SLOTS_POT_ACCOUNT_ID`). Quien saca 🃏 🃏 🃏 se lo lleva entero y la casa pone 5.000 Y$ para empezar otro. La máquina enseña el bote y el último ganador.
 - Giros gratis: 3 🎟️ en cualquier fila dan 5 giros con la apuesta que los activó. Durante los giros gratis los 🎟️ no cuentan. Si la máquina se cierra o el bot se apaga con giros pendientes, se juegan solos y se pagan.
 - Máquina caliente: cada tirada con premio (también el medio premio de la 🍒) llena una barra de 5; llena, la siguiente tirada paga la línea ×2. La barra se guarda por miembro en memoria.
 - Retorno: la línea devuelve ~83 %; con giros gratis y máquina caliente, ~91 %; con el bote, ~94 % (una prueba lo calcula). El 31 % de las tiradas paga algo, pero dos de cada tres de esos premios son menores que la apuesta, y la máquina los celebra igual. Jackpot: 1 de cada 14.400 tiradas; giros gratis: 1 de cada 133.

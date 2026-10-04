@@ -3,7 +3,7 @@ Símbolos de la tragaperras (bot.services.slots_render).
 Cada PNG es un símbolo de 50×50 px con fondo transparente, ya al tamaño con
 el que se pinta en los rodillos.
 
-- cherry, lemon, grape, bell, diamond, wild (micrófono) y scatter (entrada):
+- cherry, lemon, grape, bell, diamond, wild (comodín, 🃏) y scatter (entrada):
   emojis de Noto Color Emoji (Google), dibujados con la fuente y reducidos.
   Las imágenes de Noto Emoji se distribuyen con licencia Apache 2.0 y la
   fuente con la SIL Open Font License 1.1:

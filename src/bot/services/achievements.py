@@ -636,8 +636,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "hot_big", "Fuego real", "Gana ×20 o más con la máquina caliente.", E, True),
     ])  # fmt: skip
     a += _tiers("slots", "slots_wild_wins", [
-        (10, "wild_10", "Jovani al rescate", "Gana 10 tiradas gracias al 🎤.", C),
-        (100, "wild_100", "Fan de Jovani", "Gana 100 tiradas gracias al 🎤.", R),
+        (10, "wild_10", "Comodín al rescate", "Gana 10 tiradas gracias al 🃏.", C),
+        (100, "wild_100", "Amigo del comodín", "Gana 100 tiradas gracias al 🃏.", R),
     ])  # fmt: skip
     a += _tiers("slots", "slots_turbo", [
         (100, "turbo_100", "Sin frenos", "Juega 100 tiradas en modo turbo.", C),

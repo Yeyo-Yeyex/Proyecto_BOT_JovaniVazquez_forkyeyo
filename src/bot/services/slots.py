@@ -11,7 +11,7 @@ están para que se vea el símbolo que casi entra: el near-miss.
 Cada rodillo es una tira fija de símbolos (`REEL_STRIPS`) y en cada tirada se
 elige al azar dónde para cada uno, con la misma probabilidad para cada
 posición. Las tiras no son iguales, y eso es lo que fija las probabilidades:
-el primer rodillo lleva más 🎤 y 7️⃣ que el tercero, así que "7️⃣ 7️⃣ y el tercero
+el primer rodillo lleva más 🃏 y 7️⃣ que el tercero, así que "7️⃣ 7️⃣ y el tercero
 no" pasa mucho más que "7️⃣ 7️⃣ 7️⃣". Es el mismo truco de las máquinas reales.
 
 Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`):
@@ -23,7 +23,7 @@ Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`):
 - El 31 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
   de lo apostado (una 🍒 al principio devuelve la mitad). Es lo que más
   engancha de una tragaperras: la máquina lo celebra y aun así pierdes.
-- Jackpot (🎤 🎤 🎤 en la línea): 1 de cada 14.400 tiradas.
+- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 14.400 tiradas.
 - Giros gratis (3 🎟️ en cualquier fila): 1 de cada 133 tiradas.
 """
 
@@ -66,7 +66,7 @@ SYMBOLS: dict[str, SymbolInfo] = {
         SymbolInfo(BELL, "🔔", "Campana"),
         SymbolInfo(DIAMOND, "💎", "Diamante"),
         SymbolInfo(SEVEN, "7️⃣", "Siete"),
-        SymbolInfo(WILD, "🎤", "Jovani (comodín)"),
+        SymbolInfo(WILD, "🃏", "Comodín"),
         SymbolInfo(SCATTER, "🎟️", "Giros gratis"),
     )
 }
@@ -160,7 +160,7 @@ class Spin:
 
     @property
     def is_jackpot(self) -> bool:
-        """Si es 🎤 🎤 🎤 en la línea."""
+        """Si es 🃏 🃏 🃏 en la línea."""
         return self.kind == Kind.JACKPOT
 
     @property

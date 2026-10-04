@@ -99,7 +99,7 @@ COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_HOT = discord.Color.from_rgb(255, 110, 40)
 
 # Textos en el tono de Jovani Vázquez: alegre, exagerado y cariñoso.
-JACKPOT_LINES = ("🎤🎤🎤 ¡JOVANAZO!", "🎤🎤🎤 ¡EL BOTE ES TUYO!", "🎤🎤🎤 ¡WEPAAA!")
+JACKPOT_LINES = ("🃏🃏🃏 ¡JOVANAZO!", "🃏🃏🃏 ¡EL BOTE ES TUYO!", "🃏🃏🃏 ¡WEPAAA!")
 BIG_WIN_LINES = ("💥 ¡QUÉ LOCURA!", "💥 ¡REVIENTAS LA MÁQUINA!", "💥 ¡AY, BENDITO, QUÉ PREMIO!")
 WIN_LINES = ("¡Wepa!", "¡Eso es!", "¡Cobras, mi amor!", "¡Tilín, tilín!", "¡Acho, qué bueno!")
 SMALL_WIN_LINES = ("🍒 ¡Premio!", "🍒 ¡Algo cae!", "🍒 ¡Tilín!")
@@ -225,7 +225,7 @@ def auto_text(plays: list[SlotsPlay], stopped: str | None = None) -> str:
         line = " ".join(SYMBOLS[s].emoji for s in best.spin.line)
         lines.append(f"Mejor: {line} +{format_amount(best.net)}")
     if any(p.jackpot for p in plays):
-        lines.append(f"# 🎤🎤🎤 ¡JOVANAZO! +{format_amount(sum(p.jackpot for p in plays))}")
+        lines.append(f"# 🃏🃏🃏 ¡JOVANAZO! +{format_amount(sum(p.jackpot for p in plays))}")
     if any(p.spin.triggers_free_spins for p in plays):
         lines.append("🎟️ ¡Han salido giros gratis!")
     if stopped:
@@ -271,7 +271,7 @@ def machine_embed(
     if text is None:
         description = (
             "Pulsa 🎰 **Tirar**. Paga la fila del medio.\n"
-            "📋 **Premios** para ver la tabla. 🎤 🎤 🎤 se lleva el **bote**."
+            "📋 **Premios** para ver la tabla. 🃏 🃏 🃏 se lleva el **bote**."
         )
     else:
         description = text
@@ -872,7 +872,7 @@ class Slots(commands.Cog, name="Tragaperras"):
             return
         if play.jackpot:
             text = (
-                f"📣 🎤🎤🎤 ¡{user.mention} ha sacado el **JOVANAZO**! Se lleva "
+                f"📣 🃏🃏🃏 ¡{user.mention} ha sacado el **JOVANAZO**! Se lleva "
                 f"**{format_amount(play.jackpot)}** del bote. {TAX_COLLECTOR} ya se está "
                 "relamiendo."
             )

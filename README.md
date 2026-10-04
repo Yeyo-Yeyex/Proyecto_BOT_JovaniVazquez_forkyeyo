@@ -196,8 +196,8 @@ python -m bot
   de arriba y abajo se ven para que se note cuándo has estado cerca.
   Botones: 🎰 Tirar, 🔁 Auto ×10 (diez tiradas con un solo resumen),
   ⚡ Turbo (sin animación), ½ / ×2 / 💰 All-in y 📋 Premios. Premios:
-  🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🎤 comodín
-  y 🎤 🎤 🎤 se lleva el **bote común** del servidor, que crece con el 3 % de
+  🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🃏 comodín
+  y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 3 % de
   cada apuesta y vuelve a 5.000 Y$ al vaciarse. Tres 🎟️ en cualquier fila dan
   5 giros gratis, y cada 5 tiradas con premio la máquina se calienta y la
   siguiente paga ×2. Devuelve ~94 % de lo apostado contando el bote. El GIF
