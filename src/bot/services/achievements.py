@@ -11,7 +11,8 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
-`blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `casino_stats`) y se
+`blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `pachinko_stats`,
+`casino_stats`) y se
 lo pasan al cog de logros.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
@@ -32,6 +33,8 @@ from bot.services.crash import Seat as CrashSeat
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
 from bot.services.mines import Status as MinesStatus
+from bot.services.pachinko import Kind as PachinkoKind
+from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
@@ -96,6 +99,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("slots", "🎰 Tragaperras"),
     Category("crash", "🚀 Crash"),
     Category("mines", "💣 Minas"),
+    Category("pachinko", "🌸 Pachinko"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -794,6 +798,84 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
 
+    # 🌸 Pachinko -----------------------------------------------------------------------
+    a += _tiers("pachinko", "pachinko_volleys", [
+        (1, "pachi_1", "Primera bola", "Lanza tu primera tanda en el pachinko.", C),
+        (100, "pachi_100", "Salón de Akihabara", "Lanza 100 tandas en el pachinko.", R),
+        (1_000, "pachi_1k", "Ojos de neón", "Lanza 1.000 tandas en el pachinko.", E),
+        (10_000, "pachi_10k", "Vives en el salón", "Lanza 10.000 tandas en el pachinko.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_starts", [
+        (100, "pachi_start_100", "Por la ranura", "Mete 100 bolas por START.", C),
+        (1_000, "pachi_start_1k", "Tulipán abierto", "Mete 1.000 bolas por START.", R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_reach", [
+        (1, "pachi_reach", "¡REACH!", "Mira un reach en la pantalla.", C),
+        (100, "pachi_reach_100", "Corazón en un puño", "Mira 100 reach.", R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_fake_reach", [
+        (25, "pachi_fake_25", "Me la volvió a hacer", "Pierde 25 reach por un número.", R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_atari", [
+        (1, "pachi_atari", "¡ATARI!", "Saca tres iguales en la pantalla.", R),
+        (25, "pachi_atari_25", "Bendecido por Jovani", "Saca 25 ataris.", E),
+        (100, "pachi_atari_100", "La compuerta te quiere", "Saca 100 ataris.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_rush", [
+        (1, "pachi_rush", "Kakuhen", "Saca un rush (atari con número impar).", R),
+        (10, "pachi_rush_10", "Adicto al rush", "Saca 10 rush.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_super", [
+        (1, "pachi_777", "7️⃣7️⃣7️⃣", "Saca el SUPER RUSH.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_renchan_max", [
+        (3, "pachi_ren_3", "Renchan", "Encadena 3 premios gordos en un rush.", R),
+        (5, "pachi_ren_5", "Racha imparable", "Encadena 5 premios gordos.", E),
+        (10, "pachi_ren_10", "Lluvia de bolas", "Encadena 10 premios gordos.", L),
+        (15, "pachi_ren_15", "Fiebre total", "Encadena 15 premios gordos, el máximo.", M, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_corners", [
+        (1, "pachi_corner", "Esquinita", "Mete una bola en un bolsillo de esquina.", C),
+        (25, "pachi_corner_25", "Francotirador", "Mete 25 bolas en las esquinas.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_full_hold", [
+        (1, "pachi_hold", "Reserva llena", "Llena las 4 reservas en una tanda.", C),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_wasted", [
+        (1, "pachi_limbo", "Bolas al limbo", "Mete una bola en START con la reserva llena.", R,
+         True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_blank", [
+        (1, "pachi_blank", "Todas por el desagüe", "Pierde las 10 bolas de una tanda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_win_max", [
+        (10_000, "pachi_rich", "Bandeja llena", "Gana 10.000 Y$ en una tanda.", R),
+        (100_000, "pachi_richer", "Rey del salón", "Gana 100.000 Y$ en una tanda.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pachinko", "pachinko_session_max", [
+        (50, "pachi_session", "Sin levantarse del taburete", "Lanza 50 tandas en una máquina.", R),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_burst", [
+        (10, "pachi_burst", "Mano en el gatillo", "Usa la Ráfaga 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_turbo", [
+        (100, "pachi_turbo", "Prisa japonesa", "Lanza 100 tandas en turbo.", C),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_night", [
+        (1, "pachi_night", "Salón 24 horas", "Juega al pachinko entre las 3 y las 6.", C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="casino_six_games",
+        name="Ludópata integral",
+        description="Juega a los seis juegos del casino, pachinko incluido.",
+        category="casino",
+        rarity=E,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+        ),
+    ))  # fmt: skip
+
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
         (10_000, "rich_10k", "Clase media", "Ten 10.000 Y$ a la vez.", C),
@@ -1205,6 +1287,51 @@ def slots_stats(
     bump("slots_turbo", turbo)
     bump("slots_pot_fed", amount=0 if free else slots_pot_share(stake))
     bump("slots_night", 3 <= when.hour < 6)
+    return delta
+
+
+def pachinko_stats(
+    volley: PachinkoVolley,
+    *,
+    stake: int,
+    won: int,
+    turbo: bool,
+    session_volleys: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una tanda de pachinko (sin lo común del casino).
+
+    Args:
+        stake: Apuesta de la tanda.
+        won: Lo que ha devuelto (apuesta incluida).
+        turbo: Si se jugó sin animación (turbo o Ráfaga).
+        session_volleys: Tandas en esta máquina, contando esta.
+        when: Hora local de la tanda.
+    """
+    delta = StatDelta(add={"pachinko_volleys": 1}, peak={"pachinko_session_max": session_volleys})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    net = won - stake
+    if net > 0:
+        delta.peak["pachinko_win_max"] = net
+    bump("pachinko_starts", amount=volley.starts)
+    bump("pachinko_reach", amount=sum(1 for d in volley.draws if d.reach))
+    bump("pachinko_fake_reach", amount=sum(1 for d in volley.draws if d.reach and not d.atari))
+    bump("pachinko_atari", amount=sum(1 for d in volley.draws if d.atari))
+    bump("pachinko_rush", amount=sum(1 for d in volley.draws if d.kind == PachinkoKind.RUSH))
+    bump("pachinko_super", amount=sum(1 for d in volley.draws if d.kind == PachinkoKind.SUPER))
+    if volley.draws:
+        delta.peak["pachinko_renchan_max"] = max(d.jackpots for d in volley.draws)
+    bump("pachinko_corners", amount=volley.corners)
+    bump("pachinko_full_hold", len(volley.draws) >= 4)
+    bump("pachinko_wasted", volley.wasted > 0)
+    bump("pachinko_blank", volley.total_balls == 0)
+    bump("pachinko_turbo", turbo)
+    bump("pachinko_night", 3 <= when.hour < 6)
     return delta
 
 

@@ -92,6 +92,12 @@ PRODUCED_STATS = {
     "crash_rounds", "crash_cashouts", "crash_cashout_max", "crash_win_max", "crash_auto",
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",
     "crash_party_max",
+    # Pachinko (cogs/pachinko.py: pachinko_stats y el botón de Ráfaga)
+    "pachinko_volleys", "pachinko_starts", "pachinko_reach", "pachinko_fake_reach",
+    "pachinko_atari", "pachinko_rush", "pachinko_super", "pachinko_renchan_max",
+    "pachinko_corners", "pachinko_full_hold", "pachinko_wasted", "pachinko_blank",
+    "pachinko_win_max", "pachinko_session_max", "pachinko_burst", "pachinko_turbo",
+    "pachinko_night",
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
     "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
     "mines_clear_hard", "mines_random", "mines_streak_max",
