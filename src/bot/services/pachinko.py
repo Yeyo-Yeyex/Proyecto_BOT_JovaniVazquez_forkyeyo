@@ -1,4 +1,4 @@
-"""Pachinko: tablero de clavos, bolsillos, sorteo digital, reach y rush.
+"""Pachinko: tableros de clavos, bolsillos, sorteo digital, reach y rush.
 
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.pachinko`) cobra y paga
 con `EconomyService.settle_bet` y pinta el resultado con
@@ -6,33 +6,38 @@ con `EconomyService.settle_bet` y pinta el resultado con
 
 Cómo funciona una tanda (cada vez que se pulsa 🎯 Lanzar):
 
-1. Caen `BALLS` bolas. Cada una rebota en `ROWS` filas de clavos y en cada
-   clavo va a la izquierda o a la derecha a cara o cruz. El bolsillo final es
-   el número de veces que ha ido a la derecha (un tablero de Galton): los del
-   centro se llenan mucho y los de las esquinas casi nunca.
-2. Cada bolsillo devuelve bolas (`POCKETS`). El del centro es la ranura
-   **START**: no devuelve nada, pero cada bola que entra gana una tirada del
-   sorteo de la pantalla. Como en las máquinas reales, se guardan como mucho
-   `MAX_HOLD` tiradas en reserva (保留, *horyū*); las bolas que entran con la
-   reserva llena se pierden.
+1. Caen `BALLS` bolas. Cada una rebota en las filas de clavos del tablero y
+   en cada clavo va a la izquierda o a la derecha a cara o cruz. El bolsillo
+   final es el número de veces que ha ido a la derecha (un tablero de
+   Galton): los del centro se llenan mucho y los de las esquinas casi nunca.
+2. Cada bolsillo devuelve bolas (`Board.pockets`). El del centro es la
+   ranura **START**: no devuelve nada, pero cada bola que entra gana una
+   tirada del sorteo de la pantalla. Como en las máquinas reales, se guardan
+   como mucho `MAX_HOLD` tiradas en reserva (保留, *horyū*); las bolas que
+   entran con la reserva llena se pierden.
 3. El sorteo saca tres números del 1 al 9. Tres iguales es **ATARI**
-   (大当り, premio gordo): se abre la compuerta y entran `FEVER_BALLS` bolas.
-   Si el número es impar, el atari trae un **RUSH** (確変, *kakuhen*): se
-   encadenan más ataris mientras una moneda trucada siga saliendo cara. Con el
-   7 es el **SUPER RUSH**, con más probabilidad de seguir y más tope.
+   (大当り, premio gordo): se abre la compuerta y entran `Board.fever_balls`
+   bolas. Si el número es impar, el atari trae un **RUSH** (確変, *kakuhen*):
+   se encadenan más premios mientras una moneda trucada siga saliendo cara.
+   Con el 7 es el **SUPER RUSH**, con más probabilidad de seguir y más tope.
 4. Cuando el sorteo no toca, a veces enseña un **REACH** (dos números iguales
    y el del centro girando): es solo espectáculo, no cambia la probabilidad.
 
 Todo lo que paga se cuenta en bolas. Una bola vale `apuesta / BALLS`.
 
-Números de la tabla actual (calculados en `tests/unit/test_pachinko_service.py`):
+Hay cuatro tableros (`BOARDS`). Todos devuelven lo mismo de media, entre el
+94 y el 95 % (la ruleta americana, 94,7 %), y lo que cambia es el riesgo:
+cuánto sale de los bolsillos (poco a poco) y cuánto de los ataris (de golpe).
+Números calculados con fracciones exactas en `tests/unit/test_pachinko_service.py`:
 
-- Devuelve un 94,6 % de lo apostado (la ruleta americana, 94,7 %): 57,6 %
-  sale de los bolsillos y 37,0 %, de los ataris.
-- Un atari cada ~17 tandas. Cada atari paga de media 2,1 premios gordos.
-- En el 99,9 % de las tandas cae algo en un bolsillo, pero solo una de cada
-  diez devuelve lo apostado o más: la máquina tintinea y aun así pierdes.
-  El dinero de verdad está en los ataris.
+| Tablero | Filas | Retorno | De los bolsillos | Un atari cada | Atari medio |
+|---|---|---|---|---|---|
+| 🌸 Sakura | 8 | 95,2 % | 66,4 % | 7 tandas | ×1,8 |
+| 🏮 Clásica | 10 | 94,6 % | 57,6 % | 17 tandas | ×6,3 |
+| 🐉 Dragón | 10 | 94,4 % | 26,4 % | 22 tandas | ×14,4 |
+| 👹 Oni | 12 | 94,3 % | 17,2 % | 39 tandas | ×29,6 |
+
+("Atari medio" es lo que paga de media cada atari, en veces la apuesta.)
 """
 
 from __future__ import annotations
@@ -43,36 +48,140 @@ from dataclasses import dataclass
 from fractions import Fraction
 from math import comb
 
-# -- Tablero ------------------------------------------------------------------------
-
-#: Filas de clavos. Con 10 filas hay 11 bolsillos.
-ROWS = 10
 #: Bolas por tanda; lo apostado se reparte entre ellas.
 BALLS = 10
-#: Bolsillo de la ranura START (el del centro).
-START_POCKET = ROWS // 2
-#: Bolas que devuelve cada bolsillo, de izquierda a derecha. El START no
-#: devuelve nada: paga con tiradas del sorteo.
-POCKETS: tuple[int, ...] = (10, 3, 1, 0, 1, 0, 1, 0, 1, 3, 10)
 #: Tiradas del sorteo que se pueden guardar a la vez.
 MAX_HOLD = 4
 #: Apuesta mínima: una bola tiene que valer al menos 1 Y$.
 MIN_STAKE = BALLS
-
-# -- Sorteo -------------------------------------------------------------------------
-
-#: Probabilidad de atari por tirada del sorteo: `(numerador, denominador)`.
-ATARI_CHANCE = (1, 40)
-#: Bolas que paga cada premio gordo (un atari o cada vuelta de un rush).
-FEVER_BALLS = 30
-#: Probabilidad de que el rush encadene otro premio y vueltas extra como
-#: mucho: `(numerador, denominador, tope)`. El rush normal sale con los
-#: impares menos el 7; el super rush, con el 7. Los pares pagan un solo premio.
-RUSH = (3, 5, 9)
-SUPER_RUSH = (4, 5, 14)
+#: Número del super rush.
 SUPER_DIGIT = 7
-#: Probabilidad de enseñar un reach falso cuando el sorteo no toca.
-FAKE_REACH_CHANCE = (1, 6)
+
+
+# -- Tableros -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Board:
+    """Un tablero (mapa) de pachinko: su forma, lo que paga y cómo se llama.
+
+    Attributes:
+        key: Identificador estable; se guarda en logros y se escribe en
+            `.pachinko 500 oni`.
+        risk: Texto corto del riesgo para el menú (`"riesgo bajo"`).
+        rows: Filas de clavos (par, para que haya un bolsillo en el centro).
+        pockets: Bolas que devuelve cada bolsillo, de izquierda a derecha. El
+            del centro (START) no devuelve nada: paga con tiradas del sorteo.
+        atari_chance: Probabilidad de atari por tirada: `(num, den)`.
+        fever_balls: Bolas por premio gordo (un atari o cada vuelta de rush).
+        rush: Rush de los impares menos el 7: `(num, den, vueltas extra
+            como mucho)`. Sigue con probabilidad `num/den`.
+        super_rush: Igual, para el 7.
+        fake_reach: Probabilidad de enseñar un reach cuando no toca.
+    """
+
+    key: str
+    name: str
+    emoji: str
+    risk: str
+    blurb: str
+    rows: int
+    pockets: tuple[int, ...]
+    atari_chance: tuple[int, int]
+    fever_balls: int
+    rush: tuple[int, int, int]
+    super_rush: tuple[int, int, int]
+    fake_reach: tuple[int, int] = (1, 6)
+
+    @property
+    def start_pocket(self) -> int:
+        """Bolsillo de la ranura START (el del centro)."""
+        return self.rows // 2
+
+    @property
+    def title(self) -> str:
+        """`🌸 Sakura`."""
+        return f"{self.emoji} {self.name}"
+
+    def pocket_label(self, pocket: int) -> str:
+        """Texto del bolsillo para el tablero y la tabla de premios."""
+        if pocket == self.start_pocket:
+            return "START"
+        value = self.pockets[pocket]
+        return f"×{value}" if value else "OUT"
+
+
+SAKURA = Board(
+    key="sakura",
+    name="Sakura",
+    emoji="🌸",
+    risk="riesgo bajo",
+    blurb="8 filas. Los bolsillos pagan a menudo y los ataris caen cada pocas tandas.",
+    rows=8,
+    pockets=(5, 3, 2, 0, 0, 0, 2, 3, 5),
+    atari_chance=(1, 16),
+    fever_balls=11,
+    rush=(1, 2, 4),
+    super_rush=(2, 3, 6),
+)
+CLASSIC = Board(
+    key="clasica",
+    name="Clásica",
+    emoji="🏮",
+    risk="riesgo medio",
+    blurb="10 filas. La de siempre: un poco de bolsillos y un poco de compuerta.",
+    rows=10,
+    pockets=(10, 3, 1, 0, 1, 0, 1, 0, 1, 3, 10),
+    atari_chance=(1, 40),
+    fever_balls=30,
+    rush=(3, 5, 9),
+    super_rush=(4, 5, 14),
+)
+DRAGON = Board(
+    key="dragon",
+    name="Dragón",
+    emoji="🐉",
+    risk="riesgo alto",
+    blurb="10 filas. Casi todo OUT, esquinas de ×50 y ataris que pagan el doble.",
+    rows=10,
+    pockets=(50, 4, 1, 0, 0, 0, 0, 0, 1, 4, 50),
+    atari_chance=(1, 50),
+    fever_balls=69,
+    rush=(3, 5, 9),
+    super_rush=(4, 5, 14),
+)
+ONI = Board(
+    key="oni",
+    name="Oni",
+    emoji="👹",
+    risk="riesgo extremo",
+    blurb="12 filas. Los bolsillos no dan nada; un atari paga ×30 de media y un "
+    "super rush puede encadenar 25.",
+    rows=12,
+    pockets=(100, 10, 2, 0, 0, 0, 0, 0, 0, 0, 2, 10, 100),
+    atari_chance=(1, 84),
+    fever_balls=100,
+    rush=(3, 4, 14),
+    super_rush=(6, 7, 24),
+)
+
+#: Tableros en el orden del menú, de menos a más riesgo.
+BOARDS: dict[str, Board] = {b.key: b for b in (SAKURA, CLASSIC, DRAGON, ONI)}
+DEFAULT_BOARD = CLASSIC.key
+#: Mayor racha posible en cualquier tablero (para logros y textos).
+MAX_JACKPOTS = max(b.super_rush[2] + 1 for b in BOARDS.values())
+
+_ALIASES = {"clasico": "clasica", "classic": "clasica", "dragon": "dragon", "dragón": "dragon"}
+
+
+def find_board(text: str) -> Board | None:
+    """Tablero por su nombre, sin tildes ni mayúsculas (`Dragón`, `oni`…)."""
+    key = text.strip().lower()
+    key = _ALIASES.get(key, key).replace("á", "a").replace("ó", "o")
+    return BOARDS.get(key)
+
+
+# -- Bolas, sorteo y tanda ----------------------------------------------------------
 
 
 class Kind:
@@ -102,11 +211,6 @@ class Ball:
         """Bolsillo en el que cae: las veces que ha ido a la derecha."""
         return sum(self.path)
 
-    @property
-    def returned(self) -> int:
-        """Bolas que devuelve su bolsillo."""
-        return POCKETS[self.pocket]
-
 
 @dataclass(frozen=True, slots=True)
 class Draw:
@@ -133,22 +237,28 @@ class Draw:
 
 @dataclass(frozen=True, slots=True)
 class Volley:
-    """Una tanda entera: las bolas, el sorteo y lo que devuelve, sin dinero.
+    """Una tanda entera en un tablero: las bolas, el sorteo y lo que devuelve.
 
     Attributes:
+        board: Tablero en el que se ha jugado.
         balls: Las `BALLS` bolas, en el orden en que se lanzan.
         draws: Tiradas del sorteo, en orden (las de la reserva).
         wasted: Bolas que entraron en START con la reserva llena.
     """
 
+    board: Board
     balls: tuple[Ball, ...]
     draws: tuple[Draw, ...]
     wasted: int
 
+    def returned(self, ball: Ball) -> int:
+        """Bolas que devuelve el bolsillo de `ball` en este tablero."""
+        return self.board.pockets[ball.pocket]
+
     @property
     def pocket_balls(self) -> int:
         """Bolas devueltas por los bolsillos."""
-        return sum(ball.returned for ball in self.balls)
+        return sum(self.returned(ball) for ball in self.balls)
 
     @property
     def jackpots(self) -> int:
@@ -158,7 +268,7 @@ class Volley:
     @property
     def fever_balls(self) -> int:
         """Bolas que ha pagado la compuerta en los ataris."""
-        return self.jackpots * FEVER_BALLS
+        return self.jackpots * self.board.fever_balls
 
     @property
     def total_balls(self) -> int:
@@ -168,7 +278,7 @@ class Volley:
     @property
     def starts(self) -> int:
         """Bolas que entraron por START (con la reserva llena o no)."""
-        return sum(1 for ball in self.balls if ball.pocket == START_POCKET)
+        return sum(1 for ball in self.balls if ball.pocket == self.board.start_pocket)
 
     @property
     def best(self) -> Draw | None:
@@ -179,11 +289,11 @@ class Volley:
     @property
     def corners(self) -> int:
         """Bolas en los bolsillos de las esquinas (los que más pagan)."""
-        return sum(1 for ball in self.balls if ball.pocket in (0, ROWS))
+        return sum(1 for ball in self.balls if ball.pocket in (0, self.board.rows))
 
     def pocket_counts(self) -> list[int]:
         """Cuántas bolas han caído en cada bolsillo."""
-        counts = [0] * (ROWS + 1)
+        counts = [0] * (self.board.rows + 1)
         for ball in self.balls:
             counts[ball.pocket] += 1
         return counts
@@ -198,9 +308,6 @@ def payout(volley: Volley, stake: int) -> int:
     return stake * volley.total_balls // BALLS
 
 
-# -- Sorteo y tanda al azar ---------------------------------------------------------
-
-
 Randbelow = Callable[[int], int]
 
 
@@ -209,17 +316,17 @@ def _chance(randbelow: Randbelow, chance: tuple[int, int]) -> bool:
     return randbelow(denominator) < numerator
 
 
-def draw_lottery(randbelow: Randbelow) -> Draw:
-    """Una tirada del sorteo.
+def draw_lottery(board: Board, randbelow: Randbelow) -> Draw:
+    """Una tirada del sorteo en `board`.
 
     Primero se decide si toca y después cómo se enseña: los números de un
     fallo y el reach falso no influyen en el resultado.
     """
-    if _chance(randbelow, ATARI_CHANCE):
+    if _chance(randbelow, board.atari_chance):
         digit = randbelow(9) + 1
         if digit % 2 == 0:
             return Draw((digit, digit, digit), Kind.ATARI, True, 1)
-        numerator, denominator, cap = SUPER_RUSH if digit == SUPER_DIGIT else RUSH
+        numerator, denominator, cap = board.super_rush if digit == SUPER_DIGIT else board.rush
         jackpots = 1
         while jackpots <= cap and _chance(randbelow, (numerator, denominator)):
             jackpots += 1
@@ -227,7 +334,7 @@ def draw_lottery(randbelow: Randbelow) -> Draw:
         return Draw((digit, digit, digit), kind, True, jackpots)
 
     side = randbelow(9) + 1
-    if _chance(randbelow, FAKE_REACH_CHANCE):
+    if _chance(randbelow, board.fake_reach):
         # Reach falso: el del centro para justo al lado, el casi más cruel.
         center = side % 9 + 1 if randbelow(2) else (side - 2) % 9 + 1
         return Draw((side, center, side), Kind.MISS, True, 0)
@@ -237,18 +344,21 @@ def draw_lottery(randbelow: Randbelow) -> Draw:
     return Draw((side, center, right), Kind.MISS, False, 0)
 
 
-def build_volley(balls: Sequence[Ball], draw: Callable[[], Draw]) -> Volley:
+def build_volley(board: Board, balls: Sequence[Ball], draw: Callable[[], Draw]) -> Volley:
     """Monta la tanda: reparte las bolas de START entre la reserva y el sorteo.
 
-    La reserva se va gastando mientras caen bolas: cada bola que entra en
-    START con hueco en la reserva gana una tirada. Aquí se simplifica a que
-    caben `MAX_HOLD` por tanda (lo que se ve en la pantalla), así que con
-    cinco o más bolas en START se pierden las que sobran.
+    Caben `MAX_HOLD` tiradas por tanda (lo que se ve en la pantalla), así que
+    con cinco o más bolas en START se pierden las que sobran.
+
+    Raises:
+        ValueError: Si alguna bola no tiene una fila por cada fila del tablero.
     """
-    starts = sum(1 for ball in balls if ball.pocket == START_POCKET)
+    if any(len(ball.path) != board.rows for ball in balls):
+        raise ValueError("Cada bola necesita un rebote por fila del tablero.")
+    starts = sum(1 for ball in balls if ball.pocket == board.start_pocket)
     held = min(starts, MAX_HOLD)
     draws = tuple(draw() for _ in range(held))
-    return Volley(balls=tuple(balls), draws=draws, wasted=starts - held)
+    return Volley(board=board, balls=tuple(balls), draws=draws, wasted=starts - held)
 
 
 class PachinkoMachine:
@@ -261,22 +371,27 @@ class PachinkoMachine:
     def __init__(self, randbelow: Randbelow | None = None) -> None:
         self._randbelow = randbelow or random.SystemRandom().randrange
 
-    def ball(self) -> Ball:
-        """Una bola con un rebote al azar por fila."""
-        return Ball(tuple(self._randbelow(2) for _ in range(ROWS)))
+    def random_board(self) -> Board:
+        """Un tablero al azar (la opción 🎲 del menú)."""
+        boards = list(BOARDS.values())
+        return boards[self._randbelow(len(boards))]
 
-    def launch(self) -> Volley:
-        """Una tanda completa."""
-        balls = [self.ball() for _ in range(BALLS)]
-        return build_volley(balls, lambda: draw_lottery(self._randbelow))
+    def ball(self, board: Board) -> Ball:
+        """Una bola con un rebote al azar por fila."""
+        return Ball(tuple(self._randbelow(2) for _ in range(board.rows)))
+
+    def launch(self, board: Board) -> Volley:
+        """Una tanda completa en `board`."""
+        balls = [self.ball(board) for _ in range(BALLS)]
+        return build_volley(board, balls, lambda: draw_lottery(board, self._randbelow))
 
 
 # -- Números exactos ----------------------------------------------------------------
 
 
-def pocket_probability(pocket: int) -> Fraction:
-    """Probabilidad de que una bola caiga en `pocket`: C(ROWS, k) / 2^ROWS."""
-    return Fraction(comb(ROWS, pocket), 2**ROWS)
+def pocket_probability(board: Board, pocket: int) -> Fraction:
+    """Probabilidad de que una bola caiga en `pocket`: C(filas, k) / 2^filas."""
+    return Fraction(comb(board.rows, pocket), 2**board.rows)
 
 
 def _rush_expectation(numerator: int, denominator: int, cap: int) -> Fraction:
@@ -285,56 +400,63 @@ def _rush_expectation(numerator: int, denominator: int, cap: int) -> Fraction:
     return sum((p**i for i in range(cap + 1)), Fraction(0))
 
 
-def jackpots_per_atari() -> Fraction:
+def jackpots_per_atari(board: Board) -> Fraction:
     """Premios gordos de media por cada atari."""
     ninth = Fraction(1, 9)
     evens = 4 * ninth
-    rushes = 4 * ninth * _rush_expectation(*RUSH)
-    supers = ninth * _rush_expectation(*SUPER_RUSH)
+    rushes = 4 * ninth * _rush_expectation(*board.rush)
+    supers = ninth * _rush_expectation(*board.super_rush)
     return evens + rushes + supers
 
 
-def _held_distribution() -> list[Fraction]:
+def _held_distribution(board: Board) -> list[Fraction]:
     """Probabilidad de tener 0..MAX_HOLD tiradas del sorteo en una tanda."""
-    s = pocket_probability(START_POCKET)
+    s = pocket_probability(board, board.start_pocket)
     held = [Fraction(0)] * (MAX_HOLD + 1)
     for n in range(BALLS + 1):
         held[min(n, MAX_HOLD)] += comb(BALLS, n) * s**n * (1 - s) ** (BALLS - n)
     return held
 
 
-def pocket_return() -> Fraction:
+def pocket_return(board: Board) -> Fraction:
     """Parte de lo apostado que devuelven los bolsillos."""
-    return sum((pocket_probability(k) * POCKETS[k] for k in range(ROWS + 1)), Fraction(0))
+    return sum(
+        (pocket_probability(board, k) * board.pockets[k] for k in range(board.rows + 1)),
+        Fraction(0),
+    )
 
 
-def lottery_return() -> Fraction:
+def lottery_return(board: Board) -> Fraction:
     """Parte de lo apostado que devuelven los ataris."""
-    expected_draws = sum((n * p for n, p in enumerate(_held_distribution())), Fraction(0))
-    q = Fraction(*ATARI_CHANCE)
-    return expected_draws * q * jackpots_per_atari() * FEVER_BALLS / BALLS
+    held = _held_distribution(board)
+    expected_draws = sum((n * p for n, p in enumerate(held)), Fraction(0))
+    q = Fraction(*board.atari_chance)
+    return expected_draws * q * jackpots_per_atari(board) * board.fever_balls / BALLS
 
 
-def expected_return() -> Fraction:
+def expected_return(board: Board) -> Fraction:
     """Retorno total, sin contar el redondeo de céntimos."""
-    return pocket_return() + lottery_return()
+    return pocket_return(board) + lottery_return(board)
 
 
-def atari_volley_chance() -> Fraction:
+def atari_volley_chance(board: Board) -> Fraction:
     """Probabilidad de que una tanda tenga al menos un atari."""
-    miss = 1 - Fraction(*ATARI_CHANCE)
-    return 1 - sum((p * miss**n for n, p in enumerate(_held_distribution())), Fraction(0))
+    miss = 1 - Fraction(*board.atari_chance)
+    held = _held_distribution(board)
+    return 1 - sum((p * miss**n for n, p in enumerate(held)), Fraction(0))
+
+
+def atari_value(board: Board) -> Fraction:
+    """Lo que paga de media un atari, en veces la apuesta."""
+    return jackpots_per_atari(board) * board.fever_balls / BALLS
 
 
 # -- Presentación -------------------------------------------------------------------
 
 
-def pocket_label(pocket: int) -> str:
-    """Texto del bolsillo para el tablero y la tabla de premios."""
-    if pocket == START_POCKET:
-        return "START"
-    value = POCKETS[pocket]
-    return f"×{value}" if value else "OUT"
+def decimal(value: float, places: int = 1) -> str:
+    """Número con coma decimal, como se escribe en español: `94,3`."""
+    return f"{value:.{places}f}".replace(".", ",")
 
 
 def hold_bar(held: int) -> str:
@@ -343,17 +465,25 @@ def hold_bar(held: int) -> str:
     return "●" * held + "○" * (MAX_HOLD - held)
 
 
-def paytable_lines() -> list[str]:
-    """Tabla de premios para enseñar al jugador."""
-    corner, side, small = POCKETS[0], POCKETS[1], POCKETS[2]
-    rush_cap = RUSH[2] + 1
-    super_cap = SUPER_RUSH[2] + 1
+def paytable_lines(board: Board) -> list[str]:
+    """Tabla de premios de un tablero para enseñar al jugador."""
+    pockets = sorted({v for v in board.pockets if v}, reverse=True)
+    values = " · ".join(f"×{v}" for v in pockets)
+    rush_cap = board.rush[2] + 1
+    super_cap = board.super_rush[2] + 1
+    every = round(1 / float(atari_volley_chance(board)))
     return [
+        f"**{board.title}** · {board.risk}. {board.blurb}",
         f"🎯 Cada tanda lanza **{BALLS} bolas**. Una bola vale la apuesta entre {BALLS}.",
-        f"⬇️ Esquinas · ×{corner} bolas · lados · ×{side} · el resto · ×{small} o nada",
+        f"⬇️ Bolsillos, de las esquinas hacia dentro: {values} bolas; el resto, OUT.",
         f"🌀 **START** (el centro) · una tirada en la pantalla. Reserva: {MAX_HOLD}.",
-        f"🎰 Tres iguales · **ATARI** · +{FEVER_BALLS} bolas por premio",
-        f"🔥 Impar · **RUSH** · encadena premios ({RUSH[0]}/{RUSH[1]} de seguir, hasta {rush_cap})",
-        f"7️⃣ El 7 · **SUPER RUSH** · {SUPER_RUSH[0]}/{SUPER_RUSH[1]} de seguir, hasta {super_cap}",
+        f"🎰 Tres iguales · **ATARI** · +{board.fever_balls} bolas por premio "
+        f"(uno cada ~{every} tandas)",
+        f"🔥 Impar · **RUSH** · {board.rush[0]}/{board.rush[1]} de encadenar otro, "
+        f"hasta {rush_cap}",
+        f"7️⃣ El 7 · **SUPER RUSH** · {board.super_rush[0]}/{board.super_rush[1]} de "
+        f"seguir, hasta {super_cap}",
         "👀 El **REACH** es espectáculo: no cambia lo que toca.",
+        f"📊 Devuelve el {decimal(float(expected_return(board)) * 100)} % de media, como "
+        "los otros tableros: cambia el riesgo, no la casa.",
     ]

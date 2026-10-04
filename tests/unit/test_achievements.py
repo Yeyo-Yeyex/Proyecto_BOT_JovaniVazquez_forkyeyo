@@ -98,6 +98,8 @@ PRODUCED_STATS = {
     "pachinko_corners", "pachinko_full_hold", "pachinko_wasted", "pachinko_blank",
     "pachinko_win_max", "pachinko_session_max", "pachinko_burst", "pachinko_turbo",
     "pachinko_night",
+    *(f"pachinko_board_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
+    *(f"pachinko_atari_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
     "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
     "mines_clear_hard", "mines_random", "mines_streak_max",
