@@ -430,7 +430,7 @@ async def test_la_primera_retencion_dispara_el_discurso_de_perro_sanxe(tmp_path:
 
     assert "tax_first" in ids
     description = channel.send.await_args.kwargs["embed"].description or ""
-    assert "te ha encontrado" in description
+    assert "te encontró" in description
     assert "Bienvenido a España" in description
 
     channel.send.reset_mock()

@@ -229,8 +229,9 @@ python -m bot
   `src/bot/assets/bienvenidas.txt` y el GIF del servidor (sin GIF, el vídeo
   `src/bot/assets/bienvenida.mp4`) en el canal de bienvenida, que por
   defecto es `#chat-general`. Si ya había estado, usa las frases de vuelta.
-  Los demás pueden pulsar **👋 Dar la bienvenida** durante su primer día,
-  lo que cuenta para logros. Un administrador cambia el GIF y el canal con
+  Los demás pueden pulsar **👋 Dar la bienvenida** durante su primer día:
+  200 Y$ para quien saluda y 100 Y$ para el nuevo, sin IRPF (como los
+  regalos de cumpleaños), y cuenta para logros. Un administrador cambia el GIF y el canal con
   `bienv`. Al salir, publica una despedida con una frase aleatoria tomada de
   `src/bot/assets/despedidas.txt` en ese mismo canal.
 - `top` resuelve nombres visibles del servidor incluso para miembros que

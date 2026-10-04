@@ -8,20 +8,25 @@
 # Las frases de debajo de la línea [vuelta] son para quien ya había estado
 # en el servidor, se fue y ha vuelto.
 #
-# Tono: el del bot, chulesco y de coña, como las despedidas. Sin insultos
-# reales, ataques personales ni nada que suene a acoso.
-¿QUIÉN ERES, {usuario}? Bueno, da igual: pasa, siéntate y no toques nada.
-Atención, que ha llegado {usuario}. Esto se pone serio, chavales.
-{usuario} acaba de entrar. Ya somos uno más para la ruleta.
-Mira quién ha aparecido: {usuario}. Aquí se viene a yapear, que lo sepas.
-Bienvenido, {usuario}. Tienes 1.000 yapdollars esperándote; la casa siempre gana, pero tú inténtalo.
-{usuario} ha entrado por la puerta grande. Por la pequeña no cabía con tanta aura.
-Ojo, {usuario} en el servidor. Que alguien le explique cómo va esto antes de que pregunte.
-{usuario}, has llegado al mejor sitio de Discord. Lo digo yo, que soy un bot y no miento.
-Llega {usuario}. Primer consejo: cobra el IMV todos los días. Segundo consejo: no le hagas caso al primero, ve al casino.
-Se abre la puerta y entra {usuario}. Que suene la música, que esto es un evento.
+# Tono: el de Jovani Vázquez, el cantante boricua de las canciones de café,
+# mango y desayunos. Alegre, exagerado, cariñoso y cantarín ("wepa", "ay,
+# bendito", "mi amor", "acho"), siempre de buen rollo. Sin insultos reales,
+# ataques personales ni nada que suene a acoso. No copies letras de sus
+# canciones enteras: guiños sí, estrofas no.
+¡Wepaaa! Llegó {usuario} y esto ya es un fiestón. Que alguien le prepare un cafecito, que viene de lejos.
+¡Ay, bendito! Mira quién llegó: {usuario}. Pasa, mi amor, que aquí hay café, hay mango y hay ruleta.
+¿QUIÉN ERES, {usuario}? No importa, papi: aquí se viene a gozar. Siéntate y pide un café.
+Atención, atención: {usuario} en el servidor. Esto lo celebro con un desayuno con huevo y todo.
+¡Brutal! {usuario} se unió. Te tengo 1.000 yapdollars guardaditos; gástalos con cariño, que la ruleta no perdona.
+{usuario}, bienvenido a la casa. Aquí hay más ritmo que en un jingle de los buenos.
+Llegó {usuario} y yo quisiera ser una mosca para ver la cara que pone cuando vea este servidor.
+¡Acho, {usuario}! Entraste justo a tiempo: el café está caliente y el casino, abierto.
+Que suene el reguetón, que ha llegado {usuario}. Esto es un evento, mi gente.
+{usuario} entró y el servidor ya huele a café recién colado. Ponte cómodo, que aquí nadie muerde.
+¡Wepa, {usuario}! Primer consejo de la casa: cobra el IMV todos los días. Segundo: un jugo de china antes de ir al casino.
+Se abrió la puerta y entró {usuario} con más sabor que un mango maduro. ¡Bienvenido, mi amor!
 [vuelta]
-¿{usuario} otra vez por aquí? Sabía que no podías vivir sin nosotros.
-Ha vuelto {usuario}. Hacemos como que no ha pasado nada.
-{usuario} regresa. El hijo pródigo, pero con menos dignidad.
-Mira quién vuelve con el rabo entre las piernas: {usuario}. Pasa, pasa.
+¡Ay, mira quién volvió! {usuario}, sabía que no podías vivir sin este sabor.
+{usuario} ha vuelto, como el café de la mañana: siempre vuelve.
+¡Wepa, {usuario} de regreso! Aquí no se juzga, aquí se goza.
+¡Bendito, {usuario}! Te fuiste, pero el corazón se quedó aquí. Pasa, que te guardé un cafecito.

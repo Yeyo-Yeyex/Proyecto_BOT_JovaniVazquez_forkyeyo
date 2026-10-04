@@ -15,6 +15,14 @@ El GIF admite dos tipos de enlace:
 
 No se aceptan adjuntos de Discord (`cdn.discordapp.com`): sus enlaces
 caducan a las 24 horas y la bienvenida se quedaría sin GIF.
+
+Dinero (yapdollars). Saludar con el botón 👋 da un regalo simbólico, como
+felicitar un cumpleaños: `GREETER_GIFT` a quien saluda y `WELCOMED_GIFT` al
+recién llegado. Tratamiento fiscal: exento de IRPF, igual que los regalos de
+cumpleaños, porque lo que tributa por el Impuesto sobre Sucesiones y
+Donaciones no está sujeto al IRPF (art. 6.4 de la Ley 35/2006) y un regalo es
+una donación (art. 3.1.b de la Ley 29/1987). El ISD aún no existe en el bot;
+cuando exista, se aplicará aquí. Se paga con `EconomyService.grant`.
 """
 
 from __future__ import annotations
@@ -42,6 +50,13 @@ GREETING_WINDOW_SECONDS = 24 * 3600
 
 #: Saludar en este margen tras la entrada cuenta para "Más rápido que Hacienda".
 FAST_GREETING_SECONDS = 60
+
+#: Regalo a quien da la bienvenida: dos tiradas de ruleta a la apuesta por
+#: defecto del casino (100 Y$). Simbólico a propósito, para que nadie entre y
+#: salga del servidor con cuentas secundarias para cobrarlo.
+GREETER_GIFT = 200
+#: Lo que recibe el recién llegado por cada persona que le saluda: una tirada.
+WELCOMED_GIFT = 100
 
 #: Frases de reserva si el archivo de frases falta o está vacío.
 FALLBACK_WELCOMES = ("{usuario} acaba de llegar. Portaos bien, que es nuevo.",)

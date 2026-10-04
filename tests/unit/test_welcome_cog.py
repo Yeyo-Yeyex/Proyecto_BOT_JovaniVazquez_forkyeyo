@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -12,7 +13,10 @@ import pytest
 
 from bot.cogs import welcome
 from bot.cogs.welcome import GreetButton, Welcome, load_farewell_insults
+from bot.repositories.economy import EconomyRepository
 from bot.repositories.welcome import WelcomeRepository, WelcomeSettings
+from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
+from bot.services.welcome import GREETER_GIFT, WELCOMED_GIFT
 
 GUILD = 456
 NEWCOMER = 789
@@ -198,6 +202,56 @@ async def test_saludar_suma_al_contador_y_a_los_logros(tmp_path: Path, tracked: 
     assert view.children[0].item.label == "Dar la bienvenida · 2"
     delta = tracked.await_args.args[4]
     assert delta.add == {"welcomes_given": 1}
+
+
+async def test_saludar_regala_a_los_dos_sin_irpf_y_avisa_de_la_renta(
+    tmp_path: Path, tracked: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await economy_repository.initialize()
+    economy = EconomyService(economy_repository)
+    cog = await greet_cog(tmp_path, now=JOINED + 60)
+    cog.economy = economy
+    remind = AsyncMock()
+    monkeypatch.setattr(welcome.renta, "remind", remind)
+    monkeypatch.setattr(welcome.renta, "hint", AsyncMock(return_value=None))
+    interaction = make_interaction(1)
+    interaction.followup.send = AsyncMock()
+
+    await cog.greet_from_button(interaction, NEWCOMER, int(JOINED))
+
+    assert await economy.balance(GUILD, 1) == STARTING_BALANCE + GREETER_GIFT
+    assert await economy.balance(GUILD, NEWCOMER) == STARTING_BALANCE + WELCOMED_GIFT
+    for user_id in (1, NEWCOMER):
+        assert ledger_sum(tmp_path, user_id) == await economy.balance(GUILD, user_id)
+    # Exento: el Estado no recibe nada.
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == 0
+    assert "+200 Y$" in interaction.followup.send.await_args.args[0]
+    remind.assert_awaited_once()
+
+
+async def test_un_saludo_repetido_no_paga_otra_vez(tmp_path: Path, tracked: AsyncMock) -> None:
+    economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await economy_repository.initialize()
+    economy = EconomyService(economy_repository)
+    cog = await greet_cog(tmp_path, now=JOINED + 60)
+    cog.economy = economy
+    first = make_interaction(1)
+    first.followup.send = AsyncMock()
+    await cog.greet_from_button(first, NEWCOMER, int(JOINED))
+
+    await cog.greet_from_button(make_interaction(1), NEWCOMER, int(JOINED))
+
+    assert await economy.balance(GUILD, 1) == STARTING_BALANCE + GREETER_GIFT
+
+
+def ledger_sum(tmp_path: Path, user_id: int) -> int:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(delta), 0) FROM economy_ledger WHERE guild_id = ? AND user_id = ?",
+            (GUILD, user_id),
+        ).fetchone()
+    return int(total)
 
 
 async def test_saludo_en_el_primer_minuto_cuenta_como_rapido(

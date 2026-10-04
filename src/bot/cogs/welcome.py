@@ -9,7 +9,9 @@ frase sale de la sección `[vuelta]` del mismo archivo.
 El mensaje lleva el botón **👋 Dar la bienvenida**: cada miembro puede
 pulsarlo una vez durante el primer día del recién llegado. El botón cuenta
 los saludos y alimenta los logros de Social (`welcomes_given` y, si se
-saluda en el primer minuto, `welcomes_fast`). Saludar no mueve dinero.
+saluda en el primer minuto, `welcomes_fast`). Saludar da un regalo
+simbólico a los dos, exento de IRPF como los de cumpleaños (detalle y
+norma en `bot.services.welcome`), y por eso lleva el aviso de la Renta.
 
 La configuración (`bienv`) es un comando de administración y vive en el
 cog `Admin`; aquí solo se lee.
@@ -34,9 +36,18 @@ import discord
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import renta
 from bot.repositories.welcome import WelcomeRepository, WelcomeSettings
 from bot.services.achievements import StatDelta
+from bot.services.economy import (
+    CURRENCY_EMOJI,
+    BalanceLimitError,
+    EconomyService,
+    format_amount,
+)
 from bot.services.welcome import (
+    GREETER_GIFT,
+    WELCOMED_GIFT,
     GifError,
     GifKind,
     GreetCheck,
@@ -187,6 +198,7 @@ class Welcome(commands.Cog):
     Args:
         repository: Ajustes y entradas. `None` deja la bienvenida de siempre
             (vídeo en `#chat-general`, sin botón ni detección de vuelta).
+        economy: Para el regalo por saludar. `None` deja saludar sin regalo.
         clock: Fuente de tiempo en segundos epoch; inyectable en pruebas.
     """
 
@@ -195,10 +207,12 @@ class Welcome(commands.Cog):
         bot: commands.Bot,
         repository: WelcomeRepository | None = None,
         *,
+        economy: EconomyService | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.bot = bot
         self.repository = repository
+        self.economy = economy
         self._clock = clock
 
     async def cog_load(self) -> None:
@@ -312,41 +326,85 @@ class Welcome(commands.Cog):
     async def greet_from_button(
         self, interaction: discord.Interaction, newcomer_id: int, joined_at: int
     ) -> None:
-        """Respuesta al botón 👋: suma el saludo al contador o explica por qué no."""
+        """Respuesta al botón 👋: suma el saludo, paga el regalo o explica por qué no."""
         guild = interaction.guild
         if guild is None or self.repository is None:
             return
+        greeter = interaction.user
         now = self._clock()
-        check = check_greeting(newcomer_id, interaction.user.id, joined_at=joined_at, now=now)
+        check = check_greeting(newcomer_id, greeter.id, joined_at=joined_at, now=now)
         if check is GreetCheck.SELF:
             await interaction.response.send_message(
-                "No puedes darte la bienvenida a ti mismo. Ya estás dentro, tranquilo.",
+                "¡Ay, bendito! No te puedes dar la bienvenida a ti mismo. Ya estás dentro, "
+                "mi amor, relájate y tómate un cafecito.",
                 ephemeral=True,
             )
             return
         if check is GreetCheck.EXPIRED:
             await interaction.response.send_message(
-                "Ya no es nuevo: el botón dura un día.", ephemeral=True
+                "Llegaste tarde a la fiesta: ya no es nuevo, el botón dura un día.",
+                ephemeral=True,
             )
             return
         try:
-            count = await self.repository.add_greeting(guild.id, newcomer_id, interaction.user.id)
+            count = await self.repository.add_greeting(guild.id, newcomer_id, greeter.id)
         except (OSError, sqlite3.Error):
             logger.exception("No se pudo apuntar un saludo de bienvenida")
             await interaction.response.send_message(
-                "No he podido apuntar el saludo. Prueba otra vez.", ephemeral=True
+                "Se me cayó el café encima y no pude apuntar el saludo. Prueba otra vez.",
+                ephemeral=True,
             )
             return
         if count is None:
-            await interaction.response.send_message("Ya le diste la bienvenida.", ephemeral=True)
+            await interaction.response.send_message(
+                "Ya le diste la bienvenida. Con una vez basta, no lo agobies.", ephemeral=True
+            )
             return
-        # Editar el mensaje con el contador es la confirmación: una sola
+        # Editar el mensaje con el contador es la confirmación pública: una sola
         # llamada a Discord, sin mensajes extra en el canal.
         await interaction.response.edit_message(view=greet_view(newcomer_id, joined_at, count))
+        paid = await self._pay_greeting(guild.id, newcomer_id, greeter.id)
+        if paid:
+            text = (
+                f"👋 ¡Wepa! Saludo entregado. {CURRENCY_EMOJI} +{format_amount(GREETER_GIFT)} "
+                f"para ti y +{format_amount(WELCOMED_GIFT)} para <@{newcomer_id}>, "
+                "para que se estrene en la ruleta."
+            )
+            hint = await renta.hint(self.bot, guild.id, greeter.id)
+            if hint is not None:
+                text += f"\n{hint}"
+            try:
+                await interaction.followup.send(
+                    text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
+                )
+            except discord.HTTPException:
+                logger.warning("No se pudo confirmar el regalo de bienvenida", exc_info=True)
+            # Saludar da dinero: gancho de la Renta (ver Biblia.txt, sección 4).
+            await renta.remind(self.bot, interaction)
         delta = StatDelta(add={"welcomes_given": 1})
         if is_fast_greeting(joined_at=joined_at, now=now):
             delta.add["welcomes_fast"] = 1
-        await logros.track(self.bot, guild.id, interaction.user, interaction.channel, delta)
+        await logros.track(self.bot, guild.id, greeter, interaction.channel, delta)
+
+    async def _pay_greeting(self, guild_id: int, newcomer_id: int, greeter_id: int) -> bool:
+        """Paga el regalo simbólico de un saludo a los dos (exento, ver el servicio).
+
+        Returns:
+            Si se pagó. Un fallo se registra y no impide contar el saludo.
+        """
+        if self.economy is None:
+            return False
+        try:
+            await self.economy.grant(
+                guild_id, greeter_id, amount=GREETER_GIFT, reason="bienv:saludar"
+            )
+            await self.economy.grant(
+                guild_id, newcomer_id, amount=WELCOMED_GIFT, reason="bienv:saludado"
+            )
+        except (OSError, sqlite3.Error, BalanceLimitError):
+            logger.exception("No se pudo pagar el regalo de bienvenida")
+            return False
+        return True
 
     # -- Salida -----------------------------------------------------------------------
 
@@ -388,4 +446,4 @@ class Welcome(commands.Cog):
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
     """Registra el cog de bienvenida y despedida en el cliente."""
-    await bot.add_cog(Welcome(bot, bot.welcome))
+    await bot.add_cog(Welcome(bot, bot.welcome, economy=bot.economy))

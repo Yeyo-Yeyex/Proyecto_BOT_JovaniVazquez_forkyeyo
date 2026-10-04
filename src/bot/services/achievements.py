@@ -186,13 +186,13 @@ def _thousands(value: int) -> str:
 #: bastante para pagar, venga de donde venga el dinero (casino, niveles,
 #: premios de logros), porque todos esos caminos suman `tax_paid`.
 FIRST_TAX_STORY = (
-    f"🐶 **{TAX_COLLECTOR} te ha encontrado.** Hasta ahora cobrabas limpio porque "
-    f"no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, unos "
-    f"{_thousands(FIRST_TAX_MONTHLY)} Y$ cada 30 días. Te has pasado, así que desde "
-    "hoy cada premio, cada nivel y cada ganancia del casino pasa antes por su "
-    "cartera. Cuanto más ganes, más se queda.\n"
-    "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si "
-    "te acuerdas de presentarla (`renta`). Bienvenido a España."
+    f"🐶 **¡Ay, bendito! {TAX_COLLECTOR} te encontró.** Hasta hoy cobrabas limpito "
+    f"porque no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, "
+    f"unos {_thousands(FIRST_TAX_MONTHLY)} Y$ cada 30 días. Te pasaste, mi amor, y "
+    "desde hoy cada premio, cada nivel y cada pelotazo del casino pasa antes por su "
+    "cartera. Cuanto más ganas, más se lleva.\n"
+    "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
+    "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
 )
 
 
