@@ -15,6 +15,9 @@ Modelo de datos:
   reclamado y racha actual.
 - `economy_wallets` con `user_id = STATE_ACCOUNT_ID`: la cuenta del Estado,
   donde acaba todo lo recaudado. Empieza en 0, no con el saldo de bienvenida.
+- `economy_gambling_days`: resultado neto del casino por usuario y día
+  (premios menos apuestas) y lo retenido sobre él. La retención siempre
+  corresponde a la ganancia neta del día: si después se pierde, se devuelve.
 - `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
   retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
   y, en el futuro, para la declaración anual.
@@ -81,6 +84,23 @@ class DailyClaim:
 
     last_claimed_at: float
     streak: int
+
+
+@dataclass(frozen=True, slots=True)
+class BetSettlement:
+    """Resultado de mover dinero de una apuesta, con el IRPF del día.
+
+    Attributes:
+        balance: Saldo final del jugador.
+        tax_delta: Retención aplicada ahora; negativa si es una devolución.
+        day_net: Resultado neto del casino hoy (premios menos apuestas).
+        day_withheld: Total retenido hoy tras este movimiento.
+    """
+
+    balance: int
+    tax_delta: int = 0
+    day_net: int = 0
+    day_withheld: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +218,16 @@ class EconomyRepository:
 
                 CREATE INDEX IF NOT EXISTS economy_tax_records_member
                     ON economy_tax_records (guild_id, user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS economy_gambling_days (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    net INTEGER NOT NULL DEFAULT 0,
+                    withheld INTEGER NOT NULL DEFAULT 0 CHECK (withheld >= 0),
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, day)
+                );
                 """
             )
         finally:
@@ -355,14 +385,8 @@ class EconomyRepository:
         Returns:
             `(retención, saldo_final)`.
         """
-        (recent,) = connection.execute(
-            """
-            SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
-            WHERE guild_id = ? AND user_id = ? AND created_at > ?
-            """,
-            (guild_id, user_id, now - window_seconds),
-        ).fetchone()
-        tax = max(0, min(gross, withhold(gross, int(recent))))
+        recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
+        tax = max(0, min(gross, withhold(gross, recent)))
         entries = [LedgerEntry(gross, concept)]
         if tax:
             entries.append(LedgerEntry(-tax, f"irpf:{concept}"))
@@ -428,6 +452,156 @@ class EconomyRepository:
                 window_seconds=window_seconds,
             )
 
+    @staticmethod
+    def _recent_taxable_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        since: float,
+        *,
+        exclude_day: str | None = None,
+    ) -> int:
+        """Renta sujeta desde `since`: ingresos con retención más días de casino en positivo."""
+        (income,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND created_at > ?
+            """,
+            (guild_id, user_id, since),
+        ).fetchone()
+        (gambling,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(MAX(net, 0)), 0) FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND updated_at > ? AND day != ?
+            """,
+            (guild_id, user_id, since, exclude_day or ""),
+        ).fetchone()
+        return int(income) + int(gambling)
+
+    # -- Casino con IRPF -----------------------------------------------------------
+
+    async def settle_gamble(
+        self,
+        guild_id: int,
+        user_id: int,
+        entries: Sequence[LedgerEntry],
+        *,
+        day: str,
+        now: float,
+        adjust_tax: bool,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> BetSettlement:
+        """Mueve el dinero de una apuesta y ajusta el IRPF del día, todo atómico.
+
+        El resultado neto del día cambia en la suma de `entries`. Si
+        `adjust_tax`, la retención del día se recalcula para que sea siempre
+        la que corresponde a la ganancia neta: se cobra la diferencia o, si
+        las pérdidas la han reducido, se devuelve desde la cuenta del Estado.
+
+        Args:
+            day: Día (ISO, hora canaria) al que se imputa el movimiento.
+            adjust_tax: `False` para cobrar una apuesta cuyo resultado llega
+                después (blackjack): la retención se ajusta al pagar.
+            day_tax: Recibe `(ganancia neta del día ≥ 0, renta de los otros
+                días de la ventana)` y devuelve la retención total del día.
+
+        Raises:
+            InsufficientFundsError: Si el jugador no cubre la apuesta.
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        return await self._run(
+            self._settle_gamble_sync,
+            guild_id,
+            user_id,
+            tuple(entries),
+            day,
+            now,
+            adjust_tax,
+            day_tax,
+            window_seconds,
+        )
+
+    def _settle_gamble_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        entries: tuple[LedgerEntry, ...],
+        day: str,
+        now: float,
+        adjust_tax: bool,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> BetSettlement:
+        with self._transaction() as connection:
+            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+            connection.execute(
+                """
+                INSERT INTO economy_gambling_days (guild_id, user_id, day, net, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id, day) DO UPDATE SET
+                    net = net + excluded.net, updated_at = excluded.updated_at
+                """,
+                (guild_id, user_id, day, sum(entry.delta for entry in entries), now),
+            )
+            row = connection.execute(
+                """
+                SELECT net, withheld FROM economy_gambling_days
+                WHERE guild_id = ? AND user_id = ? AND day = ?
+                """,
+                (guild_id, user_id, day),
+            ).fetchone()
+            net, withheld = int(row["net"]), int(row["withheld"])
+            if not adjust_tax:
+                return BetSettlement(balance, 0, net, withheld)
+
+            others = self._recent_taxable_in(
+                connection, guild_id, user_id, now - window_seconds, exclude_day=day
+            )
+            delta = max(0, day_tax(max(net, 0), others)) - withheld
+            if delta > 0:
+                # Nunca deja al jugador en negativo; lo que falte se cobra en
+                # el siguiente ajuste, porque el objetivo se recalcula siempre.
+                delta = min(delta, balance)
+                if delta:
+                    balance = self._apply_in_transaction(
+                        connection, guild_id, user_id, (LedgerEntry(-delta, "irpf:juego"),)
+                    )
+                    self._credit_state_in(connection, guild_id, delta, "irpf:juego")
+            elif delta < 0:
+                refund = min(-delta, self._state_balance_in(connection, guild_id))
+                delta = -refund
+                if refund:
+                    self._apply_in_transaction(
+                        connection,
+                        guild_id,
+                        STATE_ACCOUNT_ID,
+                        (LedgerEntry(-refund, "devolucion:irpf:juego"),),
+                    )
+                    balance = self._apply_in_transaction(
+                        connection,
+                        guild_id,
+                        user_id,
+                        (LedgerEntry(refund, "devolucion:irpf:juego"),),
+                    )
+            withheld += delta
+            connection.execute(
+                """
+                UPDATE economy_gambling_days SET withheld = ?
+                WHERE guild_id = ? AND user_id = ? AND day = ?
+                """,
+                (withheld, guild_id, user_id, day),
+            )
+            return BetSettlement(balance, delta, net, withheld)
+
+    @staticmethod
+    def _state_balance_in(connection: sqlite3.Connection, guild_id: int) -> int:
+        row = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (guild_id, STATE_ACCOUNT_ID),
+        ).fetchone()
+        return int(row["balance"]) if row else 0
+
     def _credit_state_in(
         self, connection: sqlite3.Connection, guild_id: int, amount: int, reason: str
     ) -> None:
@@ -454,21 +628,29 @@ class EconomyRepository:
                 "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
                 (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
+            # Retenciones de ingresos y del casino, en una sola vista.
+            taxes = """
+                SELECT user_id, withheld, created_at AS at FROM economy_tax_records
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, withheld, updated_at AS at FROM economy_gambling_days
+                WHERE guild_id = :guild
+            """
             total, recent = connection.execute(
-                """
+                f"""
                 SELECT COALESCE(SUM(withheld), 0),
-                       COALESCE(SUM(CASE WHEN created_at >= ? THEN withheld END), 0)
-                FROM economy_tax_records WHERE guild_id = ?
+                       COALESCE(SUM(CASE WHEN at >= :since THEN withheld END), 0)
+                FROM ({taxes})
                 """,
-                (since, guild_id),
+                {"guild": guild_id, "since": since},
             ).fetchone()
             contributors = connection.execute(
-                """
-                SELECT user_id, SUM(withheld) AS paid FROM economy_tax_records
-                WHERE guild_id = ? GROUP BY user_id HAVING paid > 0
-                ORDER BY paid DESC, user_id ASC LIMIT ?
+                f"""
+                SELECT user_id, SUM(withheld) AS paid FROM ({taxes})
+                GROUP BY user_id HAVING paid > 0
+                ORDER BY paid DESC, user_id ASC LIMIT :top
                 """,
-                (guild_id, top),
+                {"guild": guild_id, "top": top},
             ).fetchall()
             return Treasury(
                 balance=int(row["balance"]) if row else 0,
@@ -570,6 +752,7 @@ class EconomyRepository:
                 "economy_ledger",
                 "economy_daily",
                 "economy_tax_records",
+                "economy_gambling_days",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

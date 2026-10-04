@@ -1,8 +1,9 @@
 """Hacienda del bot: IRPF a la española sobre los ingresos en yapdollars.
 
 Primer bloque del sistema de impuestos. De momento solo calcula la retención
-de IRPF que se aplica al cobrar ingresos (los premios por subir de nivel; el
-IMV está exento, como el real, por el art. 7.y LIRPF). Lo retenido va a la
+de IRPF que se aplica a los premios por subir de nivel (el
+IMV está exento, como el real, por el art. 7.y LIRPF) y sobre la ganancia
+neta diaria del casino (`gambling_day_tax`). Lo retenido va a la
 cuenta del Estado (`STATE_ACCOUNT_ID` en `bot.repositories.economy`).
 
 Está pensado para crecer: la tabla `economy_tax_records` guarda cada
@@ -139,6 +140,23 @@ def compute_withholding(gross: int, recent_income: int) -> Withholding:
     projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
     rate = withholding_rate(projected)
     return Withholding(gross=gross, tax=round(gross * rate), rate=rate)
+
+
+def gambling_day_tax(net_gain: int, other_recent_income: int) -> int:
+    """Retención total que corresponde a la ganancia neta del casino de un día.
+
+    Las ganancias de juego tributan en la base general y las pérdidas solo
+    compensan ganancias de juego (art. 33.5.d LIRPF). En la ley la
+    compensación es por año; aquí es por día, para que perder una tarde no
+    arrastre semanas.
+
+    Args:
+        net_gain: Premios menos apuestas del día, ya sin negativos.
+        other_recent_income: Renta sujeta del resto de los últimos 30 días.
+    """
+    if net_gain <= 0:
+        return 0
+    return compute_withholding(net_gain, other_recent_income).tax
 
 
 def format_rate(rate: float) -> str:

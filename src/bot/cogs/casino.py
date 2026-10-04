@@ -40,6 +40,7 @@ from bot.services.economy import (
     InsufficientFundsError,
     daily_amount,
     format_amount,
+    gambling_tax_line,
     is_all_in,
     parse_amount,
     treasury_embed,
@@ -297,6 +298,8 @@ class SpinResult:
     outcome: RoundOutcome
     balance: int
     media: SpinMedia
+    #: Línea de IRPF de esta tirada (retención o devolución), si la hay.
+    tax_note: str | None = None
 
 
 EditFn = Callable[..., Awaitable[Any]]
@@ -555,6 +558,8 @@ class RouletteTable(discord.ui.View):
         self.streak = self.streak + 1 if outcome.won else 0
         self.last_outcome = outcome
         self.last_text = result_text(outcome)
+        if result.tax_note:
+            self.last_text += f"\n{result.tax_note}"
         self._set_enabled(True)
         await final_edit(
             embed=await self.current_embed(result.balance),
@@ -700,11 +705,16 @@ class Casino(commands.Cog):
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
         outcome = play_round(self.wheel, wagers)
-        balance = await self.economy.settle_bet(
+        settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
         media = await asyncio.to_thread(self.renderer.media, outcome.pocket)
-        return SpinResult(outcome=outcome, balance=balance, media=media)
+        return SpinResult(
+            outcome=outcome,
+            balance=settlement.balance,
+            media=media,
+            tax_note=gambling_tax_line(settlement),
+        )
 
     def _casino_channel_error(self, channel: object) -> str | None:
         return casino_channel_error(self.casino_channel_ids, channel, "La ruleta")

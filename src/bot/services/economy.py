@@ -21,21 +21,25 @@ import discord
 from bot.repositories.economy import (
     STATE_ACCOUNT_ID,
     BalanceLimitError,
+    BetSettlement,
     DailyClaim,
     EconomyRepository,
     InsufficientFundsError,
     LedgerEntry,
     Treasury,
 )
+from bot.services.levels import local_day
 from bot.services.taxes import (
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
     compute_withholding,
     format_rate,
+    gambling_day_tax,
 )
 
 __all__ = [
     "BalanceLimitError",
+    "BetSettlement",
     "CURRENCY_EMOJI",
     "CURRENCY_NAME",
     "CURRENCY_SYMBOL",
@@ -47,6 +51,7 @@ __all__ = [
     "STATE_ACCOUNT_ID",
     "Treasury",
     "format_amount",
+    "gambling_tax_line",
     "is_all_in",
     "parse_amount",
     "tax_line",
@@ -91,6 +96,22 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
         f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
         f"({format_rate(rate)} de {format_amount(gross)})."
     )
+
+
+def gambling_tax_line(settlement: BetSettlement) -> str | None:
+    """Subtexto con lo que retiene o devuelve Hacienda en una jugada, si algo cambia."""
+    if settlement.tax_delta > 0:
+        return (
+            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(settlement.tax_delta)} de IRPF. "
+            f"Hoy vas {format_amount(settlement.day_net)} arriba y llevas "
+            f"{format_amount(settlement.day_withheld)} retenidos."
+        )
+    if settlement.tax_delta < 0:
+        return (
+            f"-# 🐶 {TAX_COLLECTOR} te devuelve {format_amount(-settlement.tax_delta)}: "
+            "tus pérdidas de hoy compensan lo que habías ganado."
+        )
+    return None
 
 
 def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> discord.Embed:
@@ -222,19 +243,36 @@ class EconomyService:
         """Saldo actual; abre el monedero con `STARTING_BALANCE` si no existía."""
         return await self.repository.balance(guild_id, user_id)
 
+    async def _gamble(
+        self,
+        guild_id: int,
+        user_id: int,
+        entries: list[LedgerEntry],
+        *,
+        adjust_tax: bool,
+    ) -> BetSettlement:
+        now = self._clock()
+        return await self.repository.settle_gamble(
+            guild_id,
+            user_id,
+            entries,
+            day=local_day(now).isoformat(),
+            now=now,
+            adjust_tax=adjust_tax,
+            day_tax=gambling_day_tax,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+
     async def settle_bet(
         self, guild_id: int, user_id: int, *, game: str, stake: int, payout: int
-    ) -> int:
-        """Cobra una apuesta y paga su premio en una sola operación.
+    ) -> BetSettlement:
+        """Cobra una apuesta, paga su premio y ajusta el IRPF del día, todo junto.
 
         Args:
             game: Nombre corto del juego, usado como motivo en el libro.
             stake: Cantidad apostada; debe ser positiva.
             payout: Cantidad total devuelta al jugador (apuesta incluida);
                 0 si pierde.
-
-        Returns:
-            El saldo final.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre la apuesta. No se
@@ -248,32 +286,31 @@ class EconomyService:
         entries = [LedgerEntry(-stake, f"{game}:apuesta")]
         if payout:
             entries.append(LedgerEntry(payout, f"{game}:premio"))
-        return await self.repository.apply(guild_id, user_id, entries)
+        return await self._gamble(guild_id, user_id, entries, adjust_tax=True)
 
-    async def place_bet(self, guild_id: int, user_id: int, *, game: str, stake: int) -> int:
+    async def place_bet(
+        self, guild_id: int, user_id: int, *, game: str, stake: int
+    ) -> BetSettlement:
         """Cobra una apuesta de un juego que se resuelve más tarde (p. ej. blackjack).
 
         A diferencia de `settle_bet`, el premio se paga después con
-        `pay_winnings`, cuando el juego termina. Así el dinero en juego sale
-        del saldo desde el primer momento y no se puede gastar dos veces.
-
-        Returns:
-            El saldo tras cobrar.
+        `pay_winnings`, cuando el juego termina, y es entonces cuando se
+        ajusta el IRPF. Así el dinero en juego sale del saldo desde el primer
+        momento y no se puede gastar dos veces.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre la apuesta.
         """
         if stake <= 0:
             raise ValueError("La apuesta debe ser positiva.")
-        return await self.repository.apply(
-            guild_id, user_id, [LedgerEntry(-stake, f"{game}:apuesta")]
+        return await self._gamble(
+            guild_id, user_id, [LedgerEntry(-stake, f"{game}:apuesta")], adjust_tax=False
         )
 
-    async def pay_winnings(self, guild_id: int, user_id: int, *, game: str, amount: int) -> int:
-        """Paga lo devuelto por un juego ya cobrado con `place_bet`.
-
-        Returns:
-            El saldo tras pagar (sin cambios si `amount` es 0).
+    async def pay_winnings(
+        self, guild_id: int, user_id: int, *, game: str, amount: int
+    ) -> BetSettlement:
+        """Paga lo devuelto por un juego cobrado con `place_bet` y ajusta el IRPF del día.
 
         Raises:
             BalanceLimitError: Si el saldo superaría el máximo.
@@ -281,7 +318,7 @@ class EconomyService:
         if amount < 0:
             raise ValueError("El premio no puede ser negativo.")
         entries = [LedgerEntry(amount, f"{game}:premio")] if amount else []
-        return await self.repository.apply(guild_id, user_id, entries)
+        return await self._gamble(guild_id, user_id, entries, adjust_tax=True)
 
     @staticmethod
     def _withhold(gross: int, recent_income: int) -> int:

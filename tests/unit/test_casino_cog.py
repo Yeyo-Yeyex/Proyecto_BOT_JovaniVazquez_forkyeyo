@@ -35,6 +35,7 @@ from bot.services.roulette import (
     parse_bet,
 )
 from bot.services.roulette_render import SpinMedia
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -315,7 +316,12 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
 
     assert [f.filename for f in send.await_args.kwargs["files"]] == [GIF_NAME]
     assert attachment_names(message.edit.await_args) == [PNG_NAME]
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36
+    # Gana 35.000 netos en el día: paga IRPF sobre ellos y la mesa lo dice.
+    gain = STARTING_BALANCE * 35
+    tax = gambling_day_tax(gain, 0)
+    assert tax > 0
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36 - tax
+    assert "Perro Sanxe" in message.edit.await_args.kwargs["embed"].description
 
 
 async def test_ruleta_con_mas_de_lo_que_tienes_avisa(tmp_path: Path) -> None:

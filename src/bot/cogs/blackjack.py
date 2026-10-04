@@ -42,6 +42,7 @@ from bot.services.economy import (
     EconomyService,
     InsufficientFundsError,
     format_amount,
+    gambling_tax_line,
     parse_amount,
 )
 from bot.utils.responder import ContextResponder, InteractionResponder
@@ -425,10 +426,13 @@ class BlackjackTable(discord.ui.View):
         if game.settled:
             return await self.balance()
         payout = game.settle()
+        tax_note: str | None = None
         try:
-            balance = await self.cog.economy.pay_winnings(
+            settlement = await self.cog.economy.pay_winnings(
                 self.guild_id, self.owner.id, game=GAME, amount=payout
             )
+            balance = settlement.balance
+            tax_note = gambling_tax_line(settlement)
         except BalanceLimitError:
             logger.warning("Premio de blackjack por encima del saldo máximo; no se paga.")
             balance = await self.balance()
@@ -437,6 +441,8 @@ class BlackjackTable(discord.ui.View):
         elif game.net < 0:
             self.streak = 0
         self.headline = result_headline(game)
+        if tax_note:
+            self.headline += f"\n{tax_note}"
         return balance
 
     # -- Fichas y repartir ----------------------------------------------------------

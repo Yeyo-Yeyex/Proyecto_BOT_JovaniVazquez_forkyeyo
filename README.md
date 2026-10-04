@@ -119,8 +119,11 @@ python -m bot
   `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
   más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
   pierde tras 48 h).
-- **IRPF y Hacienda:** los premios por subir de nivel tributan; el IMV está
-  exento, como el real (art. 7.y LIRPF). La retención
+- **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
+  diaria del casino tributan; el IMV está exento, como el real (art. 7.y
+  LIRPF). En el casino, las pérdidas del día compensan las ganancias del
+  mismo día: si pierdes después de ganar, Hacienda te devuelve lo retenido
+  de más. La retención
   proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
   la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
   por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
