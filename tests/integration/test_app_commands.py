@@ -36,6 +36,8 @@ EXPECTED_COMMANDS = {
     "hacienda",
     "renta",
     "blackjack",
+    "cumple",
+    "cumples",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
@@ -126,6 +128,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "🎵 Música (9)",
                 "📊 Niveles (2)",
                 "🎰 Casino (6)",
+                "🎂 Cumpleaños (2)",
                 "🔔 Entradas (1)",
                 "🎨 Imagen (2)",
                 "🎨 Imagen · avatar (46)",

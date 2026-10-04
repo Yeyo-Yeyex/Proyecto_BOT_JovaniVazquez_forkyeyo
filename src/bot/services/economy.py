@@ -360,6 +360,20 @@ class EconomyService:
         entries = [LedgerEntry(amount, f"{game}:premio")] if amount else []
         return await self._gamble(guild_id, user_id, entries, adjust_tax=True)
 
+    async def grant(self, guild_id: int, user_id: int, *, amount: int, reason: str) -> int:
+        """Da dinero que no es renta (p. ej. un regalo de cumpleaños): sin IRPF.
+
+        Args:
+            amount: Cantidad positiva.
+            reason: Motivo corto y estable para el libro, p. ej. `"cumple:regalo"`.
+
+        Returns:
+            El saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("La cantidad debe ser positiva.")
+        return await self.repository.apply(guild_id, user_id, [LedgerEntry(amount, reason)])
+
     @staticmethod
     def _withhold(gross: int, recent_income: int) -> int:
         return compute_withholding(gross, recent_income).tax
