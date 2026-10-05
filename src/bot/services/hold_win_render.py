@@ -1,10 +1,18 @@
 """Dibujo de las máquinas de Botes (`volcan`, `olimpo`, `filon`): GIF y PNG.
 
-Cada máquina tiene su fondo, su marco y su efecto propio:
+Cada máquina tiene su rótulo de neón («JOVANI VÁZQUEZ» y el nombre, como los
+pachinkos), su escenario, el material de sus casillas y su efecto propio, para
+que se distingan de un vistazo:
 
-- **Volcán**: grietas de lava y ascuas; la recogida lanza chorros de lava.
-- **Olimpo**: noche estrellada con columnas; la recogida son rayos.
-- **Filón**: galería de mina con vigas; la recogida es un reguero de chispas.
+- **Volcán**: cielo rojo con el cono en erupción, ríos de lava y ascuas; marco
+  de magma con goterones; casillas de basalto oscuro con filo de lava; la
+  recogida lanza chorros de lava.
+- **Olimpo**: noche violeta con estrellas, nubes y rayos; columnas de mármol y
+  marco de oro con greca griega; casillas de mármol blanco; la recogida son
+  rayos.
+- **Filón**: galería turquesa con cristales, vigas con guirnalda de bombillas y
+  raíles; casillas de cajas de madera con clavos; la recogida es un reguero
+  de chispas de oro.
 
 Una tirada del juego base es un GIF de ~2 s: los cinco rodillos caen y paran de
 izquierda a derecha con rebote. Si el recogedor está en el rodillo 1 y ya se
@@ -49,6 +57,7 @@ from bot.services.hold_win import (
     MINI_COINS,
     REELS,
     ROWS,
+    THEMES,
     BaseSpin,
     BonusStep,
     Cell,
@@ -73,7 +82,10 @@ MARGIN = 16
 GRID_W = REELS * CELL + (REELS - 1) * GAP
 GRID_H = ROWS * CELL + (ROWS - 1) * GAP
 WIDTH = GRID_W + MARGIN * 2
-HEADER_Y = 12
+#: Rótulo de la máquina (como el de los pachinkos): «JOVANI VÁZQUEZ» y el nombre.
+TITLE_Y = 6
+TITLE_H = 46
+HEADER_Y = TITLE_Y + TITLE_H + 6
 HEADER_H = 52
 GRID_Y = HEADER_Y + HEADER_H + 10
 FOOTER_Y = GRID_Y + GRID_H + 12
@@ -124,51 +136,59 @@ def short_amount(amount: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Style:
-    """Colores y efecto de una máquina."""
+    """Colores, materiales y efecto de una máquina.
+
+    Attributes:
+        cells: Material de las casillas: `"basalt"` (roca oscura con borde de
+            lava), `"marble"` (mármol blanco con filo dorado) o `"wood"`
+            (cajas de madera con clavos). Es lo que más distingue una máquina
+            de otra a primera vista.
+        title, title_glow: Relleno y halo del rótulo.
+    """
 
     top: tuple[int, int, int]
     bottom: tuple[int, int, int]
     frame: tuple[int, int, int]
     frame_dark: tuple[int, int, int]
-    cell: tuple[int, int, int]
-    cell_edge: tuple[int, int, int]
-    empty: tuple[int, int, int]
+    cells: str
     glow: tuple[int, int, int]
+    title: tuple[int, int, int]
+    title_glow: tuple[int, int, int]
     effect: str
 
 
 STYLES: dict[str, Style] = {
     "volcan": Style(
-        top=(92, 18, 10),
-        bottom=(18, 8, 8),
-        frame=(255, 128, 32),
-        frame_dark=(120, 40, 12),
-        cell=(46, 30, 28),
-        cell_edge=(92, 52, 40),
-        empty=(30, 18, 16),
-        glow=(255, 170, 60),
+        top=(150, 30, 8),
+        bottom=(14, 6, 6),
+        frame=(255, 120, 20),
+        frame_dark=(110, 30, 6),
+        cells="basalt",
+        glow=(255, 180, 50),
+        title=(255, 214, 90),
+        title_glow=(255, 70, 0),
         effect="lava",
     ),
     "olimpo": Style(
-        top=(30, 36, 92),
-        bottom=(10, 12, 34),
-        frame=(236, 196, 92),
-        frame_dark=(110, 88, 40),
-        cell=(234, 230, 220),
-        cell_edge=(178, 170, 154),
-        empty=(36, 42, 82),
-        glow=(255, 240, 150),
+        top=(92, 58, 170),
+        bottom=(22, 20, 74),
+        frame=(240, 200, 90),
+        frame_dark=(140, 104, 36),
+        cells="marble",
+        glow=(255, 236, 140),
+        title=(255, 255, 255),
+        title_glow=(120, 190, 255),
         effect="lightning",
     ),
     "filon": Style(
-        top=(66, 44, 26),
-        bottom=(20, 14, 10),
-        frame=(160, 104, 52),
-        frame_dark=(70, 44, 22),
-        cell=(54, 46, 40),
-        cell_edge=(110, 92, 70),
-        empty=(34, 28, 24),
+        top=(18, 54, 58),
+        bottom=(8, 18, 22),
+        frame=(150, 92, 44),
+        frame_dark=(74, 42, 18),
+        cells="wood",
         glow=(255, 214, 110),
+        title=(255, 196, 70),
+        title_glow=(60, 220, 200),
         effect="gold",
     ),
 }
@@ -419,72 +439,27 @@ class HoldWinRenderer:
         kit = _Kit(
             style=style,
             background=self._background(theme, style),
-            cell_bg=self._cell_bg(style.cell, style.cell_edge),
-            empty_bg=self._cell_bg(style.empty, style.frame_dark),
+            cell_bg=_cell_tile(style.cells, empty=False),
+            empty_bg=_cell_tile(style.cells, empty=True),
             symbols=symbols,
         )
         kit.palette = self._palette(kit)
         return kit
 
-    @staticmethod
-    def _cell_bg(color: tuple[int, int, int], edge: tuple[int, int, int]) -> Image.Image:
-        light = tuple(min(255, c + 26) for c in color)
-        dark = tuple(max(0, c - 18) for c in color)
-        cell = _gradient((CELL, CELL), light, dark).convert("RGBA")
-        mask = Image.new("L", (CELL, CELL), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, CELL - 1, CELL - 1), radius=12, fill=255)
-        out = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
-        out.paste(cell, (0, 0), mask)
-        ImageDraw.Draw(out).rounded_rectangle(
-            (0, 0, CELL - 1, CELL - 1), radius=12, outline=edge, width=2
-        )
-        return out
-
     def _background(self, theme: str, style: Style) -> Image.Image:
-        """Fondo, marco y decoración fija de la máquina."""
-        image = _gradient((WIDTH, HEIGHT), style.top, style.bottom)
-        draw = ImageDraw.Draw(image, "RGBA")
+        """Fondo, rótulo, marco y decoración fija de la máquina.
+
+        Se dibuja al doble de tamaño y se reduce: los bordes y las curvas
+        salen suaves. Solo se hace una vez por máquina.
+        """
+        big = _gradient((WIDTH * 2, HEIGHT * 2), style.top, style.bottom).convert("RGBA")
         rng = random.Random(theme)  # misma decoración siempre
-        if theme == "volcan":
-            for _ in range(7):
-                x, y = rng.randrange(WIDTH), rng.randrange(HEIGHT)
-                points = [(x, y)]
-                for _step in range(6):
-                    x += rng.randint(-30, 30)
-                    y += rng.randint(10, 40)
-                    points.append((x, y))
-                draw.line(points, fill=(255, 90, 20, 90), width=5)
-                draw.line(points, fill=(255, 200, 80, 140), width=2)
-            for _ in range(60):
-                x, y, r = rng.randrange(WIDTH), rng.randrange(HEIGHT), rng.choice((1, 1, 2))
-                draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 150, 50, 160))
-        elif theme == "olimpo":
-            for _ in range(80):
-                x, y, r = rng.randrange(WIDTH), rng.randrange(HEIGHT), rng.choice((1, 1, 1, 2))
-                draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 230, 170))
-            for x in (2, WIDTH - MARGIN + 2):
-                draw.rectangle((x, GRID_Y - 6, x + MARGIN - 6, FOOTER_Y - 6), fill=(230, 226, 214))
-                for k in range(3):
-                    gx = x + 3 + k * 4
-                    draw.line((gx, GRID_Y - 2, gx, FOOTER_Y - 10), fill=(180, 174, 160), width=1)
-                draw.rectangle((x - 2, GRID_Y - 10, x + MARGIN - 4, GRID_Y - 4), fill=GOLD)
-                draw.rectangle((x - 2, FOOTER_Y - 8, x + MARGIN - 4, FOOTER_Y - 2), fill=GOLD)
-        else:
-            for x in (2, WIDTH - MARGIN + 3):
-                draw.rectangle((x, 0, x + MARGIN - 7, HEIGHT), fill=(96, 62, 30))
-                for y in range(8, HEIGHT, 36):
-                    draw.line((x, y, x + MARGIN - 7, y + 4), fill=(60, 36, 16), width=2)
-            draw.rectangle((0, GRID_Y - 12, WIDTH, GRID_Y - 4), fill=(110, 72, 36))
-            for _ in range(40):
-                x, y = rng.randrange(WIDTH), rng.randrange(HEIGHT)
-                draw.polygon(_star(x, y, 3, 1, 4), fill=(255, 220, 120, 150))
-        # Marco de la rejilla.
-        box = (MARGIN - 7, GRID_Y - 7, MARGIN + GRID_W + 6, GRID_Y + GRID_H + 6)
-        draw.rounded_rectangle(box, radius=16, fill=(0, 0, 0, 120), outline=style.frame, width=4)
-        draw.rounded_rectangle(
-            (box[0] + 5, box[1] + 5, box[2] - 5, box[3] - 5), radius=12, outline=style.frame_dark
+        {"volcan": _volcano_scene, "olimpo": _olympus_scene, "filon": _mine_scene}[theme](
+            big, style, rng
         )
-        return image
+        image = big.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+        _title(image, THEMES[theme].title.upper(), style)
+        return image.convert("RGB")
 
     def _palette(self, kit: _Kit) -> Image.Image:
         """Paleta común de la máquina, sacada de todas sus piezas juntas.
@@ -516,12 +491,17 @@ class HoldWinRenderer:
             sample.paste(tile.convert("RGB"), ((i % columns) * CELL, (i // columns) * CELL))
         sample.paste(small, (0, rows * CELL))
         draw = ImageDraw.Draw(sample)
-        # Colores de los carteles, los marcos de premio y los efectos.
-        for i, color in enumerate(
-            (GOLD, WHITE, kit.style.glow, kit.style.frame, (255, 120, 30), (120, 200, 255))
-        ):
-            x = small.width + 10 + i * 30
-            draw.rectangle((x, rows * CELL, x + 29, rows * CELL + 19), fill=color)
+        # Colores de los carteles, los marcos de premio, el rótulo y los efectos,
+        # en muestras grandes para que la paleta los guarde exactos (si no, el
+        # blanco de los carteles salía grisáceo).
+        swatches = (
+            GOLD, WHITE, BLACK, kit.style.glow, kit.style.frame, kit.style.title,
+            kit.style.title_glow, (255, 120, 30), (120, 200, 255),
+        )  # fmt: skip
+        for i, color in enumerate(swatches):
+            x = small.width + 4 + (i % 4) * 40
+            y = rows * CELL + (i // 4) * 30
+            draw.rectangle((x, y, x + 39, y + 29), fill=color)
         return sample.quantize(colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT)
 
     # -- Casillas -------------------------------------------------------------------
@@ -767,9 +747,10 @@ class HoldWinRenderer:
         height = 76 if banner.title is None else 112
         cy = GRID_Y + GRID_H // 2
         box = (MARGIN - 4, cy - height // 2, WIDTH - MARGIN + 4, cy + height // 2)
-        colors = (style.frame, GOLD, (255, 110, 200), (140, 230, 255))
+        # Colores que ya están en la paleta de la máquina: así no salen grises.
+        colors = (style.frame, GOLD, style.title_glow, style.glow)
         rim = colors[min(banner.tier, 3)]
-        draw.rounded_rectangle(box, radius=18, fill=(0, 0, 0, 200), outline=rim, width=5 + pulse)
+        draw.rounded_rectangle(box, radius=18, fill=(0, 0, 0, 235), outline=rim, width=5 + pulse)
         if banner.tier >= 2:
             rng = random.Random(banner.amount)
             for _ in range(24):
@@ -780,10 +761,10 @@ class HoldWinRenderer:
         y = cy
         if banner.title is not None:
             font = _text_fit(draw, banner.title, WIDTH - 2 * MARGIN - 20, 34 + 2 * pulse)
-            _outlined_text(draw, (WIDTH / 2, cy - 22), banner.title, font, rim, width=4)
+            _outlined_text(draw, (WIDTH / 2, cy - 22), banner.title, font, style.title, rim, 4)
             y = cy + 24
         font = _text_fit(draw, banner.amount, WIDTH - 2 * MARGIN - 20, 38 + 2 * pulse)
-        _outlined_text(draw, (WIDTH / 2, y), banner.amount, font, WHITE, rim, width=4)
+        _outlined_text(draw, (WIDTH / 2, y), banner.amount, font, WHITE, BLACK, width=4)
         image.alpha_composite(overlay)
 
     # -- Composición ----------------------------------------------------------------
@@ -1186,6 +1167,306 @@ class HoldWinRenderer:
         durations.append(FINAL_FRAME_MS)
         gif = self._gif(kit, frames, durations)
         return Media(gif=gif, png=final_png, seconds=sum(durations[:-1]) / 1000)
+
+
+# -- Escenarios de cada máquina ---------------------------------------------------------
+#
+# Todo se dibuja al doble de tamaño (`S`), así que las coordenadas van por 2.
+
+S = 2
+
+
+def _grid_box(pad: int) -> tuple[int, int, int, int]:
+    """Caja de la rejilla, en coordenadas dobles, con `pad` píxeles (normales) de más."""
+    return (
+        (MARGIN - pad) * S,
+        (GRID_Y - pad) * S,
+        (MARGIN + GRID_W + pad) * S,
+        (GRID_Y + GRID_H + pad) * S,
+    )
+
+
+def _glow_layer(image: Image.Image, painter, radius: int) -> None:  # noqa: ANN001
+    """Pinta con `painter(draw)` en una capa aparte, la desenfoca y la suma (halo)."""
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    painter(ImageDraw.Draw(layer))
+    image.alpha_composite(layer.filter(ImageFilter.GaussianBlur(radius)))
+    image.alpha_composite(layer)
+
+
+def _bulbs(draw: ImageDraw.ImageDraw, box, color, every: int, rng: random.Random) -> None:  # noqa: ANN001
+    """Bombillas alrededor de una caja, como en los muebles de los salones."""
+    x0, y0, x1, y1 = box
+    points = []
+    for x in range(x0 + every // 2, x1, every):
+        points += [(x, y0), (x, y1)]
+    for y in range(y0 + every // 2, y1, every):
+        points += [(x0, y), (x1, y)]
+    for x, y in points:
+        on = rng.random() < 0.7
+        r = 4 * S // 2
+        draw.ellipse((x - r - 3, y - r - 3, x + r + 3, y + r + 3), fill=color + (60 if on else 0,))
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 250, 220) if on else (90, 80, 70))
+
+
+def _volcano_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
+    """Volcán en erupción detrás de la rejilla, ríos de lava, ascuas y marco de magma."""
+    w, h = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    # Resplandor del cielo y el cono del volcán (asoma por arriba y por los lados).
+    _glow_layer(
+        image,
+        lambda d: d.ellipse((w * 0.2, -h * 0.05, w * 0.8, h * 0.35), fill=(255, 90, 10, 120)),
+        40,
+    )
+    cone = [(-w * 0.1, h), (w * 0.38, h * 0.09), (w * 0.62, h * 0.09), (w * 1.1, h)]
+    draw.polygon(cone, fill=(34, 14, 12))
+    draw.polygon([(w * 0.38, h * 0.09), (w * 0.62, h * 0.09), (w * 0.57, h * 0.12),
+                  (w * 0.43, h * 0.12)], fill=(255, 150, 30))  # fmt: skip
+    # Ríos de lava por las laderas.
+    for side in (-1, 1):
+        for k in range(3):
+            x = w * 0.5 + side * w * (0.06 + 0.04 * k)
+            y = h * 0.11
+            points = [(x, y)]
+            while y < h:
+                x += side * rng.uniform(4, 22) * S
+                y += rng.uniform(18, 34) * S
+                points.append((x, y))
+            _glow_layer(
+                image, lambda d, p=points: d.line(p, fill=(255, 80, 0, 200), width=7 * S), 6
+            )
+            draw.line(points, fill=(255, 210, 90, 255), width=2 * S)
+    # Ascuas.
+    for _ in range(90):
+        x, y = rng.uniform(0, w), rng.uniform(0, h)
+        r = rng.choice((1, 1, 2, 3)) * S / 2
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, rng.randint(120, 220), 40, 220))
+    # Marco de magma: brillo naranja, borde amarillo y goterones.
+    box = _grid_box(8)
+    _glow_layer(
+        image,
+        lambda d: d.rounded_rectangle(box, radius=18 * S, outline=(255, 90, 0, 255), width=6 * S),
+        10,
+    )
+    draw.rounded_rectangle(box, radius=18 * S, fill=(10, 4, 4, 210))
+    draw.rounded_rectangle(box, radius=18 * S, outline=(255, 110, 10), width=5 * S)
+    draw.rounded_rectangle(
+        (box[0] + 3 * S, box[1] + 3 * S, box[2] - 3 * S, box[3] - 3 * S),
+        radius=15 * S,
+        outline=(255, 220, 100),
+        width=S,
+    )
+    for _ in range(9):
+        x = rng.uniform(box[0] + 30 * S, box[2] - 30 * S)
+        length = rng.uniform(6, 14) * S
+        draw.rounded_rectangle((x - 3 * S, box[1] - S, x + 3 * S, box[1] + length), radius=3 * S,
+                               fill=(255, 130, 20))  # fmt: skip
+        draw.ellipse((x - 4 * S, box[1] + length - 4 * S, x + 4 * S, box[1] + length + 4 * S),
+                     fill=(255, 170, 40))  # fmt: skip
+
+
+def _meander(draw: ImageDraw.ImageDraw, x0: int, x1: int, y: int, size: int, color) -> None:  # noqa: ANN001
+    """Greca griega (meandro) en una franja horizontal."""
+    x = x0
+    step = size * 2
+    while x + step <= x1:
+        pts = [
+            (x, y + size), (x, y), (x + size * 1.5, y), (x + size * 1.5, y + size * 0.66),
+            (x + size * 0.5, y + size * 0.66), (x + size * 0.5, y + size * 0.33),
+            (x + size, y + size * 0.33),
+        ]  # fmt: skip
+        draw.line(pts, fill=color, width=max(2, size // 6))
+        draw.line((x, y + size, x + step, y + size), fill=color, width=max(2, size // 6))
+        x += step
+
+
+def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
+    """Cielo del Olimpo: estrellas, nubes, rayos, columnas de mármol y marco de oro con greca."""
+    w, h = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    for _ in range(110):
+        x, y, r = rng.uniform(0, w), rng.uniform(0, h), rng.choice((1, 1, 2)) * S / 2
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 240, 200))
+    # Nubes abajo y arriba.
+    for cy, alpha in ((h * 0.98, 230),):
+        for _ in range(16):
+            x = rng.uniform(-40, w + 40)
+            r = rng.uniform(30, 60) * S
+            draw.ellipse((x - r, cy - r * 0.55, x + r, cy + r * 0.55), fill=(236, 232, 255, alpha))
+    # Rayos al fondo.
+    for x0 in (w * 0.12, w * 0.88):
+        points = [(x0, 0)]
+        y, x = 0.0, x0
+        while y < h * 0.5:
+            y += rng.uniform(20, 40) * S
+            x += rng.uniform(-18, 18) * S
+            points.append((x, y))
+        _glow_layer(image, lambda d, p=points: d.line(p, fill=(140, 200, 255, 220), width=6 * S), 8)
+        draw.line(points, fill=(255, 255, 255), width=2 * S)
+    # Columnas de mármol a los lados de la rejilla.
+    box = _grid_box(8)
+    for x0 in (2 * S, w - (MARGIN - 1) * S):
+        x1 = x0 + (MARGIN - 4) * S
+        draw.rectangle((x0, box[1], x1, box[3]), fill=(240, 236, 226))
+        for k in range(1, 4):
+            gx = x0 + (x1 - x0) * k / 4
+            draw.line((gx, box[1] + 8 * S, gx, box[3] - 8 * S), fill=(196, 188, 170), width=S)
+        draw.rectangle((x0 - 2 * S, box[1] - 4 * S, x1 + 2 * S, box[1] + 4 * S), fill=style.frame)
+        draw.rectangle((x0 - 2 * S, box[3] - 4 * S, x1 + 2 * S, box[3] + 4 * S), fill=style.frame)
+    # Marco de oro con greca arriba y abajo.
+    draw.rounded_rectangle(box, radius=10 * S, fill=(18, 14, 60, 200))
+    draw.rounded_rectangle(box, radius=10 * S, outline=(255, 224, 120), width=5 * S)
+    draw.rounded_rectangle(
+        (box[0] + 4 * S, box[1] + 4 * S, box[2] - 4 * S, box[3] - 4 * S),
+        radius=8 * S,
+        outline=style.frame_dark,
+        width=S,
+    )
+    _meander(draw, box[0] + 14 * S, box[2] - 14 * S, box[1] - 2 * S, 5 * S, (255, 224, 120))
+    _meander(draw, box[0] + 14 * S, box[2] - 14 * S, box[3] - 3 * S, 5 * S, (255, 224, 120))
+
+
+def _mine_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
+    """Galería de mina: roca con cristales, vigas de madera, bombillas y raíles."""
+    w, h = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    # Roca: losas irregulares un poco más claras que el fondo.
+    for _ in range(70):
+        x, y = rng.uniform(0, w), rng.uniform(0, h)
+        r = rng.uniform(14, 34) * S
+        pts = []
+        for i in range(6):
+            angle = i * math.pi / 3
+            reach = r * rng.uniform(0.7, 1.1)
+            pts.append((x + reach * math.cos(angle), y + reach * math.sin(angle)))
+        shade = rng.randint(0, 14)
+        draw.polygon(pts, fill=(28 + shade, 58 + shade, 62 + shade, 120))
+    # Cristales turquesa que brillan en la roca.
+    for _ in range(14):
+        x, y = rng.uniform(0, w), rng.uniform(0, h)
+        size = rng.uniform(5, 11) * S
+        _glow_layer(
+            image,
+            lambda d, x=x, y=y, s=size: d.polygon(
+                [(x, y - s), (x + s * 0.45, y), (x, y + s * 0.8), (x - s * 0.45, y)],
+                fill=(80, 240, 220, 230),
+            ),
+            5,
+        )
+    # Vigas: postes a los lados y travesaño sobre la rejilla.
+    box = _grid_box(9)
+    wood, dark = (150, 96, 48), (82, 50, 22)
+    for x0 in (0, w - (MARGIN - 2) * S):
+        x1 = x0 + (MARGIN - 2) * S
+        draw.rectangle((x0, 0, x1, h), fill=wood)
+        for y in range(10 * S, h, 26 * S):
+            draw.line((x0 + 2 * S, y, x1 - 2 * S, y + 6 * S), fill=dark, width=S)
+    beam = (0, box[1] - 10 * S, w, box[1] + 2 * S)
+    draw.rectangle(beam, fill=wood)
+    for x in range(8 * S, w, 30 * S):
+        draw.line((x, beam[1] + 3 * S, x + 18 * S, beam[1] + 3 * S), fill=dark, width=S)
+    for x in (6 * S, w - 6 * S):
+        draw.ellipse((x - 3 * S, beam[1] + 3 * S, x + 3 * S, beam[1] + 9 * S), fill=(190, 190, 200))
+    # Marco de la rejilla: madera oscura con remaches.
+    draw.rounded_rectangle(box, radius=6 * S, fill=(14, 10, 8, 215))
+    draw.rounded_rectangle(box, radius=6 * S, outline=(120, 74, 34), width=6 * S)
+    draw.rounded_rectangle(
+        (box[0] + 5 * S, box[1] + 5 * S, box[2] - 5 * S, box[3] - 5 * S),
+        radius=4 * S,
+        outline=dark,
+        width=S,
+    )
+    for x in range(box[0] + 12 * S, box[2], 28 * S):
+        for y in (box[1] + 3 * S, box[3] - 3 * S):
+            draw.ellipse((x - 2 * S, y - 2 * S, x + 2 * S, y + 2 * S), fill=(200, 200, 210))
+    # Guirnalda de bombillas en el travesaño y raíles abajo.
+    _bulbs(draw, (0, beam[1] + 6 * S, w, beam[1] + 6 * S), (255, 200, 90), 22 * S, rng)
+    rail_y = h - 5 * S
+    for x in range(0, w, 16 * S):
+        draw.rectangle((x, rail_y - 3 * S, x + 8 * S, rail_y + 3 * S), fill=(96, 60, 28))
+    draw.line((0, rail_y - 2 * S, w, rail_y - 2 * S), fill=(170, 170, 180), width=2 * S)
+
+
+def _title(image: Image.Image, text: str, style: Style) -> None:
+    """Rótulo de neón: «JOVANI VÁZQUEZ» pequeño entre estrellas y el nombre grande con halo."""
+    cx = WIDTH / 2
+    small, big = _font(11), _font(30)
+    signature = "JOVANI VÁZQUEZ"
+    half = ImageDraw.Draw(image).textlength(signature, font=small) / 2 + 10
+
+    def paint(draw: ImageDraw.ImageDraw, glow: bool) -> None:
+        if glow:
+            draw.text((cx, TITLE_Y + 31), text, font=big, fill=style.title_glow, anchor="mm",
+                      stroke_width=6, stroke_fill=style.title_glow)  # fmt: skip
+            return
+        draw.text((cx, TITLE_Y + 8), signature, font=small, fill=style.title, anchor="mm",
+                  stroke_width=2, stroke_fill=(0, 0, 0))  # fmt: skip
+        for x in (cx - half, cx + half):
+            draw.polygon(_star(x, TITLE_Y + 8, 6, 2.5, 5), fill=style.title, outline=(0, 0, 0))
+        draw.text((cx, TITLE_Y + 31), text, font=big, fill=style.title, anchor="mm",
+                  stroke_width=3, stroke_fill=(30, 10, 10))  # fmt: skip
+
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    paint(ImageDraw.Draw(layer), glow=True)
+    image.alpha_composite(layer.filter(ImageFilter.GaussianBlur(5)))
+    paint(ImageDraw.Draw(image), glow=False)
+
+
+def _cell_tile(material: str, *, empty: bool) -> Image.Image:
+    """Fondo de una casilla según el material de la máquina (llena o vacía en el bonus)."""
+    size = CELL * S
+    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    mask = Image.new("L", (size, size), 0)
+    radius = {"basalt": 12, "marble": 8, "wood": 4}[material] * S
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=255)
+    rng = random.Random(material + str(empty))
+    if material == "basalt":
+        top, bottom = ((30, 16, 14), (14, 8, 8)) if empty else ((66, 50, 46), (30, 22, 22))
+        face = _gradient((size, size), top, bottom).convert("RGBA")
+        draw = ImageDraw.Draw(face, "RGBA")
+        for _ in range(5):
+            x, y = rng.uniform(0, size), rng.uniform(0, size)
+            draw.line((x, y, x + rng.uniform(-30, 30), y + rng.uniform(10, 40)),
+                      fill=(255, 90, 20, 60 if not empty else 90), width=2)  # fmt: skip
+        rim, inner = (255, 110, 20), (120, 40, 10)
+    elif material == "marble":
+        top, bottom = ((44, 40, 110), (24, 22, 70)) if empty else ((252, 250, 245), (220, 214, 202))
+        face = _gradient((size, size), top, bottom).convert("RGBA")
+        draw = ImageDraw.Draw(face, "RGBA")
+        vein = (90, 84, 160, 70) if empty else (200, 192, 180, 60)
+        # Vetas solo en las vacías: en las llenas competían con el símbolo.
+        for _ in range(3 if empty else 0):
+            x = rng.uniform(0, size)
+            points = [(x, 0)]
+            for k in range(1, 6):
+                points.append((x + rng.uniform(-20, 20), size * k / 5))
+            draw.line(points, fill=vein, width=2)
+        rim, inner = (230, 186, 70), (255, 240, 170)
+    else:
+        top, bottom = ((44, 32, 22), (26, 18, 12)) if empty else ((196, 140, 80), (150, 98, 50))
+        face = _gradient((size, size), top, bottom).convert("RGBA")
+        draw = ImageDraw.Draw(face, "RGBA")
+        plank = size // 3
+        for k in range(1, 3):
+            draw.line((0, plank * k, size, plank * k), fill=(80, 46, 20, 200), width=2 * S)
+        for _ in range(8):
+            y = rng.uniform(0, size)
+            draw.arc((rng.uniform(-40, size), y - 8, rng.uniform(size, size + 60), y + 8), 180, 360,
+                     fill=(110, 70, 34, 120), width=2)  # fmt: skip
+        rim, inner = (70, 40, 16), (230, 180, 110)
+        for x, y in ((9, 9), (size - 9, 9), (9, size - 9), (size - 9, size - 9)):
+            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=(190, 190, 200))
+    tile.paste(face, (0, 0), mask)
+    draw = ImageDraw.Draw(tile)
+    draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, outline=rim, width=3 * S)
+    draw.rounded_rectangle(
+        (3 * S, 3 * S, size - 1 - 3 * S, size - 1 - 3 * S),
+        radius=max(2, radius - 3 * S),
+        outline=inner + (90,) if not empty else inner + (40,),
+        width=S,
+    )
+    return tile.resize((CELL, CELL), Image.Resampling.LANCZOS)
 
 
 def _shown(landing) -> Cell:
