@@ -1,0 +1,27 @@
+Imágenes y letras de las máquinas de Botes (bot.services.hold_win_render).
+
+Los símbolos son PNG de 128×128 px con fondo transparente; el renderizador los
+reduce al tamaño de la casilla. Las monedas, las fichas de bote, el fondo, los
+marcos y el rótulo no son imágenes: se dibujan en código. Si se cambia un
+símbolo, debe seguir distinguiéndose por la forma y no solo por el color (hay
+jugadores con deuteranopia).
+
+Volcán
+- volcan_pay0.png a volcan_pay5.png (cerezas, campana, BAR, siete, máscara
+  tiki dorada y máscara de fuego), volcan_wild.png (diamante WILD) y
+  volcan_collect.png (volcán): dibujados para el bot con Pillow. El BAR usa la
+  letra Bungee y el siete y el WILD, Luckiest Guy (ver abajo).
+
+Modificadores del bonus (comunes)
+- ticket.png (fichas), extra.png (reloj), instant.png (petardo) y max.png
+  (saco de dinero): pack «FiveM Inventory Icons» de SwisserDev, CC0 1.0.
+  https://github.com/SwisserDev/fivem-inventory-icons
+- mystery.png: interrogación escrita con Cinzel (SIL Open Font License 1.1).
+
+Letras
+- fonts/luckiest-guy.woff: Luckiest Guy, de Astigmatic (Brian J. Bonislawsky),
+  con licencia Apache 2.0 (fonts/LICENSE-luckiest-guy.txt), tomada del paquete
+  @fontsource/luckiest-guy. La usa el rótulo «VOLCÁN».
+- Bungee (David Jonathan Ross) y Cinzel (The Cinzel Project Authors), con
+  licencia SIL Open Font License 1.1, solo se usaron para dibujar los PNG; no
+  van en el repositorio.

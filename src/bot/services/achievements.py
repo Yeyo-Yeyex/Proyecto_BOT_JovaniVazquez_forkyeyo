@@ -11,7 +11,8 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
-`blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `pachinko_stats`,
+`blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
+`crash_stats`, `mines_stats`, `pachinko_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`) y se
 lo pasan al cog de logros.
 
@@ -33,6 +34,10 @@ from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.crash import Seat as CrashSeat
+from bot.services.hold_win import BaseSpin as HoldWinSpin
+from bot.services.hold_win import BonusResult as HoldWinBonusResult
+from bot.services.hold_win import BonusStep as HoldWinStep
+from bot.services.hold_win import Trigger as HoldWinTrigger
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
@@ -108,6 +113,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("blackjack", "🃏 Blackjack"),
     Category("casino", "💰 Casino"),
     Category("slots", "🎰 Tragaperras"),
+    Category("botes", "🌋 Botes"),
     Category("crash", "🚀 Crash"),
     Category("mines", "💣 Minas"),
     Category("pachinko", "🌸 Pachinko"),
@@ -726,6 +732,105 @@ def _build_catalog() -> tuple[Achievement, ...]:
         conditions=(("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1)),
     ))  # fmt: skip
 
+    # 🌋 Botes (de momento, volcan) ---------------------------------------------------------
+    a += _tiers("botes", "botes_spins", [
+        (1, "botes_1", "Hold & win", "Juega tu primera tirada en el Volcán.",
+         C),
+        (100, "botes_100", "Coleccionista de monedas", "Juega 100 tiradas en los botes.", C),
+        (1_000, "botes_1k", "Maletín al hombro", "Juega 1.000 tiradas en los botes.",
+         E),
+        (10_000, "botes_10k", "Socio de la casa", "Juega 10.000 tiradas en los botes.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_volcan", [
+        (100, "botes_timanfaya", "Turista en Timanfaya", "Juega 100 tiradas en el Volcán.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_collects", [
+        (1, "botes_collect", "Recogida", "Recoge las monedas con el recogedor.", C),
+        (50, "botes_collect_50", "Barrendero de monedas", "Haz 50 recogidas.", R),
+        (500, "botes_collect_500", "Aspiradora", "Haz 500 recogidas.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_double_collect", [
+        (1, "botes_double", "Por las dos puntas", "Recoge con recogedor en el rodillo 1 y el 5.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_near_miss", [
+        (25, "botes_near", "Monedas al viento",
+         "Deja 25 veces un buen puñado de monedas sin recoger.", R, True),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_ways_5", [
+        (1, "botes_five", "De punta a punta", "Gana con un símbolo en los cinco rodillos.", C),
+        (25, "botes_five_25", "Ways a mansalva", "Gana 25 veces con los cinco rodillos.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_wild_wins", [
+        (50, "botes_wild", "Comodín de confianza", "Gana 50 tiradas con ayuda del comodín.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_chips", [
+        (25, "botes_chips", "Fichas al bote", "Saca 25 fichas de bote en el juego base.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonuses", [
+        (1, "botes_bonus", "¡Maletín lleno!", "Llena un maletín y juega su bonus.", C),
+        (25, "botes_bonus_25", "Abonado al bonus", "Juega 25 bonus.", R),
+        (100, "botes_bonus_100", "El bonus me conoce", "Juega 100 bonus.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonus_green", [
+        (1, "botes_green", "Verde que te quiero verde", "Juega un bonus verde.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonus_blue", [
+        (1, "botes_blue", "Azul celeste", "Juega un bonus azul.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonus_red", [
+        (1, "botes_red", "Rojo pasión", "Juega un bonus rojo.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonus_grand", [
+        (1, "botes_grand_bonus", "Fin del mundo", "Juega el gran bonus de los tres colores.", R),
+        (10, "botes_grand_bonus_10", "Apocalipsis en bucle", "Juega 10 grandes bonus.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_mini", [
+        (1, "botes_mini", "MINI", "Gana el bote MINI (10 monedas en un bonus).", R),
+        (10, "botes_mini_10", "Minis en serie", "Gana 10 botes MINI.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_major", [
+        (1, "botes_major", "MAJOR", "Gana el bote MAJOR (15 monedas en un bonus).", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_grand", [
+        (1, "botes_grand", "GRAND", "Llena la pantalla de monedas y llévate el GRAND.", M),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_almost_grand", [
+        (1, "botes_19", "Por una moneda", "Acaba un bonus con 19 monedas.", L, True),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_mult_max", [
+        (5, "botes_mult_5", "Multiplicador ×5", "Lleva el multiplicador de un bonus a ×5.", R),
+        (10, "botes_mult_10", "Multiplicador ×10", "Lleva el multiplicador de un bonus a ×10.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_instant", [
+        (10, "botes_instant", "¡Pum, por dos!", "Saca 10 multiplicadores inmediatos.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_maximizer", [
+        (1, "botes_max", "Botes al máximo", "Saca un maximizador de botes.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_mystery", [
+        (25, "botes_mystery", "Misterio resuelto", "Destapa 25 símbolos misteriosos.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_bonus_max", [
+        (10_000, "botes_bonus_10k", "Maletín de billetes", "Gana 10.000 Y$ en un bonus.", R),
+        (100_000, "botes_bonus_100k", "Maletín de lingotes", "Gana 100.000 Y$ en un bonus.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("botes", "botes_win_max", [
+        (10_000, "botes_win_10k", "Lluvia de lava", "Gana 10.000 Y$ en una tirada base.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("botes", "botes_turbo", [
+        (100, "botes_turbo", "Turbo en la mina", "Juega 100 tiradas en turbo.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_auto", [
+        (10, "botes_auto", "Que trabaje la máquina", "Usa Auto ×10 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_night", [
+        (1, "botes_night", "Erupción de madrugada", "Juega a los botes entre las 3 y las 6.", C,
+         True),
+    ])  # fmt: skip
+
     # 🚀 Crash --------------------------------------------------------------------------
     a += _tiers("crash", "crash_rounds", [
         (1, "crash_1", "Despegue", "Juega tu primera ronda de Crash.", C),
@@ -943,6 +1048,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
         conditions=(
             ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
             ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_seven_games",
+        name="Los siete pecados",
+        description="Juega a los siete juegos del casino, botes incluidos.",
+        category="casino",
+        rarity=L,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1),
         ),
     ))  # fmt: skip
 
@@ -1558,6 +1675,78 @@ def slots_stats(
     bump("slots_turbo", turbo)
     bump("slots_pot_fed", amount=0 if free else slots_pot_share(stake))
     bump("slots_night", 3 <= when.hour < 6)
+    return delta
+
+
+def hold_win_stats(
+    spin: HoldWinSpin,
+    *,
+    theme: str,
+    stake: int,
+    payout: int,
+    trigger: HoldWinTrigger | None,
+    turbo: bool,
+    session_spins: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una tirada base de Botes (sin lo común del casino).
+
+    Args:
+        theme: Máquina (de momento, `volcan`).
+        payout: Lo cobrado en la tirada (ways más recogida).
+        trigger: Bonus que dispara la tirada, si alguno.
+        session_spins: Tiradas en esta máquina, contando esta.
+        when: Hora local de la tirada.
+    """
+    del session_spins  # de momento sin logros de sesión larga
+    delta = StatDelta(add={"botes_spins": 1, f"botes_spins_{theme}": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("botes_collects", spin.collectors > 0 and bool(spin.coins))
+    bump("botes_double_collect", spin.collectors == 2 and bool(spin.coins))
+    bump("botes_near_miss", spin.near_miss)
+    bump("botes_ways_5", any(win.reels == 5 for win in spin.wins))
+    bump("botes_wild_wins", spin.wild_win)
+    bump("botes_chips", amount=sum(spin.chips.values()))
+    bump("botes_turbo", turbo)
+    bump("botes_night", 3 <= when.hour < 6)
+    if payout - stake > 0:
+        delta.peak["botes_win_max"] = payout - stake
+    if trigger is not None:
+        bump("botes_bonuses")
+        bump(f"botes_bonus_{trigger.kind}")
+    return delta
+
+
+def hold_win_bonus_stats(
+    result: HoldWinBonusResult, steps: Iterable[HoldWinStep], *, amount: int
+) -> StatDelta:
+    """Contadores de un bonus de Botes terminado.
+
+    El bonus en sí ya se contó al dispararse (`hold_win_stats`); aquí va lo
+    que ha pasado dentro.
+
+    Args:
+        steps: Tiradas del bonus, en orden.
+        amount: Lo cobrado en Y$.
+    """
+    delta = StatDelta(peak={"botes_mult_max": result.multiplier, "botes_bonus_max": amount})
+    for step in steps:
+        for landing in step.landings:
+            if landing.mystery:
+                delta.add["botes_mystery"] = delta.add.get("botes_mystery", 0) + 1
+            if landing.cell.kind == "instant":
+                delta.add["botes_instant"] = delta.add.get("botes_instant", 0) + 1
+        if step.maximized:
+            delta.add["botes_maximizer"] = delta.add.get("botes_maximizer", 0) + 1
+    for name in result.jackpots:
+        delta.add[f"botes_{name}"] = 1
+    if result.coins == 19:
+        delta.add["botes_almost_grand"] = 1
     return delta
 
 
