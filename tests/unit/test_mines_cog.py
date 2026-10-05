@@ -154,14 +154,17 @@ async def test_cobrar_sin_destapar_no_hace_nada(tmp_path: Path) -> None:
     assert board.game is not None and board.game.playing
 
 
-async def test_limpiar_el_tablero_cobra_solo(tmp_path: Path) -> None:
+async def test_limpiar_el_tablero_cobra_solo_y_sin_tope(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
-    board = await open_board(cog, mines=23)
-    place(board, set(range(2, 25)))
-    await board._reveal(make_interaction(), 0)
-    await board._reveal(make_interaction(), 1)
+    board = await open_board(cog, mines=12)
+    place(board, set(range(13, 25)))
+    for tile in range(13):
+        await board._reveal(make_interaction(), tile)
     assert board.game is not None and board.game.status is Status.CASHED
-    assert board.game.payout == 2_376
+    # 100 × 0,99 × C(24, 12): el antiguo tope de ×10.000 lo dejaba en 1.000.000.
+    assert board.game.payout == 267_711_444
+    # Cobrado de verdad, menos la retención del juego (más de la mitad a este nivel).
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) > 100_000_000
 
 
 async def test_al_azar_destapa_una_casilla(tmp_path: Path) -> None:
@@ -187,7 +190,7 @@ async def test_jugar_otra_vuelve_a_cobrar_y_las_minas_se_cambian(tmp_path: Path)
     await board._reveal(make_interaction(), 9)
     await board._reveal(make_interaction(), 0)  # boom
     (select,) = [i for i in board.walk_children() if isinstance(i, ui.Select)]
-    assert len(select.options) == 23
+    assert len(select.options) == 12
     await board._choose_mines(make_interaction(), 5)
     assert board.mines == 5 and cog.mines_for(GUILD_ID, OWNER_ID) == 5
     assert board.total_children_count <= 40
@@ -296,7 +299,7 @@ async def test_cobro_enorme_se_anuncia(tmp_path: Path) -> None:
 async def test_la_primera_casilla_es_segura_y_devuelve_la_apuesta(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     for _ in range(20):
-        board = await open_board(cog, amount="1", mines=23)
+        board = await open_board(cog, amount="1", mines=12)
         await board._reveal(make_interaction(), 12)
         assert board.game is not None and board.game.playing
         assert board.game.cashout_value == 1

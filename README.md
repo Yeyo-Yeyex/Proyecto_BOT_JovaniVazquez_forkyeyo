@@ -244,10 +244,11 @@ python -m bot
   saltó dónde, y el mismo mensaje abre la ronda siguiente. Una edición por
   segundo durante el vuelo y una imagen por ronda.
 - **Minas** (`/minas`, `.minas [cantidad] [minas]`): un tablero de 5×5 propio
-  con 1 a 23 minas (2 por defecto). La primera casilla siempre es buena y
+  con 1 a 12 minas (2 por defecto). La primera casilla siempre es buena y
   devuelve la apuesta; desde ahí cada 💎 sube el multiplicador, 💰 Cobrar se
-  lo lleva y una 💣 lo pierde todo. Más minas, más pago por casilla: un menú
-  enseña lo que paga cada opción. El texto cuenta las casillas (💎 7/23), lo
+  lo lleva y una 💣 lo pierde todo. Más minas, más pago por casilla y sin tope:
+  el menú enseña lo que paga limpiar el tablero con cada opción (de ×23 con 1
+  mina a ×2.677.114 con 12). El texto cuenta las casillas (💎 7/23), lo
   que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.

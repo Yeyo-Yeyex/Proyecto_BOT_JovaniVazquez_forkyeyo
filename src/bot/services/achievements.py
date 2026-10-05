@@ -765,13 +765,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (2_000, "mines_x20", "Veinte veces", "Cobra en ×20 o más.", R),
         (10_000, "mines_x100", "Cien veces", "Cobra en ×100 o más.", E),
         (100_000, "mines_x1000", "Mil veces", "Cobra en ×1.000 o más.", L),
+        (1_000_000, "mines_x10k", "Diez mil veces", "Cobra en ×10.000 o más.", M),
     ])  # fmt: skip
     a += _tiers("mines", "mines_win_max", [
         (10_000, "mines_rich", "Veta de oro", "Gana 10.000 Y$ en una partida de Minas.", R),
         (100_000, "mines_richer", "Filón", "Gana 100.000 Y$ en una partida de Minas.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("mines", "mines_24", [
-        (1, "mines_24", "Ruleta rusa al revés", "Gana con 23 minas, el máximo.", E),
+        (1, "mines_24", "Ruleta rusa al revés", "Gana con 12 minas, el máximo.", C),
     ])  # fmt: skip
     a += _tiers("mines", "mines_clear", [
         (1, "mines_clear", "Desminado", "Destapa todas las casillas buenas.", R),
