@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TypeVar
@@ -32,6 +32,7 @@ from bot.repositories.economy import (
     InsufficientFundsError,
     JackpotRecord,
     LedgerEntry,
+    LotteryPayout,
     SlotsSettlement,
     Treasury,
     WealthCharge,
@@ -40,6 +41,7 @@ from bot.repositories.economy import (
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     IGIC_GENERAL_RATE,
+    LOTTERY_EXEMPT,
     MAX_PENDING_DECLARATIONS,
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
@@ -68,6 +70,7 @@ __all__ = [
     "IncomeResult",
     "InsufficientFundsError",
     "JackpotRecord",
+    "LotteryPayout",
     "SlotsSettlement",
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
@@ -147,12 +150,17 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
     Args:
         names: Nombre a mostrar de cada `user_id` de `top_contributors`.
     """
+    debt = (
+        f"\nDeuda pública (premios de lotería sin fondos): {format_amount(treasury.debt)}"
+        if treasury.debt
+        else ""
+    )
     embed = discord.Embed(
         title="🏛️ Hacienda",
         description=(
             f"Saldo de la cuenta del Estado: **{format_amount(treasury.balance)}**\n"
             f"Recaudado en {year}: **{format_amount(treasury.collected_since)}**\n"
-            f"Recaudado desde siempre: {format_amount(treasury.collected_total)}"
+            f"Recaudado desde siempre: {format_amount(treasury.collected_total)}{debt}"
         ),
         color=discord.Color.from_rgb(170, 21, 27),
     )
@@ -171,6 +179,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
             f"de {format_amount(WEALTH_MINIMUM)} · IGIC en las compras de la `tienda` "
             f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
+            f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
+            f"{format_amount(LOTTERY_EXEMPT)}"
         ).replace("%", " %"),
         inline=False,
     )
@@ -630,6 +640,50 @@ class EconomyService:
             concept=concept,
             now=self._clock(),
             release=release,
+        )
+
+    async def state_balance(self, guild_id: int) -> int:
+        """Saldo de la cuenta del Estado."""
+        return await self.repository.state_balance(guild_id)
+
+    async def lottery(
+        self,
+        guild_id: int,
+        *,
+        charges: Sequence[tuple[int, int, str]] = (),
+        payouts: Sequence[LotteryPayout] = (),
+        hook: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, dict[int, int]]:
+        """Cobra boletos de lotería y paga premios, con el Estado de banca.
+
+        Tratamiento fiscal:
+
+        - **Compra:** sin IGIC. Las loterías, apuestas y juegos de la SELAE y
+          la ONCE están exentos (art. 10.1.19º de la Ley 20/1991 del REF de
+          Canarias). No es gasto deducible ni pérdida de juego: lo jugado a la
+          lotería no compensa nada en la renta (art. 33.5.d LIRPF solo deja
+          compensar pérdidas de juego con ganancias de juego, y estos premios
+          ni siquiera están en la base general). El dinero va al Estado.
+        - **Premio:** gravamen especial del 20 % sobre lo que pase de 40.000 €
+          por décimo o apuesta (disposición adicional 33ª LIRPF), retenido
+          por el pagador y definitivo. No entra en la retención diaria del
+          casino ni en la renta semanal. Lo calcula `taxes.lottery_tax`.
+        - **Banca:** los premios salen de la cuenta del Estado. Si no le llega,
+          emite deuda pública por la diferencia (`economy_public_debt`).
+
+        Args:
+            charges: `(user_id, importe, motivo)` de cada compra.
+            payouts: Premios con su gravamen ya calculado.
+            hook: Apuntes de la lotería dentro de la misma transacción.
+
+        Returns:
+            `(lo que devuelva hook, saldo final de cada miembro tocado)`.
+
+        Raises:
+            InsufficientFundsError: Si a alguien no le llega. No se mueve nada.
+        """
+        return await self.repository.lottery(
+            guild_id, charges=charges, payouts=payouts, now=self._clock(), hook=hook
         )
 
     async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:

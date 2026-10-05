@@ -323,3 +323,31 @@ def donation_deduction(donated: int, base: int, tax_paid: int) -> int:
     first = min(eligible, DONATION_FULL_LIMIT)
     deduction = first * DONATION_FULL_RATE + (eligible - first) * DONATION_REST_RATE
     return min(round(deduction), tax_paid)
+
+
+# -- Gravamen especial sobre premios de lotería -----------------------------------------
+#
+# Disposición adicional 33ª de la Ley 35/2006 del IRPF: los premios de las
+# loterías y apuestas de la SELAE, de la ONCE, de la Cruz Roja y de los
+# organismos equivalentes de la UE (Euromillones) no van a la base general.
+# Tributan aparte, con un gravamen especial del 20 % sobre lo que pase de
+# 40.000 € por décimo, fracción, cupón o apuesta. Lo retiene quien paga el
+# premio (aquí, el Estado) y es definitivo: no entra en la renta semanal.
+#
+# Los premios de loterías no son ganancia de juego del casino: no compensan
+# pérdidas ni retienen por días (`gambling_day_tax` es para el casino).
+
+LOTTERY_EXEMPT_EUR = 40_000
+#: Parte exenta de cada décimo o apuesta, en yapdollars.
+LOTTERY_EXEMPT = LOTTERY_EXEMPT_EUR * YAPDOLLARS_PER_EURO
+LOTTERY_RATE = 0.20
+
+
+def lottery_tax(prize: int) -> int:
+    """Gravamen especial de UN décimo, apuesta o rasca premiado.
+
+    Args:
+        prize: Premio bruto de esa unidad (si un décimo cobra varios premios,
+            la suma de todos, que es como se aplica la exención).
+    """
+    return round(max(0, prize - LOTTERY_EXEMPT) * LOTTERY_RATE)

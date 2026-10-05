@@ -341,6 +341,33 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 - Los SUPER RUSH, los rush de 5 premios o más y las ganancias de ×20 la apuesta se anuncian en el canal, con el tablero.
 - Logros: 37 en la categoría 🌸 Pachinko (tandas, bolas por START, reach, reach perdidos, ataris, rush, 7️⃣7️⃣7️⃣, renchan de 3 a 25, esquinas, reserva llena, bolas al limbo, tanda en blanco, premios grandes, sesión larga, Ráfaga, turbo, de madrugada, 100 tandas en Sakura y en Oni, ataris en Dragón y en Oni y jugar en los cuatro tableros) y *Ludópata integral* en 💰 Casino por jugar a los seis juegos.
 
+### 6 ter.7 ter. Loterías del Estado
+
+- `loteria` abre un panel con pestañas (🏠 Inicio, 🎫 Nacional, 🔵 Primitiva, 🟢 Bonoloto, 🟡 Gordo, ⭐ Euromillones, 🟣 Rascas, 🎟️ Mis boletos). Con `/` es efímero; con `.loteria` es público y a quien pulse sin ser el dueño se le abre su propio panel. Se juega en los canales de casino.
+- Juegos, precios a 10 Y$ por euro y reparto según sus normas oficiales (detalle y artículos en `bot.services.lottery`):
+
+  | Juego | Sorteos (hora de Madrid) | Precio | A premios | Reparto |
+  |---|---|---|---|---|
+  | Nacional del jueves | jueves 21:30 | 30 Y$ el décimo | 70 % | Premios fijos: 1º 300.000 Y$, 2º, aproximaciones, centenas, terminaciones, 4+7+9 extracciones, 3 reintegros |
+  | Nacional del sábado | sábado 13:00 | 60 Y$ | 70 % | 1º 600.000 Y$ y el mismo esquema |
+  | Navidad | 22 de diciembre 9:00 | 200 Y$ | 70 % | Gordo 4.000.000 Y$, 2º, 3º, dos 4º, ocho 5º, 1.794 pedreas, aproximaciones, centenas, dos últimas cifras y reintegro |
+  | Niño | 6 de enero 12:00 | 200 Y$ | 70 % | 1º 2.000.000 Y$, 2º, 3º, extracciones y 3 reintegros |
+  | La Primitiva | lunes, jueves y sábado 21:30 | 10 Y$ | 55 % | 10 % reintegro; 45 % menos 80 Y$ por cada 3 aciertos, 30/37/6/11/16 % a especial, 1ª, 2ª, 3ª y 4ª |
+  | Bonoloto | lunes a sábado 21:30 | 5 Y$ | 55 % | 10 % reintegro; 45 % menos 40 Y$ por cada 3 aciertos, 45/24/12/19 % |
+  | El Gordo de la Primitiva | domingo 21:30 | 15 Y$ | 55 % | 10 % reintegro; 22 % a la 1ª (la mitad a la reserva del Estado); 23 % menos 30 Y$ por cada 2 aciertos, a la 2ª-7ª |
+  | Euromillones | martes y viernes 21:00 | 22 Y$ | 50 % | 13 categorías (43,20 % la 1ª); 4,80 % a la reserva del Estado. Sin El Millón |
+  | Rasca X10 | al momento | 20 Y$ | 64 % | Tabla de la emisión de 9.000.000 de boletos de la ONCE |
+  | Rasca 7 y Media | al momento | 10 Y$ | 59 % | Tabla de la emisión de 6.000.000 de boletos |
+
+- Probabilidades reales: se calculan con combinatoria y salen en la tabla de cada juego (pleno de la Primitiva 1 entre 139.838.160, 4 aciertos 1 entre 1.032; Euromillones 1 entre 139.838.160). En la práctica, lo que toca son reintegros y premios bajos.
+- Juegos de bote: los premios se reparten a partes iguales entre los acertantes de cada categoría del servidor. Una categoría desierta pasa a la siguiente inferior y la última al bote; la del bote se acumula para el sorteo siguiente. Ninguna categoría inferior puede cobrar más que una superior (se juntan fondos, norma 8ª.2 de la Primitiva). Los premios fijos (3 aciertos, 2 aciertos del Gordo) se pagan siempre, aunque la venta del servidor no llegue: lo pone el Estado.
+- Bote garantizado: El Gordo (4,5 M€ = 45.000.000 Y$) y Euromillones (17 M€ = 170.000.000 Y$) garantizan el mínimo real o el 25 % del saldo del Estado, lo que sea menor. Solo se paga si hay acertante. La Primitiva y la Bonoloto no tienen mínimo, como las reales.
+- Compra: apuestas automáticas (1, 5 o 10), o hasta 10 escritas a mano (reintegro, clave y estrellas opcionales: si no se marcan, al azar). Nacional: décimo al azar, billete de 10 décimos o número elegido con 1-10 décimos. Máximo 100 apuestas o décimos por persona y sorteo. Las ventas cierran a la hora del sorteo.
+- Sorteos: cada minuto el bot celebra los que ya tocan y tienen apuestas en el servidor (las bolas salen de `secrets.SystemRandom`), paga y anuncia en el canal donde se compró por última vez: combinación, premiados (un renglón por persona con su total y su mejor boleto), bote que pasa y gravamen. Un sorteo no se puede cerrar dos veces ni dejar boletos sin repartir.
+- Rascas: se cobran y resuelven en una transacción. El panel enseña las 9 casillas tapadas con spoilers de Discord (se rascan pulsando) y el veredicto también tapado. Con premio salen tres importes iguales.
+- Dinero y fiscalidad (`EconomyService.lottery`): la compra va entera al Estado sin IGIC (exenta, art. 10.1.19º de la Ley 20/1991). Los premios salen de la cuenta del Estado y pagan el gravamen especial del 20 % sobre lo que pase de 400.000 Y$ por décimo o apuesta (disposición adicional 33ª LIRPF), que vuelve al Estado y cuenta en `hacienda`. No entra en la retención del casino ni en la renta semanal. Si el Estado no tiene saldo para un premio, emite deuda pública por la diferencia; `hacienda` la enseña.
+- Logros: 35 en la categoría 🎟️ Loterías (décimos y apuestas, gasto, premios, ganancias, mayor premio, reintegros, Navidad, Niño, pedrea, el Gordo, Euromillones, 4 y 5 aciertos, bote, rascas, premio máximo de un rasca, 100 apuestas en un sorteo, quedarse a cero y *Hacienda también juega*, con su historia, al pagar el primer gravamen).
+
 ### 6 ter.7 bis. Tienda: El Colmado de Jovani
 
 - `tienda`: escaparate con pestañas (🛍️ Todo, 🎭 Roles, ⚡ Potenciadores, 💎 Coleccionables), 5 artículos por página, cada uno con su botón **Comprar · precio**. Cada ficha enseña el precio (tachado y rebajado si hay rebaja, con su fin), la descripción y etiquetas: qué es, 🔥 lo más vendido (si ha vendido al menos 3), 🆕 nuevo (3 primeros días), 📦 quedan X de Y, 🔒 nivel mínimo y 👤 máximo por persona. Es público; las pestañas y páginas solo las mueve quien lo abrió (a los demás se les abre su propio escaparate), pero **Comprar** lo puede pulsar cualquiera.
@@ -363,10 +390,10 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.9. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 377 logros en 15 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🛍️ Tienda, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 420 logros en 16 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🎟️ Loterías, 🛍️ Tienda, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
-- 38 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
+- 47 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
 - Qué cuenta: mensajes (y propiedades sin guardar el texto: hora, largo, mayúsculas, enlaces, adjuntos, respuestas, risas…), minutos en voz con al menos otra persona sin ensordecer (fuera del canal AFK; también minutos silenciado, compartiendo pantalla, con cámara, de madrugada, solo en el canal y la sesión seguida más larga), reacciones dadas y recibidas (una por persona y mensaje), felicitaciones de cumpleaños, bienvenidas dadas con el botón 👋, Patrimonio pagado, donativos, nivel y racha de días, cada tirada de ruleta y tragaperras y mano de blackjack, lo apostado, el mayor premio y la mayor pérdida, all-in, rachas de casino entre juegos, IMV, IRPF pagado, renta presentada, saldo máximo y compras de la tienda (número, gasto, IGIC, roles, renovaciones, potenciadores y su cola, coleccionables, rebajas, IGIC de lujo, mayor compra, ediciones limitadas, unidad nº 1, última unidad y quedarse a cero).
 - Escrituras: mensajes, reacciones y voz se acumulan en memoria y se guardan una vez por minuto, una transacción por servidor. Los juegos, el IMV, la renta y las subidas de nivel se guardan en el momento. Las rachas de casino y las sesiones de voz viven en memoria y se cortan con un reinicio.
 - La primera vez que el bot ve a alguien tras arrancar, recupera como máximos sus mensajes del historial importado y su nivel actual. Por eso, en el primer mensaje tras desplegar, cada veterano desbloquea y cobra lo que ya tenía.
@@ -437,7 +464,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash, Minas y pachinko. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 377 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
+9. **Logros:** 420 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 10. **Tienda:** `tienda`, `mochila` y `catalogo`, con IGIC por tipos, rebajas, alquileres, potenciadores y coleccionables numerados. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.
