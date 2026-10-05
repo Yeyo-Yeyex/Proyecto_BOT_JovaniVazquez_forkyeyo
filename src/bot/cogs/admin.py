@@ -172,6 +172,9 @@ class Admin(commands.Cog):
             check=check,
             before=before,
             after=discord.utils.utcnow() - BULK_DELETE_WINDOW,
+            # Con `after`, discord.py recorre el historial del más antiguo al más
+            # nuevo y borraría los mensajes de hace casi 14 días, no los últimos.
+            oldest_first=False,
             reason=reason,
         )
         return len(removed)
