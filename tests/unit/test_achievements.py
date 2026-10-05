@@ -76,6 +76,12 @@ PRODUCED_STATS = {
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",
     "shop_luxury", "shop_big_buy_max", "shop_limited", "shop_first_serial", "shop_last_unit",
     "shop_broke_buy",
+    # Loterías (cogs/lottery.py: lottery_buy_stats, lottery_prize_stats, scratch_stats)
+    "lottery_bets", "lottery_spent", "lottery_prizes", "lottery_won", "lottery_win_max",
+    "lottery_reintegros", "lottery_navidad", "lottery_nino", "lottery_pedrea",
+    "lottery_gordo_navidad", "lottery_euro_bets", "lottery_lotto4", "lottery_lotto5",
+    "lottery_jackpot", "lottery_scratches", "lottery_scratch_top", "lottery_draw_bets_max",
+    "lottery_broke_buy", "lottery_gravamen",
     # Casino
     "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",

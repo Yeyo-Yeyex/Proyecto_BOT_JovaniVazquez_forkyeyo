@@ -35,6 +35,11 @@ Modelo de datos:
   se queda con la base imponible de lo que se vende.
 - `economy_consumption_tax`: el IGIC de cada compra de la tienda (y, con signo
   negativo, el de cada devolución), para que `hacienda` lo cuente.
+- `economy_lottery_tax`: el gravamen especial de cada premio de lotería
+  (disposición adicional 33ª LIRPF), para que `hacienda` lo cuente.
+- `economy_public_debt`: deuda pública. Si el Estado tiene que pagar un
+  premio de lotería y no le llega el saldo, emite deuda por lo que falta: el
+  dinero se crea, queda apuntado aquí y `hacienda` lo enseña.
 - `economy_donations`: donativos a las ONGs. Cada ONG tiene su monedero con
   un `user_id` negativo (ver `bot.services.donations`), así el dinero donado
   no desaparece: se queda en la ONG, que es lo que ella quería.
@@ -162,12 +167,31 @@ class Treasury:
         collected_since: Lo recaudado desde el instante pedido (p. ej. el año).
         top_contributors: `(user_id, total retenido)` de quienes más han
             pagado, de más a menos.
+        debt: Deuda pública emitida para pagar premios de lotería.
     """
 
     balance: int
     collected_total: int
     collected_since: int
     top_contributors: tuple[tuple[int, int], ...]
+    debt: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class LotteryPayout:
+    """Un premio de lotería a pagar desde la cuenta del Estado.
+
+    Attributes:
+        user_id: Quién cobra.
+        gross: Premio bruto.
+        tax: Gravamen especial que se queda el Estado (ver `taxes.lottery_tax`).
+        concept: Motivo corto para el libro (`"primitiva"`, `"x10"`…).
+    """
+
+    user_id: int
+    gross: int
+    tax: int
+    concept: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +387,24 @@ class EconomyRepository:
                     concept TEXT NOT NULL,
                     base INTEGER NOT NULL,
                     tax INTEGER NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_lottery_tax (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    concept TEXT NOT NULL,
+                    gross INTEGER NOT NULL,
+                    tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_public_debt (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    concept TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
 
@@ -1171,7 +1213,8 @@ class EconomyRepository:
                 "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
                 (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
-            # Retenciones de ingresos y del casino, Patrimonio e IGIC, en una sola vista.
+            # Retenciones de ingresos y del casino, Patrimonio, IGIC y gravamen de
+            # loterías, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
@@ -1183,6 +1226,9 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_consumption_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_lottery_tax
                 WHERE guild_id = :guild
             """
             total, recent = connection.execute(
@@ -1201,11 +1247,16 @@ class EconomyRepository:
                 """,
                 {"guild": guild_id, "top": top},
             ).fetchall()
+            (debt,) = connection.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM economy_public_debt WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
             return Treasury(
                 balance=int(row["balance"]) if row else 0,
                 collected_total=int(total),
                 collected_since=int(recent),
                 top_contributors=tuple((int(r["user_id"]), int(r["paid"])) for r in contributors),
+                debt=int(debt),
             )
         finally:
             connection.close()
@@ -1473,6 +1524,104 @@ class EconomyRepository:
                 )
             return self._apply_in_transaction(connection, guild_id, user_id, entries)
 
+    # -- Loterías ----------------------------------------------------------------------
+
+    async def state_balance(self, guild_id: int) -> int:
+        """Saldo de la cuenta del Estado (0 si aún no existe)."""
+        return await self._run(self._state_balance_sync, guild_id)
+
+    def _state_balance_sync(self, guild_id: int) -> int:
+        connection = self._connect()
+        try:
+            return self._state_balance_in(connection, guild_id)
+        finally:
+            connection.close()
+
+    async def lottery(
+        self,
+        guild_id: int,
+        *,
+        charges: Sequence[tuple[int, int, str]],
+        payouts: Sequence[LotteryPayout],
+        now: float,
+        hook: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, dict[int, int]]:
+        """Cobra boletos y paga premios de lotería con la cuenta del Estado de banca.
+
+        Todo va en una transacción: `hook` (lo pone el repositorio de
+        loterías: apunta boletos o cierra un sorteo) corre primero y, si lanza,
+        no se mueve nada.
+
+        Args:
+            charges: `(user_id, importe, motivo)` de cada compra. El dinero va
+                entero al Estado.
+            payouts: Premios. El Estado paga el bruto y se queda el gravamen.
+                Si no le llega el saldo, emite deuda pública por lo que falta.
+
+        Returns:
+            `(lo que devuelva hook, saldo final de cada miembro tocado)`.
+
+        Raises:
+            InsufficientFundsError: Si a alguien no le llega para su compra.
+        """
+        return await self._run(
+            self._lottery_sync, guild_id, tuple(charges), tuple(payouts), now, hook
+        )
+
+    def _lottery_sync(
+        self,
+        guild_id: int,
+        charges: tuple[tuple[int, int, str], ...],
+        payouts: tuple[LotteryPayout, ...],
+        now: float,
+        hook: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, dict[int, int]]:
+        if any(cost <= 0 for _, cost, _ in charges):
+            raise ValueError("Un boleto cuesta algo.")
+        if any(p.gross <= 0 or not 0 <= p.tax <= p.gross for p in payouts):
+            raise ValueError("Premio o gravamen fuera de rango.")
+        balances: dict[int, int] = {}
+        with self._transaction() as connection:
+            result = hook(connection)
+            for user_id, cost, reason in charges:
+                balances[user_id] = self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(-cost, reason),)
+                )
+                self._credit_state_in(connection, guild_id, cost, "loteria:venta")
+            for payout in payouts:
+                self._open_empty_wallet(connection, guild_id, STATE_ACCOUNT_ID)
+                shortfall = payout.gross - self._state_balance_in(connection, guild_id)
+                if shortfall > 0:
+                    self._credit_state_in(connection, guild_id, shortfall, "deuda:emision")
+                    connection.execute(
+                        "INSERT INTO economy_public_debt (guild_id, amount, concept, created_at) "
+                        "VALUES (?, ?, ?, ?)",
+                        (guild_id, shortfall, payout.concept, now),
+                    )
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    STATE_ACCOUNT_ID,
+                    (LedgerEntry(-payout.gross, f"loteria:premio:{payout.concept}"),),
+                )
+                entries = [LedgerEntry(payout.gross, f"loteria:{payout.concept}")]
+                if payout.tax:
+                    entries.append(LedgerEntry(-payout.tax, "gravamen:loteria"))
+                balances[payout.user_id] = self._apply_in_transaction(
+                    connection, guild_id, payout.user_id, entries
+                )
+                if payout.tax:
+                    self._credit_state_in(connection, guild_id, payout.tax, "gravamen:loteria")
+                    connection.execute(
+                        """
+                        INSERT INTO economy_lottery_tax
+                            (guild_id, user_id, concept, gross, tax, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, payout.user_id, payout.concept, payout.gross, payout.tax, now),
+                    )
+            return result, balances
+
     async def ong_totals(self, guild_id: int) -> dict[str, tuple[int, int]]:
         """Por ONG: `(total recaudado, donantes distintos)` en el servidor."""
         return await self._run(self._ong_totals_sync, guild_id)
@@ -1589,6 +1738,8 @@ class EconomyRepository:
                 "economy_donations",
                 "economy_slots_jackpots",
                 "economy_consumption_tax",
+                "economy_lottery_tax",
+                "economy_public_debt",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

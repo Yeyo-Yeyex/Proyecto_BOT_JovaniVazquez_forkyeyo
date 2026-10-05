@@ -42,7 +42,7 @@ pip install -e ".[dev]"
    opcionales). `COMMAND_PREFIX` es el prefijo de los comandos de texto
    (por defecto `.`); con él se invocan los mismos comandos que con `/`.
 4. `CASINO_CHANNEL_IDS` (opcional) limita los juegos del casino (ruleta,
-   blackjack, tragaperras y pachinko) a esos canales: IDs
+   blackjack, tragaperras, pachinko y lotería) a esos canales: IDs
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
 
@@ -71,7 +71,7 @@ python -m bot
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `saldo [miembro]` · `slots [cantidad]` |
+  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -272,12 +272,25 @@ python -m bot
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
   y los SUPER RUSH, los rush de 5 o más y los premios de ×20 se anuncian.
-- **Logros** (`logros [miembro]`): 377 logros en 15 categorías (chat,
+- **Loterías** (`loteria`): un solo comando abre un panel con pestañas para
+  la Lotería Nacional (jueves, sábado, Navidad y Niño), La Primitiva,
+  Bonoloto, El Gordo de la Primitiva, Euromillones y dos rascas de la ONCE
+  (X10 y 7 y Media). Se compra con botones: apuestas al azar (1, 5 o 10),
+  décimo o billete, o números elegidos en un formulario. Precios, reparto y
+  probabilidades son los reales (normas de SELAE y tablas de la ONCE) a 10 Y$
+  por euro: el pleno de la Primitiva es 1 entre 139.838.160. La cuenta del
+  Estado hace de banca: cobra los boletos sin IGIC, paga los premios con el
+  gravamen especial del 20 % por encima de 400.000 Y$ y garantiza el bote
+  mínimo del Gordo y de Euromillones con una cuarta parte de su saldo. Si no
+  le llega para un premio, emite deuda pública. Los sorteos se celebran solos
+  a su hora y se anuncian en el canal; los rascas se rascan pulsando las
+  casillas (spoilers).
+- **Logros** (`logros [miembro]`): 420 logros en 16 categorías (chat,
   horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
-  tragaperras, Crash, Minas, pachinko, tienda, economía y coleccionista), con cinco rarezas: ▫️ común,
+  tragaperras, Crash, Minas, pachinko, loterías, tienda, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 38 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 47 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -473,6 +486,7 @@ src/bot/
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
+│   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
@@ -481,7 +495,8 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
-│   ├── taxes.py         # IRPF, Patrimonio, IGIC y deducción por donativos
+│   ├── taxes.py         # IRPF, Patrimonio, IGIC, gravamen de loterías y donativos
+│   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)

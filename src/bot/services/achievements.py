@@ -30,6 +30,7 @@ from enum import Enum
 
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.crash import Seat as CrashSeat
+from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
 from bot.services.mines import Status as MinesStatus
@@ -41,7 +42,12 @@ from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import pot_share as slots_pot_share
-from bot.services.taxes import STATE_PERSONAL_MINIMUM, TAX_COLLECTOR, YAPDOLLARS_PER_EURO
+from bot.services.taxes import (
+    LOTTERY_EXEMPT,
+    STATE_PERSONAL_MINIMUM,
+    TAX_COLLECTOR,
+    YAPDOLLARS_PER_EURO,
+)
 
 # -- Rarezas ---------------------------------------------------------------------------
 
@@ -101,6 +107,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("crash", "🚀 Crash"),
     Category("mines", "💣 Minas"),
     Category("pachinko", "🌸 Pachinko"),
+    Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
@@ -210,6 +217,16 @@ FIRST_TAX_STORY = (
     "cartera. Cuanto más ganas, más se lleva.\n"
     "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
     "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
+)
+
+
+#: Discurso del logro `gravamen`: el primer premio de lotería que paga impuestos.
+LOTTERY_TAX_STORY = (
+    f"🐶 **{TAX_COLLECTOR} también juega a la lotería, pero sin comprar décimo.** Los "
+    f"premios hasta {_thousands(LOTTERY_EXEMPT)} Y$ por décimo o apuesta están exentos; "
+    "de ahí para arriba se queda el 20 %, y te lo quita antes de pagarte "
+    "(disposición adicional 33ª de la Ley del IRPF). No va a la renta ni se "
+    "devuelve: es definitivo. Con lo que te queda, mi amor, ya puedes invitar."
 )
 
 
@@ -967,6 +984,90 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000, "renta_100k", "Hacienda somos todos", "Recupera 100.000 Y$ con la renta.", E),
     ], unit="money")  # fmt: skip
 
+    # 🎟️ Loterías -------------------------------------------------------------------------
+    a += _tiers("lottery", "lottery_bets", [
+        (1, "lotto_1", "Hoy me toca", "Compra un décimo o una apuesta.", C),
+        (50, "lotto_50", "Fijo en la administración", "Compra 50 décimos o apuestas.", R),
+        (500, "lotto_500", "Cliente de Doña Manolita", "Compra 500 décimos o apuestas.", E),
+        (5_000, "lotto_5k", "La suerte al por mayor", "Compra 5.000 décimos o apuestas.", L),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_spent", [
+        (10_000, "lspend_10k", "Impuesto a la ilusión", "Juega 10.000 Y$ a la lotería.", C),
+        (100_000, "lspend_100k", "El Estado te lo agradece", "Juega 100.000 Y$.", R),
+        (1_000_000, "lspend_1m", "Mecenas de Hacienda", "Juega 1.000.000 Y$.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("lottery", "lottery_prizes", [
+        (1, "lwin_1", "¡Me ha tocado!", "Cobra un premio de lotería, aunque sea el reintegro.", C),
+        (25, "lwin_25", "Tocado por la suerte", "Cobra 25 premios de lotería.", R),
+        (250, "lwin_250", "Cuestión de estadística", "Cobra 250 premios de lotería.", E),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_won", [
+        (10_000, "lwon_10k", "Para gastos", "Gana 10.000 Y$ en loterías.", C),
+        (100_000, "lwon_100k", "Pellizco", "Gana 100.000 Y$ en loterías.", R),
+        (1_000_000, "lwon_1m", "Pelotazo", "Gana 1.000.000 Y$ en loterías.", E),
+        (10_000_000, "lwon_10m", "Me jubilo", "Gana 10.000.000 Y$ en loterías.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("lottery", "lottery_win_max", [
+        (100_000, "lbig_100k", "Un buen pellizco", "Cobra 100.000 Y$ con un solo boleto.", E),
+        (4_000_000, "lbig_4m", "Hoy no se trabaja", "Cobra 4.000.000 Y$ con un solo boleto.",
+         M, True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("lottery", "lottery_reintegros", [
+        (1, "reint_1", "Al menos lo recupero", "Cobra un reintegro.", C),
+        (50, "reint_50", "Vuelta a empezar", "Cobra 50 reintegros.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_navidad", [
+        (1, "xmas_1", "Espíritu navideño", "Compra un décimo de Navidad.", C),
+        (20, "xmas_20", "La peña de la oficina", "Compra 20 décimos de Navidad.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_nino", [
+        (1, "nino_1", "Los Reyes también juegan", "Compra un décimo del Niño.", C),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_pedrea", [
+        (1, "pedrea", "Pedrea", "Cobra una pedrea de la Lotería de Navidad.", E, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_gordo_navidad", [
+        (1, "el_gordo", "EL GORDO", "Te toca el Gordo de Navidad.", M, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_euro_bets", [
+        (1, "euro_1", "Europeísta", "Juega una apuesta de Euromillones.", C),
+        (100, "euro_100", "Soñando en euros", "Juega 100 apuestas de Euromillones.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_lotto4", [
+        (1, "lotto4", "Cuatro de seis", "Acierta 4 números en la Primitiva o la Bonoloto.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_lotto5", [
+        (1, "lotto5", "Rozando el cielo", "Acierta 5 en la Primitiva o la Bonoloto.", L, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_jackpot", [
+        (1, "lotto_jackpot", "Bote", "Llévate la 1ª categoría de un juego de bote.", M, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_scratches", [
+        (1, "rasca_1", "Rasca y gana", "Rasca un boleto de la ONCE.", C),
+        (100, "rasca_100", "Uña de oro", "Rasca 100 boletos.", R),
+        (1_000, "rasca_1k", "Sin uñas", "Rasca 1.000 boletos.", E),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_scratch_top", [
+        (1, "rasca_top", "Premio máximo", "Saca el premio más alto de un rasca.", L, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_draw_bets_max", [
+        (MAX_LOTTERY_PER_DRAW, "brute_force", "Fuerza bruta",
+         f"Juega {MAX_LOTTERY_PER_DRAW} apuestas o décimos en un mismo sorteo.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_broke_buy", [
+        (1, "lotto_broke", "Todo al número", "Gasta todo tu saldo en lotería.", L, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="gravamen",
+        name="Hacienda también juega",
+        description="Paga el gravamen especial de un premio de lotería.",
+        category="lottery",
+        rarity=E,
+        conditions=(("lottery_gravamen", 1),),
+        secret=True,
+        story=LOTTERY_TAX_STORY,
+    ))  # fmt: skip
+
     # 🛍️ Tienda ---------------------------------------------------------------------------
     a += _tiers("shop", "shop_purchases", [
         (1, "shop_1", "Estrenando cartera", "Compra algo en la tienda.", C),
@@ -1546,4 +1647,81 @@ def shop_stats(
         delta.peak["shop_collection_max"] = collection
     if kind == "xp":
         delta.peak["shop_boost_queue_max"] = queued_boosts
+    return delta
+
+
+# -- Loterías --------------------------------------------------------------------------
+
+#: Etiquetas de un boleto premiado que cuentan para logros concretos.
+LOTTERY_TAGS = frozenset({"reintegro", "pedrea", "gordo_navidad", "jackpot", "lotto4", "lotto5"})
+
+
+def lottery_buy_stats(
+    *, game: str, units: int, cost: int, owned_in_draw: int, balance_after: int
+) -> StatDelta:
+    """Estadísticas de una compra de décimos o apuestas.
+
+    Args:
+        game: Clave del juego (`bot.services.lottery.GAMES`).
+        units: Décimos o apuestas comprados.
+        cost: Lo pagado.
+        owned_in_draw: Décimos o apuestas del miembro en ese sorteo tras comprar.
+        balance_after: Saldo tras pagar.
+    """
+    delta = StatDelta(
+        add={"lottery_bets": units, "lottery_spent": cost},
+        peak={"lottery_draw_bets_max": owned_in_draw},
+    )
+    per_game = {
+        "navidad": "lottery_navidad",
+        "nino": "lottery_nino",
+        "euromillones": "lottery_euro_bets",
+    }
+    if game in per_game:
+        delta.add[per_game[game]] = units
+    if balance_after == 0:
+        delta.add["lottery_broke_buy"] = 1
+    return delta
+
+
+def lottery_prize_stats(prizes: Iterable[tuple[int, int, frozenset[str]]]) -> StatDelta:
+    """Estadísticas de los boletos premiados de un miembro en un sorteo.
+
+    Args:
+        prizes: `(premio bruto, gravamen, etiquetas)` de cada boleto premiado.
+            Las etiquetas salen de `LOTTERY_TAGS`.
+    """
+    delta = StatDelta()
+    for gross, tax, tags in prizes:
+        delta.merge(
+            StatDelta(
+                add={"lottery_prizes": 1, "lottery_won": gross},
+                peak={"lottery_win_max": gross},
+            )
+        )
+        for tag in tags & LOTTERY_TAGS:
+            stat = "lottery_reintegros" if tag == "reintegro" else f"lottery_{tag}"
+            delta.merge(StatDelta(add={stat: 1}))
+        if tax:
+            delta.merge(StatDelta(add={"lottery_gravamen": tax, "tax_paid": tax}))
+    return delta
+
+
+def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: int) -> StatDelta:
+    """Estadísticas de un rasca.
+
+    Args:
+        cost: Precio del rasca.
+        prize: Premio bruto (0 si no toca).
+        tax: Gravamen especial pagado.
+        top: Si es el premio más alto de su tabla.
+        balance_after: Saldo tras cobrar el premio.
+    """
+    delta = StatDelta(add={"lottery_scratches": 1, "lottery_spent": cost})
+    if balance_after == 0:
+        delta.add["lottery_broke_buy"] = 1
+    if prize:
+        delta.merge(lottery_prize_stats([(prize, tax, frozenset())]))
+    if top:
+        delta.add["lottery_scratch_top"] = 1
     return delta

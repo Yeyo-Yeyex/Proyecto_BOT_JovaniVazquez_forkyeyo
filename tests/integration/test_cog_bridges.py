@@ -44,12 +44,12 @@ def importer(cog_name: str, client: BotClient):  # noqa: ANN201
 async def test_los_juegos_que_cargan_antes_encuentran_logros_y_renta(tmp_path: Path) -> None:
     client = await load_bot(tmp_path)
     try:
-        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko"):
+        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko", "Loteria"):
             module = importer(game, client)
             assert module.logros._cog(client) is client.get_cog("Achievements"), game
         renta_cog = client.get_cog("Renta")
         renta_cog.hint_for = AsyncMock(return_value="📬 Tienes la renta pendiente")
-        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko"):
+        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko", "Loteria"):
             module = importer(game, client)
             hint = await module.renta.hint(client, GUILD_ID, OWNER_ID)
             assert hint == "📬 Tienes la renta pendiente", game

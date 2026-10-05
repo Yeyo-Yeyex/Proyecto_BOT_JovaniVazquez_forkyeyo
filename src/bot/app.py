@@ -18,6 +18,7 @@ from bot.repositories.achievements import AchievementRepository
 from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
+from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.welcome import WelcomeRepository
@@ -41,6 +42,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.crash",
     "bot.cogs.mines",
     "bot.cogs.pachinko",
+    "bot.cogs.lottery",
     "bot.cogs.renta",
     "bot.cogs.patrimonio",
     "bot.cogs.donations",
@@ -93,6 +95,8 @@ class BotClient(commands.Bot):
         self.welcome = WelcomeRepository(database_path)
         # Catálogo e inventario de la tienda; el dinero de cada compra pasa por `economy`.
         self.shop = ShopRepository(database_path)
+        # Sorteos y boletos de `loteria`; el dinero también pasa por `economy`.
+        self.lottery = LotteryRepository(database_path)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -118,6 +122,7 @@ class BotClient(commands.Bot):
         await self.achievements.initialize()
         await self.welcome.initialize()
         await self.shop.initialize()
+        await self.lottery.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)
