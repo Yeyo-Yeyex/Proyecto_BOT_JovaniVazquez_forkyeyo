@@ -195,6 +195,32 @@ async def test_purge_por_miembro_borra_solo_sus_mensajes_hasta_la_cantidad() -> 
 
 
 @pytest.mark.asyncio
+async def test_purge_borra_los_ultimos_mensajes_y_no_los_mas_antiguos() -> None:
+    """`.purge 3` se lleva los 3 más recientes, aunque se pase `after`.
+
+    El canal falso imita a discord.py: si llega `after` y no se dice
+    `oldest_first`, recorre el historial del más antiguo al más nuevo.
+    """
+    cog = Admin(MagicMock())
+    history = [SimpleNamespace(id=i, author=SimpleNamespace(id=4)) for i in range(10)]
+    channel = MagicMock(spec=discord.TextChannel)
+    borrados: list[int] = []
+
+    async def fake_purge(*, limit, check, after=None, oldest_first=None, **_kwargs):
+        reverse = after is not None if oldest_first is None else oldest_first
+        ordered = history if reverse else list(reversed(history))
+        removed = [m for m in ordered[:limit] if check(m)]
+        borrados.extend(m.id for m in removed)
+        return removed
+
+    channel.purge = fake_purge
+
+    await cog._purge(channel, 3, None, "r")
+
+    assert sorted(borrados) == [7, 8, 9]
+
+
+@pytest.mark.asyncio
 async def test_say_text_no_permite_mencionar_a_everyone(guild: SimpleNamespace) -> None:
     """El bot repite el texto, pero sin pings masivos ni a roles."""
     cog = Admin(MagicMock())
