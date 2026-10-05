@@ -1,19 +1,73 @@
-Símbolos de las máquinas de Botes (bot.services.hold_win_render).
+Imágenes y letras de las máquinas de Botes (bot.services.hold_win_render).
 
-Cada PNG es un símbolo de 72×72 px con fondo transparente; el renderizador lo
-reduce al tamaño de la casilla.
-
-- <máquina>_pay0 … pay5: los seis símbolos normales de cada máquina (volcan,
-  olimpo, filon), de menos a más valor.
-- <máquina>_wild y <máquina>_collect: el comodín y el recogedor.
-- ticket, extra, instant, max y mystery: los modificadores del bonus,
-  comunes a las tres máquinas.
-
-Son emojis 3D de Noto Emoji (Google), tomados de 3D/png/128 del repositorio
-https://github.com/googlefonts/noto-emoji y reducidos. Las imágenes de Noto
-Emoji se distribuyen con licencia Apache 2.0 y las fuentes con la SIL Open Font
-License 1.1.
-
-Las monedas, las fichas de bote y los marcos no son imágenes: se dibujan en
+Los símbolos son PNG de 128×128 px con fondo transparente (recortados del
+fondo original y con una sombra suave); el renderizador los reduce al tamaño
+de la casilla. Los fondos son JPEG de 800 px como máximo. Las monedas, las
+fichas de bote, los marcos y el rayo del Olimpo no son imágenes: se dibujan en
 código. Si se cambia un símbolo, debe seguir distinguiéndose por la forma y no
 solo por el color (hay jugadores con deuteranopia).
+
+Las imágenes de Wikimedia Commons se han recortado, reescalado y, en algún
+caso, oscurecido o teñido. Las que tienen licencia CC BY-SA se redistribuyen
+con esa misma licencia.
+
+Volcán
+- volcan_bg.jpg: «Lava fountain at Kilauea», C. Heliker (US Geological Survey).
+  Dominio público. https://commons.wikimedia.org/wiki/File:Lava_fountain_at_Kilauea.jpg
+- volcan_pay0.png (plátano) y volcan_pay1.png (coco): pack «FiveM Inventory
+  Icons» de SwisserDev, CC0 1.0. https://github.com/SwisserDev/fivem-inventory-icons
+- volcan_pay2.png (olivino): «Forsterite-Olivine-4jg58b», Robert M. Lavinsky,
+  CC BY-SA 3.0. https://commons.wikimedia.org/wiki/File:Forsterite-Olivine-4jg58b.jpg
+- volcan_pay3.png (obsidiana): «Obsidian 18», James St. John, CC BY 2.0.
+  https://commons.wikimedia.org/wiki/File:Obsidian_18.jpg
+- volcan_pay4.png (lagarto tizón): «Gallotia galloti palmae - Los Cancajos 01»,
+  H. Zell, CC BY-SA 3.0.
+  https://commons.wikimedia.org/wiki/File:Gallotia_galloti_palmae_-_Los_Cancajos_01.jpg
+- volcan_pay5.png (guacamayo): «There Must Be More To Life», Sahid Martin
+  Robles Bello, CC BY-SA 3.0.
+  https://commons.wikimedia.org/wiki/File:There_Must_Be_More_To_Life_(155068491).jpeg
+- volcan_wild.png (fuego): textura de «FIRE 01», MarcusObal, CC BY-SA 3.0,
+  recortada en forma de llama. https://commons.wikimedia.org/wiki/File:FIRE_01.JPG
+- volcan_collect.png (volcán): «Lava fountain USGS page 30424305-068», J.D.
+  Griggs (USGS). Dominio público.
+  https://commons.wikimedia.org/wiki/File:Lava_fountain_USGS_page_30424305-068_large.JPG
+
+Olimpo
+- olimpo_bg.jpg: «Temple of Poseidon at sunset 2», Oleksandr Troitskyi,
+  CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Temple_of_Poseidon_at_sunset_2.jpg
+- olimpo_pay0.png (tetradracma): «Athens - 450-400 BC - silver tetradrachm -
+  head of Athena - owl - München AS», ArchaiOptix, CC BY-SA 4.0.
+- olimpo_pay1.png (kílix): «OedipusMAVSinFo», Pintor de Edipo, CC BY-SA 4.0.
+  https://commons.wikimedia.org/wiki/File:OedipusMAVSinFo.png
+- olimpo_pay2.png (ánfora): ánfora panatenaica del Pintor de Cleofrades,
+  Getty Open Content, CC0.
+- olimpo_pay3.png (crátera): crátera de columnas de figuras negras, Getty
+  Open Content, CC0.
+- olimpo_pay4.png (casco): «Corinthian helmets, hoplites», Stella, CC BY-SA 4.0.
+  https://commons.wikimedia.org/wiki/File:Corinthian_helmets,_hoplites.png
+- olimpo_pay5.png (estátera de oro): «Atena Agatocle», Stella, CC BY-SA 4.0.
+  https://commons.wikimedia.org/wiki/File:Atena_Agatocle.png
+- olimpo_wild.png (Zeus): «Marble head of Zeus Ammon», The Metropolitan Museum
+  of Art (Open Access), CC0.
+  https://commons.wikimedia.org/wiki/File:Marble_head_of_Zeus_Ammon_MET_DP160855.jpg
+- olimpo_collect.png (rayo): dibujado para el bot.
+
+Filón
+- filon_bg.jpg: «Interior view of mine tunnel», Lachlan McLean (1843-1929).
+  Dominio público.
+- filon_pay0.png a filon_pay5.png (linterna, pala, mena de oro, lingote de
+  plata, lingote de oro, diamante) y filon_wild.png (pico): pack «FiveM
+  Inventory Icons» de SwisserDev, CC0 1.0.
+- filon_collect.png (vagoneta): «Spurnagelhunt links», wdwd, CC BY-SA 4.0.
+  https://commons.wikimedia.org/wiki/File:Spurnagelhunt_links.jpg
+
+Modificadores del bonus (comunes)
+- ticket.png (fichas), extra.png (reloj), instant.png (petardo) y max.png
+  (saco de dinero): pack «FiveM Inventory Icons» de SwisserDev, CC0 1.0.
+- mystery.png: interrogación escrita con Cinzel.
+
+Letras (fonts/), con licencia SIL Open Font License 1.1, tomadas de los
+paquetes de Fontsource:
+- creepster.woff: Creepster, Copyright (c) 2011 Font Diner, Inc.
+- cinzel-bold.woff: Cinzel, Copyright 2020 The Cinzel Project Authors.
+- rye.woff: Rye, Copyright (c) 2012 Sorkin Type Co.

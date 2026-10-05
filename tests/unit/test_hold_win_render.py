@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import random
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -35,6 +36,12 @@ PANEL = Panel(mini=150, major=600, grand=100_000, cases=((10, 108), (5, 50), (21
 @pytest.fixture(scope="module")
 def renderer() -> HoldWinRenderer:
     return HoldWinRenderer()
+
+
+def close(a: Image.Image, b: Image.Image) -> bool:
+    """Casi iguales: el GIF va a 255 colores por fotograma y el PNG a color completo."""
+    diff = np.abs(np.asarray(a, dtype=np.int16) - np.asarray(b, dtype=np.int16))
+    return a.size == b.size and float(diff.mean()) < 3
 
 
 def frames(gif: bytes) -> list[Image.Image]:
@@ -73,7 +80,7 @@ def test_la_tirada_acaba_en_la_imagen_final(renderer: HoldWinRenderer, theme: st
     png = Image.open(io.BytesIO(media.png)).convert("RGB")
     assert png.size == (WIDTH, HEIGHT)
     last = frames(media.gif)[-1]
-    assert last.tobytes() == png.tobytes()
+    assert close(last, png)
     assert media.seconds > 0.5
 
 
@@ -120,7 +127,7 @@ def test_cada_tirada_del_bonus_tiene_animacion_y_final(
             rng=rng,
         )
         png = Image.open(io.BytesIO(media.png)).convert("RGB")
-        assert frames(media.gif)[-1].tobytes() == png.tobytes()
+        assert close(frames(media.gif)[-1], png)
 
 
 def test_la_imagen_parada_del_juego_base_y_del_bonus(renderer: HoldWinRenderer) -> None:
