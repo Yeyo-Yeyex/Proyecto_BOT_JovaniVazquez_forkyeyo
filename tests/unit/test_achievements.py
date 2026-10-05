@@ -76,6 +76,9 @@ PRODUCED_STATS = {
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",
     "shop_luxury", "shop_big_buy_max", "shop_limited", "shop_first_serial", "shop_last_unit",
     "shop_broke_buy",
+    # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
+    "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
+    "bizum_broke", "bizum_received_count", "bizum_received",
     # Loterías (cogs/lottery.py: lottery_buy_stats, lottery_prize_stats, scratch_stats)
     "lottery_bets", "lottery_spent", "lottery_prizes", "lottery_won", "lottery_win_max",
     "lottery_reintegros", "lottery_navidad", "lottery_nino", "lottery_pedrea",

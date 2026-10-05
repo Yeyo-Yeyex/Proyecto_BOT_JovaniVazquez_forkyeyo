@@ -43,6 +43,8 @@ Modelo de datos:
 - `economy_donations`: donativos a las ONGs. Cada ONG tiene su monedero con
   un `user_id` negativo (ver `bot.services.donations`), así el dinero donado
   no desaparece: se queda en la ONG, que es lo que ella quería.
+- `economy_bizums`: cada Bizum entre miembros (quién, a quién, cuánto y
+  cuándo), sin el concepto. Sirve para sumar lo enviado en el día.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -234,6 +236,21 @@ class DonationReceipt:
     donated_week: int
 
 
+@dataclass(frozen=True, slots=True)
+class BizumReceipt:
+    """Resultado de un Bizum entre dos miembros.
+
+    Attributes:
+        sender_balance: Saldo de quien envía, tras enviar.
+        receiver_balance: Saldo de quien recibe, tras recibir.
+        sent_today: Lo enviado hoy por quien envía, este Bizum incluido.
+    """
+
+    sender_balance: int
+    receiver_balance: int
+    sent_today: int
+
+
 class EconomyRepository:
     """Acceso SQLite a la economía; comparte archivo con el resto del bot.
 
@@ -379,6 +396,18 @@ class EconomyRepository:
 
                 CREATE INDEX IF NOT EXISTS economy_donations_member
                     ON economy_donations (guild_id, user_id, week_start);
+
+                CREATE TABLE IF NOT EXISTS economy_bizums (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    sender_id INTEGER NOT NULL,
+                    receiver_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_bizums_sender
+                    ON economy_bizums (guild_id, sender_id, created_at);
 
                 CREATE TABLE IF NOT EXISTS economy_consumption_tax (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1396,6 +1425,74 @@ class EconomyRepository:
             ).fetchone()
             return DonationReceipt(balance, int(ongs), int(week_total))
 
+    # -- Bizum entre miembros ----------------------------------------------------------
+
+    async def bizum(
+        self,
+        guild_id: int,
+        sender_id: int,
+        receiver_id: int,
+        *,
+        amount: int,
+        now: float,
+        day_start: float,
+    ) -> BizumReceipt:
+        """Pasa `amount` de un miembro a otro y apunta el Bizum.
+
+        Sin impuestos: el dinero sale entero de uno y llega entero al otro
+        (ver `bot.services.bizum`). Los dos monederos se tocan en la misma
+        transacción, así que no hay un momento en que el dinero no esté en
+        ninguno de los dos.
+
+        Args:
+            day_start: Inicio (epoch) del día local, para sumar lo enviado hoy.
+
+        Raises:
+            InsufficientFundsError: Si a quien envía no le llega. No se mueve nada.
+            BalanceLimitError: Si quien recibe superaría el saldo máximo.
+        """
+        return await self._run(
+            self._bizum_sync, guild_id, sender_id, receiver_id, amount, now, day_start
+        )
+
+    def _bizum_sync(
+        self,
+        guild_id: int,
+        sender_id: int,
+        receiver_id: int,
+        amount: int,
+        now: float,
+        day_start: float,
+    ) -> BizumReceipt:
+        if amount <= 0:
+            raise ValueError("Un Bizum tiene que ser positivo.")
+        # Solo entre miembros: el Estado, las ONGs, el bote y la caja de la tienda
+        # tienen id 0 o negativo y no pueden mandar ni recibir Bizums.
+        if sender_id <= 0 or receiver_id <= 0 or sender_id == receiver_id:
+            raise ValueError("Un Bizum va de un miembro a otro distinto.")
+        with self._transaction() as connection:
+            sender_balance = self._apply_in_transaction(
+                connection, guild_id, sender_id, (LedgerEntry(-amount, "bizum:enviado"),)
+            )
+            receiver_balance = self._apply_in_transaction(
+                connection, guild_id, receiver_id, (LedgerEntry(amount, "bizum:recibido"),)
+            )
+            connection.execute(
+                """
+                INSERT INTO economy_bizums (guild_id, sender_id, receiver_id, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (guild_id, sender_id, receiver_id, amount, now),
+            )
+            (sent_today,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0) FROM economy_bizums
+                WHERE guild_id = ? AND sender_id = ? AND created_at >= ?
+                """,
+                (guild_id, sender_id, day_start),
+            ).fetchone()
+            return BizumReceipt(sender_balance, receiver_balance, int(sent_today))
+
     # -- Compras de la tienda --------------------------------------------------------
 
     def _open_empty_wallet(
@@ -1736,6 +1833,7 @@ class EconomyRepository:
                 "economy_wealth_weeks",
                 "economy_wealth_tax",
                 "economy_donations",
+                "economy_bizums",
                 "economy_slots_jackpots",
                 "economy_consumption_tax",
                 "economy_lottery_tax",

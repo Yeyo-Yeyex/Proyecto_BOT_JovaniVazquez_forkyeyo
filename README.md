@@ -71,7 +71,7 @@ python -m bot
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
-  | 🎰 Casino | `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `slots [cantidad]` |
+  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `slots [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -189,6 +189,12 @@ python -m bot
   o retirarlo). Todo se configura desde Discord, sin tocar código. No deja
   vender roles por encima del del bot ni con permisos de moderación o
   administración. El bot necesita **Gestionar roles**.
+- **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
+  entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
+  pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$
+  (0,50 €). Los máximos de Bizum (10.000 Y$ por operación y 20.000 Y$ al día)
+  no se aplican: el bot avisa de que te has pasado y te da el logro
+  *A espaldas de Sánchez*. El resultado es público y menciona a quien recibe.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
@@ -479,6 +485,7 @@ src/bot/
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
+│   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── blackjack.py     # Blackjack con botones (bj)

@@ -26,6 +26,7 @@ from bot.repositories.economy import (
     STATE_ACCOUNT_ID,
     BalanceLimitError,
     BetSettlement,
+    BizumReceipt,
     DailyClaim,
     DonationReceipt,
     EconomyRepository,
@@ -38,6 +39,7 @@ from bot.repositories.economy import (
     WealthCharge,
     WealthRun,
 )
+from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     IGIC_GENERAL_RATE,
@@ -57,6 +59,7 @@ from bot.services.taxes import (
 __all__ = [
     "BalanceLimitError",
     "BetSettlement",
+    "BizumReceipt",
     "CURRENCY_EMOJI",
     "CURRENCY_NAME",
     "CURRENCY_SYMBOL",
@@ -179,6 +182,7 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
             f"de {format_amount(WEALTH_MINIMUM)} · IGIC en las compras de la `tienda` "
             f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
+            " · Los `bizum` entre miembros, exentos de Donaciones"
             f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
             f"{format_amount(LOTTERY_EXEMPT)}"
         ).replace("%", " %"),
@@ -569,6 +573,43 @@ class EconomyService:
             amount=amount,
             week=week_start(local_day(now)).isoformat(),
             now=now,
+        )
+
+    async def bizum(
+        self, guild_id: int, sender_id: int, receiver_id: int, *, amount: int
+    ) -> BizumReceipt:
+        """Manda un Bizum: `amount` pasa entero de un miembro a otro.
+
+        Tratamiento fiscal: exento del Impuesto sobre Sucesiones y Donaciones
+        por decisión del proyecto, y sin IRPF para quien recibe (art. 6.4
+        LIRPF: lo sujeto a Donaciones no tributa por IRPF). En la vida real
+        sería una donación sujeta (art. 3.1.b de la Ley 29/1987) que Canarias
+        solo bonifica al 99,9 % entre familia de los grupos I y II (art. 26
+        sexies del Decreto Legislativo 1/2009); el bot trata a todo el servidor
+        como grupo II y redondea el 0,1 % a cero. Detalle en
+        `bot.services.bizum`. Como no hay impuesto, el Estado no recibe nada.
+
+        Args:
+            amount: Cantidad; al menos `bot.services.bizum.MIN_AMOUNT`. Los
+                máximos de Bizum no se aplican aquí: se informan en el
+                resultado (`sent_today`) para los logros.
+
+        Raises:
+            ValueError: Si la cantidad no llega al mínimo o el destino no es
+                otro miembro. El mensaje se puede enseñar al usuario.
+            InsufficientFundsError: Si no le llega. No se mueve nada.
+            BalanceLimitError: Si quien recibe superaría el saldo máximo.
+        """
+        if amount < BIZUM_MIN_AMOUNT:
+            raise ValueError(
+                f"Bizum no deja mandar menos de {format_amount(BIZUM_MIN_AMOUNT)} (0,50 €)."
+            )
+        if sender_id == receiver_id:
+            raise ValueError("Un Bizum a ti mismo no es un Bizum, es mirar el saldo.")
+        now = self._clock()
+        day_start = datetime.combine(local_day(now), datetime.min.time(), TIMEZONE).timestamp()
+        return await self.repository.bizum(
+            guild_id, sender_id, receiver_id, amount=amount, now=now, day_start=day_start
         )
 
     async def purchase(

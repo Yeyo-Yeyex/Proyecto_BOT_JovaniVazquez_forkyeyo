@@ -46,6 +46,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.renta",
     "bot.cogs.patrimonio",
     "bot.cogs.donations",
+    "bot.cogs.bizum",
     "bot.cogs.shop",
     "bot.cogs.birthdays",
     "bot.cogs.achievements",
