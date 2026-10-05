@@ -71,6 +71,7 @@ from bot.services.economy import (
     tax_line,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress, is_happy_hour
+from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -844,8 +845,7 @@ class Achievements(commands.Cog):
 
 
 def _cog(bot: commands.Bot) -> Achievements | None:
-    cog = bot.get_cog("Achievements")
-    return cog if isinstance(cog, Achievements) else None
+    return find_cog(bot, Achievements)
 
 
 def note(

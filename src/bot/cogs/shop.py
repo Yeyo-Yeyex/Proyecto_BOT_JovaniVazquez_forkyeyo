@@ -71,6 +71,7 @@ from bot.services.shop import (
     receipt,
 )
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -1088,8 +1089,7 @@ class Tienda(commands.Cog):
 
 def xp_multiplier(bot: commands.Bot, guild_id: int, user_id: int, now: float) -> float:
     """Multiplicador de XP por potenciadores; 1,0 si la tienda no está cargada."""
-    cog = bot.get_cog("Tienda")
-    if isinstance(cog, Tienda):
+    if (cog := find_cog(bot, Tienda)) is not None:
         return cog.xp_multiplier(guild_id, user_id, now)
     return 1.0
 

@@ -45,6 +45,7 @@ from bot.services.economy import (
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
+from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -79,15 +80,13 @@ def pending_hint() -> str:
 
 async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
     """Atajo para el casino: avisa de la renta pendiente si el cog está cargado."""
-    cog = bot.get_cog("Renta")
-    if isinstance(cog, Renta):
+    if (cog := find_cog(bot, Renta)) is not None:
         await cog.remind(interaction)
 
 
 async def hint(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
     """Atajo para el casino: línea de renta pendiente si el cog está cargado."""
-    cog = bot.get_cog("Renta")
-    if isinstance(cog, Renta):
+    if (cog := find_cog(bot, Renta)) is not None:
         return await cog.hint_for(guild_id, user_id)
     return None
 
