@@ -16,5 +16,11 @@ Lo que más se olvida:
   `bot.cogs.achievements`. Sección "Logros" de `Biblia.txt`.
 - **Comandos:** un solo nombre de 8 caracteres como máximo, idéntico con `/` y con `.`,
   sin alias ni subcomandos.
+- **Entre cogs:** las funciones puente buscan el cog con `bot.utils.cogs.find_cog`, nunca
+  con `isinstance`. Lo que cruza de un cog a otro se prueba también con el bot real
+  (`BotClient` + `INITIAL_EXTENSIONS`, ver `tests/integration/test_cog_bridges.py`): los
+  cogs montados a mano no reproducen producción. Si algo falla solo en el bot desplegado,
+  reprodúcelo así antes de culpar a Docker o a la base de datos. Sección "Pruebas y
+  calidad" de `Biblia.txt`.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
