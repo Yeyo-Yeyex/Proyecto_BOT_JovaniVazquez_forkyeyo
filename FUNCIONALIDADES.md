@@ -308,16 +308,17 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.6. Minas
 
-- `minas [cantidad] [minas]` cobra y abre un tablero de 5×5 propio que solo pulsa su dueño. Minas: de 1 a 23 (por defecto, las de la última vez o 2). Apuesta por defecto, 100 Y$.
+- `minas [cantidad] [minas]` cobra y abre un tablero de 5×5 propio que solo pulsa su dueño. Minas: de 1 a 12 (por defecto, las de la última vez o 2). Apuesta por defecto, 100 Y$.
 - La primera casilla siempre es buena, como en el Buscaminas de Windows: las minas se colocan con `secrets` entre las otras 24 justo después del primer clic y desde ahí no se mueven. Como no tiene riesgo, paga ×1 (devuelve la apuesta). Mediana de casillas buenas antes de explotar: 13 con 1 mina, 7 con 2, 5 con 3 y 3 con 5.
 - Cada casilla buena después sube el multiplicador; 💰 Cobrar se lleva apuesta × multiplicador y una 💣 lo pierde todo. 🎲 Al azar destapa una casilla cualquiera.
-- Multiplicador tras k casillas (contando la segura) con m minas: 0,99 × C(24, k − 1) / C(24 − m, k − 1), con fracciones exactas y tope en ×10.000. Cobrar en cualquier momento desde la segunda casilla devuelve el 99 % de media, y para la misma casilla más minas pagan más (con 2 minas la segunda paga ×1,08; con 10, ×1,69; con 23, ×23,76). Una prueba lo verifica para cada número de minas y cada k.
-- Al terminar, un menú elige de 1 a 23 minas y enseña lo que paga cada opción (segunda casilla, quinta y tablero entero), además de 🔁 Jugar, ½, ×2 y 💰 All-in.
+- Multiplicador tras k casillas (contando la segura) con m minas: 0,99 × C(24, k − 1) / C(24 − m, k − 1), con fracciones exactas y sin tope. Cobrar en cualquier momento desde la segunda casilla devuelve el 99 % de media, y para la misma casilla más minas pagan más (con 2 minas la segunda paga ×1,08; con 12, ×1,98). Una prueba lo verifica para cada número de minas y cada k.
+- Al terminar, un menú elige de 1 a 12 minas y enseña solo lo que paga limpiar el tablero con cada opción, además de 🔁 Jugar, ½, ×2 y 💰 All-in.
+- Por qué 12 y sin tope: limpiar el tablero tiene una posibilidad entre C(24, m) y paga 0,99 × C(24, m). Es simétrico (4 y 20 minas dan lo mismo) y el máximo está en 12 (×2.677.114, 1 entre 2.704.156), así que con más de 12 el premio gordo baja. El antiguo tope de ×10.000 igualaba ese premio de 4 a 20 minas y hacía que no compensara arriesgar más de 4. Hasta 12, cada mina sube el premio gordo.
 - Progreso: el texto cuenta las casillas (💎 7/23), dice el multiplicador y lo que sumaría la siguiente casilla con su probabilidad, celebra las casillas 3, 5, 7, 10, 15 y 20, el medio tablero y la última buena, y avisa al batir el récord personal de casillas en una partida. El récord sale de la estadística de logros `mines_streak_max`, así que sobrevive a los reinicios. Al explotar dice hasta dónde llegaste y cuánto te ibas a llevar.
 - Mensaje: componentes nuevos de Discord (`LayoutView`), un bloque con el texto y las 25 casillas como botones, una fila de botones y el menú de minas: los 40 componentes que admite un mensaje. Sin imágenes: cada clic es una edición instantánea.
 - Dinero: la apuesta se cobra al empezar (`place_bet`) y se paga al cobrar o al explotar (`pay_winnings`, con 0 si explota). Fiscalidad del juego, con la línea de Perro Sanxe en el resultado. Si el tablero caduca (3 min) o el bot se apaga con una partida a medias, se cobra sola; sin casillas destapadas, se devuelve la apuesta.
 - Los cobros de ×25 o más se anuncian en el canal.
-- Logros: 25 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, pisar justo después de la segura, tan cerca, ×5 a ×1.000, 10, 15 y 20 casillas en una partida, ganar con 23 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
+- Logros: 26 en la categoría 💣 Minas (partidas, diamantes, cobros, minas pisadas, pisar justo después de la segura, tan cerca, ×5 a ×10.000, 10, 15 y 20 casillas en una partida, ganar con 12 minas, limpiar el tablero, 🎲…) y *Todoterreno* en 💰 Casino por jugar a los cinco juegos.
 
 ### 6 ter.7. Pachinko
 

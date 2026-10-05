@@ -3,15 +3,22 @@
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.mines`) cobra al
 empezar, paga al retirarse y pinta el tablero con botones.
 
-El jugador elige cuántas minas hay (de 1 a 23) y va destapando casillas.
+El jugador elige cuántas minas hay (de 1 a 12) y va destapando casillas.
 Cada casilla segura sube el multiplicador; puede cobrar cuando quiera, y si
 pisa una mina lo pierde todo.
 
 **La primera casilla siempre es segura**, como en el Buscaminas de Windows:
 las minas se colocan, con el azar del sistema operativo, entre las otras 24
 casillas justo después del primer clic, y a partir de ahí no se mueven.
-Como esa casilla no tiene riesgo, paga ×1 (devuelve la apuesta). Por eso el
-máximo son 23 minas: con 24 no quedaría ninguna casilla buena tras la primera.
+Como esa casilla no tiene riesgo, paga ×1 (devuelve la apuesta).
+
+**Por qué como mucho 12 minas.** Limpiar el tablero es acertar dónde están
+las `m` minas entre las 24 casillas que quedan tras la segura: una
+posibilidad entre C(24, m), y paga 0,99 × C(24, m). Esa cuenta es simétrica
+(4 minas y 20 minas tienen la misma probabilidad y el mismo premio) y tiene
+el máximo en 12. Con más de 12 el premio gordo vuelve a bajar, así que no
+tendría sentido arriesgar más. Hasta 12, cada mina más sube el premio
+máximo, y eso es lo que tienta a poner más.
 
 Desde la segunda casilla, el multiplicador es el inverso de la probabilidad
 de haber llegado hasta ahí, por el retorno al jugador. Tras `k` casillas
@@ -21,8 +28,11 @@ de haber llegado hasta ahí, por el retorno al jugador. Tras `k` casillas
 
 Así que cobrar en cualquier momento a partir de la segunda devuelve de media
 el 99 % de lo apostado, se juegue como se juegue, y más minas = más riesgo =
-más multiplicador por casilla. Se calcula con fracciones exactas para que el
-pago no dependa de redondeos de coma flotante.
+más multiplicador por casilla. **No hay tope de multiplicador**: con 12 minas
+limpiar el tablero paga ×2.677.114 (1 entre 2.704.156). Un tope igualaría el
+premio gordo de varias opciones y haría que arriesgar más no compensara.
+Se calcula con fracciones exactas para que el pago no dependa de redondeos
+de coma flotante.
 """
 
 from __future__ import annotations
@@ -36,23 +46,19 @@ from fractions import Fraction
 SIZE = 5
 TILES = SIZE * SIZE
 MIN_MINES = 1
-#: 24 casillas tras la primera y al menos una buena: como mucho 23 minas.
-MAX_MINES = TILES - 2
+#: A partir de 12 el premio de limpiar el tablero baja (ver la docstring).
+MAX_MINES = (TILES - 1) // 2
 #: Con 2 minas la mitad de las partidas pasan de 7 casillas.
 DEFAULT_MINES = 2
 #: Retorno al jugador desde la segunda casilla: 99 %.
 RTP = Fraction(99, 100)
-#: Tope del multiplicador (×10.000). Con muchas minas la fórmula da millones;
-#: el tope casi no cambia el retorno (hace falta muchísima suerte para
-#: llegar) y evita que una partida rompa la economía del servidor.
-MAX_MULTIPLIER = Fraction(10_000)
 
 
 def check_mines(mines: int) -> None:
     """Comprueba que el número de minas cabe en el tablero.
 
     Raises:
-        ValueError: Con un mensaje mostrable si no está entre 1 y 23.
+        ValueError: Con un mensaje mostrable si no está entre 1 y 12.
     """
     if not MIN_MINES <= mines <= MAX_MINES:
         raise ValueError(f"Las minas van de {MIN_MINES} a {MAX_MINES}.")
@@ -80,7 +86,7 @@ def multiplier(mines: int, revealed: int) -> Fraction:
         raise ValueError("Más casillas seguras de las que hay.")
     if revealed <= 1:
         return Fraction(1)
-    return min(RTP / survival(mines, revealed), MAX_MULTIPLIER)
+    return RTP / survival(mines, revealed)
 
 
 def multiplier_cents(mines: int, revealed: int) -> int:
@@ -301,15 +307,11 @@ def milestone(gems: int, safe_total: int) -> str | None:
 
 
 def risk_summary(mines: int) -> str:
-    """Resumen de una opción de minas para el menú: pagos de ejemplo y techo.
+    """Texto de una opción de minas en el menú: el premio de limpiar el tablero.
 
-    Ejemplo: `2ª ×1,03 · 5ª ×1,35 · todo ×276`.
+    Solo el premio gordo, sin decimales, porque es lo que crece con cada mina
+    y lo que hace tentador subir el riesgo. Ejemplo con 4 minas:
+    `Limpias el tablero: ×10.519`.
     """
-    safe = TILES - mines
-    parts = [f"2ª {format_multiplier(multiplier_cents(mines, 2))}"]
-    if safe >= 5:
-        parts.append(f"5ª {format_multiplier(multiplier_cents(mines, 5))}")
-    top = multiplier(mines, safe)
-    top_text = format_multiplier(multiplier_cents(mines, safe)).split(",")[0]
-    parts.append(f"todo {top_text}" + ("+" if top >= MAX_MULTIPLIER else ""))
-    return " · ".join(parts)
+    whole = format_multiplier(multiplier_cents(mines, TILES - mines)).split(",")[0]
+    return f"Limpias el tablero: {whole}"

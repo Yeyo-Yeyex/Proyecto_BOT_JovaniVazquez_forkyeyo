@@ -11,7 +11,7 @@ añadiría la siguiente y su probabilidad, frases al pasar por 3, 5, 10,
 medio tablero… y el aviso de récord personal de casillas en una partida.
 
 Al acabar, el tablero enseña dónde estaban las minas y deja jugar otra con
-🔁, cambiar la apuesta (½, ×2, 💰 All-in) y elegir de 1 a 23 minas en un
+🔁, cambiar la apuesta (½, ×2, 💰 All-in) y elegir de 1 a 12 minas en un
 menú que dice cuánto paga cada opción (más minas, más riesgo, más pago).
 
 El tablero usa los componentes nuevos de Discord (`LayoutView`): un bloque
@@ -279,7 +279,7 @@ class MinesBoard(ui.LayoutView):
             self.add_item(mines_row)
 
     def mines_select(self) -> ui.Select:
-        """Menú de 1 a 23 minas, con lo que paga cada opción."""
+        """Menú de 1 a 12 minas, con el premio de limpiar el tablero en cada opción."""
         options = [
             discord.SelectOption(
                 label=f"💣 {m} mina{'s' if m != 1 else ''}",
@@ -700,7 +700,7 @@ class Mines(commands.Cog, name="Minas"):
     )
     @app_commands.describe(
         cantidad="Apuesta: 500, 2k, all… (por defecto 100)",
-        minas="De 1 a 23: más minas, más riesgo y más pago (por defecto, las de la última vez o 2)",
+        minas="De 1 a 12: más minas, más riesgo y más premio (por defecto, la última vez o 2)",
     )
     @app_commands.guild_only()
     async def minas(

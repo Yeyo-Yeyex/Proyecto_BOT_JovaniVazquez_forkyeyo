@@ -10,7 +10,6 @@ import pytest
 
 from bot.services.mines import (
     MAX_MINES,
-    MAX_MULTIPLIER,
     MIN_MINES,
     TILES,
     MinesError,
@@ -41,17 +40,15 @@ def test_desde_la_segunda_casilla_cobrar_devuelve_el_99_por_ciento(mines: int) -
         survive = Fraction(math.comb(24 - mines, k - 1), math.comb(24, k - 1))
         assert survival(mines, k) == survive
         mult = multiplier(mines, k)
-        assert mult > previous or mult == MAX_MULTIPLIER
-        if mult < MAX_MULTIPLIER:
-            assert survive * mult == Fraction(99, 100)
-        else:
-            assert survive * mult <= Fraction(99, 100)
+        # Sin tope: el 99 % se cumple en todas las casillas, también en la última.
+        assert mult > previous
+        assert survive * mult == Fraction(99, 100)
         previous = mult
 
 
 def test_mas_minas_paga_mas_por_casilla() -> None:
     for k in (2, 3, 5):
-        payouts = [multiplier(m, k) for m in range(MIN_MINES, TILES - k + 1)]
+        payouts = [multiplier(m, k) for m in range(MIN_MINES, MAX_MINES + 1)]
         assert payouts == sorted(payouts)
         assert len(set(payouts)) == len(payouts)
 
@@ -59,17 +56,17 @@ def test_mas_minas_paga_mas_por_casilla() -> None:
 def test_multiplicadores_conocidos() -> None:
     assert multiplier_cents(2, 1) == 100
     assert multiplier_cents(2, 2) == 108  # 0,99 × 24/22
-    assert multiplier_cents(23, 2) == 2_376  # 0,99 × 24
+    assert multiplier_cents(12, 2) == 198  # 0,99 × 24/12
     assert multiplier(3, 0) == 1
-    assert multiplier(10, 15) == MAX_MULTIPLIER
-    assert payout(100, 23, 2) == 2_376
+    assert multiplier(12, 13) == Fraction(99, 100) * math.comb(24, 12)  # sin tope
+    assert payout(100, 12, 2) == 198
     assert format_multiplier(2_475) == "×24,75"
 
 
-def test_las_minas_van_de_1_a_23() -> None:
+def test_las_minas_van_de_1_a_12() -> None:
     check_mines(1)
-    check_mines(23)
-    for bad in (0, 24, 25):
+    check_mines(12)
+    for bad in (0, 13, 23, 24):
         with pytest.raises(ValueError):
             check_mines(bad)
 
@@ -82,7 +79,7 @@ def test_la_primera_casilla_nunca_es_mina(seed: int) -> None:
     assert game.reveal(tile)
     assert tile not in game.mine_tiles
     assert len(game.mine_tiles) == MAX_MINES
-    # Con 23 minas solo queda una buena: no se mueven tras el primer clic.
+    # Tras el primer clic las minas no se mueven.
     placed = game.mine_tiles
     game.reveal(next(t for t in game.hidden if t not in placed) if game.hidden else tile)
     assert game.mine_tiles == placed
@@ -134,11 +131,11 @@ def test_no_se_puede_cobrar_sin_destapar_ni_repetir_casilla() -> None:
 
 
 def test_limpiar_el_tablero() -> None:
-    game = fixed(set(range(2, 25)))
-    assert game.reveal(0)
-    assert game.reveal(1)
+    game = fixed(set(range(13, 25)))
+    for tile in range(13):
+        assert game.reveal(tile)
     assert game.cleared and game.next_cents is None
-    assert game.cash_out() == 2_376
+    assert game.cash_out() == 267_711_444  # 100 × 0,99 × C(24, 12)
 
 
 def test_al_azar_elige_una_cerrada_y_lo_cuenta() -> None:
@@ -160,8 +157,18 @@ def test_frases_de_progreso() -> None:
     assert milestone(4, 23) is None
 
 
-def test_resumen_de_riesgo_cabe_en_el_menu() -> None:
+def test_el_menu_solo_enseña_el_premio_de_limpiar_el_tablero() -> None:
+    assert risk_summary(1) == "Limpias el tablero: ×23"
+    assert risk_summary(4) == "Limpias el tablero: ×10.519"
+    assert risk_summary(12) == "Limpias el tablero: ×2.677.114"
     for mines in range(MIN_MINES, MAX_MINES + 1):
-        text = risk_summary(mines)
-        assert text.startswith("2ª ×") and "todo ×" in text
-        assert len(text) <= 100  # límite de Discord para la descripción
+        assert len(risk_summary(mines)) <= 100  # límite de Discord para la descripción
+
+
+def test_cada_mina_mas_sube_el_premio_de_limpiar_el_tablero() -> None:
+    """Hasta 12 el premio gordo crece siempre: arriesgar más tiene que tentar."""
+    tops = [multiplier(m, TILES - m) for m in range(MIN_MINES, MAX_MINES + 1)]
+    assert tops == sorted(tops)
+    assert len(set(tops)) == len(tops)
+    # Con una mina más, el premio gordo bajaría: por eso el máximo es 12.
+    assert Fraction(99, 100) * math.comb(24, MAX_MINES + 1) < tops[-1]
