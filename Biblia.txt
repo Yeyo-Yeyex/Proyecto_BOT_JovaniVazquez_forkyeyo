@@ -186,6 +186,12 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - Añadir pruebas de integración para interacciones entre componentes cuando exista una frontera relevante.
 - Antes de integrar un cambio, ejecutar las pruebas afectadas, el formateador y el linter configurados.
 - No afirmar que una funcionalidad está probada si solo se ha verificado visualmente o mediante una ejecución manual.
+- Una prueba que crea los cogs a mano (`Slots(MagicMock(), …)`) no reproduce producción. En producción el bot carga los cogs con `load_extension`, que vuelve a ejecutar cada módulo, y solo comparte los cogs reales entre ellos. Todo lo que cruza de un cog a otro (logros, Renta, tienda, niveles) se prueba también con `BotClient` y `INITIAL_EXTENSIONS`, como en `tests/integration/test_cog_bridges.py`.
+- Al investigar un fallo que solo pasa en el bot desplegado:
+  1. Reproducirlo primero arrancando el bot real: `BotClient` + `load_extension` de `INITIAL_EXTENSIONS` en orden, con `tree.sync` sustituido por un doble. No concluir que «el código está bien» ni culpar al servidor, a Docker o a la base de datos si solo se ha probado con cogs montados a mano.
+  2. Desconfiar de los caminos que fallan en silencio: las funciones puente «no lanzan y no hacen nada si el cog no está cargado», así que un fallo ahí no deja rastro en el log. Comprobar con una aserción que la llamada llega al cog y que el dato se guarda (por ejemplo, `profile.stats`), no solo que no hay excepciones.
+  3. Si el síntoma es que falta todo (cero estadísticas, ningún aviso) y no solo una parte, sospechar antes del enlace entre componentes que de la lógica del juego.
+  4. Una hipótesis se da por buena cuando una prueba la reproduce y el arreglo la hace pasar, no antes.
 - Mantener los ejemplos y la documentación coherentes con el comportamiento implementado.
 
 ### 8.1. Estándar de documentación por archivo
