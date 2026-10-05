@@ -16,8 +16,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.repositories.economy import LedgerEntry
 
 GUILD_ID = 1
+GUILD = GUILD_ID
 OWNER_ID = 10
 
 
@@ -100,5 +102,33 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         assert profile.stats["slots_spins"] == view.session_spins == slots.AUTO_SPINS
         assert profile.stats["slots_auto"] == 1
         assert {"slots_1", "auto_1"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_bizum_apunta_a_espaldas_de_sanchez_con_el_bot_real(tmp_path: Path) -> None:
+    client = await load_bot(tmp_path)
+    try:
+        bizum = importer("Bizum", client)
+        assert bizum.logros._cog(client) is client.get_cog("Achievements")
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(50_000, "test")])
+        sender = MagicMock(spec=discord.Member)
+        sender.id, sender.bot, sender.display_name = OWNER_ID, False, "Diego"
+        receiver = MagicMock(spec=discord.Member)
+        receiver.id, receiver.bot, receiver.display_name = 20, False, "Ana"
+        receiver.mention = "<@20>"
+        ctx = MagicMock()
+        ctx.guild = MagicMock(id=GUILD)
+        ctx.author = sender
+        ctx.channel = None
+        ctx.send = AsyncMock()
+
+        cog = client.get_cog("Bizum")
+        await cog.bizum_text.callback(cog, ctx, receiver, "10001")
+
+        mine = await client.achievements.profile(GUILD, OWNER_ID)
+        theirs = await client.achievements.profile(GUILD, 20)
+        assert "bizum_espaldas" in mine.unlocked
+        assert theirs.stats["bizum_received"] == 10_001
     finally:
         await client.close()

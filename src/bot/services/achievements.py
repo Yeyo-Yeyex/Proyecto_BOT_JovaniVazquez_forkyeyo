@@ -12,7 +12,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `crash_stats`, `mines_stats`, `pachinko_stats`,
-`casino_stats`, `shop_stats`) y se
+`casino_stats`, `shop_stats`, `bizum_stats`) y se
 lo pasan al cog de logros.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
@@ -28,6 +28,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
+from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
+from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
 from bot.services.crash import Seat as CrashSeat
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
@@ -109,6 +112,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("pachinko", "🌸 Pachinko"),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
+    Category("bizum", "💸 Bizum"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -227,6 +231,15 @@ LOTTERY_TAX_STORY = (
     "de ahí para arriba se queda el 20 %, y te lo quita antes de pagarte "
     "(disposición adicional 33ª de la Ley del IRPF). No va a la renta ni se "
     "devuelve: es definitivo. Con lo que te queda, mi amor, ya puedes invitar."
+)
+
+
+#: Discurso del logro `bizum_espaldas`: el primer Bizum por encima del máximo.
+BIZUM_LIMIT_STORY = (
+    f"🤫 **Eso no lo ha visto nadie, ¿verdad, mi amor?** En España un Bizum no pasa de "
+    f"1.000 € por operación ({_thousands(BIZUM_MAX_OPERATION)} Y$) ni de 2.000 € al día; "
+    "el banco te lo para en seco. Aquí te ha colado porque Perro Sanxe estaba mirando "
+    "despegar el Falcon. Si alguien pregunta, era para el cumple de tu prima."
 )
 
 
@@ -919,6 +932,55 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
         ),
     ))  # fmt: skip
+
+    # 💸 Bizum -----------------------------------------------------------------------------
+    a += _tiers("bizum", "bizum_sent_count", [
+        (1, "bizum_1", "Te hago un Bizum", "Manda tu primer Bizum.", C),
+        (25, "bizum_25", "Cuentas claras", "Manda 25 Bizums.", R),
+        (100, "bizum_100", "Tesorero del grupo", "Manda 100 Bizums.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "bizum_sent", [
+        (10_000, "bizumy_10k", "Invito yo", "Manda 10.000 Y$ en Bizums.", C),
+        (100_000, "bizumy_100k", "Banco de los colegas", "Manda 100.000 Y$ en Bizums.", R),
+        (1_000_000, "bizumy_1m", "Herencia en vida", "Manda 1.000.000 Y$ en Bizums.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "bizum_received_count", [
+        (1, "bizumr_1", "Te ha llegado un Bizum", "Recibe tu primer Bizum.", C),
+        (25, "bizumr_25", "Con amigos así", "Recibe 25 Bizums.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "bizum_received", [
+        (100_000, "bizumr_100k", "Vivo de los colegas", "Recibe 100.000 Y$ en Bizums.", R),
+    ], unit="money")  # fmt: skip
+    a.append(Achievement(
+        id="bizum_espaldas",
+        name="A espaldas de Sánchez",
+        description=(
+            f"Manda un Bizum de más de {_thousands(BIZUM_MAX_OPERATION)} Y$, el máximo "
+            "por operación en España (1.000 €)."
+        ),
+        category="bizum",
+        rarity=E,
+        conditions=(("bizum_max", BIZUM_MAX_OPERATION + 1),),
+        unit="money",
+        story=BIZUM_LIMIT_STORY,
+    ))  # fmt: skip
+    a += _tiers("bizum", "bizum_day_max", [
+        (BIZUM_MAX_DAILY + 1, "bizum_daily", "Límite diario",
+         f"Manda más de {_thousands(BIZUM_MAX_DAILY)} Y$ en Bizums en un día (2.000 €).", R,
+         True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "bizum_full", [
+        (5, "bizum_pitufeo", "Pitufeo",
+         f"Manda 5 Bizums de justo {_thousands(BIZUM_MAX_OPERATION)} Y$, sin pasarte ni un "
+         "yapdólar.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "bizum_min", [
+        (1, "bizum_cents", "Te debo 50 céntimos",
+         f"Manda un Bizum de {BIZUM_MIN_AMOUNT} Y$, el mínimo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "bizum_broke", [
+        (1, "bizum_broke", "Todo por un amigo", "Quédate a cero mandando un Bizum.", R, True),
+    ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
@@ -1648,6 +1710,38 @@ def shop_stats(
     if kind == "xp":
         delta.peak["shop_boost_queue_max"] = queued_boosts
     return delta
+
+
+# -- Bizum ----------------------------------------------------------------------------
+
+
+def bizum_stats(*, amount: int, sent_today: int, balance_after: int) -> StatDelta:
+    """Estadísticas de quien manda un Bizum.
+
+    Args:
+        amount: Lo enviado.
+        sent_today: Lo enviado hoy, este Bizum incluido.
+        balance_after: Saldo de quien envía tras enviar.
+    """
+    delta = StatDelta(
+        add={"bizum_sent_count": 1, "bizum_sent": amount},
+        peak={"bizum_max": amount, "bizum_day_max": sent_today},
+    )
+    if amount == BIZUM_MAX_OPERATION:
+        delta.add["bizum_full"] = 1
+    if amount == BIZUM_MIN_AMOUNT:
+        delta.add["bizum_min"] = 1
+    if balance_after == 0:
+        delta.add["bizum_broke"] = 1
+    return delta
+
+
+def bizum_received_stats(*, amount: int, balance_after: int) -> StatDelta:
+    """Estadísticas de quien recibe un Bizum."""
+    return StatDelta(
+        add={"bizum_received_count": 1, "bizum_received": amount},
+        peak={"balance_max": balance_after},
+    )
 
 
 # -- Loterías --------------------------------------------------------------------------
