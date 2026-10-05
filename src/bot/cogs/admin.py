@@ -53,7 +53,7 @@ BOT_FORBIDDEN = "No tengo permiso para hacer eso. Revisa mis roles y permisos en
 BULK_DELETE_WINDOW = timedelta(days=14)
 # Mensajes recientes que `purge` revisa cuando filtra por miembro.
 PURGE_SCAN_LIMIT = 500
-# Segundos que sigue visible la confirmación de `.purge` antes de borrarse.
+# Segundos que sigue visible la confirmación de `.borrar` antes de borrarse.
 PURGE_NOTICE_SECONDS = 5
 # Discord limita el motivo del registro de auditoría a 512 caracteres.
 AUDIT_REASON_LIMIT = 512
@@ -179,7 +179,7 @@ class Admin(commands.Cog):
         )
         return len(removed)
 
-    @app_commands.command(name="purge", description="Borra mensajes recientes del canal.")
+    @app_commands.command(name="borrar", description="Borra mensajes recientes del canal.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
@@ -207,7 +207,7 @@ class Admin(commands.Cog):
             return
         await responder.finish(f"🧹 {count} mensaje(s) borrado(s).")
 
-    @commands.command(name="purge")
+    @commands.command(name="borrar")
     async def purge_text(
         self, ctx: commands.Context, cantidad: int, miembro: discord.Member | None = None
     ) -> None:
@@ -234,7 +234,7 @@ class Admin(commands.Cog):
 
     # --- mute / unmute ----------------------------------------------------
 
-    @app_commands.command(name="mute", description="Aísla a un miembro durante un tiempo.")
+    @app_commands.command(name="callar", description="Aísla a un miembro durante un tiempo.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
@@ -252,7 +252,7 @@ class Admin(commands.Cog):
         """Aplica un aislamiento temporal (timeout) de Discord."""
         await self._mute_impl(InteractionResponder(interaction), miembro, duracion, motivo)
 
-    @commands.command(name="mute")
+    @commands.command(name="callar")
     async def mute_text(
         self, ctx: commands.Context, miembro: discord.Member, duracion: str, *, motivo: str = ""
     ) -> None:
@@ -276,14 +276,14 @@ class Admin(commands.Cog):
                 f"🔇 {member.mention} aislado durante {format_duration(duration)}."
             )
 
-    @app_commands.command(name="unmute", description="Quita el aislamiento a un miembro.")
+    @app_commands.command(name="hablar", description="Quita el aislamiento a un miembro.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def unmute(self, interaction: discord.Interaction, miembro: discord.Member) -> None:
         """Retira el timeout del miembro."""
         await self._unmute_impl(InteractionResponder(interaction), miembro)
 
-    @commands.command(name="unmute")
+    @commands.command(name="hablar")
     async def unmute_text(self, ctx: commands.Context, miembro: discord.Member) -> None:
         """Versión de texto (`.`) del comando slash homónimo."""
         await self._unmute_impl(ContextResponder(ctx), miembro)
@@ -302,7 +302,7 @@ class Admin(commands.Cog):
 
     # --- kick / ban / unban -----------------------------------------------
 
-    @app_commands.command(name="kick", description="Expulsa a un miembro del servidor.")
+    @app_commands.command(name="echar", description="Expulsa a un miembro del servidor.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def kick(
@@ -311,7 +311,7 @@ class Admin(commands.Cog):
         """Expulsa al miembro; puede volver con una invitación."""
         await self._kick_impl(InteractionResponder(interaction), miembro, motivo)
 
-    @commands.command(name="kick")
+    @commands.command(name="echar")
     async def kick_text(
         self, ctx: commands.Context, miembro: discord.Member, *, motivo: str = ""
     ) -> None:
@@ -329,7 +329,7 @@ class Admin(commands.Cog):
         ):
             await responder.send(f"👢 {member} expulsado.")
 
-    @app_commands.command(name="ban", description="Banea a un miembro del servidor.")
+    @app_commands.command(name="banear", description="Banea a un miembro del servidor.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def ban(
@@ -338,7 +338,7 @@ class Admin(commands.Cog):
         """Banea al miembro sin borrar sus mensajes anteriores."""
         await self._ban_impl(InteractionResponder(interaction), miembro, motivo)
 
-    @commands.command(name="ban")
+    @commands.command(name="banear")
     async def ban_text(
         self, ctx: commands.Context, miembro: discord.Member, *, motivo: str = ""
     ) -> None:
@@ -357,7 +357,7 @@ class Admin(commands.Cog):
         ):
             await responder.send(f"🔨 {member} baneado.")
 
-    @app_commands.command(name="unban", description="Levanta el baneo de un usuario.")
+    @app_commands.command(name="indultar", description="Levanta el baneo de un usuario.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(usuario="ID del usuario baneado.")
@@ -365,7 +365,7 @@ class Admin(commands.Cog):
         """Quita el baneo; el ID va como texto porque los IDs no caben en un entero de Discord."""
         await self._unban_impl(InteractionResponder(interaction), usuario)
 
-    @commands.command(name="unban")
+    @commands.command(name="indultar")
     async def unban_text(self, ctx: commands.Context, usuario: str) -> None:
         """Versión de texto (`.`) del comando slash homónimo."""
         await self._unban_impl(ContextResponder(ctx), usuario)
@@ -425,31 +425,31 @@ class Admin(commands.Cog):
         ):
             await responder.send("🔒 Canal bloqueado." if locked else "🔓 Canal desbloqueado.")
 
-    @app_commands.command(name="lock", description="Impide escribir en este canal.")
+    @app_commands.command(name="cerrar", description="Impide escribir en este canal.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def lock(self, interaction: discord.Interaction) -> None:
         """Quita a `@everyone` el permiso de escribir en el canal actual."""
         await self._set_locked(InteractionResponder(interaction), True)
 
-    @commands.command(name="lock")
+    @commands.command(name="cerrar")
     async def lock_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.`) del comando slash homónimo."""
         await self._set_locked(ContextResponder(ctx), True)
 
-    @app_commands.command(name="unlock", description="Vuelve a permitir escribir en este canal.")
+    @app_commands.command(name="abrir", description="Vuelve a permitir escribir en este canal.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def unlock(self, interaction: discord.Interaction) -> None:
         """Deshace `lock` en el canal actual."""
         await self._set_locked(InteractionResponder(interaction), False)
 
-    @commands.command(name="unlock")
+    @commands.command(name="abrir")
     async def unlock_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.`) del comando slash homónimo."""
         await self._set_locked(ContextResponder(ctx), False)
 
-    @app_commands.command(name="slow", description="Modo lento del canal (0 lo quita).")
+    @app_commands.command(name="lento", description="Modo lento del canal (0 lo quita).")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(segundos="Espera entre mensajes, 0-21600.")
@@ -461,7 +461,7 @@ class Admin(commands.Cog):
         """Cambia el modo lento del canal actual."""
         await self._slow_impl(InteractionResponder(interaction), segundos)
 
-    @commands.command(name="slow")
+    @commands.command(name="lento")
     async def slow_text(self, ctx: commands.Context, segundos: int) -> None:
         """Versión de texto (`.`) del comando slash homónimo."""
         await self._slow_impl(ContextResponder(ctx), segundos)
@@ -487,7 +487,7 @@ class Admin(commands.Cog):
 
     # --- say --------------------------------------------------------------
 
-    @app_commands.command(name="say", description="El bot escribe tu mensaje.")
+    @app_commands.command(name="decir", description="El bot escribe tu mensaje.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(texto="Lo que dirá el bot.", canal="Dónde (por defecto, aquí).")
@@ -506,7 +506,7 @@ class Admin(commands.Cog):
         if await self._attempt(responder, target.send(texto, allowed_mentions=SAY_MENTIONS)):
             await responder.send("📣 Enviado.", ephemeral=True)
 
-    @commands.command(name="say")
+    @commands.command(name="decir")
     async def say_text(self, ctx: commands.Context, *, texto: str) -> None:
         """Versión de texto (`.`): borra tu mensaje y el bot escribe en su lugar."""
         try:
@@ -517,7 +517,7 @@ class Admin(commands.Cog):
 
     # --- nick / role ------------------------------------------------------
 
-    @app_commands.command(name="nick", description="Cambia o quita el apodo de un miembro.")
+    @app_commands.command(name="apodo", description="Cambia o quita el apodo de un miembro.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(apodo="Vacío para quitarlo.")
@@ -530,7 +530,7 @@ class Admin(commands.Cog):
         """Cambia el apodo del miembro en este servidor."""
         await self._nick_impl(InteractionResponder(interaction), miembro, apodo)
 
-    @commands.command(name="nick")
+    @commands.command(name="apodo")
     async def nick_text(
         self, ctx: commands.Context, miembro: discord.Member, *, apodo: str = ""
     ) -> None:
@@ -556,7 +556,7 @@ class Admin(commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none(),
             )
 
-    @app_commands.command(name="role", description="Da o quita un rol a un miembro.")
+    @app_commands.command(name="rol", description="Da o quita un rol a un miembro.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def role(
@@ -565,7 +565,7 @@ class Admin(commands.Cog):
         """Si el miembro tiene el rol, se lo quita; si no, se lo da."""
         await self._role_impl(InteractionResponder(interaction), miembro, rol)
 
-    @commands.command(name="role")
+    @commands.command(name="rol")
     async def role_text(
         self, ctx: commands.Context, miembro: discord.Member, *, rol: discord.Role
     ) -> None:

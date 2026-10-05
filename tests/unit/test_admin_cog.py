@@ -139,7 +139,7 @@ async def test_ban_sin_permiso_del_bot_lo_explica(guild: SimpleNamespace) -> Non
 
 @pytest.mark.asyncio
 async def test_mute_aplica_la_duracion_interpretada(guild: SimpleNamespace) -> None:
-    """`.mute @x 1h30m` aísla 90 minutos."""
+    """`.callar @x 1h30m` aísla 90 minutos."""
     cog = Admin(MagicMock())
     target = make_member(4, 1)
     target.guild = guild
@@ -196,7 +196,7 @@ async def test_purge_por_miembro_borra_solo_sus_mensajes_hasta_la_cantidad() -> 
 
 @pytest.mark.asyncio
 async def test_purge_borra_los_ultimos_mensajes_y_no_los_mas_antiguos() -> None:
-    """`.purge 3` se lleva los 3 más recientes, aunque se pase `after`.
+    """`.borrar 3` se lleva los 3 más recientes, aunque se pase `after`.
 
     El canal falso imita a discord.py: si llega `after` y no se dice
     `oldest_first`, recorre el historial del más antiguo al más nuevo.

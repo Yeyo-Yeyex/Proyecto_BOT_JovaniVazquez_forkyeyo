@@ -34,9 +34,9 @@ def describe_command_error(error: commands.CommandError) -> str | None:
     if isinstance(error, commands.NoPrivateMessage):
         return GUILD_ONLY_ERROR
     if isinstance(error, commands.MissingRequiredArgument):
-        return f"Falta el argumento `{error.param.name}`. Escribe `help` para ver cómo se usa."
+        return f"Falta el argumento `{error.param.name}`. Escribe `ayuda` para ver cómo se usa."
     if isinstance(error, commands.UserInputError):
-        return "No entendí algún argumento. Escribe `help` para ver cómo se usa."
+        return "No entendí algún argumento. Escribe `ayuda` para ver cómo se usa."
     if isinstance(error, commands.MissingPermissions):
         return ADMIN_ONLY_ERROR
     if isinstance(error, commands.CheckFailure):

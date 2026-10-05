@@ -32,7 +32,7 @@ lo apostado y en vuelo se retira a todos en el multiplicador del momento.
 
 Si `CASINO_CHANNEL_IDS` está configurado, solo se juega en esos canales.
 Permisos del bot en el canal: enviar mensajes, insertar enlaces, adjuntar
-archivos y añadir reacciones (para confirmar `.crash` cuando ya hay mesa).
+archivos y añadir reacciones (para confirmar `.cohete` cuando ya hay mesa).
 """
 
 from __future__ import annotations
@@ -878,7 +878,7 @@ class Crash(commands.Cog):
         confirm: Callable[[str], Awaitable[None]],
         send_error: Callable[[str], Awaitable[None]],
     ) -> None:
-        """Lógica compartida de `/crash` y `.crash`: abre la mesa o entra en ella."""
+        """Lógica compartida de `/cohete` y `.cohete`: abre la mesa o entra en ella."""
         if guild is None or not isinstance(channel, discord.abc.Messageable):
             await send_error("El Crash solo se juega dentro de un servidor.")
             return
@@ -943,7 +943,7 @@ class Crash(commands.Cog):
         table.task = asyncio.create_task(table.run(), name=f"crash-{channel_id}")
 
     @app_commands.command(
-        name="crash", description="Crash: sube al cohete y salta antes de que explote."
+        name="cohete", description="Crash: sube al cohete y salta antes de que explote."
     )
     @app_commands.describe(
         cantidad="Apuesta: 500, 2k, all… (por defecto tu última ficha o 100)",
@@ -981,12 +981,12 @@ class Crash(commands.Cog):
         )
         await renta.remind(self.bot, interaction)
 
-    @commands.command(name="crash")
+    @commands.command(name="cohete")
     @commands.guild_only()
     async def crash_text(
         self, ctx: commands.Context, primero: str | None = None, segundo: str | None = None
     ) -> None:
-        """Versión de texto: `.crash`, `.crash 500`, `.crash 500 2x` o `.crash 2x`."""
+        """Versión de texto: `.cohete`, `.cohete 500`, `.cohete 500 2x` o `.cohete 2x`."""
         amount_text, auto_text = self.split_args(primero, segundo)
 
         async def send(**kwargs: Any) -> discord.Message:

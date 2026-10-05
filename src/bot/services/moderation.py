@@ -37,7 +37,7 @@ class _Member(Protocol):
 def parse_duration(text: str) -> timedelta | None:
     """Convierte `30s`, `10m`, `2h`, `1d` o `1h30m` en una duración.
 
-    Un número sin unidad son minutos (`.mute @x 10` = 10 minutos), que es lo
+    Un número sin unidad son minutos (`.callar @x 10` = 10 minutos), que es lo
     que se espera casi siempre al aislar a alguien.
 
     Returns:

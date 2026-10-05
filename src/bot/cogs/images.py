@@ -4,7 +4,7 @@ Todos son **solo comandos de texto** (`.trigger @alguien`): los slash commands
 se reservan para el resto del bot, y Discord además limita un bot a 100
 comandos de `/`. Cada efecto se registra como un comando de texto con el
 nombre que tiene en Dank Memer, generado desde `bot.services.memes.EFFECTS`.
-En `.help` aparecen solo por nombre, agrupados por tipo (con una línea cada
+En `.ayuda` aparecen solo por nombre, agrupados por tipo (con una línea cada
 uno no cabrían en un embed); `.memes efecto` explica cómo se usa cada uno.
 
 Cómo se leen los argumentos de un efecto (ver :func:`parse_arguments`):
@@ -66,7 +66,7 @@ Work = Callable[[list[bytes]], tuple[bytes, str]]
 _MENTION = re.compile(r"<@!?(\d+)>")
 
 # Títulos de cada grupo en `.memes`, por `Effect.kind`.
-# Nombre corto de cada tipo en `/help`, donde aparece como "🎨 Imagen · <tipo>".
+# Nombre corto de cada tipo en `/ayuda`, donde aparece como "🎨 Imagen · <tipo>".
 KIND_HELP_LABELS: dict[str, str] = {
     "avatar": "avatar",
     "mixed": "avatar + texto",

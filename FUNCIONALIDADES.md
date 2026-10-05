@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `ping`, `help`, `level`, `top`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `slots`, `crash`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `latencia`, `ayuda`, `nivel`, `ranking`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `tragas`, `cohete`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -58,7 +58,7 @@ Los ajustes se guardan por servidor en SQLite (`welcome_settings`), junto a la �
 
 ### 4.0. Preparación: importación del historial
 
-Los niveles vienen apagados en cada servidor. Un administrador los pone en marcha con el comando `niveles` (sección 6 quater): `/niveles accion:importar` o `.niveles importar` recorre el historial y, la primera vez que termina, enciende los niveles solo y lo anuncia en el canal donde se pidió. Mientras están apagados nadie gana XP y `level`/`top` responden que están apagados.
+Los niveles vienen apagados en cada servidor. Un administrador los pone en marcha con el comando `niveles` (sección 6 quater): `/niveles accion:importar` o `.niveles importar` recorre el historial y, la primera vez que termina, enciende los niveles solo y lo anuncia en el canal donde se pidió. Mientras están apagados nadie gana XP y `nivel`/`ranking` responden que están apagados.
 
 - La importación se inicia a mano y corre en segundo plano; no se ejecuta sola al arrancar el bot. Si el bot se reinicia a medias, `importar` la reanuda desde los canales que faltaban.
 - El bot recorre canales de texto, hilos activos y hilos archivados que pueda enumerar y leer. En hilos privados depende de que el bot esté unido al hilo o tenga permiso para administrar hilos. El resultado no puede incluir canales eliminados ni canales con permisos insuficientes.
@@ -87,10 +87,10 @@ Al encender los niveles por primera vez, el recuento importado se convierte una 
 
 ### 4.2. Comandos implementados
 
-- `/level [miembro]` y `.level [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
-- `/top [pagina]` y `.top [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
-- `/ping` y `.ping`: comprueban la latencia del bot.
-- `/help` y `.help`: listan todos los comandos en un solo embed, por categorías (General, Música, Niveles, Casino, Entradas, Imagen y sus cuatro tipos de efecto), solo por nombre, sin descripción ni argumentos y en orden alfabético dentro de cada categoría. La categoría Admin solo aparece si quien pide la ayuda es administrador.
+- `/nivel [miembro]` y `.nivel [miembro]`: muestran el nivel, experiencia actual y progreso al siguiente nivel del miembro indicado o de quien ejecuta el comando.
+- `/ranking [pagina]` y `.ranking [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
+- `/latencia` y `.latencia`: comprueban la latencia del bot.
+- `/ayuda` y `.ayuda`: listan todos los comandos en un solo embed, por categorías (General, Música, Niveles, Casino, Entradas, Imagen y sus cuatro tipos de efecto), solo por nombre, sin descripción ni argumentos y en orden alfabético dentro de cada categoría. La categoría Admin solo aparece si quien pide la ayuda es administrador.
 
 **Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `.`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo de texto es `.` por defecto y se puede cambiar con `COMMAND_PREFIX`; los comandos `/` funcionan siempre, sea cual sea el prefijo. Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
@@ -121,25 +121,25 @@ La puesta en marcha y los ajustes (importar, encender, apagar, canal de avisos y
 
 ### 5.1. Comandos implementados
 
-Cada acción tiene un único nombre, igual en `/` y en `.` (por ejemplo `/play` y `.play`). Ambas interfaces reutilizan la misma lógica interna; el adaptador compartido `CommandResponder` (`InteractionResponder`/`ContextResponder` en `bot.utils.responder`) oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
+Cada acción tiene un único nombre, igual en `/` y en `.` (por ejemplo `/poner` y `.poner`). Ambas interfaces reutilizan la misma lógica interna; el adaptador compartido `CommandResponder` (`InteractionResponder`/`ContextResponder` en `bot.utils.responder`) oculta si la petición vino de una `discord.Interaction` o de un mensaje de texto.
 
-- `play consulta`: busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
-- `pause` y `resume`: controlan la reproducción actual.
-- `skip`: detiene la pista en curso; la cola continúa automáticamente con la siguiente.
-- `queue`: muestra la pista actual y hasta diez pistas siguientes (con el resto resumido en un contador).
-- `remove posicion`: elimina una pista de la cola por su posición (1 = la siguiente).
-- `clear`: vacía la cola sin afectar a la pista en curso.
-- `stop`: detiene la reproducción, vacía la cola y desconecta al bot del canal de voz.
-- `volume valor`: cambia el volumen (1-200 %), incluso con una pista ya sonando.
+- `poner consulta`: busca en YouTube (o resuelve un enlace directo) mediante `yt-dlp` y reproduce el resultado; conecta al bot al canal de voz del miembro si aún no estaba conectado. Si ya hay una pista sonando, la añade al final de la cola.
+- `pausar` y `seguir`: controlan la reproducción actual.
+- `saltar`: detiene la pista en curso; la cola continúa automáticamente con la siguiente.
+- `cola`: muestra la pista actual y hasta diez pistas siguientes (con el resto resumido en un contador).
+- `quitar posicion`: elimina una pista de la cola por su posición (1 = la siguiente).
+- `vaciar`: vacía la cola sin afectar a la pista en curso.
+- `parar`: detiene la reproducción, vacía la cola y desconecta al bot del canal de voz.
+- `volumen valor`: cambia el volumen (1-200 %), incluso con una pista ya sonando.
 
-La cola y el reproductor son independientes por servidor (`GuildMusicState` en `bot.cogs.music`). Las acciones de control (todas salvo `play`, que además puede conectar al bot, y `queue`, de solo lectura) exigen que quien las use esté conectado al mismo canal de voz que el bot.
+La cola y el reproductor son independientes por servidor (`GuildMusicState` en `bot.cogs.music`). Las acciones de control (todas salvo `poner`, que además puede conectar al bot, y `cola`, de solo lectura) exigen que quien las use esté conectado al mismo canal de voz que el bot.
 
 Los comandos de texto con prefijo requieren el intent privilegiado **Message Content** habilitado en el portal de desarrolladores de Discord (además del ya requerido **Server Members**); sin él, el bot no puede leer el contenido de los mensajes y esos comandos no se dispararán (los comandos de aplicación `/` no se ven afectados).
 
 ### 5.2. Comportamiento y límites
 
 - Se informa con un mensaje claro si la consulta no se puede resolver, la pista dura demasiado, la cola está llena o el miembro no está en el canal de voz adecuado.
-- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `stop` es la única acción que corta ese encadenamiento.
+- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `parar` es la única acción que corta ese encadenamiento.
 - Duración máxima por pista: 30 minutos (`MAX_TRACK_DURATION_SECONDS`); se rechazan también los directos, al no tener duración conocida. Tamaño máximo de cola: 50 pistas por servidor (`MAX_QUEUE_SIZE`).
 - El bot abandona el canal de voz automáticamente si se queda sin oyentes humanos, o tras 5 minutos de inactividad sin pistas en cola (`IDLE_DISCONNECT_SECONDS`).
 - El bot se conecta ensordecido (`self_deaf=True`): Discord deja de reenviarle el audio de los participantes, que no usa, y el tráfico de bajada en voz cae a casi cero.
@@ -175,7 +175,7 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 
 ### 6.2. Efectos de Dank Memer
 
-Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.help` los lista en subcategorías de Imagen según su tipo; `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
+Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.ayuda` los lista en subcategorías de Imagen según su tipo; `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
 
 Lectura de argumentos:
 
@@ -285,7 +285,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.4. Tragaperras
 
-- `slots [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎰 Tirar, 🔁 Auto ×10, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$.
+- `tragas [cantidad]` abre una máquina propia con botones que solo pulsa su dueño: 🎰 Tirar, 🔁 Auto ×10, ⚡ Turbo, ½, ×2, 💰 All-in y 📋 Premios (en privado). Apuesta por defecto, 100 Y$.
 - 3 rodillos y 3 filas a la vista; solo paga la del medio. Cada rodillo es una tira fija de símbolos y la parada de cada uno sale del azar del sistema operativo (`random.SystemRandom`, como `secrets`). Las tiras son distintas: el primer rodillo lleva más 🃏 y 7️⃣ que el tercero, así que quedarse a uno del premio gordo pasa a menudo y el premio, poco.
 - Premios (veces la apuesta, con la apuesta incluida): 🍒 en el primer rodillo ×0,5; 🍒 🍒 ×2; 🍒🍒🍒 y 🍋🍋🍋 ×4; 🍇 ×10; 🔔 ×20; 💎 ×60; 7️⃣ ×200. 🃏 es comodín (menos para 🎟️) y 🃏 🃏 🃏 se lleva el bote.
 - Bote común por servidor: el 3 % de cada apuesta pagada va al bote (monedero `SLOTS_POT_ACCOUNT_ID`). Quien saca 🃏 🃏 🃏 se lo lleva entero y la casa pone 5.000 Y$ para empezar otro. La máquina enseña el bote y el último ganador.
@@ -299,7 +299,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 
 ### 6 ter.5. Crash
 
-- `crash [cantidad] [auto]` abre la mesa de Crash del canal o entra en la ronda que esté embarcando. La mesa es compartida: una ronda por canal y cualquiera se sube. `.crash 500 2x` entra con 500 Y$ y auto-retiro en 2x; el orden de los dos argumentos da igual y `no` quita el auto-retiro. Si el cohete está en el aire, quien escribe `crash` entra en la ronda siguiente.
+- `cohete [cantidad] [auto]` abre la mesa de Crash del canal o entra en la ronda que esté embarcando. La mesa es compartida: una ronda por canal y cualquiera se sube. `.cohete 500 2x` entra con 500 Y$ y auto-retiro en 2x; el orden de los dos argumentos da igual y `no` quita el auto-retiro. Si el cohete está en el aire, quien escribe `cohete` entra en la ronda siguiente.
 - Embarque: 10 s la primera ronda y 7 s las siguientes, con cuenta atrás que Discord mueve solo (marca de tiempo relativa, sin editar el mensaje). Botones: 🚀 Entrar (con tu ficha), ½, ×2, 💰 All-in y 🎯 Auto (formulario). La ficha y el auto-retiro de cada miembro se recuerdan entre rondas, en memoria. Si un embarque termina sin nadie, la mesa se cierra.
 - Vuelo: el multiplicador es e^(k·t^1,4): empieza lento y acelera, para que la tensión dure donde se decide casi todo (1,5x a los 5,5 s, 2x a los 8 s, 5x a los 15 s, 10x a los 19 s, 100x a los 31 s) y tiene tope en 1.000x. 💸 Retirar cobra apuesta × multiplicador del instante en que llega la pulsación. El auto-retiro cobra justo su objetivo aunque el bot edite a saltos. Si ya no queda nadie dentro, el cohete salta directo a su punto de explosión.
 - Punto de explosión: se sortea al abrir el embarque con `secrets` y P(llegar a x) = 0,99 / x. Retirarse siempre en el mismo multiplicador devuelve el 99 % de media, sea cual sea; el 1 % de las rondas explota en 1,00x. Una prueba lo comprueba con 200.000 puntos.
@@ -409,17 +409,17 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 
 | Comando | Qué hace |
 |---|---|
-| `purge <cantidad> [miembro]` | Borra hasta 100 mensajes del canal (solo los de ese miembro, si se indica). Ignora los de más de 14 días. |
-| `mute <miembro> <duración> [motivo]` | Aislamiento temporal de Discord. Duración: `10m`, `2h`, `1d`, `1h30m`; sin unidad, minutos; máximo 28 días. |
-| `unmute <miembro>` | Quita el aislamiento. |
-| `kick <miembro> [motivo]` | Expulsa del servidor. |
-| `ban <miembro> [motivo]` | Banea sin borrar mensajes anteriores. |
-| `unban <id>` | Levanta un baneo (ID numérico o mención). |
-| `lock` / `unlock` | Quita o devuelve a `@everyone` el permiso de escribir y crear hilos en el canal actual. |
-| `slow <segundos>` | Modo lento del canal (0-21600; 0 lo quita). |
-| `say <texto>` | El bot escribe el texto. En `.say` se borra tu mensaje; `/say` admite otro canal. Nunca menciona a `@everyone`, `@here` ni roles. |
-| `nick <miembro> [apodo]` | Cambia el apodo; sin apodo, lo quita. |
-| `role <miembro> <rol>` | Da el rol si no lo tiene; si lo tiene, se lo quita. |
+| `borrar <cantidad> [miembro]` | Borra hasta 100 mensajes del canal (solo los de ese miembro, si se indica). Ignora los de más de 14 días. |
+| `callar <miembro> <duración> [motivo]` | Aislamiento temporal de Discord. Duración: `10m`, `2h`, `1d`, `1h30m`; sin unidad, minutos; máximo 28 días. |
+| `hablar <miembro>` | Quita el aislamiento. |
+| `echar <miembro> [motivo]` | Expulsa del servidor. |
+| `banear <miembro> [motivo]` | Banea sin borrar mensajes anteriores. |
+| `indultar <id>` | Levanta un baneo (ID numérico o mención). |
+| `cerrar` / `abrir` | Quita o devuelve a `@everyone` el permiso de escribir y crear hilos en el canal actual. |
+| `lento <segundos>` | Modo lento del canal (0-21600; 0 lo quita). |
+| `decir <texto>` | El bot escribe el texto. En `.decir` se borra tu mensaje; `/decir` admite otro canal. Nunca menciona a `@everyone`, `@here` ni roles. |
+| `apodo <miembro> [apodo]` | Cambia el apodo; sin apodo, lo quita. |
+| `rol <miembro> <rol>` | Da el rol si no lo tiene; si lo tiene, se lo quita. |
 | `bienv [gif] [canal]` | GIF y canal de la bienvenida; sin argumentos, enseña los actuales. Responde con una vista previa (en `/`, solo la ves tú). Ver sección 3.3. |
 | `catalogo` | Abre la trastienda (en `/`, solo la ves tú; en `.`, queda en el canal pero solo la toca quien la abrió). Botones ➕ Rol (eliges el rol y rellenas nombre, precio, duración del alquiler o vacío para siempre, y descripción), ➕ Potenciador (multiplicador y duración) y ➕ Coleccionable (existencias). ✏️ Editar abre la ficha de cada artículo: datos, 📦 límites (existencias, máximo por persona, nivel mínimo), 🏷️ rebaja (porcentaje hasta el 90 % y duración), tipo de IGIC, ocultar/mostrar y retirar (con confirmación; lo vendido se queda en las mochilas). El nombre puede empezar por un emoji, que pasa a ser el icono. Rechaza roles por encima del del bot, gestionados por integraciones o con permisos de moderación o administración. Ver sección 6 ter.7 bis. |
 | `niveles [acción] [canal] [segundos]` | Sin argumentos, enseña el estado de los niveles. Acciones: `importar` (lee el historial y, al acabar la primera vez, enciende los niveles), `activar`, `desactivar` (no borra XP) y `mismo` (avisos donde se sube). Un canal fija dónde se anuncian las subidas; unos segundos (10–3600), el enfriamiento del XP por mensaje. En `.niveles` van en cualquier orden. Ver sección 4.0. |
@@ -427,7 +427,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 ### 6 quater.2. Autorización y seguridad
 
 - Solo los miembros con el permiso **Administrador** pueden usarlos. Se comprueba en el servidor en cada invocación (`cog_check` y `interaction_check`); que Discord oculte los `/` a los demás (`default_permissions`) es solo estética.
-- Se replica la jerarquía de Discord antes de llamar a la API: nadie actúa sobre sí mismo (salvo `nick`), sobre el bot ni sobre el dueño, ni sobre alguien con un rol igual o superior al suyo o al del bot. El dueño del servidor está por encima de esa regla.
+- Se replica la jerarquía de Discord antes de llamar a la API: nadie actúa sobre sí mismo (salvo `apodo`), sobre el bot ni sobre el dueño, ni sobre alguien con un rol igual o superior al suyo o al del bot. El dueño del servidor está por encima de esa regla.
 - Cada acción queda en el registro de auditoría con el motivo y quién la pidió.
 - El bot necesita, según el comando: Gestionar mensajes, Aislar temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar apodos y Gestionar roles (también para dar los roles de la tienda). Si le falta alguno, responde que no tiene permiso en vez de fallar en silencio.
 
@@ -459,7 +459,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 
 1. **Bienvenida y despedida:** frases editables, GIF y canal configurables con `bienv`, vuelta de antiguos miembros y botón de saludo con logros. (Implementado.) Pendiente: activar o desactivar cada mensaje y separar el canal de despedida.
 2. **Preparación de niveles:** importar y guardar agregados de mensajes históricos y contar actividad nueva. (Implementado.)
-3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `level`/`top` y configuración. (Implementado.)
+3. **Niveles:** conversión de historial en XP, XP por mensajes nuevos, cooldown, comandos `nivel`/`ranking` y configuración. (Implementado.)
 4. **Música:** reproducción y controles de cola con `yt-dlp` y `ffmpeg`. (Implementado.)
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)

@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.general: `/ping` y el comando de ayuda (`/help`)."""
+"""Pruebas de bot.cogs.general: `/latencia` y el comando de ayuda (`/ayuda`)."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def make_context() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_ping_responde_de_forma_efimera_con_la_latencia() -> None:
-    """El comando /ping debe responder una sola vez, en efímero, con la latencia del bot."""
+    """El comando /latencia debe responder una sola vez, en efímero, con la latencia del bot."""
     fake_bot = MagicMock()
     fake_bot.latency = 0.123  # segundos -> se espera 123 ms redondeados
 
@@ -54,7 +54,7 @@ async def test_ping_responde_de_forma_efimera_con_la_latencia() -> None:
 
 @pytest.mark.asyncio
 async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -> None:
-    """`.ping` comparte la lógica de `/ping` a través de `ContextResponder`."""
+    """`.latencia` comparte la lógica de `/latencia` a través de `ContextResponder`."""
     fake_bot = MagicMock()
     fake_bot.latency = 0.05
 
@@ -70,7 +70,7 @@ async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -
 
 @pytest.mark.asyncio
 async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
-    """`/help` construye y envía el embed de ayuda de forma efímera."""
+    """`/ayuda` construye y envía el embed de ayuda de forma efímera."""
     real_bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
     await real_bot.add_cog(cog)
@@ -86,8 +86,8 @@ async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
 
 @pytest.mark.asyncio
 async def test_help_text_se_llama_igual_que_el_slash_y_sin_alias() -> None:
-    """`.help` usa el mismo nombre que `/help`, sin alias en otro idioma."""
-    assert General.help_command_text.name == "help"
+    """`.ayuda` usa el mismo nombre que `/ayuda`, sin alias en otro idioma."""
+    assert General.help_command_text.name == "ayuda"
     assert not General.help_command_text.aliases
 
     real_bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
@@ -116,10 +116,10 @@ async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos()
     embed = build_help_embed(bot)
 
     text = "\n".join(field.value for field in embed.fields)
-    assert text.count("`ping`") == 1
-    assert text.count("`help`") == 1
-    assert "/ping" not in text
-    assert ".ping" not in text
+    assert text.count("`latencia`") == 1
+    assert text.count("`ayuda`") == 1
+    assert "/latencia" not in text
+    assert ".latencia" not in text
 
 
 @pytest.mark.asyncio
@@ -130,13 +130,13 @@ async def test_build_help_embed_solo_nombres_ordenados_sin_descripcion() -> None
     embed = build_help_embed(bot)
 
     assert [field.name for field in embed.fields] == ["⚙️ General (2)"]
-    assert embed.fields[0].value == "`help` · `ping`"
+    assert embed.fields[0].value == "`ayuda` · `latencia`"
 
 
 class FakeAdminCog(commands.Cog, name="Admin"):
     """Cog mínimo con el nombre del de administración, para probar la ayuda."""
 
-    @commands.command(name="kick")
+    @commands.command(name="echar")
     async def kick(self, ctx: commands.Context) -> None:
         """Comando de prueba."""
 
@@ -152,12 +152,12 @@ async def test_build_help_embed_solo_ensena_admin_a_administradores() -> None:
 
     assert all("Admin" not in field.name for field in normal.fields)
     assert admin.fields[-1].name == "🛡️ Admin (1)"
-    assert admin.fields[-1].value == "`kick`"
+    assert admin.fields[-1].value == "`echar`"
 
 
 @pytest.mark.asyncio
 async def test_help_de_un_administrador_incluye_la_categoria_admin() -> None:
-    """`/help` decide si enseña la categoría Admin según los permisos de quien la pide."""
+    """`/ayuda` decide si enseña la categoría Admin según los permisos de quien la pide."""
     bot = await make_bot_with_commands()
     await bot.add_cog(FakeAdminCog())
     cog = bot.get_cog("General")

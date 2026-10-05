@@ -59,23 +59,23 @@ python -m bot
 ## Funcionalidad actual
 
 - Cada comando tiene **un único nombre corto, igual con `/` y con `.`**
-  (`/play despacito` = `.play despacito`), salvo los de imagen, que solo
+  (`/poner despacito` = `.poner despacito`), salvo los de imagen, que solo
   existen con `.` para dejar los slash commands al resto del bot. Escribe
-  `/help` o `.help` para ver la lista:
+  `/ayuda` o `.ayuda` para ver la lista:
 
   | Categoría | Comandos |
   |---|---|
-  | ⚙️ General | `help` · `ping` |
-  | 🎵 Música | `clear` · `pause` · `play <consulta>` · `queue` · `remove <posicion>` · `resume` · `skip` · `stop` · `volume <1-200>` |
-  | 📊 Niveles | `level [miembro]` · `top [pagina]` |
+  | ⚙️ General | `ayuda` · `latencia` |
+  | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
+  | 📊 Niveles | `nivel [miembro]` · `ranking [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
-  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `crash [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `slots [cantidad]` |
+  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `ban` · `bienv` · `catalogo` · `kick` · `lock` · `mute` · `nick` · `niveles` · `purge` · `role` · `say` · `slow` · `unban` · `unlock` · `unmute` |
+  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `niveles` · `rol` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -99,7 +99,7 @@ python -m bot
   canal; si falta, `magik` lo explica en lugar de quedarse colgado.
 - Los **108 efectos de imagen de Dank Memer** (`trigger`, `slap`, `wanted`,
   `changemymind`, `brain`, `tweet`, `crab`...) funcionan como comandos de
-  texto con su nombre original. `.help` y `.memes` los listan por tipo y
+  texto con su nombre original. `.ayuda` y `.memes` los listan por tipo y
   `.memes <efecto>` explica uno. Reglas comunes:
   - `@alguien` (o responder a su mensaje) usa su avatar; una imagen adjunta
     lo sustituye. En los de dos personas (`slap`, `spank`, `bed`...) tú eres
@@ -226,7 +226,7 @@ python -m bot
   ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
-- **Tragaperras** (`/slots`, `.slots [cantidad]`): una máquina de 3 rodillos
+- **Tragaperras** (`/tragas`, `.tragas [cantidad]`): una máquina de 3 rodillos
   con botones que solo usa quien la abre. Paga la fila del medio; las filas
   de arriba y abajo se ven para que se note cuándo has estado cerca.
   Botones: 🎰 Tirar, 🔁 Auto ×10 (diez tiradas con un solo resumen),
@@ -240,8 +240,8 @@ python -m bot
   los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
   tercero frena despacio. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
-- **Crash** (`/crash`, `.crash [cantidad] [auto]`): un cohete compartido
-  por canal. En el embarque (7-10 s) se entra con 🚀 o con `.crash 500 2x`
+- **Crash** (`/cohete`, `.cohete [cantidad] [auto]`): un cohete compartido
+  por canal. En el embarque (7-10 s) se entra con 🚀 o con `.cohete 500 2x`
   (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.
   Luego el multiplicador sube, lento al principio y cada vez más rápido
   (2x a los 8 s, 10x a los 19 s, tope en 1.000x) y 💸 Retirar cobra
@@ -346,12 +346,12 @@ python -m bot
   regalos de cumpleaños), y cuenta para logros. Un administrador cambia el GIF y el canal con
   `bienv`. Al salir, publica una despedida con una frase aleatoria tomada de
   `src/bot/assets/despedidas.txt` en ese mismo canal.
-- `top` resuelve nombres visibles del servidor incluso para miembros que
+- `ranking` resuelve nombres visibles del servidor incluso para miembros que
   todavía no estén en la caché local del bot, y lo presenta en un embed con
   podio, progreso visual y paginación.
-- Música en canales de voz, sencilla y por servidor: `play` busca o resuelve
+- Música en canales de voz, sencilla y por servidor: `poner` busca o resuelve
   un enlace (vía `yt-dlp`) y lo reproduce, o lo añade a la cola si ya suena
-  algo; `stop` además vacía la cola y desconecta al bot. Solo se puede
+  algo; `parar` además vacía la cola y desconecta al bot. Solo se puede
   controlar la reproducción desde el mismo canal de voz en el que está el
   bot. Las pistas están limitadas a 30 minutos y la cola, a 50 elementos por
   servidor. El bot abandona el canal automáticamente si se queda sin oyentes

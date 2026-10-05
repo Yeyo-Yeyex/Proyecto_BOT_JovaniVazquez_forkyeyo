@@ -21,8 +21,8 @@ VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 # Valor por defecto seguro: suficiente para operar sin generar ruido excesivo.
 DEFAULT_LOG_LEVEL = "INFO"
 
-# Prefijo de los comandos de texto (".play", ".help"...). Los comandos de
-# aplicación ("/play") funcionan siempre, con independencia de este valor.
+# Prefijo de los comandos de texto (".poner", ".ayuda"...). Los comandos de
+# aplicación ("/poner") funcionan siempre, con independencia de este valor.
 DEFAULT_COMMAND_PREFIX = "."
 
 
@@ -35,8 +35,8 @@ class BotConfig:
             nunca debe registrarse en logs ni exponerse en mensajes.
         log_level: Nivel de log a usar en toda la aplicación.
         command_prefix: Prefijo de los comandos de texto. Cada comando
-            funciona igual con este prefijo (`.play`) y como comando de
-            aplicación (`/play`).
+            funciona igual con este prefijo (`.poner`) y como comando de
+            aplicación (`/poner`).
         casino_channel_ids: Canales donde se permiten los juegos del casino.
             Vacío significa "cualquier canal".
     """
