@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `latencia`, `ayuda`, `nivel`, `ranking`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `tragas`, `cohete`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`) los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `latencia`, `ayuda`, `nivel`, `ranking`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `tragas`, `cohete`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`), la lista de tareas (`lista`), los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -391,7 +391,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.9. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 434 logros en 17 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🎟️ Loterías, 🛍️ Tienda, 💸 Bizum, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 440 logros en 18 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📝 Lista, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🎟️ Loterías, 🛍️ Tienda, 💸 Bizum, 🏛️ Economía y Hacienda y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
 - 51 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
@@ -449,6 +449,18 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 - Un idioma que falla se salta. Si Google limita la tasa (HTTP 429 o redirección a su captcha) o fallan 5 idiomas seguidos, la cadena se corta, se intenta una última traducción al español y el embed avisa de que dio menos vueltas.
 - Las respuestas se envían con las menciones desactivadas.
 
+## 6 sexies. Lista de cosas que hacer: `lista`
+
+Lista de tareas compartida del servidor, para no apuntar los pendientes en mensajes sueltos que se pierden en el chat.
+
+- `lista`: vuelve a publicar la lista en el canal donde se escribe.
+- `lista <tarea> [prioridad alta|media|baja]`: la apunta y vuelve a publicar la lista. Sin prioridad, es media. La prioridad se escribe con la palabra «prioridad» (o «prio») delante y en cualquier punto del texto: `.lista arreglar el purge prioridad alta`; «comprar una mesa alta» no cuenta como prioridad. Con `/lista`, la prioridad también se elige en un desplegable, que manda sobre la del texto.
+- La lista sale ordenada: 🔥 alta, 📌 media y 💤 baja (iconos distintos, no solo colores) y, dentro de cada prioridad, de la más antigua a la más nueva. Cada tarea muestra quién la apuntó.
+- Solo hay una lista a la vista: al publicar otra, el bot borra el mensaje de la anterior. Con `.lista <tarea>` borra también el mensaje de la orden, porque la tarea ya queda en la lista; necesita **Gestionar mensajes** y, si no lo tiene, lo deja y sigue.
+- Las tareas se tachan con el menú ✅ de la lista (varias a la vez). Puede tachar una tarea quien la apuntó o un administrador; si se eligen ajenas, se tachan solo las propias y la lista lo dice. Al tachar, la tarea se borra y la lista se actualiza en el mismo mensaje. El menú sigue funcionando tras reiniciar el bot.
+- Límites: 25 tareas pendientes por servidor (lo que cabe en un menú de Discord) y 100 caracteres por tarea.
+- Logros (📝 Lista): apuntar 1, 25 y 100 tareas, y tachar 1, 25 y 100.
+
 ## 7. Persistencia y aislamiento por servidor
 
 El canal y el GIF de bienvenida se guardan por servidor en SQLite, igual que los datos del sistema de niveles.
@@ -465,7 +477,7 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash, Minas y pachinko. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
 8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 420 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
+9. **Logros:** 440 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 10. **Tienda:** `tienda`, `mochila` y `catalogo`, con IGIC por tipos, rebajas, alquileres, potenciadores y coleccionables numerados. (Implementado.)
 
 Cada fase debe incluir pruebas, permisos mínimos, documentación de uso y los cambios pertinentes a la configuración. Una función se considera terminada únicamente cuando cumple sus criterios de aceptación; aparecer en esta lista no significa que ya esté implementada.

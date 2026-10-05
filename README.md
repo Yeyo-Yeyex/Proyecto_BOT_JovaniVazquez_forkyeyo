@@ -69,6 +69,7 @@ python -m bot
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
   | 📊 Niveles | `nivel [miembro]` · `ranking [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
+  | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
   | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` |
@@ -291,9 +292,9 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 420 logros en 16 categorías (chat,
-  horarios y fechas, voz, social, niveles, ruleta, blackjack, casino,
-  tragaperras, Crash, Minas, pachinko, loterías, tienda, economía y coleccionista), con cinco rarezas: ▫️ común,
+- **Logros** (`logros [miembro]`): 440 logros en 18 categorías (chat,
+  horarios y fechas, voz, social, lista, niveles, ruleta, blackjack, casino,
+  tragaperras, Crash, Minas, pachinko, loterías, tienda, Bizum, economía y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
   millón de IRPF; 47 son secretos y se ven como `???` hasta conseguirlos.
@@ -404,7 +405,8 @@ y **Hablar** en los canales de voz donde se vaya a usar la música. Para los
 comandos de administración necesita además Gestionar mensajes, Aislar
 temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar
 apodos y Gestionar roles, y su rol debe estar por encima de los roles que
-vaya a moderar.
+vaya a moderar. Gestionar mensajes también sirve para que `.lista <tarea>`
+borre el mensaje de la orden y deje solo la lista.
 
 Las frases de bienvenida se editan en `src/bot/assets/bienvenidas.txt` con
 las mismas reglas; `{usuario}` se cambia por la mención y lo que va tras la

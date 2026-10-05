@@ -41,6 +41,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Bizum": "🎰 Casino",
     "Tienda": "🛍️ Tienda",
     "Birthdays": "🎂 Cumpleaños",
+    "Lista": "📝 Lista",
     "Achievements": "🏆 Logros",
     "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen",
