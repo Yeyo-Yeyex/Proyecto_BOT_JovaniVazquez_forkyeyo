@@ -226,8 +226,8 @@ async def test_magik_sin_permiso_para_adjuntar_explica_que_activar(harness: Harn
 
 @pytest.mark.asyncio
 async def test_un_comando_de_texto_sin_argumentos_obligatorios_responde(harness: Harness) -> None:
-    """`.play` sin nada ya no se ignora: explica qué falta."""
-    await harness.say(".play", attach_image=False)
+    """`.poner` sin nada ya no se ignora: explica qué falta."""
+    await harness.say(".poner", attach_image=False)
 
     assert "consulta" in harness.sent[-1]["content"]
 
@@ -317,8 +317,8 @@ async def test_memes_lista_los_efectos_en_un_embed(harness: Harness) -> None:
 
 @pytest.mark.asyncio
 async def test_la_ayuda_lista_los_efectos_por_nombre(harness: Harness) -> None:
-    """`.help` muestra `memes` y los efectos, todos solo por nombre."""
-    await harness.say(".help", attach_image=False)
+    """`.ayuda` muestra `memes` y los efectos, todos solo por nombre."""
+    await harness.say(".ayuda", attach_image=False)
 
     fields = harness.sent[0]["embeds"][0]["fields"]
     text = "\n".join(field["value"] for field in fields)

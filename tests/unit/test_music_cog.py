@@ -92,7 +92,7 @@ async def test_pausar_con_miembro_en_otro_canal_responde_error() -> None:
 
 @pytest.mark.asyncio
 async def test_pausar_detiene_la_reproduccion_en_curso() -> None:
-    """/pause pausa el reproductor cuando hay una pista en curso."""
+    """/pausar pausa el reproductor cuando hay una pista en curso."""
     cog = Music(MagicMock())
     channel = MagicMock(name="canal-compartido")
     state = cog._get_state(1)
@@ -109,7 +109,7 @@ async def test_pausar_detiene_la_reproduccion_en_curso() -> None:
 
 @pytest.mark.asyncio
 async def test_saltar_sin_reproduccion_responde_error() -> None:
-    """/skip avisa si no hay nada que saltar."""
+    """/saltar avisa si no hay nada que saltar."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -128,7 +128,7 @@ async def test_saltar_sin_reproduccion_responde_error() -> None:
 
 @pytest.mark.asyncio
 async def test_saltar_detiene_la_pista_actual_para_encadenar_la_siguiente() -> None:
-    """/skip deja que el callback `after` continúe con la siguiente pista."""
+    """/saltar deja que el callback `after` continúe con la siguiente pista."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -140,12 +140,12 @@ async def test_saltar_detiene_la_pista_actual_para_encadenar_la_siguiente() -> N
     await cog.skip.callback(cog, interaction)
 
     state.voice_client.stop.assert_called_once()
-    assert state.stopping is False  # a diferencia de /stop, no se frena la cola
+    assert state.stopping is False  # a diferencia de /parar, no se frena la cola
 
 
 @pytest.mark.asyncio
 async def test_limpiar_vacia_la_cola_sin_tocar_la_pista_actual() -> None:
-    """/clear deja la pista en curso intacta y vacía solo lo pendiente."""
+    """/vaciar deja la pista en curso intacta y vacía solo lo pendiente."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -163,7 +163,7 @@ async def test_limpiar_vacia_la_cola_sin_tocar_la_pista_actual() -> None:
 
 @pytest.mark.asyncio
 async def test_quitar_posicion_invalida_responde_error() -> None:
-    """/remove informa si la posición pedida no existe en la cola."""
+    """/quitar informa si la posición pedida no existe en la cola."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -179,7 +179,7 @@ async def test_quitar_posicion_invalida_responde_error() -> None:
 
 @pytest.mark.asyncio
 async def test_quitar_elimina_la_pista_pedida() -> None:
-    """/remove elimina exactamente la pista de la posición indicada."""
+    """/quitar elimina exactamente la pista de la posición indicada."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -197,7 +197,7 @@ async def test_quitar_elimina_la_pista_pedida() -> None:
 
 @pytest.mark.asyncio
 async def test_volumen_ajusta_la_fuente_en_reproduccion() -> None:
-    """/volume actualiza el estado guardado y la fuente activa si existe."""
+    """/volumen actualiza el estado guardado y la fuente activa si existe."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -215,7 +215,7 @@ async def test_volumen_ajusta_la_fuente_en_reproduccion() -> None:
 
 @pytest.mark.asyncio
 async def test_parar_marca_stopping_y_desconecta() -> None:
-    """/stop vacía la cola, detiene la reproducción y desconecta del canal."""
+    """/parar vacía la cola, detiene la reproducción y desconecta del canal."""
     cog = Music(MagicMock())
     channel = MagicMock()
     state = cog._get_state(1)
@@ -238,11 +238,11 @@ async def test_parar_marca_stopping_y_desconecta() -> None:
 
 @pytest.mark.asyncio
 async def test_advance_no_reproduce_siguiente_si_estaba_parando() -> None:
-    """El callback de fin de pista respeta un /stop en curso y no reanuda la cola."""
+    """El callback de fin de pista respeta un /parar en curso y no reanuda la cola."""
     cog = Music(MagicMock())
     state = cog._get_state(1)
     state.stopping = True
-    state.voice_client = None  # ya desconectado por /stop
+    state.voice_client = None  # ya desconectado por /parar
 
     await cog._advance(1, None)
 
@@ -253,7 +253,7 @@ async def test_advance_no_reproduce_siguiente_si_estaba_parando() -> None:
 async def test_advance_reproduce_la_siguiente_pista_tras_un_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tras un error de reproducción normal (sin /stop), se continúa la cola."""
+    """Tras un error de reproducción normal (sin /parar), se continúa la cola."""
     import bot.cogs.music as music_module
 
     monkeypatch.setattr(music_module.discord, "FFmpegPCMAudio", MagicMock())
@@ -283,17 +283,17 @@ def test_guild_music_state_valores_por_defecto() -> None:
 
 
 # Contrato de nombres: cada acción tiene UN solo nombre corto, idéntico en
-# el comando de aplicación (`/play`) y en el de texto (`.play`), sin alias.
+# el comando de aplicación (`/poner`) y en el de texto (`.poner`), sin alias.
 MUSIC_COMMAND_NAMES = {
-    "play",
-    "pause",
-    "resume",
-    "skip",
-    "stop",
-    "queue",
-    "remove",
-    "clear",
-    "volume",
+    "poner",
+    "pausar",
+    "seguir",
+    "saltar",
+    "parar",
+    "cola",
+    "quitar",
+    "vaciar",
+    "volumen",
 }
 
 
@@ -319,7 +319,7 @@ def test_los_comandos_de_texto_de_musica_no_definen_alias() -> None:
 async def test_comando_de_texto_reproducir_encola_la_pista_igual_que_el_slash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`.play` reproduce una pista igual que `/play`."""
+    """`.poner` reproduce una pista igual que `/poner`."""
     cog = Music(MagicMock())
     channel = MagicMock(name="canal-de-voz")
     voice_client = MagicMock()
@@ -354,7 +354,7 @@ async def test_comando_de_texto_reproducir_encola_la_pista_igual_que_el_slash(
 
 @pytest.mark.asyncio
 async def test_comando_de_texto_pausar_pausa_igual_que_el_slash() -> None:
-    """`.pause` pausa la reproducción igual que `/pause`."""
+    """`.pausar` pausa la reproducción igual que `/pausar`."""
     cog = Music(MagicMock())
     channel = MagicMock(name="canal-compartido")
     state = cog._get_state(1)
@@ -371,7 +371,7 @@ async def test_comando_de_texto_pausar_pausa_igual_que_el_slash() -> None:
 
 @pytest.mark.asyncio
 async def test_comando_de_texto_volumen_valida_rango_antes_de_delegar() -> None:
-    """`.volume` rechaza valores fuera de rango sin llegar a `_volume_impl`."""
+    """`.volumen` rechaza valores fuera de rango sin llegar a `_volume_impl`."""
     cog = Music(MagicMock())
     ctx = make_context(member=make_voice_member(MagicMock()))
 

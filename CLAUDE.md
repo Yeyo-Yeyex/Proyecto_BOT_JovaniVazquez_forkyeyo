@@ -14,8 +14,9 @@ Lo que más se olvida:
 - **Logros:** cada funcionalidad del bot tiene logros asociados; una nueva no está
   terminada sin los suyos. Se alimentan con `casino_play`, `track` o `note` de
   `bot.cogs.achievements`. Sección "Logros" de `Biblia.txt`.
-- **Comandos:** un solo nombre de 8 caracteres como máximo, idéntico con `/` y con `.`,
-  sin alias ni subcomandos.
+- **Comandos:** un solo nombre en español de 8 caracteres como máximo, idéntico con `/`
+  y con `.`, sin alias ni subcomandos (`/poner`, no `/play`). Sección "Cogs y comandos"
+  de `Biblia.txt`.
 - **Entre cogs:** las funciones puente buscan el cog con `bot.utils.cogs.find_cog`, nunca
   con `isinstance`. Lo que cruza de un cog a otro se prueba también con el bot real
   (`BotClient` + `INITIAL_EXTENSIONS`, ver `tests/integration/test_cog_bridges.py`): los

@@ -900,7 +900,7 @@ class Slots(commands.Cog, name="Tragaperras"):
         send: Callable[..., Awaitable[discord.Message]],
         send_error: Callable[[str], Awaitable[None]],
     ) -> None:
-        """Lógica compartida entre `/slots` y `.slots`: abre la máquina."""
+        """Lógica compartida entre `/tragas` y `.tragas`: abre la máquina."""
         if guild is None:
             await send_error("La tragaperras solo se juega dentro de un servidor.")
             return
@@ -927,7 +927,7 @@ class Slots(commands.Cog, name="Tragaperras"):
         )
         self.machines.add(view)
 
-    @app_commands.command(name="slots", description="Tragaperras con bote común, a botones.")
+    @app_commands.command(name="tragas", description="Tragaperras con bote común, a botones.")
     @app_commands.describe(cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)")
     @app_commands.guild_only()
     async def slots(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
@@ -950,10 +950,10 @@ class Slots(commands.Cog, name="Tragaperras"):
             send_error=InteractionResponder(interaction).send_error,
         )
 
-    @commands.command(name="slots")
+    @commands.command(name="tragas")
     @commands.guild_only()
     async def slots_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.slots` o `.slots 500`."""
+        """Versión de texto: `.tragas` o `.tragas 500`."""
 
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)

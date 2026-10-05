@@ -1,7 +1,7 @@
-"""Cog con comandos generales: `/ping` y `/help`.
+"""Cog con comandos generales: `/latencia` y `/ayuda`.
 
 Cada comando tiene un único nombre corto, idéntico en las dos interfaces:
-comando de aplicación (`/ping`) y comando de texto (`.ping`). Ambas
+comando de aplicación (`/latencia`) y comando de texto (`.latencia`). Ambas
 comparten la misma lógica a través de `CommandResponder`
 (`bot.utils.responder`).
 """
@@ -169,7 +169,7 @@ class General(commands.Cog):
         self.bot = bot
 
     async def _ping_impl(self, responder: CommandResponder) -> None:
-        """Lógica compartida entre `/ping` y `.ping`."""
+        """Lógica compartida entre `/latencia` y `.latencia`."""
         start = time.perf_counter()
         latency_ms = round(self.bot.latency * 1000)
         elapsed_ms = round((time.perf_counter() - start) * 1000)
@@ -180,7 +180,7 @@ class General(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="ping", description="Comprueba que el bot responde.")
+    @app_commands.command(name="latencia", description="Comprueba que el bot responde.")
     async def ping(self, interaction: discord.Interaction) -> None:
         """Responde con la latencia actual de la conexión con Discord.
 
@@ -189,24 +189,24 @@ class General(commands.Cog):
         """
         await self._ping_impl(InteractionResponder(interaction))
 
-    @commands.command(name="ping")
+    @commands.command(name="latencia")
     async def ping_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.ping`) de `/ping`."""
+        """Versión de texto (`.latencia`) de `/latencia`."""
         await self._ping_impl(ContextResponder(ctx))
 
     async def _help_impl(self, responder: CommandResponder) -> None:
-        """Lógica compartida entre `/help` y `.help`."""
+        """Lógica compartida entre `/ayuda` y `.ayuda`."""
         embed = build_help_embed(self.bot, include_admin=is_admin(responder.member))
         await responder.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="help", description="Muestra todos los comandos.")
+    @app_commands.command(name="ayuda", description="Muestra todos los comandos.")
     async def help_command(self, interaction: discord.Interaction) -> None:
         """Muestra un embed con todos los comandos."""
         await self._help_impl(InteractionResponder(interaction))
 
-    @commands.command(name="help")
+    @commands.command(name="ayuda")
     async def help_command_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.help`) de `/help`."""
+        """Versión de texto (`.ayuda`) de `/ayuda`."""
         await self._help_impl(ContextResponder(ctx))
 
 

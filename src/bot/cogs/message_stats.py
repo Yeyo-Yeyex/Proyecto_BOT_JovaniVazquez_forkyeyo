@@ -164,9 +164,10 @@ def _describe_import(status: ImportStatus | None, *, running: bool) -> str:
 
 IMPORT_DONE_LINES = (
     "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. "
-    "Mirad dónde estáis con `.level` y `.top`, mi gente.",
+    "Mirad dónde estáis con `.nivel` y `.ranking`, mi gente.",
     "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están "
-    "encendidos; a partir de ya, cada mensaje y cada rato en voz suma. `.top` pa' ver quién manda.",
+    "encendidos; a partir de ya, cada mensaje y cada rato en voz suma. "
+    "`.ranking` pa' ver quién manda.",
     "Acho, esto ya es oficial: niveles encendidos. Conté {mensajes} mensajes en {canales} "
     "canales con mi cafecito al lado. Subid de nivel, que cada nivel paga yapdollars.",
 )
@@ -530,7 +531,7 @@ class MessageStats(commands.Cog):
         responder: CommandResponder,
         miembro: discord.Member | None,
     ) -> None:
-        """Lógica compartida entre `/level` y `.level`."""
+        """Lógica compartida entre `/nivel` y `.nivel`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -557,7 +558,7 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="level", description="Consulta tu nivel o el de otro miembro.")
+    @app_commands.command(name="nivel", description="Consulta tu nivel o el de otro miembro.")
     @app_commands.guild_only()
     async def level(
         self,
@@ -567,18 +568,18 @@ class MessageStats(commands.Cog):
         """Muestra nivel, XP total y avance hacia el siguiente nivel."""
         await self._level_impl(InteractionResponder(interaction), miembro)
 
-    @commands.command(name="level")
+    @commands.command(name="nivel")
     @commands.guild_only()
     async def level_text(
         self,
         ctx: commands.Context,
         miembro: discord.Member | None = None,
     ) -> None:
-        """Versión de texto (`.level`) de `/level`."""
+        """Versión de texto (`.nivel`) de `/nivel`."""
         await self._level_impl(ContextResponder(ctx), miembro)
 
     async def _ranking_impl(self, responder: CommandResponder, pagina: int) -> None:
-        """Lógica compartida entre `/top` y `.top`."""
+        """Lógica compartida entre `/ranking` y `.ranking`."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Este comando solo está disponible dentro de un servidor.")
@@ -621,7 +622,7 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @app_commands.command(name="top", description="Muestra el ranking del servidor.")
+    @app_commands.command(name="ranking", description="Muestra el ranking del servidor.")
     @app_commands.guild_only()
     async def ranking(
         self,
@@ -631,10 +632,10 @@ class MessageStats(commands.Cog):
         """Muestra hasta diez perfiles por página, ordenados por XP."""
         await self._ranking_impl(InteractionResponder(interaction), pagina)
 
-    @commands.command(name="top")
+    @commands.command(name="ranking")
     @commands.guild_only()
     async def ranking_text(self, ctx: commands.Context, pagina: int = 1) -> None:
-        """Versión de texto (`.top`) de `/top`."""
+        """Versión de texto (`.ranking`) de `/ranking`."""
         if not (1 <= pagina <= 100):
             await ctx.send("La página debe estar entre 1 y 100.")
             return

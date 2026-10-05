@@ -14,7 +14,8 @@ Lo que más se olvida:
 - **Logros:** cada funcionalidad del bot tiene logros asociados; una nueva no está
   terminada sin los suyos. Se alimentan con `casino_play`, `track` o `note` de
   `bot.cogs.achievements`. Sección "Logros" de `Biblia.txt`.
-- **Comandos:** un solo nombre de 8 caracteres como máximo, idéntico con `/` y con `.`,
-  sin alias ni subcomandos.
+- **Comandos:** un solo nombre en español de 8 caracteres como máximo, idéntico con `/`
+  y con `.`, sin alias ni subcomandos (`/poner`, no `/play`). Sección "Cogs y comandos"
+  de `Biblia.txt`.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.

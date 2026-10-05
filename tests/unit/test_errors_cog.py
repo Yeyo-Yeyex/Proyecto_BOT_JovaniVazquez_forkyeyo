@@ -36,7 +36,7 @@ def test_falta_un_argumento_se_indica_cual() -> None:
 
 def test_un_argumento_invalido_da_un_mensaje_generico_de_uso() -> None:
     """Un argumento mal escrito remite a la ayuda."""
-    assert "help" in describe_command_error(commands.BadArgument("x"))
+    assert "ayuda" in describe_command_error(commands.BadArgument("x"))
 
 
 def test_fuera_de_un_servidor_se_avisa() -> None:

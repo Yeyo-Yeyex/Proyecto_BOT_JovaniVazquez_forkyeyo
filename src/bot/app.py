@@ -61,7 +61,7 @@ def build_intents() -> discord.Intents:
     El intent privilegiado de miembros permite recibir eventos de entrada
     y salida; también debe habilitarse en el portal de desarrolladores.
     El intent privilegiado de contenido de mensajes es necesario para que
-    el bot pueda leer comandos de texto con prefijo (p. ej. ".play"); debe
+    el bot pueda leer comandos de texto con prefijo (p. ej. ".poner"); debe
     habilitarse igualmente como "Message Content Intent" en el portal.
     """
     intents = discord.Intents.default()
