@@ -104,6 +104,13 @@ PRODUCED_STATS = {
     "slots_free_triggers", "slots_free_spins", "slots_hot_spins", "slots_hot_big",
     "slots_wild_wins", "slots_turbo", "slots_auto", "slots_session_max", "slots_pot_fed",
     "slots_night",
+    # Botes (cogs/hold_win.py: hold_win_stats, hold_win_bonus_stats y el botón de Auto)
+    "botes_spins", *(f"botes_spins_{key}" for key in ("volcan", "olimpo", "filon")),
+    "botes_collects", "botes_double_collect", "botes_near_miss", "botes_ways_5",
+    "botes_wild_wins", "botes_chips", "botes_turbo", "botes_night", "botes_win_max",
+    "botes_bonuses", *(f"botes_bonus_{kind}" for kind in ("green", "blue", "red", "grand")),
+    "botes_mini", "botes_major", "botes_grand", "botes_almost_grand", "botes_mult_max",
+    "botes_bonus_max", "botes_mystery", "botes_instant", "botes_maximizer", "botes_auto",
     # Crash (cogs/crash.py: crash_stats) y Minas (cogs/mines.py: mines_stats)
     "crash_rounds", "crash_cashouts", "crash_cashout_max", "crash_win_max", "crash_auto",
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",

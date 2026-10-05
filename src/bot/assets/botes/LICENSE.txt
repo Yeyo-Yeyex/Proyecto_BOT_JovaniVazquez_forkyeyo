@@ -1,0 +1,19 @@
+Símbolos de las máquinas de Botes (bot.services.hold_win_render).
+
+Cada PNG es un símbolo de 72×72 px con fondo transparente; el renderizador lo
+reduce al tamaño de la casilla.
+
+- <máquina>_pay0 … pay5: los seis símbolos normales de cada máquina (volcan,
+  olimpo, filon), de menos a más valor.
+- <máquina>_wild y <máquina>_collect: el comodín y el recogedor.
+- ticket, extra, instant, max y mystery: los modificadores del bonus,
+  comunes a las tres máquinas.
+
+Son emojis 3D de Noto Emoji (Google), tomados de 3D/png/128 del repositorio
+https://github.com/googlefonts/noto-emoji y reducidos. Las imágenes de Noto
+Emoji se distribuyen con licencia Apache 2.0 y las fuentes con la SIL Open Font
+License 1.1.
+
+Las monedas, las fichas de bote y los marcos no son imágenes: se dibujan en
+código. Si se cambia un símbolo, debe seguir distinguiéndose por la forma y no
+solo por el color (hay jugadores con deuteranopia).

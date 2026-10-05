@@ -72,7 +72,7 @@ python -m bot
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
-  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` |
+  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan`/`olimpo`/`filon [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -241,6 +241,19 @@ python -m bot
   los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
   tercero frena despacio. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
+- **Botes** (`/volcan`, `/olimpo`, `/filon`, también con `.` y `[cantidad]`):
+  tres máquinas de 5×4 con las mismas reglas y otros dibujos (lava, rayos de
+  Zeus, mina). Los símbolos pagan por **ways** y las monedas (verde, azul y
+  roja, cada una con su forma) llevan su premio escrito: el recogedor en el
+  rodillo 1 o el 5 las cobra todas. Cada moneda que cae llena el **maletín**
+  de su color, que se guarda en la base de datos; lleno, dispara un **bonus**
+  de 3 tiradas que vuelven a 3 cada vez que cae algo, con tickets de
+  multiplicador, tiradas extra, multiplicadores inmediatos, maximizador y
+  misteriosos. Botes MINI (10 monedas), MAJOR (15) y GRAND (pantalla llena,
+  ×1.000). Botones: 🎰 Tirar/Girar, 🔁 Auto ×10 o ⏩ Auto bonus, ⚡ Turbo,
+  ½ / ×2 / 💰 All-in y 📋 Premios. Devuelve ~94 %, con un bonus cada ~58
+  tiradas. GIF de 150-350 KB por tirada base y ~150 KB por tirada del bonus;
+  en turbo, solo el PNG (~20 KB). Tributan como el resto del casino.
 - **Crash** (`/cohete`, `.cohete [cantidad] [auto]`): un cohete compartido
   por canal. En el embarque (7-10 s) se entra con 🚀 o con `.cohete 500 2x`
   (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.
