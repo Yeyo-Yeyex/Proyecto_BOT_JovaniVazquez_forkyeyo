@@ -132,3 +132,41 @@ async def test_bizum_apunta_a_espaldas_de_sanchez_con_el_bot_real(tmp_path: Path
         assert theirs.stats["bizum_received"] == 10_001
     finally:
         await client.close()
+
+
+async def test_la_lista_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """`lista` carga antes que los logros: apuntar y tachar deben llegar a ellos."""
+    client = await load_bot(tmp_path)
+    await client.todo.initialize()
+    try:
+        lista = client.get_cog("Lista")
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        owner.guild_permissions = discord.Permissions.none()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        guild.get_member = MagicMock(return_value=owner)
+        ctx = MagicMock()
+        ctx.guild = guild
+        ctx.author = owner
+        ctx.message.delete = AsyncMock()
+        ctx.channel = MagicMock(spec=discord.TextChannel)
+        ctx.channel.send = AsyncMock(return_value=MagicMock(id=5, channel=MagicMock(id=6)))
+
+        await lista.lista_text.callback(lista, ctx, tarea="probar la lista prioridad alta")
+        (task,) = await client.todo.list_tasks(GUILD_ID)
+        interaction = MagicMock()
+        interaction.guild = guild
+        interaction.user = owner
+        interaction.channel = ctx.channel
+        interaction.response.edit_message = AsyncMock()
+        await lista.complete_from_menu(interaction, [task.id])
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["todo_added"] == 1
+        assert profile.stats["todo_done"] == 1
+        assert {"todo_add_1", "todo_done_1"} <= set(profile.unlocked)
+    finally:
+        await client.close()

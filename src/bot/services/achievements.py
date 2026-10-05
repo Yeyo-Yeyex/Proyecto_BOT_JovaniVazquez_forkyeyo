@@ -102,6 +102,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("time", "🗓️ Horarios y fechas"),
     Category("voice", "🎙️ Voz"),
     Category("social", "❤️ Social"),
+    Category("todo", "📝 Lista"),
     Category("levels", "📈 Niveles"),
     Category("roulette", "🎡 Ruleta"),
     Category("blackjack", "🃏 Blackjack"),
@@ -421,6 +422,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("social", "msg_sanxe", [
         (1, "sanxe", "Invocación", "Nombra a Perro Sanxe en el chat.", C, True),
+    ])  # fmt: skip
+
+    # 📝 Lista (cogs/todo.py) ------------------------------------------------------------
+    a += _tiers("todo", "todo_added", [
+        (1, "todo_add_1", "Apuntado", "Apunta tu primera tarea con `lista`.", C),
+        (25, "todo_add_25", "Agenda andante", "Apunta 25 tareas en la lista.", R),
+        (100, "todo_add_100", "Jefe de proyecto", "Apunta 100 tareas en la lista.", E),
+    ])  # fmt: skip
+    a += _tiers("todo", "todo_done", [
+        (1, "todo_done_1", "Tachado", "Tacha tu primera tarea de la lista.", C),
+        (25, "todo_done_25", "Productivo", "Tacha 25 tareas de la lista.", R),
+        (100, "todo_done_100", "Máquina de tachar", "Tacha 100 tareas de la lista.", E),
     ])  # fmt: skip
 
     # 📈 Niveles --------------------------------------------------------------------------

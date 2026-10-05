@@ -48,6 +48,7 @@ EXPECTED_COMMANDS = {
     "donar",
     "tienda",
     "mochila",
+    "lista",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
@@ -143,6 +144,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "🎰 Casino (13)",
                 "🛍️ Tienda (2)",
                 "🎂 Cumpleaños (2)",
+                "📝 Lista (1)",
                 "🏆 Logros (1)",
                 "🔔 Entradas (1)",
                 "🎨 Imagen (2)",
