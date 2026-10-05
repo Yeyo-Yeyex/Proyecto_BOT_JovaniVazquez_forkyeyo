@@ -21,6 +21,7 @@ from bot.repositories.economy import LedgerEntry
 GUILD_ID = 1
 GUILD = GUILD_ID
 OWNER_ID = 10
+GAMES = ("Casino", "Blackjack", "Tragaperras", "Botes", "Crash", "Minas", "Pachinko", "Loteria")
 
 
 async def load_bot(tmp_path: Path) -> BotClient:
@@ -46,12 +47,12 @@ def importer(cog_name: str, client: BotClient):  # noqa: ANN201
 async def test_los_juegos_que_cargan_antes_encuentran_logros_y_renta(tmp_path: Path) -> None:
     client = await load_bot(tmp_path)
     try:
-        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko", "Loteria"):
+        for game in GAMES:
             module = importer(game, client)
             assert module.logros._cog(client) is client.get_cog("Achievements"), game
         renta_cog = client.get_cog("Renta")
         renta_cog.hint_for = AsyncMock(return_value="📬 Tienes la renta pendiente")
-        for game in ("Casino", "Blackjack", "Tragaperras", "Crash", "Minas", "Pachinko", "Loteria"):
+        for game in GAMES:
             module = importer(game, client)
             hint = await module.renta.hint(client, GUILD_ID, OWNER_ID)
             assert hint == "📬 Tienes la renta pendiente", game
@@ -102,6 +103,44 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         assert profile.stats["slots_spins"] == view.session_spins == slots.AUTO_SPINS
         assert profile.stats["slots_auto"] == 1
         assert {"slots_1", "auto_1"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_auto_de_los_botes_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """Las máquinas de Botes cargan antes que los logros: sus tiradas deben llegar."""
+    client = await load_bot(tmp_path)
+    await client.hold_win.initialize()
+    try:
+        botes = importer("Botes", client)
+        botes.REVEAL_MARGIN_SECONDS = 0
+        botes.BONUS_INTRO_PAUSE = 0
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        cog = client.get_cog("Botes")
+        view = botes.HoldWinView(
+            cog, theme=botes.THEMES["volcan"], guild_id=GUILD_ID, owner=owner, stake=10
+        )
+        view.message = None
+        cog.renderer = MagicMock()
+        cog.renderer.base_still = MagicMock(return_value=b"PNG")
+        cog.renderer.bonus_still = MagicMock(return_value=b"PNG")
+        interaction = MagicMock()
+        interaction.user = owner
+        interaction.response.defer = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        await view._auto(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["botes_spins"] == view.session_spins
+        assert profile.stats["botes_spins_volcan"] == view.session_spins
+        assert profile.stats["botes_auto"] == 1
+        assert "botes_1" in profile.unlocked
     finally:
         await client.close()
 
