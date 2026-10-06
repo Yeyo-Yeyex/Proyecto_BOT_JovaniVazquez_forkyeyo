@@ -16,6 +16,7 @@ import pytest
 from bot.cogs.achievements import (
     Achievements,
     category_embed,
+    category_page_count,
     format_value,
     group_embed,
     summary_embed,
@@ -31,7 +32,12 @@ from bot.services.achievements import (
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
+    IMG_EFFECTS_STAT,
+    LAUGH_KINDS,
     MESSAGES_TOTAL_STAT,
+    ROULETTE_FAVOURITE_STAT,
+    ROULETTE_HIT_PREFIX,
+    ROULETTE_NUMBERS_STAT,
     UNLOCKED_STAT,
     StatDelta,
     blackjack_stats,
@@ -40,6 +46,7 @@ from bot.services.achievements import (
     is_laugh,
     menu_entries,
     message_stats,
+    meta_stats,
     newly_unlocked,
     progress,
     roulette_stats,
@@ -50,6 +57,7 @@ from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
+from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
@@ -172,6 +180,49 @@ PRODUCED_STATS = {
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",
+    # Chat (cogs/achievements.py: message_delta, ChatTracker, laugh_reply_stats, ediciones)
+    "msg_rae", "msg_exclaim", "msg_everyone", "msg_mass_ping", "msg_spoiler", "msg_code",
+    "msg_emoji_heavy", "msg_only_emoji", "msg_stretch", "msg_long_word", "msg_palindrome",
+    "msg_nice", "msg_canario", "msg_boricua", "msg_swear", "msg_mild_swear", "msg_thanks",
+    "msg_sorry", "msg_good_morning", "msg_good_night", "msg_politics", "msg_falcon",
+    "msg_fango", "msg_paguita", "msg_manual", "msg_hacienda", "msg_cuñado", "msg_ola_k_ase",
+    "msg_bizum_ask", "msg_siesta", "msg_office", "msg_weekend", "msg_cinderella", "msg_reyes",
+    "msg_valentin", "msg_pino", "msg_hispanidad", "msg_inocentes", "msg_friday13",
+    "msg_monologue_max", "msg_day_max", "msg_first_of_day", "msg_echo", "msg_necro",
+    "msg_edits",
+    # Risas
+    *(f"laugh_{kind}" for kind in LAUGH_KINDS), "msg_laugh_caps", "msg_laugh_dry",
+    "laugh_night", "laugh_sanxe", "laugh_len_max", "laugh_kinds_max", "laugh_replies",
+    "laughs_caused", "laugh_self", "laugh_at_bot", "laugh_losing", "laugh_chain_max",
+    "laugh_reacts_given", "laugh_reacts_received", "laugh_reacts_on_message_max",
+    # Voz (collect_voice y on_voice_state_update de cogs/achievements.py)
+    "voice_deaf", "voice_afk", "voice_server_muted", "voice_stream_crowd", "voice_multitask",
+    "voice_mute_streak_max", "voice_morning", "voice_siesta", "voice_weekend",
+    "voice_new_year", "voice_christmas", "voice_duo", "voice_music", "voice_joins",
+    "voice_hops", "voice_ghost", "voice_stream_starts",
+    # Sonidos de entrada (cogs/entrance.py) y música (cogs/music.py)
+    "entrance_saved", "entrance_played", "entrance_volume_max", "entrance_deleted",
+    "music_queued", "music_skips", "music_stops", "music_volume_max", "music_whisper",
+    "music_track_max", "music_queue_max", "music_clears", "music_removes", "music_jovani",
+    "music_despacito", "music_macarena", "music_pedro",
+    # Imágenes (cogs/images.py: image_stats) y babel (cogs/fun.py: babel_stats)
+    "img_made", "img_magik", "img_video", "img_on_others", "img_self", IMG_EFFECTS_STAT,
+    "babel_phrases", "babel_renames", "babel_channels", "babel_full", "babel_lost",
+    # `logros` y su ranking, y las virtuales de Coleccionista (meta_stats)
+    "logros_views", "logros_others", "logros_ranking",
+    *meta_stats([]).keys(),
+    # Segunda tanda: más estadísticas del casino, loterías, lista y derivadas
+    "roulette_dozen_wins", "roulette_half_wins", "roulette_pyrrhic", "roulette_cover_max",
+    "roulette_zero_sweep", *(f"{ROULETTE_HIT_PREFIX}{n}" for n in range(38)),
+    ROULETTE_NUMBERS_STAT, ROULETTE_FAVOURITE_STAT,
+    "bj_suited_natural", "bj_triple_seven", "bj_five_21", "bj_double_loss", "bj_stand_low",
+    "bj_split_aces", "bj_both_bj", "bj_dealer_five",
+    "casino_bet_1", "casino_bet_69", "casino_bet_777",
+    "crash_cash_low", "crash_missed_moon",
+    "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
+    *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
+    *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
+    "todo_done_batch_max",
     UNLOCKED_STAT,
 }  # fmt: skip
 
@@ -189,13 +240,14 @@ def test_todos_los_logros_disponibles_usan_estadisticas_que_alguien_suma() -> No
     assert missing == set()
 
 
-def test_cada_categoria_tiene_logros_y_cabe_en_un_embed() -> None:
+def test_cada_pagina_de_cada_categoria_cabe_en_un_embed() -> None:
     profile = Profile(stats={}, unlocked={})
     for category in CATEGORIES:
-        embed = category_embed(category, "Diego", profile, {}, 10)
-        assert embed.description is not None
-        assert len(embed.description) <= 4096
-        assert len(embed) <= 6000
+        for page in range(category_page_count(category, profile, {}, 10)):
+            embed = category_embed(category, "Diego", profile, {}, 10, page)
+            assert embed.description is not None
+            assert len(embed.description) <= 4096
+            assert len(embed) <= 6000
 
 
 def test_el_menu_de_logros_cabe_en_un_desplegable_de_discord() -> None:
@@ -625,11 +677,19 @@ async def test_voz_cuenta_minutos_con_gente_y_sesiones_seguidas(tmp_path: Path) 
     cog.collect_voice(NOON + 60)
 
     first = cog._pending[GUILD][1]
-    assert first.add == {"voice_minutes": 2, "voice_muted": 2, "voice_stream": 2}
+    # Dos escuchando: además de la llamada, cuenta como «cara a cara».
+    assert first.add == {
+        "voice_minutes": 2,
+        "voice_muted": 2,
+        "voice_stream": 2,
+        "voice_duo": 2,
+    }
     assert first.peak["voice_session_max"] == 2
     assert first.peak["voice_crowd_max"] == 2
-    assert cog._pending[GUILD][2].add == {"voice_minutes": 2}
-    assert 3 not in cog._pending[GUILD]
+    assert first.peak["voice_mute_streak_max"] == 2
+    assert cog._pending[GUILD][2].add == {"voice_minutes": 2, "voice_duo": 2}
+    # El ensordecido no suma llamada, solo «Estoy pero no estoy».
+    assert cog._pending[GUILD][3].add == {"voice_deaf": 2}
     assert 4 not in cog._pending[GUILD]
 
 
@@ -647,11 +707,14 @@ async def test_salir_de_la_llamada_reinicia_la_sesion(tmp_path: Path) -> None:
     assert cog._pending[GUILD][2].add["voice_alone"] == 1
 
 
-async def test_el_canal_afk_no_cuenta(tmp_path: Path) -> None:
+async def test_el_canal_afk_no_cuenta_como_llamada_sino_como_afk(tmp_path: Path) -> None:
     afk = SimpleNamespace(id=71, members=[voice_member(1), voice_member(2)])
     cog, _repository, _economy = await make_cog(tmp_path, voice_guild(afk, afk=afk))
     cog.collect_voice(NOON)
-    assert cog._pending == {}
+    assert {user: delta.add for user, delta in cog._pending[GUILD].items()} == {
+        1: {"voice_afk": 1},
+        2: {"voice_afk": 1},
+    }
 
 
 def reaction(*, message_id: int = 7, user_id: int = 2, author_id: int = 1) -> SimpleNamespace:

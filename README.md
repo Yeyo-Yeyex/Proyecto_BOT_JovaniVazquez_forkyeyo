@@ -348,26 +348,30 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 710 logros en 24 categorías (chat,
-  horarios y fechas, voz, social, lista, niveles, casino, loterías, tienda,
-  Bizum, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
-  coleccionista; el casino lleva dentro una sección por juego: general,
-  ruleta, blackjack, tragaperras, botes, Crash, Minas, Pollo y pachinko), con cinco rarezas: ▫️ común,
-  🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
-  mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 127 son secretos y se ven como `???` hasta conseguirlos.
+- **Logros** (`logros [miembro]`): 1.212 logros en 34 categorías. El menú
+  tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
+  reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
+  🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
+  (una sección por juego); y además social, lista, niveles, loterías,
+  tienda, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
+  coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
+  🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
+  con una simulación, ver `docs/auditoria-logros.md`). 213 son secretos y
+  se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
+  formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
   conseguidos, los más cercanos y el más raro), un menú por categorías con
-  el progreso de cada uno y el porcentaje del servidor que lo tiene, y un
-  botón 🏆 Ranking por puntos.
+  el progreso de cada uno y el porcentaje del servidor que lo tiene (las
+  largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos.
   - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
     minuto en una sola escritura por servidor. Del mensaje solo se miran
     propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.
   - La voz cuenta un minuto cada minuto a quien está en llamada (aunque
     tenga el micro silenciado) con al menos otra persona que no esté
-    ensordecida. El canal AFK no cuenta.
+    ensordecida. El canal AFK no cuenta como llamada, pero tiene sus propios
+    logros, igual que estar ensordecido.
   - La primera vez que el bot ve a alguien recupera sus mensajes del
     historial importado y su nivel, así que los veteranos cobran de golpe
     lo que ya tenían.

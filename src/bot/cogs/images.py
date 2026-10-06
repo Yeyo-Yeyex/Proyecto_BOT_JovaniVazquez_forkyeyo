@@ -40,7 +40,9 @@ from dataclasses import dataclass
 import discord
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
 from bot.cogs.general import COMPACT_GROUP_KEY, COMPACT_ORDER_KEY
+from bot.services.achievements import image_stats
 from bot.services.image_input import MAX_INPUT_BYTES, ImageTooLargeError, InvalidImageError
 from bot.services.magik import apply_magik
 from bot.services.memes import EFFECTS, Effect, MemeInputError, build_request, render
@@ -223,6 +225,20 @@ def resolve_inputs(
     return EffectInputs(sources=sources, subject=subject, texts=texts)
 
 
+def _subject_is_author(
+    effect: Effect, inputs: EffectInputs, author: discord.abc.User
+) -> bool | None:
+    """Para los logros: si el efecto usa el avatar de quien lo pide (`True`),
+    el de otra persona (`False`) o ninguno, o una imagen adjunta (`None`)."""
+    if effect.avatars == 0:
+        return None
+    if inputs.subject.id != author.id:
+        return False
+    if any(isinstance(source, discord.Attachment) for source in inputs.sources):
+        return None
+    return True
+
+
 class Images(commands.Cog):
     """Comandos que transforman imágenes (solo de texto)."""
 
@@ -273,11 +289,17 @@ class Images(commands.Cog):
         filename: str,
         progress: str,
         usage_hint: str = "",
+        subject_is_author: bool | None = None,
     ) -> None:
         """Valida, descarga, procesa en un hilo y envía el resultado.
 
         Cualquier error se comunica al usuario y el aviso de progreso nunca se
         queda colgado. Los errores imprevistos se registran con su traza.
+        Si la imagen llega al canal, cuenta para los logros (🖼️ Imágenes).
+
+        Args:
+            subject_is_author: Si el avatar usado es el de quien lo pide
+                (`None` si es una imagen adjunta o el efecto no usa avatar).
         """
         member = responder.member
         if responder.guild is None or member is None:
@@ -341,6 +363,11 @@ class Images(commands.Cog):
             await responder.finish(
                 file=discord.File(io.BytesIO(content), filename=f"{filename}.{extension}")
             )
+            logros.note_for(
+                self.bot,
+                responder,
+                image_stats(filename, extension, subject_is_author=subject_is_author),
+            )
         except discord.Forbidden:
             logger.warning("Sin permiso para adjuntar archivos en el canal", exc_info=True)
             await responder.finish(
@@ -351,7 +378,12 @@ class Images(commands.Cog):
             logger.warning("No se pudo enviar el resultado de %s", filename, exc_info=True)
             await responder.finish("No pude enviar la imagen. Inténtalo de nuevo.")
 
-    async def _magik_impl(self, responder: CommandResponder, source: ImageSource) -> None:
+    async def _magik_impl(
+        self,
+        responder: CommandResponder,
+        source: ImageSource,
+        subject_is_author: bool | None = None,
+    ) -> None:
         """Deforma con seam carving la imagen o el avatar indicado."""
         await self._process(
             responder,
@@ -359,6 +391,7 @@ class Images(commands.Cog):
             lambda data: (apply_magik(data[0]), "png"),
             filename="magik",
             progress="🌀 Distorsionando...",
+            subject_is_author=subject_is_author,
         )
 
     @commands.command(name="magik")
@@ -371,12 +404,10 @@ class Images(commands.Cog):
         Usa el adjunto del mensaje, o el del mensaje al que se responde; si no
         hay, el avatar del miembro indicado o el tuyo.
         """
-        source = (
-            _first_image(ctx.message)
-            or _first_image(_replied_message(ctx))
-            or _avatar_of(miembro or ctx.author)
-        )
-        await self._magik_impl(ContextResponder(ctx), source)
+        attachment = _first_image(ctx.message) or _first_image(_replied_message(ctx))
+        source = attachment or _avatar_of(miembro or ctx.author)
+        own = None if attachment is not None else miembro is None or miembro.id == ctx.author.id
+        await self._magik_impl(ContextResponder(ctx), source, own)
 
     async def run_effect(self, ctx: commands.Context, effect: Effect, raw: str) -> None:
         """Ejecuta un efecto a partir de un mensaje `.efecto ...`."""
@@ -402,6 +433,7 @@ class Images(commands.Cog):
             filename=effect.name,
             progress=progress,
             usage_hint=usage(effect),
+            subject_is_author=_subject_is_author(effect, inputs, ctx.author),
         )
 
     @commands.command(name="memes")

@@ -8,9 +8,15 @@ Qué se cuenta y cómo:
   bot se cae, se pierde como mucho el último minuto. Del mensaje solo se
   miran unas pocas propiedades (largo, hora, si tiene enlace…); el texto
   nunca se guarda.
+  Las ediciones (`on_message_edit`) cuentan si cambia el texto. El contexto
+  de cada canal (monólogos, ecos, cadenas de risa…) lo lleva `ChatTracker`,
+  que solo guarda un hash del último mensaje.
 - **Voz** (`_tick`, cada minuto): lee la caché de estados de voz de
   discord.py, sin llamadas a la API. Un minuto cuenta si hay al menos dos
-  personas sin ensordecer en el canal y no es el canal AFK.
+  personas sin ensordecer en el canal y no es el canal AFK (ese suma sus
+  propios minutos de AFK). Entradas, cambios de canal y huidas rápidas
+  salen de `on_voice_state_update`.
+- **Música, imágenes, entradas y babel**: llaman a `note_for` al terminar.
 - **Juegos y economía**: los juegos del casino (ruleta, blackjack,
   tragaperras, Botes, Crash, Minas, Pollo y pachinko), el IMV, la renta, los niveles y los
   cumpleaños llaman a `track`, `casino_play` o `note` de este
@@ -50,19 +56,23 @@ from bot.services.achievements import (
     CATALOG,
     CATEGORY_BY_KEY,
     GROUPS,
-    UNLOCKED_STAT,
     Achievement,
     Category,
+    ChatTracker,
     Rarity,
     StatDelta,
     group_sections,
+    is_laugh_emoji,
     is_night,
+    laugh_reply_stats,
     menu_entries,
-    message_stats,
+    message_delta,
+    meta_stats,
     newly_unlocked,
     points,
     progress,
     total_reward,
+    voice_move_stats,
 )
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -84,6 +94,8 @@ logger = logging.getLogger(__name__)
 #: Mensajes cuyos reactores se recuerdan, para que quitar y volver a poner
 #: una reacción no cuente dos veces ni infle "Viral".
 REACTION_MEMORY = 5_000
+#: Derrotas seguidas en el casino para que reírse cuente como «Ríe por no llorar».
+LOSING_STREAK = 5
 #: Logros que se listan en un aviso; si se desbloquean más a la vez, se resumen.
 ANNOUNCE_LIMIT = 8
 #: Segundos que la vista de `logros` sigue respondiendo.
@@ -125,11 +137,9 @@ def percent(holders: int, members: int) -> str:
 
 
 def with_unlocked_count(stats: Mapping[str, int], unlocked: Mapping[str, float]) -> dict[str, int]:
-    """Estadísticas más el recuento de logros normales, para el progreso de Coleccionista."""
+    """Estadísticas más las de Coleccionista (`meta_stats`), para enseñar su progreso."""
     full = dict(stats)
-    full[UNLOCKED_STAT] = sum(
-        1 for i in unlocked if i in BY_ID and BY_ID[i].category != "meta" and not BY_ID[i].upcoming
-    )
+    full.update(meta_stats(unlocked))
     return full
 
 
@@ -189,15 +199,54 @@ def _achievement_line(
     )
 
 
+#: Caracteres de logros por página de una categoría. Un embed admite 4.096 en
+#: la descripción; el resto queda para la cabecera.
+CATEGORY_PAGE_CHARS = 3_800
+
+
+def _category_lines(
+    category: Category,
+    profile: Profile,
+    holders: Mapping[str, int],
+    members: int,
+) -> list[str]:
+    stats = with_unlocked_count(profile.stats, profile.unlocked)
+    items = [a for a in CATALOG if a.category == category.key]
+    return [_achievement_line(a, stats, profile.unlocked, holders, members) for a in items]
+
+
+def paginate(lines: Sequence[str], limit: int = CATEGORY_PAGE_CHARS) -> list[list[str]]:
+    """Reparte las líneas en páginas de `limit` caracteres como mucho (siempre una al menos)."""
+    pages: list[list[str]] = [[]]
+    size = 0
+    for line in lines:
+        if pages[-1] and size + len(line) + 1 > limit:
+            pages.append([])
+            size = 0
+        pages[-1].append(line)
+        size += len(line) + 1
+    return pages
+
+
+def category_page_count(
+    category: Category, profile: Profile, holders: Mapping[str, int], members: int
+) -> int:
+    """Páginas que ocupa una categoría."""
+    return len(paginate(_category_lines(category, profile, holders, members)))
+
+
 def category_embed(
     category: Category,
     name: str,
     profile: Profile,
     holders: Mapping[str, int],
     members: int,
+    page: int = 0,
 ) -> discord.Embed:
-    """Página de una categoría: cada logro con su estado o su progreso."""
-    stats = with_unlocked_count(profile.stats, profile.unlocked)
+    """Página de una categoría: cada logro con su estado o su progreso.
+
+    Las categorías grandes se reparten en varias páginas (`page`, desde 0).
+    """
     items = [a for a in CATALOG if a.category == category.key]
     done = sum(1 for a in items if a.id in profile.unlocked)
     header = (
@@ -205,13 +254,17 @@ def category_embed(
         if category.upcoming
         else f"**{done}/{len(items)}** conseguidos"
     )
-    lines = [_achievement_line(a, stats, profile.unlocked, holders, members) for a in items]
+    pages = paginate(_category_lines(category, profile, holders, members))
+    page = max(0, min(page, len(pages) - 1))
     embed = discord.Embed(
         title=f"{category.title} · {name}",
-        description=header + "\n\n" + "\n".join(lines),
+        description=header + "\n\n" + "\n".join(pages[page]),
         color=COLOR,
     )
-    embed.set_footer(text="▫️ Común · 🔹 Raro · 💠 Épico · 🌟 Legendario · 👑 Mítico")
+    legend = "▫️ Común · 🔹 Raro · 💠 Épico · 🌟 Legendario · 👑 Mítico"
+    if len(pages) > 1:
+        legend = f"Página {page + 1}/{len(pages)} · {legend}"
+    embed.set_footer(text=legend)
     return embed
 
 
@@ -361,7 +414,7 @@ class CategorySelect(discord.ui.Select):
 
 
 class SectionSelect(discord.ui.Select):
-    """Segundo menú dentro de un grupo (🎰 Casino): un juego por opción."""
+    """Segundo menú dentro de un grupo (💬 Chat, 🎙️ Voz, 🎰 Casino): una sección por opción."""
 
     def __init__(self, view: AchievementsView, group_key: str, current: str) -> None:
         options = [
@@ -379,7 +432,8 @@ class SectionSelect(discord.ui.Select):
                     label=title, value=section.key, emoji=emoji, default=current == section.key
                 )
             )
-        super().__init__(placeholder="Elige un juego", options=options, row=1)
+        placeholder = "Elige un juego" if group_key == "casino_group" else "Elige una sección"
+        super().__init__(placeholder=placeholder, options=options, row=1)
         self.achievements_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -409,7 +463,11 @@ class AchievementsView(discord.ui.View):
         self.profile = profile
         self.holders = holders
         self.members = members
+        #: Página que se enseña y, si es una categoría larga, en qué hoja va.
+        self.key = "summary"
+        self.sheet = 0
         self.add_item(CategorySelect(self))
+        self._refresh_pager()
 
     def page(self, key: str) -> discord.Embed:
         """Embed de la página `key` (`summary`, un grupo o una categoría)."""
@@ -418,7 +476,12 @@ class AchievementsView(discord.ui.View):
             return group_embed(key, name, self.profile)
         if key in CATEGORY_BY_KEY:
             return category_embed(
-                CATEGORY_BY_KEY[key], name, self.profile, self.holders, self.members
+                CATEGORY_BY_KEY[key],
+                name,
+                self.profile,
+                self.holders,
+                self.members,
+                self.sheet if key == self.key else 0,
             )
         return summary_embed(
             name, self.target.display_avatar.url, self.profile, self.holders, self.members
@@ -444,14 +507,51 @@ class AchievementsView(discord.ui.View):
         if group is not None:
             self.add_item(SectionSelect(self, group, key))
 
+    def _sheets(self) -> int:
+        category = CATEGORY_BY_KEY.get(self.key)
+        if category is None:
+            return 1
+        return category_page_count(category, self.profile, self.holders, self.members)
+
+    def _refresh_pager(self) -> None:
+        """Activa ◀ y ▶ solo si la categoría tiene más de una página."""
+        sheets = self._sheets()
+        self.previous_sheet.disabled = self.sheet <= 0
+        self.next_sheet.disabled = self.sheet >= sheets - 1
+
     async def show(self, interaction: discord.Interaction, key: str) -> None:
-        """Enseña la página elegida."""
+        """Enseña la página elegida (desde su primera hoja)."""
+        self.key = key
+        self.sheet = 0
         self.set_sections(key)
+        self._refresh_pager()
         await interaction.response.edit_message(embed=self.page(key), view=self)
+
+    async def _turn(self, interaction: discord.Interaction, step: int) -> None:
+        self.sheet = max(0, min(self.sheet + step, self._sheets() - 1))
+        self._refresh_pager()
+        await interaction.response.edit_message(embed=self.page(self.key), view=self)
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, row=2)
+    async def previous_sheet(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        """Hoja anterior de una categoría larga."""
+        await self._turn(interaction, -1)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, row=2)
+    async def next_sheet(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        """Hoja siguiente de una categoría larga."""
+        await self._turn(interaction, 1)
 
     @discord.ui.button(label="🏆 Ranking", style=discord.ButtonStyle.primary, row=2)
     async def ranking(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         """Ranking del servidor por puntos de logros."""
+        self.cog.note(self.guild.id, interaction.user.id, StatDelta(add={"logros_ranking": 1}))
+        self.key, self.sheet = "ranking", 0
+        self._refresh_pager()
         await interaction.response.edit_message(embed=await self.cog.ranking(self.guild), view=self)
 
 
@@ -487,6 +587,14 @@ class Achievements(commands.Cog):
         self._casino_streaks: dict[tuple[int, int], int] = {}
         #: Miembros a los que ya se ha cargado el historial anterior a los logros.
         self._seeded: set[tuple[int, int]] = set()
+        #: Contexto de cada canal para monólogos, ecos, cadenas de risa…
+        self._chat = ChatTracker()
+        #: Quién se ha reído (con reacción) de cada mensaje (los últimos `REACTION_MEMORY`).
+        self._laugh_reactors: OrderedDict[int, set[int]] = OrderedDict()
+        #: Minutos seguidos silenciado en llamada, por (servidor, miembro).
+        self._mute_streaks: dict[tuple[int, int], int] = {}
+        #: Cuándo entró cada miembro a voz, para pillar a los que entran y salen.
+        self._voice_joined: dict[tuple[int, int], float] = {}
 
     async def cog_load(self) -> None:
         """Arranca la tarea de cada minuto (voz y escritura de lo pendiente)."""
@@ -609,19 +717,43 @@ class Achievements(commands.Cog):
         await self.bot.wait_until_ready()
 
     def collect_voice(self, now: float) -> None:
-        """Suma un minuto de voz a quien esté en llamada con alguien más."""
-        hour = datetime.fromtimestamp(now, TIMEZONE).hour
+        """Suma un minuto de voz a quien esté en llamada con alguien más.
+
+        También cuenta el canal AFK, a quien está ensordecido, la música del
+        bot y las rachas de silencio. Todo sale de la caché de discord.py.
+        """
+        local = datetime.fromtimestamp(now, TIMEZONE)
+        hour = local.hour
+        weekend = local.weekday() >= 5
+        new_year = local.month == 1 and local.day == 1 and hour == 0
+        christmas = local.month == 12 and local.day in (24, 25)
         seen: set[tuple[int, int]] = set()
+        muted_now: set[tuple[int, int]] = set()
         for guild in self.bot.guilds:
             afk_id = guild.afk_channel.id if guild.afk_channel is not None else None
+            music = self._music_channel_id(guild)
             for channel in guild.voice_channels:
+                humans = [m for m in channel.members if not m.bot and m.voice is not None]
                 if channel.id == afk_id:
+                    for member in humans:
+                        self.note(
+                            guild.id,
+                            member.id,
+                            StatDelta(add={"voice_afk": 1}),
+                            replace_channel=False,
+                        )
                     continue
-                listening = [
-                    m
-                    for m in channel.members
-                    if not m.bot and m.voice is not None and not (m.voice.self_deaf or m.voice.deaf)
-                ]
+                listening = [m for m in humans if not (m.voice.self_deaf or m.voice.deaf)]
+                if listening and len(humans) >= 2:
+                    for member in humans:
+                        if member not in listening:
+                            self.note(
+                                guild.id,
+                                member.id,
+                                StatDelta(add={"voice_deaf": 1}),
+                                channel.id,
+                                replace_channel=False,
+                            )
                 if len(listening) == 1:
                     (alone,) = listening
                     self.note(
@@ -642,24 +774,43 @@ class Achievements(commands.Cog):
                     voice = member.voice
                     assert voice is not None  # filtrado arriba
                     add = {"voice_minutes": 1}
+                    peak = {"voice_session_max": session, "voice_crowd_max": len(listening)}
                     if voice.self_mute or voice.mute:
                         add["voice_muted"] = 1
+                        muted_now.add(key)
+                        streak = self._mute_streaks.get(key, 0) + 1
+                        self._mute_streaks[key] = streak
+                        peak["voice_mute_streak_max"] = streak
+                    if voice.mute:
+                        add["voice_server_muted"] = 1
                     if voice.self_stream:
                         add["voice_stream"] = 1
+                        if len(listening) >= 5:
+                            add["voice_stream_crowd"] = 1
                     if voice.self_video:
                         add["voice_video"] = 1
+                        if voice.self_stream:
+                            add["voice_multitask"] = 1
                     if is_night(hour):
                         add["voice_night"] = 1
+                    if 6 <= hour < 8:
+                        add["voice_morning"] = 1
+                    if 15 <= hour < 17:
+                        add["voice_siesta"] = 1
+                    if weekend:
+                        add["voice_weekend"] = 1
+                    if new_year:
+                        add["voice_new_year"] = 1
+                    if christmas:
+                        add["voice_christmas"] = 1
+                    if len(listening) == 2:
+                        add["voice_duo"] = 1
+                    if channel.id == music:
+                        add["voice_music"] = 1
                     self.note(
                         guild.id,
                         member.id,
-                        StatDelta(
-                            add=add,
-                            peak={
-                                "voice_session_max": session,
-                                "voice_crowd_max": len(listening),
-                            },
-                        ),
+                        StatDelta(add=add, peak=peak),
                         channel.id,
                         replace_channel=False,
                     )
@@ -667,6 +818,18 @@ class Achievements(commands.Cog):
         for key in list(self._sessions):
             if key not in seen:
                 del self._sessions[key]
+        for key in list(self._mute_streaks):
+            if key not in muted_now:
+                del self._mute_streaks[key]
+
+    @staticmethod
+    def _music_channel_id(guild: discord.Guild) -> int | None:
+        """Canal de voz donde el bot está poniendo música ahora mismo, si lo hay."""
+        voice = getattr(guild, "voice_client", None)
+        if not isinstance(voice, discord.VoiceClient) or not voice.is_playing():
+            return None
+        channel = voice.channel
+        return channel.id if channel is not None else None
 
     async def flush(self) -> None:
         """Escribe lo pendiente, una transacción por servidor, y avisa."""
@@ -759,25 +922,71 @@ class Achievements(commands.Cog):
             or message.is_system()
         ):
             return
+        guild_id = message.guild.id
         author = message.author
         me = self.bot.user
         birthdays = self.bot.get_cog("Birthdays")
         own_birthday = bool(
             birthdays is not None
             and hasattr(birthdays, "is_birthday_today")
-            and birthdays.is_birthday_today(message.guild.id, author.id)
+            and birthdays.is_birthday_today(guild_id, author.id)
         )
-        stats = message_stats(
+        local = message.created_at.astimezone(TIMEZONE)
+        is_reply = message.reference is not None and message.type is discord.MessageType.reply
+        people = {u.id for u in message.mentions if u.id != author.id and not u.bot}
+        delta = message_delta(
             message.content,
-            when=message.created_at.astimezone(TIMEZONE),
+            when=local,
             attachments=len(message.attachments),
             stickers=len(message.stickers),
-            is_reply=message.reference is not None and message.type is discord.MessageType.reply,
-            mentions_others=any(u.id != author.id and not u.bot for u in message.mentions),
+            is_reply=is_reply,
+            mentions_others=bool(people),
             mentions_bot=me is not None and any(u.id == me.id for u in message.mentions),
             own_birthday=own_birthday,
+            mention_everyone=message.mention_everyone,
+            people_mentioned=len(people),
         )
-        self.note(message.guild.id, author.id, StatDelta(add=stats), message.channel.id)
+        laughed = bool(delta.add.get("msg_laughs"))
+        # Reírse con una racha de derrotas en el casino: ríe por no llorar.
+        if laughed and self._casino_streaks.get((guild_id, author.id), 0) <= -LOSING_STREAK:
+            delta.add["laugh_losing"] = 1
+        self.note(guild_id, author.id, delta, message.channel.id)
+
+        others: dict[int, StatDelta] = {}
+        if laughed and is_reply:
+            replied = message.reference.resolved if message.reference else None
+            # Si el mensaje respondido se borró (o no está en caché) no hay autor.
+            replied_author = getattr(replied, "author", None)
+            others = laugh_reply_stats(
+                author_id=author.id,
+                replied_author_id=replied_author.id if replied_author is not None else None,
+                replied_is_bot=bool(replied_author is not None and replied_author.bot),
+            )
+        context = self._chat.observe(
+            guild_id,
+            message.channel.id,
+            author.id,
+            at=message.created_at.timestamp(),
+            local=local,
+            content=message.content,
+            laughed=laughed,
+        )
+        for changes in (others, context):
+            for user_id, extra in changes.items():
+                # Al gracioso o a los de la cadena se les avisa en el mismo canal.
+                self.note(guild_id, user_id, extra, message.channel.id, replace_channel=False)
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
+        """Cuenta las ediciones de verdad (cambia el texto, no solo un embed)."""
+        if (
+            after.guild is None
+            or after.author.bot
+            or after.webhook_id is not None
+            or before.content == after.content
+        ):
+            return
+        self.note(after.guild.id, after.author.id, StatDelta(add={"msg_edits": 1}))
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
@@ -795,11 +1004,10 @@ class Achievements(commands.Cog):
         author = guild.get_member(author_id) if guild is not None else None
         if author is None or author.bot:
             return
-        reactors = self._reactors.get(payload.message_id)
-        if reactors is None:
-            reactors = self._reactors[payload.message_id] = set()
-            if len(self._reactors) > REACTION_MEMORY:
-                self._reactors.popitem(last=False)
+        emoji = getattr(payload, "emoji", None)
+        if emoji is not None and is_laugh_emoji(emoji.name or str(emoji)):
+            self._note_laugh_reaction(payload, author_id)
+        reactors = self._remember(self._reactors, payload.message_id)
         if payload.user_id in reactors:
             return
         reactors.add(payload.user_id)
@@ -814,6 +1022,60 @@ class Achievements(commands.Cog):
             payload.channel_id,
             replace_channel=False,
         )
+
+    @staticmethod
+    def _remember(memory: OrderedDict[int, set[int]], message_id: int) -> set[int]:
+        """Conjunto de quién ha reaccionado a un mensaje, olvidando los más viejos."""
+        reactors = memory.get(message_id)
+        if reactors is None:
+            reactors = memory[message_id] = set()
+            if len(memory) > REACTION_MEMORY:
+                memory.popitem(last=False)
+        return reactors
+
+    def _note_laugh_reaction(self, payload: discord.RawReactionActionEvent, author_id: int) -> None:
+        """Reacción de risa (😂, 💀, `:kekw:`…): una por persona y mensaje."""
+        assert payload.guild_id is not None  # comprobado por quien llama
+        laughers = self._remember(self._laugh_reactors, payload.message_id)
+        if payload.user_id in laughers:
+            return
+        laughers.add(payload.user_id)
+        self.note(payload.guild_id, payload.user_id, StatDelta(add={"laugh_reacts_given": 1}))
+        self.note(
+            payload.guild_id,
+            author_id,
+            StatDelta(
+                add={"laugh_reacts_received": 1},
+                peak={"laugh_reacts_on_message_max": len(laughers)},
+            ),
+            payload.channel_id,
+            replace_channel=False,
+        )
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        """Entradas, cambios de canal, huidas rápidas y pantallas compartidas."""
+        if member.bot:
+            return
+        delta = voice_move_stats(
+            before_channel=before.channel.id if before.channel else None,
+            after_channel=after.channel.id if after.channel else None,
+            started_stream=bool(after.self_stream and not before.self_stream),
+            joined_at=self._voice_joined.get((member.guild.id, member.id)),
+            now=self._clock(),
+        )
+        key = (member.guild.id, member.id)
+        if after.channel is None:
+            self._voice_joined.pop(key, None)
+        elif before.channel is None:
+            self._voice_joined[key] = self._clock()
+        if delta:
+            self.note(member.guild.id, member.id, delta, replace_channel=False)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
@@ -880,6 +1142,8 @@ class Achievements(commands.Cog):
             await send_error("Los bots no coleccionan logros.")
             return
         view = await self.build_view(guild, author.id, who)
+        stat = "logros_views" if who.id == author.id else "logros_others"
+        self.note(guild.id, author.id, StatDelta(add={stat: 1}))
         await send(
             embed=view.page("summary"), view=view, allowed_mentions=discord.AllowedMentions.none()
         )
@@ -935,6 +1199,17 @@ def note(
     """Apunta estadísticas para la escritura de cada minuto. No hace nada sin el cog."""
     if (cog := _cog(bot)) is not None:
         cog.note(guild_id, user_id, delta, channel_id, replace_channel=False)
+
+
+def note_for(bot: commands.Bot, responder: object, delta: StatDelta) -> None:
+    """`note` para quien lanza un comando, sacando servidor, miembro y canal del
+    `CommandResponder`. No hace nada fuera de un servidor ni sin el cog."""
+    guild = getattr(responder, "guild", None)
+    member = getattr(responder, "member", None)
+    channel = getattr(responder, "channel", None)
+    if guild is None or member is None or member.bot:
+        return
+    note(bot, guild.id, member.id, delta, getattr(channel, "id", None))
 
 
 async def track(
