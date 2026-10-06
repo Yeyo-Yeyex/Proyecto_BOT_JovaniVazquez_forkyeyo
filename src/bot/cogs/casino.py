@@ -24,7 +24,7 @@ import logging
 import random
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -34,7 +34,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
-from bot.services.achievements import StatDelta, casino_stats, roulette_stats
+from bot.services.achievements import StatDelta, casino_stats, hacienda_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
@@ -68,6 +68,8 @@ from bot.services.roulette import (
     pretty,
 )
 from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
+from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
+from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -1031,38 +1033,82 @@ class Casino(commands.Cog):
 
     # -- Hacienda ------------------------------------------------------------------
 
-    async def _hacienda_impl(self, responder: CommandResponder) -> None:
+    async def _hacienda_impl(
+        self, responder: CommandResponder, member: discord.abc.User | None = None
+    ) -> None:
+        """Sin miembro: la cuenta del Estado y lo que paga cada uno. Con miembro: su factura."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("La economía solo funciona dentro de un servidor.")
             return
         now = datetime.now(TIMEZONE)
         year_start = datetime(now.year, 1, 1, tzinfo=TIMEZONE).timestamp()
-        treasury = await self.economy.treasury(guild.id, since=year_start)
-        names = {}
-        for user_id, _paid in treasury.top_contributors:
-            member = guild.get_member(user_id)
-            names[user_id] = (
-                discord.utils.escape_markdown(member.display_name)
-                if member is not None
-                else f"<@{user_id}>"
+        all_bills = tax_bills(await self.economy.tax_breakdown(guild.id))
+        server = server_bill(all_bills)
+        names = {bill.user_id: self._display_name(guild, bill.user_id) for bill in all_bills}
+        if member is None:
+            treasury = await self.economy.treasury(guild.id, since=year_start)
+            embed = treasury_embed(replace(treasury, top_contributors=()), year=now.year, names={})
+            # Las cifras primero; la explicación de qué se cobra, al final.
+            explained = [(f.name, f.value) for f in embed.fields]
+            embed.clear_fields()
+            add_bill_fields(embed, all_bills, server, names)
+            for name, value in explained:
+                embed.add_field(name=name, value=value, inline=False)
+        else:
+            year_bills = tax_bills(await self.economy.tax_breakdown(guild.id, since=year_start))
+            embed = member_bill_embed(
+                member_name=discord.utils.escape_markdown(member.display_name),
+                all_bills=all_bills,
+                year_bills=year_bills,
+                server=server,
+                user_id=member.id,
+                year=now.year,
             )
-        await responder.send(
-            embed=treasury_embed(treasury, year=now.year, names=names),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+        await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        author = getattr(responder, "member", None)
+        if author is not None and not author.bot:
+            mine = next((b for b in all_bills if b.user_id == author.id), None)
+            share = (mine.total / server.total) if mine and server.total > 0 else 0.0
+            await logros.track(
+                self.bot,
+                guild.id,
+                author,
+                responder.channel,
+                hacienda_stats(
+                    own=member is not None and member.id == author.id,
+                    snooping=member is not None and member.id != author.id,
+                    share=share,
+                    indirect_over_direct=bool(mine and mine.indirect > mine.direct > 0),
+                ),
+            )
 
-    @app_commands.command(name="hacienda", description="Cuánto ha recaudado el Estado.")
+    @staticmethod
+    def _display_name(guild: discord.Guild, user_id: int) -> str:
+        found = guild.get_member(user_id)
+        if found is None:
+            return f"<@{user_id}>"
+        return discord.utils.escape_markdown(found.display_name)
+
+    @app_commands.command(
+        name="hacienda",
+        description="Cuánto ha recaudado el Estado y todo lo que paga cada uno (o tu factura).",
+    )
+    @app_commands.describe(miembro="De quién ver la factura fiscal completa (opcional).")
     @app_commands.guild_only()
-    async def hacienda(self, interaction: discord.Interaction) -> None:
-        """Muestra la cuenta del Estado: saldo, recaudación y quién más paga."""
-        await self._hacienda_impl(InteractionResponder(interaction))
+    async def hacienda(
+        self, interaction: discord.Interaction, miembro: discord.Member | None = None
+    ) -> None:
+        """La cuenta del Estado con lo que paga cada miembro, o la factura de `miembro`."""
+        await self._hacienda_impl(InteractionResponder(interaction), miembro)
 
     @commands.command(name="hacienda")
     @commands.guild_only()
-    async def hacienda_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.hacienda`) de `/hacienda`."""
-        await self._hacienda_impl(ContextResponder(ctx))
+    async def hacienda_text(
+        self, ctx: commands.Context, miembro: discord.Member | None = None
+    ) -> None:
+        """Versión de texto (`.hacienda [miembro]`) de `/hacienda`."""
+        await self._hacienda_impl(ContextResponder(ctx), miembro)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:

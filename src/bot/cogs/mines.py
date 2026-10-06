@@ -273,7 +273,7 @@ class MinesBoard(ui.LayoutView):
             controls.add_item(self.control_button("×2", "x2", self._double))
             controls.add_item(self.control_button("💰 All-in", "allin", self._all_in))
         self.add_item(controls)
-        if game is None or not game.playing:
+        if self._mines_editable():
             mines_row: ui.ActionRow = ui.ActionRow()
             mines_row.add_item(self.mines_select())
             self.add_item(mines_row)
@@ -506,6 +506,16 @@ class MinesBoard(ui.LayoutView):
     def _idle(self) -> bool:
         return self.game is None or not self.game.playing
 
+    def _mines_editable(self) -> bool:
+        """Si el menú 💣 se puede usar: sin partida o antes de destapar la primera.
+
+        El comando ya cobra la apuesta y empieza la partida, así que sin esto el
+        menú no salía la primera vez. Las minas se colocan en el primer clic,
+        de modo que cambiarlas antes no altera nada de lo ya jugado.
+        """
+        game = self.game
+        return game is None or not game.playing or not game.revealed
+
     async def _halve(self, interaction: discord.Interaction) -> None:
         if not self._idle():
             await interaction.response.defer()
@@ -534,8 +544,12 @@ class MinesBoard(ui.LayoutView):
         await self._refresh(interaction)
 
     async def _choose_mines(self, interaction: discord.Interaction, mines: int) -> None:
-        """Menú 💣: cambia las minas de la siguiente partida."""
-        if not self._idle():
+        """Menú 💣: cambia las minas de la partida recién empezada o de la siguiente.
+
+        Con la partida empezada y ninguna casilla destapada, se rehace con las
+        minas nuevas y la misma apuesta, que ya está cobrada: no se mueve dinero.
+        """
+        if self._lock.locked() or not self._mines_editable():
             await interaction.response.defer()
             return
         try:
@@ -543,9 +557,16 @@ class MinesBoard(ui.LayoutView):
         except ValueError:
             await interaction.response.defer()
             return
-        self.mines = mines
-        self.cog.set_mines(self.guild_id, self.owner.id, mines)
-        await self._refresh(interaction)
+        async with self._lock:
+            game = self.game
+            if game is not None and game.playing:
+                if game.revealed:
+                    await interaction.response.defer()
+                    return
+                self.game = MinesGame.new(game.stake, mines, self.cog.rng)
+            self.mines = mines
+            self.cog.set_mines(self.guild_id, self.owner.id, mines)
+            await self._refresh(interaction)
 
 
 # -- Cog -------------------------------------------------------------------------------

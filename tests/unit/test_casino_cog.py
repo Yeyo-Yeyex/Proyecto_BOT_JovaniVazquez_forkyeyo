@@ -556,5 +556,24 @@ async def test_hacienda_muestra_la_cuenta_del_estado(tmp_path: Path) -> None:
 
     embed = responder.sent[0]["embed"]
     assert embed.title == "🏛️ Hacienda"
-    assert "Quién más ha pagado" in embed.fields[0].name
-    assert "<@10>" in embed.fields[0].value
+    names = [field.name for field in embed.fields]
+    assert names[0] == "Por impuesto"
+    assert "IRPF de premios" in embed.fields[0].value
+    paid = embed.fields[names.index("Lo que paga cada uno (directo e indirecto)")]
+    assert "<@10>" in paid.value and "IRPF otros" in paid.value
+
+
+async def test_hacienda_con_miembro_enseña_su_factura_completa(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    await cog.economy.pay_salary(1, 10, gross=200_000, concept="pala:celador")
+    responder = RecordingResponder()
+    responder.guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+    target = SimpleNamespace(id=10, display_name="Ana", bot=False)
+
+    await cog._hacienda_impl(responder, target)  # type: ignore[arg-type]
+
+    embed = responder.sent[0]["embed"]
+    assert embed.title == "🧾 Factura fiscal de Ana"
+    fields = {field.name.split(" · ")[0]: field.value for field in embed.fields}
+    assert "Seguridad Social que paga la empresa" in fields["Indirectos (sin verlos)"]
+    assert "IRPF de las nóminas" in fields["Directos"]

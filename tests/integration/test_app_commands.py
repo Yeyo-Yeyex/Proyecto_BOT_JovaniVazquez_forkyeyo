@@ -44,6 +44,8 @@ EXPECTED_COMMANDS = {
     "logros",
     "hacienda",
     "renta",
+    "patrimonio",
+    "fortunas",
     "apuestas",
     "bizum",
     "blackjack",
@@ -109,7 +111,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # Única excepción acordada: `.blackjack` con su atajo `.bj`.
             aliases = {c.name: c.aliases for c in client.commands if c.aliases}
             assert aliases == {"blackjack": ["bj"]}
-            long_names = {"blackjack"}
+            long_names = {"blackjack", "patrimonio"}
             assert all(
                 len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects - long_names
             )
@@ -150,7 +152,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "⚙️ General (2)",
                 "🎵 Música (9)",
                 "📊 Niveles (2)",
-                "🎰 Casino (16)",
+                "🎰 Casino (18)",
                 "🛍️ Tienda (2)",
                 "🪏 Trabajo (1)",
                 "🎂 Cumpleaños (2)",

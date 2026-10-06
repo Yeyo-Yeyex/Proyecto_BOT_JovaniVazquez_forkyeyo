@@ -238,6 +238,10 @@ PRODUCED_STATS = {
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
     "todo_done_batch_max",
+    # patrimonio, fortunas y hacienda (cogs/patrimonio.py y cogs/casino.py)
+    "patrimonio_views", "patrimonio_snoop", "fortunas_views", "net_worth_max",
+    "fortunas_first", "fortunas_last", "patrimonio_illiquid", "hacienda_views",
+    "hacienda_self", "hacienda_snoop", "hacienda_pillar", "hacienda_hidden",
     # Estadísticas del casino (cogs/apuestas.py: apuestas_stats)
     "apuestas_views", "apuestas_snoop", "apuestas_insomnia", "apuestas_virgin",
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
