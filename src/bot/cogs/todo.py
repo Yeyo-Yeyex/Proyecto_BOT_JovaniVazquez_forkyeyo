@@ -241,7 +241,7 @@ class Lista(commands.Cog):
                 guild.id,
                 user,
                 interaction.channel,
-                StatDelta(add={"todo_done": len(done)}),
+                StatDelta(add={"todo_done": len(done)}, peak={"todo_done_batch_max": len(done)}),
             )
 
     # -- Comandos --------------------------------------------------------------------

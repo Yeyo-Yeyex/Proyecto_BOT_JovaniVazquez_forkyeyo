@@ -199,15 +199,54 @@ def _achievement_line(
     )
 
 
+#: Caracteres de logros por página de una categoría. Un embed admite 4.096 en
+#: la descripción; el resto queda para la cabecera.
+CATEGORY_PAGE_CHARS = 3_800
+
+
+def _category_lines(
+    category: Category,
+    profile: Profile,
+    holders: Mapping[str, int],
+    members: int,
+) -> list[str]:
+    stats = with_unlocked_count(profile.stats, profile.unlocked)
+    items = [a for a in CATALOG if a.category == category.key]
+    return [_achievement_line(a, stats, profile.unlocked, holders, members) for a in items]
+
+
+def paginate(lines: Sequence[str], limit: int = CATEGORY_PAGE_CHARS) -> list[list[str]]:
+    """Reparte las líneas en páginas de `limit` caracteres como mucho (siempre una al menos)."""
+    pages: list[list[str]] = [[]]
+    size = 0
+    for line in lines:
+        if pages[-1] and size + len(line) + 1 > limit:
+            pages.append([])
+            size = 0
+        pages[-1].append(line)
+        size += len(line) + 1
+    return pages
+
+
+def category_page_count(
+    category: Category, profile: Profile, holders: Mapping[str, int], members: int
+) -> int:
+    """Páginas que ocupa una categoría."""
+    return len(paginate(_category_lines(category, profile, holders, members)))
+
+
 def category_embed(
     category: Category,
     name: str,
     profile: Profile,
     holders: Mapping[str, int],
     members: int,
+    page: int = 0,
 ) -> discord.Embed:
-    """Página de una categoría: cada logro con su estado o su progreso."""
-    stats = with_unlocked_count(profile.stats, profile.unlocked)
+    """Página de una categoría: cada logro con su estado o su progreso.
+
+    Las categorías grandes se reparten en varias páginas (`page`, desde 0).
+    """
     items = [a for a in CATALOG if a.category == category.key]
     done = sum(1 for a in items if a.id in profile.unlocked)
     header = (
@@ -215,13 +254,17 @@ def category_embed(
         if category.upcoming
         else f"**{done}/{len(items)}** conseguidos"
     )
-    lines = [_achievement_line(a, stats, profile.unlocked, holders, members) for a in items]
+    pages = paginate(_category_lines(category, profile, holders, members))
+    page = max(0, min(page, len(pages) - 1))
     embed = discord.Embed(
         title=f"{category.title} · {name}",
-        description=header + "\n\n" + "\n".join(lines),
+        description=header + "\n\n" + "\n".join(pages[page]),
         color=COLOR,
     )
-    embed.set_footer(text="▫️ Común · 🔹 Raro · 💠 Épico · 🌟 Legendario · 👑 Mítico")
+    legend = "▫️ Común · 🔹 Raro · 💠 Épico · 🌟 Legendario · 👑 Mítico"
+    if len(pages) > 1:
+        legend = f"Página {page + 1}/{len(pages)} · {legend}"
+    embed.set_footer(text=legend)
     return embed
 
 
@@ -420,7 +463,11 @@ class AchievementsView(discord.ui.View):
         self.profile = profile
         self.holders = holders
         self.members = members
+        #: Página que se enseña y, si es una categoría larga, en qué hoja va.
+        self.key = "summary"
+        self.sheet = 0
         self.add_item(CategorySelect(self))
+        self._refresh_pager()
 
     def page(self, key: str) -> discord.Embed:
         """Embed de la página `key` (`summary`, un grupo o una categoría)."""
@@ -429,7 +476,12 @@ class AchievementsView(discord.ui.View):
             return group_embed(key, name, self.profile)
         if key in CATEGORY_BY_KEY:
             return category_embed(
-                CATEGORY_BY_KEY[key], name, self.profile, self.holders, self.members
+                CATEGORY_BY_KEY[key],
+                name,
+                self.profile,
+                self.holders,
+                self.members,
+                self.sheet if key == self.key else 0,
             )
         return summary_embed(
             name, self.target.display_avatar.url, self.profile, self.holders, self.members
@@ -455,15 +507,51 @@ class AchievementsView(discord.ui.View):
         if group is not None:
             self.add_item(SectionSelect(self, group, key))
 
+    def _sheets(self) -> int:
+        category = CATEGORY_BY_KEY.get(self.key)
+        if category is None:
+            return 1
+        return category_page_count(category, self.profile, self.holders, self.members)
+
+    def _refresh_pager(self) -> None:
+        """Activa ◀ y ▶ solo si la categoría tiene más de una página."""
+        sheets = self._sheets()
+        self.previous_sheet.disabled = self.sheet <= 0
+        self.next_sheet.disabled = self.sheet >= sheets - 1
+
     async def show(self, interaction: discord.Interaction, key: str) -> None:
-        """Enseña la página elegida."""
+        """Enseña la página elegida (desde su primera hoja)."""
+        self.key = key
+        self.sheet = 0
         self.set_sections(key)
+        self._refresh_pager()
         await interaction.response.edit_message(embed=self.page(key), view=self)
+
+    async def _turn(self, interaction: discord.Interaction, step: int) -> None:
+        self.sheet = max(0, min(self.sheet + step, self._sheets() - 1))
+        self._refresh_pager()
+        await interaction.response.edit_message(embed=self.page(self.key), view=self)
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, row=2)
+    async def previous_sheet(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        """Hoja anterior de una categoría larga."""
+        await self._turn(interaction, -1)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, row=2)
+    async def next_sheet(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        """Hoja siguiente de una categoría larga."""
+        await self._turn(interaction, 1)
 
     @discord.ui.button(label="🏆 Ranking", style=discord.ButtonStyle.primary, row=2)
     async def ranking(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         """Ranking del servidor por puntos de logros."""
         self.cog.note(self.guild.id, interaction.user.id, StatDelta(add={"logros_ranking": 1}))
+        self.key, self.sheet = "ranking", 0
+        self._refresh_pager()
         await interaction.response.edit_message(embed=await self.cog.ranking(self.guild), view=self)
 
 

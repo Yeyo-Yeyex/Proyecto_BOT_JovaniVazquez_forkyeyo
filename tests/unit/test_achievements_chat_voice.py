@@ -15,11 +15,14 @@ from bot.repositories.achievements import AchievementRepository, Profile
 from bot.services.achievements import (
     AVAILABLE,
     BY_ID,
+    CATALOG,
     CATEGORIES,
     CHAT_GROUP,
     IMG_EFFECTS_STAT,
     VOICE_GROUP,
+    Achievement,
     ChatTracker,
+    Rarity,
     analyze_laugh,
     babel_stats,
     group_sections,
@@ -604,3 +607,153 @@ def test_chat_y_voz_son_grupos_con_secciones() -> None:
 def test_no_hay_categorias_vacias() -> None:
     for category in CATEGORIES:
         assert any(a.category == category.key for a in AVAILABLE), category.key
+
+
+def test_la_rareza_no_baja_al_subir_la_meta() -> None:
+    """Dentro de una estadística, un escalón más alto nunca es más común."""
+    order = list(Rarity)
+    by_stat: dict[str, list[Achievement]] = {}
+    for achievement in AVAILABLE:
+        if len(achievement.conditions) == 1:
+            by_stat.setdefault(achievement.stat, []).append(achievement)
+    for tiers in by_stat.values():
+        ranks = [order.index(a.rarity) for a in tiers]
+        assert ranks == sorted(ranks), [a.id for a in tiers]
+
+
+def test_las_categorias_largas_se_parten_en_paginas_sin_perder_logros() -> None:
+    from bot.cogs.achievements import category_embed, category_page_count
+
+    profile = Profile(stats={}, unlocked={})
+    category = next(c for c in CATEGORIES if c.key == "slots")
+    pages = category_page_count(category, profile, {}, 10)
+    assert pages >= 2
+    text = "".join(
+        category_embed(category, "Diego", profile, {}, 10, page).description or ""
+        for page in range(pages)
+    )
+    visible = [a for a in AVAILABLE if a.category == "slots" and not a.secret]
+    assert all(a.name in text for a in visible)
+    last = category_embed(category, "Diego", profile, {}, 10, 99)
+    assert f"Página {pages}/{pages}" in (last.footer.text or "")
+
+
+# -- Segunda tanda: más logros del casino y del resto ----------------------------------
+
+
+def _roulette(pocket: int, *bets: str):
+    from bot.services import roulette
+
+    wheel = roulette.Wheel(lambda _n: roulette.POCKETS.index(pocket))
+    wagers = [roulette.Wager(roulette.parse_bet(bet), 100) for bet in bets]
+    return roulette.play_round(wheel, wagers)
+
+
+def test_ruleta_cuenta_plenos_por_numero_y_victorias_pirricas() -> None:
+    from bot.services.achievements import roulette_stats
+
+    outcome = _roulette(13, "13", "rojo", "negro", "1-18", "docena2")
+    delta = roulette_stats(outcome, table_streak=1, previous_pocket=None)
+    assert delta.add["roulette_hit_13"] == 1
+    assert delta.add["roulette_half_wins"] == 1  # 1-18
+    assert delta.add["roulette_dozen_wins"] == 1
+    assert delta.peak["roulette_cover_max"] == 36
+    stats = with_derived({"roulette_hit_13": 2, "roulette_hit_7": 1})
+    assert stats["roulette_numbers_hit"] == 2
+    assert stats["roulette_hit_max"] == 2
+
+    pyrrhic = roulette_stats(
+        _roulette(1, "rojo", "19-36", "docena3"), table_streak=0, previous_pocket=None
+    )
+    assert pyrrhic.add["roulette_pyrrhic"] == 1
+
+
+def test_ruleta_el_cero_barre_la_mesa() -> None:
+    from bot.services.achievements import roulette_stats
+
+    delta = roulette_stats(_roulette(0, "rojo", "negro"), table_streak=0, previous_pocket=None)
+    assert delta.add["roulette_zero_sweep"] == 1
+
+
+def _blackjack(player: list[tuple[int, int]], dealer: list[tuple[int, int]], hits: int = 0):
+    from bot.services import blackjack as bj
+
+    # Reparto: jugador, banca, jugador, banca; luego las cartas que se pidan
+    # y al final las de la banca. El mazo se roba desde el final.
+    order = [player[0], dealer[0], player[1], dealer[1], *player[2:], *dealer[2:]]
+    shoe = [bj.Card(rank, suit) for rank, suit in reversed(order)]
+    game = bj.BlackjackGame(100, shoe=shoe)
+    game.deal()
+    for _ in range(hits):
+        if game.player_turn:
+            game.act(bj.Action.HIT)
+    while game.player_turn:
+        game.act(bj.Action.STAND)
+    game.reveal_hole()
+    while game.dealer_should_draw():
+        game.dealer_draw()
+    game.settle()
+    return game
+
+
+def test_blackjack_tres_sietes_y_blackjack_del_mismo_palo() -> None:
+    from bot.services.achievements import blackjack_stats
+
+    sevens = blackjack_stats(_blackjack([(7, 0), (7, 1), (7, 2)], [(10, 0), (7, 0)], hits=1))
+    assert sevens.add["bj_triple_seven"] == 1
+    suited = blackjack_stats(_blackjack([(1, 2), (13, 2)], [(9, 0), (8, 0)]))
+    assert suited.add["bj_suited_natural"] == 1
+
+
+def test_blackjack_plantarse_con_once_y_la_banca_que_se_lo_curra() -> None:
+    from bot.services.achievements import blackjack_stats
+
+    game = _blackjack([(5, 0), (6, 0)], [(2, 0), (2, 1), (2, 2), (3, 0), (10, 0)])
+    delta = blackjack_stats(game)
+    assert delta.add["bj_stand_low"] == 1
+    assert delta.add["bj_dealer_five"] == 1
+
+
+def test_minas_cuenta_niveles_cobrar_con_uno_y_la_avaricia() -> None:
+    import random
+
+    from bot.services import mines
+    from bot.services.achievements import mines_stats
+
+    game = mines.MinesGame.new(100, 3, random.Random(1))
+    game.reveal(game.random_hidden(random.Random(2)))
+    game.cash_out()
+    delta = mines_stats(game)
+    assert delta.add["mines_level_3"] == 1
+    assert delta.add["mines_cash_one"] == 1
+
+
+def test_crash_cobarde_y_cohete_perdido() -> None:
+    from bot.services.achievements import crash_stats
+
+    seat = SimpleNamespace(cashed_cents=105, by_auto=False, net=5)
+    delta = crash_stats(seat, crash_cents=12_000, players=1, last_out=False)  # type: ignore[arg-type]
+    assert delta.add["crash_cash_low"] == 1
+    assert delta.add["crash_missed_moon"] == 1
+
+
+def test_apuestas_secretas_del_casino() -> None:
+    from bot.services.achievements import casino_stats
+
+    for stake in (1, 69, 777):
+        assert (
+            casino_stats(stake=stake, net=-stake, balance_after=1_000).add[f"casino_bet_{stake}"]
+            == 1
+        )
+
+
+def test_loterias_cuentan_por_juego() -> None:
+    from bot.services.achievements import lottery_buy_stats
+
+    delta = lottery_buy_stats(game="bonoloto", units=3, cost=15, owned_in_draw=3, balance_after=100)
+    assert delta.add["lottery_game_bonoloto"] == 3
+
+
+def test_no_hay_dos_logros_con_el_mismo_nombre() -> None:
+    names = [a.name for a in CATALOG]
+    assert len(names) == len(set(names))

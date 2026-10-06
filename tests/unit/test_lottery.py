@@ -576,6 +576,7 @@ def test_estadisticas_de_loterias() -> None:
         "lottery_bets": 2,
         "lottery_spent": 400,
         "lottery_navidad": 2,
+        "lottery_game_navidad": 2,
         "lottery_broke_buy": 1,
     }
     prize = lottery_prize_stats([(4_000_000, 720_000, frozenset({"gordo_navidad"}))])

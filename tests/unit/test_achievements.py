@@ -16,6 +16,7 @@ import pytest
 from bot.cogs.achievements import (
     Achievements,
     category_embed,
+    category_page_count,
     format_value,
     group_embed,
     summary_embed,
@@ -34,6 +35,9 @@ from bot.services.achievements import (
     IMG_EFFECTS_STAT,
     LAUGH_KINDS,
     MESSAGES_TOTAL_STAT,
+    ROULETTE_FAVOURITE_STAT,
+    ROULETTE_HIT_PREFIX,
+    ROULETTE_NUMBERS_STAT,
     UNLOCKED_STAT,
     StatDelta,
     blackjack_stats,
@@ -53,6 +57,7 @@ from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
+from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
@@ -206,6 +211,18 @@ PRODUCED_STATS = {
     # `logros` y su ranking, y las virtuales de Coleccionista (meta_stats)
     "logros_views", "logros_others", "logros_ranking",
     *meta_stats([]).keys(),
+    # Segunda tanda: más estadísticas del casino, loterías, lista y derivadas
+    "roulette_dozen_wins", "roulette_half_wins", "roulette_pyrrhic", "roulette_cover_max",
+    "roulette_zero_sweep", *(f"{ROULETTE_HIT_PREFIX}{n}" for n in range(38)),
+    ROULETTE_NUMBERS_STAT, ROULETTE_FAVOURITE_STAT,
+    "bj_suited_natural", "bj_triple_seven", "bj_five_21", "bj_double_loss", "bj_stand_low",
+    "bj_split_aces", "bj_both_bj", "bj_dealer_five",
+    "casino_bet_1", "casino_bet_69", "casino_bet_777",
+    "crash_cash_low", "crash_missed_moon",
+    "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
+    *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
+    *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
+    "todo_done_batch_max",
     UNLOCKED_STAT,
 }  # fmt: skip
 
@@ -223,13 +240,14 @@ def test_todos_los_logros_disponibles_usan_estadisticas_que_alguien_suma() -> No
     assert missing == set()
 
 
-def test_cada_categoria_tiene_logros_y_cabe_en_un_embed() -> None:
+def test_cada_pagina_de_cada_categoria_cabe_en_un_embed() -> None:
     profile = Profile(stats={}, unlocked={})
     for category in CATEGORIES:
-        embed = category_embed(category, "Diego", profile, {}, 10)
-        assert embed.description is not None
-        assert len(embed.description) <= 4096
-        assert len(embed) <= 6000
+        for page in range(category_page_count(category, profile, {}, 10)):
+            embed = category_embed(category, "Diego", profile, {}, 10, page)
+            assert embed.description is not None
+            assert len(embed.description) <= 4096
+            assert len(embed) <= 6000
 
 
 def test_el_menu_de_logros_cabe_en_un_desplegable_de_discord() -> None:
