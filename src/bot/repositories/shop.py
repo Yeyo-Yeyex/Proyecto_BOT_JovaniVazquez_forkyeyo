@@ -6,9 +6,13 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   administradores con `catalogo`.
 - `shop_purchases`: una fila por venta, con su número de factura (correlativo
   por servidor), lo cobrado y si se devolvió.
-- `shop_inventory`: lo que tiene cada miembro. Guarda una copia del nombre y
-  el emoji para que un coleccionable siga en la mochila aunque el artículo
-  salga del catálogo. Los alquileres y potenciadores llevan `expires_at`.
+- `shop_inventory`: lo que tiene cada miembro. Guarda una copia del nombre,
+  el emoji y la clave de serie para que un objeto siga en la mochila (y se
+  pueda usar) aunque el artículo salga del catálogo. Los alquileres y
+  potenciadores llevan `expires_at`; los objetos gastados pasan a `expired`.
+- `shop_seeded`: qué artículos del surtido de serie
+  (`bot.services.shop_catalog`) se han metido ya en cada servidor, para no
+  volver a meter lo que un administrador haya retirado.
 
 El dinero no se toca aquí: la venta se apunta con `reserve`, que corre dentro
 de la transacción de `EconomyRepository.purchase`, así que el cobro, el IGIC,
@@ -22,10 +26,10 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from bot.services.shop import (
     BEST_SELLER_MIN,
@@ -39,6 +43,9 @@ from bot.services.shop import (
     quote,
     rental_end,
 )
+
+if TYPE_CHECKING:
+    from bot.services.shop_catalog import CatalogEntry
 
 T = TypeVar("T")
 
@@ -73,6 +80,9 @@ class InventoryEntry:
         starts_at: Desde cuándo vale (potenciadores en cola).
         expires_at: Hasta cuándo; `None` para siempre.
         equipped: Si el rol está puesto (solo roles para siempre).
+        catalog_key: Clave del surtido de serie del artículo de origen. Se
+            copia al comprar para que un objeto se pueda seguir usando aunque
+            el artículo salga del catálogo.
     """
 
     id: int
@@ -87,6 +97,7 @@ class InventoryEntry:
     starts_at: float
     expires_at: float | None
     equipped: bool
+    catalog_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +130,7 @@ def _item(row: sqlite3.Row) -> ShopItem:
         discount_until=row["discount_until"],
         visible=bool(row["visible"]),
         created_at=float(row["created_at"]),
+        catalog_key=row["catalog_key"],
     )
 
 
@@ -136,6 +148,7 @@ def _entry(row: sqlite3.Row) -> InventoryEntry:
         starts_at=float(row["starts_at"]),
         expires_at=row["expires_at"],
         equipped=bool(row["equipped"]),
+        catalog_key=row["catalog_key"],
     )
 
 
@@ -243,8 +256,21 @@ class ShopRepository:
 
                 CREATE INDEX IF NOT EXISTS shop_inventory_member
                     ON shop_inventory (guild_id, user_id, status);
+
+                CREATE TABLE IF NOT EXISTS shop_seeded (
+                    guild_id INTEGER NOT NULL,
+                    catalog_key TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, catalog_key)
+                );
                 """
             )
+            # Bases de datos de antes del surtido de serie: la columna se añade
+            # vacía (los artículos de entonces son todos «de la casa»).
+            for table in ("shop_items", "shop_inventory"):
+                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if "catalog_key" not in columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN catalog_key TEXT")
+            connection.commit()
         finally:
             connection.close()
 
@@ -573,8 +599,8 @@ class ShopRepository:
                 """
                 INSERT INTO shop_inventory
                     (guild_id, user_id, item_id, kind, name, emoji, role_id, serial, edition,
-                     multiplier, starts_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     multiplier, starts_at, expires_at, catalog_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     guild_id,
@@ -589,6 +615,7 @@ class ShopRepository:
                     item.multiplier,
                     starts_at,
                     expires_at,
+                    item.catalog_key,
                 ),
             )
             inventory_id = int(cursor.lastrowid or 0)
@@ -784,17 +811,208 @@ class ShopRepository:
         finally:
             connection.close()
 
+    # -- Surtido de serie ------------------------------------------------------------
+
+    async def stock_catalog(
+        self, guild_id: int, entries: Sequence[CatalogEntry], now: float, *, restock: bool = False
+    ) -> int:
+        """Mete en el catálogo del servidor los artículos de serie que falten.
+
+        Sin `restock`, solo mete los que nunca se han metido en ese servidor:
+        lo que un administrador haya retirado no vuelve. Con `restock` (botón
+        «Reponer surtido» de la trastienda) vuelve a meter también los
+        retirados, pero nunca duplica uno que siga en el catálogo, aunque esté
+        oculto.
+
+        Returns:
+            Cuántos artículos ha añadido.
+        """
+        return await self._run(self._stock_sync, guild_id, list(entries), now, restock)
+
+    def _stock_sync(
+        self, guild_id: int, entries: list[CatalogEntry], now: float, restock: bool
+    ) -> int:
+        connection = self._connect()
+        try:
+            with connection:
+                seeded = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT catalog_key FROM shop_seeded WHERE guild_id = ?", (guild_id,)
+                    )
+                }
+                present = {
+                    row[0]
+                    for row in connection.execute(
+                        """
+                        SELECT catalog_key FROM shop_items
+                        WHERE guild_id = ? AND catalog_key IS NOT NULL
+                        """,
+                        (guild_id,),
+                    )
+                }
+                skip = present if restock else seeded | present
+                added = 0
+                for entry in entries:
+                    if entry.key in skip:
+                        continue
+                    connection.execute(
+                        """
+                        INSERT INTO shop_items
+                            (guild_id, kind, name, emoji, description, price, igic, duration,
+                             multiplier, stock, per_user, min_level, created_at, catalog_key)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            guild_id,
+                            entry.kind.value,
+                            entry.name,
+                            entry.emoji,
+                            entry.description,
+                            entry.price,
+                            entry.igic,
+                            entry.duration,
+                            entry.multiplier,
+                            entry.stock,
+                            entry.per_user,
+                            entry.min_level,
+                            now,
+                            entry.key,
+                        ),
+                    )
+                    connection.execute(
+                        "INSERT OR IGNORE INTO shop_seeded (guild_id, catalog_key) VALUES (?, ?)",
+                        (guild_id, entry.key),
+                    )
+                    added += 1
+        finally:
+            connection.close()
+        return added
+
+    # -- Usar objetos ----------------------------------------------------------------
+
+    async def consume(self, guild_id: int, user_id: int, entry_id: int) -> bool:
+        """Gasta un objeto de la mochila. `False` si ya no estaba (doble clic, otra pestaña)."""
+        return await self._run(self._consume_sync, guild_id, user_id, entry_id)
+
+    def _consume_sync(self, guild_id: int, user_id: int, entry_id: int) -> bool:
+        connection = self._connect()
+        try:
+            with connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE shop_inventory SET status = 'expired'
+                    WHERE id = ? AND guild_id = ? AND user_id = ? AND status = 'active'
+                      AND kind = 'objeto'
+                    """,
+                    (entry_id, guild_id, user_id),
+                )
+        finally:
+            connection.close()
+        return cursor.rowcount > 0
+
+    async def restore(self, entry_id: int) -> None:
+        """Devuelve a la mochila un objeto gastado (si el uso no se pudo completar)."""
+        await self._run(self._restore_sync, entry_id)
+
+    def _restore_sync(self, entry_id: int) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE shop_inventory SET status = 'active'
+                    WHERE id = ? AND status = 'expired'
+                    """,
+                    (entry_id,),
+                )
+        finally:
+            connection.close()
+
+    async def grant(
+        self, guild_id: int, user_id: int, item: ShopItem, now: float
+    ) -> tuple[InventoryEntry, bool]:
+        """Mete un objeto en la mochila sin venta (premio de la caja botín).
+
+        No cuenta como unidad vendida ni lleva número de serie: la caja solo
+        da artículos de existencias ilimitadas.
+
+        Returns:
+            `(entrada, repe)`: `repe` si ya tenía uno igual.
+        """
+        return await self._run(self._grant_sync, guild_id, user_id, item, now)
+
+    def _grant_sync(
+        self, guild_id: int, user_id: int, item: ShopItem, now: float
+    ) -> tuple[InventoryEntry, bool]:
+        connection = self._connect()
+        try:
+            with connection:
+                dupe = (
+                    connection.execute(
+                        """
+                        SELECT 1 FROM shop_inventory
+                        WHERE guild_id = ? AND user_id = ? AND item_id = ? AND status = 'active'
+                        """,
+                        (guild_id, user_id, item.id),
+                    ).fetchone()
+                    is not None
+                )
+                cursor = connection.execute(
+                    """
+                    INSERT INTO shop_inventory
+                        (guild_id, user_id, item_id, kind, name, emoji, multiplier, starts_at,
+                         catalog_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        guild_id,
+                        user_id,
+                        item.id,
+                        item.kind.value,
+                        item.name,
+                        item.emoji,
+                        item.multiplier,
+                        now,
+                        item.catalog_key,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM shop_inventory WHERE id = ?", (cursor.lastrowid,)
+                ).fetchone()
+        finally:
+            connection.close()
+        return _entry(row), dupe
+
+    async def collection_size(self, guild_id: int, user_id: int) -> int:
+        """Objetos distintos que tiene un miembro (para los logros de colección)."""
+        return await self._run(self._collection_sync, guild_id, user_id)
+
+    def _collection_sync(self, guild_id: int, user_id: int) -> int:
+        connection = self._connect()
+        try:
+            (count,) = connection.execute(
+                """
+                SELECT COUNT(DISTINCT item_id) FROM shop_inventory
+                WHERE guild_id = ? AND user_id = ? AND kind = 'objeto' AND status = 'active'
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(count)
+
     # -- Limpieza --------------------------------------------------------------------
 
     async def delete_guild_data(self, guild_id: int) -> None:
-        """Borra el catálogo, las ventas y los inventarios de un servidor."""
+        """Borra el catálogo, las ventas, los inventarios y el surtido de un servidor."""
         await self._run(self._delete_guild_data_sync, guild_id)
 
     def _delete_guild_data_sync(self, guild_id: int) -> None:
         connection = self._connect()
         try:
             with connection:
-                for table in ("shop_items", "shop_purchases", "shop_inventory"):
+                for table in ("shop_items", "shop_purchases", "shop_inventory", "shop_seeded"):
                     # `table` sale de una tupla fija, nunca de entrada del usuario.
                     connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
         finally:

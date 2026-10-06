@@ -52,6 +52,7 @@ from bot.services.interest import (
     INTEREST_TOP,
     RESIST_BALANCE,
 )
+from bot.services.levels import TIMEZONE
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame, multiplier_cents
@@ -60,6 +61,8 @@ from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
+from bot.services.shop_catalog import AISLES as SHOP_AISLES
+from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
@@ -268,6 +271,40 @@ ROULETTE_NUMBERS_STAT = "roulette_numbers_hit"
 ROULETTE_FAVOURITE_STAT = "roulette_hit_max"
 #: Tipos de risa que distingue `analyze_laugh`. Cada uno suma `laugh_<tipo>`.
 LAUGH_KINDS = ("es", "en", "emoji", "skull", "smash", "intl", "phrase", "xd")
+#: Prefijo de los usos de cada objeto de la tienda (`shop_used_huevo`).
+SHOP_USED_PREFIX = "shop_used_"
+#: Estadística virtual: objetos distintos (por tipo de uso) que ha usado el miembro.
+SHOP_USE_KINDS_STAT = "shop_use_kinds"
+#: Prefijo de las compras por pasillo del colmado (`shop_aisle_moncloa`).
+SHOP_AISLE_PREFIX = "shop_aisle_"
+#: Estadística virtual: pasillos del surtido de serie en los que ha comprado.
+SHOP_AISLES_STAT = "shop_aisles"
+_SHOP_AISLE_KEYS = frozenset(a.key for a in SHOP_AISLES)
+#: Artículos de serie con logro propio al comprarlos; cada uno suma `shop_key_<clave>`.
+#: Solo estos, para no llenar las estadísticas con un contador por artículo.
+SHOP_TRACKED_KEYS = frozenset(
+    {
+        "falcon",
+        "aire_moncloa",
+        "nada",
+        "piedra",
+        "manual_resistencia",
+        "platano_cinta",
+        "nft_mono",
+        "escano",
+        "asesor",
+        "recibo_luz",
+        "lingote",
+        "patata_espana",
+        "caca_oro",
+        "yate",
+    }
+)
+#: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
+SHOP_MESSY_USES = frozenset({"huevo", "tomate", "tarta", "globo", "gofio", "mojo"})
+SHOP_LOVE_USES = frozenset(
+    {"ramo", "abrazo", "carta", "barraquito", "perreo", "dimsum", "sobre_rojo"}
+)
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
@@ -2880,6 +2917,174 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (6, "boost_queue_6", "Atasco de potenciadores", "Ten 6 potenciadores esperando turno.", E),
     ])  # fmt: skip
 
+    # 🛍️ Tienda: el surtido de serie y los objetos que se usan --------------------------
+    a += _tiers("shop", "shop_uses", [
+        (1, "use_1", "Pa' eso lo compré", "Usa un objeto de la mochila.", C),
+        (25, "use_25", "Gamberro de barrio", "Usa 25 objetos.", C),
+        (100, "use_100", "Altercado público", "Usa 100 objetos.", R),
+        (1_000, "use_1k", "Terror del servidor", "Usa 1.000 objetos.", E),
+        (5_000, "use_5k", "Vandalismo de Estado", "Usa 5.000 objetos.", L),
+    ])  # fmt: skip
+    a += _tiers("shop", SHOP_USE_KINDS_STAT, [
+        (5, "use_kinds_5", "Probador", "Usa 5 objetos distintos.", R),
+        (20, "use_kinds_20", "Catador oficial del colmado", "Usa 20 objetos distintos.", E),
+        (len(SHOP_USES), "use_kinds_all", "Lo he probado todo",
+         f"Usa los {len(SHOP_USES)} tipos de objeto del colmado.", L),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_targeted", [
+        (1, "target_1", "Con cariño", "Usa un objeto contra alguien.", C),
+        (50, "target_50", "Francotirador de tupper", "Usa 50 objetos contra alguien.", R),
+        (500, "target_500", "Enemigo público nº 1", "Usa 500 objetos contra alguien.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_got_hit", [
+        (1, "hit_1", "Diana", "Que alguien use un objeto contra ti.", C),
+        (25, "hit_25", "Saco de boxeo", "Que usen 25 objetos contra ti.", R),
+        (250, "hit_250", "Pim, pam, pum del servidor", "Que usen 250 objetos contra ti.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_got_messy", [
+        (10, "messy_10", "Pringado (literalmente)",
+         "Recibe 10 huevos, tomates, tartazos, globos, pellas de gofio o mojo.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_got_love", [
+        (10, "love_10", "Querido por el pueblo",
+         "Recibe 10 ramos, abrazos, cartas, barraquitos, perreos, dim sum o sobres rojos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_got_raided", [
+        (1, "raided_1", "Diligencias abiertas", "Que te registre la UCO por un chivatazo.", C),
+        (10, "raided_10", "Registro de los martes", "Que te registre la UCO 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_self", [
+        (1, "use_self", "Me lo merezco", "Úsate un objeto a ti mismo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_bot", [
+        (1, "use_bot", "Muerde la mano que te da de comer",
+         "Intenta usar un objeto contra el bot.", R, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_backfires", [
+        (1, "backfire_1", "Karma instantáneo", "Que te salga el tiro por la culata.", C),
+        (25, "backfire_25", "Tu peor enemigo eres tú",
+         "Que te salga el tiro por la culata 25 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_hits", [
+        (100, "hits_100", "Puntería de chancla", "Acierta 100 lanzamientos.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_egg_collector", [
+        (1, "egg_sanxe", "Huevo a Hacienda",
+         "Dale con un huevo a Perro Sanxe sin querer.", R, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_caught", [
+        (1, "caught_1", "Reflejos de portero",
+         "Que tu objetivo cace al vuelo lo que le lanzas.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_d20_nat20", [
+        (1, "nat20_1", "Crítico natural", "Saca un 20 con el dado de 20 caras.", R),
+        (10, "nat20_10", "Bendecido por los dados", "Saca 10 veces un 20 natural.", L),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_d20_nat1", [
+        (1, "nat1_1", "Pifia", "Saca un 1 con el dado de 20 caras.", R, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_padron_hot", [
+        (1, "padron_1", "Unos pican y otros no", "Cómete un pimiento de Padrón que pica.", C),
+        (25, "padron_25", "Lengua de amianto", "Cómete 25 pimientos de Padrón que pican.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_robuso_asleep", [
+        (1, "robuso_asleep", "Despertador internacional",
+         "Llama a Robuso cuando en Hong Kong es de madrugada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}robuso", [
+        (10, "robuso_10", "Tarifa plana con Hong Kong", "Llama a Robuso 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}huevo", [
+        (50, "eggs_50", "Huevina", "Lanza 50 huevos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}uco", [
+        (10, "uco_10", "Colaborador habitual de la UCO", "Da 10 chivatazos a la UCO.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}indulto", [
+        (3, "indulto_3", "El BOE es mío", "Concede 3 indultos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}bulo", [
+        (25, "bulo_25", "Director de la máquina del fango", "Publica 25 bulos.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}cis", [
+        (10, "cis_10", "Cocinero del CIS", "Publica 10 encuestas del CIS.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", f"{SHOP_USED_PREFIX}megafono", [
+        (5, "megafono_5", "Pregonero de las fiestas", "Grita 5 veces por el megáfono.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_nickname", [
+        (1, "dni_1", "Identidad falsa", "Cámbiate el apodo con un DNI falso.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_mystery", [
+        (1, "mystery_1", "Caja de Pandora", "Abre una caja botín.", C),
+        (25, "mystery_25", "Ludopatía de cajas botín", "Abre 25 cajas botín.", R),
+        (250, "mystery_250", "Ley de cajas botín, ¿para cuándo?", "Abre 250 cajas botín.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_mystery_dupe", [
+        (1, "mystery_dupe", "Repe", "Que la caja botín te dé algo que ya tenías.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_mystery_best", [
+        (10_000, "mystery_10k", "Por una vez sale a cuenta",
+         "Que la caja botín te dé algo de 10.000 Y$ o más.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("shop", "shop_mystery_jackpot", [
+        (1, "mystery_jackpot", "Me tocó el gordo de la caja",
+         "Que la caja botín te dé algo de 100.000 Y$ o más.", L, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_consumed", [
+        (100, "consumed_100", "Usar y tirar", "Gasta 100 objetos de un solo uso.", R),
+        (1_000, "consumed_1k", "Sociedad de consumo", "Gasta 1.000 objetos de un solo uso.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_night", [
+        (1, "use_night", "Gamberro de madrugada", "Usa un objeto entre las 3 y las 6.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_newyear", [
+        (1, "use_newyear", "Campanadas con petardo", "Usa un objeto en Nochevieja o Año Nuevo.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_halloween", [
+        (1, "use_halloween", "Truco, trato o tomatazo", "Usa un objeto en Halloween.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_canarias", [
+        (1, "use_canarias", "Día de Canarias en el colmado",
+         "Usa un objeto el 30 de mayo.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_use_pino", [
+        (1, "use_pino", "Romería del Pino", "Usa un objeto el 8 de septiembre.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", SHOP_AISLES_STAT, [
+        (3, "aisles_3", "De paseo por el colmado", "Compra en 3 pasillos distintos.", C),
+        (len(SHOP_AISLES), "aisles_all", "Me conozco todos los pasillos",
+         f"Compra en los {len(SHOP_AISLES)} pasillos del colmado.", E),
+    ])  # fmt: skip
+    for key, achievement_id, name, description, rarity, secret in (
+        ("piedra", "buy_piedra", "La compra más honesta", "Compra la piedra.", C, False),
+        ("manual_resistencia", "buy_manual", "Libro de cabecera",
+         "Compra el Manual de resistencia.", C, False),
+        ("aire_moncloa", "buy_aire", "Pagar por nada", "Compra aire de La Moncloa.", C, True),
+        ("nada", "buy_nada", "Nada de nada", "Compra nada. Literalmente.", R, True),
+        ("recibo_luz", "buy_luz", "Pagar la luz por gusto",
+         "Compra el recibo de la luz de enero.", R, True),
+        ("nft_mono", "buy_nft", "Web3 en 2026", "Compra el NFT del mono aburrido.", R, True),
+        ("escano", "buy_escano", "Diputado de cartón", "Compra un escaño del Congreso.", R,
+         False),
+        ("asesor", "buy_asesor", "Asesor de nada", "Compra una plaza de asesor sin funciones.", E,
+         True),
+        ("caca_oro", "buy_caca", "Lujo escatológico", "Compra la caca bañada en oro.", E, True),
+        ("lingote", "buy_lingote", "Reserva de oro", "Compra un lingote de oro.", E, False),
+        ("yate", "buy_yate", "Puerto Rico, pero el de aquí", "Compra un yate.", L, False),
+        ("patata_espana", "buy_patata", "Sin Canarias, como en el telediario",
+         "Llévate la única patata con forma de España.", L, True),
+        ("platano_cinta", "buy_platano", "Arte contemporáneo",
+         "Compra el plátano pegado a la pared con cinta.", L, True),
+        ("falcon", "buy_falcon", "Yo también tengo Falcon", "Compra el Falcon de Moncloa.", M,
+         True),
+    ):  # fmt: skip
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((f"shop_key_{key}", 1),), secret=secret,
+        ))  # fmt: skip
+
     # 🪏 Trabajo ------------------------------------------------------------------------
     a += _tiers("work", "work_shifts", [
         (1, "pala_1", "Coge la pala", "Ficha tu primer turno.", C),
@@ -3991,6 +4196,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     # 🛍️ Tienda, 🏦 Banco, 🎟️ Loterías y 🏛️ Hacienda
+    a += more("shop", "shop_collection_max", [
+        (30, "collect_30", "Trastero lleno", "Ten 30 objetos distintos.", E),
+        (60, "collect_60", "Síndrome de Diógenes", "Ten 60 objetos distintos.", L),
+        (100, "collect_100", "El colmado en casa", "Ten 100 objetos distintos.", M),
+    ])  # fmt: skip
     a += more("shop", "shop_renewals", [
         (100, "renewals_100", "Suscriptor de por vida",
          "Renueva alquileres de rol 100 veces.", L),
@@ -4358,8 +4568,10 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
 
     `messages_total` suma los mensajes contados por los logros y los que ya
     tenía el miembro en el historial importado antes de que existieran.
-    `img_effects_tried` cuenta los efectos de imagen distintos usados, y
-    `roulette_numbers_hit` y `roulette_hit_max`, los plenos por número.
+    `img_effects_tried` cuenta los efectos de imagen distintos usados;
+    `roulette_numbers_hit` y `roulette_hit_max`, los plenos por número;
+    `shop_use_kinds`, los objetos distintos usados de la tienda, y
+    `shop_aisles`, los pasillos del colmado en los que ha comprado.
     """
     full = dict(stats)
     full[MESSAGES_TOTAL_STAT] = full.get("messages", 0) + full.get("messages_imported", 0)
@@ -4375,6 +4587,20 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[ROULETTE_NUMBERS_STAT] = len(hits)
     full[ROULETTE_FAVOURITE_STAT] = max(hits, default=0)
+    full[SHOP_USE_KINDS_STAT] = sum(
+        1
+        for stat, value in stats.items()
+        if stat.startswith(SHOP_USED_PREFIX)
+        and stat[len(SHOP_USED_PREFIX) :] in SHOP_USES
+        and value > 0
+    )
+    full[SHOP_AISLES_STAT] = sum(
+        1
+        for stat, value in stats.items()
+        if stat.startswith(SHOP_AISLE_PREFIX)
+        and stat[len(SHOP_AISLE_PREFIX) :] in _SHOP_AISLE_KEYS
+        and value > 0
+    )
     return full
 
 
@@ -5552,6 +5778,8 @@ def shop_stats(
     collection: int,
     queued_boosts: int,
     balance_after: int,
+    catalog_key: str | None = None,
+    aisle: str | None = None,
 ) -> StatDelta:
     """Estadísticas de una compra de la tienda.
 
@@ -5567,6 +5795,8 @@ def shop_stats(
         collection: Coleccionables distintos que tiene tras comprar.
         queued_boosts: Potenciadores suyos sin acabar (en marcha o en cola).
         balance_after: Saldo tras pagar.
+        catalog_key: Clave del surtido de serie, si viene de ahí.
+        aisle: Pasillo del colmado del artículo.
     """
     delta = StatDelta(
         add={"shop_purchases": 1, "shop_spent": total, "shop_igic": tax},
@@ -5592,6 +5822,82 @@ def shop_stats(
         delta.peak["shop_collection_max"] = collection
     if kind == "xp":
         delta.peak["shop_boost_queue_max"] = queued_boosts
+    if aisle in _SHOP_AISLE_KEYS:
+        bump(f"{SHOP_AISLE_PREFIX}{aisle}")
+    if catalog_key in SHOP_TRACKED_KEYS:
+        bump(f"shop_key_{catalog_key}")
+    return delta
+
+
+def shop_use_stats(
+    *,
+    use: str,
+    flags: Iterable[str],
+    consumed: bool,
+    targeted: bool,
+    at_self: bool,
+    at_bot: bool,
+    prize_price: int | None,
+    collection: int,
+    when: float,
+) -> StatDelta:
+    """Estadísticas de quien usa un objeto de la tienda.
+
+    Args:
+        use: Clave del uso (`bot.services.shop_uses.USES`).
+        flags: Marcas del desenlace (`"hit"`, `"backfire"`, `"nat20"`…).
+        consumed: Si el objeto se ha gastado.
+        targeted: Si se ha usado contra otro miembro (ni uno mismo ni un bot).
+        at_self: Si se lo ha aplicado a sí mismo.
+        at_bot: Si ha ido contra un bot.
+        prize_price: Precio del premio, si era una caja botín.
+        collection: Objetos distintos que tiene tras usarlo.
+        when: Momento del uso (epoch).
+    """
+    delta = StatDelta(add={"shop_uses": 1, f"{SHOP_USED_PREFIX}{use}": 1})
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            delta.add[stat] = delta.add.get(stat, 0) + 1
+
+    marks = set(flags)
+    bump("shop_consumed", consumed)
+    bump("shop_use_targeted", targeted)
+    bump("shop_use_self", at_self)
+    bump("shop_use_bot", at_bot)
+    bump("shop_use_hits", "hit" in marks)
+    bump("shop_use_backfires", "backfire" in marks)
+    bump("shop_egg_collector", "collector" in marks)
+    bump("shop_caught", "caught" in marks)
+    bump("shop_d20_nat20", "nat20" in marks)
+    bump("shop_d20_nat1", "nat1" in marks)
+    bump("shop_padron_hot", "hot" in marks)
+    bump("shop_robuso_asleep", "asleep" in marks)
+    bump("shop_nickname", "nickname" in marks)
+    if prize_price is not None:
+        bump("shop_mystery")
+        bump("shop_mystery_jackpot", "jackpot" in marks)
+        bump("shop_mystery_dupe", "dupe" in marks)
+        delta.peak["shop_mystery_best"] = prize_price
+        delta.peak["shop_collection_max"] = collection
+    moment = datetime.fromtimestamp(when, TIMEZONE)
+    bump("shop_use_night", 3 <= moment.hour < 6)
+    bump("shop_use_newyear", (moment.month, moment.day) in {(12, 31), (1, 1)})
+    bump("shop_use_halloween", (moment.month, moment.day) == (10, 31))
+    bump("shop_use_canarias", (moment.month, moment.day) == (5, 30))
+    bump("shop_use_pino", (moment.month, moment.day) == (9, 8))
+    return delta
+
+
+def shop_hit_stats(*, use: str) -> StatDelta:
+    """Estadísticas de quien recibe un objeto de la tienda (un huevo, un ramo…)."""
+    delta = StatDelta(add={"shop_got_hit": 1})
+    if use in SHOP_MESSY_USES:
+        delta.add["shop_got_messy"] = 1
+    if use in SHOP_LOVE_USES:
+        delta.add["shop_got_love"] = 1
+    if use == "uco":
+        delta.add["shop_got_raided"] = 1
     return delta
 
 

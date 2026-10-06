@@ -124,6 +124,8 @@ class ShopItem:
         discount_until: Fin de la rebaja (epoch); `None` hasta que se quite.
         visible: Si se enseña y se vende. Los ocultos solo los ve `catalogo`.
         created_at: Cuándo entró en el catálogo (epoch).
+        catalog_key: Clave del surtido de serie (`bot.services.shop_catalog`)
+            si vino de ahí; `None` si lo creó un administrador.
     """
 
     id: int
@@ -145,6 +147,7 @@ class ShopItem:
     discount_until: float | None = None
     visible: bool = True
     created_at: float = 0.0
+    catalog_key: str | None = None
 
     @property
     def igic_rate(self) -> IgicRate:

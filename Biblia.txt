@@ -125,6 +125,14 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
    - **Nada crece sin tope.** Toda fuente de dinero que dependa del saldo (intereses, rentas, cualquier cosa que se reinvierta) va por tramos o con un máximo diario, y el tramo remunerado no pasa del mínimo del Patrimonio. Un 2,5 % diario sin tope duplica el dinero cada 4 semanas y lo multiplica por 8.000 en un año: rompe el equilibrio entre jugar, trabajar e IMV y vuelve trivial cualquier umbral en Y$.
    - La retención de una renta se proyecta solo con rentas del mismo tipo (la de una nómina, con las nóminas recientes; el art. 83.2 RIRPF calcula la base de retención con las retribuciones del trabajo previsibles del año): mezclar el casino con la nómina hace saltar el tipo de quien juega mucho.
 
+### Tienda: surtido de serie y objetos que se usan
+
+- El surtido de serie vive en `services/shop_catalog.py` y lo que hace cada objeto al usarlo, en `services/shop_uses.py`. Un artículo nuevo es una fila en `CATALOG`; su `key` no se cambia nunca (es lo que une el artículo de cada servidor con el surtido y lo que cuentan los logros). Entra solo en todos los servidores en la siguiente apertura de la tienda; retirar un artículo de `CATALOG` no lo quita de los servidores, que siguen teniéndolo como «De la casa».
+- Cada artículo lleva el tipo de IGIC que le tocaría en la vida real y, si es caro (100.000 Y$ o más), un nivel mínimo. Precios a la escala general (10 Y$ = 1 €) y medidos en tiradas, como el resto de la economía.
+- Usar un objeto **no mueve dinero**. Si algún día un uso diera o quitara Y$, entraría en las reglas de «Dinero, impuestos y la Renta» como cualquier otra fuente. La caja botín da objetos de existencias ilimitadas, nunca dinero ni unidades numeradas.
+- Las frases de un uso son plantillas con `{who}`, `{target}`, `{item}`, `{collector}` y los huecos de `pools`; `tests/unit/test_shop_catalog.py` las arma todas con varias semillas y falla si queda un hueco sin rellenar. Un uso contra alguien menciona solo a esa persona (`AllowedMentions(users=[…])`); el megáfono no menciona a nadie.
+- Cada uso nuevo suma `shop_used_<clave>` y cuenta para «Lo he probado todo» (la meta es el número de usos, así que sube sola). Si tiene un desenlace raro, que tenga su marca (`flag`) y su logro.
+
 ### Logros
 
 **Cada funcionalidad del bot tiene logros asociados.** Una funcionalidad nueva no está terminada hasta que tiene los suyos en el catálogo (en su propia categoría o en una existente) y los alimenta. Si se cambia una funcionalidad, se revisan sus logros en el mismo cambio. Excepciones: los comandos de administración y las utilidades internas (`ayuda`, `latencia`).

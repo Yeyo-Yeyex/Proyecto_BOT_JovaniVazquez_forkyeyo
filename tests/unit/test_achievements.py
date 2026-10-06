@@ -38,6 +38,9 @@ from bot.services.achievements import (
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
+    SHOP_AISLES_STAT,
+    SHOP_TRACKED_KEYS,
+    SHOP_USE_KINDS_STAT,
     UNLOCKED_STAT,
     Rarity,
     StatDelta,
@@ -60,6 +63,7 @@ from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyServ
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
+from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
 
@@ -99,7 +103,15 @@ PRODUCED_STATS = {
     "shop_purchases", "shop_spent", "shop_igic", "shop_roles", "shop_renewals", "shop_boosts",
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",
     "shop_luxury", "shop_big_buy_max", "shop_limited", "shop_first_serial", "shop_last_unit",
-    "shop_broke_buy",
+    "shop_broke_buy", SHOP_AISLES_STAT, *(f"shop_key_{key}" for key in SHOP_TRACKED_KEYS),
+    # Usar objetos (cogs/shop.py: shop_use_stats y shop_hit_stats)
+    "shop_uses", SHOP_USE_KINDS_STAT, *(f"shop_used_{key}" for key in SHOP_USES),
+    "shop_consumed", "shop_use_targeted", "shop_use_self", "shop_use_bot", "shop_use_hits",
+    "shop_use_backfires", "shop_egg_collector", "shop_caught", "shop_d20_nat20",
+    "shop_d20_nat1", "shop_padron_hot", "shop_robuso_asleep", "shop_nickname", "shop_mystery",
+    "shop_mystery_jackpot", "shop_mystery_dupe", "shop_mystery_best", "shop_use_night",
+    "shop_use_newyear", "shop_use_halloween", "shop_use_canarias", "shop_use_pino",
+    "shop_got_hit", "shop_got_messy", "shop_got_love", "shop_got_raided",
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
     "bizum_broke", "bizum_received_count", "bizum_received",

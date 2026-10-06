@@ -9,16 +9,25 @@
   total) y pide confirmar. Al pagar sale la factura simplificada, que solo ve
   el comprador, y un aviso público en el canal para presumir.
 - `mochila [miembro]` enseña lo que tiene alguien. Su dueño puede ponerse y
-  quitarse los roles que compró para siempre (útil para los de color).
-- El catálogo lo montan los administradores con `catalogo` (cog Admin; la
-  trastienda vive en `bot.cogs.shop_admin`).
+  quitarse los roles que compró para siempre (útil para los de color) y usar
+  los objetos que se usan: tirarle un huevo a alguien, mandar un burofax,
+  abrir una caja botín… (reglas en `bot.services.shop_uses`). El resultado
+  sale en el canal; si es contra alguien, se le menciona.
+- Surtido de serie: la primera vez que se abre la tienda en un servidor se
+  llena con los artículos de `bot.services.shop_catalog`, repartidos en
+  pasillos que el escaparate deja filtrar. Desde ahí, los administradores los
+  tocan con `catalogo` (cog Admin; la trastienda vive en
+  `bot.cogs.shop_admin`) como cualquier otro artículo.
 
 Dinero: cada compra pasa por `EconomyService.purchase` con su IGIC (tipo por
 artículo, ver `bot.services.taxes.IGIC_RATES`), que va al Estado. Pagar llama
 a `renta.remind` y la factura lleva la línea de la renta pendiente. Si el rol
 comprado no se puede dar, se devuelve todo con `refund_purchase`.
 
-Logros: categoría Tienda (`shop_stats`), con `achievements.track` al pagar.
+Logros: categoría Tienda, con `achievements.track` al pagar (`shop_stats`),
+al usar un objeto (`shop_use_stats`) y para quien lo recibe (`shop_hit_stats`).
+Usar un objeto no mueve dinero, así que no lleva impuestos ni gancho de la
+Renta: lo que tributa es la compra.
 
 Otros cogs: `xp_multiplier(bot, …)` da el multiplicador de XP de los
 potenciadores; lo usa `bot.cogs.message_stats` al dar XP por mensajes y voz.
@@ -36,7 +45,7 @@ import logging
 import random
 import time
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING
 
 import discord
@@ -46,7 +55,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
-from bot.services.achievements import shop_stats
+from bot.services.achievements import shop_hit_stats, shop_stats, shop_use_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
     EconomyService,
@@ -69,6 +78,27 @@ from bot.services.shop import (
     quote,
     rate_label,
     receipt,
+)
+from bot.services.shop_catalog import (
+    AISLE_BY_KEY,
+    AISLES,
+    CATALOG,
+    HOUSE_AISLE,
+    CatalogEntry,
+    aisle_of,
+    use_of,
+)
+from bot.services.shop_uses import (
+    MAX_NICK,
+    Target,
+    Use,
+    UseResult,
+    clean_shout,
+    megaphone_text,
+    mystery_text,
+    nickname_text,
+    pick_mystery,
+    resolve,
 )
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.cogs import find_cog
@@ -107,6 +137,21 @@ ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
         "{who} añade {item} a la vitrina. Qué nivel.",
     ),
 }
+#: Aviso de compra de un objeto que se usa (un huevo, un burofax…): suena a amenaza.
+ANNOUNCE_USABLE: tuple[str, ...] = (
+    "{who} sale del colmado con {item} en la mano. Alguien va a cobrar. 👀",
+    "{who} se compra {item}. Yo que tú no le daba la espalda.",
+    "{who} pilla {item}. Esto no va a acabar bien, mi amor.",
+)
+
+#: Pestañas del escaparate: clave, etiqueta y si un artículo entra en ella.
+TABS: tuple[tuple[str, str], ...] = (
+    ("todo", "🛍️ Todo"),
+    ("rol", "🎭 Roles"),
+    ("xp", "⚡ XP"),
+    ("objeto", "💎 Vitrina"),
+    ("uso", "🫳 Para usar"),
+)
 
 
 def _name(user: discord.abc.User) -> str:
@@ -138,7 +183,19 @@ def kind_detail(item: ShopItem) -> str:
         return (
             f"XP {format_multiplier(item.multiplier or 100)} durante {format_span(item.duration)}"
         )
+    if (use := use_of(item.catalog_key)) is not None:
+        return use.summary
     return "Coleccionable"
+
+
+def in_tab(item: ShopItem, tab: str) -> bool:
+    """Si un artículo sale en una pestaña del escaparate."""
+    usable = use_of(item.catalog_key) is not None
+    if tab == "uso":
+        return usable
+    if tab == "objeto":
+        return item.kind is Kind.TROPHY and not usable
+    return tab == "todo" or item.kind.value == tab
 
 
 def price_text(item: ShopItem, now: float) -> str:
@@ -158,7 +215,7 @@ def item_card(item: ShopItem, now: float, *, best_seller: bool = False) -> str:
     lines = [f"### {item.emoji} {item.name}", price_text(item, now)]
     if item.description:
         lines.append(item.description)
-    tags = [kind_detail(item)]
+    tags = [aisle_of(item.catalog_key).label, kind_detail(item)]
     if best_seller:
         tags.append("🔥 Lo más vendido")
     if item.is_new(now):
@@ -224,13 +281,18 @@ def entry_line(entry: InventoryEntry, now: float) -> str:
     return f"{entry.emoji} **{entry.name}**"
 
 
-def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
-    """Coleccionables agrupados por artículo, con sus números de serie."""
+def group_entries(entries: list[InventoryEntry]) -> list[list[InventoryEntry]]:
+    """Entradas de la mochila agrupadas por artículo, en el orden en que llegan."""
     groups: dict[int, list[InventoryEntry]] = defaultdict(list)
     for entry in entries:
         groups[entry.item_id].append(entry)
+    return list(groups.values())
+
+
+def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
+    """Objetos agrupados por artículo, con sus números de serie y cómo se usan."""
     lines = []
-    for group in groups.values():
+    for group in group_entries(entries):
         first = group[0]
         text = f"{first.emoji} **{first.name}**"
         if len(group) > 1:
@@ -239,18 +301,46 @@ def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
         if serials and first.edition:
             numbers = ", ".join(str(s) for s in serials)
             text += f" · nº {numbers} de {first.edition}"
+        if (use := use_of(first.catalog_key)) is not None:
+            text += f" · *{use.verb.lower()}*"
         lines.append(text)
     return lines
+
+
+def _usable(entry: InventoryEntry) -> bool:
+    return entry.kind is Kind.TROPHY and use_of(entry.catalog_key) is not None
+
+
+def _clip(text: str, limit: int) -> str:
+    """Recorta por líneas enteras para no partir un emoji o un formato a la mitad."""
+    if len(text) <= limit:
+        return text
+    kept: list[str] = []
+    size = 0
+    for line in text.split("\n"):
+        if size + len(line) + 1 > limit - 20:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    return "\n".join(kept) + "\n-# …y más cosas."
+
+
+def _select_emoji(emoji: str) -> discord.PartialEmoji | str | None:
+    """Emoji válido para una opción de desplegable (los de bandera y los raros fallan)."""
+    try:
+        return discord.PartialEmoji.from_str(emoji)
+    except (TypeError, ValueError):
+        return None
 
 
 # -- Escaparate -----------------------------------------------------------------------
 
 
 class Storefront(ui.LayoutView):
-    """El escaparate: pestañas, artículos con su botón Comprar y páginas.
+    """El escaparate: pestañas, pasillos, artículos con su botón Comprar y páginas.
 
-    Las pestañas y las páginas son del dueño; si otro las toca, se le abre
-    su propio escaparate. **Comprar** lo puede pulsar cualquiera.
+    Las pestañas, el pasillo y las páginas son del dueño; si otro los toca, se
+    le abre su propio escaparate. **Comprar** lo puede pulsar cualquiera.
     """
 
     def __init__(self, cog: Tienda, guild: discord.Guild, owner: discord.abc.User) -> None:
@@ -258,7 +348,9 @@ class Storefront(ui.LayoutView):
         self.cog = cog
         self.guild = guild
         self.owner = owner
-        self.kind: Kind | None = None
+        self.tab = "todo"
+        #: Pasillo elegido (`None`: todos).
+        self.aisle: str | None = None
         self.page = 0
         self.items_all: list[ShopItem] = []
         self.best_seller: int | None = None
@@ -275,8 +367,13 @@ class Storefront(ui.LayoutView):
 
     @property
     def shown(self) -> list[ShopItem]:
-        """Artículos de la pestaña elegida."""
-        return [i for i in self.items_all if self.kind is None or i.kind is self.kind]
+        """Artículos de la pestaña y el pasillo elegidos."""
+        return [
+            i
+            for i in self.items_all
+            if in_tab(i, self.tab)
+            and (self.aisle is None or aisle_of(i.catalog_key).key == self.aisle)
+        ]
 
     @property
     def pages(self) -> int:
@@ -288,23 +385,27 @@ class Storefront(ui.LayoutView):
         now = self.cog.clock()
         self.page = min(self.page, self.pages - 1)
         container = ui.Container(accent_colour=COLOR)
+        where = f" · {AISLE_BY_KEY[self.aisle].label}" if self.aisle else ""
         container.add_item(
             ui.TextDisplay(
-                f"# 🛒 {SHOP_NAME}\n"
+                f"# 🛒 {SHOP_NAME}{where}\n"
                 f"¡Wepa, {_name(self.owner)}! Aquí se gasta lo que te dan el casino y el IMV. "
                 f"Los precios van sin IGIC: {TAX_COLLECTOR} cobra en caja.\n"
                 f"-# {CURRENCY_EMOJI} Saldo de {_name(self.owner)}: {format_amount(self.balance)}"
             )
         )
         tabs: ui.ActionRow = ui.ActionRow()
-        for kind in (None, *Kind):
-            count = sum(1 for i in self.items_all if kind is None or i.kind is kind)
-            label = "🛍️ Todo" if kind is None else f"{kind.icon} {kind.title}"
+        for key, label in TABS:
+            count = sum(1 for i in self.items_all if in_tab(i, key))
             style = (
-                discord.ButtonStyle.primary if kind is self.kind else discord.ButtonStyle.secondary
+                discord.ButtonStyle.primary if key == self.tab else discord.ButtonStyle.secondary
             )
-            tabs.add_item(_button(f"{label} · {count}", self._tab(kind), style=style))
+            tabs.add_item(_button(f"{label} · {count}", self._tab(key), style=style))
         container.add_item(tabs)
+        if (aisles := self._aisle_select()) is not None:
+            row: ui.ActionRow = ui.ActionRow()
+            row.add_item(aisles)
+            container.add_item(row)
         container.add_item(ui.Separator())
 
         page_items = self.shown[self.page * PAGE_SIZE : (self.page + 1) * PAGE_SIZE]
@@ -313,7 +414,7 @@ class Storefront(ui.LayoutView):
                 ui.TextDisplay(
                     "El colmado está vacío, mi amor. Un admin tiene que llenarlo con `catalogo`."
                     if not self.items_all
-                    else "No hay nada en esta sección todavía."
+                    else "No hay nada por aquí. Prueba otro pasillo u otra pestaña."
                 )
             )
         for item in page_items:
@@ -336,25 +437,67 @@ class Storefront(ui.LayoutView):
         nav.add_item(_button("🎒 Mi mochila", self._backpack, style=discord.ButtonStyle.primary))
         self.add_item(nav)
 
+    def _aisle_select(self) -> ui.Select | None:
+        """Desplegable de pasillos, con los que tienen algo en la pestaña elegida."""
+        counts: dict[str, int] = defaultdict(int)
+        for item in self.items_all:
+            if in_tab(item, self.tab):
+                counts[aisle_of(item.catalog_key).key] += 1
+        present = [a for a in (*AISLES, HOUSE_AISLE) if counts.get(a.key)]
+        if len(present) < 2 and self.aisle is None:
+            return None
+        options = [
+            discord.SelectOption(
+                label="Todos los pasillos",
+                value="*",
+                emoji="🧭",
+                default=self.aisle is None,
+            )
+        ]
+        options += [
+            discord.SelectOption(
+                label=f"{a.name} · {counts[a.key]}",
+                value=a.key,
+                emoji=a.emoji,
+                default=a.key == self.aisle,
+            )
+            for a in present[:24]
+        ]
+        select: ui.Select = ui.Select(placeholder="🧭 Elige pasillo", options=options)
+
+        async def callback(interaction: discord.Interaction) -> None:
+            value = select.values[0]
+            aisle = None if value == "*" else value
+            if await self._redirect(interaction, self.tab, aisle):
+                return
+            self.aisle, self.page = aisle, 0
+            self.rebuild()
+            await interaction.response.edit_message(view=self)
+
+        select.callback = callback  # type: ignore[method-assign]
+        return select
+
     async def _noop(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
 
-    async def _redirect(self, interaction: discord.Interaction, kind: Kind | None) -> bool:
+    async def _redirect(
+        self, interaction: discord.Interaction, tab: str, aisle: str | None
+    ) -> bool:
         """Si no es el dueño, le abre su propio escaparate. Devuelve si lo hizo."""
         if interaction.user.id == self.owner.id:
             return False
         own = Storefront(self.cog, self.guild, interaction.user)
-        own.kind = kind
+        own.tab, own.aisle = tab, aisle
         await own.load()
         await interaction.response.send_message(view=own, ephemeral=True)
         own.interaction = interaction
         return True
 
-    def _tab(self, kind: Kind | None) -> Callable[[discord.Interaction], Awaitable[None]]:
+    def _tab(self, tab: str) -> Callable[[discord.Interaction], Awaitable[None]]:
         async def callback(interaction: discord.Interaction) -> None:
-            if await self._redirect(interaction, kind):
+            if await self._redirect(interaction, tab, self.aisle):
                 return
-            self.kind, self.page = kind, 0
+            self.tab, self.page = tab, 0
             await self.load()
             await interaction.response.edit_message(view=self)
 
@@ -362,7 +505,7 @@ class Storefront(ui.LayoutView):
 
     def _move(self, step: int) -> Callable[[discord.Interaction], Awaitable[None]]:
         async def callback(interaction: discord.Interaction) -> None:
-            if await self._redirect(interaction, self.kind):
+            if await self._redirect(interaction, self.tab, self.aisle):
                 return
             self.page = max(0, min(self.pages - 1, self.page + step))
             self.rebuild()
@@ -536,7 +679,7 @@ class Backpack(ui.LayoutView):
         container.add_item(ui.Separator())
         sections = []
         for kind in Kind:
-            mine = [e for e in self.entries if e.kind is kind]
+            mine = [e for e in self.entries if e.kind is kind and not _usable(e)]
             if not mine:
                 continue
             lines = (
@@ -545,10 +688,39 @@ class Backpack(ui.LayoutView):
                 else [entry_line(e, now) for e in sorted(mine, key=lambda e: e.starts_at)]
             )
             sections.append(f"### {kind.icon} {kind.title}\n" + "\n".join(lines))
+        usable = [e for e in self.entries if _usable(e)]
+        if usable:
+            sections.append("### 🫳 Para usar\n" + "\n".join(trophy_lines(usable)))
         if not sections:
             sections.append("Vacía. Date una vuelta por la `tienda`, que hay cositas.")
-        container.add_item(ui.TextDisplay("\n\n".join(sections)[:3800]))
+        container.add_item(ui.TextDisplay(_clip("\n\n".join(sections), 3800)))
         self.add_item(container)
+
+        if usable and self.viewer.id == self.member.id:
+            groups = group_entries(usable)
+            use_options = []
+            for group in groups[:25]:
+                first = group[0]
+                use = use_of(first.catalog_key)
+                assert use is not None  # _usable lo garantiza
+                count = f" ×{len(group)}" if len(group) > 1 else ""
+                use_options.append(
+                    discord.SelectOption(
+                        label=f"{first.name}{count}"[:100],
+                        value=str(first.item_id),
+                        emoji=_select_emoji(first.emoji),
+                        description=use.summary.removeprefix("🫳 ")[:100],
+                    )
+                )
+            use_select: ui.Select = ui.Select(placeholder="🫳 Usar algo", options=use_options)
+
+            async def use_callback(interaction: discord.Interaction) -> None:
+                await self.cog.start_use(interaction, self, int(use_select.values[0]))
+
+            use_select.callback = use_callback  # type: ignore[method-assign]
+            use_row: ui.ActionRow = ui.ActionRow()
+            use_row.add_item(use_select)
+            self.add_item(use_row)
 
         wardrobe = [e for e in self.entries if e.kind is Kind.ROLE and e.expires_at is None]
         if wardrobe and self.viewer.id == self.member.id:
@@ -590,6 +762,63 @@ class Backpack(ui.LayoutView):
         await _close_view(self, self.message, self.interaction)
 
 
+# -- Usar objetos ---------------------------------------------------------------------
+
+
+class TargetPicker(ui.View):
+    """Desplegable de miembros para usar un objeto contra alguien. Solo lo ve quien lo usa."""
+
+    def __init__(self, cog: Tienda, backpack: Backpack, entry: InventoryEntry, use: Use) -> None:
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        self.backpack = backpack
+        self.entry = entry
+        self.use = use
+        self.done = False
+        select: ui.UserSelect = ui.UserSelect(
+            placeholder=f"{entry.emoji} {use.verb}: ¿a quién?", min_values=1, max_values=1
+        )
+        select.callback = self._picked  # type: ignore[method-assign]
+        self.select = select
+        self.add_item(select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.backpack.member.id
+
+    async def _picked(self, interaction: discord.Interaction) -> None:
+        if self.done:
+            await interaction.response.defer()
+            return
+        self.done = True
+        self.stop()
+        target = self.select.values[0]
+        await self.cog.perform_use(interaction, self.backpack, self.entry, self.use, target=target)
+
+
+class UseTextForm(ui.Modal):
+    """Formulario del megáfono y del DNI falso."""
+
+    def __init__(self, cog: Tienda, backpack: Backpack, entry: InventoryEntry, use: Use) -> None:
+        nickname = use.special == "nickname"
+        super().__init__(title=f"{use.verb}"[:45], timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        self.backpack = backpack
+        self.entry = entry
+        self.use = use
+        self.text: ui.TextInput = ui.TextInput(
+            placeholder="Tu nuevo apodo" if nickname else "Lo que quieres gritar",
+            max_length=MAX_NICK if nickname else 150,
+            required=True,
+        )
+        label = "Nombre del DNI" if nickname else "Qué gritas por el megáfono"
+        self.add_item(ui.Label(text=label, component=self.text))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self.cog.perform_use(
+            interaction, self.backpack, self.entry, self.use, text=self.text.value
+        )
+
+
 # -- Cog ------------------------------------------------------------------------------
 
 
@@ -604,14 +833,23 @@ class Tienda(commands.Cog):
         *,
         levels: MessageStatsRepository | None = None,
         clock: Callable[[], float] = time.time,
+        catalog: Sequence[CatalogEntry] = CATALOG,
+        rng: random.Random | None = None,
     ) -> None:
         self.bot = bot
         self.economy = economy
         self.repository = repository
         self.levels = levels
         self.clock = clock
+        #: Surtido de serie que se mete en cada servidor (las pruebas pasan `()`).
+        self.catalog = tuple(catalog)
+        self.rng = rng or random.Random()
         #: Potenciadores sin acabar por `(servidor, miembro)`: `(inicio, fin, %)`.
         self.boosts: dict[tuple[int, int], list[tuple[float, float, int]]] = defaultdict(list)
+        #: Servidores cuyo surtido ya se ha mirado desde que arrancó el bot.
+        self._stocked: set[int] = set()
+        #: Último uso de cada objeto que no se gasta: `(servidor, miembro, uso)` → epoch.
+        self.last_used: dict[tuple[int, int, str], float] = {}
 
     async def cog_load(self) -> None:
         """Carga los potenciadores en curso y arranca la caducidad de alquileres."""
@@ -679,8 +917,31 @@ class Tienda(commands.Cog):
 
     # -- Escaparate y mochila --------------------------------------------------------
 
+    async def stock_up(self, guild_id: int) -> int:
+        """Mete en el servidor el surtido de serie que le falte (una vez por arranque).
+
+        Returns:
+            Cuántos artículos se han añadido.
+        """
+        if guild_id in self._stocked or not self.catalog:
+            return 0
+        added = await self.repository.stock_catalog(guild_id, self.catalog, self.clock())
+        self._stocked.add(guild_id)
+        if added:
+            logger.info("Surtido de serie: %s artículos nuevos en %s", added, guild_id)
+        return added
+
+    async def restock(self, guild_id: int) -> int:
+        """Vuelve a meter los artículos de serie que se hayan retirado."""
+        added = await self.repository.stock_catalog(
+            guild_id, self.catalog, self.clock(), restock=True
+        )
+        self._stocked.add(guild_id)
+        return added
+
     async def storefront(self, guild: discord.Guild, owner: discord.abc.User) -> Storefront:
         """Escaparate listo para enviar."""
+        await self.stock_up(guild.id)
         view = Storefront(self, guild, owner)
         await view.load()
         return view
@@ -725,6 +986,238 @@ class Tienda(commands.Cog):
         await interaction.response.edit_message(
             view=view, allowed_mentions=discord.AllowedMentions.none()
         )
+
+    # -- Usar objetos ----------------------------------------------------------------
+
+    def cooldown_left(self, guild_id: int, user_id: int, use: Use, now: float) -> int:
+        """Segundos que faltan para poder volver a usar un objeto que no se gasta."""
+        if use.consumes or not use.cooldown:
+            return 0
+        last = self.last_used.get((guild_id, user_id, use.key))
+        if last is None:
+            return 0
+        return max(0, int(last + use.cooldown - now + 0.999))
+
+    async def start_use(
+        self, interaction: discord.Interaction, backpack: Backpack, item_id: int
+    ) -> None:
+        """Primer paso de usar un objeto desde la mochila.
+
+        Si el uso pide a alguien, abre el desplegable de miembros; si pide
+        texto, el formulario; si no, lo usa ya.
+        """
+        entries = [e for e in backpack.entries if e.item_id == item_id and _usable(e)]
+        if not entries:
+            await interaction.response.send_message(
+                "Eso ya no está en tu mochila, mi amor.", ephemeral=True
+            )
+            return
+        entry = min(entries, key=lambda e: e.id)
+        use = use_of(entry.catalog_key)
+        assert use is not None  # _usable lo garantiza
+        wait = self.cooldown_left(backpack.guild.id, backpack.member.id, use, self.clock())
+        if wait:
+            await interaction.response.send_message(
+                f"⏳ Espera {wait} s antes de volver a usar {entry.emoji} {entry.name}. "
+                "Que los vecinos también descansan.",
+                ephemeral=True,
+            )
+            return
+        if use.target is Target.MEMBER:
+            picker = TargetPicker(self, backpack, entry, use)
+            await interaction.response.send_message(
+                f"{entry.emoji} **{entry.name}**: elige a quién.", view=picker, ephemeral=True
+            )
+            return
+        if use.target is Target.TEXT:
+            await interaction.response.send_modal(UseTextForm(self, backpack, entry, use))
+            return
+        await self.perform_use(interaction, backpack, entry, use)
+
+    async def perform_use(
+        self,
+        interaction: discord.Interaction,
+        backpack: Backpack,
+        entry: InventoryEntry,
+        use: Use,
+        *,
+        target: discord.abc.User | None = None,
+        text: str | None = None,
+    ) -> None:
+        """Usa un objeto: lo gasta si toca, publica el resultado y apunta los logros.
+
+        Ningún uso mueve dinero, así que no hay impuestos ni gancho de la Renta
+        (Biblia, sección 4): lo que tributó fue la compra.
+        """
+        guild, member = backpack.guild, interaction.user
+        now = self.clock()
+        shout = ""
+        if self.cooldown_left(guild.id, member.id, use, now):
+            await interaction.response.send_message(
+                "⏳ Todavía no, mi amor. Respira.", ephemeral=True
+            )
+            return
+
+        if use.special == "megaphone":
+            try:
+                shout = discord.utils.escape_mentions(
+                    discord.utils.escape_markdown(clean_shout(text or ""))
+                )
+            except ValueError as error:
+                await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+                return
+        if use.special == "nickname":
+            problem = self._nickname_problem(guild, member, text)
+            if problem is not None:
+                await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
+                return
+
+        if use.consumes and not await self.repository.consume(guild.id, member.id, entry.id):
+            await interaction.response.send_message(
+                "Eso ya lo has gastado, mi amor. Mira tu `mochila`.", ephemeral=True
+            )
+            return
+
+        who = f"**{_name(member)}**"
+        item_label = f"{entry.emoji} {entry.name}"
+        prize: ShopItem | None = None
+        if use.special == "mystery":
+            outcome = await self._open_mystery(guild.id, member.id, who, entry, now)
+            if outcome is None:
+                await self.repository.restore(entry.id)
+                await interaction.response.send_message(
+                    "La caja está vacía: no hay coleccionables que sortear. Te la devuelvo.",
+                    ephemeral=True,
+                )
+                return
+            result, prize = outcome
+        elif use.special == "megaphone":
+            result = megaphone_text(who, shout)
+        elif use.special == "nickname":
+            assert isinstance(member, discord.Member)
+            new = " ".join((text or "").split())[:MAX_NICK]
+            old = member.display_name
+            try:
+                await member.edit(nick=new, reason="DNI falso de la tienda")
+            except discord.HTTPException:
+                await self.repository.restore(entry.id)
+                await interaction.response.send_message(
+                    "❌ Discord no me deja cambiarte el apodo. Te devuelvo el DNI.",
+                    ephemeral=True,
+                )
+                return
+            result = nickname_text(who, discord.utils.escape_markdown(old), new)
+        else:
+            mention = target.mention if target is not None else None
+            result = resolve(
+                use,
+                who=who,
+                item=item_label,
+                rng=self.rng,
+                now=now,
+                target=mention,
+                target_is_self=target is not None and target.id == member.id,
+                target_is_bot=target is not None and target.bot,
+            )
+
+        victim = (
+            target if target is not None and not target.bot and target.id != member.id else None
+        )
+        mentions = (
+            discord.AllowedMentions(users=[victim], everyone=False, roles=False)
+            if victim is not None
+            else discord.AllowedMentions.none()
+        )
+        await interaction.response.send_message(result.text, allowed_mentions=mentions)
+        if not use.consumes:
+            self.last_used[(guild.id, member.id, use.key)] = now
+        await self._refresh_backpack(backpack)
+
+        collection = await self.repository.collection_size(guild.id, member.id)
+        await logros.track(
+            self.bot,
+            guild.id,
+            member,
+            interaction.channel,
+            shop_use_stats(
+                use=use.key,
+                flags=result.flags,
+                consumed=use.consumes,
+                targeted=victim is not None,
+                at_self=target is not None and target.id == member.id,
+                at_bot=target is not None and target.bot,
+                prize_price=prize.price if prize is not None else None,
+                collection=collection,
+                when=now,
+            ),
+        )
+        if victim is not None:
+            await logros.track(
+                self.bot, guild.id, victim, interaction.channel, shop_hit_stats(use=use.key)
+            )
+
+    async def _open_mystery(
+        self, guild_id: int, user_id: int, who: str, box: InventoryEntry, now: float
+    ) -> tuple[UseResult, ShopItem] | None:
+        """Sortea y entrega el premio de una caja botín, o `None` si no hay premios.
+
+        Premios: coleccionables visibles, sin uso y de existencias ilimitadas,
+        para no gastar unidades numeradas de nadie.
+        """
+        candidates = [
+            item
+            for item in await self.repository.items(guild_id)
+            if item.kind is Kind.TROPHY
+            and item.stock is None
+            and item.id != box.item_id
+            and use_of(item.catalog_key) is None
+        ]
+        if not candidates:
+            return None
+        prize = candidates[pick_mystery([c.price for c in candidates], self.rng)]
+        _entry, dupe = await self.repository.grant(guild_id, user_id, prize, now)
+        label = f"{prize.emoji} **{prize.name}** ({format_amount(prize.price)})"
+        return mystery_text(who, label, price=prize.price, dupe=dupe), prize
+
+    @staticmethod
+    def _nickname_problem(
+        guild: discord.Guild, member: discord.abc.User, text: str | None
+    ) -> str | None:
+        """Por qué no se puede cambiar el apodo con el DNI falso, o `None`."""
+        new = " ".join((text or "").split())
+        if not new:
+            return "El DNI necesita un nombre, mi amor."
+        if len(new) > MAX_NICK:
+            return f"Discord no deja apodos de más de {MAX_NICK} caracteres."
+        if not isinstance(member, discord.Member):
+            return "Esto solo funciona en un servidor."
+        me = guild.me
+        if not me.guild_permissions.manage_nicknames:
+            return "Me falta el permiso **Gestionar apodos**. El DNI sigue en tu mochila."
+        if member.id == guild.owner_id or member.top_role >= me.top_role:
+            return (
+                "Tu rol está por encima del mío y no te puedo cambiar el apodo. "
+                "El DNI sigue en tu mochila."
+            )
+        return None
+
+    async def _refresh_backpack(self, backpack: Backpack) -> None:
+        """Vuelve a pintar la mochila tras usar algo (si se puede; si no, da igual)."""
+        backpack.entries = await self.repository.inventory(
+            backpack.guild.id, backpack.member.id, self.clock()
+        )
+        backpack.rebuild()
+        try:
+            if backpack.interaction is not None:
+                await backpack.interaction.edit_original_response(
+                    view=backpack, allowed_mentions=discord.AllowedMentions.none()
+                )
+            elif backpack.message is not None:
+                await backpack.message.edit(
+                    view=backpack, allowed_mentions=discord.AllowedMentions.none()
+                )
+        except discord.HTTPException:
+            logger.debug("No se pudo repintar la mochila", exc_info=True)
 
     # -- Caja ------------------------------------------------------------------------
 
@@ -899,6 +1392,8 @@ class Tienda(commands.Cog):
             got = f"{item.emoji} {item.name} ya está en tu mochila."
             if sale.serial is not None:
                 got += f" Unidad nº {sale.serial} de {sale.edition}."
+            if (use := use_of(item.catalog_key)) is not None:
+                got += f" Úsalo desde la `mochila` ({use.verb.lower()})."
         lines = [
             "### ✅ ¡Wepa! Es tuyo",
             got,
@@ -926,7 +1421,8 @@ class Tienda(commands.Cog):
     ) -> None:
         """Aviso público, aviso de la Renta y logros, después de enseñar la factura."""
         item, sale, balance = paid
-        line = random.choice(ANNOUNCE_LINES[item.kind]).format(
+        lines = ANNOUNCE_USABLE if use_of(item.catalog_key) else ANNOUNCE_LINES[item.kind]
+        line = self.rng.choice(lines).format(
             who=f"**{_name(view.buyer)}**", item=f"{item.emoji} **{item.name}**"
         )
         extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
@@ -958,6 +1454,8 @@ class Tienda(commands.Cog):
                 collection=sale.collection,
                 queued_boosts=len(self.queued_boosts(view.guild.id, view.buyer.id, now)),
                 balance_after=balance,
+                catalog_key=item.catalog_key,
+                aisle=aisle_of(item.catalog_key).key,
             ),
         )
 
@@ -1071,6 +1569,7 @@ class Tienda(commands.Cog):
         owner = interaction.user if interaction else ctx.author if ctx else None
         if guild is None or owner is None:
             return
+        await self.stock_up(guild.id)
         panel = AdminPanel(self, guild, owner)
         await panel.load()
         if interaction is not None:
