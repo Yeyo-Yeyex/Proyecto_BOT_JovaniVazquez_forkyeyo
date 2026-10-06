@@ -173,9 +173,9 @@ python -m bot
   general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),
   como en los arts. 51 a 59 de la Ley 4/2012 de Canarias.
 - **Tienda** (`tienda`): El Colmado de Jovani. Escaparate con pestañas
-  (🎭 roles, ⚡ potenciadores de XP, 💎 coleccionables), cada artículo con su
-  botón **Comprar**, rebajas tachadas, existencias que quedan y etiquetas de
-  🆕 nuevo y 🔥 lo más vendido. Los precios van sin IGIC; la caja enseña el
+  (🎭 roles, ⚡ XP, 💎 vitrina, 🫳 para usar) y un desplegable de pasillos,
+  cada artículo con su botón **Comprar**, rebajas tachadas, existencias que
+  quedan y etiquetas de 🆕 nuevo y 🔥 lo más vendido. Los precios van sin IGIC; la caja enseña el
   ticket (precio, rebaja, base, IGIC y total) y pide confirmar. Al pagar
   llega una factura simplificada que solo ve el comprador y un aviso público
   en el canal. Cualquiera puede comprar desde el escaparate de otro: la caja
@@ -187,8 +187,23 @@ python -m bot
     tiempo; si ya tienes uno, el nuevo se pone a la cola.
   - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
     numerada ("nº 3 de 10").
+  - Surtido de serie: 155 artículos que se meten solos en cada servidor la
+    primera vez que se abre la tienda, repartidos en 12 pasillos (La
+    Moncloa, Productos de la tierra, Ultramarinos, Cotillón, Bazar, Amuletos,
+    Ventanilla, Rincón boricua, Importación de Hong Kong, Lo que no debería
+    venderse, Joyería y lujo y Farmacia de guardia). Del Falcon (50 millones,
+    una unidad) a la piedra (1 Y$), cada uno con el IGIC que le tocaría de
+    verdad. Lo que un administrador retire no vuelve solo.
+  - Objetos que se usan (51): desde la `mochila`, contra alguien o sin más:
+    huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
+    Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
+    bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
+    Robuso (contesta según la hora real de Hong Kong) y la caja botín (da un
+    coleccionable al azar). El resultado sale en el canal y menciona a quien
+    lo recibe. Los de un solo uso se gastan; el resto tiene una espera entre
+    usos. Usar no mueve dinero.
   - `mochila [miembro]` enseña lo que tiene alguien; su dueño puede ponerse y
-    quitarse los roles que compró para siempre.
+    quitarse los roles que compró para siempre y usar sus objetos.
   - La base de cada venta va a la caja de la tienda (`user_id = -200`) y el
     IGIC al Estado; `hacienda` lo cuenta como recaudado.
 - **Trastienda** (`catalogo`, solo administradores): panel con botones para
@@ -197,7 +212,9 @@ python -m bot
   por persona, nivel mínimo, rebaja con fecha de fin, tipo de IGIC, ocultarlo
   o retirarlo). Todo se configura desde Discord, sin tocar código. No deja
   vender roles por encima del del bot ni con permisos de moderación o
-  administración. El bot necesita **Gestionar roles**.
+  administración. **📦 Reponer surtido** vuelve a poner a la venta los
+  artículos de serie retirados. El bot necesita **Gestionar roles** (y
+  **Gestionar apodos** para el DNI falso).
 - **Trabajo** (`pala`): coges la pala y curras. Cinco oficios con 5 puestos cada
   uno (🦺 obra, 🍽️ hostelería, 🌹 política en el PSOE, de pegacarteles a
   consejero de una eléctrica, 🏥 sanidad y 💻 oficina). Cada turno es un minijuego de decidir rápido, de
@@ -619,6 +636,8 @@ src/bot/
 │   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
+│   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
+│   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack

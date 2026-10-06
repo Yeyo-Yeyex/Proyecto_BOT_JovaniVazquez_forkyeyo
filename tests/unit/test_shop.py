@@ -539,11 +539,11 @@ def make_interaction(member: MagicMock) -> MagicMock:
     return interaction
 
 
-async def make_cog(tmp_path: Path, clock: Clock) -> Tienda:
+async def make_cog(tmp_path: Path, clock: Clock, catalog: tuple = ()) -> Tienda:
     economy, shop = await make_stores(tmp_path, clock)
     levels = MagicMock()
     levels.member_xp = AsyncMock(return_value=0)
-    return Tienda(MagicMock(), economy, shop, levels=levels, clock=clock)
+    return Tienda(MagicMock(), economy, shop, levels=levels, clock=clock, catalog=catalog)
 
 
 def texts(view: ui.LayoutView) -> str:

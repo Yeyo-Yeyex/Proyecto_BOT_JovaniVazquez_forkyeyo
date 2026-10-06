@@ -328,3 +328,50 @@ async def test_el_aviso_de_intereses_llega_a_los_juegos_por_la_renta(tmp_path: P
         assert hint == "📬 Renta\n🏦 Ayer cobraste"
     finally:
         await client.close()
+
+
+async def test_usar_un_objeto_apunta_logros_a_los_dos_con_el_bot_real(tmp_path: Path) -> None:
+    """Tirar un huevo desde la mochila llega a los logros de quien tira y de quien lo recibe."""
+    from bot.services.shop import quote
+
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        egg = next(i for i in await client.shop.items(GUILD_ID) if i.catalog_key == "huevo")
+        price = quote(egg, tienda.clock())
+        await client.economy.purchase(
+            GUILD_ID, OWNER_ID, base=price.base, tax=price.tax, concept="objeto",
+            reserve=client.shop.reserve(
+                GUILD_ID, OWNER_ID, egg.id, expected=price, level=0, now=tienda.clock()
+            ),
+        )  # fmt: skip
+
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        victim = MagicMock(spec=discord.Member)
+        victim.id, victim.bot, victim.mention = 11, False, "<@11>"
+        backpack = await tienda.backpack_view(guild, owner, owner)
+        (entry,) = backpack.entries
+        interaction = MagicMock()
+        interaction.user = owner
+        interaction.channel = MagicMock(spec=discord.TextChannel)
+        interaction.channel.send = AsyncMock()
+        interaction.response.send_message = AsyncMock()
+        await tienda.perform_use(interaction, backpack, entry, tienda_use("huevo"), target=victim)
+
+        thrower = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert thrower.stats["shop_uses"] == 1 and thrower.stats["shop_used_huevo"] == 1
+        assert {"use_1", "target_1"} <= set(thrower.unlocked)
+        target = await client.achievements.profile(GUILD_ID, 11)
+        assert target.stats["shop_got_hit"] == 1 and "hit_1" in target.unlocked
+    finally:
+        await client.close()
+
+
+def tienda_use(key: str):  # noqa: ANN201
+    from bot.services.shop_uses import USES
+
+    return USES[key]

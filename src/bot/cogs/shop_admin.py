@@ -13,6 +13,10 @@ Qué se puede hacer, todo con botones y formularios, sin código ni PRs:
   se quiere (cada unidad sale numerada).
 - **✏️ Editar** cualquier artículo: datos, existencias, límite por persona,
   nivel mínimo, rebaja con fecha de fin, tipo de IGIC, ocultarlo o retirarlo.
+  Vale también para los del surtido de serie (`bot.services.shop_catalog`).
+- **📦 Reponer surtido**: vuelve a poner a la venta los artículos de serie que
+  se hayan retirado. Los que siguen en el catálogo (aunque estén ocultos) no se
+  duplican.
 
 En el nombre se puede empezar por un emoji (`🛥️ Yate de Perro Sanxe`) y se
 usa como icono del artículo.
@@ -587,6 +591,7 @@ class AdminPanel(ui.LayoutView):
         create.add_item(_button("➕ Rol", self._new_role, style=green))
         create.add_item(_button("➕ Potenciador", self._new_boost, style=green))
         create.add_item(_button("➕ Coleccionable", self._new_trophy, style=green))
+        create.add_item(_button("📦 Reponer surtido", self._restock))
         self.add_item(create)
 
         nav: ui.ActionRow = ui.ActionRow()
@@ -648,6 +653,17 @@ class AdminPanel(ui.LayoutView):
             )
 
         return callback
+
+    async def _restock(self, interaction: discord.Interaction) -> None:
+        """Vuelve a poner a la venta los artículos de serie que se hayan retirado."""
+        added = await self.cog.restock(self.guild.id)
+        self.notice = (
+            f"📦 Repuestos {added} artículo{'' if added == 1 else 's'} del surtido de serie."
+            if added
+            else "📦 El surtido de serie ya está completo: no faltaba nada."
+        )
+        await self.load()
+        await interaction.response.edit_message(view=self)
 
     async def _new_role(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
