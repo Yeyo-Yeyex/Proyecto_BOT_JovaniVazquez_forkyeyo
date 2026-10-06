@@ -25,3 +25,6 @@ dist/
 !.vscode/settings.json
 .idea/
 .DS_Store
+
+# Estado y log de actualizar.sh en el NAS
+.despliegue/
