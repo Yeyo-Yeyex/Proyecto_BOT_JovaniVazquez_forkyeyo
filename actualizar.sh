@@ -98,15 +98,17 @@ main() {
     fi
 
     # safe.directory evita el error de "dubious ownership" si cron corre como
-    # otro usuario distinto del que clonó.
-    local git
+    # otro usuario distinto del que clonó. core.fileMode=false ignora los
+    # permisos: en las carpetas compartidas del NAS todo sale como 777 y git
+    # lo tomaría por cambios locales en todos los archivos.
+    local git opciones=(-c "safe.directory=$dir" -c core.fileMode=false)
     if command -v git >/dev/null 2>&1 && [[ -z "${GIT_EN_DOCKER:-}" ]]; then
-        git=(git -c "safe.directory=$dir")
+        git=(git "${opciones[@]}")
     else
         # Sin git en el sistema: git dentro de un contenedor desechable, con el
         # usuario dueño de la carpeta para no dejar archivos de root.
         git=(docker run --rm --user "$(stat -c '%u:%g' "$dir")" -e HOME=/tmp
-            -v "$dir:$dir" -w "$dir" alpine/git:latest -c "safe.directory=$dir")
+            -v "$dir:$dir" -w "$dir" alpine/git:latest "${opciones[@]}")
     fi
 
     if [[ ! -d "$dir/.git" ]]; then

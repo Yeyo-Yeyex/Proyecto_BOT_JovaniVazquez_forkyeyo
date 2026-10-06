@@ -259,3 +259,17 @@ def test_convertir_enlaza_la_carpeta_y_despliega(entorno):
     assert (copia / ".env").read_text() == "DISCORD_TOKEN=secreto\n"
     assert (copia / ".despliegue/commit").read_text().strip() == nuevo
     assert "compose build --pull" in _llamadas(entorno)
+
+
+def test_permisos_777_del_nas_no_cuentan_como_cambios(entorno):
+    """En las carpetas compartidas del UGREEN todos los archivos salen 777."""
+    _ejecutar(entorno, GIT_EN_DOCKER="1")
+    for archivo in entorno["clon"].rglob("*"):
+        if ".git" not in archivo.parts:
+            archivo.chmod(0o777)
+    nuevo = _nuevo_commit(entorno["origin"], "v2")
+
+    resultado = _ejecutar(entorno, GIT_EN_DOCKER="1")
+
+    assert resultado.returncode == 0, (entorno["clon"] / ".despliegue/actualizar.log").read_text()
+    assert (entorno["clon"] / ".despliegue/commit").read_text().strip() == nuevo
