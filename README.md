@@ -506,11 +506,46 @@ audio. La imagen incluye `ffmpeg` y `libopus`.
 solo si falla; no se reinicia si lo paras a mano (`docker compose stop`). Con
 un token inválido el contenedor se reiniciará en bucle: revisa el log.
 
-**Actualizar el bot:** `git pull && docker compose up -d --build`.
+**Actualizar el bot a mano:** `./actualizar.sh` (o, a la antigua,
+`git pull && docker compose up -d --build`).
 
-**Si la música deja de funcionar**, casi siempre es que `yt-dlp` se ha quedado
-anticuado (YouTube cambia a menudo). Reconstruye sin caché para traer la
-última versión: `docker compose build --no-cache && docker compose up -d`.
+### Actualización automática
+
+`actualizar.sh` deja el bot al día con la rama `main` de GitHub sin que nadie
+tenga que reconstruir la imagen. Programado a las 5:00, cada noche:
+
+- Si no hay commits nuevos, no hace nada y el bot no se reinicia.
+- Si los hay, construye la imagen nueva con el bot viejo aún en marcha y
+  después lo reinicia (unos segundos sin bot; las partidas a medias se cierran
+  como en cualquier reinicio).
+- Si la imagen no compila, el bot viejo sigue funcionando.
+- Si el bot nuevo se cae o entra en bucle en los primeros 90 s (un PR roto),
+  vuelve solo a la versión anterior y no reintenta ese commit hasta que llegue
+  otro.
+- Una vez por semana reconstruye aunque no haya cambios, para traer la última
+  `yt-dlp`.
+
+Requisitos: el bot tiene que estar en un `git clone` de este repositorio (no
+en una carpeta copiada) y sin cambios a mano en archivos versionados; si los
+hay, el script se niega a actualizar y lo apunta en el log.
+
+Para programarlo, por SSH en el NAS:
+
+```bash
+cd /ruta/al/bot
+chmod +x actualizar.sh
+./actualizar.sh          # primera vez a mano: debe acabar en "Desplegado ..." o "Sin cambios"
+sudo crontab -e          # y añade esta línea:
+0 5 * * * /ruta/al/bot/actualizar.sh
+```
+
+Comprueba con `date` que la hora del NAS es la de Canarias; cron usa esa.
+El registro de cada ejecución queda en `.despliegue/actualizar.log`.
+
+**Si la música deja de funcionar** antes de la reconstrucción semanal, casi
+siempre es que `yt-dlp` se ha quedado anticuado (YouTube cambia a menudo).
+Reconstruye sin caché para traer la última versión:
+`docker compose build --no-cache && docker compose up -d`.
 
 **Datos y copia de seguridad:** niveles y estadísticas viven en el volumen
 `bot-jovani-vazquez-data` (sobrevive a reconstrucciones y actualizaciones).
@@ -606,7 +641,8 @@ src/bot/
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```
 
-En la raíz: `Dockerfile`, `docker-compose.yml` y `.env.example` para el despliegue.
+En la raíz: `Dockerfile`, `docker-compose.yml`, `.env.example` y
+`actualizar.sh` (autoactualización en el NAS) para el despliegue.
 
 Consulta [Biblia.txt](./Biblia.txt) para el detalle completo de la
 estructura de referencia, los límites entre capas y las normas de
