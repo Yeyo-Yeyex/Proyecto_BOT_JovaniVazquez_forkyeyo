@@ -26,6 +26,23 @@ Cómo funciona un turno, en resumen:
   días en el puesto, las tareas del puesto y, a veces, una formación.
 - **Sin despidos**: con la barra a cero hay un aviso y, si se repite, te bajan
   un puesto. Tras `LEAVE_AFTER_DAYS` días sin fichar, excedencia.
+
+Reglas propias de algunos oficios (campos de `Job`):
+
+- **Guardias** (sanidad): turno doble aparte de la jornada (`ShiftKind.GUARD`).
+  Gasta mucha batería, paga `GUARD_PAY` veces la base aunque dure el doble (la
+  hora de guardia sale más barata, como en muchos servicios de salud) y mueve
+  la barra el doble. No son horas extra: en el Estatuto Marco (Ley 55/2003)
+  son jornada complementaria, así que no tienen límite ni B. Después te
+  quedas saliente `GUARD_REST_SECONDS`. Los turnos ordinarios de sanidad suben
+  la barra como mucho `Job.ordinary_cap`: para rendir hay que hacer guardias.
+  El residente (MIR) tiene guardias mínimas por semana (`Job.guards_required`).
+- **Teletrabajo** (oficina, Ley 10/2021): cansa la mitad y no resta familia,
+  pero la barra sube la mitad porque el jefe no te ve, y a veces te escriben
+  fuera de hora.
+- **Expatriarse** (oficina, `Job.abroad_from`): trabajar desde Hong Kong. La
+  fiscalidad está en `bot.services.taxes` (salaries tax, MPF, art. 7.p LIRPF,
+  art. 80 LIRPF y Ley Beckham) y la residencia, aquí (`residence_phase`).
 """
 
 from __future__ import annotations
@@ -34,6 +51,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 from bot.services.levels import TIMEZONE, local_day
 
@@ -100,6 +118,55 @@ MAX_COFFEES = 3
 #: Uno de cada tantos turnos trae un evento.
 EVENT_CHANCE = 1 / 6
 
+# -- Guardias (sanidad) ----------------------------------------------------------------
+
+GUARD_COST = 45
+GUARD_PAY = 1.6
+GUARD_TIME_FACTOR = 2
+GUARD_FAMILY = -15
+#: Saliente de guardia: no se puede fichar. Valor de juego; en la realidad el
+#: Supremo reconoció al personal sanitario 36 h seguidas de descanso semanal (2019).
+GUARD_REST_SECONDS = 12 * 3600
+#: Lo que baja la barra al residente por cada guardia mínima que no hizo la semana pasada.
+MISSED_GUARD_PENALTY = 20
+
+# -- Teletrabajo (oficina) ---------------------------------------------------------------
+
+REMOTE_COST_FACTOR = 0.5
+REMOTE_FAMILY = 2
+#: Probabilidad de que te escriban fuera de hora en un turno de teletrabajo.
+REMOTE_PING_CHANCE = 0.3
+
+# -- Stock options (CTO) ---------------------------------------------------------------
+
+#: Parte del bruto del CTO que no se cobra y se queda en opciones.
+OPTIONS_SHARE = 0.3
+EXIT_CHANCE = 0.02
+BANKRUPT_CHANCE = 0.025
+EXIT_MULTIPLIER = (2.0, 10.0)
+
+# -- Hong Kong (oficina) ---------------------------------------------------------------
+
+HONG_KONG = "hk"
+HK_TIMEZONE = ZoneInfo("Asia/Hong_Kong")
+#: Paquete de expatriado: el sueldo base se multiplica por esto.
+ABROAD_PAY = 2.0
+#: Cada turno lejos de casa resta familia.
+ABROAD_FAMILY = -4
+#: Billete de avión (base, con IGIC general; simplificación: en la realidad la
+#: parte del vuelo fuera de Canarias no lo pagaría).
+FLIGHT_PRICE = 9_000
+#: El jet lag del primer día.
+JET_LAG = -30
+#: Escala del juego para la residencia fiscal: una semana fuera es un año fiscal,
+#: como el ejercicio semanal de la renta y del Patrimonio. Pasar más de 183 días
+#: del año fuera (art. 9.1.a LIRPF) son 4 días; los 5 períodos sin residir que
+#: pide la Ley Beckham (art. 93 LIRPF) son 5 semanas, y el régimen dura el año
+#: del regreso y 5 más (6 semanas).
+NONRESIDENT_AFTER_DAYS = 4
+BECKHAM_ABROAD_WEEKS = 5
+BECKHAM_WEEKS = 6
+
 # -- Autónomos -------------------------------------------------------------------------
 
 #: Cuota semanal de autónomos. Valor de juego: desde el RDL 13/2022 la cuota real
@@ -123,6 +190,7 @@ class ShiftKind(StrEnum):
     ORDINARY = "ordinario"
     EXTRA = "extra"
     BLACK = "negro"
+    GUARD = "guardia"
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,10 +264,34 @@ class Job:
     blurb: str
     positions: tuple[Position, ...]
     rgb: tuple[int, int, int] = (230, 126, 34)
+    #: Desde qué puesto hay guardias (`None` = no hay).
+    guards_from: int | None = None
+    #: Tope de lo que sube la barra un turno que no es guardia (`None` = sin tope).
+    ordinary_cap: int | None = None
+    #: `(puesto, guardias mínimas por semana)`.
+    guards_required: tuple[tuple[int, int], ...] = ()
+    #: Si se puede teletrabajar.
+    remote: bool = False
+    #: Desde qué puesto se puede ir a Hong Kong (`None` = no se puede).
+    abroad_from: int | None = None
+    #: Puesto que cobra parte del sueldo en stock options (`None` = ninguno).
+    options_level: int | None = None
 
     def position(self, level: int) -> Position:
         """Puesto de nivel `level` (1–5)."""
         return self.positions[level - 1]
+
+    def has_guards(self, level: int) -> bool:
+        """Si en ese puesto se pueden hacer guardias."""
+        return self.guards_from is not None and level >= self.guards_from
+
+    def can_go_abroad(self, level: int) -> bool:
+        """Si en ese puesto se puede trabajar desde Hong Kong."""
+        return self.abroad_from is not None and level >= self.abroad_from
+
+    def required_guards(self, level: int) -> int:
+        """Guardias mínimas por semana en ese puesto."""
+        return dict(self.guards_required).get(level, 0)
 
     @property
     def top(self) -> int:
@@ -260,6 +352,21 @@ class Contract:
     no_extras_day: str = ""
     #: Último día de descanso ya sumado a la familia (ver `roll_over_day`).
     rest_day: str = ""
+    #: Guardias de la semana `guard_week` (lunes ISO).
+    guards_week: int = 0
+    guard_week: str = ""
+    #: Saliente de guardia: hasta cuándo no se puede fichar.
+    off_duty_until: float = 0.0
+    #: País donde trabaja (`""` = en casa, `"hk"` = Hong Kong) y desde cuándo.
+    abroad: str = ""
+    abroad_since: float = 0.0
+    #: Hasta cuándo tributa por la Ley Beckham (24 % fijo).
+    beckham_until: float = 0.0
+    #: Stock options acumuladas (valor nominal en Y$).
+    options: int = 0
+    #: Exención del art. 7.p LIRPF usada el día `exempt_day`.
+    exempt_day: str = ""
+    exempt_used: int = 0
 
 
 def battery_now(contract: Contract, now: float) -> float:
@@ -295,9 +402,9 @@ def week_of(day: date) -> str:
     return (day - timedelta(days=day.weekday())).isoformat()
 
 
-def is_night(now: float) -> bool:
-    """Si `now` cae en la madrugada (hora canaria)."""
-    hour = datetime.fromtimestamp(now, TIMEZONE).hour
+def is_night(now: float, tz: ZoneInfo = TIMEZONE) -> bool:
+    """Si `now` cae en la madrugada (hora de `tz`; por defecto, la canaria)."""
+    hour = datetime.fromtimestamp(now, tz).hour
     return NIGHT_HOURS[0] <= hour < NIGHT_HOURS[1]
 
 
@@ -350,9 +457,15 @@ def next_shift_kind(contract: Contract, now: float) -> ShiftKind:
     return ShiftKind.BLACK
 
 
-def shift_cost(kind: ShiftKind) -> int:
+def shift_cost(kind: ShiftKind, *, remote: bool = False) -> int:
     """Batería que gasta un turno."""
-    return SHIFT_COST if kind is ShiftKind.ORDINARY else EXTRA_SHIFT_COST
+    if kind is ShiftKind.GUARD:
+        cost = GUARD_COST
+    elif kind is ShiftKind.ORDINARY:
+        cost = SHIFT_COST
+    else:
+        cost = EXTRA_SHIFT_COST
+    return round(cost * (REMOTE_COST_FACTOR if remote else 1))
 
 
 def shift_pay(base: int, score: int, kind: ShiftKind) -> int:
@@ -362,12 +475,31 @@ def shift_pay(base: int, score: int, kind: ShiftKind) -> int:
         factor *= OVERTIME_PAY
     elif kind is ShiftKind.BLACK:
         factor *= BLACK_PAY
+    elif kind is ShiftKind.GUARD:
+        factor *= GUARD_PAY
     return max(1, round(base * factor))
 
 
-def performance_delta(score: int) -> int:
-    """Cuánto mueve la barra un turno: +25 uno perfecto, −25 uno a cero."""
-    return (max(0, min(100, score)) - 50) // 2
+def performance_delta(
+    score: int,
+    kind: ShiftKind = ShiftKind.ORDINARY,
+    *,
+    remote: bool = False,
+    cap: int | None = None,
+) -> int:
+    """Cuánto mueve la barra un turno: +25 uno perfecto, −25 uno a cero.
+
+    Una guardia lo mueve el doble; el teletrabajo, la mitad. `cap` limita lo que
+    sube un turno que no es guardia (sanidad: para rendir, guardias).
+    """
+    delta = (max(0, min(100, score)) - 50) // 2
+    if kind is ShiftKind.GUARD:
+        return delta * 2
+    if remote:
+        delta = int(delta / 2)
+    if cap is not None:
+        delta = min(delta, cap)
+    return delta
 
 
 def accident_chance(battery_before: float) -> float:
@@ -379,16 +511,53 @@ def accident_chance(battery_before: float) -> float:
     return 0.0
 
 
-def family_cost(kind: ShiftKind, now: float) -> int:
-    """Lo que baja la familia un turno (negativo o cero)."""
+def family_cost(
+    kind: ShiftKind,
+    now: float,
+    *,
+    remote: bool = False,
+    tz: ZoneInfo = TIMEZONE,
+    abroad: bool = False,
+) -> int:
+    """Lo que cambia la familia un turno (casi siempre, a peor).
+
+    La madrugada se mide en la hora de donde trabajas (`tz`); el domingo y los
+    festivos, en la de casa.
+    """
     cost = 0
-    if kind is not ShiftKind.ORDINARY:
+    if kind is ShiftKind.GUARD:
+        cost += GUARD_FAMILY
+    elif kind is not ShiftKind.ORDINARY:
         cost += FAMILY_EXTRA
-    if is_night(now):
+    if is_night(now, tz):
         cost += FAMILY_NIGHT
     if local_day(now).weekday() == 6 or holiday(local_day(now)) is not None:
         cost += FAMILY_SUNDAY
+    if remote:
+        cost += REMOTE_FAMILY
+    if abroad:
+        cost += ABROAD_FAMILY
     return cost
+
+
+def residence_phase(contract: Contract, now: float) -> str:
+    """Situación fiscal de quien trabaja fuera: `"casa"`, `"residente"` o `"no_residente"`.
+
+    Quien pasa más de 183 días del año fuera deja de ser residente fiscal en
+    España (art. 9.1.a LIRPF); en el juego, `NONRESIDENT_AFTER_DAYS` días.
+    """
+    if not contract.abroad:
+        return "casa"
+    if now - contract.abroad_since >= NONRESIDENT_AFTER_DAYS * 86_400:
+        return "no_residente"
+    return "residente"
+
+
+def beckham_eligible(contract: Contract, now: float) -> bool:
+    """Si al volver a España le toca la Ley Beckham (5 «años» fuera)."""
+    return bool(contract.abroad) and (
+        now - contract.abroad_since >= BECKHAM_ABROAD_WEEKS * 7 * 86_400
+    )
 
 
 #: Festivos que dan logro o restan familia (día, mes) → nombre.

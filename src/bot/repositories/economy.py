@@ -53,6 +53,10 @@ Modelo de datos:
   Trabajo que pilla un turno en negro). Van al Estado y cuentan en `hacienda`.
 - `economy_imv_suspensions`: hasta cuándo no se puede cobrar el IMV de un
   miembro (sanción por cobrar en negro).
+- `economy_residence`: quién vive (y trabaja) fuera de España y desde cuándo.
+  Mientras tanto no cobra el IMV. Las nóminas de fuera llevan su país en
+  `economy_payroll.country` y lo que se queda el otro país va a su cuenta
+  (`HK_ACCOUNT_ID`), no al Estado.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -70,7 +74,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from bot.services.taxes import Payslip
+    from bot.services.taxes import ForeignPayslip, Payslip
 
 T = TypeVar("T")
 
@@ -90,6 +94,10 @@ SLOTS_POT_ACCOUNT_ID = -100
 #: `user_id` de la caja de la tienda: recibe la base imponible de cada compra
 #: (el IGIC va al Estado). Así lo gastado no desaparece del libro.
 SHOP_ACCOUNT_ID = -200
+
+#: `user_id` de la hacienda de Hong Kong: recibe el salaries tax y el MPF de quien
+#: trabaja allí con `pala`. No es el Estado español: no cuenta en `hacienda`.
+HK_ACCOUNT_ID = -300
 
 
 class InsufficientFundsError(Exception):
@@ -458,6 +466,8 @@ class EconomyRepository:
                     ss_employer INTEGER NOT NULL CHECK (ss_employer >= 0),
                     irpf INTEGER NOT NULL CHECK (irpf >= 0),
                     net INTEGER NOT NULL,
+                    country TEXT NOT NULL DEFAULT 'es',
+                    foreign_tax INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL
                 );
 
@@ -471,6 +481,14 @@ class EconomyRepository:
                     concept TEXT NOT NULL,
                     amount INTEGER NOT NULL CHECK (amount > 0),
                     created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_residence (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    country TEXT NOT NULL,
+                    since REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_imv_suspensions (
@@ -1305,7 +1323,7 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, ss_worker + ss_employer AS withheld, created_at AS at
-                FROM economy_payroll WHERE guild_id = :guild
+                FROM economy_payroll WHERE guild_id = :guild AND country = 'es'
                 UNION ALL
                 SELECT user_id, amount AS withheld, created_at AS at FROM economy_sanctions
                 WHERE guild_id = :guild
@@ -2009,7 +2027,7 @@ class EconomyRepository:
             (net,) = connection.execute(
                 """
                 SELECT COALESCE(SUM(net), 0) FROM economy_payroll
-                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = 'es'
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
@@ -2032,7 +2050,8 @@ class EconomyRepository:
                 """
                 SELECT COALESCE(SUM(gross), 0), COALESCE(SUM(ss_worker + ss_employer), 0),
                        COALESCE(SUM(irpf), 0), COALESCE(SUM(net), 0)
-                FROM economy_payroll WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = 'es'
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
@@ -2125,6 +2144,187 @@ class EconomyRepository:
         finally:
             connection.close()
 
+    # -- Trabajar fuera ------------------------------------------------------------------
+
+    async def credit_foreign_salary(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        country: str,
+        account_id: int,
+        now: float,
+        payslip_for: Callable[[int, int, int], ForeignPayslip],
+        window_seconds: float,
+    ) -> tuple[ForeignPayslip, int]:
+        """Paga una nómina cobrada fuera de España.
+
+        En el libro: el bruto, la cotización del otro país (`mpf:concept`), su
+        impuesto (`impuesto_ext:concept`) y, si hay, el IRPF español. Lo del otro
+        país (las dos cotizaciones y el impuesto) va a `account_id`; el IRPF, al
+        Estado. La parte sujeta en España queda en `economy_tax_records`.
+
+        Args:
+            payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta
+                sujeta en España de la ventana)` y devuelve la nómina.
+
+        Returns:
+            `(nómina, saldo_final)`.
+        """
+        return await self._run(
+            self._credit_foreign_sync,
+            guild_id,
+            user_id,
+            gross,
+            concept,
+            country,
+            account_id,
+            now,
+            payslip_for,
+            window_seconds,
+        )
+
+    def _credit_foreign_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        gross: int,
+        concept: str,
+        country: str,
+        account_id: int,
+        now: float,
+        payslip_for: Callable[[int, int, int], ForeignPayslip],
+        window_seconds: float,
+    ) -> tuple[ForeignPayslip, int]:
+        with self._transaction() as connection:
+            since = now - window_seconds
+            (recent_foreign,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = ?
+                """,
+                (guild_id, user_id, since, country),
+            ).fetchone()
+            recent_spain = self._recent_taxable_in(connection, guild_id, user_id, since)
+            slip = payslip_for(gross, int(recent_foreign), recent_spain)
+            entries = [LedgerEntry(slip.gross, concept)]
+            if slip.mpf_worker:
+                entries.append(LedgerEntry(-slip.mpf_worker, f"mpf:{concept}"))
+            if slip.hk_tax:
+                entries.append(LedgerEntry(-slip.hk_tax, f"impuesto_ext:{concept}"))
+            if slip.irpf:
+                entries.append(LedgerEntry(-slip.irpf, f"irpf:{concept}"))
+            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+            if slip.foreign:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance)
+                    VALUES (?, ?, 0)
+                    """,
+                    (guild_id, account_id),
+                )
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    account_id,
+                    (LedgerEntry(slip.foreign, f"impuesto_ext:{concept}"),),
+                )
+            if slip.irpf:
+                self._credit_state_in(connection, guild_id, slip.irpf, f"irpf:{concept}")
+            taxable = slip.gross - slip.exempt if slip.resident else 0
+            if taxable > 0:
+                connection.execute(
+                    """
+                    INSERT INTO economy_tax_records
+                        (guild_id, user_id, created_at, concept, gross, withheld)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, now, concept, taxable, slip.irpf),
+                )
+            connection.execute(
+                """
+                INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker,
+                                             ss_employer, irpf, net, country, foreign_tax,
+                                             created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    guild_id,
+                    user_id,
+                    concept,
+                    slip.gross,
+                    slip.mpf_worker,
+                    slip.mpf_employer,
+                    slip.irpf,
+                    slip.net,
+                    country,
+                    slip.hk_tax,
+                    now,
+                ),
+            )
+            return slip, balance
+
+    async def foreign_taxes(self, guild_id: int, user_id: int, country: str) -> int:
+        """Todo lo que se ha quedado otro país (impuesto y cotizaciones) de un miembro."""
+        return await self._run(self._foreign_taxes_sync, guild_id, user_id, country)
+
+    def _foreign_taxes_sync(self, guild_id: int, user_id: int, country: str) -> int:
+        connection = self._connect()
+        try:
+            (total,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(foreign_tax + ss_worker + ss_employer), 0)
+                FROM economy_payroll WHERE guild_id = ? AND user_id = ? AND country = ?
+                """,
+                (guild_id, user_id, country),
+            ).fetchone()
+            return int(total)
+        finally:
+            connection.close()
+
+    async def set_residence(
+        self, guild_id: int, user_id: int, country: str | None, now: float
+    ) -> None:
+        """Apunta que vive fuera (`country`) o que ha vuelto (`None`)."""
+        await self._run(self._set_residence_sync, guild_id, user_id, country, now)
+
+    def _set_residence_sync(
+        self, guild_id: int, user_id: int, country: str | None, now: float
+    ) -> None:
+        with self._transaction() as connection:
+            if country is None:
+                connection.execute(
+                    "DELETE FROM economy_residence WHERE guild_id = ? AND user_id = ?",
+                    (guild_id, user_id),
+                )
+                return
+            connection.execute(
+                """
+                INSERT INTO economy_residence (guild_id, user_id, country, since)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    country = excluded.country, since = excluded.since
+                """,
+                (guild_id, user_id, country, now),
+            )
+
+    async def residence(self, guild_id: int, user_id: int) -> str | None:
+        """País donde vive, o `None` si vive en España."""
+        return await self._run(self._residence_sync, guild_id, user_id)
+
+    def _residence_sync(self, guild_id: int, user_id: int) -> str | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT country FROM economy_residence WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return str(row["country"]) if row else None
+        finally:
+            connection.close()
+
     # -- Limpieza ------------------------------------------------------------------
 
     async def delete_guild_data(self, guild_id: int) -> None:
@@ -2151,6 +2351,7 @@ class EconomyRepository:
                 "economy_payroll",
                 "economy_sanctions",
                 "economy_imv_suspensions",
+                "economy_residence",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

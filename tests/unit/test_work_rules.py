@@ -36,6 +36,7 @@ from bot.services.work_catalog import (
     MEMORY_PACKS,
     events_for,
 )
+from bot.services.work_games import _SPOT
 
 
 def at(year: int, month: int, day: int, hour: int = 12) -> float:
@@ -46,7 +47,7 @@ def at(year: int, month: int, day: int, hour: int = 12) -> float:
 
 
 def test_cada_oficio_tiene_cinco_puestos_con_sueldo_creciente() -> None:
-    assert {job.key for job in JOBS} == {"obra", "hosteleria", "politica"}
+    assert {job.key for job in JOBS} == {"obra", "hosteleria", "politica", "sanidad", "oficina"}
     for job in JOBS:
         assert [p.level for p in job.positions] == [1, 2, 3, 4, 5]
         pays = [p.base_pay for p in job.positions]
@@ -67,14 +68,14 @@ def test_el_contenido_de_cada_puesto_existe() -> None:
         for position in job.positions:
             kind = position.content.partition(":")[0]
             known = kind in MEMORY_PACKS or kind in DIALOGUE_PACKS
-            assert known or kind in {"cavar", "vagos", "sobrecostes"}, position.content
+            assert known or kind in {"cavar", *_SPOT}, position.content
 
 
 def test_los_dialogos_tienen_rondas_de_sobra() -> None:
     for pack in DIALOGUE_PACKS.values():
         assert len(pack.items) >= 6
         for item in pack.items:
-            assert len(item.bad) == 2
+            assert len(item.bad) in (2, 3)
 
 
 def test_la_corrupcion_solo_sale_en_politica() -> None:

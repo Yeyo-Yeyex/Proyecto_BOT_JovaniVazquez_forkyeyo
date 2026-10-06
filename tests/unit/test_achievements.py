@@ -140,7 +140,15 @@ PRODUCED_STATS = {
     "work_demoted", "imv_with_salary", "imv_floor",
     *(outcome.stat for event in (*EVENTS, RESIGN_EVENT) for _label, outcome in event.options
       if outcome.stat),
-    "work_caught_uco", "work_pardoned",
+    "work_caught_uco", "work_pardoned", "work_caught_expediente", "work_caught_hacienda",
+    "work_guards", "work_zombie_guard", "work_off_duty_tries", "work_missed_guards",
+    "work_stretcher", "work_rounds", "work_triage", "work_mir", "work_google",
+    "work_coffee_orders", "work_bugs", "work_reviews", "work_meetings", "work_pitches",
+    "work_remote", "work_office", "work_options_max", "work_exit", "work_bankrupt",
+    "work_top_sanidad", "work_top_oficina", "work_abroad", "work_hk_shifts",
+    "work_nonresident", "work_7p", "work_double_tax", "work_hk_tax", "work_jetlag",
+    "imv_abroad", "work_return", "work_beckham", "work_abroad_days_max", "work_jobs_tried",
+    "work_zero", "work_black_total",
     UNLOCKED_STAT,
 }  # fmt: skip
 
