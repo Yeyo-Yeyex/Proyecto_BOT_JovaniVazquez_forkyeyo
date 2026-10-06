@@ -106,8 +106,8 @@ async def test_minas_cobra_y_dibuja_25_casillas_mas_controles(tmp_path: Path) ->
     assert board.total_children_count <= 40
     labels = [b.label for b in all_buttons if b.label]
     assert labels[0] == "💰 Cobrar" and "🎲 Al azar" in labels
-    # En plena partida no hay menú de minas.
-    assert not [i for i in board.walk_children() if isinstance(i, ui.Select)]
+    # Antes de destapar la primera, el menú de minas sigue a mano.
+    assert len([i for i in board.walk_children() if isinstance(i, ui.Select)]) == 1
 
 
 async def test_casilla_buena_sube_y_cobrar_paga(tmp_path: Path) -> None:
@@ -338,3 +338,32 @@ async def test_batir_el_record_se_avisa(tmp_path: Path) -> None:
     await board._cash_out(make_interaction())
     assert await cog.record(GUILD_ID, OWNER_ID) == 3
     load.assert_awaited_once()  # el récord se lee una vez y luego va en memoria
+
+
+async def test_el_menu_de_minas_sale_al_abrir_y_cambia_la_partida_sin_cobrar_otra_vez(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path)
+    board = await open_board(cog, mines=3)
+    selects = [i for i in board.walk_children() if isinstance(i, ui.Select)]
+    assert len(selects) == 1
+    assert board.total_children_count <= 40
+    await board._choose_mines(make_interaction(), 7)
+    assert board.game is not None and board.game.playing
+    assert board.game.mines == 7 and board.game.stake == 100
+    assert cog.mines_for(GUILD_ID, OWNER_ID) == 7
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100
+
+
+async def test_tras_destapar_la_primera_el_menu_desaparece_y_no_cambia_nada(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path)
+    board = await open_board(cog, mines=3)
+    place(board, {0, 1, 2})
+    await board._reveal(make_interaction(), 9)
+    assert not [i for i in board.walk_children() if isinstance(i, ui.Select)]
+    interaction = make_interaction()
+    await board._choose_mines(interaction, 7)
+    interaction.response.defer.assert_awaited_once()
+    assert board.game is not None and board.game.mines == 3
