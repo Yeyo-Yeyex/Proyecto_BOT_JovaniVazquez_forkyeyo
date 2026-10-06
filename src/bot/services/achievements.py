@@ -1248,7 +1248,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("levels", "activity_streak_max", [
         (3, "streak_3", "Fin de semana largo", "Habla 3 días seguidos.", C),
-        (7, "streak_7", "Una semana sin faltar", "Habla 7 días seguidos.", C),
+        (7, "streak_7", "Una semana sin faltar", "Habla 7 días seguidos.", R),
         (14, "streak_14", "Quincena completa", "Habla 14 días seguidos.", R),
         (30, "streak_30", "Un mes sin faltar", "Habla 30 días seguidos.", E),
         (60, "streak_60", "Dos meses sin vacaciones", "Habla 60 días seguidos.", E),
