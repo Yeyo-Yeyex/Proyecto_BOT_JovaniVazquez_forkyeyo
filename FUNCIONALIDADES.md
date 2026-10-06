@@ -480,6 +480,17 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `tajo [canal] [todos]` | Canales donde se puede usar `pala`. Un canal lo añade o, si ya estaba, lo quita; `todos` (en `.tajo`, también `cualquiera`) vuelve a permitirla en cualquier canal. Sin argumentos enseña los actuales. Responde solo a ti en `/`. Ver sección 6 ter.7 quater. |
 | `niveles [acción] [canal] [segundos]` | Sin argumentos, enseña el estado de los niveles. Acciones: `importar` (lee el historial y, al acabar la primera vez, enciende los niveles), `activar`, `desactivar` (no borra XP) y `mismo` (avisos donde se sube). Un canal fija dónde se anuncian las subidas; unos segundos (10–3600), el enfriamiento del XP por mensaje. En `.niveles` van en cualquier orden. Ver sección 4.0. |
 
+`reinicio` va aparte: no es de administración sino de mantenimiento, y solo
+lo pueden usar dos IDs (Yeyo y Dani, en `DEPLOYERS` de `bot.cogs.deploy`),
+sean o no administradores. No sale en `ayuda`. Pide al NAS que baje lo último
+de `main`, reconstruya y reinicie el bot; el bot deja la petición en el buzón
+`.despliegue/buzon` y `actualizar.sh --solicitud` (cron de cada minuto) la
+atiende. Al acabar, el bot publica en el canal donde se pidió si ha ido bien
+(con el commit desplegado) o qué ha fallado, y en ese caso sigue la versión
+anterior. No se puede pedir otro mientras uno está en marcha; una petición sin
+respuesta en 30 minutos se da por perdida. Detalle en el README («Reiniciar
+desde Discord»).
+
 ### 6 quater.2. Autorización y seguridad
 
 - Solo los miembros con el permiso **Administrador** pueden usarlos. Se comprueba en el servidor en cada invocación (`cog_check` y `interaction_check`); que Discord oculte los `/` a los demás (`default_permissions`) es solo estética.

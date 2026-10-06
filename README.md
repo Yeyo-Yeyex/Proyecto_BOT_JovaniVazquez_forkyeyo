@@ -539,14 +539,29 @@ chmod +x actualizar.sh
 # dice: entonces, una sola vez, `sudo ./actualizar.sh --convertir`, que la
 # enlaza con GitHub sin tocar `.env` ni los datos.
 sudo ./actualizar.sh     # debe acabar en "Desplegado ..." o "Sin cambios"
-sudo crontab -e          # y añade esta línea:
+sudo crontab -e          # y añade estas dos líneas:
 0 5 * * * /ruta/al/bot/actualizar.sh
+* * * * * /ruta/al/bot/actualizar.sh --solicitud
 ```
+
+La segunda atiende el comando `reinicio` de Discord: cada minuto mira si
+alguien lo ha pedido y, si no, sale sin hacer nada ni escribir en el log.
 
 cron usa la hora del NAS. Si `date` no da la de Canarias (los NAS suelen ir en
 UTC), ajústala con `sudo timedatectl set-timezone Atlantic/Canary` o asume
 el desfase en la hora del crontab.
 El registro de cada ejecución queda en `.despliegue/actualizar.log`.
+
+### Reiniciar desde Discord: `reinicio`
+
+`.reinicio` (o `/reinicio`) actualiza el bot a lo último de `main` y lo
+reinicia sin entrar al NAS, aunque no haya commits nuevos y aunque el último
+hubiera fallado. Solo lo pueden usar Yeyo y Dani (IDs en `DEPLOYERS`, en
+`src/bot/cogs/deploy.py`) y no sale en `ayuda`. El bot no se reinicia solo:
+deja una nota en `.despliegue/buzon` (carpeta montada en el contenedor) y el
+cron de `actualizar.sh --solicitud` hace el trabajo. Al acabar, el bot publica
+en el mismo canal si ha ido bien o qué ha fallado. Si en un par de minutos no
+pasa nada, falta la línea de `--solicitud` en el crontab.
 
 **Si la música deja de funcionar** antes de la reconstrucción semanal, casi
 siempre es que `yt-dlp` se ha quedado anticuado (YouTube cambia a menudo).
@@ -583,6 +598,7 @@ src/bot/
 ├── cogs/                # Comandos y eventos agrupados por dominio
 │   ├── general.py       # Comandos generales (ping, help)
 │   ├── admin.py         # Moderación solo para administradores
+│   ├── deploy.py        # reinicio: pide al NAS que actualice y avisa del resultado
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py       # Bienvenidas (GIF, frases, botón 👋) y despedidas
@@ -632,6 +648,7 @@ src/bot/
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
+│   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
 │   ├── image_input.py   # Lectura validada de imágenes de usuario (límites, EXIF)

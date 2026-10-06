@@ -78,6 +78,9 @@ ADMIN_COMMANDS = {
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
 TEXT_ONLY_COMMANDS = {"magik", "memes"}
 
+# Utilidades de mantenimiento para unos pocos IDs: no salen en la ayuda.
+HIDDEN_COMMANDS = {"reinicio"}
+
 
 def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: Path) -> None:
     """`/x` y `.x` son el mismo comando: mismos nombres, cortos, planos y sin alias."""
@@ -96,7 +99,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             text_names = {c.name for c in client.commands}
             effects = {c.name for c in client.commands if "help_group" in c.extras}
 
-            assert slash_names == EXPECTED_COMMANDS | ADMIN_COMMANDS
+            assert slash_names == EXPECTED_COMMANDS | ADMIN_COMMANDS | HIDDEN_COMMANDS
             assert text_names == slash_names | TEXT_ONLY_COMMANDS | set(EFFECTS)
             # Los efectos conservan el nombre de Dank Memer (algunos de más de
             # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
@@ -113,7 +116,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             assert client.get_cog("Music") is not None
             # Los de administración no aparecen en el menú `/` de quien no es admin.
             for command in slash:
-                if command.name in ADMIN_COMMANDS:
+                if command.name in ADMIN_COMMANDS | HIDDEN_COMMANDS:
                     assert command.default_permissions is not None
                     assert command.default_permissions.administrator
                     assert command.guild_only

@@ -273,3 +273,72 @@ def test_permisos_777_del_nas_no_cuentan_como_cambios(entorno):
 
     assert resultado.returncode == 0, (entorno["clon"] / ".despliegue/actualizar.log").read_text()
     assert (entorno["clon"] / ".despliegue/commit").read_text().strip() == nuevo
+
+
+# -- --solicitud: el comando `reinicio` de Discord ----------------------------------------
+
+
+def _pedir_reinicio(entorno: dict) -> Path:
+    buzon = entorno["clon"] / ".despliegue/buzon"
+    buzon.mkdir(parents=True, exist_ok=True)
+    (buzon / "solicitud.json").write_text('{"channel_id": 1, "user_id": 2}')
+    return buzon
+
+
+def test_solicitud_sin_nota_no_hace_nada_ni_escribe_log(entorno):
+    resultado = _ejecutar_con(entorno, "--solicitud")
+
+    assert resultado.returncode == 0
+    assert _llamadas(entorno) == ""
+    assert not (entorno["clon"] / ".despliegue/actualizar.log").exists()
+    assert (entorno["clon"] / ".despliegue/buzon").is_dir()
+
+
+def test_solicitud_reinicia_aunque_no_haya_commits_y_avisa_al_bot(entorno):
+    _ejecutar(entorno)
+    _limpiar_llamadas(entorno)
+    buzon = _pedir_reinicio(entorno)
+
+    resultado = _ejecutar_con(entorno, "--solicitud")
+
+    assert resultado.returncode == 0
+    assert "compose build --pull" in _llamadas(entorno)
+    assert not (buzon / "solicitud.json").exists()
+    assert (buzon / "en_curso.json").exists()  # el bot la recoge con el resultado
+    estado, resumen = (buzon / "resultado.txt").read_text().splitlines()
+    assert estado == "ok"
+    assert resumen.startswith("Desplegado")
+
+
+def test_solicitud_reintenta_un_commit_que_fallo(entorno):
+    _ejecutar(entorno)
+    _nuevo_commit(entorno["origin"], "roto")
+    _ejecutar(entorno, FAKE_RESTARTS="3")
+    _limpiar_llamadas(entorno)
+    _pedir_reinicio(entorno)
+
+    _ejecutar_con(entorno, "--solicitud")
+
+    assert "compose build --pull" in _llamadas(entorno)
+
+
+def test_solicitud_que_falla_deja_el_error_para_el_bot(entorno):
+    _ejecutar(entorno)
+    buzon = _pedir_reinicio(entorno)
+
+    resultado = _ejecutar_con(entorno, "--solicitud", FAKE_BUILD_FAIL="1")
+
+    assert resultado.returncode == 1
+    estado, resumen = (buzon / "resultado.txt").read_text().splitlines()
+    assert estado == "error"
+    assert "no se ha podido construir" in resumen
+
+
+def _ejecutar_con(entorno: dict, *args: str, **extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(entorno["clon"] / "actualizar.sh"), *args],
+        env={**entorno["env"], **extra},
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
