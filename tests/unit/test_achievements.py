@@ -26,6 +26,8 @@ from bot.repositories.achievements import AchievementRepository, Profile
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.services.achievements import (
+    APUESTAS_PAGES,
+    APUESTAS_PERIODS,
     AVAILABLE,
     BY_ID,
     CASINO_GROUP,
@@ -236,6 +238,11 @@ PRODUCED_STATS = {
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
     "todo_done_batch_max",
+    # Estadísticas del casino (cogs/apuestas.py: apuestas_stats)
+    "apuestas_views", "apuestas_snoop", "apuestas_insomnia", "apuestas_virgin",
+    "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
+    *(f"apuestas_page_{page}" for page in APUESTAS_PAGES),
+    *(f"apuestas_period_{period}" for period in APUESTAS_PERIODS),
     UNLOCKED_STAT,
 }  # fmt: skip
 

@@ -54,7 +54,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, crash_stats
 from bot.services.crash import (
@@ -738,6 +738,16 @@ class CrashTable:
             )
             await logros.casino_play(
                 self.cog.bot, self.guild_id, user, self.channel, delta, net=seat.net
+            )
+            await apuestas.record(
+                self.cog.bot,
+                self.guild_id,
+                user,
+                game=GAME,
+                stake=seat.stake,
+                net=seat.net,
+                balance_after=settlement.balance if settlement else 0,
+                tax=settlement.tax_delta if settlement else 0,
             )
 
     async def close(self) -> None:

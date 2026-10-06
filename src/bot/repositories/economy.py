@@ -1396,6 +1396,74 @@ class EconomyRepository:
             connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(amount, reason),)
         )
 
+    async def casino_ledger(
+        self, guild_id: int, user_id: int | None
+    ) -> tuple[list[tuple[str, int, int]], int, int, int, float | None]:
+        """Lo que dice el libro del casino desde el primer día (para `apuestas`).
+
+        Solo lee. Mira los movimientos de los miembros (no los del Estado ni los
+        de los botes) cuyo motivo acaba en `:apuesta`, `:premio` o `:bote`, y
+        los del IRPF del juego y la renta.
+
+        Args:
+            user_id: Un miembro, o `None` para todo el servidor.
+
+        Returns:
+            `(filas, retenido, devuelto en el día, devuelto en la renta, primer
+            movimiento)`, donde cada fila es `(motivo, movimientos, suma)`.
+        """
+        return await self._run(self._casino_ledger_sync, guild_id, user_id)
+
+    def _casino_ledger_sync(
+        self, guild_id: int, user_id: int | None
+    ) -> tuple[list[tuple[str, int, int]], int, int, int, float | None]:
+        # Los miembros tienen ids de Discord (positivos); el Estado es 0 y las
+        # cuentas de la casa son negativas.
+        where = "guild_id = ? AND user_id > 0"
+        args: tuple[object, ...] = (guild_id,)
+        if user_id is not None:
+            where += " AND user_id = ?"
+            args = (guild_id, user_id)
+        connection = self._connect()
+        try:
+            rows = [
+                (str(reason), int(count), int(total or 0))
+                for reason, count, total in connection.execute(
+                    f"""
+                    SELECT reason, COUNT(*), SUM(delta) FROM economy_ledger
+                    WHERE {where} AND (reason LIKE '%:apuesta' OR reason LIKE '%:premio'
+                        OR reason LIKE '%:bote')
+                    GROUP BY reason
+                    """,
+                    args,
+                )
+            ]
+            sums = dict(
+                connection.execute(
+                    f"""
+                    SELECT reason, SUM(delta) FROM economy_ledger
+                    WHERE {where} AND reason IN
+                        ('irpf:juego', 'devolucion:irpf:juego', 'devolucion:renta')
+                    GROUP BY reason
+                    """,
+                    args,
+                ).fetchall()
+            )
+            (first_at,) = connection.execute(
+                f"SELECT MIN(created_at) FROM economy_ledger WHERE {where} "
+                "AND reason LIKE '%:apuesta'",
+                args,
+            ).fetchone()
+        finally:
+            connection.close()
+        return (
+            rows,
+            -int(sums.get("irpf:juego") or 0),
+            int(sums.get("devolucion:irpf:juego") or 0),
+            int(sums.get("devolucion:renta") or 0),
+            float(first_at) if first_at is not None else None,
+        )
+
     async def treasury(self, guild_id: int, since: float, top: int) -> Treasury:
         """Saldo y recaudación de la cuenta del Estado del servidor."""
         return await self._run(self._treasury_sync, guild_id, since, top)

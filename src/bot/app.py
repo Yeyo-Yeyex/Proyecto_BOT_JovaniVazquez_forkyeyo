@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from bot.repositories.achievements import AchievementRepository
 from bot.repositories.birthdays import BirthdayRepository
+from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.hold_win import HoldWinRepository
@@ -50,6 +51,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.pachinko",
     "bot.cogs.lottery",
     "bot.cogs.renta",
+    "bot.cogs.apuestas",
     "bot.cogs.patrimonio",
     "bot.cogs.intereses",
     "bot.cogs.donations",
@@ -101,6 +103,8 @@ class BotClient(commands.Bot):
             EconomyRepository(database_path, starting_balance=STARTING_BALANCE)
         )
         self.casino_channel_ids = casino_channel_ids
+        # Una fila por jugada terminada del casino, para `apuestas`. No mueve dinero.
+        self.casino_stats = CasinoStatsRepository(database_path)
         self.birthdays = BirthdayRepository(database_path)
         self.achievements = AchievementRepository(database_path)
         self.welcome = WelcomeRepository(database_path)
@@ -136,6 +140,7 @@ class BotClient(commands.Bot):
         await self.message_stats.initialize()
         await self.message_stats.recover_interrupted_imports()
         await self.economy.repository.initialize()
+        await self.casino_stats.initialize()
         await self.birthdays.initialize()
         await self.achievements.initialize()
         await self.welcome.initialize()

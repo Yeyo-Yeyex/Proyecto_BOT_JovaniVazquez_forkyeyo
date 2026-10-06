@@ -174,6 +174,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
+    Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
@@ -470,6 +471,12 @@ SAVINGS_BRACKET_STORY = (
     "a lo que pasa de ese límite, el resto sigue al 19 %. Subir de tramo nunca te deja con "
     "menos dinero. Eso sí, Sanxe te lo cobra el lunes sin preguntar."
 )
+
+
+#: Páginas de `apuestas` (las claves de su menú). Ver `bot.cogs.apuestas`.
+APUESTAS_PAGES = ("resumen", "juegos", "records", "horario", "ranking", "hacienda", "libro")
+#: Periodos de `apuestas` (`bot.services.casino_stats.Period`).
+APUESTAS_PERIODS = ("hoy", "semana", "mes", "siempre")
 
 
 def _build_catalog() -> tuple[Achievement, ...]:
@@ -4494,6 +4501,91 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "logros_ranking", [
         (25, "ranking_25", "Obsesionado con el ranking", "Mira el ranking de logros 25 veces.", R),
     ])  # fmt: skip
+    # 📊 Estadísticas del casino (`apuestas`) ------------------------------------------
+    # Mirar las cuentas es una decisión, no suerte: nada pasa de Raro
+    # (Biblia, «Rarezas»). Los secretos dependen de cómo te vaya a ti.
+    a += _tiers("apuestas", "apuestas_views", [
+        (1, "apuestas_1", "Mirar el extracto", "Consulta tus `apuestas` por primera vez.", C),
+        (10, "apuestas_10", "Contable de la ruina", "Consulta las estadísticas 10 veces.", C),
+        (50, "apuestas_50", "Excel de la desgracia", "Consulta las estadísticas 50 veces.", C),
+        (250, "apuestas_250", "Asesor fiscal de ti mismo",
+         "Consulta las estadísticas 250 veces. Sanxe ya te ofrece trabajo.", R),
+        (1_000, "apuestas_1k", "Fiscalizado por la UCO",
+         "Consulta las estadísticas 1.000 veces. Ni la UCO revisa tanto.", R),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_snoop", [
+        (1, "apuestas_snoop_1", "Cotilla de la UCO", "Mira las apuestas de otra persona.", C),
+        (25, "apuestas_snoop_25", "Pegasus en el móvil del vecino",
+         "Mira las apuestas de otros 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_page_ranking", [
+        (1, "apuestas_rank_1", "¿Quién va primero?", "Abre el ranking del casino.", C),
+        (50, "apuestas_rank_50", "Obsesionado con la tabla",
+         "Abre el ranking del casino 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_page_hacienda", [
+        (10, "apuestas_hacienda_10", "Inspector vocacional",
+         "Mira 10 veces lo que te ha quitado Hacienda en el casino.", C),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_page_libro", [
+        (1, "apuestas_libro_1", "Arqueólogo del libro mayor",
+         "Consulta el libro del casino desde el primer día.", C),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_page_horario", [
+        (1, "apuestas_horario_1", "Hora feliz (para la casa)",
+         "Mira a qué hora pierde más dinero el servidor.", C),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_page_records", [
+        (1, "apuestas_records_1", "Salón de la fama y de la vergüenza",
+         "Mira los récords del casino.", C),
+    ])  # fmt: skip
+    a.append(
+        combo(
+            "apuestas_periods",
+            "Hoy, ayer y siempre",
+            "Mira las estadísticas en los cuatro periodos (hoy, 7 días, 30 días y siempre).",
+            "apuestas",
+            C,
+            tuple((f"apuestas_period_{p}", 1) for p in APUESTAS_PERIODS),
+        )
+    )
+    a.append(
+        combo(
+            "apuestas_all_pages",
+            "Me lo he leído todo, Sanxe",
+            "Abre todas las páginas de `apuestas`.",
+            "apuestas",
+            C,
+            tuple((f"apuestas_page_{page}", 1) for page in APUESTAS_PAGES),
+        )
+    )
+    a += _tiers("apuestas", "apuestas_denial", [
+        (1, "apuestas_denial", "Negacionista de la estadística",
+         "Mira tus cuentas con más de 100 jugadas y menos de la mitad devuelta. Y sigue.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_ruin", [
+        (1, "apuestas_ruin", "La máquina del fango",
+         "Mira tus cuentas yendo 100.000 Y$ abajo en el casino.", R, True),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_rich", [
+        (1, "apuestas_rich", "Contando billetes delante de Sanxe",
+         "Mira tus cuentas yendo 100.000 Y$ arriba en el casino.", R, True),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_even", [
+        (1, "apuestas_even", "Ni pa ti ni pa mí",
+         "Mira tus cuentas con 100 jugadas o más y el casino devolviéndote entre el 99 y "
+         "el 101 %.", R, True),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_insomnia", [
+        (1, "apuestas_insomnia", "Insomnio contable",
+         "Repasa las cuentas del casino entre las 2 y las 6 de la madrugada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("apuestas", "apuestas_virgin", [
+        (1, "apuestas_virgin", "Mirar sin tocar",
+         "Consulta tus estadísticas del casino sin haber apostado nunca.", C, True),
+    ])  # fmt: skip
+
     countable = sum(
         1 for x in a if x.category != "meta" and not CATEGORY_BY_KEY[x.category].upcoming
     )
@@ -5601,6 +5693,56 @@ def hold_win_bonus_stats(
     if result.coins == 19:
         delta.add["botes_almost_grand"] = 1
     return delta
+
+
+def apuestas_stats(
+    *,
+    page: str,
+    period: str | None,
+    opened: bool,
+    own: bool,
+    snooping: bool,
+    plays: int,
+    rtp: float | None,
+    net: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de mirar las estadísticas del casino (`apuestas`).
+
+    Args:
+        page: Página que se enseña (una de `APUESTAS_PAGES`).
+        period: Clave del periodo (`hoy`, `semana`, `mes`, `siempre`), o `None`
+            si no ha cambiado.
+        opened: Si es el comando (una consulta) y no un cambio de página.
+        own: Si mira sus propias cifras de siempre (las de los secretos).
+        snooping: Si mira las de otro miembro.
+        plays: Jugadas pagadas del miembro de `own` (de siempre).
+        rtp: Pagado / apostado del miembro de `own`.
+        net: Resultado del miembro de `own` antes de impuestos.
+        when: Hora canaria de la consulta.
+    """
+    add: dict[str, int] = {f"apuestas_page_{page}": 1}
+    if period is not None:
+        add[f"apuestas_period_{period}"] = 1
+    if opened:
+        add["apuestas_views"] = 1
+        if snooping:
+            add["apuestas_snoop"] = 1
+        if 2 <= when.hour < 6:
+            add["apuestas_insomnia"] = 1
+    if own:
+        if plays == 0:
+            add["apuestas_virgin"] = 1
+        if plays >= 100 and rtp is not None:
+            if rtp < 0.5:
+                add["apuestas_denial"] = 1
+            if 0.99 <= rtp <= 1.01:
+                add["apuestas_even"] = 1
+        if net <= -100_000:
+            add["apuestas_ruin"] = 1
+        if net >= 100_000:
+            add["apuestas_rich"] = 1
+    return StatDelta(add=add)
 
 
 def pachinko_stats(

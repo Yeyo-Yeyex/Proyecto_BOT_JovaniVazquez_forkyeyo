@@ -73,7 +73,7 @@ python -m bot
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |

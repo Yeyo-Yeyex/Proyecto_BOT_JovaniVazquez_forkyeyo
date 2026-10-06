@@ -41,7 +41,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import StatDelta, casino_stats, pachinko_stats
 from bot.services.economy import (
@@ -658,6 +658,16 @@ class PachinkoView(discord.ui.View):
             getattr(self.message, "channel", None),
             delta,
             net=play.net,
+        )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game=GAME,
+            stake=play.stake,
+            net=play.net,
+            balance_after=play.balance,
+            tax=play.settlement.tax_delta,
         )
 
     async def _burst(self, interaction: discord.Interaction) -> None:

@@ -992,6 +992,16 @@ class EconomyService:
         """Por ONG: `(recaudado, donantes)` en el servidor."""
         return await self.repository.ong_totals(guild_id)
 
+    async def casino_ledger(
+        self, guild_id: int, user_id: int | None = None
+    ) -> tuple[list[tuple[str, int, int]], int, int, int, float | None]:
+        """Apuestas, premios e IRPF del casino según el libro, desde el primer día.
+
+        Solo lee; lo usa `apuestas` (`bot.services.casino_stats.ledger_from_rows`
+        lo convierte en cifras por juego). Ver `EconomyRepository.casino_ledger`.
+        """
+        return await self.repository.casino_ledger(guild_id, user_id)
+
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""
         return await self.repository.treasury(guild_id, since, top)
