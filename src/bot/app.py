@@ -61,6 +61,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.achievements",
     "bot.cogs.fun",
     "bot.cogs.admin",
+    "bot.cogs.deploy",
 )
 
 

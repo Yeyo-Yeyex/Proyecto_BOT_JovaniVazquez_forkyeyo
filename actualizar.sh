@@ -5,6 +5,7 @@
 #                                         "Actualización automática" en el README)
 #      sudo ./actualizar.sh --convertir  (solo la primera vez, si la carpeta del
 #                                         bot se copió en vez de clonarse)
+#      ./actualizar.sh --solicitud       (cron cada minuto: atiende `reinicio`)
 #
 # Qué hace, en orden:
 #   1. Descarga la rama main de GitHub (git fetch) sin tocar nada aún.
@@ -41,6 +42,13 @@
 # versión de main, sobrescribiendo los que haya. `.env`, `.despliegue/` y los
 # demás archivos ignorados por git no se tocan. Después sigue como siempre.
 #
+# --solicitud: atiende el comando `reinicio` de Discord. El bot deja la nota
+# `.despliegue/buzon/solicitud.json` (carpeta montada en el contenedor); si no
+# hay nota, sale al momento sin escribir nada en el log, así que se puede
+# lanzar cada minuto. Si la hay, actualiza aunque no haya commits nuevos (o el
+# último ya fallara) y deja `resultado.txt` en el buzón para que el bot avise
+# en el canal donde se pidió. Detalle del protocolo en bot/services/deploy.py.
+#
 # Variables opcionales: RAMA (main), ESPERA_ARRANQUE (90), DIAS_RECONSTRUIR (7),
 # REPO (el de godzilin), GIT_EN_DOCKER=1 para usar alpine/git aunque haya git.
 
@@ -50,11 +58,26 @@
 
 set -uo pipefail
 
+# Globales para avisar al bot tras main(): modo, buzón y resumen final.
+MODO_SOLICITUD=0
+BUZON=""
+RESUMEN=""
+
+# Escribe un mensaje en el log y lo guarda como resumen para el bot.
+fin() {
+    RESUMEN="$*"
+    echo "$*"
+}
+
 main() {
     local dir estado log rama espera dias contenedor imagen compose repo convertir=0
-    [[ "${1:-}" == "--convertir" ]] && convertir=1
+    case "${1:-}" in
+        --convertir) convertir=1 ;;
+        --solicitud) MODO_SOLICITUD=1 ;;
+    esac
     dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     estado="$dir/.despliegue"
+    BUZON="$estado/buzon"
     log="$estado/actualizar.log"
     rama="${RAMA:-main}"
     espera="${ESPERA_ARRANQUE:-90}"
@@ -66,7 +89,17 @@ main() {
     # cron arranca con un PATH mínimo; los NAS suelen tener docker en /usr/local/bin.
     export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-    mkdir -p "$estado"
+    # El buzón lo monta el contenedor, cuyo usuario (uid 1000) tiene que poder
+    # escribir y borrar en él. Se crea antes de arrancar el bot: si lo crease
+    # Docker, sería de root y el bot no podría dejar notas.
+    mkdir -p "$estado" "$BUZON"
+    chmod 777 "$BUZON" 2>/dev/null || true
+
+    # Modo cron de cada minuto: sin nota, nada que hacer (ni siquiera el log).
+    if [[ "$MODO_SOLICITUD" == 1 && ! -f "$BUZON/solicitud.json" ]]; then
+        return 0
+    fi
+
     # Desde cron todo va al log; a mano, además, se ve en pantalla.
     if [[ -t 1 ]]; then
         exec > >(tee -a "$log") 2>&1
@@ -82,6 +115,10 @@ main() {
     fi
 
     echo "===== $(date '+%F %T') ====="
+    if [[ "$MODO_SOLICITUD" == 1 ]]; then
+        mv -f "$BUZON/solicitud.json" "$BUZON/en_curso.json"
+        echo "Reinicio pedido desde Discord: $(cat "$BUZON/en_curso.json" 2>/dev/null)"
+    fi
     cd "$dir" || return 1
 
     if docker compose version >/dev/null 2>&1; then
@@ -89,11 +126,11 @@ main() {
     elif command -v docker-compose >/dev/null 2>&1; then
         compose=(docker-compose)
     else
-        echo "No encuentro docker compose ni docker-compose."
+        fin "No encuentro docker compose ni docker-compose."
         return 1
     fi
     if ! docker info >/dev/null 2>&1; then
-        echo "No puedo hablar con Docker. ¿Falta sudo? Prueba: sudo $dir/actualizar.sh"
+        fin "No puedo hablar con Docker. ¿Falta sudo? Prueba: sudo $dir/actualizar.sh"
         return 1
     fi
 
@@ -113,7 +150,7 @@ main() {
 
     if [[ ! -d "$dir/.git" ]]; then
         if [[ "$convertir" != 1 ]]; then
-            echo "Esta carpeta no es un clon de git (se copió a mano)."
+            fin "Esta carpeta no es un clon de git (se copió a mano)."
             echo "Ejecuta una vez: sudo $dir/actualizar.sh --convertir"
             return 1
         fi
@@ -122,25 +159,25 @@ main() {
             || ! "${git[@]}" remote add origin "$repo" \
             || ! "${git[@]}" fetch --quiet origin "$rama" \
             || ! "${git[@]}" checkout --quiet --force -B "$rama" "origin/$rama"; then
-            echo "No he podido convertirla; borra .git y vuelve a intentarlo."
+            fin "No he podido convertirla; borra .git y vuelve a intentarlo."
             return 1
         fi
         echo "Hecho: la carpeta ya sigue a origin/$rama."
     fi
 
     if ! "${git[@]}" rev-parse --verify --quiet HEAD >/dev/null; then
-        echo "git no funciona en esta carpeta; revisa el mensaje de arriba."
+        fin "git no funciona en esta carpeta; revisa el mensaje de arriba."
         return 1
     fi
 
     if ! "${git[@]}" diff --quiet HEAD --; then
-        echo "Hay cambios locales en archivos versionados; no actualizo para no pisarlos:"
+        fin "Hay archivos tocados a mano en el NAS; no actualizo para no pisarlos."
         "${git[@]}" status --short --untracked-files=no
         return 1
     fi
 
     if ! "${git[@]}" fetch --quiet origin "$rama"; then
-        echo "git fetch ha fallado (¿sin red o GitHub caído?)."
+        fin "git fetch ha fallado (¿sin red o GitHub caído?)."
         return 1
     fi
 
@@ -149,13 +186,15 @@ main() {
     actual="$(cat "$estado/commit" 2>/dev/null || "${git[@]}" rev-parse HEAD)"
     fallido="$(cat "$estado/fallido" 2>/dev/null || true)"
 
-    if [[ "$nuevo" == "$fallido" ]]; then
+    if [[ "$nuevo" == "$fallido" && "$MODO_SOLICITUD" != 1 ]]; then
         echo "origin/$rama sigue en ${nuevo:0:7}, que ya tumbó el bot; espero a un commit nuevo."
         return 0
     fi
 
     local motivo=""
-    if [[ "$nuevo" != "$actual" ]]; then
+    if [[ "$MODO_SOLICITUD" == 1 ]]; then
+        motivo="pedido desde Discord (${actual:0:7} -> ${nuevo:0:7})"
+    elif [[ "$nuevo" != "$actual" ]]; then
         motivo="commits nuevos (${actual:0:7} -> ${nuevo:0:7})"
     elif [[ -z "$(find "$estado/commit" -mtime "-$dias" 2>/dev/null)" ]]; then
         motivo="reconstrucción periódica (imagen de más de $dias días, yt-dlp al día)"
@@ -174,7 +213,7 @@ main() {
     "${git[@]}" reset --quiet --hard "$nuevo"
 
     if ! "${compose[@]}" build --pull; then
-        echo "La imagen no se ha podido construir; el bot sigue con la versión anterior."
+        fin "La imagen no se ha podido construir; el bot sigue con la versión anterior."
         # Se deja el código como estaba para que el próximo intento parta limpio.
         "${git[@]}" reset --quiet --hard "$actual" 2>/dev/null || true
         return 1
@@ -182,7 +221,7 @@ main() {
 
     # --force-recreate deja el contador de reinicios a cero para la comprobación.
     if ! "${compose[@]}" up -d --force-recreate --no-build; then
-        echo "docker compose up ha fallado."
+        fin "docker compose up ha fallado."
         volver_atras
         return 1
     fi
@@ -194,7 +233,8 @@ main() {
     corriendo="$(docker inspect -f '{{.State.Running}}' "$contenedor" 2>/dev/null || echo false)"
     reinicios="$(docker inspect -f '{{.RestartCount}}' "$contenedor" 2>/dev/null || echo 99)"
     if [[ "$corriendo" != "true" || "$reinicios" != "0" ]]; then
-        echo "El bot no aguanta en pie (en marcha: $corriendo, reinicios: $reinicios). Últimas líneas del log:"
+        fin "El bot nuevo (${nuevo:0:7}) se caía al arrancar; he vuelto a la versión anterior."
+        echo "En marcha: $corriendo, reinicios: $reinicios. Últimas líneas del log:"
         docker logs --tail 40 "$contenedor" 2>&1 || true
         echo "$nuevo" >"$estado/fallido"
         volver_atras
@@ -204,7 +244,7 @@ main() {
     echo "$nuevo" >"$estado/commit"
     rm -f "$estado/fallido"
     docker image prune -f >/dev/null 2>&1 || true
-    echo "Desplegado ${nuevo:0:7}: $("${git[@]}" log -1 --format=%s "$nuevo")"
+    fin "Desplegado ${nuevo:0:7}: $("${git[@]}" log -1 --format=%s "$nuevo")"
 }
 
 # Vuelve a la imagen guardada antes de construir. El código queda en el
@@ -220,6 +260,16 @@ volver_atras() {
     "${compose[@]}" up -d --force-recreate --no-build || echo "No he podido arrancar la imagen anterior; revisa el bot a mano."
 }
 
+# Deja en el buzón el resultado para que el bot lo publique en Discord.
+avisar_bot() {
+    [[ "$MODO_SOLICITUD" == 1 && -f "$BUZON/en_curso.json" ]] || return 0
+    local estado=error
+    [[ "$1" == 0 ]] && estado=ok
+    printf '%s\n%s\n' "$estado" "${RESUMEN:-Sin detalles.}" >"$BUZON/resultado.txt.tmp"
+    chmod 666 "$BUZON/resultado.txt.tmp" 2>/dev/null || true
+    mv -f "$BUZON/resultado.txt.tmp" "$BUZON/resultado.txt"
+}
+
 recortar_log() {
     local log="$1"
     [[ -f "$log" ]] || return 0
@@ -228,4 +278,4 @@ recortar_log() {
     fi
 }
 
-main "$@"; codigo=$?; recortar_log "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.despliegue/actualizar.log"; exit "$codigo"
+main "$@"; codigo=$?; avisar_bot "$codigo"; recortar_log "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.despliegue/actualizar.log"; exit "$codigo"

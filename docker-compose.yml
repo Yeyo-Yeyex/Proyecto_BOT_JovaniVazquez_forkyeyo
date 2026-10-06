@@ -16,6 +16,9 @@ services:
     volumes:
       # Niveles y estadísticas (SQLite). Sobrevive a reconstrucciones.
       - bot-data:/app/.data
+      # Buzón con actualizar.sh para el comando `reinicio` (ver
+      # src/bot/services/deploy.py). Lo crea el script con permisos de escritura.
+      - ./.despliegue/buzon:/app/.despliegue/buzon
     # El bot es ligero; los límites evitan que un fallo acapare el NAS.
     mem_limit: 768m
     cpus: 2.0
