@@ -11,8 +11,8 @@ dependencies = [
     "davey>=0.1.6",
     "Pillow>=10.3",
     "numpy>=1.26",
-    # Zona horaria Atlantic/Canary para los días de las rachas y la hora feliz:
-    # la imagen python:slim no trae la base de datos de zonas del sistema.
+    # Zonas horarias Atlantic/Canary (días de las rachas) y Asia/Hong_Kong
+    # (`hongkong`): la imagen python:slim no trae la base de datos del sistema.
     "tzdata>=2024.1",
 ]
 

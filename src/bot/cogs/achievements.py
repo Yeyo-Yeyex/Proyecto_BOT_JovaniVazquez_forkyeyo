@@ -70,7 +70,7 @@ from bot.services.economy import (
     format_amount,
     tax_line,
 )
-from bot.services.levels import TIMEZONE, calculate_level_progress, is_happy_hour
+from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
@@ -697,7 +697,6 @@ class Achievements(commands.Cog):
             is_reply=message.reference is not None and message.type is discord.MessageType.reply,
             mentions_others=any(u.id != author.id and not u.bot for u in message.mentions),
             mentions_bot=me is not None and any(u.id == me.id for u in message.mentions),
-            happy_hour=is_happy_hour(message.guild.id, self._clock()),
             own_birthday=own_birthday,
         )
         self.note(message.guild.id, author.id, StatDelta(add=stats), message.channel.id)

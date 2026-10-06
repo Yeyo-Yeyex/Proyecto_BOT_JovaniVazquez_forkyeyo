@@ -58,7 +58,7 @@ PRODUCED_STATS = {
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
     "msg_links", "msg_xd", "msg_laughs", "msg_attachments", "msg_stickers", "msg_replies",
-    "msg_mentions", "msg_happy_hour", "msg_leet", "msg_new_year", "msg_halloween",
+    "msg_mentions", "msg_leet", "msg_new_year", "msg_halloween",
     "msg_christmas", "msg_canarias", "msg_own_birthday", "msg_bot_call", "msg_sanxe",
     "messages_imported", MESSAGES_TOTAL_STAT,
     "voice_minutes", "voice_muted", "voice_stream", "voice_video", "voice_night",
@@ -155,6 +155,9 @@ PRODUCED_STATS = {
     "work_nonresident", "work_7p", "work_double_tax", "work_hk_tax", "work_jetlag",
     "imv_abroad", "work_return", "work_beckham", "work_abroad_days_max", "work_jobs_tried",
     "work_zero", "work_black_total",
+    # cogs/fun.py: `hongkong`
+    "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
+    "hk_clock_new_year",
     UNLOCKED_STAT,
 }  # fmt: skip
 

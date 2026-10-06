@@ -1,4 +1,8 @@
-"""Comandos de broma: de momento, `/babel` (teléfono escacharrado con traductores).
+"""Comandos de broma: `/babel` (teléfono escacharrado con traductores) y `/hongkong`.
+
+`hongkong` dice qué hora es en Hong Kong, la de Canarias y qué anda haciendo
+Robuso, el del servidor que vive allí (reglas en `bot.services.hong_kong`). No
+necesita permisos ni red y suma los logros de la categoría 🇭🇰 Hong Kong.
 
 `babel` pasa un texto por 99 idiomas al azar y lo devuelve al español, para
 ver qué queda de él. Tiene dos modos, según lo que se le dé:
@@ -32,6 +36,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import aiohttp
@@ -39,6 +45,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
+from bot.services.achievements import StatDelta, hong_kong_clock_stats
 from bot.services.babel import (
     HOME_LANGUAGE,
     LANGUAGES,
@@ -52,6 +60,7 @@ from bot.services.babel import (
     run_chain,
     split_decoration,
 )
+from bot.services.hong_kong import clock_text, clocks_at
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -250,8 +259,10 @@ class Fun(commands.Cog):
         bot: commands.Bot,
         translator: Translator | None = None,
         limiter: ChannelRenameLimiter | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.bot = bot
+        self._clock = clock
         # Inyectable para las pruebas; si no se da, se crea en `cog_load`.
         self._translator = translator
         self._limiter = limiter or ChannelRenameLimiter()
@@ -457,6 +468,26 @@ class Fun(commands.Cog):
         if not texto and isinstance(replied, discord.Message):
             replied_text = replied.clean_content
         await self._babel_impl(ContextResponder(ctx), texto, replied_text)
+
+    async def _hong_kong_impl(self, responder: CommandResponder) -> None:
+        """Lógica compartida entre `/hongkong` y `.hongkong`."""
+        clocks = clocks_at(self._clock())
+        await responder.send(clock_text(clocks))
+        if responder.guild is not None and responder.member is not None:
+            stats = hong_kong_clock_stats(clocks.hong_kong, clocks.canary)
+            await logros.track(
+                self.bot, responder.guild.id, responder.member, responder.channel, StatDelta(stats)
+            )
+
+    @app_commands.command(name="hongkong", description="Qué hora es en Hong Kong, donde Robuso.")
+    async def hong_kong(self, interaction: discord.Interaction) -> None:
+        """Dice la hora de Hong Kong y de Canarias. Solo guarda los logros."""
+        await self._hong_kong_impl(InteractionResponder(interaction))
+
+    @commands.command(name="hongkong")
+    async def hong_kong_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.hongkong`) de `/hongkong`."""
+        await self._hong_kong_impl(ContextResponder(ctx))
 
 
 async def setup(bot: commands.Bot) -> None:

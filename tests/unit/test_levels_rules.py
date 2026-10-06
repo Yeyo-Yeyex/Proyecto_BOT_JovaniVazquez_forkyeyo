@@ -6,14 +6,10 @@ from datetime import date, datetime
 
 from bot.services.levels import (
     FIRST_MESSAGE_OF_DAY_BONUS,
-    HAPPY_HOUR_EARLIEST,
-    HAPPY_HOUR_LATEST,
     MAX_REACTION_XP_PER_DAY,
     REACTION_XP,
     TIMEZONE,
     MemberActivity,
-    happy_hour,
-    is_happy_hour,
     level_reward,
     message_award,
     next_streak,
@@ -30,21 +26,19 @@ def at(day: int, hour: int = 10) -> float:
 
 
 def test_primer_mensaje_del_dia_da_bonus_y_el_segundo_no() -> None:
-    first = message_award(MemberActivity(), now=at(4), cooldown_seconds=60, base_xp=20, happy=False)
+    first = message_award(MemberActivity(), now=at(4), cooldown_seconds=60, base_xp=20)
     assert first is not None
     assert first.total_xp == 20 + FIRST_MESSAGE_OF_DAY_BONUS
     assert first.streak_days == 1
 
-    second = message_award(first, now=at(4) + 60, cooldown_seconds=60, base_xp=20, happy=False)
+    second = message_award(first, now=at(4) + 60, cooldown_seconds=60, base_xp=20)
     assert second is not None
     assert second.total_xp == first.total_xp + 20
 
 
 def test_mensaje_en_enfriamiento_no_da_nada() -> None:
     state = MemberActivity(total_xp=100, last_awarded_at=at(4), last_active_day="2026-10-04")
-    assert (
-        message_award(state, now=at(4) + 59, cooldown_seconds=60, base_xp=20, happy=False) is None
-    )
+    assert message_award(state, now=at(4) + 59, cooldown_seconds=60, base_xp=20) is None
 
 
 def test_racha_sube_si_escribe_al_dia_siguiente_y_se_reinicia_si_falla() -> None:
@@ -60,30 +54,14 @@ def test_multiplicador_de_racha_con_tope() -> None:
     assert streak_multiplier(11) == streak_multiplier(500) == 1.2
 
 
-def test_hora_feliz_duplica_el_xp() -> None:
-    state = MemberActivity(last_active_day="2026-10-04", streak_days=1, last_awarded_at=0)
-    normal = message_award(state, now=at(4), cooldown_seconds=60, base_xp=20, happy=False)
-    happy = message_award(state, now=at(4), cooldown_seconds=60, base_xp=20, happy=True)
-    assert normal is not None and happy is not None
-    assert happy.total_xp == 2 * normal.total_xp
-
-
-def test_hora_feliz_es_estable_y_cae_en_horario_razonable() -> None:
-    hour = happy_hour(123, date(2026, 10, 4))
-    assert hour == happy_hour(123, date(2026, 10, 4))
-    assert HAPPY_HOUR_EARLIEST <= hour <= HAPPY_HOUR_LATEST
-    assert is_happy_hour(123, at(4, hour))
-    assert not is_happy_hour(123, at(4, (hour + 1) % 24))
-
-
 def test_voz_usa_la_racha_vigente_sin_moverla() -> None:
     state = MemberActivity(total_xp=0, last_active_day="2026-10-03", streak_days=6)
-    after = voice_award(state, now=at(4), base_xp=5, happy=False)
+    after = voice_award(state, now=at(4), base_xp=5)
     assert after.total_xp == round(5 * streak_multiplier(6))
     assert after.streak_days == 6
 
     caducada = MemberActivity(last_active_day="2026-09-01", streak_days=6)
-    assert voice_award(caducada, now=at(4), base_xp=5, happy=False).total_xp == 5
+    assert voice_award(caducada, now=at(4), base_xp=5).total_xp == 5
 
 
 def test_reacciones_tienen_tope_diario_y_se_reinician_al_dia_siguiente() -> None:

@@ -75,7 +75,7 @@ python -m bot
   | 🪏 Trabajo | `pala` |
   | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
-  | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
+  | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `niveles` · `rol` · `tajo` |
 
@@ -378,6 +378,9 @@ python -m bot
     del suyo; un canal, **Gestionar canales**. El bot necesita **Gestionar
     apodos** y **Gestionar canales** y estar por encima de los roles de
     quienes renombra. Al dueño del servidor no se le puede cambiar el apodo.
+- `hongkong` dice qué hora es en Hong Kong, la de Canarias, cuántas horas van
+  por delante (8 en invierno, 7 en verano) y qué anda haciendo Robuso a esa
+  hora. Tiene sus logros en la categoría 🇭🇰 Hong Kong.
   - Discord solo deja renombrar un canal 2 veces cada 10 minutos; el bot lo
     avisa en vez de quedarse esperando. No hay comando para deshacer: el
     apodo se quita desde Discord y el canal se renombra a mano.
@@ -423,9 +426,6 @@ recuentos y niveles existentes permanecen guardados. Fuentes de XP:
 - Reacciones recibidas de otros: +5 XP, con tope de 100 XP al día.
 - Racha: cada día seguido escribiendo suma un 2 % al XP de mensajes y voz,
   hasta +20 %.
-- Hora feliz: una hora al día (entre las 12:00 y las 23:00, distinta cada
-  día) con XP ×2 en mensajes y voz. Se anuncia en el canal del sistema del
-  servidor.
 
 Subir al nivel N paga 100 × N Y$ brutos, el doble en los múltiplos de 5. Los
 niveles que ya tenía cada uno antes de este cambio no se pagan.

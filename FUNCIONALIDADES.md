@@ -2,7 +2,7 @@
 
 Este documento describe las funcionalidades actuales y futuras y cómo debe comportarse el bot desde el punto de vista de sus usuarios y administradores. Complementa la [Biblia del proyecto](./Biblia.txt), que define las normas técnicas y de calidad.
 
-La bienvenida/despedida descrita en la sección 3, los comandos `latencia`, `ayuda`, `nivel`, `ranking`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, los Botes, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `tragas`, `volcan`, `cohete`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`), la lista de tareas (`lista`), los comandos de administración y `babel` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
+La bienvenida/despedida descrita en la sección 3, los comandos `latencia`, `ayuda`, `nivel`, `ranking`, `magik`, `memes` y los 108 efectos de imagen, los comandos de música, los sonidos de entrada, la economía con la ruleta, el blackjack, la tragaperras, los Botes, el Crash, Minas y el pachinko (`ruleta`, `blackjack`/`.bj`, `tragas`, `volcan`, `cohete`, `minas`, `pachinko`, `saldo`, `imv`, `hacienda`, `renta`), los cumpleaños (`cumple`, `cumples`), la lista de tareas (`lista`), los comandos de administración, `babel` y `hongkong` están implementados. Las demás funciones son objetivos futuros salvo que se indique lo contrario.
 
 ## 1. Objetivo
 
@@ -100,7 +100,7 @@ La puesta en marcha y los ajustes (importar, encender, apagar, canal de avisos y
 
 - Al subir de nivel, el bot envía un aviso en el canal de avisos elegido con `niveles`; si no hay ninguno o se ha borrado, en el canal donde se ganó la XP (el chat del canal de voz si fue por voz). Solo se muestra el nombre visible, sin activar menciones.
 - Subir al nivel N paga 100 × N Y$ brutos (el doble en múltiplos de 5), con retención de IRPF.
-- Fuentes de XP además de los mensajes: +50 XP por el primer mensaje del día, 4–6 XP por minuto en voz (sin mute, fuera del AFK y con alguien más sin mutear), +5 XP por reacción recibida de otro (tope 100 al día), racha de +2 % por día seguido escribiendo (tope +20 %) y una hora feliz diaria con XP ×2.
+- Fuentes de XP además de los mensajes: +50 XP por el primer mensaje del día, 4–6 XP por minuto en voz (sin mute, fuera del AFK y con alguien más sin mutear), +5 XP por reacción recibida de otro (tope 100 al día) y racha de +2 % por día seguido escribiendo (tope +20 %).
 - El estado, el canal de avisos, el enfriamiento y la activación solo se tocan con el comando de administración `niveles`.
 - La experiencia, el nivel y los ajustes por servidor deben conservarse después de reiniciar el bot.
 - La XP inicial se calcula una sola vez al activar el sistema, usando 20 XP por mensaje contado hasta ese momento; desactivar y reactivar no vuelve a conceder esa XP.
@@ -423,7 +423,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.9. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Solo quien abre la vista puede cambiar de página.
-- 649 logros en 24 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📝 Lista, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🌋 Botes, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🎟️ Loterías, 🛍️ Tienda, 🏦 Banco: Bizum y cuenta, 🏛️ Economía y Hacienda, 🪏 Trabajo, 👷 Oficios, 🏥 Sanidad, 💻 Oficina, 🇭🇰 Hong Kong y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 658 logros en 24 categorías: 💬 Chat, 🗓️ Horarios y fechas, 🎙️ Voz, ❤️ Social, 📝 Lista, 📈 Niveles, 🎡 Ruleta, 🃏 Blackjack, 💰 Casino, 🎰 Tragaperras, 🌋 Botes, 🚀 Crash, 💣 Minas, 🌸 Pachinko, 🎟️ Loterías, 🛍️ Tienda, 🏦 Banco: Bizum y cuenta, 🏛️ Economía y Hacienda, 🪏 Trabajo, 👷 Oficios, 🏥 Sanidad, 💻 Oficina, 🇭🇰 Hong Kong y 🏆 Coleccionista. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
 - Fiscalidad: el premio es una ganancia patrimonial por un concurso del servidor (art. 33.1 LIRPF), sujeta a retención como los premios (art. 75.2.c RIRPF). Se cobra con `pay_income`: retención de IRPF que va a la cuenta del Estado y línea de Perro Sanxe en el aviso.
 - 113 logros son secretos: se ven como `???` (con el porcentaje del servidor que lo tiene) hasta conseguirlos.
@@ -464,7 +464,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 - Cada acción queda en el registro de auditoría con el motivo y quién la pidió.
 - El bot necesita, según el comando: Gestionar mensajes, Aislar temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar apodos y Gestionar roles (también para dar los roles de la tienda). Si le falta alguno, responde que no tiene permiso en vez de fallar en silencio.
 
-## 6 quinquies. Diversión: `babel`
+## 6 quinquies. Diversión: `babel` y `hongkong`
 
 ### 6 quinquies.1. Comportamiento
 
@@ -475,6 +475,12 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 - Permisos del modo nombres, iguales a los de Discord: el propio apodo requiere **Cambiar apodo**; el de otro, **Gestionar apodos** y un rol superior (el dueño del servidor está exento de la jerarquía, pero su apodo no se puede cambiar); un canal, **Gestionar canales** en ese canal. El bot necesita esos mismos permisos y un rol superior al de los miembros que renombra. Los objetivos no permitidos se listan con su motivo y el resto se renombra.
 - Discord solo permite renombrar un canal 2 veces cada 10 minutos: el bot lleva la cuenta en memoria y lo avisa antes de empezar. No hay comando para deshacer. Si la tirada no consigue volver al español, no se renombra nada.
 - Las traducciones se piden en el momento a Google Translate (endpoint público `translate_a/single`, `client=gtx`), sin clave. No hay frases predefinidas.
+
+### 6 quinquies.2. `hongkong`
+
+- `/hongkong` (o `.hongkong`) responde con la hora y la fecha de Hong Kong, la hora de Canarias y la diferencia entre las dos, calculada con `zoneinfo` (Hong Kong no cambia de hora: van 8 horas por delante en invierno y 7 en verano). Si allí ya es el día siguiente, lo dice.
+- Añade una línea sobre lo que anda haciendo Robuso, el del servidor que vive en Hong Kong, según la hora de allí (durmiendo, desayunando dim sum, en la oficina, almorzando, cenando o de karaoke).
+- Logros en 🇭🇰 Hong Kong: por número de consultas, por mirar cuando allí ya es mañana, de madrugada en Hong Kong, a la hora de comer de Robuso, de madrugada en Canarias («Gira asiática», secreto) y en el primer minuto del año de Hong Kong (secreto).
 
 ### 6 quinquies.2. Límites y fallos
 
@@ -509,8 +515,8 @@ Toda configuración de servidor debe estar asociada al ID de ese servidor. El bo
 5. **Imagen:** comando `magik` con seam carving y los 108 efectos de Dank Memer. (Implementado.)
 6. **Sonidos de entrada:** clip personal de hasta 3 s al entrar a voz. (Implementado.)
 7. **Economía y casino:** yapdollars, `daily`, `saldo`, ruleta americana, blackjack, tragaperras, Crash, Minas y pachinko. (Implementado.) Siguientes juegos y usos de la moneda pendientes.
-8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal. (Implementado.)
-9. **Logros:** 649 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
+8. **Diversión:** `babel`, traducción en cadena por 99 idiomas de frases, apodos y nombres de canal, y `hongkong`, la hora de Hong Kong. (Implementado.)
+9. **Logros:** 658 logros con premios en yapdollars, `logros` y ranking. (Implementado.)
 10. **Tienda:** `tienda`, `mochila` y `catalogo`, con IGIC por tipos, rebajas, alquileres, potenciadores y coleccionables numerados. (Implementado.)
 11. **Trabajo:** `pala` con cinco oficios de 5 puestos (obra, hostelería, política, sanidad con guardias y oficina con teletrabajo, stock options y Hong Kong), minijuegos, nóminas con Seguridad Social, IMV reducido, ascensos y eventos; `tajo` para los canales. (Implementado.) Pendiente: más oficios.
 
