@@ -348,7 +348,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.212 logros en 34 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.374 logros en 34 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -356,7 +356,7 @@ python -m bot
   tienda, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 213 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 232 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,

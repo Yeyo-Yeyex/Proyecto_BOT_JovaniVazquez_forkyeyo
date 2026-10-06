@@ -80,7 +80,7 @@ from bot.services.economy import (
     EconomyService,
     IncomeResult,
     format_amount,
-    tax_line,
+    short_tax_note,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.utils.cogs import find_cog
@@ -149,30 +149,47 @@ def unlock_embed(
     achievement_ids: Sequence[str],
     income: IncomeResult | None,
 ) -> discord.Embed:
-    """Aviso público de logros recién desbloqueados, con el premio cobrado."""
+    """Aviso público de logros recién desbloqueados, con el premio cobrado.
+
+    Compacto para no llenar el chat: el trofeo va junto al nombre, el premio en la
+    línea del logro y Hacienda detrás de la descripción. Con un logro son tres
+    líneas:
+
+        Diego · 🏆 ¡Logro desbloqueado!
+        ▫️ **Cinco veces** · Común · 🪙 **+50 Y$**
+        -# Cobra en ×5 o más. · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.
+    """
     achievements = [BY_ID[i] for i in achievement_ids if i in BY_ID]
     best = max(achievements, key=lambda a: list(Rarity).index(a.rarity))
-    title = (
+    shown = achievements[:ANNOUNCE_LIMIT]
+    headline = (
         "🏆 ¡Logro desbloqueado!"
         if len(achievements) == 1
         else f"🏆 ¡{len(achievements)} logros desbloqueados!"
     )
-    lines = [
-        f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}"
-        for a in achievements[:ANNOUNCE_LIMIT]
-    ]
-    if len(achievements) > ANNOUNCE_LIMIT:
-        lines.append(f"…y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos con `logros`.")
-    lines += [f"\n{a.story}" for a in achievements[:ANNOUNCE_LIMIT] if a.story]
-    if income is not None:
-        lines.append(
-            f"\n{CURRENCY_EMOJI} **+{format_amount(income.net)}**\n"
-            f"{tax_line(income.gross, income.tax, income.rate)}"
-        )
+    money = f"{CURRENCY_EMOJI} **+{format_amount(income.net)}**" if income else ""
+    tax = short_tax_note(income.gross, income.tax, income.rate) if income else ""
+    if len(achievements) == 1:
+        a = achievements[0]
+        head = f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}"
+        lines = [
+            f"{head} · {money}\n-# {a.description} · {tax}"
+            if income
+            else f"{head}\n-# {a.description}"
+        ]
+    else:
+        lines = [
+            f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}" for a in shown
+        ]
+        if len(achievements) > ANNOUNCE_LIMIT:
+            lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos con `logros`.")
+        if income is not None:
+            lines.append(f"{money}\n-# {tax}")
+    lines += [f"\n{a.story}" for a in shown if a.story]
     embed = discord.Embed(
-        title=title, description="\n".join(lines), color=discord.Color.from_rgb(*best.rarity.rgb)
+        description="\n".join(lines), color=discord.Color.from_rgb(*best.rarity.rgb)
     )
-    embed.set_author(name=name, icon_url=avatar_url)
+    embed.set_author(name=f"{name} · {headline}", icon_url=avatar_url)
     return embed
 
 

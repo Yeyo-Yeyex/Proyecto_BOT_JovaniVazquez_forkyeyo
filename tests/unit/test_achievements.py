@@ -39,6 +39,7 @@ from bot.services.achievements import (
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
     UNLOCKED_STAT,
+    Rarity,
     StatDelta,
     blackjack_stats,
     casino_stats,
@@ -55,7 +56,7 @@ from bot.services.achievements import (
 )
 from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
-from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
+from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
@@ -593,7 +594,7 @@ async def test_desbloquear_paga_con_irpf_y_el_libro_cuadra(tmp_path: Path) -> No
     assert ledger_sum(tmp_path, USER) == balance
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == treasury.balance
     embed = channel.send.await_args.kwargs["embed"]
-    assert "logros desbloqueados" in embed.title
+    assert "logros desbloqueados" in embed.author.name
     assert "Perro Sanxe" in embed.description
     # La retención cuenta para "Contribuyente" y compañía en la siguiente escritura.
     assert cog._pending[GUILD][USER].add["tax_paid"] == treasury.collected_total
@@ -807,8 +808,29 @@ def test_formato_de_horas_y_dinero() -> None:
 def test_aviso_de_muchos_logros_se_resume() -> None:
     ids = [a.id for a in AVAILABLE[:12]]
     embed = unlock_embed("Diego", None, ids, None)
-    assert "12 logros" in embed.title
+    assert "12 logros" in (embed.author.name or "")
     assert "y 4 más" in (embed.description or "")
+
+
+def test_aviso_de_un_logro_cabe_en_tres_lineas() -> None:
+    achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.COMMON)
+    income = IncomeResult(gross=50, tax=0, rate=0.0, balance=1_050)
+    embed = unlock_embed("Diego", None, [achievement.id], income)
+    assert embed.author.name == "Diego · 🏆 ¡Logro desbloqueado!"
+    assert embed.title is None
+    lines = (embed.description or "").splitlines()
+    assert lines == [
+        f"{achievement.rarity.emoji} **{achievement.name}** · Común · 🪙 **+50 Y$**",
+        f"-# {achievement.description} · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.",
+    ]
+
+
+def test_aviso_con_retencion_dice_cuanto_se_lleva_hacienda() -> None:
+    achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.RARE)
+    income = IncomeResult(gross=200, tax=38, rate=0.19, balance=5_162)
+    description = unlock_embed("Diego", None, [achievement.id], income).description or ""
+    assert "🪙 **+162 Y$**" in description.splitlines()[0]
+    assert "se lleva 38 Y$ (19,00 % de 200 Y$)" in description.splitlines()[1]
 
 
 def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
