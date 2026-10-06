@@ -74,6 +74,12 @@ PRODUCED_STATS = {
     "todo_added", "todo_done",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
     "wealth_tax_paid", "wealth_tax_weeks", "donated", "ongs_supported",
+    # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
+    "interest_earned", "interest_days", "interest_tax", "interest_capped", "interest_rounding",
+    "interest_zero", "interest_grasshopper", "interest_gambled", "interest_beats_imv",
+    "interest_bizum_trick", "interest_avg_max", "interest_capped_streak", "interest_floor_streak",
+    "interest_resist_streak", "interest_still_streak", "interest_ant_streak", "savings_rate_max",
+    "interest_comeback",
     # Tienda (cogs/shop.py: shop_stats)
     "shop_purchases", "shop_spent", "shop_igic", "shop_roles", "shop_renewals", "shop_boosts",
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",

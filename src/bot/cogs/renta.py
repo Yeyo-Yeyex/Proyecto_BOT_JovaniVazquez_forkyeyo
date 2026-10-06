@@ -35,6 +35,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import intereses
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
@@ -85,10 +86,20 @@ async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
 
 
 async def hint(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
-    """Atajo para el casino: línea de renta pendiente si el cog está cargado."""
-    if (cog := find_cog(bot, Renta)) is not None:
-        return await cog.hint_for(guild_id, user_id)
-    return None
+    """Líneas pequeñas para el resultado de cualquier acción con dinero, o `None`.
+
+    La de la renta pendiente y, una sola vez, la de los intereses que el miembro
+    aún no ha visto (`bot.cogs.intereses`). Así el cobro diario de la cuenta
+    llega a todos los juegos sin tocarlos uno a uno.
+    """
+    lines = []
+    if (cog := find_cog(bot, Renta)) is not None and (
+        line := await cog.hint_for(guild_id, user_id)
+    ):
+        lines.append(line)
+    if line := await intereses.hint(bot, guild_id, user_id):
+        lines.append(line)
+    return "\n".join(lines) if lines else None
 
 
 class PresentView(discord.ui.View):
@@ -222,13 +233,16 @@ class Renta(commands.Cog):
         if guild is None or member is None:
             return "La renta solo se presenta dentro de un servidor.", None
         pending = await self.economy.pending_declarations(guild.id, member.id)
+        # La base del ahorro (intereses) se liquida sola cada lunes; aquí solo se enseña.
+        savings = await intereses.savings_line(self.bot, guild.id, member.id)
+        extra = f"\n{savings}" if savings else ""
         if not pending:
             return (
                 "📬 No tienes nada que declarar. Las semanas en las que el casino te "
-                "retiene de más salen a devolver el lunes siguiente.",
+                "retiene de más salen a devolver el lunes siguiente." + extra,
                 None,
             )
-        return draft_text(pending), PresentView(self, member.id)
+        return draft_text(pending) + extra, PresentView(self, member.id)
 
     @app_commands.command(name="renta", description="Mira y presenta tu declaración de la renta.")
     @app_commands.guild_only()

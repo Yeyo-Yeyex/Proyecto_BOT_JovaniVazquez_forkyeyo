@@ -897,6 +897,25 @@ class Casino(commands.Cog):
                 f"{format_amount(wealth)} de Patrimonio (lo que pase de "
                 f"{format_amount(WEALTH_MINIMUM)})."
             )
+        # La cuenta remunerada: enseñar lo de ayer y lo que va saliendo hoy es lo que
+        # hace que se note y que dé pena fundírselo todo.
+        preview = await self.economy.interest_preview(responder.guild.id, who.id)
+        if preview.yesterday is not None:
+            gross, tax = preview.yesterday
+            description += (
+                f"\n-# 🏦 Ayer cobró {format_amount(gross - tax)} de intereses "
+                f"({TAX_COLLECTOR} se llevó {format_amount(tax)})."
+            )
+        if preview.gross:
+            top = (
+                f" Le faltan {format_amount(preview.to_top)} de media para el máximo."
+                if preview.to_top
+                else " Ya cobra el máximo: lo que pase de ahí, ni un Y$."
+            )
+            description += (
+                f"\n-# 🏦 Saldo medio de hoy: {format_amount(preview.average)}. Si no lo toca, "
+                f"mañana cobra {format_amount(preview.net)} netos.{top}"
+            )
         embed = discord.Embed(description=description, color=COLOR_WIN)
         await responder.send(embed=embed)
 

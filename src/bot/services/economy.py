@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import partial
 from typing import TypeVar
 
 import discord
@@ -32,15 +33,32 @@ from bot.repositories.economy import (
     DonationReceipt,
     EconomyRepository,
     InsufficientFundsError,
+    InterestNotice,
+    InterestRun,
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
+    SavingsRun,
     SlotsSettlement,
     Treasury,
     WealthCharge,
     WealthRun,
 )
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
+from bot.services.interest import (
+    INTEREST_DAILY_MAX,
+    INTEREST_TOP,
+    DayOutcome,
+    InterestPayment,
+    LedgerRow,
+    Streaks,
+    analyze_day,
+    interest_for,
+    project_today,
+    savings_settlement,
+    settle_day,
+    withholding,
+)
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     IGIC_GENERAL_RATE,
@@ -83,6 +101,12 @@ __all__ = [
     "imv_after_work",
     "IncomeResult",
     "InsufficientFundsError",
+    "InterestCatchUp",
+    "InterestNotice",
+    "InterestPayment",
+    "InterestPreview",
+    "InterestRun",
+    "SavingsRun",
     "JackpotRecord",
     "LotteryPayout",
     "SlotsSettlement",
@@ -216,6 +240,9 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             f"{format_amount(LOTTERY_EXEMPT)}"
             " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
             " (se apunta a quien cobra) · Multas de la Inspección"
+            " · Intereses diarios del monedero: retención del 19% en cada pago y cada lunes"
+            f" la escala del ahorro (19% a 30%); hasta {format_amount(INTEREST_DAILY_MAX)}"
+            " brutos al día"
         ).replace("%", " %"),
         inline=False,
     )
@@ -330,6 +357,69 @@ def week_label(start: date) -> str:
     """`2026-09-28` → `28/09–04/10`."""
     end = start + timedelta(days=6)
     return f"{start:%d/%m}–{end:%d/%m}"
+
+
+def day_bounds(day: date) -> tuple[float, float]:
+    """Medianoche inicial y final de `day` en hora canaria (epoch).
+
+    Se construye cada medianoche por separado en vez de sumar 86.400 s: así el
+    día del cambio de hora de octubre (25 horas) y el de marzo (23) duran lo que
+    duran de verdad.
+    """
+    start = datetime.combine(day, datetime.min.time(), TIMEZONE)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), TIMEZONE)
+    return start.timestamp(), end.timestamp()
+
+
+def _settle_member(
+    start: float, end: float, user_id: int, opening: int, rows: list[LedgerRow], streaks: Streaks
+) -> DayOutcome:
+    """Une el análisis del día y el pago (los dos en `bot.services.interest`)."""
+    return settle_day(user_id, analyze_day(opening, rows, start, end), streaks)
+
+
+#: Días atrás que se pagan como mucho si el bot ha estado caído.
+INTEREST_CATCH_UP_DAYS = 7
+
+
+@dataclass(frozen=True, slots=True)
+class InterestCatchUp:
+    """Lo que ha hecho una pasada de la cuenta remunerada en un servidor.
+
+    Attributes:
+        days: Días pagados ahora, en orden: `(día, resultado)`.
+        savings: Semana liquidada ahora con la escala del ahorro, si tocaba.
+    """
+
+    days: tuple[tuple[date, InterestRun], ...] = ()
+    savings: tuple[date, SavingsRun] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InterestPreview:
+    """Cómo va hoy la cuenta de un miembro, para `saldo`.
+
+    Attributes:
+        average: Saldo medio de hoy si el dinero no se mueve hasta medianoche.
+        gross: Intereses brutos que daría ese saldo medio.
+        tax: Su retención.
+        yesterday: Lo cobrado ayer, `(bruto, retención)`, o `None` si nada.
+    """
+
+    average: int
+    gross: int
+    tax: int
+    yesterday: tuple[int, int] | None
+
+    @property
+    def net(self) -> int:
+        """Lo que cobraría mañana, ya sin la retención."""
+        return self.gross - self.tax
+
+    @property
+    def to_top(self) -> int:
+        """Saldo medio que falta para cobrar el máximo diario."""
+        return max(0, INTEREST_TOP - self.average)
 
 
 def _week_end(week_iso: str) -> float:
@@ -627,6 +717,84 @@ class EconomyService:
             guild_id, week=week.isoformat(), now=now, tax_for=wealth_tax
         )
         return week, run
+
+    async def pay_interest(self, guild_id: int) -> InterestCatchUp:
+        """Paga los intereses de los días cerrados que falten y liquida la semana pasada.
+
+        Tratamiento fiscal: rendimiento del capital mobiliario (art. 25.2 LIRPF).
+        Cada pago lleva la retención fija del 19 % (art. 101.4 LIRPF) y cada
+        lunes la semana anterior se liquida con la escala del ahorro (arts. 66.1
+        y 76 LIRPF, `bot.services.taxes.savings_tax`): lo que falte se cobra
+        entonces. Todo lo retenido y liquidado va al Estado. El bruto se crea de
+        la nada: el banco no existe (ver `bot.services.interest`).
+
+        Es idempotente: un día o una semana ya procesados no se vuelven a tocar.
+        Si el bot ha estado caído, paga hasta `INTEREST_CATCH_UP_DAYS` días
+        atrás, con el saldo medio exacto de cada uno (sale del libro).
+        """
+        now = self._clock()
+        yesterday = local_day(now) - timedelta(days=1)
+        last = await self.repository.last_interest_day(guild_id)
+        first = yesterday if last is None else date.fromisoformat(last) + timedelta(days=1)
+        first = max(first, yesterday - timedelta(days=INTEREST_CATCH_UP_DAYS - 1))
+        paid: list[tuple[date, InterestRun]] = []
+        day = first
+        while day <= yesterday:
+            start, end = day_bounds(day)
+            run = await self.repository.pay_interest_day(
+                guild_id,
+                day=day.isoformat(),
+                start=start,
+                end=end,
+                now=now,
+                settle=partial(_settle_member, start, end),
+            )
+            if not run.done_before:
+                paid.append((day, run))
+            day += timedelta(days=1)
+        savings = None
+        week = week_start(local_day(now)) - timedelta(days=7)
+        sunday = week + timedelta(days=6)
+        last = await self.repository.last_interest_day(guild_id)
+        if last is not None and date.fromisoformat(last) >= sunday:
+            run = await self.repository.settle_savings(
+                guild_id,
+                week=week.isoformat(),
+                first_day=week.isoformat(),
+                last_day=sunday.isoformat(),
+                now=now,
+                settle=savings_settlement,
+            )
+            if not run.done_before:
+                savings = (week, run)
+        return InterestCatchUp(days=tuple(paid), savings=savings)
+
+    async def interest_preview(self, guild_id: int, user_id: int) -> InterestPreview:
+        """Saldo medio de hoy, lo que daría mañana y el último cobro de un miembro."""
+        now = self._clock()
+        today = local_day(now)
+        start, end = day_bounds(today)
+        opening, rows = await self.repository.interest_day_rows(guild_id, user_id, start)
+        average = project_today(opening, rows, start, end, now)
+        gross = interest_for(average)
+        last = await self.repository.last_interest(guild_id, user_id)
+        yesterday = (today - timedelta(days=1)).isoformat()
+        return InterestPreview(
+            average=average,
+            gross=gross,
+            tax=withholding(gross),
+            yesterday=(last[1], last[2]) if last and last[0] == yesterday else None,
+        )
+
+    async def take_interest_notice(self, guild_id: int, user_id: int) -> InterestNotice:
+        """Intereses y liquidaciones que el miembro no ha visto; quedan como vistos."""
+        return await self.repository.take_interest_notice(guild_id, user_id)
+
+    async def last_savings(
+        self, guild_id: int, user_id: int
+    ) -> tuple[str, int, int, int, int, int] | None:
+        """Última liquidación del ahorro (ver `EconomyRepository.last_savings`)."""
+        return await self.repository.last_savings(guild_id, user_id)
 
     async def donate(
         self, guild_id: int, user_id: int, *, ong_key: str, ong_account: int, amount: int
@@ -1062,7 +1230,8 @@ class EconomyService:
         """`(impuestos, neto)` de los últimos 7 días, para «Socio de Hacienda».
 
         Los impuestos son la Seguridad Social de las nóminas (las dos partes),
-        su IRPF y además el IGIC de las compras y el Patrimonio de la semana.
+        su IRPF y además el IGIC de las compras, el Patrimonio y el IRPF de los
+        intereses de la semana.
         El neto es lo cobrado en nómina.
         """
         since = self._clock() - IMV_WORK_WINDOW_SECONDS

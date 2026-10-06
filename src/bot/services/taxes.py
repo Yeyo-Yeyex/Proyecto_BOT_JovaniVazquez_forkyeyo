@@ -747,3 +747,57 @@ def compute_hk_payslip(
         double_tax_relief=relief,
         resident=resident,
     )
+
+
+# -- Intereses de la cuenta: base del ahorro ---------------------------------------------
+#
+# El efectivo del monedero da intereses cada día, por tramos (ver
+# `bot.services.interest`). Ese dinero es rendimiento del capital mobiliario
+# (art. 25.2 LIRPF) y tributa en la base del ahorro, no en la general: escala de
+# los arts. 66.1 y 76 LIRPF (redacción de la Ley 7/2024, desde 2025), con la parte
+# estatal y la autonómica iguales, así que el tipo total va del 19 % al 30 %.
+#
+# Como en la vida real, cada pago lleva una retención fija del 19 % (art. 101.4
+# LIRPF) y la diferencia con la escala se ajusta después. En el bot ese ajuste es
+# semanal: cada lunes se liquida la semana con `savings_tax`. La renta anual se
+# proyecta con los intereses de esa semana × 52 y se pasa a euros con
+# `YAPDOLLARS_PER_EURO`, igual que las retenciones proyectan solo rentas del mismo
+# tipo (Biblia, "Equilibrio"). Con el tope de 500 Y$ diarios, el máximo son 3.500
+# a la semana (18.200 € al año): se llega al tramo del 21 %, no más.
+
+#: Escala del ahorro, estatal + autonómica (arts. 66.1 y 76 LIRPF): (desde €, tipo).
+SAVINGS_BRACKETS: tuple[tuple[float, float], ...] = (
+    (0.0, 0.19),
+    (6_000.0, 0.21),
+    (50_000.0, 0.23),
+    (200_000.0, 0.27),
+    (300_000.0, 0.30),
+)
+_WEEKS_PER_YEAR = 52
+
+
+def _savings_annual_eur(weekly_gross: int) -> float:
+    return weekly_gross * _WEEKS_PER_YEAR / YAPDOLLARS_PER_EURO
+
+
+def savings_tax(weekly_gross: int) -> int:
+    """Cuota de la base del ahorro sobre los intereses de una semana, en Y$.
+
+    Args:
+        weekly_gross: Intereses brutos de la semana.
+    """
+    if weekly_gross <= 0:
+        return 0
+    annual_eur = _savings_annual_eur(weekly_gross)
+    rate = apply_scale(annual_eur, SAVINGS_BRACKETS) / annual_eur
+    return round(weekly_gross * rate)
+
+
+def savings_marginal_rate(weekly_gross: int) -> float:
+    """Tipo del tramo más alto de la escala del ahorro al que llega una semana."""
+    annual_eur = _savings_annual_eur(max(0, weekly_gross))
+    rate = SAVINGS_BRACKETS[0][1]
+    for start, bracket_rate in SAVINGS_BRACKETS:
+        if annual_eur > start:
+            rate = bracket_rate
+    return rate

@@ -39,6 +39,12 @@ from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
 from bot.services.hold_win import BonusStep as HoldWinStep
 from bot.services.hold_win import Trigger as HoldWinTrigger
+from bot.services.interest import (
+    INTEREST_DAILY_MAX,
+    INTEREST_TIERS,
+    INTEREST_TOP,
+    RESIST_BALANCE,
+)
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame
@@ -124,7 +130,9 @@ CATEGORIES: tuple[Category, ...] = (
     Category("pachinko", "🌸 Pachinko"),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
-    Category("bizum", "💸 Bizum"),
+    # Bizum y la cuenta remunerada: el menú de `logros` ya va por 25 opciones, el
+    # máximo de Discord, así que lo del banco comparte categoría.
+    Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
     Category("jobs", "👷 Oficios"),
@@ -327,6 +335,24 @@ BECKHAM_STORY = (
     "su sueldo tributa al 24 % fijo hasta 600.000 € en vez de por la escala. Se llama así "
     "porque llegó con Beckham al Real Madrid en 2003. Tú no juegas al fútbol, pero "
     "tributas como si sí."
+)
+
+
+#: Discurso de «Sanxe cobra antes que tú»: la primera retención de los intereses.
+INTEREST_TAX_STORY = (
+    "El banco te ha pagado intereses y, antes de que los vieras, Perro Sanxe ya se había "
+    "quedado el 19 %. Es la retención a cuenta de los rendimientos del capital mobiliario "
+    "(art. 101.4 LIRPF): el banco se la quita y se la manda a Hacienda por ti. Cada lunes la "
+    "semana se liquida con la escala del ahorro y, si te toca más, te cobra la diferencia. "
+    "Devolver, no te devuelve nada: el 19 % es el tramo más bajo."
+)
+
+#: Discurso de «Me suben de tramo del ahorro»: el mito del tramo, versión ahorro.
+SAVINGS_BRACKET_STORY = (
+    "Tus intereses de la semana, proyectados a un año, pasan de 6.000 € y entras en el tramo "
+    "del 21 % de la base del ahorro (arts. 66.1 y 76 LIRPF). Tranquilo: el 21 % solo se aplica "
+    "a lo que pasa de ese límite, el resto sigue al 19 %. Subir de tramo nunca te deja con "
+    "menos dinero. Eso sí, Sanxe te lo cobra el lunes sin preguntar."
 )
 
 
@@ -1143,7 +1169,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
 
-    # 💸 Bizum -----------------------------------------------------------------------------
+    # 🏦 Banco: Bizum ----------------------------------------------------------------------
     a += _tiers("bizum", "bizum_sent_count", [
         (1, "bizum_1", "Te hago un Bizum", "Manda tu primer Bizum.", C),
         (25, "bizum_25", "Cuentas claras", "Manda 25 Bizums.", R),
@@ -1236,6 +1262,95 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "wealth_tax_weeks", [
         (10, "wealth_10w", "Rico de toda la vida", "Paga Patrimonio 10 semanas.", L),
     ])  # fmt: skip
+    # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
+    a += _tiers("bizum", "interest_earned", [
+        (1, "interest_1", "La octava maravilla del mundo",
+         "Cobra intereses por primera vez. Einstein lo flipaba con esto.", C),
+        (1_000, "interest_1k", "El dinero trabaja por ti", "Cobra 1.000 Y$ netos de intereses.", R),
+        (10_000, "interest_10k", "Vivir de las rentas", "Cobra 10.000 Y$ netos de intereses.", E),
+        (100_000, "interest_100k", "Rentista de toda la vida",
+         "Cobra 100.000 Y$ netos de intereses.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "interest_days", [
+        (30, "interest_30d", "Cliente fiel", "Cobra intereses 30 días.", C),
+        (365, "interest_365d", "El BCE me sigue en Instagram", "Cobra intereses 365 días.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="interest_tax_1", name="Sanxe cobra antes que tú",
+        description="Que te retengan el 19 % de tus intereses.", category="bizum",
+        rarity=C, conditions=(("interest_tax", 1),), unit="money", story=INTEREST_TAX_STORY,
+    ))  # fmt: skip
+    a += _tiers("bizum", "interest_tax", [
+        (10_000, "interest_tax_10k", "Perro Sanxe se fuma un puro con tus ahorros",
+         "Paga 10.000 Y$ de IRPF por tus intereses.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "interest_avg_max", [
+        (INTEREST_TIERS[0][0], "interest_tier_2", "He leído la letra pequeña",
+         f"Pasa de {_thousands(INTEREST_TIERS[0][0])} Y$ de saldo medio y que el banco te baje "
+         "el tipo.", C),
+        (100_000, "interest_mattress", "Para eso lo dejo en el colchón",
+         f"Ten 100.000 Y$ de saldo medio: el banco no paga nada por encima de "
+         f"{_thousands(INTEREST_TOP)}.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "interest_capped", [
+        (1, "interest_falcon", "Ahorro en Falcon",
+         f"Cobra el máximo de la cuenta: {_thousands(INTEREST_DAILY_MAX)} Y$ brutos en un día.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_capped_streak", [
+        (30, "interest_capped_30", "Rentista de barrio",
+         "Cobra el máximo diario 30 días seguidos.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_floor_streak", [
+        (90, "interest_grandma", "El plazo fijo de la abuela",
+         f"Pasa 90 días seguidos sin bajar de {_thousands(INTEREST_TIERS[0][0])} Y$.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_resist_streak", [
+        (30, "interest_resist", "Manual de resistencia",
+         f"Pasa 30 días seguidos sin bajar de {_thousands(RESIST_BALANCE)} Y$.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_still_streak", [
+        (5, "interest_still_5", "Cinco días de reflexión",
+         "Cobra intereses 5 días seguidos sin mover ni un Y$.", R),
+        (7, "interest_still_7", "Esto lo pagamos entre todos",
+         "Cobra intereses 7 días seguidos sin hacer absolutamente nada.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_ant_streak", [
+        (7, "interest_ant", "Hormiguita", "Cobra intereses 7 días seguidos sin gastar nada.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_grasshopper", [
+        (1, "interest_grasshopper", "La cigarra",
+         "Cobra una nómina y acaba el día sin para una tirada.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_gambled", [
+        (1, "interest_gambled", "Me lo fundo en intereses",
+         "Pierde en el casino, el mismo día, lo que te acaba de pagar el banco.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_beats_imv", [
+        (1, "interest_beats_imv", "Paguita de rentista",
+         "Cobra en un día más de intereses que de IMV.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_comeback", [
+        (1, "interest_comeback", "Volví solo a por los intereses",
+         "Vuelve tras una semana sin aparecer y encuéntrate los intereses cobrados.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_zero", [
+        (1, "interest_zero", "Cero patatero",
+         "Pasa un día activo con el monedero a cero: ni un Y$ de intereses.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_rounding", [
+        (1, "interest_rounding", "Redondeo a favor de Hacienda",
+         "Cobra tan pocos intereses que el redondeo deja a Sanxe con más del 25 %.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "interest_bizum_trick", [
+        (1, "interest_bizum_trick", "Ingeniería fiscal de barrio",
+         "Haz un Bizum que deje tu saldo justo por debajo de un tramo de la cuenta.", R, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="savings_bracket", name="Me suben de tramo del ahorro",
+        description="Que la liquidación semanal de tus intereses llegue al tramo del 21 %.",
+        category="bizum", rarity=R, conditions=(("savings_rate_max", 21),),
+        story=SAVINGS_BRACKET_STORY,
+    ))  # fmt: skip
     a += _tiers("economy", "donated", [
         (1, "donate_1", "Alma caritativa", "Dona a una ONG.", C),
         (10_000, "donate_10k", "Filántropo de postureo", "Dona 10.000 Y$ a ONGs.", R),

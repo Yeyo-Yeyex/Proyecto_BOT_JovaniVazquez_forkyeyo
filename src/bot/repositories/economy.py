@@ -57,6 +57,14 @@ Modelo de datos:
   Mientras tanto no cobra el IMV. Las nóminas de fuera llevan su país en
   `economy_payroll.country` y lo que se queda el otro país va a su cuenta
   (`HK_ACCOUNT_ID`), no al Estado.
+- `economy_interest_days` y `economy_interest`: días en los que ya se pagaron
+  los intereses de la cuenta y lo que cobró cada uno (saldo medio, bruto y
+  retención del 19 %), con una marca de si ya se le ha avisado.
+- `economy_interest_streaks`: rachas de días seguidos de cada miembro para los
+  logros de la cuenta (cobrar el máximo, no bajar de un saldo, no tocar nada).
+- `economy_interest_weeks` y `economy_interest_savings`: semanas ya liquidadas
+  con la escala del ahorro y lo que pagó cada uno de más. Retenciones y
+  liquidaciones cuentan en `hacienda`.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -74,6 +82,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
+    from bot.services.interest import DayOutcome, LedgerRow, SavingsSettlement, Streaks
     from bot.services.taxes import ForeignPayslip, Payslip
 
 T = TypeVar("T")
@@ -238,6 +247,47 @@ class WealthRun:
     done_before: bool = False
     activation: bool = False
     charges: tuple[WealthCharge, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class InterestRun:
+    """Resultado de pagar los intereses de un día en un servidor.
+
+    Attributes:
+        done_before: El día ya estaba pagado; no se ha tocado nada.
+        outcomes: Un resultado por monedero de miembro, haya cobrado o no (las
+            rachas y algunos logros también miran a quien no cobra).
+    """
+
+    done_before: bool = False
+    outcomes: tuple[DayOutcome, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SavingsRun:
+    """Resultado de liquidar el ahorro de una semana en un servidor."""
+
+    done_before: bool = False
+    settlements: tuple[SavingsSettlement, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class InterestNotice:
+    """Intereses y liquidaciones que un miembro aún no ha visto.
+
+    Attributes:
+        days: Días cobrados sin avisar.
+        gross: Bruto de esos días.
+        tax: Retención de esos días.
+        first_day: El más antiguo (ISO), para saber cuánto tiempo ha estado fuera.
+        savings: Liquidaciones del ahorro sin avisar: `(lunes ISO, cobrado, tipo %)`.
+    """
+
+    days: int = 0
+    gross: int = 0
+    tax: int = 0
+    first_day: str | None = None
+    savings: tuple[tuple[str, int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,6 +546,60 @@ class EconomyRepository:
                     user_id INTEGER NOT NULL,
                     until REAL NOT NULL,
                     PRIMARY KEY (guild_id, user_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_ledger_time
+                    ON economy_ledger (guild_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS economy_interest_days (
+                    guild_id INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    processed_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_interest (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    average INTEGER NOT NULL CHECK (average >= 0),
+                    gross INTEGER NOT NULL CHECK (gross > 0),
+                    tax INTEGER NOT NULL CHECK (tax >= 0),
+                    created_at REAL NOT NULL,
+                    notified INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_interest_streaks (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    capped INTEGER NOT NULL DEFAULT 0,
+                    floor INTEGER NOT NULL DEFAULT 0,
+                    resist INTEGER NOT NULL DEFAULT 0,
+                    still INTEGER NOT NULL DEFAULT 0,
+                    ant INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_interest_weeks (
+                    guild_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    processed_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_interest_savings (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    gross INTEGER NOT NULL,
+                    withheld INTEGER NOT NULL,
+                    quota INTEGER NOT NULL,
+                    rate INTEGER NOT NULL,
+                    charged INTEGER NOT NULL CHECK (charged >= 0),
+                    created_at REAL NOT NULL,
+                    notified INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id, week_start)
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_declarations (
@@ -1305,7 +1409,7 @@ class EconomyRepository:
             ).fetchone()
             # Retenciones de ingresos y del casino, Patrimonio, IGIC, gravamen de
             # loterías, Seguridad Social de las nóminas (la de la empresa se apunta a
-            # quien cobra) y multas, en una sola vista.
+            # quien cobra), multas e IRPF de los intereses, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
@@ -1327,6 +1431,12 @@ class EconomyRepository:
                 UNION ALL
                 SELECT user_id, amount AS withheld, created_at AS at FROM economy_sanctions
                 WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_interest
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, charged AS withheld, created_at AS at
+                FROM economy_interest_savings WHERE guild_id = :guild
             """
             total, recent = connection.execute(
                 f"""
@@ -1428,6 +1538,382 @@ class EconomyRepository:
                 charges.append(WealthCharge(user_id, balance, tax))
             charges.sort(key=lambda c: (-c.tax, c.user_id))
             return WealthRun(charges=tuple(charges))
+
+    # -- Intereses de la cuenta ---------------------------------------------------------
+
+    @staticmethod
+    def _day_rows_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        start: float,
+        end: float,
+        user_id: int | None = None,
+    ) -> tuple[dict[int, int], dict[int, list[LedgerRow]]]:
+        """Saldo al empezar el día y movimientos del día, por miembro.
+
+        Todo sale del libro, no de fotos guardadas: no hace falta una tarea a
+        medianoche y, si el bot estuvo caído, el saldo medio sigue siendo exacto.
+        El saldo de apertura es el saldo de ahora menos lo que se ha movido desde
+        `start`; un monedero que aún no existía empieza en 0.
+
+        Args:
+            user_id: Solo ese miembro; `None` para todos los del servidor.
+        """
+        from bot.services.interest import LedgerRow
+
+        member = "AND user_id = :user" if user_id is not None else "AND user_id > 0"
+        params = {"guild": guild_id, "start": start, "end": end, "user": user_id}
+        balances = {
+            int(row["user_id"]): int(row["balance"])
+            for row in connection.execute(
+                f"SELECT user_id, balance FROM economy_wallets WHERE guild_id = :guild {member}",
+                params,
+            )
+        }
+        moved = {
+            int(row["user_id"]): int(row["moved"])
+            for row in connection.execute(
+                f"""
+                SELECT user_id, SUM(delta) AS moved FROM economy_ledger
+                WHERE guild_id = :guild AND created_at >= :start {member}
+                GROUP BY user_id
+                """,
+                params,
+            )
+        }
+        openings = {uid: balance - moved.get(uid, 0) for uid, balance in balances.items()}
+        rows: dict[int, list[LedgerRow]] = {}
+        for row in connection.execute(
+            f"""
+            SELECT user_id, created_at, delta, balance_after, reason FROM economy_ledger
+            WHERE guild_id = :guild AND created_at >= :start AND created_at < :end {member}
+            ORDER BY id
+            """,
+            params,
+        ):
+            rows.setdefault(int(row["user_id"]), []).append(
+                LedgerRow(
+                    float(row["created_at"]),
+                    int(row["delta"]),
+                    int(row["balance_after"]),
+                    str(row["reason"]),
+                )
+            )
+        return openings, rows
+
+    async def interest_day_rows(
+        self, guild_id: int, user_id: int, start: float
+    ) -> tuple[int, list[LedgerRow]]:
+        """Saldo de un miembro al empezar el día `start` y sus movimientos desde entonces."""
+        return await self._run(self._interest_day_rows_sync, guild_id, user_id, start)
+
+    def _interest_day_rows_sync(
+        self, guild_id: int, user_id: int, start: float
+    ) -> tuple[int, list[LedgerRow]]:
+        connection = self._connect()
+        try:
+            openings, rows = self._day_rows_in(
+                connection, guild_id, start, float("inf"), user_id=user_id
+            )
+            return openings.get(user_id, 0), rows.get(user_id, [])
+        finally:
+            connection.close()
+
+    async def last_interest_day(self, guild_id: int) -> str | None:
+        """Último día (ISO) cuyos intereses ya se pagaron en el servidor."""
+        return await self._run(self._last_interest_day_sync, guild_id)
+
+    def _last_interest_day_sync(self, guild_id: int) -> str | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT MAX(day) AS day FROM economy_interest_days WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
+            return str(row["day"]) if row and row["day"] else None
+        finally:
+            connection.close()
+
+    async def pay_interest_day(
+        self,
+        guild_id: int,
+        *,
+        day: str,
+        start: float,
+        end: float,
+        now: float,
+        settle: Callable[[int, int, list[LedgerRow], Streaks], DayOutcome],
+    ) -> InterestRun:
+        """Paga los intereses de `day` a todos los miembros del servidor, una vez.
+
+        Todo va en una transacción: o cobran todos o nadie, y el día queda
+        marcado. Cada cobro deja en el libro el bruto (`intereses`) y la
+        retención (`irpf:intereses`), que entra en la cuenta del Estado. Las
+        cuentas especiales (Estado, ONGs, bote, tienda, con `user_id` <= 0) no
+        cobran.
+
+        Args:
+            day: Día ISO que se paga.
+            start: Su medianoche inicial (epoch).
+            end: Su medianoche final.
+            settle: Recibe `(miembro, saldo inicial, movimientos, rachas)` y
+                devuelve el resultado (regla en `bot.services.interest`).
+        """
+        return await self._run(self._pay_interest_day_sync, guild_id, day, start, end, now, settle)
+
+    def _pay_interest_day_sync(
+        self,
+        guild_id: int,
+        day: str,
+        start: float,
+        end: float,
+        now: float,
+        settle: Callable[[int, int, list[LedgerRow], Streaks], DayOutcome],
+    ) -> InterestRun:
+        from bot.services.interest import Streaks
+
+        with self._transaction() as connection:
+            done = connection.execute(
+                "SELECT 1 FROM economy_interest_days WHERE guild_id = ? AND day = ?",
+                (guild_id, day),
+            ).fetchone()
+            if done is not None:
+                return InterestRun(done_before=True)
+            connection.execute(
+                "INSERT INTO economy_interest_days (guild_id, day, processed_at) VALUES (?, ?, ?)",
+                (guild_id, day, now),
+            )
+            openings, rows = self._day_rows_in(connection, guild_id, start, end)
+            streaks = {
+                int(row["user_id"]): Streaks(
+                    int(row["capped"]),
+                    int(row["floor"]),
+                    int(row["resist"]),
+                    int(row["still"]),
+                    int(row["ant"]),
+                )
+                for row in connection.execute(
+                    "SELECT * FROM economy_interest_streaks WHERE guild_id = ?", (guild_id,)
+                )
+            }
+            outcomes = []
+            for user_id in sorted(openings):
+                outcome = settle(
+                    user_id,
+                    openings[user_id],
+                    rows.get(user_id, []),
+                    streaks.get(user_id, Streaks()),
+                )
+                payment = outcome.payment
+                if payment.gross > 0:
+                    entries = [LedgerEntry(payment.gross, "intereses")]
+                    if payment.tax:
+                        entries.append(LedgerEntry(-payment.tax, "irpf:intereses"))
+                    self._apply_in_transaction(connection, guild_id, user_id, entries)
+                    if payment.tax:
+                        self._credit_state_in(connection, guild_id, payment.tax, "irpf:intereses")
+                    connection.execute(
+                        """
+                        INSERT INTO economy_interest
+                            (guild_id, user_id, day, average, gross, tax, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, user_id, day, payment.average, payment.gross, payment.tax, now),
+                    )
+                new = outcome.streaks
+                connection.execute(
+                    """
+                    INSERT INTO economy_interest_streaks
+                        (guild_id, user_id, capped, floor, resist, still, ant)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                        capped = excluded.capped, floor = excluded.floor,
+                        resist = excluded.resist, still = excluded.still, ant = excluded.ant
+                    """,
+                    (guild_id, user_id, new.capped, new.floor, new.resist, new.still, new.ant),
+                )
+                outcomes.append(outcome)
+            return InterestRun(outcomes=tuple(outcomes))
+
+    async def settle_savings(
+        self,
+        guild_id: int,
+        *,
+        week: str,
+        first_day: str,
+        last_day: str,
+        now: float,
+        settle: Callable[[int, int, int, int], SavingsSettlement],
+    ) -> SavingsRun:
+        """Liquida con la escala del ahorro los intereses de una semana, una vez.
+
+        Suma lo cobrado de `first_day` a `last_day` (ISO, ambos incluidos) por
+        cada miembro y cobra la diferencia entre la cuota y lo ya retenido
+        (`irpf:ahorro`), que va al Estado. Todo en una transacción.
+
+        Args:
+            week: Lunes ISO de la semana.
+            settle: Recibe `(miembro, bruto, retenido, saldo)` y devuelve la
+                liquidación (regla en `bot.services.interest.savings_settlement`).
+        """
+        return await self._run(
+            self._settle_savings_sync, guild_id, week, first_day, last_day, now, settle
+        )
+
+    def _settle_savings_sync(
+        self,
+        guild_id: int,
+        week: str,
+        first_day: str,
+        last_day: str,
+        now: float,
+        settle: Callable[[int, int, int, int], SavingsSettlement],
+    ) -> SavingsRun:
+        with self._transaction() as connection:
+            done = connection.execute(
+                "SELECT 1 FROM economy_interest_weeks WHERE guild_id = ? AND week_start = ?",
+                (guild_id, week),
+            ).fetchone()
+            if done is not None:
+                return SavingsRun(done_before=True)
+            connection.execute(
+                "INSERT INTO economy_interest_weeks (guild_id, week_start, processed_at) "
+                "VALUES (?, ?, ?)",
+                (guild_id, week, now),
+            )
+            totals = connection.execute(
+                """
+                SELECT i.user_id, SUM(i.gross) AS gross, SUM(i.tax) AS tax, w.balance
+                FROM economy_interest i
+                JOIN economy_wallets w ON w.guild_id = i.guild_id AND w.user_id = i.user_id
+                WHERE i.guild_id = ? AND i.day BETWEEN ? AND ?
+                GROUP BY i.user_id
+                """,
+                (guild_id, first_day, last_day),
+            ).fetchall()
+            settlements = []
+            for row in totals:
+                user_id = int(row["user_id"])
+                result = settle(user_id, int(row["gross"]), int(row["tax"]), int(row["balance"]))
+                if result.charged:
+                    self._apply_in_transaction(
+                        connection,
+                        guild_id,
+                        user_id,
+                        (LedgerEntry(-result.charged, "irpf:ahorro"),),
+                    )
+                    self._credit_state_in(connection, guild_id, result.charged, "irpf:ahorro")
+                connection.execute(
+                    """
+                    INSERT INTO economy_interest_savings
+                        (guild_id, user_id, week_start, gross, withheld, quota, rate, charged,
+                         created_at, notified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        guild_id,
+                        user_id,
+                        week,
+                        result.gross,
+                        result.withheld,
+                        result.quota,
+                        round(result.rate * 100),
+                        result.charged,
+                        now,
+                        # Sin nada que cobrar no hay nada que contar.
+                        0 if result.charged else 1,
+                    ),
+                )
+                settlements.append(result)
+            return SavingsRun(settlements=tuple(settlements))
+
+    async def last_interest(self, guild_id: int, user_id: int) -> tuple[str, int, int] | None:
+        """Último cobro de intereses de un miembro: `(día ISO, bruto, retención)`."""
+        return await self._run(self._last_interest_sync, guild_id, user_id)
+
+    def _last_interest_sync(self, guild_id: int, user_id: int) -> tuple[str, int, int] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT day, gross, tax FROM economy_interest
+                WHERE guild_id = ? AND user_id = ? ORDER BY day DESC LIMIT 1
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+            return (str(row["day"]), int(row["gross"]), int(row["tax"])) if row else None
+        finally:
+            connection.close()
+
+    async def take_interest_notice(self, guild_id: int, user_id: int) -> InterestNotice:
+        """Lo que el miembro aún no ha visto de la cuenta, y lo marca como visto."""
+        return await self._run(self._take_interest_notice_sync, guild_id, user_id)
+
+    def _take_interest_notice_sync(self, guild_id: int, user_id: int) -> InterestNotice:
+        with self._transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS days, COALESCE(SUM(gross), 0) AS gross,
+                       COALESCE(SUM(tax), 0) AS tax, MIN(day) AS first_day
+                FROM economy_interest WHERE guild_id = ? AND user_id = ? AND notified = 0
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+            savings = connection.execute(
+                """
+                SELECT week_start, charged, rate FROM economy_interest_savings
+                WHERE guild_id = ? AND user_id = ? AND notified = 0 ORDER BY week_start
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+            for table in ("economy_interest", "economy_interest_savings"):
+                # `table` sale de una tupla fija, nunca de entrada del usuario.
+                connection.execute(
+                    f"UPDATE {table} SET notified = 1 "
+                    "WHERE guild_id = ? AND user_id = ? AND notified = 0",
+                    (guild_id, user_id),
+                )
+            return InterestNotice(
+                days=int(row["days"]),
+                gross=int(row["gross"]),
+                tax=int(row["tax"]),
+                first_day=row["first_day"],
+                savings=tuple(
+                    (str(s["week_start"]), int(s["charged"]), int(s["rate"])) for s in savings
+                ),
+            )
+
+    async def last_savings(
+        self, guild_id: int, user_id: int
+    ) -> tuple[str, int, int, int, int, int] | None:
+        """Última liquidación del ahorro: `(lunes, bruto, retenido, cuota, tipo %, cobrado)`."""
+        return await self._run(self._last_savings_sync, guild_id, user_id)
+
+    def _last_savings_sync(
+        self, guild_id: int, user_id: int
+    ) -> tuple[str, int, int, int, int, int] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT week_start, gross, withheld, quota, rate, charged
+                FROM economy_interest_savings
+                WHERE guild_id = ? AND user_id = ? ORDER BY week_start DESC LIMIT 1
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return (
+                str(row["week_start"]),
+                int(row["gross"]),
+                int(row["withheld"]),
+                int(row["quota"]),
+                int(row["rate"]),
+                int(row["charged"]),
+            )
+        finally:
+            connection.close()
 
     # -- Donativos ---------------------------------------------------------------------
 
@@ -2067,7 +2553,7 @@ class EconomyRepository:
             connection.close()
 
     async def other_taxes(self, guild_id: int, user_id: int, since: float) -> int:
-        """IGIC y Patrimonio pagados desde `since` (para el logro «Socio de Hacienda»)."""
+        """IGIC, Patrimonio e IRPF de los intereses desde `since` (logro «Socio de Hacienda»)."""
         return await self._run(self._other_taxes_sync, guild_id, user_id, since)
 
     def _other_taxes_sync(self, guild_id: int, user_id: int, since: float) -> int:
@@ -2087,7 +2573,21 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
-            return int(igic) + int(wealth)
+            (interest,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(tax), 0) FROM economy_interest
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            (savings,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(charged), 0) FROM economy_interest_savings
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return int(igic) + int(wealth) + int(interest) + int(savings)
         finally:
             connection.close()
 
@@ -2358,6 +2858,11 @@ class EconomyRepository:
                 "economy_sanctions",
                 "economy_imv_suspensions",
                 "economy_residence",
+                "economy_interest_days",
+                "economy_interest",
+                "economy_interest_streaks",
+                "economy_interest_weeks",
+                "economy_interest_savings",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

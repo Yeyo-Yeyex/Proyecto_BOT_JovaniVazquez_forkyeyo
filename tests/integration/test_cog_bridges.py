@@ -248,3 +248,29 @@ async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path
         assert "pala_1" in profile.unlocked and "primera_nomina" in profile.unlocked
     finally:
         await client.close()
+
+
+async def test_los_intereses_encuentran_los_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """`Intereses` carga antes que los logros: sus avisos deben llegar al cog real."""
+    client = await load_bot(tmp_path)
+    try:
+        module = importer("Intereses", client)
+        assert module.logros._cog(client) is client.get_cog("Achievements")
+    finally:
+        await client.close()
+
+
+async def test_el_aviso_de_intereses_llega_a_los_juegos_por_la_renta(tmp_path: Path) -> None:
+    """`renta.hint` es el hueco por el que todos los juegos cuentan los intereses."""
+    client = await load_bot(tmp_path)
+    try:
+        client.get_cog("Intereses").hint_for = AsyncMock(return_value="🏦 Ayer cobraste")
+        for game in GAMES:
+            module = importer(game, client)
+            assert await module.renta.hint(client, GUILD_ID, OWNER_ID) == "🏦 Ayer cobraste", game
+        renta_cog = client.get_cog("Renta")
+        renta_cog.hint_for = AsyncMock(return_value="📬 Renta")
+        hint = await importer("Casino", client).renta.hint(client, GUILD_ID, OWNER_ID)
+        assert hint == "📬 Renta\n🏦 Ayer cobraste"
+    finally:
+        await client.close()
