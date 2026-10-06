@@ -229,7 +229,9 @@ async def test_el_trabajo_reduce_el_imv_pero_nunca_lo_quita(tmp_path: Path, dice
 
 def test_la_reduccion_del_imv_sigue_la_regla_de_la_mitad() -> None:
     assert imv_after_work(1_500, IMV_WORK_EXEMPT) == 1_500
-    assert imv_after_work(1_500, IMV_WORK_EXEMPT + 1_400) == 1_500 - 100
+    # 14.000 Y$ de nómina de más son 1.400 Y$ de IMV (otra escala); la mitad, 700
+    # a la semana: 100 al día.
+    assert imv_after_work(1_500, IMV_WORK_EXEMPT + 14_000) == 1_500 - 100
     assert imv_after_work(1_500, 10**9) == 300
 
 
@@ -342,6 +344,7 @@ async def test_el_sobre_de_la_uco_cobra_multa_y_pregunta_si_dimites(
     assert status is not None
     status.contract.level = 3
     await service.repository.save_contract(GUILD, USER, status.contract)
+    await money(service, 50_000)
     dice.hits.add(0.25)  # el riesgo del sobre
     result = await service.resolve_event(GUILD, USER, "sobre", 0)
     assert result.black > 0 and result.caught and result.caught_by == "uco"
@@ -504,13 +507,13 @@ async def test_el_cto_cobra_en_opciones_y_el_exit_paga_exento_y_con_irpf(
     assert first.payslip is not None and first.payslip.gross == first.gross - first.options_added
     status = await service.status(GUILD, USER)
     assert status is not None
-    status.contract.options = 400_000
+    status.contract.options = 3_000_000
     await service.repository.save_contract(GUILD, USER, status.contract)
     dice.hits.add(pala.EXIT_CHANCE)
     clock.now += 600
     before = await service.economy.balance(GUILD, USER)
     outcome = await work(service)
-    assert outcome.exit_payout >= 400_000 * 2
+    assert outcome.exit_payout >= 3_000_000 * 2
     assert outcome.options_total == 0
     gained = outcome.balance - before
     assert gained > pala.OPTIONS_EXEMPT  # la parte exenta llega entera
@@ -580,7 +583,7 @@ async def test_volver_tras_cinco_anos_fuera_trae_la_ley_beckham(tmp_path: Path, 
     clock = Clock()
     service = await make(tmp_path, clock)
     await set_level(service, "oficina", 4)
-    await money(service, 50_000)
+    await money(service, 100_000)
     await service.move_abroad(GUILD, USER)
     clock.now += 36 * 86_400
     status, beckham, days = await service.come_home(GUILD, USER)
@@ -596,7 +599,7 @@ async def test_volver_pronto_no_trae_beckham(tmp_path: Path, dice: Dice) -> None
     clock = Clock()
     service = await make(tmp_path, clock)
     await set_level(service, "oficina", 3)
-    await money(service, 50_000)
+    await money(service, 100_000)
     await service.move_abroad(GUILD, USER)
     clock.now += 2 * 86_400
     status, beckham, _days = await service.come_home(GUILD, USER)

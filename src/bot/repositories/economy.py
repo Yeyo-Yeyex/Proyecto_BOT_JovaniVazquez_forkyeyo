@@ -1902,13 +1902,14 @@ class EconomyRepository:
         (`concept`), la Seguridad Social (`ss:concept`) y la retención
         (`irpf:concept`). Al Estado le entran la retención, la cotización del
         trabajador y la de la empresa; esta última es dinero nuevo, porque la
-        empresa no existe. El bruto queda en `economy_tax_records` (para la
-        proyección del IRPF) y el desglose en `economy_payroll`.
+        empresa no existe. El desglose queda en `economy_payroll` y el bruto, en
+        la escala general (`Payslip.fiscal_gross`), en `economy_tax_records`,
+        que es la renta que ven el casino y la declaración.
 
         Args:
-            payslip_for: Recibe `(bruto, renta sujeta de la ventana)` y
+            payslip_for: Recibe `(bruto, bruto de nómina de la ventana)` y
                 devuelve la nómina. La regla vive en `bot.services.taxes`.
-            window_seconds: Ventana de la renta que se pasa a `payslip_for`.
+            window_seconds: Ventana del bruto que se pasa a `payslip_for`.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -1935,8 +1936,14 @@ class EconomyRepository:
         window_seconds: float,
     ) -> tuple[Payslip, int]:
         with self._transaction() as connection:
-            recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
-            slip = payslip_for(gross, recent)
+            (recent,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = 'es'
+                """,
+                (guild_id, user_id, now - window_seconds),
+            ).fetchone()
+            slip = payslip_for(gross, int(recent))
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.ss_worker:
                 entries.append(LedgerEntry(-slip.ss_worker, f"ss:{concept}"))
@@ -1957,7 +1964,7 @@ class EconomyRepository:
                     (guild_id, user_id, created_at, concept, gross, withheld)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (guild_id, user_id, now, concept, slip.gross, slip.irpf),
+                (guild_id, user_id, now, concept, slip.fiscal_gross, slip.irpf),
             )
             connection.execute(
                 """
@@ -2156,7 +2163,7 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int, int], ForeignPayslip],
+        payslip_for: Callable[[int, int], ForeignPayslip],
         window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         """Paga una nómina cobrada fuera de España.
@@ -2167,8 +2174,8 @@ class EconomyRepository:
         Estado. La parte sujeta en España queda en `economy_tax_records`.
 
         Args:
-            payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta
-                sujeta en España de la ventana)` y devuelve la nómina.
+            payslip_for: Recibe `(bruto, bruto de fuera de la ventana)` y
+                devuelve la nómina.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -2195,7 +2202,7 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int, int], ForeignPayslip],
+        payslip_for: Callable[[int, int], ForeignPayslip],
         window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         with self._transaction() as connection:
@@ -2207,8 +2214,7 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since, country),
             ).fetchone()
-            recent_spain = self._recent_taxable_in(connection, guild_id, user_id, since)
-            slip = payslip_for(gross, int(recent_foreign), recent_spain)
+            slip = payslip_for(gross, int(recent_foreign))
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.mpf_worker:
                 entries.append(LedgerEntry(-slip.mpf_worker, f"mpf:{concept}"))
@@ -2233,7 +2239,7 @@ class EconomyRepository:
                 )
             if slip.irpf:
                 self._credit_state_in(connection, guild_id, slip.irpf, f"irpf:{concept}")
-            taxable = slip.gross - slip.exempt if slip.resident else 0
+            taxable = slip.fiscal_taxable
             if taxable > 0:
                 connection.execute(
                     """

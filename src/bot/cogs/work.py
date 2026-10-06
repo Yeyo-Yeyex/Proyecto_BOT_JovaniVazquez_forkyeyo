@@ -274,7 +274,7 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         )
     if outcome.exit_payout:
         lines.append(f"## 🚀 ¡EXIT! Tus opciones valen {format_amount(outcome.exit_payout)}")
-        lines.append("-# Exentas hasta 500.000 Y$ (Ley 28/2022); el resto, con IRPF.")
+        lines.append("-# Exentas hasta 5.000.000 Y$ (Ley 28/2022); el resto, con IRPF.")
     if outcome.bankrupt:
         lines.append("💀 **La startup quiebra.** Tus stock options valen lo que el papel.")
     if outcome.kind is ShiftKind.GUARD:

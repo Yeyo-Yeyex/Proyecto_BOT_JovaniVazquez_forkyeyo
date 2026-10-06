@@ -48,6 +48,7 @@ from bot.services.taxes import (
     MAX_PENDING_DECLARATIONS,
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
+    WAGE_YAPDOLLARS_PER_EURO,
     WEALTH_MINIMUM,
     ForeignPayslip,
     Payslip,
@@ -59,6 +60,7 @@ from bot.services.taxes import (
     donation_deduction,
     format_rate,
     gambling_day_tax,
+    wage_to_fiscal,
     wealth_tax,
     weekly_refund,
 )
@@ -122,12 +124,15 @@ DAILY_STREAK_WINDOW_SECONDS = 48 * 3600
 #: empleo de los arts. 3 y 4 del RD 789/2022 (redacción del RD 240/2026): no
 #: cuenta el 100 % del aumento de ingresos del trabajo hasta 6.000 € al año y
 #: sí la mitad de lo que pase. En el juego se mira el neto de las nóminas de
-#: los últimos 7 días: los primeros `IMV_WORK_EXEMPT` (6.000 € al año a 10 Y$
-#: por euro, pasados a una semana) no cuentan y cada Y$ de más quita medio de
-#: IMV, repartido entre los 7 días. Simplificación: la ley compara con el año
-#: anterior y aquí se compara con la última semana.
+#: los últimos 7 días: los primeros `IMV_WORK_EXEMPT` (6.000 € al año, en Y$ de
+#: nómina y pasados a una semana) no cuentan, y de lo que pase se quita del IMV
+#: la mitad de su valor en euros, repartida entre los 7 días. Nómina e IMV van
+#: en escalas distintas (100 y 10 Y$ por euro, ver
+#: `taxes.WAGE_YAPDOLLARS_PER_EURO`), así que cada Y$ de nómina de más quita
+#: 0,05 Y$ de IMV. Simplificación: la ley compara con el año anterior y aquí se
+#: compara con la última semana.
 IMV_WORK_WINDOW_SECONDS = 7 * 86_400
-IMV_WORK_EXEMPT = 6_000 * 10 * 7 // 365
+IMV_WORK_EXEMPT = 6_000 * WAGE_YAPDOLLARS_PER_EURO * 7 // 365
 IMV_WORK_TAPER = 0.5
 #: El IMV nunca baja de esta parte de lo que tocaría por la racha (decisión del
 #: proyecto: trabajar mucho lo reduce, pero no lo quita).
@@ -375,10 +380,10 @@ def imv_after_work(amount: int, weekly_net: int) -> int:
 
     Args:
         amount: Lo que toca por la racha (`daily_amount`).
-        weekly_net: Neto de las nóminas de los últimos 7 días.
+        weekly_net: Neto de las nóminas de los últimos 7 días (Y$ de nómina).
     """
     excess = max(0, weekly_net - IMV_WORK_EXEMPT)
-    reduction = -(-int(excess * IMV_WORK_TAPER) // 7)  # redondeo hacia arriba
+    reduction = -(-wage_to_fiscal(round(excess * IMV_WORK_TAPER)) // 7)  # hacia arriba
     floor = round(amount * IMV_FLOOR_SHARE)
     return max(floor, amount - reduction)
 
@@ -960,13 +965,9 @@ class EconomyService:
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
 
-        def payslip_for(amount: int, recent_hk: int, recent_spain: int) -> ForeignPayslip:
+        def payslip_for(amount: int, recent_hk: int) -> ForeignPayslip:
             return compute_hk_payslip(
-                amount,
-                recent_hk=recent_hk,
-                recent_spain=recent_spain,
-                resident=resident,
-                exempt_left=exempt_left,
+                amount, recent_hk=recent_hk, resident=resident, exempt_left=exempt_left
             )
 
         slip, balance = await self.repository.credit_foreign_salary(

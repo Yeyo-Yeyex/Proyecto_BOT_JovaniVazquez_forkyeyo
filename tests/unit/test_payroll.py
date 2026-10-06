@@ -8,7 +8,7 @@ from bot.services.taxes import (
     SS_EMPLOYER_RATE,
     SS_MAX_BASE_EUR,
     SS_WORKER_RATE,
-    YAPDOLLARS_PER_EURO,
+    WAGE_YAPDOLLARS_PER_EURO,
     compute_payslip,
     compute_self_employed_payslip,
     payroll_rates,
@@ -39,13 +39,13 @@ def test_la_solidaridad_solo_grava_lo_que_pasa_de_la_base_maxima() -> None:
 
 
 def test_por_debajo_de_la_base_maxima_se_cotiza_el_tipo_entero() -> None:
-    rates = payroll_rates(30_000 * YAPDOLLARS_PER_EURO)
+    rates = payroll_rates(30_000 * WAGE_YAPDOLLARS_PER_EURO)
     assert rates.ss_worker == pytest.approx(SS_WORKER_RATE)
     assert not rates.over_max_base
 
 
 def test_por_encima_de_la_base_maxima_el_tipo_efectivo_baja() -> None:
-    rates = payroll_rates(200_000 * YAPDOLLARS_PER_EURO)
+    rates = payroll_rates(200_000 * WAGE_YAPDOLLARS_PER_EURO)
     assert rates.over_max_base
     assert rates.ss_worker < SS_WORKER_RATE
     assert rates.ss_employer < SS_EMPLOYER_RATE
@@ -53,11 +53,11 @@ def test_por_encima_de_la_base_maxima_el_tipo_efectivo_baja() -> None:
 
 def test_sueldos_bajos_no_pagan_irpf_gracias_a_la_reduccion() -> None:
     # 14.600 € al año: la reducción del art. 20 y el mínimo personal lo dejan a cero.
-    assert payroll_rates(14_600 * YAPDOLLARS_PER_EURO).irpf == 0
+    assert payroll_rates(14_600 * WAGE_YAPDOLLARS_PER_EURO).irpf == 0
 
 
 def test_la_nomina_cuadra_bruto_menos_cotizacion_menos_irpf() -> None:
-    slip = compute_payslip(1_000, recent_income=1_000 * 4 * 29)
+    slip = compute_payslip(10_000, recent_income=10_000 * 4 * 29)
     assert slip.net == slip.gross - slip.ss_worker - slip.irpf
     assert slip.total_taxes == slip.ss_worker + slip.irpf + slip.ss_employer
     assert slip.employer_cost == slip.gross + slip.ss_employer
@@ -66,14 +66,16 @@ def test_la_nomina_cuadra_bruto_menos_cotizacion_menos_irpf() -> None:
 
 def test_cobrar_mas_nunca_deja_menos_neto() -> None:
     """El mito de «me suben de tramo y gano menos»: aquí tampoco pasa."""
-    nets = [compute_payslip(gross, recent_income=gross * 119).net for gross in range(50, 5_000, 50)]
+    nets = [
+        compute_payslip(gross, recent_income=gross * 119).net for gross in range(500, 50_000, 500)
+    ]
     assert nets == sorted(nets)
 
 
 def test_el_autonomo_no_cotiza_por_turno() -> None:
-    slip = compute_self_employed_payslip(1_000, recent_income=100_000)
+    slip = compute_self_employed_payslip(10_000, recent_income=1_000_000)
     assert slip.ss_worker == 0 and slip.ss_employer == 0
-    assert slip.net == 1_000 - slip.irpf
+    assert slip.net == 10_000 - slip.irpf
 
 
 def test_un_bruto_no_positivo_no_es_una_nomina() -> None:

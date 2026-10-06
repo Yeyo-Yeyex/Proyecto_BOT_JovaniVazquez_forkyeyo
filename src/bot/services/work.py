@@ -155,7 +155,7 @@ ABROAD_PAY = 2.0
 ABROAD_FAMILY = -4
 #: Billete de avión (base, con IGIC general; simplificación: en la realidad la
 #: parte del vuelo fuera de Canarias no lo pagaría).
-FLIGHT_PRICE = 9_000
+FLIGHT_PRICE = 25_000
 #: El jet lag del primer día.
 JET_LAG = -30
 #: Escala del juego para la residencia fiscal: una semana fuera es un año fiscal,
@@ -169,10 +169,11 @@ BECKHAM_WEEKS = 6
 
 # -- Autónomos -------------------------------------------------------------------------
 
-#: Cuota semanal de autónomos. Valor de juego: desde el RDL 13/2022 la cuota real
-#: depende de los rendimientos (tramos); aquí es fija y se cobra al fichar el
-#: primer turno de la semana, trabajes lo que trabajes.
-SELF_EMPLOYED_FEE = 1_200
+#: Cuota semanal de autónomos, en Y$ de nómina (unos 100 € a la semana, del orden
+#: de la cuota real de los tramos altos). Desde el RDL 13/2022 la cuota real
+#: depende de los rendimientos; aquí es fija y se cobra al fichar el primer turno
+#: de la semana, trabajes lo que trabajes.
+SELF_EMPLOYED_FEE = 10_000
 
 
 class Mechanic(StrEnum):

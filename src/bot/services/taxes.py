@@ -397,6 +397,27 @@ SOLIDARITY_WORKER_SHARE = 0.166
 #: Otros gastos deducibles de los rendimientos del trabajo (art. 19.2.f LIRPF).
 WORK_OTHER_EXPENSES_EUR = 2_000.0
 
+#: Escala de las nóminas: 100 Y$ por euro, diez veces la del resto del bot.
+#:
+#: El resto de la economía (casino, IMV, loterías) usa `YAPDOLLARS_PER_EURO` (10
+#: Y$ por euro), y a esa escala el IMV a racha máxima ya equivale a 55.000 € al
+#: año. Para que trabajar compense frente al IMV, un turno del puesto más bajo
+#: tiene que pagar más que un IMV entero (unos 1.700 Y$); a la escala general
+#: eso serían 233.000 € al año a jornada completa y un celador pagaría un 40 %
+#: de IRPF. A 100 Y$ por euro, un turno de celador son 17 € (un turno son unas
+#: dos horas: el salario mínimo por hora) y la jornada completa, unos 25.000 € al
+#: año, con la retención de un sueldo así. Todo lo que es renta del trabajo
+#: (nómina, Seguridad Social, IRPF de la nómina, Hong Kong, Ley Beckham,
+#: exenciones) se mide en esta escala. Lo que pasa de una escala a otra (la
+#: renta que ven el casino y la declaración, y lo que el trabajo quita del IMV)
+#: se convierte con `wage_to_fiscal`.
+WAGE_YAPDOLLARS_PER_EURO = 100
+
+
+def wage_to_fiscal(amount: int) -> int:
+    """Pasa Y$ de nómina (100 Y$/€) a la escala general del bot (10 Y$/€)."""
+    return round(amount * YAPDOLLARS_PER_EURO / WAGE_YAPDOLLARS_PER_EURO)
+
 
 def work_income_reduction(net_eur: float) -> float:
     """Reducción por obtención de rendimientos del trabajo (art. 20 LIRPF), en euros.
@@ -450,8 +471,8 @@ class PayrollRates:
 
 
 def payroll_rates(annual_yd: int) -> PayrollRates:
-    """Tipos efectivos de cotización e IRPF para una renta anual en Y$."""
-    annual = annual_yd / YAPDOLLARS_PER_EURO
+    """Tipos efectivos de cotización e IRPF para un sueldo anual en Y$ de nómina."""
+    annual = annual_yd / WAGE_YAPDOLLARS_PER_EURO
     if annual <= 0:
         return PayrollRates(SS_WORKER_RATE, SS_EMPLOYER_RATE, 0.0, False)
     base = min(annual, SS_MAX_BASE_EUR)
@@ -494,6 +515,11 @@ class Payslip:
         return self.gross - self.ss_worker - self.irpf
 
     @property
+    def fiscal_gross(self) -> int:
+        """El bruto en la escala general (lo que cuenta como renta fuera de la nómina)."""
+        return wage_to_fiscal(self.gross)
+
+    @property
     def employer_cost(self) -> int:
         """Lo que le cuesta el turno a la empresa."""
         return self.gross + self.ss_employer
@@ -513,8 +539,8 @@ BECKHAM_LIMIT_EUR = 600_000.0
 
 
 def beckham_rate(annual_yd: int) -> float:
-    """Tipo medio de la Ley Beckham para una renta anual en Y$."""
-    annual = annual_yd / YAPDOLLARS_PER_EURO
+    """Tipo medio de la Ley Beckham para un sueldo anual en Y$ de nómina."""
+    annual = annual_yd / WAGE_YAPDOLLARS_PER_EURO
     if annual <= BECKHAM_LIMIT_EUR:
         return BECKHAM_RATE
     tax = BECKHAM_LIMIT_EUR * BECKHAM_RATE + (annual - BECKHAM_LIMIT_EUR) * BECKHAM_TOP_RATE
@@ -526,8 +552,9 @@ def compute_payslip(gross: int, recent_income: int, *, beckham: bool = False) ->
 
     Args:
         gross: Bruto del turno, en Y$; positivo.
-        recent_income: Renta sujeta de los últimos 30 días sin este turno
-            (la misma que usa `compute_withholding`).
+        recent_income: Bruto de nómina de los últimos 30 días sin este turno.
+            Como en la vida real, quien paga retiene según el sueldo que paga
+            (art. 82 RIRPF), no según lo que ganas en el casino.
         beckham: Si tributa por la Ley Beckham (24 % fijo en vez de la escala).
             La Seguridad Social no cambia.
     """
@@ -554,17 +581,21 @@ def compute_self_employed_payslip(gross: int, recent_income: int) -> Payslip:
     """«Nómina» de un autónomo: sin cotización por turno, IRPF por la escala.
 
     Los autónomos no cotizan por cada ingreso: pagan su cuota aparte (ver
-    `EconomyService.charge_self_employed_fee`). El IRPF se calcula igual que
-    `compute_withholding`, sin la reducción del art. 20 LIRPF, que es solo
-    para rendimientos del trabajo.
+    `EconomyService.charge_self_employed_fee`). El IRPF es la escala sobre lo
+    proyectado, sin la reducción del art. 20 LIRPF (que es solo para
+    rendimientos del trabajo), en la escala de las nóminas.
     """
-    withholding = compute_withholding(gross, recent_income)
+    if gross <= 0:
+        raise ValueError("El bruto de una nómina debe ser positivo.")
+    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
+    annual = projected / WAGE_YAPDOLLARS_PER_EURO
+    rate = round(annual_tax(annual) / annual * 100, 2) / 100 if annual else 0.0
     return Payslip(
         gross=gross,
         ss_worker=0,
-        irpf=withholding.tax,
+        irpf=round(gross * rate),
         ss_employer=0,
-        rates=PayrollRates(0.0, 0.0, withholding.rate, False),
+        rates=PayrollRates(0.0, 0.0, rate, False),
     )
 
 
@@ -612,8 +643,8 @@ HK_BANDS: tuple[tuple[float, float], ...] = (
 HK_STANDARD_RATE = 0.15
 HK_STANDARD_TOP_RATE = 0.16
 HK_STANDARD_LIMIT_HKD = 5_000_000.0
-#: Exención del art. 7.p LIRPF, en Y$ por día (60.100 € al año).
-EXEMPT_7P_PER_DAY = round(60_100 * YAPDOLLARS_PER_EURO / 365)
+#: Exención del art. 7.p LIRPF, en Y$ de nómina por día (60.100 € al año).
+EXEMPT_7P_PER_DAY = round(60_100 * WAGE_YAPDOLLARS_PER_EURO / 365)
 
 
 def hk_salaries_tax(annual_hkd: float) -> float:
@@ -657,6 +688,11 @@ class ForeignPayslip:
         return self.gross - self.mpf_worker - self.hk_tax - self.irpf
 
     @property
+    def fiscal_taxable(self) -> int:
+        """Lo sujeto en España, en la escala general (0 si no es residente)."""
+        return wage_to_fiscal(self.gross - self.exempt) if self.resident else 0
+
+    @property
     def foreign(self) -> int:
         """Todo lo que se queda Hong Kong (MPF de los dos y salaries tax)."""
         return self.mpf_worker + self.mpf_employer + self.hk_tax
@@ -666,24 +702,22 @@ def compute_hk_payslip(
     gross: int,
     *,
     recent_hk: int,
-    recent_spain: int,
     resident: bool,
     exempt_left: int,
 ) -> ForeignPayslip:
-    """Nómina de un turno trabajado desde Hong Kong.
+    """Nómina de un turno trabajado desde Hong Kong (en Y$ de nómina).
 
     Args:
-        gross: Bruto del turno, en Y$.
+        gross: Bruto del turno.
         recent_hk: Bruto cobrado en Hong Kong los últimos 30 días (para
-            proyectar el salaries tax).
-        recent_spain: Renta sujeta en España los últimos 30 días (para el IRPF).
+            proyectar el salaries tax y, si sigue siendo residente, el IRPF).
         resident: Si sigue siendo residente fiscal en España.
-        exempt_left: Exención del art. 7.p que queda hoy, en Y$.
+        exempt_left: Exención del art. 7.p que queda hoy.
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
     annual_yd = (recent_hk + gross) * _DAYS_PER_YEAR / _WINDOW_DAYS
-    annual_hkd = annual_yd / YAPDOLLARS_PER_EURO * HKD_PER_EUR
+    annual_hkd = annual_yd / WAGE_YAPDOLLARS_PER_EURO * HKD_PER_EUR
     mpf_rate = min(MPF_RATE, MPF_MAX_HKD / annual_hkd) if annual_hkd else MPF_RATE
     hk_rate = hk_salaries_tax(annual_hkd) / annual_hkd if annual_hkd else 0.0
     mpf = round(gross * mpf_rate)
@@ -693,10 +727,10 @@ def compute_hk_payslip(
         exempt = min(gross, max(0, exempt_left))
         taxable = gross - exempt
         if taxable > 0:
-            projected = (recent_spain + taxable) * _DAYS_PER_YEAR // _WINDOW_DAYS
+            projected = (recent_hk + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
             # Sin cotización española: el rendimiento neto es el bruto menos los
             # otros gastos, con la reducción del art. 20 LIRPF.
-            annual = projected / YAPDOLLARS_PER_EURO
+            annual = projected / WAGE_YAPDOLLARS_PER_EURO
             net = max(0.0, annual - WORK_OTHER_EXPENSES_EUR)
             base = max(0.0, net - work_income_reduction(net))
             rate = round(annual_tax(base) / annual * 100, 2) / 100
