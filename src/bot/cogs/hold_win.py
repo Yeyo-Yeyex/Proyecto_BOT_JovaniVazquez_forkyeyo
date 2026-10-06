@@ -50,7 +50,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import (
     StatDelta,
@@ -769,6 +769,16 @@ class HoldWinView(discord.ui.View):
         await logros.casino_play(
             self.cog.bot, self.guild_id, self.owner, self._channel(), delta, net=play.net
         )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game="botes",
+            stake=play.stake,
+            net=play.net,
+            balance_after=play.balance,
+            tax=play.settlement.tax_delta,
+        )
 
     async def _auto(self, interaction: discord.Interaction) -> None:
         """🔁 en el juego base: diez tiradas. ⏩ en el bonus: todas las que queden."""
@@ -993,6 +1003,16 @@ class HoldWinView(discord.ui.View):
         )
         await logros.casino_play(
             self.cog.bot, self.guild_id, self.owner, self._channel(), delta, net=payout.amount
+        )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game="botes",
+            stake=0,
+            net=payout.amount,
+            balance_after=payout.settlement.balance,
+            tax=payout.settlement.tax_delta,
         )
 
     # -- Ajustes --------------------------------------------------------------------

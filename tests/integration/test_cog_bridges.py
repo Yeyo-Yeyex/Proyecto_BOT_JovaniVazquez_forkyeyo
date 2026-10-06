@@ -10,6 +10,7 @@ con `INITIAL_EXTENSIONS`, en el mismo orden que en producción.
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -38,6 +39,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     client = BotClient(command_prefix=".", database_path=tmp_path / "message_stats.sqlite3")
     await client.message_stats.initialize()
     await client.economy.repository.initialize()
+    await client.casino_stats.initialize()
     await client.birthdays.initialize()
     await client.achievements.initialize()
     await client.welcome.initialize()
@@ -67,6 +69,28 @@ async def test_los_juegos_que_cargan_antes_encuentran_logros_y_renta(tmp_path: P
             module = importer(game, client)
             hint = await module.renta.hint(client, GUILD_ID, OWNER_ID)
             assert hint == "📬 Tienes la renta pendiente", game
+    finally:
+        await client.close()
+
+
+async def test_los_juegos_que_cargan_antes_apuntan_sus_jugadas_en_apuestas(
+    tmp_path: Path,
+) -> None:
+    """`apuestas` carga después que los juegos: su función puente tiene que verlo."""
+    client = await load_bot(tmp_path)
+    try:
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        for game in GAMES[:-1]:  # la lotería no es una jugada del casino
+            module = importer(game, client)
+            await module.apuestas.record(
+                client, GUILD_ID, owner, game="ruleta", stake=100, net=-100, balance_after=0, tax=0
+            )
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.total.plays == len(GAMES) - 1
     finally:
         await client.close()
 
@@ -114,6 +138,12 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         assert profile.stats["slots_spins"] == view.session_spins == slots.AUTO_SPINS
         assert profile.stats["slots_auto"] == 1
         assert {"slots_1", "auto_1"} <= set(profile.unlocked)
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["tragaperras"].plays + plays.by_game["tragaperras"].free_plays == (
+            slots.AUTO_SPINS
+        )
     finally:
         await client.close()
 

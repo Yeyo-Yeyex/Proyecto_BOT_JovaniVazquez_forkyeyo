@@ -33,7 +33,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.services.achievements import StatDelta, casino_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -594,6 +594,16 @@ class RouletteTable(discord.ui.View):
             getattr(self.message, "channel", None),
             delta,
             net=outcome.net,
+        )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game=GAME,
+            stake=outcome.stake,
+            net=outcome.net,
+            balance_after=result.balance,
+            tax=result.tax_delta,
         )
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:

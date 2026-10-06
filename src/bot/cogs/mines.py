@@ -44,7 +44,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, mines_stats
 from bot.services.economy import (
@@ -407,6 +407,16 @@ class MinesBoard(ui.LayoutView):
         )
         await logros.casino_play(
             self.cog.bot, self.guild_id, self.owner, self.channel, delta, net=game.net
+        )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game=GAME,
+            stake=game.stake,
+            net=game.net,
+            balance_after=settlement.balance if settlement else self.balance,
+            tax=settlement.tax_delta if settlement else 0,
         )
         await self.cog.shout(game, self.owner, self.channel)
 

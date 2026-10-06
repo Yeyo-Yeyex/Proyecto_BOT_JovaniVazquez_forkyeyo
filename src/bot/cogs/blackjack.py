@@ -29,7 +29,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import blackjack_stats, casino_stats
 from bot.services.blackjack import (
@@ -482,6 +482,16 @@ class BlackjackTable(discord.ui.View):
             getattr(self.message, "channel", None),
             delta,
             net=game.net,
+        )
+        await apuestas.record(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            game=GAME,
+            stake=game.total_stake,
+            net=game.net,
+            balance_after=balance,
+            tax=tax_delta,
         )
 
     # -- Fichas y repartir ----------------------------------------------------------
