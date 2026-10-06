@@ -45,6 +45,14 @@ Modelo de datos:
   no desaparece: se queda en la ONG, que es lo que ella quería.
 - `economy_bizums`: cada Bizum entre miembros (quién, a quién, cuánto y
   cuándo), sin el concepto. Sirve para sumar lo enviado en el día.
+- `economy_payroll`: cada nómina de `pala` con su desglose (bruto,
+  cotizaciones del trabajador y de la empresa, IRPF y neto). Las
+  cotizaciones cuentan como recaudación en `hacienda`, a nombre de quien
+  cobró la nómina; el neto de la última semana reduce el IMV.
+- `economy_sanctions`: multas y regularizaciones (p. ej. la Inspección de
+  Trabajo que pilla un turno en negro). Van al Estado y cuentan en `hacienda`.
+- `economy_imv_suspensions`: hasta cuándo no se puede cobrar el IMV de un
+  miembro (sanción por cobrar en negro).
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -59,7 +67,10 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from bot.services.taxes import Payslip
 
 T = TypeVar("T")
 
@@ -435,6 +446,38 @@ class EconomyRepository:
                     amount INTEGER NOT NULL CHECK (amount > 0),
                     concept TEXT NOT NULL,
                     created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_payroll (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    concept TEXT NOT NULL,
+                    gross INTEGER NOT NULL CHECK (gross >= 0),
+                    ss_worker INTEGER NOT NULL CHECK (ss_worker >= 0),
+                    ss_employer INTEGER NOT NULL CHECK (ss_employer >= 0),
+                    irpf INTEGER NOT NULL CHECK (irpf >= 0),
+                    net INTEGER NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_payroll_member
+                    ON economy_payroll (guild_id, user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS economy_sanctions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    concept TEXT NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_imv_suspensions (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    until REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_declarations (
@@ -1242,8 +1285,9 @@ class EconomyRepository:
                 "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
                 (guild_id, STATE_ACCOUNT_ID),
             ).fetchone()
-            # Retenciones de ingresos y del casino, Patrimonio, IGIC y gravamen de
-            # loterías, en una sola vista.
+            # Retenciones de ingresos y del casino, Patrimonio, IGIC, gravamen de
+            # loterías, Seguridad Social de las nóminas (la de la empresa se apunta a
+            # quien cobra) y multas, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
@@ -1258,6 +1302,12 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_lottery_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, ss_worker + ss_employer AS withheld, created_at AS at
+                FROM economy_payroll WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, amount AS withheld, created_at AS at FROM economy_sanctions
                 WHERE guild_id = :guild
             """
             total, recent = connection.execute(
@@ -1815,6 +1865,266 @@ class EconomyRepository:
             return None
         return DailyClaim(last_claimed_at=float(row["last_claimed_at"]), streak=int(row["streak"]))
 
+    # -- Nóminas, dinero en negro y sanciones ----------------------------------------
+
+    async def credit_salary(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        now: float,
+        payslip_for: Callable[[int, int], Payslip],
+        window_seconds: float,
+    ) -> tuple[Payslip, int]:
+        """Paga una nómina: bruto, cotización, IRPF y lo de la empresa, todo junto.
+
+        En el libro del trabajador quedan tres movimientos: el bruto
+        (`concept`), la Seguridad Social (`ss:concept`) y la retención
+        (`irpf:concept`). Al Estado le entran la retención, la cotización del
+        trabajador y la de la empresa; esta última es dinero nuevo, porque la
+        empresa no existe. El bruto queda en `economy_tax_records` (para la
+        proyección del IRPF) y el desglose en `economy_payroll`.
+
+        Args:
+            payslip_for: Recibe `(bruto, renta sujeta de la ventana)` y
+                devuelve la nómina. La regla vive en `bot.services.taxes`.
+            window_seconds: Ventana de la renta que se pasa a `payslip_for`.
+
+        Returns:
+            `(nómina, saldo_final)`.
+        """
+        return await self._run(
+            self._credit_salary_sync,
+            guild_id,
+            user_id,
+            gross,
+            concept,
+            now,
+            payslip_for,
+            window_seconds,
+        )
+
+    def _credit_salary_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        gross: int,
+        concept: str,
+        now: float,
+        payslip_for: Callable[[int, int], Payslip],
+        window_seconds: float,
+    ) -> tuple[Payslip, int]:
+        with self._transaction() as connection:
+            recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
+            slip = payslip_for(gross, recent)
+            entries = [LedgerEntry(slip.gross, concept)]
+            if slip.ss_worker:
+                entries.append(LedgerEntry(-slip.ss_worker, f"ss:{concept}"))
+            if slip.irpf:
+                entries.append(LedgerEntry(-slip.irpf, f"irpf:{concept}"))
+            balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+            if slip.irpf:
+                self._credit_state_in(connection, guild_id, slip.irpf, f"irpf:{concept}")
+            if slip.ss_worker:
+                self._credit_state_in(connection, guild_id, slip.ss_worker, f"ss:{concept}")
+            if slip.ss_employer:
+                self._credit_state_in(
+                    connection, guild_id, slip.ss_employer, f"ss_empresa:{concept}"
+                )
+            connection.execute(
+                """
+                INSERT INTO economy_tax_records
+                    (guild_id, user_id, created_at, concept, gross, withheld)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, now, concept, slip.gross, slip.irpf),
+            )
+            connection.execute(
+                """
+                INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker,
+                                             ss_employer, irpf, net, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    guild_id,
+                    user_id,
+                    concept,
+                    slip.gross,
+                    slip.ss_worker,
+                    slip.ss_employer,
+                    slip.irpf,
+                    slip.net,
+                    now,
+                ),
+            )
+            return slip, balance
+
+    async def charge_contribution(
+        self, guild_id: int, user_id: int, *, amount: int, concept: str, now: float
+    ) -> tuple[int, int]:
+        """Cobra una cotización sin nómina (la cuota de autónomos) y la manda al Estado.
+
+        Queda en `economy_payroll` como una fila sin bruto y con neto negativo:
+        así cuenta como Seguridad Social en `hacienda` y resta del neto semanal
+        que mira el IMV. Si no llega el saldo, se cobra lo que haya.
+
+        Returns:
+            `(cobrado, saldo_final)`.
+        """
+        return await self._run(
+            self._charge_contribution_sync, guild_id, user_id, amount, concept, now
+        )
+
+    def _charge_contribution_sync(
+        self, guild_id: int, user_id: int, amount: int, concept: str, now: float
+    ) -> tuple[int, int]:
+        with self._transaction() as connection:
+            balance = self._ensure_wallet(connection, guild_id, user_id)
+            charged = min(balance, amount)
+            if charged <= 0:
+                return 0, balance
+            balance = self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-charged, f"ss:{concept}"),)
+            )
+            self._credit_state_in(connection, guild_id, charged, f"ss:{concept}")
+            connection.execute(
+                """
+                INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker,
+                                             ss_employer, irpf, net, created_at)
+                VALUES (?, ?, ?, 0, ?, 0, 0, ?, ?)
+                """,
+                (guild_id, user_id, concept, charged, -charged, now),
+            )
+            return charged, balance
+
+    async def work_net(self, guild_id: int, user_id: int, since: float) -> int:
+        """Neto cobrado en nóminas desde `since` (lo cobrado en negro no cuenta)."""
+        return await self._run(self._work_net_sync, guild_id, user_id, since)
+
+    def _work_net_sync(self, guild_id: int, user_id: int, since: float) -> int:
+        connection = self._connect()
+        try:
+            (net,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(net), 0) FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return int(net)
+        finally:
+            connection.close()
+
+    async def payroll_totals(
+        self, guild_id: int, user_id: int, since: float
+    ) -> tuple[int, int, int, int]:
+        """`(bruto, Seguridad Social total, IRPF, neto)` de las nóminas desde `since`."""
+        return await self._run(self._payroll_totals_sync, guild_id, user_id, since)
+
+    def _payroll_totals_sync(
+        self, guild_id: int, user_id: int, since: float
+    ) -> tuple[int, int, int, int]:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross), 0), COALESCE(SUM(ss_worker + ss_employer), 0),
+                       COALESCE(SUM(irpf), 0), COALESCE(SUM(net), 0)
+                FROM economy_payroll WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return int(row[0]), int(row[1]), int(row[2]), int(row[3])
+        finally:
+            connection.close()
+
+    async def other_taxes(self, guild_id: int, user_id: int, since: float) -> int:
+        """IGIC y Patrimonio pagados desde `since` (para el logro «Socio de Hacienda»)."""
+        return await self._run(self._other_taxes_sync, guild_id, user_id, since)
+
+    def _other_taxes_sync(self, guild_id: int, user_id: int, since: float) -> int:
+        connection = self._connect()
+        try:
+            (igic,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(tax), 0) FROM economy_consumption_tax
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            (wealth,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(tax), 0) FROM economy_wealth_tax
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return int(igic) + int(wealth)
+        finally:
+            connection.close()
+
+    async def sanction(
+        self, guild_id: int, user_id: int, *, amount: int, concept: str, now: float
+    ) -> tuple[int, int]:
+        """Cobra una multa al Estado; si no llega el saldo, se queda con lo que haya.
+
+        Returns:
+            `(cobrado, saldo_final)`.
+        """
+        return await self._run(self._sanction_sync, guild_id, user_id, amount, concept, now)
+
+    def _sanction_sync(
+        self, guild_id: int, user_id: int, amount: int, concept: str, now: float
+    ) -> tuple[int, int]:
+        with self._transaction() as connection:
+            balance = self._ensure_wallet(connection, guild_id, user_id)
+            charged = min(balance, amount)
+            if charged <= 0:
+                return 0, balance
+            balance = self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-charged, f"multa:{concept}"),)
+            )
+            self._credit_state_in(connection, guild_id, charged, f"multa:{concept}")
+            connection.execute(
+                """
+                INSERT INTO economy_sanctions (guild_id, user_id, concept, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, concept, charged, now),
+            )
+            return charged, balance
+
+    async def suspend_imv(self, guild_id: int, user_id: int, until: float) -> None:
+        """Deja sin IMV a un miembro hasta `until` (alarga, nunca acorta)."""
+        await self._run(self._suspend_imv_sync, guild_id, user_id, until)
+
+    def _suspend_imv_sync(self, guild_id: int, user_id: int, until: float) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO economy_imv_suspensions (guild_id, user_id, until) VALUES (?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET until = MAX(until, excluded.until)
+                """,
+                (guild_id, user_id, until),
+            )
+
+    async def imv_suspended_until(self, guild_id: int, user_id: int) -> float:
+        """Hasta cuándo está suspendido el IMV (0 si no lo está)."""
+        return await self._run(self._imv_suspended_sync, guild_id, user_id)
+
+    def _imv_suspended_sync(self, guild_id: int, user_id: int) -> float:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT until FROM economy_imv_suspensions WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return float(row["until"]) if row else 0.0
+        finally:
+            connection.close()
+
     # -- Limpieza ------------------------------------------------------------------
 
     async def delete_guild_data(self, guild_id: int) -> None:
@@ -1838,6 +2148,9 @@ class EconomyRepository:
                 "economy_consumption_tax",
                 "economy_lottery_tax",
                 "economy_public_debt",
+                "economy_payroll",
+                "economy_sanctions",
+                "economy_imv_suspensions",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

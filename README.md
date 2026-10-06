@@ -72,11 +72,12 @@ python -m bot
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
+  | 🪏 Trabajo | `pala` |
   | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `niveles` · `rol` |
+  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `niveles` · `rol` · `tajo` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -123,7 +124,7 @@ python -m bot
   para todo el bot. Cada miembro empieza con 1.000 Y$ por servidor y
   `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
   más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
-  pierde tras 48 h).
+  pierde tras 48 h). Lo cobrado trabajando con `pala` lo reduce (ver Trabajo).
 - **Cumpleaños:** `cumple 14/02` guarda el tuyo (solo día y mes; una vez
   puesto, solo un administrador lo cambia) y `cumples` lista los próximos.
   Ese día (hora canaria) el bot lo anuncia en `#chat-general` y el
@@ -190,6 +191,22 @@ python -m bot
   o retirarlo). Todo se configura desde Discord, sin tocar código. No deja
   vender roles por encima del del bot ni con permisos de moderación o
   administración. El bot necesita **Gestionar roles**.
+- **Trabajo** (`pala`): coges la pala y curras. Tres oficios con 5 puestos cada
+  uno (🦺 obra, 🍽️ hostelería y 🌹 política en el PSOE, de pegacarteles a
+  consejero de una eléctrica). Cada turno es un minijuego de decidir rápido, de
+  30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
+  memorizar comandas o votaciones, esquivar preguntas en rueda de prensa), y la
+  nota mueve el sueldo entre el 70 % y el 130 %. Cada turno es una nómina de
+  verdad: Seguridad Social del trabajador (6,5 %), IRPF con la reducción por
+  rendimientos del trabajo y la cotización de la empresa (32 %), que va al
+  Estado igualmente. Batería que se gasta y se recarga sola (o con un
+  barraquito), 4 turnos ordinarios al día, 2 extras legales a la semana y,
+  después, extras en B con riesgo de Inspección. Ascensos al estilo de los Sims
+  (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
+  El IMV se reduce medio Y$ por cada Y$ neto que pase de 1.150 Y$ a la semana
+  (incentivo al empleo del RD 789/2022), pero nunca baja del 20 %. Eventos con
+  dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). Un
+  administrador limita los canales con `tajo`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$
@@ -306,12 +323,13 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 440 logros en 18 categorías (chat,
+- **Logros** (`logros [miembro]`): 550 logros en 21 categorías (chat,
   horarios y fechas, voz, social, lista, niveles, ruleta, blackjack, casino,
-  tragaperras, Crash, Minas, pachinko, loterías, tienda, Bizum, economía y coleccionista), con cinco rarezas: ▫️ común,
+  tragaperras, botes, Crash, Minas, pachinko, loterías, tienda, Bizum, economía,
+  trabajo, oficios y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 47 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 82 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -504,6 +522,7 @@ src/bot/
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
+│   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
@@ -518,7 +537,11 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
-│   ├── taxes.py         # IRPF, Patrimonio, IGIC, gravamen de loterías y donativos
+│   ├── taxes.py         # IRPF, nómina, Patrimonio, IGIC, loterías y donativos
+│   ├── work.py          # Reglas de pala: batería, jornada, familia, ascensos
+│   ├── work_catalog.py  # Oficios, puestos, contenido de minijuegos y eventos
+│   ├── work_games.py    # Minijuegos de pala: cavar, detectar, memoria, diálogo
+│   ├── pala.py          # Casos de uso de pala: fichar, cobrar, ascender, café
 │   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura

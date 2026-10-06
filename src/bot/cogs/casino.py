@@ -38,6 +38,8 @@ from bot.services.achievements import StatDelta, casino_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
+    IMV_FLOOR_SHARE,
+    IMV_WORK_EXEMPT,
     BalanceLimitError,
     EconomyService,
     InsufficientFundsError,
@@ -924,17 +926,35 @@ class Casino(commands.Cog):
             return
         result = await self.economy.claim_daily(responder.guild.id, user.id)
         next_at = f"<t:{int(result.next_claim_at)}:R>"
+        if result.suspended_until:
+            await responder.send_error(
+                f"🕵️ La Inspección de Trabajo te pilló cobrando en negro y te ha suspendido "
+                f"el IMV. Vuelve {next_at}, mi amor, y esta vez declara."
+            )
+            return
         if not result.claimed:
             await responder.send_error(f"Ya cobraste el IMV hoy. Vuelve {next_at}.")
             return
         streak = (
             f"🔥 Racha de {result.streak} días" if result.streak >= 2 else "Primer día de racha"
         )
+        work = ""
+        if result.reduction:
+            work = (
+                f"\n🪏 Esta semana has cobrado {format_amount(result.work_net)} netos "
+                f"trabajando: te quitan {format_amount(result.reduction)} de los "
+                f"{format_amount(result.full_amount)} que tocaban. Los primeros "
+                f"{format_amount(IMV_WORK_EXEMPT)} a la semana no cuentan y del resto, "
+                "solo la mitad (RD 789/2022)."
+            )
+        elif result.work_net:
+            work = "\n🪏 Trabajas y cobras el IMV entero: aún no pasas del mínimo exento."
         embed = discord.Embed(
             description=(
                 f"# {CURRENCY_EMOJI} +{format_amount(result.amount)}\n"
-                f"{streak} · Saldo: **{format_amount(result.balance)}**\n"
-                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}. "
+                f"{streak} · Saldo: **{format_amount(result.balance)}**{work}\n"
+                f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}"
+                f"{' (menos lo que trabajes)' if result.work_net else ''}. "
                 f"Si pasan más de 48 h, la racha se pierde.\n"
                 f"-# 🐶 {TAX_COLLECTOR} no puede tocarlo: el IMV está exento de IRPF "
                 "(art. 7.y LIRPF)."
@@ -943,16 +963,15 @@ class Casino(commands.Cog):
         )
         embed.set_author(name=f"IMV de {user.display_name}", icon_url=user.display_avatar.url)
         await responder.send(embed=embed)
-        await logros.track(
-            self.bot,
-            responder.guild.id,
-            user,
-            responder.channel,
-            StatDelta(
-                add={"imv_claims": 1},
-                peak={"imv_streak_max": result.streak, "balance_max": result.balance},
-            ),
+        delta = StatDelta(
+            add={"imv_claims": 1},
+            peak={"imv_streak_max": result.streak, "balance_max": result.balance},
         )
+        if result.work_net:
+            delta.add["imv_with_salary"] = 1
+        if result.reduction and result.amount <= round(result.full_amount * IMV_FLOOR_SHARE):
+            delta.add["imv_floor"] = 1
+        await logros.track(self.bot, responder.guild.id, user, responder.channel, delta)
 
     @app_commands.command(
         name="imv", description=f"Cobra tu Ingreso Mínimo Vital diario en {CURRENCY_NAME}."

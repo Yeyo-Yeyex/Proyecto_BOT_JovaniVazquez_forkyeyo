@@ -1,8 +1,8 @@
 """Cog de administración: moderación y utilidades solo para administradores.
 
-Comandos (todos con `/` y con `.`, mismo nombre):
+Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pala`):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
-`slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `catalogo`.
+`slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `catalogo`, `tajo`.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -60,6 +60,8 @@ AUDIT_REASON_LIMIT = 512
 MAX_NICK_LENGTH = 32
 # `say` puede mencionar usuarios, pero nunca @everyone, @here ni roles.
 SAY_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
+# Palabras que en `.tajo` permiten la pala en cualquier canal.
+TAJO_ALL_WORDS = {"todos", "todas", "cualquiera", "quitar"}
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 
@@ -795,6 +797,71 @@ class Admin(commands.Cog):
             await responder.finish(text, allowed_mentions=mentions)
         else:
             await responder.send(text, ephemeral=True, allowed_mentions=mentions)
+
+    # --- tajo -------------------------------------------------------------
+
+    @app_commands.command(name="tajo", description="Elige en qué canales se coge la pala.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        canal="Canal que añadir o quitar; sin canal, enseña los que hay.",
+        todos="Permitir la pala en cualquier canal (borra la lista).",
+    )
+    async def tajo(
+        self,
+        interaction: discord.Interaction,
+        canal: discord.TextChannel | None = None,
+        todos: bool = False,
+    ) -> None:
+        """Añade o quita un canal de `pala`, o los quita todos (solo lo ves tú)."""
+        await self._tajo_impl(InteractionResponder(interaction), canal, todos)
+
+    @commands.command(name="tajo")
+    async def tajo_text(self, ctx: commands.Context, *, arg: str = "") -> None:
+        """Versión de texto: `.tajo`, `.tajo #canal` o `.tajo todos`."""
+        word = arg.strip().lower()
+        if word in TAJO_ALL_WORDS:
+            await self._tajo_impl(ContextResponder(ctx), None, True)
+            return
+        channel: discord.TextChannel | None = None
+        if word:
+            try:
+                channel = await commands.TextChannelConverter().convert(ctx, arg.strip())
+            except commands.BadArgument:
+                await ctx.send("Uso: `.tajo` (estado), `.tajo #canal` o `.tajo todos`.")
+                return
+        await self._tajo_impl(ContextResponder(ctx), channel, False)
+
+    async def _tajo_impl(
+        self,
+        responder: CommandResponder,
+        channel: discord.TextChannel | None,
+        clear: bool,
+    ) -> None:
+        """Cambia los canales de `pala` y responde con cómo quedan."""
+        guild = responder.guild
+        work = getattr(self.bot, "work", None)
+        if guild is None or work is None:
+            await responder.send_error("El trabajo no está disponible ahora mismo.")
+            return
+        lines: list[str] = []
+        if clear:
+            await work.clear_channels(guild.id)
+            lines.append("🪏 La pala se puede coger en cualquier canal.")
+        elif channel is not None:
+            added, _ = await work.toggle_channel(guild.id, channel.id)
+            lines.append(f"🪏 {channel.mention} {'añadido a' if added else 'quitado de'} la pala.")
+            if added and not channel.permissions_for(guild.me).send_messages:
+                lines.append("⚠️ No puedo escribir en ese canal; revisa mis permisos.")
+        allowed = await work.channels(guild.id)
+        lines.append(
+            "Canales de la pala: " + ", ".join(f"<#{c}>" for c in sorted(allowed))
+            if allowed
+            else "Canales de la pala: cualquiera."
+        )
+        await responder.send(
+            "\n".join(lines), ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
+        )
 
     # --- catalogo ---------------------------------------------------------
 

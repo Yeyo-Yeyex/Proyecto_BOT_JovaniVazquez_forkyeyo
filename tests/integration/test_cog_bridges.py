@@ -32,6 +32,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.achievements.initialize()
     await client.welcome.initialize()
     await client.shop.initialize()
+    await client.work.repository.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -207,5 +208,43 @@ async def test_la_lista_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         assert profile.stats["todo_added"] == 1
         assert profile.stats["todo_done"] == 1
         assert {"todo_add_1", "todo_done_1"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """`pala` carga antes que los logros: el turno y la nómina deben llegar a ellos."""
+    client = await load_bot(tmp_path)
+    try:
+        work = importer("Trabajo", client)
+        assert work.logros._cog(client) is client.get_cog("Achievements")
+        cog = client.get_cog("Trabajo")
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        ctx = MagicMock()
+        ctx.guild = MagicMock(id=GUILD)
+        ctx.author = owner
+        ctx.channel = None
+        ctx.send = AsyncMock(return_value=MagicMock())
+        await cog.pala_text.callback(cog, ctx)
+        (panel,) = cog.panels
+
+        def interaction() -> MagicMock:
+            fake = MagicMock()
+            fake.user = owner
+            fake.response.edit_message = AsyncMock()
+            fake.response.is_done = MagicMock(return_value=False)
+            fake.message = MagicMock()
+            fake.message.edit = AsyncMock()
+            return fake
+
+        await panel._hire(interaction(), "obra")
+        await panel._clock_in(interaction())
+        await panel._finish(None)
+
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["work_shifts"] == 1
+        assert profile.stats["work_payslips"] == 1
+        assert "pala_1" in profile.unlocked and "primera_nomina" in profile.unlocked
     finally:
         await client.close()
