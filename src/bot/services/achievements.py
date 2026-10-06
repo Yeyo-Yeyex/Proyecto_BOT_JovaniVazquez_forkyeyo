@@ -4586,6 +4586,62 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Consulta tus estadísticas del casino sin haber apostado nunca.", C, True),
     ])  # fmt: skip
 
+    # 🏰 `patrimonio`, 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
+    # Mirar es una decisión: nada pasa de Raro. El patrimonio neto sí cuesta.
+    a += _tiers("economy", "patrimonio_views", [
+        (1, "patrimonio_1", "Hacer inventario", "Mira tu `patrimonio` (o el de alguien).", C),
+        (25, "patrimonio_25", "Contando los duros", "Mira el patrimonio 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "patrimonio_snoop", [
+        (1, "patrimonio_snoop_1", "Registro de la propiedad",
+         "Mira el patrimonio de otra persona.", C),
+        (25, "patrimonio_snoop_25", "Inspector del catastro",
+         "Mira el patrimonio de otros 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_views", [
+        (1, "fortunas_1", "Lista Forbes del barrio", "Abre `fortunas`.", C),
+        (25, "fortunas_25", "Envidia sana", "Abre `fortunas` 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "net_worth_max", [
+        (50_000, "networth_50k", "Propietario", "Llega a 50.000 Y$ de patrimonio.", C),
+        (500_000, "networth_500k", "Rentista", "Llega a 500.000 Y$ de patrimonio.", R),
+        (5_000_000, "networth_5m", "Gran fortuna", "Llega a 5.000.000 Y$ de patrimonio.", E),
+        (50_000_000, "networth_50m", "Lista Forbes de verdad",
+         "Llega a 50.000.000 Y$ de patrimonio.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "fortunas_first", [
+        (1, "fortunas_first", "El Amancio Ortega del servidor",
+         "Mira `fortunas` siendo el más rico.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_last", [
+        (1, "fortunas_last", "La base de la pirámide",
+         "Mira `fortunas` siendo el último de la lista (con al menos 3 personas).", C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "patrimonio_illiquid", [
+        (1, "patrimonio_illiquid", "Rico en ladrillo, pobre en liquidez",
+         "Mira tu patrimonio con más de la mitad en cosas y no en efectivo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_views", [
+        (1, "hacienda_open_1", "¿Y esto adónde va?", "Abre `hacienda`.", C),
+        (25, "hacienda_open_25", "Votante informado", "Abre `hacienda` 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_self", [
+        (1, "hacienda_self_1", "Mi factura con Sanxe", "Mira tu propia factura fiscal.", C),
+        (25, "hacienda_self_25", "Masoquista fiscal", "Mira tu factura fiscal 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_snoop", [
+        (1, "hacienda_snoop_1", "Chivato de Hacienda",
+         "Mira la factura fiscal de otra persona.", C),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_pillar", [
+        (1, "hacienda_pillar", "Tú solo sostienes el Estado",
+         "Mira `hacienda` habiendo pagado tú la mitad de todo lo recaudado.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_hidden", [
+        (1, "hacienda_hidden", "Te sangran sin que lo notes",
+         "Mira `hacienda` pagando más en impuestos indirectos que directos.", C, True),
+    ])  # fmt: skip
+
     countable = sum(
         1 for x in a if x.category != "meta" and not CATEGORY_BY_KEY[x.category].upcoming
     )
@@ -5742,6 +5798,67 @@ def apuestas_stats(
             add["apuestas_ruin"] = 1
         if net >= 100_000:
             add["apuestas_rich"] = 1
+    return StatDelta(add=add)
+
+
+def patrimonio_stats(
+    *,
+    listing: bool,
+    snooping: bool,
+    net_worth: int,
+    illiquid: bool,
+    rank: int,
+    people: int,
+) -> StatDelta:
+    """Contadores de `patrimonio` (y de `fortunas` si `listing`).
+
+    Args:
+        listing: Si es `fortunas`.
+        snooping: Si mira el patrimonio de otro.
+        net_worth: Su propio patrimonio neto (0 si no mira el suyo).
+        illiquid: Si mira el suyo y más de la mitad no es efectivo.
+        rank: Su puesto en la lista (0 si no está o no aplica).
+        people: Cuántos salen en la lista.
+    """
+    add: dict[str, int] = {}
+    peak: dict[str, int] = {}
+    if listing:
+        add["fortunas_views"] = 1
+        if rank == 1 and people > 1:
+            add["fortunas_first"] = 1
+        if people >= 3 and rank == people:
+            add["fortunas_last"] = 1
+    else:
+        add["patrimonio_views"] = 1
+        if snooping:
+            add["patrimonio_snoop"] = 1
+        if illiquid:
+            add["patrimonio_illiquid"] = 1
+    if net_worth > 0:
+        peak["net_worth_max"] = net_worth
+    return StatDelta(add=add, peak=peak)
+
+
+def hacienda_stats(
+    *, own: bool, snooping: bool, share: float, indirect_over_direct: bool
+) -> StatDelta:
+    """Contadores de `hacienda`.
+
+    Args:
+        own: Si mira su propia factura.
+        snooping: Si mira la de otro.
+        share: Parte de lo recaudado que ha pagado quien mira (0–1).
+        indirect_over_direct: Si quien mira paga más en indirectos que en directos.
+    """
+    add = {"hacienda_views": 1}
+    if own:
+        add["hacienda_self"] = 1
+    if snooping:
+        add["hacienda_snoop"] = 1
+    if share >= 0.5:
+        add["hacienda_pillar"] = 1
+    if indirect_over_direct:
+        add["hacienda_hidden"] = 1
     return StatDelta(add=add)
 
 

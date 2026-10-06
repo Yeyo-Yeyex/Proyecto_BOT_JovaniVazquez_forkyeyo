@@ -90,6 +90,7 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 - Funciones puente entre cogs (`achievements.track`, `renta.remind`, `shop.xp_multiplier`…): buscan el cog con `bot.utils.cogs.find_cog(bot, Clase)`, nunca con `isinstance(cog, Clase)`. `load_extension` vuelve a ejecutar el módulo de cada extensión, así que quien lo importó antes ve otra clase y el `isinstance` falla en silencio (así se perdieron los logros del casino). `tests/integration/test_cog_bridges.py` lo comprueba con el bot cargado de verdad: una función puente nueva se añade ahí.
 - Excepción, los comandos de imagen: son **solo de texto** (`.magik`, `.memes` y los efectos de Dank Memer), porque Discord limita un bot a 100 slash commands y los efectos son más de 100. Los efectos conservan el nombre que tienen en Dank Memer aunque pase de 8 caracteres (`.changemymind`), y `/ayuda` los reparte en subcategorías de Imagen según su tipo (`Command.extras["help_group"]`). `.memes <efecto>` explica cada uno. El resto de la norma (sin alias, sin grupos, un nombre por comando) se mantiene.
 - Excepción, el blackjack: se llama `blackjack` (`/blackjack` y `.blackjack`, aunque pase de 8 caracteres) y tiene el atajo de texto `.bj`. Es el único alias permitido; el menú de `/` solo muestra `/blackjack`.
+- Excepción, el patrimonio: `patrimonio` pasa de 8 caracteres porque es el nombre del impuesto y lo pidió así el proyecto. No tiene alias. La lista de todos va en otro comando, `fortunas`.
 
 ### Servicios
 

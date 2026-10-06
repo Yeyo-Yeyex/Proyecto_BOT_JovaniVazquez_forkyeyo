@@ -1002,6 +1002,16 @@ class EconomyService:
         """
         return await self.repository.casino_ledger(guild_id, user_id)
 
+    async def member_balances(self, guild_id: int) -> dict[int, int]:
+        """Saldo de cada miembro del servidor (para `fortunas`). Solo lee."""
+        return await self.repository.member_balances(guild_id)
+
+    async def tax_breakdown(
+        self, guild_id: int, *, since: float | None = None
+    ) -> dict[int, dict[str, int]]:
+        """Impuestos pagados por cada miembro, por tipo (ver `EconomyRepository.tax_breakdown`)."""
+        return await self.repository.tax_breakdown(guild_id, since=since)
+
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""
         return await self.repository.treasury(guild_id, since, top)

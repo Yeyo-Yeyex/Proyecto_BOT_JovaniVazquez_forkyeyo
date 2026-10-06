@@ -411,6 +411,23 @@ class LotteryRepository:
 
         return await self._run(self._read, read)
 
+    async def open_stakes(self, guild_id: int) -> dict[int, int]:
+        """Lo pagado por cada miembro en boletos de sorteos aún sin celebrar (`patrimonio`)."""
+
+        def read(connection: sqlite3.Connection) -> dict[int, int]:
+            rows = connection.execute(
+                """
+                SELECT t.user_id, SUM(t.cost) FROM lottery_tickets t
+                JOIN lottery_draws d ON d.id = t.draw_id
+                WHERE d.guild_id = ? AND d.status = 'open'
+                GROUP BY t.user_id
+                """,
+                (guild_id,),
+            ).fetchall()
+            return {int(user_id): int(total or 0) for user_id, total in rows}
+
+        return await self._run(self._read, read)
+
     async def pots(self, guild_id: int) -> dict[str, int]:
         """Bote acumulado de cada juego en el servidor."""
 

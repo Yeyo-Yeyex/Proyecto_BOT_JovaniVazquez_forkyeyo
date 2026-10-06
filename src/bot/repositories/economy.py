@@ -1464,6 +1464,103 @@ class EconomyRepository:
             float(first_at) if first_at is not None else None,
         )
 
+    async def member_balances(self, guild_id: int) -> dict[int, int]:
+        """Saldo de cada miembro con monedero (sin el Estado ni las cuentas de la casa)."""
+        return await self._run(self._member_balances_sync, guild_id)
+
+    def _member_balances_sync(self, guild_id: int) -> dict[int, int]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT user_id, balance FROM economy_wallets WHERE guild_id = ? AND user_id > 0",
+                (guild_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return {int(user_id): int(balance) for user_id, balance in rows}
+
+    async def tax_breakdown(
+        self, guild_id: int, *, since: float | None = None
+    ) -> dict[int, dict[str, int]]:
+        """Todo lo que cada miembro ha pagado al Estado, impuesto a impuesto.
+
+        Solo lee. Las claves son las de `bot.services.tax_report.TAX_KINDS`:
+        IRPF del trabajo y de otros ingresos, del casino y del ahorro,
+        Seguridad Social del trabajador (con la cuota de autónomos) y de la
+        empresa, IGIC (las devoluciones restan), Patrimonio, gravamen de
+        loterías, multas, lo devuelto en la renta (positivo; resta) y lo pagado
+        en Hong Kong (que no va al Estado).
+
+        Args:
+            since: Epoch desde el que contar, o `None` para todo.
+        """
+        return await self._run(self._tax_breakdown_sync, guild_id, since)
+
+    def _tax_breakdown_sync(self, guild_id: int, since: float | None) -> dict[int, dict[str, int]]:
+        # Una sola vista con (miembro, tipo, importe, momento). El IRPF de las
+        # nóminas está en `economy_tax_records` y en `economy_payroll`: se
+        # cuenta por la nómina y se resta del resto de rentas para no duplicarlo.
+        parts = """
+            SELECT user_id, 'irpf_trabajo' AS kind, irpf AS amount, created_at AS at
+            FROM economy_payroll WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_otros', -irpf, created_at
+            FROM economy_payroll WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_otros', withheld, created_at
+            FROM economy_tax_records WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_casino', withheld, updated_at
+            FROM economy_gambling_days WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_ahorro', tax, created_at
+            FROM economy_interest WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_ahorro', charged, created_at
+            FROM economy_interest_savings WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'ss_trabajador', ss_worker, created_at
+            FROM economy_payroll WHERE guild_id = :guild AND country = 'es'
+            UNION ALL
+            SELECT user_id, 'ss_empresa', ss_employer, created_at
+            FROM economy_payroll WHERE guild_id = :guild AND country = 'es'
+            UNION ALL
+            SELECT user_id, 'extranjero', foreign_tax + ss_worker + ss_employer, created_at
+            FROM economy_payroll WHERE guild_id = :guild AND country != 'es'
+            UNION ALL
+            SELECT user_id, 'igic', tax, created_at
+            FROM economy_consumption_tax WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'patrimonio', tax, created_at
+            FROM economy_wealth_tax WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'loteria', tax, created_at
+            FROM economy_lottery_tax WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'multas', amount, created_at
+            FROM economy_sanctions WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'devuelto', delta, created_at
+            FROM economy_ledger WHERE guild_id = :guild AND reason = 'devolucion:renta'
+        """
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT user_id, kind, SUM(amount) FROM ({parts})
+                WHERE user_id > 0 AND (:since IS NULL OR at >= :since)
+                GROUP BY user_id, kind
+                """,
+                {"guild": guild_id, "since": since},
+            ).fetchall()
+        finally:
+            connection.close()
+        out: dict[int, dict[str, int]] = {}
+        for user_id, kind, total in rows:
+            if total:
+                out.setdefault(int(user_id), {})[str(kind)] = int(total)
+        return out
+
     async def treasury(self, guild_id: int, since: float, top: int) -> Treasury:
         """Saldo y recaudación de la cuenta del Estado del servidor."""
         return await self._run(self._treasury_sync, guild_id, since, top)

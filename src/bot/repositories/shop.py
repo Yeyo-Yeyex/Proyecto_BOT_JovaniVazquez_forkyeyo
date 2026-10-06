@@ -719,6 +719,71 @@ class ShopRepository:
             connection.close()
         return [_entry(row) for row in rows]
 
+    async def holdings(
+        self, guild_id: int, user_id: int | None, now: float
+    ) -> list[tuple[int, str, str, str, int, float | None]]:
+        """Bienes en vigor con su valor, para `patrimonio`.
+
+        El valor es lo pagado sin IGIC (sumando las renovaciones y sin las
+        compras devueltas). Lo que caduca pierde valor con el tiempo: vale la
+        parte que le queda de vida. Lo que se recibió sin comprarlo (caja
+        botín, regalos) vale el precio actual del artículo.
+
+        Args:
+            user_id: Un miembro, o `None` para todo el servidor.
+
+        Returns:
+            `(miembro, nombre, emoji, tipo, valor, caduca)` por cada bien.
+        """
+        return await self._run(self._holdings_sync, guild_id, user_id, now)
+
+    def _holdings_sync(
+        self, guild_id: int, user_id: int | None, now: float
+    ) -> list[tuple[int, str, str, str, int, float | None]]:
+        where = (
+            "i.guild_id = ? AND i.status = 'active' AND (i.expires_at IS NULL OR i.expires_at > ?)"
+        )
+        args: tuple[object, ...] = (guild_id, now)
+        if user_id is not None:
+            where += " AND i.user_id = ?"
+            args = (*args, user_id)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT i.user_id, i.name, i.emoji, i.kind, i.starts_at, i.expires_at,
+                    (SELECT SUM(p.base) FROM shop_purchases p
+                     WHERE p.guild_id = i.guild_id AND p.inventory_id = i.id
+                       AND p.refunded = 0) AS paid,
+                    (SELECT it.price FROM shop_items it
+                     WHERE it.guild_id = i.guild_id AND it.id = i.item_id) AS price
+                FROM shop_inventory i WHERE {where}
+                ORDER BY i.user_id, i.id
+                """,
+                args,
+            ).fetchall()
+        finally:
+            connection.close()
+        out = []
+        for row in rows:
+            value = int(row["paid"] if row["paid"] is not None else row["price"] or 0)
+            expires = row["expires_at"]
+            if expires is not None:
+                life = float(expires) - float(row["starts_at"])
+                left = max(0.0, float(expires) - now)
+                value = round(value * left / life) if life > 0 else 0
+            out.append(
+                (
+                    int(row["user_id"]),
+                    str(row["name"]),
+                    str(row["emoji"]),
+                    str(row["kind"]),
+                    value,
+                    float(expires) if expires is not None else None,
+                )
+            )
+        return out
+
     async def set_equipped(
         self, guild_id: int, user_id: int, entry_id: int, equipped: bool
     ) -> InventoryEntry | None:
