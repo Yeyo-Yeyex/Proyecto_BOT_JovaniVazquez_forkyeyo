@@ -3549,6 +3549,669 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "sumergida", "Economía sumergida", "Cobra 10 turnos en B.", R, True),
     ])  # fmt: skip
 
+    # ➕ Segunda tanda: más escalones y logros cruzados -------------------------------
+    # Todos salen de estadísticas que ya se suman. Los escalones nuevos van aquí,
+    # detrás de los de siempre, y heredan la unidad (minutos, Y$) del primero.
+
+    def more(category: str, stat: str, rows: list[tuple]) -> list[Achievement]:
+        unit = next(x.unit for x in a if x.stat == stat and len(x.conditions) == 1)
+        return _tiers(category, stat, rows, unit=unit)
+
+    def combo(
+        achievement_id: str,
+        name: str,
+        description: str,
+        category: str,
+        rarity: Rarity,
+        conditions: tuple[tuple[str, int], ...],
+        *,
+        secret: bool = False,
+    ) -> Achievement:
+        return Achievement(
+            id=achievement_id,
+            name=name,
+            description=description,
+            category=category,
+            rarity=rarity,
+            conditions=conditions,
+            secret=secret,
+        )
+
+    # 💬 Chat, ✍️ Estilo y 🧵 Conversación
+    a += more("chat", "msg_replies", [
+        (25_000, "reply_25k", "Réplica y contrarréplica", "Responde a 25.000 mensajes.", L),
+    ])  # fmt: skip
+    a += more("chat", "msg_mentions", [
+        (5_000, "ping_5k", "Acoso y derribo", "Menciona a alguien en 5.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("chat", "msg_attachments", [
+        (5_000, "pic_5k", "Filtración masiva", "Sube 5.000 archivos o imágenes.", L),
+    ])  # fmt: skip
+    a += more("chat", "msg_everyone", [
+        (50, "everyone_50", "Cadena de televisión pública",
+         "Menciona a @everyone o @here 50 veces. Nadie te ha pedido el informativo.", E, True),
+    ])  # fmt: skip
+    a += more("chat", "msg_mass_ping", [
+        (50, "mass_ping_50", "Manifestación convocada por WhatsApp",
+         "Menciona a 5 personas o más en un mismo mensaje 50 veces.", L, True),
+    ])  # fmt: skip
+    a += more("style", "msg_long", [
+        (1_000, "long_1k", "Tesis doctoral (con autoría dudosa)",
+         "Escribe 1.000 mensajes de 600 caracteres o más.", L),
+    ])  # fmt: skip
+    a += more("style", "msg_short", [
+        (10_000, "short_10k", "Telegrama", "Manda 10.000 mensajes de 3 caracteres o menos.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_exclaim", [
+        (2_500, "exclaim_2500", "Mitin de campaña", "Escribe «!!!» en 2.500 mensajes.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_spoiler", [
+        (1_000, "spoiler_1k", "Ley de Secretos Oficiales de 1968",
+         "Esconde 1.000 mensajes tras un spoiler.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_code", [
+        (1_000, "code_1k", "Programador del SEPE",
+         "Escribe código (`así`) en 1.000 mensajes. En COBOL, a ser posible.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_emoji_heavy", [
+        (1_000, "emoji_heavy_1k", "Tía en el grupo de la familia",
+         "Mete 5 emojis o más en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_only_emoji", [
+        (5_000, "only_emoji_5k", "Piedra de Rosetta",
+         "Manda 5.000 mensajes hechos solo de emojis.", E),
+    ])  # fmt: skip
+    a += more("style", "msg_stretch", [
+        (1_000, "stretch_1k", "Holaaaaaaaaaa",
+         "Repite una letra 6 veces seguidas en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("convo", "msg_monologue_max", [
+        (100, "monologue_100", "Sesión de investidura fallida",
+         "Escribe 100 mensajes seguidos sin que nadie te conteste.", M, True),
+    ])  # fmt: skip
+    a += more("convo", "msg_day_max", [
+        (2_000, "day_2k", "Filibusterismo parlamentario",
+         "Escribe 2.000 mensajes en un solo día.", M, True),
+    ])  # fmt: skip
+    a += more("convo", "msg_first_of_day", [
+        (365, "first_365", "El gallo del corral",
+         "Sé el primero en escribir del día 365 veces.", M),
+    ])  # fmt: skip
+    a += more("convo", "msg_echo", [
+        (1_000, "echo_1k", "Argumentario de Ferraz",
+         "Repite tal cual lo que acaba de escribir otro 1.000 veces.", L),
+    ])  # fmt: skip
+    a += more("convo", "msg_necro", [
+        (50, "necro_50", "Exhumación",
+         "Escribe 50 veces en un canal que llevaba 24 h muerto.", E),
+    ])  # fmt: skip
+    a += more("convo", "msg_edits", [
+        (10_000, "edits_10k", "Corrección de errores del BOE", "Edita 10.000 mensajes.", L),
+    ])  # fmt: skip
+
+    # 😂 Risas, 🤡 Hacer reír, 🗣️ Lengua
+    a += more("laughs", "laugh_en", [
+        (5_000, "laugh_en_5k", "Spanglish de Miami", "Ríete en inglés 5.000 veces.", L),
+    ])  # fmt: skip
+    a += more("laughs", "msg_xd", [
+        (50_000, "xd_50k", "xDDDDDDDDD", "Escribe xd en 50.000 mensajes.", M, True),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_emoji", [
+        (5_000, "laugh_emoji_5k", "😂😂😂😂😂", "Ríete con emojis 5.000 veces.", E),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_skull", [
+        (2_000, "laugh_skull_2k", "Cementerio de memes",
+         "Mándale un 💀 a un chiste 2.000 veces.", E),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_smash", [
+        (1_000, "laugh_smash_1k", "Teclado sin garantía",
+         "Aporrea el teclado (ajsjsjs) 1.000 veces.", E),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_phrase", [
+        (1_000, "laugh_phrase_1k", "Me meo (de verdad)",
+         "Ríete con palabras (me meo, me parto, lloro) 1.000 veces.", E),
+    ])  # fmt: skip
+    a += more("laughs", "msg_laugh_caps", [
+        (1_000, "laugh_caps_1k", "JAJAJAJA A GRITOS",
+         "Ríete EN MAYÚSCULAS en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("laughs", "msg_laugh_dry", [
+        (1_000, "laugh_dry_1k", "Ja. Ja. Ja.",
+         "Responde «ja.» 1.000 veces.", L),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_night", [
+        (250, "laugh_night_250", "Risa de madrugada en el Congreso",
+         "Ríete en 250 mensajes entre las 2:00 y las 6:00.", E),
+    ])  # fmt: skip
+    a += more("laughs", "laugh_intl", [
+        (500, "laugh_intl_500", "Cumbre de la OTAN",
+         "Ríete en otro idioma (kkkk, mdr, wwww, ㅋㅋ…) 500 veces.", L),
+    ])  # fmt: skip
+    a += more("funny", "laugh_replies", [
+        (5_000, "laugh_replies_5k", "Público de plató",
+         "Ríete respondiendo a 5.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("funny", "laughs_caused", [
+        (5_000, "laughs_caused_5k", "Club de la Comedia",
+         "Que se rían respondiendo a tus mensajes 5.000 veces.", M),
+    ])  # fmt: skip
+    a += more("funny", "laugh_at_bot", [
+        (250, "laugh_bot_250", "Te ríes de una máquina",
+         "Ríete respondiendo al bot 250 veces. Él no se ríe de ti. Todavía.", E),
+    ])  # fmt: skip
+    a += more("funny", "laugh_chain_max", [
+        (12, "laugh_chain_12", "Ataque de risa colectivo",
+         "Que 12 personas se rían seguidas en un canal.", L, True),
+    ])  # fmt: skip
+    a += more("funny", "laugh_reacts_given", [
+        (5_000, "laugh_given_5k", "Risas enlatadas",
+         "Reacciona con 😂, 🤣 o 💀 a 5.000 mensajes.", E),
+    ])  # fmt: skip
+    a += more("funny", "laugh_reacts_received", [
+        (10_000, "laugh_received_10k", "Humorista de Estado",
+         "Recibe 10.000 reacciones de risa.", M),
+    ])  # fmt: skip
+    a += more("funny", "laugh_reacts_on_message_max", [
+        (15, "laugh_message_15", "Meme de Estado",
+         "Que 15 personas se rían (con reacción) del mismo mensaje.", L),
+    ])  # fmt: skip
+    a += more("lengua", "msg_canario", [
+        (5_000, "canario_5k", "Más canario que un barraquito",
+         "Habla en canario en 5.000 mensajes, mi niño.", M),
+    ])  # fmt: skip
+    a += more("lengua", "msg_swear", [
+        (25_000, "swear_25k", "Camionero de la GC-1",
+         "Suelta una palabrota en 25.000 mensajes.", L),
+    ])  # fmt: skip
+    a += more("lengua", "msg_thanks", [
+        (10_000, "thanks_10k", "Educación de colegio de monjas",
+         "Da las gracias en 10.000 mensajes.", L),
+    ])  # fmt: skip
+    a += more("lengua", "msg_sorry", [
+        (250, "sorry_250", "Lo siento mucho, me he equivocado, no volverá a ocurrir",
+         "Pide perdón en 250 mensajes.", E),
+    ])  # fmt: skip
+    a += more("lengua", "msg_good_night", [
+        (1_000, "good_night_1k", "Ya me voy, que mañana madrugo",
+         "Da las buenas noches 1.000 veces.", E),
+    ])  # fmt: skip
+    a += more("lengua", "msg_hacienda", [
+        (500, "hacienda_500", "Hacienda somos todos (menos tú)",
+         "Nombra a Hacienda 500 veces.", E),
+    ])  # fmt: skip
+    a += more("lengua", "msg_bizum_ask", [
+        (250, "bizum_ask_250", "Sablista",
+         "Pide un Bizum por el chat 250 veces.", E),
+    ])  # fmt: skip
+
+    # 🗓️ Horarios y ❤️ Social
+    a += more("time", "msg_night", [
+        (10_000, "night_10k", "Insomnio en la Moncloa",
+         "Escribe 10.000 mensajes entre las 2:00 y las 6:00.", L),
+    ])  # fmt: skip
+    a += more("time", "msg_morning", [
+        (10_000, "morning_10k", "Panadero digital",
+         "Escribe 10.000 mensajes entre las 6:00 y las 8:00.", L),
+    ])  # fmt: skip
+    a += more("time", "msg_siesta", [
+        (10_000, "siesta_10k", "La siesta es para los débiles",
+         "Escribe 10.000 mensajes entre las 15:00 y las 17:00.", E),
+    ])  # fmt: skip
+    a += more("time", "msg_office", [
+        (50_000, "office_50k", "Funcionario en su salsa",
+         "Escribe 50.000 mensajes entre semana de 9:00 a 14:00. ¿Quién atiende la ventanilla?", L),
+    ])  # fmt: skip
+    a += more("time", "msg_weekend", [
+        (10_000, "weekend_10k", "Sin vida los findes",
+         "Escribe 10.000 mensajes en fin de semana.", E),
+    ])  # fmt: skip
+    a += more("social", "greetings_sent", [
+        (100, "greetings_100", "Felicitador de la Casa Real",
+         "Felicita 100 cumpleaños.", M),
+    ])  # fmt: skip
+    a += more("social", "welcomes_given", [
+        (100, "welcomes_100", "Delegación del Gobierno de bienvenida",
+         "Da la bienvenida a 100 recién llegados.", M),
+    ])  # fmt: skip
+    a += more("social", "msg_bot_call", [
+        (10_000, "bot_call_10k", "Amigo íntimo del bot",
+         "Menciona al bot o di su nombre 10.000 veces.", L),
+    ])  # fmt: skip
+    a += more("social", "msg_sanxe", [
+        (1_000, "sanxe_1k", "Monotema",
+         "Nombra a Perro Sanxe 1.000 veces. Seguro que te pagan por ello.", E),
+    ])  # fmt: skip
+
+    # 🎙️ Llamada, 🎚️ Micro, 🚪 Entradas, 🎵 Música, 🖼️ Imágenes, 📝 Lista
+    a += more("voice", "voice_night", [
+        (12_000, "voice_night_200h", "Tertulia de madrugada en la radio",
+         "Pasa 200 horas en llamada entre las 2:00 y las 6:00.", L),
+    ])  # fmt: skip
+    a += more("voice", "voice_duo", [
+        (12_000, "duo_200h", "Matrimonio por la llamada",
+         "Pasa 200 horas en llamada con una sola persona.", L),
+    ])  # fmt: skip
+    a += more("voice", "voice_morning", [
+        (3_000, "voice_morning_3k", "Tertuliano matinal",
+         "Pasa 50 horas en llamada entre las 6:00 y las 8:00.", E),
+    ])  # fmt: skip
+    a += more("voice", "voice_siesta", [
+        (6_000, "voice_siesta_6k", "Siesta parlamentaria",
+         "Pasa 100 horas en llamada entre las 15:00 y las 17:00.", E),
+    ])  # fmt: skip
+    a += more("voice", "voice_weekend", [
+        (30_000, "voice_weekend_30k", "El finde es para la llamada",
+         "Pasa 500 horas en llamada en fin de semana.", L),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_stream", [
+        (12_000, "stream_200h", "Retransmisión de La 1",
+         "Comparte pantalla durante 200 horas.", L),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_video", [
+        (3_000, "video_3k", "Presentador del telediario",
+         "Pon la cámara durante 50 horas.", E),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_muted", [
+        (6_000, "muted_6k", "Rueda de prensa sin preguntas",
+         "Pasa 100 horas en llamada con el micro silenciado.", E),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_deaf", [
+        (6_000, "deaf_6k", "Oídos sordos a la oposición",
+         "Pasa 100 horas en llamada con el sonido quitado.", E, True),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_afk", [
+        (30_000, "afk_30k", "Vuelva usted mañana",
+         "Pasa 500 horas en el canal AFK sin dar palo al agua.", L),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_stream_crowd", [
+        (600, "stream_crowd_600", "Audiencia de Eurovisión",
+         "Comparte pantalla 10 horas con 4 personas o más mirando.", E),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_multitask", [
+        (300, "multitask_300", "Ministro de varias carteras",
+         "Pon cámara y comparte pantalla a la vez 5 horas.", E),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_stream_starts", [
+        (1_000, "stream_starts_1k", "Zapeador", "Empieza a compartir pantalla 1.000 veces.", E),
+    ])  # fmt: skip
+    a += more("voice_mic", "voice_mute_streak_max", [
+        (1_440, "mute_streak_1440", "Monje de Montserrat",
+         "Aguanta 24 horas seguidas silenciado en llamada.", L, True),
+    ])  # fmt: skip
+    a += more("voice_moves", "voice_joins", [
+        (5_000, "joins_5k", "Puerta del Sol en Nochevieja",
+         "Entra 5.000 veces a un canal de voz.", L),
+    ])  # fmt: skip
+    a += more("voice_moves", "voice_hops", [
+        (2_000, "hops_2k", "Tránsfuga profesional",
+         "Cambia de canal de voz 2.000 veces.", L),
+    ])  # fmt: skip
+    a += more("voice_moves", "voice_ghost", [
+        (100, "ghost_100", "Fantasma de la Moncloa",
+         "Entra en un canal de voz y vete en menos de 15 s, 100 veces.", E, True),
+    ])  # fmt: skip
+    a += more("voice_moves", "entrance_saved", [
+        (50, "entrance_saved_50", "Votante indeciso",
+         "Guarda tu sonido de entrada 50 veces. Decídete ya.", E),
+    ])  # fmt: skip
+    a += more("voice_moves", "entrance_played", [
+        (5_000, "entrance_played_5k", "Himno sin letra",
+         "Que suene tu entrada 5.000 veces.", L),
+    ])  # fmt: skip
+    a += more("music", "music_queued", [
+        (2_000, "queued_2k", "Los 40 Principales",
+         "Pon 2.000 canciones con `poner`.", L),
+    ])  # fmt: skip
+    a += more("music", "voice_music", [
+        (12_000, "voice_music_200h", "Verbena de pueblo",
+         "Pasa 200 horas en llamada con el bot poniendo música.", L),
+    ])  # fmt: skip
+    a += more("music", "music_skips", [
+        (1_000, "skips_1k", "Siguiente, por favor",
+         "Salta 1.000 canciones.", E),
+    ])  # fmt: skip
+    a += more("music", "music_stops", [
+        (100, "stops_100", "El gran apagón",
+         "Para la música con `parar` 100 veces.", E),
+    ])  # fmt: skip
+    a += more("music", "music_removes", [
+        (100, "removes_100", "Lápiz rojo del censor", "Quita 100 canciones de la cola.", E),
+    ])  # fmt: skip
+    a += more("music", "music_clears", [
+        (25, "clears_25", "Borrón y cuenta nueva",
+         "Vacía la cola con `vaciar` 25 veces.", R),
+    ])  # fmt: skip
+    a += more("music", "music_queue_max", [
+        (25, "queue_25", "Lista de espera de la Seguridad Social",
+         "Deja la cola con 25 canciones o más.", E),
+    ])  # fmt: skip
+    a += more("memes", "img_made", [
+        (2_000, "img_2k", "Fábrica de bulos",
+         "Genera 2.000 imágenes con efectos.", L),
+    ])  # fmt: skip
+    a += more("memes", "img_magik", [
+        (1_000, "magik_1k", "Brujería de Estado",
+         "Deforma 1.000 imágenes con `magik`.", E),
+    ])  # fmt: skip
+    a += more("memes", "img_video", [
+        (1_000, "img_video_1k", "Productora de NO-DO",
+         "Genera 1.000 vídeos o GIFs con efectos.", E),
+    ])  # fmt: skip
+    a += more("memes", "img_on_others", [
+        (1_000, "img_others_1k", "Dossier de la máquina del fango",
+         "Aplica un efecto al avatar de otro 1.000 veces.", E),
+    ])  # fmt: skip
+    a += more("memes", "img_self", [
+        (100, "img_self_100", "Selfie presidencial",
+         "Aplica un efecto a tu propio avatar 100 veces.", R),
+    ])  # fmt: skip
+    a += more("memes", "babel_phrases", [
+        (1_000, "babel_1k", "Pinganillo del Senado",
+         "Pasa 1.000 frases por `babel`.", L),
+    ])  # fmt: skip
+    a += more("memes", "babel_renames", [
+        (250, "babel_renames_250", "Nombre en las cuatro lenguas cooficiales",
+         "Cámbiale el apodo a alguien con `babel` 250 veces.", E),
+    ])  # fmt: skip
+    a += more("todo", "todo_done_batch_max", [
+        (50, "todo_batch_50", "Ley ómnibus", "Tacha 50 tareas de la lista de golpe.", E, True),
+    ])  # fmt: skip
+
+    # 🎰 Casino
+    a += more("casino", "casino_all_in_wins", [
+        (50, "all_in_wins_50", "Manual de supervivencia",
+         "Gana 50 all-in.", L),
+    ])  # fmt: skip
+    a += more("casino", "casino_broke", [
+        (200, "broke_200", "Rescate bancario",
+         "Quédate a cero en el casino 200 veces.", L),
+    ])  # fmt: skip
+    a += more("roulette", "roulette_color_wins", [
+        (5_000, "color_5k", "Rojo o negro, como el CIS",
+         "Gana 5.000 apuestas a color.", L),
+    ])  # fmt: skip
+    a += more("roulette", "roulette_dozen_wins", [
+        (2_500, "dozen_2500", "La docena del fraile",
+         "Gana 2.500 apuestas a docena o columna.", L),
+    ])  # fmt: skip
+    a += more("roulette", "roulette_half_wins", [
+        (5_000, "half_5k", "Mitad y mitad, como el Congreso",
+         "Gana 5.000 apuestas a par, impar, 1-18 o 19-36.", L),
+    ])  # fmt: skip
+    a += more("roulette", "roulette_zero_sweep", [
+        (1_000, "zero_sweep_1k", "La casa siempre gana",
+         "Pierde todo 1.000 veces porque sale el 0 o el 00.", L),
+    ])  # fmt: skip
+    a += more("blackjack", "bj_splits", [
+        (100, "bj_splits_100", "Federalismo asimétrico",
+         "Separa 100 parejas.", E),
+    ])  # fmt: skip
+    a += more("blackjack", "bj_double_wins", [
+        (250, "bj_double_250", "Doble o nada (y siempre doble)",
+         "Gana 250 manos después de doblar.", L),
+    ])  # fmt: skip
+    a += more("blackjack", "bj_pushes", [
+        (1_000, "bj_pushes_1k", "Empate técnico en las encuestas", "Empata 1.000 manos.", L),
+    ])  # fmt: skip
+    a += more("blackjack", "bj_dealer_busts", [
+        (2_500, "bj_dealer_busts_2500", "La banca se pasa de frenada",
+         "Gana 2.500 manos porque la banca se pasa.", L),
+    ])  # fmt: skip
+    a += more("blackjack", "bj_21_multi", [
+        (250, "bj_21_multi_250", "Veintiuno a plazos",
+         "Suma 21 con tres cartas o más 250 veces.", E),
+    ])  # fmt: skip
+    a += more("crash", "crash_party_max", [
+        (8, "crash_party_8", "Viaje oficial en el Falcon",
+         "Juega una ronda de crash con 8 personas.", E),
+    ])  # fmt: skip
+    a += more("crash", "crash_cash_low", [
+        (2_500, "crash_low_2500", "Inversor de letras del Tesoro",
+         "Retírate en 1,10x o menos 2.500 veces.", E),
+    ])  # fmt: skip
+    a += more("crash", "crash_last_out", [
+        (10, "crash_last_10", "El último que apague la luz",
+         "Sé el último en retirarse, con más gente aún dentro, 10 veces.", E),
+    ])  # fmt: skip
+    a += more("crash", "crash_missed_moon", [
+        (10, "crash_missed_10", "Me bajé antes de la Luna",
+         "Retírate antes del 2x en 10 rondas que pasan de 100x.", E, True),
+    ])  # fmt: skip
+    a += more("crash", "crash_greedy", [
+        (25, "crash_greedy_25", "Codicia de consejo de administración",
+         "Pierde en 25 rondas que llegaron a 10x.", E, True),
+    ])  # fmt: skip
+    a += more("crash", "crash_auto", [
+        (5_000, "crash_auto_5k", "Piloto automático en el Congreso",
+         "Cobra 5.000 veces con el auto-retiro.", L),
+    ])  # fmt: skip
+    a += more("crash", "crash_close", [
+        (100, "crash_close_100", "Por los pelos, otra vez",
+         "Retírate a menos de un 5 % de la explosión 100 veces.", L),
+    ])  # fmt: skip
+
+    # 🛍️ Tienda, 🏦 Banco, 🎟️ Loterías y 🏛️ Hacienda
+    a += more("shop", "shop_renewals", [
+        (100, "renewals_100", "Suscriptor de por vida",
+         "Renueva alquileres de rol 100 veces.", L),
+    ])  # fmt: skip
+    a += more("shop", "shop_sale_buys", [
+        (500, "sale_500", "Cazador del Black Friday", "Compra 500 cosas rebajadas.", L),
+    ])  # fmt: skip
+    a += more("bizum", "bizum_received_count", [
+        (500, "bizum_recv_500", "Mantenido",
+         "Recibe 500 Bizums.", L),
+    ])  # fmt: skip
+    a += more("bizum", "bizum_min", [
+        (250, "bizum_min_250", "Bizum de céntimos",
+         "Manda 250 Bizums de 5 Y$, el mínimo.", E, True),
+    ])  # fmt: skip
+    a += more("lottery", "lottery_reintegros", [
+        (5_000, "reintegros_5k", "Me ha tocado (lo mismo que jugué)", "Cobra 5.000 reintegros.", L),
+    ])  # fmt: skip
+    a += more("lottery", "lottery_nino", [
+        (100, "nino_100", "Carta a los Reyes Magos",
+         "Compra 100 décimos del Niño.", E),
+    ])  # fmt: skip
+    a += more("economy", "tax_refunds", [
+        (500, "refunds_500", "Devolución por domiciliación",
+         "Recupera IRPF del casino 500 veces perdiendo el mismo día.", L),
+    ])  # fmt: skip
+    a += more("economy", "renta_filed", [
+        (104, "renta_104", "Dos años sin faltar a la cita",
+         "Presenta la renta 104 semanas. Perro Sanxe te manda una felicitación de Navidad.", M),
+    ])  # fmt: skip
+    a += more("economy", "donated", [
+        (10_000_000, "donated_10m", "Mecenas de chiringuitos", "Dona 10.000.000 Y$ a ONGs.", M),
+    ])  # fmt: skip
+    a += more("economy", "imv_claims", [
+        (730, "imv_730", "Pensión vitalicia de expresidente", "Cobra el IMV 730 veces.", M, True),
+    ])  # fmt: skip
+
+    # 🪏 Trabajo y oficios
+    a += more("work", "work_promotions", [
+        (50, "promotions_50", "Ascenso por enchufe", "Consigue 50 ascensos.", L),
+    ])  # fmt: skip
+    a += more("work", "work_job_changes", [
+        (100, "job_changes_100", "Vida laboral de 40 páginas",
+         "Cambia de oficio 100 veces.", L),
+    ])  # fmt: skip
+    a += more("work", "work_night", [
+        (500, "work_night_500", "Turno de noche perpetuo",
+         "Ficha 500 veces entre las 0:00 y las 6:00.", M),
+    ])  # fmt: skip
+    a += more("jobs", "work_tip", [
+        (500, "tip_500", "Propina sin declarar",
+         "Guárdate 500 propinas en el bolsillo.", E),
+    ])  # fmt: skip
+    a += more("jobs", "work_happy_clients", [
+        (1_000, "happy_1k", "Trato de cinco estrellas",
+         "Atiende bien 1.000 marrones.", L),
+    ])  # fmt: skip
+    a += more("jobs", "work_slackers", [
+        (500, "slackers_500", "Capataz de la obra", "Pilla a 500 escaqueados.", L),
+    ])  # fmt: skip
+    a += more("jobs", "work_dodged", [
+        (500, "dodged_500", "Esquiva preguntas como en el Senado",
+         "Esquiva 500 preguntas en rueda de prensa.", L),
+    ])  # fmt: skip
+    a += more("jobs", "work_perfect_votes", [
+        (1_000, "votes_1k", "Rodillo parlamentario",
+         "Vota 1.000 veces lo que diga el partido.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_guards", [
+        (500, "guards_500", "Guardia eterna", "Haz 500 guardias.", M),
+    ])  # fmt: skip
+    a += more("sanidad", "work_stretcher", [
+        (1_000, "stretcher_1k", "Celador de oro",
+         "Haz 1.000 traslados perfectos.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_rounds", [
+        (1_000, "rounds_1k", "Pase de planta infinito",
+         "Haz 1.000 rondas perfectas en planta.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_google", [
+        (500, "google_500", "Doctor Google, colegiado",
+         "Gana 500 consultas.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_aggressive", [
+        (100, "aggressive_100", "Chaleco antibalas en urgencias",
+         "Sobrevive a 100 familiares alterados.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_shift_swap", [
+        (100, "swap_100", "Cuadrante imposible",
+         "Acepta 100 cambios de turno.", L),
+    ])  # fmt: skip
+    a += more("sanidad", "work_waitlist", [
+        (50, "waitlist_50", "Lista de espera quirúrgica",
+         "«Optimiza» la lista de espera 50 veces.", L, True),
+    ])  # fmt: skip
+    a += more("oficina", "work_coffee_orders", [
+        (1_000, "coffee_1k", "Becario eterno",
+         "Acierta 1.000 rondas de cafés.", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_reviews", [
+        (500, "reviews_500", "Revisor implacable",
+         "Para 500 cambios peligrosos.", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_meetings", [
+        (500, "meetings_500", "Podría haber sido un correo",
+         "Acorta 500 reuniones.", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_remote", [
+        (1_000, "remote_1k", "Teletrabajo desde Fuerteventura",
+         "Teletrabaja 1.000 turnos.", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_office", [
+        (1_000, "office_shifts_1k", "Mueble de la oficina",
+         "Ve a la oficina 1.000 turnos (que te vean).", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_useless_meeting", [
+        (250, "useless_250", "Comisión de investigación",
+         "Ve a 250 reuniones inútiles.", L),
+    ])  # fmt: skip
+    a += more("oficina", "work_disconnect", [
+        (100, "disconnect_100", "Derecho a la desconexión (de verdad)",
+         "No contestes fuera de hora 100 veces.", L),
+    ])  # fmt: skip
+    a += more("hongkong", "work_jetlag", [
+        (500, "jetlag_500", "Reloj biológico en Kowloon",
+         "Ficha 500 veces desde Hong Kong cuando en Canarias es de madrugada.", L),
+    ])  # fmt: skip
+    a += more("hongkong", "hk_clock_tomorrow", [
+        (500, "hk_tomorrow_500", "Viviendo en el futuro",
+         "Mira 500 veces la hora cuando en Hong Kong ya es mañana.", E),
+    ])  # fmt: skip
+    a += more("hongkong", "hk_clock_sleeping", [
+        (250, "hk_sleeping_250", "Robuso tiene el móvil en silencio",
+         "Mira 250 veces la hora cuando en Hong Kong son entre las 2:00 y las 6:00.", E),
+    ])  # fmt: skip
+    a += more("hongkong", "hk_clock_lunch", [
+        (250, "hk_lunch_250", "Dim sum a distancia",
+         "Mira 250 veces la hora cuando Robuso está almorzando.", E),
+    ])  # fmt: skip
+
+    # 🔀 Logros cruzados: piden cosas de varias funcionalidades a la vez
+    a += [
+        combo("x_funcionario", "Funcionario modelo",
+              "Escribe 1.000 mensajes en horario de oficina y trabaja 100 turnos. "
+              "¿Cuándo trabajas?",
+              "work", E, (("msg_office", 1_000), ("work_shifts", 100))),
+        combo("x_paguita_casino", "La paguita al casino",
+              "Cobra el IMV 100 veces y apuesta 1.000.000 Y$. El dinero público, bien invertido.",
+              "casino", E, (("imv_claims", 100), ("casino_wagered", 1_000_000))),
+        combo("x_ludopata_nomina", "Trabajo para el casino",
+              "Trabaja 100 turnos y quédate a cero 10 veces en el casino.",
+              "casino", E, (("work_shifts", 100), ("casino_broke", 10)), secret=True),
+        combo("x_contribuyente", "Contribuyente ejemplar",
+              "Paga 100.000 Y$ de IRPF, presenta la renta 10 veces y dona 10.000 Y$.",
+              "economy", L, (("tax_paid", 100_000), ("renta_filed", 10), ("donated", 10_000))),
+        combo("x_noctambulo", "Vampiro de la Moncloa",
+              "Escribe 1.000 mensajes de madrugada, pasa 50 h en llamada de madrugada "
+              "y trabaja 25 turnos de noche.",
+              "time", L, (("msg_night", 1_000), ("voice_night", 3_000), ("work_night", 25))),
+        combo("x_canario", "Canario de pura cepa",
+              "Habla en canario 100 veces y escribe el Día de Canarias y el día del Pino.",
+              "lengua", R, (("msg_canario", 100), ("msg_canarias", 1), ("msg_pino", 1))),
+        combo("x_hombre_orquesta", "Hombre orquesta",
+              "Pon 50 canciones, haz 50 imágenes, pasa 25 frases por babel y apunta 25 tareas.",
+              "memes", R, (("music_queued", 50), ("img_made", 50), ("babel_phrases", 25),
+                           ("todo_added", 25))),
+        combo("x_tombola", "Tómbola nacional",
+              "Haz 50 apuestas de lotería y rasca 100 rascas.",
+              "lottery", R, (("lottery_bets", 50), ("lottery_scratches", 100))),
+        combo("x_rey_llamada", "Presidente de la llamada",
+              "Pasa 500 h en llamada, coincide con 10 personas y comparte pantalla 10 h.",
+              "voice", L, (("voice_minutes", 30_000), ("voice_crowd_max", 10),
+                           ("voice_stream", 600))),
+        combo("x_influencer", "Influencer del servidor",
+              "Recibe 5.000 reacciones, haz reír 100 veces y crea 50 imágenes.",
+              "social", E, (("reactions_received", 5_000), ("laughs_caused", 100),
+                            ("img_made", 50))),
+        combo("x_hormiga_cigarra", "Hormiga y cigarra a la vez",
+              "Cobra 10.000 Y$ de intereses y apuesta 1.000.000 Y$ en el casino.",
+              "bizum", E, (("interest_earned", 10_000), ("casino_wagered", 1_000_000))),
+        combo("x_ruleta_fiscal", "Ingeniería fiscal",
+              "Juégatelo todo 10 veces y cobra 10 devoluciones de Hacienda.",
+              "economy", E, (("casino_all_in", 10), ("tax_refunds", 10)), secret=True),
+        combo("x_bienestar", "Estado del bienestar",
+              "Cobra el IMV 30 veces, trabaja 100 turnos, manda 25 Bizums y dona 10.000 Y$.",
+              "economy", E, (("imv_claims", 30), ("work_shifts", 100), ("bizum_sent_count", 25),
+                             ("donated", 10_000))),
+        combo("x_comisionista", "Comisionista",
+              "Mueve 100.000 Y$ en Bizum y cobra una mordida en política.",
+              "jobs", L, (("bizum_sent", 100_000), ("work_kickback", 1)), secret=True),
+        combo("x_puerta_giratoria", "Consejero de una eléctrica",
+              "Cambia de trabajo 5 veces y de canal de voz 100. Siempre caes de pie.",
+              "work", R, (("work_job_changes", 5), ("voice_hops", 100))),
+        combo("x_casino_royale", "Casino Royale",
+              "Juega 1.000 partidas a ruleta, blackjack, tragaperras, "
+              "crash, minas, pollo y pachinko.",
+              "casino", L, tuple((stat, 1_000) for stat in (
+                  "roulette_spins", "bj_hands", "slots_spins", "crash_rounds", "mines_games",
+                  "chicken_games", "pachinko_volleys"))),
+        combo("x_hongkones", "Pasaporte de Hong Kong",
+              "Trabaja 100 turnos en Hong Kong y mira su hora 100 veces.",
+              "hongkong", E, (("work_hk_shifts", 100), ("hk_clock", 100))),
+        combo("x_rueda_prensa", "Comparecencia sin preguntas",
+              "Haz 500 preguntas y pasa 20 h muteado. Preguntas, pero no escuchas.",
+              "convo", R, (("msg_questions", 500), ("voice_muted", 1_200)), secret=True),
+        combo("x_todoterreno", "Navaja suiza",
+              "Escribe 10.000 mensajes, pasa 100 h en llamada, trabaja 100 turnos "
+              "y apuesta 100.000 Y$ en el casino.",
+              "chat", L, (("messages_total", 10_000), ("voice_minutes", 6_000),
+                          ("work_shifts", 100), ("casino_wagered", 100_000))),
+        combo("x_gestor", "Gestor de lo pendiente",
+              "Apunta 100 tareas y tacha 100.",
+              "todo", E, (("todo_added", 100), ("todo_done", 100))),
+        combo("x_madrugador_total", "Gallo y panadero",
+              "Sé el primero del día 30 veces y escribe 1.000 mensajes por la mañana.",
+              "convo", E, (("msg_first_of_day", 30), ("msg_morning", 1_000))),
+        combo("x_dj_entrada", "Entrada triunfal con banda sonora",
+              "Que tu entrada suene 100 veces y pon 50 canciones.",
+              "voice_moves", R, (("entrance_played", 100), ("music_queued", 50))),
+    ]  # fmt: skip
+
     # 🏆 Coleccionista --------------------------------------------------------------------
     # Se miden con estadísticas virtuales que salen de los logros ya conseguidos
     # (`meta_stats`), nunca de contadores guardados.
