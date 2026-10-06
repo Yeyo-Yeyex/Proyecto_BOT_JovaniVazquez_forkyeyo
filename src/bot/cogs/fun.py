@@ -46,7 +46,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.services.achievements import StatDelta, hong_kong_clock_stats
+from bot.services.achievements import StatDelta, babel_stats, hong_kong_clock_stats
 from bot.services.babel import (
     HOME_LANGUAGE,
     LANGUAGES,
@@ -230,6 +230,16 @@ def channel_refusal(
     return None
 
 
+def _babel_delta(result: BabelResult, *, members: int = 0, channels: int = 0) -> StatDelta:
+    """Logros de una tirada: frase o nombres, si dio la vuelta entera o se perdió."""
+    return babel_stats(
+        renamed_members=members,
+        renamed_channels=channels,
+        completed=not result.stopped_early and result.final_language == HOME_LANGUAGE,
+        lost=result.final_language != HOME_LANGUAGE,
+    )
+
+
 def only_mentions(text: str) -> bool:
     """`True` si el texto no tiene nada más que menciones (y espacios)."""
     return bool(_ANY_MENTION.search(text)) and not _ANY_MENTION.sub("", text).strip()
@@ -329,6 +339,7 @@ class Fun(commands.Cog):
                 embed=build_result_embed(result),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+        logros.note_for(self.bot, responder, _babel_delta(result))
 
     async def _collect_targets(
         self, guild: discord.Guild, invoker: discord.Member, text: str
@@ -409,6 +420,7 @@ class Fun(commands.Cog):
             result = await self._run(responder, joined, translate)
 
             changes: list[str] = []
+            changes_by_target = [False] * len(targets)
             failures = list(refused)
             new_texts = result.final.split("\n")
             if result.hops == 0:
@@ -418,14 +430,26 @@ class Fun(commands.Cog):
                 failures.append("La cadena se cortó antes de volver al español; no he tocado nada.")
             else:
                 reason = f"babel, pedido por {invoker} ({invoker.id})"
-                for target, new_text in zip(targets, new_texts, strict=True):
+                for index, (target, new_text) in enumerate(zip(targets, new_texts, strict=True)):
                     line = await self._apply(target, target.new_name(new_text), reason)
                     (changes if line.startswith("✅") else failures).append(line)
+                    changes_by_target[index] = line.startswith("✅")
 
             await responder.finish(
                 embed=build_rename_embed(result, changes, failures),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
+            renamed = [t for t, line in zip(targets, changes_by_target, strict=True) if line]
+            if renamed or result.final_language != HOME_LANGUAGE:
+                logros.note_for(
+                    self.bot,
+                    responder,
+                    _babel_delta(
+                        result,
+                        members=sum(1 for t in renamed if not t.is_channel),
+                        channels=sum(1 for t in renamed if t.is_channel),
+                    ),
+                )
 
     async def _apply(self, target: RenameTarget, new_name: str, reason: str) -> str:
         """Aplica un nombre nuevo y devuelve la línea del resultado para el embed."""

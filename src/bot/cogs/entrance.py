@@ -32,7 +32,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
 from bot.repositories.entrance_sounds import EntranceSoundStore
+from bot.services.achievements import StatDelta
 from bot.services.entrance_sound import (
     DEFAULT_VOLUME_PERCENT,
     MAX_CLIP_SECONDS,
@@ -137,6 +139,8 @@ class Entrance(commands.Cog):
                 await responder.send_error("Para borrar tu sonido, usa `borrar` sin nada más.")
                 return
             removed = await self.store.delete(guild.id, member.id)
+            if removed:
+                logros.note_for(self.bot, responder, StatDelta(add={"entrance_deleted": 1}))
             text = "🗑️ Sonido de entrada borrado." if removed else "No tenías sonido de entrada."
             await responder.send(text, ephemeral=True)
             return
@@ -177,6 +181,14 @@ class Entrance(commands.Cog):
             await responder.finish("Algo salió mal al preparar el sonido.")
             return
 
+        logros.note_for(
+            self.bot,
+            responder,
+            StatDelta(
+                add={"entrance_saved": 1} if attachment is not None else {},
+                peak={"entrance_volume_max": final_volume},
+            ),
+        )
         seconds = len(read_opus_packets(clip)) * PACKET_SECONDS
         content = (
             f"✅ Sonido de entrada guardado ({seconds:.1f} s, volumen {final_volume} %). "
@@ -379,6 +391,9 @@ class Entrance(commands.Cog):
                     break
 
                 await self._play(voice, packets)
+                logros.note(
+                    self.bot, guild.id, member_id, StatDelta(add={"entrance_played": 1}), channel.id
+                )
                 if not voice.is_connected():
                     # Nos desconectaron (o la música tomó la voz): no se insiste.
                     queue.clear()

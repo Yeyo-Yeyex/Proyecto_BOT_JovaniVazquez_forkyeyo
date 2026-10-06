@@ -131,11 +131,11 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
 **Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor, y una funcionalidad con tres logros se queda corta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira de la España actual de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la burocracia. Sin nombrar a personas reales que no sean figuras públicas.
 
-El menú de `logros` admite 25 opciones (Resumen y 24 entradas), el máximo de un desplegable de Discord. Todos los juegos del casino van en una sola entrada, 🎰 Casino (`CASINO_GROUP`): cada juego es una sección (`Category(..., group=CASINO_GROUP.key)`) que se abre con un segundo menú. Un juego nuevo del casino añade su sección ahí (como 🐔 Pollo) y no ocupa sitio en el menú principal. Cualquier otra funcionalidad nueva entra en una categoría existente afín (como la cuenta remunerada en 🏦 Banco, con el Bizum) o en una entrada nueva mientras quepa; `tests/unit/test_achievements.py` comprueba el límite.
+El menú de `logros` admite 25 opciones (Resumen y 24 entradas), el máximo de un desplegable de Discord. Hay tres grupos que ocupan una sola entrada cada uno y abren sus secciones con un segundo menú: 💬 Chat (`CHAT_GROUP`), 🎙️ Voz (`VOICE_GROUP`) y 🎰 Casino (`CASINO_GROUP`). Cada sección es una categoría con `group=...`. Un juego nuevo del casino añade su sección en 🎰 Casino (como 🐔 Pollo); algo nuevo de texto o de voz, en su grupo. Una categoría no puede pasar de unos 50 logros, porque su página es un embed de 4.096 caracteres como mucho: si crece, se parte en dos secciones (como 😂 Risas y 🤡 Hacer reír). Cualquier otra funcionalidad nueva entra en una categoría existente afín (como la cuenta remunerada en 🏦 Banco, con el Bizum) o en una entrada nueva mientras quepa; `tests/unit/test_achievements.py` comprueba el límite.
 
 `pala` los alimenta con `work_stats` (turnos) y con estadísticas sueltas desde el panel y los eventos (categorías 🪏 Trabajo y 👷 Oficios); un oficio nuevo añade los suyos en 👷 Oficios.
 
-Funcionalidades que todavía no los tienen y deben tenerlos: música, imagen (`magik` y efectos), sonidos de entrada y `babel`. Al tocar cualquiera de ellas, se añaden.
+Música, imagen (`magik` y efectos), sonidos de entrada y `babel` los alimentan con `achievements.note_for(bot, responder, delta)`, que saca servidor, miembro y canal del `CommandResponder`. Las risas se detectan en `analyze_laugh`: una forma nueva de reírse se añade ahí, con su prueba y comprobando que no choca con palabras normales.
 
 Cómo alimentar los logros (`bot.cogs.achievements`):
 

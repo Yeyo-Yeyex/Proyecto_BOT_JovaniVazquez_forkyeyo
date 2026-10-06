@@ -24,6 +24,8 @@ import yt_dlp
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import achievements as logros
+from bot.services.achievements import StatDelta, music_queue_stats, music_volume_stats
 from bot.services.music import (
     DEFAULT_VOLUME_PERCENT,
     MAX_VOLUME_PERCENT,
@@ -206,6 +208,16 @@ class Music(commands.Cog):
             if starting_now:
                 await self._play_next(guild.id)
 
+        logros.note_for(
+            self.bot,
+            responder,
+            music_queue_stats(
+                query=consulta,
+                title=track.title,
+                duration_seconds=track.duration_seconds,
+                position=1 if starting_now else position,
+            ),
+        )
         if starting_now:
             await responder.finish(
                 f"▶️ Reproduciendo ahora: **{track.title}** "
@@ -402,6 +414,7 @@ class Music(commands.Cog):
             await responder.send_error("No hay ninguna pista que saltar.")
             return
         state.voice_client.stop()
+        logros.note_for(self.bot, responder, StatDelta(add={"music_skips": 1}))
         await responder.send("⏭️ Pista saltada.")
 
     @app_commands.command(name="parar", description="Detiene la música y desconecta al bot.")
@@ -423,6 +436,7 @@ class Music(commands.Cog):
             return
         async with state.lock:
             await self._disconnect(state)
+        logros.note_for(self.bot, responder, StatDelta(add={"music_stops": 1}))
         await responder.send("⏹️ Música detenida y bot desconectado.")
 
     @app_commands.command(name="cola", description="Muestra la canción actual y la cola.")
@@ -489,6 +503,7 @@ class Music(commands.Cog):
             except IndexError:
                 await responder.send_error(f"No hay ninguna pista en la posición {posicion}.")
                 return
+        logros.note_for(self.bot, responder, StatDelta(add={"music_removes": 1}))
         await responder.send(f"🗑️ Se quitó de la cola: **{track.title}**.")
 
     @app_commands.command(name="vaciar", description="Vacía la cola sin parar la canción actual.")
@@ -510,6 +525,7 @@ class Music(commands.Cog):
             return
         async with state.lock:
             state.queue.clear()
+        logros.note_for(self.bot, responder, StatDelta(add={"music_clears": 1}))
         await responder.send("🧹 Cola vaciada.")
 
     @app_commands.command(name="volumen", description="Cambia el volumen (1-200%).")
@@ -548,6 +564,7 @@ class Music(commands.Cog):
             state.voice_client.source, discord.PCMVolumeTransformer
         ):
             state.voice_client.source.volume = volume_percent_to_factor(valor)
+        logros.note_for(self.bot, responder, music_volume_stats(valor))
         await responder.send(f"🔊 Volumen ajustado al {valor}%.")
 
     @commands.Cog.listener()

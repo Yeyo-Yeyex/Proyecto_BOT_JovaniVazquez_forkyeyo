@@ -13,8 +13,12 @@ Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
 `crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`,
-`casino_stats`, `shop_stats`, `bizum_stats`) y se
-lo pasan al cog de logros.
+`casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
+`voice_move_stats`, `music_queue_stats`, `image_stats`, `babel_stats`…) y se
+lo pasan al cog de logros. Las risas escritas las reconoce `analyze_laugh`.
+
+Los de 🏆 Coleccionista no tienen contadores propios: salen de los logros ya
+conseguidos (`meta_stats`) cada vez que se evalúa.
 
 Para añadir un logro basta con una línea en el catálogo (`_build_catalog`).
 Si usa una estadística nueva, el juego que la produce tiene que sumarla.
@@ -24,9 +28,10 @@ Los `id` no se cambian nunca: son lo que se guarda en la base de datos.
 from __future__ import annotations
 
 import re
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -130,13 +135,28 @@ class Group:
 
 #: Todos los juegos del casino van juntos en una sola entrada del menú.
 CASINO_GROUP = Group("casino_group", "🎰 Casino")
-GROUPS: dict[str, Group] = {CASINO_GROUP.key: CASINO_GROUP}
+#: El chat (mensajes, risas, lengua, imágenes…) también, con una sección por tema.
+CHAT_GROUP = Group("chat_group", "💬 Chat")
+#: Y la voz: llamada, micro y cámara, entradas y música.
+VOICE_GROUP = Group("voice_group", "🎙️ Voz")
+GROUPS: dict[str, Group] = {g.key: g for g in (CHAT_GROUP, VOICE_GROUP, CASINO_GROUP)}
 
 _CG = CASINO_GROUP.key
+_CH = CHAT_GROUP.key
+_VG = VOICE_GROUP.key
 CATEGORIES: tuple[Category, ...] = (
-    Category("chat", "💬 Chat"),
-    Category("time", "🗓️ Horarios y fechas"),
-    Category("voice", "🎙️ Voz"),
+    Category("chat", "💬 General", group=_CH),
+    Category("style", "✍️ Estilo", group=_CH),
+    Category("laughs", "😂 Risas", group=_CH),
+    Category("funny", "🤡 Hacer reír", group=_CH),
+    Category("lengua", "🗣️ Lengua y temas", group=_CH),
+    Category("convo", "🧵 Conversación", group=_CH),
+    Category("time", "🗓️ Horarios y fechas", group=_CH),
+    Category("memes", "🖼️ Imágenes y Babel", group=_CH),
+    Category("voice", "🎙️ Llamada", group=_VG),
+    Category("voice_mic", "🎚️ Micro, cámara y AFK", group=_VG),
+    Category("voice_moves", "🚪 Entradas y salidas", group=_VG),
+    Category("music", "🎵 Música", group=_VG),
     Category("social", "❤️ Social"),
     Category("todo", "📝 Lista"),
     Category("levels", "📈 Niveles"),
@@ -237,6 +257,12 @@ class Achievement:
 UNLOCKED_STAT = "achievements"
 #: Estadística virtual: mensajes contados en vivo más los del historial importado.
 MESSAGES_TOTAL_STAT = "messages_total"
+#: Prefijo de los contadores de cada efecto de imagen (`img_fx_magik`, `img_fx_gay`…).
+IMG_EFFECT_PREFIX = "img_fx_"
+#: Estadística virtual: efectos de imagen distintos que ha usado el miembro.
+IMG_EFFECTS_STAT = "img_effects_tried"
+#: Tipos de risa que distingue `analyze_laugh`. Cada uno suma `laugh_<tipo>`.
+LAUGH_KINDS = ("es", "en", "emoji", "skull", "smash", "intl", "phrase", "xd")
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
@@ -446,26 +472,322 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "sticker_10", "Pegatinero", "Manda 10 stickers.", C),
         (100, "sticker_100", "Álbum completo", "Manda 100 stickers.", R),
     ])  # fmt: skip
-    a += _tiers("chat", "msg_long", [
+    a += _tiers("style", "msg_long", [
         (1, "long_1", "Me explayo", "Escribe un mensaje de 600 caracteres o más.", C),
         (25, "long_25", "Escribes biblias", "Escribe 25 mensajes de 600 caracteres o más.", R),
         (100, "long_100", "Premio Planeta", "Escribe 100 mensajes de 600 caracteres o más.", E),
     ])  # fmt: skip
-    a += _tiers("chat", "msg_short", [
+    a += _tiers("style", "msg_short", [
         (100, "short_100", "Monosílabo", "Manda 100 mensajes de 3 caracteres o menos.", C),
         (1_000, "short_1k", "k.", "Manda 1.000 mensajes de 3 caracteres o menos.", R),
     ])  # fmt: skip
-    a += _tiers("chat", "msg_caps", [
+    a += _tiers("style", "msg_caps", [
         (10, "caps_10", "NO GRITES", "Escribe 10 mensajes TODO EN MAYÚSCULAS.", C),
         (100, "caps_100", "BLOQ MAYÚS ROTO", "Escribe 100 mensajes TODO EN MAYÚSCULAS.", R),
     ])  # fmt: skip
-    a += _tiers("chat", "msg_xd", [
+
+    a += _tiers("chat", MESSAGES_TOTAL_STAT, [
+        (500_000, "chat_500k", "Más páginas que el BOE", "Escribe 500.000 mensajes.", M, True),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_caps", [
+        (1_000, "caps_1k", "MEGÁFONO DE MANIFESTACIÓN", "Escribe 1.000 mensajes en mayúsculas.", E),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_questions", [
+        (5_000, "ask_5k", "¿Y tú qué opinas?", "Haz 5.000 preguntas.", E),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_links", [
+        (2_500, "link_2500", "Hemeroteca digital", "Comparte 2.500 enlaces.", E),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_stickers", [
+        (1_000, "sticker_1k", "Coleccionista de cromos", "Manda 1.000 stickers.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_rae", [
+        (10, "rae_10", "Abre interrogación",
+         "Empieza 10 mensajes con ¿ o ¡, como manda la RAE.", C),
+        (100, "rae_100", "Sillón de la RAE", "Empieza 100 mensajes con ¿ o ¡.", R),
+        (1_000, "rae_1k", "Académico de número", "Empieza 1.000 mensajes con ¿ o ¡.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_exclaim", [
+        (25, "exclaim_25", "¡¡¡Enfático!!!", "Escribe «!!!» en 25 mensajes.", C),
+        (250, "exclaim_250", "Telepredicador", "Escribe «!!!» en 250 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_everyone", [
+        (1, "everyone_1", "Megafonía de Renfe",
+         "Menciona a @everyone o @here. El tren de las 8:15 lleva retraso.", C, True),
+        (10, "everyone_10", "Presidente de la comunidad de vecinos",
+         "Menciona a @everyone o @here 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_mass_ping", [
+        (1, "mass_ping_1", "Convocatoria de huelga general",
+         "Menciona a 5 personas o más en un mismo mensaje.", R),
+        (10, "mass_ping_10", "Liberado sindical del chat",
+         "Convoca a 5 personas o más en 10 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_spoiler", [
+        (10, "spoiler_10", "Sin spoilers", "Esconde algo con ||spoiler|| en 10 mensajes.", C),
+        (100, "spoiler_100", "Secreto oficial", "Usa ||spoiler|| en 100 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_code", [
+        (10, "code_10", "Hackerman", "Escribe código (`así`) en 10 mensajes.", C),
+        (100, "code_100", "Copiado de Stack Overflow", "Escribe código en 100 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_emoji_heavy", [
+        (10, "emoji_heavy_10", "Jeroglífico", "Mete 5 emojis o más en 10 mensajes.", C),
+        (100, "emoji_heavy_100", "Piedra Rosetta", "Mete 5 emojis o más en 100 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_only_emoji", [
+        (50, "only_emoji_50", "Hablo en emoji", "Manda 50 mensajes hechos solo de emojis.", C),
+        (500, "only_emoji_500", "Generación 🗿", "Manda 500 mensajes solo de emojis.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_stretch", [
+        (10, "stretch_10", "Holaaaaaaa", "Repite una letra 6 veces seguidas en 10 mensajes.", C),
+        (100, "stretch_100", "Alargador de vocaleeeees", "Estira letras en 100 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_long_word", [
+        (1, "long_word", "Esternocleidomastoideo",
+         "Escribe una palabra de 20 letras o más.", C, True),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_palindrome", [
+        (1, "palindrome", "Dábale arroz a la zorra el abad",
+         "Escribe un mensaje que se lea igual al revés (9 letras o más).", E, True),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_nice", [
+        (1, "nice", "Nice", "Escribe el número 69. Nice.", C, True),
+    ])  # fmt: skip
+
+    # 😂 Risas ----------------------------------------------------------------------------
+    a += _tiers("laughs", "msg_laughs", [
+        (1, "laugh_1", "Primera sonrisa", "Ríete por escrito por primera vez.", C),
+        (10, "laugh_10", "Risa floja", "Ríete en 10 mensajes.", C),
+        (100, "laugh_100", "Jajajaja", "Ríete (jaja, jsjs, lol, 😂…) en 100 mensajes.", C),
+        (1_000, "laugh_1k", "Risa enlatada", "Ríete en 1.000 mensajes.", R),
+        (5_000, "laugh_5k", "Joker", "Ríete en 5.000 mensajes.", E),
+        (10_000, "laugh_10k", "Hiena profesional", "Ríete en 10.000 mensajes.", L),
+        (25_000, "laugh_25k", "Hiena alfa", "Ríete en 25.000 mensajes. ¿Estás bien?", M),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_es", [
+        (500, "laugh_es_500", "Jajajólogo", "Ríete a la española (jaja, jsjs, ajaj) 500 veces.", R),
+        (5_000, "laugh_es_5k", "Catedrático del jajaja", "Ríete a la española 5.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_en", [
+        (50, "laugh_en_50", "Anglicismo risueño", "Ríete en inglés (haha, lol, lmao) 50 veces.", C),
+        (500, "laugh_en_500", "LMAO certificado", "Ríete en inglés 500 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "msg_xd", [
         (100, "xd_100", "xd", "Escribe «xd» en 100 mensajes.", C),
         (1_000, "xd_1k", "XDDDDDD", "Escribe «xd» en 1.000 mensajes.", R),
+        (10_000, "xd_10k", "Fósil de 2012", "Escribe «xd» en 10.000 mensajes.", E),
     ])  # fmt: skip
-    a += _tiers("chat", "msg_laughs", [
-        (100, "laugh_100", "Jajajaja", "Ríete (jaja, jsjs, lol…) en 100 mensajes.", C),
-        (1_000, "laugh_1k", "Risa enlatada", "Ríete en 1.000 mensajes.", R),
+    a += _tiers("laughs", "laugh_emoji", [
+        (25, "laugh_emoji_25", "Lágrima fácil", "Ríete con 😂, 🤣 o un emoji de risa 25 veces.", C),
+        (500, "laugh_emoji_500", "Emoji del año 2015", "Ríete con emojis 500 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_skull", [
+        (10, "laugh_skull_10", "Me morí 💀", "Mándale un 💀 a un chiste 10 veces.", C),
+        (200, "laugh_skull_200", "Cementerio de chistes", "Usa 💀 o ☠️ en 200 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_smash", [
+        (10, "laugh_smash_10", "Teclado aporreado", "Aporrea el teclado (ajsjsjs) 10 veces.", C),
+        (100, "laugh_smash_100", "asdfghjklñ", "Aporrea el teclado 100 veces. Cómprate otro.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_intl", [
+        (1, "laugh_intl_1", "Risa sin fronteras",
+         "Ríete en otro idioma: kkkk, rsrs, mdr, wwww, ㅋㅋ, 哈哈, хаха…", R, True),
+        (50, "laugh_intl_50", "Erasmus de la risa", "Ríete en otros idiomas 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_phrase", [
+        (10, "laugh_phrase_10", "Me meo",
+         "Ríete con palabras (me meo, me parto, lloro) 10 veces.", C),
+        (100, "laugh_phrase_100", "Descojonado", "Ríete con palabras 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "msg_laugh_caps", [
+        (10, "laugh_caps_10", "CARCAJADA", "Ríete EN MAYÚSCULAS en 10 mensajes.", C),
+        (100, "laugh_caps_100", "TERREMOTO DE RISA", "Ríete en mayúsculas en 100 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "msg_laugh_dry", [
+        (10, "laugh_dry_10", "Ja.", "Responde «ja.» 10 veces. Risa de funcionario a las 14:59.", C),
+        (100, "laugh_dry_100", "Me río por compromiso", "Ríete en seco («jaja.») 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_night", [
+        (25, "laugh_night_25", "Hiena nocturna",
+         "Ríete en 25 mensajes entre las 2:00 y las 6:00.", R),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_sanxe", [
+        (1, "laugh_sanxe", "Reírse de Hacienda (mientras puedas)",
+         "Ríete en un mensaje que nombre a Hacienda o a Perro Sanxe.", R, True),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_len_max", [
+        (20, "laugh_len_20", "Ataque de risa", "Escribe una risa de 20 letras o más.", C),
+        (50, "laugh_len_50", "Me falta el aire", "Escribe una risa de 50 letras o más.", R),
+        (100, "laugh_len_100", "Ingresado por risa", "Escribe una risa de 100 letras.", E, True),
+    ])  # fmt: skip
+    a += _tiers("laughs", "laugh_kinds_max", [
+        (3, "laugh_combo_3", "Risa políglota",
+         "Mezcla 3 tipos de risa en un mensaje (jaja lol 😂).", R),
+        (5, "laugh_combo_5", "Bomba de risas", "Mezcla 5 tipos de risa en un mensaje.", E, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="laugh_all_kinds",
+            name="Políglota de la risa",
+            description=(
+                "Ríete de todas las formas: jaja, haha, xd, 😂, 💀, ajsjsjs, kkkk y «me meo»."
+            ),
+            category="laughs",
+            rarity=E,
+            conditions=tuple((f"laugh_{kind}", 1) for kind in LAUGH_KINDS),
+        )
+    )
+    # 🤡 Hacer reír --------------------------------------------------------------------
+    a += _tiers("funny", "laugh_replies", [
+        (50, "laugh_reply_50", "Público fácil", "Ríete respondiendo a 50 mensajes.", C),
+        (500, "laugh_reply_500", "Risas en directo", "Ríete respondiendo a 500 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("funny", "laughs_caused", [
+        (10, "funny_10", "Gracioso", "Que se rían respondiendo a tus mensajes 10 veces.", C),
+        (100, "funny_100", "Payaso oficial", "Haz reír (con respuesta) 100 veces.", R),
+        (1_000, "funny_1k", "Especial de Nochevieja", "Haz reír (con respuesta) 1.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_self", [
+        (1, "laugh_self", "Me río de mis propios chistes",
+         "Responde a un mensaje tuyo con una risa.", C, True),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_at_bot", [
+        (1, "laugh_bot_1", "Jovani me hace gracia", "Ríete respondiendo a un mensaje del bot.", C),
+        (25, "laugh_bot_25", "Fan del bot", "Ríete con el bot 25 veces. Wepa.", R),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_losing", [
+        (1, "laugh_losing", "Ríe por no llorar",
+         "Ríete en el chat con una racha de 5 derrotas seguidas en el casino.", R, True),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_chain_max", [
+        (3, "laugh_chain_3", "Risa contagiosa", "Que 3 personas se rían seguidas en un canal.", C),
+        (5, "laugh_chain_5", "Epidemia de risa", "Que 5 personas se rían seguidas en un canal.", R),
+        (8, "laugh_chain_8", "Pandemia: confinados de la risa",
+         "Que 8 personas se rían seguidas en un canal.", E),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_reacts_given", [
+        (50, "laugh_react_50", "Risa de reacción", "Reacciona con 😂, 🤣 o 💀 a 50 mensajes.", C),
+        (500, "laugh_react_500", "Claque profesional", "Reacciona con risa a 500 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_reacts_received", [
+        (25, "laughed_25", "Haces gracia", "Recibe 25 reacciones de risa.", C),
+        (250, "laughed_250", "Cómico de bar", "Recibe 250 reacciones de risa.", R),
+        (2_500, "laughed_2500", "Monologuista de la tele", "Recibe 2.500 reacciones de risa.", E),
+    ])  # fmt: skip
+    a += _tiers("funny", "laugh_reacts_on_message_max", [
+        (3, "joke_day", "Chiste del día",
+         "Que 3 personas se rían (con reacción) del mismo mensaje.", C),
+        (5, "joke_year", "Chiste del año", "Que 5 personas se rían del mismo mensaje.", R),
+        (10, "joke_decade", "Chiste de la década", "Que 10 personas se rían del mismo mensaje.", E),
+    ])  # fmt: skip
+
+    # 🗣️ Lengua y temas -----------------------------------------------------------------
+    a += _tiers("lengua", "msg_canario", [
+        (10, "canario_10", "¡Chacho!",
+         "Habla en canario (guagua, ños, cotufas…) en 10 mensajes.", C),
+        (100, "canario_100", "Más canario que el gofio", "Habla en canario en 100 mensajes.", R),
+        (1_000, "canario_1k", "Ños, qué fleje", "Habla en canario en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_boricua", [
+        (10, "boricua_10", "Wepa",
+         "Habla en boricua (wepa, bendito, janguear…) en 10 mensajes.", C),
+        (100, "boricua_100", "Boricua honorario", "Habla en boricua en 100 mensajes.", R),
+        (500, "boricua_500", "Más boricua que Jovani", "Habla en boricua en 500 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_swear", [
+        (25, "swear_25", "Lenguaje de taberna", "Suelta una palabrota en 25 mensajes.", C),
+        (250, "swear_250", "Marinero de puerto", "Suelta palabrotas en 250 mensajes.", R),
+        (2_500, "swear_2500", "Mecagüen la mar", "Suelta palabrotas en 2.500 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_mild_swear", [
+        (10, "recorcholis", "¡Recórcholis!",
+         "Di «jolín», «ostras» o «caramba» en 10 mensajes. Qué fino.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_thanks", [
+        (10, "thanks_10", "Bien educado", "Da las gracias en 10 mensajes.", C),
+        (100, "thanks_100", "Tu madre estaría orgullosa", "Da las gracias en 100 mensajes.", R),
+        (1_000, "thanks_1k", "Mayordomo inglés", "Da las gracias en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_sorry", [
+        (1, "sorry_1", "Usted perdone", "Pide perdón en el chat.", C),
+        (25, "sorry_25", "Lo siento mucho, no volverá a ocurrir", "Pide perdón 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_good_morning", [
+        (10, "morning_hi_10", "Buenos días, España", "Da los buenos días 10 veces.", C),
+        (100, "morning_hi_100", "Despertador oficial", "Da los buenos días 100 veces.", R),
+        (365, "morning_hi_365", "Ni un día sin saludar", "Da los buenos días 365 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_good_night", [
+        (10, "night_bye_10", "Mañana más", "Da las buenas noches 10 veces.", C),
+        (100, "night_bye_100", "Cierre de emisión", "Da las buenas noches 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_politics", [
+        (10, "politics_10", "Cuñado en Nochebuena", "Habla de política en 10 mensajes.", C),
+        (100, "politics_100", "Tertuliano de sobremesa", "Habla de política en 100 mensajes.", R),
+        (1_000, "politics_1k", "Todólogo de plató", "Habla de política en 1.000 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_falcon", [
+        (1, "chat_falcon", "Despegue inmediato",
+         "Nombra el Falcon. Ya está calentando motores.", R, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_fango", [
+        (1, "fango", "Máquina del fango", "Habla de bulos, fango o fake news.", R, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_paguita", [
+        (1, "chat_paguita", "¿Y lo mío qué?", "Pregunta por la paguita.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_manual", [
+        (1, "manual", "Lectura obligatoria", "Cita el «Manual de resistencia».", E, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_hacienda", [
+        (1, "hacienda_1", "Hacienda somos todos", "Nombra a Hacienda.", C, True),
+        (50, "hacienda_50", "Asesor fiscal de barra de bar",
+         "Nombra a Hacienda en 50 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_cuñado", [
+        (1, "cunado", "Eso lo arreglaba yo", "Di que eso lo arreglabas tú en dos días.", R, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_ola_k_ase", [
+        (1, "ola_k_ase", "Ola k ase", "Escribe «ola k ase». Programa o k ase.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lengua", "msg_bizum_ask", [
+        (1, "bizum_ask_1", "Pásame un Bizum", "Pide un Bizum por el chat.", C),
+        (25, "bizum_ask_25", "Que no llevo suelto", "Pide un Bizum 25 veces.", R),
+    ])  # fmt: skip
+
+    # 🧵 Conversación -------------------------------------------------------------------
+    a += _tiers("convo", "msg_monologue_max", [
+        (5, "monologue_5", "Hablando solo",
+         "Escribe 5 mensajes seguidos sin que nadie conteste.", C),
+        (10, "monologue_10", "Monólogo", "Escribe 10 mensajes seguidos en un canal.", R),
+        (25, "monologue_25", "Comparecencia en el Congreso", "Escribe 25 mensajes seguidos.", E),
+        (50, "monologue_50", "Discurso de investidura",
+         "Escribe 50 mensajes seguidos. Nadie te ha interrumpido.", L),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_day_max", [
+        (100, "day_100", "Día libre", "Escribe 100 mensajes en un mismo día.", C),
+        (300, "day_300", "Jornada intensiva", "Escribe 300 mensajes en un mismo día.", R),
+        (1_000, "day_1k", "¿Tú duermes?", "Escribe 1.000 mensajes en un mismo día.", L),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_first_of_day", [
+        (1, "first_1", "Abre la persiana", "Escribe el primer mensaje del día del servidor.", C),
+        (30, "first_30", "Primero en fichar", "Abre el chat del día 30 veces.", R),
+        (200, "first_200", "Funcionario de ventanilla", "Abre el chat del día 200 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_echo", [
+        (1, "echo_1", "Eco", "Repite tal cual el mensaje que acaba de escribir otro.", C),
+        (25, "echo_25", "Aplauso de bancada", "Repite lo que dice otro 25 veces.", R),
+        (250, "echo_250", "Disciplina de partido", "Repite lo que dice otro 250 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_necro", [
+        (1, "necro_1", "Nigromante", "Escribe en un canal que llevaba 24 h sin mensajes.", C),
+        (10, "necro_10", "Resucitador de canales", "Resucita 10 canales muertos.", R),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_edits", [
+        (10, "edit_10", "Donde dije digo…", "Edita 10 mensajes.", C),
+        (100, "edit_100", "No es mentir, es cambiar de opinión", "Edita 100 mensajes.", R),
+        (1_000, "edit_1k", "Rectificar es de sabios", "Edita 1.000 mensajes.", E),
     ])  # fmt: skip
 
     # 🗓️ Horarios y fechas ----------------------------------------------------------------
@@ -498,6 +820,70 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "own_bday", "Felicidades a mí", "Escribe el día de tu cumpleaños.", C, True),
     ])  # fmt: skip
 
+    a += _tiers("time", "msg_siesta", [
+        (100, "siesta_100", "Siesta, ¿qué siesta?",
+         "Escribe 100 mensajes entre las 15:00 y las 17:00.", C),
+        (1_000, "siesta_1k", "Antisiesta", "Escribe 1.000 mensajes a la hora de la siesta.", R),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_office", [
+        (100, "office_100", "Teletrabajo (o eso dice tu jefe)",
+         "Escribe 100 mensajes entre semana de 9:00 a 14:00.", C),
+        (1_000, "office_1k", "Productividad a la española",
+         "Escribe 1.000 mensajes en horario de oficina.", R),
+        (10_000, "office_10k", "Absentismo digital",
+         "Escribe 10.000 mensajes en horario de oficina.", E),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_weekend", [
+        (100, "weekend_100", "Ni el finde descansas", "Escribe 100 mensajes en fin de semana.", C),
+        (1_000, "weekend_1k", "Sábado sabadete", "Escribe 1.000 mensajes en fin de semana.", R),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_cinderella", [
+        (1, "cinderella", "Cenicienta", "Escribe un mensaje a las 00:00 en punto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_reyes", [
+        (1, "reyes", "Carbón dulce", "Escribe el 6 de enero. ¿Te has portado bien?", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_valentin", [
+        (1, "valentin", "San Valentín en Discord",
+         "Escribe el 14 de febrero. Aquí, solo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_pino", [
+        (1, "pino", "Romero del Pino", "Escribe el 8 de septiembre, día del Pino.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_hispanidad", [
+        (1, "hispanidad", "Desfile del 12 de octubre", "Escribe el Día de la Hispanidad.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_inocentes", [
+        (1, "inocentes", "Inocente, inocente", "Escribe el 28 de diciembre.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_friday13", [
+        (1, "friday13", "Viernes 13", "Escribe un viernes 13. Mal fario.", R, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="calendar",
+            name="Calendario zaragozano",
+            description="Escribe en todas las fechas señaladas del año.",
+            category="time",
+            rarity=L,
+            conditions=tuple(
+                (stat, 1)
+                for stat in (
+                    "msg_new_year",
+                    "msg_reyes",
+                    "msg_valentin",
+                    "msg_canarias",
+                    "msg_pino",
+                    "msg_hispanidad",
+                    "msg_halloween",
+                    "msg_christmas",
+                    "msg_inocentes",
+                )
+            ),  # fmt: skip
+            secret=True,
+        )
+    )
+
     # 🎙️ Voz ------------------------------------------------------------------------------
     a += _tiers("voice", "voice_minutes", [
         (60, "voice_1h", "¿Se me oye?", "Pasa 1 hora en llamada con más gente.", C),
@@ -518,16 +904,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (600, "vnight_10h", "Turno de noche", "Pasa 10 horas en llamada de madrugada.", R),
         (3_000, "vnight_50h", "Guardia nocturna", "Pasa 50 horas en llamada de madrugada.", E),
     ], unit="min")  # fmt: skip
-    a += _tiers("voice", "voice_stream", [
+    a += _tiers("voice_mic", "voice_stream", [
         (60, "stream_1h", "En directo", "Comparte pantalla durante 1 hora.", C),
         (600, "stream_10h", "Streamer", "Comparte pantalla durante 10 horas.", R),
         (3_000, "stream_50h", "Streamer de barrio", "Comparte pantalla durante 50 horas.", E),
     ], unit="min")  # fmt: skip
-    a += _tiers("voice", "voice_video", [
+    a += _tiers("voice_mic", "voice_video", [
         (30, "cam_30m", "Dando la cara", "Pon la cámara durante 30 minutos.", C),
         (600, "cam_10h", "Influencer", "Pon la cámara durante 10 horas.", R),
     ], unit="min")  # fmt: skip
-    a += _tiers("voice", "voice_muted", [
+    a += _tiers("voice_mic", "voice_muted", [
         (120, "mute_2h", "Oyente", "Pasa 2 horas en llamada con el micro silenciado.", C),
         (1_200, "mute_20h", "El mimo", "Pasa 20 horas en llamada sin abrir el micro.", R),
     ], unit="min")  # fmt: skip
@@ -539,6 +925,216 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (60, "alone_1h", "Hablando solo", "Pasa 1 hora solo en un canal de voz.", C, True),
         (600, "alone_10h", "Forever alone", "Pasa 10 horas solo en un canal de voz.", R, True),
     ], unit="min")  # fmt: skip
+
+    a += _tiers("voice", "voice_minutes", [
+        (150_000, "voice_2500h", "Plaza en propiedad",
+         "Pasa 2.500 horas en llamada. Ya no te echa nadie.", M, True),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_session_max", [
+        (1_440, "session_24h", "Okupa con usucapión",
+         "Aguanta 24 horas seguidas en llamada.", M, True),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_crowd_max", [
+        (15, "crowd_15", "Mitin", "Coincide en una llamada con 15 personas o más.", E),
+        (25, "crowd_25", "Manifestación", "Coincide en una llamada con 25 personas o más.", L),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_alone", [
+        (3_000, "alone_50h", "Ermitaño", "Pasa 50 horas solo en un canal de voz.", E, True),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_duo", [
+        (60, "duo_1h", "Cara a cara", "Pasa 1 hora en llamada con una sola persona.", C),
+        (600, "duo_10h", "Pareja de hecho", "Pasa 10 horas en llamada a solas con alguien.", R),
+        (3_000, "duo_50h", "Matrimonio de conveniencia", "Pasa 50 horas en llamada de a dos.", E),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_morning", [
+        (60, "vmorning_1h", "Café en llamada",
+         "Pasa 1 hora en llamada entre las 6:00 y las 8:00.", C),
+        (600, "vmorning_10h", "Tertulia matinal", "Pasa 10 horas en llamada de buena mañana.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_siesta", [
+        (120, "vsiesta_2h", "Siesta compartida",
+         "Pasa 2 horas en llamada entre las 15:00 y las 17:00.", C),
+        (1_200, "vsiesta_20h", "Siesta de pijama y orinal",
+         "Pasa 20 horas en llamada a la hora de la siesta.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_weekend", [
+        (600, "vweekend_10h", "Plan de finde", "Pasa 10 horas en llamada en fin de semana.", C),
+        (6_000, "vweekend_100h", "Sábado sabadete en llamada",
+         "Pasa 100 horas en llamada en fin de semana.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice", "voice_new_year", [
+        (1, "voice_new_year", "Uvas en llamada",
+         "Estate en llamada en la primera hora del año.", E, True),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_christmas", [
+        (1, "voice_christmas", "Nochebuena en Discord",
+         "Estate en llamada en Nochebuena o en Navidad.", R, True),
+    ])  # fmt: skip
+
+    # 🎚️ Micro, cámara y AFK ---------------------------------------------------------------
+    a += _tiers("voice_mic", "voice_deaf", [
+        (60, "deaf_1h", "Estoy pero no estoy",
+         "Pasa 1 hora en llamada con el sonido quitado.", C, True),
+        (600, "deaf_10h", "Sordo selectivo", "Pasa 10 horas ensordecido en llamada.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_afk", [
+        (60, "afk_1h", "Liberado sindical", "Pasa 1 hora en el canal AFK sin dar palo al agua.", C),
+        (600, "afk_10h", "Asesor del ministerio", "Pasa 10 horas en el canal AFK.", R),
+        (6_000, "afk_100h", "Enchufado", "Pasa 100 horas en el canal AFK cobrando igual.", E),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_server_muted", [
+        (1, "gagged", "Ley mordaza", "Que un moderador te silencie en llamada.", R, True),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_stream_crowd", [
+        (60, "stream_crowd_1h", "Cine de verano",
+         "Comparte pantalla 1 hora con 4 personas o más mirando.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_multitask", [
+        (30, "multitask", "Multitarea", "Pon cámara y comparte pantalla a la vez 30 minutos.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_mute_streak_max", [
+        (120, "mute_streak_2h", "Voto de silencio",
+         "Aguanta 2 horas seguidas silenciado en llamada.", R),
+        (600, "mute_streak_10h", "Monje cartujo", "Aguanta 10 horas seguidas silenciado.", E),
+    ], unit="min")  # fmt: skip
+    a += _tiers("voice_mic", "voice_stream_starts", [
+        (10, "stream_start_10", "¿Se ve mi pantalla?", "Empieza a compartir pantalla 10 veces.", C),
+        (100, "stream_start_100", "Presentador de PowerPoint", "Comparte pantalla 100 veces.", R),
+    ])  # fmt: skip
+
+    # 🚪 Entradas y salidas -------------------------------------------------------------
+    a += _tiers("voice_moves", "voice_joins", [
+        (10, "joins_10", "Llamando a la puerta", "Entra 10 veces a un canal de voz.", C),
+        (100, "joins_100", "Como Pedro por su casa", "Entra 100 veces a un canal de voz.", R),
+        (1_000, "joins_1k", "Más viajes que el Falcon", "Entra 1.000 veces a un canal de voz.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "voice_hops", [
+        (10, "hops_10", "Culo inquieto", "Cambia de canal de voz 10 veces.", C),
+        (100, "hops_100", "Tránsfuga", "Cambia de canal de voz 100 veces.", R),
+        (500, "hops_500", "Cambio de chaqueta", "Cambia de canal de voz 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "voice_ghost", [
+        (1, "ghost_1", "Visto y no visto",
+         "Entra en un canal de voz y vete en menos de 15 s.", C, True),
+        (25, "ghost_25", "Diputado que solo va a votar",
+         "Entra y sal de voz en menos de 15 s, 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "entrance_saved", [
+        (1, "entrance_1", "Sintonía propia", "Guarda tu sonido de entrada con `entrada`.", C),
+        (10, "entrance_10", "Indeciso", "Cambia tu sonido de entrada 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "entrance_played", [
+        (10, "entrance_play_10", "Entrada de torero", "Que suene tu entrada 10 veces.", C),
+        (100, "entrance_play_100", "Llegó el que faltaba", "Que suene tu entrada 100 veces.", R),
+        (1_000, "entrance_play_1k", "Himno nacional", "Que suene tu entrada 1.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "entrance_volume_max", [
+        (200, "entrance_loud", "Entrada ensordecedora",
+         "Pon tu sonido de entrada al 200 %.", R, True),
+    ])  # fmt: skip
+    a += _tiers("voice_moves", "entrance_deleted", [
+        (1, "entrance_gone", "Perfil bajo", "Borra tu sonido de entrada.", C, True),
+    ])  # fmt: skip
+
+    # 🎵 Música -------------------------------------------------------------------------
+    a += _tiers("music", "music_queued", [
+        (1, "music_1", "DJ de verbena", "Pon una canción con `poner`.", C),
+        (50, "music_50", "Pinchadiscos", "Pon 50 canciones.", R),
+        (500, "music_500", "La radio del pueblo", "Pon 500 canciones.", E),
+    ])  # fmt: skip
+    a += _tiers("music", "voice_music", [
+        (60, "vmusic_1h", "Verbena", "Pasa 1 hora en llamada con el bot poniendo música.", C),
+        (600, "vmusic_10h", "Discoteca", "Pasa 10 horas en llamada con música.", R),
+        (3_000, "vmusic_50h", "Tenderete", "Pasa 50 horas en llamada con música.", E),
+    ], unit="min")  # fmt: skip
+    a += _tiers("music", "music_skips", [
+        (10, "skip_10", "Siguiente", "Salta 10 canciones.", C),
+        (100, "skip_100", "Ni la escuchas entera", "Salta 100 canciones.", R),
+    ])  # fmt: skip
+    a += _tiers("music", "music_stops", [
+        (1, "stop_1", "Aguafiestas", "Para la música con `parar`.", C, True),
+        (25, "stop_25", "Se acabó la fiesta", "Para la música 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("music", "music_volume_max", [
+        (200, "music_loud", "Denuncia del vecino del quinto", "Sube la música al 200 %.", R, True),
+    ])  # fmt: skip
+    a += _tiers("music", "music_whisper", [
+        (1, "music_asmr", "ASMR", "Baja la música al 10 % o menos.", C, True),
+    ])  # fmt: skip
+    a += _tiers("music", "music_track_max", [
+        (20, "music_long", "Sinfonía completa", "Pon una canción de 20 minutos o más.", R),
+    ], unit="min")  # fmt: skip
+    a += _tiers("music", "music_queue_max", [
+        (10, "music_queue_10", "Playlist de boda", "Deja la cola con 10 canciones o más.", R),
+    ])  # fmt: skip
+    a += _tiers("music", "music_clears", [
+        (1, "music_clear", "Borrón y cuenta nueva", "Vacía la cola con `vaciar`.", C),
+    ])  # fmt: skip
+    a += _tiers("music", "music_removes", [
+        (10, "music_remove_10", "Censura previa", "Quita 10 canciones de la cola.", R),
+    ])  # fmt: skip
+    a += _tiers("music", "music_jovani", [
+        (1, "music_jovani", "Fan de Jovani", "Pon una canción de Jovani Vázquez.", R, True),
+    ])  # fmt: skip
+    a += _tiers("music", "music_despacito", [
+        (1, "music_despacito", "2017 ha llamado", "Pon «Despacito».", C, True),
+    ])  # fmt: skip
+    a += _tiers("music", "music_macarena", [
+        (1, "music_macarena", "Dale a tu cuerpo alegría", "Pon «Macarena».", C, True),
+    ])  # fmt: skip
+    a += _tiers("music", "music_pedro", [
+        (1, "music_pedro", "Pedro, Pedro, Pedro",
+         "Pon una canción con «Pedro» en el título.", R, True),
+    ])  # fmt: skip
+
+    # 🖼️ Imágenes y Babel ---------------------------------------------------------------
+    a += _tiers("memes", "img_made", [
+        (1, "img_1", "Fotoshopero", "Genera tu primera imagen con un efecto (`memes`).", C),
+        (50, "img_50", "Fábrica de memes", "Genera 50 imágenes.", R),
+        (500, "img_500", "Ministerio de Propaganda", "Genera 500 imágenes.", E),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_magik", [
+        (10, "magik_10", "Magia negra", "Deforma 10 imágenes con `magik`.", C),
+        (100, "magik_100", "Brujo de Teror", "Deforma 100 imágenes con `magik`.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_video", [
+        (10, "img_video_10", "Productora audiovisual", "Genera 10 vídeos o GIFs con efectos.", C),
+        (100, "img_video_100", "Televisión pública", "Genera 100 vídeos o GIFs.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_on_others", [
+        (10, "img_others_10", "Bullying artístico",
+         "Aplica un efecto al avatar de otro 10 veces.", C),
+        (100, "img_others_100", "Caricaturista del régimen", "Usa a otros de modelo 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_self", [
+        (10, "img_self_10", "Narciso", "Aplica un efecto a tu propio avatar 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("memes", IMG_EFFECTS_STAT, [
+        (10, "img_fx_10", "Probador de filtros", "Prueba 10 efectos de imagen distintos.", R),
+        (30, "img_fx_30", "Catálogo de Ikea", "Prueba 30 efectos de imagen distintos.", E),
+        (60, "img_fx_60", "Instagram de los 2010", "Prueba 60 efectos de imagen distintos.", L),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_phrases", [
+        (1, "babel_1", "Torre de Babel", "Pasa una frase por `babel`.", C),
+        (25, "babel_25", "Traductor de Google", "Pasa 25 frases por `babel`.", R),
+        (100, "babel_100", "Intérprete de la ONU", "Pasa 100 frases por `babel`.", E),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_renames", [
+        (1, "babel_rename_1", "Registro civil", "Cámbiale el apodo a alguien con `babel`.", C),
+        (25, "babel_rename_25", "Notario de apodos", "Babeliza 25 apodos.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_channels", [
+        (1, "babel_channel", "Reforma territorial",
+         "Cámbiale el nombre a un canal con `babel`.", R, True),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_full", [
+        (1, "babel_full", "La vuelta al mundo en 100 idiomas",
+         "Que una tirada de `babel` complete los 100 saltos.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_lost", [
+        (1, "babel_lost", "Lost in translation",
+         "Que `babel` se corte lejos del español.", R, True),
+    ])  # fmt: skip
 
     # ❤️ Social ---------------------------------------------------------------------------
     a += _tiers("social", "reactions_given", [
@@ -2182,17 +2778,87 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     # 🏆 Coleccionista --------------------------------------------------------------------
+    # Se miden con estadísticas virtuales que salen de los logros ya conseguidos
+    # (`meta_stats`), nunca de contadores guardados.
     a += _tiers("meta", UNLOCKED_STAT, [
         (10, "meta_10", "Cazador de logros", "Desbloquea 10 logros.", C),
         (25, "meta_25", "Coleccionista", "Desbloquea 25 logros.", R),
         (50, "meta_50", "Vitrina llena", "Desbloquea 50 logros.", E),
         (100, "meta_100", "Museo", "Desbloquea 100 logros.", L),
+        (150, "meta_150", "Hemeroteca", "Desbloquea 150 logros.", L),
+        (250, "meta_250", "Patrimonio de la Humanidad", "Desbloquea 250 logros.", L),
+        (400, "meta_400", "BOE de logros", "Desbloquea 400 logros.", M),
+        (600, "meta_600", "Ministerio de Logros",
+         "Desbloquea 600 logros. Con su propio Falcon.", M),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_rare", [
+        (25, "meta_rare_25", "Raro, raro", "Desbloquea 25 logros raros.", R),
+        (100, "meta_rare_100", "Bicho raro", "Desbloquea 100 logros raros.", E),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_epic", [
+        (10, "meta_epic_10", "Épica", "Desbloquea 10 logros épicos.", E),
+        (50, "meta_epic_50", "Cantar de gesta", "Desbloquea 50 logros épicos.", L),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_legendary", [
+        (3, "meta_legend_3", "Leyenda local", "Desbloquea 3 logros legendarios.", E),
+        (15, "meta_legend_15", "Leyenda viva", "Desbloquea 15 logros legendarios.", L),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_mythic", [
+        (1, "meta_mythic_1", "Divinidad", "Desbloquea un logro mítico.", L),
+        (5, "meta_mythic_5", "Olimpo", "Desbloquea 5 logros míticos.", M),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_secret", [
+        (5, "meta_secret_5", "Agente del CNI", "Desbloquea 5 logros secretos.", R),
+        (20, "meta_secret_20", "Pegasus",
+         "Desbloquea 20 logros secretos. Ya sabes hasta lo que hay en el móvil del presidente.", E),
+        (50, "meta_secret_50", "Fontanero de Ferraz", "Desbloquea 50 logros secretos.", L),
+    ])  # fmt: skip
+    normal_categories = [c for c in CATEGORIES if c.key != "meta" and not c.upcoming]
+    a += _tiers("meta", "achievements_categories", [
+        (10, "meta_cats_10", "Tocando todos los palos", "Consigue logros en 10 categorías.", R),
+        (len(normal_categories), "meta_cats_all", "Hombre del Renacimiento",
+         "Consigue al menos un logro en cada categoría.", E),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_categories_done", [
+        (1, "meta_done_1", "Perfeccionista", "Completa una categoría entera.", E),
+        (5, "meta_done_5", "TOC", "Completa 5 categorías enteras.", L),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievement_points", [
+        (1_000, "meta_pts_1k", "Mil puntos", "Suma 1.000 puntos de logros.", R),
+        (5_000, "meta_pts_5k", "Carné por puntos (sin perder ninguno)", "Suma 5.000 puntos.", E),
+        (15_000, "meta_pts_15k", "Matrícula de honor", "Suma 15.000 puntos de logros.", L),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_earned", [
+        (25_000, "meta_money_25k", "Subvencionado",
+         "Cobra 25.000 Y$ brutos en premios de logros.", R),
+        (100_000, "meta_money_100k", "Chiringuito de logros", "Cobra 100.000 Y$ en premios.", E),
+        (500_000, "meta_money_500k", "Vivir del cuento", "Cobra 500.000 Y$ en premios.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("meta", "achievements_batch", [
+        (3, "meta_combo_3", "Combo", "Desbloquea 3 logros de golpe.", R, True),
+        (5, "meta_combo_5", "Pleno al quince", "Desbloquea 5 logros de golpe.", E, True),
+    ])  # fmt: skip
+    a += _tiers("meta", "logros_views", [
+        (10, "views_10", "Mírate al espejo", "Abre tus `logros` 10 veces.", C),
+        (100, "views_100", "Narciso de vitrina", "Abre tus `logros` 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("meta", "logros_others", [
+        (10, "others_10", "Cotilla", "Mira los `logros` de otra persona 10 veces.", C),
+        (100, "others_100", "Portera del edificio", "Mira los logros de otros 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("meta", "logros_ranking", [
+        (25, "ranking_25", "Obsesionado con el ranking", "Mira el ranking de logros 25 veces.", R),
     ])  # fmt: skip
     countable = sum(
         1 for x in a if x.category != "meta" and not CATEGORY_BY_KEY[x.category].upcoming
     )
     a += _tiers("meta", UNLOCKED_STAT, [
         (countable, "completionist", "Completista", "Desbloquea todos los logros.", M),
+    ])  # fmt: skip
+    metas = sum(1 for x in a if x.category == "meta")
+    a += _tiers("meta", "achievements_meta", [
+        (metas, "metacompletionist", "Logro de logros de logros",
+         "Desbloquea todos los demás logros de Coleccionista. Ya no queda nada.", M, True),
     ])  # fmt: skip
     return tuple(a)
 
@@ -2257,10 +2923,55 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
 
     `messages_total` suma los mensajes contados por los logros y los que ya
     tenía el miembro en el historial importado antes de que existieran.
+    `img_effects_tried` cuenta los efectos de imagen distintos usados.
     """
     full = dict(stats)
     full[MESSAGES_TOTAL_STAT] = full.get("messages", 0) + full.get("messages_imported", 0)
+    full[IMG_EFFECTS_STAT] = sum(
+        1 for stat, value in stats.items() if stat.startswith(IMG_EFFECT_PREFIX) and value > 0
+    )
     return full
+
+
+#: Logros normales de cada categoría, para saber cuándo se completa una.
+_PER_CATEGORY: dict[str, frozenset[str]] = {}
+for _achievement in _NORMAL:
+    _PER_CATEGORY[_achievement.category] = _PER_CATEGORY.get(_achievement.category, frozenset()) | {
+        _achievement.id
+    }
+_NORMAL_IDS = frozenset(a.id for a in _NORMAL)
+_META_IDS = frozenset(a.id for a in _META)
+
+
+def meta_stats(unlocked: Iterable[str], *, batch: int = 0) -> dict[str, int]:
+    """Estadísticas virtuales de Coleccionista a partir de los logros conseguidos.
+
+    Solo cuentan los logros normales (no los de Coleccionista), salvo
+    `achievements_meta`, para que no se desbloqueen unos a otros sin fin.
+
+    Args:
+        unlocked: Ids conseguidos (los desconocidos se ignoran).
+        batch: Logros normales que acaban de saltar a la vez (para «Combo»).
+    """
+    have = set(unlocked)
+    normal = [BY_ID[i] for i in have & _NORMAL_IDS]
+    by_rarity = {rarity: 0 for rarity in Rarity}
+    for achievement in normal:
+        by_rarity[achievement.rarity] += 1
+    return {
+        UNLOCKED_STAT: len(normal),
+        "achievements_rare": by_rarity[Rarity.RARE],
+        "achievements_epic": by_rarity[Rarity.EPIC],
+        "achievements_legendary": by_rarity[Rarity.LEGENDARY],
+        "achievements_mythic": by_rarity[Rarity.MYTHIC],
+        "achievements_secret": sum(1 for a in normal if a.secret),
+        "achievements_categories": sum(1 for ids in _PER_CATEGORY.values() if ids & have),
+        "achievements_categories_done": sum(1 for ids in _PER_CATEGORY.values() if ids <= have),
+        "achievement_points": sum(a.rarity.points for a in normal),
+        "achievements_earned": sum(a.rarity.reward for a in normal),
+        "achievements_batch": batch,
+        "achievements_meta": len(have & _META_IDS),
+    }
 
 
 def _met(achievement: Achievement, stats: Mapping[str, int]) -> bool:
@@ -2270,22 +2981,29 @@ def _met(achievement: Achievement, stats: Mapping[str, int]) -> bool:
 def newly_unlocked(stats: Mapping[str, int], unlocked: Iterable[str]) -> list[str]:
     """Logros que se cumplen con `stats` y aún no estaban en `unlocked`.
 
-    Primero los normales y después los de Coleccionista, contando ya los
-    que se acaban de conseguir.
+    Primero los normales y después los de Coleccionista, contando ya los que
+    se acaban de conseguir. Los de Coleccionista se repasan hasta que no salte
+    ninguno más, porque el último («Logro de logros de logros») depende de los
+    demás de su categoría.
     """
     have = set(unlocked)
     full = with_derived(stats)
     new = [a.id for a in _NORMAL if a.id not in have and _met(a, full)]
-    full[UNLOCKED_STAT] = sum(1 for a in _NORMAL if a.id in have) + len(new)
-    new += [a.id for a in _META if a.id not in have and _met(a, full)]
-    return new
+    batch = len(new)
+    while True:
+        full.update(meta_stats(have | set(new), batch=batch))
+        found = [a.id for a in _META if a.id not in have and a.id not in new and _met(a, full)]
+        if not found:
+            return new
+        new += found
 
 
 def progress(achievement: Achievement, stats: Mapping[str, int]) -> tuple[int, int]:
-    """`(actual, meta)` de la estadística principal, con el actual sin pasarse."""
+    """`(actual, meta)` de la estadística principal, con el actual sin pasarse.
+
+    Para los de Coleccionista, `stats` ya trae `meta_stats` (ver el cog).
+    """
     full = with_derived(stats)
-    if achievement.category == "meta":
-        full[UNLOCKED_STAT] = stats.get(UNLOCKED_STAT, 0)
     return min(full.get(achievement.stat, 0), achievement.goal), achievement.goal
 
 
@@ -2307,19 +3025,185 @@ LONG_MESSAGE = 600
 SHORT_MESSAGE = 3
 #: Letras mínimas para que un mensaje en mayúsculas cuente como grito.
 CAPS_MIN_LETTERS = 8
+#: Emojis en un mismo mensaje para que cuente como jeroglífico.
+EMOJI_HEAVY = 5
+#: Menciones a personas distintas en un mensaje para que cuente como convocatoria.
+MASS_PING = 5
+#: Letras de una palabra para que cuente como palabro.
+LONG_WORD = 20
+#: Letras mínimas de un palíndromo (con al menos tres letras distintas).
+PALINDROME_MIN = 9
 
-_LINK = re.compile(r"https?://", re.IGNORECASE)
+_LINK = re.compile(r"https?://\S+", re.IGNORECASE)
 _XD = re.compile(r"(?<![a-z])x+d+(?![a-z])", re.IGNORECASE)
-_WORD = re.compile(r"[a-záéíóúüñ]+")
-#: jaja, jajaj, jejeje, jsjsjs, jajsja… (al menos dos jotas).
-_LAUGH_WORD = re.compile(r"(?:j+[aeis]+){2,}j*|j+[aeis]+j+")
-_LAUGH_WORDS = frozenset({"lol", "lmao", "lmfao"})
+#: Palabras de cualquier alfabeto (latino, cirílico, griego…), sin números.
+_LETTERS = re.compile(r"[^\W\d_]+")
+_CUSTOM_EMOJI = re.compile(r"<a?:(\w+):\d+>")
+#: Emojis "de verdad": pictogramas, símbolos y banderas. Aproximado a propósito:
+#: sin dependencias, y basta para contar emojis en un chat.
+_EMOJI = re.compile("[\U0001f000-\U0001faff☀-➿⬀-⯿⌀-⏿]")
+#: Lo que acompaña a un emoji sin ser un emoji: selector de variante, unión de
+#: secuencias (ZWJ) y tonos de piel. Para saber si un mensaje es "solo emojis".
+_EMOJI_GLUE = re.compile("[️‍\U0001f3fb-\U0001f3ff\\s]")
+#: Quita tildes y diéresis pero deja la ñ (que distingue «ños» de «nos»).
+_ACCENTS = str.maketrans("áéíóúüàèìòùâêîôû", "aeiouuaeiouaeiou")
+
+# Risas ------------------------------------------------------------------------------
+
+
+#: jaja, jajaj, jejeje, jiji, jojojo, jsjsjs, jajsja, ajajaj… (dos jotas o más).
+_LAUGH_ES = re.compile(r"a?(?:j+[aeious]+){2,}j*|a?j+[aeiou]+j+")
+#: haha, hehe, hihi, huehue, ahahah… y las siglas de internet.
+_LAUGH_EN = re.compile(
+    r"a?(?:h+[aeiu]+){2,}h*|lo+l+z?|lolazo|lmf?ao+|rofl(?:mao)?|kekw?|lel|lulz?|omegalul"
+)
+#: Portugués (kkkk, rsrs), francés (mdr, ptdr), japonés (wwww) y griego latinizado (xaxa).
+_LAUGH_INTL_WORD = re.compile(r"k{4,}|(?:rs){2,}r?|p?tdr+|mdr+|w{4,}|(?:xa){2,}x?")
+#: Coreano, chino, japonés, ruso y griego, buscados en el texto entero.
+_LAUGH_INTL_TEXT = re.compile(
+    r"ㅋ{2,}|ㅎ{2,}|哈{2,}|呵{2,}|嘻{2,}|[草笑]|(?:х[ае]){2,}|(?:ах){2,}|(?:χα){2,}"
+)
+#: Frases de quien se ríe con palabras: «me meo», «me parto», «lloro»…
+_LAUGH_PHRASE = re.compile(
+    r"\bme (?:meo|meé|parto|parti|troncho|descojono|desternillo|mondo|"
+    r"cago de (?:la )?risa|muero de (?:la )?risa)\b|\bque risa\b|\bmuert[oa] de risa\b|"
+    r"\blloro+\b|\bllorando\b|\bestoy muert[oa]\b|\bme he meado\b"
+)
+#: Sílabas sueltas de una risa con espacios («ja ja ja», «ha ha»).
+_LAUGH_SYLLABLES_ES = frozenset({"ja", "je", "ji", "jo"})
+_LAUGH_SYLLABLES_EN = frozenset({"ha", "he", "hi"})
+_LAUGH_EMOJI = frozenset("😂🤣😹😆")
+_SKULL_EMOJI = ("💀", "☠")
+#: Pistas en el nombre de un emoji personalizado de que es de risa (`:kekw:`, `:pepelaugh:`).
+_LAUGH_EMOJI_HINTS = ("kek", "lul", "laugh", "lol", "jaja", "haha", "xd", "risa", "rofl", "lmao")
+#: Teclas de la fila central de un teclado español: lo que sale al aporrearlo.
+_HOME_ROW = frozenset("asdfghjklñ")
+#: «ja.», «jaja.», «ja, ja.»: la risa del funcionario. No cuenta como risa.
+_DRY_LAUGH = re.compile(r"j[ae]\.*|(?:j[ae]){2}\.+|j[ae],? j[ae]\.+")
+
+
+@dataclass(frozen=True, slots=True)
+class Laugh:
+    """Qué risas lleva un mensaje.
+
+    Attributes:
+        kinds: Tipos de `LAUGH_KINDS` que aparecen (vacío si no hay risa).
+        longest: Letras de la risa más larga («jajajajaja» son 10).
+        shouted: Si alguna risa va EN MAYÚSCULAS.
+        dry: Si el mensaje es una risa seca de funcionario («ja.»). No es risa.
+    """
+
+    kinds: frozenset[str] = frozenset()
+    longest: int = 0
+    shouted: bool = False
+    dry: bool = False
+
+    @property
+    def laughed(self) -> bool:
+        """Si el mensaje tiene alguna risa de verdad."""
+        return bool(self.kinds)
+
+
+def is_keyboard_smash(word: str) -> bool:
+    """Si una palabra parece un aporreo del teclado (`ajsjsjs`, `asdfghjkl`).
+
+    Hacen falta seis letras o más, todas de la fila central, al menos tres
+    distintas y como mucho una «a» de cada cuatro: así «alaska» o «falsas» no cuentan.
+    """
+    if len(word) < 6 or not set(word) <= _HOME_ROW or len(set(word)) < 3:
+        return False
+    return word.count("a") * 4 <= len(word)
+
+
+#: Palabras que encajan con los patrones pero no son risas. Salen de cruzar el
+#: detector con las 60.000 palabras más usadas en español, inglés y portugués.
+_NOT_LAUGHS = frozenset({"jauja", "jeju", "juju", "jojo", "flasks", "skaggs"})
+
+
+def _word_laugh(word: str) -> str | None:
+    """Tipo de risa de una palabra suelta (ya en minúsculas y sin tildes), o `None`."""
+    if word in _NOT_LAUGHS:
+        return None
+    if _LAUGH_ES.fullmatch(word):
+        return "es"
+    if _LAUGH_EN.fullmatch(word):
+        return "en"
+    if re.fullmatch(r"x+d+", word):
+        return "xd"
+    if _LAUGH_INTL_WORD.fullmatch(word):
+        return "intl"
+    if is_keyboard_smash(word):
+        return "smash"
+    return None
+
+
+def analyze_laugh(text: str) -> Laugh:
+    """Busca risas escritas de todas las formas que se nos han ocurrido.
+
+    Reconoce las españolas (jaja, jsjs, ajaj, «ja ja ja»), las inglesas (haha,
+    lol, lmao, kek), las de otros idiomas (kkkk, rsrs, mdr, wwww, ㅋㅋ, 哈哈,
+    хаха), los aporreos del teclado (ajsjsjs), las frases («me meo», «lloro»),
+    xd y los emojis (😂, 🤣, 💀 y los personalizados como `:kekw:`).
+    """
+    stripped = text.strip()
+    lowered = stripped.lower()
+    if _DRY_LAUGH.fullmatch(lowered):
+        return Laugh(dry=True)
+
+    kinds: set[str] = set()
+    longest = 0
+    shouted = False
+
+    for name in _CUSTOM_EMOJI.findall(lowered):
+        if any(hint in name for hint in _LAUGH_EMOJI_HINTS):
+            kinds.add("emoji")
+    # Sin los emojis personalizados ni los enlaces, que también tienen letras.
+    plain = _LINK.sub(" ", _CUSTOM_EMOJI.sub(" ", stripped))
+    if any(ch in _LAUGH_EMOJI for ch in plain):
+        kinds.add("emoji")
+    if any(skull in plain for skull in _SKULL_EMOJI):
+        kinds.add("skull")
+
+    words = _LETTERS.findall(plain)
+    previous = ""
+    for original in words:
+        word = original.lower().translate(_ACCENTS)
+        kind = _word_laugh(word)
+        # «ja ja ja»: dos sílabas de risa seguidas cuentan como una risa.
+        if kind is None and previous:
+            if word in _LAUGH_SYLLABLES_ES and previous in _LAUGH_SYLLABLES_ES:
+                kind = "es"
+            elif word in _LAUGH_SYLLABLES_EN and previous in _LAUGH_SYLLABLES_EN:
+                kind = "en"
+        previous = word
+        if kind is None:
+            continue
+        kinds.add(kind)
+        longest = max(longest, len(word))
+        if len(original) >= 4 and original.isupper():
+            shouted = True
+
+    normalized = plain.lower().translate(_ACCENTS)
+    for match in _LAUGH_INTL_TEXT.finditer(normalized):
+        kinds.add("intl")
+        longest = max(longest, len(match.group(0)))
+    if _LAUGH_PHRASE.search(normalized):
+        kinds.add("phrase")
+    return Laugh(kinds=frozenset(kinds), longest=longest, shouted=shouted)
 
 
 def is_laugh(text: str) -> bool:
-    """Si el mensaje contiene una risa escrita."""
-    return any(
-        word in _LAUGH_WORDS or _LAUGH_WORD.fullmatch(word) for word in _WORD.findall(text.lower())
+    """Si el mensaje contiene una risa escrita (de cualquier tipo, ver `analyze_laugh`)."""
+    return analyze_laugh(text).laughed
+
+
+def is_laugh_emoji(emoji: str) -> bool:
+    """Si una reacción es de risa: 😂, 🤣, 😹, 😆, 💀 o un emoji propio tipo `kekw`."""
+    lowered = emoji.lower()
+    return (
+        lowered in _LAUGH_EMOJI
+        or any(skull in lowered for skull in _SKULL_EMOJI)
+        or any(hint in lowered for hint in _LAUGH_EMOJI_HINTS)
     )
 
 
@@ -2328,7 +3212,71 @@ def is_night(hour: int) -> bool:
     return 2 <= hour < 6
 
 
-def message_stats(
+# Vocabulario ------------------------------------------------------------------------
+
+
+def _words(*items: str) -> frozenset[str]:
+    return frozenset(items)
+
+
+#: Canarismos. Palabras sueltas, ya sin tildes y en minúsculas.
+_CANARIO = _words(
+    "guagua", "guaguas", "chacho", "chacha", "ños", "fos", "cholas", "enyesque", "machango",
+    "machanga", "baifo", "gofio", "mojo", "fleje", "tenderete", "cotufas", "millo", "bubango",
+    "bubangos", "magua", "jeito", "naife", "pella", "aguaviva", "aguavivas", "arrorro",
+    "cambullonero", "sorullo", "majalulo", "tafeña", "gánigo", "ganigo",
+)  # fmt: skip
+_CANARIO_PHRASES = re.compile(r"\bpapas arrugadas\b|\bmi niñ[oa]\b|\bde fleje\b|\bño+s+\b")
+#: Palabras boricuas, para estar a la altura de Jovani.
+_BORICUA = _words(
+    "wepa", "bendito", "acho", "janguear", "jangueo", "corillo", "chavos", "bregar", "pana",
+    "panas", "boricua", "perreo", "perrear", "nitido", "chavienda", "zafacon", "gufear",
+    "jevo", "jeva", "guille", "algarete", "bichote", "mamey", "chinchorro",
+)  # fmt: skip
+_SWEAR = _words(
+    "joder", "jodido", "jodida", "coño", "hostia", "hostias", "ostia", "ostias", "mierda",
+    "puta", "puto", "cabron", "cabrona", "gilipollas", "cojones", "carajo", "capullo",
+    "pollas", "mecaguen", "imbecil", "subnormal",
+)  # fmt: skip
+_SWEAR_PHRASES = re.compile(r"\bme cago\b|\bmaldita sea\b")
+_MILD_SWEAR = _words(
+    "jolin", "jolines", "ostras", "recorcholis", "caramba", "caracoles", "corcho", "cachis",
+    "rediez", "miercoles", "porras", "cáspita", "caspita",
+)  # fmt: skip
+_THANKS = re.compile(r"\bgracias\b|\bgrax\b|\bthx\b|\bthanks\b|\bgracia[sz]+\b")
+_SORRY = re.compile(r"\bperdon\b|\bperdona(?:me)?\b|\bsorry\b|\blo siento\b|\bmi culpa\b")
+_GOOD_MORNING = re.compile(r"\bbuen[oa]?s? d[i]a+s*\b")
+_GOOD_NIGHT = re.compile(r"\bbuenas noche+s*\b")
+_POLITICS = _words(
+    "psoe", "vox", "sanchez", "feijoo", "abascal", "ayuso", "puigdemont", "moncloa", "congreso",
+    "senado", "ministro", "ministra", "ministerio", "gobierno", "diputado", "diputada",
+    "elecciones", "investidura", "oposicion",
+)  # fmt: skip
+_FANGO = re.compile(r"\bbulos?\b|\bfango\b|\bfake news\b|\bdesinformacion\b")
+_CUÑADO = re.compile(r"\blo arreglaba yo\b|\beso lo arreglo yo\b|\byo de eso se un rato\b")
+_BIZUM_ASK = re.compile(r"\b(?:hazme|pasame|mandame|enviame|haceme) (?:un )?bizum\b|\bbizumea")
+_NICE = re.compile(r"(?<!\d)69(?!\d)")
+_SPOILER = re.compile(r"\|\|.+?\|\|", re.DOTALL)
+_CODE = re.compile(r"```|`[^`\n]+`")
+_STRETCH = re.compile(r"([^\W\d_])\1{5,}")
+
+
+def _emoji_count(text: str) -> int:
+    return len(_EMOJI.findall(text)) + len(_CUSTOM_EMOJI.findall(text))
+
+
+def _only_emoji(text: str) -> bool:
+    if not text:
+        return False
+    rest = _EMOJI_GLUE.sub("", _EMOJI.sub("", _CUSTOM_EMOJI.sub("", text)))
+    return not rest and _emoji_count(text) > 0
+
+
+def _is_palindrome(letters: str) -> bool:
+    return len(letters) >= PALINDROME_MIN and len(set(letters)) >= 3 and letters == letters[::-1]
+
+
+def message_delta(
     content: str,
     *,
     when: datetime,
@@ -2338,46 +3286,365 @@ def message_stats(
     mentions_others: bool = False,
     mentions_bot: bool = False,
     own_birthday: bool = False,
-) -> dict[str, int]:
-    """Contadores que suma un mensaje. El contenido se mira y se olvida.
+    mention_everyone: bool = False,
+    people_mentioned: int = 0,
+) -> StatDelta:
+    """Lo que suma un mensaje a los logros. El contenido se mira y se olvida.
 
     Args:
         content: Texto del mensaje; no se guarda en ningún sitio.
         when: Hora local (Atlantic/Canary) del mensaje.
+        mention_everyone: Si menciona a @everyone o @here.
+        people_mentioned: Personas distintas (no bots) mencionadas.
     """
     stats = {"messages": 1}
     text = content.strip()
     lowered = text.lower()
+    normalized = _LINK.sub(" ", lowered).translate(_ACCENTS)
+    words = set(_LETTERS.findall(normalized))
+    laugh = analyze_laugh(text)
 
     def bump(stat: str, condition: bool) -> None:
         if condition:
             stats[stat] = 1
 
     letters = [ch for ch in text if ch.isalpha()]
-    bump("msg_night", is_night(when.hour))
-    bump("msg_morning", 6 <= when.hour < 8)
+    weekday = when.weekday()
+    # Formas de escribir
     bump("msg_long", len(text) >= LONG_MESSAGE)
     bump("msg_short", 0 < len(text) <= SHORT_MESSAGE)
     bump("msg_caps", len(letters) >= CAPS_MIN_LETTERS and all(ch.isupper() for ch in letters))
     bump("msg_questions", text.endswith("?"))
+    bump("msg_rae", text.startswith(("¿", "¡")))
+    bump("msg_exclaim", "!!!" in text)
     bump("msg_links", bool(_LINK.search(text)))
-    bump("msg_xd", bool(_XD.search(text)))
-    bump("msg_laughs", is_laugh(text))
     bump("msg_attachments", attachments > 0)
     bump("msg_stickers", stickers > 0)
     bump("msg_replies", is_reply)
     bump("msg_mentions", mentions_others)
-    bump("msg_leet", when.hour == 13 and when.minute == 37)
-    bump("msg_new_year", when.month == 1 and when.day == 1 and when.hour == 0)
-    bump("msg_halloween", when.month == 10 and when.day == 31)
-    bump("msg_christmas", when.month == 12 and when.day in (24, 25))
-    bump("msg_canarias", when.month == 5 and when.day == 30)
-    bump("msg_own_birthday", own_birthday)
+    bump("msg_everyone", mention_everyone)
+    bump("msg_mass_ping", people_mentioned >= MASS_PING)
+    bump("msg_spoiler", bool(_SPOILER.search(text)))
+    bump("msg_code", bool(_CODE.search(text)))
+    bump("msg_emoji_heavy", _emoji_count(text) >= EMOJI_HEAVY)
+    bump("msg_only_emoji", _only_emoji(text))
+    bump("msg_stretch", bool(_STRETCH.search(lowered)))
+    bump("msg_long_word", any(len(w) >= LONG_WORD for w in words))
+    bump("msg_palindrome", _is_palindrome("".join(ch for ch in normalized if ch.isalpha())))
+    # Risas
+    bump("msg_xd", bool(_XD.search(text)))
+    bump("msg_laughs", laugh.laughed)
+    for kind in laugh.kinds:
+        stats[f"laugh_{kind}"] = 1
+    bump("msg_laugh_caps", laugh.shouted)
+    bump("msg_laugh_dry", laugh.dry)
+    bump("laugh_night", laugh.laughed and is_night(when.hour))
+    bump("laugh_sanxe", laugh.laughed and ("sanxe" in lowered or "hacienda" in normalized))
+    # Lengua y temas
+    bump("msg_canario", bool(words & _CANARIO or _CANARIO_PHRASES.search(normalized)))
+    bump("msg_boricua", bool(words & _BORICUA))
+    bump("msg_swear", bool(words & _SWEAR or _SWEAR_PHRASES.search(normalized)))
+    bump("msg_mild_swear", bool(words & _MILD_SWEAR))
+    bump("msg_thanks", bool(_THANKS.search(normalized)))
+    bump("msg_sorry", bool(_SORRY.search(normalized)))
+    bump("msg_good_morning", bool(_GOOD_MORNING.search(normalized)))
+    bump("msg_good_night", bool(_GOOD_NIGHT.search(normalized)))
+    bump("msg_politics", bool(words & _POLITICS))
+    bump("msg_falcon", "falcon" in words)
+    bump("msg_fango", bool(_FANGO.search(normalized)))
+    bump("msg_paguita", bool(words & {"paguita", "paguitas"}))
+    bump("msg_manual", "manual de resistencia" in normalized)
+    bump("msg_hacienda", "hacienda" in words)
+    bump("msg_cuñado", bool(_CUÑADO.search(normalized)))
+    bump("msg_ola_k_ase", "ola k ase" in normalized)
+    bump("msg_bizum_ask", bool(_BIZUM_ASK.search(normalized)))
+    bump("msg_nice", bool(_NICE.search(text)))
     bump("msg_bot_call", mentions_bot or "jovani" in lowered)
     bump("msg_sanxe", "sanxe" in lowered)
+    # Horarios y fechas
+    bump("msg_night", is_night(when.hour))
+    bump("msg_morning", 6 <= when.hour < 8)
+    bump("msg_siesta", 15 <= when.hour < 17)
+    bump("msg_office", weekday < 5 and 9 <= when.hour < 14)
+    bump("msg_weekend", weekday >= 5)
+    bump("msg_leet", when.hour == 13 and when.minute == 37)
+    bump("msg_cinderella", when.hour == 0 and when.minute == 0)
+    bump("msg_new_year", when.month == 1 and when.day == 1 and when.hour == 0)
+    bump("msg_reyes", when.month == 1 and when.day == 6)
+    bump("msg_valentin", when.month == 2 and when.day == 14)
+    bump("msg_canarias", when.month == 5 and when.day == 30)
+    bump("msg_pino", when.month == 9 and when.day == 8)
+    bump("msg_hispanidad", when.month == 10 and when.day == 12)
+    bump("msg_halloween", when.month == 10 and when.day == 31)
+    bump("msg_christmas", when.month == 12 and when.day in (24, 25))
+    bump("msg_inocentes", when.month == 12 and when.day == 28)
+    bump("msg_friday13", weekday == 4 and when.day == 13)
+    bump("msg_own_birthday", own_birthday)
     # Los adjuntos y stickers cuentan uno por mensaje, no uno por archivo:
     # subir 10 imágenes de golpe no debería valer 10 veces más.
-    return stats
+    peak = {}
+    if laugh.laughed:
+        peak["laugh_len_max"] = laugh.longest
+        peak["laugh_kinds_max"] = len(laugh.kinds)
+    return StatDelta(add=stats, peak=peak)
+
+
+def message_stats(content: str, *, when: datetime, **kwargs: object) -> dict[str, int]:
+    """Contadores (sumas) que suma un mensaje. Atajo de `message_delta(...).add`."""
+    return message_delta(content, when=when, **kwargs).add  # type: ignore[arg-type]
+
+
+# Conversación: lo que depende de los mensajes anteriores del canal -------------------
+
+#: Mensajes seguidos de la misma persona para hablar de monólogo.
+MONOLOGUE_MIN = 2
+#: Horas sin mensajes en un canal para que escribir en él sea resucitarlo.
+NECRO_HOURS = 24
+#: Canales que se recuerdan a la vez (los menos recientes se olvidan).
+CHANNEL_MEMORY = 500
+#: Hora (canaria) a partir de la cual el primer mensaje abre la persiana del día.
+OPENING_HOUR = 6
+
+
+@dataclass(slots=True)
+class _ChannelState:
+    author: int
+    streak: int
+    at: float
+    content_hash: int
+    laughing: bool
+    laughers: set[int]
+
+
+class ChatTracker:
+    """Recuerda lo justo de cada canal para los logros que dependen del contexto.
+
+    Monólogos, risas en cadena, aplausos de bancada (repetir lo que acaba de
+    decir otro), resucitar canales y abrir la persiana del día. No guarda el
+    texto: solo un hash del último mensaje de cada canal. La memoria está
+    acotada a `CHANNEL_MEMORY` canales y a los contadores del día en curso.
+    """
+
+    def __init__(self) -> None:
+        self._channels: OrderedDict[int, _ChannelState] = OrderedDict()
+        #: Último día en que se abrió la persiana de cada servidor.
+        self._day: dict[int, date] = {}
+        #: Mensajes de hoy por (servidor, miembro); se vacía al cambiar de día.
+        self._daily: dict[tuple[int, int], int] = {}
+        self._daily_date: date | None = None
+
+    def observe(
+        self,
+        guild_id: int,
+        channel_id: int,
+        author_id: int,
+        *,
+        at: float,
+        local: datetime,
+        content: str,
+        laughed: bool,
+    ) -> dict[int, StatDelta]:
+        """Apunta un mensaje y devuelve lo que suma a cada miembro implicado.
+
+        Args:
+            at: Instante (epoch) del mensaje.
+            local: El mismo instante en hora canaria.
+            content: Texto del mensaje; solo se guarda su hash.
+            laughed: Si el mensaje tiene risa (`analyze_laugh`).
+
+        Returns:
+            Cambios por miembro: casi siempre solo el autor, pero una cadena de
+            risas suma a todos los que han participado.
+        """
+        out: dict[int, StatDelta] = {}
+
+        def mine() -> StatDelta:
+            return out.setdefault(author_id, StatDelta())
+
+        # Mensajes del día (se vacía al cambiar de fecha).
+        today = local.date()
+        if self._daily_date != today:
+            self._daily_date = today
+            self._daily.clear()
+        key = (guild_id, author_id)
+        self._daily[key] = self._daily.get(key, 0) + 1
+        mine().peak["msg_day_max"] = self._daily[key]
+
+        # Primer mensaje del día en el servidor, a partir de las 6:00.
+        if local.hour >= OPENING_HOUR and self._day.get(guild_id) != today:
+            self._day[guild_id] = today
+            mine().add["msg_first_of_day"] = 1
+
+        digest = hash(content.strip().lower()) if content.strip() else 0
+        state = self._channels.get(channel_id)
+        if state is None:
+            state = _ChannelState(author_id, 0, at, 0, False, set())
+        else:
+            if at - state.at >= NECRO_HOURS * 3600:
+                mine().add["msg_necro"] = 1
+            if state.author != author_id and digest and digest == state.content_hash:
+                mine().add["msg_echo"] = 1
+        streak = state.streak + 1 if state.author == author_id else 1
+        if streak >= MONOLOGUE_MIN:
+            mine().peak["msg_monologue_max"] = streak
+
+        # Cadena de risas: mensajes con risa seguidos en el canal. Cuenta cuántas
+        # personas distintas se han reído; con dos o más, suma a todas.
+        laughers: set[int] = set()
+        if laughed:
+            laughers = (state.laughers if state.laughing else set()) | {author_id}
+            if len(laughers) >= 2:
+                for member in laughers:
+                    out.setdefault(member, StatDelta()).peak["laugh_chain_max"] = len(laughers)
+
+        self._channels[channel_id] = _ChannelState(author_id, streak, at, digest, laughed, laughers)
+        self._channels.move_to_end(channel_id)
+        while len(self._channels) > CHANNEL_MEMORY:
+            self._channels.popitem(last=False)
+        return out
+
+
+def laugh_reply_stats(
+    *, author_id: int, replied_author_id: int | None, replied_is_bot: bool
+) -> dict[int, StatDelta]:
+    """Lo que suma reírse respondiendo a un mensaje: al que ríe y al gracioso.
+
+    Args:
+        replied_author_id: Autor del mensaje al que se responde (`None` si no se sabe).
+        replied_is_bot: Si ese autor es un bot.
+    """
+    out = {author_id: StatDelta(add={"laugh_replies": 1})}
+    if replied_author_id is None:
+        return out
+    if replied_is_bot:
+        out[author_id].add["laugh_at_bot"] = 1
+    elif replied_author_id == author_id:
+        out[author_id].add["laugh_self"] = 1
+    else:
+        out[replied_author_id] = StatDelta(add={"laughs_caused": 1})
+    return out
+
+
+#: Segundos en voz por debajo de los cuales salir cuenta como «Visto y no visto».
+GHOST_SECONDS = 15
+
+
+def voice_move_stats(
+    *,
+    before_channel: int | None,
+    after_channel: int | None,
+    started_stream: bool,
+    joined_at: float | None,
+    now: float,
+) -> StatDelta:
+    """Lo que suma un cambio de estado de voz: entrar, cambiar, irse o emitir.
+
+    El canal AFK cuenta como cualquier otro: irse a él también es cambiar.
+
+    Args:
+        before_channel: Canal de antes (`None` si no estaba en voz).
+        after_channel: Canal de después (`None` si se ha ido).
+        started_stream: Si acaba de empezar a compartir pantalla.
+        joined_at: Cuándo entró a voz (epoch), si se sabe.
+        now: Instante del cambio.
+    """
+    add: dict[str, int] = {}
+    if before_channel is None and after_channel is not None:
+        add["voice_joins"] = 1
+    elif before_channel is not None and after_channel is not None:
+        if before_channel != after_channel:
+            add["voice_hops"] = 1
+    elif before_channel is not None and joined_at is not None and now - joined_at < GHOST_SECONDS:
+        add["voice_ghost"] = 1
+    if started_stream:
+        add["voice_stream_starts"] = 1
+    return StatDelta(add=add)
+
+
+#: Volumen de la música (en %) por debajo del cual cuenta como «ASMR».
+MUSIC_WHISPER = 10
+#: Búsquedas de `poner` con logro secreto: (texto, estadística).
+_MUSIC_SECRETS = (
+    ("jovani", "music_jovani"),
+    ("despacito", "music_despacito"),
+    ("macarena", "music_macarena"),
+    ("pedro", "music_pedro"),
+)
+
+
+def music_queue_stats(*, query: str, title: str, duration_seconds: int, position: int) -> StatDelta:
+    """Lo que suma poner una canción con `poner`.
+
+    Args:
+        query: Lo que se buscó; solo se mira y se olvida.
+        title: Título de la pista que se encontró.
+        duration_seconds: Duración de la pista.
+        position: Posición en la cola (1 si suena ya).
+    """
+    add = {"music_queued": 1}
+    text = f"{query} {title}".lower().translate(_ACCENTS)
+    for needle, stat in _MUSIC_SECRETS:
+        if needle in text:
+            add[stat] = 1
+    return StatDelta(
+        add=add,
+        peak={"music_track_max": duration_seconds // 60, "music_queue_max": position},
+    )
+
+
+def music_volume_stats(percent: int) -> StatDelta:
+    """Lo que suma cambiar el volumen de la música."""
+    delta = StatDelta(peak={"music_volume_max": percent})
+    if percent <= MUSIC_WHISPER:
+        delta.add["music_whisper"] = 1
+    return delta
+
+
+def image_stats(effect: str, extension: str, *, subject_is_author: bool | None) -> StatDelta:
+    """Lo que suma generar una imagen con un efecto (`magik`, `.gay`, `.ataud`…).
+
+    Args:
+        effect: Nombre del efecto (el del comando).
+        extension: Formato del resultado (`png`, `gif`, `mp4`…).
+        subject_is_author: Si el avatar usado es el de quien lo pide; `None`
+            si se usó una imagen adjunta y no un avatar.
+    """
+    add = {"img_made": 1, f"{IMG_EFFECT_PREFIX}{effect}": 1}
+    if effect == "magik":
+        add["img_magik"] = 1
+    if extension in ("gif", "mp4"):
+        add["img_video"] = 1
+    if subject_is_author is True:
+        add["img_self"] = 1
+    elif subject_is_author is False:
+        add["img_on_others"] = 1
+    return StatDelta(add=add)
+
+
+def babel_stats(
+    *, renamed_members: int = 0, renamed_channels: int = 0, completed: bool, lost: bool
+) -> StatDelta:
+    """Lo que suma una tirada de `babel`.
+
+    Args:
+        renamed_members: Apodos cambiados (modo nombres); 0 en modo frase.
+        renamed_channels: Canales renombrados.
+        completed: Si la cadena hizo todos los saltos.
+        lost: Si se cortó lejos del español.
+    """
+    add: dict[str, int] = {}
+    if renamed_members or renamed_channels:
+        if renamed_members:
+            add["babel_renames"] = renamed_members
+        if renamed_channels:
+            add["babel_channels"] = renamed_channels
+    else:
+        add["babel_phrases"] = 1
+    if completed:
+        add["babel_full"] = 1
+    if lost:
+        add["babel_lost"] = 1
+    return StatDelta(add=add)
 
 
 def casino_stats(*, stake: int, net: int, balance_after: int, tax_delta: int = 0) -> StatDelta:
