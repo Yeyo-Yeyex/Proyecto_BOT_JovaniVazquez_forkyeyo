@@ -128,6 +128,9 @@ CATEGORIES: tuple[Category, ...] = (
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
     Category("jobs", "👷 Oficios"),
+    Category("sanidad", "🏥 Sanidad"),
+    Category("oficina", "💻 Oficina"),
+    Category("hongkong", "🇭🇰 Hong Kong"),
     Category("meta", "🏆 Coleccionista"),
 )
 CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
@@ -296,6 +299,34 @@ PARTNER_STORY = (
     "Seguridad Social tuya y la de la empresa, el IRPF, el IGIC de lo que compras y el "
     "Patrimonio. Es la cuenta que hace la gente cuando dice que trabaja medio año para "
     "Hacienda, y aquí te ha salido más de medio. Perro Sanxe te considera de la familia."
+)
+
+
+#: Discurso del logro `guardia_1`: la primera guardia.
+GUARD_STORY = (
+    "🚑 **Tu primera guardia.** Las guardias no son horas extra: en el Estatuto Marco "
+    "(Ley 55/2003) son jornada complementaria, así que no tienen tope ni se pagan en B. Te "
+    "pagan 1,6 veces la base por el doble de trabajo: la hora de guardia sale más barata "
+    "que la normal, como en muchos hospitales de verdad. Pero en sanidad la barra solo sube "
+    "con guardias. Bienvenido, y ahora a dormir: estás saliente."
+)
+
+#: Discurso del logro `no_residente`: dejar de ser residente fiscal en España.
+NONRESIDENT_STORY = (
+    "✈️ **Ya no eres residente fiscal en España.** Quien pasa más de 183 días del año "
+    "fuera deja de serlo (art. 9.1.a LIRPF), salvo que su familia o sus intereses "
+    "económicos sigan aquí (art. 9.1.b). Desde hoy tu sueldo de Hong Kong solo paga allí. "
+    "Perro Sanxe mira tu nómina como quien mira un barco que se va. Ojo: si sigues "
+    "comprando en el chiringuito, a lo mejor te escribe."
+)
+
+#: Discurso del logro `beckham`.
+BECKHAM_STORY = (
+    "⚽ **Ley Beckham.** El régimen de impatriados (art. 93 LIRPF) es para quien se muda a "
+    "España tras 5 años sin residir aquí: durante el año de la llegada y los 5 siguientes, "
+    "su sueldo tributa al 24 % fijo hasta 600.000 € en vez de por la escala. Se llama así "
+    "porque llegó con Beckham al Real Madrid en 2003. Tú no juegas al fútbol, pero "
+    "tributas como si sí."
 )
 
 
@@ -1588,6 +1619,227 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "visto", "Visto a las 23:47", "Déjale el visto a tu madre.", C, True),
     ])  # fmt: skip
 
+    # 🏥 Sanidad ------------------------------------------------------------------------
+    a.append(Achievement(
+        id="guardia_1", name="Primera guardia",
+        description="Haz tu primera guardia.", category="sanidad", rarity=C,
+        conditions=(("work_guards", 1),), story=GUARD_STORY,
+    ))  # fmt: skip
+    a += _tiers("sanidad", "work_guards", [
+        (10, "guardia_10", "De guardia", "Haz 10 guardias.", R),
+        (50, "guardia_50", "Vives en el hospital", "Haz 50 guardias.", E),
+        (100, "guardia_100", "La cama de guardias es tuya", "Haz 100 guardias.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_zombie_guard", [
+        (1, "treinta_seis", "36 horas despierto", "Haz una guardia con la batería en negativo.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_off_duty_tries", [
+        (1, "saliente", "Saliente, pero con ganas", "Intenta fichar estando saliente.", C, True),
+        (10, "adicto_hospital", "Adicto al hospital", "Intenta fichar saliente 10 veces.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_missed_guards", [
+        (1, "tutor", "El tutor te busca", "Sáltate las guardias mínimas del MIR.", C, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_stretcher", [
+        (50, "celador_pro", "Celador todoterreno", "Haz 50 traslados perfectos.", R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_rounds", [
+        (50, "ronda_seis", "La ronda de las seis", "Haz 50 rondas perfectas en planta.", R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_triage", [
+        (30, "ojo_clinico", "Ojo clínico", "Acierta 30 triajes.", R),
+        (200, "manchester", "Triaje de Manchester", "Acierta 200 triajes.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_mir", [
+        (50, "numero_uno", "Número uno del MIR", "Acierta 50 preguntas del MIR.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_google", [
+        (30, "doctor_google", "Doctor Google", "Gana 30 consultas.", R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_cancun", [
+        (1, "cancun", "Congreso en Cancún", "Acepta el «congreso» del visitador médico.", R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_cancun_refused", [
+        (1, "etica", "Ética de manual", "Rechaza el congreso en Cancún.", C, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_caught_expediente", [
+        (1, "expediente", "Expediente disciplinario", "Que te pillen el congreso.", E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_strike", [
+        (1, "huelguista", "Huelguista", "Súmate a la huelga de residentes.", R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_scab", [
+        (1, "esquirol", "Esquirol", "Trabaja durante la huelga.", R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_waitlist", [
+        (1, "lista_infinita", "Lista de espera infinita", "«Optimiza» la lista de espera.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_aggressive", [
+        (5, "seguridad_sala", "Seguridad, a la sala 3", "Sobrevive a 5 familiares alterados.", R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_clap", [
+        (1, "aplausos", "Aplausos de las ocho", "Saluda al vecino que aún aplaude.", C, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_shift_swap", [
+        (3, "cambio_turno", "Comodín de la supervisora", "Acepta 3 cambios de turno.", R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_top_sanidad", [
+        (1, "adjunto", "Médico adjunto", "Llega a médico adjunto.", L),
+    ])  # fmt: skip
+
+    # 💻 Oficina ------------------------------------------------------------------------
+    a += _tiers("oficina", "work_coffee_orders", [
+        (50, "becario_cafe", "Becario del café", "Acierta 50 rondas de cafés.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_bugs", [
+        (1, "mi_maquina", "Funciona en mi máquina", "Encuentra tu primer bug.", C),
+        (100, "cazabugs", "Cazabugs", "Encuentra 100 bugs.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_reviews", [
+        (30, "guardian", "Guardián de producción", "Para 30 cambios peligrosos.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_meetings", [
+        (30, "podia_correo", "Esta reunión podía ser un correo", "Acorta 30 reuniones.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_pitches", [
+        (30, "humo", "Humo de calidad", "Convence a 30 inversores.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_remote", [
+        (1, "sofa", "Desde el sofá", "Teletrabaja por primera vez.", C),
+        (50, "nomada_salon", "Nómada digital del salón", "Teletrabaja 50 turnos.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_office", [
+        (50, "presentismo", "Presentismo", "Ve a la oficina 50 turnos (que te vean).", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_always_online", [
+        (1, "siempre_linea", "Siempre en línea", "Contesta al jefe a las once de la noche.", C),
+        (10, "esclavo_slack", "Esclavo de la mensajería", "Contesta fuera de hora 10 veces.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_disconnect", [
+        (1, "desconexion", "Desconexión digital", "No contestes fuera de hora.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_deploy_friday", [
+        (1, "viernes", "Viernes de despliegue", "Despliega un viernes por la tarde.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_useless_meeting", [
+        (5, "reunionitis", "Reunionitis", "Ve a 5 reuniones inútiles.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_meeting_killed", [
+        (1, "mata_reuniones", "Matarreuniones", "Cancela una reunión con un correo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_linkedin", [
+        (1, "agradecido", "Agradecido y emocionado de anunciar", "Publica en LinkedIn.", C, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_paintball", [
+        (1, "paintball", "Fuego amigo", "Ve al paintball de empresa.", C, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ai_ninja", [
+        (1, "ninja", "Formador de ninjas", "Enséñale el código al ninja de la IA.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ireland", [
+        (1, "dublin", "Farol irlandés", "Usa la oferta de Dublín para pedir aumento.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_options_max", [
+        (100_000, "rico_papel", "Rico en papel", "Acumula 100.000 Y$ en stock options.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("oficina", "work_exit", [
+        (1, "unicornio", "Unicornio", "Vive un exit.", L, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_bankrupt", [
+        (1, "quiebra", "Quiebra", "Que tu startup quiebre con tus opciones dentro.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_top_oficina", [
+        (1, "cto", "CTO", "Llega a CTO de startup.", L),
+    ])  # fmt: skip
+
+    # 🇭🇰 Hong Kong ---------------------------------------------------------------------
+    a += _tiers("hongkong", "work_abroad", [
+        (1, "expat", "Néih hóu, Hong Kong", "Vete a trabajar a Hong Kong.", R),
+        (3, "expat_3", "Ida y vuelta", "Vete a Hong Kong 3 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_hk_shifts", [
+        (10, "hk_10", "Expat de manual", "Haz 10 turnos desde Hong Kong.", R),
+        (100, "hk_100", "Ya no vuelves", "Haz 100 turnos desde Hong Kong.", E),
+        (500, "hk_500", "Más de aquí que de allí", "Haz 500 turnos desde Hong Kong.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="no_residente", name="183 días",
+        description="Deja de ser residente fiscal en España.", category="hongkong", rarity=E,
+        conditions=(("work_nonresident", 1),), story=NONRESIDENT_STORY,
+    ))  # fmt: skip
+    a += _tiers("hongkong", "work_7p", [
+        (1, "siete_p", "Exento por el 7.p", "Cobra con la exención por trabajos en el extranjero.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_double_tax", [
+        (1, "doble_imposicion", "Sin doble imposición",
+         "Descuenta lo pagado en Hong Kong de tu IRPF.", R),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_hk_tax", [
+        (10_000, "hk_tax", "Contribuyente en Hong Kong",
+         "Deja 10.000 Y$ entre salaries tax y MPF.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("hongkong", "work_jetlag", [
+        (1, "jetlag", "Jet lag", "Ficha desde Hong Kong cuando en Canarias es de madrugada.", C),
+        (25, "reloj_roto", "Reloj biológico roto", "25 turnos con jet lag.", R),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_t8", [
+        (1, "t8", "Señal 8", "Quédate en casa con el tifón.", R, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_t8_hero", [
+        (1, "t8_heroe", "Ni el tifón te para", "Ve a la oficina con señal 8.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_dimsum", [
+        (1, "dimsum", "Dim sum con Robuso", "Desayuna dim sum con Robuso en Hong Kong.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_lkf", [
+        (1, "lkf", "Lan Kwai Fong", "Sal de afterwork y acaba en un karaoke.", C, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_videocall", [
+        (1, "videollamada", "Videollamada a las tres", "Contesta a tu madre de madrugada.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_proved_residence", [
+        (1, "vivo_aqui", "Vivo aquí, lo juro", "Demuestra a Hacienda que vives fuera.", R, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_caught_hacienda", [
+        (1, "residencia_ficticia", "Residencia fiscal ficticia",
+         "Que Hacienda te regularice por vivir «fuera».", E, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "imv_abroad", [
+        (1, "paguita_hk", "Paguita desde Hong Kong", "Intenta cobrar el IMV viviendo fuera.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "work_return", [
+        (1, "vuelta", "Vuelta a casa", "Vuelve de Hong Kong.", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="beckham", name="Ley Beckham",
+        description="Vuelve tras 5 «años» fuera y tributa al 24 %.", category="hongkong",
+        rarity=L, conditions=(("work_beckham", 1),), secret=True, story=BECKHAM_STORY,
+    ))  # fmt: skip
+    a += _tiers("hongkong", "work_abroad_days_max", [
+        (7, "semana_fuera", "Una semana fuera", "Pasa 7 días seguidos en Hong Kong.", R),
+        (35, "cinco_anos", "Cinco «años» fuera", "Pasa 35 días seguidos en Hong Kong.", L),
+    ])  # fmt: skip
+
+    # 🪏 Trabajo (más) --------------------------------------------------------------------
+    a += _tiers("jobs", "work_jobs_tried", [
+        (3, "probador", "Probando oficios", "Trabaja en 3 oficios distintos.", R),
+        (5, "curriculum_infinito", "Currículum infinito", "Trabaja en los 5 oficios.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_zero", [
+        (1, "cero", "¿Has venido a trabajar?", "Saca un 0 en un turno.", C, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_black_total", [
+        (10, "sumergida", "Economía sumergida", "Cobra 10 turnos en B.", R, True),
+    ])  # fmt: skip
+
     # 🏆 Coleccionista --------------------------------------------------------------------
     a += _tiers("meta", UNLOCKED_STAT, [
         (10, "meta_10", "Cazador de logros", "Desbloquea 10 logros.", C),
@@ -2287,6 +2539,16 @@ def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: 
 
 #: Contadores de logros por contenido de minijuego: `contenido → estadística`.
 _WORK_CONTENT_STATS = {
+    "camilla": "work_stretcher",
+    "ronda": "work_rounds",
+    "triaje": "work_triage",
+    "mir": "work_mir",
+    "consulta": "work_google",
+    "cafes": "work_coffee_orders",
+    "bugs": "work_bugs",
+    "revisiones": "work_reviews",
+    "reuniones": "work_meetings",
+    "inversores": "work_pitches",
     "vagos": "work_slackers",
     "sobrecostes": "work_overruns",
     "platos": "work_perfect_orders",
@@ -2366,8 +2628,45 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
     taxes, net = outcome.week_taxes
     if net > 0 and taxes >= net:
         add["work_partner"] = 1
+    if outcome.score == 0:
+        add["work_zero"] = 1
+    if outcome.kind.value == "negro":
+        add["work_black_total"] = 1
+    if outcome.kind.value == "guardia":
+        add["work_guards"] = 1
+        if outcome.battery_before < 0:
+            add["work_zombie_guard"] = 1
+    if outcome.missed_guards:
+        add["work_missed_guards"] = 1
+    if outcome.remote:
+        add["work_remote"] = 1
+    elif outcome.job.key == "oficina" and not outcome.abroad:
+        add["work_office"] = 1
+    if outcome.abroad:
+        add["work_hk_shifts"] = 1
+        if outcome.canary_night:
+            add["work_jetlag"] = 1
+        if outcome.phase == "no_residente":
+            add["work_nonresident"] = 1
+    foreign = outcome.foreign
+    if foreign is not None:
+        add["work_hk_tax"] = foreign.foreign
+        if foreign.exempt:
+            add["work_7p"] = 1
+        if foreign.double_tax_relief:
+            add["work_double_tax"] = 1
+        if foreign.irpf:
+            add["tax_paid"] = foreign.irpf
+    if outcome.options_total:
+        delta.peak["work_options_max"] = outcome.options_total
+    if outcome.exit_payout:
+        add["work_exit"] = 1
+    if outcome.bankrupt:
+        add["work_bankrupt"] = 1
     return delta
 
 
 #: Contenidos de memoria: cuentan las rondas perfectas, no los aciertos sueltos.
-MEMORY_CONTENT = frozenset({"platos", "comandas", "cocina", "carteles", "votos"})
+MEMORY_CONTENT = frozenset(
+    {"platos", "comandas", "cocina", "carteles", "votos", "camilla", "ronda", "cafes"}
+)

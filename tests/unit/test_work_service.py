@@ -397,3 +397,223 @@ def test_el_reloj_de_las_pruebas_es_un_martes_a_mediodia() -> None:
 
     moment = datetime.fromtimestamp(START, TIMEZONE)
     assert moment.weekday() == 1 and moment.hour == 12
+
+
+# -- Sanidad: guardias ---------------------------------------------------------------
+
+
+async def set_level(service: WorkService, job: str, level: int) -> None:
+    await service.hire(GUILD, USER, job)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level = level
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_el_celador_no_hace_guardias(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "sanidad")
+    with pytest.raises(WorkError, match="guardias"):
+        await service.start_shift(GUILD, USER, guard=True)
+
+
+async def test_en_sanidad_el_turno_normal_apenas_sube_la_barra(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_level(service, "sanidad", 2)
+    await work(service)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.contract.performance == 50 + 5
+
+
+async def test_la_guardia_paga_mas_rinde_el_doble_y_te_deja_saliente(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "sanidad", 2)
+    shift = await service.start_shift(GUILD, USER, guard=True)
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    base = JOB_BY_KEY["sanidad"].position(2).base_pay
+    assert outcome.kind is ShiftKind.GUARD
+    assert outcome.payslip is not None
+    assert outcome.payslip.gross == round(base * 1.3 * 1.6)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.contract.performance == 50 + 50
+    assert status.contract.shifts_today == 0  # no es jornada ordinaria
+    assert status.contract.guards_week == 1
+    assert status.contract.progress["guards"] == 1
+    with pytest.raises(pala.OffDuty):
+        await service.start_shift(GUILD, USER)
+    clock.now += 12 * 3600 + 1
+    await service.start_shift(GUILD, USER)
+
+
+async def test_al_mir_le_baja_la_barra_si_no_hizo_las_guardias(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "sanidad", 4)
+    await work(service, perfect=False)  # turno del martes: abre la semana sin guardias
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    before = status.contract.performance
+    clock.now += 7 * 86_400  # el martes siguiente
+    outcome = await work(service, perfect=False)
+    assert outcome.missed_guards == 2
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    # Sin la penalización bajaría como mucho 25 por el mal turno; con ella, 40 más.
+    assert status.contract.performance == max(0, before - 25 - 2 * 20)
+
+
+# -- Oficina: teletrabajo, stock options --------------------------------------------
+
+
+async def test_el_teletrabajo_cansa_la_mitad_y_rinde_la_mitad(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "oficina")
+    shift = await service.start_shift(GUILD, USER, remote=True)
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert outcome.remote
+    assert outcome.battery_after == BATTERY_MAX - 9
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.performance == 50 + 12
+
+
+async def test_teletrabajando_te_escriben_fuera_de_hora(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "oficina")
+    dice.hits.add(pala.REMOTE_PING_CHANCE)
+    shift = await service.start_shift(GUILD, USER, remote=True)
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert outcome.event is not None and outcome.event.key == "desconexion"
+
+
+async def test_el_cto_cobra_en_opciones_y_el_exit_paga_exento_y_con_irpf(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "oficina", 5)
+    first = await work(service)
+    assert first.options_added == round(first.gross * 0.3)
+    assert first.payslip is not None and first.payslip.gross == first.gross - first.options_added
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.options = 400_000
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    dice.hits.add(pala.EXIT_CHANCE)
+    clock.now += 600
+    before = await service.economy.balance(GUILD, USER)
+    outcome = await work(service)
+    assert outcome.exit_payout >= 400_000 * 2
+    assert outcome.options_total == 0
+    gained = outcome.balance - before
+    assert gained > pala.OPTIONS_EXEMPT  # la parte exenta llega entera
+    total, balance = ledger(tmp_path, USER)
+    assert total == balance
+
+
+async def test_si_la_startup_quiebra_las_opciones_se_pierden(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_level(service, "oficina", 5)
+    dice.hits.add(pala.BANKRUPT_CHANCE)
+    outcome = await work(service)
+    assert outcome.bankrupt and outcome.options_total == 0
+
+
+# -- Oficina: Hong Kong -------------------------------------------------------------
+
+
+async def money(service: WorkService, amount: int) -> None:
+    from bot.repositories.economy import LedgerEntry
+
+    await service.economy.repository.apply(GUILD, USER, [LedgerEntry(amount, "prueba")])
+
+
+async def test_el_becario_no_se_va_a_hong_kong(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "oficina")
+    with pytest.raises(WorkError, match="Hong Kong"):
+        await service.move_abroad(GUILD, USER)
+
+
+async def test_desde_hong_kong_paga_alli_y_no_hay_imv(tmp_path: Path, dice: Dice) -> None:
+    from bot.repositories.economy import HK_ACCOUNT_ID
+
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "oficina", 3)
+    await money(service, 50_000)
+    status = await service.move_abroad(GUILD, USER)
+    assert status.contract.abroad == "hk" and status.phase == "residente"
+    assert status.battery == BATTERY_MAX - 30  # jet lag
+    with pytest.raises(WorkError, match="Hong Kong"):
+        await service.hire(GUILD, USER, "obra")
+    daily = await service.economy.claim_daily(GUILD, USER)
+    assert not daily.claimed and daily.abroad == "hk"
+
+    state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
+    outcome = await work(service)
+    foreign = outcome.foreign
+    assert foreign is not None and outcome.payslip is None
+    base = JOB_BY_KEY["oficina"].position(3).base_pay
+    assert foreign.gross == round(round(base * 1.3) * 2)
+    assert foreign.resident and foreign.exempt > 0
+    assert ledger(tmp_path, HK_ACCOUNT_ID)[1] == foreign.foreign
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] - state_before == foreign.irpf
+    total, balance = ledger(tmp_path, USER)
+    assert total == balance
+
+    clock.now += 5 * 86_400  # más de 4 días fuera: ya no es residente
+    outcome = await work(service)
+    assert outcome.phase == "no_residente"
+    assert outcome.foreign is not None and outcome.foreign.irpf == 0
+    assert outcome.foreign.exempt == 0
+
+
+async def test_volver_tras_cinco_anos_fuera_trae_la_ley_beckham(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "oficina", 4)
+    await money(service, 50_000)
+    await service.move_abroad(GUILD, USER)
+    clock.now += 36 * 86_400
+    status, beckham, days = await service.come_home(GUILD, USER)
+    assert beckham and days >= 35
+    assert status.beckham and not status.contract.abroad
+    assert (await service.economy.claim_daily(GUILD, USER)).abroad is None
+    outcome = await work(service)
+    assert outcome.beckham
+    assert outcome.payslip is not None and outcome.payslip.rates.irpf == pytest.approx(0.24)
+
+
+async def test_volver_pronto_no_trae_beckham(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "oficina", 3)
+    await money(service, 50_000)
+    await service.move_abroad(GUILD, USER)
+    clock.now += 2 * 86_400
+    status, beckham, _days = await service.come_home(GUILD, USER)
+    assert not beckham and not status.beckham
+
+
+async def test_ignorar_la_carta_de_hacienda_puede_salir_cara(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await set_level(service, "oficina", 3)
+    await money(service, 50_000)
+    await service.move_abroad(GUILD, USER)
+    dice.hits.add(0.4)
+    state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
+    result = await service.resolve_event(GUILD, USER, "carta_hacienda", 1)
+    assert result.caught and result.caught_by == "hacienda"
+    assert result.fine == round(JOB_BY_KEY["oficina"].position(3).base_pay * 3)
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] - state_before == result.fine
+    # Hacienda no suspende el IMV (eso es cosa de la Inspección y la UCO).
+    assert await service.economy.repository.imv_suspended_until(GUILD, USER) == 0

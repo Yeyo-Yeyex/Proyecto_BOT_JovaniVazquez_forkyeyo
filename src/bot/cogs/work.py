@@ -2,11 +2,16 @@
 
 `pala` abre el panel de tu curro (solo lo toca su dueño):
 
-- Sin contrato, un menú para elegir oficio (obra, hostelería o política).
+- Sin contrato, un menú para elegir oficio (obra, hostelería, política, sanidad u
+  oficina).
 - Con contrato: puesto, sueldo, batería, rendimiento, familia, jornada y lo
   que falta para ascender. Botones para ⛏️ **Fichar**, 📈 **Ascender** cuando
   toca, 🎓 **Formación** cuando hace falta un curso y 📜 **Vida laboral**, y
   menús para la máquina de café y para cambiar de oficio.
+
+Según el oficio y el puesto aparecen también 🚑 **Guardia** (sanidad), 🏠
+**Teletrabajo** (oficina) y 🌏 **Irse a Hong Kong** / ✈️ **Volver a casa**
+(oficina, desde senior). Viviendo fuera no se cambia de oficio.
 
 Fichar lanza el minijuego del puesto en el mismo mensaje (cavar, detectar,
 memoria o diálogo; de 30 a 60 s). Al acabar, o al agotarse el tiempo, se
@@ -46,15 +51,17 @@ from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import (
     EventResult,
     NeedsBlack,
+    OffDuty,
     Shift,
     ShiftOutcome,
     Status,
     WorkError,
     WorkService,
 )
-from bot.services.taxes import TAX_COLLECTOR, Payslip, format_rate, igic
+from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
 from bot.services.work import (
     FAMILY_WORRIED,
+    FLIGHT_PRICE,
     LEGAL_EXTRAS_PER_WEEK,
     MAX_COFFEES,
     ORDINARY_SHIFTS,
@@ -90,7 +97,18 @@ KIND_TEXT = {
     ShiftKind.ORDINARY: "ordinario",
     ShiftKind.EXTRA: "extra (×1,25)",
     ShiftKind.BLACK: "extra en B 🤫",
+    ShiftKind.GUARD: "de guardia 🚑",
 }
+PHASE_TEXT = {
+    "residente": "sigues siendo residente fiscal en España (art. 7.p LIRPF: exento hasta "
+    "60.100 € al año)",
+    "no_residente": "ya no eres residente fiscal en España: solo paga Hong Kong",
+}
+
+
+def decimal(value: float) -> str:
+    """`2.5` → `2,5` (coma decimal, al estilo español)."""
+    return f"{value:.1f}".replace(".", ",")
 
 
 def _pct(rate: float) -> str:
@@ -128,6 +146,33 @@ def payslip_text(slip: Payslip, *, title: str, self_employed: bool) -> str:
     return "\n".join(lines)
 
 
+def foreign_payslip_text(slip: ForeignPayslip, *, title: str) -> str:
+    """Desglose de una nómina cobrada en Hong Kong."""
+    lines = [
+        f"📄 **Payslip** · {title} · 🇭🇰 Hong Kong",
+        f"Bruto (paquete de expatriado): **{format_amount(slip.gross)}**",
+        f"MPF (5 %): −{format_amount(slip.mpf_worker)}",
+        f"Salaries tax: −{format_amount(slip.hk_tax)}"
+        if slip.hk_tax
+        else "Salaries tax: 0 Y$ (aún no pasas de la deducción personal de HK$132.000)",
+    ]
+    if slip.resident:
+        lines.append(f"Exento en España (art. 7.p LIRPF): {format_amount(slip.exempt)}")
+        if slip.irpf or slip.double_tax_relief:
+            lines.append(
+                f"IRPF español: −{format_amount(slip.irpf)} (ya descontados "
+                f"{format_amount(slip.double_tax_relief)} por doble imposición, art. 80 LIRPF)"
+            )
+    else:
+        lines.append("IRPF español: 0 Y$ (ya no eres residente en España)")
+    lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
+    lines.append(
+        f"-# 🇭🇰 Hong Kong se queda {format_amount(slip.foreign)} (MPF de los dos y salaries "
+        f"tax). {TAX_COLLECTOR} se queda {format_amount(slip.irpf)} y está que trina."
+    )
+    return "\n".join(lines)
+
+
 def status_text(status: Status, notes: list[str]) -> str:
     """Texto del panel de un contrato."""
     contract, job, position = status.contract, status.job, status.position
@@ -145,8 +190,32 @@ def status_text(status: Status, notes: list[str]) -> str:
         f"🗓️ Hoy: {min(contract.shifts_today, ORDINARY_SHIFTS)}/{ORDINARY_SHIFTS} turnos "
         f"ordinarios · Extras legales esta semana: "
         f"{min(contract.extras_week, LEGAL_EXTRAS_PER_WEEK)}/{LEGAL_EXTRAS_PER_WEEK}",
-        f"Próximo turno: {KIND_TEXT[status.next_kind]}",
+        "Próximo turno: "
+        + ("cuando acabe el saliente" if status.off_duty else KIND_TEXT[status.next_kind]),
     ]
+    if status.can_guard:
+        required = job.required_guards(contract.level)
+        lines.append(
+            f"🚑 Guardias esta semana: {contract.guards_week}"
+            + (f"/{required} obligatorias" if required else "")
+            + " · la barra solo sube de verdad con guardias"
+        )
+    if status.off_duty:
+        lines.append(f"🛌 **Saliente de guardia** hasta <t:{int(contract.off_duty_until)}:t>.")
+    if contract.abroad:
+        days = (status.now - contract.abroad_since) / 86_400
+        lines.append(
+            f"🇭🇰 **En Hong Kong** desde hace {decimal(days)} días: {PHASE_TEXT[status.phase]}. "
+            "Sin IMV mientras vivas fuera."
+        )
+    if status.beckham:
+        lines.append(
+            f"⚽ **Ley Beckham** hasta <t:{int(contract.beckham_until)}:d>: IRPF al 24 % fijo."
+        )
+    if job.options_level == contract.level:
+        lines.append(
+            f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
+        )
     if status.sick:
         lines.append(f"🩹 **De baja** hasta <t:{int(contract.sick_until)}:t>.")
     if status.on_leave:
@@ -173,7 +242,13 @@ def status_text(status: Status, notes: list[str]) -> str:
 def outcome_text(outcome: ShiftOutcome) -> str:
     """Resultado de un turno."""
     game = outcome.game
-    lines = [f"## ⛏️ Turno {KIND_TEXT[outcome.kind]} · {outcome.score}/100"]
+    where = " · 🏠 teletrabajo" if outcome.remote else " · 🇭🇰" if outcome.abroad else ""
+    lines = [f"## ⛏️ Turno {KIND_TEXT[outcome.kind]}{where} · {outcome.score}/100"]
+    if outcome.missed_guards:
+        lines.append(
+            f"📋 **Tu tutor te busca:** la semana pasada te faltaron {outcome.missed_guards} "
+            "guardias obligatorias. La barra lo paga."
+        )
     detail = f"{game.correct} aciertos"
     if game.mechanic is Mechanic.DIG and game.broken:
         detail += f" · 💥 {game.broken} roturas"
@@ -187,6 +262,25 @@ def outcome_text(outcome: ShiftOutcome) -> str:
                 title=outcome.position.title,
                 self_employed=outcome.position.self_employed,
             )
+        )
+    if outcome.foreign is not None:
+        lines.append(foreign_payslip_text(outcome.foreign, title=outcome.position.title))
+    if outcome.beckham:
+        lines.append("-# ⚽ Ley Beckham: IRPF al 24 % fijo (art. 93 LIRPF).")
+    if outcome.options_added:
+        lines.append(
+            f"🦄 +{format_amount(outcome.options_added)} en stock options (no se cobran). "
+            f"Llevas {format_amount(outcome.options_total)} en papel."
+        )
+    if outcome.exit_payout:
+        lines.append(f"## 🚀 ¡EXIT! Tus opciones valen {format_amount(outcome.exit_payout)}")
+        lines.append("-# Exentas hasta 500.000 Y$ (Ley 28/2022); el resto, con IRPF.")
+    if outcome.bankrupt:
+        lines.append("💀 **La startup quiebra.** Tus stock options valen lo que el papel.")
+    if outcome.kind is ShiftKind.GUARD:
+        lines.append(
+            "🛌 Ahora estás **saliente**: 12 h sin fichar. La guardia pagó "
+            "1,6 veces la base por el doble de trabajo: la hora sale más barata."
         )
     if outcome.black:
         lines.append(f"## 🤫 En B: +{format_amount(outcome.black)}")
@@ -225,7 +319,7 @@ def event_result_text(result: EventResult) -> str:
     if result.paid is not None:
         lines.append(
             f"{CURRENCY_EMOJI} +{format_amount(result.paid.net)} netos "
-            f"({format_amount(result.paid.gross)} brutos, con su IRPF y su Seguridad Social)."
+            f"({format_amount(result.paid.gross)} brutos, con sus impuestos)."
         )
     if result.black:
         lines.append(f"🤫 +{format_amount(result.black)} en negro.")
@@ -356,9 +450,21 @@ class PalaPanel(ui.LayoutView):
         notes, self.notes = self.notes, []
         green = discord.ButtonStyle.success
         actions: ui.ActionRow = ui.ActionRow()
-        actions.add_item(
-            self._button("⛏️ Fichar", self._clock_in, style=green, disabled=status.sick)
-        )
+        blocked = status.sick or status.off_duty
+        actions.add_item(self._button("⛏️ Fichar", self._clock_in, style=green, disabled=blocked))
+        if status.can_guard:
+            actions.add_item(
+                self._button(
+                    "🚑 Guardia",
+                    self._clock_in_guard,
+                    style=discord.ButtonStyle.danger,
+                    disabled=blocked,
+                )
+            )
+        if status.job.remote:
+            actions.add_item(
+                self._button("🏠 Teletrabajo", self._clock_in_remote, disabled=blocked)
+            )
         if status.promotion_ready:
             actions.add_item(
                 self._button("📈 Ascender", self._offer, style=discord.ButtonStyle.primary)
@@ -371,12 +477,21 @@ class PalaPanel(ui.LayoutView):
         ):
             price = following.training.price + igic(following.training.price)
             actions.add_item(self._button(f"🎓 Formación · {format_amount(price)}", self._training))
-        actions.add_item(self._button("📜 Vida laboral", self._career))
+        more: ui.ActionRow = ui.ActionRow()
+        more.add_item(self._button("📜 Vida laboral", self._career))
+        flight = format_amount(FLIGHT_PRICE + igic(FLIGHT_PRICE))
+        if status.can_go_abroad:
+            more.add_item(self._button(f"🌏 Irse a Hong Kong · {flight}", self._go_abroad))
+        elif status.contract.abroad:
+            more.add_item(self._button(f"✈️ Volver a casa · {flight}", self._go_home))
         coffee_row: ui.ActionRow = ui.ActionRow()
         coffee_row.add_item(self._coffee_select(status.contract.coffees))
-        job_row: ui.ActionRow = ui.ActionRow()
-        job_row.add_item(self._job_select(status.contract.job))
-        self._frame(status_text(status, notes), COLOR_IDLE, [actions, coffee_row, job_row])
+        rows = [actions, more, coffee_row]
+        if not status.contract.abroad:
+            job_row: ui.ActionRow = ui.ActionRow()
+            job_row.add_item(self._job_select(status.contract.job))
+            rows.append(job_row)
+        self._frame(status_text(status, notes), COLOR_IDLE, rows)
 
     def show_game(self) -> None:
         """Pantalla del minijuego en marcha."""
@@ -620,7 +735,14 @@ class PalaPanel(ui.LayoutView):
 
     # -- Turno ------------------------------------------------------------------------
 
-    async def _clock_in(self, interaction: discord.Interaction, *, black_ok: bool = False) -> None:
+    async def _clock_in(
+        self,
+        interaction: discord.Interaction,
+        *,
+        black_ok: bool = False,
+        guard: bool = False,
+        remote: bool = False,
+    ) -> None:
         async with self._lock:
             if self.shift is not None:
                 await interaction.response.defer()
@@ -635,7 +757,7 @@ class PalaPanel(ui.LayoutView):
                 return
             try:
                 shift = await self.service.start_shift(
-                    self.guild_id, self.owner.id, black_ok=black_ok
+                    self.guild_id, self.owner.id, black_ok=black_ok, guard=guard, remote=remote
                 )
             except NeedsBlack as error:
                 row: ui.ActionRow = ui.ActionRow()
@@ -653,6 +775,16 @@ class PalaPanel(ui.LayoutView):
                 )
                 await self._edit(interaction)
                 return
+            except OffDuty as error:
+                await interaction.response.send_message(str(error), ephemeral=True)
+                await logros.track(
+                    self.cog.bot,
+                    self.guild_id,
+                    self.owner,
+                    self.channel,
+                    StatDelta(add={"work_off_duty_tries": 1}),
+                )
+                return
             except WorkError as error:
                 await interaction.response.send_message(str(error), ephemeral=True)
                 return
@@ -669,6 +801,60 @@ class PalaPanel(ui.LayoutView):
 
     async def _clock_in_black(self, interaction: discord.Interaction) -> None:
         await self._clock_in(interaction, black_ok=True)
+
+    async def _clock_in_guard(self, interaction: discord.Interaction) -> None:
+        await self._clock_in(interaction, guard=True)
+
+    async def _clock_in_remote(self, interaction: discord.Interaction) -> None:
+        await self._clock_in(interaction, remote=True)
+
+    # -- Hong Kong --------------------------------------------------------------------
+
+    async def _go_abroad(self, interaction: discord.Interaction) -> None:
+        try:
+            status = await self.service.move_abroad(self.guild_id, self.owner.id)
+        except WorkError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        self.notes.append(
+            "✈️ **¡Te vas a Hong Kong!** Doce horas de vuelo, un jet lag que te deja la "
+            "batería tiritando y Robuso esperándote en el aeropuerto. Cobrarás el doble "
+            "(paquete de expatriado), pero pagarás MPF y "
+            "salaries tax, y no hay IMV mientras vivas fuera (art. 36.e de la Ley 19/2021). "
+            "Pasados 4 días dejas de ser residente fiscal en España (183 días del año, "
+            "art. 9.1.a LIRPF, a la escala del juego)."
+        )
+        self.show_status(status)
+        await self._edit(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            self.channel,
+            StatDelta(add={"work_abroad": 1}),
+        )
+
+    async def _go_home(self, interaction: discord.Interaction) -> None:
+        try:
+            status, beckham, days = await self.service.come_home(self.guild_id, self.owner.id)
+        except WorkError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        note = f"🏠 **Vuelves a casa** tras {decimal(days)} días en Hong Kong. Tu madre llora."
+        if beckham:
+            note += (
+                " Y como has pasado fuera 5 «años», te toca la **Ley Beckham** (art. 93 LIRPF): "
+                "durante 6 semanas tu IRPF es un 24 % fijo."
+            )
+        self.notes.append(note)
+        self.show_status(status)
+        await self._edit(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        delta = StatDelta(add={"work_return": 1}, peak={"work_abroad_days_max": int(days)})
+        if beckham:
+            delta.add["work_beckham"] = 1
+        await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
 
     async def _deadline(self, shift: Shift) -> None:
         """Cierra el turno al acabarse el tiempo aunque nadie pulse nada."""
@@ -811,6 +997,7 @@ class Work(commands.Cog, name="Trabajo"):
         delta = StatDelta(peak={})
         tops = [job for job, (_level, top) in history.items() if top >= JOB_BY_KEY[job].top]
         delta.peak["work_jobs_top"] = len(tops)
+        delta.peak["work_jobs_tried"] = len(history)
         for job in tops:
             delta.peak[f"work_top_{job}"] = 1
         return delta

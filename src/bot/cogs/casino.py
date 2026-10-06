@@ -926,6 +926,19 @@ class Casino(commands.Cog):
             return
         result = await self.economy.claim_daily(responder.guild.id, user.id)
         next_at = f"<t:{int(result.next_claim_at)}:R>"
+        if result.abroad:
+            await responder.send_error(
+                "🇭🇰 Vives en Hong Kong, mi amor: el IMV es para quien reside en España "
+                "(arts. 10 y 36.e de la Ley 19/2021). Vuelve con `pala` y hablamos."
+            )
+            await logros.track(
+                self.bot,
+                responder.guild.id,
+                user,
+                responder.channel,
+                StatDelta(add={"imv_abroad": 1}),
+            )
+            return
         if result.suspended_until:
             await responder.send_error(
                 f"🕵️ La Inspección de Trabajo te pilló cobrando en negro y te ha suspendido "

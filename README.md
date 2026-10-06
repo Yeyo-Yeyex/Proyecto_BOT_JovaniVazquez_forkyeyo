@@ -191,9 +191,9 @@ python -m bot
   o retirarlo). Todo se configura desde Discord, sin tocar código. No deja
   vender roles por encima del del bot ni con permisos de moderación o
   administración. El bot necesita **Gestionar roles**.
-- **Trabajo** (`pala`): coges la pala y curras. Tres oficios con 5 puestos cada
-  uno (🦺 obra, 🍽️ hostelería y 🌹 política en el PSOE, de pegacarteles a
-  consejero de una eléctrica). Cada turno es un minijuego de decidir rápido, de
+- **Trabajo** (`pala`): coges la pala y curras. Cinco oficios con 5 puestos cada
+  uno (🦺 obra, 🍽️ hostelería, 🌹 política en el PSOE, de pegacarteles a
+  consejero de una eléctrica, 🏥 sanidad y 💻 oficina). Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa), y la
   nota mueve el sueldo entre el 70 % y el 130 %. Cada turno es una nómina de
@@ -205,8 +205,14 @@ python -m bot
   (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
   El IMV se reduce medio Y$ por cada Y$ neto que pase de 1.150 Y$ a la semana
   (incentivo al empleo del RD 789/2022), pero nunca baja del 20 %. Eventos con
-  dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). Un
-  administrador limita los canales con `tajo`.
+  dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). En
+  sanidad se rinde con **guardias** (turno doble que paga 1,6 veces y te deja
+  saliente 12 h; el residente tiene guardias mínimas). En oficina se puede
+  **teletrabajar** (cansa menos, rinde menos y te escriben a las once), el CTO
+  cobra parte en **stock options** (exit o quiebra) y desde programador senior
+  te puedes **ir a Hong Kong**: sueldo doble, MPF y salaries tax, exención del
+  art. 7.p LIRPF mientras sigues siendo residente, sin IMV, y Ley Beckham si
+  vuelves tras 5 «años» fuera. Un administrador limita los canales con `tajo`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$
@@ -323,13 +329,13 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 550 logros en 21 categorías (chat,
+- **Logros** (`logros [miembro]`): 624 logros en 24 categorías (chat,
   horarios y fechas, voz, social, lista, niveles, ruleta, blackjack, casino,
   tragaperras, botes, Crash, Minas, pachinko, loterías, tienda, Bizum, economía,
-  trabajo, oficios y coleccionista), con cinco rarezas: ▫️ común,
+  trabajo, oficios, sanidad, oficina, Hong Kong y coleccionista), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 82 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 113 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos

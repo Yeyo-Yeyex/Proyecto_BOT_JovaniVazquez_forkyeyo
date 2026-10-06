@@ -114,3 +114,24 @@ def test_el_plano_de_cavar_cambia_cada_turno() -> None:
     position = JOBS[0].position(1)
     headers = {new_game(position, random.Random(seed), now=NOW).header for seed in range(10)}
     assert len(headers) > 1
+
+
+def test_la_guardia_dura_el_doble_y_tiene_el_doble_de_rondas() -> None:
+    position = JOBS[3].position(3)  # enfermero
+    normal = new_game(position, random.Random(9), now=NOW)
+    guard = new_game(position, random.Random(9), now=NOW, guard=True)
+    assert guard.seconds == normal.seconds * 2
+    assert len(guard.rounds) == len(normal.rounds) * 2
+
+
+def test_el_mir_tiene_cuatro_respuestas() -> None:
+    game = new_game(JOBS[3].position(4), random.Random(10), now=NOW)
+    assert all(len(r.options) == 4 for r in game.rounds)
+    assert game.rounds[0].options == ["A", "B", "C", "D"]
+
+
+def test_los_bugs_se_ensenan_como_codigo_con_lineas() -> None:
+    game = new_game(JOBS[4].position(2), random.Random(11), now=NOW)
+    first = game.rounds[0]
+    assert "```py" in first.prompt
+    assert first.options[0] == "Línea 1"

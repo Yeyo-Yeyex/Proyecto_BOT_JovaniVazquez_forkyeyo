@@ -22,6 +22,7 @@ from typing import TypeVar
 import discord
 
 from bot.repositories.economy import (
+    HK_ACCOUNT_ID,
     SHOP_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     BalanceLimitError,
@@ -48,7 +49,10 @@ from bot.services.taxes import (
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
     WEALTH_MINIMUM,
+    ForeignPayslip,
     Payslip,
+    compute_beckham_payslip,
+    compute_hk_payslip,
     compute_payslip,
     compute_self_employed_payslip,
     compute_withholding,
@@ -288,6 +292,14 @@ class SalaryResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ForeignSalaryResult:
+    """Una nómina cobrada en Hong Kong."""
+
+    payslip: ForeignPayslip
+    balance: int
+
+
+@dataclass(frozen=True, slots=True)
 class Declaration:
     """Declaración semanal pendiente: la semana (lunes) y lo que sale a devolver."""
 
@@ -334,6 +346,7 @@ class DailyResult:
         work_net: Neto de las nóminas de los últimos 7 días.
         suspended_until: Si está suspendido por la Inspección, hasta cuándo
             (epoch); 0 si no.
+        abroad: País donde vive, si vive fuera (y entonces no cobra).
     """
 
     claimed: bool
@@ -344,6 +357,7 @@ class DailyResult:
     full_amount: int = 0
     work_net: int = 0
     suspended_until: float = 0.0
+    abroad: str | None = None
 
     @property
     def reduction(self) -> int:
@@ -802,6 +816,20 @@ class EconomyService:
         una sanción de la Inspección de Trabajo lo suspende unos días.
         """
         now = self._clock()
+        abroad = await self.repository.residence(guild_id, user_id)
+        if abroad is not None:
+            # Ley 19/2021: hay que residir en España (art. 10) y comunicar las
+            # salidas de más de 90 días al año (art. 36.e). Quien se ha mudado
+            # a trabajar fuera, no cobra.
+            state = await self.repository.daily_state(guild_id, user_id)
+            return DailyResult(
+                claimed=False,
+                amount=0,
+                balance=await self.balance(guild_id, user_id),
+                streak=state.streak if state else 0,
+                next_claim_at=now,
+                abroad=abroad,
+            )
         suspended = await self.repository.imv_suspended_until(guild_id, user_id)
         if suspended > now:
             state = await self.repository.daily_state(guild_id, user_id)
@@ -863,6 +891,7 @@ class EconomyService:
         gross: int,
         concept: str,
         self_employed: bool = False,
+        beckham: bool = False,
     ) -> SalaryResult:
         """Paga la nómina de un turno de `pala`.
 
@@ -878,10 +907,14 @@ class EconomyService:
         `charge_self_employed_fee`) y con el IRPF por la escala, como un pago a
         cuenta simplificado.
 
+        Quien vuelve de trabajar fuera puede tributar por la Ley Beckham
+        (`beckham=True`, art. 93 LIRPF): IRPF al 24 % en vez de la escala.
+
         Args:
             gross: Bruto del turno; positivo.
             concept: Motivo corto y estable para el libro (`"pala:obra"`).
             self_employed: Si quien cobra es autónomo.
+            beckham: Si tributa por la Ley Beckham.
         """
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
@@ -891,10 +924,71 @@ class EconomyService:
             gross=gross,
             concept=concept,
             now=self._clock(),
-            payslip_for=compute_self_employed_payslip if self_employed else compute_payslip,
+            payslip_for=(
+                compute_self_employed_payslip
+                if self_employed
+                else compute_beckham_payslip
+                if beckham
+                else compute_payslip
+            ),
             window_seconds=PROJECTION_WINDOW_SECONDS,
         )
         return SalaryResult(payslip=slip, balance=balance)
+
+    async def pay_foreign_salary(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        resident: bool,
+        exempt_left: int,
+    ) -> ForeignSalaryResult:
+        """Paga la nómina de un turno trabajado desde Hong Kong.
+
+        Tratamiento fiscal (detalle en `bot.services.taxes.compute_hk_payslip`):
+        MPF y salaries tax de Hong Kong, que van a su cuenta (`HK_ACCOUNT_ID`),
+        no al Estado. Si sigue siendo residente fiscal en España, la parte que
+        pasa de la exención del art. 7.p LIRPF paga IRPF con la deducción por
+        doble imposición del art. 80 LIRPF; si ya no lo es, España no cobra nada.
+
+        Args:
+            resident: Si sigue siendo residente fiscal en España.
+            exempt_left: Exención del art. 7.p que le queda hoy, en Y$.
+        """
+        if gross <= 0:
+            raise ValueError("El sueldo debe ser positivo.")
+
+        def payslip_for(amount: int, recent_hk: int, recent_spain: int) -> ForeignPayslip:
+            return compute_hk_payslip(
+                amount,
+                recent_hk=recent_hk,
+                recent_spain=recent_spain,
+                resident=resident,
+                exempt_left=exempt_left,
+            )
+
+        slip, balance = await self.repository.credit_foreign_salary(
+            guild_id,
+            user_id,
+            gross=gross,
+            concept=concept,
+            country="hk",
+            account_id=HK_ACCOUNT_ID,
+            now=self._clock(),
+            payslip_for=payslip_for,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+        return ForeignSalaryResult(payslip=slip, balance=balance)
+
+    async def set_residence(self, guild_id: int, user_id: int, country: str | None) -> None:
+        """Apunta que se va a vivir fuera (`country`) o que vuelve (`None`)."""
+        await self.repository.set_residence(guild_id, user_id, country, self._clock())
+
+    async def foreign_taxes(self, guild_id: int, user_id: int, country: str = "hk") -> int:
+        """Lo que se ha quedado otro país de las nóminas de un miembro."""
+        return await self.repository.foreign_taxes(guild_id, user_id, country)
 
     async def charge_self_employed_fee(
         self, guild_id: int, user_id: int, *, amount: int, concept: str

@@ -504,18 +504,41 @@ class Payslip:
         return self.ss_worker + self.irpf + self.ss_employer
 
 
-def compute_payslip(gross: int, recent_income: int) -> Payslip:
+#: Régimen de impatriados («Ley Beckham», art. 93 LIRPF, redacción de la Ley
+#: 28/2022): los rendimientos del trabajo tributan al 24 % hasta 600.000 € y al
+#: 47 % a partir de ahí, en vez de por la escala.
+BECKHAM_RATE = 0.24
+BECKHAM_TOP_RATE = 0.47
+BECKHAM_LIMIT_EUR = 600_000.0
+
+
+def beckham_rate(annual_yd: int) -> float:
+    """Tipo medio de la Ley Beckham para una renta anual en Y$."""
+    annual = annual_yd / YAPDOLLARS_PER_EURO
+    if annual <= BECKHAM_LIMIT_EUR:
+        return BECKHAM_RATE
+    tax = BECKHAM_LIMIT_EUR * BECKHAM_RATE + (annual - BECKHAM_LIMIT_EUR) * BECKHAM_TOP_RATE
+    return tax / annual
+
+
+def compute_payslip(gross: int, recent_income: int, *, beckham: bool = False) -> Payslip:
     """Nómina de un turno dados los ingresos sujetos de los últimos 30 días.
 
     Args:
         gross: Bruto del turno, en Y$; positivo.
         recent_income: Renta sujeta de los últimos 30 días sin este turno
             (la misma que usa `compute_withholding`).
+        beckham: Si tributa por la Ley Beckham (24 % fijo en vez de la escala).
+            La Seguridad Social no cambia.
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
     projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
     rates = payroll_rates(projected)
+    if beckham:
+        rates = PayrollRates(
+            rates.ss_worker, rates.ss_employer, beckham_rate(projected), rates.over_max_base
+        )
     ss_worker = round(gross * rates.ss_worker)
     irpf = min(round(gross * rates.irpf), gross - ss_worker)
     return Payslip(
@@ -542,4 +565,151 @@ def compute_self_employed_payslip(gross: int, recent_income: int) -> Payslip:
         irpf=withholding.tax,
         ss_employer=0,
         rates=PayrollRates(0.0, 0.0, withholding.rate, False),
+    )
+
+
+def compute_beckham_payslip(gross: int, recent_income: int) -> Payslip:
+    """`compute_payslip` con la Ley Beckham (para pasarla como función)."""
+    return compute_payslip(gross, recent_income, beckham=True)
+
+
+# -- Trabajar desde Hong Kong ------------------------------------------------------------
+#
+# Quien se va a Hong Kong con `pala` cobra allí, y allí paga:
+#
+# - **MPF** (Mandatory Provident Fund): el 5 % del sueldo el trabajador y otro
+#   5 % la empresa, con un tope de ingresos de HK$30.000 al mes (como mucho
+#   HK$18.000 al año cada uno).
+# - **Salaries tax** (año 2025/26): escala del 2, 6, 10 y 14 % en tramos de
+#   HK$50.000 y 17 % por encima, sobre lo que pasa de la deducción personal
+#   (HK$132.000) y del MPF; o el tipo estándar (15 % hasta HK$5 millones, 16 %
+#   después) sobre todo, si sale menos. Se paga lo menor.
+#
+# Y en España:
+#
+# - Mientras sigue siendo residente fiscal (`work.residence_phase`), tributa
+#   por todo lo que gana en el mundo, pero el art. 7.p LIRPF deja exentos hasta
+#   60.100 € al año por trabajos hechos en el extranjero para una empresa no
+#   residente, si allí hay un impuesto parecido y no es un paraíso fiscal (Hong
+#   Kong no está en la lista de la Orden HFP/115/2023). Sobre lo que pasa de la
+#   exención se aplica el IRPF y se descuenta lo pagado en Hong Kong por esa
+#   parte (deducción por doble imposición internacional, art. 80 LIRPF).
+# - Cuando deja de ser residente, España ya no le cobra nada por ese sueldo.
+#
+# El tipo de cambio es de juego: 9 HK$ por euro.
+
+HKD_PER_EUR = 9.0
+MPF_RATE = 0.05
+MPF_MAX_HKD = 18_000.0
+HK_ALLOWANCE_HKD = 132_000.0
+HK_BANDS: tuple[tuple[float, float], ...] = (
+    (0.0, 0.02),
+    (50_000.0, 0.06),
+    (100_000.0, 0.10),
+    (150_000.0, 0.14),
+    (200_000.0, 0.17),
+)
+HK_STANDARD_RATE = 0.15
+HK_STANDARD_TOP_RATE = 0.16
+HK_STANDARD_LIMIT_HKD = 5_000_000.0
+#: Exención del art. 7.p LIRPF, en Y$ por día (60.100 € al año).
+EXEMPT_7P_PER_DAY = round(60_100 * YAPDOLLARS_PER_EURO / 365)
+
+
+def hk_salaries_tax(annual_hkd: float) -> float:
+    """Salaries tax anual de Hong Kong (lo menor de escala y tipo estándar), en HK$."""
+    mpf = min(annual_hkd * MPF_RATE, MPF_MAX_HKD)
+    progressive = apply_scale(max(0.0, annual_hkd - mpf - HK_ALLOWANCE_HKD), HK_BANDS)
+    base = max(0.0, annual_hkd - mpf)
+    standard = (
+        min(base, HK_STANDARD_LIMIT_HKD) * HK_STANDARD_RATE
+        + max(0.0, base - HK_STANDARD_LIMIT_HKD) * HK_STANDARD_TOP_RATE
+    )
+    return min(progressive, standard)
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignPayslip:
+    """Nómina de un turno en Hong Kong, en Y$.
+
+    Attributes:
+        mpf_worker: MPF del trabajador (sale del bruto).
+        mpf_employer: MPF de la empresa (no sale del bruto).
+        hk_tax: Salaries tax de Hong Kong.
+        exempt: Parte exenta en España por el art. 7.p LIRPF.
+        irpf: IRPF español después de la deducción por doble imposición.
+        double_tax_relief: Deducción por doble imposición (art. 80 LIRPF).
+        resident: Si sigue siendo residente fiscal en España.
+    """
+
+    gross: int
+    mpf_worker: int
+    mpf_employer: int
+    hk_tax: int
+    exempt: int
+    irpf: int
+    double_tax_relief: int
+    resident: bool
+
+    @property
+    def net(self) -> int:
+        """Lo que llega al bolsillo."""
+        return self.gross - self.mpf_worker - self.hk_tax - self.irpf
+
+    @property
+    def foreign(self) -> int:
+        """Todo lo que se queda Hong Kong (MPF de los dos y salaries tax)."""
+        return self.mpf_worker + self.mpf_employer + self.hk_tax
+
+
+def compute_hk_payslip(
+    gross: int,
+    *,
+    recent_hk: int,
+    recent_spain: int,
+    resident: bool,
+    exempt_left: int,
+) -> ForeignPayslip:
+    """Nómina de un turno trabajado desde Hong Kong.
+
+    Args:
+        gross: Bruto del turno, en Y$.
+        recent_hk: Bruto cobrado en Hong Kong los últimos 30 días (para
+            proyectar el salaries tax).
+        recent_spain: Renta sujeta en España los últimos 30 días (para el IRPF).
+        resident: Si sigue siendo residente fiscal en España.
+        exempt_left: Exención del art. 7.p que queda hoy, en Y$.
+    """
+    if gross <= 0:
+        raise ValueError("El bruto de una nómina debe ser positivo.")
+    annual_yd = (recent_hk + gross) * _DAYS_PER_YEAR / _WINDOW_DAYS
+    annual_hkd = annual_yd / YAPDOLLARS_PER_EURO * HKD_PER_EUR
+    mpf_rate = min(MPF_RATE, MPF_MAX_HKD / annual_hkd) if annual_hkd else MPF_RATE
+    hk_rate = hk_salaries_tax(annual_hkd) / annual_hkd if annual_hkd else 0.0
+    mpf = round(gross * mpf_rate)
+    hk_tax = round(gross * hk_rate)
+    exempt = irpf = relief = 0
+    if resident:
+        exempt = min(gross, max(0, exempt_left))
+        taxable = gross - exempt
+        if taxable > 0:
+            projected = (recent_spain + taxable) * _DAYS_PER_YEAR // _WINDOW_DAYS
+            # Sin cotización española: el rendimiento neto es el bruto menos los
+            # otros gastos, con la reducción del art. 20 LIRPF.
+            annual = projected / YAPDOLLARS_PER_EURO
+            net = max(0.0, annual - WORK_OTHER_EXPENSES_EUR)
+            base = max(0.0, net - work_income_reduction(net))
+            rate = round(annual_tax(base) / annual * 100, 2) / 100
+            gross_irpf = round(taxable * rate)
+            relief = min(gross_irpf, round(hk_tax * taxable / gross))
+            irpf = gross_irpf - relief
+    return ForeignPayslip(
+        gross=gross,
+        mpf_worker=mpf,
+        mpf_employer=mpf,
+        hk_tax=hk_tax,
+        exempt=exempt,
+        irpf=min(irpf, gross - mpf - hk_tax),
+        double_tax_relief=relief,
+        resident=resident,
     )

@@ -14,7 +14,15 @@ Todo el dinero pasa por `EconomyService`:
 - Cuota de autónomos: `charge_self_employed_fee`, una vez por semana.
 - Baja por accidente: `pay_salary` con la prestación (tributa como
   rendimiento del trabajo, art. 17.1.b LIRPF).
-- Café y formación: `purchase`, con IGIC general.
+- Café, formación y billetes de avión: `purchase`, con IGIC general.
+- Turnos desde Hong Kong: `pay_foreign_salary` (MPF y salaries tax a Hong
+  Kong; IRPF español solo mientras sigue siendo residente, con la exención del
+  art. 7.p LIRPF). Al irse, `set_residence` (sin IMV); al volver con 5 «años»
+  fuera, Ley Beckham (`pay_salary(beckham=True)`).
+- Stock options del CTO: una parte del bruto no se cobra y se acumula. Si la
+  startup sale a bolsa o la compran (exit), se cobran: exentas hasta 500.000 Y$
+  (`grant`, 50.000 € de la Ley 28/2022 para empleados de empresas emergentes) y
+  el resto con IRPF (`pay_income`). Si quiebra, se pierden.
 """
 
 from __future__ import annotations
@@ -28,21 +36,41 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.economy import EconomyService, InsufficientFundsError
-from bot.services.levels import local_day
-from bot.services.taxes import IGIC_GENERAL_RATE, Payslip, igic
+from bot.services.levels import TIMEZONE, local_day
+from bot.services.taxes import (
+    EXEMPT_7P_PER_DAY,
+    IGIC_GENERAL_RATE,
+    YAPDOLLARS_PER_EURO,
+    ForeignPayslip,
+    Payslip,
+    igic,
+)
 from bot.services.work import (
+    ABROAD_PAY,
+    BANKRUPT_CHANCE,
     BATTERY_MAX,
     BATTERY_MIN,
     BATTERY_REGEN_PER_HOUR,
+    BECKHAM_WEEKS,
     EVENT_CHANCE,
+    EXIT_CHANCE,
+    EXIT_MULTIPLIER,
     FAMILY_MAX,
+    FLIGHT_PRICE,
     GOOD_SCORE,
+    GUARD_REST_SECONDS,
+    HK_TIMEZONE,
+    HONG_KONG,
     IMV_SUSPENSION_SECONDS,
     INSPECTION_CHANCE,
     INSPECTION_SURCHARGE,
+    JET_LAG,
     MAX_COFFEES,
+    MISSED_GUARD_PENALTY,
+    OPTIONS_SHARE,
     PERFORMANCE_MAX,
     PERFORMANCE_START,
+    REMOTE_PING_CHANCE,
     SELF_EMPLOYED_FEE,
     SICK_LEAVE_SECONDS,
     SICK_PAY_RATE,
@@ -56,6 +84,7 @@ from bot.services.work import (
     accident_chance,
     apply_performance,
     battery_now,
+    beckham_eligible,
     family_cost,
     holiday,
     is_night,
@@ -64,6 +93,7 @@ from bot.services.work import (
     performance_delta,
     promote,
     promotion_blockers,
+    residence_phase,
     roll,
     roll_over_day,
     shift_cost,
@@ -71,6 +101,7 @@ from bot.services.work import (
     week_of,
 )
 from bot.services.work_catalog import (
+    CAUGHT_SUSPENDS_IMV,
     COFFEE_BY_KEY,
     EVENT_BY_KEY,
     JOB_BY_KEY,
@@ -83,6 +114,10 @@ from bot.services.work_games import MiniGame, new_game
 
 if TYPE_CHECKING:
     from bot.repositories.work import WorkRepository
+
+#: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
+#: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
+OPTIONS_EXEMPT = 50_000 * YAPDOLLARS_PER_EURO
 
 
 class WorkError(Exception):
@@ -99,6 +134,7 @@ class Status:
         blockers: Lo que falta para el ascenso (vacío = ya toca).
         days_in_position: Días distintos fichando en el puesto.
         on_leave: Si vuelve de una excedencia.
+        phase: Situación fiscal (`work.residence_phase`).
     """
 
     contract: Contract
@@ -111,6 +147,27 @@ class Status:
     trainings: frozenset[str]
     on_leave: bool
     now: float
+    phase: str = "casa"
+
+    @property
+    def off_duty(self) -> bool:
+        """Si está saliente de guardia."""
+        return self.contract.off_duty_until > self.now
+
+    @property
+    def can_guard(self) -> bool:
+        """Si en su puesto hay guardias."""
+        return self.job.has_guards(self.contract.level)
+
+    @property
+    def can_go_abroad(self) -> bool:
+        """Si puede irse a Hong Kong (y aún no está allí)."""
+        return self.job.can_go_abroad(self.contract.level) and not self.contract.abroad
+
+    @property
+    def beckham(self) -> bool:
+        """Si tributa por la Ley Beckham."""
+        return self.contract.beckham_until > self.now
 
     @property
     def promotion_ready(self) -> bool:
@@ -141,6 +198,7 @@ class Shift:
     battery_before: float
     tremors: bool
     returned_from_leave: bool
+    remote: bool = False
 
 
 @dataclass(slots=True)
@@ -159,6 +217,15 @@ class ShiftOutcome:
         fee: Cuota de autónomos cobrada en este turno.
         event: Evento que sale, si sale.
         week_taxes: `(impuestos, neto)` de los últimos 7 días.
+        remote: Si fue en teletrabajo.
+        abroad: País desde donde se trabajó (`""` = en casa).
+        phase: Situación fiscal al cobrar (`work.residence_phase`).
+        foreign: Nómina de fuera, si se trabajó fuera.
+        beckham: Si la nómina fue por la Ley Beckham.
+        options_added: Stock options acumuladas en este turno.
+        exit_payout: Lo cobrado por un exit (bruto).
+        bankrupt: Si la startup quebró (adiós opciones).
+        missed_guards: Guardias mínimas que faltaron la semana pasada.
     """
 
     job: Job
@@ -188,10 +255,25 @@ class ShiftOutcome:
     event: Event | None = None
     promotion_ready: bool = False
     week_taxes: tuple[int, int] = (0, 0)
+    remote: bool = False
+    abroad: str = ""
+    phase: str = "casa"
+    foreign: ForeignPayslip | None = None
+    beckham: bool = False
+    options_added: int = 0
+    options_total: int = 0
+    exit_payout: int = 0
+    bankrupt: bool = False
+    missed_guards: int = 0
 
     @property
     def night(self) -> bool:
-        """Si fue de madrugada."""
+        """Si fue de madrugada donde trabajaba."""
+        return is_night(self.now, HK_TIMEZONE if self.abroad else TIMEZONE)
+
+    @property
+    def canary_night(self) -> bool:
+        """Si en Canarias era de madrugada (trabajando desde lejos: jet lag)."""
         return is_night(self.now)
 
     @property
@@ -207,6 +289,8 @@ class ShiftOutcome:
     @property
     def net(self) -> int:
         """Lo que llegó al bolsillo por el turno."""
+        if self.foreign is not None:
+            return self.foreign.net
         return (self.payslip.net if self.payslip else 0) + (0 if self.caught else self.black)
 
 
@@ -216,7 +300,7 @@ class EventResult:
 
     event: Event
     text: str
-    paid: Payslip | None = None
+    paid: Payslip | ForeignPayslip | None = None
     black: int = 0
     caught: bool = False
     caught_by: str = ""
@@ -303,6 +387,7 @@ class WorkService:
             trainings=frozenset(trainings),
             on_leave=leave,
             now=now,
+            phase=residence_phase(contract, now),
         )
 
     async def history(self, guild_id: int, user_id: int) -> dict[str, tuple[int, int]]:
@@ -327,6 +412,8 @@ class WorkService:
             current = await self.repository.contract(guild_id, user_id)
             if current is not None and current.job == job_key:
                 raise WorkError(f"Ya trabajas de {job.position(current.level).title}.")
+            if current is not None and current.abroad:
+                raise WorkError("Estás en Hong Kong. Vuelve primero y luego cambias de curro.")
             history = await self.repository.history(guild_id, user_id)
             level = history.get(job_key, (1, 1))[0]
             contract = Contract(job=job_key, level=level, position_since=now, battery_at=now)
@@ -346,6 +433,10 @@ class WorkService:
                     "sick_until",
                     "no_extras_day",
                     "rest_day",
+                    "guards_week",
+                    "guard_week",
+                    "off_duty_until",
+                    "beckham_until",
                 ):
                     setattr(contract, name, getattr(current, name))
             await self.repository.save_contract(guild_id, user_id, contract)
@@ -353,17 +444,27 @@ class WorkService:
 
     # -- Fichar -------------------------------------------------------------------------
 
-    async def start_shift(self, guild_id: int, user_id: int, *, black_ok: bool = False) -> Shift:
+    async def start_shift(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        black_ok: bool = False,
+        guard: bool = False,
+        remote: bool = False,
+    ) -> Shift:
         """Comprueba que se puede fichar y prepara el minijuego. No guarda nada.
 
         Args:
             black_ok: Si ya aceptó cobrar en B (cuando el próximo turno sería
                 extra pasado el límite legal).
+            guard: Si es una guardia (sanidad).
+            remote: Si es en teletrabajo (oficina).
 
         Raises:
-            WorkError: Si no puede fichar (sin contrato, de baja, sin batería,
-                intervención familiar) o si hace falta aceptar el B
-                (`NeedsBlack`).
+            WorkError: Si no puede fichar (sin contrato, de baja, saliente de
+                guardia, sin batería, intervención familiar) o si hace falta
+                aceptar el B (`NeedsBlack`).
         """
         status = await self.status(guild_id, user_id)
         if status is None:
@@ -375,22 +476,33 @@ class WorkService:
                 f"🩹 Estás de baja por accidente laboral hasta <t:{int(contract.sick_until)}:t>. "
                 "La mutua te vigila, mi amor."
             )
+        if status.off_duty:
+            raise OffDuty(contract.off_duty_until)
         if status.battery <= BATTERY_MIN:
             hours = max(1, round(-status.battery / BATTERY_REGEN_PER_HOUR))
             raise WorkError(
                 f"🪫 Estás tan reventado que te quedas dormido de pie. Descansa unas "
                 f"{hours} h o tómate un barraquito."
             )
-        kind = status.next_kind
+        if guard and not status.can_guard:
+            raise WorkError("En tu puesto no hay guardias.")
+        if remote and not status.job.remote:
+            raise WorkError("En tu curro no se teletrabaja.")
+        kind = ShiftKind.GUARD if guard else status.next_kind
+        if contract.abroad and kind is ShiftKind.BLACK:
+            # En Hong Kong no hay límite de horas extra como el del art. 35.2 ET.
+            kind = ShiftKind.EXTRA
         today = local_day(now).isoformat()
         if kind is not ShiftKind.ORDINARY and contract.no_extras_day == today:
             raise WorkError(
                 "👪 **Intervención familiar.** Hoy tu familia te ha confiscado la pala: "
-                "nada de horas extra. Mañana ya veremos."
+                "nada de horas extra ni guardias. Mañana ya veremos."
             )
         if kind is ShiftKind.BLACK and not black_ok:
             raise NeedsBlack()
-        game = new_game(status.position, self.rng, now=now, tired=status.battery < TIRED)
+        game = new_game(
+            status.position, self.rng, now=now, tired=status.battery < TIRED, guard=guard
+        )
         return Shift(
             job=status.job,
             position=status.position,
@@ -399,6 +511,7 @@ class WorkService:
             battery_before=status.battery,
             tremors=contract.coffees > MAX_COFFEES,
             returned_from_leave=status.on_leave,
+            remote=remote,
         )
 
     async def finish_shift(self, guild_id: int, user_id: int, shift: Shift) -> ShiftOutcome:
@@ -409,6 +522,43 @@ class WorkService:
         """
         async with self._lock(guild_id, user_id):
             return await self._finish_shift(guild_id, user_id, shift)
+
+    async def _pay(
+        self,
+        guild_id: int,
+        user_id: int,
+        contract: Contract,
+        gross: int,
+        *,
+        concept: str,
+        now: float,
+    ) -> tuple[Payslip | ForeignPayslip, int]:
+        """Paga un bruto por el camino que toque: nómina, autónomo, Beckham o Hong Kong."""
+        position = JOB_BY_KEY[contract.job].position(contract.level)
+        if contract.abroad:
+            today = local_day(now).isoformat()
+            if contract.exempt_day != today:
+                contract.exempt_day, contract.exempt_used = today, 0
+            phase = residence_phase(contract, now)
+            result = await self.economy.pay_foreign_salary(
+                guild_id,
+                user_id,
+                gross=gross,
+                concept=concept,
+                resident=phase == "residente",
+                exempt_left=EXEMPT_7P_PER_DAY - contract.exempt_used,
+            )
+            contract.exempt_used += result.payslip.exempt
+            return result.payslip, result.balance
+        result = await self.economy.pay_salary(
+            guild_id,
+            user_id,
+            gross=gross,
+            concept=concept,
+            self_employed=position.self_employed,
+            beckham=contract.beckham_until > now,
+        )
+        return result.payslip, result.balance
 
     async def _finish_shift(self, guild_id: int, user_id: int, shift: Shift) -> ShiftOutcome:
         now = self._clock()
@@ -421,54 +571,98 @@ class WorkService:
             contract.warned = False
         roll_over_day(contract, now)
         today = local_day(now)
+        week = week_of(today)
+        job = shift.job
         position = shift.position
         kind = shift.kind
         score = shift.game.score()
         battery_before = battery_now(contract, now)
         family_before = contract.family
-        concept = f"pala:{shift.job.key}"
+        concept = f"pala:{job.key}"
+        abroad = contract.abroad
+        phase = residence_phase(contract, now)
+
+        # Guardias mínimas del residente: se revisan al empezar una semana nueva.
+        missed = 0
+        if contract.guard_week != week:
+            if contract.guard_week:
+                missed = max(0, job.required_guards(contract.level) - contract.guards_week)
+                if missed:
+                    contract.performance = max(
+                        0, contract.performance - missed * MISSED_GUARD_PENALTY
+                    )
+            contract.guard_week = week
+            contract.guards_week = 0
 
         # Batería, familia, jornada y racha.
         if contract.shift_day != today.isoformat():
             contract.streak_days += 1
             contract.shift_day = today.isoformat()
-        contract.battery = battery_before - shift_cost(kind)
+        contract.battery = battery_before - shift_cost(kind, remote=shift.remote)
         contract.battery_at = now
-        contract.family = max(0, min(FAMILY_MAX, contract.family + family_cost(kind, now)))
+        family = family_cost(
+            kind,
+            now,
+            remote=shift.remote,
+            tz=HK_TIMEZONE if abroad else TIMEZONE,
+            abroad=bool(abroad),
+        )
+        contract.family = max(0, min(FAMILY_MAX, contract.family + family))
         intervention = contract.family == 0 and family_before > 0
         if intervention:
             contract.no_extras_day = (today + timedelta(days=1)).isoformat()
-        contract.shifts_today += 1
-        if kind is not ShiftKind.ORDINARY:
-            contract.extras_week += 1
+        if kind is ShiftKind.GUARD:
+            contract.guards_week += 1
+            contract.off_duty_until = now + GUARD_REST_SECONDS
+        else:
+            contract.shifts_today += 1
+            if kind is not ShiftKind.ORDINARY:
+                contract.extras_week += 1
         contract.last_shift_at = now
 
         # Dinero del turno.
         gross = shift_pay(position.base_pay, score, kind)
+        if abroad:
+            gross = round(gross * ABROAD_PAY)
         payslip: Payslip | None = None
-        black = fine = 0
-        caught = False
+        foreign: ForeignPayslip | None = None
+        black = fine = options_added = exit_payout = 0
+        caught = bankrupt = False
         if kind is ShiftKind.BLACK:
             balance = await self.economy.pay_undeclared(
-                guild_id, user_id, amount=gross, concept=shift.job.key
+                guild_id, user_id, amount=gross, concept=job.key
             )
             black = gross
             if roll(self.rng, INSPECTION_CHANCE):
                 caught = True
                 fine, balance = await self._caught(guild_id, user_id, gross, "inspeccion")
         else:
-            result = await self.economy.pay_salary(
-                guild_id,
-                user_id,
-                gross=gross,
-                concept=concept,
-                self_employed=position.self_employed,
+            cash = gross
+            if job.options_level == contract.level:
+                options_added = round(gross * OPTIONS_SHARE)
+                cash = gross - options_added
+                contract.options += options_added
+            slip, balance = await self._pay(
+                guild_id, user_id, contract, cash, concept=concept, now=now
             )
-            payslip, balance = result.payslip, result.balance
+            if isinstance(slip, ForeignPayslip):
+                foreign = slip
+            else:
+                payslip = slip
+
+        # Stock options: exit o quiebra.
+        if contract.options and job.options_level == contract.level:
+            if roll(self.rng, EXIT_CHANCE):
+                low, high = EXIT_MULTIPLIER
+                exit_payout = round(contract.options * self.rng.uniform(low, high))
+                contract.options = 0
+                balance = await self._cash_options(guild_id, user_id, exit_payout)
+            elif roll(self.rng, BANKRUPT_CHANCE):
+                bankrupt = True
+                contract.options = 0
 
         # Cuota de autónomos, una vez por semana (después de cobrar, para que llegue).
         fee = 0
-        week = week_of(today)
         if position.self_employed and contract.fee_week != week:
             contract.fee_week = week
             fee, balance = await self.economy.charge_self_employed_fee(
@@ -481,7 +675,9 @@ class WorkService:
         game = shift.game
         if score >= GOOD_SCORE:
             progress["good"] = progress.get("good", 0) + 1
-        if kind is not ShiftKind.ORDINARY:
+        if kind is ShiftKind.GUARD:
+            progress["guards"] = progress.get("guards", 0) + 1
+        elif kind is not ShiftKind.ORDINARY:
             progress["extras"] = progress.get("extras", 0) + 1
         if game.mechanic is Mechanic.DIG and game.broken == 0 and game.correct:
             progress["clean"] = progress.get("clean", 0) + 1
@@ -491,7 +687,8 @@ class WorkService:
             progress["perfect_rounds"] = progress.get("perfect_rounds", 0) + game.perfect_rounds
         if game.mechanic is Mechanic.DIALOGUE:
             progress["smooth"] = progress.get("smooth", 0) + game.correct
-        performance = apply_performance(contract, performance_delta(score))
+        delta = performance_delta(score, kind, remote=shift.remote, cap=job.ordinary_cap)
+        performance = apply_performance(contract, delta)
         if performance == "demoted":
             contract.position_since = now
 
@@ -502,39 +699,44 @@ class WorkService:
             contract.sick_until = now + SICK_LEAVE_SECONDS
             # Base reguladora: el bruto declarado de los últimos 30 días, por día.
             month = await self.repository.gross_since(guild_id, user_id, now - 30 * 86_400)
-            sick_pay = round(SICK_PAY_RATE * (month + (payslip.gross if payslip else 0)) / 30)
+            declared = payslip.gross if payslip else foreign.gross if foreign else 0
+            sick_pay = round(SICK_PAY_RATE * (month + declared) / 30)
             if sick_pay > 0:
-                balance = (
-                    await self.economy.pay_salary(
-                        guild_id, user_id, gross=sick_pay, concept="pala:baja"
-                    )
-                ).balance
+                _, balance = await self._pay(
+                    guild_id, user_id, contract, sick_pay, concept="pala:baja", now=now
+                )
 
+        net = payslip.net if payslip else foreign.net if foreign else 0 if caught else black
         await self.repository.save_contract(guild_id, user_id, contract)
         await self.repository.add_shift(
             guild_id,
             user_id,
             ShiftRecord(
-                job=shift.job.key,
+                job=job.key,
                 level=position.level,
                 day=today.isoformat(),
                 created_at=now,
                 score=score,
                 kind=kind.value,
                 gross=gross,
-                net=payslip.net if payslip else (0 if caught else black),
+                net=net,
             ),
         )
 
         event = None
-        if not accident and roll(self.rng, EVENT_CHANCE):
-            options = events_for(shift.job.key, contract.level, contract.family)
-            event = self.rng.choice(options) if options else None
+        if not accident:
+            if shift.remote and roll(self.rng, REMOTE_PING_CHANCE):
+                event = EVENT_BY_KEY["desconexion"]
+            elif roll(self.rng, EVENT_CHANCE):
+                options = events_for(
+                    job.key, contract.level, contract.family, abroad=bool(abroad), phase=phase
+                )
+                event = self.rng.choice(options) if options else None
 
         status = await self._status(guild_id, user_id, contract)
         week_taxes = await self.economy.week_tax_burden(guild_id, user_id)
         return ShiftOutcome(
-            job=shift.job,
+            job=job,
             position=position,
             kind=kind,
             score=score,
@@ -561,18 +763,127 @@ class WorkService:
             event=event,
             promotion_ready=status.promotion_ready,
             week_taxes=week_taxes,
+            remote=shift.remote,
+            abroad=abroad,
+            phase=phase,
+            foreign=foreign,
+            beckham=payslip is not None and contract.beckham_until > now,
+            options_added=options_added,
+            options_total=contract.options,
+            exit_payout=exit_payout,
+            bankrupt=bankrupt,
+            missed_guards=missed,
         )
 
+    async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
+        """Cobra un exit: exento hasta `OPTIONS_EXEMPT` y el resto con IRPF.
+
+        Tratamiento fiscal: rendimiento del trabajo en especie, con la exención
+        de la Ley 28/2022 para las acciones de empresas emergentes entregadas a
+        sus empleados (50.000 € al año). La parte exenta va por `grant`; el
+        resto, por `pay_income` con retención.
+
+        Returns:
+            El saldo final.
+        """
+        exempt = min(payout, OPTIONS_EXEMPT)
+        balance = await self.economy.grant(
+            guild_id, user_id, amount=exempt, reason="pala:opciones_exentas"
+        )
+        if payout > exempt:
+            balance = (
+                await self.economy.pay_income(
+                    guild_id, user_id, gross=payout - exempt, concept="pala:opciones"
+                )
+            ).balance
+        return balance
+
     async def _caught(self, guild_id: int, user_id: int, black: int, by: str) -> tuple[int, int]:
-        """Regulariza lo cobrado en negro: lo devuelves con recargo y sin IMV 3 días.
+        """Regulariza lo cobrado en negro: lo devuelves con recargo.
+
+        La Inspección de Trabajo y la UCO, además, te dejan sin IMV unos días.
 
         Returns:
             `(multa cobrada, saldo final)`.
         """
         amount = round(black * (1 + INSPECTION_SURCHARGE))
         fine, balance = await self.economy.sanction(guild_id, user_id, amount=amount, concept=by)
-        await self.economy.suspend_imv(guild_id, user_id, seconds=IMV_SUSPENSION_SECONDS)
+        if by in CAUGHT_SUSPENDS_IMV:
+            await self.economy.suspend_imv(guild_id, user_id, seconds=IMV_SUSPENSION_SECONDS)
         return fine, balance
+
+    # -- Hong Kong ----------------------------------------------------------------------
+
+    async def move_abroad(self, guild_id: int, user_id: int) -> Status:
+        """Se va a trabajar a Hong Kong: billete, jet lag y adiós al IMV.
+
+        Tratamiento fiscal del billete: una compra con IGIC general
+        (simplificación: en la realidad la parte del vuelo fuera de Canarias no
+        lo pagaría).
+
+        Raises:
+            WorkError: Si su puesto no puede, ya está fuera o no le llega.
+        """
+        async with self._lock(guild_id, user_id):
+            status = await self.status(guild_id, user_id)
+            if status is None:
+                raise WorkError("No tienes curro.")
+            if not status.can_go_abroad:
+                raise WorkError("Desde tu puesto no te mandan a Hong Kong (todavía).")
+            await self._fly(guild_id, user_id, "vuelo:hk")
+            contract = status.contract
+            now = status.now
+            contract.abroad = HONG_KONG
+            contract.abroad_since = now
+            contract.beckham_until = 0.0
+            contract.exempt_day, contract.exempt_used = "", 0
+            contract.battery = max(float(BATTERY_MIN), battery_now(contract, now) + JET_LAG)
+            contract.battery_at = now
+            await self.economy.set_residence(guild_id, user_id, HONG_KONG)
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return await self._status(guild_id, user_id, contract)
+
+    async def come_home(self, guild_id: int, user_id: int) -> tuple[Status, bool, float]:
+        """Vuelve a España. Con 5 «años» fuera, le toca la Ley Beckham.
+
+        Returns:
+            `(estado, si le toca la Ley Beckham, días que ha estado fuera)`.
+
+        Raises:
+            WorkError: Si no está fuera o no le llega para el billete.
+        """
+        async with self._lock(guild_id, user_id):
+            status = await self.status(guild_id, user_id)
+            if status is None or not status.contract.abroad:
+                raise WorkError("No estás fuera, mi amor.")
+            await self._fly(guild_id, user_id, "vuelo:vuelta")
+            contract = status.contract
+            now = status.now
+            beckham = beckham_eligible(contract, now)
+            days = (now - contract.abroad_since) / 86_400
+            contract.abroad = ""
+            contract.abroad_since = 0.0
+            if beckham:
+                contract.beckham_until = now + BECKHAM_WEEKS * 7 * 86_400
+            await self.economy.set_residence(guild_id, user_id, None)
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return await self._status(guild_id, user_id, contract), beckham, days
+
+    async def _fly(self, guild_id: int, user_id: int, concept: str) -> None:
+        tax = igic(FLIGHT_PRICE, IGIC_GENERAL_RATE)
+        try:
+            await self.economy.purchase(
+                guild_id,
+                user_id,
+                base=FLIGHT_PRICE,
+                tax=tax,
+                concept=concept,
+                reserve=lambda _connection: None,
+            )
+        except InsufficientFundsError as error:
+            raise WorkError(
+                f"No te llega para el billete: {FLIGHT_PRICE + tax} Y$ con IGIC."
+            ) from error
 
     # -- Eventos ------------------------------------------------------------------------
 
@@ -599,15 +910,14 @@ class WorkService:
             if outcome.stat:
                 result.stats[outcome.stat] = 1
             if outcome.pay > 0:
-                result.paid = (
-                    await self.economy.pay_salary(
-                        guild_id,
-                        user_id,
-                        gross=max(1, round(base * outcome.pay)),
-                        concept=f"pala:{contract.job}",
-                        self_employed=job.position(contract.level).self_employed,
-                    )
-                ).payslip
+                result.paid, _ = await self._pay(
+                    guild_id,
+                    user_id,
+                    contract,
+                    max(1, round(base * outcome.pay)),
+                    concept=f"pala:{contract.job}",
+                    now=now,
+                )
             if outcome.black > 0:
                 result.black = max(1, round(base * outcome.black))
                 await self.economy.pay_undeclared(
@@ -626,6 +936,14 @@ class WorkService:
                     result.stats[f"work_caught_{outcome.caught_by}"] = 1
                     if outcome.caught_by == "uco" and contract.job == "politica":
                         result.follow_up = RESIGN_EVENT
+            elif outcome.fine > 0 and roll(self.rng, outcome.risk):
+                result.caught = True
+                result.caught_by = outcome.caught_by
+                amount = max(1, round(base * outcome.fine))
+                result.fine, _ = await self.economy.sanction(
+                    guild_id, user_id, amount=amount, concept=outcome.caught_by
+                )
+                result.stats[f"work_caught_{outcome.caught_by}"] = 1
             contract.performance = max(
                 0, min(PERFORMANCE_MAX, contract.performance + outcome.performance)
             )
@@ -773,6 +1091,16 @@ class WorkService:
     async def clear_channels(self, guild_id: int) -> None:
         """Vuelve a permitir `pala` en cualquier canal."""
         await self.repository.set_channels(guild_id, frozenset())
+
+
+class OffDuty(WorkError):
+    """Saliente de guardia: no se puede fichar hasta `until`."""
+
+    def __init__(self, until: float) -> None:
+        self.until = until
+        super().__init__(
+            f"🛌 Estás saliente de guardia hasta <t:{int(until)}:t>. A dormir, que mañana operas."
+        )
 
 
 class NeedsBlack(WorkError):

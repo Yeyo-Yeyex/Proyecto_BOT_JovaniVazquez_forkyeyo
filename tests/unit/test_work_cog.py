@@ -99,13 +99,19 @@ def check_limits(panel: PalaPanel) -> None:
             assert len(item.children) <= 5
 
 
-async def test_sin_curro_el_panel_ofrece_los_tres_oficios(tmp_path: Path) -> None:
+async def test_sin_curro_el_panel_ofrece_los_cinco_oficios(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     panel, errors = await open_panel(cog)
     errors.assert_not_awaited()
     assert panel is not None
     (select,) = [i for i in panel.walk_children() if isinstance(i, ui.Select)]
-    assert {o.value for o in select.options} == {"obra", "hosteleria", "politica"}
+    assert {o.value for o in select.options} == {
+        "obra",
+        "hosteleria",
+        "politica",
+        "sanidad",
+        "oficina",
+    }
     assert "Coge la pala" in texts(panel)
     check_limits(panel)
 
@@ -256,3 +262,61 @@ async def test_no_se_puede_fichar_en_dos_paneles_a_la_vez(tmp_path: Path) -> Non
     blocked.response.send_message.assert_awaited_once()
     await first._finish(None)
     assert not cog.working
+
+
+async def level_up(cog: Work, job: str, level: int) -> None:
+    status = await cog.service.status(GUILD, OWNER)
+    assert status is not None and status.contract.job == job
+    status.contract.level = level
+    await cog.service.repository.save_contract(GUILD, OWNER, status.contract)
+
+
+async def test_sanidad_tiene_boton_de_guardia_y_la_guardia_se_juega(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "sanidad")
+    assert not any(b.label == "🚑 Guardia" for b in buttons(panel))  # celador
+    await level_up(cog, "sanidad", 3)
+    await panel.refresh(make_interaction())
+    assert any(b.label == "🚑 Guardia" for b in buttons(panel))
+    check_limits(panel)
+    await panel._clock_in_guard(make_interaction())
+    assert panel.shift is not None
+    await panel._finish(None)
+    assert "saliente" in texts(panel)
+    blocked = make_interaction()
+    await panel._clock_in(blocked)
+    assert "saliente" in blocked.response.send_message.await_args.args[0]
+
+
+async def test_oficina_teletrabajo_y_hong_kong_desde_el_panel(tmp_path: Path) -> None:
+    from bot.repositories.economy import LedgerEntry
+
+    cog = await make_cog(tmp_path)
+    await cog.service.economy.repository.apply(GUILD, OWNER, [LedgerEntry(50_000, "prueba")])
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "oficina")
+    labels = [b.label or "" for b in buttons(panel)]
+    assert "🏠 Teletrabajo" in labels
+    assert not any("Hong Kong" in label for label in labels)  # becario
+    await level_up(cog, "oficina", 3)
+    await panel.refresh(make_interaction())
+    assert any("Irse a Hong Kong" in (b.label or "") for b in buttons(panel))
+    check_limits(panel)
+    await panel._go_abroad(make_interaction())
+    assert "Te vas a Hong Kong" in texts(panel)
+    assert any("Volver a casa" in (b.label or "") for b in buttons(panel))
+    # Viviendo fuera no se cambia de oficio desde el panel.
+    assert not [
+        i
+        for i in panel.walk_children()
+        if isinstance(i, ui.Select) and "curro" in (i.placeholder or "")
+    ]
+    await panel._clock_in(make_interaction())
+    await panel._finish(None)
+    assert "Payslip" in texts(panel) and "Salaries tax" in texts(panel)
+    await panel.refresh(make_interaction())
+    await panel._go_home(make_interaction())
+    assert "Vuelves a casa" in texts(panel)

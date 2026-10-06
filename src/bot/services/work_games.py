@@ -27,15 +27,20 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from bot.services.work import TIRED_TIME_FACTOR, Mechanic, Position
+from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Position
 from bot.services.work_catalog import (
     BUDGET_ITEMS,
+    CODE_BUGS,
     DIALOGUE_PACKS,
     DIG_DANGERS,
     DIG_HINTS,
     DIG_MARKS,
     MEMORY_PACKS,
+    PR_DANGER,
+    PR_SAFE,
     SLACKING,
+    TRIAGE_TRIVIAL,
+    TRIAGE_URGENT,
     WORKER_NAMES,
     WORKING,
 )
@@ -308,12 +313,87 @@ def _memory(rng: random.Random, pack_key: str, length: int, rounds: int) -> tupl
     return "", built
 
 
+def _odd_one(
+    rng: random.Random,
+    rounds: int,
+    *,
+    ask: str,
+    good: tuple[str, ...],
+    bad: tuple[str, ...],
+    label: str,
+) -> list[Round]:
+    """Rondas de «encuentra el distinto»: uno de `good` entre cuatro de `bad`."""
+    built = []
+    for number in range(1, rounds + 1):
+        lines = rng.sample(bad, 4)
+        target = rng.randrange(5)
+        lines.insert(target, rng.choice(good))
+        text = "\n".join(f"**{label} {i + 1}**: {line}" for i, line in enumerate(lines))
+        built.append(
+            Round(
+                f"{ask.format(n=number, total=rounds)}\n{text}",
+                [f"{label} {i + 1}" for i in range(5)],
+                [target],
+            )
+        )
+    return built
+
+
+def _triage(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🚑 Triaje {n}/{total}. ¿Quién pasa primero?",
+        good=TRIAGE_URGENT,
+        bad=TRIAGE_TRIVIAL,
+        label="Box",
+    )
+    return "🏥 Urgencias a reventar. Prioridad 1: lo que no puede esperar.", built
+
+
+def _bugs(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = []
+    for number, (lines, bug) in enumerate(rng.sample(CODE_BUGS, rounds), 1):
+        code = "\n".join(f"{i + 1} | {line}" for i, line in enumerate(lines))
+        built.append(
+            Round(
+                f"🐛 Bug {number}/{rounds}. ¿Qué línea está mal?\n```py\n{code}\n```",
+                [f"Línea {i + 1}" for i in range(len(lines))],
+                [bug],
+            )
+        )
+    return "💻 Ticket urgente: «No funciona». Encuentra el fallo.", built
+
+
+def _reviews(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🔍 Revisión {n}/{total}. ¿Qué pull request no aprobarías jamás?",
+        good=PR_DANGER,
+        bad=PR_SAFE,
+        label="PR",
+    )
+    return "🛡️ Eres el último muro antes de producción.", built
+
+
+#: Contenidos de detectar y su generador.
+_SPOT = {
+    "vagos": _slackers,
+    "sobrecostes": _overruns,
+    "triaje": _triage,
+    "bugs": _bugs,
+    "revisiones": _reviews,
+}
+
+
 def _dialogue(rng: random.Random, pack_key: str, rounds: int) -> tuple[str, list[Round]]:
     pack = DIALOGUE_PACKS[pack_key]
+    rounds = min(rounds, len(pack.items))
     built = []
-    for number, item in enumerate(rng.sample(pack.items, min(rounds, len(pack.items))), 1):
+    for number, item in enumerate(rng.sample(pack.items, rounds), 1):
         options, answer = _shuffled(rng, [item.good], list(item.bad))
-        letters = "ABC"
+        letters = "ABCD"
         body = "\n".join(f"**{letters[i]}.** {text}" for i, text in enumerate(options))
         built.append(
             Round(
@@ -337,22 +417,29 @@ def rounds_for(position: Position) -> int:
 
 
 def new_game(
-    position: Position, rng: random.Random, *, now: float, tired: bool = False
+    position: Position,
+    rng: random.Random,
+    *,
+    now: float,
+    tired: bool = False,
+    guard: bool = False,
 ) -> MiniGame:
     """Prepara el minijuego de un puesto.
 
     Args:
         tired: Reventado: el reloj corre con un 30 % menos de tiempo.
+        guard: Guardia: el doble de rondas y el doble de tiempo.
     """
-    rounds = rounds_for(position)
+    factor = GUARD_TIME_FACTOR if guard else 1
+    rounds = rounds_for(position) * factor
     kind, _, arg = position.content.partition(":")
     if position.mechanic is Mechanic.DIG:
         header, built = _dig(rng, int(arg or 3), rounds)
     elif position.mechanic is Mechanic.SPOT:
-        header, built = (_overruns if kind == "sobrecostes" else _slackers)(rng, rounds)
+        header, built = _SPOT[kind](rng, min(rounds, len(CODE_BUGS)) if kind == "bugs" else rounds)
     elif position.mechanic is Mechanic.MEMORY:
         header, built = _memory(rng, kind, int(arg or 3), rounds)
     else:
         header, built = _dialogue(rng, kind, rounds)
-    seconds = position.seconds * (TIRED_TIME_FACTOR if tired else 1)
+    seconds = position.seconds * factor * (TIRED_TIME_FACTOR if tired else 1)
     return MiniGame(position.mechanic, header, built, seconds, now)
