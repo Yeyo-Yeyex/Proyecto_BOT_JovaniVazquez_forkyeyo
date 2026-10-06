@@ -12,7 +12,7 @@ Qué se cuenta y cómo:
   discord.py, sin llamadas a la API. Un minuto cuenta si hay al menos dos
   personas sin ensordecer en el canal y no es el canal AFK.
 - **Juegos y economía**: los juegos del casino (ruleta, blackjack,
-  tragaperras, Crash y Minas), el IMV, la renta, los niveles y los
+  tragaperras, Botes, Crash, Minas, Pollo y pachinko), el IMV, la renta, los niveles y los
   cumpleaños llaman a `track`, `casino_play` o `note` de este
   módulo al terminar cada acción. Si el cog no está cargado no pasa nada, y
   un fallo aquí nunca rompe el juego que lo llama.
@@ -48,14 +48,16 @@ from bot.services.achievements import (
     AVAILABLE,
     BY_ID,
     CATALOG,
-    CATEGORIES,
     CATEGORY_BY_KEY,
+    GROUPS,
     UNLOCKED_STAT,
     Achievement,
     Category,
     Rarity,
     StatDelta,
+    group_sections,
     is_night,
+    menu_entries,
     message_stats,
     newly_unlocked,
     points,
@@ -213,6 +215,37 @@ def category_embed(
     return embed
 
 
+def group_embed(
+    group_key: str,
+    name: str,
+    profile: Profile,
+) -> discord.Embed:
+    """Portada de un grupo (🎰 Casino): progreso de cada sección y el total.
+
+    Los logros de cada juego se ven eligiendo la sección en el segundo menú.
+    """
+    group = GROUPS[group_key]
+    sections = group_sections(group_key)
+    lines = []
+    total = done = 0
+    for section in sections:
+        items = [a for a in CATALOG if a.category == section.key]
+        got = sum(1 for a in items if a.id in profile.unlocked)
+        total += len(items)
+        done += got
+        lines.append(f"{section.title} · `{progress_bar(got, len(items))}` {got}/{len(items)}")
+    embed = discord.Embed(
+        title=f"{group.title} · {name}",
+        description=(
+            f"**{done}/{total}** conseguidos\n\n"
+            + "\n".join(lines)
+            + "\n\n-# Elige un juego en el segundo menú para ver sus logros."
+        ),
+        color=COLOR,
+    )
+    return embed
+
+
 def summary_embed(
     name: str,
     avatar_url: str | None,
@@ -236,13 +269,17 @@ def summary_embed(
     embed.set_author(name=name, icon_url=avatar_url)
 
     per_category = []
-    for category in CATEGORIES:
-        items = [a for a in CATALOG if a.category == category.key]
-        if category.upcoming:
-            per_category.append(f"{category.title} · próximamente")
+    for key, title in menu_entries():
+        if key in GROUPS:
+            keys = {c.key for c in group_sections(key) if not c.upcoming}
+        elif CATEGORY_BY_KEY[key].upcoming:
+            per_category.append(f"{title} · próximamente")
             continue
+        else:
+            keys = {key}
+        items = [a for a in CATALOG if a.category in keys]
         got = sum(1 for a in items if a.id in unlocked)
-        per_category.append(f"{category.title} · {got}/{len(items)}")
+        per_category.append(f"{title} · {got}/{len(items)}")
     embed.add_field(name="Categorías", value="\n".join(per_category), inline=False)
 
     recent = sorted(unlocked.items(), key=lambda item: item[1], reverse=True)[:5]
@@ -312,14 +349,41 @@ class CategorySelect(discord.ui.Select):
 
     def __init__(self, view: AchievementsView) -> None:
         options = [discord.SelectOption(label="Resumen", value="summary", emoji="🏆")]
-        for category in CATEGORIES:
-            emoji, _, title = category.title.partition(" ")
-            options.append(discord.SelectOption(label=title, value=category.key, emoji=emoji))
+        for key, full_title in menu_entries():
+            emoji, _, title = full_title.partition(" ")
+            options.append(discord.SelectOption(label=title, value=key, emoji=emoji))
         super().__init__(placeholder="Elige una categoría", options=options, row=0)
         self.achievements_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Cambia de página."""
+        await self.achievements_view.show(interaction, self.values[0])
+
+
+class SectionSelect(discord.ui.Select):
+    """Segundo menú dentro de un grupo (🎰 Casino): un juego por opción."""
+
+    def __init__(self, view: AchievementsView, group_key: str, current: str) -> None:
+        options = [
+            discord.SelectOption(
+                label="Todo el casino" if group_key == "casino_group" else "Portada",
+                value=group_key,
+                emoji="📊",
+                default=current == group_key,
+            )
+        ]
+        for section in group_sections(group_key):
+            emoji, _, title = section.title.partition(" ")
+            options.append(
+                discord.SelectOption(
+                    label=title, value=section.key, emoji=emoji, default=current == section.key
+                )
+            )
+        super().__init__(placeholder="Elige un juego", options=options, row=1)
+        self.achievements_view = view
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Cambia de sección."""
         await self.achievements_view.show(interaction, self.values[0])
 
 
@@ -348,8 +412,10 @@ class AchievementsView(discord.ui.View):
         self.add_item(CategorySelect(self))
 
     def page(self, key: str) -> discord.Embed:
-        """Embed de la página `key` (`summary` o la clave de una categoría)."""
+        """Embed de la página `key` (`summary`, un grupo o una categoría)."""
         name = self.target.display_name
+        if key in GROUPS:
+            return group_embed(key, name, self.profile)
         if key in CATEGORY_BY_KEY:
             return category_embed(
                 CATEGORY_BY_KEY[key], name, self.profile, self.holders, self.members
@@ -367,11 +433,23 @@ class AchievementsView(discord.ui.View):
         )
         return False
 
+    def set_sections(self, key: str) -> None:
+        """Pone o quita el segundo menú según si la página es de un grupo."""
+        for item in list(self.children):
+            if isinstance(item, SectionSelect):
+                self.remove_item(item)
+        group = key if key in GROUPS else None
+        if group is None and key in CATEGORY_BY_KEY:
+            group = CATEGORY_BY_KEY[key].group
+        if group is not None:
+            self.add_item(SectionSelect(self, group, key))
+
     async def show(self, interaction: discord.Interaction, key: str) -> None:
         """Enseña la página elegida."""
+        self.set_sections(key)
         await interaction.response.edit_message(embed=self.page(key), view=self)
 
-    @discord.ui.button(label="🏆 Ranking", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="🏆 Ranking", style=discord.ButtonStyle.primary, row=2)
     async def ranking(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         """Ranking del servidor por puntos de logros."""
         await interaction.response.edit_message(embed=await self.cog.ranking(self.guild), view=self)

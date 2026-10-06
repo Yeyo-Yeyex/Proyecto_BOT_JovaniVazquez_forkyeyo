@@ -131,7 +131,7 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
 **Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor, y una funcionalidad con tres logros se queda corta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira de la España actual de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la burocracia. Sin nombrar a personas reales que no sean figuras públicas.
 
-El menú de `logros` tiene 25 opciones (Resumen y 24 categorías), el máximo de un desplegable de Discord. Una funcionalidad nueva entra en una categoría existente afín (como la cuenta remunerada en 🏦 Banco, con el Bizum) salvo que se cambie el menú.
+El menú de `logros` admite 25 opciones (Resumen y 24 entradas), el máximo de un desplegable de Discord. Todos los juegos del casino van en una sola entrada, 🎰 Casino (`CASINO_GROUP`): cada juego es una sección (`Category(..., group=CASINO_GROUP.key)`) que se abre con un segundo menú. Un juego nuevo del casino añade su sección ahí (como 🐔 Pollo) y no ocupa sitio en el menú principal. Cualquier otra funcionalidad nueva entra en una categoría existente afín (como la cuenta remunerada en 🏦 Banco, con el Bizum) o en una entrada nueva mientras quepa; `tests/unit/test_achievements.py` comprueba el límite.
 
 `pala` los alimenta con `work_stats` (turnos) y con estadísticas sueltas desde el panel y los eventos (categorías 🪏 Trabajo y 👷 Oficios); un oficio nuevo añade los suyos en 👷 Oficios.
 
