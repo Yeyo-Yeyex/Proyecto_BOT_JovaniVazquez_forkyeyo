@@ -28,6 +28,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
@@ -50,6 +51,10 @@ from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import pot_share as slots_pot_share
+
+if TYPE_CHECKING:
+    from bot.services.pala import ShiftOutcome
+
 from bot.services.taxes import (
     LOTTERY_EXEMPT,
     STATE_PERSONAL_MINIMUM,
@@ -121,6 +126,8 @@ CATEGORIES: tuple[Category, ...] = (
     Category("shop", "🛍️ Tienda"),
     Category("bizum", "💸 Bizum"),
     Category("economy", "🏛️ Economía y Hacienda"),
+    Category("work", "🪏 Trabajo"),
+    Category("jobs", "👷 Oficios"),
     Category("meta", "🏆 Coleccionista"),
 )
 CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
@@ -247,6 +254,48 @@ BIZUM_LIMIT_STORY = (
     f"1.000 € por operación ({_thousands(BIZUM_MAX_OPERATION)} Y$) ni de 2.000 € al día; "
     "el banco te lo para en seco. Aquí te ha colado porque Perro Sanxe estaba mirando "
     "despegar el Falcon. Si alguien pregunta, era para el cumple de tu prima."
+)
+
+
+#: Discurso del logro `paguita`: rechazar un ascenso.
+DECLINE_STORY = (
+    "🪑 **Has rechazado un ascenso.** En la vida real hay gente que lo hace a propósito: "
+    "si cobrar más te quita una ayuda entera, acabas igual o peor. Es la «trampa de la "
+    "pobreza», y por eso existe el incentivo al empleo del IMV (RD 789/2022): lo que "
+    "ganas trabajando solo te quita una parte. Aquí, cada Y$ de más te quita medio de "
+    "IMV, así que ascender siempre compensa. Pero tú sabrás, mi amor."
+)
+
+#: Discurso del logro `ochenta_horas`: pasar del límite legal de horas extra.
+OVERTIME_STORY = (
+    "⏰ **El art. 35.2 del Estatuto de los Trabajadores dice que las horas extra no "
+    "pueden pasar de 80 al año.** Aquí son dos turnos extra por semana. Tú ya vas por "
+    "encima, así que tu jefe te las ofrece en B: sin IRPF, sin cotizar y sin que lo vea "
+    "el IMV. Si viene la Inspección, devuelves todo con un 20 % de recargo. Wepa."
+)
+
+#: Discurso del logro `primera_nomina`.
+FIRST_PAYSLIP_STORY = (
+    "📄 **Tu primera nómina.** Arriba, el bruto. Luego te quitan la Seguridad Social "
+    "(6,5 %: pensiones, paro, formación y el MEI) y la retención de IRPF, que sale de "
+    "proyectar lo que cobras al año. Abajo, lo que te llega. Y en letra pequeña, lo que "
+    "paga la empresa por ti: otro 32 % que no ves nunca. Todo eso, para Perro Sanxe."
+)
+
+#: Discurso del logro `tramo`.
+BRACKET_STORY = (
+    "📊 **«Me suben de tramo y gano menos».** Mentira, y de las gordas. El IRPF es "
+    "progresivo por tramos: solo lo que pasa de cada escalón paga el tipo nuevo, no todo "
+    "el sueldo. Ganar un yapdólar más nunca te deja con menos neto. Lo que sí pasa es que "
+    "la retención sube, y eso duele igual. Bienvenido a la clase media alta."
+)
+
+#: Discurso del logro `socio_hacienda`.
+PARTNER_STORY = (
+    "🤝 **Esta semana has pagado más impuestos que lo que te ha llegado.** Cuenta la "
+    "Seguridad Social tuya y la de la empresa, el IRPF, el IGIC de lo que compras y el "
+    "Patrimonio. Es la cuenta que hace la gente cuando dice que trabaja medio año para "
+    "Hacienda, y aquí te ha salido más de medio. Perro Sanxe te considera de la familia."
 )
 
 
@@ -1328,6 +1377,217 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "broke_buy", "Lo quiero, lo tengo", "Gástate todo tu saldo en una compra.", L, True),
     ])  # fmt: skip
 
+    # 🪏 Trabajo ------------------------------------------------------------------------
+    a += _tiers("work", "work_shifts", [
+        (1, "pala_1", "Coge la pala", "Ficha tu primer turno.", C),
+        (10, "pala_10", "Currante", "Ficha 10 turnos.", C),
+        (100, "pala_100", "Obrero del mes", "Ficha 100 turnos.", R),
+        (500, "pala_500", "Mula de carga", "Ficha 500 turnos.", E),
+        (1_000, "pala_1k", "Toda una vida con la pala", "Ficha 1.000 turnos.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_promotions", [
+        (1, "ascenso_1", "Me han subido el sueldo (en bruto)", "Asciende por primera vez.", C),
+    ])  # fmt: skip
+    a += _tiers("work", "work_jobs_top", [
+        (1, "top_1", "Lo más alto del escalafón", "Llega al puesto 5 de un oficio.", E),
+        (3, "top_3", "Currículum de Pokédex", "Llega al puesto 5 de 3 oficios.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="paguita", name="Me quedo con la paguita",
+        description="Rechaza un ascenso.", category="work", rarity=R,
+        conditions=(("work_declined", 1),), story=DECLINE_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_demoted", [
+        (1, "degradado", "De vuelta a la pala", "Que te bajen de puesto.", C, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_job_changes", [
+        (5, "culo_inquieto", "Culo inquieto", "Cambia de oficio 5 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_perfect", [
+        (1, "turno_100", "Turno perfecto", "Saca un 100 en un turno.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_good", [
+        (20, "empleado_mes", "Empleado del mes", "Haz 20 turnos de 90 o más.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_shifts_day_max", [
+        (8, "doble_jornada", "Jornada partida… en dos jornadas", "Ficha 8 turnos en un día.", E),
+        (12, "que_es_dormir", "¿Qué es dormir?", "Ficha 12 turnos en un día.", L, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_streak_max", [
+        (7, "domingo_debiles", "El domingo es para los débiles", "Ficha 7 días seguidos.", R),
+        (30, "senor_pala", "Tus hijos te llaman «el señor de la pala»",
+         "Ficha 30 días seguidos.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_night", [
+        (1, "turno_noche", "Turno de noche", "Ficha entre las 0:00 y las 6:00.", C),
+        (25, "vampiro", "Vampiro laboral", "Ficha 25 turnos de madrugada.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_sunday", [
+        (10, "misa_doce", "Misa de doce en la obra", "Ficha 10 turnos en domingo.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_birthday", [
+        (1, "cumple_pala", "Feliz cumpleaños, a currar", "Ficha el día de tu cumpleaños.", E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_christmas", [
+        (1, "nochebuena", "Nochebuena en la oficina", "Ficha el 24 o el 25 de diciembre.", E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_reyes", [
+        (1, "reyes_extra", "Los Reyes me trajeron horas extra", "Ficha el 6 de enero.", E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_mayday", [
+        (1, "ironia", "Ironía", "Ficha el 1 de mayo, Día del Trabajador.", E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_family_zero", [
+        (1, "madre_discord", "Tu madre se enteró de que existes por Discord",
+         "Deja la familia a 0.", R, True),
+        (3, "intervencion", "Intervención familiar", "Deja la familia a 0 tres veces.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="ochenta_horas", name="80 horas al año, ja",
+        description="Pasa del límite legal de horas extra.", category="work", rarity=R,
+        conditions=(("work_past_limit", 1),), secret=True, story=OVERTIME_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_zombie", [
+        (1, "zombi", "Zombi asalariado", "Ficha con la batería por debajo de 0.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_coffees_day_max", [
+        (3, "barraquito_iv", "Barraquito intravenoso", "Tómate 3 cafés en un día.", C),
+        (4, "temblores", "Temblores de oficina", "Tómate el cuarto café del día.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_accidents", [
+        (1, "parte", "Parte de accidente", "Ten un accidente laboral.", C, True),
+        (5, "mutua", "La mutua ya te conoce", "Ten 5 accidentes laborales.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="primera_nomina", name="Mi primera nómina (y mi primer disgusto)",
+        description="Cobra tu primera nómina.", category="work", rarity=C,
+        conditions=(("work_payslips", 1),), story=FIRST_PAYSLIP_STORY,
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="tramo", name="Me suben de tramo",
+        description="Que te retengan un 30 % o más de IRPF en una nómina.",
+        category="work", rarity=R, conditions=(("work_irpf_pct_max", 30),),
+        story=BRACKET_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_half_salary", [
+        (1, "medio_sueldo", "Medio sueldo para Sanxe",
+         "Cobra una nómina cuyos impuestos pasen del 80 % del neto.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="socio_hacienda", name="Socio de Hacienda",
+        description="En 7 días, paga en impuestos (nóminas, IGIC y Patrimonio) más que tu neto.",
+        category="work", rarity=L, conditions=(("work_partner", 1),), secret=True,
+        story=PARTNER_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_max_base", [
+        (1, "tope", "Tope de cotización", "Pasa de la base máxima de cotización.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_taxes", [
+        (100_000, "sanxe_pala", "Perro Sanxe come de tu pala",
+         "Paga 100.000 Y$ entre IRPF y Seguridad Social trabajando.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("work", "imv_with_salary", [
+        (1, "compatible", "Compatibilidad total", "Cobra el IMV con nómina esa semana.", C),
+    ])  # fmt: skip
+    a += _tiers("work", "imv_floor", [
+        (1, "rico_paguita", "Demasiado rico para la paguita",
+         "Cobra el IMV mínimo por lo que ganas trabajando.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_black", [
+        (1, "negro_1", "En B", "Cobra un turno en negro.", C, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_caught_inspeccion", [
+        (1, "inspeccion", "Inspección de Trabajo llama dos veces",
+         "Que te pille la Inspección.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_fee", [
+        (1, "autonomo", "Autónomo y sin vacaciones", "Paga la cuota de autónomos.", R),
+    ])  # fmt: skip
+
+    # 👷 Oficios ------------------------------------------------------------------------
+    a += _tiers("jobs", "work_pipes", [
+        (1, "tuberia", "Tubería rota", "Rompe algo cavando.", C),
+        (25, "barrio_sin_agua", "El barrio sin agua", "Rompe 25 cosas cavando.", R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_slackers", [
+        (20, "cinco_miran", "Cinco miran, uno cava", "Pilla a 20 escaqueados.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_overruns", [
+        (20, "listo_uco", "Más listo que la UCO", "Encuentra 20 sobrecostes.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_retiree", [
+        (1, "jubilado", "Jubilado inspector", "Explícale la obra a un jubilado.", C),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_calima", [
+        (1, "calima", "Parada por calima", "Para la obra por calima.", C),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_top_obra", [
+        (1, "constructor", "Constructor", "Llega a constructor.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_perfect_orders", [
+        (100, "una_cana", "Ponme una caña", "Saca 100 comandas perfectas.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_tip", [
+        (1, "propina", "Propina de guiri", "Guárdate una propina en el bolsillo.", C),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_dine_dash", [
+        (1, "sinpa", "Ni un sinpa", "Persigue a una mesa que se iba sin pagar.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_happy_clients", [
+        (30, "cliente_razon", "El cliente siempre tiene razón", "Atiende bien 30 marrones.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_top_hosteleria", [
+        (1, "chiringuito", "Chiringuito propio", "Llega a dueño del chiringuito.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_perfect_votes", [
+        (50, "disciplina", "Disciplina de voto", "Vota 50 veces lo que diga el partido.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_dodged", [
+        (20, "mi_libro", "No he venido a hablar de mi libro",
+         "Esquiva 20 preguntas en rueda de prensa.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_no_recuerdo", [
+        (20, "no_me_consta", "No me consta", "Sal vivo de 20 preguntas en comisión.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_envelope", [
+        (1, "sobre", "Sobre en la gabardina", "Acepta un sobre.", R, True),
+        (10, "sobres", "Coleccionista de sobres", "Acepta 10 sobres.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_envelope_refused", [
+        (1, "honrado", "Honrado (de momento)", "Rechaza un sobre.", C, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_kickback", [
+        (1, "fundacion", "Para la fundación", "Acepta una comisión de obra pública.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_cronyism", [
+        (1, "enchufe", "Enchufado", "Coloca a un sobrino.", R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_falcon", [
+        (1, "falcon", "Agenda oficial", "Vete a un concierto en el avión oficial.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_caught_uco", [
+        (1, "imputado", "Imputado", "Que te pille la UCO.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_pardoned", [
+        (1, "indultado", "Indultado", "Que te indulten después de pillarte.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_clinging", [
+        (1, "sillon", "Pegado al sillón", "Niégate a dimitir.", R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_resigned", [
+        (1, "dimision", "Dimisión", "Dimite. Algo insólito.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_top_politica", [
+        (1, "giratoria", "Puerta giratoria", "Llega a consejero de una eléctrica.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_communion_bizum", [
+        (1, "comunion", "La comunión del sobrino, en diferido",
+         "Manda un Bizum en vez de ir a la comunión.", R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_mom_ghosted", [
+        (1, "visto", "Visto a las 23:47", "Déjale el visto a tu madre.", C, True),
+    ])  # fmt: skip
+
     # 🏆 Coleccionista --------------------------------------------------------------------
     a += _tiers("meta", UNLOCKED_STAT, [
         (10, "meta_10", "Cazador de logros", "Desbloquea 10 logros.", C),
@@ -2021,3 +2281,93 @@ def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: 
     if top:
         delta.add["lottery_scratch_top"] = 1
     return delta
+
+
+# -- Trabajo (`pala`) --------------------------------------------------------------------
+
+#: Contadores de logros por contenido de minijuego: `contenido → estadística`.
+_WORK_CONTENT_STATS = {
+    "vagos": "work_slackers",
+    "sobrecostes": "work_overruns",
+    "platos": "work_perfect_orders",
+    "comandas": "work_perfect_orders",
+    "cocina": "work_perfect_orders",
+    "votos": "work_perfect_votes",
+    "chiringuito": "work_happy_clients",
+    "prensa": "work_dodged",
+    "comision": "work_no_recuerdo",
+}
+
+
+def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
+    """Estadísticas de un turno de `pala`.
+
+    Args:
+        outcome: Lo que ha pasado en el turno.
+        birthday: Si el miembro ha fichado el día de su cumpleaños.
+    """
+    delta = StatDelta(
+        add={"work_shifts": 1},
+        peak={
+            "work_shifts_day_max": outcome.shifts_today,
+            "work_streak_max": outcome.streak_days,
+            "balance_max": outcome.balance,
+        },
+    )
+    add = delta.add
+    if outcome.score >= 100:
+        add["work_perfect"] = 1
+    if outcome.score >= 90:
+        add["work_good"] = 1
+    if outcome.night:
+        add["work_night"] = 1
+    if outcome.sunday:
+        add["work_sunday"] = 1
+    if birthday:
+        add["work_birthday"] = 1
+    if outcome.holiday in ("Nochebuena", "Navidad"):
+        add["work_christmas"] = 1
+    elif outcome.holiday == "Reyes":
+        add["work_reyes"] = 1
+    elif outcome.holiday == "el Día del Trabajador":
+        add["work_mayday"] = 1
+    if outcome.kind.value == "negro":
+        add["work_black"] = 1
+        add["work_past_limit"] = 1
+    if outcome.caught:
+        add["work_caught_inspeccion"] = 1
+    if outcome.battery_before < 0:
+        add["work_zombie"] = 1
+    if outcome.accident:
+        add["work_accidents"] = 1
+    if outcome.intervention:
+        add["work_family_zero"] = 1
+    if outcome.fee:
+        add["work_fee"] = 1
+    if outcome.game.broken:
+        add["work_pipes"] = outcome.game.broken
+    content = outcome.position.content.partition(":")[0]
+    if (stat := _WORK_CONTENT_STATS.get(content)) is not None:
+        hits = outcome.game.perfect_rounds if content in MEMORY_CONTENT else outcome.game.correct
+        if hits:
+            add[stat] = hits
+    slip = outcome.payslip
+    if slip is not None:
+        add["work_payslips"] = 1
+        if slip.irpf:
+            add["tax_paid"] = slip.irpf
+        if slip.total_taxes:
+            add["work_taxes"] = slip.ss_worker + slip.irpf
+        delta.peak["work_irpf_pct_max"] = round(slip.rates.irpf * 100)
+        if slip.net > 0 and slip.total_taxes >= 0.8 * slip.net:
+            add["work_half_salary"] = 1
+        if slip.rates.over_max_base:
+            add["work_max_base"] = 1
+    taxes, net = outcome.week_taxes
+    if net > 0 and taxes >= net:
+        add["work_partner"] = 1
+    return delta
+
+
+#: Contenidos de memoria: cuentan las rondas perfectas, no los aciertos sueltos.
+MEMORY_CONTENT = frozenset({"platos", "comandas", "cocina", "carteles", "votos"})

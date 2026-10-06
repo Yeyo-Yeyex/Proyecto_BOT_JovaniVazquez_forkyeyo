@@ -24,7 +24,9 @@ from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
+from bot.repositories.work import WorkRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.pala import WorkService
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.donations",
     "bot.cogs.bizum",
     "bot.cogs.shop",
+    "bot.cogs.work",
     "bot.cogs.birthdays",
     "bot.cogs.todo",
     "bot.cogs.achievements",
@@ -107,6 +110,8 @@ class BotClient(commands.Bot):
         # Maletines y botes de cada jugador en las máquinas de Botes
         # (de momento, `volcan`); el dinero pasa por `economy`.
         self.hold_win = HoldWinRepository(database_path)
+        # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
+        self.work = WorkService(WorkRepository(database_path), self.economy)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -135,6 +140,7 @@ class BotClient(commands.Bot):
         await self.lottery.initialize()
         await self.todo.initialize()
         await self.hold_win.initialize()
+        await self.work.repository.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)

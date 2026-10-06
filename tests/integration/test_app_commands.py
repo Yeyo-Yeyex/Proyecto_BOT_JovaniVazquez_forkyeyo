@@ -50,6 +50,7 @@ EXPECTED_COMMANDS = {
     "tienda",
     "mochila",
     "lista",
+    "pala",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
@@ -69,6 +70,7 @@ ADMIN_COMMANDS = {
     "rol",
     "niveles",
     "catalogo",
+    "tajo",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
@@ -144,6 +146,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "📊 Niveles (2)",
                 "🎰 Casino (14)",
                 "🛍️ Tienda (2)",
+                "🪏 Trabajo (1)",
                 "🎂 Cumpleaños (2)",
                 "📝 Lista (1)",
                 "🏆 Logros (1)",

@@ -46,6 +46,7 @@ from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyServ
 from bot.services.levels import TIMEZONE
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
+from bot.services.work_catalog import EVENTS, RESIGN_EVENT
 
 GUILD = 1
 USER = 10
@@ -126,6 +127,20 @@ PRODUCED_STATS = {
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
     "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
     "mines_clear_hard", "mines_random", "mines_streak_max",
+    # Trabajo (cogs/work.py: work_stats, el panel y los eventos; cogs/casino.py: el IMV)
+    "work_shifts", "work_shifts_day_max", "work_streak_max", "work_perfect", "work_good",
+    "work_night", "work_sunday", "work_birthday", "work_christmas", "work_reyes",
+    "work_mayday", "work_black", "work_past_limit", "work_caught_inspeccion", "work_zombie",
+    "work_accidents", "work_family_zero", "work_fee", "work_pipes", "work_slackers",
+    "work_overruns", "work_perfect_orders", "work_perfect_votes", "work_happy_clients",
+    "work_dodged", "work_no_recuerdo", "work_payslips", "work_taxes", "work_irpf_pct_max",
+    "work_half_salary", "work_max_base", "work_partner",
+    "work_job_changes", "work_coffees_day_max", "work_promotions", "work_declined",
+    "work_jobs_top", "work_top_obra", "work_top_hosteleria", "work_top_politica",
+    "work_demoted", "imv_with_salary", "imv_floor",
+    *(outcome.stat for event in (*EVENTS, RESIGN_EVENT) for _label, outcome in event.options
+      if outcome.stat),
+    "work_caught_uco", "work_pardoned",
     UNLOCKED_STAT,
 }  # fmt: skip
 

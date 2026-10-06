@@ -351,3 +351,195 @@ def lottery_tax(prize: int) -> int:
             la suma de todos, que es como se aplica la exención).
     """
     return round(max(0, prize - LOTTERY_EXEMPT) * LOTTERY_RATE)
+
+
+# -- Nómina: Seguridad Social e IRPF del trabajo ------------------------------------------
+#
+# Los sueldos de `pala` no son un ingreso cualquiera: son rendimientos del
+# trabajo (art. 17.1 LIRPF) y llevan cotización a la Seguridad Social. Por eso
+# no usan `compute_withholding` tal cual, sino una nómina completa:
+#
+# 1. Seguridad Social del trabajador, tipos de 2026 del régimen general:
+#    contingencias comunes 4,70 %, desempleo 1,55 %, formación profesional
+#    0,10 % y MEI 0,15 %. Solo sobre la base hasta la base máxima (5.101,20 €
+#    al mes).
+# 2. Seguridad Social de la empresa: 23,60 + 5,50 (desempleo) + 0,20 (FOGASA)
+#    + 0,60 (formación) + 0,75 (MEI) = 30,65 %, más un 1,5 % de accidentes de
+#    trabajo, que en la realidad depende de la actividad. La empresa no existe
+#    en el juego: lo paga «ella» y entra en el Estado igualmente (dinero nuevo,
+#    a propósito: engorda los botes de la lotería).
+# 3. Cotización adicional de solidaridad (art. 19 bis LGSS, tipos de 2026 del
+#    RDL 3/2026) por lo que pase de la base máxima: 1,15 % hasta un 10 % más,
+#    1,25 % hasta un 50 % más y 1,46 % por encima. El trabajador paga el 16,6 %
+#    y la empresa el resto.
+# 4. IRPF con la escala de siempre (`annual_tax`), pero sobre el rendimiento
+#    neto: bruto − cotizaciones del trabajador − 2.000 € de otros gastos
+#    (art. 19.2.f LIRPF) − la reducción por obtención de rendimientos del
+#    trabajo (art. 20 LIRPF, redacción de la Ley 7/2024).
+#
+# Como en `compute_withholding`, la renta anual se proyecta con lo cobrado en
+# los últimos 30 días y el tipo de cada concepto se aplica al bruto del turno.
+
+#: Cotización del trabajador (fracción del bruto).
+SS_WORKER_RATE = 0.0470 + 0.0155 + 0.0010 + 0.0015
+#: Cotización de la empresa, accidentes de trabajo incluidos.
+SS_EMPLOYER_RATE = 0.2360 + 0.0550 + 0.0020 + 0.0060 + 0.0075 + 0.015
+#: Base máxima de cotización de 2026, en euros al año.
+SS_MAX_BASE_EUR = 5_101.20 * 12
+#: Tramos de la cotización de solidaridad: (hasta × base máxima, tipo).
+SOLIDARITY_BRACKETS: tuple[tuple[float, float], ...] = (
+    (1.10, 0.0115),
+    (1.50, 0.0125),
+    (float("inf"), 0.0146),
+)
+#: Parte de la cotización de solidaridad que paga el trabajador.
+SOLIDARITY_WORKER_SHARE = 0.166
+#: Otros gastos deducibles de los rendimientos del trabajo (art. 19.2.f LIRPF).
+WORK_OTHER_EXPENSES_EUR = 2_000.0
+
+
+def work_income_reduction(net_eur: float) -> float:
+    """Reducción por obtención de rendimientos del trabajo (art. 20 LIRPF), en euros.
+
+    Redacción de la Ley 7/2024: 7.302 € hasta 14.852 € de rendimiento neto;
+    de ahí baja 1,75 € por euro hasta 17.673,52 €, luego 1,14 € por euro
+    hasta 19.747,5 € y a partir de ahí es cero.
+    """
+    if net_eur <= 14_852:
+        return 7_302.0
+    if net_eur <= 17_673.52:
+        return max(0.0, 7_302 - 1.75 * (net_eur - 14_852))
+    if net_eur <= 19_747.5:
+        return max(0.0, 2_364.34 - 1.14 * (net_eur - 17_673.52))
+    return 0.0
+
+
+def solidarity_contribution(annual_eur: float) -> float:
+    """Cotización de solidaridad anual total (empresa + trabajador), en euros."""
+    total = 0.0
+    floor = SS_MAX_BASE_EUR
+    for multiple, rate in SOLIDARITY_BRACKETS:
+        ceiling = SS_MAX_BASE_EUR * multiple
+        if annual_eur > floor:
+            total += (min(annual_eur, ceiling) - floor) * rate
+        floor = ceiling
+    return total
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollRates:
+    """Tipos efectivos de una nómina (fracciones del bruto), para una renta anual.
+
+    Attributes:
+        ss_worker: Seguridad Social del trabajador, solidaridad incluida.
+        ss_employer: Seguridad Social de la empresa, solidaridad incluida.
+        irpf: Retención de IRPF, redondeada a dos decimales en % (art. 86 RIRPF).
+        over_max_base: Si la renta pasa de la base máxima de cotización (y,
+            por tanto, paga cotización de solidaridad).
+    """
+
+    ss_worker: float
+    ss_employer: float
+    irpf: float
+    over_max_base: bool
+
+    @property
+    def solidarity(self) -> bool:
+        """Si la nómina lleva cotización de solidaridad."""
+        return self.over_max_base
+
+
+def payroll_rates(annual_yd: int) -> PayrollRates:
+    """Tipos efectivos de cotización e IRPF para una renta anual en Y$."""
+    annual = annual_yd / YAPDOLLARS_PER_EURO
+    if annual <= 0:
+        return PayrollRates(SS_WORKER_RATE, SS_EMPLOYER_RATE, 0.0, False)
+    base = min(annual, SS_MAX_BASE_EUR)
+    solidarity = solidarity_contribution(annual)
+    worker = base * SS_WORKER_RATE + solidarity * SOLIDARITY_WORKER_SHARE
+    employer = base * SS_EMPLOYER_RATE + solidarity * (1 - SOLIDARITY_WORKER_SHARE)
+    net = max(0.0, annual - worker - WORK_OTHER_EXPENSES_EUR)
+    taxable = max(0.0, net - work_income_reduction(net))
+    irpf = round(annual_tax(taxable) / annual * 100, 2) / 100
+    return PayrollRates(
+        ss_worker=worker / annual,
+        ss_employer=employer / annual,
+        irpf=irpf,
+        over_max_base=annual > SS_MAX_BASE_EUR,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Payslip:
+    """Nómina de un turno, en Y$.
+
+    Attributes:
+        gross: Salario bruto.
+        ss_worker: Cotización del trabajador (sale del bruto).
+        irpf: Retención de IRPF (sale del bruto).
+        ss_employer: Cotización de la empresa (no sale del bruto: la paga
+            ella, pero va igual al Estado).
+        rates: Tipos aplicados.
+    """
+
+    gross: int
+    ss_worker: int
+    irpf: int
+    ss_employer: int
+    rates: PayrollRates
+
+    @property
+    def net(self) -> int:
+        """Lo que llega al bolsillo."""
+        return self.gross - self.ss_worker - self.irpf
+
+    @property
+    def employer_cost(self) -> int:
+        """Lo que le cuesta el turno a la empresa."""
+        return self.gross + self.ss_employer
+
+    @property
+    def total_taxes(self) -> int:
+        """Todo lo que acaba en el Estado por esta nómina."""
+        return self.ss_worker + self.irpf + self.ss_employer
+
+
+def compute_payslip(gross: int, recent_income: int) -> Payslip:
+    """Nómina de un turno dados los ingresos sujetos de los últimos 30 días.
+
+    Args:
+        gross: Bruto del turno, en Y$; positivo.
+        recent_income: Renta sujeta de los últimos 30 días sin este turno
+            (la misma que usa `compute_withholding`).
+    """
+    if gross <= 0:
+        raise ValueError("El bruto de una nómina debe ser positivo.")
+    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
+    rates = payroll_rates(projected)
+    ss_worker = round(gross * rates.ss_worker)
+    irpf = min(round(gross * rates.irpf), gross - ss_worker)
+    return Payslip(
+        gross=gross,
+        ss_worker=ss_worker,
+        irpf=irpf,
+        ss_employer=round(gross * rates.ss_employer),
+        rates=rates,
+    )
+
+
+def compute_self_employed_payslip(gross: int, recent_income: int) -> Payslip:
+    """«Nómina» de un autónomo: sin cotización por turno, IRPF por la escala.
+
+    Los autónomos no cotizan por cada ingreso: pagan su cuota aparte (ver
+    `EconomyService.charge_self_employed_fee`). El IRPF se calcula igual que
+    `compute_withholding`, sin la reducción del art. 20 LIRPF, que es solo
+    para rendimientos del trabajo.
+    """
+    withholding = compute_withholding(gross, recent_income)
+    return Payslip(
+        gross=gross,
+        ss_worker=0,
+        irpf=withholding.tax,
+        ss_employer=0,
+        rates=PayrollRates(0.0, 0.0, withholding.rate, False),
+    )

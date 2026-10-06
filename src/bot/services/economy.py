@@ -48,6 +48,9 @@ from bot.services.taxes import (
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
     WEALTH_MINIMUM,
+    Payslip,
+    compute_payslip,
+    compute_self_employed_payslip,
     compute_withholding,
     donation_deduction,
     format_rate,
@@ -70,6 +73,8 @@ __all__ = [
     "WealthRun",
     "RentaClaim",
     "EconomyService",
+    "SalaryResult",
+    "imv_after_work",
     "IncomeResult",
     "InsufficientFundsError",
     "JackpotRecord",
@@ -108,6 +113,21 @@ DAILY_MAX_BONUS = 1_000
 #: y la racha se pierde si pasan más de 48 h sin cobrar.
 DAILY_COOLDOWN_SECONDS = 20 * 3600
 DAILY_STREAK_WINDOW_SECONDS = 48 * 3600
+
+#: Compatibilidad del IMV con el trabajo (`pala`), inspirada en el incentivo al
+#: empleo de los arts. 3 y 4 del RD 789/2022 (redacción del RD 240/2026): no
+#: cuenta el 100 % del aumento de ingresos del trabajo hasta 6.000 € al año y
+#: sí la mitad de lo que pase. En el juego se mira el neto de las nóminas de
+#: los últimos 7 días: los primeros `IMV_WORK_EXEMPT` (6.000 € al año a 10 Y$
+#: por euro, pasados a una semana) no cuentan y cada Y$ de más quita medio de
+#: IMV, repartido entre los 7 días. Simplificación: la ley compara con el año
+#: anterior y aquí se compara con la última semana.
+IMV_WORK_WINDOW_SECONDS = 7 * 86_400
+IMV_WORK_EXEMPT = 6_000 * 10 * 7 // 365
+IMV_WORK_TAPER = 0.5
+#: El IMV nunca baja de esta parte de lo que tocaría por la racha (decisión del
+#: proyecto: trabajar mucho lo reduce, pero no lo quita).
+IMV_FLOOR_SHARE = 0.20
 
 
 def format_amount(amount: int) -> str:
@@ -185,6 +205,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             " · Los `bizum` entre miembros, exentos de Donaciones"
             f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
             f"{format_amount(LOTTERY_EXEMPT)}"
+            " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
+            " (se apunta a quien cobra) · Multas de la Inspección"
         ).replace("%", " %"),
         inline=False,
     )
@@ -253,6 +275,19 @@ class IncomeResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SalaryResult:
+    """Una nómina cobrada.
+
+    Attributes:
+        payslip: Desglose (bruto, cotizaciones, IRPF y neto).
+        balance: Saldo tras cobrar.
+    """
+
+    payslip: Payslip
+    balance: int
+
+
+@dataclass(frozen=True, slots=True)
 class Declaration:
     """Declaración semanal pendiente: la semana (lunes) y lo que sale a devolver."""
 
@@ -295,6 +330,10 @@ class DailyResult:
         balance: Saldo tras la operación.
         streak: Racha de días seguidos tras la operación.
         next_claim_at: Momento (epoch) desde el que se puede volver a cobrar.
+        full_amount: Lo que tocaba por la racha antes de descontar el trabajo.
+        work_net: Neto de las nóminas de los últimos 7 días.
+        suspended_until: Si está suspendido por la Inspección, hasta cuándo
+            (epoch); 0 si no.
     """
 
     claimed: bool
@@ -302,11 +341,32 @@ class DailyResult:
     balance: int
     streak: int
     next_claim_at: float
+    full_amount: int = 0
+    work_net: int = 0
+    suspended_until: float = 0.0
+
+    @property
+    def reduction(self) -> int:
+        """Lo que se ha quitado del IMV por trabajar."""
+        return max(0, self.full_amount - self.amount)
 
 
 def daily_amount(streak: int) -> int:
     """Cantidad del IMV para una racha (1 = primer día)."""
     return DAILY_BASE + min((streak - 1) * DAILY_STREAK_BONUS, DAILY_MAX_BONUS)
+
+
+def imv_after_work(amount: int, weekly_net: int) -> int:
+    """IMV de un día tras descontar lo cobrado trabajando (ver `IMV_WORK_EXEMPT`).
+
+    Args:
+        amount: Lo que toca por la racha (`daily_amount`).
+        weekly_net: Neto de las nóminas de los últimos 7 días.
+    """
+    excess = max(0, weekly_net - IMV_WORK_EXEMPT)
+    reduction = -(-int(excess * IMV_WORK_TAPER) // 7)  # redondeo hacia arriba
+    floor = round(amount * IMV_FLOOR_SHARE)
+    return max(floor, amount - reduction)
 
 
 class EconomyService:
@@ -736,8 +796,25 @@ class EconomyService:
         return await self.repository.treasury(guild_id, since, top)
 
     async def claim_daily(self, guild_id: int, user_id: int) -> DailyResult:
-        """Cobra el IMV si ya toca; si no, informa de cuándo."""
+        """Cobra el IMV si ya toca; si no, informa de cuándo.
+
+        Lo cobrado trabajando la última semana lo reduce (`imv_after_work`) y
+        una sanción de la Inspección de Trabajo lo suspende unos días.
+        """
         now = self._clock()
+        suspended = await self.repository.imv_suspended_until(guild_id, user_id)
+        if suspended > now:
+            state = await self.repository.daily_state(guild_id, user_id)
+            return DailyResult(
+                claimed=False,
+                amount=0,
+                balance=await self.balance(guild_id, user_id),
+                streak=state.streak if state else 0,
+                next_claim_at=suspended,
+                suspended_until=suspended,
+            )
+        work_net = await self.repository.work_net(guild_id, user_id, now - IMV_WORK_WINDOW_SECONDS)
+        full: list[int] = []
 
         def decide(previous: DailyClaim | None) -> tuple[int, int] | None:
             if previous is None:
@@ -747,7 +824,8 @@ class EconomyService:
                 if elapsed < DAILY_COOLDOWN_SECONDS:
                     return None
                 streak = previous.streak + 1 if elapsed <= DAILY_STREAK_WINDOW_SECONDS else 1
-            return daily_amount(streak), streak
+            full.append(daily_amount(streak))
+            return imv_after_work(full[-1], work_net), streak
 
         claimed = await self.repository.claim_daily(guild_id, user_id, now=now, decide=decide)
         if claimed is not None:
@@ -760,6 +838,8 @@ class EconomyService:
                 balance=balance,
                 streak=state.streak,
                 next_claim_at=now + DAILY_COOLDOWN_SECONDS,
+                full_amount=full[-1],
+                work_net=work_net,
             )
 
         state = await self.repository.daily_state(guild_id, user_id)
@@ -770,7 +850,130 @@ class EconomyService:
             balance=await self.balance(guild_id, user_id),
             streak=state.streak,
             next_claim_at=state.last_claimed_at + DAILY_COOLDOWN_SECONDS,
+            work_net=work_net,
         )
+
+    # -- Trabajo (`pala`) -------------------------------------------------------------
+
+    async def pay_salary(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        gross: int,
+        concept: str,
+        self_employed: bool = False,
+    ) -> SalaryResult:
+        """Paga la nómina de un turno de `pala`.
+
+        Tratamiento fiscal: rendimiento del trabajo (art. 17.1 LIRPF) con
+        retención de IRPF y cotización a la Seguridad Social (ver la nómina en
+        `bot.services.taxes`). Al Estado van la retención, la cotización del
+        trabajador y la de la empresa. La de la empresa se crea de la nada,
+        porque la empresa no existe: es una decisión del proyecto para que el
+        trabajo engorde las arcas (y los botes de la lotería).
+
+        Un autónomo cobra rendimientos de actividades económicas (art. 27
+        LIRPF): sin cotización por turno (paga la cuota con
+        `charge_self_employed_fee`) y con el IRPF por la escala, como un pago a
+        cuenta simplificado.
+
+        Args:
+            gross: Bruto del turno; positivo.
+            concept: Motivo corto y estable para el libro (`"pala:obra"`).
+            self_employed: Si quien cobra es autónomo.
+        """
+        if gross <= 0:
+            raise ValueError("El sueldo debe ser positivo.")
+        slip, balance = await self.repository.credit_salary(
+            guild_id,
+            user_id,
+            gross=gross,
+            concept=concept,
+            now=self._clock(),
+            payslip_for=compute_self_employed_payslip if self_employed else compute_payslip,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+        return SalaryResult(payslip=slip, balance=balance)
+
+    async def charge_self_employed_fee(
+        self, guild_id: int, user_id: int, *, amount: int, concept: str
+    ) -> tuple[int, int]:
+        """Cobra la cuota semanal de autónomos.
+
+        Tratamiento fiscal: cotización al RETA (sistema de cotización por
+        ingresos reales del RDL 13/2022; en el juego, cuota fija). Va al Estado
+        como Seguridad Social. Si no llega el saldo, se cobra lo que haya.
+
+        Returns:
+            `(cobrado, saldo_final)`.
+        """
+        if amount <= 0:
+            raise ValueError("La cuota debe ser positiva.")
+        return await self.repository.charge_contribution(
+            guild_id, user_id, amount=amount, concept=concept, now=self._clock()
+        )
+
+    async def pay_undeclared(
+        self, guild_id: int, user_id: int, *, amount: int, concept: str
+    ) -> int:
+        """Paga dinero en negro: sin retención, sin cotizar y sin que lo vea el IMV.
+
+        Tratamiento fiscal: debería tributar como rendimiento del trabajo
+        (art. 17.1 LIRPF) y cotizar (art. 147 LGSS), pero nadie lo declara: es
+        el chiste. Si la Inspección lo descubre, `sanction` lo regulariza. No
+        deja rastro en `economy_tax_records` ni en `economy_payroll`.
+
+        Returns:
+            El saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("La cantidad debe ser positiva.")
+        return await self.repository.apply(
+            guild_id, user_id, [LedgerEntry(amount, f"negro:{concept}")]
+        )
+
+    async def sanction(
+        self, guild_id: int, user_id: int, *, amount: int, concept: str
+    ) -> tuple[int, int]:
+        """Cobra una multa o regularización al Estado (Inspección de Trabajo, UCO…).
+
+        Tratamiento fiscal: sanción administrativa; no es un impuesto, pero va
+        al Estado y `hacienda` la cuenta. Si no llega el saldo, se cobra lo que
+        haya (no se generan deudas).
+
+        Returns:
+            `(cobrado, saldo_final)`.
+        """
+        if amount <= 0:
+            raise ValueError("La multa debe ser positiva.")
+        return await self.repository.sanction(
+            guild_id, user_id, amount=amount, concept=concept, now=self._clock()
+        )
+
+    async def suspend_imv(self, guild_id: int, user_id: int, *, seconds: float) -> float:
+        """Suspende el IMV `seconds` segundos desde ahora. Devuelve hasta cuándo."""
+        until = self._clock() + seconds
+        await self.repository.suspend_imv(guild_id, user_id, until)
+        return until
+
+    async def work_week_net(self, guild_id: int, user_id: int) -> int:
+        """Neto de las nóminas de los últimos 7 días (lo que mira el IMV)."""
+        return await self.repository.work_net(
+            guild_id, user_id, self._clock() - IMV_WORK_WINDOW_SECONDS
+        )
+
+    async def week_tax_burden(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """`(impuestos, neto)` de los últimos 7 días, para «Socio de Hacienda».
+
+        Los impuestos son la Seguridad Social de las nóminas (las dos partes),
+        su IRPF y además el IGIC de las compras y el Patrimonio de la semana.
+        El neto es lo cobrado en nómina.
+        """
+        since = self._clock() - IMV_WORK_WINDOW_SECONDS
+        _gross, ss, irpf, net = await self.repository.payroll_totals(guild_id, user_id, since)
+        other = await self.repository.other_taxes(guild_id, user_id, since)
+        return ss + irpf + other, net
 
     async def delete_guild_data(self, guild_id: int) -> None:
         """Borra la economía del servidor (el bot ha salido de él)."""
