@@ -525,21 +525,27 @@ tenga que reconstruir la imagen. Programado a las 5:00, cada noche:
 - Una vez por semana reconstruye aunque no haya cambios, para traer la última
   `yt-dlp`.
 
-Requisitos: el bot tiene que estar en un `git clone` de este repositorio (no
-en una carpeta copiada) y sin cambios a mano en archivos versionados; si los
-hay, el script se niega a actualizar y lo apunta en el log.
+No hace falta tener git instalado: si el sistema no lo trae (el UGREEN no lo
+trae), el script usa la imagen `alpine/git` de Docker. Si en los archivos
+versionados hay cambios hechos a mano, el script no actualiza y lo apunta en
+el log.
 
 Para programarlo, por SSH en el NAS:
 
 ```bash
 cd /ruta/al/bot
 chmod +x actualizar.sh
-./actualizar.sh          # primera vez a mano: debe acabar en "Desplegado ..." o "Sin cambios"
+# Primera vez a mano. Si la carpeta se copió en vez de clonarse, el script lo
+# dice: entonces, una sola vez, `sudo ./actualizar.sh --convertir`, que la
+# enlaza con GitHub sin tocar `.env` ni los datos.
+sudo ./actualizar.sh     # debe acabar en "Desplegado ..." o "Sin cambios"
 sudo crontab -e          # y añade esta línea:
 0 5 * * * /ruta/al/bot/actualizar.sh
 ```
 
-Comprueba con `date` que la hora del NAS es la de Canarias; cron usa esa.
+cron usa la hora del NAS. Si `date` no da la de Canarias (los NAS suelen ir en
+UTC), ajústala con `sudo timedatectl set-timezone Atlantic/Canary` o asume
+el desfase en la hora del crontab.
 El registro de cada ejecución queda en `.despliegue/actualizar.log`.
 
 **Si la música deja de funcionar** antes de la reconstrucción semanal, casi

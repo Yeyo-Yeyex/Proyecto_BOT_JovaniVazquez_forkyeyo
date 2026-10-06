@@ -23,8 +23,16 @@ pytestmark = pytest.mark.skipif(
     reason="hacen falta bash, git y flock",
 )
 
-# `docker` falso: registra los argumentos y responde según FAKE_*.
+# `docker` falso: registra los argumentos y responde según FAKE_*. Para
+# `docker run ... alpine/git:latest <args>` ejecuta el git real con <args>,
+# como haría el contenedor.
 FAKE_DOCKER = """#!/usr/bin/env bash
+if [[ "$1" == run ]]; then
+  echo "run alpine/git" >> "$FAKE_LOG"
+  while [[ $# -gt 0 && "$1" != alpine/git:latest ]]; do shift; done
+  shift
+  exec git "$@"
+fi
 echo "$*" >> "$FAKE_LOG"
 case "$1 $2" in
   "compose version") exit 0 ;;
@@ -193,3 +201,75 @@ def test_no_pisa_cambios_locales(entorno):
     assert resultado.returncode == 1
     assert (entorno["clon"] / "bot.txt").read_text() == "tocado a mano\n"
     assert "compose build" not in _llamadas(entorno)
+
+
+def test_sin_git_en_el_sistema_usa_alpine_git(entorno):
+    _ejecutar(entorno, GIT_EN_DOCKER="1")
+    _limpiar_llamadas(entorno)
+    nuevo = _nuevo_commit(entorno["origin"], "v2")
+
+    resultado = _ejecutar(entorno, GIT_EN_DOCKER="1")
+
+    assert resultado.returncode == 0
+    assert "run alpine/git" in _llamadas(entorno)
+    assert (entorno["clon"] / ".despliegue/commit").read_text().strip() == nuevo
+
+
+def _carpeta_copiada(entorno: dict) -> Path:
+    """Simula la carpeta del NAS: los archivos del bot sin `.git`, con un `.env`."""
+    copia = entorno["clon"].parent / "copia"
+    shutil.copytree(entorno["clon"], copia, ignore=shutil.ignore_patterns(".git"))
+    (copia / "bot.txt").write_text("versión vieja copiada a mano\n")
+    (copia / ".env").write_text("DISCORD_TOKEN=secreto\n")
+    return copia
+
+
+def test_carpeta_copiada_pide_convertir(entorno):
+    copia = _carpeta_copiada(entorno)
+
+    resultado = subprocess.run(
+        ["bash", str(copia / "actualizar.sh")],
+        env=entorno["env"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert resultado.returncode == 1
+    assert "--convertir" in (copia / ".despliegue/actualizar.log").read_text()
+    assert "compose build" not in _llamadas(entorno)
+
+
+def test_convertir_enlaza_la_carpeta_y_despliega(entorno):
+    copia = _carpeta_copiada(entorno)
+    nuevo = _nuevo_commit(entorno["origin"], "v2")
+    env = {**entorno["env"], "REPO": str(entorno["origin"]), "GIT_EN_DOCKER": "1"}
+
+    resultado = subprocess.run(
+        ["bash", str(copia / "actualizar.sh"), "--convertir"],
+        env=env,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert resultado.returncode == 0, (copia / ".despliegue/actualizar.log").read_text()
+    assert _git(copia, "rev-parse", "HEAD") == nuevo
+    assert (copia / "bot.txt").read_text() == "v2"
+    assert (copia / ".env").read_text() == "DISCORD_TOKEN=secreto\n"
+    assert (copia / ".despliegue/commit").read_text().strip() == nuevo
+    assert "compose build --pull" in _llamadas(entorno)
+
+
+def test_permisos_777_del_nas_no_cuentan_como_cambios(entorno):
+    """En las carpetas compartidas del UGREEN todos los archivos salen 777."""
+    _ejecutar(entorno, GIT_EN_DOCKER="1")
+    for archivo in entorno["clon"].rglob("*"):
+        if ".git" not in archivo.parts:
+            archivo.chmod(0o777)
+    nuevo = _nuevo_commit(entorno["origin"], "v2")
+
+    resultado = _ejecutar(entorno, GIT_EN_DOCKER="1")
+
+    assert resultado.returncode == 0, (entorno["clon"] / ".despliegue/actualizar.log").read_text()
+    assert (entorno["clon"] / ".despliegue/commit").read_text().strip() == nuevo
