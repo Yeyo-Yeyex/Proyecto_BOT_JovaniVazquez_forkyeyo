@@ -1794,7 +1794,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "t8_heroe", "Ni el tifón te para", "Ve a la oficina con señal 8.", E, True),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_dimsum", [
-        (1, "dimsum", "Dim sum con el colega", "Desayuna dim sum con el colega del servidor.",
+        (1, "dimsum", "Dim sum con Robuso", "Desayuna dim sum con Robuso en Hong Kong.",
          R, True),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_lkf", [

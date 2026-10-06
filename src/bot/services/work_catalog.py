@@ -1719,12 +1719,12 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "dimsum",
-        "🥟 Un colega del servidor que vive en Hong Kong te invita a dim sum el domingo.",
+        "🥟 Robuso, que vive en Hong Kong, te invita a dim sum el domingo.",
         (
             (
                 "Voy",
                 Outcome(
-                    "Har gow, siu mai y cotilleos del servidor. Vuelves nuevo.",
+                    "Har gow, siu mai y Robuso poniéndote al día del servidor. Vuelves nuevo.",
                     battery=10,
                     family=5,
                     stat="work_dimsum",
@@ -1732,7 +1732,9 @@ EVENTS: tuple[Event, ...] = (
             ),
             (
                 "Tengo que currar",
-                Outcome("Te quedas trabajando. Te manda fotos de los bollos.", performance=5),
+                Outcome(
+                    "Te quedas trabajando. Robuso te manda fotos de los bollos.", performance=5
+                ),
             ),
         ),
         jobs=("oficina",),

@@ -817,8 +817,9 @@ class PalaPanel(ui.LayoutView):
             await interaction.response.send_message(str(error), ephemeral=True)
             return
         self.notes.append(
-            "✈️ **¡Te vas a Hong Kong!** Doce horas de vuelo y un jet lag que te deja la "
-            "batería tiritando. Cobrarás el doble (paquete de expatriado), pero pagarás MPF y "
+            "✈️ **¡Te vas a Hong Kong!** Doce horas de vuelo, un jet lag que te deja la "
+            "batería tiritando y Robuso esperándote en el aeropuerto. Cobrarás el doble "
+            "(paquete de expatriado), pero pagarás MPF y "
             "salaries tax, y no hay IMV mientras vivas fuera (art. 36.e de la Ley 19/2021). "
             "Pasados 4 días dejas de ser residente fiscal en España (183 días del año, "
             "art. 9.1.a LIRPF, a la escala del juego)."
