@@ -161,6 +161,13 @@ python -m bot
   tramos escalados al mismo factor que el mínimo. `saldo` avisa de lo que te
   tocaría y el bot anuncia quién ha pagado. La primera semana tras desplegarlo
   no cobra.
+- **Cuenta remunerada:** cada día el monedero paga intereses sobre el saldo
+  medio del día anterior, por tramos: 2,5 % hasta 4.000 Y$, 1,25 % hasta 20.000
+  y 0,4 % hasta 70.000 (500 Y$ brutos al día como mucho). Cobran también los
+  que no hacen nada. Retención del 19 % en cada pago (art. 101.4 LIRPF) y, cada
+  lunes, liquidación con la escala del ahorro (arts. 66.1 y 76 LIRPF). El aviso
+  llega una vez, en la siguiente acción con dinero; `saldo` enseña lo de ayer y
+  lo que va saliendo hoy.
 - **IGIC:** el impuesto al consumo es el canario, no el IVA. Lo pagan las
   compras de la tienda, al tipo de cada artículo: cero, reducido (3 %),
   general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),
@@ -526,6 +533,7 @@ src/bot/
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
+│   ├── intereses.py     # Intereses diarios del monedero y liquidación del ahorro
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
@@ -545,7 +553,8 @@ src/bot/
 │   ├── levels.py        # Cálculo de niveles y progreso
 │   ├── achievements.py  # Catálogo de logros y qué cuenta cada jugada o mensaje
 │   ├── economy.py       # Yapdollars: única puerta al dinero del bot
-│   ├── taxes.py         # IRPF, nómina, Patrimonio, IGIC, loterías y donativos
+│   ├── taxes.py         # IRPF, nómina, Patrimonio, IGIC, loterías, donativos y ahorro
+│   ├── interest.py      # Cuenta remunerada: saldo medio, tramos, rachas y liquidación
 │   ├── work.py          # Reglas de pala: batería, jornada, familia, ascensos
 │   ├── work_catalog.py  # Oficios, puestos, contenido de minijuegos y eventos
 │   ├── work_games.py    # Minijuegos de pala: cavar, detectar, memoria, diálogo
