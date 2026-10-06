@@ -1514,8 +1514,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "tope", "Tope de cotización", "Pasa de la base máxima de cotización.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_taxes", [
-        (100_000, "sanxe_pala", "Perro Sanxe come de tu pala",
-         "Paga 100.000 Y$ entre IRPF y Seguridad Social trabajando.", E),
+        (1_000_000, "sanxe_pala", "Perro Sanxe come de tu pala",
+         "Paga 1.000.000 Y$ entre IRPF y Seguridad Social trabajando.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("work", "imv_with_salary", [
         (1, "compatible", "Compatibilidad total", "Cobra el IMV con nómina esa semana.", C),
@@ -1744,7 +1744,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dublin", "Farol irlandés", "Usa la oferta de Dublín para pedir aumento.", R, True),
     ])  # fmt: skip
     a += _tiers("oficina", "work_options_max", [
-        (100_000, "rico_papel", "Rico en papel", "Acumula 100.000 Y$ en stock options.", E),
+        (1_000_000, "rico_papel", "Rico en papel", "Acumula 1.000.000 Y$ en stock options.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("oficina", "work_exit", [
         (1, "unicornio", "Unicornio", "Vive un exit.", L, True),
@@ -1780,8 +1780,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Descuenta lo pagado en Hong Kong de tu IRPF.", R),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_hk_tax", [
-        (10_000, "hk_tax", "Contribuyente en Hong Kong",
-         "Deja 10.000 Y$ entre salaries tax y MPF.", R),
+        (200_000, "hk_tax", "Contribuyente en Hong Kong",
+         "Deja 200.000 Y$ entre salaries tax y MPF.", R),
     ], unit="money")  # fmt: skip
     a += _tiers("hongkong", "work_jetlag", [
         (1, "jetlag", "Jet lag", "Ficha desde Hong Kong cuando en Canarias es de madrugada.", C),

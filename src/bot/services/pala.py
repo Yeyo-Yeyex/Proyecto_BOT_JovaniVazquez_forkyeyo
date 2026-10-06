@@ -20,9 +20,9 @@ Todo el dinero pasa por `EconomyService`:
   art. 7.p LIRPF). Al irse, `set_residence` (sin IMV); al volver con 5 «años»
   fuera, Ley Beckham (`pay_salary(beckham=True)`).
 - Stock options del CTO: una parte del bruto no se cobra y se acumula. Si la
-  startup sale a bolsa o la compran (exit), se cobran: exentas hasta 500.000 Y$
-  (`grant`, 50.000 € de la Ley 28/2022 para empleados de empresas emergentes) y
-  el resto con IRPF (`pay_income`). Si quiebra, se pierden.
+  startup sale a bolsa o la compran (exit), se cobran: exentas hasta 50.000 €
+  (`grant`, Ley 28/2022 para empleados de empresas emergentes) y el resto como
+  nómina en especie (`pay_salary`). Si quiebra, se pierden.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     EXEMPT_7P_PER_DAY,
     IGIC_GENERAL_RATE,
-    YAPDOLLARS_PER_EURO,
+    WAGE_YAPDOLLARS_PER_EURO,
     ForeignPayslip,
     Payslip,
     igic,
@@ -117,7 +117,7 @@ if TYPE_CHECKING:
 
 #: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
 #: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
-OPTIONS_EXEMPT = 50_000 * YAPDOLLARS_PER_EURO
+OPTIONS_EXEMPT = 50_000 * WAGE_YAPDOLLARS_PER_EURO
 
 
 class WorkError(Exception):
@@ -776,12 +776,13 @@ class WorkService:
         )
 
     async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
-        """Cobra un exit: exento hasta `OPTIONS_EXEMPT` y el resto con IRPF.
+        """Cobra un exit: exento hasta `OPTIONS_EXEMPT` y el resto como nómina.
 
         Tratamiento fiscal: rendimiento del trabajo en especie, con la exención
         de la Ley 28/2022 para las acciones de empresas emergentes entregadas a
         sus empleados (50.000 € al año). La parte exenta va por `grant`; el
-        resto, por `pay_income` con retención.
+        resto, por `pay_salary` (IRPF y cotización, como cualquier retribución
+        en especie).
 
         Returns:
             El saldo final.
@@ -792,7 +793,7 @@ class WorkService:
         )
         if payout > exempt:
             balance = (
-                await self.economy.pay_income(
+                await self.economy.pay_salary(
                     guild_id, user_id, gross=payout - exempt, concept="pala:opciones"
                 )
             ).balance

@@ -5,11 +5,14 @@ puestos, su contenido de minijuego (si usa uno nuevo) y, si se quiere, sus
 eventos. Los `key` (oficios, formaciones, tareas, eventos) no se cambian
 nunca: son lo que se guarda en la base de datos.
 
-Sueldos: la base común es 150 / 250 / 400 / 650 / 1.000 Y$ por turno y cada
-oficio la ajusta (la hostelería empieza por debajo, la política se dispara
-arriba). Con jornada completa todos los días, la retención de IRPF queda
-entre el 0 y el 11 % en el puesto 1 y entre el 37 y el 44 % en el 5 (ver la
-nómina en `bot.services.taxes`).
+Sueldos, en Y$ de nómina (100 Y$ por euro, ver
+`taxes.WAGE_YAPDOLLARS_PER_EURO`): el puesto 1 de cada oficio paga entre 1.600 y
+1.800 Y$ por turno con nota media, un poco más que un IMV entero (1.500 Y$), y
+el puesto 5 entre 13.000 y 25.000. Un turno son unas dos horas: la jornada
+completa (4 turnos) de un celador equivale a unos 25.000 € al año y la de un
+consejero de eléctrica, a 365.000 €, con la retención que toca a cada uno. Las
+formaciones cuestan de 2 a 4 turnos del puesto al que dan acceso. El análisis
+que fija estas cifras está en `docs/economia-trabajo.md`.
 
 La política es una sátira del PSOE, el partido del Gobierno, y de sus
 tópicos (sobres, enchufes, comisiones, puertas giratorias). No se nombra a
@@ -59,7 +62,7 @@ OBRA = Job(
         Position(
             1,
             "Peón",
-            150,
+            1_800,
             Mechanic.DIG,
             30,
             (_good(3), Task("clean", "Haz 2 turnos sin romper nada", "clean", 2)),
@@ -69,18 +72,18 @@ OBRA = Job(
         Position(
             2,
             "Oficial de segunda",
-            250,
+            2_800,
             Mechanic.DIG,
             30,
             (_good(4), _extras(1)),
             days=3,
             content="cavar:3",
-            training=Training("prl20", "el curso de PRL de 20 horas", 1_500),
+            training=Training("prl20", "el curso de PRL de 20 horas", 6_000),
         ),
         Position(
             3,
             "Oficial de primera",
-            400,
+            4_500,
             Mechanic.DIG,
             40,
             (_good(5), Task("clean", "Haz 4 turnos sin romper nada", "clean", 4)),
@@ -90,25 +93,25 @@ OBRA = Job(
         Position(
             4,
             "Encargado",
-            715,
+            7_500,
             Mechanic.SPOT,
             60,
             (Task("caught", "Pilla a 25 escaqueados", "caught", 25), _good(5), _events(2)),
             days=5,
             content="vagos",
-            training=Training("recurso", "el curso de recurso preventivo de 60 horas", 4_000),
+            training=Training("recurso", "el curso de recurso preventivo de 60 horas", 15_000),
         ),
         Position(
             5,
             "Constructor",
-            1_300,
+            13_000,
             Mechanic.SPOT,
             60,
             (),
             days=0,
             content="sobrecostes",
             self_employed=True,
-            training=Training("rea", "el alta en el Registro de Empresas Acreditadas", 12_000),
+            training=Training("rea", "el alta en el Registro de Empresas Acreditadas", 50_000),
         ),
     ),
 )
@@ -123,7 +126,7 @@ HOSTELERIA = Job(
         Position(
             1,
             "Friegaplatos",
-            120,
+            1_700,
             Mechanic.MEMORY,
             30,
             (_good(3), Task("perfect", "Saca 6 tandas perfectas", "perfect_rounds", 6)),
@@ -133,18 +136,18 @@ HOSTELERIA = Job(
         Position(
             2,
             "Camarero",
-            210,
+            2_500,
             Mechanic.MEMORY,
             30,
             (_good(4), _extras(1)),
             days=3,
             content="comandas:3",
-            training=Training("manipulador", "el carnet de manipulador de alimentos", 800),
+            training=Training("manipulador", "el carnet de manipulador de alimentos", 4_000),
         ),
         Position(
             3,
             "Jefe de rango",
-            360,
+            4_000,
             Mechanic.MEMORY,
             40,
             (Task("perfect", "Saca 15 comandas perfectas", "perfect_rounds", 15), _good(5)),
@@ -154,7 +157,7 @@ HOSTELERIA = Job(
         Position(
             4,
             "Jefe de cocina",
-            650,
+            7_000,
             Mechanic.MEMORY,
             60,
             (
@@ -164,19 +167,19 @@ HOSTELERIA = Job(
             ),
             days=5,
             content="cocina:5",
-            training=Training("alergenos", "el curso de alérgenos y APPCC", 2_500),
+            training=Training("alergenos", "el curso de alérgenos y APPCC", 12_000),
         ),
         Position(
             5,
             "Dueño del chiringuito",
-            1_300,
+            13_000,
             Mechanic.DIALOGUE,
             60,
             (),
             days=0,
             content="chiringuito",
             self_employed=True,
-            training=Training("apertura", "la licencia de apertura del chiringuito", 15_000),
+            training=Training("apertura", "la licencia de apertura del chiringuito", 60_000),
         ),
     ),
 )
@@ -191,7 +194,7 @@ POLITICA = Job(
         Position(
             1,
             "Pegacarteles",
-            45,
+            1_700,
             Mechanic.MEMORY,
             30,
             (_good(3), Task("perfect", "Haz 6 rutas perfectas", "perfect_rounds", 6)),
@@ -201,7 +204,7 @@ POLITICA = Job(
         Position(
             2,
             "Concejal",
-            225,
+            2_700,
             Mechanic.MEMORY,
             30,
             (
@@ -210,12 +213,12 @@ POLITICA = Job(
             ),
             days=3,
             content="votos:3",
-            training=Training("listas", "un puesto de salida en las listas", 2_000),
+            training=Training("listas", "un puesto de salida en las listas", 8_000),
         ),
         Position(
             3,
             "Diputado autonómico",
-            480,
+            5_000,
             Mechanic.DIALOGUE,
             40,
             (Task("smooth", "Esquiva 15 preguntas en rueda de prensa", "smooth", 15), _good(5)),
@@ -225,7 +228,7 @@ POLITICA = Job(
         Position(
             4,
             "Ministro",
-            975,
+            10_000,
             Mechanic.DIALOGUE,
             60,
             (
@@ -235,18 +238,18 @@ POLITICA = Job(
             ),
             days=5,
             content="comision",
-            training=Training("cartera", "la cartera ministerial (cena en Ferraz)", 8_000),
+            training=Training("cartera", "la cartera ministerial (cena en Ferraz)", 30_000),
         ),
         Position(
             5,
             "Consejero de una eléctrica",
-            2_500,
+            25_000,
             Mechanic.DIALOGUE,
             60,
             (),
             days=0,
             content="consejo",
-            training=Training("giratoria", "el paso por la puerta giratoria", 25_000),
+            training=Training("giratoria", "el paso por la puerta giratoria", 100_000),
         ),
     ),
 )
@@ -262,33 +265,33 @@ SANIDAD = Job(
     guards_required=((4, 2),),
     positions=(
         Position(
-            1, "Celador", 135, Mechanic.MEMORY, 30,
+            1, "Celador", 1_750, Mechanic.MEMORY, 30,
             (_good(3), Task("perfect", "Haz 6 traslados perfectos", "perfect_rounds", 6)),
             days=2, content="camilla:3",
         ),
         Position(
-            2, "TCAE", 250, Mechanic.MEMORY, 30,
+            2, "TCAE", 2_800, Mechanic.MEMORY, 30,
             (_good(3), _guards(2)),
             days=3, content="ronda:3",
-            training=Training("tcae", "el título de TCAE (FP de grado medio)", 1_500),
+            training=Training("tcae", "el título de TCAE (FP de grado medio)", 6_000),
         ),
         Position(
-            3, "Enfermero", 460, Mechanic.SPOT, 40,
+            3, "Enfermero", 4_800, Mechanic.SPOT, 40,
             (Task("caught", "Acierta 20 triajes", "caught", 20), _guards(4)),
             days=4, content="triaje",
-            training=Training("enfermeria", "el grado en Enfermería", 6_000),
+            training=Training("enfermeria", "el grado en Enfermería", 20_000),
         ),
         Position(
-            4, "Médico residente (MIR)", 780, Mechanic.DIALOGUE, 60,
+            4, "Médico residente (MIR)", 8_000, Mechanic.DIALOGUE, 60,
             (Task("smooth", "Acierta 25 preguntas del MIR", "smooth", 25), _guards(6),
              _events(2)),
             days=5, content="mir",
-            training=Training("mir", "la academia del MIR (y aprobar el examen)", 8_000),
+            training=Training("mir", "la academia del MIR (y aprobar el examen)", 30_000),
         ),
         Position(
-            5, "Médico adjunto", 1_400, Mechanic.DIALOGUE, 60, (),
+            5, "Médico adjunto", 14_000, Mechanic.DIALOGUE, 60, (),
             days=0, content="consulta",
-            training=Training("ope", "la plaza de adjunto (oposición, OPE)", 15_000),
+            training=Training("ope", "la plaza de adjunto (oposición, OPE)", 60_000),
         ),
     ),
 )  # fmt: skip
@@ -304,31 +307,31 @@ OFICINA = Job(
     options_level=5,
     positions=(
         Position(
-            1, "Becario", 75, Mechanic.MEMORY, 30,
+            1, "Becario", 1_700, Mechanic.MEMORY, 30,
             (_good(3), Task("perfect", "Acierta 6 rondas de cafés", "perfect_rounds", 6)),
             days=2, content="cafes:3",
         ),
         Position(
-            2, "Programador junior", 250, Mechanic.SPOT, 30,
+            2, "Programador junior", 2_800, Mechanic.SPOT, 30,
             (Task("caught", "Encuentra 15 bugs", "caught", 15), _good(4)),
             days=3, content="bugs",
-            training=Training("bootcamp", "el bootcamp de programación", 2_500),
+            training=Training("bootcamp", "el bootcamp de programación", 10_000),
         ),
         Position(
-            3, "Programador senior", 480, Mechanic.SPOT, 40,
+            3, "Programador senior", 5_000, Mechanic.SPOT, 40,
             (Task("caught", "Para 20 cambios que rompían producción", "caught", 20), _good(5)),
             days=4, content="revisiones",
         ),
         Position(
-            4, "Tech lead", 910, Mechanic.DIALOGUE, 60,
+            4, "Tech lead", 9_500, Mechanic.DIALOGUE, 60,
             (Task("smooth", "Acorta 20 reuniones", "smooth", 20), _good(5), _events(2)),
             days=5, content="reuniones",
-            training=Training("scrum", "la certificación de Scrum Master", 3_000),
+            training=Training("scrum", "la certificación de Scrum Master", 12_000),
         ),
         Position(
-            5, "CTO de startup", 1_800, Mechanic.DIALOGUE, 60, (),
+            5, "CTO de startup", 18_000, Mechanic.DIALOGUE, 60, (),
             days=0, content="inversores",
-            training=Training("mba", "el MBA de una escuela de negocios", 20_000),
+            training=Training("mba", "el MBA de una escuela de negocios", 80_000),
         ),
     ),
 )  # fmt: skip

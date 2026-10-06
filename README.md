@@ -203,7 +203,9 @@ python -m bot
   barraquito), 4 turnos ordinarios al día, 2 extras legales a la semana y,
   después, extras en B con riesgo de Inspección. Ascensos al estilo de los Sims
   (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
-  El IMV se reduce medio Y$ por cada Y$ neto que pase de 1.150 Y$ a la semana
+  Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,
+  cunde como un IMV a racha máxima; ver `docs/economia-trabajo.md`).
+  El IMV se reduce 1 Y$ por cada 20 Y$ netos de nómina que pasen de 11.506 a la semana
   (incentivo al empleo del RD 789/2022), pero nunca baja del 20 %. Eventos con
   dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). En
   sanidad se rinde con **guardias** (turno doble que paga 1,6 veces y te deja
