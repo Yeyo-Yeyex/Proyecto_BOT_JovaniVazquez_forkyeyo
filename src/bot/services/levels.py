@@ -11,8 +11,6 @@ dispara y el repositorio solo las guarda de forma atómica):
   mensaje, con un tope de 100 XP al día.
 - **Racha:** cada día seguido escribiendo suma un 2 % al XP de mensajes y voz,
   hasta un +20 %.
-- **Hora feliz:** cada día hay una hora, distinta por servidor, en la que el
-  XP de mensajes y voz se duplica.
 
 Los "días" son días naturales en hora canaria (`TIMEZONE`). Subir de nivel
 paga yapdollars brutos (`level_reward`); el IRPF lo aplica la economía.
@@ -20,7 +18,6 @@ paga yapdollars brutos (`level_reward`); el IRPF lo aplica la economía.
 
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -42,11 +39,6 @@ REACTION_XP = 5
 MAX_REACTION_XP_PER_DAY = 100
 STREAK_BONUS_PER_DAY = 0.02
 MAX_STREAK_BONUS = 0.20
-HAPPY_HOUR_MULTIPLIER = 2
-#: La hora feliz empieza a una hora en punto entre estas dos (ambas incluidas),
-#: que es cuando hay gente despierta.
-HAPPY_HOUR_EARLIEST = 12
-HAPPY_HOUR_LATEST = 22
 
 #: Premio bruto por nivel alcanzado: `LEVEL_REWARD_PER_LEVEL × nivel`, el doble
 #: en los múltiplos de `LEVEL_MILESTONE`.
@@ -92,29 +84,12 @@ def calculate_level_progress(total_xp: int) -> LevelProgress:
     )
 
 
-# -- Días, rachas y hora feliz ------------------------------------------------------
+# -- Días y rachas ------------------------------------------------------------------
 
 
 def local_day(now: float) -> date:
     """Día natural en hora canaria del instante `now` (epoch)."""
     return datetime.fromtimestamp(now, TIMEZONE).date()
-
-
-def happy_hour(guild_id: int, day: date) -> int:
-    """Hora de inicio (0–23, hora canaria) de la hora feliz de ese día.
-
-    Sale de una semilla fija por servidor y día: no hace falta guardarla y
-    sobrevive a reinicios del bot.
-    """
-    return random.Random(f"{guild_id}:{day.isoformat()}").randint(
-        HAPPY_HOUR_EARLIEST, HAPPY_HOUR_LATEST
-    )
-
-
-def is_happy_hour(guild_id: int, now: float) -> bool:
-    """Si `now` cae dentro de la hora feliz del servidor."""
-    moment = datetime.fromtimestamp(now, TIMEZONE)
-    return moment.hour == happy_hour(guild_id, moment.date())
 
 
 def streak_multiplier(streak_days: int) -> float:
@@ -155,10 +130,9 @@ class MemberActivity:
     reaction_xp: int = 0
 
 
-def boosted(base_xp: int, *, streak_days: int, happy: bool) -> int:
-    """Aplica la racha y la hora feliz a un XP base."""
-    multiplier = streak_multiplier(streak_days) * (HAPPY_HOUR_MULTIPLIER if happy else 1)
-    return round(base_xp * multiplier)
+def boosted(base_xp: int, *, streak_days: int) -> int:
+    """Aplica la racha a un XP base."""
+    return round(base_xp * streak_multiplier(streak_days))
 
 
 def message_award(
@@ -167,7 +141,6 @@ def message_award(
     now: float,
     cooldown_seconds: int,
     base_xp: int,
-    happy: bool,
 ) -> MemberActivity | None:
     """Nuevo estado tras un mensaje, o `None` si sigue en enfriamiento."""
     if state.last_awarded_at is not None and now - state.last_awarded_at < cooldown_seconds:
@@ -175,7 +148,7 @@ def message_award(
     today = local_day(now)
     first_today = state.last_active_day != today.isoformat()
     streak = next_streak(state.last_active_day, today, state.streak_days)
-    xp = boosted(base_xp, streak_days=streak, happy=happy)
+    xp = boosted(base_xp, streak_days=streak)
     if first_today:
         xp += FIRST_MESSAGE_OF_DAY_BONUS
     return replace(
@@ -194,10 +167,10 @@ def current_streak(state: MemberActivity, today: date) -> int:
     return 0
 
 
-def voice_award(state: MemberActivity, *, now: float, base_xp: int, happy: bool) -> MemberActivity:
+def voice_award(state: MemberActivity, *, now: float, base_xp: int) -> MemberActivity:
     """Nuevo estado tras un minuto en voz. La voz no mueve la racha, solo la usa."""
     streak = current_streak(state, local_day(now))
-    xp = boosted(base_xp, streak_days=streak, happy=happy)
+    xp = boosted(base_xp, streak_days=streak)
     return replace(state, total_xp=state.total_xp + xp)
 
 

@@ -219,7 +219,7 @@ def scratch_text(game: Game, prize: Prize | None, cells: list[int], tax: int) ->
             " ".join(f"||`{format_amount(c):^{width}}`||" for c in cells[row * 3 : row * 3 + 3])
         )
     if prize is None:
-        verdict = "||Nada. El cartón va a la papelera.||"
+        verdict = "||Esta vez no, mi amor. El próximo rasca tiene tu nombre.||"
     else:
         verdict = f"||🎉 ¡Tres iguales! Premio de **{format_amount(prize.amount)}**||"
     lines = [f"### {game.emoji} {game.name} · rasca las casillas", *rows, verdict]
@@ -581,8 +581,8 @@ class Loteria(commands.Cog):
             f"({_thousands(totals.winners)} boletos premiados)."
         )
         lines.append(
-            "-# Probabilidades reales: el gordo es casi imposible, lo que toca son "
-            "reintegros y premios pequeños. Si el bote no tiene dueño, se acumula."
+            "-# Cada semana cae algo: reintegros, premios pequeños y, a quien le toque, "
+            "el gordo. Si el bote no tiene dueño, se acumula y crece pa'l próximo, bebé."
         )
         return "\n".join(lines)
 
@@ -946,7 +946,9 @@ class Loteria(commands.Cog):
             if len(ranking) > ANNOUNCE_WINNERS:
                 lines.append(f"…y {len(ranking) - ANNOUNCE_WINNERS} premiados más.")
         else:
-            lines.append("Nadie del servidor ha cobrado nada. El Estado lo agradece.")
+            lines.append(
+                "Esta vez no le ha tocado a nadie del servidor. El próximo sorteo es el bueno 🍀"
+            )
         if game.categories:
             jackpot = next(c for c in game.categories if c.jackpot)
             won = next(c for c in settlement.categories if c.key == jackpot.key).winners

@@ -6,7 +6,6 @@ Fuentes de XP en vivo (las reglas están en `bot.services.levels`):
 - `on_raw_reaction_add`: XP para el autor de un mensaje cuando otro reacciona.
 - `_voice_tick`: cada minuto, XP para quien está en voz sin mutear. Lee la
   caché de estados de voz de discord.py, así que no hace llamadas a la API.
-  La misma tarea anuncia la hora feliz.
 
 Subir de nivel paga yapdollars con retención de IRPF (`EconomyService`).
 
@@ -45,7 +44,6 @@ from bot.services.economy import (
     tax_line,
 )
 from bot.services.levels import (
-    HAPPY_HOUR_MULTIPLIER,
     HISTORICAL_XP_PER_MESSAGE,
     MAX_MESSAGE_XP,
     MAX_VOICE_XP,
@@ -53,9 +51,6 @@ from bot.services.levels import (
     MIN_VOICE_XP,
     MemberActivity,
     calculate_level_progress,
-    happy_hour,
-    is_happy_hour,
-    local_day,
     message_award,
     reaction_award,
     rewards_between,
@@ -187,8 +182,6 @@ class MessageStats(commands.Cog):
         self.economy = economy
         self._scan_tasks: dict[int, asyncio.Task[None]] = {}
         self._rewarded_reactions: OrderedDict[tuple[int, int], None] = OrderedDict()
-        #: Último día (ISO) en que se anunció la hora feliz, por servidor.
-        self._happy_hour_announced: dict[int, str] = {}
 
     async def cog_load(self) -> None:
         """Arranca la tarea de XP por voz."""
@@ -214,12 +207,9 @@ class MessageStats(commands.Cog):
         # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop).
         boost = tienda.xp_multiplier(self.bot, guild_id, message.author.id, now)
         base_xp = round(random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP) * boost)
-        happy = is_happy_hour(guild_id, now)
 
         def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
-            return message_award(
-                state, now=now, cooldown_seconds=cooldown, base_xp=base_xp, happy=happy
-            )
+            return message_award(state, now=now, cooldown_seconds=cooldown, base_xp=base_xp)
 
         awards = await self.repository.grant_activity(guild_id, [message.author.id], decide)
         award = awards.get(message.author.id)
@@ -268,11 +258,11 @@ class MessageStats(commands.Cog):
         if award is not None and isinstance(channel, discord.abc.Messageable):
             await self._handle_level_up(guild, channel, author, award)
 
-    # -- Voz y hora feliz ---------------------------------------------------------------
+    # -- Voz -----------------------------------------------------------------------------
 
     @tasks.loop(seconds=60)
     async def _voice_tick(self) -> None:
-        """Cada minuto: XP por voz y aviso de la hora feliz."""
+        """Cada minuto: XP por voz."""
         try:
             enabled = await self.repository.enabled_guild_ids()
         except (OSError, sqlite3.Error):
@@ -283,7 +273,6 @@ class MessageStats(commands.Cog):
             if guild.id not in enabled:
                 continue
             try:
-                await self._announce_happy_hour_if_due(guild, now)
                 for channel in guild.voice_channels:
                     await self._award_voice_channel(guild, channel, now)
             except Exception:
@@ -305,7 +294,6 @@ class MessageStats(commands.Cog):
         # Hace falta alguien más para que cuente: nadie farmea solo.
         if len(eligible) < 2:
             return
-        happy = is_happy_hour(guild.id, now)
         base = {
             member.id: round(
                 random.randint(MIN_VOICE_XP, MAX_VOICE_XP)
@@ -315,34 +303,12 @@ class MessageStats(commands.Cog):
         }
 
         def decide(user_id: int, state: MemberActivity, _cooldown: int) -> MemberActivity:
-            return voice_award(state, now=now, base_xp=base[user_id], happy=happy)
+            return voice_award(state, now=now, base_xp=base[user_id])
 
         awards = await self.repository.grant_activity(guild.id, list(base), decide)
         by_id = {member.id: member for member in eligible}
         for user_id, award in awards.items():
             await self._handle_level_up(guild, channel, by_id[user_id], award)
-
-    async def _announce_happy_hour_if_due(self, guild: discord.Guild, now: float) -> None:
-        """Avisa una vez al día, al empezar la hora feliz, en el canal del sistema."""
-        if not is_happy_hour(guild.id, now):
-            return
-        today = local_day(now).isoformat()
-        if self._happy_hour_announced.get(guild.id) == today:
-            return
-        self._happy_hour_announced[guild.id] = today
-        channel = guild.system_channel
-        if channel is None:
-            return
-        end = happy_hour(guild.id, local_day(now)) + 1
-        try:
-            await channel.send(
-                f"🎉 **¡Hora feliz!** Hasta las {end % 24:02d}:00 los mensajes y la voz "
-                f"dan XP ×{HAPPY_HOUR_MULTIPLIER}."
-            )
-        except (discord.Forbidden, discord.HTTPException):
-            logger.warning(
-                "No se pudo anunciar la hora feliz en el servidor %s", guild.id, exc_info=True
-            )
 
     # -- Subidas de nivel ---------------------------------------------------------------
 
@@ -495,8 +461,6 @@ class MessageStats(commands.Cog):
             lines.append("Anuncios de nivel: ⚠️ el canal elegido ya no existe; se usa el de subida")
         else:
             lines.append(f"Anuncios de nivel: {target.mention}")
-        start = happy_hour(guild.id, local_day(time.time()))
-        lines.append(f"Hora feliz de hoy: {start:02d}:00–{(start + 1) % 24:02d}:00")
 
         if status is None:
             lines.append("\nSiguiente paso: `/niveles accion:importar` (o `.niveles importar`).")

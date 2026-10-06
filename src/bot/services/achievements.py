@@ -431,10 +431,6 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "morning_100", "Al que madruga…", "Escribe 100 mensajes antes de las 8:00.", R),
         (1_000, "morning_1k", "Gallo del corral", "Escribe 1.000 mensajes antes de las 8:00.", E),
     ])  # fmt: skip
-    a += _tiers("time", "msg_happy_hour", [
-        (50, "happy_50", "Hora feliz", "Escribe 50 mensajes durante la hora feliz.", C),
-        (500, "happy_500", "Cazador de horas felices", "Escribe 500 mensajes en la hora feliz.", R),
-    ])  # fmt: skip
     a += _tiers(
         "time", "msg_leet", [(1, "leet", "1337", "Escribe un mensaje a las 13:37.", R, True)]
     )
@@ -1933,6 +1929,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("hongkong", "work_return", [
         (1, "vuelta", "Vuelta a casa", "Vuelve de Hong Kong.", C),
     ])  # fmt: skip
+    # `hongkong`: mirar la hora de allí (ver `hong_kong_clock_stats`).
+    a += _tiers("hongkong", "hk_clock", [
+        (1, "hkclock_1", "¿Qué hora es allí?", "Mira la hora de Hong Kong.", C),
+        (25, "hkclock_25", "Reloj de Robuso", "Mira la hora de Hong Kong 25 veces.", R),
+        (100, "hkclock_100", "Doble zona horaria", "Mira la hora de Hong Kong 100 veces.", E),
+        (500, "hkclock_500", "Viaje oficial en Falcon",
+         "Mira la hora de Hong Kong 500 veces. Con tanto interés, ya habrías ido en Falcon.", L),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "hk_clock_tomorrow", [
+        (1, "hk_manana", "Viajero del futuro", "Mira la hora cuando en Hong Kong ya es mañana.",
+         C),
+        (50, "hk_diferido", "Vives en diferido", "50 veces mirando el mañana de Hong Kong.", R),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "hk_clock_sleeping", [
+        (1, "hk_no_despiertes", "No despiertes a Robuso",
+         "Mira la hora cuando en Hong Kong son entre las 2:00 y las 6:00.", C),
+        (25, "hk_insomne", "Insomne transoceánico",
+         "25 veces mirando la hora de madrugada en Hong Kong.", R),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "hk_clock_lunch", [
+        (1, "hk_cha_chaan", "Hora del cha chaan teng",
+         "Mira la hora cuando Robuso está almorzando (12:00–14:00 allí).", C),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "hk_clock_tour", [
+        (1, "hk_gira", "Gira asiática",
+         "Mira la hora de Hong Kong de madrugada en Canarias, como en una gira oficial por "
+         "China.", R, True),
+    ])  # fmt: skip
+    a += _tiers("hongkong", "hk_clock_new_year", [
+        (1, "hk_ano_nuevo", "Año nuevo por adelantado",
+         "Mira la hora en el primer minuto del año en Hong Kong, horas antes que en Canarias.",
+         E, True),
+    ])  # fmt: skip
     a.append(Achievement(
         id="beckham", name="Ley Beckham",
         description="Vuelve tras 5 «años» fuera y tributa al 24 %.", category="hongkong",
@@ -1980,6 +2009,27 @@ _NORMAL = tuple(a for a in AVAILABLE if a.category != "meta")
 
 
 # -- Evaluación ------------------------------------------------------------------------
+
+
+def hong_kong_clock_stats(hong_kong: datetime, canary: datetime) -> dict[str, int]:
+    """Contadores que suma mirar la hora de Hong Kong con `hongkong`.
+
+    Args:
+        hong_kong: Hora local de Hong Kong en ese momento.
+        canary: Hora local de Canarias en ese mismo momento.
+    """
+    stats = {"hk_clock": 1}
+    if hong_kong.date() > canary.date():
+        stats["hk_clock_tomorrow"] = 1
+    if 2 <= hong_kong.hour < 6:
+        stats["hk_clock_sleeping"] = 1
+    if 12 <= hong_kong.hour < 14:
+        stats["hk_clock_lunch"] = 1
+    if is_night(canary.hour):
+        stats["hk_clock_tour"] = 1
+    if (hong_kong.month, hong_kong.day, hong_kong.hour, hong_kong.minute) == (1, 1, 0, 0):
+        stats["hk_clock_new_year"] = 1
+    return stats
 
 
 @dataclass(slots=True)
@@ -2090,7 +2140,6 @@ def message_stats(
     is_reply: bool = False,
     mentions_others: bool = False,
     mentions_bot: bool = False,
-    happy_hour: bool = False,
     own_birthday: bool = False,
 ) -> dict[str, int]:
     """Contadores que suma un mensaje. El contenido se mira y se olvida.
@@ -2121,7 +2170,6 @@ def message_stats(
     bump("msg_stickers", stickers > 0)
     bump("msg_replies", is_reply)
     bump("msg_mentions", mentions_others)
-    bump("msg_happy_hour", happy_hour)
     bump("msg_leet", when.hour == 13 and when.minute == 37)
     bump("msg_new_year", when.month == 1 and when.day == 1 and when.hour == 0)
     bump("msg_halloween", when.month == 10 and when.day == 31)

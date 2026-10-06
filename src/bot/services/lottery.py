@@ -45,8 +45,8 @@ Lotería Nacional (premios fijos por décimo, el 70 % de la emisión):
 Rascas de la ONCE (instantáneos, con la tabla de premios de su emisión):
 **X10** (2 €, devuelve el 64 %) y **7 y Media** (1 €, devuelve el 59 %).
 
-Las probabilidades son las reales. El gordo de cualquier juego es, en la
-práctica, inalcanzable; lo que toca a menudo son reintegros y premios bajos.
+Las probabilidades son las reales: lo que más toca son reintegros y premios
+bajos, y el gordo cae de vez en cuando.
 """
 
 from __future__ import annotations
