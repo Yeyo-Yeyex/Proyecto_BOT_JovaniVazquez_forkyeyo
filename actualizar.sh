@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Autoactualización del bot en el NAS.
 #
-# Uso: ./actualizar.sh    (a mano o desde cron; ver "Actualización automática"
-#                          en el README para dejarlo programado a las 5:00)
+# Uso: sudo ./actualizar.sh              (a mano o desde cron; ver
+#                                         "Actualización automática" en el README)
+#      sudo ./actualizar.sh --convertir  (solo la primera vez, si la carpeta del
+#                                         bot se copió en vez de clonarse)
 #
 # Qué hace, en orden:
 #   1. Descarga la rama main de GitHub (git fetch) sin tocar nada aún.
@@ -19,8 +21,10 @@
 # La reconstrucción semanal aunque no haya cambios trae la última versión de
 # yt-dlp, que YouTube deja inservible cada pocas semanas.
 #
-# Requisitos: git, docker con el plugin compose (o docker-compose) y flock.
-# El usuario que lo ejecute tiene que poder usar docker y ser dueño del clon.
+# Requisitos: docker con el plugin compose (o docker-compose). Si el sistema
+# no tiene git (el NAS UGREEN no lo trae), usa la imagen `alpine/git` con el
+# mismo usuario dueño de la carpeta, así que los archivos no cambian de dueño.
+# flock es opcional: evita dos ejecuciones a la vez si está instalado.
 # Nunca toca `.env` ni los datos: el token está ignorado por git y la base de
 # datos vive en el volumen `bot-jovani-vazquez-data`.
 #
@@ -32,7 +36,13 @@
 #   .despliegue/fallido     último commit que tumbó el bot (no se reintenta)
 #   .despliegue/actualizar.log   registro de cada ejecución (últimas 2000 líneas)
 #
-# Variables opcionales: RAMA (main), ESPERA_ARRANQUE (90), DIAS_RECONSTRUIR (7).
+# --convertir: la carpeta no es un clon de git (se copió a mano). La enlaza
+# con el repositorio de GitHub y pone los archivos versionados en la última
+# versión de main, sobrescribiendo los que haya. `.env`, `.despliegue/` y los
+# demás archivos ignorados por git no se tocan. Después sigue como siempre.
+#
+# Variables opcionales: RAMA (main), ESPERA_ARRANQUE (90), DIAS_RECONSTRUIR (7),
+# REPO (el de godzilin), GIT_EN_DOCKER=1 para usar alpine/git aunque haya git.
 
 # Todo va dentro de funciones y la llamada final cabe en una sola línea: bash
 # lee los scripts a trozos mientras los ejecuta, y este se sobrescribe a sí
@@ -41,7 +51,8 @@
 set -uo pipefail
 
 main() {
-    local dir estado log rama espera dias contenedor imagen compose
+    local dir estado log rama espera dias contenedor imagen compose repo convertir=0
+    [[ "${1:-}" == "--convertir" ]] && convertir=1
     dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     estado="$dir/.despliegue"
     log="$estado/actualizar.log"
@@ -50,6 +61,7 @@ main() {
     dias="${DIAS_RECONSTRUIR:-7}"
     contenedor="bot-jovani-vazquez"
     imagen="bot-jovani-vazquez"
+    repo="${REPO:-https://github.com/godzilin/Proyecto_BOT_JovaniVazquez.git}"
 
     # cron arranca con un PATH mínimo; los NAS suelen tener docker en /usr/local/bin.
     export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -64,7 +76,7 @@ main() {
 
     # Una sola ejecución a la vez (por si alguien lo lanza a mano a las 5:00).
     exec 9>"$estado/lock"
-    if ! flock -n 9; then
+    if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
         echo "$(date '+%F %T') Ya hay otra actualización en marcha; salgo."
         return 0
     fi
@@ -80,10 +92,44 @@ main() {
         echo "No encuentro docker compose ni docker-compose."
         return 1
     fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "No puedo hablar con Docker. ¿Falta sudo? Prueba: sudo $dir/actualizar.sh"
+        return 1
+    fi
 
     # safe.directory evita el error de "dubious ownership" si cron corre como
     # otro usuario distinto del que clonó.
-    local git=(git -c "safe.directory=$dir")
+    local git
+    if command -v git >/dev/null 2>&1 && [[ -z "${GIT_EN_DOCKER:-}" ]]; then
+        git=(git -c "safe.directory=$dir")
+    else
+        # Sin git en el sistema: git dentro de un contenedor desechable, con el
+        # usuario dueño de la carpeta para no dejar archivos de root.
+        git=(docker run --rm --user "$(stat -c '%u:%g' "$dir")" -e HOME=/tmp
+            -v "$dir:$dir" -w "$dir" alpine/git:latest -c "safe.directory=$dir")
+    fi
+
+    if [[ ! -d "$dir/.git" ]]; then
+        if [[ "$convertir" != 1 ]]; then
+            echo "Esta carpeta no es un clon de git (se copió a mano)."
+            echo "Ejecuta una vez: sudo $dir/actualizar.sh --convertir"
+            return 1
+        fi
+        echo "Convirtiendo la carpeta en un clon de $repo ($rama)..."
+        if ! "${git[@]}" init --quiet \
+            || ! "${git[@]}" remote add origin "$repo" \
+            || ! "${git[@]}" fetch --quiet origin "$rama" \
+            || ! "${git[@]}" checkout --quiet --force -B "$rama" "origin/$rama"; then
+            echo "No he podido convertirla; borra .git y vuelve a intentarlo."
+            return 1
+        fi
+        echo "Hecho: la carpeta ya sigue a origin/$rama."
+    fi
+
+    if ! "${git[@]}" rev-parse --verify --quiet HEAD >/dev/null; then
+        echo "git no funciona en esta carpeta; revisa el mensaje de arriba."
+        return 1
+    fi
 
     if ! "${git[@]}" diff --quiet HEAD --; then
         echo "Hay cambios locales en archivos versionados; no actualizo para no pisarlos:"
