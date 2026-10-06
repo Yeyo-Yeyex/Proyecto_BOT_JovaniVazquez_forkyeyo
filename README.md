@@ -73,7 +73,7 @@ python -m bot
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `imv` · `hacienda` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -305,6 +305,16 @@ python -m bot
   que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.
+- **Pollo** (`/pollo`, `.pollo [cantidad] [dificultad] [autocobro]`): el
+  Chicken Road de los casinos online. El pollo cruza una carretera carril a
+  carril; cada carril sube el multiplicador, 💰 Cobrar se lo lleva y si te
+  atropellan lo pierdes todo. Cuatro dificultades: Fácil (4 % por carril,
+  meta ×2,63), Media (12 %, ×16,48), Difícil (20 %, ×85,86) y Hardcore (40 %,
+  ×2.105). Cada paso es un GIF en el que el pollo tiembla mientras se
+  encienden unos faros (la espera, más larga cuanto más hay en juego, es la
+  tensión) y después un PNG. 🎯 Autocobro cruza solo hasta el multiplicador
+  elegido en un único GIF. Al cobrar dice dónde estaba el coche («quedaban 4
+  carriles libres»). Devuelve el 99 % de media.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
   japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
   bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
@@ -338,13 +348,14 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 624 logros en 24 categorías (chat,
-  horarios y fechas, voz, social, lista, niveles, ruleta, blackjack, casino,
-  tragaperras, botes, Crash, Minas, pachinko, loterías, tienda, Bizum, economía,
-  trabajo, oficios, sanidad, oficina, Hong Kong y coleccionista), con cinco rarezas: ▫️ común,
+- **Logros** (`logros [miembro]`): 710 logros en 24 categorías (chat,
+  horarios y fechas, voz, social, lista, niveles, casino, loterías, tienda,
+  Bizum, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
+  coleccionista; el casino lleva dentro una sección por juego: general,
+  ruleta, blackjack, tragaperras, botes, Crash, Minas, Pollo y pachinko), con cinco rarezas: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico. Van desde escribir el primer
   mensaje hasta pasar 1.000 horas en llamada, acertar 50 plenos o pagar un
-  millón de IRPF; 113 son secretos y se ven como `???` hasta conseguirlos.
+  millón de IRPF; 127 son secretos y se ven como `???` hasta conseguirlos.
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
   donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
@@ -543,6 +554,7 @@ src/bot/
 │   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
+│   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
@@ -571,6 +583,8 @@ src/bot/
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
+│   ├── chicken.py       # Pollo: dificultades, multiplicadores y carril del atropello
+│   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin

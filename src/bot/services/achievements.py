@@ -12,7 +12,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `pachinko_stats`,
+`crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`) y se
 lo pasan al cog de logros.
 
@@ -34,6 +34,8 @@ from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
+from bot.services.chicken import ChickenGame
+from bot.services.chicken import Status as ChickenStatus
 from bot.services.crash import Seat as CrashSeat
 from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
@@ -106,13 +108,31 @@ class Category:
     Attributes:
         upcoming: El juego aún no existe. Sus logros se enseñan como
             "próximamente", no cuentan para el total ni se pueden desbloquear.
+        group: Clave del grupo del menú en el que va (`CASINO_GROUP`), o
+            `None` si sale sola en el menú. Las categorías de un grupo son
+            secciones: el menú enseña el grupo una vez y, dentro, un segundo
+            menú elige la sección.
     """
 
     key: str
     title: str
     upcoming: bool = False
+    group: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Group:
+    """Entrada del menú de `logros` que reúne varias categorías (secciones)."""
+
+    key: str
+    title: str
+
+
+#: Todos los juegos del casino van juntos en una sola entrada del menú.
+CASINO_GROUP = Group("casino_group", "🎰 Casino")
+GROUPS: dict[str, Group] = {CASINO_GROUP.key: CASINO_GROUP}
+
+_CG = CASINO_GROUP.key
 CATEGORIES: tuple[Category, ...] = (
     Category("chat", "💬 Chat"),
     Category("time", "🗓️ Horarios y fechas"),
@@ -120,18 +140,19 @@ CATEGORIES: tuple[Category, ...] = (
     Category("social", "❤️ Social"),
     Category("todo", "📝 Lista"),
     Category("levels", "📈 Niveles"),
-    Category("roulette", "🎡 Ruleta"),
-    Category("blackjack", "🃏 Blackjack"),
-    Category("casino", "💰 Casino"),
-    Category("slots", "🎰 Tragaperras"),
-    Category("botes", "🌋 Botes"),
-    Category("crash", "🚀 Crash"),
-    Category("mines", "💣 Minas"),
-    Category("pachinko", "🌸 Pachinko"),
+    # 🎰 Casino: una entrada del menú con una sección por juego. El menú de
+    # Discord admite 25 opciones y, con un juego por categoría, se llenaba.
+    Category("casino", "💰 General", group=_CG),
+    Category("roulette", "🎡 Ruleta", group=_CG),
+    Category("blackjack", "🃏 Blackjack", group=_CG),
+    Category("slots", "🎰 Tragaperras", group=_CG),
+    Category("botes", "🌋 Botes", group=_CG),
+    Category("crash", "🚀 Crash", group=_CG),
+    Category("mines", "💣 Minas", group=_CG),
+    Category("chicken", "🐔 Pollo", group=_CG),
+    Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
-    # Bizum y la cuenta remunerada: el menú de `logros` ya va por 25 opciones, el
-    # máximo de Discord, así que lo del banco comparte categoría.
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
@@ -142,6 +163,29 @@ CATEGORIES: tuple[Category, ...] = (
     Category("meta", "🏆 Coleccionista"),
 )
 CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
+
+
+def menu_entries() -> list[tuple[str, str]]:
+    """Opciones del menú de `logros` (sin el Resumen): `(clave, título)`.
+
+    Cada categoría suelta sale tal cual; las de un grupo salen una sola vez,
+    con la clave y el título del grupo, en la posición de la primera.
+    """
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for category in CATEGORIES:
+        if category.group is None:
+            entries.append((category.key, category.title))
+        elif category.group not in seen:
+            seen.add(category.group)
+            group = GROUPS[category.group]
+            entries.append((group.key, group.title))
+    return entries
+
+
+def group_sections(group_key: str) -> list[Category]:
+    """Categorías (secciones) de un grupo, en el orden del catálogo."""
+    return [c for c in CATEGORIES if c.group == group_key]
 
 
 # -- Logros ----------------------------------------------------------------------------
@@ -228,6 +272,10 @@ def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -
 FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
 #: Lo mismo en la ventana de 30 días que usa la retención (`compute_withholding`).
 FIRST_TAX_MONTHLY = FIRST_TAX_YEARLY * 30 // 365
+
+
+#: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
+CHICKEN_VEHICLE_KINDS = ("car", "van", "truck", "bus", "moto", "taxi")
 
 
 def _thousands(value: int) -> str:
@@ -1039,6 +1087,143 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", "mines_random", [
         (50, "mines_dice", "Que decida el destino", "Destapa 50 casillas con 🎲.", C),
     ])  # fmt: skip
+    # 🐔 Pollo ---------------------------------------------------------------------------
+    a += _tiers("chicken", "chicken_games", [
+        (1, "pollo_1", "¿Por qué cruzó el pollo la carretera?",
+         "Juega tu primera partida del Pollo.", C),
+        (100, "pollo_100", "Carnet por puntos", "Juega 100 partidas del Pollo.", R),
+        (1_000, "pollo_1k", "La DGT te tiene fichado", "Juega 1.000 partidas del Pollo.", E),
+        (10_000, "pollo_10k", "Más viajes que el Falcon", "Juega 10.000 partidas del Pollo.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lanes", [
+        (100, "pollol_100", "Peatón de fondo", "Cruza 100 carriles.", C),
+        (1_000, "pollol_1k", "Paso de cebra del Ministerio", "Cruza 1.000 carriles.", R),
+        (10_000, "pollol_10k", "Red de Carreteras del Estado", "Cruza 10.000 carriles.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_cashouts", [
+        (10, "polloc_10", "Pollo listo", "Cobra 10 partidas del Pollo.", C),
+        (100, "polloc_100", "Gallina vieja hace buen caldo", "Cobra 100 partidas del Pollo.", R),
+        (1_000, "polloc_1k", "Granja rentable", "Cobra 1.000 partidas del Pollo.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_splats", [
+        (1, "pollos_1", "Pollo a la plancha", "Que te atropellen por primera vez.", C),
+        (10, "pollos_10", "Pechuga fileteada", "Que te atropellen 10 veces.", C),
+        (100, "pollos_100", "Nuggets", "Que te atropellen 100 veces.", R),
+        (500, "pollos_500", "Pollo sin cabeza", "Que te atropellen 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_first_splat", [
+        (1, "pollo_ni_acera", "Ni a la otra acera", "Que te atropellen en el primer carril.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_last_lane_splat", [
+        (1, "pollo_casi", "A un carril de la gloria",
+         "Que te atropellen en el último carril antes de la meta.", E, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_mult_max", [
+        (300, "pollo_x3", "Pollo de corral", "Cobra en ×3 o más.", C),
+        (1_000, "pollo_x10", "Pollo de Bresse", "Cobra en ×10 o más.", R),
+        (5_000, "pollo_x50", "La gallina de los huevos de oro", "Cobra en ×50 o más.", E),
+        (100_000, "pollo_x1000", "Pollo en el Falcon",
+         "Cobra en ×1.000 o más: ya viajas como un presidente.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_win_max", [
+        (10_000, "pollo_rich", "Huevo de oro", "Gana 10.000 Y$ en una partida del Pollo.", R),
+        (100_000, "pollo_richer", "Granja de Hacienda",
+         f"Gana 100.000 Y$ en una partida del Pollo. {TAX_COLLECTOR} ya afila el cuchillo.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_finish_facil", [
+        (1, "pollo_meta_facil", "Cruzar en verde", "Llega a la meta en Fácil.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_finish_media", [
+        (1, "pollo_meta_media", "Nacional sin rasguños", "Llega a la meta en Media.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_finish_dificil", [
+        (1, "pollo_meta_dificil", "Autovía conquistada", "Llega a la meta en Difícil.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_finish_hardcore", [
+        (1, "pollo_meta_hardcore", "Operación salida superada",
+         "Llega a la meta en Hardcore (×2.105). Sale en el BOE.", M),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hardcore_cashouts", [
+        (1, "pollo_hc_1", "Kamikaze", "Cobra una partida en Hardcore.", C),
+        (50, "pollo_hc_50", "Sin miedo a la DGT", "Cobra 50 partidas en Hardcore.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lanes_max_hardcore", [
+        (5, "pollo_hc_r5", "Valiente o inconsciente", "Cruza 5 carriles en Hardcore.", R),
+        (10, "pollo_hc_r10", "Ni el Constitucional te para",
+         "Cruza 10 carriles en Hardcore.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lanes_max_dificil", [
+        (12, "pollo_dif_r12", "Autovía de peaje", "Cruza 12 carriles en Difícil.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lanes_max_media", [
+        (15, "pollo_med_r15", "Nacional de primera", "Cruza 15 carriles en Media.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lanes_max_facil", [
+        (20, "pollo_fac_r20", "Paseo dominical", "Cruza 20 carriles en Fácil.", C),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_auto_runs", [
+        (10, "polloa_10", "Piloto automático", "Usa el autocobro 10 veces.", C),
+        (100, "polloa_100", "Conducción autónoma", "Usa el autocobro 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_auto_lanes", [
+        (1_000, "polloal_1k", "Sin manos, mamá", "Cruza 1.000 carriles con el autocobro.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_gallina", [
+        (25, "pollo_gallina", "Gallina",
+         "Cobra 25 veces tras un solo carril. Cobarde, pero cobras.", C),
+        (250, "pollo_gallina_250", "Gallina clueca", "Cobra 250 veces tras un solo carril.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_close", [
+        (1, "pollo_pelos", "Por los pelos", "Cobra justo un carril antes del coche.", R),
+        (10, "pollo_pelos_10", "Manual de resistencia",
+         "Cobra 10 veces justo un carril antes del coche.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_left_on_table", [
+        (1, "pollo_mesa", "Te lo dejaste en la mesa",
+         "Cobra con 5 carriles libres o más por delante.", C),
+        (10, "pollo_mesa_10", "Dinero que no volverá",
+         "Cobra 10 veces con 5 carriles libres o más por delante.", R),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_road_free", [
+        (1, "pollo_libre", "Y la carretera, vacía",
+         "Cobra cuando no venía ningún coche hasta la meta.", R, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_lost_big", [
+        (1, "pollo_rescate", "Rescate denegado", "Que te atropellen con ×10 o más en juego.", E),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_car", [
+        (1, "pollo_hit_car", "Siniestro total", "Que te atropelle un utilitario o un SUV.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_van", [
+        (1, "pollo_hit_van", "Pedido entregado (tú)",
+         "Que te atropelle una furgoneta de reparto.", C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_truck", [
+        (1, "pollo_hit_truck", "Mudanza al más allá", "Que te atropelle un camión de mudanzas.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_bus", [
+        (1, "pollo_hit_bus", "Final de trayecto", "Que te atropelle un autobús de línea.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_moto", [
+        (1, "pollo_hit_moto", "Rider sin contrato", "Que te atropelle un repartidor en moto.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_hit_taxi", [
+        (1, "pollo_hit_taxi", "Bajada de bandera", "Que te atropelle un taxi con prisa.",
+         C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pollo_matriculas",
+        name="Colección de matrículas",
+        description="Que te atropellen los seis tipos de vehículo.",
+        category="chicken",
+        rarity=E,
+        conditions=tuple((f"chicken_hit_{kind}", 1) for kind in CHICKEN_VEHICLE_KINDS),
+    ))  # fmt: skip
     a.append(Achievement(
         id="casino_all_games",
         name="Todoterreno",
@@ -1162,6 +1347,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
             ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
             ("botes_spins", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_eight_games",
+        name="Ocho apellidos ludópatas",
+        description="Juega a los ocho juegos del casino, el Pollo incluido.",
+        category="casino",
+        rarity=L,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1),
         ),
     ))  # fmt: skip
 
@@ -2530,6 +2727,48 @@ def mines_stats(game: MinesGame) -> StatDelta:
         # La primera casilla es segura: "a la primera" es la que va justo después.
         bump("mines_first_boom", game.gems == 1)
         bump("mines_almost", game.gems >= 1 and game.safe_total - game.gems == 1)
+    return delta
+
+
+def chicken_stats(game: ChickenGame, *, vehicle: str | None = None) -> StatDelta:
+    """Contadores de una partida del Pollo terminada (sin lo común del casino).
+
+    Args:
+        game: La partida terminada.
+        vehicle: Tipo de vehículo que atropelló (`CHICKEN_VEHICLE_KINDS`), si
+            hubo atropello.
+    """
+    key = game.difficulty.key
+    delta = StatDelta(add={"chicken_games": 1}, peak={f"chicken_lanes_max_{key}": game.crossed})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("chicken_lanes", amount=game.crossed)
+    bump("chicken_auto_lanes", amount=game.auto_lanes)
+    bump("chicken_auto_runs", game.auto_target is not None)
+    if game.status is ChickenStatus.CASHED:
+        bump("chicken_cashouts")
+        delta.peak["chicken_mult_max"] = game.cents
+        if game.net > 0:
+            delta.peak["chicken_win_max"] = game.net
+        bump(f"chicken_finish_{key}", game.finished_road)
+        bump("chicken_hardcore_cashouts", key == "hardcore")
+        bump("chicken_gallina", game.crossed == 1)
+        left = game.free_lanes_left
+        if not game.finished_road:
+            bump("chicken_close", left == 0)
+            bump("chicken_left_on_table", left is not None and left >= 5)
+            bump("chicken_road_free", left is None)
+    elif game.status is ChickenStatus.SPLAT:
+        bump("chicken_splats")
+        bump("chicken_first_splat", game.crossed == 0)
+        bump("chicken_last_lane_splat", game.crossed == game.lanes - 1)
+        bump("chicken_lost_big", game.cents >= 1_000)
+        if vehicle in CHICKEN_VEHICLE_KINDS:
+            bump(f"chicken_hit_{vehicle}")
     return delta
 
 

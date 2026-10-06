@@ -35,6 +35,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Botes": "🎰 Casino",
     "Crash": "🎰 Casino",
     "Minas": "🎰 Casino",
+    "Pollo": "🎰 Casino",
     "Pachinko": "🎰 Casino",
     "Loteria": "🎰 Casino",
     "Renta": "🎰 Casino",

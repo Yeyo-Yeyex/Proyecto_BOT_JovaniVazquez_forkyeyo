@@ -17,6 +17,7 @@ from bot.cogs.achievements import (
     Achievements,
     category_embed,
     format_value,
+    group_embed,
     summary_embed,
     unlock_embed,
 )
@@ -26,14 +27,18 @@ from bot.repositories.message_stats import MessageStatsRepository
 from bot.services.achievements import (
     AVAILABLE,
     BY_ID,
+    CASINO_GROUP,
     CATALOG,
     CATEGORIES,
+    CHICKEN_VEHICLE_KINDS,
     MESSAGES_TOTAL_STAT,
     UNLOCKED_STAT,
     StatDelta,
     blackjack_stats,
     casino_stats,
+    group_sections,
     is_laugh,
+    menu_entries,
     message_stats,
     newly_unlocked,
     progress,
@@ -42,6 +47,7 @@ from bot.services.achievements import (
     total_reward,
 )
 from bot.services.blackjack import BlackjackGame, Card, Hand
+from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
@@ -133,6 +139,14 @@ PRODUCED_STATS = {
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
     "mines_almost", "mines_mult_max", "mines_win_max", "mines_24", "mines_clear",
     "mines_clear_hard", "mines_random", "mines_streak_max",
+    # cogs/chicken.py (`chicken_stats`)
+    "chicken_games", "chicken_lanes", "chicken_auto_lanes", "chicken_auto_runs",
+    "chicken_cashouts", "chicken_mult_max", "chicken_win_max", "chicken_hardcore_cashouts",
+    "chicken_gallina", "chicken_close", "chicken_left_on_table", "chicken_road_free",
+    "chicken_splats", "chicken_first_splat", "chicken_last_lane_splat", "chicken_lost_big",
+    *(f"chicken_finish_{d.key}" for d in CHICKEN_DIFFICULTIES),
+    *(f"chicken_lanes_max_{d.key}" for d in CHICKEN_DIFFICULTIES),
+    *(f"chicken_hit_{kind}" for kind in CHICKEN_VEHICLE_KINDS),
     # Trabajo (cogs/work.py: work_stats, el panel y los eventos; cogs/casino.py: el IMV)
     "work_shifts", "work_shifts_day_max", "work_streak_max", "work_perfect", "work_good",
     "work_night", "work_sunday", "work_birthday", "work_christmas", "work_reyes",
@@ -182,6 +196,40 @@ def test_cada_categoria_tiene_logros_y_cabe_en_un_embed() -> None:
         assert embed.description is not None
         assert len(embed.description) <= 4096
         assert len(embed) <= 6000
+
+
+def test_el_menu_de_logros_cabe_en_un_desplegable_de_discord() -> None:
+    # 25 opciones como mucho, y una es el Resumen.
+    assert len(menu_entries()) <= 24
+    keys = [key for key, _title in menu_entries()]
+    assert len(keys) == len(set(keys))
+
+
+def test_todos_los_juegos_del_casino_van_en_una_sola_entrada_del_menu() -> None:
+    sections = {c.key for c in group_sections(CASINO_GROUP.key)}
+    assert {
+        "casino",
+        "roulette",
+        "blackjack",
+        "slots",
+        "botes",
+        "crash",
+        "mines",
+        "chicken",
+        "pachinko",
+    } <= sections
+    keys = {key for key, _title in menu_entries()}
+    assert CASINO_GROUP.key in keys
+    assert not keys & sections
+    # Un segundo desplegable lista las secciones (más la portada).
+    assert len(sections) + 1 <= 25
+
+
+def test_la_portada_del_casino_cabe_en_un_embed() -> None:
+    embed = group_embed(CASINO_GROUP.key, "Diego", Profile(stats={}, unlocked={}))
+    assert embed.description is not None
+    assert len(embed.description) <= 4096
+    assert "🐔 Pollo" in embed.description
 
 
 def test_completista_pide_todos_los_logros_normales() -> None:

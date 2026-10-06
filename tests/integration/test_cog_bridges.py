@@ -21,7 +21,17 @@ from bot.repositories.economy import LedgerEntry
 GUILD_ID = 1
 GUILD = GUILD_ID
 OWNER_ID = 10
-GAMES = ("Casino", "Blackjack", "Tragaperras", "Botes", "Crash", "Minas", "Pachinko", "Loteria")
+GAMES = (
+    "Casino",
+    "Blackjack",
+    "Tragaperras",
+    "Botes",
+    "Crash",
+    "Minas",
+    "Pollo",
+    "Pachinko",
+    "Loteria",
+)
 
 
 async def load_bot(tmp_path: Path) -> BotClient:
@@ -104,6 +114,50 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         assert profile.stats["slots_spins"] == view.session_spins == slots.AUTO_SPINS
         assert profile.stats["slots_auto"] == 1
         assert {"slots_1", "auto_1"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_el_pollo_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """El Pollo carga antes que los logros: sus partidas deben llegar a `logros`."""
+    client = await load_bot(tmp_path)
+    try:
+        pollo = importer("Pollo", client)
+        pollo.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Pollo")
+        cog.renderer = MagicMock()
+        cog.renderer.hops.return_value = pollo.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        cog.renderer.board.return_value = b"PNG"
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._pollo_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            difficulty=None,
+            auto=None,
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+        (view,) = cog.views
+        view.game.hit_lane = 1
+        interaction = MagicMock()
+        interaction.user = owner
+        interaction.guild = None
+        interaction.response.defer = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        await view._cross(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["chicken_games"] == 1
+        assert profile.stats["chicken_splats"] == 1
+        assert {"pollo_1", "pollos_1", "pollo_ni_acera"} <= set(profile.unlocked)
     finally:
         await client.close()
 
