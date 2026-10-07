@@ -143,9 +143,9 @@ async def test_perder_despues_del_premio_devuelve_el_irpf(tmp_path: Path) -> Non
         GUILD,
         USER,
         game="tragaperras",
-        stake=40_000,
+        stake=30_000,
         payout=0,
-        share=1_200,
+        share=900,
         jackpot=False,
         seed=SEED,
     )

@@ -379,11 +379,11 @@ async def test_perder_despues_devuelve_lo_retenido(tmp_path: Path) -> None:
     service = await make_service(tmp_path)
     win = await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
 
-    loss = await service.settle_bet(GUILD, USER, game="ruleta", stake=25_000, payout=0)
+    loss = await service.settle_bet(GUILD, USER, game="ruleta", stake=20_000, payout=0)
 
-    assert loss.day_net == 10_000
+    assert loss.day_net == 15_000
     assert loss.tax_delta < 0
-    assert loss.day_withheld == win.tax_delta + loss.tax_delta == gambling_day_tax(10_000, 0)
+    assert loss.day_withheld == win.tax_delta + loss.tax_delta == gambling_day_tax(15_000, 0)
     treasury = await service.treasury(GUILD, since=0)
     assert treasury.balance == treasury.collected_total == loss.day_withheld
     assert ledger_sum(tmp_path) == loss.balance

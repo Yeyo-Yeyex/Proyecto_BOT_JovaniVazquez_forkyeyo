@@ -174,7 +174,8 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     assert attachment_names(first) == [GIF_NAME]
     final = interaction.edit_original_response.await_args
     assert attachment_names(final) == [PNG_NAME]
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 3500
+    withheld = gambling_day_tax(3500, 0)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 3500 - withheld
     assert cog.history(GUILD_ID) == [17]
     assert table.streak == 1
     assert not table.repeat_button.disabled

@@ -290,10 +290,12 @@ async def test_la_maquina_caliente_paga_doble(tmp_path: Path) -> None:
         await view.play(make_interaction())
     assert cog.heat(GUILD_ID, OWNER_ID) == HEAT_MAX
     before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    state_before = (await cog.economy.treasury(GUILD_ID, since=0)).balance
 
     await view.play(make_interaction())
 
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before - 100 + 2_000
+    withheld = (await cog.economy.treasury(GUILD_ID, since=0)).balance - state_before
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before - 100 + 2_000 - withheld
     assert cog.heat(GUILD_ID, OWNER_ID) == 0
 
 

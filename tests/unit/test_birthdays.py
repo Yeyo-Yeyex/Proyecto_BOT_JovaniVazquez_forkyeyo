@@ -25,6 +25,7 @@ from bot.services.birthdays import (
     parse_birthday,
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import compute_withholding
 
 GUILD = 1
 TODAY = date(2026, 10, 4)
@@ -204,7 +205,9 @@ async def test_el_cumpleanero_cobra_el_regalo_y_se_anuncia_una_sola_vez(
 
     cog._announce.assert_awaited_once()
     assert cog._announce.await_args.args[:3] == (guild, member, 2026)
-    assert await economy.balance(GUILD, 10) == STARTING_BALANCE + BIRTHDAY_GIFT
+    # Retención proyectando el regalo solo, con la ventana de 7 días de la Renta.
+    gift = compute_withholding(BIRTHDAY_GIFT, recent_income=0)
+    assert await economy.balance(GUILD, 10) == STARTING_BALANCE + gift.net
     assert await economy.balance(GUILD, 11) == STARTING_BALANCE
     assert cog._today[GUILD] == (TODAY, frozenset({10}))
 
