@@ -34,6 +34,7 @@ from bot.services.achievements import (
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.pets_catalog import SPECIES, species_of
+from bot.services.porras import BINOCULARS_KEY, NOTEBOOK_KEY
 from bot.services.shop import (
     MAX_BOOST,
     MAX_DESCRIPTION,
@@ -66,6 +67,7 @@ from bot.services.shop_uses import (
     resolve,
 )
 from bot.services.taxes import IGIC_BY_KEY
+from bot.services.work_tools import TOOL_KEYS
 
 GUILD = 1
 BUYER = 10
@@ -129,7 +131,10 @@ def test_ficha_de_alta_de_cada_pasillo(aisle: Aisle) -> None:
     assert aisle.theme, "cada pasillo dice de qué va"
     on_sale = [e for e in CATALOG if e.aisle == aisle.key and e.visible]
     assert len(on_sale) >= MIN_AISLE_SIZE, f"{aisle.key}: si no llega, va dentro de otro"
-    assert any(e.use for e in on_sale), f"{aisle.key}: necesita al menos un objeto que se use"
+    # «Hacer algo» es usarse desde la mochila o tener efecto con solo tenerlo (las
+    # herramientas de `pala`, los prismáticos y la libreta de la porra).
+    passive = TOOL_KEYS | {BINOCULARS_KEY, NOTEBOOK_KEY}
+    assert any(e.use or e.key in passive for e in on_sale), f"{aisle.key}: nada hace nada"
 
 
 def test_pasillos_retirados_no_vuelven_y_heredan_en_uno_que_existe() -> None:
@@ -740,3 +745,19 @@ async def test_reponer_surtido_desde_la_trastienda(tmp_path: Path) -> None:
     await panel._restock(click)
     assert "Repuestos 1" in (panel.notice or "")
     assert len(panel.items_all) == len(CATALOG)
+
+
+def test_cada_herramienta_de_curro_esta_en_la_ferreteria() -> None:
+    """Las herramientas de `pala` son artículos del pasillo de la ferretería, uno por persona."""
+    from bot.cogs.shop import kind_detail
+    from bot.services.work_tools import TOOLS
+
+    curro = {e.key for e in CATALOG if e.aisle == "curro"}
+    assert curro == {tool.key for tool in TOOLS}
+    for tool in TOOLS:
+        entry = CATALOG_BY_KEY[tool.key]
+        assert entry.emoji == tool.emoji, tool.key
+        assert entry.per_user == 1 and entry.use is None, tool.key
+        assert "`pala`" in entry.description, tool.key
+        item = MagicMock(kind=entry.kind, catalog_key=tool.key)
+        assert tool.effect in kind_detail(item)

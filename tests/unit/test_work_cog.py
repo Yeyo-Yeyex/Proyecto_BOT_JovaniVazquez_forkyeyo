@@ -15,7 +15,8 @@ import discord
 import pytest
 from discord import ui
 
-from bot.cogs.work import PalaPanel, Work
+from bot.cogs import work as work_cog
+from bot.cogs.work import PalaPanel, Work, game_id, parse_game_id
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.work import WorkRepository
 from bot.services import pala
@@ -132,7 +133,7 @@ async def test_firmar_y_fichar_un_turno_entero_con_botones(tmp_path: Path) -> No
     while panel.shift is not None:
         current = game.current
         assert current is not None
-        await panel._option(current.answer[0])(make_interaction())
+        await panel.game_click(make_interaction(), game.index, current.answer[0])
         if panel.shift is not None:
             check_limits(panel)
     assert "Nómina" in texts(panel) and "100/100" in texts(panel)
@@ -151,7 +152,7 @@ async def test_la_memoria_ensena_y_luego_oculta(tmp_path: Path) -> None:
     await panel._clock_in(make_interaction())
     assert panel.shift is not None and panel.shift.game.showing
     assert [b.label for b in buttons(panel)] == ["✅ Memorizado"]
-    await panel._hide(make_interaction())
+    await panel.game_click(make_interaction(), panel.shift.game.index, "ver")
     assert not panel.shift.game.showing
     assert len(buttons(panel)) >= 5
     check_limits(panel)
@@ -320,3 +321,160 @@ async def test_oficina_teletrabajo_y_hong_kong_desde_el_panel(tmp_path: Path) ->
     await panel.refresh(make_interaction())
     await panel._go_home(make_interaction())
     assert "Vuelves a casa" in texts(panel)
+
+
+def custom_ids(panel: PalaPanel) -> dict[str, str]:
+    """`etiqueta → custom_id` de los botones que se ven ahora mismo."""
+    return {b.label or "": b.custom_id or "" for b in buttons(panel)}
+
+
+def component_interaction(custom_id: str, user_id: int = OWNER) -> MagicMock:
+    interaction = make_interaction(user_id)
+    interaction.type = discord.InteractionType.component
+    interaction.data = {"custom_id": custom_id, "component_type": 2}
+    return interaction
+
+
+def test_el_custom_id_del_minijuego_va_y_vuelve() -> None:
+    assert parse_game_id(game_id(3, 7, 2)) == (3, 7, 2)
+    assert parse_game_id(game_id(3, 0, "ver")) == (3, 0, "ver")
+    assert parse_game_id("pala:3:7:otra") is None
+    assert parse_game_id("pala:x:7:1") is None
+    assert parse_game_id("tienda:1") is None
+
+
+async def test_los_clics_del_minijuego_llegan_por_el_listener(tmp_path: Path) -> None:
+    """Los botones del minijuego no dependen del registro de la vista de discord.py."""
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    current = game.current
+    assert current is not None
+    right = game_id(panel.token, game.index, current.answer[0])
+    assert right in custom_ids(panel).values()
+    # La vista no lo atiende (ni siquiera para su dueño): lo hace el listener.
+    click = component_interaction(right)
+    assert not await panel.interaction_check(click)
+    click.response.send_message.assert_not_awaited()
+    await cog.on_interaction(click)
+    assert game.index == 1 and game.correct == 1
+    click.response.edit_message.assert_awaited_once()
+    await panel._finish(None)
+
+
+async def test_un_clic_de_una_ronda_ya_pasada_se_acepta_sin_contar(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    current = game.current
+    assert current is not None
+    await panel.game_click(make_interaction(), 0, current.answer[0])
+    late = make_interaction()
+    await panel.game_click(late, 0, current.answer[0])
+    late.response.defer.assert_awaited_once()
+    late.response.edit_message.assert_not_awaited()
+    assert game.index == 1 and game.presses == 1 and game.stale == 1
+    await panel._finish(None)
+
+
+async def test_una_rafaga_en_la_memoria_cuenta_todas_las_pulsaciones(tmp_path: Path) -> None:
+    """Clics seguidos con los botones de antes de redibujar: cuentan todos, en orden."""
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "politica")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    assert "Memoriza la secuencia" in texts(panel)
+    await cog.on_interaction(component_interaction(custom_ids(panel)["✅ Memorizado"]))
+    current = game.current
+    assert current is not None and not game.showing
+    ids = custom_ids(panel)
+    sequence = [ids[current.options[i]] for i in current.answer]
+    clicks = [component_interaction(custom_id) for custom_id in sequence]
+    await asyncio.gather(*(cog.on_interaction(click) for click in clicks))
+    assert game.perfect_rounds == 1 and game.index == 1
+    for click in clicks:
+        responses = click.response.edit_message.await_count + click.response.defer.await_count
+        assert responses == 1
+    # Solo el último redibuja; y la ronda nueva enseña cómo acabó la anterior.
+    assert clicks[-1].response.edit_message.await_count == 1
+    assert "Ronda anterior:** ✅" in texts(panel)
+    await panel._finish(None)
+
+
+async def test_un_fallo_en_la_memoria_se_ve_en_la_ronda_siguiente(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "politica")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    await panel.game_click(make_interaction(), 0, "ver")
+    current = game.current
+    assert current is not None
+    wrong = next(i for i in range(len(current.options)) if i != current.answer[0])
+    await panel.game_click(make_interaction(), 0, wrong)
+    assert game.showing and game.index == 1
+    assert "Fallaste en el 1.º: tocaba" in texts(panel)
+    assert current.options[current.answer[0]] in texts(panel)
+    await panel._finish(None)
+
+
+async def test_otro_miembro_no_puede_jugar_tu_turno(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    current = panel.shift.game.current
+    assert current is not None
+    intruder = component_interaction(game_id(panel.token, 0, current.answer[0]), user_id=77)
+    await cog.on_interaction(intruder)
+    intruder.response.send_message.assert_awaited_once()
+    assert panel.shift.game.presses == 0
+    await panel._finish(None)
+
+
+async def test_un_panel_caducado_avisa_al_pulsar(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    click = component_interaction(game_id(999, 0, 1))
+    await cog.on_interaction(click)
+    assert "caducó" in click.response.send_message.await_args.args[0]
+
+
+async def test_las_herramientas_de_la_mochila_ayudan_en_el_turno(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owned = AsyncMock(return_value=frozenset({"chaleco_reflectante", "reloj_fichar", "huevo"}))
+    monkeypatch.setattr(work_cog.tienda, "owned_keys", owned)
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    await panel._clock_in(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    assert game.retries == 1
+    assert set(game.tools) == {"chaleco_reflectante", "reloj_fichar"}
+    assert "🛠️" in texts(panel) and "fallo gratis" in texts(panel)
+    current = game.current
+    assert current is not None
+    wrong = next(i for i in range(len(current.options)) if i not in current.answer)
+    await panel.game_click(make_interaction(), 0, wrong)
+    assert game.index == 0 and game.saved == 1
+    assert "tu herramienta te salva" in texts(panel)
+    assert "fallo gratis gastado" in texts(panel)
+    await panel._finish(None)
+    assert panel._tools_owned == 2

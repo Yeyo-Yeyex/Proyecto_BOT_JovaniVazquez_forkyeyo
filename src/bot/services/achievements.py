@@ -13,6 +13,7 @@ Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
 `crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`,
+`porra_open_stats`, `porra_bet_stats`, `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
 `voice_move_stats`, `music_queue_stats`, `image_stats`, `babel_stats`…) y se
 lo pasan al cog de logros. Las risas escritas las reconoce `analyze_laugh`.
@@ -62,6 +63,9 @@ from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.porras import MIN_BET as PORRA_MIN_BET
+from bot.services.porras import PROPOSITIONS as PORRA_PROPOSITIONS
+from bot.services.porras import allowed_games as porra_allowed_games
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.shop_catalog import AISLES as SHOP_AISLES
 from bot.services.shop_catalog import RETIRED_AISLES as SHOP_RETIRED_AISLES
@@ -70,6 +74,8 @@ from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import pot_share as slots_pot_share
+from bot.services.work import MAX_COFFEES, Mechanic
+from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
     from bot.services.pala import ShiftOutcome
@@ -177,6 +183,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
+    Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
@@ -317,6 +324,12 @@ SHOP_MESSY_USES = frozenset({"huevo", "tomate", "tarta", "globo", "gofio", "mojo
 SHOP_LOVE_USES = frozenset(
     {"ramo", "abrazo", "carta", "barraquito", "perreo", "dimsum", "sobre_rojo"}
 )
+
+#: Prefijos de las porras montadas por juego y por propuesta (`porra_game_minas`).
+PORRA_GAME_PREFIX = "porra_game_"
+PORRA_PROP_PREFIX = "porra_prop_"
+PORRA_GAMES = tuple(porra_allowed_games())
+PORRA_PROPS = tuple(prop.key for prop in PORRA_PROPOSITIONS)
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
@@ -496,6 +509,23 @@ SAVINGS_BRACKET_STORY = (
 
 
 #: Páginas de `apuestas` (las claves de su menú). Ver `bot.cogs.apuestas`.
+#: Discurso del logro `porra_iaj_1`: el primer IAJ pagado en una porra.
+IAJ_STORY = (
+    f"🎫 **{TAX_COLLECTOR} no apuesta, pero siempre gana.** Las porras son apuestas "
+    "cruzadas entre jugadores (art. 3.c de la Ley 13/2011) y el operador paga el "
+    "Impuesto sobre Actividades de Juego por lo que se queda: en la vida real, el 20 % "
+    "de sus ingresos netos (art. 48). Aquí el operador no existe, así que el 10 % de "
+    "cada apuesta va directo al Estado. Hayas acertado o no."
+)
+
+#: Discurso del logro `porra_image_1`: los primeros derechos de imagen cobrados.
+IMAGE_STORY = (
+    "📸 **Tu cara vale dinero, mi amor.** Por prestar tu imagen a una porra cobras el 2 "
+    "% del bote. Para Hacienda es un rendimiento del capital mobiliario por ceder el "
+    "derecho de imagen (art. 25.4.d de la Ley del IRPF) y la retención es fija: el 24 %, "
+    f"como a los futbolistas (art. 101). {TAX_COLLECTOR} ya tiene tu foto."
+)
+
 APUESTAS_PAGES = ("resumen", "juegos", "records", "horario", "ranking", "hacienda", "libro")
 #: Periodos de `apuestas` (`bot.services.casino_stats.Period`).
 APUESTAS_PERIODS = ("hoy", "semana", "mes", "siempre")
@@ -3497,6 +3527,61 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (12, "autonomo_12", "Autónomo de verdad", "Paga 12 cuotas de autónomos.", E),
     ])  # fmt: skip
 
+    # Minijuego: herramientas de curro, velocidad y despistes.
+    a += _tiers("work", "work_tools_owned", [
+        (1, "herramienta_1", "Herramienta propia",
+         "Ficha con una herramienta de curro de la tienda.", C),
+        (5, "herramienta_5", "Caja de herramientas", "Ficha con 5 herramientas de curro.", R),
+        (len(WORK_TOOLS), "herramienta_all", "Ferretería ambulante",
+         f"Ficha con las {len(WORK_TOOLS)} herramientas de curro.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_saves", [
+        (1, "rectificar", "Donde dije digo, digo Diego",
+         "Que una herramienta te perdone un fallo.", C),
+        (50, "rectificar_50", "No es mentira, es un cambio de opinión",
+         "Que las herramientas te perdonen 50 fallos.", R),
+        (500, "rectificar_500", "Manual de rectificación",
+         "Que las herramientas te perdonen 500 fallos.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_insured", [
+        (1, "seguro_paga", "Para eso pago el seguro",
+         "Rompe algo cavando con el seguro de responsabilidad civil.", C, True),
+        (25, "prima_sube", "La aseguradora te sube la prima",
+         "Rompe 25 cosas con el seguro puesto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_fifty", [
+        (10, "chuleta", "Con chuleta", "Acierta 10 preguntas con una respuesta tachada.", C),
+        (500, "chuleta_500", "Opositor con chuleta",
+         "Acierta 500 preguntas con una respuesta tachada.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_fast", [
+        (1, "rayo", "Rayo de la pala", "Acaba un turno con más de la mitad del tiempo.", R),
+        (50, "decreto_ley", "Por la vía del decreto ley",
+         "Acaba 50 turnos con más de la mitad del tiempo.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_last_second", [
+        (1, "ultimo_segundo", "Como la Renta, el último día",
+         "Acaba la última ronda con menos de un segundo en el reloj.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_first_miss", [
+        (1, "empezamos_bien", "Empezamos bien", "Falla la primera jugada de un turno.", C, True),
+        (25, "lunes_eterno", "Lunes eterno", "Falla la primera jugada en 25 turnos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_stale_clicks", [
+        (25, "doble_clic", "Doble clic de boomer",
+         "Pulsa 25 veces un botón de una ronda que ya ha pasado.", C, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_tremor_perfect", [
+        (1, "pulso_cirujano", "Pulso de cirujano",
+         "Saca un 100 con los temblores del cuarto café.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_memory_flawless", [
+        (1, "memoria_elefante", "Memoria de elefante",
+         "Haz perfectas todas las rondas de memoria de un turno.", C),
+        (50, "memoria_50", "Ni un «no me consta»",
+         "Haz perfectas todas las rondas de memoria en 50 turnos.", R),
+    ])  # fmt: skip
+
     # 👷 Oficios ------------------------------------------------------------------------
     a += _tiers("jobs", "work_pipes", [
         (1, "tuberia", "Tubería rota", "Rompe algo cavando.", C),
@@ -3629,6 +3714,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_dine_dash", [
         (10, "sinpa_10", "Velocista de terraza", "Persigue a 10 mesas que se iban sin pagar.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_posters", [
+        (10, "carteles_10", "Empapelando el barrio", "Pega 10 rutas de carteles perfectas.", C),
+        (100, "carteles_100", "Las farolas son del partido",
+         "Pega 100 rutas de carteles perfectas.", R),
+        (500, "carteles_500", "Brigada del engrudo", "Pega 500 rutas de carteles perfectas.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_clean_digs", [
+        (10, "sin_averias", "Ni una avería", "Haz 10 turnos de cavar sin romper nada.", C),
+        (100, "zahori", "Zahorí", "Haz 100 turnos de cavar sin romper nada.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_board", [
+        (20, "consejero_20", "Consejero de nada",
+         "Acierta 20 respuestas en el consejo de administración.", R),
+        (200, "consejero_200", "Dietas por asistir",
+         "Acierta 200 respuestas en el consejo de administración.", E),
     ])  # fmt: skip
 
     # 🏥 Sanidad ------------------------------------------------------------------------
@@ -4812,6 +4913,239 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("apuestas", "apuestas_virgin", [
         (1, "apuestas_virgin", "Mirar sin tocar",
          "Consulta tus estadísticas del casino sin haber apostado nunca.", C, True),
+    ])  # fmt: skip
+
+    # 🎫 Porras ---------------------------------------------------------------------------
+    # Montar, aceptar y apostar son decisiones (Común o Raro); lo que pide muchas porras o
+    # que el resto del servidor se equivoque sube de rareza. Las cuotas las pone la gente,
+    # no un dado: no salen de `auditoria_logros.py`, sino de cuántas porras hacen falta.
+    a += _tiers("porras", "porra_opened", [
+        (1, "porra_open_1", "Montador de porras", "Monta tu primera `porra` a alguien.", C),
+        (10, "porra_open_10", "Peñista", "Monta 10 porras.", C),
+        (50, "porra_open_50", "Corredor de apuestas de barra",
+         "Monta 50 porras. El bar ya te guarda el taburete.", R),
+        (250, "porra_open_250", "Casa de apuestas clandestina", "Monta 250 porras.", E),
+        (1_000, "porra_open_1k", "Loterías y Apuestas del Barrio",
+         "Monta 1.000 porras. La SELAE quiere hablar contigo.", L),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_rejected", [
+        (1, "porra_rejected_1", "Calabazas", "Que te rechacen una porra.", C, True),
+        (10, "porra_rejected_10", "Ni con un palo", "Que te rechacen 10 porras.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="porra_all_games",
+            name="Peña polideportiva",
+            description="Monta porras en todos los juegos que las admiten.",
+            category="porras",
+            rarity=R,
+            conditions=tuple((f"{PORRA_GAME_PREFIX}{game}", 1) for game in PORRA_GAMES),
+        )
+    )
+    a.append(
+        Achievement(
+            id="porra_all_props",
+            name="Me sé todas las preguntas",
+            description="Monta una porra de cada tipo de propuesta.",
+            category="porras",
+            rarity=R,
+            conditions=tuple((f"{PORRA_PROP_PREFIX}{prop}", 1) for prop in PORRA_PROPS),
+        )
+    )
+    a += _tiers("porras", "porra_long", [
+        (1, "porra_long", "Ley de Presupuestos",
+         "Monta una porra de más de 5 jugadas (con la libreta de la porra).", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_opener_against", [
+        (1, "porra_fontaneria", "Fontanería de Ferraz",
+         "Monta una porra a alguien y apuesta en su contra.", C, True),
+    ])  # fmt: skip
+
+    a += _tiers("porras", "porra_accepted", [
+        (1, "porra_star_1", "Protagonista", "Acepta una porra sobre ti.", C),
+        (10, "porra_star_10", "Carne de porra", "Acepta 10 porras sobre ti.", C),
+        (50, "porra_star_50", "Personaje público", "Acepta 50 porras sobre ti.", R),
+        (250, "porra_star_250", "Famoseo de tertulia", "Acepta 250 porras sobre ti.", E),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_declined", [
+        (1, "porra_declined_1", "No, gracias", "Rechaza una porra sobre ti.", C),
+        (25, "porra_declined_25", "Escaqueo profesional", "Rechaza 25 porras sobre ti.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="porra_image_1", name="Derechos de imagen",
+        description="Cobra tus primeros derechos de imagen como protagonista de una porra.",
+        category="porras", rarity=C, conditions=(("porra_image", 1),), unit="money",
+        story=IMAGE_STORY,
+    ))  # fmt: skip
+    a += _tiers("porras", "porra_image", [
+        (10_000, "porra_image_10k", "Imagen de marca",
+         "Cobra 10.000 Y$ en derechos de imagen.", R),
+        (100_000, "porra_image_100k", "Contrato con una plataforma",
+         "Cobra 100.000 Y$ en derechos de imagen.", E),
+        (1_000_000, "porra_image_1m", "Influencer de Marbella",
+         "Cobra 1.000.000 Y$ en derechos de imagen.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("porras", "porra_star_wins", [
+        (1, "porra_star_win_1", "Cumplir las expectativas",
+         "Como protagonista, que salga lo bueno para ti.", C),
+        (25, "porra_star_win_25", "Fiable como el BOE",
+         "Como protagonista, que salga lo bueno para ti 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_heroic", [
+        (1, "porra_heroic", "Les has callado la boca",
+         "Como protagonista, que salga lo bueno para ti con al menos 3 personas y todo "
+         "el dinero apostado en tu contra.", R, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_no_show", [
+        (1, "porra_no_show_1", "Espantada", "Acepta una porra y no juegues a tiempo.", C, True),
+        (10, "porra_no_show_10", "Ni está ni se le espera",
+         "Deja 10 porras tiradas por no jugar.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_broke", [
+        (1, "porra_broke", "Arruinado en directo",
+         "Quédate sin saldo para seguir en mitad de una porra sobre ti.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_pool_max", [
+        (1_000, "porra_pool_1k", "Hay expectación",
+         "Protagoniza una porra con 1.000 Y$ en el bote.", C),
+        (10_000, "porra_pool_10k", "Prime time",
+         "Protagoniza una porra con 10.000 Y$ en el bote.", R),
+        (100_000, "porra_pool_100k", "Final de Champions",
+         "Protagoniza una porra con 100.000 Y$ en el bote.", E),
+    ], unit="money")  # fmt: skip
+
+    a += _tiers("porras", "porra_bets", [
+        (1, "porra_bet_1", "Un euro a la porra", "Apuesta en una porra.", C),
+        (10, "porra_bet_10", "Habitual del bar", "Apuesta 10 veces en porras.", C),
+        (100, "porra_bet_100", "Quinielista", "Apuesta 100 veces en porras.", R),
+        (1_000, "porra_bet_1k", "El del boleto en la cartera", "Apuesta 1.000 veces.", E),
+        (5_000, "porra_bet_5k", "Abonado de la peña", "Apuesta 5.000 veces en porras.", L),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_wins", [
+        (1, "porra_win_1", "Lo sabía", "Acierta una porra.", C),
+        (10, "porra_win_10", "Ojo de tasador", "Acierta 10 porras.", R),
+        (100, "porra_win_100", "Pitoniso", "Acierta 100 porras.", E),
+        (500, "porra_win_500", "Oráculo de Teror", "Acierta 500 porras.", L),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_losses", [
+        (10, "porra_loss_10", "Así es el fútbol", "Falla 10 porras.", C),
+        (100, "porra_loss_100", "Siempre al caballo cojo", "Falla 100 porras.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_win_streak_max", [
+        (3, "porra_streak_3", "Racha de bar", "Acierta 3 porras seguidas.", R),
+        (5, "porra_streak_5", "Información privilegiada",
+         "Acierta 5 porras seguidas. La UCO toma nota.", E),
+        (10, "porra_streak_10", "Cuñado con razón", "Acierta 10 porras seguidas.", L),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_win_max", [
+        (1_000, "porra_big_1k", "Para cañas", "Gana 1.000 Y$ netos en una porra.", C),
+        (10_000, "porra_big_10k", "Pelotazo de barra", "Gana 10.000 Y$ netos en una porra.", R),
+        (100_000, "porra_big_100k", "Golpe de mano", "Gana 100.000 Y$ netos en una porra.", E),
+        (1_000_000, "porra_big_1m", "El millón del Falcon",
+         "Gana 1.000.000 Y$ netos en una porra.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("porras", "porra_odds_max", [
+        (3, "porra_odds_3", "Cuota decente", "Acierta una porra que te paga ×3 o más.", C),
+        (10, "porra_odds_10", "La sorpresa del Mundial",
+         "Acierta una porra que te paga ×10 o más.", R),
+        (50, "porra_odds_50", "Leicester campeón",
+         "Acierta una porra que te paga ×50 o más.", E, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_lone_wolf", [
+        (1, "porra_lone_1", "Contra todo pronóstico",
+         "Acierta siendo el único, con al menos 3 personas en contra.", R),
+        (10, "porra_lone_10", "Francotirador de la peña",
+         "Acierta en solitario contra 3 o más 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_favourite_flop", [
+        (1, "porra_flop_1", "El favorito siempre pierde",
+         "Falla una porra en la que tu opción tenía el 75 % del bote o más.", C),
+        (10, "porra_flop_10", "Encuesta del CIS",
+         "Falla 10 porras siendo el gran favorito.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_loyal_losses", [
+        (10, "porra_loyal_10", "Fe ciega",
+         "Apuesta a favor del protagonista y pierde 10 veces.", R),
+        (50, "porra_loyal_50", "Manual de resistencia (del apostante)",
+         "Apuesta a favor del protagonista y pierde 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_tamayazo", [
+        (1, "porra_tamayazo", "Tamayazo",
+         "Acierta una porra que dio la vuelta en la última jugada.", R, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_refunds", [
+        (1, "porra_refund_1", "Devolución de la entrada", "Que te devuelvan una apuesta.", C),
+        (25, "porra_refund_25", "Porras de papel mojado",
+         "Que te devuelvan 25 apuestas de porras anuladas.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_nobody", [
+        (1, "porra_nobody", "Nadie lo vio venir",
+         "Apuesta en una porra en la que no acierta nadie.", C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="porra_iaj_1", name="Impuesto sobre Actividades de Juego",
+        description="Paga el IAJ de una porra por primera vez.",
+        category="porras", rarity=C, conditions=(("porra_iaj", 1),), unit="money",
+        story=IAJ_STORY,
+    ))  # fmt: skip
+    a += _tiers("porras", "porra_iaj", [
+        (10_000, "porra_iaj_10k", "La peña paga a Sanxe", "Paga 10.000 Y$ de IAJ.", R),
+        (100_000, "porra_iaj_100k", "Mecenas del Falcon", "Paga 100.000 Y$ de IAJ.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("porras", "porra_crowd_max", [
+        (5, "porra_crowd_5", "Corrillo", "Participa en una porra con 5 apostantes.", C),
+        (10, "porra_crowd_10", "Peña completa",
+         "Participa en una porra con 10 apostantes.", R),
+        (20, "porra_crowd_20", "Bar lleno en el Clásico",
+         "Participa en una porra con 20 apostantes.", E),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_bet_min", [
+        (1, "porra_bet_min", "Lo mínimo para presumir",
+         f"Apuesta {PORRA_MIN_BET} Y$ justos en una porra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_bet_666", [
+        (1, "porra_bet_666", "La porra del diablo", "Apuesta 666 Y$ en una porra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_bet_69", [
+        (1, "porra_bet_69", "Porra picante", "Apuesta 69 Y$ en una porra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_all_in", [
+        (1, "porra_all_in_1", "Todo a la porra", "Apuesta todo tu saldo en una porra.", C),
+        (10, "porra_all_in_10", "Me lo juego todo a que no", "Apuesta todo 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_snoops", [
+        (1, "porra_snoop_1", "Vigilancia aduanera",
+         "Mira quién apuesta qué con los prismáticos de la UCO.", C),
+        (50, "porra_snoop_50", "Pegasus de bolsillo",
+         "Usa los prismáticos en 50 porras.", R),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_night", [
+        (1, "porra_night", "Porra de after",
+         "Apuesta en una porra entre las 2:00 y las 6:00.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_carrusel", [
+        (1, "porra_carrusel", "Carrusel deportivo",
+         "Apuesta en una porra un domingo entre las 16:00 y las 20:00.", C),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_nochevieja", [
+        (1, "porra_nochevieja", "Porra de las uvas",
+         "Apuesta en una porra en Nochevieja.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_canarias", [
+        (1, "porra_canarias", "Porra del 30 de mayo",
+         "Apuesta en una porra el Día de Canarias.", C, True),
+    ])  # fmt: skip
+    a += _tiers("porras", "porra_friday13", [
+        (1, "porra_friday13", "Gafe profesional",
+         "Apuesta en una porra un viernes 13.", R, True),
+    ])  # fmt: skip
+    a += _tiers("porras", f"{SHOP_USED_PREFIX}bufanda", [
+        (10, "porra_bufanda_10", "Grada de animación",
+         "Ondea la bufanda de la peña 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("porras", f"{SHOP_USED_PREFIX}silbato", [
+        (1, "porra_silbato", "¡Al VAR!",
+         "Pita a alguien con el silbato de árbitro.", C, True),
     ])  # fmt: skip
 
     # 🏰 `patrimonio`, 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
@@ -5999,6 +6333,171 @@ def hold_win_bonus_stats(
     return delta
 
 
+#: Todas las estadísticas que suman las porras (menos las de prefijo por juego y propuesta).
+PORRA_STATS = frozenset(
+    {
+        "porra_opened", "porra_rejected", "porra_long", "porra_opener_against",
+        "porra_accepted", "porra_declined", "porra_image", "porra_star_wins",
+        "porra_heroic", "porra_no_show", "porra_broke", "porra_pool_max", "porra_bets",
+        "porra_wins", "porra_losses", "porra_win_streak_max", "porra_win_max",
+        "porra_odds_max", "porra_lone_wolf", "porra_favourite_flop", "porra_loyal_losses",
+        "porra_tamayazo", "porra_refunds", "porra_nobody", "porra_iaj", "porra_crowd_max",
+        "porra_bet_min", "porra_bet_666", "porra_bet_69", "porra_all_in", "porra_snoops",
+        "porra_night", "porra_carrusel", "porra_nochevieja", "porra_canarias",
+        "porra_friday13",
+    }
+)  # fmt: skip
+
+
+def porra_open_stats(*, game: str, proposition: str, plays: int) -> StatDelta:
+    """Lo que cuenta montar una porra (para quien la monta).
+
+    Args:
+        game: Juego de la porra (clave de `casino_stats.GAMES`).
+        proposition: Clave de la propuesta (`bot.services.porras.PROPOSITIONS`).
+        plays: Jugadas pedidas.
+    """
+    add = {
+        "porra_opened": 1,
+        f"{PORRA_GAME_PREFIX}{game}": 1,
+        f"{PORRA_PROP_PREFIX}{proposition}": 1,
+    }
+    if plays > 5:
+        add["porra_long"] = 1
+    return StatDelta(add=add)
+
+
+def porra_answer_stats(*, accepted: bool) -> tuple[StatDelta, StatDelta]:
+    """Lo que cuenta la respuesta del protagonista: `(para él, para quien la montó)`."""
+    if accepted:
+        return StatDelta(add={"porra_accepted": 1}), StatDelta()
+    return StatDelta(add={"porra_declined": 1}), StatDelta(add={"porra_rejected": 1})
+
+
+def porra_bet_stats(
+    *, stake: int, balance_before: int, opener_against: bool, when: datetime
+) -> StatDelta:
+    """Lo que cuenta una apuesta a una porra, al hacerla.
+
+    Args:
+        stake: Lo apostado esta vez.
+        balance_before: Saldo antes de apostar.
+        opener_against: Si quien apuesta montó la porra y va contra el protagonista.
+        when: Hora canaria de la apuesta.
+    """
+    add = {"porra_bets": 1}
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    bump("porra_bet_min", stake == PORRA_MIN_BET)
+    bump("porra_bet_666", stake == 666)
+    bump("porra_bet_69", stake == 69)
+    bump("porra_all_in", stake >= balance_before > 0)
+    bump("porra_opener_against", opener_against)
+    bump("porra_night", 2 <= when.hour < 6)
+    bump("porra_carrusel", when.weekday() == 6 and 16 <= when.hour < 20)
+    bump("porra_nochevieja", (when.month, when.day) == (12, 31))
+    bump("porra_canarias", (when.month, when.day) == (5, 30))
+    bump("porra_friday13", when.weekday() == 4 and when.day == 13)
+    return StatDelta(add=add)
+
+
+def porra_bettor_stats(
+    *,
+    stake: int,
+    payout: int,
+    refund: bool,
+    nobody: bool,
+    tax: int,
+    streak: int,
+    lone_wolf: bool,
+    favourite_flop: bool,
+    loyal_loss: bool,
+    flipped: bool,
+    crowd: int,
+) -> StatDelta:
+    """Lo que cuenta el final de una porra para quien apostó.
+
+    Args:
+        stake: Lo que llevaba apostado.
+        payout: Lo que le ha vuelto (0 si falló; lo apostado si se devolvió).
+        refund: Si se le ha devuelto (anulada o sin aciertos).
+        nobody: Si se devolvió porque no acertó nadie.
+        tax: IAJ que ha pagado.
+        streak: Porras acertadas seguidas tras esta (0 si falló).
+        lone_wolf: Si ha sido el único en acertar con 3 o más en contra.
+        favourite_flop: Si ha fallado con el 75 % del bote o más en su opción.
+        loyal_loss: Si ha fallado apostando a lo bueno para el protagonista.
+        flipped: Si la última jugada le dio la vuelta al resultado.
+        crowd: Apostantes de la porra.
+    """
+    delta = StatDelta(peak={"porra_crowd_max": crowd})
+    add = delta.add
+    if refund:
+        add["porra_refunds"] = 1
+        if nobody:
+            add["porra_nobody"] = 1
+        return delta
+    if tax:
+        add["porra_iaj"] = tax
+    if payout > 0:
+        add["porra_wins"] = 1
+        delta.peak["porra_win_streak_max"] = streak
+        if payout > stake:
+            delta.peak["porra_win_max"] = payout - stake
+        if stake:
+            delta.peak["porra_odds_max"] = payout // stake
+        if lone_wolf:
+            add["porra_lone_wolf"] = 1
+        if flipped:
+            add["porra_tamayazo"] = 1
+    else:
+        add["porra_losses"] = 1
+        if favourite_flop:
+            add["porra_favourite_flop"] = 1
+        if loyal_loss:
+            add["porra_loyal_losses"] = 1
+    return delta
+
+
+def porra_subject_stats(
+    *, image: int, pool: int, favourable: bool | None, heroic: bool, broke: bool, crowd: int
+) -> StatDelta:
+    """Lo que cuenta una porra resuelta para su protagonista.
+
+    Args:
+        image: Derechos de imagen brutos cobrados.
+        pool: Bote de la porra.
+        favourable: Si ha salido la opción buena para él (`None` si la propuesta
+            no tiene una buena, como «cuántas gana»).
+        heroic: Si ha salido la buena con todo el dinero en contra (3 o más).
+        broke: Si se ha quedado sin saldo para seguir.
+        crowd: Apostantes de la porra.
+    """
+    delta = StatDelta(peak={"porra_pool_max": pool, "porra_crowd_max": crowd})
+    if image:
+        delta.add["porra_image"] = image
+    if favourable:
+        delta.add["porra_star_wins"] = 1
+    if heroic:
+        delta.add["porra_heroic"] = 1
+    if broke:
+        delta.add["porra_broke"] = 1
+    return delta
+
+
+def porra_no_show_stats() -> StatDelta:
+    """El protagonista no ha jugado a tiempo."""
+    return StatDelta(add={"porra_no_show": 1})
+
+
+def porra_snoop_stats() -> StatDelta:
+    """Ha mirado quién apuesta qué con los prismáticos."""
+    return StatDelta(add={"porra_snoops": 1})
+
+
 def apuestas_stats(
     *,
     page: str,
@@ -6659,9 +7158,11 @@ _WORK_CONTENT_STATS = {
     "comandas": "work_perfect_orders",
     "cocina": "work_perfect_orders",
     "votos": "work_perfect_votes",
+    "carteles": "work_posters",
     "chiringuito": "work_happy_clients",
     "prensa": "work_dodged",
     "comision": "work_no_recuerdo",
+    "consejo": "work_board",
 }
 
 
@@ -6767,7 +7268,37 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_exit"] = 1
     if outcome.bankrupt:
         add["work_bankrupt"] = 1
+    _work_game_stats(outcome, add)
     return delta
+
+
+def _work_game_stats(outcome: ShiftOutcome, add: dict[str, int]) -> None:
+    """Lo del minijuego: velocidad, herramientas, despistes y rondas limpias."""
+    game = outcome.game
+    if game.saved:
+        add["work_saves"] = game.saved
+    if game.insured_breaks:
+        add["work_insured"] = game.insured_breaks
+    if game.fifty and game.correct:
+        add["work_fifty"] = game.correct
+    if game.completed and game.time_left >= game.seconds / 2:
+        add["work_fast"] = 1
+    if game.completed and game.time_left < 1:
+        add["work_last_second"] = 1
+    if game.first_miss:
+        add["work_first_miss"] = 1
+    if game.stale:
+        add["work_stale_clicks"] = game.stale
+    if outcome.score >= 100 and outcome.coffees > MAX_COFFEES:
+        add["work_tremor_perfect"] = 1
+    if game.mechanic is Mechanic.DIG and not game.broken and game.correct:
+        add["work_clean_digs"] = 1
+    if (
+        game.mechanic is Mechanic.MEMORY
+        and game.completed
+        and game.perfect_rounds == len(game.rounds)
+    ):
+        add["work_memory_flawless"] = 1
 
 
 #: Contenidos de memoria: cuentan las rondas perfectas, no los aciertos sueltos.

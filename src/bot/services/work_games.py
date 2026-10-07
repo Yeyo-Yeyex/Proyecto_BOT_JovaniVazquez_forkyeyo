@@ -11,6 +11,10 @@ pequeño extra (`TIME_BONUS`) si se acaban todas las rondas antes de tiempo.
 
 Puntuación (0–100): aciertos sobre el máximo posible, más el extra de tiempo.
 
+Las herramientas de curro (`bot.services.work_tools`) cambian algo la partida:
+más tiempo, un fallo gratis (se repite la jugada), el seguro que hace que
+romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
+
 - **Cavar**: cada turno trae un plano (qué marca del suelo es segura, cuál
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
@@ -44,6 +48,7 @@ from bot.services.work_catalog import (
     WORKER_NAMES,
     WORKING,
 )
+from bot.services.work_tools import NO_PERKS, Perks
 
 #: Puntos extra (sobre 100) por acabar antes de tiempo, proporcionales a lo que sobra.
 TIME_BONUS = 10
@@ -105,6 +110,26 @@ class MiniGame:
     correct: int = 0
     last: str = ""
     finished_at: float | None = None
+    #: Fallos gratis que quedan (herramientas).
+    retries: int = 0
+    #: Si romper algo al cavar no resta (seguro).
+    insured: bool = False
+    #: Si los diálogos llevan una respuesta mala tachada (chuleta).
+    fifty: bool = False
+    #: Claves de las herramientas que cuentan en este turno.
+    tools: tuple[str, ...] = ()
+    #: Fallos perdonados por una herramienta.
+    saved: int = 0
+    #: Roturas que pagó el seguro.
+    insured_breaks: int = 0
+    #: Pulsaciones falladas (sin contar las perdonadas).
+    misses: int = 0
+    #: Pulsaciones que han contado (aciertos y fallos).
+    presses: int = 0
+    #: Si la primera pulsación del turno fue un fallo.
+    first_miss: bool = False
+    #: Pulsaciones que llegaron tarde, a una ronda ya pasada (las cuenta el cog).
+    stale: int = 0
 
     def __post_init__(self) -> None:
         self.showing = self.mechanic is Mechanic.MEMORY
@@ -123,6 +148,18 @@ class MiniGame:
     def current(self) -> Round | None:
         """Ronda en juego, o `None` si ya no quedan."""
         return self.rounds[self.index] if self.index < len(self.rounds) else None
+
+    @property
+    def completed(self) -> bool:
+        """Si se jugaron todas las rondas (no se acabó el tiempo antes)."""
+        return self.current is None
+
+    @property
+    def time_left(self) -> float:
+        """Segundos que sobraron al acabar todas las rondas (0 si no se acabaron)."""
+        if not self.completed or self.finished_at is None:
+            return 0.0
+        return max(0.0, self.deadline - self.finished_at)
 
     def finished(self, now: float) -> bool:
         """Si ya no se puede jugar (sin rondas o sin tiempo)."""
@@ -145,11 +182,28 @@ class MiniGame:
         if self.current is None:
             self.finish(now)
 
+    def _count(self, hit: bool) -> None:
+        if not hit:
+            if self.presses == 0:
+                self.first_miss = True
+            self.misses += 1
+        self.presses += 1
+
+    def _forgive(self, wrong: str) -> bool:
+        """Gasta un fallo gratis si queda. Devuelve si lo ha perdonado."""
+        if self.retries <= 0:
+            return False
+        self.retries -= 1
+        self.saved += 1
+        self.last = f"🛟 {wrong}, pero tu herramienta te salva: inténtalo otra vez."
+        return True
+
     def press(self, option: int, now: float) -> bool:
         """Registra una pulsación. Devuelve si ha sido un acierto.
 
         Las pulsaciones fuera de tiempo (con un pequeño margen) cierran la
-        partida sin contar.
+        partida sin contar. Un fallo perdonado por una herramienta no pasa de
+        ronda: se repite la jugada.
         """
         current = self.current
         if current is None or self.finished_at is not None:
@@ -159,35 +213,58 @@ class MiniGame:
             return False
         if self.mechanic is Mechanic.MEMORY:
             return self._press_memory(current, option, now)
+        if not 0 <= option < len(current.options):
+            return False
         hit = option in current.answer
+        right = current.options[current.answer[0]]
         if hit:
             self.points += 1
             self.correct += 1
-            self.last = "✅"
+            self.last = f"✅ ¡Bien! {current.options[option]}"
         elif option in current.penalty:
-            self.points -= 1
+            if self._forgive("Ibas a reventar una tubería"):
+                return False
             self.broken += 1
-            self.last = "💥"
+            if self.insured:
+                self.insured_breaks += 1
+                self.last = "💥📄 Rompiste algo, pero paga el seguro: no resta."
+            else:
+                self.points -= 1
+                self.last = "💥 ¡Rompiste algo! Resta un punto."
         elif option in current.neutral:
-            self.last = "🪨"
+            if self._forgive("Eso era roca"):
+                return False
+            self.last = f"🪨 Roca: no suma. Lo seguro era {right}."
         else:
-            self.last = "❌"
+            if self._forgive("Fallo"):
+                return False
+            self.last = f"❌ Fallo. Era {right}."
+        self._count(hit)
         self._next_round(now)
         return hit
 
     def _press_memory(self, current: Round, option: int, now: float) -> bool:
-        if self.showing:
+        if self.showing or not 0 <= option < len(current.options):
             return False
+        expected = current.options[current.answer[self.step]]
         if option == current.answer[self.step]:
             self.points += 1
             self.step += 1
+            self._count(True)
+            self.last = f"✅ {current.options[option]}"
             if self.step == len(current.answer):
                 self.perfect_rounds += 1
                 self.correct += 1
-                self.last = "✅ ¡Perfecta!"
+                self.last = "✅ ¡Ronda perfecta!"
                 self._next_round(now)
             return True
-        self.last = f"❌ Era {current.options[current.answer[self.step]]}"
+        if self._forgive(f"No era {current.options[option]}"):
+            return False
+        self._count(False)
+        self.last = (
+            f"❌ Fallaste en el {self.step + 1}.º: tocaba {expected}. "
+            f"Llevabas {self.step}/{len(current.answer)}."
+        )
         self._next_round(now)
         return False
 
@@ -387,12 +464,18 @@ _SPOT = {
 }
 
 
-def _dialogue(rng: random.Random, pack_key: str, rounds: int) -> tuple[str, list[Round]]:
+def _dialogue(
+    rng: random.Random, pack_key: str, rounds: int, *, fifty: bool = False
+) -> tuple[str, list[Round]]:
+    """Rondas de diálogo. Con `fifty` (chuleta) sobra una respuesta mala."""
     pack = DIALOGUE_PACKS[pack_key]
     rounds = min(rounds, len(pack.items))
     built = []
     for number, item in enumerate(rng.sample(pack.items, rounds), 1):
-        options, answer = _shuffled(rng, [item.good], list(item.bad))
+        bad = list(item.bad)
+        if fifty and len(bad) > 1:
+            bad.remove(rng.choice(bad))
+        options, answer = _shuffled(rng, [item.good], bad)
         letters = "ABCD"
         body = "\n".join(f"**{letters[i]}.** {text}" for i, text in enumerate(options))
         built.append(
@@ -423,12 +506,14 @@ def new_game(
     now: float,
     tired: bool = False,
     guard: bool = False,
+    perks: Perks = NO_PERKS,
 ) -> MiniGame:
     """Prepara el minijuego de un puesto.
 
     Args:
         tired: Reventado: el reloj corre con un 30 % menos de tiempo.
         guard: Guardia: el doble de rondas y el doble de tiempo.
+        perks: Lo que dan las herramientas de curro del miembro.
     """
     factor = GUARD_TIME_FACTOR if guard else 1
     rounds = rounds_for(position) * factor
@@ -440,6 +525,17 @@ def new_game(
     elif position.mechanic is Mechanic.MEMORY:
         header, built = _memory(rng, kind, int(arg or 3), rounds)
     else:
-        header, built = _dialogue(rng, kind, rounds)
+        header, built = _dialogue(rng, kind, rounds, fifty=perks.fifty)
     seconds = position.seconds * factor * (TIRED_TIME_FACTOR if tired else 1)
-    return MiniGame(position.mechanic, header, built, seconds, now)
+    seconds *= 1 + perks.extra_time
+    return MiniGame(
+        position.mechanic,
+        header,
+        built,
+        seconds,
+        now,
+        retries=perks.retries,
+        insured=perks.insured,
+        fifty=perks.fifty and position.mechanic is Mechanic.DIALOGUE,
+        tools=tuple(t.key for t in perks.tools),
+    )

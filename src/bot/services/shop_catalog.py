@@ -51,6 +51,17 @@ es un artículo `Kind.PET` con la clave `mascota_<especie>` en el pasillo de
 su tema. Las que aparecen solas también están, pero ocultas
 (`visible=False`): así tienen un artículo al que apuntar en la mochila y un
 valor para `patrimonio`, y nadie las puede comprar.
+
+**Peña de la porra.** Lo del pasillo 🎫 sirve para las `porra`. Los prismáticos
+y la libreta no se usan desde la mochila: con tenerlos, el cog de porras deja ver
+quién apuesta qué y montar porras más largas (`bot.services.porras`, mismas
+claves). No tocan el dinero de nadie.
+
+**Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
+desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
+(`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
+de 2 a 9 turnos del puesto 1, porque suben un poco la nota y con ella el
+sueldo.
 """
 
 from __future__ import annotations
@@ -110,6 +121,18 @@ AISLES: tuple[Aisle, ...] = (
     Aisle("shitpost", "💀", "Lo que no debería venderse", "Memes, absurdos y estafas honestas."),
     Aisle(
         "animales", "🐾", "Tienda de animales", "Mascotas sin tema propio, su comida y sus cosas."
+    ),
+    Aisle(
+        "curro",
+        "🛠️",
+        "Ferretería del curro",
+        "El trabajo: lo que te llevas a `pala` para currar mejor.",
+    ),
+    Aisle(
+        "porra",
+        "🎫",
+        "Peña de la porra",
+        "El bar de las apuestas entre colegas: la porra, la quiniela y el árbitro.",
     ),
 )
 #: Pasillo de lo que crean los administradores con `catalogo`.
@@ -729,9 +752,84 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("curso_tenencia", "animales", "🎓", "Curso de tenencia de perros", 800,
        "La Ley 7/2023 pide un curso para tener perro. Este es online, dura diez minutos "
        "y el examen se aprueba solo."),
-    _t("seguro_rc", "animales", "📋", "Seguro de responsabilidad civil canino", 1_500,
-       "Otra cosa que pide la Ley 7/2023 para los perros. Cubre mordiscos, destrozos y "
-       "que se coma la declaración de la renta del vecino."),
+    _t("seguro_rc_perro", "animales", "📋", "Seguro de responsabilidad civil canino", 1_500,
+       "Lo pide la Ley 7/2023 para los perros. Cubre mordiscos y destrozos. Los seguros "
+       "están exentos de IGIC (art. 10.1.16 de la Ley 20/1991).", igic="cero"),
+    # 🎫 Peña de la porra -----------------------------------------------------------------
+    _t("prismaticos_uco", "porra", "🔭", "Prismáticos de la UCO", 8_000,
+       "Para ver desde la barra quién apuesta qué. En las `porra`, el botón 🔭 te enseña "
+       "a cada apostante y lo que lleva.", per_user=1),
+    _t("libreta_porra", "porra", "📓", "Libreta de la porra", 5_000,
+       "Con las porras apuntadas a lápiz y un boli mordido. Te deja montar porras de "
+       "hasta 10 jugadas en vez de 5.", per_user=1),
+    _t("bufanda_pena", "porra", "🧣", "Bufanda de la peña", 1_500,
+       "Para animar a quien protagoniza la porra. Abriga poco, pero da ánimos.",
+       use="bufanda"),
+    _t("silbato_arbitro", "porra", "🟨", "Silbato de árbitro", 900,
+       "Pita a quien quieras. Tarjeta, penalti o VAR: tú decides, como en la Liga.",
+       use="silbato"),
+    _t("quiniela_enmarcada", "porra", "🖼️", "Quiniela de 14 enmarcada", 3_000,
+       "Le faltó el pleno al quince. Sigue en la pared del bar desde el 98."),
+    _t("boli_porra", "porra", "🖊️", "Boli de la porra del bar", 50,
+       "Atado con cuerda al mostrador. Nadie sabe de quién es, pero todos lo han usado."),
+    # 🛠️ Ferretería del curro (efectos en `bot.services.work_tools`) --------------------
+    _t("reloj_fichar", "curro", "⌚", "Reloj de fichar", 3_000,
+       "Un Casio de toda la vida, sincronizado con el registro de jornada. En `pala`: "
+       "+10 % de tiempo en cualquier curro.", per_user=1),
+    _t("casco_linterna", "curro", "⛑️", "Casco con linterna", 4_000,
+       "Homologado y con luz para las zanjas. En `pala`, obra: +15 % de tiempo.",
+       per_user=1),
+    _t("chaleco_reflectante", "curro", "🦺", "Chaleco reflectante", 5_000,
+       "Se te ve desde la caseta, así que el encargado te avisa antes de liarla. En "
+       "`pala`, obra: un fallo gratis por turno.", per_user=1),
+    _t("seguro_rc", "curro", "📄", "Seguro de responsabilidad civil", 8_000,
+       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros están "
+       "exentos de IGIC (art. 10.1.16 de la Ley 20/1991). En `pala`, cavar: romper "
+       "algo no resta.", igic="cero", per_user=1),
+    _t("zuecos", "curro", "👞", "Zuecos antideslizantes", 4_000,
+       "Suela de cocina profesional: el suelo puede estar como una pista de patinaje. "
+       "En `pala`, hostelería: +15 % de tiempo.", per_user=1),
+    _t("libreta_comandas", "curro", "🗒️", "Libreta de comandas", 5_000,
+       "Con boli atado con cuerda. En `pala`, hostelería: un fallo gratis por turno.",
+       per_user=1),
+    _t("hoja_reclamaciones", "curro", "📋", "Hoja de reclamaciones", 12_000,
+       "Si el cliente sabe que la tienes, baja el tono. En `pala`, el chiringuito: "
+       "tacha una respuesta mala en cada cliente.", per_user=1),
+    _t("cubo_engrudo", "curro", "🪣", "Cubo de engrudo", 3_500,
+       "Harina, agua y fe en el candidato. En `pala`, política: +15 % de tiempo.",
+       per_user=1),
+    _t("pinganillo", "curro", "🎧", "Pinganillo del portavoz", 6_000,
+       "Te soplan qué votar y dónde pegar. En `pala`, política: un fallo gratis por "
+       "turno.", per_user=1),
+    _t("argumentario", "curro", "📒", "Argumentario de Ferraz", 15_000,
+       "Respuestas para cualquier pregunta, sobre todo para las que no se responden. "
+       "Es un libro: IGIC tipo cero. En `pala`, ruedas de prensa, comisiones y "
+       "consejos: tacha una respuesta mala.", igic="cero", per_user=1),
+    _t("fonendo", "curro", "🩺", "Fonendoscopio", 6_000,
+       "De los buenos, con tu nombre grabado. En `pala`, sanidad: +15 % de tiempo.",
+       per_user=1),
+    _t("chuleta_triaje", "curro", "🧾", "Chuleta de bolsillo", 7_000,
+       "Plastificada, con las constantes normales y las extensiones de la planta. En "
+       "`pala`, sanidad: un fallo gratis por turno.", per_user=1),
+    _t("vademecum", "curro", "📘", "Vademécum", 15_000,
+       "Todos los medicamentos en papel biblia. Es un libro: IGIC tipo cero. En "
+       "`pala`, el MIR y la consulta: tacha una respuesta mala.", igic="cero",
+       per_user=1),
+    _t("segunda_pantalla", "curro", "🖥️", "Segunda pantalla", 8_000,
+       "En una el trabajo y en la otra Discord. En `pala`, oficina: +15 % de tiempo.",
+       per_user=1),
+    _t("tecla_deshacer", "curro", "⌨️", "Teclado con Ctrl+Z gigante", 4_000,
+       "La tecla de deshacer ocupa medio teclado. Ojalá existiera en las reuniones. En "
+       "`pala`, oficina: un fallo gratis por turno.", per_user=1),
+    _t("ia_premium", "curro", "🤖", "Suscripción a la IA de moda", 15_000,
+       "Responde con mucha seguridad, a veces bien. En `pala`, reuniones e inversores: "
+       "tacha una respuesta mala.", per_user=1),
+    _t("domino_bar", "porra", "🁫", "Fichas de dominó del bar", 600,
+       "Las de la mesa del fondo, con la doble seis mordida. Se juega en silencio y se "
+       "discute a gritos."),
+    _t("cana_tapa", "porra", "🍺", "Caña con tapa de ensaladilla", 250,
+       "Lo que se pide mientras se espera la jugada de otro. La tapa se la puedes dar a "
+       "tu mascota.", food=True),
 )
 # fmt: on
 

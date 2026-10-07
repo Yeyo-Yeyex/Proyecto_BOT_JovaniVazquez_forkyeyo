@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from bot.services.work import Mechanic
 from bot.services.work_catalog import JOBS
 from bot.services.work_games import GRACE_SECONDS, MiniGame, new_game
+from bot.services.work_tools import NO_PERKS, TOOLS, perks_for
 
 NOW = 1_000.0
 
@@ -135,3 +138,118 @@ def test_los_bugs_se_ensenan_como_codigo_con_lineas() -> None:
     first = game.rounds[0]
     assert "```py" in first.prompt
     assert first.options[0] == "Línea 1"
+
+
+# -- Herramientas de curro y mensajes de cada jugada --------------------------------------
+
+
+def wrong_option(game: MiniGame) -> int:
+    current = game.current
+    assert current is not None
+    expected = current.answer[game.step] if game.mechanic is Mechanic.MEMORY else None
+    return next(
+        i
+        for i in range(len(current.options))
+        if (i != expected if expected is not None else i not in current.answer)
+    )
+
+
+def test_un_fallo_dice_cual_era_la_buena() -> None:
+    game = new_game(JOBS[2].position(3), random.Random(12), now=NOW)  # rueda de prensa
+    current = game.current
+    assert current is not None
+    game.press(wrong_option(game), NOW)
+    assert game.last == f"❌ Fallo. Era {current.options[current.answer[0]]}."
+    assert game.first_miss and game.misses == 1
+
+
+def test_el_fallo_gratis_repite_la_jugada_una_sola_vez() -> None:
+    perks = perks_for("obra", Mechanic.DIG, {"chaleco_reflectante"})
+    game = new_game(JOBS[0].position(1), random.Random(13), now=NOW, perks=perks)
+    assert game.retries == 1
+    assert not game.press(wrong_option(game), NOW)
+    assert game.index == 0 and game.saved == 1 and game.misses == 0
+    assert "inténtalo otra vez" in game.last
+    game.press(wrong_option(game), NOW)
+    assert game.index == 1 and game.misses == 1
+
+
+def test_en_memoria_el_fallo_gratis_no_pierde_lo_que_llevabas() -> None:
+    perks = perks_for("politica", Mechanic.MEMORY, {"pinganillo"})
+    game = new_game(JOBS[2].position(1), random.Random(14), now=NOW, perks=perks)
+    game.hide(NOW)
+    current = game.current
+    assert current is not None
+    assert game.press(current.answer[0], NOW)
+    assert not game.press(wrong_option(game), NOW)
+    assert game.step == 1 and game.index == 0 and not game.showing
+    for option in current.answer[1:]:
+        assert game.press(option, NOW)
+    assert game.perfect_rounds == 1
+
+
+def test_con_el_seguro_romper_algo_no_resta() -> None:
+    perks = perks_for("obra", Mechanic.DIG, {"seguro_rc"})
+    game = new_game(JOBS[0].position(1), random.Random(3), now=NOW, perks=perks)
+    current = game.current
+    assert current is not None
+    while not current.penalty:
+        game.press(current.answer[0], NOW)
+        current = game.current
+        assert current is not None
+    before = game.points
+    game.press(next(iter(current.penalty)), NOW)
+    assert game.points == before
+    assert game.broken == 1 and game.insured_breaks == 1
+    assert "paga el seguro" in game.last
+
+
+def test_la_chuleta_tacha_una_respuesta_mala_en_cada_pregunta() -> None:
+    position = JOBS[2].position(3)  # rueda de prensa: tres respuestas
+    perks = perks_for("politica", Mechanic.DIALOGUE, {"argumentario"})
+    plain = new_game(position, random.Random(15), now=NOW)
+    helped = new_game(position, random.Random(15), now=NOW, perks=perks)
+    assert helped.fifty
+    for before, after in zip(plain.rounds, helped.rounds, strict=True):
+        assert len(after.options) == len(before.options) - 1
+    play_perfect(helped)
+    assert helped.score() == 100
+
+
+def test_las_herramientas_de_tiempo_se_suman() -> None:
+    position = JOBS[0].position(1)
+    perks = perks_for("obra", Mechanic.DIG, {"reloj_fichar", "casco_linterna"})
+    assert perks.extra_time == pytest.approx(0.25)
+    base = new_game(position, random.Random(16), now=NOW)
+    longer = new_game(position, random.Random(16), now=NOW, perks=perks)
+    assert longer.seconds == pytest.approx(base.seconds * 1.25)
+
+
+def test_cada_herramienta_solo_sirve_en_su_oficio_y_su_minijuego() -> None:
+    owned = {tool.key for tool in TOOLS}
+    assert perks_for("obra", Mechanic.DIG, set()) is NO_PERKS
+    dig = perks_for("obra", Mechanic.DIG, owned)
+    assert {t.key for t in dig.tools} == {
+        "reloj_fichar",
+        "casco_linterna",
+        "chaleco_reflectante",
+        "seguro_rc",
+    }
+    assert dig.insured and not dig.fifty and dig.retries == 1
+    office_talk = perks_for("oficina", Mechanic.DIALOGUE, owned)
+    assert office_talk.fifty and not office_talk.insured
+    assert all(t.job in (None, "oficina") for t in office_talk.tools)
+    # Cada oficio tiene sus herramientas y todas tienen un efecto.
+    for job in JOBS:
+        assert any(t.job == job.key for t in TOOLS), job.key
+    assert all(tool.effect for tool in TOOLS)
+
+
+def test_el_tiempo_sobrante_solo_cuenta_si_se_acaban_las_rondas() -> None:
+    game = new_game(JOBS[0].position(1), random.Random(17), now=NOW)
+    end = play_perfect(game, step=0.5)
+    assert game.completed
+    assert game.time_left == pytest.approx(game.deadline - (end - 0.5))
+    late = new_game(JOBS[0].position(1), random.Random(17), now=NOW)
+    late.finish(late.deadline)
+    assert not late.completed and late.time_left == 0

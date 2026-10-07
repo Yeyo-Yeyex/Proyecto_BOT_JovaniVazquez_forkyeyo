@@ -40,6 +40,11 @@ from bot.services.achievements import (
     PET_SPAWN_KINDS_STAT,
     PET_SPECIES_PREFIX,
     PET_SPECIES_STAT,
+    PORRA_GAME_PREFIX,
+    PORRA_GAMES,
+    PORRA_PROP_PREFIX,
+    PORRA_PROPS,
+    PORRA_STATS,
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
@@ -206,6 +211,9 @@ PRODUCED_STATS = {
     "work_nonresident", "work_7p", "work_double_tax", "work_hk_tax", "work_jetlag",
     "imv_abroad", "work_return", "work_beckham", "work_abroad_days_max", "work_jobs_tried",
     "work_zero", "work_black_total",
+    "work_tools_owned", "work_saves", "work_insured", "work_fifty", "work_fast",
+    "work_last_second", "work_first_miss", "work_stale_clicks", "work_tremor_perfect",
+    "work_memory_flawless", "work_posters", "work_clean_digs", "work_board",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",
@@ -261,6 +269,10 @@ PRODUCED_STATS = {
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
     *(f"apuestas_page_{page}" for page in APUESTAS_PAGES),
     *(f"apuestas_period_{period}" for period in APUESTAS_PERIODS),
+    # Porras (cogs/porras.py; test_porras.py comprueba que cada una sale de verdad)
+    *PORRA_STATS,
+    *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
+    *(f"{PORRA_PROP_PREFIX}{prop}" for prop in PORRA_PROPS),
     UNLOCKED_STAT,
 }  # fmt: skip
 
