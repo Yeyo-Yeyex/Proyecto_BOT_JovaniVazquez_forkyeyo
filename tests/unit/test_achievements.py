@@ -37,6 +37,11 @@ from bot.services.achievements import (
     IMG_EFFECTS_STAT,
     LAUGH_KINDS,
     MESSAGES_TOTAL_STAT,
+    PORRA_GAME_PREFIX,
+    PORRA_GAMES,
+    PORRA_PROP_PREFIX,
+    PORRA_PROPS,
+    PORRA_STATS,
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
@@ -250,6 +255,10 @@ PRODUCED_STATS = {
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
     *(f"apuestas_page_{page}" for page in APUESTAS_PAGES),
     *(f"apuestas_period_{period}" for period in APUESTAS_PERIODS),
+    # Porras (cogs/porras.py; test_porras.py comprueba que cada una sale de verdad)
+    *PORRA_STATS,
+    *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
+    *(f"{PORRA_PROP_PREFIX}{prop}" for prop in PORRA_PROPS),
     UNLOCKED_STAT,
 }  # fmt: skip
 

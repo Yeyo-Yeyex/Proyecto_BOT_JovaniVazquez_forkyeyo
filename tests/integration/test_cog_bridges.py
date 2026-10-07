@@ -31,6 +31,7 @@ GAMES = (
     "Minas",
     "Pollo",
     "Pachinko",
+    "Porras",
     "Loteria",
 )
 
@@ -45,6 +46,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.welcome.initialize()
     await client.shop.initialize()
     await client.work.repository.initialize()
+    await client.porras.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -422,4 +424,84 @@ async def test_la_pala_ve_las_herramientas_de_la_mochila_con_el_bot_real(
         owned = await work.tienda.owned_keys(client, GUILD_ID, OWNER_ID)
         assert "casco_linterna" in owned
     finally:
+        await client.close()
+
+
+async def test_una_porra_cuenta_las_jugadas_y_apunta_logros_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """La jugada de minas llega a la porra por `apuestas.record` y el reparto, a los logros."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from bot.services.porras import Status
+
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Porras")
+
+        async def never(_seconds: float) -> None:
+            await asyncio.Event().wait()
+
+        cog.sleep = never
+        people = {}
+        for user_id, name in ((10, "Luis"), (20, "Ana"), (30, "Pepe"), (40, "Mari")):
+            user = MagicMock(spec=discord.Member)
+            user.id, user.bot, user.display_name, user.mention = (
+                user_id,
+                False,
+                name,
+                f"<@{user_id}>",
+            )
+            people[user_id] = user
+        cog._member = lambda _guild, user_id: people.get(user_id)
+        message = MagicMock()
+        message.id = 99
+        message.edit = AsyncMock()
+        message.channel.send = AsyncMock()
+        porra = await cog.open(
+            guild=SimpleNamespace(id=GUILD_ID), channel=None, opener=people[10],
+            subject=people[20], game_text="minas", prop_key="signo", plays=1,
+            stake_text="100", send=AsyncMock(return_value=message), send_error=AsyncMock(),
+        )  # fmt: skip
+        table = cog.tables[porra.id]
+
+        def press(user_id: int) -> MagicMock:
+            inter = MagicMock()
+            inter.user, inter.channel, inter.guild_id = people[user_id], None, GUILD_ID
+            inter.guild = SimpleNamespace(id=GUILD_ID)
+            inter.response.send_message = AsyncMock()
+            inter.response.edit_message = AsyncMock()
+            return inter
+
+        await cog.answer(press(20), table, accepted=True)
+        await cog.bet(press(30), table, 0, "200")
+        await cog.bet(press(40), table, 1, "200")
+        await cog.lock(table)
+
+        mines = importer("Minas", client)
+        await mines.apuestas.record(
+            client, GUILD_ID, people[20], game="minas", stake=100, net=150,
+            balance_after=1_150, tax=0, details=(("boom", 0),),
+        )  # fmt: skip
+        # El reparto va en otra tarea (el juego no lo espera): se espera a que acabe.
+        for _ in range(300):
+            stats = (await client.achievements.profile(GUILD_ID, 20)).stats
+            if porra.status is Status.RESOLVED and "porra_pool_max" in stats:
+                break
+            await asyncio.sleep(0.01)
+        assert porra.status is Status.RESOLVED
+
+        winner = await client.achievements.profile(GUILD_ID, 30)
+        loser = await client.achievements.profile(GUILD_ID, 40)
+        subject = await client.achievements.profile(GUILD_ID, 20)
+        assert winner.stats.get("porra_wins") == 1
+        assert loser.stats.get("porra_losses") == 1
+        assert subject.stats.get("porra_image", 0) > 0
+        assert "porra_image_1" in subject.unlocked
+        report = await client.casino_stats.report(GUILD_ID, 30, since=None, today=date(2026, 10, 6))
+        assert report.total.plays == 1
+    finally:
+        for task in list(client.get_cog("Porras")._tasks):
+            task.cancel()
         await client.close()

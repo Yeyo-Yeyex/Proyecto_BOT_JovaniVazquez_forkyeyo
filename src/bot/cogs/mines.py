@@ -36,6 +36,7 @@ import asyncio
 import logging
 import random
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -365,6 +366,8 @@ class MinesBoard(ui.LayoutView):
         except InsufficientFundsError as error:
             return insufficient_text(error.balance, self.stake)
         self.balance = settlement.balance
+        # Para las porras: una partida abierta antes del cierre no cuenta.
+        self.started_at = time.time()
         self.game = MinesGame.new(self.stake, self.mines, self.cog.rng)
         self.record_before = await self.cog.record(self.guild_id, self.owner.id)
         self.note = None
@@ -417,6 +420,10 @@ class MinesBoard(ui.LayoutView):
             net=game.net,
             balance_after=settlement.balance if settlement else self.balance,
             tax=settlement.tax_delta if settlement else 0,
+            details=(
+                ("boom", int(game.status is Status.BUSTED)),
+                ("started", int(getattr(self, "started_at", 0))),
+            ),
         )
         await self.cog.shout(game, self.owner, self.channel)
 

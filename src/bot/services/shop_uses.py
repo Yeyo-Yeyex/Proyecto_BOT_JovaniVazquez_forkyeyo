@@ -1077,6 +1077,71 @@ _USES: tuple[Use, ...] = (
         on_self="🪨 {who} mira su piedra. La piedra le mira. Un vínculo así no se compra "
         "con dinero. Bueno, sí: por 1 Y$.",
     ),
+    # 🎫 Peña de la porra --------------------------------------------------------------
+    Use(
+        "bufanda",
+        "Ondear",
+        Target.MEMBER,
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                55,
+                "🧣 {who} ondea la bufanda de la peña por {target}: «¡Sí se puede, sí se "
+                "puede!». Medio bar se une al cántico.",
+                "cheer",
+            ),
+            _o(
+                30,
+                "🧣 {who} le pone la bufanda a {target} para la suerte. Huele a puro y a "
+                "Liga del 98, pero da calorcito.",
+                "cheer",
+            ),
+            _o(
+                15,
+                "🧣 {who} ondea la bufanda con tanto ímpetu que le da en la cara a {target}. "
+                "Ánimo con daños colaterales.",
+                "backfire",
+            ),
+        ),
+        on_self="🧣 {who} se anima a sí mismo con la bufanda. La peña es él solo, pero "
+        "la peña nunca falla.",
+    ),
+    Use(
+        "silbato",
+        "Pitar",
+        Target.MEMBER,
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                40,
+                "🟨 ¡Priiii! {who} le saca amarilla a {target} por protestar. {target} "
+                "pide el VAR, pero el VAR está tomando café.",
+                "yellow",
+            ),
+            _o(
+                25,
+                "🟨 ¡Priiii, priiii! {who} le saca la roja directa a {target}. Al vestuario, "
+                "y sin ducha.",
+                "red",
+            ),
+            _o(
+                20,
+                "🟨 {who} pita penalti a favor de {target}. Nadie sabe de qué, pero el "
+                "árbitro siempre tiene razón.",
+                "penalty",
+            ),
+            _o(
+                15,
+                "🟨 {who} va a pitarle a {target} y aparece {collector} pidiendo la factura "
+                "del silbato. Los árbitros también hacen la declaración.",
+                "collector",
+            ),
+        ),
+        on_self="🟨 {who} se pita a sí mismo fuera de juego. Honestidad arbitral, eso "
+        "sí que no se ve en la Liga.",
+    ),
 )
 
 USES: dict[str, Use] = {use.key: use for use in _USES}
