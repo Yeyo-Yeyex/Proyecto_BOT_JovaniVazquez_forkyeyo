@@ -34,6 +34,7 @@ from bot.services.economy import (
     format_amount,
     parse_amount,
 )
+from bot.services.pets import Event, Moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -112,7 +113,7 @@ class Bizum(commands.Cog):
             f"-# 🐶 {TAX_COLLECTOR} no toca ni un yapdólar: los Bizums entre colegas del "
             "servidor están exentos de Donaciones."
         )
-        hint = await renta.hint(self.bot, guild.id, sender.id)
+        hint = await renta.hint(self.bot, guild.id, sender.id, Moment(Event.BIZUM))
         if hint is not None:
             lines.append(hint)
         # Las menciones dentro de un embed no avisan: la de quien recibe va también en el

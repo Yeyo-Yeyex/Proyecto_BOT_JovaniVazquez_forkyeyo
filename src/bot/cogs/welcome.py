@@ -47,6 +47,7 @@ from bot.services.economy import (
     format_amount,
     tax_line,
 )
+from bot.services.pets import Moment
 from bot.services.welcome import (
     GREETER_GIFT,
     WELCOMED_GIFT,
@@ -375,7 +376,7 @@ class Welcome(commands.Cog):
                 "para que se estrene en la ruleta.\n"
                 f"{tax_line(mine.gross, mine.tax, mine.rate)}"
             )
-            hint = await renta.hint(self.bot, guild.id, greeter.id)
+            hint = await renta.hint(self.bot, guild.id, greeter.id, Moment())
             if hint is not None:
                 text += f"\n{hint}"
             try:

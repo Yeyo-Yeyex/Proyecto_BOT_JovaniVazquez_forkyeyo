@@ -60,8 +60,11 @@ from bot.services.mines import Status as MinesStatus
 from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
+from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
+from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.shop_catalog import AISLES as SHOP_AISLES
+from bot.services.shop_catalog import RETIRED_AISLES as SHOP_RETIRED_AISLES
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
@@ -177,6 +180,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
+    Category("pets", "🐾 Mascotas"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
@@ -281,6 +285,13 @@ SHOP_AISLE_PREFIX = "shop_aisle_"
 #: Estadística virtual: pasillos del surtido de serie en los que ha comprado.
 SHOP_AISLES_STAT = "shop_aisles"
 _SHOP_AISLE_KEYS = frozenset(a.key for a in SHOP_AISLES)
+#: Prefijo de las especies de mascota conseguidas (`pet_species_gato`).
+PET_SPECIES_PREFIX = "pet_species_"
+#: Estadísticas virtuales: especies distintas y, de ellas, las que aparecen solas.
+PET_SPECIES_STAT = "pet_species_count"
+PET_SPAWN_KINDS_STAT = "pet_spawn_kinds"
+_PET_KEYS = frozenset(s.key for s in PET_SPECIES)
+_PET_SPAWN_KEYS = frozenset(s.key for s in PET_SPAWNING)
 #: Artículos de serie con logro propio al comprarlos; cada uno suma `shop_key_<clave>`.
 #: Solo estos, para no llenar las estadísticas con un contador por artículo.
 SHOP_TRACKED_KEYS = frozenset(
@@ -363,6 +374,17 @@ FIRST_TAX_STORY = (
     "cartera. Cuanto más ganas, más se lleva.\n"
     "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
     "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
+)
+
+
+#: Discurso del logro `pet_1`: la primera mascota.
+ADOPTION_STORY = (
+    "🐾 **Tu primera mascota.** Si es un perro, un gato o un hurón, el colmado no te lo "
+    "ha vendido: desde la Ley 7/2023 de bienestar animal (art. 56) las tiendas no pueden "
+    "venderlos, solo tenerlos en adopción con una protectora. Lo que has pagado es la tasa "
+    f"de adopción, con su IGIC al tipo general, porque {TAX_COLLECTOR} no perdona ni a los "
+    "animales. Cuídala cada día con `mascota`: el vínculo nunca baja, y si la llevas "
+    "contigo saldrá en tus jugadas a opinar."
 )
 
 
@@ -3059,6 +3081,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_use_pino", [
         (1, "use_pino", "Romería del Pino", "Usa un objeto el 8 de septiembre.", C),
     ])  # fmt: skip
+    a += _tiers("shop", "shop_clover_broken", [
+        (1, "clover_broken", "Trébol de tres hojas",
+         "Frota tan fuerte el trébol que se le cae una hoja.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_no_parsley", [
+        (1, "no_parsley", "Sin perejil no hay milagro",
+         "Pídele algo a San Pancracio sin perejil.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_flash", [
+        (1, "shop_flash", "Ropa interior a la vista",
+         "Enseña al canal la ropa interior roja de Nochevieja.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_fake_champagne", [
+        (1, "fake_champagne", "Era cava", "Descorcha el champán francés y que resulte ser cava.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_ball_dogs", [
+        (1, "ball_dogs", "Suelta de perros",
+         "Lanza la pelota y que salga detrás medio barrio de perros.", C),
+    ])  # fmt: skip
     a += _tiers("shop", SHOP_AISLES_STAT, [
         (3, "aisles_3", "De paseo por el colmado", "Compra en 3 pasillos distintos.", C),
         (len(SHOP_AISLES), "aisles_all", "Me conozco todos los pasillos",
@@ -3091,6 +3133,192 @@ def _build_catalog() -> tuple[Achievement, ...]:
             id=achievement_id, name=name, description=description, category="shop",
             rarity=rarity, conditions=((f"shop_key_{key}", 1),), secret=secret,
         ))  # fmt: skip
+
+    # 🐾 Mascotas ------------------------------------------------------------------------
+    a.append(Achievement(
+        id="pet_1", name="Familia monoparental", description="Consigue tu primera mascota.",
+        category="pets", rarity=C, conditions=((PET_SPECIES_STAT, 1),), story=ADOPTION_STORY,
+    ))  # fmt: skip
+    a += _tiers("pets", "pet_adopted", [
+        (3, "pet_adopt_3", "Casa de acogida", "Adopta 3 mascotas en el colmado.", R),
+        (10, "pet_adopt_10", "Arca de Noé", "Adopta 10 mascotas en el colmado.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", PET_SPECIES_STAT, [
+        (5, "pet_species_5", "Zoológico de barrio", "Ten 5 especies distintas.", R),
+        (15, "pet_species_15", "Bioparc", "Ten 15 especies distintas.", E),
+        (sum(1 for sp in PET_SPECIES if sp.adoptable), "pet_species_shop",
+         "Todo el escaparate", "Ten todas las especies que se adoptan en el colmado.", L),
+        (len(PET_SPECIES), "pet_species_all", "Ni Félix Rodríguez de la Fuente",
+         "Ten todas las especies, también las que aparecen solas.", M),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_protectora", [
+        (1, "pet_protectora", "Adopta, no compres",
+         "Adopta un perro, un gato o un hurón, que no se venden desde la Ley 7/2023.", C),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_spawned", [
+        (1, "pet_spawn_1", "Okupa", "Que una mascota aparezca sola en tu casa.", R),
+    ])  # fmt: skip
+    a += _tiers("pets", PET_SPAWN_KINDS_STAT, [
+        (len(PET_SPAWNING), "pet_spawn_all", "Ley de okupación animal",
+         f"Que te aparezcan solas las {len(PET_SPAWNING)} especies que no se venden.", L),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_owned_max", [
+        (5, "pet_owned_5", "Casa llena", "Ten 5 mascotas a la vez.", R),
+        (10, "pet_owned_10", "Esto es un zoo", "Ten 10 mascotas a la vez.", E),
+    ])  # fmt: skip
+    for key, achievement_id, name, description, rarity, secret in (
+        ("cucaracha", "pet_cucaracha", "Compañera de piso",
+         "Que se te meta en casa la cucaracha superviviente.", R, True),
+        ("gato_callejero", "pet_callejero", "Undécima vida",
+         "Que te elija el gato callejero tuerto.", E, False),
+        ("paloma", "pet_paloma", "Plaza Mayor", "Que se te pose la paloma al salir de currar.",
+         R, False),
+        ("cotorra", "pet_cotorra", "Invasión argentina",
+         "Que se te mude la cotorra al subir de nivel.", R, False),
+        ("lagarto", "pet_lagarto", "Especie protegida",
+         "Que te aparezca el lagarto gigante de El Hierro el Día de Canarias.", L, False),
+        ("mosquito", "pet_mosquito", "Verano en España", "Que se te pegue el mosquito tigre.",
+         R, True),
+        ("pedrusco", "pet_pedrusco", "Moda de 1975", "Adopta la piedra mascota.", C, True),
+        ("presa", "pet_presa", "Corazón de pan", "Adopta un presa canario.", R, False),
+        ("koi", "pet_koi", "Prosperidad de Mong Kok", "Adopta la carpa koi.", E, False),
+        ("caballo", "pet_caballo", "Feria de Abril en casa",
+         "Adopta el caballo de pura raza española.", E, False),
+        ("panda", "pet_panda", "Diplomacia del panda", "Consigue un panda en préstamo.", L,
+         False),
+        ("perro_sanxe", "pet_sanxe", "El perro es mío",
+         "Adopta a Perro Sanxe. Solo hay uno en todo el servidor.", M, False),
+    ):  # fmt: skip
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="pets",
+            rarity=rarity, conditions=((f"{PET_SPECIES_PREFIX}{key}", 1),), secret=secret,
+        ))  # fmt: skip
+    for achievement_id, name, description, rarity, keys in (
+        ("pet_perro_gato", "Como el perro y el gato", "Ten un perro y un gato a la vez.", R,
+         ("perro", "gato")),
+        ("pet_islas", "Fauna de las islas",
+         "Ten el canario, el bardino, la cabra majorera y el presa canario.", E,
+         ("canario", "bardino", "cabra", "presa")),
+        ("pet_boricua", "Patio boricua", "Ten el coquí y el gallo de patio.", R,
+         ("coqui", "gallo")),
+        ("pet_pijos", "Pijerío animal",
+         "Ten el caniche de Serrano, el pavo real y el caballo de pura raza.", L,
+         ("caniche", "pavo_real", "caballo")),
+    ):  # fmt: skip
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="pets",
+            rarity=rarity,
+            conditions=tuple((f"{PET_SPECIES_PREFIX}{key}", 1) for key in keys),
+        ))  # fmt: skip
+    a += _tiers("pets", "pet_cares", [
+        (1, "pet_care_1", "Primera caricia", "Cuida a una mascota.", C),
+        (50, "pet_care_50", "Cuidador", "Cuida 50 veces a tus mascotas.", R),
+        (500, "pet_care_500", "Veterinario sin título", "Cuida 500 veces a tus mascotas.", E),
+        (2_000, "pet_care_2k", "Protectora con patas", "Cuida 2.000 veces a tus mascotas.", L),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_petted", [
+        (100, "pet_petted_100", "Mano de santo", "Acaricia 100 veces a tus mascotas.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_played", [
+        (100, "pet_played_100", "Compañero de juegos", "Juega 100 veces con tus mascotas.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_fed", [
+        (1, "pet_fed_1", "Hora de comer", "Dale de comer a una mascota.", C),
+        (100, "pet_fed_100", "Comedor social", "Dale de comer 100 veces a tus mascotas.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_favourite", [
+        (1, "pet_fav_1", "Eso le encanta", "Dale a una mascota su comida favorita.", C),
+        (50, "pet_fav_50", "Chef de pienso", "Dales 50 veces su comida favorita.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_bond_max", [
+        (1, "pet_bond_1", "Nos vamos conociendo", "Sube a nivel 1 el vínculo con una mascota.",
+         C),
+        (5, "pet_bond_5", "Uña y carne", "Sube a nivel 5 el vínculo con una mascota.", R),
+        (10, "pet_bond_10", "Inseparables", "Sube a nivel 10 el vínculo con una mascota.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_tricks_max", [
+        (1, "pet_tricks_1", "Sabe hacer cosas", "Que una mascota aprenda su primer truco.", R),
+        (3, "pet_tricks_3", "Circo del Sol", "Que una mascota se sepa sus tres trucos.", E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_streak_max", [
+        (7, "pet_streak_7", "Una semana sin fallar", "Cuida a tus mascotas 7 días seguidos.", R),
+        (30, "pet_streak_30", "Responsabilidad afectiva",
+         "Cuida a tus mascotas 30 días seguidos.", E),
+        (100, "pet_streak_100", "Ni un día sin paseo", "Cuida a tus mascotas 100 días seguidos.",
+         L),
+        (365, "pet_streak_365", "Un año dándole de comer",
+         "Cuida a tus mascotas 365 días seguidos.", M),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_gifts", [
+        (1, "pet_gift_1", "Un regalito", "Que una mascota te traiga un regalo.", C),
+        (10, "pet_gift_10", "Lo que trae el gato", "Que tus mascotas te traigan 10 regalos.", E),
+        (50, "pet_gift_50", "Mantenido por la mascota",
+         "Que tus mascotas te traigan 50 regalos.", L),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_cameos", [
+        (1, "pet_cameo_1", "Robaescenas", "Que tu mascota salga en un mensaje del bot.", C),
+        (100, "pet_cameo_100", "Estrella invitada", "Que tu mascota salga 100 veces.", R),
+        (1_000, "pet_cameo_1k", "Más pantalla que Jovani", "Que tu mascota salga 1.000 veces.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_cameo_bust", [
+        (1, "pet_cameo_bust", "Hasta la mascota se va",
+         "Que tu mascota te vea quedarte a cero.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_cameo_big", [
+        (1, "pet_cameo_big", "Testigo del pelotazo", "Que tu mascota te vea dar un pelotazo.", R),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_cameo_night", [
+        (1, "pet_cameo_night", "Fiesta de madrugada",
+         "Que tu mascota salga en un mensaje entre las 0:00 y las 6:00.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_renamed", [
+        (1, "pet_name_1", "Bautizo", "Ponle nombre a una mascota.", C),
+        (10, "pet_name_10", "Crisis de identidad", "Cambia 10 veces el nombre de tus mascotas.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_named_sanxe", [
+        (1, "pet_named_sanxe", "Perro Sanxe, el de verdad",
+         "Ponle a una mascota el nombre del presidente.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_named_beast", [
+        (1, "pet_named_beast", "La bestia", "Ponle un 666 en el nombre a una mascota.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_switches", [
+        (10, "pet_switch_10", "Poliamor animal", "Cambia 10 veces de mascota activa.", R),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_fed_nothing", [
+        (1, "pet_fed_rock", "Dar de comer a una piedra",
+         "Intenta darle de comer a una mascota que no come.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_goat_tax", [
+        (1, "pet_goat_tax", "La cabra se comió la declaración",
+         "Dale el Modelo 100 a la cabra majorera.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_goat_odd", [
+        (10, "pet_goat_10", "Estómago de cabra",
+         "Dale a la cabra 10 cosas que no son su favorita.", R),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_night", [
+        (1, "pet_night", "Insomnio compartido", "Cuida a una mascota entre las 3 y las 6.", C,
+         True),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_san_anton", [
+        (1, "pet_san_anton", "Bendición de San Antón",
+         "Cuida a una mascota el 17 de enero, día de San Antón.", C),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_christmas", [
+        (1, "pet_christmas", "Navidad con pelos", "Cuida a una mascota en Nochebuena o Navidad.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_halloween", [
+        (1, "pet_halloween", "Gato negro en Halloween",
+         "Cuida a una mascota en Halloween.", C),
+    ])  # fmt: skip
+    a += _tiers("pets", "pet_canarias", [
+        (1, "pet_canarias", "Día de Canarias con mascota",
+         "Cuida a una mascota el 30 de mayo.", C),
+    ])  # fmt: skip
 
     # 🪏 Trabajo ------------------------------------------------------------------------
     a += _tiers("work", "work_shifts", [
@@ -4742,14 +4970,34 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
         and stat[len(SHOP_USED_PREFIX) :] in SHOP_USES
         and value > 0
     )
-    full[SHOP_AISLES_STAT] = sum(
-        1
+    full[SHOP_AISLES_STAT] = len(visited_aisles(stats))
+    pets = {
+        stat[len(PET_SPECIES_PREFIX) :]
         for stat, value in stats.items()
-        if stat.startswith(SHOP_AISLE_PREFIX)
-        and stat[len(SHOP_AISLE_PREFIX) :] in _SHOP_AISLE_KEYS
-        and value > 0
-    )
+        if stat.startswith(PET_SPECIES_PREFIX) and value > 0
+    }
+    full[PET_SPECIES_STAT] = len(pets & _PET_KEYS)
+    full[PET_SPAWN_KINDS_STAT] = len(pets & _PET_SPAWN_KEYS)
     return full
+
+
+def visited_aisles(stats: Mapping[str, int]) -> set[str]:
+    """Pasillos actuales del colmado en los que ha comprado el miembro.
+
+    Las compras de un pasillo retirado cuentan para el que lo hereda
+    (`RETIRED_AISLES`): quien compró en Ultramarinos ya conoce la España de
+    siempre. Las de un pasillo repartido entre varios (la Farmacia) no
+    cuentan para ninguno.
+    """
+    seen = set()
+    for stat, value in stats.items():
+        if not stat.startswith(SHOP_AISLE_PREFIX) or value <= 0:
+            continue
+        key = stat[len(SHOP_AISLE_PREFIX) :]
+        key = SHOP_RETIRED_AISLES.get(key, key) or ""
+        if key in _SHOP_AISLE_KEYS:
+            seen.add(key)
+    return seen
 
 
 #: Logros normales de cada categoría, para saber cuándo se completa una.
@@ -6133,6 +6381,11 @@ def shop_use_stats(
     bump("shop_padron_hot", "hot" in marks)
     bump("shop_robuso_asleep", "asleep" in marks)
     bump("shop_nickname", "nickname" in marks)
+    bump("shop_clover_broken", "broken" in marks)
+    bump("shop_no_parsley", "no_parsley" in marks)
+    bump("shop_flash", "flash" in marks)
+    bump("shop_fake_champagne", "fake" in marks)
+    bump("shop_ball_dogs", "dogs" in marks)
     if prize_price is not None:
         bump("shop_mystery")
         bump("shop_mystery_jackpot", "jackpot" in marks)
@@ -6145,6 +6398,122 @@ def shop_use_stats(
     bump("shop_use_halloween", (moment.month, moment.day) == (10, 31))
     bump("shop_use_canarias", (moment.month, moment.day) == (5, 30))
     bump("shop_use_pino", (moment.month, moment.day) == (9, 8))
+    return delta
+
+
+# -- Mascotas -------------------------------------------------------------------------
+
+
+def _pet_name_marks(name: str) -> set[str]:
+    """Nombres con guasa: ponerle «Perro Sanxe» o «Pedro» a la mascota, o un 666."""
+    plain = re.sub(r"[^a-z0-9]", "", name.lower().replace("á", "a").replace("é", "e"))
+    marks = set()
+    if "sanxe" in plain or "sanchez" in plain or plain == "pedro":
+        marks.add("pet_named_sanxe")
+    if "666" in plain:
+        marks.add("pet_named_beast")
+    return marks
+
+
+def pet_adopt_stats(
+    *, species: str, spawned: bool, owned: int, adoption: bool = False
+) -> StatDelta:
+    """Estadísticas de quien consigue una mascota.
+
+    Args:
+        species: Clave de la especie (`bot.services.pets_catalog.SPECIES`).
+        spawned: Si ha aparecido sola (si no, la ha adoptado en la tienda).
+        owned: Mascotas que tiene tras conseguirla.
+        adoption: Si era de las de tasa de adopción (perros, gatos, hurones).
+    """
+    delta = StatDelta(add={f"{PET_SPECIES_PREFIX}{species}": 1}, peak={"pet_owned_max": owned})
+    delta.add["pet_spawned" if spawned else "pet_adopted"] = 1
+    if adoption:
+        delta.add["pet_protectora"] = 1
+    return delta
+
+
+def pet_care_stats(
+    *,
+    action: str,
+    points: int,
+    favourite: bool,
+    level: int,
+    tricks: int,
+    streak: int,
+    gift: bool,
+    when: float,
+    food_key: str | None = None,
+    species: str = "",
+    eats: bool = True,
+) -> StatDelta:
+    """Estadísticas de un cuidado (acariciar, jugar o dar de comer).
+
+    Solo cuentan para los escalones los cuidados que suman vínculo: el resto
+    (pasado el cupo del día) se puede hacer sin límite y no debe dar logros.
+
+    Args:
+        action: `bot.services.pets.Care` (`"acariciar"`, `"jugar"`, `"comer"`).
+        points: Vínculo que ha sumado.
+        favourite: Si le ha dado su comida favorita.
+        level: Nivel de vínculo tras el cuidado.
+        tricks: Trucos que sabe tras el cuidado.
+        streak: Días seguidos cuidando alguna mascota.
+        gift: Si ha traído un regalo.
+        food_key: Clave de lo que se ha comido, si ha comido.
+        species: Especie cuidada.
+        eats: Si la especie come (darle de comer a una piedra tiene logro).
+    """
+    delta = StatDelta(peak={"pet_bond_max": level, "pet_tricks_max": tricks,
+                            "pet_streak_max": streak})  # fmt: skip
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            delta.add[stat] = delta.add.get(stat, 0) + 1
+
+    if points > 0:
+        bump("pet_cares")
+        bump({"acariciar": "pet_petted", "jugar": "pet_played", "comer": "pet_fed"}[action])
+    bump("pet_favourite", favourite)
+    bump("pet_gifts", gift)
+    bump("pet_fed_nothing", action == "comer" and not eats)
+    bump("pet_goat_tax", species == "cabra" and food_key == "modelo_100")
+    bump("pet_goat_odd", species == "cabra" and food_key is not None and food_key != "modelo_100")
+    moment = datetime.fromtimestamp(when, TIMEZONE)
+    bump("pet_night", 3 <= moment.hour < 6)
+    bump("pet_san_anton", (moment.month, moment.day) == (1, 17))
+    bump("pet_christmas", (moment.month, moment.day) in {(12, 24), (12, 25)})
+    bump("pet_halloween", (moment.month, moment.day) == (10, 31))
+    bump("pet_canarias", (moment.month, moment.day) == (5, 30))
+    return delta
+
+
+def pet_cameo_stats(*, event: str, when: float) -> StatDelta:
+    """Estadísticas de que la mascota activa salga en un mensaje del bot.
+
+    Args:
+        event: `bot.services.pets.Event` del momento.
+    """
+    delta = StatDelta(add={"pet_cameos": 1})
+    if event == "bust":
+        delta.add["pet_cameo_bust"] = 1
+    if event == "big_win":
+        delta.add["pet_cameo_big"] = 1
+    if datetime.fromtimestamp(when, TIMEZONE).hour < 6:
+        delta.add["pet_cameo_night"] = 1
+    return delta
+
+
+def pet_switch_stats() -> StatDelta:
+    """Estadísticas de cambiar de mascota activa."""
+    return StatDelta(add={"pet_switches": 1})
+
+
+def pet_name_stats(*, name: str) -> StatDelta:
+    """Estadísticas de ponerle nombre a una mascota."""
+    delta = StatDelta(add={"pet_renamed": 1})
+    for mark in _pet_name_marks(name):
+        delta.add[mark] = 1
     return delta
 
 

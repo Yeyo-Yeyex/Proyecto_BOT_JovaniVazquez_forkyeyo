@@ -99,6 +99,7 @@ from bot.services.hold_win import (
 )
 from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Media, Panel
 from bot.services.levels import TIMEZONE
+from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -692,7 +693,12 @@ class HoldWinView(discord.ui.View):
         text = base_text(self.theme, play)
         if note := tax_note([play.settlement]):
             text += f"\n{note}"
-        if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=play.stake, net=play.net, balance_after=play.balance),
+        ):
             text += f"\n{hint}"
         self.last_text = text
         self.last_won = play.payout > 0
@@ -834,7 +840,16 @@ class HoldWinView(discord.ui.View):
             text = self.auto_text(plays, stopped)
             if note := tax_note([p.settlement for p in plays]):
                 text += f"\n{note}"
-            if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            if hint := await renta.hint(
+                self.cog.bot,
+                self.guild_id,
+                self.owner.id,
+                bet_moment(
+                    stake=sum(p.stake for p in plays),
+                    net=sum(p.net for p in plays),
+                    balance_after=plays[-1].balance,
+                ),
+            ):
                 text += f"\n{hint}"
             self.last_text = text
             self.last_won = sum(p.net for p in plays) > 0
@@ -963,7 +978,12 @@ class HoldWinView(discord.ui.View):
             text = bonus_end_text(self.theme, payout)
             if note := tax_note([payout.settlement]):
                 text += f"\n{note}"
-            if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            if hint := await renta.hint(
+                self.cog.bot,
+                self.guild_id,
+                self.owner.id,
+                bet_moment(stake=0, net=payout.amount, balance_after=payout.settlement.balance),
+            ):
                 text += f"\n{hint}"
             won = True
             balance = payout.settlement.balance

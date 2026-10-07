@@ -129,7 +129,7 @@ def _o(weight: int, text: str, flag: str = "") -> Outcome:
 # -- Catálogo de usos ------------------------------------------------------------------
 
 _USES: tuple[Use, ...] = (
-    # 🥫 Ultramarinos -------------------------------------------------------------------
+    # 🥘 Typical Spanish (la comida de siempre) -----------------------------------------
     Use(
         "huevo",
         "Lanzar",
@@ -374,7 +374,7 @@ _USES: tuple[Use, ...] = (
             ),
         ),
     ),
-    # 🌴 Productos de la tierra ----------------------------------------------------------
+    # 🌴 Canarias ---------------------------------------------------------------------------
     Use(
         "gofio",
         "Lanzar",
@@ -499,7 +499,7 @@ _USES: tuple[Use, ...] = (
             ),
         ),
     ),
-    # 🎉 Cotillón ------------------------------------------------------------------------
+    # 🎉 Fiestas y verbenas --------------------------------------------------------------
     Use(
         "petardo",
         "Encender",
@@ -1076,6 +1076,161 @@ _USES: tuple[Use, ...] = (
         ),
         on_self="🪨 {who} mira su piedra. La piedra le mira. Un vínculo así no se compra "
         "con dinero. Bueno, sí: por 1 Y$.",
+    ),
+    # 🍀 Supersticiones: dan una frase, nunca una probabilidad ----------------------------
+    Use(
+        "trebol",
+        "Frotar",
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                45,
+                "🍀 {who} frota el trébol de cuatro hojas antes de jugar. La ruleta ni se "
+                "inmuta: las probabilidades vienen en el código, no en el trébol.",
+            ),
+            _o(
+                35,
+                "🍀 {who} frota el trébol tan fuerte que se le cae una hoja. Ahora es un "
+                "trébol normal. La suerte, también.",
+                "broken",
+            ),
+            _o(
+                20,
+                "🍀 {who} frota el trébol y {collector} aparece a cobrar el 19 % de la "
+                "suerte. Retención a cuenta de la buena fortuna.",
+            ),
+        ),
+    ),
+    Use(
+        "rosario",
+        "Rezar",
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                50,
+                "📿 {who} reza el rosario de la abuela entre tirada y tirada. La abuela, "
+                "desde arriba, pide que deje de apostar.",
+            ),
+            _o(
+                30,
+                "📿 {who} reza un misterio doloroso. Muy adecuado para el saldo que tiene.",
+            ),
+            _o(
+                20,
+                "📿 {who} se lía con las cuentas del rosario y acaba rezando la tabla del "
+                "7. Le sale mejor que la renta.",
+            ),
+        ),
+    ),
+    Use(
+        "calzoncillos",
+        "Ponértelos",
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                50,
+                "🩲 {who} se pone la ropa interior roja de Nochevieja. Si no es 31 de "
+                "diciembre, la tradición no garantiza nada. Si lo es, tampoco.",
+            ),
+            _o(
+                30,
+                "🩲 {who} se pone la ropa interior roja del revés. Según la abuela, eso "
+                "da el doble de suerte. Según la ciencia, no.",
+            ),
+            _o(
+                20,
+                "🩲 {who} enseña la ropa interior roja a todo el canal. Nadie lo había "
+                "pedido, mi amor.",
+                "flash",
+            ),
+        ),
+    ),
+    Use(
+        "pancracio",
+        "Pedir",
+        consumes=False,
+        cooldown=60,
+        pools={
+            "deseo": (
+                "trabajo",
+                "salud",
+                "que salga el rojo",
+                "una cita previa en el SEPE",
+                "que Perro Sanxe se olvide de su renta",
+                "un piso de alquiler por menos de 1.000 €",
+            ),
+        },
+        outcomes=(
+            _o(
+                60,
+                "🙏 {who} le pone perejil a San Pancracio y le pide {deseo}. El santo "
+                "toma nota y le da número: van por el 2.",
+            ),
+            _o(
+                40,
+                "🙏 {who} le pide {deseo} a San Pancracio sin perejil. El santo no "
+                "trabaja sin perejil. Ni los domingos.",
+                "no_parsley",
+            ),
+        ),
+    ),
+    # 💎 Vida de rico ----------------------------------------------------------------------
+    Use(
+        "champan",
+        "Descorchar",
+        outcomes=(
+            _o(
+                60,
+                "🥂 {who} descorcha el champán francés de los caros. Burbujas finas, "
+                "brindis largo y una factura con el 15 % de IGIC de lujo para "
+                "{collector}.",
+                "pop",
+            ),
+            _o(
+                25,
+                "🥂 {who} abre el champán y lo sirve en vaso de plástico. El sumiller "
+                "llora en francés.",
+            ),
+            _o(
+                15,
+                "🥂 {who} descorcha el champán y resulta que era cava. Nadie lo nota. "
+                "Nadie lo nota nunca.",
+                "fake",
+            ),
+        ),
+    ),
+    # 🐾 Tienda de animales ----------------------------------------------------------------
+    Use(
+        "pelota",
+        "Lanzar",
+        Target.MEMBER,
+        consumes=False,
+        cooldown=60,
+        outcomes=(
+            _o(
+                50,
+                "🎾 {who} le lanza la pelota de tenis babeada a {target}. Llega llena de "
+                "babas. Era de esperar.",
+                "hit",
+            ),
+            _o(
+                30,
+                "🎾 {who} lanza la pelota hacia {target} y medio barrio de perros sale "
+                "corriendo detrás. {target} acaba en el suelo.",
+                "dogs",
+            ),
+            _o(
+                20,
+                "🎾 {target} caza al vuelo la pelota que le lanza {who} y se la queda. "
+                "Ahora la pelota tiene dos dueños y ninguno quiere tocarla.",
+                "caught",
+            ),
+        ),
+        on_self="🎾 {who} se lanza la pelota a sí mismo y va a buscarla. Alguien tenía "
+        "que hacerlo si no hay perro.",
     ),
 )
 
