@@ -16,7 +16,7 @@ async def test_level_up_announcement_uses_message_channel() -> None:
     """El aviso de nivel se publica en el canal recibido del evento de mensaje."""
     channel = MagicMock()
     channel.send = AsyncMock()
-    member = SimpleNamespace(display_name="Nombre Visible")
+    member = SimpleNamespace(id=200, display_name="Nombre Visible")
     guild = SimpleNamespace(id=100)
     cog = MessageStats(MagicMock(), MagicMock())
 

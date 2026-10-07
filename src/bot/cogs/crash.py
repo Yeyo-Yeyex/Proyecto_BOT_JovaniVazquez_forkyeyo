@@ -78,6 +78,7 @@ from bot.services.economy import (
     gambling_tax_line,
     parse_amount,
 )
+from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -570,7 +571,16 @@ class CrashTable:
         settlement = self.settlements.get(user_id)
         if settlement is not None and (note := gambling_tax_line(settlement)):
             text += f"\n{note}"
-        if hint := await renta.hint(self.cog.bot, self.guild_id, user_id):
+        if hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            user_id,
+            bet_moment(
+                stake=seat.stake,
+                net=seat.net,
+                balance_after=settlement.balance if settlement is not None else 0,
+            ),
+        ):
             text += f"\n{hint}"
         try:
             await interaction.followup.send(text, ephemeral=True)

@@ -71,7 +71,7 @@ python -m bot
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🏆 Logros | `logros [miembro]` |
-  | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
+  | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
   | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `patrimonio [miembro]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
@@ -172,8 +172,9 @@ python -m bot
   compras de la tienda, al tipo de cada artículo: cero, reducido (3 %),
   general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),
   como en los arts. 51 a 59 de la Ley 4/2012 de Canarias.
-- **Tienda** (`tienda`): El Colmado de Jovani. Escaparate con pestañas
-  (🎭 roles, ⚡ XP, 💎 vitrina, 🫳 para usar) y un desplegable de pasillos,
+- **Tienda** (`tienda`): El Colmado de Jovani. Escaparate con pestañas por
+  lo que hace cada artículo (🎭 roles, ⚡ XP, 🐾 mascotas, 💎 vitrina, 🫳 para
+  usar) y un desplegable de pasillos por su tema,
   cada artículo con su botón **Comprar**, rebajas tachadas, existencias que
   quedan y etiquetas de 🆕 nuevo y 🔥 lo más vendido. Los precios van sin IGIC; la caja enseña el
   ticket (precio, rebaja, base, IGIC y total) y pide confirmar. Al pagar
@@ -187,14 +188,18 @@ python -m bot
     tiempo; si ya tienes uno, el nuevo se pone a la cola.
   - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
     numerada ("nº 3 de 10").
-  - Surtido de serie: 155 artículos que se meten solos en cada servidor la
-    primera vez que se abre la tienda, repartidos en 12 pasillos (La
-    Moncloa, Productos de la tierra, Ultramarinos, Cotillón, Bazar, Amuletos,
-    Ventanilla, Rincón boricua, Importación de Hong Kong, Lo que no debería
-    venderse, Joyería y lujo y Farmacia de guardia). Del Falcon (50 millones,
-    una unidad) a la piedra (1 Y$), cada uno con el IGIC que le tocaría de
-    verdad. Lo que un administrador retire no vuelve solo.
-  - Objetos que se usan (51): desde la `mochila`, contra alguien o sin más:
+  - Surtido de serie: 189 artículos a la venta (152 objetos, 15
+    potenciadores y 22 mascotas) que se meten solos en cada servidor la
+    primera vez que se abre la tienda, repartidos en 12 pasillos por tema (La
+    Moncloa, Ventanilla, Canarias, Typical Spanish, Fiestas y verbenas,
+    Supersticiones, Bazar de todo a 100, Rincón boricua, Importación de Hong
+    Kong, Vida de rico, Lo que no debería venderse y Tienda de animales). Del
+    Falcon (50 millones, una unidad) a la piedra (1 Y$), cada uno con el IGIC
+    que le tocaría de verdad. Lo que se come lleva 🍽️ (las mascotas se lo
+    comen). Lo que un administrador retire no vuelve solo. Las reglas para
+    añadir artículos (tipo por lo que hace, pasillo por su tema) están en la
+    Biblia.
+  - Objetos que se usan (57): desde la `mochila`, contra alguien o sin más:
     huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
     Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
     bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
@@ -204,6 +209,24 @@ python -m bot
     usos. Usar no mueve dinero.
   - `mochila [miembro]` enseña lo que tiene alguien; su dueño puede ponerse y
     quitarse los roles que compró para siempre y usar sus objetos.
+- **Mascotas** (`mascota [miembro]`): 28 especies con su personalidad, del
+  gato que te tira la ficha de la mesa a Perro Sanxe (una en todo el
+  servidor). 22 se adoptan en la tienda (perros, gatos y hurones con «tasa de
+  adopción», que la Ley 7/2023 no deja venderlos) y 6 aparecen solas: la
+  cucaracha cuando te quedas a cero, el gato callejero al cobrar el IMV, la
+  cotorra al subir de nivel, el lagarto gigante de El Hierro el Día de
+  Canarias… Puedes tener todas las que quieras; una va contigo.
+  - El panel deja acariciarla, jugar con ella y darle de comer lo que tengas
+    en la mochila (cada una tiene su comida favorita; la cabra se come
+    cualquier cosa, Modelo 100 incluido), ponerle nombre y elegir cuál te
+    acompaña. Los demás solo miran.
+  - Cuidar sube el vínculo, que nunca baja. Da poco a propósito: hasta +5 %
+    de XP con la que llevas, trucos nuevos a nivel 3, 6 y 9, y a veces un
+    regalo del colmado. No hay castigo por no cuidarla.
+  - La que va contigo sale en los mensajes del bot con una frase suya: en
+    las jugadas del casino, la lotería, `pala`, el IMV, la tienda, los
+    niveles, los logros y tu cumpleaños. Siempre en los momentos sonados
+    (pelotazo, quedarte a cero) y de vez en cuando en los demás.
   - La base de cada venta va a la caja de la tienda (`user_id = -200`) y el
     IGIC al Estado; `hacienda` lo cuenta como recaudado.
 - **Trastienda** (`catalogo`, solo administradores): panel con botones para
@@ -365,15 +388,15 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.374 logros en 34 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.560 logros en 36 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
   (una sección por juego); y además social, lista, niveles, loterías,
-  tienda, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
+  tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 232 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 275 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -627,6 +650,7 @@ src/bot/
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
+│   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
@@ -654,6 +678,8 @@ src/bot/
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
+│   ├── pets.py          # Reglas de las mascotas: vínculo, cuidados, momentos y cameos
+│   ├── pets_catalog.py  # Especies de mascota: personalidad, frases y trucos
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack

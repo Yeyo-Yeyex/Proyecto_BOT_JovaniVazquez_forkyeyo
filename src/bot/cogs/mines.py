@@ -69,6 +69,7 @@ from bot.services.mines import (
     milestone,
     risk_summary,
 )
+from bot.services.pets import bet_moment
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -385,7 +386,12 @@ class MinesBoard(ui.LayoutView):
         notes = []
         if tax := gambling_tax_line(settlement):
             notes.append(tax)
-        if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=game.stake, net=game.net, balance_after=settlement.balance),
+        ):
             notes.append(hint)
         self.note = "\n".join(notes) or None
         return settlement

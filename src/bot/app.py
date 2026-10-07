@@ -22,6 +22,7 @@ from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.hold_win import HoldWinRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
+from bot.repositories.pets import PetRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
@@ -57,6 +58,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.donations",
     "bot.cogs.bizum",
     "bot.cogs.shop",
+    "bot.cogs.pets",
     "bot.cogs.work",
     "bot.cogs.birthdays",
     "bot.cogs.todo",
@@ -110,6 +112,8 @@ class BotClient(commands.Bot):
         self.welcome = WelcomeRepository(database_path)
         # Catálogo e inventario de la tienda; el dinero de cada compra pasa por `economy`.
         self.shop = ShopRepository(database_path)
+        # Estado de las mascotas (`mascota`); quién tiene cada una lo dice la tienda.
+        self.pets = PetRepository(database_path)
         # Sorteos y boletos de `loteria`; el dinero también pasa por `economy`.
         self.lottery = LotteryRepository(database_path)
         # Lista de cosas que hacer del servidor (`lista`).
@@ -145,6 +149,7 @@ class BotClient(commands.Bot):
         await self.achievements.initialize()
         await self.welcome.initialize()
         await self.shop.initialize()
+        await self.pets.initialize()
         await self.lottery.initialize()
         await self.todo.initialize()
         await self.hold_win.initialize()

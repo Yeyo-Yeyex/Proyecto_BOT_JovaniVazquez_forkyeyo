@@ -48,6 +48,7 @@ from bot.services.economy import (
     gambling_tax_line,
     parse_amount,
 )
+from bot.services.pets import bet_moment
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -455,7 +456,12 @@ class BlackjackTable(discord.ui.View):
         self.headline = result_headline(game)
         if tax_note:
             self.headline += f"\n{tax_note}"
-        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if renta_hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=game.total_stake, net=game.net, balance_after=balance),
+        ):
             self.headline += f"\n{renta_hint}"
         return balance
 

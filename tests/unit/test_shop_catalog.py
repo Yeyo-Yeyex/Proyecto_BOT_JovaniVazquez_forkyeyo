@@ -33,6 +33,7 @@ from bot.services.achievements import (
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.levels import TIMEZONE
+from bot.services.pets_catalog import SPECIES, species_of
 from bot.services.shop import (
     MAX_BOOST,
     MAX_DESCRIPTION,
@@ -45,7 +46,16 @@ from bot.services.shop import (
     MIN_SPAN,
     Kind,
 )
-from bot.services.shop_catalog import AISLES, CATALOG, CATALOG_BY_KEY, aisle_of, use_of
+from bot.services.shop_catalog import (
+    AISLES,
+    CATALOG,
+    CATALOG_BY_KEY,
+    MIN_AISLE_SIZE,
+    RETIRED_AISLES,
+    Aisle,
+    aisle_of,
+    use_of,
+)
 from bot.services.shop_uses import (
     MYSTERY_JACKPOT,
     USES,
@@ -85,7 +95,16 @@ def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
         assert entry.igic in IGIC_BY_KEY, entry.key
         assert 0 <= entry.min_level <= MAX_LEVEL, entry.key
         assert entry.stock is None or 1 <= entry.stock <= MAX_STOCK, entry.key
-        assert entry.kind in (Kind.TROPHY, Kind.BOOST), "los roles dependen del servidor"
+        assert entry.kind is not Kind.ROLE, "los roles dependen del servidor"
+        if entry.kind is Kind.PET:
+            species = species_of(entry.key)
+            assert species is not None, entry.key
+            assert entry.per_user == 1, "una de cada especie por persona"
+            assert entry.visible is species.adoptable, entry.key
+        else:
+            assert entry.visible, "solo las mascotas que aparecen solas van ocultas"
+        if entry.food:
+            assert entry.kind is Kind.TROPHY, entry.key
         if entry.kind is Kind.BOOST:
             assert entry.multiplier is not None and MIN_BOOST <= entry.multiplier <= MAX_BOOST
             assert entry.duration is not None and MIN_SPAN <= entry.duration <= MAX_SPAN
@@ -100,10 +119,31 @@ def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
 def test_cada_uso_tiene_su_articulo_y_cada_pasillo_su_surtido() -> None:
     used = {entry.use for entry in CATALOG if entry.use}
     assert used == set(USES)
-    for aisle in AISLES:
-        assert sum(1 for e in CATALOG if e.aisle == aisle.key) >= 5, aisle.key
     # Un desplegable de Discord admite 25 opciones: «Todos» + pasillos + «De la casa».
     assert len(AISLES) + 2 <= 25
+
+
+@pytest.mark.parametrize("aisle", AISLES, ids=lambda a: a.key)
+def test_ficha_de_alta_de_cada_pasillo(aisle: Aisle) -> None:
+    """Las reglas de la Biblia para los pasillos: tema, tamaño y algo que usar."""
+    assert aisle.theme, "cada pasillo dice de qué va"
+    on_sale = [e for e in CATALOG if e.aisle == aisle.key and e.visible]
+    assert len(on_sale) >= MIN_AISLE_SIZE, f"{aisle.key}: si no llega, va dentro de otro"
+    assert any(e.use for e in on_sale), f"{aisle.key}: necesita al menos un objeto que se use"
+
+
+def test_pasillos_retirados_no_vuelven_y_heredan_en_uno_que_existe() -> None:
+    keys = {a.key for a in AISLES}
+    assert all(e.aisle in keys for e in CATALOG), "cada artículo en un pasillo que existe"
+    assert not set(RETIRED_AISLES) & keys, "una clave retirada no se reutiliza"
+    assert all(heir is None or heir in keys for heir in RETIRED_AISLES.values())
+
+
+def test_las_mascotas_comen_lo_que_vende_el_colmado() -> None:
+    for species in SPECIES:
+        for key in species.favourites:
+            entry = CATALOG_BY_KEY[key]
+            assert entry.food or species.diet == "todo", (species.key, key)
 
 
 @pytest.mark.parametrize(
@@ -134,7 +174,8 @@ def test_lujo_y_patrimonio() -> None:
 def test_lo_retirado_no_tiene_pasillo_y_va_a_la_casa() -> None:
     assert aisle_of(None).key == "casa"
     assert aisle_of("no_existe").key == "casa"
-    assert aisle_of("huevo").key == "ultramarinos"
+    assert aisle_of("huevo").key == "espana"
+    assert aisle_of("mascota_canario").key == "canarias"
     assert use_of("huevo") is USES["huevo"]
     assert use_of("falcon") is None
 
@@ -294,6 +335,13 @@ def test_derivados_cuentan_usos_y_pasillos_distintos() -> None:
          "shop_aisle_moncloa": 1, "shop_aisle_casa": 4, "shop_aisle_lujo": 0}
     )  # fmt: skip
     assert full[SHOP_USE_KINDS_STAT] == 2
+    assert full[SHOP_AISLES_STAT] == 1
+
+
+def test_lo_comprado_en_un_pasillo_retirado_cuenta_para_su_heredero() -> None:
+    full = with_derived(
+        {"shop_aisle_ultramarinos": 2, "shop_aisle_espana": 1, "shop_aisle_farmacia": 5}
+    )
     assert full[SHOP_AISLES_STAT] == 1
 
 
@@ -461,7 +509,7 @@ async def test_escaparate_se_llena_solo_y_cabe_en_cada_pestana_y_pasillo(tmp_pat
     cog = await make_cog(tmp_path, Clock())
     guild = make_guild()
     view = await cog.storefront(guild, make_member(guild))
-    assert len(view.items_all) == len(CATALOG)
+    assert len(view.items_all) == sum(1 for e in CATALOG if e.visible)
     for tab, _label in TABS:
         for aisle in (None, *(a.key for a in AISLES)):
             view.tab, view.aisle, view.page = tab, aisle, 0
@@ -473,6 +521,8 @@ async def test_escaparate_se_llena_solo_y_cabe_en_cada_pestana_y_pasillo(tmp_pat
                 assert all(aisle_of(i.catalog_key).key == aisle for i in view.shown)
     view.tab, view.aisle = "uso", None
     assert {use_of(i.catalog_key) is not None for i in view.shown} == {True}
+    view.tab = "mascota"
+    assert view.shown and {i.kind for i in view.shown} == {Kind.PET}
 
 
 async def test_pasillo_desde_el_desplegable(tmp_path: Path) -> None:

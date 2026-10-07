@@ -152,10 +152,56 @@ def _entry(row: sqlite3.Row) -> InventoryEntry:
     )
 
 
-# Orden del escaparate: roles, potenciadores y coleccionables; dentro, de barato a caro.
+# Orden del escaparate: roles, potenciadores, mascotas y coleccionables; dentro, de
+# barato a caro.
 _ITEM_ORDER = """
-    ORDER BY CASE kind WHEN 'rol' THEN 0 WHEN 'xp' THEN 1 ELSE 2 END, price, id
+    ORDER BY CASE kind WHEN 'rol' THEN 0 WHEN 'xp' THEN 1 WHEN 'mascota' THEN 2 ELSE 3 END,
+        price, id
 """
+
+
+def _allow_pets(connection: sqlite3.Connection) -> None:
+    """Deja entrar el tipo `mascota` en las bases de datos de antes de las mascotas.
+
+    SQLite no deja cambiar un `CHECK`: hay que rehacer la tabla. Se copia
+    entera con sus `id` (las ventas y las mochilas apuntan a ellos) y en una
+    sola transacción, así que si algo falla queda la tabla de antes.
+    """
+    (sql,) = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'shop_items'"
+    ).fetchone()
+    if "'mascota'" in sql:
+        return
+    # El contador de AUTOINCREMENT se guarda aparte: sin él, un artículo nuevo
+    # podría heredar el id de uno retirado que sigue en las mochilas.
+    sequence = connection.execute(
+        "SELECT seq FROM sqlite_sequence WHERE name = 'shop_items'"
+    ).fetchone()
+    with connection:
+        connection.execute("ALTER TABLE shop_items RENAME TO shop_items_old")
+        connection.execute(
+            sql.replace("'objeto')", "'objeto', 'mascota')").replace(
+                "CREATE TABLE shop_items_old", "CREATE TABLE shop_items"
+            )
+        )
+        columns = ", ".join(
+            row[1] for row in connection.execute("PRAGMA table_info(shop_items_old)")
+        )
+        connection.execute(
+            f"INSERT INTO shop_items ({columns}) SELECT {columns} FROM shop_items_old"
+        )
+        connection.execute("DROP TABLE shop_items_old")
+        connection.execute("CREATE INDEX IF NOT EXISTS shop_items_guild ON shop_items (guild_id)")
+        if sequence is not None:
+            connection.execute(
+                "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'shop_items'",
+                (sequence[0],),
+            )
+            connection.execute(
+                "INSERT INTO sqlite_sequence (name, seq) SELECT 'shop_items', ? "
+                "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'shop_items')",
+                (sequence[0],),
+            )
 
 
 class ShopRepository:
@@ -190,7 +236,7 @@ class ShopRepository:
                 CREATE TABLE IF NOT EXISTS shop_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
-                    kind TEXT NOT NULL CHECK (kind IN ('rol', 'xp', 'objeto')),
+                    kind TEXT NOT NULL CHECK (kind IN ('rol', 'xp', 'objeto', 'mascota')),
                     name TEXT NOT NULL,
                     emoji TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
@@ -271,6 +317,7 @@ class ShopRepository:
                 if "catalog_key" not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN catalog_key TEXT")
             connection.commit()
+            _allow_pets(connection)
         finally:
             connection.close()
 
@@ -362,6 +409,22 @@ class ShopRepository:
         try:
             row = connection.execute(
                 "SELECT * FROM shop_items WHERE guild_id = ? AND id = ?", (guild_id, item_id)
+            ).fetchone()
+        finally:
+            connection.close()
+        return _item(row) if row else None
+
+    async def item_by_key(self, guild_id: int, catalog_key: str) -> ShopItem | None:
+        """El artículo del surtido de serie con esa clave, aunque esté oculto."""
+        return await self._run(self._item_by_key_sync, guild_id, catalog_key)
+
+    def _item_by_key_sync(self, guild_id: int, catalog_key: str) -> ShopItem | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT * FROM shop_items WHERE guild_id = ? AND catalog_key = ? "
+                "ORDER BY id LIMIT 1",
+                (guild_id, catalog_key),
             ).fetchone()
         finally:
             connection.close()
@@ -925,8 +988,9 @@ class ShopRepository:
                         """
                         INSERT INTO shop_items
                             (guild_id, kind, name, emoji, description, price, igic, duration,
-                             multiplier, stock, per_user, min_level, created_at, catalog_key)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             multiplier, stock, per_user, min_level, created_at, catalog_key,
+                             visible)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             guild_id,
@@ -943,6 +1007,7 @@ class ShopRepository:
                             entry.min_level,
                             now,
                             entry.key,
+                            int(entry.visible),
                         ),
                     )
                     connection.execute(

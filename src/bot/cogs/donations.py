@@ -32,6 +32,7 @@ from bot.services.economy import (
     format_amount,
     parse_amount,
 )
+from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -121,7 +122,7 @@ class Donaciones(commands.Cog):
             f"-# 🐶 Esta semana llevas {format_amount(receipt.donated_week)} donados. "
             f"Desgrava el {deduction_rule_text()}; te vuelve en la renta del lunes.",
         ]
-        hint = await renta.hint(self.bot, guild.id, user.id)
+        hint = await renta.hint(self.bot, guild.id, user.id, Moment())
         if hint is not None:
             lines.append(hint)
         await responder.send(

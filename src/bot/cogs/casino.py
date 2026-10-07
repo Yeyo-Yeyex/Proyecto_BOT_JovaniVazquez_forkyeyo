@@ -34,6 +34,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import pets as mascotas
 from bot.services.achievements import StatDelta, casino_stats, hacienda_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -51,6 +52,7 @@ from bot.services.economy import (
     treasury_embed,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.pets import Event, Moment, bet_moment
 from bot.services.roulette import (
     COLOR_EMOJI,
     OUTSIDE_BETS,
@@ -571,7 +573,12 @@ class RouletteTable(discord.ui.View):
         self.last_text = result_text(outcome)
         if result.tax_note:
             self.last_text += f"\n{result.tax_note}"
-        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if renta_hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=outcome.stake, net=outcome.net, balance_after=result.balance),
+        ):
             self.last_text += f"\n{renta_hint}"
         self._set_enabled(True)
         await final_edit(
@@ -993,6 +1000,7 @@ class Casino(commands.Cog):
             )
         elif result.work_net:
             work = "\n🪏 Trabajas y cobras el IMV entero: aún no pasas del mínimo exento."
+        pet = await mascotas.cameo(self.bot, responder.guild.id, user.id, Moment(Event.IMV))
         embed = discord.Embed(
             description=(
                 f"# {CURRENCY_EMOJI} +{format_amount(result.amount)}\n"
@@ -1001,7 +1009,7 @@ class Casino(commands.Cog):
                 f"{' (menos lo que trabajes)' if result.work_net else ''}. "
                 f"Si pasan más de 48 h, la racha se pierde.\n"
                 f"-# 🐶 {TAX_COLLECTOR} no puede tocarlo: el IMV está exento de IRPF "
-                "(art. 7.y LIRPF)."
+                "(art. 7.y LIRPF)." + (f"\n{pet}" if pet else "")
             ),
             color=COLOR_WIN,
         )

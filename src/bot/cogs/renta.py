@@ -36,6 +36,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import intereses
+from bot.cogs import pets as mascotas
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
@@ -45,6 +46,7 @@ from bot.services.economy import (
     week_start,
 )
 from bot.services.levels import TIMEZONE, local_day
+from bot.services.pets import Moment
 from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
 
@@ -85,12 +87,21 @@ async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
         await cog.remind(interaction)
 
 
-async def hint(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
+async def hint(
+    bot: commands.Bot, guild_id: int, user_id: int, moment: Moment | None = None
+) -> str | None:
     """Líneas pequeñas para el resultado de cualquier acción con dinero, o `None`.
 
-    La de la renta pendiente y, una sola vez, la de los intereses que el miembro
-    aún no ha visto (`bot.cogs.intereses`). Así el cobro diario de la cuenta
-    llega a todos los juegos sin tocarlos uno a uno.
+    La de la renta pendiente; una sola vez, la de los intereses que el miembro
+    aún no ha visto (`bot.cogs.intereses`); y lo que diga su mascota activa
+    (`bot.cogs.pets.cameo`). Así el cobro diario de la cuenta y las mascotas
+    llegan a todos los juegos sin tocarlos uno a uno.
+
+    Args:
+        moment: Lo que acaba de pasar (`bot.services.pets.bet_moment` en una
+            jugada), para que la mascota reaccione a eso y para que puedan
+            aparecer mascotas nuevas. Sin él, la mascota habla de dinero en
+            general y no aparece ninguna.
     """
     lines = []
     if (cog := find_cog(bot, Renta)) is not None and (
@@ -98,6 +109,8 @@ async def hint(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
     ):
         lines.append(line)
     if line := await intereses.hint(bot, guild_id, user_id):
+        lines.append(line)
+    if line := await mascotas.cameo(bot, guild_id, user_id, moment):
         lines.append(line)
     return "\n".join(lines) if lines else None
 

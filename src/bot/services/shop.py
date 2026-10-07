@@ -10,6 +10,10 @@ Qué se vende (`Kind`):
   acaba el anterior, para que no se pisen.
 - **Coleccionables** (`objeto`): no hacen nada, solo se tienen. Si tienen
   existencias limitadas, cada unidad lleva su número de serie ("nº 3 de 10").
+  Algunos se usan desde la `mochila` (`bot.services.shop_uses`).
+- **Mascotas** (`mascota`): solo del surtido de serie
+  (`bot.services.pets_catalog`); se cuidan con `mascota` y la activa sale en
+  los mensajes del bot (`bot.services.pets`).
 
 Todo el catálogo lo montan los administradores con `catalogo`: precio, tipo
 de IGIC, rebajas con fecha de fin, existencias, límite por persona y nivel
@@ -28,6 +32,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from bot.services.levels import TIMEZONE
+from bot.services.pets_catalog import species_of
 from bot.services.taxes import IGIC_BY_KEY, IGIC_DEFAULT, IgicRate, igic
 
 SHOP_NAME = "El Colmado de Jovani"
@@ -39,16 +44,22 @@ class Kind(StrEnum):
     ROLE = "rol"
     BOOST = "xp"
     TROPHY = "objeto"
+    PET = "mascota"
 
     @property
     def title(self) -> str:
         """Nombre de la sección del escaparate."""
-        return {"rol": "Roles", "xp": "Potenciadores", "objeto": "Coleccionables"}[self.value]
+        return {
+            "rol": "Roles",
+            "xp": "Potenciadores",
+            "objeto": "Coleccionables",
+            "mascota": "Mascotas",
+        }[self.value]
 
     @property
     def icon(self) -> str:
         """Emoji de la sección y emoji por defecto de sus artículos."""
-        return {"rol": "🎭", "xp": "⚡", "objeto": "💎"}[self.value]
+        return {"rol": "🎭", "xp": "⚡", "objeto": "💎", "mascota": "🐾"}[self.value]
 
 
 # -- Límites ---------------------------------------------------------------------------
@@ -244,6 +255,9 @@ def ineligibility(
     """
     if not item.visible:
         return "Ese artículo ya no está a la venta."
+    if item.kind is Kind.PET and (species := species_of(item.catalog_key)) is not None:
+        if not species.adoptable:
+            return "Esa mascota no se vende: aparece sola cuando le da la gana."
     if item.sold_out:
         return "Agotado, mi amor. Llegaste tarde."
     if item.min_level and level < item.min_level:

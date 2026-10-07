@@ -58,6 +58,8 @@ from bot.services.pala import (
     WorkError,
     WorkService,
 )
+from bot.services.pets import Event as PetEvent
+from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
 from bot.services.work import (
     FAMILY_WORRIED,
@@ -907,7 +909,7 @@ class PalaPanel(ui.LayoutView):
         finally:
             self.shift = None
             self.cog.working.discard((self.guild_id, self.owner.id))
-        extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id)
+        extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK))
         self.show_outcome(outcome, extra)
         await self._edit(interaction)
         if interaction is not None:

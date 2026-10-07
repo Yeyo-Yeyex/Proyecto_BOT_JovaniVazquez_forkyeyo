@@ -34,6 +34,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.repositories.birthdays import BirthdayRepository
 from bot.services.achievements import StatDelta
@@ -56,6 +57,7 @@ from bot.services.economy import (
     tax_line,
 )
 from bot.services.levels import local_day
+from bot.services.pets import Event, Moment
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -320,6 +322,10 @@ class Birthdays(commands.Cog):
             ),
             color=COLOR,
         )
+        # En su cumpleaños, la mascota que lleve sale siempre a felicitarle.
+        moment = Moment(Event.BIRTHDAY, notable=True)
+        if pet := await mascotas.cameo(self.bot, guild.id, member.id, moment):
+            embed.description = f"{embed.description}\n{pet}"
         embed.set_thumbnail(url=member.display_avatar.url)
         view = discord.ui.View(timeout=None)
         view.add_item(GreetButton(member.id, year))

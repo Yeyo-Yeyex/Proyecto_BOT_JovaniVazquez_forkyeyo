@@ -405,3 +405,33 @@ def tienda_use(key: str):  # noqa: ANN201
     from bot.services.shop_uses import USES
 
     return USES[key]
+
+
+async def test_las_mascotas_llegan_a_todos_con_el_bot_real(tmp_path: Path) -> None:
+    """Niveles, Renta, tienda, IMV, logros y cumpleaños cargan antes o después de
+    `bot.cogs.pets`: todos tienen que encontrar la mascota activa."""
+    from bot.services.pets import BOND_LEVELS, Event, Moment, PetState
+
+    client = await load_bot(tmp_path)
+    try:
+        pets = client.get_cog("Mascotas")
+        assert pets is not None
+        pets.active[(GUILD_ID, OWNER_ID)] = PetState(
+            id=1, guild_id=GUILD_ID, user_id=OWNER_ID, species="perro", name="Toby",
+            bond=BOND_LEVELS[4],
+        )  # fmt: skip
+        loud = Moment(Event.BIG_WIN)  # sonado y sin apariciones
+        for cog_name in ("MessageStats", "Renta", "Tienda", "Casino", "Achievements",
+                         "Birthdays"):  # fmt: skip
+            module = importer(cog_name, client)
+            assert module.mascotas.xp_bonus(client, GUILD_ID, OWNER_ID, voice=False) > 1.0
+            line = await module.mascotas.cameo(client, GUILD_ID, OWNER_ID, loud)
+            assert line is not None and "**Toby**" in line, cog_name
+        # Los juegos llegan a la mascota a través de la Renta.
+        client.get_cog("Renta").hint_for = AsyncMock(return_value=None)
+        for game in GAMES:
+            module = importer(game, client)
+            hint = await module.renta.hint(client, GUILD_ID, OWNER_ID, loud)
+            assert hint is not None and "**Toby**" in hint, game
+    finally:
+        await client.close()
