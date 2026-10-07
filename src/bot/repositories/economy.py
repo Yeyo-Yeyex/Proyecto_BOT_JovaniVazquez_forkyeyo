@@ -1187,7 +1187,7 @@ class EconomyRepository:
                 las anteriores.
             week_end: Fin (epoch) de una semana dado su lunes ISO.
             refund_for: Recibe `(neto, retenido, renta de otros ingresos en los
-                30 días previos al cierre)` y devuelve lo que sale a devolver
+                7 días previos al cierre)` y devuelve lo que sale a devolver
                 del casino.
             keep: Cuántas declaraciones pendientes se guardan como máximo; las
                 más antiguas caducan y el dinero se queda en el Estado.
@@ -2558,9 +2558,13 @@ class EconomyRepository:
         que es la renta que ven el casino y la declaración.
 
         Args:
-            payslip_for: Recibe `(bruto, bruto de nómina de la ventana)` y
-                devuelve la nómina. La regla vive en `bot.services.taxes`.
-            window_seconds: Ventana del bruto que se pasa a `payslip_for`.
+            payslip_for: Recibe `(bruto, renta sujeta de la ventana)` y
+                devuelve la nómina. La renta es toda la del miembro (nóminas,
+                premios, casino en positivo), la misma que ven los premios y el
+                casino (`_recent_taxable_in`), en la escala general; pasarla a
+                la de nóminas es cosa de quien la recibe. La regla vive en
+                `bot.services.taxes`.
+            window_seconds: Ventana de la renta que se pasa a `payslip_for`.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -2587,14 +2591,8 @@ class EconomyRepository:
         window_seconds: float,
     ) -> tuple[Payslip, int]:
         with self._transaction() as connection:
-            (recent,) = connection.execute(
-                """
-                SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
-                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = 'es'
-                """,
-                (guild_id, user_id, now - window_seconds),
-            ).fetchone()
-            slip = payslip_for(gross, int(recent))
+            recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
+            slip = payslip_for(gross, recent)
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.ss_worker:
                 entries.append(LedgerEntry(-slip.ss_worker, f"ss:{concept}"))
@@ -2828,7 +2826,7 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int], ForeignPayslip],
+        payslip_for: Callable[[int, int, int], ForeignPayslip],
         window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         """Paga una nómina cobrada fuera de España.
@@ -2839,8 +2837,9 @@ class EconomyRepository:
         Estado. La parte sujeta en España queda en `economy_tax_records`.
 
         Args:
-            payslip_for: Recibe `(bruto, bruto de fuera de la ventana)` y
-                devuelve la nómina.
+            payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta
+                sujeta en España de la ventana en la escala general)` y devuelve
+                la nómina.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -2867,7 +2866,7 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int], ForeignPayslip],
+        payslip_for: Callable[[int, int, int], ForeignPayslip],
         window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         with self._transaction() as connection:
@@ -2879,7 +2878,8 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since, country),
             ).fetchone()
-            slip = payslip_for(gross, int(recent_foreign))
+            recent_es = self._recent_taxable_in(connection, guild_id, user_id, since)
+            slip = payslip_for(gross, int(recent_foreign), recent_es)
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.mpf_worker:
                 entries.append(LedgerEntry(-slip.mpf_worker, f"mpf:{concept}"))

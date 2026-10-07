@@ -350,8 +350,8 @@ def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -
 #: personal estatal (art. 57 LIRPF) al cambio del juego. El autonómico de
 #: Canarias es algo mayor, así que la primera mordida siempre es la estatal.
 FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
-#: Lo mismo en la ventana de 30 días que usa la retención (`compute_withholding`).
-FIRST_TAX_MONTHLY = FIRST_TAX_YEARLY * 30 // 365
+#: Lo mismo en la ventana de 7 días que usa la retención (`compute_withholding`).
+FIRST_TAX_WEEKLY = FIRST_TAX_YEARLY * 7 // 365
 
 
 #: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
@@ -369,9 +369,9 @@ def _thousands(value: int) -> str:
 FIRST_TAX_STORY = (
     f"🐶 **¡Ay, bendito! {TAX_COLLECTOR} te encontró.** Hasta hoy cobrabas limpito "
     f"porque no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, "
-    f"unos {_thousands(FIRST_TAX_MONTHLY)} Y$ cada 30 días. Te pasaste, mi amor, y "
-    "desde hoy cada premio, cada nivel y cada pelotazo del casino pasa antes por su "
-    "cartera. Cuanto más ganas, más se lleva.\n"
+    f"unos {_thousands(FIRST_TAX_WEEKLY)} Y$ a la semana, sumando todo lo que cobras. "
+    "Te pasaste, mi amor, y desde hoy cada premio, cada nivel, cada nómina y cada "
+    "pelotazo del casino pasa antes por su cartera. Cuanto más ganas, más se lleva.\n"
     "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
     "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
 )

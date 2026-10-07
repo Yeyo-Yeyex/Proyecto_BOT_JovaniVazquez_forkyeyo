@@ -53,14 +53,14 @@ async def test_perder_otro_dia_de_la_semana_sale_a_devolver(tmp_path: Path) -> N
     service = await make_service(tmp_path, clock)
     win = await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
     clock.at(day(7))
-    await service.settle_bet(GUILD, USER, game="ruleta", stake=25_000, payout=0)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=20_000, payout=0)
 
     assert await service.pending_declarations(GUILD, USER) == []  # la semana sigue abierta
 
     clock.at(day(12, hour=9))
     pending = await service.pending_declarations(GUILD, USER)
 
-    assert pending == [Declaration(date(2026, 10, 5), win.tax_delta - gambling_day_tax(10_000, 0))]
+    assert pending == [Declaration(date(2026, 10, 5), win.tax_delta - gambling_day_tax(15_000, 0))]
 
 
 async def test_presentar_cobra_del_estado_una_sola_vez(tmp_path: Path) -> None:
@@ -68,7 +68,7 @@ async def test_presentar_cobra_del_estado_una_sola_vez(tmp_path: Path) -> None:
     service = await make_service(tmp_path, clock)
     await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
     clock.at(day(7))
-    after_loss = await service.settle_bet(GUILD, USER, game="ruleta", stake=25_000, payout=0)
+    after_loss = await service.settle_bet(GUILD, USER, game="ruleta", stake=20_000, payout=0)
     clock.at(day(12))
     state_before = (await service.treasury(GUILD, since=0)).balance
 
@@ -113,7 +113,7 @@ async def test_aviso_efimero_una_vez_por_campana_y_presentar_es_publico(
     service = await make_service(tmp_path, clock)
     await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
     clock.at(day(7))
-    await service.settle_bet(GUILD, USER, game="ruleta", stake=25_000, payout=0)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=20_000, payout=0)
     clock.at(day(12))
     cog = Renta(MagicMock(), service)
     channel = MagicMock(spec=["send"])

@@ -147,7 +147,8 @@ python -m bot
   últimas semanas pendientes; si se acumula otra, la más antigua se pierde.
   El bot crea un evento de Discord por campaña (necesita **Gestionar
   eventos**). La retención
-  proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
+  proyecta la renta anual con todo lo cobrado en los últimos 7 días
+  (nóminas, premios y casino juntos, la misma semana que la Renta) y le aplica
   la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
   por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
   muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
