@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -111,6 +111,7 @@ from bot.services.work_catalog import (
     events_for,
 )
 from bot.services.work_games import MiniGame, new_game
+from bot.services.work_tools import NO_PERKS, Perks, perks_for
 
 if TYPE_CHECKING:
     from bot.repositories.work import WorkRepository
@@ -199,6 +200,7 @@ class Shift:
     tremors: bool
     returned_from_leave: bool
     remote: bool = False
+    perks: Perks = NO_PERKS
 
 
 @dataclass(slots=True)
@@ -452,6 +454,7 @@ class WorkService:
         black_ok: bool = False,
         guard: bool = False,
         remote: bool = False,
+        tools: Collection[str] = (),
     ) -> Shift:
         """Comprueba que se puede fichar y prepara el minijuego. No guarda nada.
 
@@ -460,6 +463,9 @@ class WorkService:
                 extra pasado el límite legal).
             guard: Si es una guardia (sanidad).
             remote: Si es en teletrabajo (oficina).
+            tools: Claves de la tienda que tiene el miembro; las herramientas de
+                curro que sirvan para el puesto ayudan en el minijuego
+                (`bot.services.work_tools`).
 
         Raises:
             WorkError: Si no puede fichar (sin contrato, de baja, saliente de
@@ -500,8 +506,14 @@ class WorkService:
             )
         if kind is ShiftKind.BLACK and not black_ok:
             raise NeedsBlack()
+        perks = perks_for(status.job.key, status.position.mechanic, tools)
         game = new_game(
-            status.position, self.rng, now=now, tired=status.battery < TIRED, guard=guard
+            status.position,
+            self.rng,
+            now=now,
+            tired=status.battery < TIRED,
+            guard=guard,
+            perks=perks,
         )
         return Shift(
             job=status.job,
@@ -512,6 +524,7 @@ class WorkService:
             tremors=contract.coffees > MAX_COFFEES,
             returned_from_leave=status.on_leave,
             remote=remote,
+            perks=perks,
         )
 
     async def finish_shift(self, guild_id: int, user_id: int, shift: Shift) -> ShiftOutcome:

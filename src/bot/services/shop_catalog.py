@@ -28,6 +28,12 @@ pide la Biblia para compensar el que se crea de la nada.
 
 **Usos.** Los artículos con `use` se usan desde la `mochila`
 (`bot.services.shop_uses`). Los que se gastan desaparecen al usarlos.
+
+**Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
+desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
+(`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
+de 2 a 9 turnos del puesto 1, porque suben un poco la nota y con ella el
+sueldo.
 """
 
 from __future__ import annotations
@@ -65,6 +71,7 @@ AISLES: tuple[Aisle, ...] = (
     Aisle("shitpost", "💀", "Lo que no debería venderse"),
     Aisle("lujo", "💎", "Joyería y lujo"),
     Aisle("farmacia", "⚡", "Farmacia de guardia"),
+    Aisle("curro", "🛠️", "Ferretería del curro"),
 )
 #: Pasillo de lo que crean los administradores con `catalogo`.
 HOUSE_AISLE = Aisle("casa", "🏷️", "De la casa")
@@ -624,6 +631,59 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "XP con él."),
     _b("pina_colada", "boricua", "🍹", "Piña colada", 800, 130, 2 * H,
        "Inventada en San Juan, dicen. Dos horas de XP con sabor a playa boricua."),
+
+    # 🛠️ Ferretería del curro (efectos en `bot.services.work_tools`) --------------------
+    _t("reloj_fichar", "curro", "⌚", "Reloj de fichar", 3_000,
+       "Un Casio de toda la vida, sincronizado con el registro de jornada. En `pala`: "
+       "+10 % de tiempo en cualquier curro.", per_user=1),
+    _t("casco_linterna", "curro", "⛑️", "Casco con linterna", 4_000,
+       "Homologado y con luz para las zanjas. En `pala`, obra: +15 % de tiempo.",
+       per_user=1),
+    _t("chaleco_reflectante", "curro", "🦺", "Chaleco reflectante", 5_000,
+       "Se te ve desde la caseta, así que el encargado te avisa antes de liarla. En "
+       "`pala`, obra: un fallo gratis por turno.", per_user=1),
+    _t("seguro_rc", "curro", "📄", "Seguro de responsabilidad civil", 8_000,
+       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros están "
+       "exentos de IGIC (art. 10.1.16 de la Ley 20/1991). En `pala`, cavar: romper "
+       "algo no resta.", igic="cero", per_user=1),
+    _t("zuecos", "curro", "👞", "Zuecos antideslizantes", 4_000,
+       "Suela de cocina profesional: el suelo puede estar como una pista de patinaje. "
+       "En `pala`, hostelería: +15 % de tiempo.", per_user=1),
+    _t("libreta_comandas", "curro", "🗒️", "Libreta de comandas", 5_000,
+       "Con boli atado con cuerda. En `pala`, hostelería: un fallo gratis por turno.",
+       per_user=1),
+    _t("hoja_reclamaciones", "curro", "📋", "Hoja de reclamaciones", 12_000,
+       "Si el cliente sabe que la tienes, baja el tono. En `pala`, el chiringuito: "
+       "tacha una respuesta mala en cada cliente.", per_user=1),
+    _t("cubo_engrudo", "curro", "🪣", "Cubo de engrudo", 3_500,
+       "Harina, agua y fe en el candidato. En `pala`, política: +15 % de tiempo.",
+       per_user=1),
+    _t("pinganillo", "curro", "🎧", "Pinganillo del portavoz", 6_000,
+       "Te soplan qué votar y dónde pegar. En `pala`, política: un fallo gratis por "
+       "turno.", per_user=1),
+    _t("argumentario", "curro", "📒", "Argumentario de Ferraz", 15_000,
+       "Respuestas para cualquier pregunta, sobre todo para las que no se responden. "
+       "Es un libro: IGIC tipo cero. En `pala`, ruedas de prensa, comisiones y "
+       "consejos: tacha una respuesta mala.", igic="cero", per_user=1),
+    _t("fonendo", "curro", "🩺", "Fonendoscopio", 6_000,
+       "De los buenos, con tu nombre grabado. En `pala`, sanidad: +15 % de tiempo.",
+       per_user=1),
+    _t("chuleta_triaje", "curro", "🧾", "Chuleta de bolsillo", 7_000,
+       "Plastificada, con las constantes normales y las extensiones de la planta. En "
+       "`pala`, sanidad: un fallo gratis por turno.", per_user=1),
+    _t("vademecum", "curro", "📘", "Vademécum", 15_000,
+       "Todos los medicamentos en papel biblia. Es un libro: IGIC tipo cero. En "
+       "`pala`, el MIR y la consulta: tacha una respuesta mala.", igic="cero",
+       per_user=1),
+    _t("segunda_pantalla", "curro", "🖥️", "Segunda pantalla", 8_000,
+       "En una el trabajo y en la otra Discord. En `pala`, oficina: +15 % de tiempo.",
+       per_user=1),
+    _t("tecla_deshacer", "curro", "⌨️", "Teclado con Ctrl+Z gigante", 4_000,
+       "La tecla de deshacer ocupa medio teclado. Ojalá existiera en las reuniones. En "
+       "`pala`, oficina: un fallo gratis por turno.", per_user=1),
+    _t("ia_premium", "curro", "🤖", "Suscripción a la IA de moda", 15_000,
+       "Responde con mucha seguridad, a veces bien. En `pala`, reuniones e inversores: "
+       "tacha una respuesta mala.", per_user=1),
 )
 # fmt: on
 

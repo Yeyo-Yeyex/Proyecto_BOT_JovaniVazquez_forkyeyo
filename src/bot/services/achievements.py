@@ -67,6 +67,8 @@ from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import pot_share as slots_pot_share
+from bot.services.work import MAX_COFFEES, Mechanic
+from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
     from bot.services.pala import ShiftOutcome
@@ -3269,6 +3271,61 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (12, "autonomo_12", "Autónomo de verdad", "Paga 12 cuotas de autónomos.", E),
     ])  # fmt: skip
 
+    # Minijuego: herramientas de curro, velocidad y despistes.
+    a += _tiers("work", "work_tools_owned", [
+        (1, "herramienta_1", "Herramienta propia",
+         "Ficha con una herramienta de curro de la tienda.", C),
+        (5, "herramienta_5", "Caja de herramientas", "Ficha con 5 herramientas de curro.", R),
+        (len(WORK_TOOLS), "herramienta_all", "Ferretería ambulante",
+         f"Ficha con las {len(WORK_TOOLS)} herramientas de curro.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_saves", [
+        (1, "rectificar", "Donde dije digo, digo Diego",
+         "Que una herramienta te perdone un fallo.", C),
+        (50, "rectificar_50", "No es mentira, es un cambio de opinión",
+         "Que las herramientas te perdonen 50 fallos.", R),
+        (500, "rectificar_500", "Manual de rectificación",
+         "Que las herramientas te perdonen 500 fallos.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_insured", [
+        (1, "seguro_paga", "Para eso pago el seguro",
+         "Rompe algo cavando con el seguro de responsabilidad civil.", C, True),
+        (25, "prima_sube", "La aseguradora te sube la prima",
+         "Rompe 25 cosas con el seguro puesto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_fifty", [
+        (10, "chuleta", "Con chuleta", "Acierta 10 preguntas con una respuesta tachada.", C),
+        (500, "chuleta_500", "Opositor con chuleta",
+         "Acierta 500 preguntas con una respuesta tachada.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_fast", [
+        (1, "rayo", "Rayo de la pala", "Acaba un turno con más de la mitad del tiempo.", R),
+        (50, "decreto_ley", "Por la vía del decreto ley",
+         "Acaba 50 turnos con más de la mitad del tiempo.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_last_second", [
+        (1, "ultimo_segundo", "Como la Renta, el último día",
+         "Acaba la última ronda con menos de un segundo en el reloj.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_first_miss", [
+        (1, "empezamos_bien", "Empezamos bien", "Falla la primera jugada de un turno.", C, True),
+        (25, "lunes_eterno", "Lunes eterno", "Falla la primera jugada en 25 turnos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_stale_clicks", [
+        (25, "doble_clic", "Doble clic de boomer",
+         "Pulsa 25 veces un botón de una ronda que ya ha pasado.", C, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_tremor_perfect", [
+        (1, "pulso_cirujano", "Pulso de cirujano",
+         "Saca un 100 con los temblores del cuarto café.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_memory_flawless", [
+        (1, "memoria_elefante", "Memoria de elefante",
+         "Haz perfectas todas las rondas de memoria de un turno.", C),
+        (50, "memoria_50", "Ni un «no me consta»",
+         "Haz perfectas todas las rondas de memoria en 50 turnos.", R),
+    ])  # fmt: skip
+
     # 👷 Oficios ------------------------------------------------------------------------
     a += _tiers("jobs", "work_pipes", [
         (1, "tuberia", "Tubería rota", "Rompe algo cavando.", C),
@@ -3401,6 +3458,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_dine_dash", [
         (10, "sinpa_10", "Velocista de terraza", "Persigue a 10 mesas que se iban sin pagar.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_posters", [
+        (10, "carteles_10", "Empapelando el barrio", "Pega 10 rutas de carteles perfectas.", C),
+        (100, "carteles_100", "Las farolas son del partido",
+         "Pega 100 rutas de carteles perfectas.", R),
+        (500, "carteles_500", "Brigada del engrudo", "Pega 500 rutas de carteles perfectas.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_clean_digs", [
+        (10, "sin_averias", "Ni una avería", "Haz 10 turnos de cavar sin romper nada.", C),
+        (100, "zahori", "Zahorí", "Haz 100 turnos de cavar sin romper nada.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_board", [
+        (20, "consejero_20", "Consejero de nada",
+         "Acierta 20 respuestas en el consejo de administración.", R),
+        (200, "consejero_200", "Dietas por asistir",
+         "Acierta 200 respuestas en el consejo de administración.", E),
     ])  # fmt: skip
 
     # 🏥 Sanidad ------------------------------------------------------------------------
@@ -6290,9 +6363,11 @@ _WORK_CONTENT_STATS = {
     "comandas": "work_perfect_orders",
     "cocina": "work_perfect_orders",
     "votos": "work_perfect_votes",
+    "carteles": "work_posters",
     "chiringuito": "work_happy_clients",
     "prensa": "work_dodged",
     "comision": "work_no_recuerdo",
+    "consejo": "work_board",
 }
 
 
@@ -6398,7 +6473,37 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_exit"] = 1
     if outcome.bankrupt:
         add["work_bankrupt"] = 1
+    _work_game_stats(outcome, add)
     return delta
+
+
+def _work_game_stats(outcome: ShiftOutcome, add: dict[str, int]) -> None:
+    """Lo del minijuego: velocidad, herramientas, despistes y rondas limpias."""
+    game = outcome.game
+    if game.saved:
+        add["work_saves"] = game.saved
+    if game.insured_breaks:
+        add["work_insured"] = game.insured_breaks
+    if game.fifty and game.correct:
+        add["work_fifty"] = game.correct
+    if game.completed and game.time_left >= game.seconds / 2:
+        add["work_fast"] = 1
+    if game.completed and game.time_left < 1:
+        add["work_last_second"] = 1
+    if game.first_miss:
+        add["work_first_miss"] = 1
+    if game.stale:
+        add["work_stale_clicks"] = game.stale
+    if outcome.score >= 100 and outcome.coffees > MAX_COFFEES:
+        add["work_tremor_perfect"] = 1
+    if game.mechanic is Mechanic.DIG and not game.broken and game.correct:
+        add["work_clean_digs"] = 1
+    if (
+        game.mechanic is Mechanic.MEMORY
+        and game.completed
+        and game.perfect_rounds == len(game.rounds)
+    ):
+        add["work_memory_flawless"] = 1
 
 
 #: Contenidos de memoria: cuentan las rondas perfectas, no los aciertos sueltos.

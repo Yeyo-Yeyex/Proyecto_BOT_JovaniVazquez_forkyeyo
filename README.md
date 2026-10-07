@@ -187,11 +187,11 @@ python -m bot
     tiempo; si ya tienes uno, el nuevo se pone a la cola.
   - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
     numerada ("nº 3 de 10").
-  - Surtido de serie: 155 artículos que se meten solos en cada servidor la
-    primera vez que se abre la tienda, repartidos en 12 pasillos (La
+  - Surtido de serie: 171 artículos que se meten solos en cada servidor la
+    primera vez que se abre la tienda, repartidos en 13 pasillos (La
     Moncloa, Productos de la tierra, Ultramarinos, Cotillón, Bazar, Amuletos,
     Ventanilla, Rincón boricua, Importación de Hong Kong, Lo que no debería
-    venderse, Joyería y lujo y Farmacia de guardia). Del Falcon (50 millones,
+    venderse, Joyería y lujo, Farmacia de guardia y Ferretería del curro). Del Falcon (50 millones,
     una unidad) a la piedra (1 Y$), cada uno con el IGIC que le tocaría de
     verdad. Lo que un administrador retire no vuelve solo.
   - Objetos que se usan (51): desde la `mochila`, contra alguien o sin más:
@@ -227,6 +227,10 @@ python -m bot
   barraquito), 4 turnos ordinarios al día, 2 extras legales a la semana y,
   después, extras en B con riesgo de Inspección. Ascensos al estilo de los Sims
   (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
+  En la Ferretería del curro de la `tienda` hay 16 herramientas (casco,
+  libreta de comandas, pinganillo, vademécum…) que, con tenerlas, ayudan en
+  el minijuego de su oficio: más tiempo, un fallo gratis por turno, un seguro
+  para las tuberías o una respuesta mala tachada.
   Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,
   cunde como un IMV a racha máxima; ver `docs/economia-trabajo.md`).
   El IMV se reduce 1 Y$ por cada 20 Y$ netos de nómina que pasen de 11.506 a la semana
@@ -648,6 +652,7 @@ src/bot/
 │   ├── work.py          # Reglas de pala: batería, jornada, familia, ascensos
 │   ├── work_catalog.py  # Oficios, puestos, contenido de minijuegos y eventos
 │   ├── work_games.py    # Minijuegos de pala: cavar, detectar, memoria, diálogo
+│   ├── work_tools.py    # Herramientas de curro de la tienda y su efecto en pala
 │   ├── pala.py          # Casos de uso de pala: fichar, cobrar, ascender, café
 │   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
