@@ -461,7 +461,7 @@ DISHES: tuple[tuple[str, str], ...] = (
 MEMORY_PACKS: dict[str, MemoryPack] = {
     "platos": MemoryPack(
         "🧽 Llega una montaña de platos. Lávalos en este orden o el jefe se enfada:",
-        "¿En qué orden iban?",
+        "Lávalos en el mismo orden.",
         (
             ("🍽️", "Plato llano"),
             ("🥣", "Bol"),
@@ -477,16 +477,18 @@ MEMORY_PACKS: dict[str, MemoryPack] = {
         "👨‍🍳 Comanda para la mesa {n}. Emplata en este orden:", "¡Emplata!", DISHES
     ),
     "carteles": MemoryPack(
-        "🗺️ El coordinador te dicta la ruta de hoy para pegar carteles:",
-        "¿Por dónde ibas?",
+        "🗺️ Noche de pegada de carteles. El coordinador de campaña te dicta la ruta "
+        "(y que no te pille la policía local):",
+        "Pega el cartel del candidato en cada sitio, en el mismo orden de la ruta.",
         (
-            ("🏫", "Colegio"),
-            ("🏥", "Centro de salud"),
-            ("⛪", "Iglesia"),
-            ("🏟️", "Estadio"),
-            ("🚏", "Parada de guagua"),
-            ("🏪", "Bazar"),
-            ("🌳", "Parque"),
+            ("💡", "Farola"),
+            ("🚏", "Marquesina de la guagua"),
+            ("🗳️", "Colegio electoral"),
+            ("🏛️", "Ayuntamiento"),
+            ("🌹", "Casa del Pueblo"),
+            ("🧱", "Muro del solar"),
+            ("🏪", "Persiana del bazar"),
+            ("📮", "Buzón de Correos"),
         ),
     ),
     "votos": MemoryPack(
@@ -743,7 +745,7 @@ MEMORY_PACKS.update(
     {
         "camilla": MemoryPack(
             "🛏️ Te dictan el traslado del paciente. Ruta:",
-            "¿Por dónde llevabas la camilla?",
+            "Lleva la camilla por la misma ruta, en orden.",
             (("🚑", "Urgencias"), ("🩻", "Rayos"), ("🧪", "Laboratorio"), ("🛏️", "Planta 3"),
              ("🔪", "Quirófano"), ("🛗", "Ascensor de servicio"), ("☕", "Cafetería")),
         ),

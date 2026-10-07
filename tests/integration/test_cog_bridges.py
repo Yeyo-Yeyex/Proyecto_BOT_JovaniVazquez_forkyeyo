@@ -405,3 +405,21 @@ def tienda_use(key: str):  # noqa: ANN201
     from bot.services.shop_uses import USES
 
     return USES[key]
+
+
+async def test_la_pala_ve_las_herramientas_de_la_mochila_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`pala` carga antes que la tienda: su puente tiene que encontrar la mochila."""
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        items = await client.shop.items(GUILD_ID)
+        casco = next(item for item in items if item.catalog_key == "casco_linterna")
+        await client.shop.grant(GUILD_ID, OWNER_ID, casco, 0.0)
+        work = importer("Trabajo", client)
+        owned = await work.tienda.owned_keys(client, GUILD_ID, OWNER_ID)
+        assert "casco_linterna" in owned
+    finally:
+        await client.close()

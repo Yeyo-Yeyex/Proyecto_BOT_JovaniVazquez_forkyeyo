@@ -690,3 +690,19 @@ async def test_reponer_surtido_desde_la_trastienda(tmp_path: Path) -> None:
     await panel._restock(click)
     assert "Repuestos 1" in (panel.notice or "")
     assert len(panel.items_all) == len(CATALOG)
+
+
+def test_cada_herramienta_de_curro_esta_en_la_ferreteria() -> None:
+    """Las herramientas de `pala` son artículos del pasillo de la ferretería, uno por persona."""
+    from bot.cogs.shop import kind_detail
+    from bot.services.work_tools import TOOLS
+
+    curro = {e.key for e in CATALOG if e.aisle == "curro"}
+    assert curro == {tool.key for tool in TOOLS}
+    for tool in TOOLS:
+        entry = CATALOG_BY_KEY[tool.key]
+        assert entry.emoji == tool.emoji, tool.key
+        assert entry.per_user == 1 and entry.use is None, tool.key
+        assert "`pala`" in entry.description, tool.key
+        item = MagicMock(kind=entry.kind, catalog_key=tool.key)
+        assert tool.effect in kind_detail(item)

@@ -192,6 +192,9 @@ PRODUCED_STATS = {
     "work_nonresident", "work_7p", "work_double_tax", "work_hk_tax", "work_jetlag",
     "imv_abroad", "work_return", "work_beckham", "work_abroad_days_max", "work_jobs_tried",
     "work_zero", "work_black_total",
+    "work_tools_owned", "work_saves", "work_insured", "work_fifty", "work_fast",
+    "work_last_second", "work_first_miss", "work_stale_clicks", "work_tremor_perfect",
+    "work_memory_flawless", "work_posters", "work_clean_digs", "work_board",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",
