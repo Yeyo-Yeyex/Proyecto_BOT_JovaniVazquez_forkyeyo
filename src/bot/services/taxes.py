@@ -801,3 +801,38 @@ def savings_marginal_rate(weekly_gross: int) -> float:
         if annual_eur > start:
             rate = bracket_rate
     return rate
+
+
+# -- Porras: Impuesto sobre Actividades de Juego y derechos de imagen ---------------------
+#
+# Las porras (`bot.services.porras`) son apuestas cruzadas: los miembros apuestan
+# entre ellos sobre las jugadas de otro y el bot solo hace de operador (art. 3.c
+# de la Ley 13/2011, de regulación del juego). El operador cobra una comisión
+# sobre lo apostado y sus ingresos netos (lo jugado menos los premios) pagan el
+# Impuesto sobre Actividades de Juego al 20 % (art. 48.7 de la Ley 13/2011, en la
+# redacción de la Ley 6/2018). Aquí el operador no existe (como la empresa de las
+# nóminas): la comisión entera, el 10 % de cada apuesta, va al Estado como IAJ.
+# Decisión del proyecto, para que la casa no acumule dinero que nadie usa.
+#
+# El protagonista de la porra cobra un 2 % del bote por prestar su imagen. Es un
+# rendimiento del capital mobiliario por la cesión del derecho de imagen (art.
+# 25.4.d LIRPF) y retiene un tipo fijo del 24 % (art. 101 LIRPF), no la escala
+# proyectada de los premios: por eso no usa `compute_withholding`.
+
+#: Comisión de las porras que va al Estado como IAJ, en tanto por uno.
+GAMING_TAX_RATE = 0.10
+#: Retención fija de los derechos de imagen (art. 101 LIRPF).
+IMAGE_RIGHTS_WITHHOLDING = 0.24
+
+
+def gaming_tax(stake: int) -> int:
+    """IAJ que paga una apuesta de una porra resuelta: el 10 %, redondeado a la baja.
+
+    Se redondea a la baja para que la suma de las de todos nunca pase del bote.
+    """
+    return max(0, stake) * round(GAMING_TAX_RATE * 100) // 100
+
+
+def image_rights_withholding(gross: int) -> int:
+    """Retención del 24 % sobre los derechos de imagen de una porra."""
+    return round(max(0, gross) * IMAGE_RIGHTS_WITHHOLDING)

@@ -42,7 +42,7 @@ pip install -e ".[dev]"
    opcionales). `COMMAND_PREFIX` es el prefijo de los comandos de texto
    (por defecto `.`); con él se invocan los mismos comandos que con `/`.
 4. `CASINO_CHANNEL_IDS` (opcional) limita los juegos del casino (ruleta,
-   blackjack, tragaperras, pachinko y lotería) a esos canales: IDs
+   blackjack, tragaperras, pachinko, lotería y porras) a esos canales: IDs
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
 
@@ -73,7 +73,7 @@ python -m bot
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `patrimonio [miembro]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `patrimonio [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -187,11 +187,11 @@ python -m bot
     tiempo; si ya tienes uno, el nuevo se pone a la cola.
   - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
     numerada ("nº 3 de 10").
-  - Surtido de serie: 171 artículos que se meten solos en cada servidor la
-    primera vez que se abre la tienda, repartidos en 13 pasillos (La
+  - Surtido de serie: 177 artículos que se meten solos en cada servidor la
+    primera vez que se abre la tienda, repartidos en 14 pasillos (La
     Moncloa, Productos de la tierra, Ultramarinos, Cotillón, Bazar, Amuletos,
     Ventanilla, Rincón boricua, Importación de Hong Kong, Lo que no debería
-    venderse, Joyería y lujo, Farmacia de guardia y Ferretería del curro). Del Falcon (50 millones,
+    venderse, Joyería y lujo, Farmacia de guardia, Ferretería del curro y Peña de la porra). Del Falcon (50 millones,
     una unidad) a la piedra (1 Y$), cada uno con el IGIC que le tocaría de
     verdad. Lo que un administrador retire no vuelve solo.
   - Objetos que se usan (51): desde la `mochila`, contra alguien o sin más:
@@ -356,6 +356,23 @@ python -m bot
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
   y los SUPER RUSH, los rush de 5 o más y los premios de ×20 se anuncian.
+- **Porras** (`porra`): apuestas entre miembros sobre las próximas jugadas
+  de otro. `/porra @ana minas mina 3 500` le monta a Ana una porra: «¿pisa
+  alguna mina en sus próximas 3 partidas de al menos 500 Y$?». Nadie puede
+  montársela a sí mismo y la protagonista tiene que aceptar, porque se
+  compromete a jugar. Durante 90 s cualquiera menos ella apuesta a una de
+  las opciones (una por persona); luego tiene un plazo para jugar y el bot
+  cuenta sus jugadas solo. Reparto mutuo, como la Quiniela: sin banca y sin
+  cuotas fijas. De cada apuesta, el 10 % va al Estado como Impuesto sobre
+  Actividades de Juego y el 2 % a la protagonista por derechos de imagen
+  (con retención fija del 24 %); el resto se lo reparten quienes aciertan.
+  El bote no pasa de 5 veces lo que ella se juega, para que amañarla no
+  salga tan a cuenta. Once propuestas: gana o pierde, si las gana todas,
+  cuántas gana, si dobla, si se pega un palo, si saca un ×5, si acaba tieso
+  y las propias de minas, pollo y blackjack. Vale en todos los juegos menos
+  el crash, y un juego nuevo las tiene sin hacer nada. Sin `miembro`, enseña
+  las porras en marcha. En la tienda, los 🔭 Prismáticos de la UCO dejan ver
+  quién apuesta qué y la 📓 Libreta de la porra, montar porras de 10 jugadas.
 - **Loterías** (`loteria`): un solo comando abre un panel con pestañas para
   la Lotería Nacional (jueves, sábado, Navidad y Niño), La Primitiva,
   Bonoloto, El Gordo de la Primitiva, Euromillones y dos rascas de la ONCE
@@ -369,7 +386,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.374 logros en 34 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.593 logros en 35 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -377,7 +394,7 @@ python -m bot
   tienda, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 232 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 283 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -638,6 +655,7 @@ src/bot/
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
+│   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
@@ -672,6 +690,7 @@ src/bot/
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
+│   ├── porras.py        # Propuestas, tope del bote y reparto mutuo de las porras
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋

@@ -44,6 +44,7 @@ import logging
 import random
 import re
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -538,6 +539,8 @@ class ChickenView(ui.View):
         except InsufficientFundsError as error:
             return insufficient_text(error.balance, self.stake)
         self.balance = settlement.balance
+        # Para las porras: una partida empezada antes del cierre no cuenta.
+        self.started_at = time.time()
         self.game = ChickenGame.new(self.stake, self.difficulty, self.cog.rng)
         self.seed = self.cog.rng.randrange(1, 2**31)
         self.record_before = await self.cog.record(
@@ -593,6 +596,10 @@ class ChickenView(ui.View):
             net=game.net,
             balance_after=settlement.balance if settlement else self.balance,
             tax=settlement.tax_delta if settlement else 0,
+            details=(
+                ("splat", int(game.status is Status.SPLAT)),
+                ("started", int(getattr(self, "started_at", 0))),
+            ),
         )
         await self.cog.shout(game, self.owner, self.channel)
 

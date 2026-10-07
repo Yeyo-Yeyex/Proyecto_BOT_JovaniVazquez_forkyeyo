@@ -24,7 +24,8 @@ Con `/apuestas` el panel es efímero; con `.apuestas` se ve en el canal.
 
 Apuntar jugadas: cada juego del casino llama a `record` (función puente de
 este módulo) al terminar una jugada, junto a `achievements.casino_play`. No
-mueve dinero ni lanza: si falla, se registra en el log y el juego sigue.
+mueve dinero ni lanza: si falla, se registra en el log y el juego sigue. La
+misma llamada cuenta la jugada para las porras (`bot.cogs.porras`).
 
 Logros: categoría 📊 Estadísticas del grupo 🎰 Casino (`apuestas_stats`).
 No necesita permisos especiales ni intents.
@@ -840,10 +841,13 @@ async def record(
     net: int,
     balance_after: int,
     tax: int,
+    details: tuple[tuple[str, int], ...] = (),
 ) -> None:
     """Apunta una jugada terminada del casino para `apuestas`. Nunca lanza.
 
     Se llama al terminar cada jugada, con las mismas cifras que `casino_stats`.
+    También se la pasa a las porras (`bot.cogs.porras.observe`): si quien juega
+    protagoniza una, la jugada cuenta. Así un juego nuevo tiene porras sin más.
 
     Args:
         game: Clave de `bot.services.casino_stats.GAMES`.
@@ -851,18 +855,26 @@ async def record(
         net: Ganancia o pérdida de la jugada (devuelto menos apostado).
         balance_after: Saldo del jugador al terminar.
         tax: IRPF que movió la jugada: positivo retenido, negativo devuelto.
+        details: Datos propios del juego para las porras (`Play.details`).
     """
+    # Import tardío: `porras` importa este módulo para apuntar sus propias jugadas.
+    from bot.cogs import porras
+
+    if user.bot:
+        return
+    play = Play(
+        game=game,
+        stake=max(0, stake),
+        payout=max(0, stake + net),
+        tax=tax,
+        balance_after=balance_after,
+        details=details,
+    )
+    await porras.observe(bot, guild_id, user.id, play)
     cog = find_cog(bot, Apuestas)
-    if cog is None or user.bot:
+    if cog is None:
         return
     try:
-        play = Play(
-            game=game,
-            stake=max(0, stake),
-            payout=max(0, stake + net),
-            tax=tax,
-            balance_after=balance_after,
-        )
         await cog.record_play(guild_id, user.id, play)
     except Exception:
         logger.exception("No se pudo apuntar la jugada de %s en %s", user.id, game)

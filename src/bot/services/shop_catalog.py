@@ -29,6 +29,11 @@ pide la Biblia para compensar el que se crea de la nada.
 **Usos.** Los artículos con `use` se usan desde la `mochila`
 (`bot.services.shop_uses`). Los que se gastan desaparecen al usarlos.
 
+**Peña de la porra.** Lo del pasillo 🎫 sirve para las `porra`. Los prismáticos
+y la libreta no se usan desde la mochila: con tenerlos, el cog de porras deja ver
+quién apuesta qué y montar porras más largas (`bot.services.porras`, mismas
+claves). No tocan el dinero de nadie.
+
 **Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
 desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
 (`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
@@ -72,6 +77,7 @@ AISLES: tuple[Aisle, ...] = (
     Aisle("lujo", "💎", "Joyería y lujo"),
     Aisle("farmacia", "⚡", "Farmacia de guardia"),
     Aisle("curro", "🛠️", "Ferretería del curro"),
+    Aisle("porra", "🎫", "Peña de la porra"),
 )
 #: Pasillo de lo que crean los administradores con `catalogo`.
 HOUSE_AISLE = Aisle("casa", "🏷️", "De la casa")
@@ -632,6 +638,23 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _b("pina_colada", "boricua", "🍹", "Piña colada", 800, 130, 2 * H,
        "Inventada en San Juan, dicen. Dos horas de XP con sabor a playa boricua."),
 
+    # 🎫 Peña de la porra -----------------------------------------------------------------
+    _t("prismaticos_uco", "porra", "🔭", "Prismáticos de la UCO", 8_000,
+       "Para ver desde la barra quién apuesta qué. En las `porra`, el botón 🔭 te enseña "
+       "a cada apostante y lo que lleva.", per_user=1),
+    _t("libreta_porra", "porra", "📓", "Libreta de la porra", 5_000,
+       "Con las porras apuntadas a lápiz y un boli mordido. Te deja montar porras de "
+       "hasta 10 jugadas en vez de 5.", per_user=1),
+    _t("bufanda_pena", "porra", "🧣", "Bufanda de la peña", 1_500,
+       "Para animar a quien protagoniza la porra. Abriga poco, pero da ánimos.",
+       use="bufanda"),
+    _t("silbato_arbitro", "porra", "🟨", "Silbato de árbitro", 900,
+       "Pita a quien quieras. Tarjeta, penalti o VAR: tú decides, como en la Liga.",
+       use="silbato"),
+    _t("quiniela_enmarcada", "porra", "🖼️", "Quiniela de 14 enmarcada", 3_000,
+       "Le faltó el pleno al quince. Sigue en la pared del bar desde el 98."),
+    _t("boli_porra", "porra", "🖊️", "Boli de la porra del bar", 50,
+       "Atado con cuerda al mostrador. Nadie sabe de quién es, pero todos lo han usado."),
     # 🛠️ Ferretería del curro (efectos en `bot.services.work_tools`) --------------------
     _t("reloj_fichar", "curro", "⌚", "Reloj de fichar", 3_000,
        "Un Casio de toda la vida, sincronizado con el registro de jornada. En `pala`: "

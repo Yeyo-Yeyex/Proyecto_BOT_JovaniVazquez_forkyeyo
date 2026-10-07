@@ -10,8 +10,9 @@ Grupos:
   cotización del trabajador y cuota de autónomos, Patrimonio y gravamen de
   loterías).
 - **Indirectos:** los que paga sin verlos (IGIC dentro del precio de la
-  `tienda` y la Seguridad Social que la empresa ingresa por su nómina: es coste
-  de su puesto aunque no salga de su bolsillo, igual que en la vida real).
+  `tienda`, la Seguridad Social que la empresa ingresa por su nómina, que es coste
+  de su puesto aunque no salga de su bolsillo, igual que en la vida real, y el
+  IAJ que sale del bote de cada `porra`).
 - **Otros pagos al Estado:** multas de la Inspección. No son impuestos, pero
   salen del bolsillo y van al Estado.
 - **Devuelto:** lo que la renta semanal le devolvió (resta).
@@ -71,6 +72,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
     TaxKind("igic", "🛒", "IGIC de las compras", "IGIC", Group.INDIRECT, "Ley 4/2012"),
     TaxKind("ss_empresa", "🏢", "Seguridad Social que paga la empresa", "SS empresa",
             Group.INDIRECT, "LGSS"),
+    TaxKind("iaj", "🎫", "Impuesto sobre Actividades de Juego (porras)", "IAJ",
+            Group.INDIRECT, "art. 48 Ley 13/2011"),
     TaxKind("multas", "🚨", "Multas de la Inspección", "Multas", Group.OTHER, "LGT"),
     TaxKind("devuelto", "📬", "Devuelto en la renta", "Devuelto", Group.REFUND,
             "art. 103 LIRPF"),
