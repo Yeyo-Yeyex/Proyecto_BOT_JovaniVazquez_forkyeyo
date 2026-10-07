@@ -55,6 +55,7 @@ from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
 from bot.services.achievements import shop_hit_stats, shop_stats, shop_use_stats
@@ -65,6 +66,8 @@ from bot.services.economy import (
     format_amount,
 )
 from bot.services.levels import calculate_level_progress
+from bot.services.pets import Event, Moment
+from bot.services.pets_catalog import species_of
 from bot.services.shop import (
     DANGEROUS_PERMISSIONS,
     SHOP_NAME,
@@ -88,6 +91,7 @@ from bot.services.shop_catalog import (
     HOUSE_AISLE,
     CatalogEntry,
     aisle_of,
+    food_of,
     use_of,
 )
 from bot.services.shop_uses import (
@@ -139,6 +143,11 @@ ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
         "{who} compra {item}. Pa' presumir, que pa' eso está.",
         "{who} añade {item} a la vitrina. Qué nivel.",
     ),
+    Kind.PET: (
+        "{who} sale del colmado con {item} en brazos. Familia nueva.",
+        "{who} adopta {item}. Ya tiene a quien contarle sus pérdidas.",
+        "{who} se lleva {item} a casa. Que alguien avise a la protectora: ha ido bien.",
+    ),
 }
 #: Aviso de compra de un objeto que se usa (un huevo, un burofax…): suena a amenaza.
 ANNOUNCE_USABLE: tuple[str, ...] = (
@@ -152,9 +161,12 @@ TABS: tuple[tuple[str, str], ...] = (
     ("todo", "🛍️ Todo"),
     ("rol", "🎭 Roles"),
     ("xp", "⚡ XP"),
+    ("mascota", "🐾 Mascotas"),
     ("objeto", "💎 Vitrina"),
     ("uso", "🫳 Para usar"),
 )
+#: Botones por fila de pestañas (Discord admite 5 por fila).
+TABS_PER_ROW = 5
 
 
 def _name(user: discord.abc.User) -> str:
@@ -186,6 +198,9 @@ def kind_detail(item: ShopItem) -> str:
         return (
             f"XP {format_multiplier(item.multiplier or 100)} durante {format_span(item.duration)}"
         )
+    if item.kind is Kind.PET:
+        species = species_of(item.catalog_key)
+        return f"🐾 Mascota {species.rarity.lower()}" if species else "🐾 Mascota"
     if (use := use_of(item.catalog_key)) is not None:
         return use.summary
     if (tool := TOOL_BY_KEY.get(item.catalog_key or "")) is not None:
@@ -221,6 +236,8 @@ def item_card(item: ShopItem, now: float, *, best_seller: bool = False) -> str:
     if item.description:
         lines.append(item.description)
     tags = [aisle_of(item.catalog_key).label, kind_detail(item)]
+    if food_of(item.catalog_key):
+        tags.append("🍽️ Se come (para tu mascota)")
     if best_seller:
         tags.append("🔥 Lo más vendido")
     if item.is_new(now):
@@ -399,14 +416,23 @@ class Storefront(ui.LayoutView):
                 f"-# {CURRENCY_EMOJI} Saldo de {_name(self.owner)}: {format_amount(self.balance)}"
             )
         )
-        tabs: ui.ActionRow = ui.ActionRow()
+        # Solo las pestañas con algo (los roles no vienen de serie); si no caben
+        # en una fila, siguen en la de abajo.
+        shown_tabs = []
         for key, label in TABS:
             count = sum(1 for i in self.items_all if in_tab(i, key))
-            style = (
-                discord.ButtonStyle.primary if key == self.tab else discord.ButtonStyle.secondary
-            )
-            tabs.add_item(_button(f"{label} · {count}", self._tab(key), style=style))
-        container.add_item(tabs)
+            if count or key in ("todo", self.tab):
+                shown_tabs.append((key, label, count))
+        for start in range(0, len(shown_tabs), TABS_PER_ROW):
+            tabs: ui.ActionRow = ui.ActionRow()
+            for key, label, count in shown_tabs[start : start + TABS_PER_ROW]:
+                style = (
+                    discord.ButtonStyle.primary
+                    if key == self.tab
+                    else discord.ButtonStyle.secondary
+                )
+                tabs.add_item(_button(f"{label} · {count}", self._tab(key), style=style))
+            container.add_item(tabs)
         if (aisles := self._aisle_select()) is not None:
             row: ui.ActionRow = ui.ActionRow()
             row.add_item(aisles)
@@ -689,9 +715,11 @@ class Backpack(ui.LayoutView):
                 continue
             lines = (
                 trophy_lines(mine)
-                if kind is Kind.TROPHY
+                if kind in (Kind.TROPHY, Kind.PET)
                 else [entry_line(e, now) for e in sorted(mine, key=lambda e: e.starts_at)]
             )
+            if kind is Kind.PET:
+                lines.append("-# Cuídalas y elige cuál va contigo con `mascota`.")
             sections.append(f"### {kind.icon} {kind.title}\n" + "\n".join(lines))
         usable = [e for e in self.entries if _usable(e)]
         if usable:
@@ -1138,7 +1166,10 @@ class Tienda(commands.Cog):
             if victim is not None
             else discord.AllowedMentions.none()
         )
-        await interaction.response.send_message(result.text, allowed_mentions=mentions)
+        text = result.text
+        if pet := await mascotas.cameo(self.bot, guild.id, member.id, Moment(Event.USE)):
+            text += f"\n{pet}"
+        await interaction.response.send_message(text, allowed_mentions=mentions)
         if not use.consumes:
             self.last_used[(guild.id, member.id, use.key)] = now
         await self._refresh_backpack(backpack)
@@ -1398,6 +1429,11 @@ class Tienda(commands.Cog):
                 if sale.starts_at <= now
                 else f"XP {boost} en cola: empieza <t:{int(sale.starts_at)}:R>."
             )
+        elif item.kind is Kind.PET:
+            got = (
+                f"{item.emoji} {item.name} ya vive contigo. Ponle nombre, cuídala y elige "
+                "si te acompaña con `mascota`."
+            )
         else:
             got = f"{item.emoji} {item.name} ya está en tu mochila."
             if sale.serial is not None:
@@ -1419,7 +1455,7 @@ class Tienda(commands.Cog):
             igic_line(price),
             f"{CURRENCY_EMOJI} Saldo: **{format_amount(balance)}**",
         ]
-        if hint := await renta.hint(self.bot, buyer.guild.id, buyer.id):
+        if hint := await renta.hint(self.bot, buyer.guild.id, buyer.id, Moment(Event.BUY)):
             lines.append(hint)
         return "\n".join(lines)
 
@@ -1446,6 +1482,8 @@ class Tienda(commands.Cog):
             logger.debug("No se pudo anunciar una compra", exc_info=True)
         # Comprar gasta dinero: gancho de la Renta (ver Biblia.txt, sección 4).
         await renta.remind(self.bot, interaction)
+        if item.kind is Kind.PET:
+            await mascotas.adopted(self.bot, view.guild.id, view.buyer, interaction.channel, item)
         now = self.clock()
         await logros.track(
             self.bot,

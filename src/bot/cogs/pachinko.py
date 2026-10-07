@@ -73,6 +73,7 @@ from bot.services.pachinko import (
     paytable_lines,
 )
 from bot.services.pachinko_render import PachinkoMedia, PachinkoRenderer
+from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -622,7 +623,12 @@ class PachinkoView(discord.ui.View):
         text = result_text(play, random_board=self.board is None)
         if note := tax_note([play]):
             text += f"\n{note}"
-        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if renta_hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=play.stake, net=play.net, balance_after=play.balance),
+        ):
             text += f"\n{renta_hint}"
         self.last_text = text
         self.last_won = play.won > 0
@@ -706,7 +712,16 @@ class PachinkoView(discord.ui.View):
             text = burst_text(plays, stopped)
             if note := tax_note(plays):
                 text += f"\n{note}"
-            if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            if renta_hint := await renta.hint(
+                self.cog.bot,
+                self.guild_id,
+                self.owner.id,
+                bet_moment(
+                    stake=sum(p.stake for p in plays),
+                    net=sum(p.net for p in plays),
+                    balance_after=plays[-1].balance,
+                ),
+            ):
                 text += f"\n{renta_hint}"
             self.last_text = text
             self.last_won = sum(p.net for p in plays) > 0

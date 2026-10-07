@@ -126,7 +126,12 @@ def top_share(values: list[int], fraction: float) -> float:
     return sum(data[:count]) / total
 
 
-KIND_LABELS = {Kind.ROLE.value: "Rol", Kind.BOOST.value: "Potenciador", Kind.TROPHY.value: "Objeto"}
+KIND_LABELS = {
+    Kind.ROLE.value: "Rol",
+    Kind.BOOST.value: "Potenciador",
+    Kind.TROPHY.value: "Objeto",
+    Kind.PET.value: "Mascota",
+}
 
 
 def holding_line(item: Holding) -> str:

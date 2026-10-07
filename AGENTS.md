@@ -17,6 +17,10 @@ Lo que más se olvida:
   `bot.cogs.achievements`. La rareza sigue la escala por esfuerzo de la Biblia; los de
   suerte del casino se calibran con `docs/auditoria_logros.py`. Sección "Logros" de
   `Biblia.txt`, que tiene la lista de familias de logros que hay que cubrir.
+- **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
+  que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
+  pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»
+  de `Biblia.txt`.
 - **Comandos:** un solo nombre en español de 8 caracteres como máximo, idéntico con `/`
   y con `.`, sin alias ni subcomandos (`/poner`, no `/play`). Sección "Cogs y comandos"
   de `Biblia.txt`.

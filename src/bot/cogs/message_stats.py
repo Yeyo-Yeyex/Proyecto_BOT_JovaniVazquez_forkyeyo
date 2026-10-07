@@ -32,6 +32,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.repositories.message_stats import ImportStatus, LevelAward, MessageStatsRepository
 from bot.services.achievements import StatDelta
@@ -56,6 +57,7 @@ from bot.services.levels import (
     rewards_between,
     voice_award,
 )
+from bot.services.pets import Event, Moment
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -204,8 +206,11 @@ class MessageStats(commands.Cog):
 
         guild_id = message.guild.id
         now = time.time()
-        # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop).
-        boost = tienda.xp_multiplier(self.bot, guild_id, message.author.id, now)
+        # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop), y
+        # la mascota activa suma su pequeño bonus encima (ver bot.cogs.pets).
+        boost = tienda.xp_multiplier(
+            self.bot, guild_id, message.author.id, now
+        ) * mascotas.xp_bonus(self.bot, guild_id, message.author.id, voice=False)
         base_xp = round(random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP) * boost)
 
         def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
@@ -298,6 +303,7 @@ class MessageStats(commands.Cog):
             member.id: round(
                 random.randint(MIN_VOICE_XP, MAX_VOICE_XP)
                 * tienda.xp_multiplier(self.bot, guild.id, member.id, now)
+                * mascotas.xp_bonus(self.bot, guild.id, member.id, voice=True)
             )
             for member in eligible
         }
@@ -666,6 +672,8 @@ class MessageStats(commands.Cog):
                 f" {CURRENCY_EMOJI} +{format_amount(reward.net)}\n"
                 f"{tax_line(reward.gross, reward.tax, reward.rate)}"
             )
+        if pet := await mascotas.cameo(self.bot, guild.id, member.id, Moment(Event.LEVEL)):
+            text += f"\n{pet}"
         try:
             await channel.send(
                 text,

@@ -52,6 +52,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.pets import bet_moment
 from bot.services.slots import (
     FREE_SPINS,
     HEAT_MAX,
@@ -587,7 +588,12 @@ class SlotMachineView(discord.ui.View):
         text = result_text(play)
         if note := tax_note(play.settlement.bet.tax_delta, [play]):
             text += f"\n{note}"
-        if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+        if renta_hint := await renta.hint(
+            self.cog.bot,
+            self.guild_id,
+            self.owner.id,
+            bet_moment(stake=play.paid_stake, net=play.net, balance_after=play.balance),
+        ):
             text += f"\n{renta_hint}"
         self.last_text = text
         self.last_won = play.won > 0
@@ -682,7 +688,16 @@ class SlotMachineView(discord.ui.View):
             text = auto_text(plays, stopped)
             if note := tax_note(sum(p.settlement.bet.tax_delta for p in plays), plays):
                 text += f"\n{note}"
-            if renta_hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id):
+            if renta_hint := await renta.hint(
+                self.cog.bot,
+                self.guild_id,
+                self.owner.id,
+                bet_moment(
+                    stake=sum(p.paid_stake for p in plays),
+                    net=sum(p.net for p in plays),
+                    balance_after=plays[-1].balance,
+                ),
+            ):
                 text += f"\n{renta_hint}"
             self.last_text = text
             self.last_won = sum(p.net for p in plays) > 0

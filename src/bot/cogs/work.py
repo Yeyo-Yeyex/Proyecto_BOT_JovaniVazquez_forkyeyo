@@ -73,6 +73,8 @@ from bot.services.pala import (
     WorkError,
     WorkService,
 )
+from bot.services.pets import Event as PetEvent
+from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
 from bot.services.work import (
     FAMILY_WORRIED,
@@ -1023,7 +1025,7 @@ class PalaPanel(ui.LayoutView):
         finally:
             self.shift = None
             self.cog.working.discard((self.guild_id, self.owner.id))
-        extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id)
+        extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK))
         # Bajo el mismo candado que los clics: que una edición del minijuego que
         # aún va de camino no pise el resultado.
         async with self._render_lock:

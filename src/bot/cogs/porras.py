@@ -77,6 +77,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.pets import Moment
 from bot.services.porras import (
     ACCEPT_SECONDS,
     BETTING_SECONDS,
@@ -849,7 +850,8 @@ class Porras(commands.Cog):
                 f"-# 🐶 Si la porra sale adelante, {TAX_COLLECTOR} se queda el {_IAJ_PCT} % de lo "
                 "que apuestas, aciertes o no.",
             ]
-            if hint := await renta.hint(self.bot, porra.guild_id, user.id):
+            # Apostar es un resultado con dinero: la mascota activa puede opinar.
+            if hint := await renta.hint(self.bot, porra.guild_id, user.id, Moment()):
                 lines.append(hint)
             text = "\n".join(line for line in lines if line)
             await interaction.response.send_message(text, ephemeral=True)

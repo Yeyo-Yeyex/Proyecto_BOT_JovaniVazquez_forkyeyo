@@ -49,6 +49,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot.cogs import pets as mascotas
 from bot.repositories.achievements import AchievementRepository, Profile
 from bot.services.achievements import (
     AVAILABLE,
@@ -83,6 +84,7 @@ from bot.services.economy import (
     short_tax_note,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
+from bot.services.pets import Event, Moment
 from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
@@ -897,11 +899,11 @@ class Achievements(commands.Cog):
         member = guild.get_member(user_id) if guild is not None else None
         name = member.display_name if member is not None else f"Miembro {user_id}"
         avatar = member.display_avatar.url if member is not None else None
+        embed = unlock_embed(name, avatar, ids, income)
+        if pet := await mascotas.cameo(self.bot, guild_id, user_id, Moment(Event.ACHIEVEMENT)):
+            embed.description = f"{embed.description}\n{pet}"
         try:
-            await channel.send(
-                embed=unlock_embed(name, avatar, ids, income),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo anunciar un logro en el servidor %s", guild_id)
 

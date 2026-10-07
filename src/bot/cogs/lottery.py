@@ -84,6 +84,7 @@ from bot.services.lottery import (
     settle_nacional,
     settle_pool,
 )
+from bot.services.pets import Event, Moment
 from bot.services.taxes import LOTTERY_EXEMPT, TAX_COLLECTOR
 
 if TYPE_CHECKING:
@@ -707,7 +708,7 @@ class Loteria(commands.Cog):
                 f"-# Pagas {format_amount(cost)}, sin IGIC (la lotería está exenta). "
                 f"Llevas {owned} de {MAX_PER_DRAW} en este sorteo.",
             ]
-            if hint := await renta.hint(self.bot, guild.id, user.id):
+            if hint := await renta.hint(self.bot, guild.id, user.id, Moment(Event.BUY)):
                 lines.append(hint)
             panel.notice = "\n".join(lines)
             panel.balance = balances[user.id]
@@ -765,7 +766,8 @@ class Loteria(commands.Cog):
             return
         balance = balances[user.id]
         lines = [scratch_text(game, prize, scratch_grid(game, prize, self.rng), tax)]
-        if hint := await renta.hint(self.bot, guild.id, user.id):
+        moment = Moment(Event.LOTTERY_WIN if prize is not None else Event.LOTTERY_LOSE)
+        if hint := await renta.hint(self.bot, guild.id, user.id, moment):
             lines.append(hint)
         panel.notice = "\n".join(lines)
         panel.balance = balance

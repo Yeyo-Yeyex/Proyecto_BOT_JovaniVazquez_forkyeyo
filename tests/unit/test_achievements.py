@@ -37,6 +37,9 @@ from bot.services.achievements import (
     IMG_EFFECTS_STAT,
     LAUGH_KINDS,
     MESSAGES_TOTAL_STAT,
+    PET_SPAWN_KINDS_STAT,
+    PET_SPECIES_PREFIX,
+    PET_SPECIES_STAT,
     PORRA_GAME_PREFIX,
     PORRA_GAMES,
     PORRA_PROP_PREFIX,
@@ -69,6 +72,7 @@ from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
+from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
@@ -119,6 +123,16 @@ PRODUCED_STATS = {
     "shop_mystery_jackpot", "shop_mystery_dupe", "shop_mystery_best", "shop_use_night",
     "shop_use_newyear", "shop_use_halloween", "shop_use_canarias", "shop_use_pino",
     "shop_got_hit", "shop_got_messy", "shop_got_love", "shop_got_raided",
+    "shop_clover_broken", "shop_no_parsley", "shop_flash", "shop_fake_champagne",
+    "shop_ball_dogs",
+    # Mascotas (cogs/pets.py: pet_adopt_stats, pet_care_stats, pet_cameo_stats…)
+    "pet_adopted", "pet_spawned", "pet_protectora", "pet_owned_max", PET_SPECIES_STAT,
+    PET_SPAWN_KINDS_STAT, *(f"{PET_SPECIES_PREFIX}{s.key}" for s in PET_SPECIES),
+    "pet_cares", "pet_petted", "pet_played", "pet_fed", "pet_favourite", "pet_gifts",
+    "pet_bond_max", "pet_tricks_max", "pet_streak_max", "pet_fed_nothing", "pet_goat_tax",
+    "pet_goat_odd", "pet_night", "pet_san_anton", "pet_christmas", "pet_halloween",
+    "pet_canarias", "pet_cameos", "pet_cameo_bust", "pet_cameo_big", "pet_cameo_night",
+    "pet_renamed", "pet_named_sanxe", "pet_named_beast", "pet_switches",
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
     "bizum_broke", "bizum_received_count", "bizum_received",
