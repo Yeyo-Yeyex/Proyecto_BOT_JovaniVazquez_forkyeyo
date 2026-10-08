@@ -13,6 +13,10 @@ quien actualiza y reinicia:
 4. El bot (el mismo o el recién arrancado) ve el resultado, lo publica en el
    canal de la petición y borra la nota y el resultado.
 
+Aparte, cada vez que despliega commits nuevos (de noche o por `reinicio`), el
+script deja `novedades.txt`: una línea por PR fusionado desde el despliegue
+anterior. El bot lo publica en `#chat-general` y lo borra (`take_news`).
+
 La carpeta es `.despliegue/buzon`, montada en el contenedor por
 `docker-compose.yml`. Este módulo no depende de discord.py.
 """
@@ -33,6 +37,12 @@ DEFAULT_MAILBOX = Path(".despliegue/buzon")
 REQUEST_FILE = "solicitud.json"
 RUNNING_FILE = "en_curso.json"
 RESULT_FILE = "resultado.txt"
+NEWS_FILE = "novedades.txt"
+
+#: PR que se enseñan en un aviso de novedades; el resto se resume en "y N más".
+NEWS_LIMIT = 12
+#: Largo máximo de cada línea, para que el aviso quepa en un embed.
+NEWS_LINE_CHARS = 120
 
 #: Una petición sin resultado tras este tiempo se da por perdida (el script se
 #: cortó o el cron no está puesto) y deja pedir otra.
@@ -131,6 +141,41 @@ class Mailbox:
         status = lines[0].strip() if lines else ""
         summary = " ".join(line.strip() for line in lines[1:] if line.strip())
         return DeployResult(ok=status == "ok", summary=summary, request=request)
+
+    def take_news(self) -> list[str] | None:
+        """Recoge la lista de PR desplegados, si la hay, y la borra del buzón.
+
+        Returns:
+            Un título de PR por elemento, sin líneas vacías; `None` si no hay
+            novedades pendientes (o el archivo no se pudo leer o borrar: mejor
+            no publicarlas que publicarlas en bucle cada 15 s).
+        """
+        news_file = self.path / NEWS_FILE
+        try:
+            text = news_file.read_text(encoding="utf-8")
+            news_file.unlink()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            logger.exception("No se pudieron recoger las novedades del buzón")
+            return None
+        items = [line.strip() for line in text.splitlines() if line.strip()]
+        return items or None
+
+
+def news_lines(items: list[str], limit: int = NEWS_LIMIT) -> list[str]:
+    """Líneas del aviso de novedades: las primeras `limit` y un resumen del resto.
+
+    Recorta las demasiado largas para que el aviso quepa siempre en un embed.
+    """
+    shown = [
+        item if len(item) <= NEWS_LINE_CHARS else item[: NEWS_LINE_CHARS - 1] + "…"
+        for item in items[:limit]
+    ]
+    lines = [f"• {item}" for item in shown]
+    if len(items) > limit:
+        lines.append(f"…y {len(items) - limit} más.")
+    return lines
 
 
 def _read_request(file: Path) -> DeployRequest | None:

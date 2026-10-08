@@ -425,7 +425,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.740 logros en 38 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.742 logros en 38 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -604,6 +604,8 @@ tenga que reconstruir la imagen. Programado a las 5:00, cada noche:
   otro.
 - Una vez por semana reconstruye aunque no haya cambios, para traer la última
   `yt-dlp`.
+- Si el despliegue sale bien y trae PR nuevos, el bot publica sus títulos en
+  `#chat-general` (ver «Novedades» más abajo).
 
 No hace falta tener git instalado: si el sistema no lo trae (el UGREEN no lo
 trae), el script usa la imagen `alpine/git` de Docker. Si en los archivos
@@ -642,6 +644,31 @@ deja una nota en `.despliegue/buzon` (carpeta montada en el contenedor) y el
 cron de `actualizar.sh --solicitud` hace el trabajo. Al acabar, el bot publica
 en el mismo canal si ha ido bien o qué ha fallado. Si en un par de minutos no
 pasa nada, falta la línea de `--solicitud` en el crontab.
+
+### Novedades: el changelog en Discord
+
+Cada vez que `actualizar.sh` despliega commits nuevos (de noche o con
+`reinicio`) y el bot nuevo pasa la comprobación de arranque, el script apunta
+en `.despliegue/buzon/novedades.txt` los PR fusionados desde el despliegue
+anterior, uno por línea. El bot lo mira cada 15 s, lo publica en
+`#chat-general` (o en el canal del sistema) como «📜 Novedades del bot» y lo
+borra. Si el bot nuevo se cae y se vuelve atrás, no se anuncia nada.
+
+De dónde sale cada línea:
+
+- Cada `Merge pull request` entre los dos commits aporta el título de su PR.
+  Por eso los títulos tienen que entenderse sin abrir GitHub (ver «Títulos y
+  descripciones de PR» en `CLAUDE.md`).
+- Los PR que traen entero el `main` del fork (rama `main`) se saltan si dentro
+  hay otros PR, que ya cuentan lo mismo con más detalle.
+- Si el título es el que GitHub pone solo con el nombre de la rama
+  («Claude/adoring tesla ybmnco»), salen los asuntos de sus commits.
+- Los commits subidos directamente a `main`, sin PR, no salen.
+- Se enseñan 12 como mucho; el resto queda en «…y N más».
+
+El aviso lleva un botón 📜 Leído. Pulsarlo da los logros *Leído y conforme* y,
+al primero del servidor, *Más rápido que el BOE* (❤️ Social). Solo cuenta el
+último aviso publicado desde que arrancó el bot y una vez por persona.
 
 **Si la música deja de funcionar** antes de la reconstrucción semanal, casi
 siempre es que `yt-dlp` se ha quedado anticuado (YouTube cambia a menudo).

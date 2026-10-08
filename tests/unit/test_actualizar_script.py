@@ -342,3 +342,91 @@ def _ejecutar_con(entorno: dict, *args: str, **extra: str) -> subprocess.Complet
         text=True,
         stdin=subprocess.DEVNULL,
     )
+
+
+# -- Novedades: los PR desplegados, para el aviso de Discord ------------------------------
+
+
+def _merge_pr(origin: Path, numero: int, rama: str, titulo: str) -> None:
+    """Fusiona `rama` en la rama actual con el mensaje que pone GitHub."""
+    mensaje = f"Merge pull request #{numero} from yeyo/{rama}"
+    _git(origin, "merge", "-q", "--no-ff", rama, "-m", mensaje, "-m", titulo)
+
+
+def _fusionar_pr(origin: Path, numero: int, rama: str, titulo: str, *commits: str) -> None:
+    """Crea `rama` con `commits` y la fusiona en main como el botón de GitHub."""
+    _git(origin, "checkout", "-q", "-b", rama)
+    for asunto in commits:
+        (origin / f"{rama.replace('/', '_')}.txt").write_text(asunto)
+        _git(origin, "add", ".")
+        _git(origin, "commit", "-q", "-m", asunto)
+    _git(origin, "checkout", "-q", "main")
+    _merge_pr(origin, numero, rama, titulo)
+
+
+def _novedades(entorno: dict) -> list[str] | None:
+    archivo = entorno["clon"] / ".despliegue/buzon/novedades.txt"
+    return archivo.read_text().splitlines() if archivo.exists() else None
+
+
+def test_despliegue_deja_los_titulos_de_los_pr_para_el_bot(entorno):
+    _ejecutar(entorno)
+    origin = entorno["origin"]
+    _fusionar_pr(origin, 1, "pollo", "Pollo: carriles más rápidos", "pollo 1", "pollo 2")
+    # GitHub titula con el nombre de la rama si nadie lo cambia: valen sus commits.
+    _fusionar_pr(origin, 2, "claude/adoring-tesla-x1", "Claude/adoring tesla x1", "Mascotas")
+
+    resultado = _ejecutar(entorno)
+
+    assert resultado.returncode == 0
+    assert _novedades(entorno) == ["Pollo: carriles más rápidos", "Mascotas"]
+
+
+def test_el_pr_que_junta_el_fork_cede_ante_los_pr_que_trae(entorno):
+    _ejecutar(entorno)
+    origin = entorno["origin"]
+    # El fork fusiona su PR en su main y luego todo su main entra de golpe.
+    _git(origin, "checkout", "-q", "-b", "fork")
+    _git(origin, "checkout", "-q", "-b", "caballos")
+    (origin / "caballos.txt").write_text("caballos")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "caballos")
+    _git(origin, "checkout", "-q", "fork")
+    _merge_pr(origin, 3, "caballos", "Carreras de caballos")
+    _git(origin, "checkout", "-q", "main")
+    _git(origin, "branch", "-q", "-m", "fork", "main-del-fork")
+    _git(origin, "merge", "-q", "--no-ff", "main-del-fork",
+         "-m", "Merge pull request #46 from yeyo/main", "-m", "Caballos")  # fmt: skip
+
+    _ejecutar(entorno)
+
+    assert _novedades(entorno) == ["Carreras de caballos"]
+
+
+def test_sin_pr_nuevos_no_hay_novedades(entorno):
+    _ejecutar(entorno)
+    _nuevo_commit(entorno["origin"], "v2 sin PR")
+
+    _ejecutar(entorno)
+
+    assert _novedades(entorno) is None
+
+
+def test_un_despliegue_que_vuelve_atras_no_anuncia_nada(entorno):
+    _ejecutar(entorno)
+    _fusionar_pr(entorno["origin"], 4, "rota", "Esto tumba el bot", "roto")
+
+    _ejecutar(entorno, FAKE_RESTARTS="3")
+
+    assert _novedades(entorno) is None
+
+
+def test_las_novedades_sin_publicar_se_juntan_con_las_nuevas(entorno):
+    _ejecutar(entorno)
+    _fusionar_pr(entorno["origin"], 5, "a", "Primera", "a")
+    _ejecutar(entorno)
+    _fusionar_pr(entorno["origin"], 6, "b", "Segunda", "b")
+
+    _ejecutar(entorno)
+
+    assert _novedades(entorno) == ["Primera", "Segunda"]

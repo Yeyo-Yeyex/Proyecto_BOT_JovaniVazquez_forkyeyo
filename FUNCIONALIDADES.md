@@ -481,7 +481,7 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
 ### 6 ter.9. Logros
 
 - `logros [miembro]`: resumen (logros conseguidos, puntos, por categoría, los 5 últimos, los 3 más cercanos y el más raro del servidor), un menú con cada categoría y un botón 🏆 Ranking por puntos. Las categorías que no caben en un embed se parten en hojas con ◀ y ▶. Solo quien abre la vista puede cambiar de página.
-- 1.740 logros en 38 categorías, que el menú de `logros` enseña en 17 entradas: 💬 Chat, 🎙️ Voz, ❤️ Social, 📝 Lista, 📈 Niveles, 🎰 Casino, 🎟️ Loterías, 🛍️ Tienda, 🐾 Mascotas, 🏦 Banco: Bizum y cuenta, 🏛️ Economía y Hacienda, 🪏 Trabajo, 👷 Oficios, 🏥 Sanidad, 💻 Oficina, 🇭🇰 Hong Kong y 🏆 Coleccionista. Tres entradas son grupos: su portada enseña el progreso de cada sección y un segundo menú las abre. 💬 Chat: 💬 General, ✍️ Estilo, 😂 Risas, 🤡 Hacer reír, 🗣️ Lengua y temas, 🧵 Conversación, 🗓️ Horarios y fechas y 🖼️ Imágenes y Babel. 🎙️ Voz: 🎙️ Llamada, 🎚️ Micro, cámara y AFK, 🚪 Entradas y salidas y 🎵 Música. 🎰 Casino: 💰 General, 🎡 Ruleta, 🃏 Blackjack, 🎰 Tragaperras, 🌋 Botes, 🚀 Crash, 💣 Minas, 🐔 Pollo, 🌸 Pachinko, 🏇 Caballos, 🎫 Porras y 📊 Estadísticas. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
+- 1.742 logros en 38 categorías, que el menú de `logros` enseña en 17 entradas: 💬 Chat, 🎙️ Voz, ❤️ Social, 📝 Lista, 📈 Niveles, 🎰 Casino, 🎟️ Loterías, 🛍️ Tienda, 🐾 Mascotas, 🏦 Banco: Bizum y cuenta, 🏛️ Economía y Hacienda, 🪏 Trabajo, 👷 Oficios, 🏥 Sanidad, 💻 Oficina, 🇭🇰 Hong Kong y 🏆 Coleccionista. Tres entradas son grupos: su portada enseña el progreso de cada sección y un segundo menú las abre. 💬 Chat: 💬 General, ✍️ Estilo, 😂 Risas, 🤡 Hacer reír, 🗣️ Lengua y temas, 🧵 Conversación, 🗓️ Horarios y fechas y 🖼️ Imágenes y Babel. 🎙️ Voz: 🎙️ Llamada, 🎚️ Micro, cámara y AFK, 🚪 Entradas y salidas y 🎵 Música. 🎰 Casino: 💰 General, 🎡 Ruleta, 🃏 Blackjack, 🎰 Tragaperras, 🌋 Botes, 🚀 Crash, 💣 Minas, 🐔 Pollo, 🌸 Pachinko, 🏇 Caballos, 🎫 Porras y 📊 Estadísticas. Una categoría puede marcarse `upcoming` ("próximamente") mientras su juego no exista: sus logros se ven pero no se pueden conseguir ni cuentan para el total.
 - Risas (`analyze_laugh`): reconoce ocho tipos y cada uno tiene sus logros. Español (jaja, jsjs, ajaj, jejeje, jiji, «ja ja ja», con tildes o sin ellas), inglés (haha, ahah, huehue, lol, lmao, rofl, kek), xd, emojis (😂 🤣 😹 😆 y los personalizados con kek, lul, laugh, lol, jaja, haha, xd, risa, rofl o lmao en el nombre), calavera (💀 ☠️), aporreo del teclado (ajsjsjs, asdfghjklñ: seis letras o más de la fila central, tres distintas como poco y una «a» de cada cuatro como mucho), otros idiomas (kkkk, rsrs, mdr, ptdr, wwww, ㅋㅋ, 哈哈, 草, хаха, χαχα) y frases (me meo, me parto, me troncho, me descojono, qué risa, lloro, estoy muerto). «ja.» o «jaja.» a secas es la risa del funcionario: tiene sus logros pero no cuenta como risa. Se probó contra las 60.000 palabras más usadas en español, inglés y portugués; las pocas que encajaban sin ser risas (jauja, juju, jojo…) están excluidas. También cuentan la risa más larga, gritar la risa, mezclar tipos en un mensaje, reírse de madrugada o de Hacienda, reírse respondiendo (al autor del mensaje le suma «hacer reír»; a uno mismo o al bot, sus secretos), las reacciones de risa (dadas, recibidas y personas que se ríen del mismo mensaje), las cadenas de risas seguidas en un canal y reírse con 5 derrotas seguidas en el casino.
 - Rarezas: dicen cuánto le cuesta a un miembro activo. ▫️ Común, tres días o menos; 🔹 Raro, hasta dos semanas; 💠 Épico, hasta dos meses; 🌟 Legendario, hasta ocho meses; 👑 Mítico, más. Los del casino se calibran simulando jugadores con el código real (`docs/auditoria_logros.py`, detalle en `docs/auditoria-logros.md`).
 - Rarezas y premio bruto: ▫️ Común 50 Y$ (10 puntos), 🔹 Raro 200 Y$ (25), 💠 Épico 750 Y$ (50), 🌟 Legendario 2.500 Y$ (100), 👑 Mítico 10.000 Y$ (250). Los emojis tienen formas distintas para que se distingan sin depender del color.
@@ -533,6 +533,17 @@ atiende. Al acabar, el bot publica en el canal donde se pidió si ha ido bien
 anterior. No se puede pedir otro mientras uno está en marcha; una petición sin
 respuesta en 30 minutos se da por perdida. Detalle en el README («Reiniciar
 desde Discord»).
+
+**Novedades.** Tras cada despliegue con commits nuevos (el de las 5:00 o
+`reinicio`) que arranque bien, el bot publica en `#chat-general` (o en el canal
+del sistema) «📜 Novedades del bot»: los títulos de los PR fusionados desde el
+despliegue anterior, 12 como mucho y «…y N más». `actualizar.sh` saca la lista
+de los commits `Merge pull request` y la deja en el buzón (`novedades.txt`).
+El botón 📜 Leído da los logros de ❤️ Social *Leído y conforme* (común) y *Más
+rápido que el BOE* (raro, al primero del servidor en pulsarlo); cuenta una vez
+por persona y solo en el último aviso desde que arrancó el bot, para que nadie
+cobre dos veces el mismo tras un reinicio. La mascota activa comenta la
+lectura. Detalle en el README («Novedades»).
 
 ### 6 quater.2. Autorización y seguridad
 

@@ -357,6 +357,34 @@ async def test_la_lista_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         await client.close()
 
 
+async def test_leer_las_novedades_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """El botón 📜 Leído busca su cog y llega a los logros con todo cargado."""
+    client = await load_bot(tmp_path)
+    try:
+        deploy = client.get_cog("Despliegue")
+        deploy._news[GUILD_ID] = (123, set())
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        interaction = MagicMock()
+        interaction.client = client
+        interaction.guild = MagicMock(id=GUILD_ID)
+        interaction.user = owner
+        interaction.channel = MagicMock(spec=discord.TextChannel)
+        interaction.channel.send = AsyncMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=True)
+        button = importer("Despliegue", client).NewsReadButton(123)
+
+        await button.callback(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["news_read"] == 1
+        assert {"news_read", "news_first"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
 async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
     """`pala` carga antes que los logros: el turno y la nómina deben llegar a ellos."""
     client = await load_bot(tmp_path)
