@@ -364,8 +364,10 @@ python -m bot
   ganador y colocado devuelven el 95 %, gemela el 92 % y trío el 90 %. En la
   parrilla (30 s) se apuesta con 🎟️ Apostar (panel privado) o de un toque con
   🐶 Lo de Sanxe, 🐑 Con el pueblo o 🎲 Al azar; `.caballo 500 3-5-1` va al
-  trío. La carrera es un GIF con foto-finish a cámara lenta si llegan
-  pegados. Cada 8 carreras (y 4 h) sale el Gran Premio con un bote para quien
+  trío. La carrera es un GIF dibujado con canvas en un Chromium sin
+  ventana (grada, sedas, galope, polvo, lluvia, rótulos de la tele) con
+  foto-finish a cámara lenta si llegan pegados; se dibuja mientras se
+  apuesta, así que sale en cuanto se cierra la parrilla. Cada 8 carreras (y 4 h) sale el Gran Premio con un bote para quien
   acierte el ganador, que crece si nadie acierta. Tributa como el resto del
   casino.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
@@ -538,7 +540,10 @@ vacío, se usa una frase de reserva para no dejar la despedida sin texto.
 El bot corre bien en cualquier equipo x86_64 con Docker, por ejemplo un NAS
 UGREEN DXP2800 (Intel N100): consume poca CPU y memoria y no necesita abrir
 puertos, porque solo hace conexiones salientes a Discord y a las fuentes de
-audio. La imagen incluye `ffmpeg` y `libopus`.
+audio. La imagen incluye `ffmpeg` y `libopus`, y un Chromium sin ventana
+(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos.
+Mientras se usa ocupa unos 150-250 MB de memoria y se cierra solo tras 10
+minutos sin carreras; si no estuviera, el bot dibuja con Pillow.
 
 1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
 2. Crea el archivo de configuración y pon tu token:
@@ -708,7 +713,8 @@ src/bot/
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
-│   ├── horses_render.py # Parrilla, GIF de la carrera con foto-finish y boleto
+│   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas
+│   ├── horses_scene.py  # Dibujo con Chromium: parrilla, carrera y boleto en JS/HTML
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋
@@ -721,6 +727,7 @@ src/bot/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
     ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
+    ├── caballos/       # escena.html: canvas y HTML/CSS de las carreras de caballos
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```

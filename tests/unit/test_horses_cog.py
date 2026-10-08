@@ -52,14 +52,17 @@ class FakeClock:
 
 
 class FakeRenderer:
-    def card(self, *args, **kwargs) -> bytes:  # noqa: ANN002, ANN003
+    async def card(self, *args, **kwargs) -> bytes:  # noqa: ANN002, ANN003
         return b"PNG"
 
-    def race(self, *args, **kwargs) -> Media:  # noqa: ANN002, ANN003
+    async def race(self, *args, **kwargs) -> Media:  # noqa: ANN002, ANN003
         return Media(gif=b"GIF", png=b"PNG", seconds=1.0)
 
-    def ticket(self, **kwargs) -> bytes:  # noqa: ANN003
+    async def ticket(self, **kwargs) -> bytes:  # noqa: ANN003
         return b"TICKET"
+
+    async def close(self) -> None:
+        pass
 
 
 def make_user(user_id: int, name: str = "Ana") -> MagicMock:
@@ -92,6 +95,7 @@ def make_interaction(user_id: int, name: str = "Ana", message_id: int | None = 9
     interaction.response.send_modal = AsyncMock()
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
+    interaction.edit_original_response = AsyncMock()
     return interaction
 
 
@@ -293,6 +297,7 @@ async def test_el_panel_monta_un_trio_y_apuesta(tmp_path: Path) -> None:
     await panel._on_confirm(interaction)
     assert race.tickets[ANA].stake == 300
     assert interaction.response.edit_message.await_args.kwargs["view"] is None
+    interaction.edit_original_response.assert_awaited_once()
 
 
 async def test_el_panel_tiene_un_menu_por_caballo_del_boleto(tmp_path: Path) -> None:
@@ -510,3 +515,27 @@ async def test_los_boletos_gordos_se_publican_sin_mencionar(
     big = channel.send.await_args_list[-1]
     assert big.kwargs["allowed_mentions"] == cog_module.NO_MENTIONS
     assert "premiado" in big.args[0]
+
+
+async def test_la_carrera_se_dibuja_mientras_se_apuesta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`prepare` corre y dibuja durante la parrilla; al salir se usa eso y no se redibuja."""
+    cog, _clock = await make_cog(tmp_path)
+    channel = make_channel()
+    await caballo(cog, channel, amount="100", pick="1")
+    race = cog.races[CHANNEL_ID]
+    race.message = channel.test_message
+    force(monkeypatch, fixed_result((0, 1, 2, 3, 4, 5)))
+    calls = []
+    real = cog.renderer.race
+
+    async def counting(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        calls.append(args)
+        return await real(*args, **kwargs)
+
+    cog.renderer.race = counting  # type: ignore[method-assign]
+    race.prepare()
+    await race.race()
+    assert len(calls) == 1
+    assert race.tickets[ANA].prize == h.payout(100, race.tickets[ANA].odds)

@@ -14,6 +14,9 @@ dependencies = [
     # Zonas horarias Atlantic/Canary (días de las rachas) y Asia/Hong_Kong
     # (`hongkong`): la imagen python:slim no trae la base de datos del sistema.
     "tzdata>=2024.1",
+    # Chromium sin ventana para dibujar las carreras de caballos con canvas y
+    # HTML/CSS (`bot.services.horses_scene`). Sin el navegador, se dibuja con Pillow.
+    "playwright>=1.48,<2",
 ]
 
 [project.optional-dependencies]
@@ -44,4 +47,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bot = ["assets/*.mp4", "assets/*.txt", "assets/memes/**/*", "assets/slots/*", "assets/botes/**/*"]
+bot = ["assets/*.mp4", "assets/*.txt", "assets/memes/**/*", "assets/slots/*", "assets/botes/**/*", "assets/caballos/*"]

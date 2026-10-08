@@ -15,7 +15,9 @@ Cada carrera pasa por tres momentos en el mismo mensaje:
    ganador de un toque; 🪙 **Ficha** la cambia. Un boleto por persona y carrera.
    `.caballo 500 3` apuesta 500 a ganador al 3; `.caballo 500 3-5` a la gemela;
    `.caballo 500 3-5-1` al trío; `.caballo 500 3 colocado` a colocado.
-2. **Carrera**: el GIF con los caballos galopando (`bot.services.horses_render`).
+2. **Carrera**: el GIF con los caballos galopando. Se dibuja con canvas y
+   HTML/CSS en un Chromium sin ventana (`bot.services.horses_scene`) y, si no
+   hay navegador, con Pillow (`bot.services.horses_render`).
 3. **Llegada**: el podio, la narración, quién cobra y quién no, y lo que se te
    escapó si fallaste por poco. Botón 🏇 **Otra carrera**.
 
@@ -118,7 +120,8 @@ from bot.services.horses import (
     run_race,
     sanxe_tip,
 )
-from bot.services.horses_render import HorseRenderer, Media
+from bot.services.horses_render import Media
+from bot.services.horses_scene import SceneRenderer
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
@@ -461,6 +464,8 @@ class Race:
         self.lobby_ends = cog.wall_clock() + seconds
         self.tickets: dict[int, Ticket] = {}
         self.result: RaceResult | None = None
+        #: La carrera ya corrida y dibujada mientras la parrilla está abierta (`prepare`).
+        self.prepared: asyncio.Task[tuple[RaceResult, Media]] | None = None
         self.task: asyncio.Task[None] | None = None
         self._edit_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -677,15 +682,16 @@ class Race:
             f"**{format_amount(payout(ticket.stake, ticket.odds))}**."
         )
 
-    def ticket_file(self, ticket: Ticket) -> discord.File:
+    async def ticket_file(self, ticket: Ticket) -> discord.File:
         """El boleto dibujado, antes de la carrera."""
-        png = self.cog.renderer.ticket(
+        png = await self.cog.renderer.ticket(
             race=self.card.name,
             player=ticket.user.display_name,
             pick=ticket.pick,
             names=pick_names(self.card, ticket.pick),
             stake=ticket.stake,
             odds=ticket.odds,
+            horses=[self.card.horses[i] for i in ticket.pick.horses],
         )
         return discord.File(io.BytesIO(png), filename="boleto.png")
 
@@ -731,15 +737,18 @@ class Race:
         if from_lobby:
             await interaction.response.edit_message(embed=self.lobby_embed(), view=self.view)
             await interaction.followup.send(
-                self.confirm_text(ticket), file=self.ticket_file(ticket), ephemeral=True
+                self.confirm_text(ticket), file=await self.ticket_file(ticket), ephemeral=True
             )
         else:
-            # Desde el panel privado: el panel se convierte en el boleto.
-            await interaction.response.edit_message(
-                content=self.confirm_text(ticket),
-                view=None,
-                attachments=[self.ticket_file(ticket)],
-            )
+            # Desde el panel privado: el panel se convierte en el boleto. Primero
+            # se contesta (Discord da 3 s) y luego se le pega la imagen.
+            await interaction.response.edit_message(content=self.confirm_text(ticket), view=None)
+            try:
+                await interaction.edit_original_response(
+                    attachments=[await self.ticket_file(ticket)]
+                )
+            except discord.HTTPException:
+                logger.debug("No se pudo pegar el boleto al panel", exc_info=True)
             self.edit_soon()
         await renta.remind(self.cog.bot, interaction)
 
@@ -822,15 +831,40 @@ class Race:
         finally:
             self.cog.release(self)
 
+    def prepare(self) -> None:
+        """Corre y dibuja la carrera en segundo plano mientras se apuesta.
+
+        Dibujarla lleva ~5-8 s y así no se espera al cerrar la parrilla. Es
+        justo: el resultado no depende de los boletos (sale de su propio
+        azar, distinto del de las cuotas) y no se enseña ni se guarda en
+        ningún sitio hasta que salen los caballos. Decidirlo al abrir o al
+        cerrar da exactamente las mismas probabilidades.
+        """
+        self.prepared = asyncio.create_task(self._prepare(), name="caballos-dibujo")
+
+    async def _prepare(self) -> tuple[RaceResult, Media]:
+        result = run_race(self.card, self.cog.np_rng())
+        return result, await self.cog.renderer.race(self.card, result, self.odds)
+
     async def race(self) -> None:
         """Corre, paga, enseña el GIF y luego la llegada."""
         async with self._lock:
             self.phase = Phase.RUNNING
-            result = self.result = run_race(self.card, self.cog.np_rng())
+        media: Media | None = None
+        result: RaceResult | None = None
+        if self.prepared is not None:
+            try:
+                result, media = await self.prepared
+            except Exception:
+                logger.exception("No se pudo preparar la carrera; se corre ahora")
+        if result is None:
+            result = run_race(self.card, self.cog.np_rng())
+        self.result = result
         pot_winners, pot = await self.pay(result)
         if self._edit_task is not None:
             await asyncio.gather(self._edit_task, return_exceptions=True)
-        media: Media = await asyncio.to_thread(self.cog.renderer.race, self.card, result)
+        if media is None:
+            media = await self.cog.renderer.race(self.card, result, self.odds)
         await self.edit(
             embed=self.running_embed(),
             view=None,
@@ -893,7 +927,7 @@ class Race:
         """Anuncios aparte: el bote del Gran Premio (con mención) y los boletos gordos."""
         if pot_winners:
             mentions = " ".join(t.user.mention for t in pot_winners)
-            files = [self._premiado(t) for t in pot_winners[:MAX_BIG_TICKETS]]
+            files = [await self._premiado(t) for t in pot_winners[:MAX_BIG_TICKETS]]
             try:
                 await self.channel.send(
                     f"## 🏆 ¡Bote del {self.card.name}!\n{mentions} "
@@ -917,14 +951,14 @@ class Race:
             try:
                 await self.channel.send(
                     ("🎟️ ¡Boletos premiados! " if len(big) > 1 else "🎟️ ¡Boleto premiado! ") + names,
-                    files=[self._premiado(t) for t in big],
+                    files=[await self._premiado(t) for t in big],
                     allowed_mentions=NO_MENTIONS,
                 )
             except discord.HTTPException:
                 logger.debug("No se pudo publicar un boleto premiado", exc_info=True)
 
-    def _premiado(self, ticket: Ticket) -> discord.File:
-        png = self.cog.renderer.ticket(
+    async def _premiado(self, ticket: Ticket) -> discord.File:
+        png = await self.cog.renderer.ticket(
             race=self.card.name,
             player=ticket.user.display_name,
             pick=ticket.pick,
@@ -934,6 +968,7 @@ class Race:
             won=True,
             prize=ticket.prize,
             pot_share=ticket.pot_share,
+            horses=[self.card.horses[i] for i in ticket.pick.horses],
         )
         return discord.File(io.BytesIO(png), filename=f"premiado-{ticket.user.id}.png")
 
@@ -1033,6 +1068,8 @@ class Race:
     async def close(self) -> None:
         """Parrilla vacía: los caballos vuelven a la cuadra y el mensaje pierde los botones."""
         self.phase = Phase.DONE
+        if self.prepared is not None:
+            self.prepared.cancel()
         embed = discord.Embed(
             title=f"🏇 {self.card.name}",
             description="Nadie ha apostado. Los caballos vuelven a la cuadra.\n"
@@ -1081,7 +1118,7 @@ class Horses(commands.Cog, name="Caballos"):
         *,
         economy: EconomyService,
         repository: HorseRepository,
-        renderer: HorseRenderer | None = None,
+        renderer: SceneRenderer | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
         rng: Any = None,
         wall_clock: Callable[[], float] = time.time,
@@ -1091,7 +1128,8 @@ class Horses(commands.Cog, name="Caballos"):
         self.bot = bot
         self.economy = economy
         self.repository = repository
-        self.renderer = renderer or HorseRenderer()
+        # Dibuja con Chromium y, si no hay, con Pillow (ver `bot.services.horses_scene`).
+        self.renderer = renderer or SceneRenderer()
         self.casino_channel_ids = casino_channel_ids
         # `secrets` usa el azar del sistema operativo: no se puede predecir.
         self.rng = rng or secrets.SystemRandom()
@@ -1134,6 +1172,8 @@ class Horses(commands.Cog, name="Caballos"):
         """Al apagar, devuelve lo apostado en las parrillas abiertas."""
         for race in list(self.races.values()):
             race.stopping = True
+            if race.prepared is not None and race.phase is Phase.LOBBY:
+                race.prepared.cancel()
             if race.task is not None:
                 if race.sleeping:
                     race.task.cancel()
@@ -1143,6 +1183,7 @@ class Horses(commands.Cog, name="Caballos"):
             except Exception:
                 logger.exception("No se pudo cerrar una carrera al apagar")
         self.races.clear()
+        await self.renderer.close()
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
@@ -1166,8 +1207,7 @@ class Horses(commands.Cog, name="Caballos"):
         card = new_card(rng, records, now=now, grand_prix=grand_prix)
         odds = await asyncio.to_thread(estimate, card, rng)
         tip = sanxe_tip(odds, rng)
-        card_png = await asyncio.to_thread(
-            self.renderer.card,
+        card_png = await self.renderer.card(
             card,
             odds,
             records,
@@ -1192,6 +1232,7 @@ class Horses(commands.Cog, name="Caballos"):
         """Arranca el bucle de una carrera recién abierta."""
         channel_id = getattr(race.channel, "id", 0)
         race.task = asyncio.create_task(race.run(), name=f"caballos-{channel_id}")
+        race.prepare()
 
     async def ensure_race(
         self, guild_id: int, channel: discord.abc.Messageable
@@ -1354,7 +1395,9 @@ class Horses(commands.Cog, name="Caballos"):
 
         async def confirm(text: str, race: Race, ticket: Ticket | None) -> None:
             if ticket is not None:
-                await interaction.followup.send(text, file=race.ticket_file(ticket), ephemeral=True)
+                await interaction.followup.send(
+                    text, file=await race.ticket_file(ticket), ephemeral=True
+                )
                 return
             if interaction.user.id in race.tickets:
                 await interaction.followup.send(

@@ -44,6 +44,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.services.horses import (
+    RAIN_SEGMENT,
     BetKind,
     Going,
     Horse,
@@ -301,25 +302,9 @@ class HorseRenderer:
     def race(self, card: RaceCard, result: RaceResult) -> Media:
         """GIF de la carrera y PNG del podio."""
         rng = random.Random(hash((card.name, result.times)) & 0xFFFF)
-        winner_time = result.times[result.winner]
-        anim = GRAND_PRIX_SECONDS if card.grand_prix else RACE_SECONDS
-        scale = winner_time / (anim * 1000 / FRAME_MS)  # segundos de carrera por fotograma
-        third = result.times[result.order[min(2, card.size - 1)]]
-        end = third + winner_time * 0.03
+        times, _slow = frame_times(card, result)
         photo = photo_finish(result, card.distance)
-        slow_from = winner_time * 0.985
-        slow_to = result.times[result.order[1]] + winner_time * 0.003
-        rain_at = None
-        if result.rained:
-            leader = result.order[0]
-            rain_at = result.splits[leader][5]
-
-        times: list[float] = [0.0] * GATE_FRAMES
-        t = 0.0
-        while t < end:
-            slow = photo and slow_from <= t <= slow_to
-            t += scale / SLOW_MOTION if slow else scale
-            times.append(min(t, end))
+        rain_at = rain_start(result)
 
         frames: list[Image.Image] = []
         for n, t in enumerate(times):
@@ -501,12 +486,7 @@ class HorseRenderer:
         return sprite
 
     def _positions(self, card: RaceCard, result: RaceResult, t: float) -> list[float]:
-        """X de pantalla del hocico de cada caballo a los `t` segundos de carrera."""
-        distance = card.distance
-        meters = [result.position_at(i, t, distance) for i in range(card.size)]
-        lead = min(max(meters), distance)
-        lead_x = START_X + (FINISH_X - START_X) * lead / distance
-        return [lead_x - (lead - m) * PX_PER_M for m in meters]
+        return screen_positions(card, result, t)
 
     def _frame(
         self,
@@ -700,3 +680,54 @@ class HorseRenderer:
             optimize=False,
         )
         return buffer.getvalue()
+
+
+def frame_times(card: RaceCard, result: RaceResult) -> tuple[list[float], list[bool]]:
+    """Segundo de carrera de cada fotograma del GIF y si va a cámara lenta.
+
+    Los primeros `GATE_FRAMES` son los cajones cerrados (segundo 0). Luego la
+    carrera avanza a ritmo fijo hasta que entra el tercero; si hay
+    foto-finish, los últimos metros del ganador y del segundo van a
+    `SLOW_MOTION` veces menos velocidad. Lo comparten el dibujo con Pillow y
+    el del navegador (`bot.services.horses_scene`).
+    """
+    winner_time = result.times[result.winner]
+    anim = GRAND_PRIX_SECONDS if card.grand_prix else RACE_SECONDS
+    scale = winner_time / (anim * 1000 / FRAME_MS)  # segundos de carrera por fotograma
+    third = result.times[result.order[min(2, card.size - 1)]]
+    end = third + winner_time * 0.03
+    photo = photo_finish(result, card.distance)
+    slow_from = winner_time * 0.985
+    slow_to = result.times[result.order[1]] + winner_time * 0.003
+    times: list[float] = [0.0] * GATE_FRAMES
+    slow_flags: list[bool] = [False] * GATE_FRAMES
+    t = 0.0
+    while t < end:
+        slow = photo and slow_from <= t <= slow_to
+        t += scale / SLOW_MOTION if slow else scale
+        times.append(min(t, end))
+        slow_flags.append(slow)
+    return times, slow_flags
+
+
+def rain_start(result: RaceResult) -> float | None:
+    """Segundo en que empieza a llover (cuando el ganador cierra el tramo de la lluvia)."""
+    if not result.rained:
+        return None
+    return result.splits[result.order[0]][RAIN_SEGMENT]
+
+
+def screen_positions(
+    card: RaceCard, result: RaceResult, t: float, *, start_x: float = START_X
+) -> list[float]:
+    """X de pantalla del hocico de cada caballo a los `t` segundos de carrera.
+
+    Cámara virtual: el primero avanza a ritmo fijo de los cajones (`start_x`)
+    a la meta y los demás van detrás a la distancia real que les saca
+    (`PX_PER_M`).
+    """
+    distance = card.distance
+    meters = [result.position_at(i, t, distance) for i in range(card.size)]
+    lead = min(max(meters), distance)
+    lead_x = start_x + (FINISH_X - start_x) * lead / distance
+    return [lead_x - (lead - m) * PX_PER_M for m in meters]

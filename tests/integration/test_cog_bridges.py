@@ -206,9 +206,11 @@ async def test_las_carreras_apuntan_sus_logros_y_jugadas_con_el_bot_real(
         caballos = importer("Caballos", client)
         cog = client.get_cog("Caballos")
         cog.renderer = MagicMock()
-        cog.renderer.card.return_value = b"PNG"
-        cog.renderer.ticket.return_value = b"PNG"
-        cog.renderer.race.return_value = caballos.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        cog.renderer.card = AsyncMock(return_value=b"PNG")
+        cog.renderer.ticket = AsyncMock(return_value=b"PNG")
+        cog.renderer.race = AsyncMock(
+            return_value=caballos.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
         cog.sleep = AsyncMock()
         cog.start = MagicMock()
         owner = MagicMock(spec=discord.Member)
