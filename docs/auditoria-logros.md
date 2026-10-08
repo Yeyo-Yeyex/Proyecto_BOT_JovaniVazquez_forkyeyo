@@ -14,11 +14,11 @@ La rareza dice cuánto le cuesta a un miembro activo que hace esa cosa:
 | 🌟 Legendario | hasta 8 meses | 2.500 Y$ | 100 |
 | 👑 Mítico | más de 8 meses, o suerte de 1 entre decenas de miles | 10.000 Y$ | 250 |
 
-Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60 y pachinko 60 tandas. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
+Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60, pachinko 60 tandas y caballos 30 boletos. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
 
 ## Método
 
-1. **Casino, simulado.** Cada jugador juega con el código de verdad (`SlotMachine`, `spin_base` y `BonusGame`, `PachinkoMachine`, `MinesGame`, `ChickenGame`, `crash_point`, `Wheel`, `BlackjackGame`) y la misma función de estadísticas que usa el cog. La estrategia imita a un jugador normal: apuestas a color, a número y a docenas en la ruleta; estrategia básica simplificada en el blackjack; minas, dificultades y objetivos de cobro variados en Minas, Pollo y Crash. Se toma la mediana del día en que salta cada logro.
+1. **Casino, simulado.** Cada jugador juega con el código de verdad (`SlotMachine`, `spin_base` y `BonusGame`, `PachinkoMachine`, `MinesGame`, `ChickenGame`, `crash_point`, `Wheel`, `BlackjackGame`, `run_race`) y la misma función de estadísticas que usa el cog. La estrategia imita a un jugador normal: apuestas a color, a número y a docenas en la ruleta; estrategia básica simplificada en el blackjack; minas, dificultades y objetivos de cobro variados en Minas, Pollo y Crash. Se toma la mediana del día en que salta cada logro.
 2. **Contadores, por ritmo.** Meta entre ritmo diario. Es orientativo: sirve para ver saltos de dos rarezas, no para afinar.
 3. **Fechas y decisiones, a mano.** Los logros de un día del año (Halloween, Reyes…) se quedan en Común: basta con estar ese día. Lo que depende de una decisión del jugador (apostar 1 Y$, plantarse con 11, cobrar a 1,10x) se puede forzar a propósito y va en Común o Raro.
 
@@ -38,6 +38,15 @@ Rarezas cambiadas: 130.
 - **Casino general.** Probar los ocho juegos costaba Legendario y se hace en diez minutos: baja a Común o Raro. Las rachas de victorias se fuerzan cobrando a 1,01x en el Crash (98 % de acierto): 5 seguidas a Común, 10 a Raro.
 - **Cosas que dependen del calendario.** Treinta días seguidos (hablar, el IMV, los intereses, la pala) es Épico; cien, Legendario; un año, Mítico. Antes había rachas de un año en Legendario y de 30 días en Común.
 - **Loterías.** 4 aciertos en la Primitiva o la Bonoloto (1 de cada 1.032 apuestas) pasa de Raro a Épico; 5 aciertos (1 de cada 55.491), de Legendario a Mítico.
+
+## Carreras de caballos
+
+Se añadieron después, con 72 logros (11 secretos). La simulación (`_jugar_caballos`) prepara 60 parrillas con sus cuotas, una de cada diez de Gran Premio, y en cada carrera elige un tipo de boleto como un jugador normal (ganador 55 %, colocado 15 %, gemela 18 %, trío 12 %) y caballos tirando hacia los favoritos. 52 de los 72 caen en su banda; 9 a una de distancia. Lo que se calibró con ella:
+
+- **Suben:** cobrar a 20x (unos 4 días) y a 100x (unos 40), ganar con un tapado de 10x (5 días; diez veces, unos 70), perder 10 por una nariz (63), remontar desde el último (40; diez veces, más de un año), ganar tras tropezar (unos 200 días), 50 colocados y 25 aciertos con el pronóstico de Perro Sanxe (unos 20 días).
+- **Bajan:** que tu caballo se desboque (1 de cada 250 boletos, día y medio) y el secreto de Puerta Giratoria, que pide 5x en vez de 10x (a 10x tardaba nueve meses).
+- **Se dejan por encima de lo que dice la simulación:** el bote del Gran Premio (Raro, y cinco botes Épico) y la colección de distancias (Raro), porque la simulación corre un Gran Premio de cada diez carreras y en un servidor de verdad sale como mucho uno cada 4 horas y hacen falta ocho carreras normales antes. Igual con «Tribuna llena» y «Derbi de Epsom» (6 y 10 boletos en una carrera), que dependen de cuánta gente juegue en el servidor.
+- **Fuera de la simulación:** los de madrugada, apostar 1.500 Y$ justos, ganar 100.000 Y$ de golpe, la retención de IRPF (el jugador simulado no paga impuestos), el caballo cansado (la simulación no guarda historial) y los que se derivan de los contadores por caballo (todo el establo, hincha, socio y peña), que se cuentan en `with_derived`.
 
 ## Excepciones que la simulación marca y se dejan
 

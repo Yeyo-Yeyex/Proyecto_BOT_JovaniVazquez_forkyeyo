@@ -20,6 +20,7 @@ from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.hold_win import HoldWinRepository
+from bot.repositories.horses import HorseRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.pets import PetRepository
@@ -50,6 +51,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.mines",
     "bot.cogs.chicken",
     "bot.cogs.pachinko",
+    "bot.cogs.horses",
     "bot.cogs.lottery",
     "bot.cogs.renta",
     "bot.cogs.apuestas",
@@ -121,6 +123,8 @@ class BotClient(commands.Bot):
         # Maletines y botes de cada jugador en las máquinas de Botes
         # (de momento, `volcan`); el dinero pasa por `economy`.
         self.hold_win = HoldWinRepository(database_path)
+        # Historial del establo y bote del Gran Premio de `caballo`; el dinero pasa por `economy`.
+        self.horses = HorseRepository(database_path)
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
         self.work = WorkService(WorkRepository(database_path), self.economy)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
@@ -153,6 +157,7 @@ class BotClient(commands.Bot):
         await self.lottery.initialize()
         await self.todo.initialize()
         await self.hold_win.initialize()
+        await self.horses.initialize()
         await self.work.repository.initialize()
 
         for extension in INITIAL_EXTENSIONS:

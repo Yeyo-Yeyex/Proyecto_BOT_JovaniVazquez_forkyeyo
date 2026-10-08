@@ -40,10 +40,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import SimpleNamespace
 
+import numpy as np
+
 sys.path.insert(0, "src")
 
 from bot.services import blackjack as bj  # noqa: E402
 from bot.services import chicken, crash, hold_win, mines, pachinko, roulette, slots  # noqa: E402
+from bot.services import horses as caballos  # noqa: E402
 from bot.services.achievements import (  # noqa: E402
     AVAILABLE,
     CATALOG,
@@ -58,6 +61,7 @@ from bot.services.achievements import (  # noqa: E402
     crash_stats,
     hold_win_bonus_stats,
     hold_win_stats,
+    horses_stats,
     mines_stats,
     pachinko_stats,
     roulette_stats,
@@ -97,6 +101,7 @@ RITMO_CASINO = {
     "mines": 40,
     "chicken": 60,
     "pachinko": 60,
+    "horses": 30,
 }
 
 #: Cuánto suma al día cada contador para un miembro activo que hace esa cosa.
@@ -371,6 +376,66 @@ def _jugar_blackjack(j: Jugador) -> StatDelta:
     return _con_casino(blackjack_stats(game), stake=game.total_stake, net=game.net)
 
 
+#: Carreras ya preparadas (parrilla y cuotas): estimar las cuotas es lo caro y
+#: con unas decenas de parrillas distintas basta para que salga de todo.
+_PARRILLAS: list[tuple[caballos.RaceCard, caballos.Odds]] = []
+_TIPOS = ((caballos.BetKind.WIN, 55), (caballos.BetKind.PLACE, 15),
+          (caballos.BetKind.EXACTA, 18), (caballos.BetKind.TRIFECTA, 12))  # fmt: skip
+_VIAS = (("panel", 65), ("sanxe", 15), ("pueblo", 10), ("azar", 10))
+
+
+def _parrillas() -> list[tuple[caballos.RaceCard, caballos.Odds]]:
+    if not _PARRILLAS:
+        rng = np.random.default_rng(1)
+        for n in range(60):
+            # Una de cada diez carreras es Gran Premio (como mucho uno cada 4 h).
+            card = caballos.new_card(rng, {}, now=0, grand_prix=n % 10 == 0)
+            _PARRILLAS.append((card, caballos.estimate(card, rng, trials=20_000)))
+    return _PARRILLAS
+
+
+def _jugar_caballos(j: Jugador) -> StatDelta:
+    rng = j.rng
+    card, odds = rng.choice(_parrillas())
+    kind = _elegir(rng, _TIPOS)
+    # Un jugador normal tira hacia los favoritos, pero no siempre.
+    weights = [p**0.7 + 1e-6 for p in odds.win]
+    horses = []
+    while len(horses) < kind.picks:  # type: ignore[attr-defined]
+        horse = rng.choices(range(card.size), weights=weights)[0]
+        if horse not in horses:
+            horses.append(horse)
+    pick = caballos.Pick(kind, tuple(horses))  # type: ignore[arg-type]
+    cents = odds.odds(pick)
+    result = caballos.run_race(card, np.random.default_rng(rng.getrandbits(64)))
+    won = pick.wins(result.order)
+    share = 0
+    if card.grand_prix and caballos.pot_eligible(pick, APUESTA, result.order):
+        share = caballos.GRAND_PRIX_POT // rng.choice((1, 1, 2))
+    prize = (caballos.payout(APUESTA, cents) if won else 0) + share
+    tip = caballos.sanxe_tip(odds, np.random.default_rng(rng.getrandbits(64)))
+    delta = horses_stats(
+        card=card,
+        result=result,
+        pick=pick,
+        stake=APUESTA,
+        odds_cents=cents,
+        net=prize - APUESTA,
+        pot_share=share,
+        tip_horse=tip.horse,
+        alone=rng.random() < 0.15,
+        via=_elegir(rng, _VIAS),  # type: ignore[arg-type]
+        players=rng.choice((1, 1, 2, 3, 4, 6)),
+        favourite=odds.favourite(),
+        favourite_odds=odds.odds(caballos.Pick(caballos.BetKind.WIN, (odds.favourite(),))),
+        photo=caballos.photo_finish(result, card.distance),
+        comeback=caballos.comeback(result, card.distance, pick.horses[0]),
+        tax_delta=0,
+        when=NOON,
+    )
+    return _con_casino(delta, stake=APUESTA, net=prize - APUESTA)
+
+
 JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "slots": _jugar_slots,
     "botes": _jugar_botes,
@@ -380,6 +445,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "crash": _jugar_crash,
     "roulette": _jugar_ruleta,
     "blackjack": _jugar_blackjack,
+    "horses": _jugar_caballos,
 }
 
 

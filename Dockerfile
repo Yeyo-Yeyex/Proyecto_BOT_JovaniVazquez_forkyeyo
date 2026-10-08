@@ -3,6 +3,7 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
@@ -18,6 +19,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install . && rm -rf /app/src /app/build
+
+# Chromium sin ventana (y sus librerías del sistema) para dibujar las carreras
+# de caballos. Ocupa unos 300 MB; si falta, el bot dibuja con Pillow.
+RUN python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 # Usuario sin privilegios. La base de datos vive en /app/.data (volumen).
 RUN useradd --create-home --uid 1000 bot \
