@@ -50,6 +50,7 @@ HELP_CATEGORIES: dict[str, str] = {
     "Trabajo": "🪏 Trabajo",
     "Birthdays": "🎂 Cumpleaños",
     "Lista": "📝 Lista",
+    "Beernight": "🍻 Beernight",
     "Achievements": "🏆 Logros",
     "Entrance": "🔔 Entradas",
     "Images": "🎨 Imagen",

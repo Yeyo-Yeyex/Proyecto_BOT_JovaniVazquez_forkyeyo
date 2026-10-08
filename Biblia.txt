@@ -91,6 +91,7 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 - Excepción, los comandos de imagen: son **solo de texto** (`.magik`, `.memes` y los efectos de Dank Memer), porque Discord limita un bot a 100 slash commands y los efectos son más de 100. Los efectos conservan el nombre que tienen en Dank Memer aunque pase de 8 caracteres (`.changemymind`), y `/ayuda` los reparte en subcategorías de Imagen según su tipo (`Command.extras["help_group"]`). `.memes <efecto>` explica cada uno. El resto de la norma (sin alias, sin grupos, un nombre por comando) se mantiene.
 - Excepción, el blackjack: se llama `blackjack` (`/blackjack` y `.blackjack`, aunque pase de 8 caracteres) y tiene el atajo de texto `.bj`. Es el único alias permitido; el menú de `/` solo muestra `/blackjack`.
 - Excepción, el patrimonio: `patrimonio` pasa de 8 caracteres porque es el nombre del impuesto y lo pidió así el proyecto. No tiene alias. La lista de todos va en otro comando, `fortunas`.
+- Excepción, la beernight: `beernight` pasa de 8 caracteres y no está en español porque es el nombre del evento del servidor y lo pidió así el proyecto. No tiene alias ni subcomandos: todo va en su panel, y subir un audio son dos opciones del mismo comando.
 
 ### Servicios
 

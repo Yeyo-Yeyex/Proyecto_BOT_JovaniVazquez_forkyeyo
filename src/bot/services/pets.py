@@ -61,6 +61,7 @@ class Event(StrEnum):
     BIZUM = "bizum"
     BIRTHDAY = "birthday"
     NEWS = "news"
+    BEER = "beer"
 
 
 class Mood(StrEnum):
@@ -492,6 +493,12 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
     Event.NEWS: (
         "{pet} se sienta encima de las novedades para que no las leas sin su permiso.",
         "{pet} olisquea el changelog y aprueba la mitad, como el Congreso.",
+    ),
+    Event.BEER: (
+        "{pet} te mira beber y apunta otro sorbo en su libreta.",
+        "{pet} brinda contigo a su manera: {sound}.",
+        "{pet} no bebe, pero te juzga en silencio.",
+        "{pet} se acerca a olisquear el vaso y vuelve con cara de «¿otra vez?».",
     ),
 }
 

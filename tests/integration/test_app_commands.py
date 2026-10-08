@@ -59,6 +59,7 @@ EXPECTED_COMMANDS = {
     "mochila",
     "lista",
     "pala",
+    "beernight",
 }
 
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
@@ -114,7 +115,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # Única excepción acordada: `.blackjack` con su atajo `.bj`.
             aliases = {c.name: c.aliases for c in client.commands if c.aliases}
             assert aliases == {"blackjack": ["bj"]}
-            long_names = {"blackjack", "patrimonio"}
+            long_names = {"blackjack", "patrimonio", "beernight"}
             assert all(
                 len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects - long_names
             )
@@ -160,6 +161,7 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
                 "🪏 Trabajo (1)",
                 "🎂 Cumpleaños (2)",
                 "📝 Lista (1)",
+                "🍻 Beernight (1)",
                 "🏆 Logros (1)",
                 "🔔 Entradas (1)",
                 "🎨 Imagen (2)",

@@ -41,10 +41,11 @@ from bot.services.entrance_sound import (
     MAX_UPLOAD_BYTES,
     MAX_VOLUME_PERCENT,
     MIN_VOLUME_PERCENT,
+    PACKET_SECONDS,
     EntranceSoundError,
-    OpusPacketSource,
     build_source_clip,
     check_duration,
+    play_packets,
     probe_audio_duration,
     read_opus_packets,
     render_clip,
@@ -64,8 +65,6 @@ CONNECT_TIMEOUT_SECONDS = 10.0
 #: Pausa tras conectar o moverse antes de emitir. Sin ella Discord puede
 #: comerse el principio del clip mientras termina de establecer la sesión de voz.
 PRE_ROLL_SECONDS = 0.3
-#: Duración de cada paquete Opus generado por el servicio (`-frame_duration 20`).
-PACKET_SECONDS = 0.02
 #: Conversiones de audio simultáneas (cada una lanza un `ffmpeg`).
 MAX_CONCURRENT_JOBS = 2
 #: Tipos MIME que se aceptan cuando Discord informa uno. Si no lo informa,
@@ -441,24 +440,7 @@ class Entrance(commands.Cog):
 
     async def _play(self, voice: discord.VoiceClient, packets: list[bytes]) -> None:
         """Reproduce los paquetes y espera a que terminen (con un tope de seguridad)."""
-        loop = asyncio.get_running_loop()
-        finished = asyncio.Event()
-
-        def _after(error: Exception | None) -> None:
-            # Lo llama el hilo de audio de discord.py, no el event loop.
-            if error is not None:
-                logger.warning("Error de reproducción en un sonido de entrada: %s", error)
-            loop.call_soon_threadsafe(finished.set)
-
-        try:
-            voice.play(OpusPacketSource(packets), after=_after)
-        except discord.ClientException:
-            logger.warning("No se pudo reproducir un sonido de entrada", exc_info=True)
-            return
-        try:
-            await asyncio.wait_for(finished.wait(), timeout=len(packets) * PACKET_SECONDS + 5)
-        except TimeoutError:
-            voice.stop()
+        await play_packets(voice, packets)
 
     async def cog_unload(self) -> None:
         """Cancela los reproductores en curso; su `finally` cierra la voz."""

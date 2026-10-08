@@ -70,6 +70,7 @@ python -m bot
   | 📊 Niveles | `nivel [miembro]` · `ranking [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
+  | 🍻 Beernight | `beernight [sonido] [archivo]` |
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
@@ -425,15 +426,15 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.742 logros en 38 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.830 logros en 39 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
-  (una sección por juego); y además social, lista, niveles, loterías,
+  (una sección por juego); y además social, lista, beernight, niveles, loterías,
   tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 309 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 319 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -505,6 +506,19 @@ python -m bot
   El bot entra, lo reproduce y se va; no suena si el bot ya está poniendo
   música. Los clips se guardan en `.data/entradas/` (mismo volumen Docker
   que la base de datos).
+- **Beernight** (`beernight`): la noche de llamada del servidor, para jugar a
+  lo que sea y beber lo que cada uno tenga. El panel tiene unos cuantos
+  mandamientos activos (154 de serie en siete familias, más los que proponga
+  la gente) que rotan solos. Quien cae lo confiesa con 🍺; si no, alguien se
+  chiva con 🚨 y otra persona lo confirma, y si el chivatazo es falso bebe el
+  chivato. Cada pocos minutos salta uno de los 69 eventos: sorbos directos,
+  duelos, retos, repartos, decretos con un mandamiento temporal y
+  remodelaciones. El anfitrión y los administradores ajustan el ritmo, el
+  tope de sorbos por hora y las familias. Cada servidor sube sus audios con
+  `beernight sonido:<momento> archivo:<audio>` (hasta 6 s, cinco por
+  momento) y el bot los pone en la llamada si no está ya con música. Todo
+  queda en un histórico con ranking de siempre. No mueve yapdollars. Los
+  audios se guardan en `.data/beernight/`.
 
 La importación histórica de este servidor ya se completó y la activación de
 niveles ya se ejecutó. Los comandos temporales de importación/activación y los

@@ -622,3 +622,71 @@ async def test_una_porra_cuenta_las_jugadas_y_apunta_logros_con_el_bot_real(
         for task in list(client.get_cog("Porras")._tasks):
             task.cancel()
         await client.close()
+
+
+async def test_la_beernight_apunta_sus_logros_y_saca_la_mascota_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`beernight` carga antes que los logros: confesar y cerrar deben llegar a ellos, y la
+    mascota activa tiene que poder brindar en sus mensajes."""
+    from bot.services.beernight import Settings
+    from bot.services.pets import BOND_LEVELS, Event, Moment, PetState
+
+    client = await load_bot(tmp_path)
+    await client.beernight.initialize()
+    await client.beernight.save_settings(GUILD_ID, Settings(sound=False))
+    try:
+        beernight = client.get_cog("Beernight")
+        module = importer("Beernight", client)
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        owner.voice = None
+        owner.guild_permissions = discord.Permissions.none()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        guild.get_member = MagicMock(return_value=owner)
+        guild.voice_client = None
+        owner.guild = guild
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 5
+        channel.send = AsyncMock(return_value=MagicMock(id=6, channel=channel))
+        channel.get_partial_message = MagicMock(return_value=MagicMock(edit=AsyncMock()))
+        client.get_guild = MagicMock(return_value=guild)  # type: ignore[method-assign]
+        client.get_channel = MagicMock(return_value=channel)  # type: ignore[method-assign]
+        interaction = MagicMock()
+        interaction.guild = guild
+        interaction.user = owner
+        interaction.channel = channel
+        interaction.client = client
+        interaction.response.edit_message = AsyncMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.message = MagicMock(id=7, channel=channel)
+
+        await beernight.start(interaction)
+        state = beernight.nights[GUILD_ID]
+        state.task.cancel()
+        mandate = state.active[0].mandate
+        await beernight.confess(interaction, state.night.id, mandate.key)
+        await beernight.finish(state, interaction=interaction)
+        # Los sorbos van por `note` (se escriben cada minuto): se fuerza la escritura.
+        await client.get_cog("Achievements").flush()
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["beer_sips"] == mandate.sips
+        assert profile.stats["beer_nights"] == 1
+        assert profile.stats["beer_hosted"] == 1
+        assert {"beer_sip_1", "beer_night_1", "beer_host_1"} <= set(profile.unlocked)
+
+        pets = client.get_cog("Mascotas")
+        pets.active[(GUILD_ID, OWNER_ID)] = PetState(
+            id=1, guild_id=GUILD_ID, user_id=OWNER_ID, species="perro", name="Toby",
+            bond=BOND_LEVELS[4],
+        )  # fmt: skip
+        line = await module.mascotas.cameo(client, GUILD_ID, OWNER_ID, Moment(Event.BEER, True))
+        assert line is not None and "**Toby**" in line
+    finally:
+        await client.close()
