@@ -32,3 +32,17 @@ Lo que más se olvida:
   calidad" de `Biblia.txt`.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
+
+## Dos repositorios
+
+- `godzilin/Proyecto_BOT_JovaniVazquez` es el del bot: su `main` es lo que se despliega.
+- `Yeyo-Yeyex/Proyecto_BOT_JovaniVazquez_forkyeyo` es un fork que se usa para dar
+  contexto en cada chat. Se trabaja aquí.
+- Al terminar un cambio, los dos `main` tienen que quedar con la versión más
+  actualizada. Primero se trae el `main` de godzilin (`git remote add upstream
+  https://github.com/godzilin/Proyecto_BOT_JovaniVazquez`, `git fetch upstream main`) y
+  se fusiona con el del fork, resolviendo conflictos y pasando las comprobaciones. El
+  resultado se sube al `main` del fork.
+- El agente no tiene permiso de escritura en el repo de godzilin. Para llevar el `main`
+  del fork allí, se le da a la persona el enlace para abrir la PR desde la web:
+  https://github.com/godzilin/Proyecto_BOT_JovaniVazquez/compare/main...Yeyo-Yeyex:Proyecto_BOT_JovaniVazquez_forkyeyo:main
