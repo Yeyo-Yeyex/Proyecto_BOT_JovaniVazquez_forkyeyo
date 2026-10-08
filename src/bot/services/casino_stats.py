@@ -51,6 +51,7 @@ GAMES: dict[str, tuple[str, str]] = {
     "pollo": ("🐔", "Pollo"),
     "pachinko": ("🌸", "Pachinko"),
     "caballos": ("🏇", "Caballos"),
+    "porra": ("🎫", "Porras"),
 }
 
 #: Prefijos del libro que pertenecen a otro juego de `GAMES`.
@@ -142,6 +143,11 @@ class Play:
         payout: Lo devuelto, apuesta incluida (0 si se pierde todo).
         tax: IRPF que movió: positivo si se retuvo, negativo si se devolvió.
         balance_after: Saldo del jugador al terminar.
+        details: Datos propios del juego, como pares `(clave, valor)`, para las
+            propuestas de las porras (`bot.services.porras`): `boom` en minas,
+            `splat` en el pollo, `bust` y `natural` en el blackjack y `started`
+            (epoch de cuando se cobró la apuesta) en los juegos que duran. No
+            se guardan en `casino_plays`.
     """
 
     game: str
@@ -149,6 +155,11 @@ class Play:
     payout: int
     tax: int
     balance_after: int
+    details: tuple[tuple[str, int], ...] = ()
+
+    def detail(self, key: str, default: int = 0) -> int:
+        """Valor de `details` para `key`, o `default` si el juego no lo manda."""
+        return dict(self.details).get(key, default)
 
     @property
     def net(self) -> int:

@@ -32,6 +32,8 @@ Renta: lo que tributa es la compra.
 Otros cogs: `xp_multiplier(bot, …)` da el multiplicador de XP de los
 potenciadores; lo usa `bot.cogs.message_stats` al dar XP por mensajes y voz.
 Lo lee de una caché en memoria, sin tocar la base de datos en cada mensaje.
+`owned_keys(bot, …)` da las claves de serie de lo que tiene un miembro; lo
+usa `bot.cogs.work` al fichar para aplicar las herramientas de curro.
 
 Permisos: **Gestionar roles** y que el rol del bot esté por encima de los
 roles que se venden. Sin ellos, la tienda no deja ponerlos a la venta ni
@@ -105,6 +107,7 @@ from bot.services.shop_uses import (
     resolve,
 )
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.work_tools import TOOL_BY_KEY
 from bot.utils.cogs import find_cog
 
 if TYPE_CHECKING:
@@ -200,6 +203,8 @@ def kind_detail(item: ShopItem) -> str:
         return f"🐾 Mascota {species.rarity.lower()}" if species else "🐾 Mascota"
     if (use := use_of(item.catalog_key)) is not None:
         return use.summary
+    if (tool := TOOL_BY_KEY.get(item.catalog_key or "")) is not None:
+        return f"🛠️ Herramienta de `pala`: {tool.effect}"
     return "Coleccionable"
 
 
@@ -905,6 +910,11 @@ class Tienda(commands.Cog):
             del self.boosts[key]
             return 1.0
         return active_multiplier(windows, now)
+
+    async def owned_keys(self, guild_id: int, user_id: int) -> frozenset[str]:
+        """Claves de serie de lo que tiene el miembro en vigor (para `pala`)."""
+        entries = await self.repository.inventory(guild_id, user_id, self.clock())
+        return frozenset(e.catalog_key for e in entries if e.catalog_key)
 
     def queued_boosts(
         self, guild_id: int, user_id: int, now: float
@@ -1629,6 +1639,21 @@ def xp_multiplier(bot: commands.Bot, guild_id: int, user_id: int, now: float) ->
     if (cog := find_cog(bot, Tienda)) is not None:
         return cog.xp_multiplier(guild_id, user_id, now)
     return 1.0
+
+
+async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:
+    """Claves de serie de lo que tiene un miembro; vacío si la tienda no está cargada.
+
+    `pala` lo usa para las herramientas de curro. Si la base de datos falla, el
+    turno sigue sin herramientas: mejor currar sin casco que no poder fichar.
+    """
+    if (cog := find_cog(bot, Tienda)) is None:
+        return frozenset()
+    try:
+        return await cog.owned_keys(guild_id, user_id)
+    except Exception:
+        logger.exception("No se pudo leer la mochila de %s para la pala", user_id)
+        return frozenset()
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

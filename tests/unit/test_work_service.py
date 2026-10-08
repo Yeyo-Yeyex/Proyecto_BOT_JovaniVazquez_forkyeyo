@@ -620,3 +620,46 @@ async def test_ignorar_la_carta_de_hacienda_puede_salir_cara(tmp_path: Path, dic
     assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] - state_before == result.fine
     # Hacienda no suspende el IMV (eso es cosa de la Inspección y la UCO).
     assert await service.economy.repository.imv_suspended_until(GUILD, USER) == 0
+
+
+# -- Herramientas de curro y logros del minijuego ------------------------------------------
+
+
+async def test_las_herramientas_entran_en_el_turno_y_en_los_logros(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    shift = await service.start_shift(
+        GUILD, USER, tools={"seguro_rc", "chaleco_reflectante", "argumentario", "huevo"}
+    )
+    assert {t.key for t in shift.perks.tools} == {"seguro_rc", "chaleco_reflectante"}
+    game = shift.game
+    assert game.retries == 1 and game.insured
+    # Rompe dos cosas: la primera la perdona el chaleco; la segunda la paga el seguro.
+    now = game.started_at
+    while game.saved + game.insured_breaks < 2 and not game.finished(now):
+        current = game.current
+        assert current is not None
+        game.press(next(iter(current.penalty)) if current.penalty else current.answer[0], now)
+    play(game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    add = work_stats(outcome).add
+    assert add["work_saves"] == 1 and add["work_insured"] == 1
+    assert "work_clean_digs" not in add  # rompió algo, aunque pagara el seguro
+
+
+async def test_un_turno_limpio_y_rapido_cuenta_para_sus_logros(tmp_path: Path, dice: Dice) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "politica")
+    shift = await service.start_shift(GUILD, USER)
+    play(shift.game)  # medio segundo por jugada: sobra más de la mitad del tiempo
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    add = work_stats(outcome).add
+    assert add["work_posters"] == len(shift.game.rounds)
+    assert add["work_memory_flawless"] == 1 and add["work_fast"] == 1
+    assert "work_first_miss" not in add and "work_last_second" not in add

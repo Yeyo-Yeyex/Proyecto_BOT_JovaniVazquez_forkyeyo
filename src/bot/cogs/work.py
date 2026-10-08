@@ -16,7 +16,20 @@ Según el oficio y el puesto aparecen también 🚑 **Guardia** (sanidad), 🏠
 Fichar lanza el minijuego del puesto en el mismo mensaje (cavar, detectar,
 memoria o diálogo; de 30 a 60 s). Al acabar, o al agotarse el tiempo, se
 cobra la nómina y se enseña con su desglose; a veces sale un evento con dos
-opciones. Las reglas están en `bot.services.work`, los minijuegos en
+opciones. Las herramientas de curro de la tienda (`bot.services.work_tools`)
+se aplican solas al fichar si el miembro las tiene.
+
+**Botones del minijuego.** No los atiende la vista, sino el listener
+`Work.on_interaction`, por su `custom_id` (`pala:<panel>:<ronda>:<opción>`).
+discord.py desengancha los botones de una vista al redibujarla y solo vuelve a
+registrar los nuevos cuando Discord confirma la edición, así que un clic que
+llegaba en esos 100–500 ms se perdía («Esta interacción ha fallado»). En la
+memoria, donde se pulsa seguido, pasaba a cada rato. Con el listener todo clic
+llega: si es de la ronda en juego cuenta, si es de una ronda ya pasada se
+acepta sin hacer nada, y las ediciones van de una en una (`_render_lock`)
+para que el panel nunca se quede en un estado viejo.
+
+Las reglas están en `bot.services.work`, los minijuegos en
 `bot.services.work_games` y los casos de uso (y el dinero) en
 `bot.services.pala`.
 
@@ -35,6 +48,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -45,6 +59,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import renta
+from bot.cogs import shop as tienda
 from bot.services.achievements import StatDelta, work_stats
 from bot.services.economy import CURRENCY_EMOJI, format_amount
 from bot.services.levels import TIMEZONE, local_day
@@ -76,6 +91,7 @@ from bot.services.work import (
 )
 from bot.services.work_catalog import CAUGHT_TEXT, COFFEES, JOB_BY_KEY, JOBS, Event
 from bot.services.work_games import GRACE_SECONDS
+from bot.services.work_tools import TOOL_KEYS
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -101,6 +117,39 @@ KIND_TEXT = {
     ShiftKind.BLACK: "extra en B 🤫",
     ShiftKind.GUARD: "de guardia 🚑",
 }
+#: Cómo se juega cada minijuego, en una línea.
+HOW_TO = {
+    Mechanic.DIG: "Pulsa la casilla con una marca segura del plano. La roca no suma y "
+    "romper algo resta. Ojo: los mirones no siempre aciertan.",
+    Mechanic.SPOT: "Lee la lista y pulsa el que no encaja.",
+    Mechanic.MEMORY: "Memoriza la secuencia, pulsa ✅ Memorizado y repítela en el mismo "
+    "orden. Puedes pulsar seguido: no hace falta esperar a que se actualice el panel.",
+    Mechanic.DIALOGUE: "Lee la situación y elige la mejor respuesta.",
+}
+#: Prefijo de los `custom_id` de los botones del minijuego.
+GAME_ID_PREFIX = "pala:"
+#: Opción del botón ✅ Memorizado en el `custom_id`.
+HIDE_CHOICE = "ver"
+
+
+def game_id(token: int, round_index: int, choice: int | str) -> str:
+    """`custom_id` de un botón del minijuego: panel, ronda y opción."""
+    return f"{GAME_ID_PREFIX}{token}:{round_index}:{choice}"
+
+
+def parse_game_id(custom_id: str) -> tuple[int, int, int | str] | None:
+    """Lo contrario de `game_id`; `None` si no es un botón del minijuego."""
+    if not custom_id.startswith(GAME_ID_PREFIX):
+        return None
+    parts = custom_id[len(GAME_ID_PREFIX) :].split(":")
+    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None
+    choice: int | str = int(parts[2]) if parts[2].isdigit() else parts[2]
+    if choice != HIDE_CHOICE and not isinstance(choice, int):
+        return None
+    return int(parts[0]), int(parts[1]), choice
+
+
 PHASE_TEXT = {
     "residente": "sigues siendo residente fiscal en España (art. 7.p LIRPF: exento hasta "
     "60.100 € al año)",
@@ -360,6 +409,14 @@ class PalaPanel(ui.LayoutView):
         self._lock = asyncio.Lock()
         self._timer: asyncio.Task[None] | None = None
         self._finishing = False
+        #: Identifica el panel en los `custom_id` del minijuego.
+        self.token = cog.new_token()
+        #: Una edición del panel cada vez durante el minijuego.
+        self._render_lock = asyncio.Lock()
+        #: Clics del minijuego recibidos; solo el último redibuja.
+        self._ticket = 0
+        #: Herramientas de curro que tenía al fichar (para los logros).
+        self._tools_owned = 0
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -374,6 +431,19 @@ class PalaPanel(ui.LayoutView):
         button: ui.Button = ui.Button(label=label[:80], style=style, disabled=disabled)
         button.callback = callback  # type: ignore[method-assign]
         return button
+
+    def _game_button(
+        self,
+        label: str,
+        round_index: int,
+        choice: int | str,
+        *,
+        style: discord.ButtonStyle = discord.ButtonStyle.secondary,
+    ) -> ui.Button:
+        """Botón del minijuego: lo atiende `Work.on_interaction` por su `custom_id`."""
+        return ui.Button(
+            label=label[:80], style=style, custom_id=game_id(self.token, round_index, choice)
+        )
 
     def _frame(self, text: str, color: discord.Color, rows: list[ui.ActionRow]) -> None:
         self.clear_items()
@@ -496,12 +566,23 @@ class PalaPanel(ui.LayoutView):
         self._frame(status_text(status, notes), COLOR_IDLE, rows)
 
     def show_game(self) -> None:
-        """Pantalla del minijuego en marcha."""
+        """Pantalla del minijuego en marcha.
+
+        Arriba, cómo se juega, las herramientas y el reloj; luego lo que ha
+        pasado con la última pulsación (bien visible, para que un fallo no
+        pase desapercibido) y la ronda en juego.
+        """
         shift = self.shift
         assert shift is not None
         game = shift.game
         current = game.current
         head = [f"### {shift.job.emoji} {shift.position.title} · turno {KIND_TEXT[shift.kind]}"]
+        head.append(f"-# 🎮 {HOW_TO[game.mechanic]}")
+        if shift.perks.tools:
+            spent = shift.perks.retries and not game.retries
+            head.append(
+                f"-# 🛠️ {shift.perks.summary}" + (" (fallo gratis gastado)" if spent else "")
+            )
         if game.header:
             head.append(game.header)
         if shift.tremors:
@@ -512,18 +593,24 @@ class PalaPanel(ui.LayoutView):
             self._frame("\n".join(head), COLOR_GAME, [])
             return
         if game.showing:
+            if game.last:
+                head.append(f"**Ronda anterior:** {game.last}")
             head.append(current.reveal or "")
             row: ui.ActionRow = ui.ActionRow()
             row.add_item(
-                self._button("✅ Memorizado", self._hide, style=discord.ButtonStyle.primary)
+                self._game_button(
+                    "✅ Memorizado", game.index, HIDE_CHOICE, style=discord.ButtonStyle.primary
+                )
             )
             self._frame("\n".join(head), COLOR_GAME, [row])
             return
+        if game.last:
+            head.append(f"**{game.last}**")
         body = current.prompt
         if game.mechanic is Mechanic.MEMORY:
-            body += f"\n-# {game.step}/{len(current.answer)}"
-        if game.last:
-            body += f"\n-# Anterior: {game.last}"
+            done = [current.options[i].split(" ", 1)[0] for i in current.answer[: game.step]]
+            todo = ["❔"] * (len(current.answer) - game.step)
+            body += f"\nLlevas: {' → '.join(done + todo)} ({game.step}/{len(current.answer)})"
         indices = list(range(len(current.options)))
         if shift.tremors:
             self.service.rng.shuffle(indices)
@@ -532,7 +619,7 @@ class PalaPanel(ui.LayoutView):
             if len(row.children) == 5:
                 rows.append(row)
                 row = ui.ActionRow()
-            row.add_item(self._button(current.options[i], self._option(i)))
+            row.add_item(self._game_button(current.options[i], game.index, i))
         rows.append(row)
         self._frame("\n".join([*head, body]), COLOR_GAME, rows)
 
@@ -570,7 +657,10 @@ class PalaPanel(ui.LayoutView):
     # -- Ciclo de vida ----------------------------------------------------------------
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Solo el dueño toca su pala."""
+        """Solo el dueño toca su pala. Los botones del minijuego van por el listener."""
+        custom_id = (interaction.data or {}).get("custom_id")
+        if isinstance(custom_id, str) and parse_game_id(custom_id) is not None:
+            return False
         if interaction.user.id == self.owner.id:
             return True
         await interaction.response.send_message(
@@ -757,9 +847,15 @@ class PalaPanel(ui.LayoutView):
                     "Ya estás fichando en otro panel. Una pala cada vez, mi amor.", ephemeral=True
                 )
                 return
+            owned = await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id)
             try:
                 shift = await self.service.start_shift(
-                    self.guild_id, self.owner.id, black_ok=black_ok, guard=guard, remote=remote
+                    self.guild_id,
+                    self.owner.id,
+                    black_ok=black_ok,
+                    guard=guard,
+                    remote=remote,
+                    tools=owned,
                 )
             except NeedsBlack as error:
                 row: ui.ActionRow = ui.ActionRow()
@@ -791,6 +887,7 @@ class PalaPanel(ui.LayoutView):
                 await interaction.response.send_message(str(error), ephemeral=True)
                 return
             self.shift = shift
+            self._tools_owned = len(owned & TOOL_KEYS)
             self.cog.working.add(key)
             self._finishing = False
             self.show_game()
@@ -865,29 +962,48 @@ class PalaPanel(ui.LayoutView):
         if self.shift is shift:
             await self._finish(None)
 
-    def _option(self, index: int) -> Callable[[discord.Interaction], Awaitable[None]]:
-        async def callback(interaction: discord.Interaction) -> None:
-            shift = self.shift
-            if shift is None or self._finishing:
+    async def game_click(
+        self, interaction: discord.Interaction, round_index: int, choice: int | str
+    ) -> None:
+        """Un clic en un botón del minijuego (llega por `Work.on_interaction`).
+
+        La jugada se apunta en cuanto llega, en orden. Para redibujar, cada clic
+        espera su turno y, si mientras tanto ha llegado otro, se limita a
+        aceptar la interacción: el último pinta el estado final. Así una ráfaga
+        de clics en la memoria no deja el panel en un estado viejo.
+        """
+        if interaction.user.id != self.owner.id:
+            await interaction.response.send_message(
+                f"Esta pala es de {self.owner.display_name}. Coge la tuya con `pala`.",
+                ephemeral=True,
+            )
+            return
+        shift = self.shift
+        if shift is None or self._finishing:
+            await interaction.response.defer()
+            return
+        game = shift.game
+        if round_index != game.index:
+            # Un clic que salió antes de ver la ronda nueva (doble clic, prisa).
+            game.stale += 1
+            await interaction.response.defer()
+            return
+        now = self.service.now()
+        if choice == HIDE_CHOICE:
+            game.hide(now)
+        elif isinstance(choice, int):
+            game.press(choice, now)
+        if game.finished(now):
+            await self._finish(interaction)
+            return
+        self._ticket += 1
+        ticket = self._ticket
+        async with self._render_lock:
+            if ticket != self._ticket or self.shift is not shift:
                 await interaction.response.defer()
-                return
-            now = self.service.now()
-            shift.game.press(index, now)
-            if shift.game.finished(now):
-                await self._finish(interaction)
                 return
             self.show_game()
             await self._edit(interaction)
-
-        return callback
-
-    async def _hide(self, interaction: discord.Interaction) -> None:
-        if self.shift is None:
-            await interaction.response.defer()
-            return
-        self.shift.game.hide(self.service.now())
-        self.show_game()
-        await self._edit(interaction)
 
     async def _finish(self, interaction: discord.Interaction | None) -> None:
         """Cobra el turno y enseña el resultado (una sola vez por turno)."""
@@ -910,13 +1026,18 @@ class PalaPanel(ui.LayoutView):
             self.shift = None
             self.cog.working.discard((self.guild_id, self.owner.id))
         extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK))
-        self.show_outcome(outcome, extra)
-        await self._edit(interaction)
+        # Bajo el mismo candado que los clics: que una edición del minijuego que
+        # aún va de camino no pise el resultado.
+        async with self._render_lock:
+            self.show_outcome(outcome, extra)
+            await self._edit(interaction)
         if interaction is not None:
             await renta.remind(self.cog.bot, interaction)
         delta = work_stats(
             outcome, birthday=await self.cog.is_birthday(self.guild_id, self.owner.id)
         )
+        if self._tools_owned:
+            delta.peak["work_tools_owned"] = self._tools_owned
         delta.merge(await self.cog.top_stats(self.guild_id, self.owner.id))
         await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
 
@@ -966,6 +1087,18 @@ class Work(commands.Cog, name="Trabajo"):
         self.working: set[tuple[int, int]] = set()
         #: Temporizadores de turnos en marcha, para cancelarlos al descargar.
         self.timers: set[asyncio.Task[None]] = set()
+        self._tokens = random.SystemRandom()
+
+    def new_token(self) -> int:
+        """Número de panel para los `custom_id` del minijuego.
+
+        Al azar y no correlativo: un contador volvería a empezar en 1 tras
+        reiniciar el bot y un botón de un panel viejo caería en uno nuevo.
+        """
+        taken = {panel.token for panel in self.panels}
+        while (token := self._tokens.randrange(1, 10**9)) in taken:
+            pass
+        return token
 
     async def cog_unload(self) -> None:
         """Cierra los turnos a medias (se cobran) y cancela los temporizadores."""
@@ -1074,6 +1207,23 @@ class Work(commands.Cog, name="Trabajo"):
             send=send,
             send_error=ContextResponder(ctx).send_error,
         )
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Atiende los botones del minijuego (ver la docstring del módulo)."""
+        if interaction.type is not discord.InteractionType.component:
+            return
+        custom_id = (interaction.data or {}).get("custom_id")
+        if not isinstance(custom_id, str) or (parsed := parse_game_id(custom_id)) is None:
+            return
+        token, round_index, choice = parsed
+        panel = next((p for p in self.panels if p.token == token), None)
+        if panel is None:
+            await interaction.response.send_message(
+                "Este panel de la pala ya caducó. Abre otro con `pala`.", ephemeral=True
+            )
+            return
+        await panel.game_click(interaction, round_index, choice)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:

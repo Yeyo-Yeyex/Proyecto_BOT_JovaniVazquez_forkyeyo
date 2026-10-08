@@ -539,3 +539,19 @@ async def test_la_carrera_se_dibuja_mientras_se_apuesta(
     await race.race()
     assert len(calls) == 1
     assert race.tickets[ANA].prize == h.payout(100, race.tickets[ANA].odds)
+
+
+async def test_cada_boleto_dice_a_las_porras_cuando_se_hizo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Las porras no cuentan jugadas empezadas antes de su cierre: el boleto manda `started`."""
+    cog, clock = await make_cog(tmp_path)
+    channel = make_channel()
+    await caballo(cog, channel, amount="100", pick="1")
+    race = cog.races[CHANNEL_ID]
+    race.message = channel.test_message
+    record = AsyncMock()
+    monkeypatch.setattr(cog_module.apuestas, "record", record)
+    force(monkeypatch, fixed_result((0, 1, 2, 3, 4, 5)))
+    await race.race()
+    assert record.await_args.kwargs["details"] == (("started", int(START)),)

@@ -186,6 +186,8 @@ class Ticket:
     prize: int = 0
     pot_share: int = 0
     settlement: BetSettlement | None = None
+    #: Cuándo se hizo el boleto (epoch). Las porras no cuentan los anteriores a su cierre.
+    placed_at: float = 0.0
 
     @property
     def net(self) -> int:
@@ -669,6 +671,7 @@ class Race:
                 odds=self.odds.odds(pick),
                 via=via,
                 interaction=interaction,
+                placed_at=self.cog.wall_clock(),
             )
             self.tickets[user.id] = ticket
             return ticket
@@ -1063,6 +1066,7 @@ class Race:
                 net=ticket.net,
                 balance_after=settlement.balance if settlement else 0,
                 tax=settlement.tax_delta if settlement else 0,
+                details=(("started", int(ticket.placed_at)),),
             )
 
     async def close(self) -> None:

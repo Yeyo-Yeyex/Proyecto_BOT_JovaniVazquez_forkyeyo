@@ -38,6 +38,11 @@ from bot.repositories.economy import (
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
+    PorraBetReceipt,
+    PorraCapError,
+    PorraClosedError,
+    PorraPayment,
+    PorraSideError,
     SavingsRun,
     SlotsSettlement,
     Treasury,
@@ -79,6 +84,7 @@ from bot.services.taxes import (
     fiscal_to_wage,
     format_rate,
     gambling_day_tax,
+    image_rights_withholding,
     wage_to_fiscal,
     wealth_tax,
     weekly_refund,
@@ -110,6 +116,11 @@ __all__ = [
     "SavingsRun",
     "JackpotRecord",
     "LotteryPayout",
+    "PorraBetReceipt",
+    "PorraCapError",
+    "PorraClosedError",
+    "PorraPayment",
+    "PorraSideError",
     "SlotsSettlement",
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
@@ -640,6 +651,103 @@ class EconomyService:
             now=now,
             day_tax=gambling_day_tax,
             window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+
+    async def porra_bet(
+        self,
+        guild_id: int,
+        porra_id: int,
+        user_id: int,
+        *,
+        outcome: int,
+        stake: int,
+        cap: int,
+        game: str = "porra",
+    ) -> PorraBetReceipt:
+        """Apuesta a una porra (`bot.services.porras`); el dinero espera en el depósito.
+
+        Tratamiento fiscal: juego, como `place_bet`. Resta en el día del casino del
+        jugador y su IRPF se ajusta al liquidar la porra (`settle_porra`).
+
+        Raises:
+            PorraClosedError: La porra ya está liquidada.
+            PorraSideError: Ya apostó a otra opción de esta porra.
+            PorraCapError: No cabe en el bote; `room` dice cuánto cabe.
+            InsufficientFundsError: No le llega.
+        """
+        now = self._clock()
+        return await self.repository.porra_bet(
+            guild_id,
+            porra_id,
+            user_id,
+            outcome=outcome,
+            stake=stake,
+            cap=cap,
+            game=game,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
+
+    async def porra_bets(self, guild_id: int, porra_id: int) -> list[tuple[int, int, int]]:
+        """Apuestas de una porra: `(miembro, opción, apuesta)`, en orden de llegada."""
+        return await self.repository.porra_bets(guild_id, porra_id)
+
+    async def porra_settled(self, guild_id: int, porra_id: int) -> bool:
+        """Si la porra ya está liquidada (pagada o devuelta)."""
+        return await self.repository.porra_settled(guild_id, porra_id)
+
+    async def settle_porra(
+        self,
+        guild_id: int,
+        porra_id: int,
+        *,
+        payouts: dict[int, int],
+        taxes: dict[int, int],
+        refund: bool,
+        image: int,
+        subject_id: int,
+        game: str = "porra",
+    ) -> PorraPayment:
+        """Liquida una porra: reparte el depósito en una sola transacción.
+
+        Tratamiento fiscal:
+
+        - **Apostantes:** juego. Lo cobrado entra en su día del casino y ajusta
+          la retención diaria del IRPF como cualquier `pay_winnings` (ganancia
+          patrimonial, art. 33.5.d LIRPF solo deja compensar pérdidas de juego con
+          ganancias de juego). Las devoluciones deshacen la apuesta.
+        - **IAJ:** el 10 % de cada apuesta va al Estado como Impuesto sobre
+          Actividades de Juego (art. 48 de la Ley 13/2011; ver
+          `taxes.GAMING_TAX_RATE`). Se apunta a nombre de cada apostante para
+          `hacienda`.
+        - **Derechos de imagen del protagonista:** rendimiento del capital
+          mobiliario (art. 25.4.d LIRPF) con retención fija del 24 % (art. 101
+          LIRPF, `taxes.image_rights_withholding`). La retención va al Estado y
+          queda en `economy_tax_records` como cualquier otro ingreso.
+
+        El reparto lo calcula `bot.services.porras.split` (o `refund_split`).
+
+        Raises:
+            PorraClosedError: Si ya estaba liquidada. No se mueve nada.
+            ValueError: Si el reparto no cuadra con lo apostado.
+        """
+        now = self._clock()
+        return await self.repository.settle_porra(
+            guild_id,
+            porra_id,
+            payouts=payouts,
+            taxes=taxes,
+            refund=refund,
+            image=image,
+            subject_id=subject_id,
+            game=game,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+            window_seconds=PROJECTION_WINDOW_SECONDS,
+            image_withhold=lambda gross, _recent: image_rights_withholding(gross),
         )
 
     async def slots_pot(self, guild_id: int, *, seed: int) -> int:

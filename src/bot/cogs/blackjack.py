@@ -21,6 +21,7 @@ import asyncio
 import io
 import logging
 import random
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -358,6 +359,8 @@ class BlackjackTable(discord.ui.View):
             )
         except InsufficientFundsError as error:
             return insufficient_text(error.balance)
+        # Para las porras: una mano repartida antes del cierre no cuenta.
+        self.started_at = time.time()
         self.game = BlackjackGame(stake=self.stake, shoe=self.cog.new_shoe())
         self.headline = None
         self.game.deal()
@@ -498,6 +501,11 @@ class BlackjackTable(discord.ui.View):
             net=game.net,
             balance_after=balance,
             tax=tax_delta,
+            details=(
+                ("bust", int(any(hand.busted for hand in game.hands))),
+                ("natural", int(any(hand.natural for hand in game.hands))),
+                ("started", int(getattr(self, "started_at", 0))),
+            ),
         )
 
     # -- Fichas y repartir ----------------------------------------------------------

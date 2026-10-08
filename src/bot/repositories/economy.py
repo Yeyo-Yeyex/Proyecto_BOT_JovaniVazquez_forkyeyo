@@ -65,6 +65,14 @@ Modelo de datos:
 - `economy_interest_weeks` y `economy_interest_savings`: semanas ya liquidadas
   con la escala del ahorro y lo que pagó cada uno de más. Retenciones y
   liquidaciones cuentan en `hacienda`.
+- `economy_wallets` con `user_id = PORRA_ACCOUNT_ID`: el depósito de las
+  porras. Guarda lo apostado hasta que la porra se resuelve o se anula; al
+  liquidar se vacía entero (premios, IAJ, derechos de imagen o devoluciones).
+- `economy_porra_bets`: cada apuesta a una porra (quién, a qué opción y cuánto).
+  Es la verdad del dinero de cada porra: el reparto se calcula con estas filas.
+- `economy_porra_settled`: porras ya liquidadas, para no pagar dos veces.
+- `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra,
+  a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -108,6 +116,10 @@ SHOP_ACCOUNT_ID = -200
 #: trabaja allí con `pala`. No es el Estado español: no cuenta en `hacienda`.
 HK_ACCOUNT_ID = -300
 
+#: `user_id` del depósito de las porras: lo apostado espera aquí a que la porra
+#: se resuelva, así no desaparece del libro mientras tanto.
+PORRA_ACCOUNT_ID = -400
+
 
 class InsufficientFundsError(Exception):
     """El movimiento dejaría el saldo en negativo.
@@ -123,6 +135,34 @@ class InsufficientFundsError(Exception):
 
 class BalanceLimitError(Exception):
     """El movimiento superaría `MAX_BALANCE`."""
+
+
+class PorraClosedError(Exception):
+    """La porra ya está liquidada: no admite apuestas ni otro pago."""
+
+
+class PorraSideError(Exception):
+    """El miembro ya apostó a otra opción de la misma porra.
+
+    Attributes:
+        outcome: La opción a la que apostó.
+    """
+
+    def __init__(self, outcome: int) -> None:
+        super().__init__(f"Ya apostó a la opción {outcome}")
+        self.outcome = outcome
+
+
+class PorraCapError(Exception):
+    """La apuesta pasaría el tope del bote.
+
+    Attributes:
+        room: Lo que aún cabe en el bote.
+    """
+
+    def __init__(self, room: int) -> None:
+        super().__init__(f"Solo caben {room}")
+        self.room = room
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,6 +343,36 @@ class DonationReceipt:
     balance: int
     ongs_supported: int
     donated_week: int
+
+
+@dataclass(frozen=True, slots=True)
+class PorraBetReceipt:
+    """Resultado de apostar a una porra.
+
+    Attributes:
+        balance: Saldo de quien apuesta, tras apostar.
+        stake: Lo que lleva apostado en esa porra, esta apuesta incluida.
+        pool: Bote de la porra tras la apuesta.
+    """
+
+    balance: int
+    stake: int
+    pool: int
+
+
+@dataclass(frozen=True, slots=True)
+class PorraPayment:
+    """Lo que ha movido la liquidación de una porra.
+
+    Attributes:
+        bets: Resultado de cada apostante (saldo e IRPF del día), por miembro.
+        image_tax: Retención de los derechos de imagen (0 si no hubo).
+        subject_balance: Saldo del protagonista tras cobrarlos, o `None`.
+    """
+
+    bets: dict[int, BetSettlement]
+    image_tax: int = 0
+    subject_balance: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -600,6 +670,35 @@ class EconomyRepository:
                     created_at REAL NOT NULL,
                     notified INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (guild_id, user_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_porra_bets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    porra_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    outcome INTEGER NOT NULL CHECK (outcome >= 0),
+                    stake INTEGER NOT NULL CHECK (stake > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_porra_bets_porra
+                    ON economy_porra_bets (guild_id, porra_id);
+
+                CREATE TABLE IF NOT EXISTS economy_porra_settled (
+                    guild_id INTEGER NOT NULL,
+                    porra_id INTEGER NOT NULL,
+                    refund INTEGER NOT NULL,
+                    settled_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, porra_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_gaming_tax (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    porra_id INTEGER NOT NULL,
+                    tax INTEGER NOT NULL CHECK (tax >= 0),
+                    created_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_declarations (
@@ -1161,6 +1260,298 @@ class EconomyRepository:
                 )
             return SlotsSettlement(bet=bet, jackpot=won, pot=pot)
 
+    # -- Porras --------------------------------------------------------------------
+
+    @staticmethod
+    def _porra_settled_in(connection: sqlite3.Connection, guild_id: int, porra_id: int) -> bool:
+        row = connection.execute(
+            "SELECT 1 FROM economy_porra_settled WHERE guild_id = ? AND porra_id = ?",
+            (guild_id, porra_id),
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _porra_rows_in(
+        connection: sqlite3.Connection, guild_id: int, porra_id: int
+    ) -> list[tuple[int, int, int]]:
+        return [
+            (int(user_id), int(outcome), int(stake))
+            for user_id, outcome, stake in connection.execute(
+                """
+                SELECT user_id, outcome, stake FROM economy_porra_bets
+                WHERE guild_id = ? AND porra_id = ? ORDER BY id
+                """,
+                (guild_id, porra_id),
+            )
+        ]
+
+    async def porra_bet(
+        self,
+        guild_id: int,
+        porra_id: int,
+        user_id: int,
+        *,
+        outcome: int,
+        stake: int,
+        cap: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> PorraBetReceipt:
+        """Cobra una apuesta a una porra y la deja en el depósito, todo atómico.
+
+        Es una apuesta del casino que se resuelve después (como `place_bet`):
+        resta en el día del jugador pero no ajusta su IRPF hasta que se liquide.
+
+        Args:
+            outcome: Opción a la que apuesta.
+            cap: Tope del bote de la porra.
+
+        Raises:
+            PorraClosedError: Si la porra ya está liquidada.
+            PorraSideError: Si ya apostó a otra opción de esta porra.
+            PorraCapError: Si no cabe en el bote.
+            InsufficientFundsError: Si no le llega.
+        """
+        return await self._run(
+            self._porra_bet_sync,
+            guild_id,
+            porra_id,
+            user_id,
+            outcome,
+            stake,
+            cap,
+            game,
+            day,
+            now,
+            day_tax,
+            window_seconds,
+        )
+
+    def _porra_bet_sync(
+        self,
+        guild_id: int,
+        porra_id: int,
+        user_id: int,
+        outcome: int,
+        stake: int,
+        cap: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> PorraBetReceipt:
+        if stake <= 0 or outcome < 0:
+            raise ValueError("Apuesta de porra inválida.")
+        with self._transaction() as connection:
+            if self._porra_settled_in(connection, guild_id, porra_id):
+                raise PorraClosedError
+            rows = self._porra_rows_in(connection, guild_id, porra_id)
+            mine = [row for row in rows if row[0] == user_id]
+            if mine and mine[0][1] != outcome:
+                raise PorraSideError(mine[0][1])
+            pool = sum(row[2] for row in rows)
+            if pool + stake > cap:
+                raise PorraCapError(max(0, cap - pool))
+            bet = self._settle_gamble_in(
+                connection,
+                guild_id,
+                user_id,
+                (LedgerEntry(-stake, f"{game}:apuesta"),),
+                day=day,
+                now=now,
+                adjust_tax=False,
+                day_tax=day_tax,
+                window_seconds=window_seconds,
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance)
+                VALUES (?, ?, 0)
+                """,
+                (guild_id, PORRA_ACCOUNT_ID),
+            )
+            self._apply_in_transaction(
+                connection, guild_id, PORRA_ACCOUNT_ID, (LedgerEntry(stake, f"{game}:deposito"),)
+            )
+            connection.execute(
+                """
+                INSERT INTO economy_porra_bets
+                    (guild_id, porra_id, user_id, outcome, stake, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, porra_id, user_id, outcome, stake, now),
+            )
+            return PorraBetReceipt(
+                balance=bet.balance,
+                stake=sum(row[2] for row in mine) + stake,
+                pool=pool + stake,
+            )
+
+    async def porra_bets(self, guild_id: int, porra_id: int) -> list[tuple[int, int, int]]:
+        """Apuestas de una porra como filas `(miembro, opción, apuesta)`, en orden."""
+        return await self._run(self._porra_bets_sync, guild_id, porra_id)
+
+    def _porra_bets_sync(self, guild_id: int, porra_id: int) -> list[tuple[int, int, int]]:
+        connection = self._connect()
+        try:
+            return self._porra_rows_in(connection, guild_id, porra_id)
+        finally:
+            connection.close()
+
+    async def porra_settled(self, guild_id: int, porra_id: int) -> bool:
+        """Si la porra ya está liquidada."""
+        return await self._run(self._porra_settled_sync, guild_id, porra_id)
+
+    def _porra_settled_sync(self, guild_id: int, porra_id: int) -> bool:
+        connection = self._connect()
+        try:
+            return self._porra_settled_in(connection, guild_id, porra_id)
+        finally:
+            connection.close()
+
+    async def settle_porra(
+        self,
+        guild_id: int,
+        porra_id: int,
+        *,
+        payouts: dict[int, int],
+        taxes: dict[int, int],
+        refund: bool,
+        image: int,
+        subject_id: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+        image_withhold: Callable[[int, int], int],
+    ) -> PorraPayment:
+        """Vacía el depósito de una porra: premios, IAJ, imagen o devoluciones.
+
+        Todo en una transacción: o cobra todo el mundo o nadie. Comprueba que el
+        reparto suma justo lo apostado y que cada apostante sale en `payouts`.
+
+        Args:
+            payouts: Lo que vuelve a cada apostante (0 a quien falla).
+            taxes: IAJ de cada apostante; va al Estado.
+            refund: Si es una devolución (anulada o sin aciertos). Entonces se
+                deshace la apuesta (`<juego>:apuesta` en positivo) en vez de
+                pagar un premio.
+            image: Derechos de imagen brutos del protagonista.
+            image_withhold: Retención de los derechos de imagen, con la firma de
+                `_credit_income_in`.
+
+        Raises:
+            PorraClosedError: Si ya estaba liquidada. No se mueve nada.
+            ValueError: Si el reparto no cuadra con lo apostado.
+        """
+        return await self._run(
+            self._settle_porra_sync,
+            guild_id,
+            porra_id,
+            dict(payouts),
+            dict(taxes),
+            refund,
+            image,
+            subject_id,
+            game,
+            day,
+            now,
+            day_tax,
+            window_seconds,
+            image_withhold,
+        )
+
+    def _settle_porra_sync(
+        self,
+        guild_id: int,
+        porra_id: int,
+        payouts: dict[int, int],
+        taxes: dict[int, int],
+        refund: bool,
+        image: int,
+        subject_id: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+        image_withhold: Callable[[int, int], int],
+    ) -> PorraPayment:
+        with self._transaction() as connection:
+            if self._porra_settled_in(connection, guild_id, porra_id):
+                raise PorraClosedError
+            rows = self._porra_rows_in(connection, guild_id, porra_id)
+            pool = sum(row[2] for row in rows)
+            bettors = {row[0] for row in rows}
+            if set(payouts) != bettors or not set(taxes) <= bettors:
+                raise ValueError("El reparto no tiene a los mismos apostantes que el libro.")
+            if min([*payouts.values(), *taxes.values(), image, 0]) < 0:
+                raise ValueError("El reparto tiene cantidades negativas.")
+            if sum(payouts.values()) + sum(taxes.values()) + image != pool:
+                raise ValueError("El reparto no suma lo apostado.")
+            if pool:
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    PORRA_ACCOUNT_ID,
+                    (LedgerEntry(-pool, f"{game}:deposito"),),
+                )
+            results: dict[int, BetSettlement] = {}
+            for user_id in sorted(bettors):
+                amount = payouts[user_id]
+                reason = f"{game}:apuesta" if refund else f"{game}:premio"
+                entries = (LedgerEntry(amount, reason),) if amount else ()
+                results[user_id] = self._settle_gamble_in(
+                    connection,
+                    guild_id,
+                    user_id,
+                    entries,
+                    day=day,
+                    now=now,
+                    adjust_tax=True,
+                    day_tax=day_tax,
+                    window_seconds=window_seconds,
+                )
+            tax_total = sum(taxes.values())
+            if tax_total:
+                self._credit_state_in(connection, guild_id, tax_total, f"iaj:{game}")
+                connection.executemany(
+                    """
+                    INSERT INTO economy_gaming_tax (guild_id, user_id, porra_id, tax, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (guild_id, user_id, porra_id, tax, now)
+                        for user_id, tax in sorted(taxes.items())
+                        if tax
+                    ],
+                )
+            image_tax, subject_balance = 0, None
+            if image:
+                image_tax, subject_balance = self._credit_income_in(
+                    connection,
+                    guild_id,
+                    subject_id,
+                    gross=image,
+                    concept=f"{game}:imagen",
+                    now=now,
+                    withhold=image_withhold,
+                    window_seconds=window_seconds,
+                )
+            connection.execute(
+                """
+                INSERT INTO economy_porra_settled (guild_id, porra_id, refund, settled_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (guild_id, porra_id, int(refund), now),
+            )
+            return PorraPayment(bets=results, image_tax=image_tax, subject_balance=subject_balance)
+
     # -- Declaración semanal -------------------------------------------------------
 
     def _sync_declarations_in(
@@ -1488,8 +1879,8 @@ class EconomyRepository:
         IRPF del trabajo y de otros ingresos, del casino y del ahorro,
         Seguridad Social del trabajador (con la cuota de autónomos) y de la
         empresa, IGIC (las devoluciones restan), Patrimonio, gravamen de
-        loterías, multas, lo devuelto en la renta (positivo; resta) y lo pagado
-        en Hong Kong (que no va al Estado).
+        loterías, IAJ de las porras, multas, lo devuelto en la renta (positivo;
+        resta) y lo pagado en Hong Kong (que no va al Estado).
 
         Args:
             since: Epoch desde el que contar, o `None` para todo.
@@ -1536,6 +1927,9 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id, 'loteria', tax, created_at
             FROM economy_lottery_tax WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'iaj', tax, created_at
+            FROM economy_gaming_tax WHERE guild_id = :guild
             UNION ALL
             SELECT user_id, 'multas', amount, created_at
             FROM economy_sanctions WHERE guild_id = :guild
@@ -1589,6 +1983,9 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_lottery_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_gaming_tax
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, ss_worker + ss_employer AS withheld, created_at AS at
@@ -3028,6 +3425,9 @@ class EconomyRepository:
                 "economy_interest_streaks",
                 "economy_interest_weeks",
                 "economy_interest_savings",
+                "economy_porra_bets",
+                "economy_porra_settled",
+                "economy_gaming_tax",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
