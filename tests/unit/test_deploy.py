@@ -1,4 +1,5 @@
-"""Pruebas del comando `reinicio`: el buzón (bot.services.deploy) y el cog."""
+"""Pruebas del comando `reinicio` y del aviso de novedades: el buzón
+(bot.services.deploy) y el cog."""
 
 from __future__ import annotations
 
@@ -10,8 +11,18 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from bot.cogs.deploy import DEPLOYERS, Deploy, result_message
+from bot.cogs import deploy as deploy_cog
+from bot.cogs.deploy import (
+    DEPLOYERS,
+    NEWS_FIRST_STAT,
+    NEWS_READ_STAT,
+    Deploy,
+    news_embed,
+    result_message,
+)
 from bot.services.deploy import (
+    NEWS_FILE,
+    NEWS_LIMIT,
     REQUEST_FILE,
     RESULT_FILE,
     RUNNING_FILE,
@@ -19,6 +30,7 @@ from bot.services.deploy import (
     DeployRequest,
     DeployResult,
     Mailbox,
+    news_lines,
 )
 from bot.utils.responder import CommandResponder
 
@@ -201,3 +213,115 @@ def test_mensaje_de_error_dice_que_sigue_la_version_anterior() -> None:
     text = result_message(DeployResult(False, "Hay archivos tocados a mano.", None))
 
     assert text.startswith("❌") and "versión de antes" in text
+
+
+# -- Novedades ---------------------------------------------------------------------------
+
+
+def test_recoger_las_novedades_las_borra(tmp_path: Path) -> None:
+    mailbox = Mailbox(tmp_path)
+    (tmp_path / NEWS_FILE).write_text("Pollo más rápido\n\n  Caballos  \n")
+
+    assert mailbox.take_news() == ["Pollo más rápido", "Caballos"]
+    assert not (tmp_path / NEWS_FILE).exists()
+    assert mailbox.take_news() is None
+
+
+def test_un_archivo_de_novedades_vacio_no_se_publica(tmp_path: Path) -> None:
+    (tmp_path / NEWS_FILE).write_text("\n")
+
+    assert Mailbox(tmp_path).take_news() is None
+
+
+def test_muchas_novedades_se_resumen_y_caben_en_un_embed() -> None:
+    items = [f"PR {n} " + "x" * 500 for n in range(NEWS_LIMIT + 5)]
+
+    lines = news_lines(items)
+
+    assert len(lines) == NEWS_LIMIT + 1
+    assert lines[-1] == "…y 5 más."
+    assert len(news_embed(items).description or "") <= 4096
+
+
+def _guild_with_channel(guild_id: int = 1) -> tuple[MagicMock, MagicMock]:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = guild_id
+    guild.text_channels = [channel]
+    return guild, channel
+
+
+def _interaction(guild_id: int, user_id: int) -> MagicMock:
+    interaction = MagicMock()
+    interaction.guild = SimpleNamespace(id=guild_id)
+    interaction.user = SimpleNamespace(id=user_id, bot=False)
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+async def _publish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Deploy, list, int]:
+    """Cog con unas novedades ya publicadas; devuelve los logros apuntados y la edición."""
+    guild, channel = _guild_with_channel()
+    bot = MagicMock()
+    bot.guilds = [guild]
+    cog = make_cog(tmp_path, bot)
+    buzon = tmp_path / "buzon"
+    buzon.mkdir()
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    tracked: list = []
+
+    async def fake_track(bot, guild_id, user, channel, delta) -> None:  # noqa: ANN001
+        tracked.append((user.id, delta.add))
+
+    monkeypatch.setattr(deploy_cog.logros, "track", fake_track)
+    monkeypatch.setattr(deploy_cog.mascotas, "cameo", AsyncMock(return_value=None))
+    monkeypatch.setattr(deploy_cog.renta, "remind", AsyncMock())
+
+    assert await cog.announce_news() is True
+
+    embed = channel.send.await_args.kwargs["embed"]
+    assert "Carreras de caballos" in embed.description
+    button = channel.send.await_args.kwargs["view"].children[0]
+    edition = int(button.custom_id.rsplit(":", 1)[1])
+    assert await cog.announce_news() is False
+    return cog, tracked, edition
+
+
+@pytest.mark.asyncio
+async def test_leer_las_novedades_da_logros_y_el_primero_se_lleva_el_suyo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog, tracked, edition = await _publish(tmp_path, monkeypatch)
+
+    await cog.read_news(_interaction(1, YEYO), edition)
+    await cog.read_news(_interaction(1, DANI), edition)
+
+    assert tracked == [
+        (YEYO, {NEWS_READ_STAT: 1, NEWS_FIRST_STAT: 1}),
+        (DANI, {NEWS_READ_STAT: 1}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_leerlas_dos_veces_no_cuenta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cog, tracked, edition = await _publish(tmp_path, monkeypatch)
+    await cog.read_news(_interaction(1, YEYO), edition)
+    again = _interaction(1, YEYO)
+
+    await cog.read_news(again, edition)
+
+    assert len(tracked) == 1
+    assert "Ya te lo habías leído" in again.response.send_message.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_un_aviso_viejo_ya_no_cuenta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cog, tracked, edition = await _publish(tmp_path, monkeypatch)
+    old = _interaction(1, YEYO)
+
+    await cog.read_news(old, edition - 1)
+
+    assert tracked == []
+    assert "derogadas" in old.response.send_message.await_args.args[0]

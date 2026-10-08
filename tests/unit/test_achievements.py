@@ -104,6 +104,8 @@ PRODUCED_STATS = {
     "balance_max",
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
+    # Botón 📜 Leído de las novedades (cogs/deploy.py)
+    "news_read", "news_first",
     # Lista de tareas (cogs/todo.py)
     "todo_added", "todo_done",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)

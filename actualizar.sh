@@ -17,7 +17,9 @@
 #   4. Reinicia el contenedor con la imagen nueva y espera 90 s. Si en ese
 #      tiempo el bot se cae o entra en bucle de reinicios (un PR roto), vuelve
 #      a la imagen anterior y no reintenta ese commit hasta que haya otro.
-#   5. Borra las imágenes huérfanas para no llenar el disco.
+#   5. Si el bot nuevo arranca bien, deja en el buzón la lista de PR que trae
+#      (`novedades.txt`) para que el bot la publique en Discord.
+#   6. Borra las imágenes huérfanas para no llenar el disco.
 #
 # La reconstrucción semanal aunque no haya cambios trae la última versión de
 # yt-dlp, que YouTube deja inservible cada pocas semanas.
@@ -48,6 +50,13 @@
 # lanzar cada minuto. Si la hay, actualiza aunque no haya commits nuevos (o el
 # último ya fallara) y deja `resultado.txt` en el buzón para que el bot avise
 # en el canal donde se pidió. Detalle del protocolo en bot/services/deploy.py.
+#
+# Novedades: entre el commit que había y el nuevo, cada `Merge pull request`
+# aporta una línea con el título del PR. Los PR que juntan el main del fork
+# (rama `main`) se saltan si hay otros PR dentro, que ya cuentan lo mismo con
+# más detalle. Si un título es el que GitHub inventa con el nombre de la rama
+# ("Claude/adoring tesla ybmnco"), se usan los asuntos de sus commits. El bot
+# lee el archivo, lo publica y lo borra (bot/services/deploy.py).
 #
 # Variables opcionales: RAMA (main), ESPERA_ARRANQUE (90), DIAS_RECONSTRUIR (7),
 # REPO (el de godzilin), GIT_EN_DOCKER=1 para usar alpine/git aunque haya git.
@@ -243,6 +252,7 @@ main() {
 
     echo "$nuevo" >"$estado/commit"
     rm -f "$estado/fallido"
+    apuntar_novedades "$actual" "$nuevo"
     docker image prune -f >/dev/null 2>&1 || true
     fin "Desplegado ${nuevo:0:7}: $("${git[@]}" log -1 --format=%s "$nuevo")"
 }
@@ -258,6 +268,51 @@ volver_atras() {
     docker tag "$imagen:anterior" "$imagen:latest"
     "${git[@]}" reset --quiet --hard "$actual" 2>/dev/null || true
     "${compose[@]}" up -d --force-recreate --no-build || echo "No he podido arrancar la imagen anterior; revisa el bot a mano."
+}
+
+# Escribe en la salida una línea por PR fusionado entre $1 y $2 (ver
+# "Novedades" arriba). Usa el `git` de main().
+listar_novedades() {
+    local merge asunto rama titulo auto
+    local -a propios=() paquetes=()
+    while IFS=$'\t' read -r merge asunto; do
+        [[ "$asunto" =~ ^Merge\ pull\ request\ \#[0-9]+\ from\ [^/]+/(.+)$ ]] || continue
+        rama="${BASH_REMATCH[1]}"
+        # El título del PR es la primera línea no vacía del cuerpo del merge.
+        titulo="$("${git[@]}" log -1 --format=%b "$merge" | sed -n '/[^[:space:]]/{p;q;}')"
+        auto="${rama//[-_]/ }"
+        if [[ -z "$titulo" || "${titulo,,}" == "${auto,,}" ]]; then
+            # Título de relleno: lo que cuentan sus commits, sin los merges.
+            while IFS= read -r titulo; do
+                [[ -n "$titulo" ]] && propios+=("$titulo")
+            done < <("${git[@]}" log --no-merges --reverse --format=%s "$merge^1..$merge^2")
+            continue
+        fi
+        if [[ "$rama" == main ]]; then
+            paquetes+=("$titulo")
+        else
+            propios+=("$titulo")
+        fi
+    done < <("${git[@]}" log --merges --reverse --format=$'%H\t%s' "$1..$2")
+    if ((${#propios[@]} == 0)); then
+        propios=("${paquetes[@]}")
+    fi
+    ((${#propios[@]})) && printf '%s\n' "${propios[@]}" | awk '!visto[$0]++'
+    return 0
+}
+
+# Añade las novedades de $1..$2 al buzón para que el bot las publique. Si el
+# bot aún no había publicado las anteriores, se juntan.
+apuntar_novedades() {
+    local lista archivo="$BUZON/novedades.txt"
+    lista="$(listar_novedades "$1" "$2")"
+    [[ -n "$lista" ]] || return 0
+    { cat "$archivo" 2>/dev/null; printf '%s\n' "$lista"; } >"$archivo.tmp"
+    # El bot (uid 1000) tiene que poder borrarlo después de publicarlo.
+    chmod 666 "$archivo.tmp" 2>/dev/null || true
+    mv -f "$archivo.tmp" "$archivo"
+    echo "Novedades para Discord:"
+    sed 's/^/  - /' <<<"$lista"
 }
 
 # Deja en el buzón el resultado para que el bot lo publique en Discord.

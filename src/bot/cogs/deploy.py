@@ -1,4 +1,4 @@
-"""Cog `reinicio`: reinicia el bot con la última versión de `main`.
+"""Cog `reinicio` y avisos de novedades: el bot al día con `main`.
 
 Solo pueden usarlo las personas de `DEPLOYERS` (quien mantiene el bot y quien
 lo hostea). El bot no se reinicia a sí mismo: deja una nota en el buzón
@@ -7,13 +7,21 @@ lanzado cada minuto por cron, descarga `main`, reconstruye y reinicia. Cuando
 el script termina, este cog publica el resultado en el canal donde se pidió,
 lo haga el bot viejo (si no hubo reinicio) o el nuevo.
 
-No tiene logros: es una utilidad interna de dos personas (excepción de la
-Biblia, sección "Logros"). No sale en `ayuda`.
+Novedades: cada vez que el NAS despliega commits nuevos (de noche o por
+`reinicio`), deja la lista de PR en el buzón y este cog la publica en
+`#chat-general` (o en el canal del sistema) con un botón 📜 Leído. Quien lo
+pulsa suma logros (❤️ Social): leerse unas novedades y ser el primero en
+hacerlo. Solo cuenta el aviso más reciente publicado desde el último arranque;
+así nadie cobra dos veces el mismo aviso tras un reinicio.
+
+`reinicio` no tiene logros: es una utilidad interna de dos personas (excepción
+de la Biblia, sección "Logros"). No sale en `ayuda`.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -21,7 +29,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from bot.services.deploy import DeployRequest, DeployResult, Mailbox
+from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
+from bot.cogs import renta
+from bot.services.achievements import StatDelta
+from bot.services.deploy import DeployRequest, DeployResult, Mailbox, news_lines
+from bot.services.pets import Event, Moment
+from bot.utils.cogs import find_cog
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -29,8 +43,14 @@ logger = logging.getLogger(__name__)
 #: Quién puede pedir el reinicio: Yeyo y Dani (el que hostea el bot en su NAS).
 DEPLOYERS: frozenset[int] = frozenset({403646452414545921, 498473711687434241})
 
-#: Cada cuánto se mira si el NAS ha dejado el resultado.
+#: Cada cuánto se mira si el NAS ha dejado el resultado o novedades.
 POLL_SECONDS = 15
+
+NEWS_CHANNEL_NAME = "chat-general"
+NEWS_COLOR = discord.Color.from_rgb(200, 160, 60)
+#: Estadísticas de logros del botón 📜 Leído.
+NEWS_READ_STAT = "news_read"
+NEWS_FIRST_STAT = "news_first"
 
 
 def result_message(result: DeployResult) -> str:
@@ -42,8 +62,61 @@ def result_message(result: DeployResult) -> str:
     return f"❌ {who}El reinicio no ha salido, sigo con la versión de antes. {summary}"
 
 
+def news_embed(items: list[str]) -> discord.Embed:
+    """Aviso público con los PR que trae la versión recién desplegada."""
+    return discord.Embed(
+        title="📜 Novedades del bot",
+        description="\n".join(
+            [
+                "Recién salido del horno (y del Consejo de Ministros):",
+                "",
+                *news_lines(items),
+            ]
+        ),
+        color=NEWS_COLOR,
+    ).set_footer(text="Pulsa 📜 Leído si te lo has leído entero. Hacienda toma nota.")
+
+
+class NewsReadButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"novedades:leido:(?P<edition>\d+)",
+):
+    """Botón 📜 Leído del aviso de novedades.
+
+    Es un `DynamicItem` para que los avisos viejos sigan respondiendo tras un
+    reinicio (con un "ya está derogado") en vez de dar "interacción fallida".
+    `edition` es la marca de tiempo del aviso: solo cuenta el último.
+    """
+
+    def __init__(self, edition: int) -> None:
+        super().__init__(
+            discord.ui.Button(
+                label="Leído",
+                emoji="📜",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"novedades:leido:{edition}",
+            )
+        )
+        self.edition = edition
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ) -> NewsReadButton:
+        return cls(int(match["edition"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = find_cog(interaction.client, Deploy)  # type: ignore[arg-type]
+        if cog is not None:
+            await cog.read_news(interaction, self.edition)
+
+
 class Deploy(commands.Cog, name="Despliegue"):
-    """Comando `reinicio` y aviso del resultado."""
+    """Comando `reinicio`, aviso de su resultado y avisos de novedades."""
 
     def __init__(
         self,
@@ -55,8 +128,12 @@ class Deploy(commands.Cog, name="Despliegue"):
         self.bot = bot
         self.mailbox = mailbox or Mailbox()
         self._clock = clock or (lambda: datetime.now(UTC))
+        #: Último aviso de novedades por servidor: su edición y quién lo ha leído.
+        #: En memoria: tras un reinicio los avisos anteriores ya no cuentan.
+        self._news: dict[int, tuple[int, set[int]]] = {}
 
     async def cog_load(self) -> None:
+        self.bot.add_dynamic_items(NewsReadButton)
         self._poll.start()
 
     async def cog_unload(self) -> None:
@@ -140,9 +217,77 @@ class Deploy(commands.Cog, name="Despliegue"):
             logger.exception("No se pudo publicar el resultado del reinicio")
         return True
 
+    async def announce_news(self) -> bool:
+        """Publica en cada servidor las novedades que haya dejado el NAS.
+
+        Returns:
+            Si había novedades (aunque no se hayan podido publicar en todos).
+        """
+        items = self.mailbox.take_news()
+        if items is None:
+            return False
+        logger.info("Novedades desplegadas: %s", items)
+        edition = int(self._clock().timestamp())
+        for guild in self.bot.guilds:
+            channel = (
+                discord.utils.get(guild.text_channels, name=NEWS_CHANNEL_NAME)
+                or guild.system_channel
+            )
+            if channel is None:
+                continue
+            view = discord.ui.View(timeout=None)
+            view.add_item(NewsReadButton(edition))
+            try:
+                await channel.send(embed=news_embed(items), view=view)
+            except discord.HTTPException:
+                logger.exception("No se pudieron publicar las novedades en %s", guild.id)
+                continue
+            self._news[guild.id] = (edition, set())
+        return True
+
+    async def read_news(self, interaction: discord.Interaction, edition: int) -> None:
+        """Respuesta (solo visible para quien pulsa) al botón 📜 Leído.
+
+        Cuenta para los logros una vez por persona y aviso, y solo en el aviso
+        más reciente desde el último arranque.
+        """
+        guild = interaction.guild
+        if guild is None:
+            return
+        current = self._news.get(guild.id)
+        if current is None or current[0] != edition:
+            await interaction.response.send_message(
+                "📜 Estas novedades ya están derogadas. Busca las últimas.", ephemeral=True
+            )
+            return
+        readers = current[1]
+        user = interaction.user
+        if user.id in readers:
+            await interaction.response.send_message(
+                "Ya te lo habías leído. Ni el BOE se lee dos veces.", ephemeral=True
+            )
+            return
+        first = not readers
+        readers.add(user.id)
+        text = (
+            "🥇 Primero en leérselo. Ni la UCO se entera tan rápido."
+            if first
+            else "📜 Leído y conforme. Queda constancia en el registro."
+        )
+        if pet := await mascotas.cameo(self.bot, guild.id, user.id, Moment(Event.NEWS)):
+            text = f"{text}\n{pet}"
+        await interaction.response.send_message(text, ephemeral=True)
+        delta = StatDelta(add={NEWS_READ_STAT: 1})
+        if first:
+            delta.add[NEWS_FIRST_STAT] = 1
+        await logros.track(self.bot, guild.id, user, interaction.channel, delta)
+        # Los logros se pagan: gancho de la Renta (ver Biblia.txt, sección 4).
+        await renta.remind(self.bot, interaction)
+
     @tasks.loop(seconds=POLL_SECONDS)
     async def _poll(self) -> None:
         await self.announce()
+        await self.announce_news()
 
     @_poll.before_loop
     async def _before_poll(self) -> None:

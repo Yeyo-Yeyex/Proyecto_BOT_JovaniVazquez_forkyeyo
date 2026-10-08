@@ -40,3 +40,32 @@ Lo que más se olvida:
 - El agente no tiene permiso de escritura en el repo de godzilin. Para llevar el `main`
   del fork allí, se le da a la persona el enlace para abrir la PR desde la web:
   https://github.com/godzilin/Proyecto_BOT_JovaniVazquez/compare/main...Yeyo-Yeyex:Proyecto_BOT_JovaniVazquez_forkyeyo:main
+  Junto al enlace va el título y la descripción listos para pegar (ver abajo).
+
+## Títulos y descripciones de PR
+
+El título de cada PR acaba en Discord: al desplegar, `actualizar.sh` publica los
+títulos de los PR nuevos como «📜 Novedades del bot» (README, «Novedades»). Lo leen
+los miembros del servidor, no programadores.
+
+- **Título:** qué cambia para quien usa el bot, en español y sin jerga, con la forma
+  «Funcionalidad: qué cambia» y el comando entre comillas invertidas si lo hay. 70
+  caracteres como mucho: GitHub corta el resto con «…» en el commit de fusión.
+  - Bien: «Caballos: `caballo`, carreras con cuotas de verdad», «Pala: los clics ya
+    no se pierden».
+  - Mal: «Claude/adoring tesla ybmnco» (el que propone GitHub con la rama: cámbialo
+    siempre), «fix», «Add pets system», «Caballos», «Refactor de deploy.py».
+  - Un arreglo interno que nadie nota se dice igual, en cristiano: «Interno: pruebas
+    del casino con el bot real».
+- **Un tema por PR.** Cada PR es una línea del aviso; si un PR junta tres cosas, el
+  título las nombra todas o se parte en tres.
+- **La PR del fork a godzilin** se salta en el aviso si trae otros PR dentro, pero si
+  lo que trae llegó al `main` del fork sin PR, su título es la única línea que saldrá:
+  resume todo lo nuevo («Caballos y una sola semana para el IRPF»), nunca «Caballos»
+  ni «Merge main».
+- **Asuntos de commit** en español y legibles: si un PR queda con el título
+  automático, el aviso usa los asuntos de sus commits.
+- **Descripción** (no sale en Discord, es para quien revisa): qué cambia y por qué,
+  en párrafos cortos; cómo se ha probado; y lo que hay que vigilar al desplegar
+  (logros retroactivos que se cobran de golpe, cambios de cifras de la economía,
+  pasos a mano en el NAS). Sin listas de archivos tocados: eso ya lo enseña el diff.
