@@ -84,6 +84,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -642,7 +643,7 @@ class ChickenView(ui.View):
             view=self,
         )
 
-    async def _board(self, interaction: discord.Interaction, *, deferred: bool) -> None:
+    async def _board(self, interaction: discord.Interaction) -> None:
         """Pone el PNG del estado actual (sin animación)."""
         game = self.game
         if game is None:
@@ -654,29 +655,26 @@ class ChickenView(ui.View):
                 self.cog.renderer.board, game, seed=self.seed, note=self._end_note(game)
             )
         self.rebuild()
-        kwargs: dict[str, Any] = {
-            "embed": self.embed(),
-            "attachments": [discord.File(io.BytesIO(png), filename=PNG_NAME)],
-            "view": self,
-        }
-        if deferred:
-            await interaction.edit_original_response(**kwargs)
-        else:
-            await interaction.response.edit_message(**kwargs)
+        await edit(
+            interaction,
+            embed=self.embed(),
+            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+            view=self,
+        )
 
     async def _step(self, interaction: discord.Interaction, *, auto: bool) -> None:
         """🐔 Cruzar (un carril) o 🎯 (hasta el autocobro), con su animación."""
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         game = self.game
         if game is None or not game.playing:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         settlement: BetSettlement | None = None
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             async with self._lock:
                 start = game.crossed
                 waiting = self.crossing_text(auto=auto, target=game.next_cents)
@@ -711,20 +709,20 @@ class ChickenView(ui.View):
     async def _cash_out(self, interaction: discord.Interaction) -> None:
         """💰 Cobrar: se retira con el multiplicador actual."""
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         game = self.game
         if game is None or not game.playing or not game.crossed:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             async with self._lock:
                 game.cash_out()
                 settlement = await self._settle(game)
                 self._last_interaction = interaction
-            await self._board(interaction, deferred=True)
+            await self._board(interaction)
         finally:
             self._busy = False
         await self._after_game(interaction, game, settlement)
@@ -739,66 +737,74 @@ class ChickenView(ui.View):
 
     async def _new_game(self, interaction: discord.Interaction, *, auto: bool) -> None:
         if self._busy or (self.game is not None and self.game.playing):
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        # Cobrar la apuesta va a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         async with self._lock:
             error = await self.start()
         if error is not None:
-            await interaction.response.send_message(error, ephemeral=True)
+            await notify(interaction, error)
             return
         self._last_interaction = interaction
         if auto and self.auto:
             await self._step(interaction, auto=True)
         else:
-            await interaction.response.defer()
-            await self._board(interaction, deferred=True)
+            await self._board(interaction)
         await renta.remind(self.cog.bot, interaction)
 
     def _idle(self) -> bool:
         return not self._busy and (self.game is None or not self.game.playing)
 
     async def _refresh(self, interaction: discord.Interaction) -> None:
-        """Repinta tras cambiar apuesta, dificultad o autocobro (sin dinero de por medio)."""
+        """Repinta tras cambiar apuesta, dificultad o autocobro (sin dinero de por medio).
+
+        Lee el saldo (y a veces dibuja la carretera): se acepta el clic antes.
+        """
+        await ack(interaction)
         self.balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         self.note = None
         self._last_interaction = interaction
         if self.game is not None and self.game.difficulty.key != self.difficulty.key:
             # La imagen de la partida anterior era de otra carretera: se pinta la acera nueva.
             self.game = None
-            await self._board(interaction, deferred=False)
+            await self._board(interaction)
             return
         self.rebuild()
-        await interaction.response.edit_message(embed=self.embed(), view=self)
+        await edit(interaction, embed=self.embed(), view=self)
 
     async def _halve(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.stake = max(1, self.stake // 2)
         await self._refresh(interaction)
 
     async def _double(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         self.stake = max(1, min(self.stake * 2, balance))
         await self._refresh(interaction)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         if balance <= 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+            await notify(interaction, insufficient_text(0))
             return
+
         self.stake = balance
         await self._refresh(interaction)
 
     async def _choose_difficulty(self, interaction: discord.Interaction, key: str) -> None:
         if not self._idle() or key not in DIFFICULTY_BY_KEY:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.difficulty = DIFFICULTY_BY_KEY[key]
         # Un objetivo que esta dificultad no alcanza se quita.
@@ -809,7 +815,7 @@ class ChickenView(ui.View):
 
     async def _choose_auto(self, interaction: discord.Interaction, target: int | None) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.auto = target
         self.cog.set_prefs(self.guild_id, self.owner.id, self.difficulty, self.auto)

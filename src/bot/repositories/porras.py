@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
+from bot.repositories import sqlite
 from bot.services.porras import Porra, Status, VoidReason
 
 T = TypeVar("T")
@@ -42,9 +43,7 @@ class PorraRepository:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         """Conexión con transacción que se confirma al salir y se cierra siempre."""
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=30)
-        connection.row_factory = sqlite3.Row
+        connection = sqlite.connect(self.database_path)
         try:
             with connection:
                 yield connection

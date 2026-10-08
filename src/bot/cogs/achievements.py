@@ -86,6 +86,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.pets import Event, Moment
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -568,10 +569,12 @@ class AchievementsView(discord.ui.View):
     @discord.ui.button(label="🏆 Ranking", style=discord.ButtonStyle.primary, row=2)
     async def ranking(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         """Ranking del servidor por puntos de logros."""
+        # El ranking se calcula con los logros de todo el servidor: se acepta el clic antes.
+        await ack(interaction)
         self.cog.note(self.guild.id, interaction.user.id, StatDelta(add={"logros_ranking": 1}))
         self.key, self.sheet = "ranking", 0
         self._refresh_pager()
-        await interaction.response.edit_message(embed=await self.cog.ranking(self.guild), view=self)
+        await edit(interaction, embed=await self.cog.ranking(self.guild), view=self)
 
 
 # -- Cog ------------------------------------------------------------------------------

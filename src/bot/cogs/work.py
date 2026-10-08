@@ -92,6 +92,7 @@ from bot.services.work import (
 from bot.services.work_catalog import CAUGHT_TEXT, COFFEES, JOB_BY_KEY, JOBS, Event
 from bot.services.work_games import GRACE_SECONDS
 from bot.services.work_tools import TOOL_KEYS
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -679,8 +680,8 @@ class PalaPanel(ui.LayoutView):
 
     async def _edit(self, interaction: discord.Interaction | None) -> None:
         try:
-            if interaction is not None and not interaction.response.is_done():
-                await interaction.response.edit_message(view=self)
+            if interaction is not None:
+                await edit(interaction, view=self)
             elif self.message is not None:
                 await self.message.edit(view=self)
         except discord.HTTPException:
@@ -699,15 +700,21 @@ class PalaPanel(ui.LayoutView):
 
     # -- Acciones del panel -----------------------------------------------------------
 
+    # Todas las acciones del panel leen o guardan el contrato en la base de datos:
+    # aceptan el clic con `ack` antes de nada. Solo los clics del minijuego, que no
+    # tocan la base de datos hasta el último, contestan directamente.
+
     async def _home(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         await self.refresh(interaction)
 
     async def _hire(self, interaction: discord.Interaction, job_key: str) -> None:
+        await ack(interaction)
         had_job = await self.service.status(self.guild_id, self.owner.id) is not None
         try:
             status = await self.service.hire(self.guild_id, self.owner.id, job_key)
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         self.notes.append(
             f"✍️ Firmas de **{status.position.title}** en {status.job.emoji} {status.job.name}. "
@@ -725,12 +732,13 @@ class PalaPanel(ui.LayoutView):
             )
 
     async def _coffee(self, interaction: discord.Interaction, key: str) -> None:
+        await ack(interaction)
         try:
             battery, coffees, _balance = await self.service.buy_coffee(
                 self.guild_id, self.owner.id, key
             )
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         coffee = next(c for c in COFFEES if c.key == key)
         note = (
@@ -751,12 +759,13 @@ class PalaPanel(ui.LayoutView):
         )
 
     async def _training(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         try:
             name, base, tax, _balance = await self.service.buy_training(
                 self.guild_id, self.owner.id
             )
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         self.notes.append(
             f"🎓 Consigues {name}: {format_amount(base)} + {format_amount(tax)} de IGIC."
@@ -765,6 +774,7 @@ class PalaPanel(ui.LayoutView):
         await renta.remind(self.cog.bot, interaction)
 
     async def _career(self, interaction: discord.Interaction) -> None:
+        await ack(interaction, new_message=True)
         history = await self.service.history(self.guild_id, self.owner.id)
         lines = [f"📜 **Vida laboral de {discord.utils.escape_markdown(self.owner.display_name)}**"]
         for job in JOBS:
@@ -776,9 +786,10 @@ class PalaPanel(ui.LayoutView):
                 )
         if len(lines) == 1:
             lines.append("Nada todavía. Ni unas prácticas.")
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await edit(interaction, content="\n".join(lines))
 
     async def _offer(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         status = await self.service.status(self.guild_id, self.owner.id)
         if status is None or not status.promotion_ready or status.next_position is None:
             await self.refresh(interaction)
@@ -798,10 +809,11 @@ class PalaPanel(ui.LayoutView):
         await self._edit(interaction)
 
     async def _accept(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         try:
             status = await self.service.accept_promotion(self.guild_id, self.owner.id)
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         self.notes.append(
             f"🎉 **¡Ascendido a {status.position.title}!** Ahora cobras "
@@ -814,6 +826,7 @@ class PalaPanel(ui.LayoutView):
         await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
 
     async def _decline(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         await self.service.decline_promotion(self.guild_id, self.owner.id)
         self.notes.append("🪑 Rechazas el ascenso. Mañana te lo vuelven a ofrecer.")
         await self.refresh(interaction)
@@ -837,7 +850,7 @@ class PalaPanel(ui.LayoutView):
     ) -> None:
         async with self._lock:
             if self.shift is not None:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
             key = (self.guild_id, self.owner.id)
             if key in self.cog.working:
@@ -847,6 +860,7 @@ class PalaPanel(ui.LayoutView):
                     "Ya estás fichando en otro panel. Una pala cada vez, mi amor.", ephemeral=True
                 )
                 return
+            await ack(interaction)
             owned = await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id)
             try:
                 shift = await self.service.start_shift(
@@ -874,7 +888,7 @@ class PalaPanel(ui.LayoutView):
                 await self._edit(interaction)
                 return
             except OffDuty as error:
-                await interaction.response.send_message(str(error), ephemeral=True)
+                await notify(interaction, str(error))
                 await logros.track(
                     self.cog.bot,
                     self.guild_id,
@@ -884,7 +898,7 @@ class PalaPanel(ui.LayoutView):
                 )
                 return
             except WorkError as error:
-                await interaction.response.send_message(str(error), ephemeral=True)
+                await notify(interaction, str(error))
                 return
             self.shift = shift
             self._tools_owned = len(owned & TOOL_KEYS)
@@ -910,10 +924,11 @@ class PalaPanel(ui.LayoutView):
     # -- Hong Kong --------------------------------------------------------------------
 
     async def _go_abroad(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         try:
             status = await self.service.move_abroad(self.guild_id, self.owner.id)
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         self.notes.append(
             "✈️ **¡Te vas a Hong Kong!** Doce horas de vuelo, un jet lag que te deja la "
@@ -935,10 +950,11 @@ class PalaPanel(ui.LayoutView):
         )
 
     async def _go_home(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         try:
             status, beckham, days = await self.service.come_home(self.guild_id, self.owner.id)
         except WorkError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         note = f"🏠 **Vuelves a casa** tras {decimal(days)} días en Hong Kong. Tu madre llora."
         if beckham:
@@ -980,13 +996,13 @@ class PalaPanel(ui.LayoutView):
             return
         shift = self.shift
         if shift is None or self._finishing:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         game = shift.game
         if round_index != game.index:
             # Un clic que salió antes de ver la ronda nueva (doble clic, prisa).
             game.stale += 1
-            await interaction.response.defer()
+            await ack(interaction)
             return
         now = self.service.now()
         if choice == HIDE_CHOICE:
@@ -999,19 +1015,25 @@ class PalaPanel(ui.LayoutView):
         self._ticket += 1
         ticket = self._ticket
         async with self._render_lock:
-            if ticket != self._ticket or self.shift is not shift:
-                await interaction.response.defer()
-                return
-            self.show_game()
-            await self._edit(interaction)
+            stale = ticket != self._ticket or self.shift is not shift
+            if not stale:
+                self.show_game()
+                await self._edit(interaction)
+        if stale:
+            # Fuera del candado: si se aceptara dentro, una ráfaga de clics haría
+            # cola para aceptarse uno detrás de otro y los últimos pasarían de 3 s.
+            await ack(interaction)
 
     async def _finish(self, interaction: discord.Interaction | None) -> None:
         """Cobra el turno y enseña el resultado (una sola vez por turno)."""
         if self._finishing or self.shift is None:
-            if interaction is not None and not interaction.response.is_done():
-                await interaction.response.defer()
+            if interaction is not None:
+                await ack(interaction)
             return
         self._finishing = True
+        if interaction is not None:
+            # La nómina (cotizaciones, IRPF, IMV) se calcula y se guarda: se acepta antes.
+            await ack(interaction)
         shift = self.shift
         if self._timer is not None and asyncio.current_task() is not self._timer:
             self._timer.cancel()
@@ -1046,16 +1068,18 @@ class PalaPanel(ui.LayoutView):
     ) -> Callable[[discord.Interaction], Awaitable[None]]:
         async def callback(interaction: discord.Interaction) -> None:
             if self.pending_event is None or self.pending_event.key != event_key:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
             self.pending_event = None
+            await ack(interaction)
             try:
                 result = await self.service.resolve_event(
                     self.guild_id, self.owner.id, event_key, option
                 )
             except WorkError as error:
-                await interaction.response.send_message(str(error), ephemeral=True)
+                await notify(interaction, str(error))
                 return
+
             self.pending_event = result.follow_up
             self._show_after(
                 f"### 🎲 {result.event.options[option][0]}\n" + event_result_text(result),

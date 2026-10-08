@@ -123,6 +123,7 @@ from bot.services.entrance_sound import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import Event, Moment
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -1084,12 +1085,15 @@ class Beernight(commands.Cog):
         guild, user, channel = interaction.guild, interaction.user, interaction.channel
         if guild is None or not isinstance(user, discord.Member) or channel is None:
             return
+        # Abrir la noche guarda a cada persona de la llamada en la base de datos:
+        # se acepta el clic antes.
+        await ack(interaction)
         lock = self._start_locks.setdefault(guild.id, asyncio.Lock())
         async with lock:
             if guild.id in self.nights:
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     "Ya hay una beernight en marcha. Pulsa sus botones o usa `/beernight`.",
-                    ephemeral=True,
                 )
                 return
             voice = user.voice.channel if user.voice is not None else None
@@ -1099,7 +1103,7 @@ class Beernight(commands.Cog):
                     guild.id, user.id, channel.id, voice.id if voice else None, now
                 )
             except BeernightError as error:
-                await interaction.response.send_message(str(error), ephemeral=True)
+                await notify(interaction, str(error))
                 return
             settings = await self.repository.get_settings(guild.id)
             custom = await self.repository.list_custom(guild.id)
@@ -1116,9 +1120,7 @@ class Beernight(commands.Cog):
             state.next_rotation_at = now + settings.rotation * 60
             state.log.append(f"▶️ {mention(user.id)} abre la barra.")
             self.nights[guild.id] = state
-        await interaction.response.edit_message(
-            embed=live_embed(guild, state, now), view=panel_view(night.id)
-        )
+        await edit(interaction, embed=live_embed(guild, state, now), view=panel_view(night.id))
         if interaction.message is not None:
             state.panel = (interaction.message.channel.id, interaction.message.id)
         state.task = asyncio.create_task(self._run(state), name=f"beernight-{guild.id}")
@@ -1392,6 +1394,8 @@ class Beernight(commands.Cog):
     async def toggle_retire(self, interaction: discord.Interaction, state: NightState) -> None:
         """«Me retiro / vuelvo»: los eventos dejan (o vuelven) a contar con quien pulsa."""
         user = interaction.user
+        # Apuntarse espera al candado de la noche y escribe: se acepta el clic antes.
+        await ack(interaction, new_message=True)
         async with state.lock:
             await self._join(state, user.id, self.clock())
             if user.id in state.retired:
@@ -1403,7 +1407,7 @@ class Beernight(commands.Cog):
                 text = "🚪 Te has retirado. Los eventos ya no te tocan; pulsa otra vez para volver."
                 state.log.append(f"🚪 {mention(user.id)} se retira a sus aposentos")
                 logros.note(self.bot, state.guild_id, user.id, StatDelta(add={"beer_retired": 1}))
-        await interaction.response.send_message(text, ephemeral=True)
+        await edit(interaction, content=text)
         await self._refresh_panel(state)
 
     # -- Chivatazos, duelos, retos y repartos --------------------------------------------
@@ -1820,21 +1824,23 @@ class Beernight(commands.Cog):
         guild = interaction.guild
         if guild is None:
             return
+        await ack(interaction, new_message=True)
         all_time = await self.repository.all_time(guild.id)
         nights = await self.repository.recent_nights(guild.id, limit=25)
         embed = history_embed(guild, all_time, nights)
-        kwargs: dict[str, object] = {"embed": embed, "ephemeral": True}
+        kwargs: dict[str, object] = {"embed": embed}
         if nights:
             kwargs["view"] = HistoryView(self, guild.id, nights)
-        await interaction.response.send_message(**kwargs)  # type: ignore[arg-type]
+        await edit(interaction, **kwargs)
 
     async def show_night(
         self, interaction: discord.Interaction, guild_id: int, night_id: int
     ) -> None:
         """Resumen de una noche del histórico."""
+        await ack(interaction, new_message=True)
         night = await self.repository.get_night(guild_id, night_id)
         if night is None or night.ended_at is None:
-            await interaction.response.send_message("Esa noche no está.", ephemeral=True)
+            await edit(interaction, content="Esa noche no está.")
             return
         records = await self.repository.night_records(night.id)
         participants = await self.repository.participants(night.id)
@@ -1848,7 +1854,7 @@ class Beernight(commands.Cog):
             names=lambda key: mandate_text(key, texts),
         )
         embed.title = "📜 Una noche del histórico"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await edit(interaction, embed=embed)
 
     # -- Ajustes ------------------------------------------------------------------------
 
@@ -1868,12 +1874,15 @@ class Beernight(commands.Cog):
         guild = interaction.guild
         if guild is None:
             return
+        await ack(interaction, new_message=True)
         embed, view = await self._settings_view(guild)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await edit(interaction, embed=embed, view=view)
 
     async def _can_manage(self, interaction: discord.Interaction, guild_id: int) -> bool:
         state = self.nights.get(guild_id)
         if is_manager(interaction.user, state.host_id if state else None):
+            # Lo que viene después guarda ajustes en la base de datos: se acepta ya.
+            await ack(interaction)
             return True
         await interaction.response.send_message(
             "Los ajustes los toca el anfitrión de la noche o un administrador.", ephemeral=True
@@ -1914,10 +1923,7 @@ class Beernight(commands.Cog):
             return
         embed, view = await self._settings_view(guild)
         embed.description = f"{note}\n\n{embed.description or ''}"
-        if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
-        else:
-            await interaction.response.edit_message(embed=embed, view=view)
+        await edit(interaction, embed=embed, view=view)
 
     async def save_rhythm(
         self,
@@ -1947,7 +1953,7 @@ class Beernight(commands.Cog):
                 disabled_families=current.disabled_families,
             ).validated()
         except BeernightError as error:
-            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+            await notify(interaction, f"❌ {error}")
             return
         await self.repository.save_settings(guild_id, settings)
         state = self.nights.get(guild_id)
@@ -1985,6 +1991,7 @@ class Beernight(commands.Cog):
         self, interaction: discord.Interaction, guild_id: int, text: str, sips_raw: str
     ) -> None:
         """Apunta un mandamiento de la casa (lo puede proponer cualquiera)."""
+        await ack(interaction)
         try:
             cleaned = clean_custom_text(text)
             sips = parse_number(sips_raw, Bounds(1, MAX_CUSTOM_SIPS, "Sorbos"))
@@ -1992,7 +1999,7 @@ class Beernight(commands.Cog):
                 guild_id, interaction.user.id, cleaned, sips, self.clock()
             )
         except BeernightError as error:
-            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+            await notify(interaction, f"❌ {error}")
             return
         logros.note(
             self.bot, guild_id, interaction.user.id, StatDelta(add={"beer_custom_added": 1})
@@ -2001,10 +2008,10 @@ class Beernight(commands.Cog):
         if state is not None:
             async with state.lock:
                 state.custom.append(custom)
-        await interaction.response.send_message(
+        await notify(
+            interaction,
             f"✍️ Apuntado en el repertorio: «{discord.utils.escape_markdown(cleaned)}» "
             f"({sips} 🍺). Saldrá cuando le toque.",
-            ephemeral=True,
         )
 
     async def remove_custom(

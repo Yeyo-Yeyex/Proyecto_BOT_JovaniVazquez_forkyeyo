@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs import welcome
 from bot.cogs.welcome import GreetButton, Welcome, load_farewell_insults
@@ -169,11 +170,8 @@ async def test_canal_configurado_borrado_vuelve_a_chat_general(
 
 
 def make_interaction(user_id: int) -> MagicMock:
-    interaction = MagicMock()
+    interaction = fake_interaction(SimpleNamespace(id=user_id, bot=False))
     interaction.guild = SimpleNamespace(id=GUILD)
-    interaction.user = SimpleNamespace(id=user_id, bot=False)
-    interaction.response.send_message = AsyncMock()
-    interaction.response.edit_message = AsyncMock()
     return interaction
 
 
@@ -198,7 +196,7 @@ async def test_saludar_suma_al_contador_y_a_los_logros(tmp_path: Path, tracked: 
     second = make_interaction(2)
     await cog.greet_from_button(second, NEWCOMER, int(JOINED))
 
-    view = second.response.edit_message.await_args.kwargs["view"]
+    view = second.edit_original_response.await_args.kwargs["view"]
     assert view.children[0].item.label == "Dar la bienvenida · 2"
     delta = tracked.await_args.args[4]
     assert delta.add == {"welcomes_given": 1}
@@ -303,7 +301,7 @@ async def test_saludos_no_validos_se_explican_y_no_cuentan(
     await cog.greet_from_button(interaction, NEWCOMER, int(JOINED))
 
     assert texto in interaction.response.send_message.await_args.args[0]
-    interaction.response.edit_message.assert_not_awaited()
+    interaction.edit_original_response.assert_not_awaited()
     tracked.assert_not_awaited()
 
 
@@ -316,7 +314,7 @@ async def test_no_se_saluda_dos_veces_a_la_misma_persona(
 
     await cog.greet_from_button(again, NEWCOMER, int(JOINED))
 
-    assert "Ya le diste" in again.response.send_message.await_args.args[0]
+    assert "Ya le diste" in again.followup.send.await_args.args[0]
     assert tracked.await_count == 1
 
 

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs.shop import TABS, Backpack, Storefront, TargetPicker, Tienda, UseTextForm, in_tab
 from bot.cogs.shop_admin import AdminPanel
@@ -483,16 +484,9 @@ def make_member(guild: MagicMock, user_id: int = BUYER, *, bot: bool = False) ->
 
 
 def make_interaction(member: MagicMock) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = member
+    interaction = fake_interaction(member)
     interaction.guild = member.guild
     interaction.channel = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
     return interaction
 
 
@@ -545,7 +539,7 @@ async def test_pasillo_desde_el_desplegable(tmp_path: Path) -> None:
     select = next(c for c in view.walk_children() if isinstance(c, ui.Select))
     select._values = ["lujo"]  # type: ignore[attr-defined]
     await select.callback(stranger)
-    own = stranger.response.send_message.await_args.kwargs["view"]
+    own = stranger.edit_original_response.await_args.kwargs["view"]
     assert isinstance(own, Storefront) and own.aisle == "lujo" and view.aisle == "hongkong"
 
 
@@ -579,9 +573,9 @@ async def test_usar_un_gastable_lo_publica_y_lo_gasta(tmp_path: Path) -> None:
 
     click = make_interaction(member)
     await cog.start_use(click, backpack, cookie)
-    public = click.response.send_message.await_args
+    public = click.followup.send.await_args
     assert "galleta de la suerte" in public.args[0]
-    assert "ephemeral" not in public.kwargs
+    assert public.kwargs["ephemeral"] is False
     assert len(await cog.repository.inventory(GUILD, BUYER, NOW)) == 1
     assert "×2" not in texts(backpack), "la mochila se repinta"
 
@@ -604,7 +598,7 @@ async def test_usar_contra_alguien_abre_el_desplegable_y_le_menciona(tmp_path: P
     picker.select._values = [victim]  # type: ignore[attr-defined]
     pick = make_interaction(member)
     await picker._picked(pick)
-    sent = pick.response.send_message.await_args
+    sent = pick.followup.send.await_args
     assert "<@11>" in sent.args[0] or "**Miembro10**" in sent.args[0]
     assert sent.kwargs["allowed_mentions"].users == [victim]
     assert await cog.repository.inventory(GUILD, BUYER, NOW) == []
@@ -622,7 +616,7 @@ async def test_contra_el_bot_no_menciona_a_nadie(tmp_path: Path) -> None:
     click = make_interaction(member)
     await cog.perform_use(click, backpack, entry, USES["tomate"],
                           target=make_member(guild, 99, bot=True))  # fmt: skip
-    sent = click.response.send_message.await_args
+    sent = click.followup.send.await_args
     assert "Jovani" in sent.args[0]
     assert sent.kwargs["allowed_mentions"].users is False
 
@@ -637,14 +631,14 @@ async def test_lo_que_no_se_gasta_tiene_espera(tmp_path: Path) -> None:
     backpack = await backpack_for(cog, guild, member)
     first = make_interaction(member)
     await cog.start_use(first, backpack, horn)
-    assert "vuvuzela" in first.response.send_message.await_args.args[0]
+    assert "vuvuzela" in first.followup.send.await_args.args[0]
     again = make_interaction(member)
     await cog.start_use(again, backpack, horn)
     assert "Espera" in again.response.send_message.await_args.args[0]
     clock.now += USES["vuvuzela"].cooldown
     later = make_interaction(member)
     await cog.start_use(later, backpack, horn)
-    assert "vuvuzela" in later.response.send_message.await_args.args[0]
+    assert "vuvuzela" in later.followup.send.await_args.args[0]
     assert len(await cog.repository.inventory(GUILD, BUYER, clock.now)) == 1
 
 
@@ -657,7 +651,7 @@ async def test_caja_botin_da_un_coleccionable_ilimitado(tmp_path: Path) -> None:
     backpack = await backpack_for(cog, guild, member)
     click = make_interaction(member)
     await cog.start_use(click, backpack, box)
-    assert "caja botín" in click.response.send_message.await_args.args[0]
+    assert "caja botín" in click.followup.send.await_args.args[0]
     (prize,) = await cog.repository.inventory(GUILD, BUYER, NOW)
     item = await cog.repository.item(GUILD, prize.item_id)
     assert item is not None and item.stock is None and use_of(item.catalog_key) is None
@@ -673,7 +667,7 @@ async def test_caja_botin_sin_premios_se_devuelve(tmp_path: Path) -> None:
     backpack = await backpack_for(cog, guild, member)
     click = make_interaction(member)
     await cog.start_use(click, backpack, box)
-    assert click.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert click.followup.send.await_args.kwargs["ephemeral"] is True
     assert len(await cog.repository.inventory(GUILD, BUYER, NOW)) == 1
 
 
@@ -691,7 +685,7 @@ async def test_megafono_pide_texto_y_no_menciona(tmp_path: Path) -> None:
     form.text._value = "@everyone **VIVA EL GOFIO**"
     submit = make_interaction(member)
     await form.on_submit(submit)
-    sent = submit.response.send_message.await_args
+    sent = submit.followup.send.await_args
     assert "VIVA EL GOFIO" in sent.args[0] and "@everyone" not in sent.args[0].replace(
         "@​everyone", ""
     )
@@ -709,7 +703,7 @@ async def test_dni_falso_sin_permiso_no_se_gasta(tmp_path: Path) -> None:
     (entry,) = backpack.entries
     click = make_interaction(member)
     await cog.perform_use(click, backpack, entry, USES["dni_falso"], text="Perro Sanxe")
-    assert "Gestionar apodos" in click.response.send_message.await_args.args[0]
+    assert "Gestionar apodos" in click.followup.send.await_args.args[0]
     assert len(await cog.repository.inventory(GUILD, BUYER, NOW)) == 1
 
 
@@ -727,7 +721,7 @@ async def test_dni_falso_cambia_el_apodo(tmp_path: Path) -> None:
     await cog.perform_use(click, backpack, entry, USES["dni_falso"], text="  El  Fontanero ")
     member.edit.assert_awaited_once()
     assert member.edit.await_args.kwargs["nick"] == "El Fontanero"
-    assert "**El Fontanero**" in click.response.send_message.await_args.args[0]
+    assert "**El Fontanero**" in click.followup.send.await_args.args[0]
     assert await cog.repository.inventory(GUILD, BUYER, NOW) == []
 
 

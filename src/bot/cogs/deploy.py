@@ -36,6 +36,7 @@ from bot.services.achievements import StatDelta
 from bot.services.deploy import DeployRequest, DeployResult, Mailbox, news_lines
 from bot.services.pets import Event, Moment
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -254,18 +255,18 @@ class Deploy(commands.Cog, name="Despliegue"):
         guild = interaction.guild
         if guild is None:
             return
+        # La mascota puede aparecer y eso se guarda: se acepta el clic antes.
+        await ack(interaction, new_message=True)
         current = self._news.get(guild.id)
         if current is None or current[0] != edition:
-            await interaction.response.send_message(
-                "📜 Estas novedades ya están derogadas. Busca las últimas.", ephemeral=True
+            await edit(
+                interaction, content="📜 Estas novedades ya están derogadas. Busca las últimas."
             )
             return
         readers = current[1]
         user = interaction.user
         if user.id in readers:
-            await interaction.response.send_message(
-                "Ya te lo habías leído. Ni el BOE se lee dos veces.", ephemeral=True
-            )
+            await edit(interaction, content="Ya te lo habías leído. Ni el BOE se lee dos veces.")
             return
         first = not readers
         readers.add(user.id)
@@ -276,7 +277,7 @@ class Deploy(commands.Cog, name="Despliegue"):
         )
         if pet := await mascotas.cameo(self.bot, guild.id, user.id, Moment(Event.NEWS)):
             text = f"{text}\n{pet}"
-        await interaction.response.send_message(text, ephemeral=True)
+        await edit(interaction, content=text)
         delta = StatDelta(add={NEWS_READ_STAT: 1})
         if first:
             delta.add[NEWS_FIRST_STAT] = 1

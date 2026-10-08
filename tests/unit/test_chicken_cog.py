@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs import chicken as chicken_cog
 from bot.cogs.chicken import (
@@ -56,14 +57,7 @@ def make_user(user_id: int = OWNER_ID) -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 def fake_renderer() -> MagicMock:

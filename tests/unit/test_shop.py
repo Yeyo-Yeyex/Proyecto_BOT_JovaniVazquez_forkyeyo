@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs import shop as shop_cog
 from bot.cogs.shop import Backpack, Checkout, Tienda, item_card
@@ -527,15 +528,8 @@ def make_member(guild: MagicMock, user_id: int = BUYER) -> MagicMock:
 
 
 def make_interaction(member: MagicMock) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = member
+    interaction = fake_interaction(member)
     interaction.guild = member.guild
-    interaction.response.send_message = AsyncMock()
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
     return interaction
 
 
@@ -608,7 +602,7 @@ async def test_comprar_un_coleccionable_desde_la_caja(tmp_path: Path) -> None:
     member = make_member(guild)
     opening = make_interaction(member)
     await cog.open_checkout(opening, it.id)
-    checkout = opening.response.send_message.await_args.kwargs["view"]
+    checkout = opening.edit_original_response.await_args.kwargs["view"]
     assert isinstance(checkout, Checkout)
     assert "IGIC 7 %" in texts(checkout)
 
@@ -637,7 +631,7 @@ async def test_rol_que_no_se_puede_dar_se_devuelve_entero(tmp_path: Path) -> Non
     member.add_roles.side_effect = discord.Forbidden(MagicMock(status=403), "no")
     opening = make_interaction(member)
     await cog.open_checkout(opening, it.id)
-    checkout = opening.response.send_message.await_args.kwargs["view"]
+    checkout = opening.edit_original_response.await_args.kwargs["view"]
     await checkout._pay(make_interaction(member))
     assert checkout.failed and "devuelto" in (checkout.result or "")
     assert await cog.economy.balance(GUILD, BUYER) == STARTING_BALANCE
@@ -657,7 +651,7 @@ async def test_rol_comprado_se_da_y_se_puede_quitar_desde_la_mochila(tmp_path: P
     member = make_member(guild)
     opening = make_interaction(member)
     await cog.open_checkout(opening, it.id)
-    checkout = opening.response.send_message.await_args.kwargs["view"]
+    checkout = opening.edit_original_response.await_args.kwargs["view"]
     await checkout._pay(make_interaction(member))
     member.add_roles.assert_awaited_once()
 
@@ -681,7 +675,7 @@ async def test_no_se_vende_un_rol_que_ya_llevas_de_fuera(tmp_path: Path) -> None
     member.roles = [role]
     opening = make_interaction(member)
     await cog.open_checkout(opening, it.id)
-    assert "Ya llevas ese rol" in opening.response.send_message.await_args.args[0]
+    assert "Ya llevas ese rol" in opening.edit_original_response.await_args.kwargs["content"]
 
 
 async def test_potenciador_multiplica_el_xp_y_caduca(tmp_path: Path) -> None:
@@ -695,7 +689,7 @@ async def test_potenciador_multiplica_el_xp_y_caduca(tmp_path: Path) -> None:
     member = make_member(guild)
     opening = make_interaction(member)
     await cog.open_checkout(opening, it.id)
-    await opening.response.send_message.await_args.kwargs["view"]._pay(make_interaction(member))
+    await opening.edit_original_response.await_args.kwargs["view"]._pay(make_interaction(member))
     assert cog.xp_multiplier(GUILD, BUYER, NOW + 10) == 2.0
     assert cog.xp_multiplier(GUILD, OTHER, NOW + 10) == 1.0
 
@@ -809,5 +803,5 @@ async def test_formulario_con_error_lo_explica(tmp_path: Path) -> None:
         form.inputs[key]._value = value
     submit = make_interaction(admin)
     await form.on_submit(submit)
-    assert "multiplicador" in submit.response.send_message.await_args.args[0]
+    assert "multiplicador" in submit.followup.send.await_args.args[0]
     assert await cog.repository.items(GUILD) == []

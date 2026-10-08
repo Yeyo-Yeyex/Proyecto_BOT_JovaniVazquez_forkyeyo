@@ -58,6 +58,7 @@ from bot.services.economy import (
 )
 from bot.services.levels import local_day
 from bot.services.pets import Event, Moment
+from bot.utils.interactions import ack, edit
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -204,6 +205,8 @@ class Birthdays(commands.Cog):
         guild = interaction.guild
         if guild is None:
             return
+        # Felicitar paga a los dos en la base de datos: se acepta el clic antes.
+        await ack(interaction, new_message=True)
         today = local_day(time.time())
         greeting = (
             Greeting(GreetOutcome.NOT_TODAY)
@@ -222,9 +225,10 @@ class Birthdays(commands.Cog):
             GreetOutcome.NOT_TODAY: "Este cumpleaños ya pasó.",
             GreetOutcome.REPEATED: "Ya le felicitaste hoy.",
         }
-        await interaction.response.send_message(
-            texts[outcome], ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
+        await edit(
+            interaction, content=texts[outcome], allowed_mentions=discord.AllowedMentions.none()
         )
+
         if outcome is GreetOutcome.OK:
             # Felicitar da dinero: gancho de la Renta (ver Biblia.txt, sección 4).
             await renta.remind(self.bot, interaction)

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs.todo import SELECT_ID, Lista, build_board
 from bot.repositories.todo import TodoRepository
@@ -213,11 +214,8 @@ async def test_una_tarea_invalida_se_explica_y_no_se_apunta(repo: TodoRepository
 
 
 def _interaction(user: MagicMock) -> MagicMock:
-    interaction = MagicMock()
+    interaction = fake_interaction(user)
     interaction.guild = _guild()
-    interaction.user = user
-    interaction.response.send_message = AsyncMock()
-    interaction.response.edit_message = AsyncMock()
     return interaction
 
 
@@ -230,7 +228,7 @@ async def test_el_menu_tacha_solo_las_propias_si_no_eres_admin(repo: TodoReposit
     await cog.complete_from_menu(interaction, [mine.id, other.id])
 
     assert [t.text for t in await repo.list_tasks(GUILD_ID)] == ["ajena"]
-    embed = interaction.response.edit_message.await_args.kwargs["embed"]
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
     assert "tachó «mía»" in (embed.description or "")
     assert "1 no eran suyas" in (embed.description or "")
 
@@ -242,8 +240,8 @@ async def test_el_menu_no_deja_tachar_ajenas_sin_ser_admin(repo: TodoRepository)
 
     await cog.complete_from_menu(interaction, [other.id])
 
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
-    interaction.response.edit_message.assert_not_awaited()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+    interaction.edit_original_response.assert_not_awaited()
     assert len(await repo.list_tasks(GUILD_ID)) == 1
 
 
@@ -257,4 +255,4 @@ async def test_un_admin_tacha_cualquiera_y_la_lista_se_queda_sin_menu(
     await cog.complete_from_menu(interaction, [other.id])
 
     assert await repo.list_tasks(GUILD_ID) == []
-    assert interaction.response.edit_message.await_args.kwargs["view"] is None
+    assert interaction.edit_original_response.await_args.kwargs["view"] is None

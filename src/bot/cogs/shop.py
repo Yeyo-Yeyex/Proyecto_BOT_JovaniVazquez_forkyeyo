@@ -109,6 +109,7 @@ from bot.services.shop_uses import (
 from bot.services.taxes import TAX_COLLECTOR
 from bot.services.work_tools import TOOL_BY_KEY
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -509,7 +510,7 @@ class Storefront(ui.LayoutView):
         return select
 
     async def _noop(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
+        await ack(interaction)
 
     async def _redirect(
         self, interaction: discord.Interaction, tab: str, aisle: str | None
@@ -519,8 +520,10 @@ class Storefront(ui.LayoutView):
             return False
         own = Storefront(self.cog, self.guild, interaction.user)
         own.tab, own.aisle = tab, aisle
+        # Cargar el escaparate va a la base de datos: se acepta el clic antes.
+        await ack(interaction, new_message=True)
         await own.load()
-        await interaction.response.send_message(view=own, ephemeral=True)
+        await edit(interaction, view=own)
         own.interaction = interaction
         return True
 
@@ -528,9 +531,10 @@ class Storefront(ui.LayoutView):
         async def callback(interaction: discord.Interaction) -> None:
             if await self._redirect(interaction, tab, self.aisle):
                 return
+            await ack(interaction)
             self.tab, self.page = tab, 0
             await self.load()
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
 
         return callback
 
@@ -551,10 +555,9 @@ class Storefront(ui.LayoutView):
         return callback
 
     async def _backpack(self, interaction: discord.Interaction) -> None:
+        await ack(interaction, new_message=True)
         view = await self.cog.backpack_view(self.guild, interaction.user, interaction.user)
-        await interaction.response.send_message(
-            view=view, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
         view.interaction = interaction
 
     async def on_timeout(self) -> None:
@@ -664,10 +667,9 @@ class Checkout(ui.LayoutView):
 
     async def _pay(self, interaction: discord.Interaction) -> None:
         async with self._lock:
+            await ack(interaction)
             if self.done or self.failed:
-                await interaction.response.defer()
                 return
-            await interaction.response.defer()
             paid = await self.cog.complete_purchase(self, interaction)
             self.rebuild()
             self.stop()
@@ -820,7 +822,7 @@ class TargetPicker(ui.View):
 
     async def _picked(self, interaction: discord.Interaction) -> None:
         if self.done:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.done = True
         self.stop()
@@ -998,15 +1000,15 @@ class Tienda(commands.Cog):
         entry = next((e for e in view.entries if e.id == entry_id), None)
         member = interaction.user
         if entry is None or not isinstance(member, discord.Member):
-            await interaction.response.send_message(
-                "Ese rol ya no está en tu mochila.", ephemeral=True
-            )
+            await notify(interaction, "Ese rol ya no está en tu mochila.")
             return
         role = view.guild.get_role(entry.role_id or 0)
         if (problem := self.role_problem(view.guild, role)) is not None:
-            await interaction.response.send_message(problem, ephemeral=True)
+            await notify(interaction, problem)
             return
         assert role is not None  # role_problem lo comprueba
+        # Cambiar el rol en Discord y guardarlo tardan: se acepta el clic antes.
+        await ack(interaction)
         equip = not entry.equipped
         try:
             if equip:
@@ -1014,16 +1016,12 @@ class Tienda(commands.Cog):
             else:
                 await member.remove_roles(role, reason="Se lo quita desde la mochila")
         except discord.HTTPException:
-            await interaction.response.send_message(
-                "No he podido cambiarte el rol. Revisa mis permisos.", ephemeral=True
-            )
+            await notify(interaction, "No he podido cambiarte el rol. Revisa mis permisos.")
             return
         await self.repository.set_equipped(view.guild.id, member.id, entry.id, equip)
         view.entries = await self.repository.inventory(view.guild.id, member.id, self.clock())
         view.rebuild()
-        await interaction.response.edit_message(
-            view=view, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
 
     # -- Usar objetos ----------------------------------------------------------------
 
@@ -1088,12 +1086,12 @@ class Tienda(commands.Cog):
         (Biblia, sección 4): lo que tributó fue la compra.
         """
         guild, member = backpack.guild, interaction.user
+        # Gastar el objeto y sortear premios van a la base de datos: se acepta antes.
+        await ack(interaction)
         now = self.clock()
         shout = ""
         if self.cooldown_left(guild.id, member.id, use, now):
-            await interaction.response.send_message(
-                "⏳ Todavía no, mi amor. Respira.", ephemeral=True
-            )
+            await notify(interaction, "⏳ Todavía no, mi amor. Respira.")
             return
 
         if use.special == "megaphone":
@@ -1102,17 +1100,17 @@ class Tienda(commands.Cog):
                     discord.utils.escape_markdown(clean_shout(text or ""))
                 )
             except ValueError as error:
-                await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+                await notify(interaction, f"❌ {error}")
                 return
         if use.special == "nickname":
             problem = self._nickname_problem(guild, member, text)
             if problem is not None:
-                await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
+                await notify(interaction, f"❌ {problem}")
                 return
 
         if use.consumes and not await self.repository.consume(guild.id, member.id, entry.id):
-            await interaction.response.send_message(
-                "Eso ya lo has gastado, mi amor. Mira tu `mochila`.", ephemeral=True
+            await notify(
+                interaction, "Eso ya lo has gastado, mi amor. Mira tu `mochila`.", ephemeral=True
             )
             return
 
@@ -1123,9 +1121,9 @@ class Tienda(commands.Cog):
             outcome = await self._open_mystery(guild.id, member.id, who, entry, now)
             if outcome is None:
                 await self.repository.restore(entry.id)
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     "La caja está vacía: no hay coleccionables que sortear. Te la devuelvo.",
-                    ephemeral=True,
                 )
                 return
             result, prize = outcome
@@ -1139,9 +1137,9 @@ class Tienda(commands.Cog):
                 await member.edit(nick=new, reason="DNI falso de la tienda")
             except discord.HTTPException:
                 await self.repository.restore(entry.id)
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     "❌ Discord no me deja cambiarte el apodo. Te devuelvo el DNI.",
-                    ephemeral=True,
                 )
                 return
             result = nickname_text(who, discord.utils.escape_markdown(old), new)
@@ -1169,7 +1167,7 @@ class Tienda(commands.Cog):
         text = result.text
         if pet := await mascotas.cameo(self.bot, guild.id, member.id, Moment(Event.USE)):
             text += f"\n{pet}"
-        await interaction.response.send_message(text, allowed_mentions=mentions)
+        await notify(interaction, text, ephemeral=False, allowed_mentions=mentions)
         if not use.consumes:
             self.last_used[(guild.id, member.id, use.key)] = now
         await self._refresh_backpack(backpack)
@@ -1267,26 +1265,26 @@ class Tienda(commands.Cog):
         guild = interaction.guild
         buyer = interaction.user
         if guild is None or not isinstance(buyer, discord.Member):
-            await interaction.response.send_message(
-                "La tienda solo abre en un servidor.", ephemeral=True
-            )
+            await notify(interaction, "La tienda solo abre en un servidor.")
             return
+        # La caja lee artículo, mochila, nivel y saldo: se acepta el clic antes.
+        # Los errores rellenan el «pensando…» privado en vez de dejarlo colgado.
+        await ack(interaction, new_message=True)
         item = await self.repository.item(guild.id, item_id)
         if item is None or not item.visible:
-            await interaction.response.send_message(
-                "Ese artículo ya no está a la venta. Abre la `tienda` otra vez.", ephemeral=True
+            await edit(
+                interaction,
+                content="Ese artículo ya no está a la venta. Abre la `tienda` otra vez.",
             )
             return
         now = self.clock()
         error, note = await self._precheck(guild, buyer, item, now)
         if error is not None:
-            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+            await edit(interaction, content=f"❌ {error}")
             return
         balance = await self.economy.balance(guild.id, buyer.id)
         view = Checkout(self, guild, buyer, item, quote(item, now), balance=balance, note=note)
-        await interaction.response.send_message(
-            view=view, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
 
     async def _precheck(
         self, guild: discord.Guild, buyer: discord.Member, item: ShopItem, now: float
@@ -1562,10 +1560,10 @@ class Tienda(commands.Cog):
     async def tienda(self, interaction: discord.Interaction) -> None:
         """Enseña el escaparate en el canal; comprar abre una caja privada."""
         assert interaction.guild is not None  # guild_only
+        # El escaparate se lee de la base de datos: «pensando…» mientras tanto.
+        await interaction.response.defer(thinking=True)
         view = await self.storefront(interaction.guild, interaction.user)
-        await interaction.response.send_message(
-            view=view, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
         view.interaction = interaction
 
     @commands.command(name="tienda")
@@ -1585,10 +1583,9 @@ class Tienda(commands.Cog):
         """Enseña la mochila; su dueño puede ponerse y quitarse roles."""
         assert interaction.guild is not None  # guild_only
         target = miembro or interaction.user
+        await interaction.response.defer(thinking=True)
         view = await self.backpack_view(interaction.guild, target, interaction.user)
-        await interaction.response.send_message(
-            view=view, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
         view.interaction = interaction
 
     @commands.command(name="mochila")
@@ -1617,14 +1614,16 @@ class Tienda(commands.Cog):
         owner = interaction.user if interaction else ctx.author if ctx else None
         if guild is None or owner is None:
             return
+        if interaction is not None:
+            # Reponer y cargar el catálogo tardan: «pensando…» privado mientras tanto.
+            await ack(interaction, new_message=True)
         await self.stock_up(guild.id)
         panel = AdminPanel(self, guild, owner)
         await panel.load()
         if interaction is not None:
-            await interaction.response.send_message(
-                view=panel, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-            )
+            await edit(interaction, view=panel, allowed_mentions=discord.AllowedMentions.none())
             panel.interaction = interaction
+
         elif ctx is not None:
             panel.message = await ctx.send(
                 view=panel, allowed_mentions=discord.AllowedMentions.none()

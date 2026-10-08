@@ -75,6 +75,7 @@ from bot.services.pachinko import (
 from bot.services.pachinko_render import PachinkoMedia, PachinkoRenderer
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -569,26 +570,24 @@ class PachinkoView(discord.ui.View):
         """Respuesta a 🎯 Lanzar: cobra, lanza, enseña y paga."""
         if self._busy:
             # Doble clic mientras caen las bolas: se ignora sin mostrar error.
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
+            # Cobrar y dibujar la caída tardan: se acepta el clic antes.
+            await ack(interaction)
             try:
                 play = await self._play_one(turbo=self.turbo)
             except InsufficientFundsError as error:
-                await interaction.response.send_message(
-                    insufficient_text(error.balance, self.stake), ephemeral=True
-                )
+                await notify(interaction, insufficient_text(error.balance, self.stake))
                 return
             except BalanceLimitError:
-                await interaction.response.send_message(
-                    "La banca no puede pagar tanto. Baja la apuesta.", ephemeral=True
-                )
+                await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
                 return
             self._last_interaction = interaction
             await self.show(
                 play,
-                first_edit=interaction.response.edit_message,
+                first_edit=interaction.edit_original_response,
                 final_edit=interaction.edit_original_response,
             )
         finally:
@@ -682,13 +681,13 @@ class PachinkoView(discord.ui.View):
         Para antes si se acaba el dinero o sale un atari (para que se vea).
         """
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         plays: list[PachinkoPlay] = []
         stopped: str | None = None
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             self._last_interaction = interaction
             for _ in range(BURST_VOLLEYS):
                 try:
@@ -744,11 +743,13 @@ class PachinkoView(discord.ui.View):
             await self.cog.shout(play, self.owner, channel)
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
-        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen."""
+        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen.
+
+        El embed lee el saldo de la base de datos: se acepta el clic antes.
+        """
+        await ack(interaction)
         self._set_enabled(True)
-        await interaction.response.edit_message(
-            embed=await self.current_embed(balance=balance), view=self
-        )
+        await edit(interaction, embed=await self.current_embed(balance=balance), view=self)
         self._last_interaction = interaction
 
     async def _toggle_turbo(self, interaction: discord.Interaction) -> None:
@@ -761,17 +762,17 @@ class PachinkoView(discord.ui.View):
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         # Si el doble no cabe, se queda en todo el saldo: es lo que se busca.
         self.stake = max(MIN_STAKE, min(self.stake * 2, balance))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         if balance < MIN_STAKE:
-            await interaction.response.send_message(
-                insufficient_text(balance, MIN_STAKE), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(balance, MIN_STAKE))
             return
         self.stake = balance
         await self._refresh(interaction, balance)
@@ -782,7 +783,7 @@ class PachinkoView(discord.ui.View):
     async def _choose_board(self, interaction: discord.Interaction) -> None:
         """Cambia de tablero y enseña la máquina nueva parada."""
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         values = self.board_select.values
         if values and (values[0] in BOARDS or values[0] == RANDOM_BOARD):
@@ -791,9 +792,12 @@ class PachinkoView(discord.ui.View):
         self.last_text = None
         self.last_won = None
         self._set_enabled(True)
+        # Dibujar el tablero y leer el saldo tardan: se acepta el clic antes.
+        await ack(interaction)
         board = self.board or self.cog.machine.random_board()
         png = await asyncio.to_thread(self.cog.renderer.idle_png, board)
-        await interaction.response.edit_message(
+        await edit(
+            interaction,
             embed=await self.current_embed(),
             attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
             view=self,

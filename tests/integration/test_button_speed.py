@@ -1,0 +1,241 @@
+"""Los botones contestan a Discord antes de tocar la base de datos, con el bot real.
+
+Discord da 3 segundos para contestar a un clic. Si antes de contestar el botón
+espera a SQLite (que puede estar esperando a otra escritura) o dibuja una
+imagen, el botón se queda «pensando» y acaba en «Esta interacción ha fallado».
+La regla (CLAUDE.md, «Botones rápidos») es aceptar el clic con
+`bot.utils.interactions.ack` antes de ese trabajo.
+
+Cada caso pulsa un botón de un cog cargado como en producción y apunta, en el
+mismo orden en que pasan, las respuestas a la interacción y las conexiones a la
+base de datos (`bot.repositories.sqlite.connect`). La primera tiene que ser una
+respuesta. Un caso que no llegue a tocar la base de datos no prueba nada, así que
+también se exige que la toque.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import sys
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from types import ModuleType
+from unittest.mock import AsyncMock, MagicMock
+
+import discord
+import pytest
+from interaction_fakes import fake_interaction
+
+import bot.repositories.sqlite as sqlite_module
+from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.services.todo import Priority
+
+GUILD_ID = 1
+OWNER_ID = 10
+
+#: Un clic: recibe la interacción falsa.
+Click = Callable[[MagicMock], Awaitable[None]]
+#: Cada caso prepara lo que haga falta (sin contar) y devuelve el clic que se mide.
+Press = Callable[[BotClient, MagicMock], Awaitable[Click]]
+
+
+async def load_bot(tmp_path: Path) -> BotClient:
+    client = BotClient(command_prefix=".", database_path=tmp_path / "bot.sqlite3")
+    await client.message_stats.initialize()
+    await client.economy.repository.initialize()
+    await client.casino_stats.initialize()
+    await client.birthdays.initialize()
+    await client.achievements.initialize()
+    await client.welcome.initialize()
+    await client.shop.initialize()
+    await client.work.repository.initialize()
+    await client.horses.initialize()
+    await client.porras.initialize()
+    await client.todo.initialize()
+    for extension in INITIAL_EXTENSIONS:
+        await client.load_extension(extension)
+    return client
+
+
+def module_of(client: BotClient, cog_name: str) -> ModuleType:
+    """El módulo que cargó `load_extension` (no el importado desde aquí)."""
+    cog = client.get_cog(cog_name)
+    assert cog is not None, cog_name
+    return sys.modules[type(cog).__module__]
+
+
+def make_owner() -> MagicMock:
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = GUILD_ID
+    guild.name = "Servidor"
+    owner = MagicMock(spec=discord.Member)
+    owner.id = OWNER_ID
+    owner.bot = False
+    owner.display_name = "Diego"
+    owner.mention = f"<@{OWNER_ID}>"
+    owner.guild = guild
+    owner.guild_permissions = discord.Permissions.all()
+    owner.roles = []
+    guild.get_member = MagicMock(return_value=owner)
+    guild.get_role = MagicMock(return_value=None)
+    return owner
+
+
+async def press_slots(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Tragaperras")
+    view = module_of(client, "Tragaperras").SlotMachineView(
+        cog, guild_id=GUILD_ID, owner=owner, stake=1
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await view.play(interaction)
+
+    return click
+
+
+async def press_slots_double(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Tragaperras")
+    view = module_of(client, "Tragaperras").SlotMachineView(
+        cog, guild_id=GUILD_ID, owner=owner, stake=1
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await view._double_stake(interaction)
+
+    return click
+
+
+async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
+    module = module_of(client, "Casino")
+    table = module.RouletteTable(client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=1)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.choose(interaction, module.OUTSIDE_BETS["red"])
+
+    return click
+
+
+async def press_blackjack(client: BotClient, owner: MagicMock) -> Click:
+    table = module_of(client, "Blackjack").BlackjackTable(
+        client.get_cog("Blackjack"), guild_id=GUILD_ID, owner=owner, stake=1
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await table._deal_again(interaction)
+
+    return click
+
+
+async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
+    panel = module_of(client, "Trabajo").PalaPanel(
+        client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._hire(interaction, "obra")
+
+    return click
+
+
+async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    (item, *_rest) = await client.shop.items(GUILD_ID)
+
+    async def click(interaction: MagicMock) -> None:
+        await tienda.open_checkout(interaction, item.id)
+
+    return click
+
+
+async def press_casino_stats(client: BotClient, owner: MagicMock) -> Click:
+    view = module_of(client, "Apuestas").StatsView(
+        client.get_cog("Apuestas"), owner=owner, guild=owner.guild, member=owner
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await view.show(interaction, page="resumen")
+
+    return click
+
+
+async def press_ranking(client: BotClient, owner: MagicMock) -> Click:
+    view = await client.get_cog("Achievements").build_view(owner.guild, OWNER_ID, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.ranking.callback(interaction)
+
+    return click
+
+
+async def press_renta(client: BotClient, owner: MagicMock) -> Click:
+
+    async def click(interaction: MagicMock) -> None:
+        await client.get_cog("Renta").present(interaction)
+
+    return click
+
+
+async def press_todo(client: BotClient, owner: MagicMock) -> Click:
+    task = await client.todo.add_task(GUILD_ID, OWNER_ID, "probar los botones", Priority.ALTA)
+
+    async def click(interaction: MagicMock) -> None:
+        await client.get_cog("Lista").complete_from_menu(interaction, [task.id])
+
+    return click
+
+
+async def press_news(client: BotClient, owner: MagicMock) -> Click:
+    deploy = client.get_cog("Despliegue")
+    deploy._news[GUILD_ID] = (123, set())
+
+    async def click(interaction: MagicMock) -> None:
+        await deploy.read_news(interaction, 123)
+
+    return click
+
+
+CASES: dict[str, Press] = {
+    "tragaperras: tirar": press_slots,
+    "tragaperras: ×2": press_slots_double,
+    "ruleta: apostar": press_roulette,
+    "blackjack: repartir": press_blackjack,
+    "pala: elegir curro": press_pala_hire,
+    "tienda: comprar": press_checkout,
+    "apuestas: cambiar de página": press_casino_stats,
+    "logros: ranking": press_ranking,
+    "renta: presentar": press_renta,
+    "lista: tachar": press_todo,
+    "novedades: leído": press_news,
+}
+
+
+@pytest.mark.parametrize("press", CASES.values(), ids=CASES.keys())
+async def test_el_boton_contesta_antes_de_tocar_la_base_de_datos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, press: Press
+) -> None:
+    client = await load_bot(tmp_path)
+    try:
+        events: list[str] = []
+        real_connect = sqlite_module.connect
+
+        def connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+            events.append("db")
+            return real_connect(*args, **kwargs)  # type: ignore[arg-type]
+
+        owner = make_owner()
+        click = await press(client, owner)
+        monkeypatch.setattr(sqlite_module, "connect", connect)
+        interaction = fake_interaction(owner, events=events)
+        interaction.client = client
+        interaction.guild = owner.guild
+        interaction.guild_id = GUILD_ID
+        interaction.channel = MagicMock(spec=discord.TextChannel)
+        interaction.channel.send = AsyncMock()
+
+        await click(interaction)
+
+        assert "db" in events, "el caso no toca la base de datos: no prueba nada"
+        assert events[0].startswith("response."), events[:5]
+    finally:
+        await client.close()

@@ -86,6 +86,7 @@ from bot.services.lottery import (
 )
 from bot.services.pets import Event, Moment
 from bot.services.taxes import LOTTERY_EXEMPT, TAX_COLLECTOR
+from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -431,8 +432,10 @@ class LotteryPanel(ui.LayoutView):
             return False
         own = LotteryPanel(self.cog, self.guild, interaction.user)
         own.tab, own.nacional = self.tab, self.nacional
+        # Cargar el panel va a la base de datos: se acepta el clic antes.
+        await ack(interaction, new_message=True)
         await own.load()
-        await interaction.response.send_message(view=own, ephemeral=True)
+        await edit(interaction, view=own)
         own.interaction = interaction
         return True
 
@@ -440,9 +443,10 @@ class LotteryPanel(ui.LayoutView):
         async def callback(interaction: discord.Interaction) -> None:
             if await self._redirect(interaction):
                 return
+            await ack(interaction)
             self.tab, self.notice = key, None
             await self.load()
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
 
         return callback
 
@@ -450,9 +454,10 @@ class LotteryPanel(ui.LayoutView):
         async def callback(interaction: discord.Interaction) -> None:
             if await self._redirect(interaction):
                 return
+            await ack(interaction)
             self.nacional, self.notice = key, None
             await self.load()
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
 
         return callback
 
@@ -672,6 +677,8 @@ class Loteria(commands.Cog):
         renta y apunta los logros.
         """
         guild, user = panel.guild, interaction.user
+        # Cobrar y apuntar los boletos van a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         now = self.clock()
         draw_at = next_draw(game, now)
         units = sum(quantity for _, quantity in picks)
@@ -713,7 +720,7 @@ class Loteria(commands.Cog):
             panel.notice = "\n".join(lines)
             panel.balance = balances[user.id]
             await panel.load()
-            await interaction.response.edit_message(view=panel)
+            await edit(interaction, view=panel)
             await renta.remind(self.bot, interaction)
             await logros.track(
                 self.bot,
@@ -730,13 +737,14 @@ class Loteria(commands.Cog):
             )
             return
         panel.rebuild()
-        await interaction.response.edit_message(view=panel)
+        await edit(interaction, view=panel)
 
     async def scratch(
         self, interaction: discord.Interaction, panel: LotteryPanel, game: Game
     ) -> None:
         """Vende un rasca, lo resuelve al momento y enseña las casillas tapadas."""
         guild, user = panel.guild, interaction.user
+        await ack(interaction)
         prize = scratch(game, self.rng)
         gross = prize.amount if prize else 0
         tax = gravamen(gross) if gross else 0
@@ -762,7 +770,7 @@ class Loteria(commands.Cog):
                 f"{format_amount(error.balance)}."
             )
             panel.rebuild()
-            await interaction.response.edit_message(view=panel)
+            await edit(interaction, view=panel)
             return
         balance = balances[user.id]
         lines = [scratch_text(game, prize, scratch_grid(game, prize, self.rng), tax)]
@@ -772,7 +780,8 @@ class Loteria(commands.Cog):
         panel.notice = "\n".join(lines)
         panel.balance = balance
         panel.rebuild()
-        await interaction.response.edit_message(view=panel)
+        await edit(interaction, view=panel)
+
         await renta.remind(self.bot, interaction)
         assert game.scratch is not None
         await logros.track(
@@ -991,10 +1000,9 @@ class Loteria(commands.Cog):
         if error := casino_channel_error(self.casino_channel_ids, channel, "La lotería"):
             await interaction.response.send_message(error, ephemeral=True)
             return
+        await ack(interaction, new_message=True)
         panel = await self.open_panel(interaction.guild, interaction.user)
-        await interaction.response.send_message(
-            view=panel, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=panel, allowed_mentions=discord.AllowedMentions.none())
         panel.interaction = interaction
 
     @commands.command(name="loteria")

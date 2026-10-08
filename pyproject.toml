@@ -27,8 +27,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-# El código vive en src/, así que se añade al path de importación de pytest.
-pythonpath = ["src"]
+# El código vive en src/, así que se añade al path de importación de pytest; tests/
+# también, para los dobles compartidos entre pruebas (`interaction_fakes`).
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

@@ -14,11 +14,12 @@ import random
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import discord
 import pytest
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs.pets import FoodPicker, Mascotas, PetPanel
 from bot.repositories.economy import EconomyRepository
@@ -379,16 +380,9 @@ def make_member(guild: MagicMock, user_id: int = OWNER) -> MagicMock:
 
 
 def make_interaction(member: MagicMock) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = member
+    interaction = fake_interaction(member)
     interaction.guild = member.guild
     interaction.channel = MagicMock()
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
     return interaction
 
 
@@ -429,7 +423,8 @@ async def test_adoptar_la_lleva_contigo_y_da_bonus_al_cuidarla(tmp_path: Path) -
     for _ in range(CARE_RULES[Care.PET].daily):
         click = make_interaction(member)
         await cog.care(click, panel, Care.PET)
-        click.response.edit_message.assert_awaited()
+        click.response.defer.assert_awaited_once()
+        click.edit_original_response.assert_awaited()
         clock.now += CARE_RULES[Care.PET].cooldown
     assert "vínculo" in texts(panel)
     pet = cog.active[(GUILD, OWNER)]
@@ -442,7 +437,7 @@ async def test_adoptar_la_lleva_contigo_y_da_bonus_al_cuidarla(tmp_path: Path) -
     click = make_interaction(member)
     clock.now -= CARE_RULES[Care.PET].cooldown - 1
     await cog.care(click, panel, Care.PET)
-    assert click.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert click.followup.send.await_args.kwargs["ephemeral"] is True
 
 
 async def test_dar_de_comer_gasta_lo_de_la_mochila(tmp_path: Path) -> None:
@@ -456,13 +451,13 @@ async def test_dar_de_comer_gasta_lo_de_la_mochila(tmp_path: Path) -> None:
 
     click = make_interaction(member)
     await cog.open_feeding(click, panel)
-    picker = click.response.send_message.await_args.kwargs["view"]
+    picker = click.followup.send.await_args.kwargs["view"]
     assert isinstance(picker, FoodPicker)
     assert [o.description for o in picker.select.options] == ["⭐ Su favorita"]
     picker.select._values = [picker.select.options[0].value]  # type: ignore[attr-defined]
     pick = make_interaction(member)
     await picker._picked(pick)
-    assert "favorita" in pick.response.edit_message.await_args.kwargs["content"]
+    assert "favorita" in pick.edit_original_response.await_args.kwargs["content"]
     left = {e.catalog_key for e in await cog.shop.inventory(GUILD, OWNER, NOW)}
     assert "lata_atun" not in left and "piedra" in left
     (cat,) = await cog.repository.pets(GUILD, OWNER)
@@ -477,7 +472,7 @@ async def test_sin_comida_avisa_y_la_piedra_no_come(tmp_path: Path) -> None:
     panel = await cog.panel(guild, member, member)
     click = make_interaction(member)
     await cog.open_feeding(click, panel)
-    assert "nada de comer" in click.response.send_message.await_args.args[0]
+    assert "nada de comer" in click.followup.send.await_args.args[0]
 
     await adopt(economy, cog.shop, "mascota_pedrusco")
     await panel.load()

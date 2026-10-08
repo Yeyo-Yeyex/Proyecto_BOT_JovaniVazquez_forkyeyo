@@ -71,6 +71,7 @@ from bot.services.slots import (
 )
 from bot.services.slots_render import SlotsMedia, SlotsRenderer
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -529,30 +530,28 @@ class SlotMachineView(discord.ui.View):
         try:
             return await self._play_one(turbo=turbo, render=render)
         except InsufficientFundsError as error:
-            await interaction.response.send_message(
-                insufficient_text(error.balance, self.stake), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(error.balance, self.stake))
         except BalanceLimitError:
-            await interaction.response.send_message(
-                "La banca no puede pagar tanto. Baja la apuesta.", ephemeral=True
-            )
+            await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
         return None
 
     async def play(self, interaction: discord.Interaction) -> None:
         """Respuesta a 🎰 Tirar: cobra, gira, enseña y paga."""
         if self._busy:
             # Doble clic mientras gira: se ignora sin mostrar error.
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
+            # Cobrar y dibujar va a la base de datos y tarda: se acepta el clic antes.
+            await ack(interaction)
             play = await self._guarded_play(interaction, turbo=self.turbo)
             if play is None:
                 return
             self._last_interaction = interaction
             await self.show(
                 play,
-                first_edit=interaction.response.edit_message,
+                first_edit=interaction.edit_original_response,
                 final_edit=interaction.edit_original_response,
             )
         finally:
@@ -654,13 +653,13 @@ class SlotMachineView(discord.ui.View):
         salgan por el camino se juegan dentro de la misma ronda.
         """
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         plays: list[SlotsPlay] = []
         stopped: str | None = None
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             self._last_interaction = interaction
             for _ in range(AUTO_SPINS):
                 try:
@@ -675,9 +674,7 @@ class SlotMachineView(discord.ui.View):
                     stopped = "Parado: ¡ha salido el bote!"
                     break
             if not plays:
-                await interaction.followup.send(
-                    insufficient_text(await self.balance(), self.stake), ephemeral=True
-                )
+                await notify(interaction, insufficient_text(await self.balance(), self.stake))
                 return
             last = plays[-1]
             png = await asyncio.to_thread(
@@ -723,11 +720,13 @@ class SlotMachineView(discord.ui.View):
             await self.cog.shout(play, self.owner, getattr(self.message, "channel", None))
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
-        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen."""
+        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen.
+
+        El embed lee saldo y bote de la base de datos: se acepta el clic antes.
+        """
+        await ack(interaction)
         self._set_enabled(True)
-        await interaction.response.edit_message(
-            embed=await self.current_embed(balance=balance), view=self
-        )
+        await edit(interaction, embed=await self.current_embed(balance=balance), view=self)
         self._last_interaction = interaction
 
     async def _toggle_turbo(self, interaction: discord.Interaction) -> None:
@@ -740,16 +739,19 @@ class SlotMachineView(discord.ui.View):
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         # Si el doble no cabe, se queda en todo el saldo: es lo que se busca.
         self.stake = max(1, min(self.stake * 2, balance))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         if balance == 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+            await notify(interaction, insufficient_text(0))
             return
+
         self.stake = balance
         await self._refresh(interaction, balance)
 

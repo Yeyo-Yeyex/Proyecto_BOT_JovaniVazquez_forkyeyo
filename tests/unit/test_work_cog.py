@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs import work as work_cog
 from bot.cogs.work import PalaPanel, Work, game_id, parse_game_id
@@ -44,13 +45,7 @@ def make_user(user_id: int = OWNER) -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.followup.send = AsyncMock()
+    interaction = fake_interaction(make_user(user_id))
     interaction.message = MagicMock()
     interaction.message.edit = AsyncMock()
     return interaction
@@ -288,7 +283,7 @@ async def test_sanidad_tiene_boton_de_guardia_y_la_guardia_se_juega(tmp_path: Pa
     assert "saliente" in texts(panel)
     blocked = make_interaction()
     await panel._clock_in(blocked)
-    assert "saliente" in blocked.response.send_message.await_args.args[0]
+    assert "saliente" in blocked.followup.send.await_args.args[0]
 
 
 async def test_oficina_teletrabajo_y_hong_kong_desde_el_panel(tmp_path: Path) -> None:

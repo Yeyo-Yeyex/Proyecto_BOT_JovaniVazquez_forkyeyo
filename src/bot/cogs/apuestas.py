@@ -77,6 +77,7 @@ from bot.services.economy import EconomyService, day_bounds, format_amount
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -659,7 +660,12 @@ class StatsView(discord.ui.View):
         period: Period | None = None,
         server: bool | None = None,
     ) -> None:
-        """Cambia lo pedido y repinta el panel."""
+        """Cambia lo pedido y repinta el panel.
+
+        Las cifras se leen del libro entero, que crece con cada jugada: se acepta el
+        clic antes.
+        """
+        await ack(interaction)
         if page is not None:
             self.page = page
         if period is not None:
@@ -668,7 +674,8 @@ class StatsView(discord.ui.View):
             self.server = server
         self._build()
         embed = await self.render()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await edit(interaction, embed=embed, view=self)
+
         await logros.track(
             self.cog.bot,
             self.guild.id,

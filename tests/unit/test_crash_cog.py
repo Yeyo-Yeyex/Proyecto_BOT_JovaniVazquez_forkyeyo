@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs.crash import Crash, CrashTable, Phase, trail
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
@@ -71,13 +72,7 @@ def make_channel() -> MagicMock:
 
 
 def make_interaction(user_id: int, name: str = "Ana") -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id, name)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id, name))
 
 
 async def make_cog(tmp_path: Path, crash_cents: int = 300) -> tuple[Crash, FakeClock]:
@@ -166,7 +161,8 @@ async def test_entrar_con_el_boton_usa_la_ficha_y_no_dos_veces(tmp_path: Path) -
     table, _ = await open_table(cog)
     leo = make_interaction(LEO, "Leo")
     await table.join_button(leo)
-    leo.response.edit_message.assert_awaited_once()
+    leo.response.defer.assert_awaited_once()
+    leo.edit_original_response.assert_awaited_once()
     assert table.round.seats[LEO].stake == 100
     again = make_interaction(LEO, "Leo")
     await table.join_button(again)
@@ -181,7 +177,7 @@ async def test_entrar_sin_saldo_avisa_y_no_se_sienta(tmp_path: Path) -> None:
     leo = make_interaction(LEO, "Leo")
     await table.join_button(leo)
     assert LEO not in table.round.seats
-    assert leo.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert leo.followup.send.await_args.kwargs["ephemeral"] is True
 
 
 async def test_crash_con_otra_mesa_embarcando_entra_en_ella(tmp_path: Path) -> None:
@@ -232,7 +228,7 @@ async def test_los_botones_de_ficha_la_cambian_en_privado(tmp_path: Path) -> Non
     assert cog.ficha(GUILD_ID, LEO) == 100
     await table.all_in(make_interaction(LEO, "Leo"))
     assert cog.ficha(GUILD_ID, LEO) == STARTING_BALANCE
-    assert leo.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert leo.followup.send.await_args.kwargs["ephemeral"] is True
 
 
 async def test_auto_desde_el_formulario_cambia_el_asiento(tmp_path: Path) -> None:
@@ -266,7 +262,7 @@ async def test_retirarse_a_mano_paga_el_multiplicador_del_momento(tmp_path: Path
     assert await cog.economy.balance(GUILD_ID, ANA) == STARTING_BALANCE - 500 + paid - tax
     assert ledger_sum(tmp_path, ANA) == await cog.economy.balance(GUILD_ID, ANA)
     assert state_balance(tmp_path) == tax
-    interaction.response.edit_message.assert_awaited_once()
+    interaction.edit_original_response.assert_awaited_once()
     interaction.followup.send.assert_awaited()
 
 

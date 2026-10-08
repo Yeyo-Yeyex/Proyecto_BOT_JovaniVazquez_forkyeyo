@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 import bot.cogs.slots as slots_module
 from bot.cogs.slots import (
@@ -111,15 +112,7 @@ def make_user(user_id: int = OWNER_ID, name: str = "Diego") -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.edit_original_response = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 def make_view(cog: Slots, stake: int = 100) -> SlotMachineView:
@@ -212,8 +205,10 @@ async def test_tirar_cobra_gira_y_paga(tmp_path: Path) -> None:
     await view.play(interaction)
 
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100 + 1_000
-    assert attachment_names(interaction.response.edit_message.await_args) == [GIF_NAME]
-    assert attachment_names(interaction.edit_original_response.await_args) == [PNG_NAME]
+    interaction.response.defer.assert_awaited_once()
+    first, final = interaction.edit_original_response.await_args_list
+    assert attachment_names(first) == [GIF_NAME]
+    assert attachment_names(final) == [PNG_NAME]
     assert await cog.pot(GUILD_ID) == POT_SEED + 3
 
 
@@ -225,8 +220,8 @@ async def test_en_turbo_solo_se_edita_una_vez(tmp_path: Path) -> None:
 
     await view.play(interaction)
 
-    assert attachment_names(interaction.response.edit_message.await_args) == [PNG_NAME]
-    interaction.edit_original_response.assert_not_awaited()
+    assert attachment_names(interaction.edit_original_response.await_args) == [PNG_NAME]
+    interaction.edit_original_response.assert_awaited_once()
 
 
 async def test_el_turbo_se_recuerda_para_la_siguiente_maquina(tmp_path: Path) -> None:
@@ -242,8 +237,9 @@ async def test_sin_saldo_no_gira_y_avisa_en_privado(tmp_path: Path) -> None:
 
     await view.play(interaction)
 
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
-    interaction.response.edit_message.assert_not_awaited()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+    interaction.edit_original_response.assert_not_awaited()
+
     assert await cog.pot(GUILD_ID) == POT_SEED
 
 

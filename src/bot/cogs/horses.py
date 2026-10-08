@@ -125,6 +125,7 @@ from bot.services.horses_scene import SceneRenderer
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder
 
 if TYPE_CHECKING:
@@ -247,22 +248,20 @@ class AmountModal(discord.ui.Modal, title="🪙 Tu ficha"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Guarda la ficha; si viene del panel, lo redibuja con la nueva cantidad."""
         cog = self.race.cog
+        # Leer el saldo va a la base de datos: se acepta el formulario antes.
+        await ack(interaction)
         balance = await cog.economy.balance(self.race.guild_id, interaction.user.id)
         try:
             stake = parse_amount(str(self.amount.value), balance)
         except ValueError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         cog.set_ficha(self.race.guild_id, interaction.user.id, stake)
         if self.panel is not None:
             self.panel.stake = stake
-            await interaction.response.edit_message(
-                content=self.panel.text(), view=self.panel.refresh()
-            )
+            await edit(interaction, content=self.panel.text(), view=self.panel.refresh())
             return
-        await interaction.response.send_message(
-            f"🪙 Tu ficha: **{format_amount(stake)}**.", ephemeral=True
-        )
+        await notify(interaction, f"🪙 Tu ficha: **{format_amount(stake)}**.")
 
 
 class BetPanel(discord.ui.View):
@@ -383,8 +382,9 @@ class BetPanel(discord.ui.View):
     async def _on_confirm(self, interaction: discord.Interaction) -> None:
         pick = self.pick()
         if pick is None:
-            await interaction.response.defer()
+            await ack(interaction)
             return
+
         await self.race.bet_from_button(interaction, pick, via="panel", stake=self.stake)
         self.stop()
 
@@ -701,9 +701,7 @@ class Race:
     async def _stake_or_error(self, interaction: discord.Interaction, stake: int) -> int | None:
         balance = await self.cog.economy.balance(self.guild_id, interaction.user.id)
         if balance <= 0 or stake > balance:
-            await interaction.response.send_message(
-                insufficient_text(balance, stake), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(balance, stake))
             return None
         return stake
 
@@ -718,6 +716,8 @@ class Race:
         """Apuesta desde un botón (de la parrilla o del panel privado) y lo confirma."""
         if stake is None:
             stake = self.cog.ficha(self.guild_id, interaction.user.id)
+        # Saldo, cobro y boleto dibujado tardan: se acepta el clic antes.
+        await ack(interaction)
         if await self._stake_or_error(interaction, stake) is None:
             return
         try:
@@ -725,12 +725,10 @@ class Race:
                 interaction.user, pick, stake, via=via, interaction=interaction
             )
         except InsufficientFundsError as error:
-            await interaction.response.send_message(
-                insufficient_text(error.balance, stake), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(error.balance, stake))
             return
         except HorseError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         from_lobby = (
             self.message is not None
@@ -738,14 +736,14 @@ class Race:
             and interaction.message.id == self.message.id
         )
         if from_lobby:
-            await interaction.response.edit_message(embed=self.lobby_embed(), view=self.view)
+            await edit(interaction, embed=self.lobby_embed(), view=self.view)
             await interaction.followup.send(
                 self.confirm_text(ticket), file=await self.ticket_file(ticket), ephemeral=True
             )
         else:
             # Desde el panel privado: el panel se convierte en el boleto. Primero
-            # se contesta (Discord da 3 s) y luego se le pega la imagen.
-            await interaction.response.edit_message(content=self.confirm_text(ticket), view=None)
+            # el texto y luego, cuando esté dibujada, la imagen.
+            await edit(interaction, content=self.confirm_text(ticket), view=None)
             try:
                 await interaction.edit_original_response(
                     attachments=[await self.ticket_file(ticket)]

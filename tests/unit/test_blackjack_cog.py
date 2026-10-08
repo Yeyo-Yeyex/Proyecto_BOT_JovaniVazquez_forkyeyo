@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
@@ -71,13 +72,7 @@ def make_user(user_id: int = OWNER_ID) -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 async def open_table(cog: Blackjack, *, amount: str | None = "100", channel_id: int = 1):  # noqa: ANN201
@@ -134,9 +129,9 @@ async def test_pedir_y_pasarse_pierde_la_apuesta(tmp_path: Path) -> None:
     assert table.game.settled
     assert table.game.hands[0].busted
     assert await balance(cog) == STARTING_BALANCE - 100
-    # Primera edición: banca destapando; la última, con el resultado.
-    interaction.response.edit_message.assert_awaited_once()
-    assert interaction.edit_original_response.await_count >= 1
+    # El clic se acepta antes de pagar; luego, banca destapando y resultado.
+    interaction.response.defer.assert_awaited_once()
+    assert interaction.edit_original_response.await_count >= 2
 
 
 async def test_plantarse_y_la_banca_roba_hasta_pasarse(tmp_path: Path) -> None:
@@ -169,7 +164,8 @@ async def test_doblar_sin_saldo_avisa_y_no_cambia_la_mano(tmp_path: Path) -> Non
 
     await table.act(interaction, Action.DOUBLE)
 
-    assert "necesitas" in interaction.response.send_message.await_args.args[0]
+    assert "necesitas" in interaction.followup.send.await_args.args[0]
+
     assert len(table.game.hands[0].cards) == 2
     assert await balance(cog) == 0
 

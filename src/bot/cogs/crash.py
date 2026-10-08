@@ -80,6 +80,7 @@ from bot.services.economy import (
 )
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -444,9 +445,7 @@ class CrashTable:
         stake = self.cog.ficha(self.guild_id, interaction.user.id)
         balance = await self.cog.economy.balance(self.guild_id, interaction.user.id)
         if balance <= 0 or stake > balance:
-            await interaction.response.send_message(
-                insufficient_text(balance, stake), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(balance, stake))
             return None
         return stake
 
@@ -454,7 +453,7 @@ class CrashTable:
         """🚀 Entrar: se sienta con su ficha y su auto-retiro."""
         user = interaction.user
         if self.phase is not Phase.LOBBY:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         if user.id in self.round.seats:
             seat = self.round.seats[user.id]
@@ -462,29 +461,25 @@ class CrashTable:
                 f"Ya estás dentro con {format_amount(seat.stake)}.", ephemeral=True
             )
             return
+        # Leer el saldo y cobrar van a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         stake = await self._ficha_or_error(interaction)
         if stake is None:
             return
         try:
             await self.sit(user, stake, self.cog.auto(self.guild_id, user.id))
         except InsufficientFundsError as error:
-            await interaction.response.send_message(
-                insufficient_text(error.balance, stake), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(error.balance, stake))
             return
         except CrashError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
-        await interaction.response.edit_message(
-            embed=self.lobby_embed(), view=self.view(Phase.LOBBY)
-        )
+        await edit(interaction, embed=self.lobby_embed(), view=self.view(Phase.LOBBY))
         await renta.remind(self.cog.bot, interaction)
 
     async def _set_ficha(self, interaction: discord.Interaction, stake: int) -> None:
         self.cog.set_ficha(self.guild_id, interaction.user.id, stake)
-        await interaction.response.send_message(
-            self.ficha_text(interaction.user.id), ephemeral=True
-        )
+        await notify(interaction, self.ficha_text(interaction.user.id))
 
     def ficha_text(self, user_id: int) -> str:
         """Ficha y auto-retiro de un jugador, para sus avisos privados."""
@@ -504,15 +499,17 @@ class CrashTable:
 
     async def double(self, interaction: discord.Interaction) -> None:
         """×2: dobla la ficha (como mucho, todo el saldo)."""
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, interaction.user.id)
         stake = self.cog.ficha(self.guild_id, interaction.user.id) * 2
         await self._set_ficha(interaction, max(1, min(stake, balance)))
 
     async def all_in(self, interaction: discord.Interaction) -> None:
         """💰 All-in: ficha = todo el saldo."""
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, interaction.user.id)
         if balance <= 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+            await notify(interaction, insufficient_text(0))
             return
         await self._set_ficha(interaction, balance)
 
@@ -546,7 +543,7 @@ class CrashTable:
     async def cash_out(self, interaction: discord.Interaction) -> None:
         """💸 Retirar: cobra apuesta × multiplicador de este instante."""
         if self.phase is not Phase.FLYING:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         user_id = interaction.user.id
         elapsed = self.elapsed()
@@ -560,10 +557,11 @@ class CrashTable:
         except CrashError as error:
             await interaction.response.send_message(str(error), ephemeral=True)
             return
+        # El multiplicador ya está fijado; pagar va a la base de datos y tarda.
+        await ack(interaction)
         await self.pay(seat)
-        await interaction.response.edit_message(
-            embed=self.flight_embed(), view=self.view(Phase.FLYING)
-        )
+        await edit(interaction, embed=self.flight_embed(), view=self.view(Phase.FLYING))
+
         text = (
             f"## ✅ {random.choice(CASH_LINES)} {format_multiplier(seat.cashed_cents or 0)}\n"
             f"Cobras **{format_amount(seat.payout)}** (+{format_amount(seat.net)})."

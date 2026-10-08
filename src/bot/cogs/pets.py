@@ -81,6 +81,7 @@ from bot.services.pets_catalog import CATALOG_PREFIX, SPAWNING, SPECIES_BY_KEY, 
 from bot.services.shop import Kind, ShopItem
 from bot.services.shop_catalog import CATALOG, food_of, use_of
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -335,7 +336,7 @@ class PetPanel(ui.LayoutView):
     async def _rename(self, interaction: discord.Interaction) -> None:
         state = self.current
         if state is None:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         await interaction.response.send_modal(RenameForm(self.cog, self, state))
 
@@ -344,8 +345,8 @@ class PetPanel(ui.LayoutView):
         await self.load()
         mentions = discord.AllowedMentions.none()
         try:
-            if interaction is not None and not interaction.response.is_done():
-                await interaction.response.edit_message(view=self, allowed_mentions=mentions)
+            if interaction is not None:
+                await edit(interaction, view=self, allowed_mentions=mentions)
             elif self.interaction is not None:
                 await self.interaction.edit_original_response(view=self, allowed_mentions=mentions)
             elif self.message is not None:
@@ -436,7 +437,7 @@ class FoodPicker(ui.View):
 
     async def _picked(self, interaction: discord.Interaction) -> None:
         if self.done:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.done = True
         self.stop()
@@ -616,11 +617,13 @@ class Mascotas(commands.Cog):
 
         Al comer, gasta de la mochila lo que se le da (salvo a las que no comen).
         """
+        # Leer y guardar el vínculo van a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         await panel.load()
         state = panel.current
         guild, member = panel.guild, interaction.user
         if state is None:
-            await interaction.response.send_message("Esa mascota ya no está.", ephemeral=True)
+            await notify(interaction, "Esa mascota ya no está.")
             return
         species = SPECIES_BY_KEY[state.species]
         now = self.clock()
@@ -628,9 +631,7 @@ class Mascotas(commands.Cog):
         food_label = None
         if action is Care.FEED and eats:
             if food is None or not await self.shop.consume(guild.id, member.id, food.id):
-                await interaction.response.send_message(
-                    "Eso ya no está en tu mochila, mi amor.", ephemeral=True
-                )
+                await notify(interaction, "Eso ya no está en tu mochila, mi amor.")
                 return
             food_label = f"{food.emoji} {food.name}"
         favourite = food is not None and food.catalog_key in species.favourites
@@ -639,9 +640,9 @@ class Mascotas(commands.Cog):
             if food is not None and eats:
                 await self.shop.restore(food.id)
             minutes = max(1, -(-outcome.wait // 60))
-            await interaction.response.send_message(
+            await notify(
+                interaction,
                 f"⏳ {species.emoji} Dale un respiro: podrás volver dentro de {minutes} min.",
-                ephemeral=True,
             )
             return
 
@@ -703,7 +704,7 @@ class Mascotas(commands.Cog):
         else:
             # Viene del desplegable privado de comida: se cierra ese y se repinta
             # el panel público, que es otro mensaje.
-            await interaction.response.edit_message(content=lines[0], view=None)
+            await edit(interaction, content=lines[0], view=None)
             await panel.refresh()
 
         await logros.track(
@@ -744,10 +745,11 @@ class Mascotas(commands.Cog):
 
     async def open_feeding(self, interaction: discord.Interaction, panel: PetPanel) -> None:
         """Abre el desplegable de comida (o da de comer sin más a las que no comen)."""
+        await ack(interaction)
         await panel.load()
         state = panel.current
         if state is None:
-            await interaction.response.send_message("Esa mascota ya no está.", ephemeral=True)
+            await notify(interaction, "Esa mascota ya no está.")
             return
         species = SPECIES_BY_KEY[state.species]
         if species.diet == "nada":
@@ -760,25 +762,26 @@ class Mascotas(commands.Cog):
             if e.kind is Kind.TROPHY and (species.diet == "todo" or food_of(e.catalog_key))
         ]
         if not foods:
-            await interaction.response.send_message(
+            await notify(
+                interaction,
                 "No tienes nada de comer en la mochila. En la `tienda` lo que se come lleva "
                 "🍽️ (la 🐾 Tienda de animales tiene pienso).",
-                ephemeral=True,
             )
             return
-        await interaction.response.send_message(
+        await notify(
+            interaction,
             f"{species.emoji} ¿Qué le das a **"
             f"{discord.utils.escape_markdown(pet_name(state, species))}**?",
             view=FoodPicker(self, panel, state, foods),
-            ephemeral=True,
         )
 
     async def activate(self, interaction: discord.Interaction, panel: PetPanel) -> None:
         """La mascota que se ve pasa a ir con su dueño."""
+        await ack(interaction)
         await panel.load()
         state = panel.current
         if state is None:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         guild_id, user_id = panel.guild.id, panel.member.id
         await self.repository.set_active(guild_id, user_id, state.id)
@@ -800,11 +803,13 @@ class Mascotas(commands.Cog):
         except ValueError as error:
             await interaction.response.send_message(f"❌ {error}", ephemeral=True)
             return
+        await ack(interaction)
         await panel.load()
         current = next((p for p in panel.pets if p.id == state.id), None)
         if current is None:
-            await interaction.response.send_message("Esa mascota ya no está.", ephemeral=True)
+            await notify(interaction, "Esa mascota ya no está.")
             return
+
         current.name = name
         await self.repository.save(current)
         key = (panel.guild.id, panel.member.id)
@@ -844,10 +849,10 @@ class Mascotas(commands.Cog):
     ) -> None:
         """Enseña el panel de mascotas; solo su dueño puede cuidarlas."""
         assert interaction.guild is not None  # guild_only
+        # Las mascotas se leen de la base de datos: «pensando…» mientras tanto.
+        await interaction.response.defer(thinking=True)
         view = await self.panel(interaction.guild, miembro or interaction.user, interaction.user)
-        await interaction.response.send_message(
-            view=view, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
         view.interaction = interaction
 
     @commands.command(name="mascota")

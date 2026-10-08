@@ -24,8 +24,60 @@ Lo que más se olvida:
 - **Comandos:** un solo nombre en español de 8 caracteres como máximo, idéntico con `/`
   y con `.`, sin alias ni subcomandos (`/poner`, no `/play`). Sección "Cogs y comandos"
   de `Biblia.txt`.
+- **Botones:** contestan a Discord antes de tocar la base de datos. Sección siguiente.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
+
+## Botones rápidos
+
+Discord da 3 segundos para contestar a un clic (botón, menú o formulario). Si no
+llega nada, el botón se queda «pensando» y acaba en «Esta interacción ha fallado»,
+aunque el bot termine el trabajo después. Python casi nunca es lo lento. Lo lento
+es la base de datos (sobre todo cuando espera a otra escritura), dibujar una
+imagen, llamar a la API de Discord (roles, apodos) y esperar un `asyncio.Lock`.
+
+Todo botón nuevo, o que se toque, sigue estas reglas. Las funciones están en
+`bot.utils.interactions`.
+
+1. **Si antes de enseñar el resultado hay que esperar algo de lo de arriba, la
+   primera línea útil del callback es `await ack(interaction)`.** Las
+   comprobaciones que solo miran memoria (¿es el dueño?, ¿está ocupado?) pueden ir
+   antes y contestar directamente. El `ack` va también antes de coger un candado.
+2. **Después de `ack`, se contesta con `edit(interaction, ...)` para cambiar el
+   mensaje del botón y con `notify(interaction, "...")` para un aviso aparte**
+   (privado por defecto, `ephemeral=False` para uno público). Nunca con
+   `interaction.response.*`, que ya está gastado y lanza `InteractionResponded`.
+   `edit` y `notify` valen igual sin `ack`, así que una función compartida puede
+   usarlas sin saber de dónde la llaman.
+3. **Si la respuesta es un mensaje privado nuevo** (abrir tu propio panel, una
+   ficha, unas estadísticas), se usa `ack(interaction, new_message=True)`:
+   Discord enseña «pensando…» en privado y `edit(interaction, ...)` lo rellena,
+   también con los errores (`edit(interaction, content="...")`). Así no queda un
+   «pensando…» colgado.
+4. **Si el botón solo cambia memoria** (pasar de página con los datos ya
+   cargados, el minijuego de `pala`), se contesta directamente con
+   `interaction.response.edit_message`: es lo más rápido y no hace falta `ack`.
+5. **Un botón que abre un formulario no puede hacer `ack`**: `send_modal` tiene
+   que ser la primera respuesta. Las comprobaciones previas a abrirlo solo pueden
+   mirar memoria. El `ack` va en el `on_submit` del formulario.
+6. **Lo que no hace falta para enseñar el resultado va después de contestar:**
+   logros (`casino_play`, `track`), `apuestas.record`, `renta.remind`, anuncios en
+   el canal.
+7. **Clics en ráfaga contra un mismo candado** (como el minijuego de `pala`): el
+   clic que llega tarde se acepta fuera del candado. Si se acepta dentro, cada
+   clic espera a que el anterior termine de hablar con Discord y los últimos pasan
+   de 3 segundos.
+8. **La base de datos se abre siempre con `bot.repositories.sqlite.connect`**, que
+   activa el modo WAL. Una escritura no sincroniza el disco del NAS y una lectura
+   no espera a una escritura. Un repositorio nuevo no llama a `sqlite3.connect` a
+   mano.
+
+Para probarlo, el doble de `tests/interaction_fakes.py` (`fake_interaction`) se porta
+como Discord: una sola respuesta y `is_done()` de verdad. Con un `MagicMock` sin más,
+`is_done()` siempre es falso y la prueba no ve si el botón contesta tarde o dos veces.
+Un botón nuevo que toque la base de datos se añade a
+`tests/integration/test_button_speed.py`, que pulsa botones del bot real y falla si
+la primera conexión a SQLite llega antes que la respuesta a Discord.
 
 ## Dos repositorios
 

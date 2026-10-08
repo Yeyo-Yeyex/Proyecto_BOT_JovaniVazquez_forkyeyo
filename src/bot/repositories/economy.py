@@ -89,6 +89,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
+from bot.repositories import sqlite
+
 if TYPE_CHECKING:
     from bot.services.interest import DayOutcome, LedgerRow, SavingsSettlement, Streaks
     from bot.services.taxes import ForeignPayslip, Payslip
@@ -407,10 +409,7 @@ class EconomyRepository:
 
     def _connect(self) -> sqlite3.Connection:
         """Abre una conexión en modo autocommit; las transacciones son explícitas."""
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=30, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return sqlite.connect(self.database_path, isolation_level=None)
 
     async def _run(self, operation: Callable[..., T], *args: object) -> T:
         """Ejecuta una operación SQLite fuera del event loop."""

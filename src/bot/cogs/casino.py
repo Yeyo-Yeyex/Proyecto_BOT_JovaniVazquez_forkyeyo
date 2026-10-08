@@ -73,6 +73,7 @@ from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
 from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
 from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -497,19 +498,18 @@ class RouletteTable(discord.ui.View):
             await self.play(interaction, (Wager(bet, self.stake),))
             return
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        await ack(interaction)
         balance = await self.balance()
         needed = wagers_total(self.slip) + self.stake
         if needed > balance:
-            await interaction.response.send_message(
-                insufficient_text(balance, needed), ephemeral=True
-            )
+            await notify(interaction, insufficient_text(balance, needed))
             return
         try:
             self.slip = add_wager(self.slip, bet, self.stake)
         except ValueError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            await notify(interaction, str(error))
             return
         await self._refresh(interaction, balance)
 
@@ -517,26 +517,24 @@ class RouletteTable(discord.ui.View):
         """Cobra, gira y paga las apuestas, editando la mesa."""
         if self._busy:
             # Doble clic mientras gira: se ignora sin mostrar error.
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
+            # Cobrar y dibujar el giro tardan: se acepta el clic antes.
+            await ack(interaction)
             try:
                 result = await self.cog.spin(self.guild_id, self.owner.id, wagers)
             except InsufficientFundsError as error:
-                await interaction.response.send_message(
-                    insufficient_text(error.balance, wagers_total(wagers)), ephemeral=True
-                )
+                await notify(interaction, insufficient_text(error.balance, wagers_total(wagers)))
                 return
             except BalanceLimitError:
-                await interaction.response.send_message(
-                    "La banca no puede pagar tanto. Baja la ficha.", ephemeral=True
-                )
+                await notify(interaction, "La banca no puede pagar tanto. Baja la ficha.")
                 return
             self._last_interaction = interaction
             await self.show_spin(
                 result,
-                first_edit=interaction.response.edit_message,
+                first_edit=interaction.edit_original_response,
                 final_edit=interaction.edit_original_response,
             )
         finally:
@@ -616,9 +614,13 @@ class RouletteTable(discord.ui.View):
         )
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
-        """Actualiza la mesa (ficha, modo, fichas puestas) sin tocar la imagen."""
+        """Actualiza la mesa (ficha, modo, fichas puestas) sin tocar la imagen.
+
+        El embed lee el saldo de la base de datos: se acepta el clic antes.
+        """
+        await ack(interaction)
         self._set_enabled(True)
-        await interaction.response.edit_message(embed=await self.current_embed(balance), view=self)
+        await edit(interaction, embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
 
     async def _open_numbers(self, interaction: discord.Interaction) -> None:
@@ -633,16 +635,18 @@ class RouletteTable(discord.ui.View):
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         # Si el doble no cabe, se queda en lo que queda libre: es lo que se busca.
         self.stake = max(1, min(self.stake * 2, self._free_balance(balance)))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         free = self._free_balance(balance)
         if free == 0:
-            await interaction.response.send_message(insufficient_text(free), ephemeral=True)
+            await notify(interaction, insufficient_text(free))
             return
         # En modo varias, all-in es "todo lo que queda" para la siguiente ficha.
         self.stake = free
@@ -651,16 +655,20 @@ class RouletteTable(discord.ui.View):
     async def _repeat(self, interaction: discord.Interaction) -> None:
         if self.last_wagers:
             await self.play(interaction, self.last_wagers)
+        else:
+            # Clic en un botón que ya debía estar apagado: se acepta sin más.
+            await ack(interaction)
 
     async def _double_and_repeat(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         if not self.last_wagers:
             return
         doubled = tuple(Wager(w.bet, w.stake * 2) for w in self.last_wagers)
         balance = await self.balance()
         if wagers_total(doubled) > balance:
-            await interaction.response.send_message(
+            await notify(
+                interaction,
                 "No te llega para doblar. " + insufficient_text(balance, wagers_total(doubled)),
-                ephemeral=True,
             )
             return
         self.stake *= 2
@@ -674,6 +682,8 @@ class RouletteTable(discord.ui.View):
     async def _spin_slip(self, interaction: discord.Interaction) -> None:
         if self.slip:
             await self.play(interaction, self.slip)
+        else:
+            await ack(interaction)
 
     async def _clear_slip(self, interaction: discord.Interaction) -> None:
         self.slip = ()

@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs import horses as cog_module
 from bot.cogs.horses import Horses, Phase, Race
@@ -86,16 +87,9 @@ def make_channel() -> MagicMock:
 
 
 def make_interaction(user_id: int, name: str = "Ana", message_id: int | None = 999) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id, name)
+    interaction = fake_interaction(make_user(user_id, name))
     interaction.guild = None
     interaction.message = MagicMock(id=message_id) if message_id is not None else None
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
     return interaction
 
 
@@ -266,7 +260,8 @@ async def test_los_botones_rapidos_apuestan_la_ficha(tmp_path: Path) -> None:
     assert race.tickets[ANA].pick == Pick(BetKind.WIN, (race.tip.horse,))
     assert race.tickets[ANA].stake == 250
     assert race.tickets[ANA].via == "sanxe"
-    sanxe.response.edit_message.assert_awaited_once()
+    sanxe.response.defer.assert_awaited_once()
+    sanxe.edit_original_response.assert_awaited_once()
     assert sanxe.followup.send.await_args.kwargs["ephemeral"] is True
 
     crowd = make_interaction(LEO, "Leo")
@@ -296,8 +291,9 @@ async def test_el_panel_monta_un_trio_y_apuesta(tmp_path: Path) -> None:
     interaction = make_interaction(ANA, message_id=None)
     await panel._on_confirm(interaction)
     assert race.tickets[ANA].stake == 300
-    assert interaction.response.edit_message.await_args.kwargs["view"] is None
-    interaction.edit_original_response.assert_awaited_once()
+    text, image = interaction.edit_original_response.await_args_list
+    assert text.kwargs["view"] is None
+    assert "attachments" in image.kwargs
 
 
 async def test_el_panel_tiene_un_menu_por_caballo_del_boleto(tmp_path: Path) -> None:
