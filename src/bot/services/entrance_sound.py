@@ -51,6 +51,9 @@ LIMITER_CEILING = 0.95
 #: Tiempo máximo para cualquier llamada a ffmpeg/ffprobe sobre un clip corto.
 FFMPEG_TIMEOUT_SECONDS = 30
 
+#: Duración de cada paquete Opus generado (`-frame_duration 20`).
+PACKET_SECONDS = 0.02
+
 #: Cabeceras Ogg/Opus que no son audio y no deben enviarse a Discord.
 _OPUS_HEADER_PREFIXES = (b"OpusHead", b"OpusTags")
 
@@ -132,16 +135,20 @@ async def probe_audio_duration(path: Path) -> float:
     raise EntranceSoundError("No pude saber cuánto dura ese audio.")
 
 
-def check_duration(duration_seconds: float) -> None:
-    """Rechaza clips más largos que `MAX_CLIP_SECONDS` (con su tolerancia).
+def check_duration(duration_seconds: float, max_seconds: float = MAX_CLIP_SECONDS) -> None:
+    """Rechaza clips más largos que `max_seconds` (con su tolerancia).
+
+    Args:
+        max_seconds: Duración máxima; por defecto, la de los sonidos de entrada.
+            La beernight admite clips algo más largos.
 
     Raises:
         EntranceSoundError: Con la duración real, para que el usuario sepa cuánto recortar.
     """
-    if duration_seconds > MAX_CLIP_SECONDS + CLIP_DURATION_TOLERANCE_SECONDS:
+    if duration_seconds > max_seconds + CLIP_DURATION_TOLERANCE_SECONDS:
         raise EntranceSoundError(
             f"El audio dura {duration_seconds:.1f} s y el máximo es "
-            f"{MAX_CLIP_SECONDS:.0f} s. Recórtalo y vuelve a subirlo."
+            f"{max_seconds:.0f} s. Recórtalo y vuelve a subirlo."
         )
 
 
@@ -158,18 +165,22 @@ def _opus_output_args(bitrate_kbps: int) -> tuple[str, ...]:
     )  # fmt: skip
 
 
-async def build_source_clip(upload_path: Path, output_path: Path) -> None:
+async def build_source_clip(
+    upload_path: Path, output_path: Path, max_seconds: float = MAX_CLIP_SECONDS
+) -> None:
     """Convierte el adjunto subido en la fuente normalizada del sonido.
 
     Se guarda a 128 kbps para que regenerarla con otro volumen apenas pierda
-    calidad. `-t` corta igualmente en el máximo por si `ffprobe` se quedara corto.
+    calidad. `-t` corta igualmente en `max_seconds` por si `ffprobe` se quedara
+    corto. El resultado ya es Opus en paquetes de 20 ms: se puede reproducir tal
+    cual con `OpusPacketSource` (lo hace la beernight).
     """
     await _run(
         "ffmpeg", "-y", "-v", "error",
         "-protocol_whitelist", "file",
         "-i", str(upload_path),
         "-map", "0:a:0", "-vn", "-sn", "-dn",
-        "-t", str(MAX_CLIP_SECONDS),
+        "-t", str(max_seconds),
         "-af", f"loudnorm=I={TARGET_LOUDNESS_LUFS}:TP=-1.5:LRA=11",
         *_opus_output_args(128),
         str(output_path),
@@ -234,3 +245,29 @@ class OpusPacketSource(discord.AudioSource):
     def is_opus(self) -> bool:
         """Indica a `discord.py` que los datos ya están en Opus."""
         return True
+
+
+async def play_packets(voice: discord.VoiceClient, packets: list[bytes]) -> None:
+    """Reproduce paquetes Opus y espera a que terminen (con un tope de seguridad).
+
+    La usan los sonidos de entrada y la beernight. Si Discord no deja
+    reproducir (ya suena otra cosa), se registra y se sigue.
+    """
+    loop = asyncio.get_running_loop()
+    finished = asyncio.Event()
+
+    def _after(error: Exception | None) -> None:
+        # Lo llama el hilo de audio de discord.py, no el event loop.
+        if error is not None:
+            logger.warning("Error de reproducción de un clip: %s", error)
+        loop.call_soon_threadsafe(finished.set)
+
+    try:
+        voice.play(OpusPacketSource(packets), after=_after)
+    except discord.ClientException:
+        logger.warning("No se pudo reproducir un clip", exc_info=True)
+        return
+    try:
+        await asyncio.wait_for(finished.wait(), timeout=len(packets) * PACKET_SECONDS + 5)
+    except TimeoutError:
+        voice.stop()

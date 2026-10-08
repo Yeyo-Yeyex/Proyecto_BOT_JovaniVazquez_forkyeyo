@@ -36,6 +36,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
@@ -179,6 +180,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("music", "🎵 Música", group=_VG),
     Category("social", "❤️ Social"),
     Category("todo", "📝 Lista"),
+    Category("beernight", "🍻 Beernight"),
     Category("levels", "📈 Niveles"),
     # 🎰 Casino: una entrada del menú con una sección por juego. El menú de
     # Discord admite 25 opciones y, con un juego por categoría, se llenaba.
@@ -389,6 +391,19 @@ HORSE_BACKED_PREFIX = "horse_backed_"
 #: Caballos distintos por los que ha apostado y boletos al caballo más repetido.
 HORSE_BACKED_KINDS_STAT = "horse_backed_kinds"
 HORSE_BACKED_MAX_STAT = "horse_backed_max"
+
+
+#: Prefijo de los sorbos por motivo (`beer_kind_chivatazo`), para «He bebido por todo».
+BEER_KIND_PREFIX = "beer_kind_"
+
+#: Discurso del primer logro de la beernight: explica cómo se juega.
+BEERNIGHT_STORY = (
+    "Bienvenido a la beernight. Las normas: los mandamientos dicen quién bebe; quien cae lo "
+    "confiesa con 🍺 y, si no, alguien se chiva con 🚨 y otro lo confirma. Si el chivatazo "
+    "es mentira, bebe el chivato. Cada pocos minutos el bot lanza un evento y los "
+    "mandamientos cambian solos. Nadie está obligado a nada y cada uno bebe lo que tenga. "
+    f"{TAX_COLLECTOR} todavía no ha encontrado la forma de cobrar por sorbo. Todavía."
+)
 
 
 def _thousands(value: int) -> str:
@@ -1356,6 +1371,212 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5, "todo_batch_5", "Limpieza de primavera", "Tacha 5 tareas de golpe.", C),
         (20, "todo_batch_20", "Limpieza general", "Tacha 20 tareas de golpe.", R),
     ])  # fmt: skip
+
+    # 🍻 Beernight (cogs/beernight.py: beernight_drink_stats y beernight_close_stats) ----
+    a.append(Achievement(
+        id="beer_night_1", name="Primera ronda",
+        description="Participa en tu primera beernight.",
+        category="beernight", rarity=C, conditions=(("beer_nights", 1),),
+        story=BEERNIGHT_STORY,
+    ))  # fmt: skip
+    a += _tiers("beernight", "beer_nights", [
+        (3, "beer_night_3", "Cliente de la casa", "Participa en 3 beernights.", R),
+        (10, "beer_night_10", "Tu taburete tiene tu forma", "Participa en 10 beernights.", E),
+        (25, "beer_night_25", "Peña cervecera", "Participa en 25 beernights.", L),
+        (50, "beer_night_50", "Patrimonio Inmaterial de la Humanidad",
+         "Participa en 50 beernights.", M),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_hosted", [
+        (1, "beer_host_1", "Anfitrión", "Organiza una beernight.", C),
+        (5, "beer_host_5", "Excelentísimo", "Organiza 5 beernights.", R),
+        (20, "beer_host_20", "Presidente del Gobierno de la birra",
+         "Organiza 20 beernights. Sin Falcon, de momento.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_sips", [
+        (1, "beer_sip_1", "El primer sorbo", "Bebe tu primer sorbo en una beernight.", C),
+        (25, "beer_sip_25", "Calentando", "Bebe 25 sorbos en beernights.", C),
+        (100, "beer_sip_100", "Hígado de acero", "Bebe 100 sorbos en beernights.", R),
+        (500, "beer_sip_500", "Barril humano", "Bebe 500 sorbos en beernights.", E),
+        (1_500, "beer_sip_1500", "Patrocinado por Tropical",
+         "Bebe 1.500 sorbos en beernights.", L),
+        (5_000, "beer_sip_5000", "Monumento a la cebada", "Bebe 5.000 sorbos en beernights.", M),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_night_sips_max", [
+        (15, "beer_night_sips_15", "Noche movida", "Bebe 15 sorbos en una sola beernight.", C),
+        (30, "beer_night_sips_30", "Noche toledana", "Bebe 30 sorbos en una sola beernight.", R),
+        (60, "beer_night_sips_60", "Mañana no existe",
+         "Bebe 60 sorbos en una sola beernight.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_drink_max", [
+        (3, "beer_gulp_3", "Trago largo", "Bebe 3 sorbos de una sola vez.", C),
+        (5, "beer_gulp_5", "Fondo blanco", "Bebe 5 sorbos de una sola vez.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_mvp", [
+        (1, "beer_mvp_1", "MVP de la barra", "Sé quien más bebe en una beernight.", C),
+        (5, "beer_mvp_5", "Récord autonómico", "Sé quien más bebe en 5 beernights.", E),
+        (20, "beer_mvp_20", "Leyenda del garito", "Sé quien más bebe en 20 beernights.", L),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_reports_ok", [
+        (1, "beer_snitch_1", "Chivato", "Que te confirmen un chivatazo.", C),
+        (10, "beer_snitch_10", "Confidente de la UCO", "Que te confirmen 10 chivatazos.", R),
+        (50, "beer_snitch_50", "Pegasus con patas", "Que te confirmen 50 chivatazos.", E),
+        (200, "beer_snitch_200", "Gran Hermano", "Que te confirmen 200 chivatazos.", L),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_reports_false", [
+        (1, "beer_lie_1", "Bulo", "Que te tumben un chivatazo por falso y bebas tú.", C, True),
+        (10, "beer_lie_10", "Pseudomedio digital",
+         "Que te tumben 10 chivatazos por falsos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_confirms", [
+        (1, "beer_confirm_1", "Notario", "Confirma un chivatazo ajeno.", C),
+        (25, "beer_confirm_25", "Fe pública", "Confirma 25 chivatazos ajenos.", R),
+        (100, "beer_confirm_100", "Tribunal Supremo de la birra",
+         "Confirma 100 chivatazos ajenos.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_denies", [
+        (1, "beer_deny_1", "Fact-checker", "Vota «mentira» en un chivatazo.", C),
+        (25, "beer_deny_25", "Maldita birra", "Vota «mentira» en 25 chivatazos.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_confessions", [
+        (1, "beer_confess_1", "Confieso que he bebido", "Confiesa que has caído.", C),
+        (10, "beer_confess_10", "Arrepentido", "Confiesa 10 veces que has caído.", R),
+        (50, "beer_confess_50", "Colaborador con la justicia",
+         "Confiesa 50 veces que has caído.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_accused", [
+        (1, "beer_caught_1", "Pillado", "Bebe por un chivatazo confirmado.", C),
+        (25, "beer_caught_25", "Investigado por la birra",
+         "Bebe por 25 chivatazos confirmados.", R),
+        (100, "beer_caught_100", "Ficha policial", "Bebe por 100 chivatazos confirmados.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_event_hits", [
+        (1, "beer_event_1", "Le tocó", "Bebe por un evento aleatorio.", C),
+        (25, "beer_event_25", "Imán de desgracias", "Bebe por 25 eventos aleatorios.", R),
+        (100, "beer_event_100", "El bombo te odia", "Bebe por 100 eventos aleatorios.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_duels_won", [
+        (1, "beer_duel_win_1", "En guardia", "Gana un duelo de la beernight.", C),
+        (10, "beer_duel_win_10", "Gladiador", "Gana 10 duelos de la beernight.", R),
+        (50, "beer_duel_win_50", "Invicto del salón", "Gana 50 duelos de la beernight.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_duels_lost", [
+        (1, "beer_duel_lose_1", "Tocado", "Pierde un duelo de la beernight.", C),
+        (10, "beer_duel_lose_10", "Sparring", "Pierde 10 duelos de la beernight.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_challenges_ok", [
+        (1, "beer_challenge_ok_1", "Reto superado", "Cumple un reto de la beernight.", C),
+        (10, "beer_challenge_ok_10", "Showman", "Cumple 10 retos de la beernight.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_challenges_failed", [
+        (1, "beer_challenge_ko_1", "Pánico escénico", "Falla un reto de la beernight.", C),
+        (10, "beer_challenge_ko_10", "Abucheado", "Falla 10 retos de la beernight.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_given", [
+        (10, "beer_give_10", "Generoso con lo ajeno",
+         "Haz beber 10 sorbos a otros con repartos o chivatazos.", C),
+        (100, "beer_give_100", "Recaudador", "Haz beber 100 sorbos a otros.", R),
+        (500, "beer_give_500", "Agencia Tributaria de la birra",
+         "Haz beber 500 sorbos a otros.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_toasts", [
+        (1, "beer_toast_1", "Por gusto", "Brinda por voluntad propia.", C),
+        (50, "beer_toast_50", "Nadie te obliga", "Brinda 50 veces por voluntad propia.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_custom_added", [
+        (1, "beer_law_1", "Legislador", "Propón un mandamiento de la casa.", C),
+        (10, "beer_law_10", "Padre de la Constitución",
+         "Propón 10 mandamientos de la casa.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_custom_broken", [
+        (1, "beer_law_used_1", "Tu ley se cumple",
+         "Que alguien caiga en un mandamiento que propusiste.", C),
+        (25, "beer_law_used_25", "Hecha la ley…",
+         "Que caigan 25 veces en tus mandamientos.", R),
+        (100, "beer_law_used_100", "BOE andante",
+         "Que caigan 100 veces en tus mandamientos.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_sound_saved", [
+        (1, "beer_dj_1", "DJ de la beernight", "Sube un audio para la beernight.", C),
+        (5, "beer_dj_5", "Productor musical", "Sube 5 audios para la beernight.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_retired", [
+        (1, "beer_retire_1", "Me retiro a mis aposentos", "Retírate de una beernight.", C),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_events_forced", [
+        (1, "beer_force_1", "Dedo nervioso", "Lanza un evento a mano como anfitrión.", C),
+        (25, "beer_force_25", "Gobernar por decreto",
+         "Lanza 25 eventos a mano como anfitrión.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_night_minutes_max", [
+        (120, "beer_long_2h", "Una y nos vamos", "Aguanta 2 horas en una beernight.", C),
+        (240, "beer_long_4h", "Hasta que cierre el bar",
+         "Aguanta 4 horas en una beernight.", R),
+        (360, "beer_long_6h", "Afterhours", "Aguanta 6 horas en una beernight.", E),
+    ], unit="min")  # fmt: skip
+    a += _tiers("beernight", "beer_crowd_max", [
+        (4, "beer_crowd_4", "Mesa para cuatro", "Participa en una beernight de 4 personas.", C),
+        (8, "beer_crowd_8", "Botellón", "Participa en una beernight de 8 personas.", R),
+        (12, "beer_crowd_12", "Esto parece una boda",
+         "Participa en una beernight de 12 personas.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_streak_max", [
+        (2, "beer_streak_2", "Ayer también", "Participa en beernights 2 días seguidos.", C),
+        (3, "beer_streak_3", "Puente largo", "Participa en beernights 3 días seguidos.", R),
+        (7, "beer_streak_7", "Feria de abril", "Participa en beernights 7 días seguidos.", E),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_forgiven", [
+        (1, "beer_forgiven_1", "Indulto parcial",
+         "Que el tope por hora te perdone algún sorbo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_snitch_host", [
+        (1, "beer_coup", "Golpe de Estado",
+         "Que te confirmen un chivatazo contra el anfitrión.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_zero_night", [
+        (1, "beer_teetotal", "Abstemio de facto",
+         "Pasa una hora o más en una beernight sin beber ni un sorbo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_nice", [
+        (1, "beer_nice", "Sesenta y nueve sorbos",
+         "Bebe exactamente 69 sorbos en una beernight.", R, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_dawn", [
+        (1, "beer_dawn", "Churros con chocolate",
+         "Sigue en una beernight cuando cierra entre las 5 y las 9 de la mañana.", C, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_thursday", [
+        (1, "beer_juernes", "Juernes", "Participa en una beernight que empieza en jueves.", C),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_monday", [
+        (1, "beer_monday", "Lunes de resaca",
+         "Participa en una beernight que empieza en lunes. ¿Quién hace eso?", C, True),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_nochevieja", [
+        (1, "beer_nochevieja", "Uvas con espuma",
+         "Participa en una beernight en Nochevieja.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_dia_canarias", [
+        (1, "beer_dia_canarias", "Arrorró con cerveza",
+         "Participa en una beernight el Día de Canarias (30 de mayo).", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_pino", [
+        (1, "beer_pino", "Pino con espuma",
+         "Participa en una beernight el 7 u 8 de septiembre.", R),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_halloween", [
+        (1, "beer_halloween", "Truco o birra", "Participa en una beernight en Halloween.", C),
+    ])  # fmt: skip
+    a += _tiers("beernight", "beer_san_juan", [
+        (1, "beer_san_juan", "Noche de San Juan",
+         "Participa en una beernight la noche del 23 de junio.", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="beer_all_reasons", name="He bebido por todo",
+        description="Bebe por cada motivo: confesión, chivatazo, chivatazo falso, evento, "
+        "duelo, reto, reparto y brindis.",
+        category="beernight", rarity=R,
+        conditions=tuple((f"{BEER_KIND_PREFIX}{reason.value}", 1) for reason in BeerReason),
+    ))  # fmt: skip
 
     # 📈 Niveles --------------------------------------------------------------------------
     a += _tiers("levels", "level_max", [
@@ -6268,6 +6489,107 @@ def music_volume_stats(percent: int) -> StatDelta:
     if percent <= MUSIC_WHISPER:
         delta.add["music_whisper"] = 1
     return delta
+
+
+def beernight_drink_stats(reason: str, sips: int, *, forgiven: int = 0) -> StatDelta:
+    """Lo que suma beber en una beernight (para quien bebe).
+
+    Args:
+        reason: Motivo (`beernight.Reason`), por su valor.
+        sips: Sorbos que bebe de verdad (ya con el tope aplicado).
+        forgiven: Sorbos que le ha perdonado el tope.
+    """
+    add = {"beer_sips": sips, f"{BEER_KIND_PREFIX}{reason}": 1}
+    per_reason = {
+        BeerReason.CONFESSION.value: "beer_confessions",
+        BeerReason.REPORT.value: "beer_accused",
+        BeerReason.LIE.value: "beer_reports_false",
+        BeerReason.EVENT.value: "beer_event_hits",
+        BeerReason.TOAST.value: "beer_toasts",
+    }
+    if reason in per_reason:
+        add[per_reason[reason]] = 1
+    if forgiven:
+        add["beer_forgiven"] = forgiven
+    return StatDelta(add=add, peak={"beer_drink_max": sips})
+
+
+#: Días con logro propio de la beernight: (mes, día) -> estadística.
+_BEER_DATES = {
+    (12, 31): "beer_nochevieja",
+    (5, 30): "beer_dia_canarias",
+    (9, 7): "beer_pino",
+    (9, 8): "beer_pino",
+    (10, 31): "beer_halloween",
+    (6, 23): "beer_san_juan",
+}
+#: Minutos en una noche sin beber para «Abstemio de facto».
+BEER_TEETOTAL_MINUTES = 60
+
+
+def beernight_close_stats(
+    *,
+    sips: int,
+    minutes: int,
+    crowd: int,
+    mvp: bool,
+    host: bool,
+    started: datetime,
+    ended: datetime,
+    streak: int,
+) -> StatDelta:
+    """Lo que suma a cada participante el cierre de una beernight.
+
+    Args:
+        sips: Sorbos que bebió esa noche.
+        minutes: Minutos que estuvo (desde que llegó hasta el cierre).
+        crowd: Gente que participó.
+        mvp: Si fue quien más bebió.
+        host: Si la organizó.
+        started: Inicio de la noche, en hora de Canarias.
+        ended: Cierre de la noche, en hora de Canarias.
+        streak: Días seguidos con beernight, contando esta.
+    """
+    add = {"beer_nights": 1}
+    if host:
+        add["beer_hosted"] = 1
+    if mvp:
+        add["beer_mvp"] = 1
+    if sips == 0 and minutes >= BEER_TEETOTAL_MINUTES:
+        add["beer_zero_night"] = 1
+    if sips == 69:
+        add["beer_nice"] = 1
+    if 5 <= ended.hour < 9:
+        add["beer_dawn"] = 1
+    if started.weekday() == 3:
+        add["beer_thursday"] = 1
+    if started.weekday() == 0:
+        add["beer_monday"] = 1
+    for day in {(started.month, started.day), (ended.month, ended.day)}:
+        if stat := _BEER_DATES.get(day):
+            add[stat] = 1
+    return StatDelta(
+        add=add,
+        peak={
+            "beer_night_sips_max": sips,
+            "beer_night_minutes_max": minutes,
+            "beer_crowd_max": crowd,
+            "beer_streak_max": streak,
+        },
+    )
+
+
+def beernight_streak(days: Iterable[date]) -> int:
+    """Días seguidos con beernight que acaban en el más reciente de `days`."""
+    ordered = sorted(set(days), reverse=True)
+    if not ordered:
+        return 0
+    streak = 1
+    for newer, older in zip(ordered, ordered[1:], strict=False):
+        if (newer - older).days != 1:
+            break
+        streak += 1
+    return streak
 
 
 def image_stats(effect: str, extension: str, *, subject_is_author: bool | None) -> StatDelta:

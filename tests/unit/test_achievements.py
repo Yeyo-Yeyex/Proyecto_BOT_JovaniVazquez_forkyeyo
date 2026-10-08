@@ -58,6 +58,8 @@ from bot.services.achievements import (
     UNLOCKED_STAT,
     Rarity,
     StatDelta,
+    beernight_close_stats,
+    beernight_drink_stats,
     blackjack_stats,
     casino_stats,
     group_sections,
@@ -71,6 +73,7 @@ from bot.services.achievements import (
     slots_stats,
     total_reward,
 )
+from bot.services.beernight import Reason as BeerReason
 from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
@@ -108,6 +111,21 @@ PRODUCED_STATS = {
     "news_read", "news_first",
     # Lista de tareas (cogs/todo.py)
     "todo_added", "todo_done",
+    # Beernight (cogs/beernight.py): beber, cerrar la noche y los botones de cada uno
+    *(stat for reason in BeerReason
+      for stat in (*beernight_drink_stats(reason.value, 1, forgiven=1).add,
+                   *beernight_drink_stats(reason.value, 1).peak)),
+    *(stat for day in ((12, 31), (5, 30), (9, 7), (10, 31), (6, 23))
+      for delta in [beernight_close_stats(
+          sips=69, minutes=0, crowd=1, mvp=True, host=True, streak=1,
+          started=datetime(2026, *day, 22, tzinfo=TIMEZONE),
+          ended=datetime(2026, *day, 6, tzinfo=TIMEZONE))]
+      for stat in (*delta.add, *delta.peak)),
+    "beer_thursday", "beer_monday", "beer_zero_night",
+    "beer_reports_ok", "beer_given", "beer_snitch_host", "beer_confirms", "beer_denies",
+    "beer_duels_won", "beer_duels_lost", "beer_challenges_ok", "beer_challenges_failed",
+    "beer_custom_added", "beer_custom_broken", "beer_sound_saved", "beer_retired",
+    "beer_events_forced",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
     "wealth_tax_paid", "wealth_tax_weeks", "donated", "ongs_supported",
     # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)

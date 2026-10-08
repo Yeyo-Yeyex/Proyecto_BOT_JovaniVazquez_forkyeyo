@@ -588,6 +588,22 @@ Lista de tareas compartida del servidor, para no apuntar los pendientes en mensa
 - Límites: 25 tareas pendientes por servidor (lo que cabe en un menú de Discord) y 100 caracteres por tarea.
 - Logros (📝 Lista): apuntar 1, 25 y 100 tareas, y tachar 1, 25 y 100.
 
+## 6 septies. Beernight: `beernight`
+
+La noche estrella del servidor: todos en la llamada, jugando a algo y bebiendo lo que cada uno tenga (con o sin alcohol). Nadie está obligado a nada. El nombre es la excepción a los 8 caracteres de los comandos.
+
+- `beernight` publica el panel. Sin noche: ▶️ Empezar, 📜 Histórico, ✍️ Proponer y ⚙️ Ajustes. Con una noche en marcha, vuelve a publicar su panel al final del canal y borra el anterior.
+- **Participantes:** al empezar, quien está en la llamada del anfitrión; luego, quien entra en esa llamada o pulsa cualquier botón. Los eventos solo tocan a quien sigue en la llamada y no se ha retirado (🚪, que se pulsa otra vez para volver). Si el anfitrión no estaba en voz, cuenta todo el que participa.
+- **Mandamientos:** de 2 a 10 activos (5 por defecto). Cada 20 minutos (ajustable) cambia un tercio, los más antiguos, procurando no repetir familia. Hay 154 de serie en siete familias (palabras prohibidas, la partida, la llamada, España y Hacienda, Canarias, manías y retos, móvil y vida real), que se encienden y apagan por familia, y hasta 25 de la casa, que propone cualquiera con ✍️ (1-5 sorbos).
+- **Quién bebe:** 🍺 He caído (confesión, sin votación); 🚨 Chivatazo: se elige mandamiento y persona, y otra persona que no sea ni el chivato ni el acusado lo confirma (✅). Si dos dicen 🤥 «mentira» (una basta con tres participantes o menos), bebe el chivato. Caduca a los 5 minutos. 🥂 Brindis: un sorbo por gusto.
+- **Eventos:** uno cada 8-12 minutos (ajustable), entre 69: sorbos directos (a uno, a una pareja, a todos, a todos menos uno, al que más lleva, al más sobrio, al anfitrión, al último en llegar), duelos (los demás pulsan quién pierde; un duelista solo puede rendirse), retos (otra persona dice si se ha cumplido), repartos (quien le toca elige víctima), decretos con un mandamiento temporal de 5 o 10 minutos y remodelaciones que cambian todos los mandamientos. El anfitrión puede lanzar uno a mano (🎲) o rotar los mandamientos (🔄).
+- **Tope por hora:** opcional (0 = sin tope). Lo que pasa del tope se perdona y se dice.
+- **Sonidos:** cinco momentos (alguien bebe, evento, chivatazo, empieza y acaba la noche). Cualquiera sube un audio de hasta 6 s con `/beernight sonido:<momento> archivo:<audio>` o `.beernight sonido <momento>` con el audio adjunto; hasta cinco por momento, suena uno al azar. El bot entra ensordecido, lo pone y se va, igual que los sonidos de entrada; si ya está en voz (la música), no suena. «Alguien bebe» suena como mucho cada 20 segundos. Se apagan en ⚙️ Ajustes.
+- **Gestión:** el anfitrión y los administradores (o quien gestiona el servidor) tocan los ajustes, lanzan eventos, rotan, borran mandamientos de la casa y audios, y terminan la noche.
+- **Al terminar:** resumen con duración, gente, sorbos (y litros, a 25 ml el sorbo), marcador, MVP, chivato, bulero y el mandamiento más incumplido. Si el bot se reinicia con una noche abierta, al volver la cierra con lo que había y publica el resumen.
+- **Histórico:** ranking de siempre (sorbos, noches, veces MVP), chivatos, buleros y las últimas noches, con un desplegable para ver el resumen de cada una.
+- No mueve yapdollars. Logros (🍻 Beernight, 88): noches, anfitrión, sorbos, MVP, chivatazos, confirmaciones, confesiones, duelos, retos, repartos, mandamientos propios, audios, rachas de días seguidos, fechas (Juernes, Nochevieja, Día de Canarias, el Pino, Halloween, San Juan) y secretos. La mascota activa comenta cuando su dueño bebe.
+
 ## 7. Persistencia y aislamiento por servidor
 
 El canal y el GIF de bienvenida se guardan por servidor en SQLite, igual que los datos del sistema de niveles.

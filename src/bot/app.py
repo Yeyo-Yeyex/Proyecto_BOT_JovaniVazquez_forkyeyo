@@ -15,6 +15,8 @@ import discord
 from discord.ext import commands
 
 from bot.repositories.achievements import AchievementRepository
+from bot.repositories.beernight import BeernightRepository
+from bot.repositories.beernight_sounds import BeernightSoundStore
 from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
@@ -66,6 +68,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.work",
     "bot.cogs.birthdays",
     "bot.cogs.todo",
+    "bot.cogs.beernight",
     "bot.cogs.achievements",
     "bot.cogs.fun",
     "bot.cogs.admin",
@@ -134,6 +137,9 @@ class BotClient(commands.Bot):
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
+        # Histórico de la beernight (`beernight`) y sus audios, en el mismo volumen.
+        self.beernight = BeernightRepository(database_path)
+        self.beernight_sounds = BeernightSoundStore(database_path.parent / "beernight")
         super().__init__(
             command_prefix=command_prefix,
             intents=build_intents(),
@@ -164,6 +170,7 @@ class BotClient(commands.Bot):
         await self.horses.initialize()
         await self.porras.initialize()
         await self.work.repository.initialize()
+        await self.beernight.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)
