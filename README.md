@@ -73,7 +73,7 @@ python -m bot
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `patrimonio [miembro]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `patrimonio [miembro]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -356,6 +356,18 @@ python -m bot
   tensión) y después un PNG. 🎯 Autocobro cruza solo hasta el multiplicador
   elegido en un único GIF. Al cobrar dice dónde estaba el coche («quedaban 4
   carriles libres»). Devuelve el 99 % de media.
+- **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
+  una carrera por canal, solo cuando alguien la pide. Un establo de 16
+  caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
+  regularidad) y forma guardada por servidor. Las cuotas salen de simular la
+  carrera 80.000 veces con su terreno, su distancia y su parte de lluvia:
+  ganador y colocado devuelven el 95 %, gemela el 92 % y trío el 90 %. En la
+  parrilla (30 s) se apuesta con 🎟️ Apostar (panel privado) o de un toque con
+  🐶 Lo de Sanxe, 🐑 Con el pueblo o 🎲 Al azar; `.caballo 500 3-5-1` va al
+  trío. La carrera es un GIF con foto-finish a cámara lenta si llegan
+  pegados. Cada 8 carreras (y 4 h) sale el Gran Premio con un bote para quien
+  acierte el ganador, que crece si nadie acierta. Tributa como el resto del
+  casino.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
   japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
   bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
@@ -389,7 +401,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.560 logros en 36 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.633 logros en 37 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -397,7 +409,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 275 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 286 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -659,6 +671,7 @@ src/bot/
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
+│   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
 │   └── music.py         # Comandos de música y control por servidor
@@ -694,6 +707,8 @@ src/bot/
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
+│   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
+│   ├── horses_render.py # Parrilla, GIF de la carrera con foto-finish y boleto
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
 │   ├── welcome.py       # GIF de bienvenida, frases y reglas del botón 👋

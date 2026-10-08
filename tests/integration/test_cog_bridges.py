@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
@@ -31,6 +32,7 @@ GAMES = (
     "Minas",
     "Pollo",
     "Pachinko",
+    "Caballos",
     "Loteria",
 )
 
@@ -45,6 +47,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.welcome.initialize()
     await client.shop.initialize()
     await client.work.repository.initialize()
+    await client.horses.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -188,6 +191,60 @@ async def test_el_pollo_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         assert profile.stats["chicken_games"] == 1
         assert profile.stats["chicken_splats"] == 1
         assert {"pollo_1", "pollos_1", "pollo_ni_acera"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_las_carreras_apuntan_sus_logros_y_jugadas_con_el_bot_real(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Los caballos cargan antes que los logros y `apuestas`: sus boletos deben llegar."""
+    from bot.services.horses import SEGMENTS, RaceResult
+
+    client = await load_bot(tmp_path)
+    try:
+        caballos = importer("Caballos", client)
+        cog = client.get_cog("Caballos")
+        cog.renderer = MagicMock()
+        cog.renderer.card.return_value = b"PNG"
+        cog.renderer.ticket.return_value = b"PNG"
+        cog.renderer.race.return_value = caballos.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        cog.sleep = AsyncMock()
+        cog.start = MagicMock()
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 77
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        await cog._caballo_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=channel,
+            user=owner,
+            amount_text="100",
+            pick_text="1",
+            kind_text=None,
+            confirm=AsyncMock(),
+            send_error=AsyncMock(),
+        )
+        race = cog.races[77]
+        times = tuple(100.0 + i for i in range(race.card.size))
+        splits = tuple(tuple(t * s / SEGMENTS for s in range(SEGMENTS + 1)) for t in times)
+        result = RaceResult(order=tuple(range(race.card.size)), times=times, splits=splits)
+        monkeypatch.setattr(caballos, "run_race", lambda card, rng: result)
+
+        await race.race()
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["horse_bets"] == 1
+        assert profile.stats["horse_hits"] == 1
+        assert {"caballo_1", "caballo_hit_1"} <= set(profile.unlocked)
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["caballos"].plays == 1
     finally:
         await client.close()
 
