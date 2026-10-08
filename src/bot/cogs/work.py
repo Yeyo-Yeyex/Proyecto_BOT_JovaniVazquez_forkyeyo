@@ -176,7 +176,7 @@ def payslip_text(slip: Payslip, *, title: str, self_employed: bool) -> str:
     if slip.irpf:
         lines.append(f"IRPF: −{format_amount(slip.irpf)} ({_pct(slip.rates.irpf)})")
     else:
-        lines.append("IRPF: 0 Y$ (con lo que cobras al año, aún no llegas al mínimo)")
+        lines.append("IRPF: 0 Y$ (con toda tu renta de la última semana, aún no llegas al mínimo)")
     lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
     if self_employed:
         lines.append(

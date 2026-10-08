@@ -18,7 +18,7 @@ Qué se cuenta y cómo:
   salen de `on_voice_state_update`.
 - **Música, imágenes, entradas y babel**: llaman a `note_for` al terminar.
 - **Juegos y economía**: los juegos del casino (ruleta, blackjack,
-  tragaperras, Botes, Crash, Minas, Pollo y pachinko), el IMV, la renta, los niveles y los
+  tragaperras, Botes, Crash, Minas, Pollo, pachinko y caballos), el IMV, la renta, los niveles y los
   cumpleaños llaman a `track`, `casino_play` o `note` de este
   módulo al terminar cada acción. Si el cog no está cargado no pasa nada, y
   un fallo aquí nunca rompe el juego que lo llama.

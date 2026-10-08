@@ -36,14 +36,14 @@ def test_el_tipo_sube_con_la_renta() -> None:
     assert rates[-1] < 0.5
 
 
-def test_retencion_proyecta_los_ultimos_30_dias() -> None:
+def test_retencion_proyecta_los_ultimos_7_dias() -> None:
     nuevo = compute_withholding(1_000, recent_income=0)
-    habitual = compute_withholding(1_000, recent_income=29_000)
+    habitual = compute_withholding(1_000, recent_income=6_000)
 
     assert nuevo.tax == 0
     assert habitual.tax > 0
     assert habitual.net == 1_000 - habitual.tax
-    # 30.000 Y$ en 30 días → 365.000 Y$/año → 36.500 €
+    # 7.000 Y$ en 7 días → 365.000 Y$/año → 36.500 €
     assert habitual.rate == withholding_rate(365_000)
 
 

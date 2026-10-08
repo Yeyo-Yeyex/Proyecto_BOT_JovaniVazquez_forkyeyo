@@ -1,6 +1,11 @@
 """Datos del análisis de la economía del trabajo, calculados con el código real.
 
 Uso, desde la raíz del repo: `python docs/economia_trabajo.py` (imprime JSON).
+
+La renta reciente que se pasa a `compute_payslip` es la de los últimos 7 días (la
+ventana de todas las retenciones): `b * 6` es un turno al día toda la semana y
+`b * 4 * 7 - b`, la jornada completa. `old_net` reproduce el sistema anterior,
+con su ventana de 30 días.
 """
 
 import json
@@ -37,16 +42,16 @@ out = {}
 bases = list(range(200, 3201, 100))
 out["base_curve"] = {
     "bases": bases,
-    "net": [new_net(b, b * 4 * 30 - b) for b in bases],
-    "net_one": [new_net(b, b * 29) for b in bases],
+    "net": [new_net(b, b * 4 * 7 - b) for b in bases],
+    "net_one": [new_net(b, b * 6) for b in bases],
 }
 # Base mínima: neto >= IMV máx.
-opt = next(b for b in range(100, 5000, 10) if new_net(b, b * 29) >= IMV_MAX * 1.05)
+opt = next(b for b in range(100, 5000, 10) if new_net(b, b * 6) >= IMV_MAX * 1.05)
 out["base_min"] = opt
 # 2) Valor de cada acción en tiradas de 100.
 cel_old = old_net(135, 135 * 29)
-cel_new = new_net(1750, 1750 * 29)
-cons_new = new_net(25000, 25000 * 29)
+cel_new = new_net(1750, 1750 * 6)
+cons_new = new_net(25000, 25000 * 6)
 out["actions"] = [
     ["IMV, primer día", 500 / 100],
     ["IMV, racha máxima", 15.0],
@@ -58,7 +63,7 @@ out["actions"] = [
 days = []
 for n in range(0, 9):
     g = 1750
-    net = sum(new_net(g, g * n * 30 - g) for _ in range(n)) if n else 0
+    net = sum(new_net(g, g * n * 7 - g) for _ in range(n)) if n else 0
     weekly = net * 7
     imv = imv_after_work(IMV_MAX, weekly)
     g0 = 135
@@ -100,9 +105,9 @@ out["ladder"] = [
         "emoji": j.emoji,
         "old": OLD[j.key],
         "new": [p.base_pay for p in j.positions],
-        "net_one": [new_net(p.base_pay, p.base_pay * 29) for p in j.positions],
+        "net_one": [new_net(p.base_pay, p.base_pay * 6) for p in j.positions],
         "old_one": [old_net(g, g * 29) for g in OLD[j.key]],
-        "net_full": [new_net(p.base_pay, p.base_pay * 4 * 30 - p.base_pay) for p in j.positions],
+        "net_full": [new_net(p.base_pay, p.base_pay * 4 * 7 - p.base_pay) for p in j.positions],
         "irpf": [irpf_rate(p.base_pay, 100) for p in j.positions],
         "eur_year": [round(p.base_pay * 4 * 365 / 100) for p in j.positions],
     }

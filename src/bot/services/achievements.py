@@ -12,7 +12,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`,
+`crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`, `horses_stats`,
 `porra_open_stats`, `porra_bet_stats`, `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
 `voice_move_stats`, `music_queue_stats`, `image_stats`, `babel_stats`…) y se
@@ -47,6 +47,14 @@ from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
 from bot.services.hold_win import BonusStep as HoldWinStep
 from bot.services.hold_win import Trigger as HoldWinTrigger
+from bot.services.horses import DISTANCES as _HORSE_RACE_DISTANCES
+from bot.services.horses import GRAND_PRIX_DISTANCE as _HORSE_GP_DISTANCE
+from bot.services.horses import STABLE as _HORSE_STABLE
+from bot.services.horses import BetKind as HorseBetKind
+from bot.services.horses import Going as HorseGoing
+from bot.services.horses import Pick as HorsePick
+from bot.services.horses import RaceCard as HorseCard
+from bot.services.horses import RaceResult as HorseResult
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
     INTEREST_TIERS,
@@ -183,6 +191,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
+    Category("horses", "🏇 Caballos", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
@@ -363,12 +372,23 @@ def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -
 #: personal estatal (art. 57 LIRPF) al cambio del juego. El autonómico de
 #: Canarias es algo mayor, así que la primera mordida siempre es la estatal.
 FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
-#: Lo mismo en la ventana de 30 días que usa la retención (`compute_withholding`).
-FIRST_TAX_MONTHLY = FIRST_TAX_YEARLY * 30 // 365
+#: Lo mismo en la ventana de 7 días que usa la retención (`compute_withholding`).
+FIRST_TAX_WEEKLY = FIRST_TAX_YEARLY * 7 // 365
 
 
 #: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
 CHICKEN_VEHICLE_KINDS = ("car", "van", "truck", "bus", "moto", "taxi")
+
+#: Tipos de boleto de las carreras (`horses.BetKind`), uno por condición de «Quiniela completa».
+HORSE_BET_KINDS = tuple(kind.key for kind in HorseBetKind)
+#: Caballos del establo y distancias de las carreras, para las colecciones.
+HORSE_KEYS = frozenset(h.key for h in _HORSE_STABLE)
+HORSE_DISTANCES = (*_HORSE_RACE_DISTANCES, _HORSE_GP_DISTANCE)
+#: Boletos por caballo (`horse_backed_falcon`…); el recuento se calcula en `with_derived`.
+HORSE_BACKED_PREFIX = "horse_backed_"
+#: Caballos distintos por los que ha apostado y boletos al caballo más repetido.
+HORSE_BACKED_KINDS_STAT = "horse_backed_kinds"
+HORSE_BACKED_MAX_STAT = "horse_backed_max"
 
 
 def _thousands(value: int) -> str:
@@ -382,9 +402,9 @@ def _thousands(value: int) -> str:
 FIRST_TAX_STORY = (
     f"🐶 **¡Ay, bendito! {TAX_COLLECTOR} te encontró.** Hasta hoy cobrabas limpito "
     f"porque no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, "
-    f"unos {_thousands(FIRST_TAX_MONTHLY)} Y$ cada 30 días. Te pasaste, mi amor, y "
-    "desde hoy cada premio, cada nivel y cada pelotazo del casino pasa antes por su "
-    "cartera. Cuanto más ganas, más se lleva.\n"
+    f"unos {_thousands(FIRST_TAX_WEEKLY)} Y$ a la semana, sumando todo lo que cobras. "
+    "Te pasaste, mi amor, y desde hoy cada premio, cada nivel, cada nómina y cada "
+    "pelotazo del casino pasa antes por su cartera. Cuanto más ganas, más se lleva.\n"
     "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
     "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
 )
@@ -5204,6 +5224,235 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mira `hacienda` pagando más en impuestos indirectos que directos.", C, True),
     ])  # fmt: skip
 
+    # 🏇 Caballos ------------------------------------------------------------------------
+    a += _tiers("horses", "horse_bets", [
+        (1, "caballo_1", "Día de carreras en la Zarzuela",
+         "Haz tu primer boleto en las carreras.", C),
+        (10, "caballo_10", "Socio del hipódromo", "Haz 10 boletos en las carreras.", C),
+        (100, "caballo_100", "Tribuna de honor", "Haz 100 boletos en las carreras.", R),
+        (1_000, "caballo_1k", "Palco presidencial", "Haz 1.000 boletos en las carreras.", E),
+        (5_000, "caballo_5k", "Patrimonio Nacional", "Haz 5.000 boletos en las carreras.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_hits", [
+        (1, "caballo_hit_1", "¡Ha entrado!", "Cobra tu primer boleto.", C),
+        (25, "caballo_hit_25", "Ojo de tratante", "Cobra 25 boletos.", R),
+        (250, "caballo_hit_250", "Pronóstico del BOE", "Cobra 250 boletos.", E),
+        (1_000, "caballo_hit_1k", "Más aciertos que el CIS", "Cobra 1.000 boletos.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_hits_colocado", [
+        (50, "caballo_coloc_50", "Colocado, como un enchufado",
+         "Cobra 50 boletos a colocado.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_hits_gemela", [
+        (1, "caballo_gemela_1", "Gemelos univitelinos",
+         "Acierta una gemela (1º y 2º en orden).", C),
+        (25, "caballo_gemela_25", "Coalición de gobierno",
+         "Acierta 25 gemelas. Dos que llegan juntos y en orden.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_hits_trio", [
+        (1, "caballo_trio_1", "Trío de ases", "Acierta un trío (el podio entero, en orden).", R),
+        (10, "caballo_trio_10", "Tripartito", "Acierta 10 tríos.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="caballo_quiniela",
+        name="Quiniela completa",
+        description="Haz un boleto de cada tipo: ganador, colocado, gemela y trío.",
+        category="horses",
+        rarity=C,
+        conditions=tuple((f"horse_kind_{kind}", 1) for kind in HORSE_BET_KINDS),
+    ))  # fmt: skip
+    a += _tiers("horses", "horse_odds_max", [
+        (500, "caballo_x5", "Caballo de segunda fila", "Cobra un boleto a 5x o más.", C),
+        (2_000, "caballo_x20", "Tapado", "Cobra un boleto a 20x o más.", R),
+        (10_000, "caballo_x100", "Pelotazo del ladrillo", "Cobra un boleto a 100x o más.", E),
+        (100_000, "caballo_x1000", "Indulto a la banca", "Cobra un boleto a 1.000x o más.", M),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_win_max", [
+        (10_000, "caballo_rich", "Premio gordo en la Zarzuela",
+         "Gana 10.000 Y$ con un boleto.", E),
+        (100_000, "caballo_richer", "Cuadra en Marbella",
+         f"Gana 100.000 Y$ con un boleto. {TAX_COLLECTOR} ya ha cogido sitio en la tribuna.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_long_shots", [
+        (1, "caballo_tapado_1", "Tapado de manual",
+         "Gana a ganador con un caballo a 10x o más.", R),
+        (10, "caballo_tapado_10", "Especialista en tapados",
+         "Gana 10 veces a ganador con caballos a 10x o más.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_photo_wins", [
+        (1, "caballo_foto_1", "Sale bien en la foto",
+         "Cobra un boleto decidido por foto-finish.", C),
+        (10, "caballo_foto_10", "Fotogénico", "Cobra 10 boletos decididos por foto-finish.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_nose_losses", [
+        (1, "caballo_cabeza", "Por una cabeza",
+         "Pierde un boleto a ganador porque tu caballo entra 2º por una nariz o menos.", R),
+        (10, "caballo_cabeza_10", "Gardel lloraría",
+         "Pierde 10 boletos a ganador por una nariz o menos.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_seconds", [
+        (10, "caballo_segundo_10", "Eterno segundón",
+         "Tu caballo a ganador entra 2º 10 veces.", C),
+        (100, "caballo_segundo_100", "Subcampeón del Estado",
+         "Tu caballo a ganador entra 2º 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_lasts", [
+        (1, "caballo_farolillo", "Farolillo rojo", "Tu caballo entra el último.", C),
+        (50, "caballo_farolillo_50", "Abonado al farolillo",
+         "Tu caballo entra el último 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_bolted", [
+        (1, "caballo_desbocado", "Se fue en el Falcon",
+         "Tu caballo se desboca y se va hacia la grada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_stumble_wins", [
+        (1, "caballo_tropiezo", "Tropezar y ganar",
+         "Gana a ganador con un caballo que ha tropezado en la carrera.", L),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_comebacks", [
+        (1, "caballo_remontada", "Del último al primero",
+         "Gana a ganador con un caballo que iba último a mitad de carrera.", E),
+        (10, "caballo_remontada_10", "Especialista en remontadas",
+         "Gana 10 veces con caballos que iban últimos a mitad de carrera.", M),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_manual_comeback", [
+        (1, "caballo_resistencia", "Resistir es vencer",
+         "Gana con Manual de Resistencia remontando desde el último puesto.", L, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_rain_wins", [
+        (1, "caballo_lluvia", "Cantando bajo la lluvia",
+         "Cobra un boleto en una carrera en la que se puso a llover.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_mud_wins", [
+        (10, "caballo_barro_10", "Máquina del barro",
+         "Cobra 10 boletos con la pista embarrada.", R),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_tired_wins", [
+        (1, "caballo_cansado", "Sin vacaciones",
+         "Gana a ganador con un caballo que salió cansado.", R, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_sanxe_hits", [
+        (1, "caballo_cis", "Lo dijo el CIS",
+         f"Gana a ganador con el caballo que pronosticó {TAX_COLLECTOR}.", C),
+        (25, "caballo_cis_25", "Tertuliano de cabecera",
+         f"Gana 25 veces con el pronóstico de {TAX_COLLECTOR}.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_contra_sanxe", [
+        (10, "caballo_oposicion", "Ni caso a Perro Sanxe",
+         f"Gana 10 veces a ganador con otro caballo cuando {TAX_COLLECTOR} falla.", R),
+        (100, "caballo_oposicion_100", "Oposición frontal",
+         f"Gana 100 veces llevándole la contraria a {TAX_COLLECTOR}, y con razón.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_via_sanxe", [
+        (10, "caballo_via_sanxe", "Voto cautivo", "Pulsa 🐶 Lo de Sanxe 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_via_pueblo", [
+        (10, "caballo_via_pueblo", "Donde va Vicente", "Pulsa 🐑 Con el pueblo 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_via_azar", [
+        (10, "caballo_via_azar", "Dios proveerá", "Pulsa 🎲 Al azar 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_lone_wins", [
+        (1, "caballo_verso_suelto", "Verso suelto",
+         "Gana con un caballo al que no apostaba nadie más, con 3 boletos o más en la carrera.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_party_max", [
+        (3, "caballo_pena", "Peña hípica", "Corre una carrera con 3 boletos o más.", C),
+        (6, "caballo_tribuna", "Tribuna llena", "Corre una carrera con 6 boletos o más.", R),
+        (10, "caballo_derbi", "Derbi de Epsom", "Corre una carrera con 10 boletos o más.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_gp_bets", [
+        (1, "caballo_gp_1", "Gran Premio", "Haz un boleto en el Gran Premio.", C),
+        (10, "caballo_gp_10", "Habitual del Gran Premio", "Haz 10 boletos en el Gran Premio.", R),
+        (50, "caballo_gp_50", "Pamela y chaqué", "Haz 50 boletos en el Gran Premio.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_pot_wins", [
+        (1, "caballo_bote_1", "El bote de Perro Sanxe",
+         "Llévate el bote del Gran Premio, aunque sea a medias.", R),
+        (5, "caballo_bote_5", "Bote, bote, bote", "Llévate el bote del Gran Premio 5 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_pot_max", [
+        (10_000, "caballo_bote_gordo", "Bote acumulado",
+         "Cobra 10.000 Y$ o más de un bote del Gran Premio.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("horses", "horse_fav_flops", [
+        (1, "caballo_cis_falla", "Encuesta de Tezanos",
+         "Tu favorito a 2x o menos se queda fuera del podio.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_reversed", [
+        (1, "caballo_reves", "Del revés",
+         "Falla una gemela por haber puesto el 1º y el 2º al revés.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_jumbled", [
+        (1, "caballo_trio_lio", "Trío desordenado",
+         "Falla un trío con los tres caballos del podio, pero en otro orden.", C),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_night", [
+        (1, "caballo_noche", "Hípica de madrugada", "Haz un boleto entre las 3 y las 6.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_uco_wins", [
+        (1, "caballo_uco", "La UCO siempre llega", "Gana a ganador con La UCO.", R, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_puerta_long", [
+        (1, "caballo_puerta", "Puertas giratorias",
+         "Gana a ganador con Puerta Giratoria a 5x o más.", R, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_falcon_bets", [
+        (10, "caballo_falcon", "Viaje oficial",
+         "Apuesta 10 veces por Falcon Presidencial.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_paguita_imv", [
+        (1, "caballo_paguita_imv", "Invertir la paguita",
+         "Apuesta 1.500 Y$ justos a La Paguita. El IMV entero, a un caballo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_colchon_night", [
+        (1, "caballo_colchon", "Colchón de madrugada",
+         "Apuesta por Colchón de la Moncloa entre las 3 y las 6.", C, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_wepa_gp", [
+        (1, "caballo_wepa_gp", "¡Wepa en el Gran Premio!",
+         "Gana el Gran Premio a ganador con Wepa Boricua.", R, True),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_taxed", [
+        (1, "caballo_irpf", "Hacienda también apuesta",
+         "Cobra un boleto y que te retengan IRPF por él.", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="caballo_establo",
+        name="Todo el establo",
+        description="Apuesta por los 16 caballos del establo.",
+        category="horses",
+        rarity=R,
+        conditions=((HORSE_BACKED_KINDS_STAT, len(HORSE_KEYS)),),
+    ))  # fmt: skip
+    a += _tiers("horses", HORSE_BACKED_MAX_STAT, [
+        (25, "caballo_hincha", "Hincha", "Apuesta 25 veces por el mismo caballo.", C),
+        (100, "caballo_socio", "Socio de número", "Apuesta 100 veces por el mismo caballo.", R),
+        (500, "caballo_pena_vida", "Peña de toda la vida",
+         "Apuesta 500 veces por el mismo caballo.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="caballo_distancias",
+        name="Kilómetro hípico",
+        description="Apuesta en las cuatro distancias: 1.200, 1.600, 2.000 y 2.400 m.",
+        category="horses",
+        rarity=R,
+        conditions=tuple((f"horse_dist_{d}", 1) for d in HORSE_DISTANCES),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_nine_games",
+        name="La novena",
+        description="Juega a los nueve juegos del casino, las carreras incluidas.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("horse_bets", 1),
+        ),
+    ))  # fmt: skip
+
     countable = sum(
         1 for x in a if x.category != "meta" and not CATEGORY_BY_KEY[x.category].upcoming
     )
@@ -5280,8 +5529,10 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     tenía el miembro en el historial importado antes de que existieran.
     `img_effects_tried` cuenta los efectos de imagen distintos usados;
     `roulette_numbers_hit` y `roulette_hit_max`, los plenos por número;
-    `shop_use_kinds`, los objetos distintos usados de la tienda, y
-    `shop_aisles`, los pasillos del colmado en los que ha comprado.
+    `shop_use_kinds`, los objetos distintos usados de la tienda;
+    `shop_aisles`, los pasillos del colmado en los que ha comprado, y
+    `horse_backed_kinds` y `horse_backed_max`, los caballos distintos por los
+    que ha apostado y los boletos al que más.
     """
     full = dict(stats)
     full[MESSAGES_TOTAL_STAT] = full.get("messages", 0) + full.get("messages_imported", 0)
@@ -5312,6 +5563,15 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     }
     full[PET_SPECIES_STAT] = len(pets & _PET_KEYS)
     full[PET_SPAWN_KINDS_STAT] = len(pets & _PET_SPAWN_KEYS)
+    backed = [
+        value
+        for stat, value in stats.items()
+        if stat.startswith(HORSE_BACKED_PREFIX)
+        and stat[len(HORSE_BACKED_PREFIX) :] in HORSE_KEYS
+        and value > 0
+    ]
+    full[HORSE_BACKED_KINDS_STAT] = len(backed)
+    full[HORSE_BACKED_MAX_STAT] = max(backed, default=0)
     return full
 
 
@@ -6690,6 +6950,125 @@ def crash_stats(seat: CrashSeat, *, crash_cents: int, players: int, last_out: bo
         bump("crash_instant", crash_cents == 100)
         bump("crash_greedy", crash_cents >= 1_000)
     bump("crash_moon", crash_cents >= 10_000)
+    return delta
+
+
+def horses_stats(
+    *,
+    card: HorseCard,
+    result: HorseResult,
+    pick: HorsePick,
+    stake: int,
+    odds_cents: int,
+    net: int,
+    pot_share: int,
+    tip_horse: int,
+    alone: bool,
+    via: str,
+    players: int,
+    favourite: int,
+    favourite_odds: int,
+    photo: bool,
+    comeback: bool,
+    tax_delta: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de un boleto de las carreras ya pagado (sin lo común del casino).
+
+    Args:
+        card: La carrera (caballos, terreno, distancia).
+        result: Cómo acabó.
+        pick: El boleto.
+        stake: Lo apostado.
+        odds_cents: Su cuota, en centésimas.
+        net: Ganado menos apostado (bote incluido).
+        pot_share: Parte del bote del Gran Premio que se lleva.
+        tip_horse: Caballo del pronóstico de Perro Sanxe.
+        alone: Si nadie más apostó por su caballo (con 3 boletos o más).
+        via: Cómo apostó (`sanxe`, `pueblo`, `azar`, `panel` o `comando`).
+        players: Boletos de la carrera.
+        favourite: Caballo con más probabilidad de ganar.
+        favourite_odds: Cuota a ganador del favorito.
+        photo: Si hubo foto-finish.
+        comeback: Si su caballo iba último a mitad de carrera.
+        tax_delta: IRPF retenido (positivo) o devuelto en la jugada.
+        when: Hora local.
+    """
+    kind = pick.kind
+    first = pick.horses[0]
+    first_key = card.horses[first].key
+    delta = StatDelta(
+        add={
+            "horse_bets": 1,
+            f"horse_kind_{kind.key}": 1,
+            f"horse_dist_{card.distance}": 1,
+        },
+        peak={"horse_party_max": players},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    for index in pick.horses:
+        bump(f"{HORSE_BACKED_PREFIX}{card.horses[index].key}")
+    bump("horse_falcon_bets", any(card.horses[i].key == "falcon" for i in pick.horses))
+    bump("horse_gp_bets", card.grand_prix)
+    bump(f"horse_via_{via}", via in ("sanxe", "pueblo", "azar"))
+    night = 3 <= when.hour < 6
+    bump("horse_night", night)
+    backed = {card.horses[i].key for i in pick.horses}
+    bump("horse_paguita_imv", stake == 1_500 and "paguita" in backed)
+    bump("horse_colchon_night", night and "colchon" in backed)
+    order = result.order
+    single = kind is HorseBetKind.WIN
+    position = result.position(first)
+    if pick.wins(order):
+        bump("horse_hits")
+        bump(f"horse_hits_{kind.key}")
+        delta.peak["horse_odds_max"] = odds_cents
+        if net > 0:
+            delta.peak["horse_win_max"] = net
+        bump("horse_photo_wins", photo)
+        bump("horse_rain_wins", result.rained)
+        bump(
+            "horse_mud_wins",
+            card.going is HorseGoing.BARRO
+            or (result.rained and card.going.wetter() is HorseGoing.BARRO),
+        )
+        bump("horse_lone_wins", alone)
+        bump("horse_taxed", tax_delta > 0)
+        if pot_share:
+            bump("horse_pot_wins")
+            delta.peak["horse_pot_max"] = pot_share
+        if single:
+            bump("horse_long_shots", odds_cents >= 1_000)
+            bump("horse_tired_wins", first_key in card.tired)
+            bump("horse_stumble_wins", first in result.stumbles)
+            bump("horse_comebacks", comeback)
+            bump("horse_manual_comeback", comeback and first_key == "manual")
+            bump("horse_sanxe_hits", first == tip_horse)
+            bump("horse_contra_sanxe", first != tip_horse)
+            bump("horse_uco_wins", first_key == "uco")
+            bump("horse_puerta_long", first_key == "puerta" and odds_cents >= 500)
+            bump("horse_wepa_gp", first_key == "wepa" and card.grand_prix)
+    else:
+        if single and position == 2:
+            bump("horse_seconds")
+            bump("horse_nose_losses", result.lengths_behind(first, card.distance) < 0.15)
+        real = tuple(order[: kind.picks])
+        bump("horse_reversed", kind is HorseBetKind.EXACTA and real == pick.horses[::-1])
+        bump(
+            "horse_jumbled",
+            kind is HorseBetKind.TRIFECTA and set(real) == set(pick.horses),
+        )
+    bump("horse_lasts", position == card.size)
+    bump("horse_bolted", first in result.bolted)
+    bump(
+        "horse_fav_flops",
+        first == favourite and favourite_odds <= 200 and position > 3,
+    )
     return delta
 
 

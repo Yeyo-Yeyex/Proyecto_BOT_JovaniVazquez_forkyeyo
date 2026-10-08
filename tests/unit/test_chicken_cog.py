@@ -34,6 +34,7 @@ from bot.services.chicken import (
 )
 from bot.services.chicken_render import Media
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -188,7 +189,8 @@ async def test_autocobro_cruza_y_cobra_solo(tmp_path: Path) -> None:
     assert game is not None and game.status is Status.CASHED
     assert game.crossed == lanes_for_target(MEDIA, 300)
     assert game.cents >= 300
-    assert await balance(cog) == STARTING_BALANCE - 1_000 + game.payout
+    withheld = gambling_day_tax(game.payout - 1_000, 0)
+    assert await balance(cog) == STARTING_BALANCE - 1_000 + game.payout - withheld
     cog.renderer.hops.assert_called_once()
     assert cog.renderer.hops.call_args.kwargs["start"] == 0
 

@@ -73,7 +73,7 @@ python -m bot
   | 🏆 Logros | `logros [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `patrimonio [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `patrimonio [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -147,7 +147,8 @@ python -m bot
   últimas semanas pendientes; si se acumula otra, la más antigua se pierde.
   El bot crea un evento de Discord por campaña (necesita **Gestionar
   eventos**). La retención
-  proyecta la renta anual con lo cobrado en los últimos 30 días y le aplica
+  proyecta la renta anual con todo lo cobrado en los últimos 7 días
+  (nóminas, premios y casino juntos, la misma semana que la Renta) y le aplica
   la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
   por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
   muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
@@ -360,6 +361,20 @@ python -m bot
   tensión) y después un PNG. 🎯 Autocobro cruza solo hasta el multiplicador
   elegido en un único GIF. Al cobrar dice dónde estaba el coche («quedaban 4
   carriles libres»). Devuelve el 99 % de media.
+- **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
+  una carrera por canal, solo cuando alguien la pide. Un establo de 16
+  caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
+  regularidad) y forma guardada por servidor. Las cuotas salen de simular la
+  carrera 80.000 veces con su terreno, su distancia y su parte de lluvia:
+  ganador y colocado devuelven el 95 %, gemela el 92 % y trío el 90 %. En la
+  parrilla (30 s) se apuesta con 🎟️ Apostar (panel privado) o de un toque con
+  🐶 Lo de Sanxe, 🐑 Con el pueblo o 🎲 Al azar; `.caballo 500 3-5-1` va al
+  trío. La carrera es un GIF dibujado con canvas en un Chromium sin
+  ventana (grada, sedas, galope, polvo, lluvia, rótulos de la tele) con
+  foto-finish a cámara lenta si llegan pegados; se dibuja mientras se
+  apuesta, así que sale en cuanto se cierra la parrilla. Cada 8 carreras (y 4 h) sale el Gran Premio con un bote para quien
+  acierte el ganador, que crece si nadie acierta. Tributa como el resto del
+  casino.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
   japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
   bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
@@ -410,7 +425,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.667 logros en 37 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.740 logros en 38 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -418,7 +433,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 298 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 309 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -547,7 +562,10 @@ vacío, se usa una frase de reserva para no dejar la despedida sin texto.
 El bot corre bien en cualquier equipo x86_64 con Docker, por ejemplo un NAS
 UGREEN DXP2800 (Intel N100): consume poca CPU y memoria y no necesita abrir
 puertos, porque solo hace conexiones salientes a Discord y a las fuentes de
-audio. La imagen incluye `ffmpeg` y `libopus`.
+audio. La imagen incluye `ffmpeg` y `libopus`, y un Chromium sin ventana
+(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos.
+Mientras se usa ocupa unos 150-250 MB de memoria y se cierra solo tras 10
+minutos sin carreras; si no estuviera, el bot dibuja con Pillow.
 
 1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
 2. Crea el archivo de configuración y pon tu token:
@@ -680,6 +698,7 @@ src/bot/
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
+│   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
@@ -717,6 +736,9 @@ src/bot/
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
+│   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
+│   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas
+│   ├── horses_scene.py  # Dibujo con Chromium: parrilla, carrera y boleto en JS/HTML
 │   ├── porras.py        # Propuestas, tope del bote y reparto mutuo de las porras
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
@@ -730,6 +752,7 @@ src/bot/
     ├── bienvenida.mp4  # Vídeo adjunto al mensaje de bienvenida
     ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
+    ├── caballos/       # escena.html: canvas y HTML/CSS de las carreras de caballos
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```

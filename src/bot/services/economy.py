@@ -81,6 +81,7 @@ from bot.services.taxes import (
     compute_self_employed_payslip,
     compute_withholding,
     donation_deduction,
+    fiscal_to_wage,
     format_rate,
     gambling_day_tax,
     image_rights_withholding,
@@ -188,7 +189,7 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     if tax <= 0:
         return (
             f"-# 🐶 {TAX_COLLECTOR} no te retiene nada: con tu renta de los últimos "
-            "30 días no llegas al mínimo. Disfrútalo mientras dure."
+            "7 días no llegas al mínimo. Disfrútalo mientras dure."
         )
     return (
         f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
@@ -1225,6 +1226,11 @@ class EconomyService:
         Quien vuelve de trabajar fuera puede tributar por la Ley Beckham
         (`beckham=True`, art. 93 LIRPF): IRPF al 24 % en vez de la escala.
 
+        La retención proyecta toda la renta sujeta del miembro en la semana
+        (nóminas, premios, casino en positivo), no solo las nóminas: es la
+        misma renta que ven los premios y el casino, pasada a la escala de
+        nóminas con `fiscal_to_wage`.
+
         Args:
             gross: Bruto del turno; positivo.
             concept: Motivo corto y estable para el libro (`"pala:obra"`).
@@ -1233,19 +1239,24 @@ class EconomyService:
         """
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
+        rule = (
+            compute_self_employed_payslip
+            if self_employed
+            else compute_beckham_payslip
+            if beckham
+            else compute_payslip
+        )
+
+        def payslip_for(amount: int, recent: int) -> Payslip:
+            return rule(amount, fiscal_to_wage(recent))
+
         slip, balance = await self.repository.credit_salary(
             guild_id,
             user_id,
             gross=gross,
             concept=concept,
             now=self._clock(),
-            payslip_for=(
-                compute_self_employed_payslip
-                if self_employed
-                else compute_beckham_payslip
-                if beckham
-                else compute_payslip
-            ),
+            payslip_for=payslip_for,
             window_seconds=PROJECTION_WINDOW_SECONDS,
         )
         return SalaryResult(payslip=slip, balance=balance)
@@ -1275,9 +1286,13 @@ class EconomyService:
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
 
-        def payslip_for(amount: int, recent_hk: int) -> ForeignPayslip:
+        def payslip_for(amount: int, recent_hk: int, recent: int) -> ForeignPayslip:
             return compute_hk_payslip(
-                amount, recent_hk=recent_hk, resident=resident, exempt_left=exempt_left
+                amount,
+                recent_hk=recent_hk,
+                resident=resident,
+                exempt_left=exempt_left,
+                recent_es=fiscal_to_wage(recent),
             )
 
         slip, balance = await self.repository.credit_foreign_salary(

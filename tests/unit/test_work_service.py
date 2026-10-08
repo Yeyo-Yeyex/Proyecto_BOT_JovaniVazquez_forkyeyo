@@ -215,7 +215,7 @@ async def test_el_trabajo_reduce_el_imv_pero_nunca_lo_quita(tmp_path: Path, dice
     assert status is not None
     status.contract.level = 5  # consejero: sueldos enormes
     await service.repository.save_contract(GUILD, USER, status.contract)
-    for _ in range(4):
+    for _ in range(5):
         await work(service)
         clock.now += 600
     net = await service.economy.work_week_net(GUILD, USER)
