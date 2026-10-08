@@ -49,6 +49,7 @@ from bot.services.levels import TIMEZONE, local_day
 from bot.services.pets import Moment
 from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -200,13 +201,14 @@ class Renta(commands.Cog):
         guild = interaction.guild
         if guild is None:
             return
+        # Cobrar la devolución va a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         claim = await self.economy.claim_declarations(guild.id, interaction.user.id)
         if not claim.declarations:
-            await interaction.response.edit_message(
-                content="No tienes ninguna declaración pendiente.", view=None
-            )
+            await edit(interaction, content="No tienes ninguna declaración pendiente.", view=None)
             return
-        await interaction.response.edit_message(
+        await edit(
+            interaction,
             content=(
                 f"✅ Declaración presentada: +{format_amount(claim.refunded)}. "
                 f"Saldo: **{format_amount(claim.balance)}**."

@@ -71,6 +71,7 @@ from bot.services.mines import (
     risk_summary,
 )
 from bot.services.pets import bet_moment
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -437,21 +438,25 @@ class MinesBoard(ui.LayoutView):
         """Destapa `tile` (o una al azar) y enseña el resultado."""
         if self._lock.locked():
             # Doble clic mientras se procesa el anterior: se ignora.
-            await interaction.response.defer()
+            await ack(interaction)
             return
         async with self._lock:
             game = self.game
             if game is None or not game.playing:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
             random_pick = tile is None
             try:
                 target = game.random_hidden(self.cog.rng) if tile is None else tile
                 safe = game.reveal(target, random_pick=random_pick)
             except MinesError:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
             settlement = None
+            if not safe or game.cleared:
+                # Pagar va a la base de datos: se acepta el clic antes. Una casilla
+                # buena sin más se pinta directamente, que es lo más rápido.
+                await ack(interaction)
             if not safe:
                 settlement = await self._settle(game)
             elif game.cleared:
@@ -461,7 +466,7 @@ class MinesBoard(ui.LayoutView):
                 self.note = None
             self._last_interaction = interaction
             self.rebuild()
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
         if not game.playing:
             await self._after_game(interaction, game, settlement)
 
@@ -477,44 +482,50 @@ class MinesBoard(ui.LayoutView):
     async def _cash_out(self, interaction: discord.Interaction) -> None:
         """💰 Cobrar: se retira con el multiplicador actual."""
         if self._lock.locked():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         async with self._lock:
             game = self.game
             if game is None or not game.playing or not game.gems:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
+            await ack(interaction)
             game.cash_out()
             settlement = await self._settle(game)
             self._last_interaction = interaction
             self.rebuild()
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
         await self._after_game(interaction, game, settlement)
 
     async def _again(self, interaction: discord.Interaction) -> None:
         """🔁 Jugar: cobra otra vez y coloca minas nuevas."""
         if self._lock.locked():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         async with self._lock:
             if self.game is not None and self.game.playing:
-                await interaction.response.defer()
+                await ack(interaction)
                 return
+            await ack(interaction)
             error = await self.start()
             if error is not None:
-                await interaction.response.send_message(error, ephemeral=True)
+                await notify(interaction, error)
                 return
             self._last_interaction = interaction
-            await interaction.response.edit_message(view=self)
+            await edit(interaction, view=self)
         await renta.remind(self.cog.bot, interaction)
 
     async def _refresh(self, interaction: discord.Interaction) -> None:
-        """Pinta el tablero tras cambiar apuesta o minas (sin dinero de por medio)."""
+        """Pinta el tablero tras cambiar apuesta o minas (sin dinero de por medio).
+
+        Lee el saldo de la base de datos: se acepta el clic antes.
+        """
+        await ack(interaction)
         self.balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         self.note = None
         self.rebuild()
         self._last_interaction = interaction
-        await interaction.response.edit_message(view=self)
+        await edit(interaction, view=self)
 
     def _idle(self) -> bool:
         return self.game is None or not self.game.playing
@@ -531,15 +542,16 @@ class MinesBoard(ui.LayoutView):
 
     async def _halve(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self.stake = max(1, self.stake // 2)
         await self._refresh(interaction)
 
     async def _double(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         # Si el doble no cabe, se queda en todo el saldo.
         self.stake = max(1, min(self.stake * 2, balance))
@@ -547,12 +559,14 @@ class MinesBoard(ui.LayoutView):
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
         if not self._idle():
-            await interaction.response.defer()
+            await ack(interaction)
             return
+        await ack(interaction)
         balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         if balance <= 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+            await notify(interaction, insufficient_text(0))
             return
+
         self.stake = balance
         await self._refresh(interaction)
 
@@ -563,18 +577,18 @@ class MinesBoard(ui.LayoutView):
         minas nuevas y la misma apuesta, que ya está cobrada: no se mueve dinero.
         """
         if self._lock.locked() or not self._mines_editable():
-            await interaction.response.defer()
+            await ack(interaction)
             return
         try:
             check_mines(mines)
         except ValueError:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         async with self._lock:
             game = self.game
             if game is not None and game.playing:
                 if game.revealed:
-                    await interaction.response.defer()
+                    await ack(interaction)
                     return
                 self.game = MinesGame.new(game.stake, mines, self.cog.rng)
             self.mines = mines

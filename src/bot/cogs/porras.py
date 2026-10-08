@@ -109,6 +109,7 @@ from bot.services.porras import (
 )
 from bot.services.taxes import GAMING_TAX_RATE, IMAGE_RIGHTS_WITHHOLDING, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -709,23 +710,24 @@ class Porras(commands.Cog):
         """✅ o ❌ del protagonista."""
         porra = table.porra
         if interaction.user.id != porra.subject_id:
-            await interaction.response.send_message(
-                "Solo el protagonista puede aceptar o rechazar su porra.", ephemeral=True
+            await notify(
+                interaction,
+                "Solo el protagonista puede aceptar o rechazar su porra.",
             )
             return
+        # Guardar y repintar van a la base de datos (y esperan al candado): se acepta antes.
+        await ack(interaction)
         async with table.lock:
             if porra.status is not Status.PROPOSED:
-                await interaction.response.send_message(
-                    "Esa porra ya no espera respuesta.", ephemeral=True
-                )
+                await notify(interaction, "Esa porra ya no espera respuesta.")
                 return
             if accepted:
                 balance = await self.economy.balance(porra.guild_id, porra.subject_id)
                 if balance < porra.stake:
-                    await interaction.response.send_message(
+                    await notify(
+                        interaction,
                         f"No te llega para jugar a {format_amount(porra.stake)}: tienes "
                         f"{format_amount(balance)}.",
-                        ephemeral=True,
                     )
                     return
                 porra.status = Status.OPEN
@@ -734,9 +736,8 @@ class Porras(commands.Cog):
                 embed = panel_embed(
                     porra, [], self._name(porra.guild_id, porra.subject_id), until=table.until
                 )
-                await interaction.response.edit_message(embed=embed, view=PorraView(self, table))
+                await edit(interaction, embed=embed, view=PorraView(self, table))
             else:
-                await interaction.response.defer()
                 await self._void_locked(table, VoidReason.DECLINED)
         own, opener_delta = porra_answer_stats(accepted=accepted)
         await logros.track(self.bot, porra.guild_id, interaction.user, interaction.channel, own)
@@ -747,17 +748,16 @@ class Porras(commands.Cog):
         """🗑️ de quien la montó, antes de que el protagonista conteste."""
         porra = table.porra
         if interaction.user.id != porra.opener_id:
-            await interaction.response.send_message(
-                "Solo quien la montó puede retirarla.", ephemeral=True
-            )
+            await notify(interaction, "Solo quien la montó puede retirarla.")
             return
+        await ack(interaction)
         async with table.lock:
             if porra.status is not Status.PROPOSED:
-                await interaction.response.send_message(
-                    "Ya no se puede retirar: el protagonista ha contestado.", ephemeral=True
+                await notify(
+                    interaction,
+                    "Ya no se puede retirar: el protagonista ha contestado.",
                 )
                 return
-            await interaction.response.defer()
             await self._void_locked(table, VoidReason.CANCELLED)
 
     async def _expire(self, table: Table) -> None:
@@ -789,16 +789,14 @@ class Porras(commands.Cog):
         """Cobra la apuesta del formulario y la deja en el depósito de la porra."""
         porra = table.porra
         user = interaction.user
+        # Cobrar va a la base de datos (y espera al candado de la porra): se acepta antes.
+        await ack(interaction)
         async with table.lock:
             if porra.status is not Status.OPEN:
-                await interaction.response.send_message(
-                    "Las apuestas ya están cerradas.", ephemeral=True
-                )
+                await notify(interaction, "Las apuestas ya están cerradas.")
                 return
             if user.id == porra.subject_id or user.bot:
-                await interaction.response.send_message(
-                    "Tú no puedes apostar aquí.", ephemeral=True
-                )
+                await notify(interaction, "Tú no puedes apostar aquí.")
                 return
             balance = await self.economy.balance(porra.guild_id, user.id)
             try:
@@ -809,32 +807,30 @@ class Porras(commands.Cog):
                     porra.guild_id, porra.id, user.id, outcome=outcome, stake=stake, cap=porra.cap
                 )
             except ValueError as error:
-                await interaction.response.send_message(str(error), ephemeral=True)
+                await notify(interaction, str(error))
                 return
             except InsufficientFundsError as error:
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)}.",
-                    ephemeral=True,
                 )
                 return
             except PorraSideError as error:
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     f"Ya vas a **{porra.options[error.outcome]}**. Una opción por porra: puedes "
                     "subir lo que llevas ahí, pero no cubrirte.",
-                    ephemeral=True,
                 )
                 return
             except PorraCapError as error:
-                await interaction.response.send_message(
+                await notify(
+                    interaction,
                     f"No cabe: el bote no pasa de {format_amount(porra.cap)} (5 veces lo que se "
                     f"juega <@{porra.subject_id}>). Quedan {format_amount(error.room)}.",
-                    ephemeral=True,
                 )
                 return
             except PorraClosedError:
-                await interaction.response.send_message(
-                    "Esa porra ya está cerrada.", ephemeral=True
-                )
+                await notify(interaction, "Esa porra ya está cerrada.")
                 return
             bets = await self._bets(porra)
             totals = by_outcome(bets, len(porra.options))
@@ -854,7 +850,7 @@ class Porras(commands.Cog):
             if hint := await renta.hint(self.bot, porra.guild_id, user.id, Moment()):
                 lines.append(hint)
             text = "\n".join(line for line in lines if line)
-            await interaction.response.send_message(text, ephemeral=True)
+            await notify(interaction, text)
         self.refresh_soon(table)
         # Apostar es gastar: gancho de la Renta (ver Biblia.txt, sección 4).
         await renta.remind(self.bot, interaction)
@@ -877,12 +873,13 @@ class Porras(commands.Cog):
     async def snoop(self, interaction: discord.Interaction, table: Table) -> None:
         """🔭: quién apuesta qué, para quien tenga los prismáticos."""
         porra = table.porra
+        await ack(interaction, new_message=True)
         owned = await shop.owned_keys(self.bot, porra.guild_id, interaction.user.id)
         if BINOCULARS_KEY not in owned:
-            await interaction.response.send_message(
-                "🔭 Para ver quién apuesta qué necesitas los **Prismáticos de la UCO** (`tienda`, "
-                "pasillo 🎫 Peña de la porra).",
-                ephemeral=True,
+            await edit(
+                interaction,
+                content="🔭 Para ver quién apuesta qué necesitas los **Prismáticos de la UCO** "
+                "(`tienda`, pasillo 🎫 Peña de la porra).",
             )
             return
         bets = await self._bets(porra)
@@ -893,7 +890,7 @@ class Porras(commands.Cog):
             )
         if not bets:
             lines.append("Nadie todavía. Mucho mirar y poco apostar.")
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await edit(interaction, content="\n".join(lines))
         await logros.track(
             self.bot, porra.guild_id, interaction.user, interaction.channel, porra_snoop_stats()
         )

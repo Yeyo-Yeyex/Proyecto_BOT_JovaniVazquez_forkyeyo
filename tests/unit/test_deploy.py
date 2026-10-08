@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs import deploy as deploy_cog
 from bot.cogs.deploy import (
@@ -254,10 +255,8 @@ def _guild_with_channel(guild_id: int = 1) -> tuple[MagicMock, MagicMock]:
 
 
 def _interaction(guild_id: int, user_id: int) -> MagicMock:
-    interaction = MagicMock()
+    interaction = fake_interaction(SimpleNamespace(id=user_id, bot=False))
     interaction.guild = SimpleNamespace(id=guild_id)
-    interaction.user = SimpleNamespace(id=user_id, bot=False)
-    interaction.response.send_message = AsyncMock()
     return interaction
 
 
@@ -313,7 +312,7 @@ async def test_leerlas_dos_veces_no_cuenta(tmp_path: Path, monkeypatch: pytest.M
     await cog.read_news(again, edition)
 
     assert len(tracked) == 1
-    assert "Ya te lo habías leído" in again.response.send_message.await_args.args[0]
+    assert "Ya te lo habías leído" in again.edit_original_response.await_args.kwargs["content"]
 
 
 @pytest.mark.asyncio
@@ -324,4 +323,4 @@ async def test_un_aviso_viejo_ya_no_cuenta(tmp_path: Path, monkeypatch: pytest.M
     await cog.read_news(old, edition - 1)
 
     assert tracked == []
-    assert "derogadas" in old.response.send_message.await_args.args[0]
+    assert "derogadas" in old.edit_original_response.await_args.kwargs["content"]

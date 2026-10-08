@@ -541,7 +541,12 @@ de un servidor, se borran sus saldos y su libro de movimientos.
 
 Los datos persistentes viven en `.data/message_stats.sqlite3`, localmente en
 la máquina de ejecución y excluidos de Git; inclúyelos en las copias de
-seguridad del despliegue.
+seguridad del despliegue. La base va en modo WAL (`bot.repositories.sqlite`):
+junto al archivo aparecen `message_stats.sqlite3-wal` y
+`message_stats.sqlite3-shm`, y las últimas escrituras pueden estar todavía en el
+`-wal`. Una copia a mano se hace con el bot parado y copiando los tres archivos
+juntos; copiar solo el `.sqlite3` con el bot en marcha puede dejar fuera lo más
+reciente.
 
 Tras actualizar el código, reinicia el bot para que sincronice y retire los
 comandos antiguos de Discord.

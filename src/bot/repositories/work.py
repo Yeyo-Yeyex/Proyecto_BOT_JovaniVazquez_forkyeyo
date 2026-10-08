@@ -24,6 +24,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 from typing import TypeVar
 
+from bot.repositories import sqlite
 from bot.services.work import Contract, ShiftRecord
 
 T = TypeVar("T")
@@ -45,10 +46,7 @@ class WorkRepository:
         self.database_path = database_path
 
     def _connect(self) -> sqlite3.Connection:
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=30, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return sqlite.connect(self.database_path, isolation_level=None)
 
     async def _run(self, operation: Callable[..., T], *args: object) -> T:
         """Ejecuta una operación SQLite fuera del event loop."""

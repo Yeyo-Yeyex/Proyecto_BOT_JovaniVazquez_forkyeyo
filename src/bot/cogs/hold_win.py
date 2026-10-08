@@ -101,6 +101,7 @@ from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Me
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -638,10 +639,10 @@ class HoldWinView(discord.ui.View):
                 session_spins=self.session_spins + 1,
             )
         except InsufficientFundsError as error:
-            await _private(interaction, insufficient_text(error.balance, self.stake))
+            await notify(interaction, insufficient_text(error.balance, self.stake))
             return None
         except BalanceLimitError:
-            await _private(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
+            await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
             return None
         self.session_spins += 1
         if play.bonus is not None:
@@ -651,7 +652,7 @@ class HoldWinView(discord.ui.View):
     async def _spin(self, interaction: discord.Interaction) -> None:
         """🎰: en el juego base, una tirada; en el bonus, una tirada del bonus."""
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         if self.bonus is not None:
             await self._bonus_spin(interaction)
@@ -659,13 +660,15 @@ class HoldWinView(discord.ui.View):
         self._busy = True
         play: BasePlay | None = None
         try:
+            # Cobrar y dibujar tardan: se acepta el clic antes.
+            await ack(interaction)
             play = await self._guarded_play(interaction, turbo=self.turbo)
             if play is None:
                 return
             self._last_interaction = interaction
             await self.show_base(
                 play,
-                first_edit=interaction.response.edit_message,
+                first_edit=interaction.edit_original_response,
                 final_edit=interaction.edit_original_response,
             )
         finally:
@@ -789,7 +792,7 @@ class HoldWinView(discord.ui.View):
     async def _auto(self, interaction: discord.Interaction) -> None:
         """🔁 en el juego base: diez tiradas. ⏩ en el bonus: todas las que queden."""
         if self._busy:
-            await interaction.response.defer()
+            await ack(interaction)
             return
         if self.bonus is not None:
             await self._bonus_auto(interaction)
@@ -798,7 +801,7 @@ class HoldWinView(discord.ui.View):
         plays: list[BasePlay] = []
         stopped: str | None = None
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             self._last_interaction = interaction
             for _ in range(AUTO_SPINS):
                 try:
@@ -905,9 +908,10 @@ class HoldWinView(discord.ui.View):
         self._busy = True
         payout: BonusPayout | None = None
         try:
+            await ack(interaction)
             self._last_interaction = interaction
             payout = await self._bonus_step(
-                first_edit=interaction.response.edit_message,
+                first_edit=interaction.edit_original_response,
                 final_edit=interaction.edit_original_response,
             )
         finally:
@@ -922,7 +926,7 @@ class HoldWinView(discord.ui.View):
         self._busy = True
         payout: BonusPayout | None = None
         try:
-            await interaction.response.defer()
+            await ack(interaction)
             self._last_interaction = interaction
             while self.bonus is not None:
                 payout = await self._bonus_step(
@@ -1038,11 +1042,13 @@ class HoldWinView(discord.ui.View):
     # -- Ajustes --------------------------------------------------------------------
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
-        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen."""
+        """Actualiza la máquina (apuesta, turbo) sin tocar la imagen.
+
+        El embed lee saldo y maletines de la base de datos: se acepta el clic antes.
+        """
+        await ack(interaction)
         self._set_enabled(True)
-        await interaction.response.edit_message(
-            embed=await self.current_embed(balance=balance), view=self
-        )
+        await edit(interaction, embed=await self.current_embed(balance=balance), view=self)
         self._last_interaction = interaction
 
     async def _toggle_turbo(self, interaction: discord.Interaction) -> None:
@@ -1055,29 +1061,23 @@ class HoldWinView(discord.ui.View):
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         # Si el doble no cabe, se queda en todo el saldo: es lo que se busca.
         self.stake = max(MIN_STAKE, min(self.stake * 2, balance))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         if balance < MIN_STAKE:
-            await _private(interaction, insufficient_text(balance, MIN_STAKE))
+            await notify(interaction, insufficient_text(balance, MIN_STAKE))
             return
         self.stake = balance
         await self._refresh(interaction, balance)
 
     async def _paytable(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(embed=paytable_embed(self.theme), ephemeral=True)
-
-
-async def _private(interaction: discord.Interaction, text: str) -> None:
-    """Aviso que solo ve quien pulsa, responda ya o no a la interacción."""
-    if interaction.response.is_done():
-        await interaction.followup.send(text, ephemeral=True)
-    else:
-        await interaction.response.send_message(text, ephemeral=True)
 
 
 # -- Cog ----------------------------------------------------------------------------

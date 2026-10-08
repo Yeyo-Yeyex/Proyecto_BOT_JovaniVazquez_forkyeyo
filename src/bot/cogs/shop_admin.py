@@ -56,6 +56,7 @@ from bot.services.shop import (
     split_emoji,
 )
 from bot.services.taxes import IGIC_DEFAULT, IGIC_RATES, TAX_COLLECTOR
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.cogs.shop import Tienda
@@ -142,10 +143,13 @@ class ItemForm(ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         values = {key: text_input.value for key, text_input in self.inputs.items()}
+        # Todos los formularios guardan en la base de datos: se aceptan antes, y
+        # los manejadores contestan con `edit` o `notify`.
+        await ack(interaction)
         try:
             await self.handler(interaction, values)
         except (ValueError, ShopError) as error:
-            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+            await notify(interaction, f"❌ {error}")
 
 
 def _name_field(default: str = "") -> Field:
@@ -274,7 +278,8 @@ class RolePicker(ui.View):
                 role_id=role.id,
                 duration=parse_span(values.get("duration"), "d"),
             )
-            await submit.response.edit_message(
+            await edit(
+                submit,
                 content=f"✅ A la venta: {item.emoji} **{item.name}** ({kind_detail(item)}).",
                 view=None,
                 allowed_mentions=discord.AllowedMentions.none(),
@@ -391,14 +396,13 @@ class ItemEditor(ui.LayoutView):
 
     async def _save(self, interaction: discord.Interaction, notice: str, **fields: object) -> None:
         """Guarda cambios, repinta la ficha y refresca la trastienda."""
+        await ack(interaction)
         self.item = await self.cog.repository.update_item(
             self.panel.guild.id, self.item.id, **fields
         )
         self.notice = notice
         self.rebuild()
-        await interaction.response.edit_message(
-            view=self, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=self, allowed_mentions=discord.AllowedMentions.none())
         await self.panel.refresh()
 
     async def _edit_data(self, interaction: discord.Interaction) -> None:
@@ -518,13 +522,12 @@ class ItemEditor(ui.LayoutView):
         await interaction.response.edit_message(view=self)
 
     async def _delete(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         await self.cog.repository.delete_item(self.panel.guild.id, self.item.id)
         self.deleted = True
         self.rebuild()
         self.stop()
-        await interaction.response.edit_message(
-            view=self, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await edit(interaction, view=self, allowed_mentions=discord.AllowedMentions.none())
         await self.panel.refresh(f"🗑️ Retirado: {self.item.emoji} {self.item.name}")
 
 
@@ -635,20 +638,20 @@ class AdminPanel(ui.LayoutView):
 
     async def _refresh_button(self, interaction: discord.Interaction) -> None:
         self.notice = None
+        await ack(interaction)
         await self.load()
-        await interaction.response.edit_message(view=self)
+        await edit(interaction, view=self)
 
     def _edit(self, item_id: int) -> Callable[[discord.Interaction], Awaitable[None]]:
         async def callback(interaction: discord.Interaction) -> None:
+            await ack(interaction, new_message=True)
             item = await self.cog.repository.item(self.guild.id, item_id)
             if item is None:
-                await interaction.response.send_message(
-                    "Ese artículo ya no existe.", ephemeral=True
-                )
+                await edit(interaction, content="Ese artículo ya no existe.")
                 return
-            await interaction.response.send_message(
+            await edit(
+                interaction,
                 view=ItemEditor(self, item),
-                ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
 
@@ -656,6 +659,7 @@ class AdminPanel(ui.LayoutView):
 
     async def _restock(self, interaction: discord.Interaction) -> None:
         """Vuelve a poner a la venta los artículos de serie que se hayan retirado."""
+        await ack(interaction)
         added = await self.cog.restock(self.guild.id)
         self.notice = (
             f"📦 Repuestos {added} artículo{'' if added == 1 else 's'} del surtido de serie."
@@ -663,7 +667,7 @@ class AdminPanel(ui.LayoutView):
             else "📦 El surtido de serie ya está completo: no faltaba nada."
         )
         await self.load()
-        await interaction.response.edit_message(view=self)
+        await edit(interaction, view=self)
 
     async def _new_role(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
@@ -695,10 +699,10 @@ class AdminPanel(ui.LayoutView):
                 duration=span,
                 multiplier=parse_multiplier(values["multiplier"]),
             )
-            await submit.response.send_message(
+            await notify(
+                submit,
                 f"✅ A la venta: {item.emoji} **{item.name}** "
                 f"({format_multiplier(item.multiplier or 100)} durante {format_span(span)}).",
-                ephemeral=True,
             )
             await self.refresh(f"✅ Nuevo: {item.emoji} {item.name}")
 
@@ -726,9 +730,8 @@ class AdminPanel(ui.LayoutView):
                 stock=parse_limit(values.get("stock"), "Las existencias", MAX_STOCK),
             )
             edition = f", {item.stock} unidades numeradas" if item.stock is not None else ""
-            await submit.response.send_message(
-                f"✅ A la venta: {item.emoji} **{item.name}**{edition}.", ephemeral=True
-            )
+            await notify(submit, f"✅ A la venta: {item.emoji} **{item.name}**{edition}.")
+
             await self.refresh(f"✅ Nuevo: {item.emoji} {item.name}")
 
         fields = [

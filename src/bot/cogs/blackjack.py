@@ -50,6 +50,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
+from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -375,10 +376,12 @@ class BlackjackTable(discord.ui.View):
         """Aplica una acción del jugador; si termina su turno, juega la banca."""
         game = self.game
         if self._busy or game is None or not game.can(action):
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
+            # Cobrar, pagar y dibujar la mesa tardan: se acepta el clic antes.
+            await ack(interaction)
             extra = game.extra_stake(action)
             if extra:
                 try:
@@ -387,19 +390,19 @@ class BlackjackTable(discord.ui.View):
                     )
                 except InsufficientFundsError as error:
                     verb = "doblar" if action is Action.DOUBLE else "separar"
-                    await interaction.response.send_message(
+                    await notify(
+                        interaction,
                         f"Para {verb} necesitas {format_amount(extra)} más y tienes "
                         f"{format_amount(error.balance)}.",
-                        ephemeral=True,
                     )
                     return
             game.act(action)
             self._last_interaction = interaction
             if game.player_turn:
-                await self._show(interaction.response.edit_message)
+                await self._show(interaction.edit_original_response)
             else:
                 await self._finish(
-                    interaction.response.edit_message, interaction.edit_original_response
+                    interaction.edit_original_response, interaction.edit_original_response
                 )
         finally:
             self._busy = False
@@ -511,8 +514,10 @@ class BlackjackTable(discord.ui.View):
     # -- Fichas y repartir ----------------------------------------------------------
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
+        # El embed lee el saldo de la base de datos: se acepta el clic antes.
+        await ack(interaction)
         self._update_buttons()
-        await interaction.response.edit_message(embed=await self.current_embed(balance), view=self)
+        await edit(interaction, embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
 
     async def _halve(self, interaction: discord.Interaction) -> None:
@@ -520,30 +525,34 @@ class BlackjackTable(discord.ui.View):
         await self._refresh(interaction)
 
     async def _double_stake(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         self.stake = max(1, min(self.stake * 2, balance))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
         balance = await self.balance()
         if balance == 0:
-            await interaction.response.send_message(insufficient_text(0), ephemeral=True)
+            await notify(interaction, insufficient_text(0))
             return
         self.stake = balance
         await self._refresh(interaction, balance)
 
     async def _deal_again(self, interaction: discord.Interaction) -> None:
         if self._busy or (self.game is not None and not self.game.settled):
-            await interaction.response.defer()
+            await ack(interaction)
             return
         self._busy = True
         try:
+            await ack(interaction)
             self._last_interaction = interaction
             error = await self.start(
-                interaction.response.edit_message, interaction.edit_original_response
+                interaction.edit_original_response, interaction.edit_original_response
             )
             if error is not None:
-                await interaction.response.send_message(error, ephemeral=True)
+                await notify(interaction, error)
+
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)

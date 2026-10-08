@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
+from bot.repositories import sqlite
 from bot.services.horses import GRAND_PRIX_POT, HorseRecord, updated_record
 
 T = TypeVar("T")
@@ -61,10 +62,7 @@ class HorseRepository:
         self.database_path = database_path
 
     def _connect(self) -> sqlite3.Connection:
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=30)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return sqlite.connect(self.database_path)
 
     async def _run(self, operation: Callable[..., T], *args: object) -> T:
         """Ejecuta una operación SQLite fuera del event loop."""

@@ -42,6 +42,7 @@ from bot.services.todo import (
     sort_tasks,
 )
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -209,6 +210,8 @@ class Lista(commands.Cog):
         guild, user = interaction.guild, interaction.user
         if guild is None or not isinstance(user, discord.Member):
             return
+        # Tachar espera al candado de la lista y escribe: se acepta el clic antes.
+        await ack(interaction)
         async with self._lock(guild.id):
             tasks = await self.repository.get_tasks(guild.id, task_ids)
             is_admin = user.guild_permissions.administrator
@@ -219,7 +222,7 @@ class Lista(commands.Cog):
                     if tasks
                     else "Esas tareas ya estaban tachadas."
                 )
-                await interaction.response.send_message(text, ephemeral=True)
+                await notify(interaction, text)
                 return
             removed = set(await self.repository.remove_tasks(guild.id, [t.id for t in allowed]))
             done = [t for t in allowed if t.id in removed]
@@ -234,7 +237,7 @@ class Lista(commands.Cog):
                 note = (note or "") + f"\n-# {skipped} no eran suyas y siguen en la lista."
             embed, view = build_board(guild, await self.repository.list_tasks(guild.id), note)
             # Editar el mismo mensaje lo mantiene en su sitio y sin avisos extra.
-            await interaction.response.edit_message(embed=embed, view=view)
+            await edit(interaction, embed=embed, view=view)
         if done:
             await logros.track(
                 self.bot,

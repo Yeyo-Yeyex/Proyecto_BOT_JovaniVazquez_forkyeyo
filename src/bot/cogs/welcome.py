@@ -62,6 +62,7 @@ from bot.services.welcome import (
     pick_phrase,
     render_phrase,
 )
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -349,23 +350,26 @@ class Welcome(commands.Cog):
                 ephemeral=True,
             )
             return
+        # Apuntar el saludo va a la base de datos: se acepta el clic antes.
+        await ack(interaction)
         try:
             count = await self.repository.add_greeting(guild.id, newcomer_id, greeter.id)
         except (OSError, sqlite3.Error):
             logger.exception("No se pudo apuntar un saludo de bienvenida")
-            await interaction.response.send_message(
+            await notify(
+                interaction,
                 "Se me cayó el café encima y no pude apuntar el saludo. Prueba otra vez.",
-                ephemeral=True,
             )
             return
         if count is None:
-            await interaction.response.send_message(
-                "Ya le diste la bienvenida. Con una vez basta, no lo agobies.", ephemeral=True
+            await notify(
+                interaction, "Ya le diste la bienvenida. Con una vez basta, no lo agobies."
             )
             return
-        # Editar el mensaje con el contador es la confirmación pública: una sola
-        # llamada a Discord, sin mensajes extra en el canal.
-        await interaction.response.edit_message(view=greet_view(newcomer_id, joined_at, count))
+        # Editar el mensaje con el contador es la confirmación pública, sin
+        # mensajes extra en el canal.
+        await edit(interaction, view=greet_view(newcomer_id, joined_at, count))
+
         incomes = await self._pay_greeting(guild.id, newcomer_id, greeter.id)
         delta = StatDelta(add={"welcomes_given": 1})
         if incomes is not None:

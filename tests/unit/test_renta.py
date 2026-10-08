@@ -124,6 +124,7 @@ async def test_aviso_efimero_una_vez_por_campana_y_presentar_es_publico(
         channel=channel,
         response=SimpleNamespace(is_done=lambda: True, edit_message=AsyncMock()),
         followup=SimpleNamespace(send=AsyncMock()),
+        edit_original_response=AsyncMock(),
     )
 
     await cog.remind(interaction)  # type: ignore[arg-type]

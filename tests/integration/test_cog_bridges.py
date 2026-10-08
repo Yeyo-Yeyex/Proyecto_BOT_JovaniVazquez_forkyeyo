@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
@@ -130,12 +131,9 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         view.message.channel = channel
         view.cog.renderer = MagicMock()
         view.cog.renderer.still_png = MagicMock(return_value=b"PNG")
-        interaction = MagicMock()
+        interaction = fake_interaction()
         interaction.user = owner
         interaction.guild = None
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-        interaction.followup.send = AsyncMock()
 
         await view._auto(interaction)
 
@@ -180,12 +178,9 @@ async def test_el_pollo_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         )
         (view,) = cog.views
         view.game.hit_lane = 1
-        interaction = MagicMock()
+        interaction = fake_interaction()
         interaction.user = owner
         interaction.guild = None
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-        interaction.followup.send = AsyncMock()
 
         await view._cross(interaction)
 
@@ -274,11 +269,8 @@ async def test_auto_de_los_botes_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
         cog.renderer = MagicMock()
         cog.renderer.base_still = MagicMock(return_value=b"PNG")
         cog.renderer.bonus_still = MagicMock(return_value=b"PNG")
-        interaction = MagicMock()
+        interaction = fake_interaction()
         interaction.user = owner
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-        interaction.followup.send = AsyncMock()
 
         await view._auto(interaction)
 
@@ -342,11 +334,10 @@ async def test_la_lista_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
 
         await lista.lista_text.callback(lista, ctx, tarea="probar la lista prioridad alta")
         (task,) = await client.todo.list_tasks(GUILD_ID)
-        interaction = MagicMock()
+        interaction = fake_interaction()
         interaction.guild = guild
         interaction.user = owner
         interaction.channel = ctx.channel
-        interaction.response.edit_message = AsyncMock()
         await lista.complete_from_menu(interaction, [task.id])
 
         profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
@@ -366,14 +357,12 @@ async def test_leer_las_novedades_apunta_sus_logros_con_el_bot_real(tmp_path: Pa
         owner = MagicMock(spec=discord.Member)
         owner.id = OWNER_ID
         owner.bot = False
-        interaction = MagicMock()
+        interaction = fake_interaction()
         interaction.client = client
         interaction.guild = MagicMock(id=GUILD_ID)
         interaction.user = owner
         interaction.channel = MagicMock(spec=discord.TextChannel)
         interaction.channel.send = AsyncMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.response.is_done = MagicMock(return_value=True)
         button = importer("Despliegue", client).NewsReadButton(123)
 
         await button.callback(interaction)
@@ -403,10 +392,8 @@ async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path
         (panel,) = cog.panels
 
         def interaction() -> MagicMock:
-            fake = MagicMock()
+            fake = fake_interaction()
             fake.user = owner
-            fake.response.edit_message = AsyncMock()
-            fake.response.is_done = MagicMock(return_value=False)
             fake.message = MagicMock()
             fake.message.edit = AsyncMock()
             return fake
@@ -474,11 +461,9 @@ async def test_usar_un_objeto_apunta_logros_a_los_dos_con_el_bot_real(tmp_path: 
         victim.id, victim.bot, victim.mention = 11, False, "<@11>"
         backpack = await tienda.backpack_view(guild, owner, owner)
         (entry,) = backpack.entries
-        interaction = MagicMock()
-        interaction.user = owner
+        interaction = fake_interaction(owner)
         interaction.channel = MagicMock(spec=discord.TextChannel)
         interaction.channel.send = AsyncMock()
-        interaction.response.send_message = AsyncMock()
         await tienda.perform_use(interaction, backpack, entry, tienda_use("huevo"), target=victim)
 
         thrower = await client.achievements.profile(GUILD_ID, OWNER_ID)
@@ -584,11 +569,9 @@ async def test_una_porra_cuenta_las_jugadas_y_apunta_logros_con_el_bot_real(
         table = cog.tables[porra.id]
 
         def press(user_id: int) -> MagicMock:
-            inter = MagicMock()
+            inter = fake_interaction()
             inter.user, inter.channel, inter.guild_id = people[user_id], None, GUILD_ID
             inter.guild = SimpleNamespace(id=GUILD_ID)
-            inter.response.send_message = AsyncMock()
-            inter.response.edit_message = AsyncMock()
             return inter
 
         await cog.answer(press(20), table, accepted=True)
@@ -655,23 +638,23 @@ async def test_la_beernight_apunta_sus_logros_y_saca_la_mascota_con_el_bot_real(
         channel.get_partial_message = MagicMock(return_value=MagicMock(edit=AsyncMock()))
         client.get_guild = MagicMock(return_value=guild)  # type: ignore[method-assign]
         client.get_channel = MagicMock(return_value=channel)  # type: ignore[method-assign]
-        interaction = MagicMock()
-        interaction.guild = guild
-        interaction.user = owner
-        interaction.channel = channel
-        interaction.client = client
-        interaction.response.edit_message = AsyncMock()
-        interaction.response.send_message = AsyncMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.message = MagicMock(id=7, channel=channel)
 
-        await beernight.start(interaction)
+        def click() -> MagicMock:
+            """Una pulsación nueva: cada botón trae su propia interacción."""
+            interaction = fake_interaction(owner)
+            interaction.guild = guild
+            interaction.channel = channel
+            interaction.client = client
+            interaction.message = MagicMock(id=7, channel=channel)
+            return interaction
+
+        await beernight.start(click())
         state = beernight.nights[GUILD_ID]
         state.task.cancel()
         mandate = state.active[0].mandate
-        await beernight.confess(interaction, state.night.id, mandate.key)
-        await beernight.finish(state, interaction=interaction)
+        await beernight.confess(click(), state.night.id, mandate.key)
+        await beernight.finish(state, interaction=click())
+
         # Los sorbos van por `note` (se escriben cada minuto): se fuerza la escritura.
         await client.get_cog("Achievements").flush()
 

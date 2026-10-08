@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs import blackjack as blackjack_cog
 from bot.cogs import chicken as chicken_cog
@@ -453,13 +454,8 @@ def member(user_id: int, name: str) -> MagicMock:
 
 
 def interaction(user: MagicMock) -> MagicMock:
-    inter = MagicMock()
-    inter.user = user
+    inter = fake_interaction(user)
     inter.channel = None
-    inter.response.send_message = AsyncMock()
-    inter.response.edit_message = AsyncMock()
-    inter.response.defer = AsyncMock()
-    inter.response.send_modal = AsyncMock()
     return inter
 
 
@@ -643,9 +639,9 @@ async def test_los_prismaticos_hacen_falta_para_ver_quien_apuesta(
     await cog.bet(interaction(people[PEPE]), table, 0, "300")
     mirona = interaction(people[MARI])
     await cog.snoop(mirona, table)
-    assert "Prismáticos" in mirona.response.send_message.await_args.args[0]
+    assert "Prismáticos" in mirona.edit_original_response.await_args.kwargs["content"]
     monkeypatch.setattr(
         "bot.cogs.porras.shop.owned_keys", AsyncMock(return_value=frozenset({BINOCULARS_KEY}))
     )
     await cog.snoop(mirona, table)
-    assert f"<@{PEPE}>" in mirona.response.send_message.await_args.args[0]
+    assert f"<@{PEPE}>" in mirona.edit_original_response.await_args.kwargs["content"]

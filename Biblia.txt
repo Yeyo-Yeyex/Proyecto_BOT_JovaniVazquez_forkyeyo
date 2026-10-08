@@ -80,7 +80,7 @@ La estructura es una guía, no una obligación de crear carpetas vacías desde e
 - Cada cog agrupa comandos y eventos de un mismo dominio funcional; evitar un cog único que crezca sin límite.
 - Los cogs adaptan las interacciones de Discord a llamadas de servicios. No alojan reglas de negocio complejas ni consultas de persistencia extensas.
 - Validar entradas, permisos y contexto en el límite del comando. Comprobar los permisos requeridos también en Discord cuando corresponda.
-- Responder a las interacciones dentro de los plazos de Discord; diferir la respuesta antes de trabajo que pueda tardar.
+- Responder a las interacciones dentro de los plazos de Discord (3 segundos); diferir la respuesta antes de trabajo que pueda tardar. En botones, menús y formularios: `ack(interaction)` de `bot.utils.interactions` antes de tocar la base de datos, dibujar, llamar a la API de Discord o esperar un candado, y después `edit`/`notify`. Solo lo que cambia memoria contesta directamente. Reglas completas en «Botones rápidos» de CLAUDE.md; `tests/integration/test_button_speed.py` lo comprueba con el bot real.
 - Dar respuestas de error claras y seguras. No mostrar trazas, tokens ni datos internos a usuarios.
 - Registrar listeners con moderación: evitar trabajo repetido por cada evento y evitar respuestas o efectos duplicados.
 - Ayuda: `/ayuda` cabe en un solo embed. Todas las categorías tienen el mismo formato: nombres de comando en orden alfabético, sin descripción ni argumentos. La explicación de cada comando vive en su descripción de slash command y en la documentación.
@@ -204,6 +204,7 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - No introducir una base de datos hasta que exista una necesidad funcional de conservar datos entre reinicios.
 - Cuando se añada persistencia, aislarla detrás de repositorios y definir el ciclo de vida de conexiones y migraciones.
 - Las operaciones de base de datos deben ser asíncronas o ejecutarse fuera del event loop si el controlador es síncrono.
+- Toda conexión a SQLite se abre con `bot.repositories.sqlite.connect`: modo WAL y `synchronous=NORMAL`, para que una escritura no sincronice el disco del NAS ni bloquee las lecturas. Con el diario de serie, cada tirada del casino forzaba siete sincronizaciones del disco y los botones esperaban detrás de las escrituras de cada mensaje del chat. Si se va la luz se pueden perder las últimas transacciones, pero la base no se corrompe.
 - No guardar datos personales innecesarios. Definir retención y borrado cuando el bot almacene datos de usuarios.
 
 ### Utilidades y modelos
@@ -232,6 +233,7 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - Aplicar límites a concurrencia, reintentos y tamaño de lotes. Los reintentos deben respetar `Retry-After` y no multiplicar efectos no idempotentes.
 - No crear cachés globales sin política de caducidad y límites de memoria.
 - Evitar consultas redundantes a Discord: aprovechar los datos de la interacción y las cachés de la librería cuando sean suficientes.
+- Nada de trabajo lento antes de contestar a una interacción (ver «Cogs y comandos»). Los clics que llegan en ráfaga contra un mismo candado se aceptan fuera de él: dentro, cada uno espera al anterior y los últimos pasan de los 3 segundos de Discord.
 - Un panel con estado por usuario (como el de `pala`) admite una sola acción en curso: el cog guarda quién está en una (`working`) y rechaza la segunda, porque dos botones de dos paneles pueden llegar a la vez y cobrar dos veces.
 
 ## 6. Seguridad y permisos

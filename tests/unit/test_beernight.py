@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs.beernight import (
     LIVE_ACTIONS,
@@ -475,18 +476,10 @@ class World:
         return message
 
     def interaction(self, user_id: int) -> MagicMock:
-        interaction = MagicMock()
+        interaction = fake_interaction(self.members[user_id])
         interaction.guild = self.guild
-        interaction.user = self.members[user_id]
         interaction.channel = self.channel
         interaction.client = self.bot
-        interaction.response.send_message = AsyncMock()
-        interaction.response.edit_message = AsyncMock()
-        interaction.response.defer = AsyncMock()
-        interaction.response.send_modal = AsyncMock()
-        interaction.response.is_done = MagicMock(return_value=False)
-        interaction.followup.send = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
         interaction.message = MagicMock(id=777, channel=self.channel, edit=AsyncMock())
         return interaction
 
@@ -514,7 +507,7 @@ async def test_empezar_apunta_a_la_llamada_y_saca_los_mandamientos(tmp_path: Pat
     }
     second = world.interaction(ANA)
     await world.cog.start(second)
-    assert "Ya hay una beernight" in second.response.send_message.call_args.args[0]
+    assert "Ya hay una beernight" in second.followup.send.call_args.args[0]
     embed = live_embed(world.guild, state, world.now)
     assert len(embed) <= 6000
     assert all(len(f.value) <= 1024 for f in embed.fields)
@@ -725,7 +718,7 @@ async def test_ajustes_del_formulario_y_mandamientos_de_la_casa(tmp_path: Path) 
     assert sum(1 for a in state.active if a.until is None) == 3
     bad = world.interaction(HOST)
     await world.cog.save_rhythm(bad, GUILD_ID, events="9-2", active="3", rotation="10", cap="0")
-    assert "❌" in bad.response.send_message.call_args.args[0]
+    assert "❌" in bad.followup.send.call_args.args[0]
     stranger = world.interaction(ANA)
     await world.cog.save_rhythm(stranger, GUILD_ID, events="5", active="4", rotation="10", cap="0")
     assert (await world.repo.get_settings(GUILD_ID)).active == 3

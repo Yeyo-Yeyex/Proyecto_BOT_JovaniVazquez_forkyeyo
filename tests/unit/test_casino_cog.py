@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 import bot.cogs.casino as casino_module
 from bot.cogs.casino import (
@@ -80,14 +81,7 @@ def make_user(user_id: int = OWNER_ID, name: str = "Diego") -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.edit_original_response = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 def attachment_names(call) -> list[str]:  # noqa: ANN001
@@ -170,9 +164,9 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
 
     await table.choose(interaction, parse_bet("17"))
 
-    first = interaction.response.edit_message.await_args
+    interaction.response.defer.assert_awaited_once()
+    first, final = interaction.edit_original_response.await_args_list
     assert attachment_names(first) == [GIF_NAME]
-    final = interaction.edit_original_response.await_args
     assert attachment_names(final) == [PNG_NAME]
     withheld = gambling_day_tax(3500, 0)
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 3500 - withheld
@@ -199,8 +193,8 @@ async def test_sin_saldo_no_gira_y_avisa_en_privado(tmp_path: Path) -> None:
 
     await table.choose(interaction, OUTSIDE_BETS["red"])
 
-    interaction.response.edit_message.assert_not_awaited()
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    interaction.edit_original_response.assert_not_awaited()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
 
 
@@ -266,7 +260,7 @@ async def test_doblar_sin_saldo_suficiente_no_cambia_la_ficha(tmp_path: Path) ->
     await table._double_and_repeat(interaction)
 
     assert table.stake == STARTING_BALANCE
-    interaction.response.edit_message.assert_not_awaited()
+    interaction.edit_original_response.assert_not_awaited()
 
 
 # -- Comando ----------------------------------------------------------------------
@@ -454,7 +448,7 @@ async def test_girar_juega_todas_las_fichas_en_una_tirada(tmp_path: Path) -> Non
 
     await table._spin_slip(interaction)
 
-    assert attachment_names(interaction.response.edit_message.await_args) == [GIF_NAME]
+    assert attachment_names(interaction.edit_original_response.await_args_list[0]) == [GIF_NAME]
     # Rojo 100 gana +100; pleno 17 pierde 100: se queda igual.
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
     assert table.slip == ()
@@ -472,7 +466,7 @@ async def test_no_se_pueden_poner_mas_fichas_que_saldo(tmp_path: Path) -> None:
     await table.choose(interaction, OUTSIDE_BETS["black"])
 
     assert len(table.slip) == 1
-    assert "Necesitas 1.200 Y$" in interaction.response.send_message.await_args.args[0]
+    assert "Necesitas 1.200 Y$" in interaction.followup.send.await_args.args[0]
 
 
 async def test_all_in_en_modo_varias_usa_lo_que_queda_libre(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from interaction_fakes import fake_interaction
 
 import bot.cogs.hold_win as module
 from bot.cogs.hold_win import (
@@ -140,15 +141,7 @@ def make_user(user_id: int = OWNER_ID) -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.edit_original_response = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 def make_view(cog: HoldWin, stake: int = 100) -> HoldWinView:
@@ -226,8 +219,10 @@ async def test_tirar_cobra_gira_y_paga_la_recogida(
     balance = await cog.economy.balance(GUILD_ID, OWNER_ID)
     assert balance == STARTING_BALANCE - 100 + 250
     assert ledger_sum(tmp_path, OWNER_ID) == balance
-    assert names(interaction.response.edit_message.await_args) == [GIF_NAME]
-    assert names(interaction.edit_original_response.await_args) == [PNG_NAME]
+    interaction.response.defer.assert_awaited_once()
+    first, final = interaction.edit_original_response.await_args_list
+    assert names(first) == [GIF_NAME]
+    assert names(final) == [PNG_NAME]
 
 
 async def test_las_monedas_entran_en_el_maletin_y_se_guardan(
@@ -258,8 +253,8 @@ async def test_en_turbo_solo_se_edita_una_vez(
 
     await view._spin(interaction)
 
-    assert names(interaction.response.edit_message.await_args) == [PNG_NAME]
-    interaction.edit_original_response.assert_not_awaited()
+    assert names(interaction.edit_original_response.await_args) == [PNG_NAME]
+    interaction.edit_original_response.assert_awaited_once()
 
 
 async def test_sin_saldo_no_gira_ni_toca_los_maletines(
@@ -272,7 +267,8 @@ async def test_sin_saldo_no_gira_ni_toca_los_maletines(
 
     await view._spin(interaction)
 
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
     assert (await cog.meters(GUILD_ID, OWNER_ID, "volcan")).cases[Tier.RED].coins == 0
 

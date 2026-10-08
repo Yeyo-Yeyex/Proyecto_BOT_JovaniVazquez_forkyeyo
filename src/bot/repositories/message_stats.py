@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
+from bot.repositories import sqlite
 from bot.services.levels import HISTORICAL_XP_PER_MESSAGE, MemberActivity
 
 T = TypeVar("T")
@@ -66,9 +67,7 @@ class MessageStatsRepository:
 
     def _connect(self) -> sqlite3.Connection:
         """Abre una conexión configurada para transacciones seguras."""
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path, timeout=30)
-        connection.row_factory = sqlite3.Row
+        connection = sqlite.connect(self.database_path)
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 

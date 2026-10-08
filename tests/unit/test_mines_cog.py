@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from discord import ui
+from interaction_fakes import fake_interaction
 
 from bot.cogs.mines import BOOM, GEM, MINE, Mines, MinesBoard
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
@@ -33,14 +34,7 @@ def make_user(user_id: int = OWNER_ID) -> MagicMock:
 
 
 def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    interaction = MagicMock()
-    interaction.user = make_user(user_id)
-    interaction.response.edit_message = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    interaction.edit_original_response = AsyncMock()
-    return interaction
+    return fake_interaction(make_user(user_id))
 
 
 async def make_cog(tmp_path: Path) -> Mines:
@@ -125,7 +119,8 @@ async def test_casilla_buena_sube_y_cobrar_paga(tmp_path: Path) -> None:
     tax = state_balance(tmp_path)
     assert balance == STARTING_BALANCE - 100 + paid - tax
     assert ledger_sum(tmp_path) == balance
-    interaction.response.edit_message.assert_awaited_once()
+    interaction.response.defer.assert_awaited_once()
+    interaction.edit_original_response.assert_awaited_once()
     # Tras cobrar, la fila de controles vuelve a ser la de jugar otra.
     assert any((b.label or "").startswith("🔁 Jugar") for b in buttons(board))
 
@@ -218,7 +213,7 @@ async def test_jugar_otra_sin_saldo_avisa(tmp_path: Path) -> None:
     await board._reveal(make_interaction(), 0)
     interaction = make_interaction()
     await board._again(interaction)
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
 
 
 async def test_apagar_con_partida_a_medias_cobra_o_devuelve(tmp_path: Path) -> None:
