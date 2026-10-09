@@ -98,6 +98,7 @@ from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
     from bot.app import BotClient
+    from bot.repositories.slots import SlotsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -1002,9 +1003,12 @@ class Slots(commands.Cog, name="Tragaperras"):
         renderer: SlotsRenderer | None = None,
         machine: SlotMachine | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
+        repository: SlotsRepository | None = None,
     ) -> None:
         self.bot = bot
         self.economy = economy
+        # Calor y giro diario guardados; `None` en pruebas que no los usan.
+        self.repository = repository
         self.renderer = renderer or SlotsRenderer()
         self.machine = machine or SlotMachine()
         self.casino_channel_ids = casino_channel_ids
@@ -1226,5 +1230,12 @@ class Slots(commands.Cog, name="Tragaperras"):
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
-    """Registra el cog con la economía compartida del bot."""
-    await bot.add_cog(Slots(bot, economy=bot.economy, casino_channel_ids=bot.casino_channel_ids))
+    """Registra el cog con la economía y el repositorio compartidos del bot."""
+    await bot.add_cog(
+        Slots(
+            bot,
+            economy=bot.economy,
+            casino_channel_ids=bot.casino_channel_ids,
+            repository=bot.slots_repository,
+        )
+    )

@@ -11,6 +11,7 @@ La moneda es ficticia: no se compra ni se canjea por nada con valor real.
 
 from __future__ import annotations
 
+import random
 import re
 import sqlite3
 import time
@@ -610,6 +611,8 @@ class EconomyService:
         share: int,
         jackpot: bool,
         seed: int,
+        cap: int = 0,
+        draw_hit: Callable[[int, int], int] | None = None,
     ) -> SlotsSettlement:
         """Cobra y paga una tirada de tragaperras y mueve el bote común.
 
@@ -619,11 +622,20 @@ class EconomyService:
         (art. 33.5.d LIRPF): por eso entra en la retención diaria del casino y
         en la declaración semanal. El jackpot también: el gravamen especial
         del 20 % (disposición adicional 33ª LIRPF) es solo para loterías del
-        Estado, ONCE y Cruz Roja, no para tragaperras.
+        Estado, ONCE y Cruz Roja, no para tragaperras. El bote misterioso
+        (el que cae solo al llegar a la cifra oculta) es el mismo bote pagado
+        por la misma máquina: juego, con los mismos asientos y el mismo IRPF
+        que el jackpot.
 
         La parte de la apuesta que va al bote no es un impuesto ni sale del
         bolsillo del jugador aparte: es dinero de la apuesta que la casa no
-        se queda. Un giro gratis (`stake=0`) no aporta nada.
+        se queda. Un giro gratis (`stake=0`) no aporta nada, ni cuenta como
+        tirada sin bote.
+
+        Con `cap > 0` el bote «tiene que caer antes de `cap`»: cada vez que se
+        siembra se sortea una cifra oculta entre `seed` y `cap`, y la tirada
+        pagada que lo hace llegar a ella se lo lleva entero
+        (`SlotsSettlement.mystery`). Ver `EconomyRepository.settle_slots`.
 
         Args:
             game: Motivo corto para el libro (`"tragaperras"`).
@@ -632,6 +644,10 @@ class EconomyService:
             share: Parte de la apuesta que va al bote.
             jackpot: Si se lleva el bote entero.
             seed: Lo que pone la casa en un bote nuevo o recién vaciado.
+            cap: Tope del bote misterioso; 0 lo desactiva.
+            draw_hit: Sorteo de la cifra oculta, `(low, high) -> entero` con
+                ambos extremos incluidos. Por defecto, `SystemRandom().randint`;
+                las pruebas lo sustituyen para forzar el azar.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre la apuesta.
@@ -651,6 +667,8 @@ class EconomyService:
             now=now,
             day_tax=gambling_day_tax,
             window_seconds=PROJECTION_WINDOW_SECONDS,
+            cap=cap,
+            draw_hit=draw_hit or random.SystemRandom().randint,
         )
 
     async def porra_bet(
@@ -757,6 +775,10 @@ class EconomyService:
     async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
         """Último jackpot de la tragaperras del servidor."""
         return await self.repository.last_jackpot(guild_id)
+
+    async def slots_spins_since(self, guild_id: int) -> int:
+        """Tiradas pagadas de la tragaperras desde el último bote (0 si no ha habido)."""
+        return await self.repository.slots_spins_since(guild_id)
 
     async def grant(self, guild_id: int, user_id: int, *, amount: int, reason: str) -> int:
         """Da dinero que no es renta (p. ej. un regalo de cumpleaños): sin IRPF.
