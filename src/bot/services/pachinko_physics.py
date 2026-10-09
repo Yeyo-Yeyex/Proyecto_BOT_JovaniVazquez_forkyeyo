@@ -9,13 +9,20 @@ Lógica pura, sin Pillow ni Discord. Hace dos cosas:
 2. `simulate` deja caer una bola con gravedad y rebotes (bola contra clavo y
    bola contra pared) y devuelve su `Trajectory`: dónde está en cada
    fotograma del GIF, en qué bolsillo acaba y cuántos clavos ha golpeado.
+3. `advance` hace lo mismo con varias bolas a la vez, que además chocan entre
+   sí (dos círculos de radio `BALL_R` y la misma masa: se separan y se reparten
+   el impulso a lo largo de la normal con `BALL_RESTITUTION`). Con una sola
+   bola en el aire hace exactamente la cuenta de `simulate`.
 
 **La lógica decide y la física obedece.** El bolsillo de cada bola lo sortea
 `bot.services.pachinko` (cara o cruz por fila), así que el retorno de la
 máquina sigue demostrado con fracciones exactas. La física no lo cambia: de
 antemano se simulan muchas bolas (`bake_library`) y se guarda una biblioteca
 de caídas reales por tablero y bolsillo (`assets/pachinko/trayectorias.json`).
-En cada tanda, cada bola usa una de la biblioteca que acaba en su bolsillo. Ninguna
+Una bola sola usa una de la biblioteca que acaba en su bolsillo. Con choques, la
+caída de cada bola depende de las demás, así que `bot.services.pachinko_motion`
+busca en tiempo de juego una tanda entera en la que todas acaben donde dijo el
+sorteo, probando como entrada las salidas (`Start`) de la biblioteca. Ninguna
 trayectoria está trucada: todas son una simulación completa desde su
 condición inicial, sin empujones.
 
@@ -116,6 +123,13 @@ ENTRY_MARGIN = BALL_R + 4
 ENTRY_SPEED = 40
 #: Tamaño de las celdas de la rejilla espacial (px).
 CELL = 16
+#: Diámetro de una bola: dos bolas chocan cuando sus centros se acercan menos de esto.
+BALL_D = 2 * BALL_R
+#: Parte de la velocidad de acercamiento que se conserva al chocar dos bolas.
+BALL_RESTITUTION = 0.8
+#: Un choque entre bolas cuenta si se acercan a más de esta velocidad (px/s); así
+#: dos bolas que se rozan o se apoyan una en otra no suman un choque por paso.
+BALL_HIT_MIN_SPEED = 40.0
 
 #: Caídas guardadas por bolsillo y tablero.
 TRAJECTORIES_PER_POCKET = 24
@@ -419,6 +433,227 @@ def simulate(geometry: Geometry, start: Start) -> Trajectory | None:
                 return None
             anchor_x, anchor_y = x, y
     return None
+
+
+# -- Varias bolas a la vez ----------------------------------------------------------
+
+
+@dataclass(slots=True)
+class Body:
+    """Una bola en el aire dentro de un sistema de varias (estado mutable del simulador).
+
+    Es lo que `advance` hace avanzar. Una instantánea del sistema es una lista de
+    `Body` copiados con `copy`: así se prueba una continuación sin tocar la
+    original.
+
+    Attributes:
+        ident: Número de la bola en la tanda.
+        target: Bolsillo en el que tiene que acabar para darla por buena.
+        launch: Paso de simulación (absoluto) en que apareció; es múltiplo de
+            `STEPS_PER_FRAME`, así sus puntos caen en los mismos instantes que
+            los fotogramas del GIF.
+        start: Condición inicial con la que apareció.
+        x, y, vx, vy: Posición y velocidad ahora.
+        bounces: Golpes contra clavos a más de `BOUNCE_MIN_SPEED`.
+        hits: Choques contra otras bolas a más de `BALL_HIT_MIN_SPEED`.
+        anchor_x, anchor_y: Dónde estaba hace `STUCK_SECONDS` (para detectar atascos).
+        points: Posición en cada fotograma desde el lanzamiento, a 0,1 px.
+    """
+
+    ident: int
+    target: int
+    launch: int
+    start: Start
+    x: float
+    y: float
+    vx: float
+    vy: float
+    anchor_x: float
+    anchor_y: float
+    points: list[tuple[float, float]]
+    bounces: int = 0
+    hits: int = 0
+
+    @classmethod
+    def spawn(cls, ident: int, target: int, start: Start, step: int) -> Body:
+        """Una bola nueva en `ENTRY_Y` en el paso `step` (múltiplo de `STEPS_PER_FRAME`)."""
+        x, y = start.x0, float(ENTRY_Y)
+        return cls(
+            ident, target, step, start, x, y, start.vx0, 0.0, x, y,
+            [(round(x * 10) / 10, round(y * 10) / 10)],
+        )  # fmt: skip
+
+    def copy(self) -> Body:
+        """Copia independiente (la lista de puntos también)."""
+        return Body(
+            self.ident, self.target, self.launch, self.start, self.x, self.y, self.vx, self.vy,
+            self.anchor_x, self.anchor_y, list(self.points), self.bounces, self.hits,
+        )  # fmt: skip
+
+
+def advance(
+    geometry: Geometry, bodies: list[Body], step: int, stop: int | None = None
+) -> list[Body] | None:
+    """Hace avanzar un sistema de bolas que chocan entre sí hasta que entran todas.
+
+    Es el mismo simulador de `simulate` (paso fijo, solo `+ - * /` y `sqrt`, sin
+    azar) con una pieza más: después de resolver cada bola contra los clavos,
+    las paredes y los separadores, se resuelven los choques entre bolas. Dos
+    círculos de radio `BALL_R` y la misma masa se separan por igual y se
+    reparten el impulso a lo largo de la normal, con `BALL_RESTITUTION`. Con una
+    sola bola en el aire no hay pares, así que el resultado es bit a bit el de
+    `simulate`.
+
+    Cada bola entra cuando su centro pasa de `Geometry.end_y`. Se descarta
+    todo el sistema (devuelve `None`) en cuanto una bola no puede acabar en su
+    `target`: se mete en otro bolsillo, se atasca, tarda fuera de
+    `MIN_SECONDS..MAX_SECONDS` o sale del campo.
+
+    Args:
+        geometry: El campo.
+        bodies: Bolas en el aire; se modifican en su sitio (para probar una
+            continuación hay que pasar copias). Al volver quedan las que siguen
+            en el aire.
+        step: Paso absoluto en el que está el sistema ahora.
+        stop: Si se da, para tras ese paso aunque queden bolas en el aire (para
+            sacar una instantánea). Sin él, sigue hasta que entran todas.
+
+    Returns:
+        Las bolas que han entrado durante la ejecución, por orden de entrada
+        (con `points` completos), o `None` si el sistema no vale.
+    """
+    grid = geometry.grid
+    left, right = geometry.left, geometry.right
+    end_y = geometry.end_y
+    in_slot_y = geometry.pocket_top
+    pocket_at = geometry.pocket_at
+    pin_reach = BALL_R + PIN_R
+    pin_reach2 = pin_reach * pin_reach
+    seg_reach = BALL_R + SEGMENT_R
+    seg_reach2 = seg_reach * seg_reach
+    ball_d2 = BALL_D * BALL_D
+    gravity_step = GRAVITY * DT
+    max_steps = int(MAX_SECONDS * SIM_HZ) + STEPS_PER_FRAME
+    stuck_steps = int(STUCK_SECONDS * SIM_HZ)
+    keep = 1.0 - FRICTION
+    landed: list[Body] = []
+    while bodies and (stop is None or step < stop):
+        step += 1
+        for body in bodies:
+            x, y, vx, vy = body.x, body.y, body.vx, body.vy
+            vy += gravity_step
+            x += vx * DT
+            y += vy * DT
+            cell = grid.get((int(x // CELL), int(y // CELL)))
+            if cell is not None:
+                for px, py in cell[0]:
+                    ex = x - px
+                    ey = y - py
+                    d2 = ex * ex + ey * ey
+                    if d2 >= pin_reach2:
+                        continue
+                    d = sqrt(d2)
+                    if d == 0.0:
+                        nx, ny, d = 0.0, -1.0, 0.0
+                    else:
+                        nx, ny = ex / d, ey / d
+                    push = pin_reach - d
+                    x += nx * push
+                    y += ny * push
+                    vn = vx * nx + vy * ny
+                    if vn < 0.0:
+                        if -vn > BOUNCE_MIN_SPEED:
+                            body.bounces += 1
+                        tx, ty = vx - vn * nx, vy - vn * ny
+                        vx = tx * keep - vn * PIN_RESTITUTION * nx
+                        vy = ty * keep - vn * PIN_RESTITUTION * ny
+                for seg in cell[1]:
+                    sx = seg.x1 - seg.x0
+                    sy = seg.y1 - seg.y0
+                    t = ((x - seg.x0) * sx + (y - seg.y0) * sy) / (sx * sx + sy * sy)
+                    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                    ex = x - (seg.x0 + t * sx)
+                    ey = y - (seg.y0 + t * sy)
+                    d2 = ex * ex + ey * ey
+                    if d2 >= seg_reach2:
+                        continue
+                    d = sqrt(d2)
+                    if d == 0.0:
+                        nx, ny, d = 0.0, -1.0, 0.0
+                    else:
+                        nx, ny = ex / d, ey / d
+                    push = seg_reach - d
+                    x += nx * push
+                    y += ny * push
+                    vn = vx * nx + vy * ny
+                    if vn < 0.0:
+                        tx, ty = vx - vn * nx, vy - vn * ny
+                        vx = tx * keep - vn * WALL_RESTITUTION * nx
+                        vy = ty * keep - vn * WALL_RESTITUTION * ny
+            body.x, body.y, body.vx, body.vy = x, y, vx, vy
+
+        count = len(bodies)
+        for i in range(count - 1):
+            first = bodies[i]
+            for j in range(i + 1, count):
+                second = bodies[j]
+                ex = first.x - second.x
+                if ex >= BALL_D or ex <= -BALL_D:
+                    continue
+                ey = first.y - second.y
+                d2 = ex * ex + ey * ey
+                if d2 >= ball_d2:
+                    continue
+                d = sqrt(d2)
+                if d == 0.0:
+                    nx, ny, d = 0.0, -1.0, 0.0
+                else:
+                    nx, ny = ex / d, ey / d
+                # Cada una cede la mitad del solape; con la misma masa, el choque
+                # intercambia la componente de la velocidad a lo largo de la normal.
+                push = (BALL_D - d) / 2
+                first.x += nx * push
+                first.y += ny * push
+                second.x -= nx * push
+                second.y -= ny * push
+                closing = (first.vx - second.vx) * nx + (first.vy - second.vy) * ny
+                if closing < 0.0:
+                    if -closing > BALL_HIT_MIN_SPEED:
+                        first.hits += 1
+                        second.hits += 1
+                    impulse = -(1.0 + BALL_RESTITUTION) * closing / 2
+                    first.vx += impulse * nx
+                    first.vy += impulse * ny
+                    second.vx -= impulse * nx
+                    second.vy -= impulse * ny
+
+        entered = False
+        for body in bodies:
+            x, y = body.x, body.y
+            relative = step - body.launch
+            if relative % STEPS_PER_FRAME == 0:
+                body.points.append((round(x * 10) / 10, round(y * 10) / 10))
+            if y >= in_slot_y and pocket_at(x) != body.target:
+                return None
+            if y >= end_y:
+                if not MIN_SECONDS <= relative * DT <= MAX_SECONDS or not left < x < right:
+                    return None
+                if relative % STEPS_PER_FRAME:
+                    body.points.append((round(x * 10) / 10, round(y * 10) / 10))
+                landed.append(body)
+                entered = True
+            elif relative > max_steps:
+                return None
+            elif relative % stuck_steps == 0:
+                moved = (x - body.anchor_x) * (x - body.anchor_x) + (y - body.anchor_y) * (
+                    y - body.anchor_y
+                )
+                if moved < STUCK_DISTANCE * STUCK_DISTANCE:
+                    return None
+                body.anchor_x, body.anchor_y = x, y
+        if entered:
+            bodies[:] = [body for body in bodies if body.y < end_y]
+    return landed
 
 
 # -- Biblioteca ---------------------------------------------------------------------

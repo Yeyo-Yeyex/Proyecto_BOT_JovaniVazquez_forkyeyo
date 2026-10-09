@@ -28,7 +28,10 @@ del event loop) y unos 300-350 KB de GIF, que escribe
 `bot.utils.gif.shared_palette_gif`. Medido con 40 tandas por tablero: mediana
 de 0,20 a 0,26 s (el 10 % más largo, hasta ~0,37 s) y de 300 a 350 KB (hasta
 ~570 KB); con el dibujo solo con Pillow eran 0,21-0,25 s y 215-240 KB. El modo
-turbo solo manda la imagen final.
+turbo solo manda la imagen final. El movimiento de las bolas (`motion_for`, con
+sus choques) se calcula aparte y cuesta ~75-83 ms más (máximo ~200 ms); no
+cambia el GIF: con 40 tandas por tablero, antes y después, 0,21-0,24 s de
+mediana y 300-340 KB.
 
 Cada tablero de `bot.services.pachinko.BOARDS` tiene su tema (`THEMES`):
 colores, rótulo y adorno (molinillos, flores de cerezo, perlas de dragón o
@@ -37,12 +40,14 @@ lo que se dibuja es exactamente lo que golpean las bolas.
 
 La animación sigue la línea de tiempo de una máquina real:
 
-1. Las bolas se lanzan de una en una y caen con física real (gravedad y
-   rebotes en los clavos y las paredes). La caída de cada una es una de las
-   simuladas de antemano (`pachinko_physics.library`) que acaban en el
-   bolsillo que ha sorteado `bot.services.pachinko`; la física no decide
-   nada, solo cómo se ve. Cada caída dura lo suyo, así que las bolas no
-   llegan en el orden en que salen.
+1. Las bolas se lanzan de una en una y caen con física real (gravedad,
+   rebotes en los clavos y las paredes y choques de unas con otras). El
+   movimiento de la tanda entera lo busca `bot.services.pachinko_motion`
+   (`motion_for`) apoyándose en las caídas simuladas de antemano
+   (`pachinko_physics.library`): las diez bolas, chocando de verdad, acaban
+   cada una en el bolsillo que ha sorteado `bot.services.pachinko`; la física
+   no decide nada, solo cómo se ve. Cada caída dura lo suyo, así que las
+   bolas no llegan en el orden en que salen.
 2. Cuando una cae en START, la reserva (los puntos bajo la pantalla) gana una
    tirada, y la pantalla la juega en cuanto queda libre, mientras siguen
    cayendo bolas. Las tiradas se asignan por orden de llegada.
@@ -75,12 +80,12 @@ from bot.services.pachinko import (
     BALLS,
     BOARDS,
     MAX_HOLD,
-    Ball,
     Board,
     Draw,
     Kind,
     Volley,
 )
+from bot.services.pachinko_motion import VolleyMotion, motion_for
 from bot.services.pachinko_physics import (
     BALL_R,
     CX,
@@ -93,7 +98,6 @@ from bot.services.pachinko_physics import (
     POCKET_H,
     WIDTH,
     Geometry,
-    Trajectory,
     geometry_for,
     library,
 )
@@ -136,9 +140,8 @@ BULB_SPACING = 20
 BULB_R = 3
 
 # -- Tiempos (en fotogramas de `FRAME_MS`) -----------------------------------------
+# Cuándo sale cada bola (`LAUNCH_GAP`) lo decide `bot.services.pachinko_motion`.
 
-#: Fotogramas entre una bola y la siguiente.
-LAUNCH_GAP = 3
 #: Fotogramas que un bolsillo se queda iluminado al recibir una bola.
 POCKET_FLASH = 4
 #: Paradas de los números del sorteo desde que empieza la tirada.
@@ -299,31 +302,6 @@ class Layout:
         """Centro del bolsillo `pocket`."""
         return self.geometry.pocket_x(pocket)
 
-    def trajectory(self, ball: Ball) -> Trajectory:
-        """La caída de la biblioteca que sigue `ball`: la de su bolsillo y su número."""
-        return library(self.board)[ball.pocket][ball.trajectory]
-
-    def ball_frames(self, ball: Ball) -> int:
-        """Fotogramas desde que se lanza `ball` hasta que entra en su bolsillo."""
-        return self.trajectory(ball).frames
-
-    def ball_position(self, ball: Ball, frame: float) -> tuple[float, float] | None:
-        """Dónde está una bola `frame` fotogramas después de lanzarla.
-
-        Devuelve `None` antes de lanzarla y después de entrar en el bolsillo.
-        Entre dos fotogramas enteros interpola en línea recta entre los puntos
-        de la caída simulada.
-        """
-        points = self.trajectory(ball).points
-        if frame < 0 or frame >= len(points):
-            return None
-        index = int(frame)
-        if index >= len(points) - 1:
-            return points[-1]
-        t = frame - index
-        (x0, y0), (x1, y1) = points[index], points[index + 1]
-        return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
-
 
 def layout_for(board: Board) -> Layout:
     """Disposición de `board`: su campo de clavos y lo que cuelga de él."""
@@ -426,21 +404,24 @@ class Timeline:
         return current
 
 
-def build_timeline(volley: Volley) -> Timeline:
+def build_timeline(volley: Volley, motion: VolleyMotion | None = None) -> Timeline:
     """Programa la animación: cuándo cae cada bola y cuándo gira la pantalla.
 
-    Cada bola tarda lo que dura su caída simulada, así que no llegan en el
+    Cada bola sale y entra cuando dice su movimiento (`pachinko_motion`: las
+    bolas chocan entre sí y alguna sale con retraso), así que no llegan en el
     orden en que se lanzan. Las tiradas entran en la reserva por orden de
     llegada a START y la pantalla las juega en orden, en cuanto acaba la
     anterior. Las bolas de START que no cupieron en la reserva
     (`Volley.wasted`) son las últimas en llegar. El pago no depende de este
     orden (`build_volley` cuenta bolas), pero la pantalla tiene que ser
     coherente con lo que se ve.
+
+    Args:
+        motion: El movimiento de la tanda; si no se da, se calcula (o sale de
+            la caché de `motion_for`).
     """
-    layout = layout_for(volley.board)
-    landings = tuple(
-        index * LAUNCH_GAP + layout.ball_frames(ball) for index, ball in enumerate(volley.balls)
-    )
+    motion = motion or motion_for(volley)
+    landings = tuple(ball.landing for ball in motion.balls)
     start = volley.board.start_pocket
     pairs = zip(volley.balls, landings, strict=True)
     start_landings = sorted(landing for ball, landing in pairs if ball.pocket == start)
@@ -1234,6 +1215,7 @@ class PachinkoRenderer:
         self,
         assets: _Assets,
         volley: Volley,
+        motion: VolleyMotion,
         timeline: Timeline,
         frame: int,
         rng: random.Random,
@@ -1249,8 +1231,8 @@ class PachinkoRenderer:
 
         self._decorate(assets, image, frame // 2)
 
-        for index, ball in enumerate(volley.balls):
-            position = layout.ball_position(ball, frame - index * LAUNCH_GAP)
+        for ball in motion.balls:
+            position = ball.position(frame)
             if position is not None:
                 self._paste(image, assets.ball, *position)
 
@@ -1324,10 +1306,10 @@ class PachinkoRenderer:
         self._tray(assets.layout, image, 0)
         return self._png(self._quantize(assets, image))
 
-    def still_png(self, volley: Volley) -> bytes:
+    def still_png(self, volley: Volley, motion: VolleyMotion | None = None) -> bytes:
         """PNG del final de una tanda, sin animación (Ráfaga)."""
         assets = self.assets(volley.board)
-        final = self._final(assets, volley, build_timeline(volley))
+        final = self._final(assets, volley, build_timeline(volley, motion))
         return self._png(self._quantize(assets, final))
 
     def warm_up(self) -> None:
@@ -1336,14 +1318,18 @@ class PachinkoRenderer:
             library(board)
             self.assets(board)
 
-    def render(self, volley: Volley, *, turbo: bool = False) -> PachinkoMedia:
+    def render(
+        self, volley: Volley, *, turbo: bool = False, motion: VolleyMotion | None = None
+    ) -> PachinkoMedia:
         """Animación y PNG final de una tanda.
 
         Args:
             turbo: Solo el PNG final, sin GIF (más rápido y casi sin datos).
+            motion: Su movimiento (`motion_for`); si no se da, se calcula.
         """
         assets = self.assets(volley.board)
-        timeline = build_timeline(volley)
+        motion = motion or motion_for(volley)
+        timeline = build_timeline(volley, motion)
         final = self._quantize(assets, self._final(assets, volley, timeline))
         if turbo:
             return PachinkoMedia(gif=b"", png=self._png(final), seconds=0.0)
@@ -1351,7 +1337,7 @@ class PachinkoRenderer:
         # por tanda, la misma tanda se dibuja siempre igual.
         rng = random.Random(hash(tuple((ball.path, ball.trajectory) for ball in volley.balls)))
         frames = [
-            self._quantize(assets, self._frame(assets, volley, timeline, index, rng))
+            self._quantize(assets, self._frame(assets, volley, motion, timeline, index, rng))
             for index in range(timeline.frames)
         ]
         frames.append(final)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
+import threading
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -57,7 +58,8 @@ from bot.services.pachinko import (
     Volley,
     build_volley,
 )
-from bot.services.pachinko_physics import library
+from bot.services.pachinko_motion import BallMotion, VolleyMotion, motion_for
+from bot.services.pachinko_physics import Start
 from bot.services.pachinko_render import PachinkoMedia
 
 GUILD_ID = 1
@@ -91,12 +93,20 @@ SMALL = build_volley(CLASSIC, [ball_in(1)] + [ball_in(3)] * 9, lambda: MISS)
 
 
 class FakeRenderer:
-    """Devuelve bytes fijos: las pruebas no necesitan dibujar el tablero."""
+    """Devuelve bytes fijos: las pruebas no necesitan dibujar el tablero.
 
-    def render(self, volley, *, turbo: bool = False) -> PachinkoMedia:  # noqa: ANN001
+    Apunta en `motions` el movimiento que recibe cada dibujo.
+    """
+
+    def __init__(self) -> None:
+        self.motions: list[VolleyMotion | None] = []
+
+    def render(self, volley, *, turbo: bool = False, motion=None) -> PachinkoMedia:  # noqa: ANN001
+        self.motions.append(motion)
         return PachinkoMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
-    def still_png(self, volley) -> bytes:  # noqa: ANN001
+    def still_png(self, volley, motion=None) -> bytes:  # noqa: ANN001
+        self.motions.append(motion)
         return b"STILL"
 
     def idle_png(self, board) -> bytes:  # noqa: ANN001
@@ -178,6 +188,7 @@ def make_play(volley: Volley, *, stake: int = 100, won: int = 0) -> PachinkoPlay
         settlement=settlement,
         media=PachinkoMedia(b"", b"", 0.0),
         session_volleys=1,
+        motion=motion_for(volley),
     )
 
 
@@ -342,6 +353,50 @@ async def test_un_rush_corto_no_llena_el_canal(tmp_path: Path) -> None:
     channel.send.assert_not_awaited()
 
 
+async def test_el_movimiento_se_calcula_fuera_del_event_loop_tambien_sin_dibujar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Turbo y Ráfaga no dibujan, pero los logros necesitan los choques: `motion_for` siempre."""
+    threads: list[str] = []
+    real = pachinko_module.motion_for
+
+    def spy(volley: Volley) -> VolleyMotion:
+        threads.append(threading.current_thread().name)
+        return real(volley)
+
+    monkeypatch.setattr(pachinko_module, "motion_for", spy)
+    cog = await make_cog(tmp_path, [RUSH, BLANK])
+
+    drawn = await cog.play(GUILD_ID, OWNER_ID, stake=100, board=CLASSIC, turbo=False)
+    silent = await cog.play(GUILD_ID, OWNER_ID, stake=100, board=CLASSIC, turbo=True, render=False)
+
+    assert len(threads) == 2
+    assert threading.main_thread().name not in threads
+    assert drawn.motion == motion_for(RUSH) and silent.motion == motion_for(BLANK)
+    assert cog.renderer.motions == [drawn.motion]  # el dibujo reutiliza el mismo cálculo
+
+
+async def test_si_el_movimiento_falla_no_se_mueve_dinero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(volley: Volley) -> VolleyMotion:
+        raise RuntimeError("la física no cuadra")
+
+    monkeypatch.setattr(pachinko_module, "motion_for", broken)
+    cog = await make_cog(tmp_path, [RUSH])
+    with pytest.raises(RuntimeError):
+        await cog.play(GUILD_ID, OWNER_ID, stake=100, board=CLASSIC, turbo=True)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+
+
+async def test_la_rafaga_dibuja_el_ultimo_con_su_movimiento(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = make_view(cog, stake=10)
+    await view._burst(make_interaction())
+    assert len(cog.renderer.motions) == 1
+    assert isinstance(cog.renderer.motions[0], VolleyMotion)
+
+
 async def test_la_mitad_no_baja_del_minimo(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     view = make_view(cog, stake=15)
@@ -498,6 +553,7 @@ async def test_pachinko_con_mas_de_lo_que_tienes_avisa(tmp_path: Path) -> None:
 def test_estadisticas_de_un_rush() -> None:
     delta = pachinko_stats(
         RUSH,
+        motion=motion_for(RUSH),
         stake=100,
         won=1_200,
         turbo=False,
@@ -518,6 +574,7 @@ def test_estadisticas_de_un_rush() -> None:
 def test_estadisticas_de_una_tanda_en_blanco() -> None:
     delta = pachinko_stats(
         BLANK,
+        motion=motion_for(BLANK),
         stake=100,
         won=0,
         turbo=True,
@@ -529,59 +586,132 @@ def test_estadisticas_de_una_tanda_en_blanco() -> None:
     assert "pachinko_win_max" not in delta.peak
 
 
-def drop_where(board: Board, wanted) -> Ball:  # noqa: ANN001
-    """Una bola cuya caída de la biblioteca cumple `wanted` (fija rebotes y duración)."""
-    for pocket, falls in library(board).items():
-        for index, fall in enumerate(falls):
-            if wanted(fall):
-                return Ball((1,) * pocket + (0,) * (board.rows - pocket), index)
-    raise AssertionError("la biblioteca no tiene una caída así")
+def fake_motion(*falls: tuple[int, ...], pocket: int = 0) -> VolleyMotion:
+    """Movimiento de mentira para fijar cifras.
+
+    Una bola por `(fotogramas, rebotes, choques)`, con opcionalmente su bolsillo y los
+    fotogramas de retraso al final.
+    """
+    balls = []
+    for index, (frames, bounces, collisions, *extra) in enumerate(falls):
+        balls.append(
+            BallMotion(
+                pocket=extra[0] if extra else pocket,
+                start=Start(100.0, 0.0),
+                launch=index * 3,
+                points=((100.0, 170.0),) * frames,
+                landing=index * 3 + frames,
+                bounces=bounces,
+                collisions=collisions,
+                delay=extra[1] if len(extra) > 1 else 0,
+            )
+        )
+    return VolleyMotion(tuple(balls))
+
+
+WHEN = datetime(2026, 1, 1, 12, tzinfo=TIMEZONE)
+
+
+def stats_of(volley: Volley, motion: VolleyMotion):  # noqa: ANN201
+    return pachinko_stats(
+        volley, motion=motion, stake=100, won=0, turbo=False, session_volleys=1, when=WHEN
+    )
 
 
 def test_estadisticas_de_rebotes_y_duracion_de_una_tanda_fija() -> None:
-    """Tres bolas con caídas conocidas y siete más en el bolsillo 0, primera caída."""
-    clean = drop_where(SAKURA, lambda f: f.bounces <= PACHINKO_CLEAN_BOUNCES)
-    slow = drop_where(SAKURA, lambda f: f.frames >= PACHINKO_SLOW_FRAMES)
-    swift = drop_where(SAKURA, lambda f: f.frames <= PACHINKO_SWIFT_FRAMES)
-    balls = [clean, slow, swift] + [Ball((0,) * SAKURA.rows)] * 7
-    volley = build_volley(SAKURA, balls, lambda: MISS)
-    falls = [library(SAKURA)[ball.pocket][ball.trajectory] for ball in balls]
-    delta = pachinko_stats(
-        volley,
-        stake=100,
-        won=0,
-        turbo=False,
-        session_volleys=1,
-        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+    """Tres bolas con cifras conocidas (limpia, lenta y rápida) y siete normales."""
+    clean = (30, PACHINKO_CLEAN_BOUNCES, 0)
+    slow = (PACHINKO_SLOW_FRAMES + 1, 12, 0)
+    swift = (PACHINKO_SWIFT_FRAMES - 1, 9, 0)
+    motion = fake_motion(clean, slow, swift, *[(30, 11, 0)] * 7)
+    delta = stats_of(BLANK, motion)
+    assert delta.add["pachinko_bounces"] == PACHINKO_CLEAN_BOUNCES + 12 + 9 + 77
+    assert delta.peak["pachinko_bounce_volley_max"] == delta.add["pachinko_bounces"]
+    assert delta.peak["pachinko_bounce_max"] == 12
+    assert delta.add["pachinko_slow_balls"] == 1
+    assert delta.add["pachinko_swift_balls"] == 1
+    assert delta.add["pachinko_clean_balls"] == 1
+
+
+def test_las_cifras_de_la_duracion_se_cuentan_en_su_limite() -> None:
+    motion = fake_motion(
+        (PACHINKO_SLOW_FRAMES, 11, 0),
+        (PACHINKO_SLOW_FRAMES - 1, 11, 0),
+        (PACHINKO_SWIFT_FRAMES, 11, 0),
+        (PACHINKO_SWIFT_FRAMES + 1, 11, 0),
+        (30, PACHINKO_CLEAN_BOUNCES + 1, 0),
     )
-    total = sum(f.bounces for f in falls)
-    assert delta.add["pachinko_bounces"] == total
-    assert delta.peak["pachinko_bounce_volley_max"] == total
-    assert delta.peak["pachinko_bounce_max"] == max(f.bounces for f in falls)
-    assert delta.add["pachinko_slow_balls"] == sum(
-        1 for f in falls if f.frames >= PACHINKO_SLOW_FRAMES
+    delta = stats_of(BLANK, motion)
+    assert delta.add["pachinko_slow_balls"] == 1
+    assert delta.add["pachinko_swift_balls"] == 1
+    assert "pachinko_clean_balls" not in delta.add
+
+
+def test_estadisticas_de_choques_de_una_tanda_fija() -> None:
+    """Seis bolas chocan (cuatro choques) y dos de ellas acaban en las esquinas de Sakura."""
+    rows = SAKURA.rows
+    falls = [
+        (30, 11, 2), (30, 11, 2), (30, 11, 1), (30, 11, 1), (30, 11, 0), (30, 11, 0),
+        (30, 11, 1, 0), (30, 11, 1, rows), (30, 11, 0, 0, 6), (30, 11, 0, 3, 3),
+    ]  # fmt: skip
+    delta = stats_of(blank(SAKURA), fake_motion(*falls, pocket=3))
+    assert delta.add["pachinko_hits"] == 4  # cada choque cuenta una vez aunque lo sufran dos
+    assert delta.peak["pachinko_hits_max"] == 4
+    assert delta.peak["pachinko_hit_ball_max"] == 2
+    assert delta.peak["pachinko_balls_hit_max"] == 6
+    assert delta.add["pachinko_hit_corner"] == 2  # la de la esquina sin choque no cuenta
+    assert delta.add["pachinko_delayed"] == 2
+    assert "pachinko_no_hits" not in delta.add
+
+
+def test_una_tanda_sin_choques_cuenta_como_tranquila() -> None:
+    delta = stats_of(BLANK, fake_motion(*[(30, 11, 0)] * 10))
+    assert delta.add["pachinko_no_hits"] == 1
+    assert "pachinko_hits" not in delta.add
+    assert "pachinko_hit_corner" not in delta.add
+    assert delta.peak["pachinko_hits_max"] == 0
+
+
+def test_las_estadisticas_salen_del_movimiento_real_con_choques() -> None:
+    """Con la tanda de choques de `test_pachinko_motion`, los contadores son los del movimiento."""
+    volley = build_volley(
+        CLASSIC,
+        [
+            Ball((0, 1, 1, 0, 0, 0, 0, 0, 0, 0), 12),
+            Ball((0, 1, 1, 1, 1, 1, 0, 1, 0, 1), 7),
+            Ball((0, 1, 1, 1, 1, 0, 1, 0, 0, 1), 19),
+            Ball((1, 0, 0, 1, 0, 0, 1, 0, 0, 0), 17),
+            Ball((0, 1, 0, 0, 1, 1, 1, 1, 1, 0), 5),
+            Ball((0, 1, 1, 1, 0, 1, 0, 1, 1, 0), 16),
+            Ball((0, 1, 0, 0, 1, 1, 0, 1, 0, 1), 8),
+            Ball((1, 1, 1, 0, 1, 0, 0, 0, 0, 0), 9),
+            Ball((0, 0, 1, 1, 0, 1, 0, 0, 1, 1), 13),
+            Ball((1, 0, 0, 1, 0, 0, 0, 0, 1, 0), 16),
+        ],
+        lambda: MISS,
     )
-    assert delta.add["pachinko_swift_balls"] == sum(
-        1 for f in falls if f.frames <= PACHINKO_SWIFT_FRAMES
-    )
-    assert delta.add["pachinko_clean_balls"] == sum(
-        1 for f in falls if f.bounces <= PACHINKO_CLEAN_BOUNCES
-    )
-    assert delta.add["pachinko_clean_balls"] >= 1
-    assert delta.add["pachinko_slow_balls"] >= 1
-    assert delta.add["pachinko_swift_balls"] >= 1
+    motion = motion_for(volley)
+    delta = stats_of(volley, motion)
+    assert motion.collisions > 0
+    assert delta.add["pachinko_bounces"] == motion.bounces
+    assert delta.add["pachinko_hits"] == motion.collisions
+    assert delta.peak["pachinko_hits_max"] == motion.collisions
+    assert delta.peak["pachinko_hit_ball_max"] == max(b.collisions for b in motion.balls)
+    assert "pachinko_clean_volleys" not in delta.add
 
 
 def test_los_rebotes_no_dependen_de_lo_que_paga_la_tanda() -> None:
     """La caída solo se ve: con las mismas bolas, dos sorteos cuentan los mismos rebotes."""
     balls = [Ball((1,) * 5 + (0,) * 5, index) for index in range(10)]
     when = datetime(2026, 1, 1, 12, tzinfo=TIMEZONE)
+    miss_volley = build_volley(CLASSIC, balls, lambda: MISS)
+    rush_volley = build_volley(CLASSIC, balls, lambda: RUSH.draws[0])
     miss = pachinko_stats(
-        build_volley(CLASSIC, balls, lambda: MISS),
+        miss_volley, motion=motion_for(miss_volley),
         stake=100, won=0, turbo=False, session_volleys=1, when=when,
     )  # fmt: skip
     rush = pachinko_stats(
-        build_volley(CLASSIC, balls, lambda: RUSH.draws[0]),
+        rush_volley, motion=motion_for(rush_volley),
         stake=100, won=5_000, turbo=False, session_volleys=1, when=when,
     )  # fmt: skip
     assert miss.add["pachinko_bounces"] == rush.add["pachinko_bounces"]

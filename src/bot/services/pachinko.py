@@ -25,9 +25,11 @@ Cómo funciona una tanda (cada vez que se pulsa 🎯 Lanzar):
 
 Todo lo que paga se cuenta en bolas. Una bola vale `apuesta / BALLS`.
 
-La caída que se ve en el GIF no decide nada: sale de la biblioteca de
-`bot.services.pachinko_physics` (caídas con gravedad y rebotes simuladas de
-antemano), de las que cada bola usa una que acaba en el bolsillo ya sorteado.
+La caída que se ve en el GIF no decide nada: las bolas caen con gravedad,
+rebotes y choques entre sí (`bot.services.pachinko_physics`) y
+`bot.services.pachinko_motion` busca una tanda entera en la que cada una acaba
+en el bolsillo ya sorteado, apoyándose en una biblioteca de caídas simuladas de
+antemano.
 
 Hay cuatro tableros (`BOARDS`). Todos devuelven lo mismo de media, entre el
 94 y el 95 % (la ruleta americana, 94,7 %), y lo que cambia es el riesgo:
@@ -208,8 +210,9 @@ class Ball:
 
     Attributes:
         path: Un 0 (izquierda) o un 1 (derecha) por fila.
-        trajectory: Qué caída de la biblioteca de su bolsillo se ve
-            (`pachinko_physics.library`); solo afecta al dibujo, nunca al pago.
+        trajectory: Qué caída de la biblioteca de su bolsillo se prueba primero
+            como salida de la bola (`pachinko_motion.motion_for`: con choques, la
+            caída final puede ser otra); solo afecta al dibujo, nunca al pago.
     """
 
     path: tuple[int, ...]
@@ -376,8 +379,8 @@ class PachinkoMachine:
     Args:
         randbelow: Devuelve un entero en `[0, n)`; inyectable en pruebas. Decide
             todo lo que cuenta: tablero, rebotes y sorteo.
-        pick_trajectory: Lo mismo, solo para elegir la caída que se ve de cada
-            bola. Va aparte para que forzar el azar del juego en las pruebas no
+        pick_trajectory: Lo mismo, solo para elegir la caída que se prueba
+            primero para cada bola. Va aparte para que forzar el azar del juego en las pruebas no
             dependa de cuántas caídas hay y para que el dinero no la use nunca.
     """
 

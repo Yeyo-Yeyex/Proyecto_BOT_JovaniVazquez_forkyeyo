@@ -15,10 +15,12 @@ Botones:
   (cada tanda en uno distinto). Todos devuelven lo mismo de media; cambia el
   riesgo. También se elige al abrir: `.pachinko 500 oni`.
 
-La animación es un GIF que se monta en cada tanda (~0,8 s de CPU fuera del
-event loop y 130-370 KB). Al acabar se cambia por el PNG final, como en la
-tragaperras. El turbo y el tablero se recuerdan por miembro en memoria hasta
-reiniciar.
+Las bolas chocan entre sí y aun así cada una acaba donde dijo el sorteo
+(`bot.services.pachinko_motion`, ~0,1 s de CPU por tanda, también en turbo y en
+la Ráfaga porque los logros cuentan los choques). La animación es un GIF que se
+monta en cada tanda (~0,8 s de CPU fuera del event loop y 130-370 KB). Al acabar
+se cambia por el PNG final, como en la tragaperras. El turbo y el tablero se
+recuerdan por miembro en memoria hasta reiniciar.
 
 Si `CASINO_CHANNEL_IDS` está configurado, la máquina solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes, insertar
@@ -72,6 +74,7 @@ from bot.services.pachinko import (
     payout,
     paytable_lines,
 )
+from bot.services.pachinko_motion import VolleyMotion, motion_for
 from bot.services.pachinko_render import PachinkoMedia, PachinkoRenderer
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
@@ -137,6 +140,8 @@ class PachinkoPlay:
 
     Attributes:
         won: Lo que ha devuelto la tanda (apuesta incluida).
+        motion: Cómo se mueven las bolas (con sus choques); lo usan el dibujo
+            y los logros, también en turbo y en la Ráfaga.
         session_volleys: Tandas en esta máquina, contando esta.
     """
 
@@ -146,6 +151,7 @@ class PachinkoPlay:
     settlement: BetSettlement
     media: PachinkoMedia
     session_volleys: int
+    motion: VolleyMotion
 
     @property
     def net(self) -> int:
@@ -642,6 +648,7 @@ class PachinkoView(discord.ui.View):
         """Logros de la tanda, después de enseñarla (antes destriparía el resultado)."""
         delta = pachinko_stats(
             play.volley,
+            motion=play.motion,
             stake=play.stake,
             won=play.won,
             turbo=not play.media.gif,
@@ -707,7 +714,7 @@ class PachinkoView(discord.ui.View):
                 )
                 return
             last = plays[-1]
-            png = await asyncio.to_thread(self.cog.renderer.still_png, last.volley)
+            png = await asyncio.to_thread(self.cog.renderer.still_png, last.volley, last.motion)
             text = burst_text(plays, stopped)
             if note := tax_note(plays):
                 text += f"\n{note}"
@@ -886,11 +893,17 @@ class Pachinko(commands.Cog, name="Pachinko"):
             raise ValueError(f"La tanda mínima es {MIN_STAKE}.")
         volley = self.machine.launch(board)
         won = payout(volley, stake)
+        # El movimiento (choques incluidos) hace falta para los logros aunque no se
+        # dibuje (turbo, Ráfaga) y se calcula antes de cobrar: si fallara, no se ha
+        # movido dinero. Es CPU (decenas de ms), así que fuera del event loop.
+        motion = await asyncio.to_thread(motion_for, volley)
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=stake, payout=won
         )
         if render:
-            media = await asyncio.to_thread(self.renderer.render, volley, turbo=turbo)
+            media = await asyncio.to_thread(
+                self.renderer.render, volley, turbo=turbo, motion=motion
+            )
         else:
             media = PachinkoMedia(gif=b"", png=b"", seconds=0.0)
         return PachinkoPlay(
@@ -900,6 +913,7 @@ class Pachinko(commands.Cog, name="Pachinko"):
             settlement=settlement,
             media=media,
             session_volleys=session_volleys,
+            motion=motion,
         )
 
     async def shout(self, play: PachinkoPlay, user: discord.abc.User, channel: object) -> None:

@@ -36,6 +36,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from bot.services.autoplay import StopReason
 from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
@@ -70,7 +71,7 @@ from bot.services.mines import Status as MinesStatus
 from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
-from bot.services.pachinko_physics import library as pachinko_library
+from bot.services.pachinko_motion import VolleyMotion as PachinkoMotion
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.porras import MIN_BET as PORRA_MIN_BET
@@ -1987,8 +1988,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "turbo_1k", "Turbodiésel", "Juega 1.000 tiradas en modo turbo.", R),
     ])  # fmt: skip
     a += _tiers("slots", "slots_auto", [
-        (1, "auto_1", "Piloto automático", "Usa Auto ×10.", C),
-        (50, "auto_50", "Ni lo miro", "Usa Auto ×10 50 veces.", R),
+        (1, "auto_1", "Piloto automático", "Usa Ráfaga ×10.", C),
+        (50, "auto_50", "Ni lo miro", "Usa Ráfaga ×10 50 veces.", R),
     ])  # fmt: skip
     a += _tiers("slots", "slots_session_max", [
         (100, "session_100", "Una más y lo dejo", "Juega 100 tiradas sin cerrar la máquina.", C,
@@ -2032,7 +2033,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10_000, "turbo_10k", "Sin animaciones, sin alma", "Juega 10.000 tiradas en turbo.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_auto", [
-        (500, "auto_500", "Manos libres", "Usa Auto ×10 500 veces.", E),
+        (500, "auto_500", "Manos libres", "Usa Ráfaga ×10 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_ldw", [
         (5_000, "ldw_5k", "Pierdo ganando", "Cobra 5.000 premios más pequeños que tu apuesta.", L),
@@ -2040,6 +2041,75 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_near_miss", [
         (500, "nearmiss_500", "Casi, casi, casi",
          "Quédate 500 veces a un símbolo del premio gordo.", M, True),
+    ])  # fmt: skip
+
+    # ▶️ Auto con animación: sesiones de hasta 25 tiradas, una a una. Las rarezas salen de
+    # simular sesiones con las reglas reales (apuesta de 100 Y$, 5 sesiones al día): el 31 %
+    # llega a las 25, el 65 % topa con el límite de pérdidas, el 3,7 % para por un premio
+    # gordo (jackpot o ×50) y el bote solo en 1 de cada ~600 sesiones.
+    a += _tiers("slots", "slots_autoplay_spins", [
+        (1, "autoplay_1", "Gobierno en funciones",
+         "Juega una tirada con ▶️ Auto: la máquina gobierna sola.", C),
+        (100, "autoplay_100", "Decreto ley", "Juega 100 tiradas con ▶️ Auto, sin consultar.", C),
+        (1_000, "autoplay_1k", "Falcon en piloto automático",
+         "Juega 1.000 tiradas con ▶️ Auto.", R),
+        (10_000, "autoplay_10k", "Legislatura infinita", "Juega 10.000 tiradas con ▶️ Auto.", L),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_sessions", [
+        (10, "autoplay_ses_10", "Consejo de Ministros", "Empieza 10 sesiones de ▶️ Auto.", C),
+        (100, "autoplay_ses_100", "Mayoría absoluta", "Empieza 100 sesiones de ▶️ Auto.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_full", [
+        (1, "autoplay_full_1", "Agotar la legislatura",
+         "Completa una sesión de ▶️ Auto hasta el tope de 25 tiradas.", C),
+        (10, "autoplay_full_10", "Sin moción de censura",
+         "Completa 10 sesiones de ▶️ Auto hasta el tope.", R),
+        (50, "autoplay_full_50", "Cuatro años sin dimitir",
+         "Completa 50 sesiones de ▶️ Auto hasta el tope.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_loss_limit", [
+        (1, "autoplay_loss_1", "Techo de gasto",
+         "Que ▶️ Auto pare al perder 10 veces la apuesta.", C),
+        (10, "autoplay_loss_10", "Regla de gasto",
+         "Que ▶️ Auto pare por el límite de pérdidas 10 veces.", C),
+        (100, "autoplay_loss_100", "Recortes por decreto",
+         "Que ▶️ Auto pare por el límite de pérdidas 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_bigwin", [
+        (1, "autoplay_big_1", "Aterrizaje forzoso",
+         "Que ▶️ Auto pare porque ha salido un premio gordo.", R),
+        (10, "autoplay_big_10", "Gordo de Navidad en diferido",
+         "Que ▶️ Auto pare por un premio gordo 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_jackpot", [
+        (1, "autoplay_jackpot", "El Gordo con el piloto puesto",
+         "Llévate el bote mientras ▶️ Auto juega por ti.", L, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_broke", [
+        (1, "autoplay_broke", "Prórroga de los presupuestos",
+         "Que ▶️ Auto pare porque no te llega para otra tirada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_manual", [
+        (1, "autoplay_manual_1", "Cese en funciones", "Para ▶️ Auto a mano con ⏹️ Parar.", C),
+        (10, "autoplay_manual_10", "Cuestión de confianza", "Para ▶️ Auto a mano 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_quick_quit", [
+        (1, "autoplay_quit", "Dimisión fulminante",
+         "Para ▶️ Auto después de una sola tirada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_exit_ahead", [
+        (1, "autoplay_ahead_1", "Dimitir a tiempo",
+         "Para ▶️ Auto a mano con 10 tiradas o más y la sesión en positivo.", C),
+        (10, "autoplay_ahead_10", "Retirada con honores",
+         "Retírate a tiempo, con ganancias, 10 veces. Sin puertas giratorias.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_free", [
+        (10, "autoplay_free_10", "Barra libre automática",
+         "Juega 10 giros gratis con ▶️ Auto.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_autoplay_even", [
+        (1, "autoplay_even", "Déficit cero",
+         "Termina una sesión completa de ▶️ Auto con el neto en 0 Y$ exactos.", E, True),
     ])  # fmt: skip
 
     # 🌋 Botes (de momento, volcan) ---------------------------------------------------------
@@ -2726,7 +2796,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20, "pachi_hop_20", "Moción de censura",
          "Haz que una bola rebote 20 veces antes de caer en su bolsillo.", C),
         (21, "pachi_hop_21", "Récord del Congreso",
-         "Haz que una bola rebote 21 veces, lo máximo que da un tablero.", C, True),
+         "Haz que una bola rebote 21 veces: casi lo máximo que da un tablero.", C, True),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_bounce_volley_max", [
         (150, "pachi_tanda_150", "Sesión de control",
@@ -2764,6 +2834,75 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mira 25 bolas bajar rebotando 5 veces o menos.", C),
         (250, "pachi_clean_250", "Disco duro formateado",
          "Mira 250 bolas bajar rebotando 5 veces o menos.", E, True),
+    ])  # fmt: skip
+
+    # 🌸 Pachinko: choques entre bolas (`pachinko_motion`) ----------------------------------
+    # Rarezas: meta / (60 tandas al día × lo que da una tanda), con las probabilidades
+    # medidas simulando 42.000 tandas con el código real (0,62 choques por tanda, el 61 %
+    # sin ninguno; ver `docs/auditoria-logros.md`, «Pachinko: los choques»).
+    a += _tiers("pachinko", "pachinko_hits", [
+        (1, "pachi_hit_1", "Cara a cara en el Congreso",
+         "Haz que dos bolas choquen entre sí por primera vez.", C),
+        (100, "pachi_hit_100", "Rifirrafe de cafetería", "Provoca 100 choques entre bolas.", C),
+        (500, "pachi_hit_500", "Junta de vecinos",
+         "Provoca 500 choques entre bolas: siempre las mismas de siempre.", R),
+        (2_000, "pachi_hit_2k", "Cacerolada en Ferraz", "Provoca 2.000 choques entre bolas.", E),
+        (5_000, "pachi_hit_5k", "Investidura fallida",
+         "Provoca 5.000 choques entre bolas sin que se pongan de acuerdo.", L),
+        (20_000, "pachi_hit_20k", "Colisionador de hadrones",
+         "Provoca 20.000 choques entre bolas.", M, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_hits_max", [
+        (3, "pachi_hits_3", "Empujones en el Metro",
+         "Consigue 3 choques entre bolas en una sola tanda.", C),
+        (5, "pachi_hits_5", "Manifestación en Colón",
+         "Consigue 5 choques entre bolas en una sola tanda.", C),
+        (6, "pachi_hits_6", "Pelea en el hemiciclo",
+         "Consigue 6 choques entre bolas en una sola tanda.", R),
+        (8, "pachi_hits_8", "Choque de trenes",
+         "Consigue 8 choques entre bolas en una sola tanda.", E),
+        (10, "pachi_hits_10", "Colisión en cadena en la A-6",
+         "Consigue 10 choques entre bolas en una sola tanda.", L, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_hit_ball_max", [
+        (2, "pachi_ball_2", "Doble tropiezo",
+         "Haz que una misma bola choque 2 veces con otras en su caída.", C),
+        (3, "pachi_ball_3", "Carambola a tres bandas",
+         "Haz que una misma bola choque 3 veces con otras en su caída.", C),
+        (5, "pachi_ball_5", "Partida de billar en el bar de Paco",
+         "Haz que una misma bola choque 5 veces con otras en su caída.", R),
+        (7, "pachi_ball_7", "Tertulia de Telecinco",
+         "Haz que una misma bola choque 7 veces: nadie deja hablar a nadie.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_balls_hit_max", [
+        (5, "pachi_dominos_5", "Efecto dominó",
+         "Haz que 5 bolas distintas choquen con otra en una misma tanda.", C),
+        (7, "pachi_dominos_7", "Coalición de siete partidos",
+         "Haz que 7 bolas distintas choquen con otra en una misma tanda.", E),
+        (8, "pachi_dominos_8", "Todos contra todos",
+         "Haz que 8 de las 10 bolas choquen con otra en una misma tanda.", L, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_hit_corner", [
+        (1, "pachi_waterloo", "Fuga a Waterloo",
+         "Haz que una bola choque con otra y salga despedida a un bolsillo de esquina.", E, True),
+        (5, "pachi_andorra", "Cuenta en Andorra",
+         "Haz que 5 bolas acaben en una esquina después de chocar con otra.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_no_hits", [
+        (1, "pachi_calm_1", "Distancia de seguridad",
+         "Lanza una tanda en la que ninguna bola choque con otra.", C),
+        (100, "pachi_calm_100", "Aforo limitado",
+         "Lanza 100 tandas sin ningún choque entre bolas.", C),
+        (1_000, "pachi_calm_1k", "Burbuja de convivientes",
+         "Lanza 1.000 tandas sin ningún choque entre bolas.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_delayed", [
+        (1, "pachi_wait_1", "Cita previa en Hacienda",
+         "Mira una bola esperar turno para salir: no había hueco libre.", C),
+        (100, "pachi_wait_100", "Lista de espera de la Sanidad",
+         "Mira 100 bolas esperar turno para salir.", E),
+        (1_000, "pachi_wait_1k", "Plaza de funcionario",
+         "Mira 1.000 bolas esperar turno para salir.", L),
     ])  # fmt: skip
 
     # 🏦 Banco: Bizum ----------------------------------------------------------------------
@@ -6874,6 +7013,7 @@ def slots_stats(
     turbo: bool,
     session_spins: int,
     when: datetime,
+    autoplay: bool = False,
 ) -> StatDelta:
     """Contadores de una tirada de tragaperras (sin lo común del casino).
 
@@ -6885,6 +7025,7 @@ def slots_stats(
         hot: Si la máquina estaba caliente.
         session_spins: Tiradas en esta máquina, contando esta.
         when: Hora local de la tirada.
+        autoplay: Si la tirada se jugó con ▶️ Auto (con animación, una a una).
     """
     delta = StatDelta(add={"slots_spins": 1}, peak={"slots_session_max": session_spins})
     add = delta.add
@@ -6916,6 +7057,50 @@ def slots_stats(
     bump("slots_turbo", turbo)
     bump("slots_pot_fed", amount=0 if free else slots_pot_share(stake))
     bump("slots_night", 3 <= when.hour < 6)
+    bump("slots_autoplay_spins", autoplay)
+    bump("slots_autoplay_free", autoplay and free)
+    bump("slots_autoplay_jackpot", autoplay and jackpot > 0)
+    return delta
+
+
+#: Tiradas mínimas de una sesión de Auto para que pararla a mano en positivo
+#: cuente como retirarse a tiempo (con menos, es suerte de una racha corta).
+MANUAL_EXIT_MIN_SPINS = 10
+
+
+def slots_autoplay_stats(*, spins: int, net: int, reason: StopReason) -> StatDelta:
+    """Contadores de una sesión de ▶️ Auto de la tragaperras, al terminar.
+
+    Las tiradas ya se contaron una a una en `slots_stats`; aquí solo cuenta la
+    sesión y cómo acabó. Una sesión sin ninguna tirada (no llegaba el saldo) no
+    cuenta.
+
+    Args:
+        spins: Tiradas jugadas en la sesión.
+        net: Neto de la sesión (ganado menos apostado).
+        reason: Por qué paró.
+    """
+    delta = StatDelta()
+    if spins <= 0:
+        return delta
+    add = delta.add
+    add["slots_autoplay_sessions"] = 1
+    if reason is StopReason.MAX_SPINS:
+        add["slots_autoplay_full"] = 1
+        if net == 0:
+            add["slots_autoplay_even"] = 1
+    elif reason is StopReason.LOSS_LIMIT:
+        add["slots_autoplay_loss_limit"] = 1
+    elif reason is StopReason.BIG_PRIZE:
+        add["slots_autoplay_bigwin"] = 1
+    elif reason is StopReason.NO_FUNDS:
+        add["slots_autoplay_broke"] = 1
+    elif reason is StopReason.MANUAL:
+        add["slots_autoplay_manual"] = 1
+        if spins == 1:
+            add["slots_autoplay_quick_quit"] = 1
+        if net > 0 and spins >= MANUAL_EXIT_MIN_SPINS:
+            add["slots_autoplay_exit_ahead"] = 1
     return delta
 
 
@@ -7278,6 +7463,7 @@ PACHINKO_CLEAN_BOUNCES = 5
 def pachinko_stats(
     volley: PachinkoVolley,
     *,
+    motion: PachinkoMotion,
     stake: int,
     won: int,
     turbo: bool,
@@ -7287,15 +7473,16 @@ def pachinko_stats(
     """Contadores de una tanda de pachinko (sin lo común del casino).
 
     Args:
+        motion: Cómo se han movido las bolas (`pachinko_motion.motion_for`, con
+            sus choques), se dibuje la tanda o no.
         stake: Apuesta de la tanda.
         won: Lo que ha devuelto (apuesta incluida).
         turbo: Si se jugó sin animación (turbo o Ráfaga).
         session_volleys: Tandas en esta máquina, contando esta.
         when: Hora local de la tanda.
 
-    Las estadísticas de rebotes y de duración salen de las caídas que se ven
-    (`pachinko_physics.library`), no de lo que paga la máquina, así que no
-    tocan el dinero.
+    Las estadísticas de rebotes, de duración y de choques salen del movimiento
+    que se ve, no de lo que paga la máquina, así que no tocan el dinero.
     """
     delta = StatDelta(add={"pachinko_volleys": 1}, peak={"pachinko_session_max": session_volleys})
     add = delta.add
@@ -7324,8 +7511,7 @@ def pachinko_stats(
     key = volley.board.key
     bump(f"pachinko_board_{key}")
     bump(f"pachinko_atari_{key}", amount=sum(1 for d in volley.draws if d.atari))
-    falls = pachinko_library(volley.board)
-    drops = [falls[ball.pocket][ball.trajectory] for ball in volley.balls]
+    drops = motion.balls
     bounces = [drop.bounces for drop in drops]
     bump("pachinko_bounces", amount=sum(bounces))
     if bounces:
@@ -7337,6 +7523,23 @@ def pachinko_stats(
         "pachinko_clean_balls",
         amount=sum(1 for d in drops if d.bounces <= PACHINKO_CLEAN_BOUNCES),
     )
+    # Choques entre bolas: salen del movimiento real, no del sorteo. Un choque cuenta
+    # una vez en la tanda (`VolleyMotion.collisions`) y una vez por cada bola que lo
+    # sufre (`BallMotion.collisions`).
+    hits = [drop.collisions for drop in drops]
+    bump("pachinko_hits", amount=motion.collisions)
+    bump("pachinko_no_hits", not motion.collisions)
+    if hits:
+        delta.peak["pachinko_hits_max"] = motion.collisions
+        delta.peak["pachinko_hit_ball_max"] = max(hits)
+    corners = (0, volley.board.rows)
+    bump(
+        "pachinko_hit_corner",
+        amount=sum(1 for drop in drops if drop.collisions and drop.pocket in corners),
+    )
+    bump("pachinko_delayed", amount=motion.delayed)
+    if hits:
+        delta.peak["pachinko_balls_hit_max"] = sum(1 for count in hits if count)
     return delta
 
 

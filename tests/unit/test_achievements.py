@@ -70,9 +70,11 @@ from bot.services.achievements import (
     newly_unlocked,
     progress,
     roulette_stats,
+    slots_autoplay_stats,
     slots_stats,
     total_reward,
 )
+from bot.services.autoplay import StopReason
 from bot.services.beernight import Reason as BeerReason
 from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
@@ -176,13 +178,17 @@ PRODUCED_STATS = {
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
     "casino_all_in_wins", "casino_broke", "casino_bet_666", "casino_bet_42",
     "casino_win_streak_max", "casino_loss_streak_max", "tax_refunds",
-    # Tragaperras (cogs/slots.py: slots_stats y el botón de Auto)
+    # Tragaperras (cogs/slots.py: slots_stats, slots_autoplay_stats y el botón de Ráfaga)
     "slots_spins", "slots_wins", "slots_jackpots", "slots_jackpot_max", "slots_win_max",
     *(f"slots_three_{symbol}" for symbol in "CLGBD7"),
     "slots_ldw", "slots_near_miss", "slots_anticipation", "slots_scatter_tease",
     "slots_free_triggers", "slots_free_spins", "slots_hot_spins", "slots_hot_big",
     "slots_wild_wins", "slots_turbo", "slots_auto", "slots_session_max", "slots_pot_fed",
     "slots_night",
+    "slots_autoplay_spins", "slots_autoplay_sessions", "slots_autoplay_full",
+    "slots_autoplay_loss_limit", "slots_autoplay_bigwin", "slots_autoplay_jackpot",
+    "slots_autoplay_broke", "slots_autoplay_manual", "slots_autoplay_quick_quit",
+    "slots_autoplay_exit_ahead", "slots_autoplay_free", "slots_autoplay_even",
     # Botes (cogs/hold_win.py: hold_win_stats, hold_win_bonus_stats y el botón de Auto)
     "botes_spins", "botes_spins_volcan",
     "botes_collects", "botes_double_collect", "botes_near_miss", "botes_ways_5",
@@ -201,6 +207,8 @@ PRODUCED_STATS = {
     "pachinko_win_max", "pachinko_session_max", "pachinko_burst", "pachinko_turbo",
     "pachinko_night", "pachinko_bounces", "pachinko_bounce_max", "pachinko_bounce_volley_max",
     "pachinko_slow_balls", "pachinko_swift_balls", "pachinko_clean_balls",
+    "pachinko_hits", "pachinko_hits_max", "pachinko_hit_ball_max", "pachinko_balls_hit_max",
+    "pachinko_hit_corner", "pachinko_no_hits", "pachinko_delayed",
     *(f"pachinko_board_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
     *(f"pachinko_atari_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
@@ -1056,3 +1064,73 @@ def test_giro_gratis_no_aporta_al_bote_y_cualquier_premio_es_ganar() -> None:
     assert delta.add["slots_wins"] == 1
     assert delta.add["slots_free_spins"] == 1
     assert "slots_pot_fed" not in delta.add
+
+
+def _autoplay_spin_delta(*, autoplay: bool, free: bool = False, jackpot: int = 0) -> StatDelta:
+    spin = spin_at(_slots_stops(lambda s: s.is_jackpot if jackpot else s.kind == Kind.CHERRY))
+    return slots_stats(
+        spin,
+        stake=100,
+        payout=0,
+        jackpot=jackpot,
+        free=free,
+        hot=False,
+        turbo=False,
+        session_spins=1,
+        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+        autoplay=autoplay,
+    )
+
+
+def test_cada_tirada_de_auto_cuenta_y_la_de_tirar_no() -> None:
+    assert _autoplay_spin_delta(autoplay=True).add["slots_autoplay_spins"] == 1
+    assert "slots_autoplay_spins" not in _autoplay_spin_delta(autoplay=False).add
+
+
+def test_auto_cuenta_sus_giros_gratis_y_su_bote() -> None:
+    delta = _autoplay_spin_delta(autoplay=True, free=True)
+    assert delta.add["slots_autoplay_free"] == 1
+    delta = _autoplay_spin_delta(autoplay=True, jackpot=5_000)
+    assert delta.add["slots_autoplay_jackpot"] == 1
+    plain = _autoplay_spin_delta(autoplay=False, free=True, jackpot=5_000)
+    assert not {"slots_autoplay_free", "slots_autoplay_jackpot"} & plain.add.keys()
+
+
+@pytest.mark.parametrize(
+    ("reason", "net", "spins", "expected"),
+    [
+        (StopReason.MAX_SPINS, -300, 25, {"slots_autoplay_full"}),
+        (StopReason.MAX_SPINS, 0, 25, {"slots_autoplay_full", "slots_autoplay_even"}),
+        (StopReason.LOSS_LIMIT, -1_000, 10, {"slots_autoplay_loss_limit"}),
+        (StopReason.BIG_PRIZE, 5_000, 4, {"slots_autoplay_bigwin"}),
+        (StopReason.NO_FUNDS, -900, 9, {"slots_autoplay_broke"}),
+        (StopReason.MANUAL, -50, 12, {"slots_autoplay_manual"}),
+        (StopReason.MANUAL, 50, 9, {"slots_autoplay_manual"}),
+        (
+            StopReason.MANUAL,
+            50,
+            10,
+            {"slots_autoplay_manual", "slots_autoplay_exit_ahead"},
+        ),
+        (StopReason.MANUAL, -50, 1, {"slots_autoplay_manual", "slots_autoplay_quick_quit"}),
+        (StopReason.CLOSED, -50, 3, set()),
+        (StopReason.ERROR, -50, 3, set()),
+    ],
+)
+def test_sesion_de_auto_cuenta_segun_como_acaba(
+    reason: StopReason, net: int, spins: int, expected: set[str]
+) -> None:
+    delta = slots_autoplay_stats(spins=spins, net=net, reason=reason)
+    assert set(delta.add) == {"slots_autoplay_sessions", *expected}
+
+
+def test_una_sesion_de_auto_sin_tiradas_no_cuenta() -> None:
+    assert slots_autoplay_stats(spins=0, net=0, reason=StopReason.NO_FUNDS).add == {}
+
+
+def test_los_logros_de_auto_se_desbloquean_con_sus_contadores() -> None:
+    assert {"autoplay_1", "autoplay_ses_10"} <= set(
+        newly_unlocked({"slots_autoplay_spins": 1, "slots_autoplay_sessions": 10}, [])
+    )
+    assert "autoplay_loss_1" in newly_unlocked({"slots_autoplay_loss_limit": 1}, [])
+    assert "autoplay_jackpot" in newly_unlocked({"slots_autoplay_jackpot": 1}, [])

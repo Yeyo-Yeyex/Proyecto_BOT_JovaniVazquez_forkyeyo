@@ -20,10 +20,12 @@ from bot.services.pachinko_physics import (
     MIN_SECONDS,
     PIN_R,
     TRAJECTORIES_PER_POCKET,
+    Body,
     Geometry,
     Segment,
     Start,
     Trajectory,
+    advance,
     bake_library,
     decode_library,
     encode_library,
@@ -151,6 +153,96 @@ def test_los_puntos_estan_redondeados_a_una_decima() -> None:
     for x, y in fall.points:
         assert round(x * 10) == pytest.approx(x * 10)
         assert round(y * 10) == pytest.approx(y * 10)
+
+
+# -- Varias bolas a la vez ------------------------------------------------------------
+
+
+def free_field(monkeypatch: pytest.MonkeyPatch) -> Geometry:
+    """Campo sin clavos y sin duración mínima: solo se ve lo que hacen las bolas entre sí."""
+    monkeypatch.setattr(physics, "MIN_SECONDS", 0.0)
+    return open_field()
+
+
+@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
+def test_una_bola_sola_cae_exactamente_como_en_la_biblioteca(board: Board) -> None:
+    """Sin otra bola no hay choques: `advance` repite la cuenta de `simulate` bit a bit.
+
+    Es lo que garantiza que una bola que sale cuando no queda ninguna en el aire
+    (el peor caso de `pachinko_motion`) cae igual que su caída de la biblioteca.
+    """
+    geometry = geometry_for(board)
+    for pocket, items in library(board).items():
+        for saved in items:
+            (entered,) = advance(geometry, [Body.spawn(0, pocket, saved.start, 0)], 0) or [None]
+            assert entered is not None
+            assert tuple(entered.points) == saved.points
+            assert entered.bounces == saved.bounces
+            assert entered.hits == 0
+
+
+def test_dos_bolas_que_se_acercan_chocan_y_se_reparten_el_impulso(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    geometry = free_field(monkeypatch)
+    left = Body.spawn(0, geometry.pocket_at(126.0), Start(166.0, 100.0), 0)
+    right = Body.spawn(1, geometry.pocket_at(214.0), Start(174.0, -100.0), 0)
+    entered = advance(geometry, [left, right], 0)
+    assert entered is not None and len(entered) == 2
+    assert left.hits == right.hits == 1
+    # Misma masa y acercamiento de 200 px/s: salen con el 80 % (restitución 0,8) en
+    # sentido contrario, simétricas respecto al punto de choque.
+    assert left.points[-1][0] < 166.0 and right.points[-1][0] > 174.0
+    assert (left.points[-1][0] + right.points[-1][0]) / 2 == pytest.approx(170.0, abs=0.2)
+    # Cada una sale a 200 × 0,8 / 2 = 80 px/s hacia su lado durante lo que dura la caída libre.
+    fall_seconds = math.sqrt(2 * (geometry.end_y - ENTRY_Y) / physics.GRAVITY)
+    assert left.points[-1][0] == pytest.approx(166.0 - 80.0 * fall_seconds, abs=2.0)
+
+
+def test_dos_bolas_lejanas_no_chocan(monkeypatch: pytest.MonkeyPatch) -> None:
+    geometry = free_field(monkeypatch)
+    a = Body.spawn(0, geometry.pocket_at(166.0), Start(166.0, 0.0), 0)
+    b = Body.spawn(1, geometry.pocket_at(240.0), Start(240.0, 0.0), 0)
+    assert advance(geometry, [a, b], 0) is not None
+    assert a.hits == b.hits == 0
+    assert a.points[-1][0] == 166.0 and b.points[-1][0] == 240.0
+
+
+def test_apoyarse_despacio_una_bola_en_otra_no_cuenta_como_choque(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Se separan igual, pero un roce a menos de `BALL_HIT_MIN_SPEED` no suma."""
+    geometry = free_field(monkeypatch)
+    a = Body.spawn(0, geometry.pocket_at(166.0), Start(166.0, 10.0), 0)
+    b = Body.spawn(1, geometry.pocket_at(174.0), Start(174.0, -10.0), 0)
+    assert advance(geometry, [a, b], 0) is not None
+    assert a.hits == b.hits == 0
+    assert a.points[-1][0] < b.points[-1][0]
+
+
+def test_el_sistema_se_descarta_si_una_bola_cae_en_otro_bolsillo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    geometry = free_field(monkeypatch)
+    wrong = Body.spawn(0, geometry.pocket_at(166.0) + 1, Start(166.0, 0.0), 0)
+    assert advance(geometry, [wrong], 0) is None
+
+
+def test_se_puede_parar_a_mitad_para_sacar_una_instantanea(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parar y seguir es lo mismo que correr de un tirón (la simulación es determinista)."""
+    geometry = free_field(monkeypatch)
+    start = Start(120.0, 40.0)
+    target = geometry.pocket_at(120.0 + 40.0 * 0.5)
+    whole = Body.spawn(0, target, start, 0)
+    advance(geometry, [whole], 0)
+    body = Body.spawn(0, target, start, 0)
+    halves = [body]
+    assert advance(geometry, halves, 0, stop=100) == []
+    assert halves == [body] and body.y < geometry.end_y
+    advance(geometry, halves, 100)
+    assert body.points == whole.points
 
 
 # -- Biblioteca ---------------------------------------------------------------------

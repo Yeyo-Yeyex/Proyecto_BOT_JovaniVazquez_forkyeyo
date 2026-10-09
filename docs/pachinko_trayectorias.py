@@ -14,8 +14,10 @@ Efectos: sobrescribe `src/bot/assets/pachinko/trayectorias.json`. Para cada
 tablero y cada bolsillo guarda `TRAJECTORIES_PER_POCKET` caídas: bolas
 simuladas de verdad (gravedad, rebotes en clavos y paredes) que acaban en ese
 bolsillo, con su condición inicial y la posición en cada fotograma del GIF.
-En cada tanda, el bolsillo lo sortea `bot.services.pachinko` y cada bola usa una
-de estas caídas; el pago no depende de ellas.
+En cada tanda, el bolsillo lo sortea `bot.services.pachinko` y
+`bot.services.pachinko_motion` prueba como salida de cada bola las de su
+bolsillo (con las bolas chocando entre sí, la caída final puede ser otra, pero
+acaba en el mismo bolsillo); el pago no depende de ellas.
 
 Hay que volver a ejecutarlo siempre que cambie la geometría (clavos, paredes,
 bolsillos, adornos) o una constante física: la prueba

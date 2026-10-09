@@ -309,8 +309,11 @@ python -m bot
 - **Tragaperras** (`/tragas`, `.tragas [cantidad]`): una máquina de 3 rodillos
   con botones que solo usa quien la abre. Paga la fila del medio; las filas
   de arriba y abajo se ven para que se note cuándo has estado cerca.
-  Botones: 🎰 Tirar, 🔁 Auto ×10 (diez tiradas con un solo resumen),
-  ⚡ Turbo (sin animación), ½ / ×2 / 💰 All-in y 📋 Premios. Premios:
+  Botones: 🎰 Tirar, 🔁 Ráfaga ×10 (diez tiradas sin animación y con un solo
+  resumen), ▶️ Auto (tiradas encadenadas, cada una con su animación; el botón
+  pasa a ser ⏹️ Parar y para solo al llegar a 25 tiradas, con un premio gordo,
+  sin saldo o al perder 10 veces la apuesta), ⚡ Turbo (sin animación),
+  ½ / ×2 / 💰 All-in y 📋 Premios. Premios:
   🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🃏 comodín
   y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 3 % de
   cada apuesta y vuelve a 5.000 Y$ al vaciarse. Tres 🎟️ en cualquier fila dan
@@ -393,10 +396,11 @@ python -m bot
   El mueble, los clavos, los bolsillos, la bola y las bombillas se pintan con canvas una sola vez y se guardan como PNG
   (`python docs/pachinko_piezas.py` los regenera); el bot solo los pega, sin abrir ningún navegador.
   Los números salen de fracciones exactas en las pruebas. Las bolas caen con
-  física real (gravedad y rebotes en clavos y paredes) calculada de antemano:
-  el bolsillo de cada una lo sortea la máquina y la caída que se ve es una
-  simulación guardada que acaba justo ahí, así que no cambia lo que paga. El
-  GIF (190-390 KB, ~0,2 s de CPU) tiene
+  física real (gravedad y rebotes en clavos y paredes) y **chocan entre sí**,
+  y aun así cada una acaba donde dijo el sorteo: el bolsillo lo decide la
+  máquina y la física obedece (se busca una tanda en la que las diez, chocando
+  de verdad, acaben cada una en el suyo, ~75 ms de CPU), así que no cambia lo
+  que paga. El GIF (190-390 KB, ~0,2 s de CPU) tiene
   bombillas que persiguen, adornos que se mueven (molinillos, flores,
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
@@ -431,7 +435,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.830 logros en 39 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.904 logros en 39 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -744,7 +748,7 @@ src/bot/
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
 │   ├── blackjack.py     # Blackjack con botones (bj)
-│   ├── slots.py         # Tragaperras con botones, Auto, turbo y bote común
+│   ├── slots.py         # Tragaperras con botones, Ráfaga, Auto, turbo y bote común
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
@@ -779,6 +783,7 @@ src/bot/
 │   ├── cards_render.py  # Imagen de la mesa de blackjack
 │   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
+│   ├── autoplay.py      # Autoplay común: bucle, tope, límite de pérdidas y Parar
 │   ├── slots_render.py  # GIF de cada tirada con piezas precalculadas
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
@@ -788,6 +793,7 @@ src/bot/
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── pachinko_physics.py # Clavos, paredes y caída con física de las bolas del pachinko
+│   ├── pachinko_motion.py # Movimiento de una tanda: las bolas chocan y cada una acaba en su bolsillo
 │   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
 │   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas
 │   ├── horses_scene.py  # Dibujo con Chromium: parrilla, carrera y boleto en JS/HTML

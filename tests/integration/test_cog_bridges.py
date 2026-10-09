@@ -111,8 +111,8 @@ async def test_los_niveles_ven_los_potenciadores_de_la_tienda(tmp_path: Path) ->
         await client.close()
 
 
-async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
-    """El fallo de producción: diez tiradas jugadas y ninguna en los logros."""
+async def test_rafaga_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """El fallo de producción: diez tiradas de la Ráfaga jugadas y ninguna en los logros."""
     client = await load_bot(tmp_path)
     try:
         slots = importer("Tragaperras", client)
@@ -135,18 +135,63 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         interaction.user = owner
         interaction.guild = None
 
-        await view._auto(interaction)
+        await view._burst(interaction)
 
         profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
-        assert profile.stats["slots_spins"] == view.session_spins == slots.AUTO_SPINS
+        assert profile.stats["slots_spins"] == view.session_spins == slots.BURST_SPINS
         assert profile.stats["slots_auto"] == 1
         assert {"slots_1", "auto_1"} <= set(profile.unlocked)
         plays = await client.casino_stats.report(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert plays.by_game["tragaperras"].plays + plays.by_game["tragaperras"].free_plays == (
-            slots.AUTO_SPINS
+            slots.BURST_SPINS
         )
+    finally:
+        await client.close()
+
+
+async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """▶️ Auto con el bot cargado: cada tirada y la sesión llegan a los logros."""
+    client = await load_bot(tmp_path)
+    try:
+        slots = importer("Tragaperras", client)
+        slots.REVEAL_MARGIN_SECONDS = 0
+        slots.AUTOPLAY_MIN_GAP = 0
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        cog = client.get_cog("Tragaperras")
+        view = slots.SlotMachineView(cog, guild_id=GUILD_ID, owner=owner, stake=1)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        view.message = MagicMock()
+        view.message.channel = channel
+        view.message.edit = AsyncMock()
+        cog.renderer = MagicMock()
+        cog.renderer.render = MagicMock(
+            return_value=slots.SlotsMedia(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await view._autoplay_click(interaction)
+        await view.autoplay.task
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert view.session_spins >= 1
+        assert profile.stats["slots_spins"] == profile.stats["slots_autoplay_spins"]
+        assert profile.stats["slots_autoplay_spins"] == view.session_spins
+        assert profile.stats["slots_autoplay_sessions"] == 1
+        assert {"slots_1", "autoplay_1"} <= set(profile.unlocked)
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        played = plays.by_game["tragaperras"]
+        assert played.plays + played.free_plays == view.session_spins
     finally:
         await client.close()
 
