@@ -5,8 +5,8 @@ partida dice cuánto hay que cobrar antes de cada acción (`extra_stake`) y
 cuánto devolver al terminar (`total_return`), y el cog lo mueve a través de
 la economía.
 
-Reglas (las habituales de un casino, ventaja de la casa ≈ 0,5 % con
-estrategia básica):
+Reglas (las habituales de un casino, salvo el empate con el blackjack de la
+banca y el tope de apuesta):
 
 - Zapato de 6 barajas, barajado de nuevo en cada mano (no se pueden contar
   cartas).
