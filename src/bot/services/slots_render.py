@@ -12,8 +12,9 @@ crear el renderizador:
 - El marco de la máquina (fondo, ventanas y flechas de la línea) también
   está ya cuantizado.
 
-Una tirada cuesta ~0,1 s de CPU y ~100 KB de GIF. El modo turbo se salta el
-GIF y manda solo la imagen final (~15 KB).
+Una tirada cuesta ~0,05 s de CPU y ~110 KB de GIF, que escribe
+`bot.utils.gif.shared_palette_gif`. El modo turbo se salta el GIF y manda
+solo la imagen final (~15 KB).
 
 La animación:
 
@@ -54,6 +55,7 @@ from bot.services.slots import (
     WILD,
     Spin,
 )
+from bot.utils.gif import shared_palette_gif
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "slots"
 SYMBOL_FILES = {
@@ -335,19 +337,10 @@ class SlotsRenderer:
                 frames.extend([plain] * FLASH_FRAMES)
         frames.append(final)
 
-        buffer = io.BytesIO()
         durations = [FRAME_MS] * (len(frames) - 1) + [FINAL_FRAME_MS]
-        frames[0].save(
-            buffer,
-            format="GIF",
-            save_all=True,
-            append_images=frames[1:],
-            duration=durations,
-            loop=0,
-            disposal=1,
-        )
         seconds = FRAME_MS * (len(frames) - 1) / 1000
-        return SlotsMedia(gif=buffer.getvalue(), png=self._png(final), seconds=seconds)
+        gif = shared_palette_gif(frames, durations)
+        return SlotsMedia(gif=gif, png=self._png(final), seconds=seconds)
 
 
 def _vertical_blur(image: Image.Image, radius: int) -> Image.Image:

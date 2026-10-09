@@ -2,9 +2,9 @@
 
 La máquina imita las de los salones japoneses: un mueble con bombillas que
 persiguen, un rótulo de neón, una pantalla con el sorteo, un campo de clavos
-con dos adornos que se mueven y los bolsillos abajo. Una tanda cuesta ~0,5 s
-de CPU (fuera del event loop) y unos cientos de KB de GIF. El modo turbo solo
-manda la imagen final.
+con dos adornos que se mueven y los bolsillos abajo. Una tanda cuesta ~0,2 s
+de CPU (fuera del event loop) y unos 150-250 KB de GIF, que escribe
+`bot.utils.gif.shared_palette_gif`. El modo turbo solo manda la imagen final.
 
 Cada tablero de `bot.services.pachinko.BOARDS` tiene su tema (`THEMES`):
 colores, rótulo y adorno (molinillos, flores de cerezo, perlas de dragón o
@@ -51,6 +51,7 @@ from bot.services.pachinko import (
     Kind,
     Volley,
 )
+from bot.utils.gif import shared_palette_gif
 
 FONT_PATH = (
     Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
@@ -948,16 +949,7 @@ class PachinkoRenderer:
             for index in range(timeline.frames)
         ]
         frames.append(final)
-        buffer = io.BytesIO()
         durations = [FRAME_MS] * (len(frames) - 1) + [FINAL_FRAME_MS]
-        frames[0].save(
-            buffer,
-            format="GIF",
-            save_all=True,
-            append_images=frames[1:],
-            duration=durations,
-            loop=0,
-            disposal=1,
-        )
         seconds = FRAME_MS * (len(frames) - 1) / 1000
-        return PachinkoMedia(gif=buffer.getvalue(), png=self._png(final), seconds=seconds)
+        gif = shared_palette_gif(frames, durations)
+        return PachinkoMedia(gif=gif, png=self._png(final), seconds=seconds)
