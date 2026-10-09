@@ -31,8 +31,9 @@ Lo que más se olvida:
   reprodúcelo así antes de culpar a Docker o a la base de datos. Sección "Pruebas y
   calidad" de `Biblia.txt`.
 - **Botones:** contestan a Discord antes de tocar la base de datos. Sección siguiente.
-- **Subagentes:** uno solo a la vez y solo para una tarea bien acotada (archivos, contrato y
-  comprobación claros). Sección «Agentes y subagentes» de `Biblia.txt`.
+- **Subagentes:** solo Haiku (lo mecánico) o Sonnet (programar), en su última versión, uno a
+  la vez y para una tarea bien acotada. Si pueden hacerlo, se les delega y se espera, revisando
+  siempre su trabajo antes de fusionar. Sección «Agentes y subagentes» de `Biblia.txt`.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
 

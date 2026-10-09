@@ -276,12 +276,28 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 
 ### 8.0. Agentes y subagentes
 
-Para los agentes de IA que trabajan en el repositorio:
+Para los agentes de IA que trabajan en el repositorio. El agente principal es el que habla con la persona: diseña, reparte, revisa y fusiona. Los subagentes hacen trabajo delegado.
 
-- Como mucho **un subagente a la vez**. Cada uno arranca sin contexto, cuesta lo mismo que una sesión nueva y, si se cortan varios a la vez (por ejemplo, por el límite de gasto), dejan trabajo a medias en varios sitios.
-- Solo se delega una tarea **bien acotada**: los archivos que puede tocar (y los que no), las firmas o el contrato que tiene que respetar, cómo se comprueba que está bien y qué tiene que devolver. Si no se puede escribir así en un párrafo, la tarea la hace el agente principal.
-- El subagente trabaja en su propia copia (`worktree`) y parte de la rama de trabajo, no de un `main` antiguo. Hace commit en su rama sin push, y el agente principal revisa y fusiona su trabajo.
-- El agente principal no espera de brazos cruzados: sigue con lo que no depende del subagente.
+**Qué subagentes se pueden usar.** Solo dos familias de modelos, siempre en la versión más moderna que ofrezca la herramienta (en Claude Code, `model: "haiku"` o `model: "sonnet"` en la herramienta `Agent`, que apuntan a la última versión de cada una). Ningún otro modelo, tampoco uno igual al del agente principal.
+
+- **Haiku: lo rápido y mecánico.** Es el más rápido y barato, y rinde bien cuando la tarea no pide criterio. Para:
+  - buscar en el repositorio y resumir qué hay (dónde se usa algo, qué pruebas tocan un archivo);
+  - cambios mecánicos y repetitivos con un patrón claro: renombrar, actualizar cifras en README, FUNCIONALIDADES y textos, añadir una estadística a una lista;
+  - pasar `ruff` y `pytest` y resumir los fallos;
+  - medir o ejecutar un script ya escrito (la auditoría de logros, el calibrador) y devolver las cifras.
+- **Sonnet: el código de verdad.** Programa bien, sigue instrucciones largas y aguanta tareas de varios pasos. Para:
+  - implementar una pieza acotada con su contrato ya fijado: un dibujo nuevo, un repositorio, una función de servicio con sus pruebas;
+  - escribir las pruebas de algo que ya funciona;
+  - una refactorización limitada a uno o dos archivos;
+  - investigar un fallo concreto y proponer el arreglo.
+- **Lo que no se delega:** decidir el diseño, tocar la economía o los impuestos, recalibrar probabilidades, cambiar esta Biblia o el CLAUDE.md, fusionar ramas, resolver conflictos y hacer push. Eso lo hace el agente principal.
+
+**Cómo se usan.**
+
+- **Uno a la vez**, nunca dos en paralelo. Cada subagente arranca sin contexto y, si se cortan varios a la vez (por ejemplo, por el límite de gasto), dejan trabajo a medias en varios sitios.
+- **Si Haiku o Sonnet pueden hacerlo, se les delega y el agente principal espera.** No adelanta por su cuenta el mismo trabajo ni otro que lo pise: espera al informe, lo revisa y decide. Se elige el más ligero que pueda hacerlo bien: Haiku si es mecánico, Sonnet si hay que programar.
+- **Solo tareas bien acotadas:** qué archivos puede tocar (y cuáles no), las firmas o el contrato que tiene que respetar, cómo se comprueba que está bien y qué tiene que devolver. Si no se puede escribir así en un párrafo, la tarea la hace el agente principal.
+- **Siempre bajo supervisión.** El subagente trabaja en su propia copia (`worktree`), parte de la rama de trabajo y no de un `main` antiguo, y hace commit en su rama sin push. El agente principal lee el diff, mira las imágenes si hay dibujo, pasa las comprobaciones y solo entonces fusiona. Lo que el subagente dice que ha hecho no cuenta hasta que el agente principal lo ha comprobado.
 
 ### 8.1. Estándar de documentación por archivo
 
