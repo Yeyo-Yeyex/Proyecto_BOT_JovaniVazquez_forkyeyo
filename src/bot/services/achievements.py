@@ -2905,6 +2905,111 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mira 1.000 bolas esperar turno para salir.", L),
     ])  # fmt: skip
 
+    # 🌸 Pachinko: ▶️ Auto (sesiones de hasta 25 tandas, una a una, con animación) --------
+    # Las rarezas salen de simular sesiones con las reglas reales (apuesta de 100 Y$, tableros
+    # Clásica 40 %, Sakura 30 %, Dragón 15 % y Oni 15 %, 5 sesiones al día, 30.000 sesiones):
+    # el Auto del pachinko casi siempre para antes de las 25 tandas, porque un atari llega en
+    # 1 de cada ~13 tandas y lo corta. El 79,7 % de las sesiones acaba en atari (4 al día), el
+    # 19,1 % en el techo de pérdidas (1 al día) y solo el 1,3 % llega a las 25 tandas (1 cada
+    # ~16 días). Una sesión dura 10,1 tandas de media (~50 al día); el 9,1 % acaba en un SUPER
+    # RUSH (0,46 al día); el 0,97 % pasa por un momento con 10 tandas o más y neto positivo
+    # donde retirarse a tiempo (1 cada ~20 días); 1 de cada ~15.000 sesiones llega a las 25 con
+    # el neto en 0 exacto; salen 19 reach perdidos al día y un atari encadena 3 premios gordos o
+    # más 1 de cada 5 veces. Parar a mano, quedarse sin saldo o parar tras una tanda se decide.
+    # El primer SUPER RUSH del Auto es Raro como el de 🎯 Lanzar (`pachi_777`): mismo ritmo.
+    a += _tiers("pachinko", "pachinko_autoplay_volleys", [
+        (1, "pachi_auto_1", "Bolas de oficio",
+         "Juega una tanda con ▶️ Auto: las bolas caen solas, como los expedientes.", C),
+        (100, "pachi_auto_100", "Silencio administrativo",
+         "Juega 100 tandas con ▶️ Auto. Quien calla, otorga.", C),
+        (1_000, "pachi_auto_1k", "Fondos Next Generation",
+         "Juega 1.000 tandas con ▶️ Auto: el dinero sale solo y nadie sabe adónde va.", E),
+        (10_000, "pachi_auto_10k", "Funcionario de carrera",
+         "Juega 10.000 tandas con ▶️ Auto. Plaza fija y sin mirar el reloj.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_sessions", [
+        (10, "pachi_auto_ses_10", "Pleno extraordinario",
+         "Empieza 10 sesiones de ▶️ Auto en el pachinko.", C),
+        (100, "pachi_auto_ses_100", "Subcomisión de bolas",
+         "Empieza 100 sesiones de ▶️ Auto: más sesiones que conclusiones.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_full", [
+        (1, "pachi_auto_full_1", "Maratón de tramitación",
+         "Completa una sesión de ▶️ Auto hasta el tope de 25 tandas, sin atari ni techo de gasto.",
+         E),
+        (5, "pachi_auto_full_5", "Gobernar sin Presupuestos",
+         "Completa 5 sesiones de ▶️ Auto hasta el tope de 25 tandas.", L),
+        (25, "pachi_auto_full_25", "Inmunidad parlamentaria",
+         "Completa 25 sesiones de ▶️ Auto hasta el tope de 25 tandas.", M),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_loss_limit", [
+        (1, "pachi_auto_loss_1", "Banco malo de bolas",
+         "Que ▶️ Auto pare en el pachinko al perder 10 veces la apuesta.", C),
+        (10, "pachi_auto_loss_10", "Corralito",
+         "Que ▶️ Auto pare por el límite de pérdidas del pachinko 10 veces.", R),
+        (100, "pachi_auto_loss_100", "Intervención de Bruselas",
+         "Que ▶️ Auto pare por el límite de pérdidas del pachinko 100 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_bigwin", [
+        (1, "pachi_auto_atari_1", "Aterrizaje en Torrejón",
+         "Que ▶️ Auto pare porque ha salido un atari: el Falcon toca pista.", C),
+        (10, "pachi_auto_atari_10", "Hoja de ruta del Falcon",
+         "Que ▶️ Auto pare por un atari 10 veces.", C),
+        (50, "pachi_auto_atari_50", "Puerta giratoria de Akihabara",
+         "Que ▶️ Auto pare por un atari 50 veces: entras, cobras y sales.", R),
+        (250, "pachi_auto_atari_250", "Fichaje de expresidente",
+         "Que ▶️ Auto pare por un atari 250 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_super", [
+        (1, "pachi_auto_777", "Sobresueldo en 7️⃣7️⃣7️⃣",
+         "Saca un SUPER RUSH mientras ▶️ Auto juega por ti.", R),
+        (10, "pachi_auto_777_10", "Caja B de la máquina",
+         "Saca 10 SUPER RUSH con ▶️ Auto.", E),
+        (50, "pachi_auto_777_50", "La Gürtel del pachinko",
+         "Saca 50 SUPER RUSH con ▶️ Auto. Alguien tiene que estar cobrando comisiones.", L, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_broke", [
+        (1, "pachi_auto_broke", "Cuenta intervenida",
+         "Que ▶️ Auto pare porque no te llega para otra tanda.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_manual", [
+        (1, "pachi_auto_manual_1", "Botón de pánico",
+         "Para ▶️ Auto a mano con ⏹️ Parar en el pachinko.", C),
+        (10, "pachi_auto_manual_10", "Moción de orden",
+         "Para ▶️ Auto a mano en el pachinko 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_quick_quit", [
+        (1, "pachi_auto_quit", "Marcha atrás en caliente",
+         "Para ▶️ Auto en el pachinko después de una sola tanda.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_exit_ahead", [
+        (1, "pachi_auto_ahead_1", "Salir de rositas",
+         "Para ▶️ Auto a mano con 10 tandas o más y la sesión en positivo.", E),
+        (10, "pachi_auto_ahead_10", "Pelotazo y a Dubái",
+         "Retírate a tiempo, con ganancias, 10 veces en el pachinko.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_even", [
+        (1, "pachi_auto_even", "Cuadrar con Bruselas",
+         "Termina una sesión completa de ▶️ Auto en el pachinko con el neto en 0 Y$ exactos.",
+         M, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_fake_reach", [
+        (50, "pachi_auto_fake_50", "Promesas electorales",
+         "Pierde 50 reach por un número mientras ▶️ Auto juega por ti.", C),
+        (200, "pachi_auto_fake_200", "Letra pequeña del programa",
+         "Pierde 200 reach por un número con ▶️ Auto.", R),
+        (1_000, "pachi_auto_fake_1k", "Programa electoral cumplido",
+         "Pierde 1.000 reach por un número con ▶️ Auto. Lo prometido no era deuda.", E, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_autoplay_renchan_max", [
+        (3, "pachi_auto_ren_3", "Cadena de favores",
+         "Encadena 3 premios gordos en una tanda de ▶️ Auto.", C),
+        (5, "pachi_auto_ren_5", "Red clientelar",
+         "Encadena 5 premios gordos en una tanda de ▶️ Auto.", R),
+        (10, "pachi_auto_ren_10", "Contratos a dedo",
+         "Encadena 10 premios gordos en una tanda de ▶️ Auto, sin concurso público.", E, True),
+    ])  # fmt: skip
+
     # 🏦 Banco: Bizum ----------------------------------------------------------------------
     a += _tiers("bizum", "bizum_sent_count", [
         (1, "bizum_1", "Te hago un Bizum", "Manda tu primer Bizum.", C),
@@ -7469,6 +7574,7 @@ def pachinko_stats(
     turbo: bool,
     session_volleys: int,
     when: datetime,
+    autoplay: bool = False,
 ) -> StatDelta:
     """Contadores de una tanda de pachinko (sin lo común del casino).
 
@@ -7480,6 +7586,7 @@ def pachinko_stats(
         turbo: Si se jugó sin animación (turbo o Ráfaga).
         session_volleys: Tandas en esta máquina, contando esta.
         when: Hora local de la tanda.
+        autoplay: Si la tanda se jugó con ▶️ Auto (con animación, una a una).
 
     Las estadísticas de rebotes, de duración y de choques salen del movimiento
     que se ve, no de lo que paga la máquina, así que no tocan el dinero.
@@ -7540,6 +7647,54 @@ def pachinko_stats(
     bump("pachinko_delayed", amount=motion.delayed)
     if hits:
         delta.peak["pachinko_balls_hit_max"] = sum(1 for count in hits if count)
+    if autoplay:
+        bump("pachinko_autoplay_volleys")
+        bump(
+            "pachinko_autoplay_super",
+            amount=sum(1 for d in volley.draws if d.kind == PachinkoKind.SUPER),
+        )
+        bump(
+            "pachinko_autoplay_fake_reach",
+            amount=sum(1 for d in volley.draws if d.reach and not d.atari),
+        )
+        if volley.draws:
+            delta.peak["pachinko_autoplay_renchan_max"] = max(d.jackpots for d in volley.draws)
+    return delta
+
+
+def pachinko_autoplay_stats(*, volleys: int, net: int, reason: StopReason) -> StatDelta:
+    """Contadores de una sesión de ▶️ Auto del pachinko, al terminar.
+
+    Las tandas ya se contaron una a una en `pachinko_stats`; aquí solo cuenta la
+    sesión y cómo acabó. Una sesión sin ninguna tanda (no llegaba el saldo) no
+    cuenta. Parar por «premio gordo» es parar por un atari.
+
+    Args:
+        volleys: Tandas jugadas en la sesión.
+        net: Neto de la sesión (ganado menos apostado).
+        reason: Por qué paró.
+    """
+    delta = StatDelta()
+    if volleys <= 0:
+        return delta
+    add = delta.add
+    add["pachinko_autoplay_sessions"] = 1
+    if reason is StopReason.MAX_SPINS:
+        add["pachinko_autoplay_full"] = 1
+        if net == 0:
+            add["pachinko_autoplay_even"] = 1
+    elif reason is StopReason.LOSS_LIMIT:
+        add["pachinko_autoplay_loss_limit"] = 1
+    elif reason is StopReason.BIG_PRIZE:
+        add["pachinko_autoplay_bigwin"] = 1
+    elif reason is StopReason.NO_FUNDS:
+        add["pachinko_autoplay_broke"] = 1
+    elif reason is StopReason.MANUAL:
+        add["pachinko_autoplay_manual"] = 1
+        if volleys == 1:
+            add["pachinko_autoplay_quick_quit"] = 1
+        if net > 0 and volleys >= MANUAL_EXIT_MIN_SPINS:
+            add["pachinko_autoplay_exit_ahead"] = 1
     return delta
 
 

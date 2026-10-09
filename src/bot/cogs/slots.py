@@ -654,8 +654,8 @@ class SlotMachineView(discord.ui.View):
             edit = first_edit
 
         text = result_text(play)
-        if note := tax_note(play.settlement.bet.tax_delta, [play]):
-            text += f"\n{note}"
+        if tax_line := tax_note(play.settlement.bet.tax_delta, [play]):
+            text += f"\n{tax_line}"
         if renta_hint := await renta.hint(
             self.cog.bot,
             self.guild_id,

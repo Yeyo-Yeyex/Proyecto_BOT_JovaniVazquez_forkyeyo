@@ -6,7 +6,9 @@ flag de «Parar» y el texto del motivo de parada. Cada juego enchufa solo lo su
 una función `step` que juega **una** ronda completa (cobrar, animar, enseñar,
 apuntar logros) y devuelve su resultado.
 
-Cómo lo enchufa un juego (la tragaperras es el ejemplo, `bot.cogs.slots`):
+Cómo lo enchufa un juego (la tragaperras es el ejemplo, `bot.cogs.slots`; el
+pachinko lo hace igual en `bot.cogs.pachinko` y pasa `unit="tandas"` a los textos
+de `stop_text` y `summary`):
 
 1. Al pulsar ▶️ Auto, el botón crea una `AutoplaySession(stake=apuesta)` y llama
    a `session.start(step, on_finish=..., name="slots-autoplay-<id>")`. Eso
@@ -115,24 +117,42 @@ class AutoplayOutcome:
     loss_limit: int = 0
     max_spins: int = AUTOPLAY_MAX
 
-    def reason_text(self) -> str:
-        """El motivo de parada, en una frase para el usuario."""
-        return stop_text(self.reason, loss_limit=self.loss_limit, max_spins=self.max_spins)
+    def reason_text(self, *, unit: str = "tiradas") -> str:
+        """El motivo de parada, en una frase para el usuario (`unit`: ver `stop_text`)."""
+        return stop_text(
+            self.reason, loss_limit=self.loss_limit, max_spins=self.max_spins, unit=unit
+        )
 
     def summary(self, *, icon: str = "▶️", unit: str = "tiradas") -> str:
-        """Titular y motivo: «▶️ Auto: 17 tiradas · -1.230 Y$» y debajo por qué paró."""
+        """Titular y motivo: «▶️ Auto: 17 tiradas · -1.230 Y$» y debajo por qué paró.
+
+        Args:
+            unit: Las rondas del juego, en plural (`"tandas"` en el pachinko).
+        """
         sign = "+" if self.net > 0 else "-" if self.net < 0 else "±"
         return (
             f"### {icon} Auto: {self.spins} {unit} · {sign}{format_amount(abs(self.net))}\n"
-            f"-# {self.reason_text()}"
+            f"-# {self.reason_text(unit=unit)}"
         )
 
 
-def stop_text(reason: StopReason, *, loss_limit: int = 0, max_spins: int = AUTOPLAY_MAX) -> str:
-    """Frase del motivo de parada (con el tono del bot)."""
+def stop_text(
+    reason: StopReason,
+    *,
+    loss_limit: int = 0,
+    max_spins: int = AUTOPLAY_MAX,
+    unit: str = "tiradas",
+) -> str:
+    """Frase del motivo de parada (con el tono del bot).
+
+    Args:
+        unit: Cómo llama el juego a sus rondas, en plural y acabado en «s»
+            (`"tiradas"` en la tragaperras, `"tandas"` en el pachinko). El
+            singular de «no te llega para otra…» sale de quitarle la «s».
+    """
     texts = {
-        StopReason.MAX_SPINS: f"Parado: tope de {max_spins} tiradas por sesión.",
-        StopReason.NO_FUNDS: "Parado: no te llega para otra tirada.",
+        StopReason.MAX_SPINS: f"Parado: tope de {max_spins} {unit} por sesión.",
+        StopReason.NO_FUNDS: f"Parado: no te llega para otra {unit.removesuffix('s')}.",
         StopReason.BANK_LIMIT: "Parado: la banca no puede pagar tanto.",
         StopReason.BIG_PRIZE: "Parado: ¡premio gordo! Disfrútalo antes de seguir.",
         StopReason.LOSS_LIMIT: (

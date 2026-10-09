@@ -498,6 +498,29 @@ async def test_auto_encadena_tiradas_con_animacion_hasta_el_tope(
     assert view.timeout == slots_module.MACHINE_TIMEOUT
 
 
+async def test_auto_ensena_el_contador_de_tiradas_en_cada_resultado(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    """El contador «tirada n/25» sale en el resultado de cada tirada del Auto.
+
+    Antes, la línea fiscal reutilizaba el nombre `note` y lo pisaba: el
+    contador no salía nunca.
+    """
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+
+    await run_autoplay(view)
+
+    results = [
+        call.kwargs["embed"].description
+        for call in view.message.edit.await_args_list
+        if [f.filename for f in call.kwargs.get("attachments", [])] == [PNG_NAME]
+    ]
+    assert len(results) == view.session_spins
+    for number, description in enumerate(results, start=1):
+        assert f"tirada {number}/{AUTOPLAY_MAX}" in description
+
+
 async def test_auto_cobra_cada_tirada_una_vez(tmp_path: Path, fast_gap: list[float]) -> None:
     cog = await make_cog(tmp_path)
     view = autoplay_view(cog, stake=100)

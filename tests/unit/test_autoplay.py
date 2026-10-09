@@ -320,3 +320,27 @@ def test_resumen_en_positivo_y_en_tablas() -> None:
 @pytest.mark.parametrize("reason", list(StopReason))
 def test_todos_los_motivos_tienen_frase(reason: StopReason) -> None:
     assert stop_text(reason, loss_limit=1_000).strip()
+
+
+def test_los_motivos_de_parada_usan_la_unidad_del_juego() -> None:
+    """La tragaperras dice «tiradas»; el pachinko, «tandas». Lo que no es de ronda no cambia."""
+    for reason in (StopReason.MAX_SPINS, StopReason.NO_FUNDS):
+        default = stop_text(reason)
+        assert "tirada" in default and "tanda" not in default
+        tandas = stop_text(reason, unit="tandas")
+        assert "tanda" in tandas and "tirada" not in tandas
+    assert stop_text(StopReason.MAX_SPINS, max_spins=25, unit="tandas") == (
+        "Parado: tope de 25 tandas por sesión."
+    )
+    assert stop_text(StopReason.NO_FUNDS, unit="tandas") == "Parado: no te llega para otra tanda."
+    assert stop_text(StopReason.NO_FUNDS) == "Parado: no te llega para otra tirada."
+    assert stop_text(StopReason.MANUAL, unit="tandas") == stop_text(StopReason.MANUAL)
+
+
+def test_el_resumen_lleva_la_unidad_en_el_titular_y_en_el_motivo() -> None:
+    outcome = AutoplayOutcome(spins=25, net=-40, reason=StopReason.MAX_SPINS)
+    assert "25 tiradas" in outcome.summary() and "tope de 25 tiradas" in outcome.summary()
+    text = outcome.summary(unit="tandas")
+    assert "25 tandas" in text and "tope de 25 tandas" in text and "tirada" not in text
+    assert outcome.reason_text(unit="tandas") == "Parado: tope de 25 tandas por sesión."
+    assert outcome.reason_text() == "Parado: tope de 25 tiradas por sesión."

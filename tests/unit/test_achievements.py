@@ -68,6 +68,8 @@ from bot.services.achievements import (
     message_stats,
     meta_stats,
     newly_unlocked,
+    pachinko_autoplay_stats,
+    pachinko_stats,
     progress,
     roulette_stats,
     slots_autoplay_stats,
@@ -81,6 +83,9 @@ from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
+from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
+from bot.services.pachinko import Kind as PachinkoKind
+from bot.services.pachinko_motion import motion_for
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
@@ -200,7 +205,7 @@ PRODUCED_STATS = {
     "crash_rounds", "crash_cashouts", "crash_cashout_max", "crash_win_max", "crash_auto",
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",
     "crash_party_max",
-    # Pachinko (cogs/pachinko.py: pachinko_stats y el botón de Ráfaga)
+    # Pachinko (cogs/pachinko.py: pachinko_stats, pachinko_autoplay_stats y el botón de Ráfaga)
     "pachinko_volleys", "pachinko_starts", "pachinko_reach", "pachinko_fake_reach",
     "pachinko_atari", "pachinko_rush", "pachinko_super", "pachinko_renchan_max",
     "pachinko_corners", "pachinko_full_hold", "pachinko_wasted", "pachinko_blank",
@@ -209,6 +214,11 @@ PRODUCED_STATS = {
     "pachinko_slow_balls", "pachinko_swift_balls", "pachinko_clean_balls",
     "pachinko_hits", "pachinko_hits_max", "pachinko_hit_ball_max", "pachinko_balls_hit_max",
     "pachinko_hit_corner", "pachinko_no_hits", "pachinko_delayed",
+    "pachinko_autoplay_volleys", "pachinko_autoplay_sessions", "pachinko_autoplay_full",
+    "pachinko_autoplay_loss_limit", "pachinko_autoplay_bigwin", "pachinko_autoplay_super",
+    "pachinko_autoplay_broke", "pachinko_autoplay_manual", "pachinko_autoplay_quick_quit",
+    "pachinko_autoplay_exit_ahead", "pachinko_autoplay_even", "pachinko_autoplay_fake_reach",
+    "pachinko_autoplay_renchan_max",
     *(f"pachinko_board_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
     *(f"pachinko_atari_{key}" for key in ("sakura", "clasica", "dragon", "oni")),
     "mines_games", "mines_gems", "mines_cashouts", "mines_booms", "mines_first_boom",
@@ -1134,3 +1144,90 @@ def test_los_logros_de_auto_se_desbloquean_con_sus_contadores() -> None:
     )
     assert "autoplay_loss_1" in newly_unlocked({"slots_autoplay_loss_limit": 1}, [])
     assert "autoplay_jackpot" in newly_unlocked({"slots_autoplay_jackpot": 1}, [])
+
+
+def _pachinko_volley(*draws: Draw):  # noqa: ANN202
+    """Una tanda en la Clásica con una bola en START por cada sorteo dado (hasta 4)."""
+    start = CLASSIC.start_pocket
+    balls = [Ball((1,) * start + (0,) * (CLASSIC.rows - start))] * len(draws)
+    balls += [Ball((1,) * 3 + (0,) * (CLASSIC.rows - 3))] * (10 - len(draws))
+    queue = list(draws)
+    return build_volley(CLASSIC, balls, lambda: queue.pop(0))
+
+
+def _pachinko_delta(volley, *, autoplay: bool) -> StatDelta:  # noqa: ANN001
+    return pachinko_stats(
+        volley,
+        motion=motion_for(volley),
+        stake=100,
+        won=0,
+        turbo=False,
+        session_volleys=1,
+        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+        autoplay=autoplay,
+    )
+
+
+_PACHINKO_MISS = Draw((1, 2, 3), PachinkoKind.MISS, False, 0)
+_PACHINKO_FAKE = Draw((4, 6, 4), PachinkoKind.MISS, True, 0)
+_PACHINKO_SUPER = Draw((7, 7, 7), PachinkoKind.SUPER, True, 4)
+
+
+def test_cada_tanda_de_auto_del_pachinko_cuenta_y_la_de_lanzar_no() -> None:
+    volley = _pachinko_volley(_PACHINKO_FAKE, _PACHINKO_MISS, _PACHINKO_SUPER)
+    auto = _pachinko_delta(volley, autoplay=True)
+    assert auto.add["pachinko_autoplay_volleys"] == 1
+    assert auto.add["pachinko_autoplay_fake_reach"] == 1
+    assert auto.add["pachinko_autoplay_super"] == 1
+    assert auto.peak["pachinko_autoplay_renchan_max"] == 4
+    plain = _pachinko_delta(volley, autoplay=False)
+    assert not [stat for stat in (*plain.add, *plain.peak) if "autoplay" in stat]
+    # Lo demás se cuenta igual: el Auto es otra forma de pulsar 🎯 Lanzar.
+    assert {k: v for k, v in auto.add.items() if "autoplay" not in k} == plain.add
+
+
+@pytest.mark.parametrize(
+    ("reason", "net", "volleys", "expected"),
+    [
+        (StopReason.MAX_SPINS, -300, 25, {"pachinko_autoplay_full"}),
+        (StopReason.MAX_SPINS, 0, 25, {"pachinko_autoplay_full", "pachinko_autoplay_even"}),
+        (StopReason.LOSS_LIMIT, -1_000, 10, {"pachinko_autoplay_loss_limit"}),
+        (StopReason.BIG_PRIZE, 5_000, 4, {"pachinko_autoplay_bigwin"}),
+        (StopReason.NO_FUNDS, -900, 9, {"pachinko_autoplay_broke"}),
+        (StopReason.MANUAL, -50, 12, {"pachinko_autoplay_manual"}),
+        (StopReason.MANUAL, 50, 9, {"pachinko_autoplay_manual"}),
+        (StopReason.MANUAL, 50, 10, {"pachinko_autoplay_manual", "pachinko_autoplay_exit_ahead"}),
+        (StopReason.MANUAL, -50, 1, {"pachinko_autoplay_manual", "pachinko_autoplay_quick_quit"}),
+        (StopReason.CLOSED, -50, 3, set()),
+        (StopReason.ERROR, -50, 3, set()),
+    ],
+)
+def test_sesion_de_auto_del_pachinko_cuenta_segun_como_acaba(
+    reason: StopReason, net: int, volleys: int, expected: set[str]
+) -> None:
+    delta = pachinko_autoplay_stats(volleys=volleys, net=net, reason=reason)
+    assert set(delta.add) == {"pachinko_autoplay_sessions", *expected}
+
+
+def test_una_sesion_de_auto_del_pachinko_sin_tandas_no_cuenta() -> None:
+    assert pachinko_autoplay_stats(volleys=0, net=0, reason=StopReason.NO_FUNDS).add == {}
+
+
+def test_los_logros_de_auto_del_pachinko_se_desbloquean_con_sus_contadores() -> None:
+    unlocked = set(
+        newly_unlocked({"pachinko_autoplay_volleys": 1, "pachinko_autoplay_sessions": 10}, [])
+    )
+    assert {"pachi_auto_1", "pachi_auto_ses_10"} <= unlocked
+    assert "pachi_auto_atari_1" in newly_unlocked({"pachinko_autoplay_bigwin": 1}, [])
+    assert "pachi_auto_ren_3" in newly_unlocked({"pachinko_autoplay_renchan_max": 3}, [])
+
+
+def test_los_logros_de_auto_del_pachinko_no_chocan_con_los_de_la_tragaperras() -> None:
+    pachinko = [a for a in CATALOG if a.id.startswith("pachi_auto_")]
+    slots = [a for a in CATALOG if a.id.startswith("autoplay_")]
+    assert len(pachinko) >= 25
+    assert {a.name for a in pachinko}.isdisjoint({a.name for a in slots})
+    assert {a.id for a in pachinko}.isdisjoint({a.id for a in slots})
+    assert all(a.category == "pachinko" for a in pachinko)
+    secrets = sum(a.secret for a in pachinko)
+    assert len(pachinko) / 8 <= secrets <= len(pachinko) / 3  # alrededor de uno de cada seis

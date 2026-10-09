@@ -196,6 +196,51 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         await client.close()
 
 
+async def test_auto_del_pachinko_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """▶️ Auto del pachinko con el bot cargado, con precarga: cada tanda y la sesión llegan."""
+    client = await load_bot(tmp_path)
+    try:
+        pachinko = importer("Pachinko", client)
+        pachinko.REVEAL_MARGIN_SECONDS = 0
+        pachinko.AUTOPLAY_MIN_GAP = 0
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        cog = client.get_cog("Pachinko")
+        view = pachinko.PachinkoView(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        view.message = MagicMock()
+        view.message.channel = channel
+        view.message.edit = AsyncMock()
+        cog.machines.add(view)
+        cog.renderer = MagicMock()
+        cog.renderer.render = MagicMock(
+            return_value=pachinko.PachinkoMedia(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await view._autoplay_click(interaction)
+        await view.autoplay.task
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert view.session_volleys >= 1
+        assert profile.stats["pachinko_volleys"] == view.session_volleys
+        assert profile.stats["pachinko_autoplay_volleys"] == view.session_volleys
+        assert profile.stats["pachinko_autoplay_sessions"] == 1
+        assert {"pachi_1", "pachi_auto_1"} <= set(profile.unlocked)
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["pachinko"].plays == view.session_volleys
+    finally:
+        await client.close()
+
+
 async def test_el_pollo_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
     """El Pollo carga antes que los logros: sus partidas deben llegar a `logros`."""
     client = await load_bot(tmp_path)
