@@ -90,9 +90,18 @@ Las rarezas de los de suerte (tandas con muchos choques, bolas con muchos choque
 
 ## Tragaperras: el revamp
 
-Re-giro del tercer rodillo, doble o nada, bote misterioso, giro diario, GRAN/MEGA/ÉPICO, calor que se enfría y ticket de sesión traen 81 logros. Se escribieron a la vez que la lógica nueva, así que sus rarezas salen de probabilidades estimadas, no de la simulación: a 200 tiradas al día, re-giro ofrecido en un 20 % de las tiradas (un jugador normal acepta unos 10 al día) y acertado en un 10 %; quedarse otra vez a uno tras fallar, un 20 %; doble o nada al 50 %, unas 10 series al día; GRAN PREMIO 1 de cada 75 tiradas, MEGA 1 de cada 500 y ÉPICO 1 de cada 2.000. Con eso, fallar 3, 4, 5 y 7 re-giros seguidos tarda unos 3, 20, 100 días y años (Raro, Épico, Legendario, Mítico); ganar los cinco dobles, 1 de cada 32 series (Raro); el primer ÉPICO, unos 7 días (Raro).
+El revamp trae re-giro del tercer rodillo, doble o nada, bote misterioso, giro diario, GRAN/MEGA/ÉPICO, calor que se enfría y ticket de sesión, con 81 logros nuevos. `_jugar_slots` simula ya la máquina nueva: rodillo virtual, re-giro de la mitad de los casi-premios (y en cadena mientras siga rozando), doble o nada con la mitad de los premios (y otra vez la mitad de las veces que acierta) y bote que cae solo entre la semilla y `POT_CAP`, alimentado por cinco jugadores. Con esa simulación se han puesto las rarezas de todos los logros de suerte de la tragaperras, nuevos y antiguos, y ninguno queda fuera de su banda.
 
-Los casi-premios pasan del 0,8 % a un 20-25 % de las tiradas: 25 y 100 salían en horas. Las metas de `nearmiss_25`, `nearmiss_100` y `nearmiss_500` suben a 1.000, 5.000 y 25.000 (los `id` y las rarezas se quedan), y la de `antic_100` a 1.000. Cuando la máquina nueva esté en `main`, hay que adaptar `_jugar_slots` del script (re-giros, dobles, tope oculto del bote) y volver a pasarlo, también para los de suerte de antes (tríos, 🃏🃏🃏, medio premio), porque el RTP sube del 94 % al 99,5 %.
+Lo que más cambia:
+
+- **El bote cae mucho más:** con el tope de 50.000 Y$ y cinco jugadores, el primer bote llega en unos 9 días. `jackpot_1` pasa de Legendario a Raro, `jackpot_5` de Mítico a Épico y los de bote misterioso y sequía bajan dos escalones. «Bote gordo» pide ahora 40.000 Y$ en vez de 50.000, porque el bote ya no pasa del tope.
+- **El 7️⃣ 7️⃣ 7️⃣ es más raro:** el rodillo virtual hace que el 7️⃣ roce la línea a menudo y entre poco. El primer trío tarda unos 260 días (Raro → Mítico), y lo mismo «Frutería completa», que lo necesita.
+- **Re-giros:** fallar tres, cuatro o cinco seguidos pasa en el primer o segundo día, porque el 81 % de los re-giros fallan. Son Comunes; siete seguidos, Épico.
+- **Celebraciones:** el GRAN PREMIO (×5) sale una vez cada ~17 tiradas, así que sus logros bajan un escalón.
+
+Los casi-premios pasan del 0,8 % al 21 % de las tiradas: con 25 y 100 salían en horas. Las metas de `nearmiss_25`, `nearmiss_100` y `nearmiss_500` suben a 1.000, 5.000 y 25.000 (los `id` y las rarezas se quedan), y la de `antic_100` a 1.000.
+
+No se simulan, y se revisan a mano, los que dependen de lo que hace el miembro y no de la suerte: el giro diario (uno al día, rachas de días seguidos), el calor que se enfría (irse más de diez minutos) y el ticket (cerrar la máquina). La tabla de la simulación los marca como «>400 d» porque el jugador simulado nunca hace esas cosas.
 
 ## Excepciones que la simulación marca y se dejan
 

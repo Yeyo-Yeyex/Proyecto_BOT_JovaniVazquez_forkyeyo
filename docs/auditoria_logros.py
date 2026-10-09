@@ -67,6 +67,8 @@ from bot.services.achievements import (  # noqa: E402
     mines_stats,
     pachinko_stats,
     roulette_stats,
+    slots_double_stats,
+    slots_respin_stats,
     slots_stats,
 )
 from bot.services.levels import TIMEZONE  # noqa: E402
@@ -170,25 +172,39 @@ def _con_casino(delta: StatDelta, *, stake: int, net: int) -> StatDelta:
 
 
 def _jugar_slots(j: Jugador) -> StatDelta:
+    """Una tirada de un jugador normal, con lo que haga después.
+
+    Re-gira el tercer rodillo la mitad de las veces que se le ofrece (y sigue
+    re-girando mientras se quede a uno), y juega a doble o nada la mitad de
+    los premios, doblando otra vez la mitad de las veces que acierta. El bote
+    cae también por el tope oculto, sorteado entre la semilla y `POT_CAP`.
+    """
     rng = j.rng
     machine = slots.SlotMachine(rng.randrange)
     free = j.extra.get("free", 0)
     heat = j.extra.get("heat", 0)
     session = j.extra.get("session", 0) + 1
     pot = j.extra.get("pot", slots.POT_SEED)
+    hit_at = j.extra.get("hit_at") or rng.randint(slots.POT_SEED, slots.POT_CAP)
+    drought = j.extra.get("drought", 0)
     hot = heat >= slots.HEAT_MAX
     spin = machine.spin(free=bool(free))
     payout = slots.line_payout(spin, APUESTA, hot=hot)
-    jackpot = 0
-    if spin.kind == slots.Kind.JACKPOT:
-        jackpot, pot = pot, slots.POT_SEED
     # El bote lo alimentan cinco jugadores: el simulado y cuatro más.
     pot += 5 * slots.pot_share(APUESTA)
+    drought += 5
+    jackpot, mystery = 0, False
+    if spin.kind == slots.Kind.JACKPOT or pot >= hit_at:
+        mystery = spin.kind != slots.Kind.JACKPOT
+        jackpot, pot = pot, slots.POT_SEED
+        hit_at = rng.randint(slots.POT_SEED, slots.POT_CAP)
     j.extra.update(
         free=(free - 1 if free else 0) + (slots.FREE_SPINS if spin.triggers_free_spins else 0),
         heat=slots.next_heat(heat, paid=payout > 0, was_hot=hot),
         session=0 if session >= 150 else session,
         pot=pot,
+        hit_at=hit_at,
+        drought=0 if jackpot else drought,
     )
     delta = slots_stats(
         spin,
@@ -200,10 +216,35 @@ def _jugar_slots(j: Jugador) -> StatDelta:
         turbo=rng.random() < 0.7,
         session_spins=session,
         when=NOON,
+        tier=slots.win_tier(payout + jackpot, APUESTA),
+        mystery=mystery,
+        drought=drought if jackpot else 0,
     )
     delta.add["slots_auto"] = 1 if rng.random() < 0.05 else 0
     paid = 0 if free else APUESTA
-    return _con_casino(delta, stake=paid, net=payout + jackpot - paid)
+    net = payout + jackpot - paid
+
+    chain, current = 0, spin
+    while current.teaser is not None and rng.random() < 0.5:
+        chain += 1
+        price = slots.respin_price(current, APUESTA, pot)
+        current = machine.respin(current)
+        won = slots.line_payout(current, APUESTA)
+        delta.merge(slots_respin_stats(price=price, payout=won, jackpot=0, chain=chain))
+        paid += price
+        net += won - price
+
+    amount, doubles = payout + jackpot, 0
+    while amount and doubles < slots.DOUBLE_MAX and rng.random() < 0.5:
+        won = rng.random() < 0.5
+        delta.merge(slots_double_stats(amount=amount, won=won, chain=doubles + won))
+        paid += amount
+        net += amount if won else -amount
+        if not won:
+            break
+        doubles += 1
+        amount *= 2
+    return _con_casino(delta, stake=paid, net=net)
 
 
 def _jugar_botes(j: Jugador) -> StatDelta:

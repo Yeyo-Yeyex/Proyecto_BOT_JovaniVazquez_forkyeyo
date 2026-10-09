@@ -453,16 +453,27 @@ def prize_columns(stake: int) -> tuple[str, str]:
     return "\n".join(rows[:half]), "\n".join(rows[half:])
 
 
-def ticket_text(*, spins: int, staked: int, gross: int, rng: random.Random | None = None) -> str:
-    """El ticket de la sesión al cerrar la máquina: aquí sí sale el neto."""
+def ticket_text(
+    *, spins: int, staked: int, gross: int, tax: int = 0, rng: random.Random | None = None
+) -> str:
+    """El ticket de la sesión al cerrar la máquina: aquí sí sale el neto, con el IRPF.
+
+    Args:
+        tax: IRPF del juego retenido en la sesión (negativo si se devolvió).
+    """
     rng = rng or random.Random()
-    net = gross - staked
+    net = gross - staked - tax
     sign = "+" if net > 0 else "-" if net < 0 else "±"
     return "\n".join(
         (
             "## 🧾 Ticket de la sesión",
             f"Tiradas: {spins} · Apostado: {format_amount(staked)}",
             f"Premios cobrados: {format_amount(gross)}",
+            *(
+                [f"IRPF ({TAX_COLLECTOR}): {'-' if tax > 0 else '+'}{format_amount(abs(tax))}"]
+                if tax
+                else []
+            ),
             f"**Neto: {sign}{format_amount(abs(net))}**",
             f"-# {rng.choice(TICKET_LINES)}",
         )
@@ -534,6 +545,8 @@ class SlotMachineView(discord.ui.View):
         self.session_staked = 0
         self.session_gross = 0
         self.session_prizes = 0
+        # IRPF del juego retenido (o devuelto, en negativo) en la sesión.
+        self.session_tax = 0
         # Lo que se puede hacer con la última tirada: re-girar el tercer
         # rodillo (`respin_offer`: la tirada, su apuesta, el precio y los
         # re-giros encadenados) o doblar lo cobrado (`double_offer`: cuánto y
@@ -670,7 +683,10 @@ class SlotMachineView(discord.ui.View):
             summary = auto_text(plays, "Giros gratis jugados al cerrar la máquina.") + "\n\n"
         if self.session_spins:
             summary += ticket_text(
-                spins=self.session_spins, staked=self.session_staked, gross=self.session_gross
+                spins=self.session_spins,
+                staked=self.session_staked,
+                gross=self.session_gross,
+                tax=self.session_tax,
             )
         if summary:
             kwargs["embed"] = await self.current_embed(text=summary)
@@ -691,7 +707,7 @@ class SlotMachineView(discord.ui.View):
                     spins=self.session_spins,
                     gross=self.session_gross,
                     staked=self.session_staked,
-                    net=self.session_gross - self.session_staked,
+                    net=self.session_gross - self.session_staked - self.session_tax,
                 ),
             )
 
@@ -792,6 +808,7 @@ class SlotMachineView(discord.ui.View):
         self.session_staked += play.paid_stake
         self.session_gross += play.won
         self.session_prizes += play.won > 0
+        self.session_tax += play.settlement.bet.tax_delta
         self.cooled = 0
         self.respin_offer = None
         self.double_offer = None
@@ -1057,6 +1074,7 @@ class SlotMachineView(discord.ui.View):
             chain = chain + 1 if won else chain
             self.session_staked += amount
             self.session_gross += 2 * amount if won else 0
+            self.session_tax += bet.tax_delta
             self.respin_offer = None
             self.double_offer = (2 * amount, chain) if won and chain < DOUBLE_MAX else None
             shown = color if won else (BLACK if color == RED else RED)
