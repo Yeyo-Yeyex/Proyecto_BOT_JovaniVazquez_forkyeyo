@@ -14,6 +14,10 @@ from bot.services.slots_render import (
     FLASHES,
     FRAME_MS,
     HEIGHT,
+    LIGHTS_H,
+    LIGHTS_W,
+    LIGHTS_X,
+    LIGHTS_Y,
     OVERSHOOT,
     STOP_FRAMES,
     WIDTH,
@@ -171,8 +175,90 @@ def test_cada_nivel_tiene_su_cartel(renderer: SlotsRenderer) -> None:
 
 
 def test_el_gif_epico_del_peor_caso_no_se_dispara(renderer: SlotsRenderer) -> None:
-    """Jackpot con anticipación, cuenta ÉPICA y un importe de siete cifras."""
+    """Jackpot con anticipación, cuenta ÉPICA, luces y un importe de siete cifras."""
     spin = find(lambda s: s.is_jackpot)
+    assert spin.anticipation
     media = renderer.render(spin, won=1_234_567, stake=STAKE)
-    assert len(media.gif) < 250_000
+    assert len(media.gif) < 300_000
     assert len(media.png) < 30_000
+
+
+# -- Luces de los laterales ----------------------------------------------------------
+
+
+def lights(image: Image.Image) -> tuple[bytes, bytes]:
+    """Las dos columnas de luces (izquierda y derecha) de un fotograma."""
+    top, bottom = LIGHTS_Y, LIGHTS_Y + LIGHTS_H
+    left = image.crop((LIGHTS_X, top, LIGHTS_X + LIGHTS_W, bottom))
+    right_x = WIDTH - LIGHTS_X - LIGHTS_W
+    right = image.crop((right_x, top, right_x + LIGHTS_W, bottom))
+    return left.tobytes(), right.tobytes()
+
+
+def test_las_luces_cambian_entre_fotogramas_mientras_gira(renderer: SlotsRenderer) -> None:
+    spin = find(lambda s: not s.anticipation and not s.pay_halves and not s.is_jackpot)
+    spinning = frames_of(renderer.render(spin))[: STOP_FRAMES[2]]
+    looks = [lights(frame) for frame in spinning]
+
+    assert all(left == right for left, right in looks)
+    assert len(set(looks)) >= 4
+    # La persecución avanza: dos fotogramas seguidos de aspecto distinto los hay
+    # a lo largo de todo el giro, no solo al principio.
+    changes = [k for k in range(1, len(looks)) if looks[k] != looks[k - 1]]
+    assert changes[0] <= 2
+    assert changes[-1] >= len(looks) - 3
+
+
+@pytest.mark.parametrize("multiple", [0, EPIC_WIN])
+def test_el_ultimo_fotograma_lleva_las_mismas_luces_que_el_png(
+    renderer: SlotsRenderer, multiple: int
+) -> None:
+    spin = find(lambda s: s.pay_halves >= 4 and not s.is_jackpot)
+    media = renderer.render(spin, won=multiple * STAKE, stake=STAKE)
+    final = Image.open(io.BytesIO(media.png)).convert("RGB")
+    assert same_image(frames_of(media)[-1], final)
+
+    still = Image.open(io.BytesIO(renderer.still_png(spin.stops))).convert("RGB")
+    # Sin premio, luces tranquilas como en la imagen parada; con premio, otras.
+    assert (lights(final) == lights(still)) is (multiple == 0)
+
+
+def test_la_imagen_parada_lleva_las_luces_tranquilas(renderer: SlotsRenderer) -> None:
+    still = Image.open(io.BytesIO(renderer.still_png((1, 2, 3)))).convert("RGB")
+    left, right = lights(still)
+    assert left == right
+    # Encendidas y apagadas: la columna no es de un solo color.
+    column = still.crop((LIGHTS_X, LIGHTS_Y, LIGHTS_X + LIGHTS_W, LIGHTS_Y + LIGHTS_H))
+    assert len(column.getcolors(4096) or []) > 3
+
+
+def test_con_anticipacion_las_luces_son_otras(renderer: SlotsRenderer) -> None:
+    calm = find(lambda s: not s.anticipation and not s.pay_halves and not s.is_jackpot)
+    tense = find(lambda s: s.anticipation and not s.pay_halves and not s.is_jackpot)
+    calm_looks = {lights(frame) for frame in frames_of(renderer.render(calm))}
+    tense_frames = frames_of(renderer.render(tense))
+    # Mientras el tercer rodillo frena despacio, ninguna luz es de las normales.
+    waiting = {lights(frame) for frame in tense_frames[STOP_FRAMES[1] : STOP_FRAMES[2]]}
+    assert waiting
+    assert not waiting & calm_looks
+    # Y cambian en cada fotograma: van más rápido que la persecución normal.
+    looks = [lights(frame) for frame in tense_frames[STOP_FRAMES[1] : STOP_FRAMES[2]]]
+    assert all(a != b for a, b in itertools.pairwise(looks))
+
+
+def test_las_luces_parpadean_mas_rapido_cuanto_mas_alto_es_el_nivel(
+    renderer: SlotsRenderer,
+) -> None:
+    spin = find(lambda s: s.pay_halves >= 4 and not s.anticipation and not s.is_jackpot)
+
+    def blink_rate(multiple: int, tier: str | None) -> float:
+        media = renderer.render(spin, won=multiple * STAKE // 2, stake=STAKE)
+        counting = frames_of(media)[-rollup_frames(tier) - 1 : -1]
+        looks = [lights(frame) for frame in counting]
+        return sum(a != b for a, b in itertools.pairwise(looks)) / len(looks)
+
+    small = blink_rate(1, None)
+    big = blink_rate(BIG_WIN * 2, WinTier.BIG)
+    mega = blink_rate(MEGA_WIN * 2, WinTier.MEGA)
+    epic = blink_rate(EPIC_WIN * 2, WinTier.EPIC)
+    assert 0 < small < big < mega <= epic
