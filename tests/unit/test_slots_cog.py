@@ -68,7 +68,7 @@ FREE = stops_where(lambda s: s.triggers_free_spins and not s.pay_halves)
 class FakeRenderer:
     """Devuelve bytes fijos: las pruebas no necesitan dibujar los rodillos."""
 
-    def render(self, spin, *, turbo: bool = False) -> SlotsMedia:  # noqa: ANN001
+    def render(self, spin, *, turbo: bool = False, won: int = 0, stake: int = 0) -> SlotsMedia:  # noqa: ANN001
         return SlotsMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
     def still_png(self, stops, *, highlight: bool = False) -> bytes:  # noqa: ANN001
