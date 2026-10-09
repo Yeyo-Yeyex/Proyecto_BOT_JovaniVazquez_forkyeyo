@@ -274,6 +274,15 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - El azar se fuerza en la prueba (sustituyendo `random` o pasando la tirada), no se confía en que dos probabilidades distintas den resultados distintos: dos constantes con el mismo valor hacen que la prueba acierte por casualidad.
 - Al cambiar una cifra visible (sueldo, precio, umbral, exención), buscarla en README, FUNCIONALIDADES, la Biblia y los textos de los cogs (`grep` de la cifra con y sin punto de miles) y actualizarla en el mismo cambio.
 
+### 8.0. Agentes y subagentes
+
+Para los agentes de IA que trabajan en el repositorio:
+
+- Como mucho **un subagente a la vez**. Cada uno arranca sin contexto, cuesta lo mismo que una sesión nueva y, si se cortan varios a la vez (por ejemplo, por el límite de gasto), dejan trabajo a medias en varios sitios.
+- Solo se delega una tarea **bien acotada**: los archivos que puede tocar (y los que no), las firmas o el contrato que tiene que respetar, cómo se comprueba que está bien y qué tiene que devolver. Si no se puede escribir así en un párrafo, la tarea la hace el agente principal.
+- El subagente trabaja en su propia copia (`worktree`) y parte de la rama de trabajo, no de un `main` antiguo. Hace commit en su rama sin push, y el agente principal revisa y fusiona su trabajo.
+- El agente principal no espera de brazos cruzados: sigue con lo que no depende del subagente.
+
 ### 8.1. Estándar de documentación por archivo
 
 Como mínimo, cada archivo nuevo o modificado debe cumplir lo siguiente:
