@@ -756,7 +756,9 @@ ruff check .
 ```
 
 Las pruebas no requieren un token real ni conexión a Discord: se aíslan
-mediante dobles de prueba (`unittest.mock`).
+mediante dobles de prueba (`unittest.mock`). Corren en paralelo, un proceso
+por núcleo (`pytest-xdist`, configurado en `pyproject.toml`); `pytest -n 0`
+las corre en uno solo, para depurar.
 
 ## Estructura del proyecto
 
