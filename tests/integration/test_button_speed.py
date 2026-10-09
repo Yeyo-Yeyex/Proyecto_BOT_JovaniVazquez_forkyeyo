@@ -105,6 +105,22 @@ async def press_slots_double(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_slots_autoplay(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Tragaperras")
+    module = module_of(client, "Tragaperras")
+    # Una sola tirada y sin esperas: lo que se mide es la respuesta al clic.
+    module.AUTOPLAY_MAX = 1
+    module.AUTOPLAY_MIN_GAP = 0
+    module.REVEAL_MARGIN_SECONDS = 0
+    view = module.SlotMachineView(cog, guild_id=GUILD_ID, owner=owner, stake=1)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._autoplay_click(interaction)
+        await view.autoplay.task
+
+    return click
+
+
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
     table = module.RouletteTable(client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=1)
@@ -198,6 +214,7 @@ async def press_news(client: BotClient, owner: MagicMock) -> Click:
 CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
+    "tragaperras: auto": press_slots_autoplay,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "pala: elegir curro": press_pala_hire,

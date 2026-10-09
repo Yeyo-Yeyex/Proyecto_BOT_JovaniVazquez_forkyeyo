@@ -5,6 +5,8 @@ Uso, desde la raíz del repo:
     python docs/auditoria_logros.py            # tabla de discrepancias
     python docs/auditoria_logros.py --todo     # todos los logros con su estimación
     python docs/auditoria_logros.py --json     # lo mismo en JSON
+    python docs/auditoria_logros.py --juego pachinko --jugadores 4 --dias 20
+                                               # solo un juego y con menos horizonte
 
 La rareza de un logro debería reflejar cuánto le cuesta a un miembro activo:
 
@@ -68,6 +70,7 @@ from bot.services.achievements import (  # noqa: E402
     slots_stats,
 )
 from bot.services.levels import TIMEZONE  # noqa: E402
+from bot.services.pachinko_motion import motion_for  # noqa: E402
 
 #: Límites (en días) de cada rareza, de menor a mayor.
 BANDAS = (
@@ -255,6 +258,7 @@ def _jugar_pachinko(j: Jugador) -> StatDelta:
     j.extra["session"] = 0 if session >= 60 else session
     delta = pachinko_stats(
         volley,
+        motion=motion_for(volley),
         stake=APUESTA,
         won=won,
         turbo=rng.random() < 0.5,
@@ -453,8 +457,16 @@ def _met(a: Achievement, stats: dict[str, int]) -> bool:
     return all(stats.get(s, 0) >= g for s, g in a.conditions)
 
 
-def simular(juego: str, jugadores: int, semilla: int = 1) -> dict[str, float]:
-    """Mediana de días hasta desbloquear cada logro de `juego` (inf si no da tiempo)."""
+def simular(
+    juego: str, jugadores: int, semilla: int = 1, horizonte: int = HORIZONTE
+) -> dict[str, float]:
+    """Mediana de días hasta desbloquear cada logro de `juego` (inf si no da tiempo).
+
+    El pachinko calcula el movimiento de las bolas con choques en cada tanda
+    (~0,1 s), así que simular 400 días de 60 tandas cuesta horas: para él se
+    usa `horizonte` bajo y el resto se saca de las probabilidades (ver
+    `docs/auditoria-logros.md`).
+    """
     objetivos = [a for a in AVAILABLE if a.category == juego]
     ritmo = RITMO_CASINO[juego]
     jugar = JUEGOS[juego]
@@ -463,7 +475,7 @@ def simular(juego: str, jugadores: int, semilla: int = 1) -> dict[str, float]:
         j = Jugador(random.Random(semilla * 1000 + n))
         pendientes = list(objetivos)
         partida = 0
-        while pendientes and partida < HORIZONTE * ritmo:
+        while pendientes and partida < horizonte * ritmo:
             partida += 1
             j.sumar(jugar(j))
             if partida % 10 and partida > 50:
@@ -485,13 +497,24 @@ def contador(a: Achievement) -> float | None:
     return a.goal / RITMO[a.stat]
 
 
-def auditar(jugadores: int) -> list[dict[str, object]]:
-    """Estimación de cada logro: días, rareza sugerida y la actual."""
+def auditar(
+    jugadores: int, solo: str | None = None, horizonte: int = HORIZONTE
+) -> list[dict[str, object]]:
+    """Estimación de cada logro: días, rareza sugerida y la actual.
+
+    Args:
+        solo: Si se da, audita únicamente los logros de ese juego.
+        horizonte: Días que juega cada jugador simulado antes de rendirse.
+    """
     estimado: dict[str, tuple[float, str]] = {}
     for juego in JUEGOS:
-        for achievement_id, dias in simular(juego, jugadores).items():
+        if solo and juego != solo:
+            continue
+        for achievement_id, dias in simular(juego, jugadores, horizonte=horizonte).items():
             estimado[achievement_id] = (dias, "simulado")
     for a in AVAILABLE:
+        if solo and a.category != solo:
+            continue
         if a.id not in estimado and (dias := contador(a)) is not None:
             estimado[a.id] = (dias, "ritmo")
     filas = []
@@ -520,15 +543,17 @@ def main() -> None:
     parser.add_argument("--jugadores", type=int, default=9)
     parser.add_argument("--todo", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--juego", choices=sorted(JUEGOS), help="auditar solo este juego")
+    parser.add_argument("--dias", type=int, default=HORIZONTE, help="horizonte de cada jugador")
     args = parser.parse_args()
-    filas = auditar(args.jugadores)
+    filas = auditar(args.jugadores, args.juego, args.dias)
     if not args.todo:
         filas = [f for f in filas if f["salto"]]
     if args.json:
         print(json.dumps(filas, ensure_ascii=False, indent=1))
         return
     for f in filas:
-        dias = f["dias"] if f["dias"] is not None else f">{HORIZONTE}"
+        dias = f["dias"] if f["dias"] is not None else f">{args.dias}"
         print(
             f"{f['salto']:+d} {f['id']:24} {str(dias):>8} d  {f['actual']:>10} → "
             f"{f['sugerida']:<10} ({f['metodo']}) {f['categoria']}"

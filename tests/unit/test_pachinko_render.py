@@ -5,19 +5,21 @@ from __future__ import annotations
 import io
 import logging
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from bot.services.pachinko import BOARDS, CLASSIC, ONI, Ball, Board, Draw, Kind, build_volley
+from bot.services.pachinko_motion import LAUNCH_GAP, motion_for
 from bot.services.pachinko_physics import PIN_R, geometry_for, library
 from bot.services.pachinko_pieces import PIECES_DIR, expected_sizes
 from bot.services.pachinko_render import (
     CENTER_STOP,
     HEIGHT,
-    LAUNCH_GAP,
     PIN,
+    POCKET_FLASH,
     REACH_STOP,
     SUPER_REACH_STOP,
     THEMES,
@@ -74,26 +76,40 @@ def test_el_tablero_cabe_en_la_imagen(board: Board) -> None:
     assert layout.tray_top + 30 < HEIGHT
 
 
+def lone_ball(board: Board, pocket: int, trajectory: int):  # noqa: ANN201
+    """Movimiento de una tanda de una sola bola: sin otras bolas, cae como en la biblioteca."""
+    volley = build_volley(board, [ball_in(board, pocket, trajectory)], lambda: MISS)
+    return motion_for(volley).balls[0]
+
+
 @pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
 def test_la_bola_sigue_su_caida_acaba_en_su_bolsillo_y_desaparece(board: Board) -> None:
     layout = layout_for(board)
-    ball = ball_in(board, 2, trajectory=5)
+    motion = lone_ball(board, 2, trajectory=5)
     points = library(board)[2][5].points
-    assert layout.ball_position(ball, -1) is None
-    assert layout.ball_position(ball, 0) == points[0]
-    assert layout.ball_position(ball, 7) == points[7]
-    x, y = layout.ball_position(ball, len(points) - 1)
+    assert motion.points == points
+    assert motion.position(-1) is None
+    assert motion.position(0) == points[0]
+    assert motion.position(7) == points[7]
+    x, y = motion.position(len(points) - 1)
     assert abs(x - layout.pocket_x(2)) < layout.dx / 2
     assert y >= layout.pocket_top
-    assert layout.ball_position(ball, layout.ball_frames(ball)) is None
-    assert layout.ball_frames(ball) == len(points)
+    assert motion.position(motion.landing) is None
+    assert motion.landing == len(points) == motion.frames
+
+
+def test_una_bola_lanzada_mas_tarde_se_ve_desde_su_fotograma_de_salida() -> None:
+    motion = lone_ball(CLASSIC, 3, trajectory=1)
+    late = replace(motion, launch=9)
+    assert late.position(8) is None
+    assert late.position(9) == motion.points[0]
+    assert late.position(9 + len(motion.points)) is None
 
 
 def test_entre_dos_fotogramas_la_bola_va_por_el_punto_medio() -> None:
-    layout = layout_for(CLASSIC)
-    ball = ball_in(CLASSIC, 3, trajectory=1)
+    motion = lone_ball(CLASSIC, 3, trajectory=1)
     (x0, y0), (x1, y1) = library(CLASSIC)[3][1].points[4:6]
-    x, y = layout.ball_position(ball, 4.5)
+    x, y = motion.position(4.5)
     assert (x, y) == pytest.approx(((x0 + x1) / 2, (y0 + y1) / 2))
 
 
@@ -122,15 +138,16 @@ def test_el_reach_y_el_super_reach_alargan_la_tirada() -> None:
 
 def test_la_pantalla_juega_la_reserva_en_orden_sin_solaparse() -> None:
     volley = volley_of(CLASSIC, 3, 0, [REACH, MISS, RUSH])
-    timeline = build_timeline(volley)
-    ball_frames = layout_for(CLASSIC).ball_frames(ball_in(CLASSIC, CLASSIC.start_pocket))
+    motion = motion_for(volley)
+    timeline = build_timeline(volley, motion)
+    assert timeline.landings == tuple(ball.landing for ball in motion.balls)
+    arrivals = sorted(timeline.landings[:3])  # las tres bolas de START salen las primeras
     first, second, third = timeline.slots
-    assert first.start == first.queued == ball_frames
-    assert second.queued == ball_frames + LAUNCH_GAP
-    assert second.start == first.end  # esperó en la reserva
-    assert third.start == second.end
-    assert timeline.held(second.queued) == 1
-    assert timeline.frames == third.end
+    assert [first.queued, second.queued, third.queued] == arrivals
+    assert first.start == first.queued
+    assert second.start == max(second.queued, first.end)  # espera en la reserva si hace falta
+    assert third.start == max(third.queued, second.end)
+    assert timeline.frames == max(third.end, max(timeline.landings) + POCKET_FLASH)
 
 
 def test_la_reserva_sigue_el_orden_de_llegada_y_las_perdidas_son_las_ultimas() -> None:
@@ -143,9 +160,9 @@ def test_la_reserva_sigue_el_orden_de_llegada_y_las_perdidas_son_las_ultimas() -
     balls = [ball_in(CLASSIC, start, slow)] * 3 + [ball_in(CLASSIC, start, fast)] * 3
     balls += [ball_in(CLASSIC, 0)] * 4
     volley = build_volley(CLASSIC, balls, lambda: MISS)
-    timeline = build_timeline(volley)
-    layout = layout_for(CLASSIC)
-    expected = [i * LAUNCH_GAP + layout.ball_frames(b) for i, b in enumerate(balls)]
+    motion = motion_for(volley)
+    timeline = build_timeline(volley, motion)
+    expected = [ball.landing for ball in motion.balls]
     assert list(timeline.landings) == expected
     assert expected[0] > expected[3]  # la primera en salir llega después de la cuarta
     arrivals = sorted(expected[:6])

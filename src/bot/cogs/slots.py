@@ -8,7 +8,14 @@ en `EconomyService.play_slots`. Este cog solo une las piezas y pinta.
 Botones:
 
 - 🎰 **Tirar**: cobra, gira y paga. Con giros gratis pendientes, juega uno.
-- 🔁 **Auto ×10**: diez tiradas seguidas con un solo resumen y una sola imagen.
+- 🔁 **Ráfaga ×10**: diez tiradas seguidas sin animación, con un solo resumen y
+  una sola imagen.
+- ▶️ **Auto**: tiradas normales encadenadas, cada una con su animación y su imagen
+  final, como si el dueño pulsara 🎰 Tirar una y otra vez. Mientras corre, el
+  botón es ⏹️ **Parar** y es lo único que se puede pulsar. Para sola si no llega
+  el saldo, si sale un premio gordo (el bote o ×50 la apuesta), si las pérdidas
+  netas de la sesión llegan a 10 veces la apuesta o al llegar a 25 tiradas. El
+  bucle y sus reglas están en `bot.services.autoplay`.
 - ⚡ **Turbo**: sin animación, solo la imagen final (más rápido y casi sin datos).
 - **½**, **×2**, 💰 **All-in**: cambian la apuesta. 📋 **Premios**: la tabla.
 
@@ -29,6 +36,7 @@ import asyncio
 import io
 import logging
 import random
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -41,7 +49,21 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
-from bot.services.achievements import StatDelta, casino_stats, slots_stats
+from bot.services.achievements import (
+    StatDelta,
+    casino_stats,
+    slots_autoplay_stats,
+    slots_stats,
+)
+from bot.services.autoplay import (
+    AUTOPLAY_MAX,
+    AUTOPLAY_MIN_GAP,
+    AutoplayOutcome,
+    AutoplaySession,
+    AutoplayStop,
+    SpinResult,
+    StopReason,
+)
 from bot.services.economy import (
     BalanceLimitError,
     EconomyService,
@@ -86,8 +108,8 @@ DEFAULT_STAKE = 100
 MACHINE_TIMEOUT = 180
 #: Margen tras la animación: el cliente tarda un poco en empezar el GIF.
 REVEAL_MARGIN_SECONDS = 0.4
-#: Tiradas de Auto.
-AUTO_SPINS = 10
+#: Tiradas de Ráfaga.
+BURST_SPINS = 10
 #: A partir de cuántas veces la apuesta se anuncia el premio en el canal.
 SHOUT_MULTIPLIER = 50
 
@@ -167,6 +189,11 @@ class SlotsPlay:
         """Saldo tras la tirada, con el IRPF ya ajustado."""
         return self.settlement.bet.balance
 
+    @property
+    def big_prize(self) -> bool:
+        """Premio gordo: el bote o ×`SHOUT_MULTIPLIER` la apuesta (los que se anuncian)."""
+        return self.jackpot > 0 or (self.stake > 0 and self.net >= SHOUT_MULTIPLIER * self.stake)
+
 
 def result_text(play: SlotsPlay, rng: random.Random | None = None) -> str:
     """Bloque grande con lo que ha pasado en la tirada.
@@ -214,7 +241,7 @@ def result_text(play: SlotsPlay, rng: random.Random | None = None) -> str:
 
 
 def auto_text(plays: list[SlotsPlay], stopped: str | None = None) -> str:
-    """Resumen de una ronda de Auto: cuántas, cuántas con premio, neto y la mejor."""
+    """Resumen de una Ráfaga: cuántas, cuántas con premio, neto y la mejor."""
     net = sum(p.net for p in plays)
     paid = sum(1 for p in plays if p.won > 0)
     best = max(plays, key=lambda p: p.net)
@@ -236,7 +263,7 @@ def auto_text(plays: list[SlotsPlay], stopped: str | None = None) -> str:
 
 
 def tax_note(delta: int, plays: list[SlotsPlay]) -> str | None:
-    """Línea de IRPF de una tirada o de una ronda de Auto (suma de ajustes)."""
+    """Línea de IRPF de una tirada o de una Ráfaga (suma de ajustes)."""
     if not plays:
         return None
     if len(plays) == 1:
@@ -357,6 +384,10 @@ class SlotMachineView(discord.ui.View):
     Guarda la apuesta, el modo turbo, los giros gratis pendientes y las
     tiradas de la sesión. No guarda dinero: el saldo y el bote se leen y se
     cambian siempre a través de la economía.
+
+    `_busy` vale mientras hay una acción en curso (una tirada, una Ráfaga o todo
+    un ▶️ Auto): un segundo clic de dos botones a la vez no puede cobrar dos
+    veces. `autoplay` es la sesión de ▶️ Auto en marcha, si la hay.
     """
 
     def __init__(self, cog: Slots, *, guild_id: int, owner: discord.abc.User, stake: int) -> None:
@@ -374,6 +405,7 @@ class SlotMachineView(discord.ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        self.autoplay: AutoplaySession | None = None
         self._build_buttons()
 
     # -- Construcción ---------------------------------------------------------------
@@ -397,8 +429,11 @@ class SlotMachineView(discord.ui.View):
     def _build_buttons(self) -> None:
         green, blue = discord.ButtonStyle.success, discord.ButtonStyle.primary
         self.spin_button = self._add("🎰 Tirar", 0, self._spin, style=green, custom_id="spin")
-        self.auto_button = self._add(
-            f"🔁 Auto ×{AUTO_SPINS}", 0, self._auto, style=blue, custom_id="auto"
+        self.burst_button = self._add(
+            f"🔁 Ráfaga ×{BURST_SPINS}", 0, self._burst, style=blue, custom_id="auto"
+        )
+        self.autoplay_button = self._add(
+            "▶️ Auto", 0, self._autoplay_click, style=blue, custom_id="autoplay"
         )
         self.turbo_button = self._add("⚡ Turbo", 0, self._toggle_turbo, custom_id="turbo")
         self._add("½", 1, self._halve, custom_id="half")
@@ -409,9 +444,19 @@ class SlotMachineView(discord.ui.View):
 
     def _set_enabled(self, enabled: bool) -> None:
         """Activa o desactiva los botones y pone al día sus etiquetas."""
+        running = self.autoplay is not None
         for item in self.children:
             if isinstance(item, discord.ui.Button):
-                item.disabled = not enabled
+                # Con ▶️ Auto en marcha solo queda el botón de Parar.
+                item.disabled = running or not enabled
+        stopping = running and self.autoplay is not None and self.autoplay.stop_requested
+        if running:
+            self.autoplay_button.disabled = stopping
+            self.autoplay_button.label = "⏹️ Parando…" if stopping else "⏹️ Parar"
+            self.autoplay_button.style = discord.ButtonStyle.danger
+        else:
+            self.autoplay_button.label = "▶️ Auto"
+            self.autoplay_button.style = discord.ButtonStyle.primary
         if self.free_spins:
             self.spin_button.label = f"🎟️ Giro gratis ({self.free_spins})"
             self.spin_button.style = discord.ButtonStyle.primary
@@ -438,6 +483,7 @@ class SlotMachineView(discord.ui.View):
     async def on_timeout(self) -> None:
         """Cierra la máquina y juega los giros gratis que se hayan quedado sin usar."""
         self.cog.machines.discard(self)
+        await self.close_autoplay()
         plays = await self.flush_free_spins()
         for item in self.children:
             if isinstance(item, discord.ui.Button):
@@ -453,6 +499,19 @@ class SlotMachineView(discord.ui.View):
                 await self.message.edit(**kwargs)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar la tragaperras", exc_info=True)
+
+    async def close_autoplay(self) -> None:
+        """Detiene un ▶️ Auto en marcha: acaba la tirada en curso y cierra la tarea."""
+        session = self.autoplay
+        if session is None:
+            return
+        await session.close()
+        if self.autoplay is session:
+            # La tarea se canceló antes de poder cerrarse sola: deja la vista limpia.
+            self.autoplay = None
+            self.timeout = MACHINE_TIMEOUT
+            self._busy = False
+            self._set_enabled(True)
 
     async def flush_free_spins(self) -> list[SlotsPlay]:
         """Juega los giros gratis pendientes sin animación; nadie pierde lo ganado.
@@ -560,11 +619,21 @@ class SlotMachineView(discord.ui.View):
         await self._track(play)
         await self.cog.shout(play, self.owner, getattr(self.message, "channel", None))
 
-    async def show(self, play: SlotsPlay, *, first_edit: EditFn, final_edit: EditFn) -> None:
+    async def show(
+        self,
+        play: SlotsPlay,
+        *,
+        first_edit: EditFn,
+        final_edit: EditFn,
+        note: str | None = None,
+    ) -> None:
         """Enseña la tirada: el GIF y después el PNG final (o solo el PNG en turbo).
 
         El dinero ya está cobrado y pagado: si Discord falla al editar, el
         saldo sigue siendo correcto.
+
+        Args:
+            note: Línea pequeña bajo el resultado (el contador de ▶️ Auto).
         """
         if play.media.gif:
             self._set_enabled(False)
@@ -594,6 +663,8 @@ class SlotMachineView(discord.ui.View):
             bet_moment(stake=play.paid_stake, net=play.net, balance_after=play.balance),
         ):
             text += f"\n{renta_hint}"
+        if note:
+            text += f"\n{note}"
         self.last_text = text
         self.last_won = play.won > 0
         self._set_enabled(True)
@@ -603,7 +674,7 @@ class SlotMachineView(discord.ui.View):
             view=self,
         )
 
-    async def _track(self, play: SlotsPlay) -> None:
+    async def _track(self, play: SlotsPlay, *, autoplay: bool = False) -> None:
         """Logros de la tirada, después de enseñarla (antes destriparía el resultado)."""
         delta = slots_stats(
             play.spin,
@@ -615,6 +686,7 @@ class SlotMachineView(discord.ui.View):
             turbo=not play.media.gif,
             session_spins=play.session_spins,
             when=datetime.now(TIMEZONE),
+            autoplay=autoplay,
         )
         delta.merge(
             casino_stats(
@@ -646,8 +718,8 @@ class SlotMachineView(discord.ui.View):
     async def _spin(self, interaction: discord.Interaction) -> None:
         await self.play(interaction)
 
-    async def _auto(self, interaction: discord.Interaction) -> None:
-        """Diez tiradas seguidas sin animación y un solo resumen.
+    async def _burst(self, interaction: discord.Interaction) -> None:
+        """🔁 Ráfaga: diez tiradas seguidas sin animación y un solo resumen.
 
         Para antes si se acaba el dinero o sale el bote. Los giros gratis que
         salgan por el camino se juegan dentro de la misma ronda.
@@ -661,7 +733,7 @@ class SlotMachineView(discord.ui.View):
         try:
             await ack(interaction)
             self._last_interaction = interaction
-            for _ in range(AUTO_SPINS):
+            for _ in range(BURST_SPINS):
                 try:
                     plays.append(await self._play_one(turbo=True, render=False))
                 except InsufficientFundsError:
@@ -718,6 +790,163 @@ class SlotMachineView(discord.ui.View):
         )
         for play in plays:
             await self.cog.shout(play, self.owner, getattr(self.message, "channel", None))
+
+    # -- ▶️ Auto ---------------------------------------------------------------------
+
+    def _message_edit(self, interaction: discord.Interaction) -> EditFn:
+        """Cómo editar el mensaje de la máquina sin el token de la interacción.
+
+        El token caduca a los 15 minutos y un ▶️ Auto largo puede pasarse. El mensaje
+        de un slash command es un `InteractionMessage`, cuyo `edit` usa ese token: se
+        edita entonces por el canal. Un mensaje normal (`.tragas`) ya edita con el
+        token del bot. Sin mensaje guardado, se cae a la respuesta de la interacción.
+        """
+        message = self.message
+        if message is None:
+            return interaction.edit_original_response
+        if isinstance(message, discord.InteractionMessage):
+            get_partial = getattr(message.channel, "get_partial_message", None)
+            if get_partial is not None:
+                return get_partial(message.id).edit
+        return message.edit
+
+    async def _autoplay_click(self, interaction: discord.Interaction) -> None:
+        """▶️ Auto empieza una sesión; con la sesión en marcha, el mismo botón es ⏹️ Parar."""
+        session = self.autoplay
+        if session is not None:
+            await self._stop_autoplay(interaction, session)
+            return
+        if self._busy:
+            # Doble clic o una tirada en curso: se acepta el clic y se ignora.
+            await ack(interaction)
+            return
+        self._busy = True
+        started = False
+        try:
+            await ack(interaction)
+            self._last_interaction = interaction
+            session = AutoplaySession(
+                stake=self.stake, max_spins=AUTOPLAY_MAX, min_gap=AUTOPLAY_MIN_GAP
+            )
+            self.autoplay = session
+            # Sin clics durante la sesión, la vista caducaría a los 3 minutos.
+            self.timeout = None
+            edit_fn = self._message_edit(interaction)
+
+            async def step(number: int) -> SpinResult:
+                return await self._autoplay_step(interaction, session, number, edit_fn)
+
+            async def finish(outcome: AutoplayOutcome) -> None:
+                await self._autoplay_finish(interaction, session, outcome, edit_fn)
+
+            session.start(
+                step,
+                on_finish=finish,
+                name=f"slots-autoplay-{self.guild_id}-{self.owner.id}",
+            )
+            started = True
+        finally:
+            if not started:
+                self.autoplay = None
+                self.timeout = MACHINE_TIMEOUT
+                self._busy = False
+
+    async def _stop_autoplay(
+        self, interaction: discord.Interaction, session: AutoplaySession
+    ) -> None:
+        """⏹️ Parar: marca el flag y contesta ya, sin base de datos (solo memoria)."""
+        if not session.armed:
+            # El mensaje aún no enseña el botón de Parar: es el doble clic de ▶️ Auto.
+            await ack(interaction)
+            return
+        session.request_stop()
+        self._set_enabled(True)
+        await interaction.response.edit_message(view=self)
+
+    async def _autoplay_step(
+        self,
+        interaction: discord.Interaction,
+        session: AutoplaySession,
+        number: int,
+        edit_fn: EditFn,
+    ) -> SpinResult:
+        """Una tirada de ▶️ Auto: igual que 🎰 Tirar, pero editando sin token.
+
+        Raises:
+            AutoplayStop: Si no llega el saldo o la banca no puede pagar (antes de cobrar).
+        """
+        try:
+            play = await self._play_one(turbo=self.turbo)
+        except InsufficientFundsError:
+            raise AutoplayStop(StopReason.NO_FUNDS) from None
+        except BalanceLimitError:
+            raise AutoplayStop(StopReason.BANK_LIMIT) from None
+
+        async def first_edit(**kwargs: Any) -> None:
+            await edit_fn(**kwargs)
+            session.armed = True
+
+        sign = "+" if session.net + play.net > 0 else "-" if session.net + play.net < 0 else "±"
+        note = (
+            f"-# ▶️ Auto · tirada {number}/{session.max_spins} · "
+            f"neto {sign}{format_amount(abs(session.net + play.net))}"
+        )
+        stop: StopReason | None = None
+        try:
+            await self.show(play, first_edit=first_edit, final_edit=edit_fn, note=note)
+        except discord.HTTPException:
+            # Mensaje borrado o sin permisos: seguir jugando a ciegas gastaría dinero.
+            logger.warning("No se pudo editar la tragaperras en pleno Auto", exc_info=True)
+            stop = StopReason.CLOSED
+        edited_at = time.monotonic()
+        channel = getattr(self.message, "channel", None)
+        await self._track(play, autoplay=True)
+        await self.cog.shout(play, self.owner, channel)
+        if number == 1:
+            await renta.remind(self.cog.bot, interaction)
+        return SpinResult(net=play.net, big_prize=play.big_prize, edited_at=edited_at, stop=stop)
+
+    async def _autoplay_finish(
+        self,
+        interaction: discord.Interaction,
+        session: AutoplaySession,
+        outcome: AutoplayOutcome,
+        edit_fn: EditFn,
+    ) -> None:
+        """Cierra la sesión: devuelve los botones, enseña el resumen y apunta los logros."""
+        try:
+            self.autoplay = None
+            self.timeout = MACHINE_TIMEOUT
+            self._set_enabled(True)
+            try:
+                if outcome.spins == 0:
+                    if outcome.reason is StopReason.NO_FUNDS:
+                        await notify(
+                            interaction, insufficient_text(await self.balance(), self.stake)
+                        )
+                    elif outcome.reason is not StopReason.CLOSED:
+                        await notify(interaction, outcome.reason_text())
+                    if session.armed:
+                        await edit_fn(embed=await self.current_embed(), view=self)
+                else:
+                    # El resumen va encima de la última tirada para que se siga viendo.
+                    text = outcome.summary()
+                    if self.last_text:
+                        text += f"\n\n{self.last_text}"
+                    self.last_text = text
+                    self.last_won = outcome.net > 0
+                    await edit_fn(embed=await self.current_embed(), view=self)
+            except discord.HTTPException:
+                logger.debug("No se pudo cerrar el resumen del Auto", exc_info=True)
+        finally:
+            self._busy = False
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            getattr(self.message, "channel", None),
+            slots_autoplay_stats(spins=outcome.spins, net=outcome.net, reason=outcome.reason),
+        )
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
         """Actualiza la máquina (apuesta, turbo) sin tocar la imagen.
@@ -799,6 +1028,7 @@ class Slots(commands.Cog, name="Tragaperras"):
             self._warm_task.cancel()
         for view in list(self.machines):
             try:
+                await view.close_autoplay()
                 await view.flush_free_spins()
             except Exception:
                 logger.exception("No se pudieron jugar los giros gratis al apagar")

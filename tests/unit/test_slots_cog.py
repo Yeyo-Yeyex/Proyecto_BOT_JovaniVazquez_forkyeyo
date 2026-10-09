@@ -1,4 +1,4 @@
-"""Pruebas de bot.cogs.slots: la máquina con botones, el comando `slots` y Auto.
+"""Pruebas de bot.cogs.slots: la máquina con botones, el comando `slots`, Ráfaga y Auto.
 
 Se usa la economía real sobre un SQLite temporal (para comprobar que el
 dinero se mueve de verdad), rodillos trucados y un renderizador falso.
@@ -6,6 +6,7 @@ dinero se mueve de verdad), rodillos trucados y un renderizador falso.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import random
 from collections.abc import Iterable
@@ -18,7 +19,7 @@ from interaction_fakes import fake_interaction
 
 import bot.cogs.slots as slots_module
 from bot.cogs.slots import (
-    AUTO_SPINS,
+    BURST_SPINS,
     GIF_NAME,
     PNG_NAME,
     SlotMachineView,
@@ -30,6 +31,8 @@ from bot.cogs.slots import (
     result_text,
 )
 from bot.repositories.economy import EconomyRepository
+from bot.services.achievements import slots_autoplay_stats
+from bot.services.autoplay import AUTOPLAY_MAX, AUTOPLAY_MIN_GAP, StopReason
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.slots import (
     FREE_SPINS,
@@ -164,7 +167,7 @@ def test_los_tickets_anuncian_los_giros_gratis() -> None:
     assert "GIROS GRATIS" in result_text(make_play(FREE), random.Random(0))
 
 
-def test_resumen_de_auto() -> None:
+def test_resumen_de_rafaga() -> None:
     plays = [make_play(GRAPES, payout=1_000), *[make_play(LOSS) for _ in range(9)]]
     text = auto_text(plays)
     assert "10 tiradas" in text
@@ -295,30 +298,30 @@ async def test_la_maquina_caliente_paga_doble(tmp_path: Path) -> None:
     assert cog.heat(GUILD_ID, OWNER_ID) == 0
 
 
-async def test_auto_juega_diez_tiradas_con_una_sola_edicion(tmp_path: Path) -> None:
+async def test_rafaga_juega_diez_tiradas_con_una_sola_edicion(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     view = make_view(cog, stake=10)
     interaction = make_interaction()
 
-    await view._auto(interaction)
+    await view._burst(interaction)
 
-    assert view.session_spins == AUTO_SPINS
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * AUTO_SPINS
+    assert view.session_spins == BURST_SPINS
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * BURST_SPINS
     interaction.response.defer.assert_awaited_once()
     interaction.edit_original_response.assert_awaited_once()
 
 
-async def test_auto_para_cuando_no_llega_el_dinero(tmp_path: Path) -> None:
+async def test_rafaga_para_cuando_no_llega_el_dinero(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     view = make_view(cog, stake=300)
 
-    await view._auto(make_interaction())
+    await view._burst(make_interaction())
 
     assert view.session_spins == 3
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 900
 
 
-async def test_auto_para_con_el_bote_y_lo_anuncia(tmp_path: Path) -> None:
+async def test_rafaga_para_con_el_bote_y_lo_anuncia(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, [LOSS, JACKPOT])
     view = make_view(cog)
     channel = MagicMock(spec=discord.TextChannel)
@@ -326,7 +329,7 @@ async def test_auto_para_con_el_bote_y_lo_anuncia(tmp_path: Path) -> None:
     view.message = MagicMock()
     view.message.channel = channel
 
-    await view._auto(make_interaction())
+    await view._burst(make_interaction())
 
     assert view.session_spins == 2
     assert "JOVANAZO" in channel.send.await_args.args[0]
@@ -419,3 +422,411 @@ async def test_slots_con_mas_de_lo_que_tienes_avisa(tmp_path: Path) -> None:
     )
 
     send_error.assert_awaited_once()
+
+
+# -- ▶️ Auto ------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fast_gap(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Sin espera entre tiradas; devuelve las esperas pedidas a `asyncio.sleep`."""
+    waited: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(delay: float, *args: object) -> None:
+        waited.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    return waited
+
+
+def autoplay_view(cog: Slots, stake: int = 10) -> SlotMachineView:
+    """Máquina con un mensaje normal (`.tragas`): se edita con `message.edit`, sin token."""
+    view = make_view(cog, stake)
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock()
+    view.message = MagicMock()
+    view.message.channel = channel
+    view.message.edit = AsyncMock()
+    return view
+
+
+async def run_autoplay(view: SlotMachineView, interaction: MagicMock | None = None) -> MagicMock:
+    """Pulsa ▶️ Auto y espera a que acabe la sesión. Devuelve la interacción del clic."""
+    interaction = interaction or make_interaction()
+    await view._autoplay_click(interaction)
+    assert view.autoplay is not None
+    await view.autoplay.task  # type: ignore[arg-type]
+    return interaction
+
+
+def edited_names(view: SlotMachineView) -> list[list[str]]:
+    return [
+        [file.filename for file in call.kwargs["attachments"]]
+        for call in view.message.edit.await_args_list
+        if "attachments" in call.kwargs
+    ]
+
+
+def last_description(view: SlotMachineView) -> str:
+    return view.message.edit.await_args.kwargs["embed"].description
+
+
+async def test_auto_encadena_tiradas_con_animacion_hasta_el_tope(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path, [GRAPES, GRAPES])
+    view = autoplay_view(cog, stake=10)
+
+    interaction = await run_autoplay(view)
+
+    assert view.session_spins == AUTOPLAY_MAX
+    # Cada tirada: el GIF y, después, el PNG final; y al cerrar, el resumen sin imagen.
+    assert edited_names(view) == [[GIF_NAME], [PNG_NAME]] * AUTOPLAY_MAX
+    assert view.message.edit.await_count == 2 * AUTOPLAY_MAX + 1
+    assert "25 tiradas" in last_description(view)
+    assert "tope" in last_description(view)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) > 0
+    # Contesta al clic una sola vez y nunca edita con el token de la interacción.
+    interaction.response.defer.assert_awaited_once()
+    interaction.edit_original_response.assert_not_awaited()
+    assert view.autoplay is None
+    assert not view._busy
+    assert not any(item.disabled for item in view.children)  # type: ignore[attr-defined]
+    assert view.autoplay_button.label == "▶️ Auto"
+    assert view.timeout == slots_module.MACHINE_TIMEOUT
+
+
+async def test_auto_cobra_cada_tirada_una_vez(tmp_path: Path, fast_gap: list[float]) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+
+    await run_autoplay(view)
+
+    # Todo pierde: para al perder 10 apuestas, y el saldo cuadra con las tiradas.
+    assert view.session_spins == 10
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * 100
+    assert "Techo de gasto" in last_description(view)
+
+
+async def test_auto_en_turbo_solo_manda_la_imagen_final_y_deja_el_intervalo(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    view.turbo = True
+
+    await run_autoplay(view)
+
+    assert set(map(tuple, edited_names(view))) == {(PNG_NAME,)}
+    assert view.message.edit.await_count == view.session_spins + 1
+    assert fast_gap  # esperó entre tiradas
+    assert all(0 < wait <= AUTOPLAY_MIN_GAP for wait in fast_gap)
+
+
+async def test_auto_para_cuando_no_llega_el_saldo(tmp_path: Path, fast_gap: list[float]) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=300)
+
+    await run_autoplay(view)
+
+    assert view.session_spins == 3
+    assert "no te llega" in last_description(view)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 900
+
+
+async def test_auto_sin_saldo_desde_el_principio_avisa_en_privado_y_no_edita(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=STARTING_BALANCE + 1)
+
+    interaction = await run_autoplay(view)
+
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+    view.message.edit.assert_not_awaited()
+    assert view.session_spins == 0
+    assert not view._busy
+    assert view.autoplay is None
+
+
+async def test_auto_para_con_el_bote_lo_anuncia_y_deja_ver_la_tirada(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path, [LOSS, JACKPOT])
+    view = autoplay_view(cog, stake=10)
+
+    await run_autoplay(view)
+
+    assert view.session_spins == 2
+    assert "premio gordo" in last_description(view)
+    assert "del bote" in last_description(view)  # el resumen no tapa la tirada
+    assert "JOVANAZO" in view.message.channel.send.await_args.args[0]
+    assert await cog.pot(GUILD_ID) == POT_SEED
+
+
+async def test_auto_para_con_un_premio_de_cincuenta_veces_la_apuesta(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    sevens = stops_where(lambda s: s.kind == Kind.THREE and s.symbol == "7" and not s.scatters)
+    cog = await make_cog(tmp_path, [LOSS, sevens])
+    view = autoplay_view(cog, stake=10)
+
+    await run_autoplay(view)
+
+    assert view.session_spins == 2
+    assert "premio gordo" in last_description(view)
+
+
+async def test_auto_juega_los_giros_gratis_como_tirar(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path, [FREE])
+    view = autoplay_view(cog, stake=100)
+
+    await run_autoplay(view)
+
+    # Una tirada pagada que da 5 gratis (no se cobran) y 9 pagadas más hasta el límite.
+    assert view.free_spins == 0
+    assert view.session_spins == 1 + FREE_SPINS + 9
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * 100
+
+
+async def test_parar_contesta_sin_ack_y_la_tirada_en_curso_acaba(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=10)
+    events: list[str] = []
+    stop_click = fake_interaction(make_user(), events=events)
+    pressed = False
+
+    async def press_stop_in_third_spin(**kwargs: object) -> None:
+        nonlocal pressed
+        if view.session_spins == 3 and not pressed:
+            pressed = True
+            await view._autoplay_click(stop_click)
+
+    view.message.edit.side_effect = press_stop_in_third_spin
+
+    await run_autoplay(view)
+
+    assert events == ["response.edit_message"]  # directa: sin ack, sin base de datos
+    stop_click.response.defer.assert_not_awaited()
+    assert stop_click.response.edit_message.await_args.kwargs["view"] is view
+    # La tercera tirada acabó entera (GIF y PNG) y la cuarta no se jugó.
+    assert view.session_spins == 3
+    assert "Parado a mano" in last_description(view)
+    assert edited_names(view)[-2:] == [[GIF_NAME], [PNG_NAME]]
+
+
+async def test_mientras_corre_solo_se_puede_pulsar_parar(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=10)
+    seen: list[dict[str, bool]] = []
+
+    async def spy(**kwargs: object) -> None:
+        seen.append({item.label: item.disabled for item in view.children})  # type: ignore[attr-defined]
+
+    view.message.edit.side_effect = spy
+
+    await run_autoplay(view)
+
+    running = seen[:-1]  # la última edición es el resumen, con todo activo
+    assert running
+    for buttons in running:
+        assert buttons["⏹️ Parar"] is False
+        assert [label for label, disabled in buttons.items() if not disabled] == ["⏹️ Parar"]
+    assert not any(seen[-1].values())
+
+
+async def test_dos_clics_a_la_vez_en_auto_no_cobran_dos_veces(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    first, second = make_interaction(), make_interaction()
+
+    await asyncio.gather(view._autoplay_click(first), view._autoplay_click(second))
+    assert view.autoplay is not None
+    await view.autoplay.task  # type: ignore[arg-type]
+
+    # El segundo clic se acepta y se ignora: ni para la sesión ni abre otra.
+    second.response.defer.assert_awaited_once()
+    assert view.session_spins == 10
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * 100
+
+
+async def test_tirar_mientras_corre_el_auto_se_rechaza(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    extra = make_interaction()
+    tried = False
+
+    async def try_to_spin(**kwargs: object) -> None:
+        nonlocal tried
+        if not tried:
+            tried = True
+            await view.play(extra)
+
+    view.message.edit.side_effect = try_to_spin
+
+    await run_autoplay(view)
+
+    extra.response.defer.assert_awaited_once()
+    extra.edit_original_response.assert_not_awaited()
+    assert view.session_spins == 10
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * 100
+
+
+async def test_un_segundo_auto_mientras_corre_no_abre_otra_sesion(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    view._busy = True  # p. ej. una tirada de Tirar en curso
+    interaction = make_interaction()
+
+    await view._autoplay_click(interaction)
+
+    interaction.response.defer.assert_awaited_once()
+    assert view.autoplay is None
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+
+
+async def test_un_parar_antes_de_que_se_vea_el_boton_se_ignora(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    await view._autoplay_click(make_interaction())
+    assert view.autoplay is not None and not view.autoplay.armed
+    early = make_interaction()
+
+    await view._autoplay_click(early)  # el doble clic de ▶️ Auto
+
+    early.response.defer.assert_awaited_once()
+    assert not view.autoplay.stop_requested
+    await view.autoplay.task  # type: ignore[arg-type]
+    assert view.session_spins == 10
+
+
+async def test_al_descargar_el_cog_el_auto_acaba_la_tirada_y_se_cierra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=10)
+    cog.machines.add(view)
+    in_gap = asyncio.Event()
+    real_sleep = asyncio.sleep
+
+    async def stuck_sleep(delay: float, *args: object) -> None:
+        in_gap.set()
+        await real_sleep(3600)
+
+    monkeypatch.setattr(asyncio, "sleep", stuck_sleep)
+    monkeypatch.setattr("bot.services.autoplay.CLOSE_GRACE_SECONDS", 0.05)
+    await view._autoplay_click(make_interaction())
+    task = view.autoplay.task  # type: ignore[union-attr]
+    assert task.get_name().startswith("slots-autoplay-")
+    await in_gap.wait()
+
+    await cog.cog_unload()
+
+    assert task.done()
+    assert view.autoplay is None
+    assert not view._busy
+    assert view.session_spins == 1
+
+
+async def test_al_caducar_la_vista_el_auto_se_detiene_limpio(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=10)
+    release = asyncio.Event()
+
+    async def hold_in_first_spin(**kwargs: object) -> None:
+        await release.wait()
+
+    view.message.edit.side_effect = hold_in_first_spin
+    await view._autoplay_click(make_interaction())
+    task = view.autoplay.task  # type: ignore[union-attr]
+    await asyncio.sleep(0)
+    closing = asyncio.create_task(view.on_timeout())
+    await asyncio.sleep(0)
+    release.set()
+    await closing
+
+    assert task.done()
+    assert view.autoplay is None
+    assert view.session_spins < AUTOPLAY_MAX
+
+
+async def test_auto_sin_token_edita_un_mensaje_de_slash_por_el_canal(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = make_view(cog)
+    message = MagicMock(spec=discord.InteractionMessage)
+    message.id = 1234
+    message.channel = MagicMock()
+    partial = message.channel.get_partial_message.return_value
+    partial.edit = AsyncMock()
+    view.message = message
+    interaction = make_interaction()
+
+    assert view._message_edit(interaction) is partial.edit
+    message.channel.get_partial_message.assert_called_once_with(1234)
+    view.message = MagicMock(spec=discord.Message)
+    assert view._message_edit(interaction) is view.message.edit
+    view.message = None
+    assert view._message_edit(interaction) is interaction.edit_original_response
+
+
+async def test_auto_se_para_si_no_se_puede_editar_el_mensaje(
+    tmp_path: Path, fast_gap: list[float]
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=10)
+    gone = MagicMock(status=404, reason="Not Found")
+    view.message.edit.side_effect = discord.NotFound(gone, "Unknown Message")
+
+    await run_autoplay(view)
+
+    # La tirada ya estaba cobrada y se cuenta; la siguiente no se juega a ciegas.
+    assert view.session_spins == 1
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10
+    assert not view._busy
+
+
+async def test_auto_avisa_de_la_renta_una_sola_vez_por_sesion(
+    tmp_path: Path, fast_gap: list[float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog = await make_cog(tmp_path)
+    view = autoplay_view(cog, stake=100)
+    remind = AsyncMock()
+    monkeypatch.setattr(slots_module.renta, "remind", remind)
+
+    interaction = await run_autoplay(view)
+
+    assert view.session_spins == 10
+    remind.assert_awaited_once_with(cog.bot, interaction)
+
+
+async def test_el_boton_de_rafaga_sigue_con_su_custom_id_y_el_auto_tiene_el_suyo(
+    tmp_path: Path,
+) -> None:
+    view = make_view(await make_cog(tmp_path))
+    ids = {item.label: item.custom_id for item in view.children}  # type: ignore[attr-defined]
+    assert ids[f"🔁 Ráfaga ×{BURST_SPINS}"] == "tragaperras:auto"
+    assert ids["▶️ Auto"] == "tragaperras:autoplay"
+
+
+def test_resumen_de_logros_de_sesion_segun_el_motivo() -> None:
+    manual = slots_autoplay_stats(spins=12, net=300, reason=StopReason.MANUAL).add
+    assert manual["slots_autoplay_manual"] == manual["slots_autoplay_exit_ahead"] == 1
+    assert slots_autoplay_stats(spins=0, net=0, reason=StopReason.NO_FUNDS).add == {}

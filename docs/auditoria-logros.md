@@ -50,22 +50,43 @@ Se añadieron después, con 72 logros (11 secretos). La simulación (`_jugar_cab
 
 ## Pachinko: la física
 
-Las bolas del pachinko caen con física real (`bot.services.pachinko_physics`) y de ahí salen 25 logros nuevos: rebotes en los clavos, caídas lentas y rápidas y bolas que bajan sin tocar casi nada. Se alimentan en `pachinko_stats` con las caídas de la biblioteca guardada (`trayectorias.json`), no con lo que paga la máquina. Cuatro son secretos.
+Las bolas del pachinko caen con física real (`bot.services.pachinko_physics`) y de ahí salen 25 logros: rebotes en los clavos, caídas lentas y rápidas y bolas que bajan sin tocar casi nada. Se alimentan en `pachinko_stats` con el movimiento real de la tanda (`bot.services.pachinko_motion`, con las bolas chocando entre sí), no con lo que paga la máquina. Cuatro son secretos.
 
-La rareza sale de la biblioteca y de la probabilidad real de cada bolsillo (`pocket_probability`): cada bola elige al azar una de las 24 caídas de su bolsillo, así que la probabilidad de una propiedad de la caída es la suma, sobre bolsillos, de la probabilidad del bolsillo por la parte de sus caídas que la cumple. Con el jugador de la simulación (60 tandas al día, tableros 40 % Clásica, 30 % Sakura, 15 % Dragón y 15 % Oni) y 10 bolas por tanda salen unos 116 rebotes por tanda (6.950 al día), 0,14 bolas lentas por bola, 0,05 rápidas y 0,025 que bajan casi sin tocar clavos:
+La rareza salió primero de la biblioteca de caídas guardadas (`trayectorias.json`) y de la probabilidad real de cada bolsillo (`pocket_probability`): cada bola cae en un bolsillo, y la probabilidad de una propiedad de la caída es la suma, sobre bolsillos, de la probabilidad del bolsillo por la parte de sus caídas que la cumple. Al añadir los choques se repitió con 42.000 tandas simuladas con `motion_for` (10.500 por tablero, semillas fijas): los choques casi no mueven estas distribuciones (115,5 rebotes por tanda contra 115,8 sin choques; bolas lentas, 15,6 % contra 14,2 %), así que **ninguna rareza ni meta de estos 25 logros cambia**. Con el jugador de la simulación (60 tandas al día, tableros 40 % Clásica, 30 % Sakura, 15 % Dragón y 15 % Oni) y 10 bolas por tanda salen unos 115 rebotes por tanda (6.930 al día), 0,156 bolas lentas por bola, 0,047 rápidas y 0,026 que bajan casi sin tocar clavos:
 
 | Logro | Cuenta | Días (mediana) | Rareza |
 |---|---|---|---|
-| 1.000 y 10.000 rebotes | meta / 6.950 al día | 0,15 y 1,5 | Común |
+| 1.000 y 10.000 rebotes | meta / 6.930 al día | 0,15 y 1,4 | Común |
 | 50.000 / 250.000 / 1.000.000 / 5.000.000 rebotes | idem | 7 / 36 / 144 / 720 | Raro / Épico / Legendario / Mítico |
-| Una bola con 15, 18, 20 y 21 rebotes | 66 %, 11 %, 2,9 % y 1,2 % de las tandas lo traen | 0,01 / 0,1 / 0,4 / 1 | Común (el máximo que da un tablero es 21, solo en Oni) |
+| Una bola con 15, 18, 20 y 21 rebotes | 69 %, 12 %, 2,8 % y 1,0 % de las tandas lo traen | 0,01 / 0,1 / 0,4 / 1,1 | Común (con choques, una de cada ~9.000 tandas llega a 22 y 23: «casi lo máximo») |
 | Una tanda con 150 rebotes | 2,4 % de las tandas | 0,5 | Común |
-| Una tanda con 160, 165 y 170 rebotes | 0,16 %, 0,025 % y 0,003 % | 7 / 46 / 450 | Raro / Épico / Mítico |
-| 1, 100, 1.000 y 10.000 bolas lentas (casi 2 s) | 85 al día | 0,02 / 1,2 / 12 / 118 | Común / Común / Raro / Legendario |
-| 1, 100, 1.000 y 5.000 bolas rápidas (1,1 s o menos) | 30 al día | 0,03 / 3,3 / 33 / 165 | Común / Raro / Épico / Legendario |
-| 1, 25 y 250 bolas con 5 rebotes o menos | 15 al día | 0,06 / 1,7 / 17 | Común / Común / Épico |
+| Una tanda con 160, 165 y 170 rebotes | 0,19 %, 0,03 % y 0,003 % | 6 / 40 / 360 | Raro / Épico / Mítico |
+| 1, 100, 1.000 y 10.000 bolas lentas (casi 2 s) | 94 al día | 0,01 / 1,1 / 11 / 107 | Común / Común / Raro / Legendario |
+| 1, 100, 1.000 y 5.000 bolas rápidas (1,1 s o menos) | 28 al día | 0,04 / 3,5 / 35 / 176 | Común / Raro / Épico / Legendario |
+| 1, 25 y 250 bolas con 5 rebotes o menos | 16 al día | 0,06 / 1,6 / 16 | Común / Común / Épico |
 
-Las cifras de las tandas salen de convolucionar la distribución de rebotes de una bola 10 veces por tablero; la simulación de `docs/auditoria_logros.py` (con `PachinkoMachine(rng.randrange, rng.randrange)`) las confirma y no marca ninguna discrepancia. Si se regenera la biblioteca (`docs/pachinko_trayectorias.py`) cambian estas distribuciones: hay que volver a calcular las tablas y las metas de `pachinko_bounce_volley_max`, que son las más sensibles.
+Las cifras de las tandas salen de convolucionar la distribución de rebotes de una bola 10 veces por tablero (con la de las 42.000 tandas, bolsillo a bolsillo) y las de una bola, de las tandas simuladas; la simulación de `docs/auditoria_logros.py` (con `PachinkoMachine(rng.randrange, rng.randrange)` y `motion_for`) las confirma y no marca ninguna discrepancia. Si se regenera la biblioteca (`docs/pachinko_trayectorias.py`) o se toca la física de los choques, cambian estas distribuciones: hay que volver a calcular las tablas y las metas de `pachinko_bounce_volley_max`, que son las más sensibles. La única frase que cambió es la de «Récord del Congreso» (21 rebotes): ya no es «lo máximo que da un tablero».
+
+## Pachinko: los choques
+
+Las bolas chocan entre sí (restitución 0,8) y, aun así, cada una acaba en el bolsillo que sorteó la máquina: `motion_for` busca, bola a bola, una salida con la que todas las que están en el aire entran donde deben. Con el método de arriba (42.000 tandas, mismo jugador) salen **26 logros nuevos** en 🌸 Pachinko, cuatro de ellos secretos. Lo que mide la simulación:
+
+- 0,62 choques por tanda (37 al día). El 61 % de las tandas no tiene ninguno; el 39 % tiene al menos uno, el 15 % dos o más, el 5,6 % tres o más, el 2,0 % cuatro, el 0,78 % cinco, el 0,30 % seis, el 0,05 % ocho y el 0,007 % diez. El máximo visto en 42.000 tandas es 11.
+- Una bola con 2 o más choques en su caída: 11,5 % de las tandas; 3 o más, 3,6 %; 5 o más, 0,29 %; 7 o más, 0,032 %. Bolas distintas que chocan en una tanda: 5 o más, 1,1 %; 7 o más, 0,048 %; 8, 0,006 %.
+- Una bola que choca y acaba en una esquina: se midió forzando una bola a cada esquina en 1.000 tandas por tablero. Choca el 1,6 % de las que van a las esquinas de Sakura y el 0,5-0,7 % en los otros tres (casi todas las esquinas se llegan sin tocar a nadie), lo que da 0,00044 por tanda: unos 26 días.
+- Una bola que sale con retraso (ninguna de las 8 salidas probadas sirvió): el 1,0 % de las bolas, 6 al día, y en 42.000 tandas nunca más de 6 fotogramas de retraso.
+
+| Logro | Cuenta | Días (mediana) | Rareza |
+|---|---|---|---|
+| 1, 100, 500, 2.000, 5.000 y 20.000 choques en total | meta / 37 al día | 0,03 / 2,7 / 13 / 54 / 134 / 538 | Común / Común / Raro / Épico / Legendario / Mítico (secreto) |
+| Una tanda con 3, 5, 6, 8 y 10 choques | 5,6 %, 0,78 %, 0,30 %, 0,050 % y 0,007 % de las tandas | 0,2 / 1,5 / 3,9 / 23 / 172 | Común / Común / Raro / Épico / Legendario (el de 10, secreto) |
+| Una bola con 2, 3, 5 y 7 choques | 11,5 %, 3,6 %, 0,29 % y 0,032 % de las tandas | 0,09 / 0,3 / 4,0 / 36 | Común / Común / Raro / Épico |
+| 5, 7 y 8 bolas distintas chocando en una tanda | 1,1 %, 0,048 % y 0,006 % | 1,0 / 24 / 203 | Común / Épico / Legendario (el de 8, secreto) |
+| 1 y 5 bolas que chocan y acaban en una esquina | 0,026 al día | 26 / 190 | Épico (secreto) / Legendario |
+| 1, 100 y 1.000 tandas sin ningún choque | 37 al día | 0,03 / 2,7 / 27 | Común / Común / Épico |
+| 1, 100 y 1.000 bolas que esperan turno para salir | 6 al día | 0,17 / 17 / 166 | Común / Épico / Legendario |
+
+Las rarezas de los de suerte (tandas con muchos choques, bolas con muchos choques, esquinas) salen de las probabilidades de arriba con `0,69 / (−ln(1 − p) × 60)` días, igual que las del apartado anterior. `docs/auditoria_logros.py --juego pachinko --jugadores 4 --dias 20` confirma los de menos de 20 días (el pachinko cuesta ~0,1 s por tanda con choques, así que simular 400 días de 60 tandas llevaría horas) y el resto se deja a las probabilidades. Las colas más raras (diez choques en una tanda, 8 bolas distintas) salen de 2 a 3 casos en 42.000 tandas: su rareza es aproximada, y el techo de 10 y 8 es lo más alto que se ha visto, no un máximo demostrado.
 
 ## Excepciones que la simulación marca y se dejan
 
