@@ -194,6 +194,21 @@ PRODUCED_STATS = {
     "slots_autoplay_loss_limit", "slots_autoplay_bigwin", "slots_autoplay_jackpot",
     "slots_autoplay_broke", "slots_autoplay_manual", "slots_autoplay_quick_quit",
     "slots_autoplay_exit_ahead", "slots_autoplay_free", "slots_autoplay_even",
+    # Revamp: re-giro, doble o nada, bote misterioso, giro diario, celebraciones, calor
+    # que se enfría y ticket (slots_stats, slots_respin_stats, slots_double_stats,
+    # slots_cooled_stats y slots_ticket_stats)
+    "slots_win_big", "slots_win_mega", "slots_win_epic", "slots_tiny_big", "slots_daily_big",
+    "slots_mystery_pots", "slots_pot_drought", "slots_pot_quick", "slots_daily",
+    "slots_daily_streak",
+    "slots_respins", "slots_respin_spent", "slots_respin_price_max", "slots_respin_saved",
+    "slots_respin_bailout", "slots_respin_jackpots", "slots_respin_fail_chain",
+    "slots_doubles", "slots_double_wins", "slots_double_chain", "slots_double_win_max",
+    "slots_double_fives", "slots_double_loss_max", "slots_double_nada",
+    "slots_double_heartbreak",
+    "slots_cooled", "slots_cooled_max",
+    "slots_tickets", "slots_ticket_gross_max", "slots_ticket_best", "slots_ticket_loss_max",
+    "slots_ticket_creative", "slots_ticket_taxed", "slots_ticket_zero", "slots_ticket_dry",
+    "slots_ticket_quick",
     # Botes (cogs/hold_win.py: hold_win_stats, hold_win_bonus_stats y el botón de Auto)
     "botes_spins", "botes_spins_volcan",
     "botes_collects", "botes_double_collect", "botes_near_miss", "botes_ways_5",

@@ -81,9 +81,11 @@ from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.shop_catalog import AISLES as SHOP_AISLES
 from bot.services.shop_catalog import RETIRED_AISLES as SHOP_RETIRED_AISLES
 from bot.services.shop_uses import USES as SHOP_USES
+from bot.services.slots import HEAT_MAX as SLOT_HEAT_MAX
 from bot.services.slots import WILD as SLOT_WILD
 from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
+from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
 from bot.services.work import MAX_COFFEES, Mechanic
 from bot.services.work_tools import TOOLS as WORK_TOOLS
@@ -1952,14 +1954,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "ldw_1k", "Contabilidad creativa",
          "Cobra 1.000 premios más pequeños que tu apuesta.", E),
     ])  # fmt: skip
+    # Por un pelo: desde el revamp la máquina enseña un casi-premio en un 20-25 % de
+    # las tiradas (antes, un 0,8 %). A 200 tiradas al día son unos 45 al día, así que
+    # 25 y 100 salían en horas. Se multiplican las metas (los `id` se quedan) para
+    # mantener la rareza: 1.000 son unos 22 días (Épico), 5.000 unos 110 (Legendario)
+    # y 25.000 (abajo) más de un año (Mítico). Si cambia la frecuencia, se ajustan.
     a += _tiers("slots", "slots_near_miss", [
         (1, "nearmiss_1", "Por un pelo", "Quédate a un símbolo de un premio gordo.", C),
-        (25, "nearmiss_25", "¡Ay, bendito!", "Quédate 25 veces a un símbolo del premio gordo.", E),
-        (100, "nearmiss_100", "La próxima sí", "Quédate 100 veces a un símbolo.", L),
+        (1_000, "nearmiss_25", "¡Ay, bendito!",
+         "Quédate 1.000 veces a un símbolo del premio gordo.", E),
+        (5_000, "nearmiss_100", "La próxima sí", "Quédate 5.000 veces a un símbolo.", L),
     ])  # fmt: skip
+    # El tercer rodillo frena despacio cuando los dos primeros prometen premio gordo,
+    # que es la mitad de cada casi-premio de la línea: con el revamp pasa en más del
+    # 10 % de las tiradas, y 100 salían en tres o cuatro días. 1.000 vuelve a ser Épico.
     a += _tiers("slots", "slots_anticipation", [
         (10, "antic_10", "Corazón en un puño", "Ve frenar despacio el tercer rodillo 10 veces.", C),
-        (100, "antic_100", "Taquicardia", "Ve frenar despacio el tercer rodillo 100 veces.", E),
+        (1_000, "antic_100", "Taquicardia",
+         "Ve frenar despacio el tercer rodillo 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_scatter_tease", [
         (10, "tease_10", "Te faltó una entrada", "Saca dos 🎟️ y no el tercero 10 veces.", C, True),
@@ -2039,8 +2051,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5_000, "ldw_5k", "Pierdo ganando", "Cobra 5.000 premios más pequeños que tu apuesta.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_near_miss", [
-        (500, "nearmiss_500", "Casi, casi, casi",
-         "Quédate 500 veces a un símbolo del premio gordo.", M, True),
+        (25_000, "nearmiss_500", "Casi, casi, casi",
+         "Quédate 25.000 veces a un símbolo del premio gordo.", M, True),
     ])  # fmt: skip
 
     # ▶️ Auto con animación: sesiones de hasta 25 tiradas, una a una. Las rarezas salen de
@@ -2111,6 +2123,242 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "autoplay_even", "Déficit cero",
          "Termina una sesión completa de ▶️ Auto con el neto en 0 Y$ exactos.", E, True),
     ])  # fmt: skip
+
+    # 🎰 Tragaperras: re-giro, doble o nada, bote misterioso, giro diario, celebraciones,
+    # calor que se enfría y ticket de sesión. Rarezas estimadas a 200 tiradas al día con
+    # estas probabilidades (ajustarlas si cambian las tablas de `services/slots.py` y
+    # volver a pasar `docs/auditoria_logros.py`): re-giro ofrecido en un 20 % de las
+    # tiradas, de las que un jugador normal acepta unas 10 al día, y acertado en un
+    # 10 %; volver a quedarse a uno tras fallar, un 20 %; doble o nada al 50 %, unas 10
+    # series al día; GRAN PREMIO 1 de cada 75 tiradas, MEGA 1 de cada 500 y ÉPICO 1 de
+    # cada 2.000 (los contadores de cada nivel no se solapan).
+    a += _tiers("slots", "slots_respins", [
+        (1, "respin_1", "Rescate exprés", "Re-gira el tercer rodillo tras un casi-premio.", C),
+        (50, "respin_50", "Inyección de liquidez", "Re-gira el tercer rodillo 50 veces.", R),
+        (500, "respin_500", "Banco malo",
+         "Re-gira el tercer rodillo 500 veces. La Sareb te manda recuerdos.", E),
+        (2_500, "respin_2500", "Rescate a la banca",
+         "Re-gira 2.500 veces. 60.000 millones que no volverán.", L),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_respin_saved", [
+        (1, "respin_saved_1", "Rescatado", "Acierta un re-giro y cobra el premio.", C),
+        (10, "respin_saved_10", "Too big to fail", "Acierta 10 re-giros.", R),
+        (50, "respin_saved_50", "El rescate que sí se devolvió", "Acierta 50 re-giros.", E),
+        (250, "respin_saved_250", "Ingeniería financiera", "Acierta 250 re-giros.", L),
+    ])  # fmt: skip
+    # Fallar k seguidos en la misma tirada: 0,2^(k-1) × 0,9^k por re-giro empezado.
+    # 3 seguidos, unos 3 días; 4, unos 20; 5, unos 100; 7, años.
+    a += _tiers("slots", "slots_respin_fail_chain", [
+        (3, "respin_fail_3", "Esto no es un rescate",
+         "Falla 3 re-giros seguidos en la misma tirada. Es una línea de crédito.", R),
+        (4, "respin_fail_4", "Bankia sale a bolsa",
+         "Falla 4 re-giros seguidos en la misma tirada.", E),
+        (5, "respin_fail_5", "El FROB al rescate",
+         "Falla 5 re-giros seguidos en la misma tirada.", L),
+        (7, "respin_fail_7", "Rescate a fondo perdido",
+         "Falla 7 re-giros seguidos en la misma tirada. Ni el Banco de España lo vio venir.",
+         M, True),
+    ])  # fmt: skip
+    # Acertar tras fallar dos: 0,2² × 0,9² × 0,1 por re-giro empezado, unos 30 días.
+    a += _tiers("slots", "slots_respin_bailout", [
+        (1, "respin_bailout", "A la tercera va la vencida",
+         "Acierta un re-giro después de fallar dos o más en la misma tirada.", E, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_respin_jackpots", [
+        (1, "respin_jackpot", "Rescate con premio gordo",
+         "Llévate el bote en un re-giro.", M, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_respin_price_max", [
+        (1_000, "respin_price_1k", "Prima de riesgo",
+         "Paga 1.000 Y$ o más por un solo re-giro.", R),
+        (10_000, "respin_price_10k", "Prima de riesgo por las nubes",
+         "Paga 10.000 Y$ o más por un solo re-giro.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_respin_spent", [
+        (10_000, "respin_spent_10k", "Fondo de rescate", "Gasta 10.000 Y$ en re-giros.", R),
+        (100_000, "respin_spent_100k", "Socializar las pérdidas",
+         "Gasta 100.000 Y$ en re-giros.", L),
+    ], unit="money")  # fmt: skip
+
+    a += _tiers("slots", "slots_doubles", [
+        (1, "double_1", "¿Rojo o negro?", "Juega tu primer doble o nada tras un premio.", C),
+        (100, "double_100", "Doble o nada, nada o doble", "Juega 100 dobles.", R),
+        (1_000, "double_1k", "Tahúr de feria", "Juega 1.000 dobles.", E),
+        (10_000, "double_10k", "El rojo y el negro", "Juega 10.000 dobles. Stendhal lo sabía.",
+         M),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_double_wins", [
+        (1, "double_win_1", "Lo doblo", "Gana un doble o nada.", C),
+        (50, "double_win_50", "Ojo de halcón", "Gana 50 dobles.", R),
+        (500, "double_win_500", "Pacto con el diablo", "Gana 500 dobles.", E),
+        (2_000, "double_win_2k", "La banca soy yo", "Gana 2.000 dobles.", L),
+    ])  # fmt: skip
+    # Ganar los cinco seguidos: 1 de cada 32 series, unos 3 días a 10 series al día.
+    a += _tiers("slots", "slots_double_chain", [
+        (3, "double_chain_3", "Triple salto mortal", "Gana 3 dobles seguidos.", C),
+        (5, "double_chain_5", "Pleno al color",
+         "Gana los 5 dobles seguidos que deja la máquina.", R),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_double_fives", [
+        (10, "double_fives_10", "Martingala a la española", "Gana 10 series de 5 dobles.", E),
+        (50, "double_fives_50", "Trato con la ruina", "Gana 50 series de 5 dobles.", L),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_double_nada", [
+        (1, "double_nada", "Fue nada", "Pierde el primer doble nada más empezar.", C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_double_heartbreak", [
+        (1, "double_heartbreak", "Moción de censura en el descuento",
+         "Gana 4 dobles seguidos y pierde el quinto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_double_win_max", [
+        (10_000, "double_rich", "Doblar la paguita", "Gana 10.000 Y$ o más en un solo doble.", R),
+        (50_000, "double_rich_50k", "Doble de oro", "Gana 50.000 Y$ o más en un solo doble.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_double_loss_max", [
+        (10_000, "double_ouch", "Lo que el viento se llevó",
+         "Pierde 10.000 Y$ o más en un solo doble.", R),
+        (50_000, "double_ouch_50k", "Y se fue en un rojo",
+         "Pierde 50.000 Y$ o más en un solo doble.", L, True),
+    ], unit="money")  # fmt: skip
+
+    # Bote misterioso: cada jugador se lo lleva más o menos cada 15.000 tiradas suyas
+    # (depende del tope y de cuánto juegue el servidor): unos 75 días, como el 🃏🃏🃏.
+    a += _tiers("slots", "slots_mystery_pots", [
+        (1, "mystery_pot_1", "Tenía que caer",
+         "Llévate el bote misterioso al cruzar su tope oculto.", L),
+        (3, "mystery_pot_3", "Vidente del bote", "Llévate el bote misterioso 3 veces.", M),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_pot_drought", [
+        (10_000, "drought_10k", "Le tocaba",
+         "Llévate el bote cuando el servidor llevaba 10.000 tiradas sin él.", L),
+        (50_000, "drought_50k", "Sequía de la España vaciada",
+         "Llévate el bote cuando el servidor llevaba 50.000 tiradas sin él.", M),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_pot_quick", [
+        (1, "pot_quick", "Ni lo calentaste",
+         "Llévate el bote cuando el servidor llevaba 100 tiradas o menos sin bote.", M, True),
+    ])  # fmt: skip
+
+    # Giro diario: uno al día como mucho, así que se mide en días de calendario.
+    a += _tiers("slots", "slots_daily", [
+        (1, "daily_1", "La paguita de la máquina", "Juega tu giro diario gratis.", C),
+        (30, "daily_30", "Funcionario de la tragaperras", "Juega el giro diario 30 días.", E),
+        (100, "daily_100", "Fijo discontinuo", "Juega el giro diario 100 días.", L),
+        (365, "daily_365", "Ayuda a fondo perdido", "Juega el giro diario 365 días.", M),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_daily_streak", [
+        (7, "daily_streak_7", "Siete días a la semana",
+         "Juega el giro diario 7 días seguidos y llévalo a su apuesta máxima.", R),
+    ])  # fmt: skip
+    # Un GRAN PREMIO o más en el giro diario: 1 de cada 60 días, unos 42 de mediana.
+    a += _tiers("slots", "slots_daily_big", [
+        (1, "daily_big", "Café para todos",
+         "Saca un GRAN PREMIO o más en el giro diario gratis.", E, True),
+    ])  # fmt: skip
+
+    a += _tiers("slots", "slots_win_big", [
+        (1, "win_big_1", "¡GRAN PREMIO!", "Gana de ×5 a ×15 lo apostado en una tirada.", C),
+        (25, "win_big_25", "Fanfarria de barrio", "Saca 25 GRAN PREMIO.", R),
+        (100, "win_big_100", "Vecino de la orquesta", "Saca 100 GRAN PREMIO.", E),
+        (500, "win_big_500", "Ya ni miro las luces", "Saca 500 GRAN PREMIO.", L),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_win_mega", [
+        (1, "win_mega_1", "¡MEGAPREMIO!", "Gana de ×15 a ×50 lo apostado en una tirada.", C),
+        (10, "win_mega_10", "Megaconstructora", "Saca 10 MEGAPREMIO.", E),
+        (50, "win_mega_50", "Mega, mega, mega", "Saca 50 MEGAPREMIO.", L),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_win_epic", [
+        (1, "win_epic_1", "¡PREMIO ÉPICO!", "Gana ×50 o más lo apostado en una tirada.", R),
+        (5, "win_epic_5", "Epopeya", "Saca 5 PREMIO ÉPICO.", E),
+        (25, "win_epic_25", "El cantar de mío Sanxe", "Saca 25 PREMIO ÉPICO.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="slots_fanfare",
+        name="Fanfarria completa",
+        description="Saca un GRAN PREMIO, un MEGAPREMIO y un PREMIO ÉPICO.",
+        category="slots",
+        rarity=R,
+        conditions=(("slots_win_big", 1), ("slots_win_mega", 1), ("slots_win_epic", 1)),
+    ))  # fmt: skip
+    a += _tiers("slots", "slots_tiny_big", [
+        (1, "tiny_big", "Gran premio de jubilado", "Saca un GRAN PREMIO apostando 1 Y$.", C,
+         True),
+    ])  # fmt: skip
+
+    a += _tiers("slots", "slots_cooled", [
+        (1, "cooled_1", "Se enfrió el café", "Pierde calor de la máquina por no jugar.", C),
+        (25, "cooled_25", "Me fui a por tabaco", "Pierde 25 puntos de calor por no jugar.", R),
+        (100, "cooled_100", "Corriente de aire", "Pierde 100 puntos de calor por no jugar.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_cooled_max", [
+        (SLOT_HEAT_MAX, "cooled_hot", "Apagar el horno",
+         "Deja que la máquina caliente se enfríe del todo por no jugar.", C, True),
+    ])  # fmt: skip
+
+    a += _tiers("slots", "slots_tickets", [
+        (1, "ticket_1", "Pase por caja", "Cierra la máquina y llévate el ticket.", C),
+        (25, "ticket_25", "Tickets en la cartera", "Llévate 25 tickets de la tragaperras.", R),
+        (250, "ticket_250", "Archivo de Simancas", "Llévate 250 tickets de la tragaperras.", E),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_ticket_gross_max", [
+        (10_000, "ticket_gross_10k", "Premios en bruto",
+         "Cierra un ticket con 10.000 Y$ en premios cobrados.", C),
+        (100_000, "ticket_gross_100k", "Facturación récord",
+         "Cierra un ticket con 100.000 Y$ en premios cobrados.", R),
+        (500_000, "ticket_gross_500k", "Lluvia de millones (en bruto)",
+         "Cierra un ticket con 500.000 Y$ en premios cobrados.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_ticket_creative", [
+        (10_000, "ticket_creative_10k", "Maquillaje contable",
+         "Cierra con 10.000 Y$ en premios cobrados y aun así en negativo.", C),
+        (100_000, "ticket_creative_100k", "La contabilidad en B",
+         "Cierra con 100.000 Y$ en premios cobrados y aun así en negativo.", R),
+        (1_000_000, "ticket_creative_1m", "Las cuentas del Gran Capitán",
+         "Cierra con 1.000.000 Y$ en premios cobrados y aun así en negativo.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_ticket_best", [
+        (10_000, "ticket_best_10k", "Salir ganando", "Cierra un ticket con 10.000 Y$ netos o más.",
+         R),
+        (100_000, "ticket_best_100k", "Pelotazo inmobiliario",
+         "Cierra un ticket con 100.000 Y$ netos o más.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_ticket_loss_max", [
+        (10_000, "ticket_loss_10k", "Agujero contable",
+         "Cierra un ticket perdiendo 10.000 Y$ o más.", C),
+        (100_000, "ticket_loss_100k", "El agujero de las pensiones",
+         "Cierra un ticket perdiendo 100.000 Y$ o más.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("slots", "slots_ticket_taxed", [
+        (1, "ticket_taxed", "Ganas a la máquina, pierdes con Hacienda",
+         "Cierra con más premios que apuestas y aun así en negativo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_ticket_zero", [
+        (1, "ticket_zero", "Equilibrio presupuestario",
+         "Cierra tras 10 tiradas o más con el neto en 0 justo. Estabilidad presupuestaria.", R,
+         True),
+    ])  # fmt: skip
+    # Diez tiradas seguidas sin premio, con un 40 % de tiradas premiadas: 1 de cada 165
+    # sesiones de 10 o más; unos 30 días a 5 sesiones al día.
+    a += _tiers("slots", "slots_ticket_dry", [
+        (1, "ticket_dry", "Ni para pipas",
+         "Cierra tras 10 tiradas o más sin haber cobrado ni un premio.", E, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_ticket_quick", [
+        (1, "ticket_quick", "Visita de médico", "Cierra la máquina tras una sola tirada.", C,
+         True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="slots_feria",
+        name="La feria entera",
+        description="Re-gira, juega un doble, usa el giro diario, deja enfriar la máquina "
+        "y llévate un ticket.",
+        category="slots",
+        rarity=C,
+        conditions=(
+            ("slots_respins", 1), ("slots_doubles", 1), ("slots_daily", 1),
+            ("slots_cooled", 1), ("slots_tickets", 1),
+        ),
+    ))  # fmt: skip
 
     # 🌋 Botes (de momento, volcan) ---------------------------------------------------------
     a += _tiers("botes", "botes_spins", [
@@ -7119,6 +7367,11 @@ def slots_stats(
     session_spins: int,
     when: datetime,
     autoplay: bool = False,
+    tier: str | None = None,
+    mystery: bool = False,
+    drought: int = 0,
+    daily: bool = False,
+    daily_streak: int = 0,
 ) -> StatDelta:
     """Contadores de una tirada de tragaperras (sin lo común del casino).
 
@@ -7131,6 +7384,12 @@ def slots_stats(
         session_spins: Tiradas en esta máquina, contando esta.
         when: Hora local de la tirada.
         autoplay: Si la tirada se jugó con ▶️ Auto (con animación, una a una).
+        tier: Celebración de la tirada (`slots.win_tier`): `"big"`, `"mega"`,
+            `"epic"` o `None`.
+        mystery: Si el bote que se ha llevado cayó por el tope oculto.
+        drought: Si se ha llevado el bote, tiradas que llevaba el servidor sin bote.
+        daily: Si era el giro diario gratis.
+        daily_streak: Días seguidos del giro diario, contando este.
     """
     delta = StatDelta(add={"slots_spins": 1}, peak={"slots_session_max": session_spins})
     add = delta.add
@@ -7165,6 +7424,121 @@ def slots_stats(
     bump("slots_autoplay_spins", autoplay)
     bump("slots_autoplay_free", autoplay and free)
     bump("slots_autoplay_jackpot", autoplay and jackpot > 0)
+    if tier in SLOTS_WIN_TIERS:
+        bump(f"slots_win_{tier}")
+        bump("slots_tiny_big", stake == 1 and not free and not daily)
+        bump("slots_daily_big", daily)
+    if jackpot:
+        bump("slots_mystery_pots", mystery)
+        if drought > 0:
+            delta.peak["slots_pot_drought"] = drought
+            bump("slots_pot_quick", drought <= SLOTS_QUICK_POT)
+    if daily:
+        bump("slots_daily")
+        if daily_streak > 0:
+            delta.peak["slots_daily_streak"] = daily_streak
+    return delta
+
+
+#: Niveles de celebración de `slots.win_tier` (`WinTier.BIG`, `MEGA` y `EPIC`). Cada
+#: uno suma su contador (`slots_win_big`…); no se solapan.
+SLOTS_WIN_TIERS = (SlotWinTier.BIG, SlotWinTier.MEGA, SlotWinTier.EPIC)
+#: Tiradas sin bote del servidor por debajo de las que llevárselo es «Ni lo calentaste».
+SLOTS_QUICK_POT = 100
+#: Dobles seguidos que deja la máquina tras un premio.
+SLOTS_DOUBLE_MAX = 5
+
+
+def slots_respin_stats(*, price: int, payout: int, jackpot: int, chain: int) -> StatDelta:
+    """Contadores de un re-giro del tercer rodillo tras un casi-premio.
+
+    Args:
+        price: Lo que ha costado el re-giro.
+        payout: Lo que ha pagado la línea tras re-girar (0 si nada).
+        jackpot: Lo que se ha llevado del bote (0 si nada).
+        chain: Re-giros seguidos sobre la misma tirada, contando este.
+    """
+    delta = StatDelta(add={"slots_respins": 1})
+    if price > 0:
+        delta.add["slots_respin_spent"] = price
+        delta.peak["slots_respin_price_max"] = price
+    if payout + jackpot > 0:
+        delta.add["slots_respin_saved"] = 1
+        if chain >= 3:
+            delta.add["slots_respin_bailout"] = 1
+        if jackpot > 0:
+            delta.add["slots_respin_jackpots"] = 1
+    else:
+        delta.peak["slots_respin_fail_chain"] = chain
+    return delta
+
+
+def slots_double_stats(*, amount: int, won: bool, chain: int) -> StatDelta:
+    """Contadores de un doble o nada (rojo o negro) tras un premio.
+
+    Args:
+        amount: Lo que se jugaba en este doble.
+        won: Si ha acertado el color.
+        chain: Dobles ganados seguidos tras este si ha ganado; si ha perdido, los
+            que llevaba ganados antes de este.
+    """
+    delta = StatDelta(add={"slots_doubles": 1})
+    if won:
+        delta.add["slots_double_wins"] = 1
+        delta.peak["slots_double_chain"] = chain
+        delta.peak["slots_double_win_max"] = amount
+        if chain >= SLOTS_DOUBLE_MAX:
+            delta.add["slots_double_fives"] = 1
+    else:
+        delta.peak["slots_double_loss_max"] = amount
+        if chain == 0:
+            delta.add["slots_double_nada"] = 1
+        elif chain == SLOTS_DOUBLE_MAX - 1:
+            delta.add["slots_double_heartbreak"] = 1
+    return delta
+
+
+def slots_cooled_stats(*, lost: int) -> StatDelta:
+    """Contadores del calor que ha perdido la máquina por no jugar.
+
+    Args:
+        lost: Puntos de calor perdidos (al reabrir la máquina o al tirar).
+    """
+    if lost <= 0:
+        return StatDelta()
+    return StatDelta(add={"slots_cooled": lost}, peak={"slots_cooled_max": lost})
+
+
+def slots_ticket_stats(*, spins: int, gross: int, staked: int, net: int) -> StatDelta:
+    """Contadores del ticket que sale al cerrar la máquina.
+
+    Args:
+        spins: Tiradas de la sesión.
+        gross: Premios cobrados en bruto durante la sesión.
+        staked: Lo apostado en la sesión.
+        net: Resultado real de la sesión (lo que entra o sale del monedero).
+    """
+    if spins <= 0:
+        return StatDelta()
+    delta = StatDelta(add={"slots_tickets": 1})
+    add, peak = delta.add, delta.peak
+    if gross > 0:
+        peak["slots_ticket_gross_max"] = gross
+    if net > 0:
+        peak["slots_ticket_best"] = net
+    elif net < 0:
+        peak["slots_ticket_loss_max"] = -net
+        if gross > 0:
+            peak["slots_ticket_creative"] = gross
+        if gross > staked:
+            add["slots_ticket_taxed"] = 1
+    if spins >= 10:
+        if net == 0:
+            add["slots_ticket_zero"] = 1
+        if gross == 0:
+            add["slots_ticket_dry"] = 1
+    if spins == 1:
+        add["slots_ticket_quick"] = 1
     return delta
 
 
