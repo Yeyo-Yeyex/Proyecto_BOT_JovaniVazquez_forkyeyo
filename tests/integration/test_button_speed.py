@@ -15,6 +15,7 @@ también se exige que la toque.
 
 from __future__ import annotations
 
+import itertools
 import sqlite3
 import sys
 from collections.abc import Awaitable, Callable
@@ -52,6 +53,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.horses.initialize()
     await client.porras.initialize()
     await client.todo.initialize()
+    await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -101,6 +103,51 @@ async def press_slots_double(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await view._double_stake(interaction)
+
+    return click
+
+
+def slots_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    cog = client.get_cog("Tragaperras")
+    module = module_of(client, "Tragaperras")
+    module.REVEAL_MARGIN_SECONDS = 0
+    return module.SlotMachineView(cog, guild_id=GUILD_ID, owner=owner, stake=1)
+
+
+async def press_slots_respin(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services.slots import REEL_STRIPS, spin_at
+
+    view = slots_view(client, owner)
+    near = next(
+        spin
+        for stops in itertools.product(*(range(len(strip)) for strip in REEL_STRIPS))
+        if (spin := spin_at(stops)).teaser is not None
+    )
+    # El precio enseñado, de sobra: así el clic cobra y gira.
+    view.respin_offer = (near, 1, 10**6, 1)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._respin(interaction)
+
+    return click
+
+
+async def press_slots_gamble(client: BotClient, owner: MagicMock) -> Click:
+    view = slots_view(client, owner)
+    view.double_offer = (1, 0)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._double_red(interaction)
+
+    return click
+
+
+async def press_slots_daily(client: BotClient, owner: MagicMock) -> Click:
+    view = slots_view(client, owner)
+    view.daily_streak = 1
+
+    async def click(interaction: MagicMock) -> None:
+        await view._daily(interaction)
 
     return click
 
@@ -245,6 +292,9 @@ CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
     "tragaperras: auto": press_slots_autoplay,
+    "tragaperras: re-girar": press_slots_respin,
+    "tragaperras: doble o nada": press_slots_gamble,
+    "tragaperras: giro del día": press_slots_daily,
     "pachinko: lanzar": press_pachinko_launch,
     "pachinko: auto": press_pachinko_autoplay,
     "ruleta: apostar": press_roulette,

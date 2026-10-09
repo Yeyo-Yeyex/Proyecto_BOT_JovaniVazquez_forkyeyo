@@ -313,12 +313,20 @@ python -m bot
   resumen), ▶️ Auto (tiradas encadenadas, cada una con su animación; el botón
   pasa a ser ⏹️ Parar y para solo al llegar a 25 tiradas, con un premio gordo,
   sin saldo o al perder 10 veces la apuesta), ⚡ Turbo (sin animación),
-  ½ / ×2 / 💰 All-in y 📋 Premios. Premios:
+  ½ / ×2 / 💰 All-in y 📋 Premios. Cuando tocan salen 🔁 Re-girar el 3º (tras
+  un casi-premio, por lo que vale de media el re-giro), 🔴 Rojo / ⚫ Negro (doble
+  o nada con lo cobrado, hasta 5 veces) y 🎁 Giro del día (gratis, a 100 Y$ por
+  día de racha, hasta 700 Y$). El embed enseña lo que paga cada combinación a
+  tu apuesta y los premios cobrados en la sesión; al cerrarse sale el ticket
+  con el neto. Premios:
   🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🃏 comodín
   y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 3 % de
-  cada apuesta y vuelve a 5.000 Y$ al vaciarse. Tres 🎟️ en cualquier fila dan
-  5 giros gratis, y cada 5 tiradas con premio la máquina se calienta y la
-  siguiente paga ×2. Devuelve ~94 % de lo apostado contando el bote. El GIF
+  cada apuesta y vuelve a 5.000 Y$ al vaciarse; además cae solo antes de
+  llegar a 50.000 Y$. Tres 🎟️ en cualquier fila dan 5 giros gratis, y cada 5
+  tiradas con premio la máquina se calienta y la siguiente paga ×2 (el calor
+  se guarda y se enfría un punto cada 10 minutos sin jugar). Los rodillos
+  tienen pesos por casilla, como las máquinas reales: el 7️⃣ roza la línea en
+  una de cada cinco tiradas. Devuelve ~99,5 % de lo apostado contando el bote. El GIF
   (~150 KB, ~0,1 s de CPU) se monta en cada tirada con piezas precalculadas:
   los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
   tercero frena despacio. Los premios tributan como el resto del casino, el
@@ -752,7 +760,7 @@ src/bot/
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
 │   ├── blackjack.py     # Blackjack con botones (bj)
-│   ├── slots.py         # Tragaperras con botones, Ráfaga, Auto, turbo y bote común
+│   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro

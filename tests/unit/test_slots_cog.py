@@ -22,6 +22,7 @@ from bot.cogs.slots import (
     BURST_SPINS,
     GIF_NAME,
     PNG_NAME,
+    TIER_LINES,
     SlotMachineView,
     Slots,
     SlotsPlay,
@@ -29,18 +30,27 @@ from bot.cogs.slots import (
     machine_embed,
     parse_stake,
     result_text,
+    ticket_text,
 )
 from bot.repositories.economy import EconomyRepository
+from bot.repositories.slots import SlotsRepository
 from bot.services.achievements import slots_autoplay_stats
 from bot.services.autoplay import AUTOPLAY_MAX, AUTOPLAY_MIN_GAP, StopReason
-from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.economy import STARTING_BALANCE, EconomyService, format_amount
 from bot.services.slots import (
+    DOUBLE_MAX,
     FREE_SPINS,
+    HEAT_DECAY_SECONDS,
     HEAT_MAX,
     POT_SEED,
     REEL_STRIPS,
+    SEVEN,
+    THREE_OF_A_KIND,
     Kind,
     SlotMachine,
+    WinTier,
+    daily_stake,
+    respin_price,
     spin_at,
 )
 from bot.services.slots_render import SlotsMedia
@@ -63,12 +73,16 @@ CHERRY = stops_where(lambda s: s.kind == Kind.CHERRY and not s.scatters)
 GRAPES = stops_where(lambda s: s.kind == Kind.THREE and s.symbol == "G" and not s.scatters)
 JACKPOT = stops_where(lambda s: s.is_jackpot)
 FREE = stops_where(lambda s: s.triggers_free_spins and not s.pay_halves)
+NEAR_SEVEN = stops_where(
+    lambda s: s.line[:2] == (SEVEN, SEVEN) and s.teaser == SEVEN and not s.pay_halves
+)
+SEVENS = stops_where(lambda s: s.kind == Kind.THREE and s.symbol == SEVEN and not s.scatters)
 
 
 class FakeRenderer:
     """Devuelve bytes fijos: las pruebas no necesitan dibujar los rodillos."""
 
-    def render(self, spin, *, turbo: bool = False) -> SlotsMedia:  # noqa: ANN001
+    def render(self, spin, *, turbo: bool = False, won: int = 0, stake: int = 0) -> SlotsMedia:  # noqa: ANN001
         return SlotsMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
     def still_png(self, stops, *, highlight: bool = False) -> bytes:  # noqa: ANN001
@@ -86,6 +100,10 @@ class RiggedMachine(SlotMachine):
         stops = self.sequence.pop(0) if self.sequence else LOSS
         return spin_at(stops, count_scatters=not free)
 
+    def respin(self, spin):  # noqa: ANN001, ANN201
+        stops = self.sequence.pop(0) if self.sequence else LOSS
+        return spin_at(stops, count_scatters=False)
+
 
 @pytest.fixture(autouse=True)
 def no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,15 +111,27 @@ def no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(slots_module, "REVEAL_MARGIN_SECONDS", 0)
 
 
-async def make_cog(tmp_path: Path, sequence=(), channels=frozenset()) -> Slots:  # noqa: ANN001
+async def make_cog(
+    tmp_path: Path,
+    sequence=(),  # noqa: ANN001
+    channels=frozenset(),  # noqa: ANN001
+    *,
+    clock=None,  # noqa: ANN001
+    coin=None,  # noqa: ANN001
+) -> Slots:
     repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await repository.initialize()
+    slots_repository = SlotsRepository(tmp_path / "bot.db")
+    await slots_repository.initialize()
     return Slots(
         MagicMock(),
         economy=EconomyService(repository),
         renderer=FakeRenderer(),  # type: ignore[arg-type]
         machine=RiggedMachine(sequence),
         casino_channel_ids=channels,
+        repository=slots_repository,
+        clock=clock or (lambda: 1_000_000.0),
+        coin=coin,
     )
 
 
@@ -132,6 +162,8 @@ def attachment_names(call) -> list[str]:  # noqa: ANN001
 def make_play(stops, *, stake=100, payout=0, jackpot=0, free=False, hot=False) -> SlotsPlay:  # noqa: ANN001
     settlement = MagicMock()
     settlement.jackpot = jackpot
+    settlement.mystery = False
+    settlement.drought = 0
     settlement.bet.balance = 1_000
     return SlotsPlay(
         spin=spin_at(stops),
@@ -853,3 +885,166 @@ def test_resumen_de_logros_de_sesion_segun_el_motivo() -> None:
     manual = slots_autoplay_stats(spins=12, net=300, reason=StopReason.MANUAL).add
     assert manual["slots_autoplay_manual"] == manual["slots_autoplay_exit_ahead"] == 1
     assert slots_autoplay_stats(spins=0, net=0, reason=StopReason.NO_FUNDS).add == {}
+
+
+# -- Revamp: re-giro, doble o nada, giro del día, calor guardado y ticket ---------------
+
+
+async def treasury(cog: Slots) -> int:
+    return (await cog.economy.treasury(GUILD_ID, since=0)).balance
+
+
+async def test_el_casi_premio_ofrece_re_girar_el_tercero_a_su_precio(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [NEAR_SEVEN])
+    view = make_view(cog)
+
+    await view.play(make_interaction())
+
+    assert view.respin_offer is not None
+    expected = respin_price(spin_at(NEAR_SEVEN), 100, await cog.pot(GUILD_ID))
+    assert view.respin_offer[2] == expected
+    assert view.respin_button in view.children
+    assert format_amount(expected) in view.respin_button.label
+
+
+async def test_re_girar_cobra_el_precio_y_paga_a_la_apuesta_original(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [NEAR_SEVEN, SEVENS])
+    view = make_view(cog)
+    await view.play(make_interaction())
+    price = view.respin_offer[2]
+    before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    tax_before = await treasury(cog)
+
+    await view._respin(make_interaction())
+
+    withheld = await treasury(cog) - tax_before
+    prize = 100 * THREE_OF_A_KIND[SEVEN]
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before - price + prize - withheld
+    assert view.respin_offer is None
+    assert view.session_staked == 100 + price
+
+
+async def test_si_el_bote_ha_subido_el_re_giro_no_se_cobra_y_avisa(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [NEAR_SEVEN])
+    view = make_view(cog)
+    await view.play(make_interaction())
+    spin, stake, _price, chain = view.respin_offer
+    view.respin_offer = (spin, stake, 1, chain)  # el botón enseñaba un precio viejo
+    before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    interaction = make_interaction()
+
+    await view._respin(interaction)
+
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before
+    assert "ahora cuesta" in interaction.followup.send.await_args.args[0]
+
+
+async def test_doble_o_nada_ganado_dobla_y_deja_seguir(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES], coin=lambda: True)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    assert view.double_offer == (1_000, 0)
+    before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    tax_before = await treasury(cog)
+
+    await view._double_black(make_interaction())
+
+    withheld = await treasury(cog) - tax_before
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before + 1_000 - withheld
+    assert view.double_offer == (2_000, 1)
+    assert view.red_button in view.children and view.black_button in view.children
+
+
+async def test_doble_o_nada_perdido_se_lleva_lo_cobrado(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES], coin=lambda: False)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    tax_before = await treasury(cog)
+
+    await view._double_red(make_interaction())
+
+    returned = tax_before - await treasury(cog)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before - 1_000 + returned
+    assert view.double_offer is None
+    assert view.red_button not in view.children
+    assert "⚫ Negro" in view.last_text
+
+
+async def test_doble_o_nada_tiene_tope(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [CHERRY], coin=lambda: True)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    for _ in range(DOUBLE_MAX):
+        await view._double_red(make_interaction())
+    assert view.double_offer is None
+    assert view.session_gross == 50 * 2**DOUBLE_MAX + sum(50 * 2**k for k in range(DOUBLE_MAX))
+
+
+async def test_el_giro_del_dia_es_gratis_y_solo_uno(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES, GRAPES])
+    view = make_view(cog)
+    ready, streak = await cog.daily_status(GUILD_ID, OWNER_ID)
+    assert ready and streak == 1
+    view.daily_streak = streak
+    tax_before = await treasury(cog)
+
+    await view._daily(make_interaction())
+
+    withheld = await treasury(cog) - tax_before
+    prize = daily_stake(1) * THREE_OF_A_KIND["G"]
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + prize - withheld
+    assert await cog.pot(GUILD_ID) == POT_SEED  # no aporta al bote
+    assert await cog.daily_status(GUILD_ID, OWNER_ID) == (False, 1)
+    assert view.daily_button not in view.children
+
+    second = make_view(cog)
+    second.daily_streak = 1  # una máquina abierta antes de cobrarlo
+    interaction = make_interaction()
+    await second._daily(interaction)
+    assert "Ya has cobrado" in interaction.followup.send.await_args.args[0]
+
+
+async def test_el_calor_se_guarda_y_se_enfria_si_te_vas(tmp_path: Path) -> None:
+    now = [1_000_000.0]
+    cog = await make_cog(tmp_path, [CHERRY, CHERRY], clock=lambda: now[0])
+    view = make_view(cog)
+    await view.play(make_interaction())
+    await view.play(make_interaction())
+    assert cog.heat(GUILD_ID, OWNER_ID) == 2
+
+    # Otro arranque del bot, media hora después.
+    now[0] += 3 * HEAT_DECAY_SECONDS
+    reopened = await make_cog(tmp_path, clock=lambda: now[0])
+    await reopened.load_heat(GUILD_ID, OWNER_ID)
+    assert reopened.heat(GUILD_ID, OWNER_ID) == 2
+    assert reopened.cool_down(GUILD_ID, OWNER_ID) == 2
+    assert reopened.heat(GUILD_ID, OWNER_ID) == 0
+
+
+async def test_el_embed_lleva_el_cartel_de_premios_y_el_tope_del_bote(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    embed = await make_view(cog, stake=200).current_embed()
+    fields = {field.name: field.value for field in embed.fields}
+    assert "Premios a 200 Y$" in fields
+    table = fields["Premios a 200 Y$"] + "".join(fields.values())
+    assert f"**{format_amount(200 * THREE_OF_A_KIND[SEVEN])}**" in table
+    assert "Cae antes de" in fields["💰 Bote"]
+
+
+async def test_la_sesion_enseña_premios_en_bruto_y_el_ticket_el_neto(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [CHERRY, CHERRY, LOSS])
+    view = make_view(cog)
+    for _ in range(3):
+        await view.play(make_interaction())
+    embed = await view.current_embed()
+    assert any(f.name == "🎫 Premios cobrados" and "100 Y$" in f.value for f in embed.fields)
+
+    text = ticket_text(spins=3, staked=view.session_staked, gross=view.session_gross)
+    assert "Neto: -200 Y$" in text
+
+
+def test_un_premio_de_diez_veces_se_celebra_como_gran_premio() -> None:
+    play = make_play(GRAPES, payout=1_000)
+    assert play.tier == WinTier.BIG
+    assert result_text(play, random.Random(0)).splitlines()[0][2:] in TIER_LINES[WinTier.BIG]

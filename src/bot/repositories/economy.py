@@ -29,8 +29,13 @@ Modelo de datos:
 - `economy_wallets` con `user_id = SLOTS_POT_ACCOUNT_ID`: el bote común de la
   tragaperras. Crece con una parte de cada apuesta y se lo lleva entero
   quien saque el jackpot; la casa lo vuelve a sembrar al vaciarse.
-- `economy_slots_jackpots`: cada jackpot de la tragaperras (quién, cuánto y
-  cuándo), para enseñar el último en la máquina.
+- `economy_slots_jackpots`: cada jackpot de la tragaperras (quién, cuánto,
+  cuándo y si cayó solo por el tope oculto), para enseñar el último en la
+  máquina.
+- `economy_slots_mystery`: el bote «tiene que caer antes de X» de cada
+  servidor. `hit_at` es la cifra oculta del bote a la que cae solo, sorteada
+  entre la semilla y el tope cada vez que se vacía; `spins`, las tiradas
+  pagadas desde el último bote.
 - `economy_wallets` con `user_id = SHOP_ACCOUNT_ID`: la caja de la tienda, que
   se queda con la base imponible de lo que se vende.
 - `economy_consumption_tax`: el IGIC de cada compra de la tienda (y, con signo
@@ -213,20 +218,34 @@ class SlotsSettlement:
         bet: Saldo e IRPF del jugador, como en cualquier apuesta.
         jackpot: Lo que se ha llevado del bote (0 si no hay jackpot).
         pot: Bote tras la tirada (ya resembrado si se vació).
+        mystery: Si el bote ha caído solo, por llegar a la cifra oculta del
+            tope («tiene que caer antes de X»), y no por la combinación.
+        spins_since: Tiradas pagadas sin bote tras esta tirada; 0 si acaba
+            de caer.
+        drought: Si el bote ha caído en esta tirada, cuántas tiradas pagadas
+            llevaba sin caer, incluida esta; 0 si no ha caído.
     """
 
     bet: BetSettlement
     jackpot: int
     pot: int
+    mystery: bool = False
+    spins_since: int = 0
+    drought: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class JackpotRecord:
-    """Un jackpot de la tragaperras."""
+    """Un jackpot de la tragaperras.
+
+    Attributes:
+        mystery: Si cayó solo, por llegar a la cifra oculta del tope.
+    """
 
     user_id: int
     amount: int
     won_at: float
+    mystery: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,7 +521,14 @@ class EconomyRepository:
                     guild_id INTEGER NOT NULL,
                     user_id INTEGER NOT NULL,
                     amount INTEGER NOT NULL CHECK (amount > 0),
-                    won_at REAL NOT NULL
+                    won_at REAL NOT NULL,
+                    mystery INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_slots_mystery (
+                    guild_id INTEGER PRIMARY KEY,
+                    hit_at INTEGER NOT NULL,
+                    spins INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_wealth_weeks (
@@ -712,6 +738,16 @@ class EconomyRepository:
                 );
                 """
             )
+            # Bases de datos de antes del bote misterioso: los jackpots de
+            # entonces cayeron todos por la combinación.
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(economy_slots_jackpots)")
+            }
+            if "mystery" not in columns:
+                connection.execute(
+                    "ALTER TABLE economy_slots_jackpots "
+                    "ADD COLUMN mystery INTEGER NOT NULL DEFAULT 0"
+                )
         finally:
             connection.close()
 
@@ -1139,7 +1175,7 @@ class EconomyRepository:
         try:
             row = connection.execute(
                 """
-                SELECT user_id, amount, won_at FROM economy_slots_jackpots
+                SELECT user_id, amount, won_at, mystery FROM economy_slots_jackpots
                 WHERE guild_id = ? ORDER BY id DESC LIMIT 1
                 """,
                 (guild_id,),
@@ -1148,7 +1184,9 @@ class EconomyRepository:
             connection.close()
         if row is None:
             return None
-        return JackpotRecord(int(row["user_id"]), int(row["amount"]), float(row["won_at"]))
+        return JackpotRecord(
+            int(row["user_id"]), int(row["amount"]), float(row["won_at"]), bool(row["mystery"])
+        )
 
     async def settle_slots(
         self,
@@ -1165,6 +1203,8 @@ class EconomyRepository:
         now: float,
         day_tax: Callable[[int, int], int],
         window_seconds: float,
+        cap: int = 0,
+        draw_hit: Callable[[int, int], int] | None = None,
     ) -> SlotsSettlement:
         """Cobra una tirada, paga la línea y mueve el bote, todo en una transacción.
 
@@ -1174,11 +1214,25 @@ class EconomyRepository:
         lo queda la casa. Con jackpot, el jugador se lleva el bote entero
         (con la parte de esta misma tirada) y la casa lo vuelve a sembrar.
 
+        Con `cap > 0` el bote es además «tiene que caer antes de `cap`», como
+        los misteriosos de los casinos: cada vez que se siembra se sortea con
+        `draw_hit` una cifra oculta entre la semilla y el tope, y la tirada
+        cuya aportación hace llegar el bote a esa cifra se lo lleva entero
+        aunque la combinación no fuera jackpot (`mystery=True`). Cobra y
+        tributa exactamente igual que el jackpot normal. Un giro gratis no
+        aporta al bote, así que nunca lo hace caer ni cuenta como tirada.
+
         Args:
             stake: Apuesta cobrada; 0 en un giro gratis.
             payout: Lo que devuelve la línea, apuesta incluida.
             share: Parte de `stake` que va al bote.
             seed: Lo que pone la casa en un bote nuevo o recién vaciado.
+            cap: Tope del bote misterioso; 0 lo desactiva (solo cae por la
+                combinación).
+            draw_hit: Sorteo de la cifra oculta: recibe `(low, high)` y
+                devuelve un entero de ese intervalo, ambos incluidos. Se
+                inyecta para que las pruebas fuercen el azar; obligatorio si
+                `cap > 0`.
 
         Raises:
             InsufficientFundsError: Si el jugador no cubre la apuesta. No se
@@ -1199,6 +1253,8 @@ class EconomyRepository:
             now,
             day_tax,
             window_seconds,
+            cap,
+            draw_hit,
         )
 
     def _settle_slots_sync(
@@ -1215,12 +1271,22 @@ class EconomyRepository:
         now: float,
         day_tax: Callable[[int, int], int],
         window_seconds: float,
+        cap: int,
+        draw_hit: Callable[[int, int], int] | None,
     ) -> SlotsSettlement:
-        if stake < 0 or payout < 0 or not 0 <= share <= stake:
+        if stake < 0 or payout < 0 or not 0 <= share <= stake or cap < 0:
             raise ValueError("Movimiento de tragaperras inválido.")
+        if cap and draw_hit is None:
+            raise ValueError("El bote misterioso necesita `draw_hit`.")
         with self._transaction() as connection:
             pot = self._pot_in(connection, guild_id, seed)
-            won = pot + share if jackpot else 0
+            hit_at, spins = self._mystery_in(connection, guild_id, pot, seed, cap, draw_hit)
+            if stake:
+                spins += 1
+            # El misterio solo lo dispara una aportación: el bote cruza la
+            # cifra oculta con el dinero de esta tirada, nunca sin moverse.
+            mystery = not jackpot and cap > 0 and share > 0 and pot + share >= hit_at
+            won = pot + share if jackpot or mystery else 0
             entries = []
             if stake:
                 entries.append(LedgerEntry(-stake, f"{game}:apuesta"))
@@ -1248,16 +1314,84 @@ class EconomyRepository:
                     pot_moves.append(LedgerEntry(seed, "bote:semilla"))
                 connection.execute(
                     """
-                    INSERT INTO economy_slots_jackpots (guild_id, user_id, amount, won_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO economy_slots_jackpots
+                        (guild_id, user_id, amount, won_at, mystery)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (guild_id, user_id, won, now),
+                    (guild_id, user_id, won, now, int(mystery)),
                 )
             if pot_moves:
                 pot = self._apply_in_transaction(
                     connection, guild_id, SLOTS_POT_ACCOUNT_ID, pot_moves
                 )
-            return SlotsSettlement(bet=bet, jackpot=won, pot=pot)
+            drought = 0
+            if won:
+                drought, spins = spins, 0
+                if cap and draw_hit is not None:
+                    hit_at = draw_hit(seed, cap)
+            connection.execute(
+                "UPDATE economy_slots_mystery SET hit_at = ?, spins = ? WHERE guild_id = ?",
+                (hit_at, spins, guild_id),
+            )
+            return SlotsSettlement(
+                bet=bet,
+                jackpot=won,
+                pot=pot,
+                mystery=mystery,
+                spins_since=spins,
+                drought=drought,
+            )
+
+    @staticmethod
+    def _mystery_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        pot: int,
+        seed: int,
+        cap: int,
+        draw_hit: Callable[[int, int], int] | None,
+    ) -> tuple[int, int]:
+        """Cifra oculta y tiradas sin bote del servidor; crea la fila la primera vez.
+
+        La cifra se sortea desde el bote actual (no desde la semilla) y, si el
+        servidor ya tiene un bote por encima del tope, hasta justo por encima
+        de él: así cae en cuanto alguien aporte, no nunca. Se sortea al crear
+        la fila y también si la guardada no vale para el tope de ahora: sin
+        tope (`cap=0`) la fila guarda `hit_at = 0` solo para contar tiradas,
+        y si luego se baja el tope una cifra por encima de él no caería
+        «antes de X».
+
+        Debe llamarse dentro de una transacción ya abierta. Lo sorteado se
+        guarda al final de la tirada, en `_settle_slots_sync`.
+        """
+        connection.execute(
+            "INSERT OR IGNORE INTO economy_slots_mystery (guild_id, hit_at, spins)"
+            " VALUES (?, 0, 0)",
+            (guild_id,),
+        )
+        row = connection.execute(
+            "SELECT hit_at, spins FROM economy_slots_mystery WHERE guild_id = ?",
+            (guild_id,),
+        ).fetchone()
+        hit_at, spins = int(row["hit_at"]), int(row["spins"])
+        high = max(cap, pot + 1)
+        if cap and draw_hit is not None and not 0 < hit_at <= high:
+            hit_at = draw_hit(max(seed, pot), high)
+        return hit_at, spins
+
+    async def slots_spins_since(self, guild_id: int) -> int:
+        """Tiradas pagadas desde el último bote del servidor (0 si no hay ninguna)."""
+        return await self._run(self._slots_spins_since_sync, guild_id)
+
+    def _slots_spins_since_sync(self, guild_id: int) -> int:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT spins FROM economy_slots_mystery WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(row["spins"]) if row is not None else 0
 
     # -- Porras --------------------------------------------------------------------
 
@@ -3412,6 +3546,7 @@ class EconomyRepository:
                 "economy_donations",
                 "economy_bizums",
                 "economy_slots_jackpots",
+                "economy_slots_mystery",
                 "economy_consumption_tax",
                 "economy_lottery_tax",
                 "economy_public_debt",

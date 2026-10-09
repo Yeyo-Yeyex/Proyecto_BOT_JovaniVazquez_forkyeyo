@@ -28,6 +28,7 @@ from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.pets import PetRepository
 from bot.repositories.porras import PorraRepository
 from bot.repositories.shop import ShopRepository
+from bot.repositories.slots import SlotsRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
@@ -128,6 +129,9 @@ class BotClient(commands.Bot):
         # Maletines y botes de cada jugador en las máquinas de Botes
         # (de momento, `volcan`); el dinero pasa por `economy`.
         self.hold_win = HoldWinRepository(database_path)
+        # Calor y giro diario de la tragaperras (`tragas`); el dinero y el
+        # bote pasan por `economy`.
+        self.slots_repository = SlotsRepository(database_path)
         # Historial del establo y bote del Gran Premio de `caballo`; el dinero pasa por `economy`.
         self.horses = HorseRepository(database_path)
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
@@ -167,6 +171,7 @@ class BotClient(commands.Bot):
         await self.lottery.initialize()
         await self.todo.initialize()
         await self.hold_win.initialize()
+        await self.slots_repository.initialize()
         await self.horses.initialize()
         await self.porras.initialize()
         await self.work.repository.initialize()
