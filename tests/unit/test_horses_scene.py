@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import pytest_asyncio
 from PIL import Image
 
 from bot.services import horses as h
@@ -19,6 +20,9 @@ from bot.services.horses_render import GATE_FRAMES, H, W
 from bot.services.horses_scene import SCENE, SceneRenderer, horse_json, ranking_at
 
 SIX = ("falcon", "manual", "paguita", "gofio", "fango", "uco")
+#: Las pruebas con navegador comparten un bucle de eventos: el `browser` se abre una vez
+#: y sus pruebas lo comparten (Playwright está atado al bucle que lo arrancó).
+module_loop = pytest.mark.asyncio(loop_scope="module")
 #: Chromium del entorno de desarrollo, si lo hay (en Docker lo instala Playwright).
 LOCAL_CHROMIUM = Path("/opt/pw-browsers/chromium")
 
@@ -102,20 +106,28 @@ async def test_sin_navegador_dibuja_con_pillow() -> None:
     await renderer.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def browser() -> SceneRenderer:
+    """Un solo Chromium para las tres pruebas con navegador del módulo.
+
+    Arrancarlo cuesta ~0,8 s y antes se hacía en cada prueba. Compartirlo no cambia lo
+    que se comprueba: cada prueba sigue pidiendo su dibujo al mismo `SceneRenderer`,
+    que reutiliza la pestaña como hace en producción entre carreras.
+    """
     path = str(LOCAL_CHROMIUM) if LOCAL_CHROMIUM.exists() else None
     renderer = SceneRenderer(executable_path=path)
     card = card_of()
     odds = h.estimate(card, np.random.default_rng(1), trials=2_000)
     png = await renderer.card(card, odds, {})
     if renderer.disabled:
+        await renderer.close()
         pytest.skip("No hay Chromium en esta máquina")
     renderer.test_card_png = png  # type: ignore[attr-defined]
     yield renderer
     await renderer.close()
 
 
+@module_loop
 async def test_con_navegador_la_parrilla_es_un_png_ancho(browser: SceneRenderer) -> None:
     image = Image.open(io.BytesIO(browser.test_card_png))  # type: ignore[attr-defined]
     assert image.format == "PNG"
@@ -125,6 +137,7 @@ async def test_con_navegador_la_parrilla_es_un_png_ancho(browser: SceneRenderer)
     assert len(image.convert("RGB").getcolors(1 << 20) or []) > 100
 
 
+@module_loop
 async def test_con_navegador_la_carrera_es_un_gif_que_cabe_en_discord(
     browser: SceneRenderer,
 ) -> None:
@@ -139,6 +152,7 @@ async def test_con_navegador_la_carrera_es_un_gif_que_cabe_en_discord(
     assert not browser.disabled
 
 
+@module_loop
 async def test_con_navegador_el_boleto_premiado_lleva_sello(browser: SceneRenderer) -> None:
     kwargs = {
         "race": "Premio Puerta del Sol",

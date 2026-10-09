@@ -188,8 +188,18 @@ class Harness:
 
 
 @pytest.fixture
-async def harness(tmp_path: Path):
-    """Bot de prueba listo para recibir mensajes."""
+async def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Bot de prueba listo para recibir mensajes.
+
+    `apply_magik` (la distorsión por costuras, ~1 s incluso con un PNG de 200x150) se
+    sustituye por una función que devuelve la imagen tal cual. Lo que miran estas pruebas
+    de `.magik` es el camino del comando (aviso de progreso, archivo `magik.png`, aviso
+    borrado, permisos, enfriamiento), no el dibujo, que prueban `test_magik_service.py` y
+    `test_images_cog.py`. Se cambia en el servicio ANTES de cargar los cogs, porque
+    `load_extension` vuelve a ejecutar `bot.cogs.images` y recoge el sustituto; los efectos
+    de `memes` se siguen dibujando de verdad (de ellos depende la extensión del archivo).
+    """
+    monkeypatch.setattr("bot.services.magik.apply_magik", lambda data, *args, **kwargs: data)
     h = Harness(tmp_path)
     await h.start()
     yield h

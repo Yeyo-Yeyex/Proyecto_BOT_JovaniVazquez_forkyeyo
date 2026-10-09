@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from interaction_fakes import fake_interaction
+from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
@@ -33,6 +34,19 @@ from bot.services.todo import Priority
 
 GUILD_ID = 1
 OWNER_ID = 10
+
+
+@pytest.fixture(autouse=True)
+def fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sin dibujar las máquinas del casino: aquí la imagen no entra en ninguna aserción.
+
+    La prueba solo apunta el orden entre las respuestas a Discord y las conexiones a
+    SQLite. Dibujar el GIF de la tragaperras, la ruleta o el pachinko (y su
+    precalentamiento al cargar el cog) tardaba 1-3 s por caso sin cambiar ese orden.
+    Los cogs, el bot y la base de datos siguen siendo los reales (ver `render_fakes`).
+    """
+    use_fake_drawings(monkeypatch)
+
 
 #: Un clic: recibe la interacción falsa.
 Click = Callable[[MagicMock], Awaitable[None]]
@@ -85,6 +99,7 @@ def make_owner() -> MagicMock:
 
 async def press_slots(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Tragaperras")
+    module_of(client, "Tragaperras").REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
     view = module_of(client, "Tragaperras").SlotMachineView(
         cog, guild_id=GUILD_ID, owner=owner, stake=1
     )
@@ -200,6 +215,8 @@ async def press_pachinko_launch(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
+    module.SPIN_SECONDS = 0  # sin esperar a que «gire» la rueda: aquí no se enseña
+    module.REVEAL_MARGIN_SECONDS = 0
     table = module.RouletteTable(client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=1)
 
     async def click(interaction: MagicMock) -> None:
