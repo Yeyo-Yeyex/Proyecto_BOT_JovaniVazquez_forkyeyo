@@ -1,4 +1,4 @@
-"""Tienda: `tienda` y `mochila`, la caja con IGIC y la caducidad de los alquileres.
+"""Tienda: `tienda` y la mochila, la caja con IGIC y la caducidad de los alquileres.
 
 - `tienda` abre el escaparate de El Colmado de Jovani: pestañas por sección
   (roles, potenciadores, coleccionables), cada artículo con su botón
@@ -8,7 +8,8 @@
 - La caja enseña el ticket antes de pagar (precio, rebaja, base, IGIC y
   total) y pide confirmar. Al pagar sale la factura simplificada, que solo ve
   el comprador, y un aviso público en el canal para presumir.
-- `mochila [miembro]` enseña lo que tiene alguien. Su dueño puede ponerse y
+- La mochila (botón 🎒 del escaparate, o sección 🎒 Objetos de `perfil`)
+  enseña lo que tiene alguien. Su dueño puede ponerse y
   quitarse los roles que compró para siempre (útil para los de color) y usar
   los objetos que se usan: tirarle un huevo a alguien, mandar un burofax,
   abrir una caja botín… (reglas en `bot.services.shop_uses`). El resultado
@@ -683,6 +684,29 @@ class Checkout(ui.LayoutView):
 # -- Mochila --------------------------------------------------------------------------
 
 
+def backpack_text(entries: list[InventoryEntry], now: float) -> str:
+    """Lo que hay en una mochila, por tipos, en texto (mochila y `perfil`)."""
+    sections = []
+    for kind in Kind:
+        mine = [e for e in entries if e.kind is kind and not _usable(e)]
+        if not mine:
+            continue
+        lines = (
+            trophy_lines(mine)
+            if kind in (Kind.TROPHY, Kind.PET)
+            else [entry_line(e, now) for e in sorted(mine, key=lambda e: e.starts_at)]
+        )
+        if kind is Kind.PET:
+            lines.append("-# Cuídalas y elige cuál va contigo con `mascota`.")
+        sections.append(f"### {kind.icon} {kind.title}\n" + "\n".join(lines))
+    usable = [e for e in entries if _usable(e)]
+    if usable:
+        sections.append("### 🫳 Para usar\n" + "\n".join(trophy_lines(usable)))
+    if not sections:
+        sections.append("Vacía. Date una vuelta por la `tienda`, que hay cositas.")
+    return _clip("\n\n".join(sections), 3800)
+
+
 class Backpack(ui.LayoutView):
     """La mochila de un miembro; su dueño puede ponerse y quitarse roles."""
 
@@ -710,26 +734,9 @@ class Backpack(ui.LayoutView):
         container = ui.Container(accent_colour=COLOR)
         container.add_item(ui.TextDisplay(f"# 🎒 Mochila de {_name(self.member)}"))
         container.add_item(ui.Separator())
-        sections = []
-        for kind in Kind:
-            mine = [e for e in self.entries if e.kind is kind and not _usable(e)]
-            if not mine:
-                continue
-            lines = (
-                trophy_lines(mine)
-                if kind in (Kind.TROPHY, Kind.PET)
-                else [entry_line(e, now) for e in sorted(mine, key=lambda e: e.starts_at)]
-            )
-            if kind is Kind.PET:
-                lines.append("-# Cuídalas y elige cuál va contigo con `mascota`.")
-            sections.append(f"### {kind.icon} {kind.title}\n" + "\n".join(lines))
-        usable = [e for e in self.entries if _usable(e)]
-        if usable:
-            sections.append("### 🫳 Para usar\n" + "\n".join(trophy_lines(usable)))
-        if not sections:
-            sections.append("Vacía. Date una vuelta por la `tienda`, que hay cositas.")
-        container.add_item(ui.TextDisplay(_clip("\n\n".join(sections), 3800)))
+        container.add_item(ui.TextDisplay(backpack_text(self.entries, now)))
         self.add_item(container)
+        usable = [e for e in self.entries if _usable(e)]
 
         if usable and self.viewer.id == self.member.id:
             groups = group_entries(usable)
@@ -789,7 +796,7 @@ class Backpack(ui.LayoutView):
         if interaction.user.id == self.member.id:
             return True
         await interaction.response.send_message(
-            "Esa mochila no es tuya. Mira la tuya con `mochila`.", ephemeral=True
+            "Esa mochila no es tuya. Mira la tuya en `perfil`, sección 🎒 Objetos.", ephemeral=True
         )
         return False
 
@@ -986,6 +993,21 @@ class Tienda(commands.Cog):
         await view.load()
         return view
 
+    async def backpack_embed(self, guild: discord.Guild, member: discord.abc.User) -> discord.Embed:
+        """Sección 🎒 Objetos de `perfil`: la mochila en texto, sin botones."""
+        entries = await self.repository.inventory(guild.id, member.id, self.clock())
+        embed = discord.Embed(
+            title=f"🎒 Mochila de {_name(member)}",
+            description=backpack_text(entries, self.clock()),
+            color=COLOR,
+        )
+        embed.set_footer(text="Para usar objetos o ponerte roles, abre la mochila.")
+        return embed
+
+    async def item_count(self, guild_id: int, user_id: int) -> int:
+        """Cuántas cosas en vigor tiene alguien en la mochila."""
+        return len(await self.repository.inventory(guild_id, user_id, self.clock()))
+
     async def backpack_view(
         self, guild: discord.Guild, member: discord.abc.User, viewer: discord.abc.User
     ) -> Backpack:
@@ -1110,7 +1132,9 @@ class Tienda(commands.Cog):
 
         if use.consumes and not await self.repository.consume(guild.id, member.id, entry.id):
             await notify(
-                interaction, "Eso ya lo has gastado, mi amor. Mira tu `mochila`.", ephemeral=True
+                interaction,
+                "Eso ya lo has gastado, mi amor. Mira tu mochila en `perfil`.",
+                ephemeral=True,
             )
             return
 
@@ -1437,7 +1461,7 @@ class Tienda(commands.Cog):
             if sale.serial is not None:
                 got += f" Unidad nº {sale.serial} de {sale.edition}."
             if (use := use_of(item.catalog_key)) is not None:
-                got += f" Úsalo desde la `mochila` ({use.verb.lower()})."
+                got += f" Úsalo desde la mochila ({use.verb.lower()})."
         lines = [
             "### ✅ ¡Wepa! Es tuyo",
             got,
@@ -1572,31 +1596,6 @@ class Tienda(commands.Cog):
         """Versión de texto de `tienda`."""
         assert ctx.guild is not None  # guild_only
         view = await self.storefront(ctx.guild, ctx.author)
-        view.message = await ctx.send(view=view, allowed_mentions=discord.AllowedMentions.none())
-
-    @app_commands.command(name="mochila", description="Lo que has comprado en la tienda.")
-    @app_commands.describe(miembro="De quién (por defecto, la tuya).")
-    @app_commands.guild_only()
-    async def mochila(
-        self, interaction: discord.Interaction, miembro: discord.Member | None = None
-    ) -> None:
-        """Enseña la mochila; su dueño puede ponerse y quitarse roles."""
-        assert interaction.guild is not None  # guild_only
-        target = miembro or interaction.user
-        await interaction.response.defer(thinking=True)
-        view = await self.backpack_view(interaction.guild, target, interaction.user)
-        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
-        view.interaction = interaction
-
-    @commands.command(name="mochila")
-    @commands.guild_only()
-    async def mochila_text(
-        self, ctx: commands.Context, miembro: discord.Member | None = None
-    ) -> None:
-        """Versión de texto: `.mochila` o `.mochila @alguien`."""
-        assert ctx.guild is not None  # guild_only
-        target = miembro or ctx.author
-        view = await self.backpack_view(ctx.guild, target, ctx.author)
         view.message = await ctx.send(view=view, allowed_mentions=discord.AllowedMentions.none())
 
     # -- Trastienda (la abre el comando `catalogo` del cog Admin) ---------------------

@@ -43,14 +43,14 @@ del Patrimonio (70.000 Y$), que es justo la gracia: lo que está en la vitrina
 no lo ve el Patrimonio, que solo mira el saldo. Un sumidero de dinero, como
 pide la Biblia para compensar el que se crea de la nada.
 
-**Usos.** Los artículos con `use` se usan desde la `mochila`
+**Usos.** Los artículos con `use` se usan desde la mochila
 (`bot.services.shop_uses`). Los que se gastan desaparecen al usarlos.
 
 **Mascotas.** Salen de `bot.services.pets_catalog`: cada especie adoptable
 es un artículo `Kind.PET` con la clave `mascota_<especie>` en el pasillo de
 su tema. Las que aparecen solas también están, pero ocultas
 (`visible=False`): así tienen un artículo al que apuntar en la mochila y un
-valor para `patrimonio`, y nadie las puede comprar.
+valor para el patrimonio, y nadie las puede comprar.
 
 **Peña de la porra.** Lo del pasillo 🎫 sirve para las `porra`. Los prismáticos
 y la libreta no se usan desde la mochila: con tenerlos, el cog de porras deja ver

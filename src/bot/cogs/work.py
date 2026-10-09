@@ -775,15 +775,8 @@ class PalaPanel(ui.LayoutView):
 
     async def _career(self, interaction: discord.Interaction) -> None:
         await ack(interaction, new_message=True)
-        history = await self.service.history(self.guild_id, self.owner.id)
         lines = [f"📜 **Vida laboral de {discord.utils.escape_markdown(self.owner.display_name)}**"]
-        for job in JOBS:
-            if job.key in history:
-                level, top = history[job.key]
-                lines.append(
-                    f"{job.emoji} {job.name}: {job.position(level).title} "
-                    f"(máximo: {job.position(top).title})"
-                )
+        lines += await self.cog.career_lines(self.guild_id, self.owner.id)
         if len(lines) == 1:
             lines.append("Nada todavía. Ni unas prácticas.")
         await edit(interaction, content="\n".join(lines))
@@ -1160,6 +1153,41 @@ class Work(commands.Cog, name="Trabajo"):
         for job in tops:
             delta.peak[f"work_top_{job}"] = 1
         return delta
+
+    async def career_lines(self, guild_id: int, user_id: int) -> list[str]:
+        """Vida laboral: un renglón por oficio con el puesto actual y el más alto."""
+        history = await self.service.history(guild_id, user_id)
+        return [
+            f"{job.emoji} {job.name}: {job.position(history[job.key][0]).title} "
+            f"(máximo: {job.position(history[job.key][1]).title})"
+            for job in JOBS
+            if job.key in history
+        ]
+
+    async def job_line(self, guild_id: int, user_id: int) -> str:
+        """El curro de alguien en un renglón, para el resumen de `perfil`."""
+        status = await self.service.status(guild_id, user_id)
+        if status is None:
+            return "En el paro. Ni unas prácticas."
+        job, position = status.job, status.position
+        where = " · en Hong Kong 🇭🇰" if status.contract.abroad else ""
+        level = f"{status.contract.level}/{job.top}"
+        return f"{job.emoji} {position.title} · {job.name} ({level}){where}"
+
+    async def work_embed(self, guild_id: int, member: discord.abc.User) -> discord.Embed:
+        """Sección 🪏 Trabajo de `perfil`: contrato actual y vida laboral. No ficha nada."""
+        name = discord.utils.escape_markdown(member.display_name)
+        status = await self.service.status(guild_id, member.id)
+        career = await self.career_lines(guild_id, member.id)
+        text = status_text(status, []) if status is not None else "## 🪏 En el paro"
+        embed = discord.Embed(title=f"🪏 Trabajo de {name}", description=text, color=COLOR_IDLE)
+        embed.add_field(
+            name="📜 Vida laboral",
+            value="\n".join(career)[:1_024] if career else "Nada todavía. Ni unas prácticas.",
+            inline=False,
+        )
+        embed.set_footer(text="Para fichar, ascender o cambiar de curro: pala.")
+        return embed
 
     async def channel_error(self, guild: discord.Guild, channel: object) -> str | None:
         """Mensaje si `pala` no se puede usar en este canal, o `None`."""

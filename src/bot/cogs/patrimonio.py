@@ -11,15 +11,16 @@ es una interacción, así que el aviso de la Renta no aplica; el anuncio
 público hace de recordatorio. Logros: `wealth_tax_paid` y `wealth_tax_weeks`
 (categoría Economía y Hacienda).
 
-Comandos (no mueven dinero; ver `bot.services.net_worth`):
+Consultas (no mueven dinero; ver `bot.services.net_worth`):
 
-- `patrimonio [miembro]`: todos los activos de alguien (efectivo, bienes de
-  la tienda, boletos de lotería pendientes y la renta por cobrar), con su
-  valor, su puesto y el Patrimonio que le tocaría pagar el lunes.
+- Sección 🏰 Patrimonio de `perfil` (`patrimonio_embed`): todos los activos
+  de alguien (efectivo, bienes de la tienda, boletos de lotería pendientes y
+  la renta por cobrar), con su valor, su puesto y el Patrimonio que le
+  tocaría pagar el lunes.
 - `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
   de la riqueza del servidor (Gini y lo que tiene el más rico).
 
-Logros de los dos comandos: `patrimonio_stats` (Economía y Hacienda).
+Logros de las dos: `patrimonio_stats` (Economía y Hacienda).
 
 Permisos: enviar mensajes e insertar enlaces en el canal del anuncio.
 """
@@ -178,7 +179,7 @@ class Patrimonio(commands.Cog):
                 channel.id if channel is not None else None,
             )
 
-    # -- `patrimonio` y `fortunas` ------------------------------------------------------
+    # -- Patrimonio y `fortunas` --------------------------------------------------------
 
     async def fortunes(self, guild_id: int) -> list[NetWorth]:
         """Patrimonio de todos los miembros, del más rico al menos."""
@@ -201,21 +202,28 @@ class Patrimonio(commands.Cog):
             return f"<@{user_id}>"
         return discord.utils.escape_markdown(member.display_name)
 
-    async def _patrimonio_impl(
-        self, responder: CommandResponder, member: discord.abc.User | None
-    ) -> None:
-        guild = responder.guild
-        author = responder.member
-        if guild is None or author is None:
-            await responder.send_error("El patrimonio solo se mira dentro de un servidor.")
-            return
-        target = member or author
-        everyone = await self.fortunes(guild.id)
-        worth = next((w for w in everyone if w.user_id == target.id), None)
+    async def net_worth(self, guild_id: int, user_id: int) -> tuple[NetWorth, int, int]:
+        """Patrimonio de un miembro, su puesto en `fortunas` y cuántos tienen algo."""
+        everyone = await self.fortunes(guild_id)
+        worth = next((w for w in everyone if w.user_id == user_id), None)
         if worth is None:
-            worth = NetWorth(user_id=target.id)
+            worth = NetWorth(user_id=user_id)
         ranked = [w for w in everyone if w.total > 0]
-        rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == target.id), len(ranked))
+        rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == user_id), len(ranked))
+        return worth, rank, len(ranked)
+
+    async def patrimonio_embed(
+        self,
+        guild: discord.Guild,
+        author: discord.abc.User,
+        target: discord.abc.User,
+        channel: object,
+    ) -> discord.Embed:
+        """Sección 🏰 Patrimonio de `perfil`: activos de `target` y lo que paga el lunes.
+
+        Apunta los logros de mirar el patrimonio (propio o ajeno) a `author`.
+        """
+        worth, rank, people = await self.net_worth(guild.id, target.id)
         lines = [
             f"💵 Efectivo: **{format_amount(worth.cash)}**",
             f"🛍️ Bienes de la tienda: **{format_amount(worth.goods_value)}** ({len(worth.goods)})",
@@ -226,8 +234,8 @@ class Patrimonio(commands.Cog):
             title=f"🏰 Patrimonio de {discord.utils.escape_markdown(target.display_name)}",
             description=(
                 f"# {format_amount(worth.total)}\n"
-                + (f"Puesto {rank} de {len(ranked)} en `fortunas`\n" if worth.total > 0 else "")
-                + f"*{verdict(worth, rank, len(ranked))}*"
+                + (f"Puesto {rank} de {people} en `fortunas`\n" if worth.total > 0 else "")
+                + f"*{verdict(worth, rank, people)}*"
             ),
             color=COLOR,
         )
@@ -253,22 +261,23 @@ class Patrimonio(commands.Cog):
         embed.set_footer(
             text="Bienes al precio pagado sin IGIC; lo que caduca vale la vida que le queda."
         )
-        await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         if not author.bot:
+            own = target.id == author.id
             await logros.track(
                 self.bot,
                 guild.id,
                 author,
-                responder.channel,
+                channel,
                 patrimonio_stats(
                     listing=False,
-                    snooping=target.id != author.id,
-                    net_worth=worth.total if target.id == author.id else 0,
-                    illiquid=target.id == author.id and worth.illiquid_share >= 0.5,
-                    rank=rank if target.id == author.id else 0,
-                    people=len(ranked),
+                    snooping=not own,
+                    net_worth=worth.total if own else 0,
+                    illiquid=own and worth.illiquid_share >= 0.5,
+                    rank=rank if own else 0,
+                    people=people,
                 ),
             )
+        return embed
 
     async def _fortunas_impl(self, responder: CommandResponder) -> None:
         guild = responder.guild
@@ -288,7 +297,7 @@ class Patrimonio(commands.Cog):
             for i, w in enumerate(everyone[:FORTUNES_TOP])
         ]
         if len(everyone) > FORTUNES_TOP:
-            lines.append(f"-# Y {len(everyone) - FORTUNES_TOP} más. `patrimonio @miembro`.")
+            lines.append(f"-# Y {len(everyone) - FORTUNES_TOP} más. `perfil @miembro`.")
         total = sum(totals)
         cash = sum(w.cash for w in everyone)
         embed = discord.Embed(
@@ -334,25 +343,6 @@ class Patrimonio(commands.Cog):
                     people=len(everyone),
                 ),
             )
-
-    @app_commands.command(
-        name="patrimonio", description="Todo lo que tienes (o lo que tiene alguien), valorado."
-    )
-    @app_commands.describe(miembro="De quién mirar el patrimonio (por defecto, el tuyo).")
-    @app_commands.guild_only()
-    async def patrimonio(
-        self, interaction: discord.Interaction, miembro: discord.Member | None = None
-    ) -> None:
-        """Activos de un miembro: efectivo, bienes, boletos y renta por cobrar."""
-        await self._patrimonio_impl(InteractionResponder(interaction), miembro)
-
-    @commands.command(name="patrimonio")
-    @commands.guild_only()
-    async def patrimonio_text(
-        self, ctx: commands.Context, miembro: discord.Member | None = None
-    ) -> None:
-        """Versión de texto (`.patrimonio [miembro]`)."""
-        await self._patrimonio_impl(ContextResponder(ctx), miembro)
 
     @app_commands.command(
         name="fortunas", description="Lista de todos los miembros por patrimonio."

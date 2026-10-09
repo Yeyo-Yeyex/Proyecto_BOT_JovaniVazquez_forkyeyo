@@ -846,6 +846,31 @@ class MessageStatsRepository:
             ).fetchone()
             return int(row["total_xp"]) if row else 0
 
+    async def member_activity(self, guild_id: int, user_id: int) -> MemberActivity:
+        """XP y racha de un miembro; los perfiles ausentes empiezan en cero."""
+        return await self._run(self._member_activity_sync, guild_id, user_id)
+
+    def _member_activity_sync(self, guild_id: int, user_id: int) -> MemberActivity:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT total_xp, last_awarded_at, last_active_day, streak_days,
+                       reaction_day, reaction_xp
+                FROM member_levels WHERE guild_id = ? AND user_id = ?
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+        if row is None:
+            return MemberActivity()
+        return MemberActivity(
+            total_xp=int(row["total_xp"]),
+            last_awarded_at=row["last_awarded_at"],
+            last_active_day=row["last_active_day"],
+            streak_days=int(row["streak_days"]),
+            reaction_day=row["reaction_day"],
+            reaction_xp=int(row["reaction_xp"]),
+        )
+
     async def level_leaderboard(
         self, guild_id: int, limit: int, offset: int
     ) -> list[tuple[int, int]]:

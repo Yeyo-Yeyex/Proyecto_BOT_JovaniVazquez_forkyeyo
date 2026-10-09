@@ -18,7 +18,7 @@ from interaction_fakes import fake_interaction
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
 from bot.repositories.economy import EconomyRepository
-from bot.services.blackjack import Action, Card
+from bot.services.blackjack import MAX_STAKE, Action, Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 GUILD_ID = 1
@@ -273,3 +273,37 @@ async def test_all_in_tras_la_mano_pone_todo_el_saldo(tmp_path: Path) -> None:
     await table._all_in(make_interaction())
 
     assert table.stake == STARTING_BALANCE - 100
+
+
+async def test_la_banca_con_blackjack_devuelve_la_apuesta(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(10), c(1), c(9), c(13))
+
+    table, *_ = await open_table(cog)
+
+    assert table.game.settled
+    assert table.game.net == 0
+    assert await balance(cog) == STARTING_BALANCE
+
+
+async def test_la_apuesta_inicial_no_pasa_del_tope_de_la_mesa(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(10), c(9), c(6), c(8))
+    await cog.economy.grant(GUILD_ID, OWNER_ID, amount=MAX_STAKE * 3, reason="prueba")
+    start = await balance(cog)
+
+    table, _, send_error, _ = await open_table(cog, amount="all")
+
+    send_error.assert_not_awaited()
+    assert table.game.stake == MAX_STAKE
+    assert await balance(cog) == start - MAX_STAKE
+
+
+async def test_all_in_y_doblar_ficha_se_quedan_en_el_tope(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(10), c(9), c(6), c(8), c(10))
+    await cog.economy.grant(GUILD_ID, OWNER_ID, amount=MAX_STAKE * 3, reason="prueba")
+    table, *_ = await open_table(cog)
+    await table.act(make_interaction(), Action.HIT)
+
+    await table._all_in(make_interaction())
+    assert table.stake == MAX_STAKE
+    await table._double_stake(make_interaction())
+    assert table.stake == MAX_STAKE

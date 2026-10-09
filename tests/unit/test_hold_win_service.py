@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import bisect
+import itertools
 import random
+from collections.abc import Sequence
 
 import pytest
 
+from bot.services import hold_win as hold_win_module
 from bot.services.hold_win import (
     CASE_SIZE,
     CELLS,
@@ -326,13 +330,36 @@ def test_la_apuesta_minima_da_premios_de_al_menos_un_yapdollar() -> None:
     assert to_amount(10, MIN_STAKE) >= 1
 
 
-def test_el_retorno_ronda_el_94_por_ciento() -> None:
+def test_el_retorno_ronda_el_94_por_ciento(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulación corta con semilla fija: el número exacto está en el docstring.
 
     Con 150.000 tiradas el error típico ronda los dos puntos (los bonus y,
     sobre todo, el Grand dan mucha varianza), así que el margen es amplio.
     El ajuste fino se hizo con varios millones de tiradas.
+
+    No se puede recortar: con 40 semillas distintas, 40.000 tiradas dan un retorno
+    de 0,91 a 1,10 y 80.000 de 0,90 a 1,03, fuera de la horquilla (0,88 a 1,0) en
+    ambos casos. Lo que sí se acelera es `_pick` (el sorteo con pesos, lo más
+    llamado): las sumas acumuladas de cada tabla se calculan una vez y se busca
+    con `bisect`. Gasta la misma tirada de `rng` y devuelve lo mismo que el
+    original, así que la simulación sale idéntica.
     """
+    # Se guarda también la tabla para que su `id` no se reutilice mientras dura la caché.
+    cumulative: dict[int, tuple[list[int], list[object], Sequence]] = {}
+
+    def fast_pick(rng: random.Random, table: Sequence[tuple[object, int]]) -> object:
+        cached = cumulative.get(id(table))
+        if cached is None:
+            cached = (
+                list(itertools.accumulate(weight for _item, weight in table)),
+                [item for item, _weight in table],
+                table,
+            )
+            cumulative[id(table)] = cached
+        sums, items, _table = cached
+        return items[bisect.bisect_right(sums, rng.randrange(sums[-1]))]
+
+    monkeypatch.setattr(hold_win_module, "_pick", fast_pick)
     sim = simulate(150_000, random.Random(2026))
     assert 0.88 < sim.rtp < 1.0
     assert 0.38 < sim.part("ways") < 0.46

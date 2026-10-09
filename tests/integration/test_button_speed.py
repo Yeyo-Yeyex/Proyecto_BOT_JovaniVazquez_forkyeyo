@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from interaction_fakes import fake_interaction
+from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
@@ -33,6 +34,19 @@ from bot.services.todo import Priority
 
 GUILD_ID = 1
 OWNER_ID = 10
+
+
+@pytest.fixture(autouse=True)
+def fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sin dibujar las máquinas del casino: aquí la imagen no entra en ninguna aserción.
+
+    La prueba solo apunta el orden entre las respuestas a Discord y las conexiones a
+    SQLite. Dibujar el GIF de la tragaperras, la ruleta o el pachinko (y su
+    precalentamiento al cargar el cog) tardaba 1-3 s por caso sin cambiar ese orden.
+    Los cogs, el bot y la base de datos siguen siendo los reales (ver `render_fakes`).
+    """
+    use_fake_drawings(monkeypatch)
+
 
 #: Un clic: recibe la interacción falsa.
 Click = Callable[[MagicMock], Awaitable[None]]
@@ -85,6 +99,7 @@ def make_owner() -> MagicMock:
 
 async def press_slots(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Tragaperras")
+    module_of(client, "Tragaperras").REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
     view = module_of(client, "Tragaperras").SlotMachineView(
         cog, guild_id=GUILD_ID, owner=owner, stake=1
     )
@@ -200,6 +215,8 @@ async def press_pachinko_launch(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
+    module.SPIN_SECONDS = 0  # sin esperar a que «gire» la rueda: aquí no se enseña
+    module.REVEAL_MARGIN_SECONDS = 0
     table = module.RouletteTable(client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=1)
 
     async def click(interaction: MagicMock) -> None:
@@ -288,6 +305,34 @@ async def press_news(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def perfil_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    module = module_of(client, "Perfil")
+    return module.PerfilView(
+        client.get_cog("Perfil"), guild=owner.guild, owner=owner, target=owner, channel=None
+    )
+
+
+async def press_perfil_section(client: BotClient, owner: MagicMock) -> Click:
+    view = perfil_view(client, owner)
+    select = view.children[0]
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["rachas"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["rachas"]}
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_perfil_backpack(client: BotClient, owner: MagicMock) -> Click:
+    view = perfil_view(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._backpack(interaction)
+
+    return click
+
+
 CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
@@ -303,6 +348,8 @@ CASES: dict[str, Press] = {
     "tienda: comprar": press_checkout,
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
+    "perfil: cambiar de sección": press_perfil_section,
+    "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
     "lista: tachar": press_todo,
     "novedades: leído": press_news,

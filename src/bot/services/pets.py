@@ -62,6 +62,7 @@ class Event(StrEnum):
     BIRTHDAY = "birthday"
     NEWS = "news"
     BEER = "beer"
+    PROFILE = "profile"
 
 
 class Mood(StrEnum):
@@ -499,6 +500,12 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} brinda contigo a su manera: {sound}.",
         "{pet} no bebe, pero te juzga en silencio.",
         "{pet} se acerca a olisquear el vaso y vuelve con cara de «¿otra vez?».",
+    ),
+    Event.PROFILE: (
+        "{pet} se asoma a tu perfil y busca su foto. No sale. Se ofende.",
+        "{pet} lee tu vida laboral y suspira como un funcionario de la Seguridad Social.",
+        "{pet} cree que tu perfil necesita más logros y menos casino.",
+        "{pet} pide salir en el resumen. Lo ve justo: sin {pet} no eres nadie.",
     ),
 }
 

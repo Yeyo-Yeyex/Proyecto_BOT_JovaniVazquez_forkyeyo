@@ -66,15 +66,15 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | ⚙️ General | `ayuda` · `latencia` |
+  | 👤 Perfil | `perfil [miembro]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
-  | 📊 Niveles | `nivel [miembro]` · `ranking [pagina]` |
+  | 📊 Niveles | `ranking [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
-  | 🏆 Logros | `logros [miembro]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
+  | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `patrimonio [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -202,7 +202,7 @@ python -m bot
     comen). Lo que un administrador retire no vuelve solo. Las reglas para
     añadir artículos (tipo por lo que hace, pasillo por su tema) están en la
     Biblia.
-  - Objetos que se usan (59): desde la `mochila`, contra alguien o sin más:
+  - Objetos que se usan (59): desde la mochila, contra alguien o sin más:
     huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
     Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
     bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
@@ -210,8 +210,9 @@ python -m bot
     coleccionable al azar). El resultado sale en el canal y menciona a quien
     lo recibe. Los de un solo uso se gastan; el resto tiene una espera entre
     usos. Usar no mueve dinero.
-  - `mochila [miembro]` enseña lo que tiene alguien; su dueño puede ponerse y
-    quitarse los roles que compró para siempre y usar sus objetos.
+  - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
+    enseña lo que tiene alguien; su dueño puede ponerse y quitarse los roles
+    que compró para siempre y usar sus objetos.
 - **Mascotas** (`mascota [miembro]`): 28 especies con su personalidad, del
   gato que te tira la ficha de la mesa a Perro Sanxe (una en todo el
   servidor). 22 se adoptan en la tienda (perros, gatos y hurones con «tasa de
@@ -301,9 +302,12 @@ python -m bot
   mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
   (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
   pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
-  en 17 (también blando) y mira si tiene blackjack, blackjack paga 3:2,
-  doblar con dos cartas (también tras separar), separar una vez; sin seguro
-  ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
+  en 17 (también blando) y mira si tiene blackjack; si lo tiene, la mano es
+  empate y recuperas la apuesta. Blackjack paga 3:2, doblar con dos cartas
+  (también tras separar), separar una vez; sin seguro ni rendición. La
+  apuesta inicial es de 5.000 Y$ como mucho (`all` y ×2 se quedan ahí):
+  con el empate ante el blackjack de la banca, jugar bien deja un 3,6 % a
+  favor del jugador y el tope impide exprimirlo con un all-in. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
 - **Tragaperras** (`/tragas`, `.tragas [cantidad]`): una máquina de 3 rodillos
@@ -440,16 +444,33 @@ python -m bot
   la Lotería Nacional (jueves, sábado, Navidad y Niño), La Primitiva,
   Bonoloto, El Gordo de la Primitiva, Euromillones y dos rascas de la ONCE
   (X10 y 7 y Media). Se compra con botones: apuestas al azar (1, 5 o 10),
-  décimo o billete, o números elegidos en un formulario. Precios, reparto y
-  probabilidades son los reales (normas de SELAE y tablas de la ONCE) a 10 Y$
-  por euro: el pleno de la Primitiva es 1 entre 139.838.160. La cuenta del
-  Estado hace de banca: cobra los boletos sin IGIC, paga los premios con el
-  gravamen especial del 20 % por encima de 400.000 Y$ y garantiza el bote
-  mínimo del Gordo y de Euromillones con una cuarta parte de su saldo. Si no
+  décimo o billete, o números elegidos en un formulario. Precios y reparto
+  son los reales (normas de SELAE y tablas de la ONCE) a 10 Y$ por euro, y
+  las probabilidades de la Nacional y los rascas también. En los juegos de
+  bote se ajustan al servidor: si cada persona (sin contar bots) juega una
+  apuesta por sorteo, el bote cae más o menos una vez al mes. Con 30
+  personas, el bote de la Primitiva es 1 entre 386 (en la vida real, 1 entre
+  139.838.160). La cuenta del Estado hace de banca: cobra los boletos sin
+  IGIC, paga los premios con el gravamen especial del 20 % por encima de
+  400.000 Y$ y garantiza el bote mínimo del Gordo y de Euromillones,
+  encogido en la misma proporción y con una cuarta parte de su saldo como
+  mucho. Si no
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.936 logros en 39 categorías. El menú
+- **Perfil** (`perfil [miembro]`): todo lo de un miembro en un mismo menú.
+  Un desplegable cambia de sección en el mismo mensaje: 📋 Resumen (un
+  renglón de cada cosa), 📊 Nivel (nivel, XP y racha de días escribiendo),
+  🏰 Patrimonio (activos y el Patrimonio del lunes), 🪏 Trabajo (contrato y
+  vida laboral; para fichar sigue estando `pala`), 🏆 Logros, 🔥 Rachas (la
+  vigente y los récords de todas las rachas que cuentan los logros) y 🎒
+  Objetos (la mochila; su botón la abre para usar objetos y ponerse roles).
+  Sustituye a `nivel`, `patrimonio`, `logros` y `mochila`. Solo lo maneja
+  quien lo abre. Logros en 🏆 Coleccionista: *¿Quién soy yo?*, *Selfie
+  diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
+  *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
+  secretos.
+- **Logros** (sección 🏆 de `perfil`): 1.936 logros en 39 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -462,10 +483,11 @@ python -m bot
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
-  donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
+  donde se consiguió. La sección 🏆 de `perfil` enseña un resumen (total, puntos, últimos
   conseguidos, los más cercanos y el más raro), un menú por categorías con
   el progreso de cada uno y el porcentaje del servidor que lo tiene (las
-  largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos.
+  largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos; el botón
+  🏆 de la sección los abre en un mensaje aparte.
   - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
     minuto en una sola escritura por servidor. Del mensaje solo se miran
     propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.
@@ -734,7 +756,9 @@ ruff check .
 ```
 
 Las pruebas no requieren un token real ni conexión a Discord: se aíslan
-mediante dobles de prueba (`unittest.mock`).
+mediante dobles de prueba (`unittest.mock`). Corren en paralelo, un proceso
+por núcleo (`pytest-xdist`, configurado en `pyproject.toml`); `pytest -n 0`
+las corre en uno solo, para depurar.
 
 ## Estructura del proyecto
 
@@ -770,7 +794,8 @@ src/bot/
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
-│   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
+│   ├── achievements.py  # Logros: seguimiento, premios, avisos y su vista
+│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas y objetos
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .

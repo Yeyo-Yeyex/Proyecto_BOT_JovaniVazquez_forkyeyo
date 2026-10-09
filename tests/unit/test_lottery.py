@@ -8,6 +8,7 @@ prueba con la economía y el repositorio reales sobre un SQLite temporal.
 from __future__ import annotations
 
 import random
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -31,18 +32,25 @@ from bot.services.lottery import (
     MAX_PER_DRAW,
     LotteryError,
     Pick,
+    _extra_mass,
     _no_inversion,
     classify,
+    draw_result,
+    draws_per_period,
     format_pick,
     guarantee_for,
     jackpot_estimate,
+    jackpot_scale,
     nacional_expected_return,
     nacional_prizes,
     next_draw,
     parse_pick,
     random_pick,
+    real_odds,
+    result_for,
     scratch,
     scratch_grid,
+    server_odds,
     settle_nacional,
     settle_pool,
 )
@@ -594,3 +602,134 @@ async def test_panel_de_inicio_enseña_sorteos_y_botes(tmp_path: Path) -> None:
     assert "Euromillones" in text and "Navidad" in text and "bote" in text
     assert "Primitiva" in await cog.tab_text(GUILD, ALICE, "primitiva", "jueves")
     assert "Nada todavía" in await cog.tab_text(GUILD, ALICE, "mios", "jueves")
+
+
+# -- Probabilidades a la medida del servidor -------------------------------------------------
+
+POOL = (PRIMITIVA, BONOLOTO, GORDO, EURO)
+
+
+@pytest.mark.parametrize("game", POOL, ids=lambda g: g.key)
+@pytest.mark.parametrize("members", [1, 5, 30, 200, 10**9])
+def test_las_probabilidades_del_servidor_mantienen_el_orden_y_nunca_son_peores(
+    game, members: int
+) -> None:
+    real, odds = real_odds(game), server_odds(game, members)
+    bottom = min(real, key=real.__getitem__)
+    jackpot = next(c.key for c in game.categories if c.jackpot)
+    assert odds[bottom] == real[bottom]
+    for key in real:
+        assert odds[key] <= real[key] + 1e-6
+        assert odds[key] <= odds[jackpot] + 1e-6  # el bote sigue siendo lo más difícil
+    # Si en la vida real una categoría es más difícil que otra, aquí no es más fácil.
+    for a in real:
+        for b in real:
+            if real[a] < real[b]:
+                assert odds[a] <= odds[b] + 1e-6
+
+
+@pytest.mark.parametrize("game", POOL, ids=lambda g: g.key)
+def test_con_todo_el_servidor_jugando_el_bote_cae_una_vez_al_mes(game) -> None:
+    jackpot = next(c.key for c in game.categories if c.jackpot)
+    members = 30
+    odds = server_odds(game, members)
+    assert odds[jackpot] == pytest.approx(members * draws_per_period(game))
+    # El bombo solo regala una categoría por sorteo. En Primitiva y Bonoloto cabe
+    # con una apuesta por persona; Gordo y Euromillones tienen tantas categorías
+    # que no caben ni igualándolas al bote, y se quedan igualadas.
+    mass = members * _extra_mass(real_odds(game), odds)
+    if game in (PRIMITIVA, BONOLOTO):
+        assert mass <= 1 + 1e-9
+    else:
+        boosted = [k for k in odds if odds[k] < real_odds(game)[k]]
+        assert mass <= 1 + 1e-9 or all(odds[k] == pytest.approx(odds[jackpot]) for k in boosted)
+
+
+def test_en_un_servidor_enorme_las_probabilidades_son_las_reales() -> None:
+    assert server_odds(PRIMITIVA, 10**9) == real_odds(PRIMITIVA)
+    assert jackpot_scale(PRIMITIVA, 10**9) == 1
+
+
+@pytest.mark.parametrize("game", POOL, ids=lambda g: g.key)
+def test_el_bombo_cargado_da_justo_la_categoria_pedida(game) -> None:
+    rng = random.Random(5)
+    for _ in range(25):
+        pick = random_pick(game, rng)
+        for cat in game.categories:
+            result = result_for(game, pick, cat.key, rng)
+            assert classify(game, pick, result)[0] == cat.key
+            # Una combinación válida: bolas distintas y dentro del bombo.
+            assert len(set(result["numbers"])) == len(result["numbers"])
+
+
+def test_el_bote_cae_con_la_frecuencia_del_servidor() -> None:
+    """30 personas con una apuesta cada una: el bote cae en uno de cada ~13 sorteos."""
+    rng = random.Random(11)
+    members = 30
+    odds = server_odds(PRIMITIVA, members)
+    picks = [random_pick(PRIMITIVA, rng) for _ in range(members)]
+    draws = 6_000
+    jackpots = 0
+    for _ in range(draws):
+        result = draw_result(PRIMITIVA, rng, tickets=[(p, 1) for p in picks], odds=odds)
+        jackpots += sum(classify(PRIMITIVA, p, result)[0] == "especial" for p in picks)
+    expected = draws / draws_per_period(PRIMITIVA)
+    assert abs(jackpots - expected) < 4 * expected**0.5
+
+
+def test_sin_apuestas_o_sin_probabilidades_el_sorteo_es_el_real() -> None:
+    a = draw_result(PRIMITIVA, random.Random(3))
+    assert draw_result(PRIMITIVA, random.Random(3), tickets=(), odds={}) == a
+    pick = random_pick(PRIMITIVA, random.Random(4))
+    assert draw_result(PRIMITIVA, random.Random(3), tickets=[(pick, 1)]) == a
+
+
+def test_el_bote_garantizado_se_encoge_con_el_servidor() -> None:
+    small = guarantee_for(EURO, 10**12, 30)
+    assert small == round(EURO.guarantee * jackpot_scale(EURO, 30))
+    assert 0 < small < EURO.guarantee
+    assert guarantee_for(EURO, 10**12, 10**9) == EURO.guarantee
+
+
+def test_la_tabla_del_servidor_avisa_de_la_probabilidad_real() -> None:
+    table = odds_table(PRIMITIVA, 30)
+    assert "30 personas" in table
+    assert re.search(r"Especial .* 1 entre +386 ", table)
+    assert "139.838.160" in table
+    assert "personas" not in odds_table(PRIMITIVA)
+
+
+def test_las_personas_del_servidor_no_cuentan_bots() -> None:
+    bot = MagicMock()
+    people = [MagicMock(bot=False) for _ in range(4)] + [MagicMock(bot=True)]
+    bot.get_guild.return_value = MagicMock(members=people, member_count=5)
+    cog = Loteria(bot, MagicMock(), MagicMock())
+    assert cog.members(GUILD) == 4
+    bot.get_guild.return_value = MagicMock(members=[], member_count=12)
+    assert cog.members(GUILD) == 12
+    bot.get_guild.return_value = None
+    assert cog.members(GUILD) is None
+
+
+async def test_el_sorteo_usa_las_probabilidades_del_servidor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = Clock()
+    economy, lottery = await make(tmp_path, clock)
+    pick = random_pick(PRIMITIVA, random.Random(2))
+    await buy(economy, lottery, ALICE, "primitiva", [(pick, 1)])
+    cog = make_cog(economy, lottery, clock)
+    monkeypatch.setattr(cog, "members", lambda guild_id: 3)
+    # Un bote de 1 entre 1: el bombo se carga siempre con la apuesta de Alice.
+    # Se cambia en los globales del propio `settle`: si otra prueba ha cargado el
+    # bot real, `bot.cogs.lottery` de `sys.modules` ya no es el módulo de `Loteria`.
+    monkeypatch.setitem(
+        Loteria.settle.__globals__,
+        "server_odds",
+        lambda game, members: {**real_odds(game), "especial": 1.0},
+    )
+    clock.now = next_draw(PRIMITIVA, NOW) + 1
+    assert await cog.run_due_draws() == 1
+    draw = await lottery.last_draw(GUILD, "primitiva")
+    assert draw is not None and draw.result is not None
+    assert classify(PRIMITIVA, pick, draw.result)[0] == "especial"

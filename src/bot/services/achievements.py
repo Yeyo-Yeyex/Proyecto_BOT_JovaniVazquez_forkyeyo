@@ -41,7 +41,13 @@ from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
-from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
+from bot.services.blackjack import (
+    MAX_STAKE,
+    BlackjackGame,
+    Result,
+    hand_total,
+    is_blackjack,
+)
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
 from bot.services.crash import Seat as CrashSeat
@@ -133,7 +139,7 @@ class Rarity(Enum):
 
 @dataclass(frozen=True, slots=True)
 class Category:
-    """Grupo de logros que se muestra junto en `logros`.
+    """Grupo de logros que se muestra junto en el menú de logros.
 
     Attributes:
         upcoming: El juego aún no existe. Sus logros se enseñan como
@@ -152,7 +158,7 @@ class Category:
 
 @dataclass(frozen=True, slots=True)
 class Group:
-    """Entrada del menú de `logros` que reúne varias categorías (secciones)."""
+    """Entrada del menú de logros que reúne varias categorías (secciones)."""
 
     key: str
     title: str
@@ -216,7 +222,7 @@ CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
 
 
 def menu_entries() -> list[tuple[str, str]]:
-    """Opciones del menú de `logros` (sin el Resumen): `(clave, título)`.
+    """Opciones del menú de logros (sin el Resumen): `(clave, título)`.
 
     Cada categoría suelta sale tal cual; las de un grupo salen una sola vez,
     con la clave y el título del grupo, en la posición de la primera.
@@ -291,6 +297,12 @@ MESSAGES_TOTAL_STAT = "messages_total"
 IMG_EFFECT_PREFIX = "img_fx_"
 #: Estadística virtual: efectos de imagen distintos que ha usado el miembro.
 IMG_EFFECTS_STAT = "img_effects_tried"
+#: Secciones de `perfil` vistas: un contador por sección con este prefijo
+#: (`perfil_seen_nivel`…) y el recuento de distintas, calculado en `with_derived`.
+PERFIL_SEEN_PREFIX = "perfil_seen_"
+PERFIL_SECTIONS_STAT = "perfil_sections"
+#: Secciones de `perfil` (las mismas claves que `bot.cogs.perfil.SECTIONS`).
+PERFIL_SECTIONS = ("resumen", "nivel", "patrimonio", "trabajo", "logros", "rachas", "objetos")
 #: Prefijo de los plenos acertados en cada número de la ruleta (`roulette_hit_17`).
 ROULETTE_HIT_PREFIX = "roulette_hit_"
 #: Estadísticas virtuales: números distintos acertados a pleno y el más repetido.
@@ -1811,6 +1823,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_dealer_five", [
         (10, "dealer_five", "La banca se lo curra",
          "Que la banca robe 5 cartas o más 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dealer_bj_saved", [
+        (1, "bj_rescate", "Rescate de Bankia",
+         "La banca saca blackjack y te devuelve la apuesta.", C),
+        (25, "bj_rescate_25", "El FROB te quiere",
+         "Que la banca te perdone su blackjack 25 veces.", R),
+        (250, "bj_rescate_250", "Demasiado grande para caer",
+         "Que la banca te perdone su blackjack 250 veces.", E),
+        (1_000, "bj_rescate_1k", "Rescatado con dinero de todos",
+         "Que la banca te perdone su blackjack 1.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_max_stake", [
+        (1, "bj_tope", "Hasta aquí llega la mesa",
+         "Juega una mano con la apuesta máxima.", C),
+        (100, "bj_tope_100", "Techo de gasto de la mesa",
+         "Juega 100 manos con la apuesta máxima.", R),
+        (1_000, "bj_tope_1k", "Regla de gasto de Bruselas",
+         "Juega 1.000 manos con la apuesta máxima.", R),
     ])  # fmt: skip
 
     # 💰 Casino ---------------------------------------------------------------------------
@@ -3605,7 +3635,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "lotto4", "Cuatro de seis", "Acierta 4 números en la Primitiva o la Bonoloto.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_lotto5", [
-        (1, "lotto5", "Rozando el cielo", "Acierta 5 en la Primitiva o la Bonoloto.", M, True),
+        (1, "lotto5", "Rozando el cielo", "Acierta 5 en la Primitiva o la Bonoloto.", L, True),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_jackpot", [
         (1, "lotto_jackpot", "El bote de la Primitiva",
@@ -5657,12 +5687,35 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5, "meta_combo_5", "Pleno al quince", "Desbloquea 5 logros de golpe.", E, True),
     ])  # fmt: skip
     a += _tiers("meta", "logros_views", [
-        (10, "views_10", "Mírate al espejo", "Abre tus `logros` 10 veces.", C),
-        (100, "views_100", "Narciso de vitrina", "Abre tus `logros` 100 veces.", R),
+        (10, "views_10", "Mírate al espejo", "Abre tus logros en `perfil` 10 veces.", C),
+        (100, "views_100", "Narciso de vitrina", "Abre tus logros en `perfil` 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("meta", "logros_others", [
-        (10, "others_10", "Cotilla", "Mira los `logros` de otra persona 10 veces.", C),
+        (10, "others_10", "Cotilla", "Mira los logros de otra persona 10 veces.", C),
         (100, "others_100", "Portera del edificio", "Mira los logros de otros 100 veces.", R),
+    ])  # fmt: skip
+    # 👤 Perfil: mirarse y mirar a otros es una decisión, nada pasa de Épico.
+    a += _tiers("meta", "perfil_views", [
+        (1, "perfil_1", "¿Quién soy yo?", "Abre tu `perfil`.", C),
+        (50, "perfil_50", "Selfie diario", "Abre tu `perfil` 50 veces.", R),
+        (500, "perfil_500", "Ego de ministro", "Abre tu `perfil` 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("meta", "perfil_others", [
+        (1, "perfil_otro_1", "Fisgón de rellano", "Mira el `perfil` de otra persona.", C),
+        (50, "perfil_otro_50", "Informe de la UCO", "Mira perfiles ajenos 50 veces.", R),
+        (500, "perfil_otro_500", "Pegasus de barrio", "Mira perfiles ajenos 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("meta", PERFIL_SECTIONS_STAT, [
+        (len(PERFIL_SECTIONS), "perfil_todo", "Expediente completo",
+         "Mira todas las secciones de tu `perfil`.", C),
+    ])  # fmt: skip
+    a += _tiers("meta", "perfil_bot", [
+        (1, "perfil_bot", "Funcionario sin alma",
+         "Intenta mirar el perfil de un bot.", C, True),
+    ])  # fmt: skip
+    a += _tiers("meta", "perfil_night", [
+        (1, "perfil_noche", "Crisis existencial de madrugada",
+         "Mírate el `perfil` entre las 3 y las 5 de la mañana.", C, True),
     ])  # fmt: skip
     a += _tiers("meta", "logros_ranking", [
         (25, "ranking_25", "Obsesionado con el ranking", "Mira el ranking de logros 25 veces.", R),
@@ -5985,10 +6038,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pita a alguien con el silbato de árbitro.", C, True),
     ])  # fmt: skip
 
-    # 🏰 `patrimonio`, 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
+    # 🏰 patrimonio (`perfil`), 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
     # Mirar es una decisión: nada pasa de Raro. El patrimonio neto sí cuesta.
     a += _tiers("economy", "patrimonio_views", [
-        (1, "patrimonio_1", "Hacer inventario", "Mira tu `patrimonio` (o el de alguien).", C),
+        (1, "patrimonio_1", "Hacer inventario",
+         "Mira tu patrimonio en `perfil` (o el de alguien).", C),
         (25, "patrimonio_25", "Contando los duros", "Mira el patrimonio 25 veces.", R),
     ])  # fmt: skip
     a += _tiers("economy", "patrimonio_snoop", [
@@ -6347,7 +6401,8 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     `img_effects_tried` cuenta los efectos de imagen distintos usados;
     `roulette_numbers_hit` y `roulette_hit_max`, los plenos por número;
     `shop_use_kinds`, los objetos distintos usados de la tienda;
-    `shop_aisles`, los pasillos del colmado en los que ha comprado, y
+    `shop_aisles`, los pasillos del colmado en los que ha comprado;
+    `perfil_sections`, las secciones distintas de `perfil` que ha mirado, y
     `horse_backed_kinds` y `horse_backed_max`, los caballos distintos por los
     que ha apostado y los boletos al que más.
     """
@@ -6373,6 +6428,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
         and value > 0
     )
     full[SHOP_AISLES_STAT] = len(visited_aisles(stats))
+    full[PERFIL_SECTIONS_STAT] = sum(
+        1 for key in PERFIL_SECTIONS if stats.get(f"{PERFIL_SEEN_PREFIX}{key}", 0) > 0
+    )
     pets = {
         stat[len(PET_SPECIES_PREFIX) :]
         for stat, value in stats.items()
@@ -7339,6 +7397,10 @@ def blackjack_stats(game: BlackjackGame) -> StatDelta:
         bump("bj_dealer_busts")
     if is_blackjack(game.dealer):
         bump("bj_dealer_naturals")
+        if not game.hands[0].natural:
+            bump("bj_dealer_bj_saved")
+    if game.stake >= MAX_STAKE:
+        bump("bj_max_stake")
     if any(h.result is Result.LOSE and h.total == 20 and dealer_total == 21 for h in game.hands):
         bump("bj_bad_beat")
     if any(_kamikaze(h.cards, h.doubled, h.busted) for h in game.hands):
@@ -7919,7 +7981,7 @@ def patrimonio_stats(
     rank: int,
     people: int,
 ) -> StatDelta:
-    """Contadores de `patrimonio` (y de `fortunas` si `listing`).
+    """Contadores de mirar el patrimonio en `perfil` (y de `fortunas` si `listing`).
 
     Args:
         listing: Si es `fortunas`.

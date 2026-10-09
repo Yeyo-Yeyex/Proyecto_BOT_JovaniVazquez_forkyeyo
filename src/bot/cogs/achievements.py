@@ -1,4 +1,4 @@
-"""Logros: `logros`, el seguimiento de la actividad y los avisos al desbloquear.
+"""Logros: el seguimiento de la actividad, los avisos al desbloquear y su vista.
 
 Qué se cuenta y cómo:
 
@@ -31,6 +31,9 @@ Se anuncia en el canal donde se consiguió. No llega como interacción propia
 (salta dentro de otra acción), así que el aviso de la Renta lo pone la
 acción que lo provoca, como manda la Biblia.
 
+Los logros de cada uno se consultan en la sección 🏆 Logros de `perfil`
+(`build_view`, con el menú por categorías y el ranking).
+
 Permisos: enviar mensajes e insertar enlaces en los canales donde se juega
 y se habla (también en el chat de texto de los canales de voz).
 """
@@ -43,10 +46,9 @@ import time
 from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import pets as mascotas
@@ -101,7 +103,7 @@ REACTION_MEMORY = 5_000
 LOSING_STREAK = 5
 #: Logros que se listan en un aviso; si se desbloquean más a la vez, se resumen.
 ANNOUNCE_LIMIT = 8
-#: Segundos que la vista de `logros` sigue respondiendo.
+#: Segundos que la vista de logros sigue respondiendo.
 VIEW_TIMEOUT = 300
 RANKING_SIZE = 10
 COLOR = discord.Color.from_rgb(255, 190, 40)
@@ -185,7 +187,7 @@ def unlock_embed(
             f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}" for a in shown
         ]
         if len(achievements) > ANNOUNCE_LIMIT:
-            lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos con `logros`.")
+            lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos en `perfil`.")
         if income is not None:
             lines.append(f"{money}\n-# {tax}")
     lines += [f"\n{a.story}" for a in shown if a.story]
@@ -326,7 +328,7 @@ def summary_embed(
     holders: Mapping[str, int],
     members: int,
 ) -> discord.Embed:
-    """Portada de `logros`: total, puntos, categorías, últimos y los más cercanos."""
+    """Portada de los logros (🏆 en `perfil`): total, puntos, categorías y los últimos."""
     unlocked = {i: t for i, t in profile.unlocked.items() if i in BY_ID}
     available_ids = {a.id for a in AVAILABLE}
     done = sum(1 for i in unlocked if i in available_ids)
@@ -414,7 +416,7 @@ def ranking_embed(entries: Sequence[tuple[str, int, int]]) -> discord.Embed:
     )
 
 
-# -- Vista de `logros` -----------------------------------------------------------------
+# -- Vista de logros -------------------------------------------------------------------
 
 
 class CategorySelect(discord.ui.Select):
@@ -462,7 +464,7 @@ class SectionSelect(discord.ui.Select):
 
 
 class AchievementsView(discord.ui.View):
-    """Páginas de `logros` de un miembro. Solo quien lo pidió las cambia."""
+    """Páginas de logros de un miembro (botón 🏆 de `perfil`). Solo quien lo pidió las cambia."""
 
     def __init__(
         self,
@@ -508,11 +510,12 @@ class AchievementsView(discord.ui.View):
         )
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Cada uno navega por su propio `logros`."""
+        """Cada uno navega por sus propios logros."""
         if interaction.user.id == self.owner_id:
             return True
         await interaction.response.send_message(
-            "Abre los tuyos con `logros` (o `logros @alguien`).", ephemeral=True
+            "Abre los tuyos en `perfil` (o `perfil @alguien`), sección 🏆 Logros.",
+            ephemeral=True,
         )
         return False
 
@@ -1132,7 +1135,7 @@ class Achievements(commands.Cog):
     async def build_view(
         self, guild: discord.Guild, owner_id: int, target: discord.abc.User
     ) -> AchievementsView:
-        """Prepara la vista de `logros` con los datos de `target`."""
+        """Prepara la vista de logros con los datos de `target`."""
         await self.flush()  # para que se vea lo del último minuto
         profile = await self.repository.profile(guild.id, target.id)
         rows, members = await self.repository.guild_unlocks(guild.id)
@@ -1147,61 +1150,15 @@ class Achievements(commands.Cog):
             members=members,
         )
 
-    async def _logros_impl(
-        self,
-        *,
-        guild: discord.Guild | None,
-        author: discord.abc.User,
-        target: discord.abc.User | None,
-        send: Callable[..., Any],
-        send_error: Callable[[str], Any],
-    ) -> None:
-        if guild is None:
-            await send_error("Los logros solo funcionan dentro de un servidor.")
-            return
-        who = target or author
-        if who.bot:
-            await send_error("Los bots no coleccionan logros.")
-            return
-        view = await self.build_view(guild, author.id, who)
-        stat = "logros_views" if who.id == author.id else "logros_others"
-        self.note(guild.id, author.id, StatDelta(add={stat: 1}))
-        await send(
-            embed=view.page("summary"), view=view, allowed_mentions=discord.AllowedMentions.none()
-        )
+    def note_view(self, guild_id: int, viewer_id: int, target_id: int) -> None:
+        """Cuenta que alguien ha mirado sus logros o los de otro (logros de cotilla)."""
+        stat = "logros_views" if viewer_id == target_id else "logros_others"
+        self.note(guild_id, viewer_id, StatDelta(add={stat: 1}))
 
-    @app_commands.command(name="logros", description="Tus logros, los de otro y el ranking.")
-    @app_commands.describe(miembro="De quién ver los logros (por defecto, tú)")
-    @app_commands.guild_only()
-    async def logros(
-        self, interaction: discord.Interaction, miembro: discord.Member | None = None
-    ) -> None:
-        """Muestra los logros con un menú por categorías y el ranking del servidor."""
-
-        async def send_error(text: str) -> None:
-            await interaction.response.send_message(text, ephemeral=True)
-
-        await self._logros_impl(
-            guild=interaction.guild,
-            author=interaction.user,
-            target=miembro,
-            send=interaction.response.send_message,
-            send_error=send_error,
-        )
-
-    @commands.command(name="logros")
-    @commands.guild_only()
-    async def logros_text(
-        self, ctx: commands.Context, miembro: discord.Member | None = None
-    ) -> None:
-        """Versión de texto (`.logros [@miembro]`) de `/logros`."""
-        await self._logros_impl(
-            guild=ctx.guild,
-            author=ctx.author,
-            target=miembro,
-            send=ctx.send,
-            send_error=ctx.send,
-        )
+    async def fresh_profile(self, guild_id: int, user_id: int) -> Profile:
+        """Estadísticas y logros de un miembro, con lo del último minuto ya escrito."""
+        await self.flush()
+        return await self.repository.profile(guild_id, user_id)
 
 
 # -- Puntos de entrada para otros cogs ----------------------------------------------------

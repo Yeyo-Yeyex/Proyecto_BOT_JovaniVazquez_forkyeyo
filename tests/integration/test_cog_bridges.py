@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from interaction_fakes import fake_interaction
+from render_fakes import use_fake_drawings
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
@@ -37,6 +38,18 @@ GAMES = (
     "Porras",
     "Loteria",
 )
+
+
+@pytest.fixture(autouse=True)
+def fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sin dibujar las máquinas del casino: ninguna aserción de aquí mira una imagen.
+
+    Estas pruebas comprueban que lo jugado llega a logros, apuestas y Renta. El GIF de
+    la tragaperras, la ruleta o el pachinko (y su precalentamiento al cargar el cog) no
+    cambia nada de eso y costaba 1-3 s por prueba. Cogs, bot y base de datos siguen siendo
+    los reales; solo se sustituye el dibujo (ver `render_fakes`).
+    """
+    use_fake_drawings(monkeypatch)
 
 
 async def load_bot(tmp_path: Path) -> BotClient:
@@ -204,6 +217,9 @@ async def test_auto_del_pachinko_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
         pachinko = importer("Pachinko", client)
         pachinko.REVEAL_MARGIN_SECONDS = 0
         pachinko.AUTOPLAY_MIN_GAP = 0
+        # Cuatro tandas bastan para probar la precarga (se prepara la siguiente mientras se
+        # juega la actual): las 25 de un Auto completo cuestan ~75 ms de física cada una.
+        pachinko.AUTOPLAY_MAX = 4
         owner = MagicMock(spec=discord.Member)
         owner.id = OWNER_ID
         owner.display_name = "Diego"
@@ -287,11 +303,14 @@ async def test_las_carreras_apuntan_sus_logros_y_jugadas_con_el_bot_real(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Los caballos cargan antes que los logros y `apuestas`: sus boletos deben llegar."""
-    from bot.services.horses import SEGMENTS, RaceResult
+    from bot.services.horses import SEGMENTS, RaceResult, estimate
 
     client = await load_bot(tmp_path)
     try:
         caballos = importer("Caballos", client)
+        # Las cuotas salen de simular la carrera `ODDS_TRIALS` (80.000) veces, ~0,7 s. Aquí
+        # basta con unas pocas: la prueba apunta una apuesta acertada, no mira la cuota.
+        monkeypatch.setattr(caballos, "estimate", lambda card, rng: estimate(card, rng, 2_000))
         cog = client.get_cog("Caballos")
         cog.renderer = MagicMock()
         cog.renderer.card = AsyncMock(return_value=b"PNG")
@@ -762,5 +781,41 @@ async def test_la_beernight_apunta_sus_logros_y_saca_la_mascota_con_el_bot_real(
         )  # fmt: skip
         line = await module.mascotas.cameo(client, GUILD_ID, OWNER_ID, Moment(Event.BEER, True))
         assert line is not None and "**Toby**" in line
+    finally:
+        await client.close()
+
+
+async def test_el_perfil_junta_todas_las_secciones_con_el_bot_real(tmp_path: Path) -> None:
+    """`perfil` pide cada sección a su cog: con el bot real, ninguna sale «no disponible»."""
+    client = await load_bot(tmp_path)
+    await client.lottery.initialize()
+    await client.pets.initialize()
+    try:
+        perfil = client.get_cog("Perfil")
+        module = importer("Perfil", client)
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        owner.guild = guild
+        guild.get_member = MagicMock(return_value=owner)
+        guild.get_role = MagicMock(return_value=None)
+
+        result = await perfil.open(guild=guild, author=owner, target=None, channel=None)
+
+        assert not isinstance(result, str)
+        summary, view = result
+        assert "Diego" in summary.title
+        for marker in ("📊", "🏰", "🪏", "🏆", "🔥", "🎒"):
+            assert marker in summary.description, marker
+        for key in module.SECTION_KEYS:
+            embed = await perfil.section(view, key)
+            assert "no está disponible" not in (embed.description or ""), key
+        # Abrir el perfil propio cuenta para sus logros, en el cog de logros de verdad.
+        profile = await client.get_cog("Achievements").fresh_profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["perfil_views"] == 1
+        assert profile.stats["perfil_seen_resumen"] == 1
     finally:
         await client.close()

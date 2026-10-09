@@ -140,14 +140,42 @@ def test_las_probabilidades_suman_lo_que_deben() -> None:
     assert sum(h.estimate(gp, np.random.default_rng(2), trials=5_000).place) == pytest.approx(3)
 
 
+@pytest.fixture(scope="module")
+def blando_card() -> RaceCard:
+    return card_of(*SIX, going=Going.BLANDO, rain_chance=0.3)
+
+
+@pytest.fixture(scope="module")
+def blando_odds(blando_card: RaceCard) -> h.Odds:
+    """Las cuotas de la carrera de `blando_card`, estimadas una sola vez para los cuatro boletos."""
+    return h.estimate(blando_card, np.random.default_rng(11), trials=80_000)
+
+
+def count_wins(pick: Pick, orders: np.ndarray) -> int:
+    """Cuántos órdenes de llegada (filas) cobra el boleto: lo mismo que `Pick.wins` fila a fila.
+
+    `Pick.wins` en bucle de Python tardaba segundos con 30.000 carreras; con numpy es
+    la misma cuenta (ganador: el primero; colocado: está entre los que cobran puesto;
+    gemela y trío: los primeros son exactamente los elegidos, en orden).
+    """
+    if pick.kind is BetKind.PLACE:
+        top = orders[:, : h.place_slots(orders.shape[1])]
+        return int((top == pick.horses[0]).any(axis=1).sum())
+    top = orders[:, : pick.kind.picks]
+    return int((top == np.array(pick.horses)).all(axis=1).sum())
+
+
 @pytest.mark.parametrize("kind", list(BetKind))
-def test_cada_tipo_de_boleto_devuelve_su_rtp(kind: BetKind) -> None:
+def test_cada_tipo_de_boleto_devuelve_su_rtp(
+    kind: BetKind, blando_card: RaceCard, blando_odds: h.Odds
+) -> None:
     """Apostar siempre al mismo boleto devuelve de media su RTP (con margen de muestreo).
 
     Se estiman las cuotas con un azar y se corren carreras con otro, como en el cog.
+    Las cuotas se estiman una vez para todos los boletos y los aciertos se cuentan
+    con numpy (ver `count_wins`).
     """
-    card = card_of(*SIX, going=Going.BLANDO, rain_chance=0.3)
-    odds = h.estimate(card, np.random.default_rng(11), trials=80_000)
+    card, odds = blando_card, blando_odds
     picks = {
         BetKind.WIN: Pick(kind, (odds.favourite(),)),
         BetKind.PLACE: Pick(kind, (2,)),
@@ -161,7 +189,7 @@ def test_cada_tipo_de_boleto_devuelve_su_rtp(kind: BetKind) -> None:
     v, _ = h._speeds(card, rng, races)
     times = (card.distance / SEGMENTS / v).sum(axis=2)
     orders = np.argsort(times, axis=1)
-    hits = sum(pick.wins(tuple(int(x) for x in row)) for row in orders)
+    hits = count_wins(pick, orders)
     returned = hits * cents / 100 / races
     assert returned == pytest.approx(RTP[kind.key], abs=0.06)
 

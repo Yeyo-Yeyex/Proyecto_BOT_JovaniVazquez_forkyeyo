@@ -284,8 +284,7 @@ async def test_patrimonio_y_fortunas_responden_con_un_embed(tmp_path: Path) -> N
     original = patrimonio_cog.logros.track
     patrimonio_cog.logros.track = track
     try:
-        await cog._patrimonio_impl(responder, None)
-        embed = responder.send.await_args.kwargs["embed"]
+        embed = await cog.patrimonio_embed(guild, responder.member, responder.member, None)
         assert "Ana" in embed.title
         assert "Patrimonio" in embed.fields[-1].value
         check(embed)

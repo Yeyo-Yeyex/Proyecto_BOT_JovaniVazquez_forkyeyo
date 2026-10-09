@@ -3,14 +3,14 @@
 Qué se vende (`Kind`):
 
 - **Roles** (`rol`): un rol del servidor, para siempre o alquilado unos días.
-  Los permanentes se pueden poner y quitar desde la `mochila` (útil para los
+  Los permanentes se pueden poner y quitar desde la mochila (útil para los
   roles de color). Volver a comprar uno alquilado alarga el alquiler.
 - **Potenciadores** (`xp`): multiplican el XP de mensajes y voz durante un
   tiempo. Si ya tienes uno, el nuevo se pone a la cola y empieza cuando
   acaba el anterior, para que no se pisen.
 - **Coleccionables** (`objeto`): no hacen nada, solo se tienen. Si tienen
   existencias limitadas, cada unidad lleva su número de serie ("nº 3 de 10").
-  Algunos se usan desde la `mochila` (`bot.services.shop_uses`).
+  Algunos se usan desde la mochila (`bot.services.shop_uses`).
 - **Mascotas** (`mascota`): solo del surtido de serie
   (`bot.services.pets_catalog`); se cuidan con `mascota` y la activa sale en
   los mensajes del bot (`bot.services.pets`).
@@ -263,7 +263,7 @@ def ineligibility(
     if item.min_level and level < item.min_level:
         return f"Hace falta nivel {item.min_level} y vas por el {level}. ¡A yapear!"
     if item.permanent_role and owns_role:
-        return "Ese rol ya es tuyo. Póntelo o quítatelo desde la `mochila`."
+        return "Ese rol ya es tuyo. Póntelo o quítatelo desde la mochila (`perfil`, 🎒 Objetos)."
     if item.per_user is not None and bought >= item.per_user:
         veces = "vez" if item.per_user == 1 else "veces"
         return f"Solo se puede comprar {item.per_user} {veces} por persona y ya lo hiciste."

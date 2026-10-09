@@ -783,7 +783,7 @@ class ShopRepository:
     async def holdings(
         self, guild_id: int, user_id: int | None, now: float
     ) -> list[tuple[int, str, str, str, int, float | None]]:
-        """Bienes en vigor con su valor, para `patrimonio`.
+        """Bienes en vigor con su valor, para el patrimonio.
 
         El valor es lo pagado sin IGIC (sumando las renovaciones y sin las
         compras devueltas). Lo que caduca pierde valor con el tiempo: vale la

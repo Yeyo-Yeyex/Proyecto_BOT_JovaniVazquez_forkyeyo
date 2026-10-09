@@ -34,6 +34,7 @@ from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import blackjack_stats, casino_stats
 from bot.services.blackjack import (
+    MAX_STAKE,
     Action,
     BlackjackGame,
     Card,
@@ -70,7 +71,10 @@ COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
 
-RULES_FOOTER = "Blackjack paga 3:2 · la banca se planta en 17"
+RULES_FOOTER = (
+    "Blackjack paga 3:2 · la banca se planta en 17 · su blackjack es empate"
+    f" · máx. {format_amount(MAX_STAKE)}"
+)
 
 BLACKJACK_LINES = ("🂡 ¡BLACKJACK!", "💥 ¡BLACKJACK!", "🔥 ¡BLACKJACK!")
 WIN_LINES = ("¡Ganas", "¡Le ganas a la banca!", "¡Cobras", "¡Toma ya!")
@@ -527,7 +531,7 @@ class BlackjackTable(discord.ui.View):
     async def _double_stake(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
         balance = await self.balance()
-        self.stake = max(1, min(self.stake * 2, balance))
+        self.stake = max(1, min(self.stake * 2, balance, MAX_STAKE))
         await self._refresh(interaction, balance)
 
     async def _all_in(self, interaction: discord.Interaction) -> None:
@@ -536,7 +540,7 @@ class BlackjackTable(discord.ui.View):
         if balance == 0:
             await notify(interaction, insufficient_text(0))
             return
-        self.stake = balance
+        self.stake = min(balance, MAX_STAKE)
         await self._refresh(interaction, balance)
 
     async def _deal_again(self, interaction: discord.Interaction) -> None:
@@ -623,6 +627,9 @@ class Blackjack(commands.Cog):
         except ValueError as error:
             await send_error(str(error))
             return
+        # Con el empate ante el blackjack de la banca el juego favorece al que
+        # juega bien: el tope impide exprimirlo con un all-in (ver el servicio).
+        stake = min(stake, MAX_STAKE)
         if stake > balance:
             await send_error(insufficient_text(balance))
             return
