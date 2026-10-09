@@ -206,6 +206,7 @@ PRODUCED_STATS = {
     "slots_double_fives", "slots_double_loss_max", "slots_double_nada",
     "slots_double_heartbreak",
     "slots_cooled", "slots_cooled_max",
+    "slots_bonus_fills", "slots_bonus_slowest", "slots_bonus_quick",
     "slots_tickets", "slots_ticket_gross_max", "slots_ticket_best", "slots_ticket_loss_max",
     "slots_ticket_creative", "slots_ticket_taxed", "slots_ticket_zero", "slots_ticket_dry",
     "slots_ticket_quick",

@@ -90,13 +90,14 @@ Las rarezas de los de suerte (tandas con muchos choques, bolas con muchos choque
 
 ## Tragaperras: el revamp
 
-El revamp trae re-giro del tercer rodillo, doble o nada, bote misterioso, giro diario, GRAN/MEGA/ÉPICO, calor que se enfría y ticket de sesión, con 81 logros nuevos. `_jugar_slots` simula ya la máquina nueva: rodillo virtual, re-giro de la mitad de los casi-premios (y en cadena mientras siga rozando), doble o nada con la mitad de los premios (y otra vez la mitad de las veces que acierta) y bote que cae solo entre la semilla y `POT_CAP`, alimentado por cinco jugadores. Con esa simulación se han puesto las rarezas de todos los logros de suerte de la tragaperras, nuevos y antiguos, y ninguno queda fuera de su banda.
+El revamp trae re-giro del tercer rodillo, doble o nada, bote misterioso, giro diario, barra de bonus, GRAN/MEGA/ÉPICO, calor que se enfría y ticket de sesión, con 88 logros nuevos. `_jugar_slots` simula ya la máquina nueva: rodillo virtual, re-giro de la mitad de los casi-premios (y en cadena mientras siga rozando), doble o nada con la mitad de los premios (y otra vez la mitad de las veces que acierta) y bote que cae solo entre la semilla y `POT_CAP`, alimentado por cinco jugadores. Con esa simulación se han puesto las rarezas de todos los logros de suerte de la tragaperras, nuevos y antiguos, y ninguno queda fuera de su banda.
 
 Lo que más cambia:
 
 - **El bote cae mucho más:** con el tope de 50.000 Y$ y cinco jugadores, el primer bote llega en unos 9 días. `jackpot_1` pasa de Legendario a Raro, `jackpot_5` de Mítico a Épico y los de bote misterioso y sequía bajan dos escalones. «Bote gordo» pide ahora 40.000 Y$ en vez de 50.000, porque el bote ya no pasa del tope.
-- **El 7️⃣ 7️⃣ 7️⃣ es más raro:** el rodillo virtual hace que el 7️⃣ roce la línea a menudo y entre poco. El primer trío tarda unos 260 días (Raro → Mítico), y lo mismo «Frutería completa», que lo necesita.
+- **El 7️⃣ 7️⃣ 7️⃣ es más raro:** el rodillo virtual hace que el 7️⃣ roce la línea a menudo y entre poco. El primer trío tarda unos 110 días (Raro → Legendario), y lo mismo «Frutería completa», que lo necesita.
 - **Re-giros:** fallar tres, cuatro o cinco seguidos pasa en el primer o segundo día, porque el 81 % de los re-giros fallan. Son Comunes; siete seguidos, Épico.
+- **Barra de bonus:** se llena cada ~80 tiradas pagadas y es regular (el 98 % de las barras tardan entre 60 y 103), así que los de «tardar mucho» o «llenarla rápido» piden 100, 110 y 60 tiradas, no cifras redondas que no salen nunca.
 - **Celebraciones:** el GRAN PREMIO (×5) sale una vez cada ~17 tiradas, así que sus logros bajan un escalón.
 
 Los casi-premios pasan del 0,8 % al 21 % de las tiradas: con 25 y 100 salían en horas. Las metas de `nearmiss_25`, `nearmiss_100` y `nearmiss_500` suben a 1.000, 5.000 y 25.000 (los `id` y las rarezas se quedan), y la de `antic_100` a 1.000.

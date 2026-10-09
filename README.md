@@ -324,7 +324,9 @@ python -m bot
   cada apuesta y vuelve a 5.000 Y$ al vaciarse; además cae solo antes de
   llegar a 50.000 Y$. Tres 🎟️ en cualquier fila dan 5 giros gratis, y cada 5
   tiradas con premio la máquina se calienta y la siguiente paga ×2 (el calor
-  se guarda y se enfría un punto cada 10 minutos sin jugar). Los rodillos
+  se guarda y se enfría un punto cada 10 minutos sin jugar). La barra de bonus
+  sube con cada tirada pagada (más con los casi-premios, y a cuentagotas al
+  final) y, llena, da 3 giros gratis. Los rodillos
   tienen pesos por casilla, como las máquinas reales: el 7️⃣ roza la línea en
   una de cada cinco tiradas. Devuelve ~99,5 % de lo apostado contando el bote. El GIF
   (~150 KB, ~0,1 s de CPU) se monta en cada tirada con piezas precalculadas:

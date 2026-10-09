@@ -17,6 +17,10 @@ import pytest
 from bot.services.slots import (
     BELL,
     BIG_WIN,
+    BONUS_FREE_SPINS,
+    BONUS_MAX,
+    BONUS_NEAR_MISS,
+    BONUS_SLOW_FROM,
     CHERRY,
     DAILY_STAKE,
     DAILY_STREAK_MAX,
@@ -39,9 +43,12 @@ from bot.services.slots import (
     THREE_OF_A_KIND,
     TWO_CHERRIES,
     WILD,
+    BonusMeter,
     Kind,
     SlotMachine,
     WinTier,
+    add_bonus,
+    bonus_bar,
     daily_stake,
     decayed_heat,
     evaluate_line,
@@ -241,26 +248,28 @@ def exact_stats() -> dict[str, float]:
 
 def test_las_cifras_de_la_documentacion_son_las_reales(exact_stats) -> None:  # noqa: ANN001
     stats = exact_stats
-    assert stats["line"] == pytest.approx(0.875, abs=0.005)
+    assert stats["line"] == pytest.approx(0.84, abs=0.005)
     assert stats["hit"] == pytest.approx(0.32, abs=0.01)
     # Dos de cada tres premios devuelven menos de lo apostado.
     assert stats["ldw"] / stats["hit"] == pytest.approx(2 / 3, abs=0.03)
-    assert 1 / stats["jackpot"] == pytest.approx(20_000, rel=0.03)
-    assert 1 / stats["free"] == pytest.approx(125, rel=0.02)
-    assert stats["near"] == pytest.approx(0.21, abs=0.01)
-    assert stats["respin"] == pytest.approx(0.205, abs=0.01)
-    assert 1 / stats["epic"] == pytest.approx(2_500, rel=0.1)
+    assert 1 / stats["jackpot"] == pytest.approx(22_000, rel=0.03)
+    assert 1 / stats["free"] == pytest.approx(120, rel=0.02)
+    assert stats["near"] == pytest.approx(0.205, abs=0.01)
+    assert stats["respin"] == pytest.approx(0.20, abs=0.01)
+    assert 1 / stats["epic"] == pytest.approx(2_400, rel=0.1)
     assert 1 / stats["mega"] == pytest.approx(450, rel=0.1)
-    assert 1 / stats["big"] == pytest.approx(17, rel=0.1)
+    assert 1 / stats["big"] == pytest.approx(19, rel=0.1)
 
 
 def test_el_retorno_total_es_el_de_un_casino_de_verdad() -> None:
-    """Línea + giros gratis + máquina caliente ≈ 96,5 %; con el bote, ≈ 99,5 %.
+    """Línea + giros gratis + calor + barra de bonus ≈ 96,5 %; con el bote, ≈ 99,5 %.
 
     Se simula con apuesta 100 para que el medio premio no pierda decimales.
     """
-    machine = SlotMachine(random.Random(2026).randrange)
+    rng = random.Random(2026)
+    machine = SlotMachine(rng.randrange)
     stake, paid, returned, heat, free = 100, 0, 0, 0, 0
+    meter = BonusMeter()
     for _ in range(600_000):
         is_free = free > 0
         if is_free:
@@ -274,6 +283,9 @@ def test_el_retorno_total_es_el_de_un_casino_de_verdad() -> None:
         heat = next_heat(heat, paid=payout > 0, was_hot=hot)
         if spin.triggers_free_spins:
             free += FREE_SPINS
+        if not is_free:
+            meter, award = add_bonus(meter, spin, stake, rng.randrange)
+            free += BONUS_FREE_SPINS if award else 0
     house = returned / paid
     assert 0.95 < house < 0.98
     assert 0.98 < house + POT_SHARE_PERCENT / 100 < 1.0
@@ -385,3 +397,35 @@ def test_la_tabla_de_premios_menciona_el_bote_y_los_giros() -> None:
     text = "\n".join(paytable_lines())
     assert "BOTE" in text
     assert f"{FREE_SPINS} giros gratis" in text
+
+
+# -- Barra de bonus ------------------------------------------------------------------------
+
+
+def test_la_barra_de_bonus_sube_mas_con_un_casi_premio() -> None:
+    near = spin_at(find_stops(lambda s: s.near_miss))
+    loss = spin_at(find_stops(lambda s: not s.near_miss and not s.pay_halves))
+    zero = lambda _n: 0  # noqa: E731
+    assert add_bonus(BonusMeter(), loss, 100, zero)[0].points == 0
+    assert add_bonus(BonusMeter(), near, 100, zero)[0].points == BONUS_NEAR_MISS
+
+
+def test_cerca_del_final_la_barra_sube_a_cuentagotas() -> None:
+    loss = spin_at(find_stops(lambda s: not s.near_miss and not s.pay_halves))
+    two = lambda _n: 2  # noqa: E731
+    meter = BonusMeter(points=BONUS_SLOW_FROM)
+    assert add_bonus(meter, loss, 100, two)[0].points == BONUS_SLOW_FROM
+    assert add_bonus(BonusMeter(points=10), loss, 100, two)[0].points == 12
+
+
+def test_la_barra_llena_da_giros_a_la_apuesta_media_y_vuelve_a_cero() -> None:
+    near = spin_at(find_stops(lambda s: s.near_miss))
+    meter = BonusMeter(points=BONUS_MAX - 1, stake_sum=900, spins=9)
+    meter, award = add_bonus(meter, near, 10_000, lambda _n: 0)
+    assert meter == BonusMeter()
+    assert award == (900 + 10_000) // 10
+
+
+def test_la_barra_de_bonus_dice_el_porcentaje() -> None:
+    assert bonus_bar(78) == "▰▰▰▰▰▰▰▱▱▱ 78 %"
+    assert bonus_bar(500).endswith("100 %")

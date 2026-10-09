@@ -30,6 +30,7 @@ from bot.cogs.slots import (
     machine_embed,
     parse_stake,
     result_text,
+    spinning_embed,
     ticket_text,
 )
 from bot.repositories.economy import EconomyRepository
@@ -38,6 +39,9 @@ from bot.services.achievements import slots_autoplay_stats
 from bot.services.autoplay import AUTOPLAY_MAX, AUTOPLAY_MIN_GAP, StopReason
 from bot.services.economy import STARTING_BALANCE, EconomyService, format_amount
 from bot.services.slots import (
+    BONUS_FREE_SPINS,
+    BONUS_MAX,
+    BONUS_NEAR_MISS,
     DOUBLE_MAX,
     FREE_SPINS,
     HEAT_DECAY_SECONDS,
@@ -46,6 +50,7 @@ from bot.services.slots import (
     REEL_STRIPS,
     SEVEN,
     THREE_OF_A_KIND,
+    BonusMeter,
     Kind,
     SlotMachine,
     WinTier,
@@ -118,6 +123,7 @@ async def make_cog(
     *,
     clock=None,  # noqa: ANN001
     coin=None,  # noqa: ANN001
+    randbelow=None,  # noqa: ANN001
 ) -> Slots:
     repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await repository.initialize()
@@ -132,6 +138,7 @@ async def make_cog(
         repository=slots_repository,
         clock=clock or (lambda: 1_000_000.0),
         coin=coin,
+        randbelow=randbelow or (lambda _n: 0),
     )
 
 
@@ -1048,3 +1055,47 @@ def test_un_premio_de_diez_veces_se_celebra_como_gran_premio() -> None:
     play = make_play(GRAPES, payout=1_000)
     assert play.tier == WinTier.BIG
     assert result_text(play, random.Random(0)).splitlines()[0][2:] in TIER_LINES[WinTier.BIG]
+
+
+def test_mientras_gira_se_ve_el_cartel_de_premios() -> None:
+    embed = spinning_embed(owner="Diego", stake=300, free=False, hot=False, pot=POT_SEED)
+    fields = {field.name: field.value for field in embed.fields}
+    assert "Premios a 300 Y$" in fields
+    assert f"**{format_amount(300 * THREE_OF_A_KIND[SEVEN])}**" in "".join(fields.values())
+
+
+async def test_la_barra_de_bonus_llena_da_giros_gratis_a_la_apuesta_media(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [LOSS], randbelow=lambda _n: 0)
+    # Con la barra a uno del final, un punto más la llena.
+    cog._bonus[(GUILD_ID, OWNER_ID)] = BonusMeter(BONUS_MAX - 1, 50 * 9, 9)
+    view = make_view(cog)
+
+    await view.play(make_interaction())
+
+    assert view.free_spins == BONUS_FREE_SPINS
+    assert view.free_stake == (50 * 9 + 100) // 10
+    assert cog.bonus(GUILD_ID, OWNER_ID) == BonusMeter()
+    assert "BARRA DE BONUS LLENA" in view.last_text
+
+
+async def test_la_barra_de_bonus_se_guarda_y_sale_en_la_maquina(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [NEAR_SEVEN], randbelow=lambda _n: 0)
+    view = make_view(cog)
+    await view.play(make_interaction())
+
+    reopened = await make_cog(tmp_path)
+    await reopened.load_heat(GUILD_ID, OWNER_ID)
+    assert reopened.bonus(GUILD_ID, OWNER_ID).points == BONUS_NEAR_MISS
+    embed = await make_view(reopened).current_embed()
+    assert any(f.name.startswith("🎁 Bonus") and "3 %" in f.value for f in embed.fields)
+
+
+async def test_los_giros_gratis_no_llenan_la_barra(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [FREE, NEAR_SEVEN], randbelow=lambda _n: 2)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    points = cog.bonus(GUILD_ID, OWNER_ID).points
+
+    await view.play(make_interaction())  # giro gratis
+
+    assert cog.bonus(GUILD_ID, OWNER_ID).points == points

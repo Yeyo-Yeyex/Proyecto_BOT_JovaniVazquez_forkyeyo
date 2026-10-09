@@ -67,6 +67,7 @@ from bot.services.achievements import (
     StatDelta,
     casino_stats,
     slots_autoplay_stats,
+    slots_bonus_stats,
     slots_cooled_stats,
     slots_double_stats,
     slots_respin_stats,
@@ -94,6 +95,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.slots import (
+    BONUS_FREE_SPINS,
     DOUBLE_MAX,
     FREE_SPINS,
     HEAT_DECAY_SECONDS,
@@ -103,10 +105,13 @@ from bot.services.slots import (
     POT_SEED,
     SCATTER,
     SYMBOLS,
+    BonusMeter,
     Kind,
     SlotMachine,
     Spin,
     WinTier,
+    add_bonus,
+    bonus_bar,
     daily_stake,
     decayed_heat,
     heat_bar,
@@ -218,6 +223,10 @@ class SlotsPlay:
     respin_chain: int = 0
     daily: bool = False
     daily_streak: int = 0
+    #: Si la tirada ha llenado la barra de bonus: la apuesta de sus giros
+    #: gratis (0 si no) y en cuántas tiradas se llenó.
+    bonus_stake: int = 0
+    bonus_fill_spins: int = 0
 
     @property
     def jackpot(self) -> int:
@@ -315,6 +324,11 @@ def result_text(play: SlotsPlay, rng: random.Random | None = None) -> str:
         lines.append(f"🎁 Giro del día · racha de {days}.")
     if play.free:
         lines.append("🎟️ Giro gratis.")
+    if play.bonus_stake:
+        lines.append(
+            f"### 🎁 ¡BARRA DE BONUS LLENA! +{BONUS_FREE_SPINS} giros gratis "
+            f"a {format_amount(play.bonus_stake)}"
+        )
     if spin.triggers_free_spins:
         lines.append(f"### 🎟️🎟️🎟️ ¡GIROS GRATIS! +{FREE_SPINS}")
     elif spin.scatters == 2:
@@ -380,6 +394,7 @@ def machine_embed(
     spins_since: int = 0,
     session_gross: int = 0,
     session_prizes: int = 0,
+    bonus: int = 0,
 ) -> discord.Embed:
     """Embed de la máquina parada: al abrirla o tras una tirada.
 
@@ -388,6 +403,7 @@ def machine_embed(
         session_gross: Premios cobrados en esta máquina, en bruto: sin restar
             lo apostado. Es lo que enseña una máquina de verdad.
         session_prizes: Cuántas tiradas de la sesión han cobrado algo.
+        bonus: Puntos de la barra de bonus.
     """
     if text is None:
         description = (
@@ -421,6 +437,11 @@ def machine_embed(
         )
     else:
         embed.add_field(name="Calor", value=heat_bar(heat), inline=False)
+    embed.add_field(
+        name=f"🎁 Bonus: {BONUS_FREE_SPINS} giros gratis al llenarse",
+        value=bonus_bar(bonus),
+        inline=False,
+    )
     if free_spins:
         embed.add_field(
             name="🎟️ Giros gratis",
@@ -488,6 +509,10 @@ def spinning_embed(*, owner: str, stake: int, free: bool, hot: bool, pot: int) -
         lines.append(f"🔥 Tirada caliente: ×{HOT_MULTIPLIER}")
     embed = discord.Embed(title="🎰 Tragaperras", description="\n".join(lines), color=COLOR_SPIN)
     embed.add_field(name="💰 Bote", value=f"**{format_amount(pot)}**")
+    # El cartel sigue a la vista mientras giran: se mira lo que podría tocar.
+    left, right = prize_columns(stake)
+    embed.add_field(name=f"Premios a {format_amount(stake)}", value=left)
+    embed.add_field(name="\u200b", value=right)
     embed.set_image(url=f"attachment://{GIF_NAME}")
     embed.set_footer(text=f"Máquina de {owner}")
     return embed
@@ -775,6 +800,7 @@ class SlotMachineView(discord.ui.View):
             spins_since=spins_since,
             session_gross=self.session_gross,
             session_prizes=self.session_prizes,
+            bonus=self.cog.bonus(self.guild_id, self.owner.id).points,
         )
 
     async def _play_one(self, *, turbo: bool, render: bool = True) -> SlotsPlay:
@@ -797,11 +823,25 @@ class SlotMachineView(discord.ui.View):
         self.session_spins += 1
         if free:
             self.free_spins -= 1
-        if play.spin.triggers_free_spins:
-            self.free_spins += FREE_SPINS
-            self.free_stake = stake
+        self._grant(play)
         self._account(play)
         return play
+
+    def _grant(self, play: SlotsPlay) -> None:
+        """Apunta los giros gratis que da la tirada: 🎟️ 🎟️ 🎟️ y la barra de bonus llena.
+
+        Todos los pendientes se juegan a una sola apuesta. Si se juntan dos
+        apuestas distintas, se queda la menor: no hay forma de llenar algo
+        barato y cobrarlo caro.
+        """
+        grants = []
+        if play.spin.triggers_free_spins:
+            grants.append((FREE_SPINS, play.stake))
+        if play.bonus_stake:
+            grants.append((BONUS_FREE_SPINS, play.bonus_stake))
+        for count, stake in grants:
+            self.free_stake = min(self.free_stake, stake) if self.free_spins else stake
+            self.free_spins += count
 
     def _account(self, play: SlotsPlay) -> None:
         """Suma la tirada al ticket de la sesión y retira las ofertas de la anterior."""
@@ -939,6 +979,8 @@ class SlotMachineView(discord.ui.View):
                 daily=play.daily,
                 daily_streak=play.daily_streak,
             )
+        if play.bonus_stake:
+            delta.merge(slots_bonus_stats(fill_spins=play.bonus_fill_spins))
         delta.merge(
             casino_stats(
                 stake=play.paid_stake,
@@ -1154,9 +1196,7 @@ class SlotMachineView(discord.ui.View):
                 await notify(interaction, "La banca no puede pagar tanto.")
                 return
             self.session_spins += 1
-            if play.spin.triggers_free_spins:
-                self.free_spins += FREE_SPINS
-                self.free_stake = play.stake
+            self._grant(play)
             self._account(play)
             self._offer(play)
             self._last_interaction = interaction
@@ -1457,6 +1497,7 @@ class Slots(commands.Cog, name="Tragaperras"):
         repository: SlotsRepository | None = None,
         clock: Callable[[], float] = time.time,
         coin: Callable[[], bool] | None = None,
+        randbelow: Callable[[int], int] | None = None,
     ) -> None:
         self.bot = bot
         self.economy = economy
@@ -1468,11 +1509,14 @@ class Slots(commands.Cog, name="Tragaperras"):
         self.clock = clock
         # Cara o cruz del doble o nada; inyectable en pruebas.
         self.coin = coin or (lambda: random.SystemRandom().random() < 0.5)
+        # Lo que sube la barra de bonus en cada tirada; inyectable en pruebas.
+        self.randbelow = randbelow or random.SystemRandom().randrange
         # Calor (con la hora en que se tocó por última vez) y turbo por
         # (servidor, miembro). Crecen como mucho hasta el número de miembros
         # que han jugado. El calor se guarda también en `repository`.
         self._heat: dict[tuple[int, int], int] = {}
         self._heat_at: dict[tuple[int, int], float] = {}
+        self._bonus: dict[tuple[int, int], BonusMeter] = {}
         self._turbo: dict[tuple[int, int], bool] = {}
         # Máquinas abiertas: para jugar sus giros gratis si el bot se apaga.
         self.machines: set[SlotMachineView] = set()
@@ -1503,14 +1547,19 @@ class Slots(commands.Cog, name="Tragaperras"):
         """Calor de la máquina de un miembro (sin aplicar el enfriado pendiente)."""
         return self._heat.get((guild_id, user_id), 0)
 
+    def bonus(self, guild_id: int, user_id: int) -> BonusMeter:
+        """Barra de bonus de la máquina de un miembro."""
+        return self._bonus.get((guild_id, user_id), BonusMeter())
+
     async def load_heat(self, guild_id: int, user_id: int) -> None:
-        """Trae el calor guardado a memoria la primera vez que el miembro abre la máquina."""
+        """Trae calor y barra de bonus guardados la primera vez que el miembro juega."""
         key = (guild_id, user_id)
-        if key in self._heat or self.repository is None:
+        if key in self._bonus or self.repository is None:
             return
         saved = await self.repository.load_heat(guild_id, user_id)
         if saved is not None:
             self._heat[key], self._heat_at[key] = saved
+        self._bonus[key] = await self.repository.load_bonus(guild_id, user_id)
 
     def cool_down(self, guild_id: int, user_id: int) -> int:
         """Aplica el enfriado por el tiempo sin jugar y devuelve los puntos perdidos."""
@@ -1532,7 +1581,7 @@ class Slots(commands.Cog, name="Tragaperras"):
         self._heat_at[key] = self.clock()
         if self.repository is not None:
             await self.repository.save_heat(
-                guild_id, user_id, self._heat.get(key, 0), self._heat_at[key]
+                guild_id, user_id, self._heat.get(key, 0), self._heat_at[key], self.bonus(*key)
             )
 
     async def daily_status(self, guild_id: int, user_id: int) -> tuple[bool, int]:
@@ -1636,6 +1685,11 @@ class Slots(commands.Cog, name="Tragaperras"):
             self.heat(guild_id, user_id), paid=payout > 0 or spin.is_jackpot, was_hot=hot
         )
         self._heat[key] = heat
+        bonus_stake = bonus_fill_spins = 0
+        if charged:
+            meter = self.bonus(guild_id, user_id)
+            self._bonus[key], bonus_stake = add_bonus(meter, spin, stake, self.randbelow)
+            bonus_fill_spins = meter.spins + 1 if bonus_stake else 0
         await self._save_heat(guild_id, user_id)
         media = await self._media(
             spin, turbo=turbo, render=render, won=payout + settlement.jackpot, stake=stake
@@ -1652,6 +1706,8 @@ class Slots(commands.Cog, name="Tragaperras"):
             session_spins=session_spins,
             daily=daily,
             daily_streak=daily_streak,
+            bonus_stake=bonus_stake,
+            bonus_fill_spins=bonus_fill_spins,
         )
 
     async def _media(
