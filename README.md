@@ -390,6 +390,8 @@ python -m bot
   encadenan premios en un **RUSH** y el 7 es el **SUPER RUSH**. El reach
   (dos iguales y el centro frenando) es espectáculo y no cambia nada.
   Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
+  El mueble, los clavos, los bolsillos, la bola y las bombillas se pintan con canvas una sola vez y se guardan como PNG
+  (`python docs/pachinko_piezas.py` los regenera); el bot solo los pega, sin abrir ningún navegador.
   Los números salen de fracciones exactas en las pruebas. Las bolas caen con
   física real (gravedad y rebotes en clavos y paredes) calculada de antemano:
   el bolsillo de cada una lo sortea la máquina y la caída que se ve es una

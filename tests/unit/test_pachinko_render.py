@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import io
+import logging
+import shutil
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from bot.services.pachinko import BOARDS, CLASSIC, ONI, Ball, Board, Draw, Kind, build_volley
 from bot.services.pachinko_physics import PIN_R, geometry_for, library
+from bot.services.pachinko_pieces import PIECES_DIR, expected_sizes
 from bot.services.pachinko_render import (
     CENTER_STOP,
     HEIGHT,
@@ -20,8 +24,10 @@ from bot.services.pachinko_render import (
     WIDTH,
     PachinkoRenderer,
     build_timeline,
+    bulb_palette,
     draw_length,
     layout_for,
+    piece_problems,
 )
 
 ALL_BOARDS = list(BOARDS.values())
@@ -99,8 +105,10 @@ def test_los_clavos_dibujados_son_los_de_la_fisica(
     geometry = geometry_for(board)
     assert assets.layout.geometry is geometry
     for x, y in geometry.pins:
-        assert assets.base.getpixel((round(x), round(y))) == PIN
-        assert assets.base.getpixel((round(x) + PIN_R + 3, round(y))) != PIN
+        center = sum(assets.base.getpixel((round(x), round(y))))
+        beside = sum(assets.base.getpixel((round(x) + PIN_R + 3, round(y))))
+        # El clavo es claro (metálico, con brillo) sobre un campo oscuro.
+        assert center > beside + 200
     for pocket in range(board.rows + 1):
         assert assets.layout.pocket_x(pocket) == geometry.pocket_x(pocket)
 
@@ -201,3 +209,75 @@ def test_la_maquina_parada_es_un_png(renderer: PachinkoRenderer) -> None:
     for board in ALL_BOARDS:
         assert renderer.idle_png(board).startswith(b"\x89PNG")
     assert renderer.still_png(volley_of(ONI, 0, 3, [])).startswith(b"\x89PNG")
+
+
+# -- Piezas pintadas con canvas ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
+def test_las_piezas_existen_y_miden_lo_que_deben(board: Board) -> None:
+    layout = layout_for(board)
+    sizes = expected_sizes(len(bulb_palette(THEMES[board.key])), board.rows + 1, layout.dx)
+    assert sizes
+    for name, size in sizes.items():
+        with Image.open(PIECES_DIR / board.key / name) as image:
+            assert image.size == size, name
+            assert image.mode == "RGBA", name
+
+
+@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
+def test_las_piezas_guardadas_estan_al_dia(board: Board) -> None:
+    """Si falla, hay que regenerarlas con `python docs/pachinko_piezas.py`."""
+    assert piece_problems(board) == []
+
+
+def test_las_piezas_se_dan_por_viejas_si_cambia_algo_de_lo_que_se_pinto(tmp_path: Path) -> None:
+    folder = tmp_path / CLASSIC.key
+    shutil.copytree(PIECES_DIR / CLASSIC.key, folder)
+    assert piece_problems(CLASSIC, tmp_path) == []
+    manifest = folder / "piezas.json"
+    manifest.write_text(manifest.read_text().replace('"hash": "', '"hash": "0'), encoding="utf-8")
+    assert "cambiado" in piece_problems(CLASSIC, tmp_path)[0]
+    (folder / "bola.png").unlink()
+    assert "falta bola.png" in piece_problems(CLASSIC, tmp_path)
+
+
+def test_el_render_usa_los_png_del_tablero(renderer: PachinkoRenderer) -> None:
+    assets = renderer.assets(CLASSIC)
+    with Image.open(PIECES_DIR / CLASSIC.key / "fondo.png") as fondo:
+        assert assets.base.tobytes() == fondo.convert("RGB").tobytes()
+    assert assets.lit_strip is not None
+    assert assets.bulbs is not None
+
+
+def test_sin_piezas_el_render_sigue_funcionando_con_pillow_y_avisa_una_vez(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Se borra una pieza suelta (la bola) y, aparte, un tablero entero (Oni)."""
+    shutil.copytree(PIECES_DIR / CLASSIC.key, tmp_path / CLASSIC.key)
+    (tmp_path / CLASSIC.key / "bola.png").unlink()
+    (tmp_path / CLASSIC.key / "fondo.png").write_bytes(b"no soy un PNG")
+    renderer = PachinkoRenderer(pieces_dir=tmp_path)
+    with caplog.at_level(logging.WARNING, logger="bot.services.pachinko_pieces"):
+        for board in (CLASSIC, ONI):
+            media = renderer.render(volley_of(board, 2, 1, [REACH, RUSH]))
+            assert media.gif.startswith(b"GIF8")
+            assert media.png.startswith(b"\x89PNG")
+            renderer.render(volley_of(board, 2, 1, [REACH, RUSH]))
+    assets = renderer.assets(CLASSIC)
+    assert assets.bulbs is not None  # lo que sí estaba, se usa
+    assert renderer.assets(ONI).bulbs is None and renderer.assets(ONI).lit_full is not None
+    warnings = [r for r in caplog.records if "Pillow" in r.getMessage()]
+    assert len(warnings) == 2  # una por tablero, aunque se dibuje más de una tanda
+    assert "bola.png" in warnings[0].getMessage()
+
+
+def test_el_dibujo_con_pillow_acaba_igual_en_gif_y_png(tmp_path: Path) -> None:
+    renderer = PachinkoRenderer(pieces_dir=tmp_path)  # carpeta vacía: todo con Pillow
+    media = renderer.render(volley_of(CLASSIC, 2, 1, [REACH, RUSH]))
+    gif = Image.open(io.BytesIO(media.gif))
+    gif.seek(gif.n_frames - 1)
+    png = Image.open(io.BytesIO(media.png)).convert("RGB")
+    assert gif.convert("RGB").tobytes() == png.tobytes()
+    clavo = geometry_for(CLASSIC).pins[0]
+    assert renderer.assets(CLASSIC).base.getpixel((round(clavo[0]), round(clavo[1]))) == PIN

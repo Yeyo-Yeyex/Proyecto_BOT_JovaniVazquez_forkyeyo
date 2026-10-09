@@ -1,0 +1,853 @@
+<!doctype html>
+<!--
+Piezas de la máquina del pachinko, dibujadas con canvas en un Chromium sin
+ventana. Se pintan UNA VEZ, fuera del bot, con `docs/pachinko_piezas.py`, que
+guarda los PNG en `assets/pachinko/<tablero>/`; el bot solo los carga y los
+pega con Pillow (ver bot/services/pachinko_render.py y pachinko_pieces.py).
+
+No decide nada ni tiene cifras propias: Python le pasa un JSON (`spec`) con la
+geometría del campo (los clavos que golpea la física), los colores de
+`THEMES` y las constantes de color y de medida del render. Aquí solo se pinta.
+Función que llama Python:
+
+- renderPieces(spec)  devuelve {archivo: data URL PNG} con todas las piezas
+                      de un tablero: fondo.png, iluminado.png (un bolsillo
+                      encendido por celda), bola.png, adorno_0..3.png,
+                      bombillas.png (una celda por color), pantalla_*.png,
+                      reserva.png (vacío, lleno) y chapa.png.
+
+Todo se dibuja al doble de tamaño (S = 2) y se reduce al sacar el PNG: bordes
+suaves sin dientes de sierra. Las coordenadas son las de la imagen final, con
+el mismo criterio que Pillow (el píxel i está centrado en i), por eso los
+objetos del campo se pintan desplazados medio píxel. Las fuentes son las del
+bot (Montserrat de los memes), las mismas que usa el dibujo con Pillow.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+
+const S = 2;
+let SP = null;
+
+// -- Color ---------------------------------------------------------------------------
+
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const lighten = (c, t) => mix(c, [255, 255, 255], t);
+const darken = (c, t) => mix(c, [0, 0, 0], t);
+/** Multiplica el color (`k` > 1 aclara, < 1 oscurece) sin lavarlo hacia el blanco ni el negro. */
+const shade = (c, k) => c.map((v) => Math.max(0, Math.min(255, Math.round(v * k))));
+
+// -- Lienzos -------------------------------------------------------------------------
+
+/** Lienzo de `w` x `h` píxeles finales, dibujado al doble. */
+function canvas(w, h) {
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(w * S);
+  cv.height = Math.round(h * S);
+  const ctx = cv.getContext("2d");
+  ctx.scale(S, S);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  return [cv, ctx];
+}
+
+/**
+ * Copia la zona (sx, sy, w, h) del lienzo doble a uno de tamaño final y la devuelve como PNG.
+ * Con `hard`, el borde se corta limpio (todo o nada): el recorte no se mezcla con lo que
+ * tenga debajo, así sus píxeles no dependen del fondo (y el GIF se comprime mejor).
+ */
+function png(cv, w, h, hard = false) {
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cv, 0, 0, w * S, h * S, 0, 0, w, h);
+  if (hard) {
+    const img = ctx.getImageData(0, 0, w, h);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = img.data[i] >= 128 ? 255 : 0;
+    ctx.putImageData(img, 0, 0);
+  }
+  return out.toDataURL("image/png");
+}
+
+/** Las sombras de canvas no escalan con la transformación: se pasan ya al doble. */
+function shadow(ctx, color, blur, dx = 0, dy = 0) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur * S;
+  ctx.shadowOffsetX = dx * S;
+  ctx.shadowOffsetY = dy * S;
+}
+function noShadow(ctx) {
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+function roundRect(ctx, x0, y0, x1, y1, r) {
+  const p = new Path2D();
+  p.roundRect(x0, y0, x1 - x0, y1 - y0, r);
+  return p;
+}
+
+function vGradient(ctx, y0, y1, stops) {
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  for (const [t, c] of stops) g.addColorStop(t, c);
+  return g;
+}
+
+/** Esfera: radial con el brillo desplazado hacia arriba a la izquierda. */
+function sphere(ctx, x, y, r, color, { shine = 0.75, rim = 0.4 } = {}) {
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r);
+  g.addColorStop(0, rgb(lighten(color, shine)));
+  g.addColorStop(0.45, rgb(color));
+  g.addColorStop(1, rgb(darken(color, rim)));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function starPath(cx, cy, outer, inner) {
+  const p = new Path2D();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const x = cx + r * Math.cos(a);
+    const y = cy + r * Math.sin(a);
+    if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
+  }
+  p.closePath();
+  return p;
+}
+
+/** Texto centrado cuyo borde de arriba (con contorno) queda en `top`, como en Pillow. */
+function textTop(ctx, text, cx, top, size, sw) {
+  ctx.font = `700 ${size}px "Montserrat"`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  const m = ctx.measureText(text);
+  return { x: cx, y: top + sw + m.actualBoundingBoxAscent, width: m.width };
+}
+
+/** Texto de neón: contorno del color del halo, resplandor y relleno. */
+function neonText(ctx, text, cx, top, size, fill, stroke, sw, glow, blur) {
+  const t = textTop(ctx, text, cx, top, size, sw);
+  ctx.save();
+  ctx.lineWidth = sw * 2;
+  ctx.strokeStyle = rgb(stroke);
+  shadow(ctx, rgb(glow, 0.95), blur);
+  ctx.strokeText(text, t.x, t.y);
+  ctx.strokeText(text, t.x, t.y);
+  noShadow(ctx);
+  ctx.strokeText(text, t.x, t.y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, t.x, t.y);
+  ctx.restore();
+  return t;
+}
+
+/** Texto con contorno de color liso (los de los bolsillos). */
+function outlinedText(ctx, text, cx, top, size, fill, stroke, sw) {
+  const t = textTop(ctx, text, cx, top, size, sw);
+  ctx.save();
+  if (sw > 0) {
+    ctx.lineWidth = sw * 2;
+    ctx.strokeStyle = rgb(stroke);
+    ctx.strokeText(text, t.x, t.y);
+  }
+  ctx.fillStyle = rgb(fill);
+  ctx.fillText(text, t.x, t.y);
+  ctx.restore();
+}
+
+// -- Fondo: mueble, rótulo, pantalla y campo ----------------------------------------------
+
+function drawCabinet(ctx) {
+  const [W, H] = SP.size;
+  const c = SP.colors;
+  const cab = SP.theme.cabinet;
+  ctx.fillStyle = rgb(c.background);
+  ctx.fillRect(0, 0, W, H);
+  const body = roundRect(ctx, 1, 1, W - 1, H - 1, 18);
+  ctx.fillStyle = vGradient(ctx, 0, H, [
+    [0, rgb(shade(cab, 1.3))],
+    [0.3, rgb(cab)],
+    [1, rgb(shade(cab, 0.55))],
+  ]);
+  ctx.fill(body);
+  ctx.save();
+  ctx.clip(body);
+  // Foco de luz sobre el rótulo y la pantalla.
+  const pool = ctx.createRadialGradient(W / 2, 60, 10, W / 2, 60, 250);
+  pool.addColorStop(0, rgb(shade(cab, 1.9), 0.3));
+  pool.addColorStop(1, rgb(cab, 0));
+  ctx.fillStyle = pool;
+  ctx.fillRect(0, 0, W, H);
+  // Borde interior hundido: da grosor al mueble.
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "rgba(0,0,0,.35)";
+  ctx.stroke(body);
+  ctx.restore();
+  // Marco metálico.
+  const edge = c.cabinet_edge;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = vGradient(ctx, 0, H, [
+    [0, rgb(lighten(edge, 0.35))],
+    [0.5, rgb(darken(edge, 0.3))],
+    [1, rgb(edge)],
+  ]);
+  ctx.stroke(roundRect(ctx, 1.5, 1.5, W - 1.5, H - 1.5, 17));
+}
+
+function drawField(ctx) {
+  const [W] = SP.size;
+  const t = SP.theme;
+  const [x0, y0, x1, y1] = SP.field_box;
+  const box = roundRect(ctx, x0, y0, x1 + 1, y1 + 1, 12);
+  ctx.fillStyle = rgb(t.board);
+  ctx.fill(box);
+  ctx.save();
+  ctx.clip(box);
+  const glowFill = ctx.createRadialGradient(W / 2, (y0 + y1) / 2, 20, W / 2, (y0 + y1) / 2, 280);
+  glowFill.addColorStop(0, rgb(shade(t.board, 1.7), 0.6));
+  glowFill.addColorStop(1, rgb(shade(t.board, 0.6), 0.6));
+  ctx.fillStyle = glowFill;
+  ctx.fillRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  // Sombra interior: el campo está hundido en el mueble.
+  const hole = new Path2D();
+  hole.rect(x0 - 40, y0 - 40, x1 - x0 + 81, y1 - y0 + 81);
+  hole.addPath(box);
+  shadow(ctx, "rgba(0,0,0,.8)", 9, 0, 3);
+  ctx.fillStyle = "#000";
+  ctx.fill(hole, "evenodd");
+  noShadow(ctx);
+  ctx.restore();
+  // Marco dorado con un poco de resplandor.
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = rgb(t.accent);
+  shadow(ctx, rgb(t.accent, 0.55), 5);
+  ctx.stroke(roundRect(ctx, x0 + 1, y0 + 1, x1, y1, 11));
+  ctx.restore();
+}
+
+function drawTitle(ctx) {
+  const c = SP.colors;
+  const t = SP.theme;
+  const ti = SP.title;
+  const small = neonText(ctx, ti.small.text, SP.cx, ti.small.top, ti.small.size,
+    rgb(c.yellow), t.halo, ti.small.stroke, t.halo, 5);
+  for (const side of [-1, 1]) {
+    const sx = SP.cx + side * (small.width / 2 + ti.star_gap);
+    ctx.save();
+    shadow(ctx, rgb(c.yellow, 0.8), 4);
+    ctx.fillStyle = rgb(c.yellow);
+    ctx.fill(starPath(sx, ti.star_y, ti.star_r, ti.star_inner));
+    ctx.restore();
+  }
+  const g = vGradient(ctx, ti.big.top, ti.big.top + ti.big.size + 6, [
+    [0, rgb(c.white)],
+    [0.55, rgb(c.white)],
+    [1, rgb(mix(c.white, t.halo, 0.35))],
+  ]);
+  neonText(ctx, ti.big.text, SP.cx, ti.big.top, ti.big.size, g, t.halo, ti.big.stroke, t.halo, 14);
+}
+
+function drawScreenFrame(ctx) {
+  const t = SP.theme;
+  const c = SP.colors;
+  const [x0, y0, x1, y1] = SP.lcd_box;
+  const outer = roundRect(ctx, x0 - 6, y0 - 6, x1 + 7, y1 + 7, 10);
+  ctx.save();
+  shadow(ctx, "rgba(0,0,0,.6)", 6, 0, 3);
+  ctx.fillStyle = vGradient(ctx, y0 - 6, y1 + 7, [
+    [0, rgb(lighten(t.accent, 0.35))],
+    [0.5, rgb(t.accent)],
+    [1, rgb(darken(t.accent, 0.4))],
+  ]);
+  ctx.fill(outer);
+  ctx.restore();
+  const inner = roundRect(ctx, x0 - 3, y0 - 3, x1 + 4, y1 + 4, 8);
+  ctx.fillStyle = rgb(c.lcd_bezel);
+  ctx.fill(inner);
+  ctx.fillStyle = rgb(t.lcd);
+  ctx.fillRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  // Sombra del cristal sobre el borde interior.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  ctx.clip();
+  const hole = new Path2D();
+  hole.rect(x0 - 20, y0 - 20, x1 - x0 + 41, y1 - y0 + 41);
+  hole.rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  shadow(ctx, "rgba(0,0,0,.85)", 6, 0, 2);
+  ctx.fillStyle = "#000";
+  ctx.fill(hole, "evenodd");
+  ctx.restore();
+}
+
+/** Casquillos de las bombillas: las de encima se pegan por fotograma, esto es lo que las sujeta. */
+function drawSockets(ctx) {
+  const c = SP.colors;
+  for (const [x, y] of SP.bulbs) {
+    ctx.beginPath();
+    ctx.arc(x + 0.5, y + 0.5, 5, 0, Math.PI * 2);
+    ctx.fillStyle = rgb(c.socket);
+    ctx.fill();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = rgb(darken(c.cabinet_edge, 0.4), 0.9);
+    ctx.stroke();
+  }
+}
+
+function drawWalls(ctx) {
+  const t = SP.theme;
+  for (const [x0, y0, x1, y1] of SP.walls) {
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgb(t.accent);
+    shadow(ctx, rgb(t.accent, 0.6), 4);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPins(ctx) {
+  const c = SP.colors;
+  const r = SP.pin_r;
+  // Sombras primero (una sola pasada): los clavos hacen relieve sobre el tablero.
+  ctx.fillStyle = "rgba(0,0,0,.5)";
+  for (const [x, y] of SP.pins) {
+    ctx.beginPath();
+    ctx.arc(x + 0.7, y + 1.1, r + 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const [x, y] of SP.pins) {
+    const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.45, 0.1, x, y, r + 0.3);
+    g.addColorStop(0, rgb(c.white));
+    g.addColorStop(0.5, rgb(c.pin));
+    g.addColorStop(1, rgb(darken(c.pin, 0.5)));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawDividers(ctx) {
+  const c = SP.colors;
+  for (const [x0, y0, x1, y1] of SP.dividers) {
+    ctx.lineCap = "butt";
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,.45)";
+    ctx.beginPath();
+    ctx.moveTo(x0 + 1.4, y0 + 0.6);
+    ctx.lineTo(x1 + 1.4, y1 + 0.6);
+    ctx.stroke();
+    ctx.strokeStyle = rgb(c.pin);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = rgb(lighten(c.pin, 0.7));
+    ctx.beginPath();
+    ctx.moveTo(x0 - 0.4, y0);
+    ctx.lineTo(x1 - 0.4, y1);
+    ctx.stroke();
+    ctx.lineCap = "round";
+  }
+}
+
+/** Fondo del platillo del adorno: se pinta en el fondo y otra vez dentro del recorte animado. */
+function dishGradient(ctx, x, y) {
+  const g = ctx.createRadialGradient(x, y, 2, x, y, SP.ring_r);
+  g.addColorStop(0, rgb(shade(SP.theme.board, 1.25)));
+  g.addColorStop(1, rgb(shade(SP.theme.board, 0.5)));
+  return g;
+}
+
+/** Aro del adorno: un platillo hundido bajo el sprite animado. */
+function drawRings(ctx) {
+  const t = SP.theme;
+  for (const [x, y] of SP.decorations) {
+    ctx.beginPath();
+    ctx.arc(x, y, SP.ring_r, 0, Math.PI * 2);
+    ctx.fillStyle = dishGradient(ctx, x, y);
+    ctx.fill();
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgb(t.accent);
+    shadow(ctx, rgb(t.accent, 0.6), 4);
+    ctx.beginPath();
+    ctx.arc(x, y, SP.ring_r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// -- Bolsillos ---------------------------------------------------------------------------------
+
+/** Marca de un bolsillo (estrella, rombo, círculo, aspa o tulipán): las formas no dependen del color. */
+function drawMark(ctx, shape, x, cy, size, color) {
+  const c = SP.colors;
+  ctx.fillStyle = color;
+  if (shape === "star") {
+    ctx.fill(starPath(x, cy, size, size * 0.45));
+  } else if (shape === "diamond") {
+    ctx.beginPath();
+    ctx.moveTo(x, cy - size);
+    ctx.lineTo(x + size * 0.75, cy);
+    ctx.lineTo(x, cy + size);
+    ctx.lineTo(x - size * 0.75, cy);
+    ctx.closePath();
+    ctx.fill();
+  } else if (shape === "circle") {
+    ctx.beginPath();
+    ctx.arc(x, cy, size * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shape === "cross") {
+    const r = size * 0.65;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgb(c.pin);
+    ctx.beginPath();
+    ctx.moveTo(x - r, cy - r);
+    ctx.lineTo(x + r, cy + r);
+    ctx.moveTo(x - r, cy + r);
+    ctx.lineTo(x + r, cy - r);
+    ctx.stroke();
+  } else {
+    const k = size / 8;
+    ctx.beginPath();
+    const pts = [[-8, -8], [-4, -2], [0, -9], [4, -2], [8, -8], [6, 5], [-6, 5]];
+    pts.forEach(([px, py], i) => {
+      if (i === 0) ctx.moveTo(x + px * k, cy + py * k); else ctx.lineTo(x + px * k, cy + py * k);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/** Un bolsillo centrado en `x` (con la cara de arriba en `top`); `lit` lo enciende. */
+function drawPocket(ctx, pocket, x, top, lit) {
+  const t = SP.theme;
+  const c = SP.colors;
+  const half = SP.dx / 2;
+  const h = SP.pocket_h;
+  const x0 = x - half + 2 - 0.5;
+  const x1 = x + half - 2 + 0.5;
+  const y0 = top - 0.5;
+  const y1 = top + h + 0.5;
+  const fill = pocket.fill;
+  const body = roundRect(ctx, x0, y0, x1, y1, 5);
+  ctx.save();
+  if (lit) shadow(ctx, rgb(fill, 0.95), 8);
+  ctx.fillStyle = rgb(lit ? c.white : fill);
+  ctx.fill(body);
+  ctx.restore();
+  // Tres tonos lisos (reflejo, cuerpo y sombra): un degradado se rompería en bandas
+  // de colores falsos al reducir el GIF a pocos colores.
+  ctx.save();
+  ctx.clip(body);
+  ctx.fillStyle = rgb(lit ? c.white : shade(fill, 1.15));
+  ctx.fillRect(x0, y0, x1 - x0, 4);
+  ctx.fillStyle = rgb(lit ? lighten(fill, 0.6) : shade(fill, 0.68));
+  ctx.fillRect(x0, y1 - 5, x1 - x0, 5);
+  ctx.restore();
+  if (!lit) {
+    // Hueco hundido: sombra por dentro, arriba.
+    ctx.save();
+    ctx.clip(body);
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.fillRect(x0, y0 + 4, x1 - x0, 2);
+    ctx.restore();
+  }
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgb(lit ? t.accent : c.pin);
+  ctx.stroke(roundRect(ctx, x0 + 0.5, y0 + 0.5, x1 - 0.5, y1 - 0.5, 4.5));
+  const cy = top + h * 0.62;
+  const size = Math.min(8, half - 4);
+  const mark = lit ? rgb(fill) : rgb(t.board);
+  if (!lit && pocket.shape !== "cross") {
+    // Canto iluminado debajo: la forma parece grabada.
+    ctx.save();
+    ctx.translate(0, 0.9);
+    drawMark(ctx, pocket.shape, x, cy, size, rgb(lighten(fill, 0.55), 0.7));
+    ctx.restore();
+  }
+  drawMark(ctx, pocket.shape, x, cy, size, mark);
+}
+
+function drawPocketLabels(ctx) {
+  for (const p of SP.pockets) {
+    if (p.label === null) continue;
+    outlinedText(ctx, p.label, p.x, SP.label_y, p.label_size, p.label_color, [0, 0, 0], 1);
+  }
+}
+
+function drawTray(ctx) {
+  const t = SP.theme;
+  const [x0, , x1] = SP.field_box;
+  const y0 = SP.tray_top + 4;
+  const y1 = SP.tray_top + 28;
+  const plate = roundRect(ctx, x0 + 18, y0, x1 + 1 - 18, y1, 8);
+  ctx.save();
+  shadow(ctx, "rgba(255,255,255,.12)", 0, 0, 1);
+  ctx.fillStyle = vGradient(ctx, y0, y1, [[0, rgb(darken(t.board, 0.5))], [1, rgb(darken(t.board, 0.15))]]);
+  ctx.fill(plate);
+  ctx.restore();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = rgb(t.accent, 0.7);
+  ctx.stroke(roundRect(ctx, x0 + 18.5, y0 + 0.5, x1 + 0.5 - 18, y1 - 0.5, 7.5));
+  ctx.font = `700 ${SP.tray_text.size}px "Montserrat"`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = rgb(t.accent);
+  ctx.fillText(SP.tray_text.text, SP.cx, SP.tray_top + 16);
+}
+
+function pieceBackground() {
+  const [W, H] = SP.size;
+  const [cv, ctx] = canvas(W, H);
+  drawCabinet(ctx);
+  drawField(ctx);
+  drawTitle(ctx);
+  drawScreenFrame(ctx);
+  ctx.save();
+  ctx.translate(0.5, 0.5);
+  drawSockets(ctx);
+  drawWalls(ctx);
+  drawRings(ctx);
+  drawPins(ctx);
+  drawDividers(ctx);
+  for (const p of SP.pockets) drawPocket(ctx, p, p.x, SP.pocket_top, false);
+  ctx.restore();
+  drawPocketLabels(ctx);
+  drawTray(ctx);
+  return png(cv, W, H);
+}
+
+/** Todos los bolsillos encendidos, uno por celda (resplandor incluido, sin tocar al vecino). */
+function pieceLit() {
+  const [cw, ch] = SP.lit_cell;
+  const [cv, ctx] = canvas(cw * SP.pockets.length, ch);
+  SP.pockets.forEach((p, i) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(i * cw, 0, cw, ch);
+    ctx.clip();
+    ctx.translate(i * cw + (cw - 1) / 2 + 0.5, SP.lit_pad + 0.5);
+    drawPocket(ctx, p, 0, 0, true);
+    ctx.restore();
+  });
+  return png(cv, cw * SP.pockets.length, ch);
+}
+
+// -- Bola, adornos, bombillas y demás recortes ---------------------------------------------
+
+function pieceBall() {
+  const n = SP.cells.ball;
+  const r = SP.ball_r;
+  const m = n / 2;
+  const [cv, ctx] = canvas(n, n);
+  // Acero: oscuro abajo, claro arriba, con el cielo reflejado en la mitad de arriba.
+  const g = ctx.createRadialGradient(m - 1.6, m - 2, 0.3, m, m, r + 0.4);
+  g.addColorStop(0, "rgb(255,255,255)");
+  g.addColorStop(0.3, "rgb(205,212,228)");
+  g.addColorStop(0.7, "rgb(120,126,148)");
+  g.addColorStop(1, "rgb(58,60,82)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(m, m, r + 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(m, m, r + 0.4, 0, Math.PI * 2);
+  ctx.clip();
+  // Reflejo del suelo: una luz de rebote en el borde de abajo.
+  const bounce = ctx.createLinearGradient(0, m + r * 0.3, 0, m + r);
+  bounce.addColorStop(0, "rgba(160,190,255,0)");
+  bounce.addColorStop(1, "rgba(160,190,255,.55)");
+  ctx.fillStyle = bounce;
+  ctx.fillRect(m - r, m + r * 0.3, 2 * r, r);
+  ctx.restore();
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = "rgba(40,42,66,.9)";
+  ctx.beginPath();
+  ctx.arc(m, m, r + 0.4, 0, Math.PI * 2);
+  ctx.stroke();
+  // Brillo de ventana.
+  ctx.fillStyle = "rgba(255,255,255,.95)";
+  ctx.beginPath();
+  ctx.ellipse(m - 1.7, m - 1.9, 1.5, 1.1, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+  return png(cv, n, n);
+}
+
+function drawDecoration(ctx, step, m) {
+  const c = SP.colors;
+  const t = SP.theme;
+  const kind = t.decoration;
+  ctx.save();
+  ctx.translate(m, m);
+  if (kind === "flower") {
+    shadow(ctx, rgb(c.petal, 0.5), 2);
+    for (let i = 0; i < 5; i++) {
+      const a = ((step * 18 + i * 72) * Math.PI) / 180;
+      const px = 9 * Math.cos(a);
+      const py = 9 * Math.sin(a);
+      const g = ctx.createRadialGradient(px - 1.5, py - 1.5, 0.5, px, py, 6.2);
+      g.addColorStop(0, rgb(lighten(c.petal, 0.55)));
+      g.addColorStop(1, rgb(darken(c.petal, 0.12)));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    noShadow(ctx);
+    for (let i = 0; i < 5; i++) {
+      const a = ((step * 18 + i * 72) * Math.PI) / 180;
+      ctx.fillStyle = rgb(c.white);
+      ctx.beginPath();
+      ctx.arc(9 * Math.cos(a), 9 * Math.sin(a), 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    sphere(ctx, 0, 0, 4.2, c.yellow);
+  } else if (kind === "pearl") {
+    const body = ctx.createRadialGradient(-4, -5, 1, 0, 0, 14.5);
+    body.addColorStop(0, rgb(lighten(c.pearl, 0.6)));
+    body.addColorStop(0.5, rgb(c.pearl));
+    body.addColorStop(1, rgb(darken(c.pearl, 0.5)));
+    ctx.save();
+    shadow(ctx, rgb(t.accent, 0.5), 2);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgb(t.accent);
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = ((step * 30 + i * 120) * Math.PI) / 180;
+      const hx = 7 * Math.cos(a);
+      const hy = 7 * Math.sin(a);
+      const tx = 11 * Math.cos(a + 0.9);
+      const ty = 11 * Math.sin(a + 0.9);
+      ctx.save();
+      shadow(ctx, rgb(c.gold, 0.6), 1.5);
+      ctx.fillStyle = rgb(c.gold);
+      ctx.beginPath();
+      ctx.moveTo(hx, hy - 3);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(hx, hy + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      sphere(ctx, hx, hy, 4, c.gold);
+    }
+    ctx.save();
+    shadow(ctx, rgb(c.white, 0.8), 2);
+    sphere(ctx, 0, 0, 3, c.white, { shine: 0, rim: 0.15 });
+    ctx.restore();
+  } else if (kind === "flame") {
+    const height = [14, 16, 13, 15][step];
+    const lean = [-2, 1, 2, -1][step];
+    const flame = (halfBase, topY, color, glow) => {
+      ctx.save();
+      if (glow) shadow(ctx, rgb(color, 0.7), 3);
+      ctx.beginPath();
+      ctx.moveTo(-halfBase, 12);
+      ctx.quadraticCurveTo(-halfBase - 2, 2, lean * 0.8 - 2, topY + 6);
+      ctx.quadraticCurveTo(lean - 1, topY + 2, lean, topY);
+      ctx.quadraticCurveTo(lean + 1.5, topY + 4, lean * 0.8 + 2.5, topY + 7);
+      ctx.quadraticCurveTo(halfBase + 2, 2, halfBase, 12);
+      ctx.closePath();
+      ctx.fillStyle = vGradient(ctx, topY, 12, [
+        [0, rgb(lighten(color, 0.2))], [1, rgb(darken(color, 0.25))]]);
+      ctx.fill();
+      ctx.restore();
+    };
+    flame(10, -height, c.flame, true);
+    flame(6, -height + 7, c.yellow, false);
+    sphere(ctx, 0, 9, 3.2, c.white, { shine: 0, rim: 0.2 });
+  } else {
+    for (let i = 0; i < 4; i++) {
+      const a = ((step * 22.5 + i * 90) * Math.PI) / 180;
+      const color = i % 2 ? c.cyan : c.magenta;
+      const tip = [14 * Math.cos(a), 14 * Math.sin(a)];
+      const side = [9 * Math.cos(a + 0.5), 9 * Math.sin(a + 0.5)];
+      const g = ctx.createLinearGradient(0, 0, tip[0], tip[1]);
+      g.addColorStop(0, rgb(darken(color, 0.3)));
+      g.addColorStop(1, rgb(lighten(color, 0.35)));
+      ctx.save();
+      shadow(ctx, rgb(color, 0.5), 1.5);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(side[0], side[1]);
+      ctx.lineTo(tip[0], tip[1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    sphere(ctx, 0, 0, 3.4, c.gold);
+  }
+  ctx.restore();
+}
+
+function pieceDecoration(step) {
+  const n = SP.cells.decoration;
+  const [cv, ctx] = canvas(n, n);
+  // El platillo va dentro del recorte, opaco y con el borde limpio: así sus
+  // píxeles no dependen del fondo y entre un paso y el siguiente solo cambia el adorno.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(n / 2, n / 2, SP.ring_r - 0.9, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = dishGradient(ctx, n / 2, n / 2);
+  ctx.fillRect(0, 0, n, n);
+  ctx.restore();
+  drawDecoration(ctx, step, n / 2);
+  return png(cv, n, n, true);
+}
+
+/** Una bombilla con su casquillo y su halo, opaca: no depende de lo que tenga detrás. */
+function drawBulb(ctx, color, lit, cx, cy) {
+  const r = SP.bulb_r;
+  const reach = SP.cells.bulb / 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, reach, 0, Math.PI * 2);
+  ctx.fillStyle = rgb(SP.colors.socket);
+  ctx.fill();
+  if (lit) {
+    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, reach);
+    halo.addColorStop(0, rgb(color, 0.75));
+    halo.addColorStop(1, rgb(color, 0.2));
+    ctx.fillStyle = halo;
+    ctx.fill();
+  }
+  sphere(ctx, cx, cy, r - 0.7, color, lit ? { shine: 0.85, rim: 0.25 } : { shine: 0.3, rim: 0.2 });
+  ctx.fillStyle = `rgba(255,255,255,${lit ? 0.9 : 0.3})`;
+  ctx.beginPath();
+  ctx.arc(cx - 0.8, cy - 0.9, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function pieceBulbs() {
+  const cell = SP.cells.bulb;
+  const n = SP.bulb_colors.length;
+  const [cv, ctx] = canvas(cell * n, cell);
+  SP.bulb_colors.forEach((b, i) => drawBulb(ctx, b.color, b.lit, i * cell + cell / 2, cell / 2));
+  return png(cv, cell * n, cell, true);
+}
+
+function pieceHold() {
+  const n = SP.cells.hold;
+  const c = SP.colors;
+  const [cv, ctx] = canvas(n * 2, n);
+  const m = n / 2;
+  // Vacío: un hueco con aro metálico.
+  ctx.beginPath();
+  ctx.arc(m, m, 5.2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,.4)";
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgb(c.pin);
+  ctx.stroke();
+  // Lleno: perla magenta encendida.
+  const cx = n + m;
+  ctx.save();
+  shadow(ctx, rgb(c.magenta, 0.9), 5);
+  sphere(ctx, cx, m, 5.2, c.magenta, { shine: 0.7, rim: 0.3 });
+  ctx.restore();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgb(c.white);
+  ctx.beginPath();
+  ctx.arc(cx, m, 5.2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.beginPath();
+  ctx.arc(cx - 1.7, m - 1.8, 1, 0, Math.PI * 2);
+  ctx.fill();
+  return png(cv, n * 2, n);
+}
+
+function pieceBadge() {
+  const n = SP.cells.badge;
+  const m = n / 2;
+  const [cv, ctx] = canvas(n, n);
+  const g = ctx.createRadialGradient(m - 2.5, m - 3, 0.5, m, m, 8.2);
+  g.addColorStop(0, "rgb(255,255,255)");
+  g.addColorStop(0.7, "rgb(236,236,244)");
+  g.addColorStop(1, "rgb(188,188,208)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(m, m, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = rgb(SP.theme.board);
+  ctx.stroke();
+  return png(cv, n, n);
+}
+
+/**
+ * Fondo de la pantalla del sorteo en un color: liso, con un canto hundido y un reflejo
+ * arriba. Se pega entero en cada fotograma y alterna de color, así que lleva pocos tonos.
+ */
+function pieceScreen(color) {
+  const [w, h] = SP.cells.screen;
+  const [cv, ctx] = canvas(w, h);
+  ctx.fillStyle = rgb(color);
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = rgb(shade(color, 1.18));
+  ctx.fillRect(0, 0, w, h * 0.45);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = rgb(shade(color, 0.55));
+  ctx.strokeRect(1.5, 1.5, w - 3, h - 3);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgb(shade(color, 0.8));
+  ctx.strokeRect(3.5, 3.5, w - 7, h - 7);
+  return png(cv, w, h);
+}
+
+async function renderPieces(spec) {
+  SP = spec;
+  await document.fonts.load('700 26px "Montserrat"');
+  await document.fonts.ready;
+  const out = {
+    "fondo.png": pieceBackground(),
+    "iluminado.png": pieceLit(),
+    "bola.png": pieceBall(),
+    "bombillas.png": pieceBulbs(),
+    "reserva.png": pieceHold(),
+    "chapa.png": pieceBadge(),
+  };
+  for (let step = 0; step < SP.decoration_steps; step++) {
+    out[`adorno_${step}.png`] = pieceDecoration(step);
+  }
+  for (const [key, color] of Object.entries(SP.screens)) {
+    out[`pantalla_${key}.png`] = pieceScreen(color);
+  }
+  return out;
+}
+</script>
+</body>
+</html>

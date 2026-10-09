@@ -2,13 +2,33 @@
 
 La máquina imita las de los salones japoneses: un mueble con bombillas que
 persiguen, un rótulo de neón, una pantalla con el sorteo, un campo de clavos
-con dos adornos que se mueven y los bolsillos abajo. Una tanda cuesta ~0,2 s
-de CPU (fuera del event loop) y unos 200-260 KB de GIF, que escribe
+con dos adornos que se mueven y los bolsillos abajo.
+
+**Las piezas se pintan una vez, fuera del bot.** El mueble con su rótulo, el
+campo de clavos y los bolsillos (fondo), los bolsillos iluminados, la bola
+metálica, los cuatro pasos de cada adorno, las bombillas con halo, las
+pantallas de cada modo, los puntos de la reserva y la chapa del contador salen
+de `assets/pachinko/escena.html` (canvas, con degradados y brillos) en un
+Chromium, con `docs/pachinko_piezas.py`, y se guardan como PNG en
+`assets/pachinko/<tablero>/`. El bot no abre ningún navegador: carga esos PNG
+(`bot.services.pachinko_pieces`) y monta cada fotograma pegándolos, y encima
+dibuja con Pillow lo que cambia (números, contador, carteles). Si falta alguno
+o no se puede abrir, esa pieza se dibuja con Pillow como antes y se avisa una
+vez en el log. `piece_spec` es lo único que alimenta la escena (geometría de
+la física, colores de `THEMES`) y `piece_problems` dice si los PNG siguen al
+día.
+
+La paleta del GIF (`PALETTE_COLORS`) tiene colores exactos para lo pequeño y
+saturado (bolsillos, números, carteles, bombillas) y reparte el resto entre el
+fondo y lo que se mueve; con degradados, una paleta repartida por superficie
+lavaba los bolsillos. Los degradados grandes son del fondo, que no cambia, y
+lo que se mueve (bombillas, adornos, pantallas) lleva el borde limpio y pocos
+tonos para que el GIF se comprima. Una tanda cuesta ~0,2-0,25 s de CPU (fuera
+del event loop) y unos 300-350 KB de GIF, que escribe
 `bot.utils.gif.shared_palette_gif`. Medido con 40 tandas por tablero: mediana
-de 0,18 a 0,24 s según el tablero (el 10 % más largo, hasta ~0,37 s) y de 185
-a 255 KB (hasta ~390 KB). Antes de la física, 0,17-0,19 s y 175-200 KB: las
-bolas tardan más en caer, así que hay más fotogramas. El modo turbo solo manda
-la imagen final.
+de 0,20 a 0,26 s (el 10 % más largo, hasta ~0,37 s) y de 300 a 350 KB (hasta
+~570 KB); con el dibujo solo con Pillow eran 0,21-0,25 s y 215-240 KB. El modo
+turbo solo manda la imagen final.
 
 Cada tablero de `bot.services.pachinko.BOARDS` tiene su tema (`THEMES`):
 colores, rótulo y adorno (molinillos, flores de cerezo, perlas de dragón o
@@ -41,12 +61,14 @@ deuteranopia.
 from __future__ import annotations
 
 import io
+import json
 import math
 import random
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from bot.services.pachinko import (
@@ -74,6 +96,31 @@ from bot.services.pachinko_physics import (
     Trajectory,
     geometry_for,
     library,
+)
+from bot.services.pachinko_pieces import (
+    BACKGROUND_FILE,
+    BADGE_CELL,
+    BADGE_FILE,
+    BALL_CELL,
+    BALL_FILE,
+    BULB_CELL,
+    BULBS_FILE,
+    DECORATION_CELL,
+    DECORATION_STEPS,
+    HOLD_CELL,
+    HOLD_FILE,
+    LIT_FILE,
+    LIT_PAD,
+    MANIFEST,
+    PIECES_DIR,
+    SCREEN_KEYS,
+    decoration_file,
+    expected_sizes,
+    lit_cell_size,
+    load_pieces,
+    piece_hash,
+    screen_file,
+    screen_size,
 )
 from bot.utils.gif import shared_palette_gif
 
@@ -120,9 +167,22 @@ BLUE = (70, 120, 255)
 PIN = (215, 215, 235)
 LCD_REACH = (88, 0, 92)
 LCD_ATARI = (120, 78, 0)
+#: Segundo color de la pantalla, que alterna con el primero cada dos fotogramas.
+LCD_REACH_ALT = (60, 0, 70)
+LCD_ATARI_ALT = (160, 110, 0)
+LCD_BEZEL = (30, 30, 40)
 OUT_FILL = (52, 50, 66)
 RAINBOW = (MAGENTA, YELLOW, CYAN, WHITE, GOLD, BLUE)
-PALETTE_COLORS = 64
+#: Colores de los adornos que no salen de `THEMES`.
+PETAL = (255, 170, 215)
+PEARL = (20, 60, 70)
+#: Casquillo oscuro de las bombillas (también va pintado en los sprites).
+SOCKET = (16, 12, 24)
+FLAME = (255, 110, 20)
+#: Colores del GIF: unos exactos, y el resto repartido entre el fondo y lo que se mueve.
+PALETTE_COLORS = 70
+#: Colores más frecuentes de la fila de bolsillos que se guardan exactos.
+POCKET_COLORS = 14
 
 #: Relleno y forma de los bolsillos que pagan, del que más paga al que menos.
 #: Las formas son distintas para que se distingan sin depender del color.
@@ -135,6 +195,11 @@ OUT_STYLE = (OUT_FILL, "cross")
 START_STYLE = (MAGENTA, "tulip")
 
 RGB = tuple[int, int, int]
+
+TITLE_SMALL = "JOVANI VÁZQUEZ"
+TRAY_TITLE = "BOLAS"
+#: Radio del aro que rodea a cada adorno del campo.
+DECORATION_RING_R = 18
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,35 +504,227 @@ def _lcd_bulb_positions() -> list[tuple[int, int]]:
     return points
 
 
+def bulb_palette(theme: Theme) -> list[tuple[RGB, bool]]:
+    """Colores distintos que puede tener una bombilla y si dan halo, en orden.
+
+    Son los del reposo (apagada y encendida), el del reach y los del atari. Es
+    el orden de las celdas de `bombillas.png`.
+    """
+    colors: dict[RGB, bool] = {}
+    for color, glows in ((theme.bulb_off, False), (theme.bulb_on, True)):
+        colors.setdefault(color, glows)
+    for color in (MAGENTA, *RAINBOW):
+        colors.setdefault(color, True)
+    return list(colors.items())
+
+
+def pocket_style(board: Board, paying: list[int], pocket: int) -> tuple[RGB, str]:
+    """Relleno y forma del bolsillo `pocket`; `paying` son sus valores de mayor a menor."""
+    value = board.pockets[pocket]
+    if pocket == board.start_pocket:
+        return START_STYLE
+    if value:
+        return POCKET_RANKS[min(paying.index(value), len(POCKET_RANKS) - 1)]
+    return OUT_STYLE
+
+
+def piece_spec(board: Board) -> dict:
+    """Todo lo que `escena.html` necesita para pintar las piezas de `board`.
+
+    Es la única fuente de las cifras: la geometría es la de la física, los
+    colores son los de `THEMES` y las constantes de este módulo, y las medidas
+    de los recortes son las de `bot.services.pachinko_pieces`. La escena no
+    tiene cifras propias; `docs/pachinko_piezas.py` guarda un resumen de este
+    diccionario para saber si los PNG están al día.
+    """
+    theme = THEMES[board.key]
+    layout = layout_for(board)
+    geometry = layout.geometry
+    paying = sorted({v for v in board.pockets if v}, reverse=True)
+    pockets = []
+    for pocket in range(board.rows + 1):
+        fill, shape = pocket_style(board, paying, pocket)
+        has_label = bool(board.pockets[pocket]) or pocket == board.start_pocket
+        pockets.append(
+            {
+                "x": layout.pocket_x(pocket),
+                "fill": fill,
+                "shape": shape,
+                "label": board.pocket_label(pocket) if has_label else None,
+                "label_color": MAGENTA if pocket == board.start_pocket else WHITE,
+                "label_size": 10 if layout.dx >= 26 else 9,
+            }
+        )
+    segments = lambda items: [[s.x0, s.y0, s.x1, s.y1] for s in items]  # noqa: E731
+    return {
+        "board": board.key,
+        "size": [WIDTH, HEIGHT],
+        "cx": CX,
+        "colors": {
+            "background": BACKGROUND,
+            "cabinet_edge": CABINET_EDGE,
+            "gold": GOLD,
+            "magenta": MAGENTA,
+            "cyan": CYAN,
+            "yellow": YELLOW,
+            "white": WHITE,
+            "blue": BLUE,
+            "pin": PIN,
+            "lcd_bezel": LCD_BEZEL,
+            "petal": PETAL,
+            "pearl": PEARL,
+            "flame": FLAME,
+            "socket": SOCKET,
+        },
+        "theme": {
+            "title": theme.title,
+            "cabinet": theme.cabinet,
+            "board": theme.board,
+            "accent": theme.accent,
+            "halo": theme.halo,
+            "lcd": theme.lcd,
+            "bulb_on": theme.bulb_on,
+            "bulb_off": theme.bulb_off,
+            "decoration": theme.decoration,
+        },
+        "title": {
+            "small": {"text": TITLE_SMALL, "size": 11, "top": 12, "stroke": 1},
+            "big": {"text": theme.title, "size": 26, "top": 24, "stroke": 3},
+            "star_y": 18,
+            "star_r": 6,
+            "star_inner": 2.5,
+            "star_gap": 12,
+        },
+        "field_box": list(field_box(layout)),
+        "lcd_box": list(LCD_BOX),
+        "pocket_top": layout.pocket_top,
+        "pocket_h": POCKET_H,
+        "label_y": layout.label_y,
+        "tray_top": layout.tray_top,
+        "tray_text": {"text": TRAY_TITLE, "size": 10},
+        "dx": layout.dx,
+        "pockets": pockets,
+        "pins": [list(pin) for pin in geometry.pins],
+        "pin_r": PIN_R,
+        "walls": segments(geometry.walls),
+        "dividers": segments(geometry.dividers),
+        "decorations": [list(d) for d in DECORATIONS],
+        "ring_r": DECORATION_RING_R,
+        "decoration_steps": DECORATION_STEPS,
+        "bulbs": [list(b) for b in _bulb_positions() + _lcd_bulb_positions()],
+        "bulb_r": BULB_R,
+        "bulb_colors": [{"color": color, "lit": lit} for color, lit in bulb_palette(theme)],
+        "ball_r": BALL_R,
+        "cells": {
+            "ball": BALL_CELL,
+            "decoration": DECORATION_CELL,
+            "bulb": BULB_CELL,
+            "hold": HOLD_CELL,
+            "badge": BADGE_CELL,
+            "screen": list(screen_size()),
+        },
+        "lit_cell": list(lit_cell_size(layout.dx)),
+        "lit_pad": LIT_PAD,
+        "screens": {
+            "reposo": theme.lcd,
+            "reach_a": LCD_REACH,
+            "reach_b": LCD_REACH_ALT,
+            "atari_a": LCD_ATARI,
+            "atari_b": LCD_ATARI_ALT,
+        },
+    }
+
+
+def piece_problems(board: Board, directory: Path = PIECES_DIR) -> list[str]:
+    """Lo que falla en los PNG guardados de `board` (vacía si están al día).
+
+    Mira que estén todos, que midan lo que toca y que el resumen de `piezas.json`
+    sea el de la geometría, los temas y la escena de ahora. Lo usan
+    `docs/pachinko_piezas.py --comprobar` y las pruebas; no necesita navegador.
+    """
+    theme = THEMES[board.key]
+    layout = layout_for(board)
+    folder = directory / board.key
+    problems = []
+    try:
+        saved = json.loads((folder / MANIFEST).read_text(encoding="utf-8"))["hash"]
+    except (OSError, ValueError, KeyError):
+        problems.append(f"falta {MANIFEST}")
+    else:
+        if saved != piece_hash(piece_spec(board)):
+            problems.append(
+                "la geometría, los temas o la escena han cambiado desde que se pintaron"
+            )
+    sizes = expected_sizes(len(bulb_palette(theme)), board.rows + 1, layout.dx)
+    for name, size in sizes.items():
+        try:
+            with Image.open(folder / name) as image:
+                if image.size != size:
+                    problems.append(f"{name} mide {image.size} y tendría que medir {size}")
+        except OSError:
+            problems.append(f"falta {name}")
+    return problems
+
+
+def field_box(layout: Layout) -> tuple[int, int, int, float]:
+    """Caja del campo de clavos (esquinas incluidas), de la pantalla a la bandeja."""
+    return 16, 54, WIDTH - 17, layout.tray_top - 2
+
+
 @dataclass(slots=True)
 class _Assets:
-    """Piezas precalculadas de un tablero."""
+    """Piezas precalculadas de un tablero.
+
+    Attributes:
+        base: Fondo estático (RGB).
+        lit_strip: Bolsillos iluminados (RGBA, una celda por bolsillo) de los
+            PNG, o `None` si se dibujan con Pillow.
+        lit_full: Imagen entera con todos los bolsillos iluminados, solo cuando
+            no hay `lit_strip` (respaldo con Pillow).
+        screens: Fondos de la pantalla por modo (RGB); los que falten se
+            pintan lisos.
+        bulbs: Sprite de cada color de bombilla; `None` si se dibujan con Pillow.
+        hold: Punto de la reserva vacío y lleno; `None` si se dibujan con Pillow.
+        badge: Chapa del contador del final; `None` si se dibuja con Pillow.
+    """
 
     board: Board
     theme: Theme
     layout: Layout
     base: Image.Image
-    lit: Image.Image
+    lit_strip: Image.Image | None
+    lit_full: Image.Image | None
+    ball: Image.Image
     decorations: list[Image.Image]
+    screens: dict[str, Image.Image]
+    bulbs: dict[RGB, Image.Image] | None
+    hold: tuple[Image.Image, Image.Image] | None
+    badge: Image.Image | None
     palette: Image.Image
 
 
 class PachinkoRenderer:
     """Dibuja las tandas del pachinko con piezas precalculadas por tablero.
 
+    Las piezas son los PNG de `assets/pachinko/<tablero>/` (pintados con canvas,
+    ver `bot.services.pachinko_pieces`); la que falte se dibuja con Pillow.
     Es seguro llamarlo desde varios hilos: las piezas de cada tablero se
     preparan una vez con un cerrojo y después solo se leen (la caché de
     textos se rellena bajo el mismo cerrojo).
+
+    Args:
+        font_path: Tipografía de los textos.
+        pieces_dir: Carpeta con las de cada tablero (cambia en las pruebas).
     """
 
-    def __init__(self, font_path: Path = FONT_PATH) -> None:
+    def __init__(self, font_path: Path = FONT_PATH, pieces_dir: Path = PIECES_DIR) -> None:
         self._font_path = font_path
+        self._pieces_dir = pieces_dir
         self._lock = threading.RLock()
         self._fonts: dict[int, ImageFont.FreeTypeFont] = {}
         self._texts: dict[tuple, Image.Image] = {}
         self._assets: dict[str, _Assets] = {}
         self._bulbs = _bulb_positions() + _lcd_bulb_positions()
-        self._ball = self._ball_sprite()
 
     # -- Piezas ---------------------------------------------------------------------
 
@@ -507,31 +764,130 @@ class PachinkoRenderer:
             return image
 
     def assets(self, board: Board) -> _Assets:
-        """Piezas de `board`, preparadas la primera vez (~0,05 s de CPU)."""
+        """Piezas de `board`, preparadas la primera vez (~0,2 s de CPU).
+
+        Carga los PNG de la carpeta del tablero; cada pieza que falte se
+        dibuja con Pillow (el juego nunca se queda sin imagen).
+        """
         with self._lock:
             cached = self._assets.get(board.key)
             if cached is not None:
                 return cached
             theme = THEMES[board.key]
             layout = layout_for(board)
-            base = self._draw_board(board, theme, layout, lit=False)
-            lit = self._draw_board(board, theme, layout, lit=True)
-            decorations = [self._decoration(theme, step) for step in range(4)]
-            sample = Image.new("RGB", (WIDTH * 2, HEIGHT))
-            sample.paste(base, (0, 0))
-            sample.paste(lit, (WIDTH, 0))
-            # Los colores de los carteles y de la pantalla también tienen que
-            # estar en la paleta aunque no salgan en el tablero.
-            swatch = ImageDraw.Draw(sample)
-            extra = (*RAINBOW, LCD_REACH, LCD_ATARI, theme.bulb_on, theme.bulb_off, theme.lcd)
-            for i, color in enumerate(extra):
-                swatch.rectangle((i * 8, 0, i * 8 + 7, 7), fill=color)
-            for i, sprite in enumerate(decorations):
-                sample.paste(sprite, (i * 34, 10), sprite)
-            palette = sample.quantize(colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT)
-            assets = _Assets(board, theme, layout, base, lit, decorations, palette)
+            pieces = load_pieces(
+                board.key,
+                len(bulb_palette(theme)),
+                board.rows + 1,
+                layout.dx,
+                self._pieces_dir,
+            )
+            assets = self._assemble(board, theme, layout, pieces)
             self._assets[board.key] = assets
             return assets
+
+    def _assemble(
+        self, board: Board, theme: Theme, layout: Layout, pieces: dict[str, Image.Image]
+    ) -> _Assets:
+        """Reúne las piezas de un tablero: los PNG que hay y, de lo que falte, Pillow."""
+        background = pieces.get(BACKGROUND_FILE)
+        base = (
+            background.convert("RGB")
+            if background is not None
+            else self._draw_board(board, theme, layout, lit=False)
+        )
+        lit_strip = pieces.get(LIT_FILE)
+        lit_full = None if lit_strip else self._draw_board(board, theme, layout, lit=True)
+        ball = pieces.get(BALL_FILE) or self._ball_sprite()
+        decorations = [
+            pieces.get(decoration_file(step)) or self._decoration(theme, step)
+            for step in range(DECORATION_STEPS)
+        ]
+        screens = {
+            key: pieces[screen_file(key)].convert("RGB")
+            for key in SCREEN_KEYS
+            if screen_file(key) in pieces
+        }
+        atlas = pieces.get(BULBS_FILE)
+        bulbs = None
+        if atlas is not None:
+            bulbs = {
+                color: atlas.crop((i * BULB_CELL, 0, (i + 1) * BULB_CELL, BULB_CELL))
+                for i, (color, _) in enumerate(bulb_palette(theme))
+            }
+        pair = pieces.get(HOLD_FILE)
+        hold = None
+        if pair is not None:
+            hold = (
+                pair.crop((0, 0, HOLD_CELL, HOLD_CELL)),
+                pair.crop((HOLD_CELL, 0, 2 * HOLD_CELL, HOLD_CELL)),
+            )
+        assets = _Assets(
+            board, theme, layout, base, lit_strip, lit_full, ball, decorations, screens,
+            bulbs, hold, pieces.get(BADGE_FILE), palette=Image.new("P", (1, 1)),
+        )  # fmt: skip
+        assets.palette = self._palette(assets)
+        return assets
+
+    def _palette(self, assets: _Assets) -> Image.Image:
+        """Paleta común del GIF, sacada de fotogramas de muestra de cada modo.
+
+        Se mide sobre lo que de verdad sale (fondo con las bombillas del
+        reposo, del reach y del atari, la pantalla de cada modo y los bolsillos
+        iluminados) y no solo sobre el fondo: así los halos y los degradados no
+        se quedan sin sus colores.
+        """
+        theme = assets.theme
+        shots = []
+        for mode, screen in (("idle", "reposo"), ("reach", "reach_a"), ("atari", "atari_a")):
+            image = assets.base.copy()
+            self._decorate(assets, image, len(shots))
+            sprite = assets.screens.get(screen)
+            if sprite is not None:
+                image.paste(sprite, LCD_BOX[:2])
+            if mode == "idle":
+                for i in range(6):
+                    self._paste(image, assets.ball, 60 + i * 41, 250 + (i % 3) * 30)
+            self._bulbs_layer(image, ImageDraw.Draw(image), assets, 0, mode)
+            self._hold_dots(image, ImageDraw.Draw(image), assets, 2)
+            shots.append(image)
+        flashed = assets.base.copy()
+        for pocket in range(assets.board.rows + 1):
+            self._flash(assets, flashed, pocket)
+        shots.append(flashed)
+        # Tres partes de paleta. Primero los colores que tienen que salir exactos
+        # (los de los carteles, los números, las pantallas, las bombillas y los
+        # bolsillos: pocos y pequeños, un degradado los lavaría hacia el morado
+        # del mueble). Después una parte para el fondo (casi toda la imagen, con
+        # los degradados) y otra para lo que cambia (halos, bolas, adornos).
+        base = np.asarray(assets.base)
+        top = round(assets.layout.pocket_top)
+        pocket_row = Image.fromarray(base[top : top + POCKET_H + 1], "RGB")
+        frequent = sorted(pocket_row.getcolors(10_000) or [], reverse=True)[:POCKET_COLORS]
+        exact = [
+            *RAINBOW, GOLD, YELLOW, WHITE, (0, 0, 0), PIN, OUT_FILL, LCD_REACH, LCD_ATARI,
+            LCD_REACH_ALT, LCD_ATARI_ALT, (90, 110, 170), theme.bulb_on, theme.bulb_off,
+            theme.lcd, theme.board, theme.cabinet, theme.accent, theme.halo,
+            *(color for _, color in frequent),
+        ]  # fmt: skip
+        exact = list(dict.fromkeys(exact))
+        rest = max(2, PALETTE_COLORS - len(exact))
+        moving = [np.asarray(shot)[(np.asarray(shot) != base).any(axis=2)] for shot in shots]
+        colors = np.unique(np.concatenate(moving), axis=0)
+        moving_image = Image.fromarray(colors.reshape(-1, 1, 3), "RGB")
+        parts = (
+            (assets.base.quantize(colors=rest // 2, method=Image.Quantize.MEDIANCUT), rest // 2),
+            (moving_image.quantize(colors=rest - rest // 2, method=Image.Quantize.MEDIANCUT),
+             rest - rest // 2),
+        )  # fmt: skip
+        entries = [channel for color in exact for channel in color]
+        for part, count in parts:
+            raw = part.getpalette() or []
+            used = len(part.getcolors() or [])
+            entries.extend(raw[: min(count, used) * 3])
+        palette = Image.new("P", (1, 1))
+        palette.putpalette(entries)
+        return palette
 
     def _draw_board(self, board: Board, theme: Theme, layout: Layout, *, lit: bool) -> Image.Image:
         """Mueble, rótulo, marco de la pantalla, clavos y bolsillos.
@@ -541,16 +897,16 @@ class PachinkoRenderer:
         """
         image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
         draw = ImageDraw.Draw(image)
-        field_box = (16, 54, WIDTH - 17, layout.tray_top - 2)
+        field = field_box(layout)
         draw.rounded_rectangle((1, 1, WIDTH - 2, HEIGHT - 2), radius=18, fill=theme.cabinet)
         draw.rounded_rectangle(
             (1, 1, WIDTH - 2, HEIGHT - 2), radius=18, outline=CABINET_EDGE, width=3
         )
-        draw.rounded_rectangle(field_box, radius=12, fill=theme.board)
-        draw.rounded_rectangle(field_box, radius=12, outline=theme.accent, width=2)
+        draw.rounded_rectangle(field, radius=12, fill=theme.board)
+        draw.rounded_rectangle(field, radius=12, outline=theme.accent, width=2)
 
         # Rótulo de neón: el color de contorno hace de halo.
-        small = self._text("JOVANI VÁZQUEZ", 11, YELLOW, theme.halo, 1)
+        small = self._text(TITLE_SMALL, 11, YELLOW, theme.halo, 1)
         image.paste(small, (CX - small.width // 2, 12), small)
         for side in (-1, 1):
             sx = CX + side * (small.width // 2 + 12)
@@ -561,7 +917,7 @@ class PachinkoRenderer:
         # Marco de la pantalla.
         x0, y0, x1, y1 = LCD_BOX
         draw.rounded_rectangle((x0 - 6, y0 - 6, x1 + 6, y1 + 6), radius=10, fill=theme.accent)
-        draw.rounded_rectangle((x0 - 3, y0 - 3, x1 + 3, y1 + 3), radius=8, fill=(30, 30, 40))
+        draw.rounded_rectangle((x0 - 3, y0 - 3, x1 + 3, y1 + 3), radius=8, fill=LCD_BEZEL)
         draw.rectangle(LCD_BOX, fill=theme.lcd)
 
         # Campo de clavos: los mismos que golpea la física, con las paredes y los
@@ -573,7 +929,9 @@ class PachinkoRenderer:
         for divider in layout.geometry.dividers:
             draw.line((divider.x0, divider.y0, divider.x1, divider.y1), fill=PIN, width=2)
         for mx, my in DECORATIONS:
-            draw.ellipse((mx - 18, my - 18, mx + 18, my + 18), outline=theme.accent, width=2)
+            ring = DECORATION_RING_R
+            box = (mx - ring, my - ring, mx + ring, my + ring)
+            draw.ellipse(box, outline=theme.accent, width=2)
 
         # Bolsillos con su forma y, debajo, su valor.
         paying = sorted({v for v in board.pockets if v}, reverse=True)
@@ -581,7 +939,7 @@ class PachinkoRenderer:
             self._draw_pocket(image, draw, board, theme, layout, paying, pocket, lit=lit)
         draw.text(
             (CX, layout.tray_top + 16),
-            "BOLAS",
+            TRAY_TITLE,
             font=self._font(10),
             fill=theme.accent,
             anchor="mm",
@@ -601,12 +959,7 @@ class PachinkoRenderer:
         lit: bool,
     ) -> None:
         value = board.pockets[pocket]
-        if pocket == board.start_pocket:
-            fill, shape = START_STYLE
-        elif value:
-            fill, shape = POCKET_RANKS[min(paying.index(value), len(POCKET_RANKS) - 1)]
-        else:
-            fill, shape = OUT_STYLE
+        fill, shape = pocket_style(board, paying, pocket)
         x = layout.pocket_x(pocket)
         half = layout.dx / 2
         top = layout.pocket_top
@@ -649,6 +1002,7 @@ class PachinkoRenderer:
         image.paste(label, (round(x - label.width / 2), round(layout.label_y)), label)
 
     def _ball_sprite(self) -> Image.Image:
+        """La bola con Pillow (respaldo de `bola.png`)."""
         size = BALL_R * 2 + 1
         sprite = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(sprite)
@@ -657,7 +1011,7 @@ class PachinkoRenderer:
         return sprite
 
     def _decoration(self, theme: Theme, step: int) -> Image.Image:
-        """Adorno de los lados en el paso `step` (0-3) de su animación."""
+        """Adorno de los lados en el paso `step` (0-3) con Pillow (respaldo de `adorno_N.png`)."""
         size = 33
         sprite = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(sprite)
@@ -667,12 +1021,12 @@ class PachinkoRenderer:
             for petal in range(5):
                 a = math.radians(step * 18 + petal * 72)
                 px, py = c + 9 * math.cos(a), c + 9 * math.sin(a)
-                draw.ellipse((px - 6, py - 6, px + 6, py + 6), fill=(255, 170, 215))
+                draw.ellipse((px - 6, py - 6, px + 6, py + 6), fill=PETAL)
                 draw.ellipse((px - 2, py - 2, px + 2, py + 2), fill=WHITE)
             draw.ellipse((c - 4, c - 4, c + 4, c + 4), fill=YELLOW)
         elif theme.decoration == "pearl":
             # Perla del dragón con tres comas (tomoe) que dan vueltas.
-            draw.ellipse((c - 14, c - 14, c + 14, c + 14), fill=(20, 60, 70), outline=theme.accent)
+            draw.ellipse((c - 14, c - 14, c + 14, c + 14), fill=PEARL, outline=theme.accent)
             for comma in range(3):
                 a = math.radians(step * 30 + comma * 120)
                 hx, hy = c + 7 * math.cos(a), c + 7 * math.sin(a)
@@ -686,7 +1040,7 @@ class PachinkoRenderer:
             lean = (-2, 1, 2, -1)[step]
             draw.polygon(
                 [(c - 10, c + 12), (c + lean - 3, c - height), (c + 10, c + 12)],
-                fill=(255, 110, 20),
+                fill=FLAME,
             )
             draw.polygon(
                 [(c - 6, c + 12), (c + lean, c - height + 7), (c + 6, c + 12)],
@@ -708,8 +1062,18 @@ class PachinkoRenderer:
     def _paste(self, frame: Image.Image, sprite: Image.Image, cx: float, cy: float) -> None:
         frame.paste(sprite, (round(cx - sprite.width / 2), round(cy - sprite.height / 2)), sprite)
 
-    def _bulbs_layer(self, draw: ImageDraw.ImageDraw, theme: Theme, frame: int, mode: str) -> None:
+    def _bulbs_layer(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        assets: _Assets,
+        frame: int,
+        mode: str,
+    ) -> None:
         """Bombillas del borde: persiguen, corren en un reach y se vuelven locas en un atari."""
+        theme = assets.theme
+        sprites = assets.bulbs
+        reach = BULB_CELL // 2
         for i, (x, y) in enumerate(self._bulbs):
             if mode == "atari":
                 color = RAINBOW[(i + frame) % len(RAINBOW)]
@@ -717,7 +1081,30 @@ class PachinkoRenderer:
                 color = MAGENTA if (i + frame) % 2 == 0 else theme.bulb_on
             else:
                 color = theme.bulb_on if (i + frame // 2) % 4 == 0 else theme.bulb_off
-            draw.ellipse((x - BULB_R, y - BULB_R, x + BULB_R, y + BULB_R), fill=color)
+            if sprites is None:
+                draw.ellipse((x - BULB_R, y - BULB_R, x + BULB_R, y + BULB_R), fill=color)
+            else:
+                sprite = sprites[color]
+                image.paste(sprite, (x - reach, y - reach), sprite)
+
+    def _flash(self, assets: _Assets, image: Image.Image, pocket: int) -> None:
+        """Enciende el bolsillo `pocket`: se pega su celda iluminada (con su resplandor)."""
+        layout = assets.layout
+        x = layout.pocket_x(pocket)
+        if assets.lit_strip is None:
+            # Respaldo con Pillow: el recorte del bolsillo de la imagen iluminada.
+            box = (
+                round(x - layout.dx / 2),
+                round(layout.pocket_top) - 1,
+                round(x + layout.dx / 2),
+                round(layout.pocket_top + POCKET_H) + 1,
+            )
+            assert assets.lit_full is not None
+            image.paste(assets.lit_full.crop(box), box[:2])
+            return
+        cell_w, cell_h = lit_cell_size(layout.dx)
+        cell = assets.lit_strip.crop((pocket * cell_w, 0, (pocket + 1) * cell_w, cell_h))
+        image.paste(cell, (round(x) - (cell_w - 1) // 2, round(layout.pocket_top) - LIT_PAD), cell)
 
     def _digit(self, value: int, color: RGB, blur: bool = False) -> Image.Image:
         sprite = self._text(str(value), 46, color, (0, 0, 0), 3)
@@ -742,7 +1129,7 @@ class PachinkoRenderer:
         centers = (x0 + 38, CX, x1 - 38)
         mid_y = (y0 + y1) // 2 + 2
         if slot is None:
-            draw.rectangle(LCD_BOX, fill=assets.theme.lcd)
+            self._screen(assets, frame_image, draw, "reposo", assets.theme.lcd)
             for cx in centers:
                 self._paste(frame_image, self._digit(7, (90, 110, 170)), cx, mid_y)
             tag = self._text(f"¡DALE! · {assets.board.risk.upper()}", 12, YELLOW, (0, 0, 0), 2)
@@ -754,12 +1141,13 @@ class PachinkoRenderer:
         atari_on = d.atari and frame >= slot.center_stop
         reach_on = d.reach and t >= RIGHT_STOP and frame < slot.center_stop
         if atari_on:
-            bg = LCD_ATARI if (frame // 2) % 2 or final else (160, 110, 0)
+            first = (frame // 2) % 2 or final
+            key, bg = ("atari_a", LCD_ATARI) if first else ("atari_b", LCD_ATARI_ALT)
         elif reach_on:
-            bg = LCD_REACH if (frame // 2) % 2 else (60, 0, 70)
+            key, bg = ("reach_a", LCD_REACH) if (frame // 2) % 2 else ("reach_b", LCD_REACH_ALT)
         else:
-            bg = assets.theme.lcd
-        draw.rectangle(LCD_BOX, fill=bg)
+            key, bg = "reposo", assets.theme.lcd
+        self._screen(assets, frame_image, draw, key, bg)
         digit_color = GOLD if atari_on else WHITE
         stops = (LEFT_STOP, slot.center_stop - slot.start, RIGHT_STOP)
         order = (0, 2, 1)  # paran izquierda, derecha y, por último, el centro
@@ -797,10 +1185,31 @@ class PachinkoRenderer:
             return "atari"
         return "reach" if reach_on else "idle"
 
-    def _hold_dots(self, draw: ImageDraw.ImageDraw, held: int) -> None:
+    def _screen(
+        self,
+        assets: _Assets,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        key: str,
+        color: RGB,
+    ) -> None:
+        """Fondo de la pantalla: el PNG de su modo o, si no hay, un rectángulo liso."""
+        sprite = assets.screens.get(key)
+        if sprite is None:
+            draw.rectangle(LCD_BOX, fill=color)
+        else:
+            image.paste(sprite, LCD_BOX[:2])
+
+    def _hold_dots(
+        self, image: Image.Image, draw: ImageDraw.ImageDraw, assets: _Assets, held: int
+    ) -> None:
         """Reserva: puntos llenos (tiradas pendientes) y huecos (vacíos)."""
         for i in range(MAX_HOLD):
             x = CX + (i - (MAX_HOLD - 1) / 2) * 16
+            if assets.hold is not None:
+                dot = assets.hold[1 if i < held else 0]
+                self._paste(image, dot, x, HOLD_Y)
+                continue
             box = (x - 5, HOLD_Y - 5, x + 5, HOLD_Y + 5)
             if i < held:
                 draw.ellipse(box, fill=MAGENTA, outline=WHITE)
@@ -836,21 +1245,14 @@ class PachinkoRenderer:
         # Bolsillos que destellan porque acaba de entrar una bola.
         for ball, landing in zip(volley.balls, timeline.landings, strict=True):
             if landing <= frame < landing + POCKET_FLASH and (frame - landing) % 2 == 0:
-                x = layout.pocket_x(ball.pocket)
-                box = (
-                    round(x - layout.dx / 2),
-                    round(layout.pocket_top) - 1,
-                    round(x + layout.dx / 2),
-                    round(layout.pocket_top + POCKET_H) + 1,
-                )
-                image.paste(assets.lit.crop(box), box[:2])
+                self._flash(assets, image, ball.pocket)
 
         self._decorate(assets, image, frame // 2)
 
         for index, ball in enumerate(volley.balls):
             position = layout.ball_position(ball, frame - index * LAUNCH_GAP)
             if position is not None:
-                self._paste(image, self._ball, *position)
+                self._paste(image, assets.ball, *position)
 
         slot = timeline.slot_at(frame)
         mode = self._lcd(assets, image, frame, slot, rng)
@@ -859,9 +1261,9 @@ class PachinkoRenderer:
             for _ in range(10):
                 x = rng.randint(30, WIDTH - 30)
                 y = rng.randint(LCD_BOX[3] + 10, round(layout.pocket_top) - 6)
-                self._paste(image, self._ball, x, y)
-        self._bulbs_layer(draw, assets.theme, frame, mode)
-        self._hold_dots(draw, timeline.held(frame))
+                self._paste(image, assets.ball, x, y)
+        self._bulbs_layer(image, draw, assets, frame, mode)
+        self._hold_dots(image, draw, assets, timeline.held(frame))
 
         balls = sum(
             volley.returned(ball)
@@ -884,7 +1286,10 @@ class PachinkoRenderer:
             x = layout.pocket_x(pocket)
             y = layout.pocket_top + 9
             r = min(8, layout.dx / 2 - 2)
-            draw.ellipse((x - r, y - r, x + r, y + r), fill=WHITE, outline=assets.theme.board)
+            if assets.badge is not None:
+                self._paste(image, assets.badge, x, y)
+            else:
+                draw.ellipse((x - r, y - r, x + r, y + r), fill=WHITE, outline=assets.theme.board)
             badge = self._text(str(count), 11, assets.theme.board, WHITE, 0)
             self._paste(image, badge, x, y)
         best = volley.best
@@ -892,8 +1297,8 @@ class PachinkoRenderer:
         if timeline.slots:
             slot = next((s for s in timeline.slots if s.draw is best), timeline.slots[-1])
         mode = self._lcd(assets, image, timeline.frames, slot, random.Random(0), final=True)
-        self._bulbs_layer(draw, assets.theme, 0, "atari" if mode == "atari" else "idle")
-        self._hold_dots(draw, 0)
+        self._bulbs_layer(image, draw, assets, 0, "atari" if mode == "atari" else "idle")
+        self._hold_dots(image, draw, assets, 0)
         self._tray(layout, image, volley.total_balls, final=True)
         return image
 
@@ -914,8 +1319,8 @@ class PachinkoRenderer:
         self._decorate(assets, image, 0)
         self._lcd(assets, image, 0, None, random.Random(0))
         draw = ImageDraw.Draw(image)
-        self._bulbs_layer(draw, assets.theme, 0, "idle")
-        self._hold_dots(draw, 0)
+        self._bulbs_layer(image, draw, assets, 0, "idle")
+        self._hold_dots(image, draw, assets, 0)
         self._tray(assets.layout, image, 0)
         return self._png(self._quantize(assets, image))
 
