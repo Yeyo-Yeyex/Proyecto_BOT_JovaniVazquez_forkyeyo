@@ -1,4 +1,4 @@
-"""Tragaperras: rodillos, tabla de pagos, giros gratis y máquina caliente.
+"""Tragaperras: rodillos, tabla de pagos, giros gratis, re-giro y máquina caliente.
 
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.slots`) decide cuánto
 se apuesta, cobra y paga con `EconomyService.play_slots` y pinta el resultado
@@ -6,32 +6,48 @@ con `bot.services.slots_render`.
 
 La máquina tiene 3 rodillos y se ven 3 filas de cada uno (una cuadrícula de
 3×3). Solo paga la fila del medio, la línea. Las filas de arriba y abajo
-están para que se vea el símbolo que casi entra: el near-miss.
+están para que se vea el símbolo que casi entra: el casi-premio.
 
-Cada rodillo es una tira fija de símbolos (`REEL_STRIPS`) y en cada tirada se
-elige al azar dónde para cada uno, con la misma probabilidad para cada
-posición. Las tiras no son iguales, y eso es lo que fija las probabilidades:
-el primer rodillo lleva más 🃏 y 7️⃣ que el tercero, así que "7️⃣ 7️⃣ y el tercero
-no" pasa mucho más que "7️⃣ 7️⃣ 7️⃣". Es el mismo truco de las máquinas reales.
+Cada rodillo es una tira fija de símbolos (`REEL_STRIPS`) y cada posición de
+la tira tiene un peso (`REEL_WEIGHTS`), el «rodillo virtual» de las máquinas
+reales. El peso decide cuánto para el rodillo en cada casilla: las casillas
+pegadas a un 7️⃣ o a un 🃏 del tercer rodillo pesan mucho y la del símbolo,
+poco. Así el premio gordo pasa rozando la línea a menudo y entra en ella
+casi nunca. Kassinove y Schare (2001) vieron que la gente aguanta más jugando
+con casi-premios en torno a un 30 % de las tiradas; aquí hay uno de cada
+cinco.
 
-Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`):
+Tras un casi-premio en el tercer rodillo se puede comprar un re-giro de ese
+rodillo (`respin_price`): cuesta lo que vale de media entre `RESPIN_RTP`.
 
-- La línea devuelve ~83 % de lo apostado; con los giros gratis y la máquina
-  caliente, ~91 %. El 3 % de cada apuesta va al bote común, que acaba
-  saliendo entero en algún jackpot: en total vuelve ~94 % (la ruleta
-  americana, 94,7 %).
-- El 31 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
-  de lo apostado (una 🍒 al principio devuelve la mitad). Es lo que más
-  engancha de una tragaperras: la máquina lo celebra y aun así pierdes.
-- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 14.400 tiradas.
-- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 133 tiradas.
+Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`
+y buscados con `docs/calibrar_tragaperras.py`):
+
+- La línea devuelve ~87,5 % de lo apostado; con los giros gratis y la máquina
+  caliente, ~96,5 %. El 3 % de cada apuesta va al bote común, que acaba
+  saliendo entero: en total vuelve ~99,5 %. Se pierde despacio, que es lo que
+  alarga las sesiones.
+- El 32 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
+  de lo apostado (una 🍒 al principio devuelve la mitad). La máquina lo
+  celebra y aun así pierdes.
+- Casi-premio en el 21 % de las tiradas; re-giro ofrecido en el 20,5 % y con
+  premio gordo en el 19 % de los re-giros.
+- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 20.000 tiradas. Además el bote cae
+  solo antes de llegar a `POT_CAP`.
+- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 125 tiradas.
+- Celebraciones: ÉPICO (×50) 1 de cada ~2.500 tiradas, MEGA (×15) 1 de cada
+  ~450 y GRAN PREMIO (×5) 1 de cada ~17.
 """
 
 from __future__ import annotations
 
+import bisect
+import itertools
+import math
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 # -- Símbolos -----------------------------------------------------------------------
 
@@ -81,6 +97,31 @@ REEL_STRIPS: tuple[str, str, str] = (
     "CBGGCDCLGGBDLGLGBSLGLLBLL7CCSW",
 )
 
+#: Rodillo virtual: cuánto pesa cada posición de la tira al elegir dónde para.
+#: Es el truco de la patente de Telnaes (1984) que usan todas las máquinas
+#: modernas: la casilla de un 7️⃣ del tercer rodillo pesa poco y las de justo
+#: encima y debajo pesan mucho, así que el 7️⃣ se ve rozando la línea muy a
+#: menudo y entra en ella muy poco. Los pesos salen de un optimizador
+#: (`docs/calibrar_tragaperras.py`) que busca el retorno, los casi-premios y la
+#: frecuencia de premios de la docstring. Cambiar un peso cambia todo: hay que
+#: volver a pasar los tests del retorno.
+# fmt: off
+REEL_WEIGHTS: tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]] = (
+    (
+        31, 17, 8, 5, 34, 35, 1, 1, 43, 1, 60, 6, 1, 19, 1, 5,
+        4, 7, 8, 1, 1, 1, 8, 1, 18, 33, 1, 1, 3, 10, 4, 12,
+    ),
+    (
+        1, 9, 7, 6, 3, 1, 11, 12, 18, 1, 13, 1, 17, 30, 8,
+        1, 1, 4, 4, 1, 20, 25, 5, 3, 3, 3, 1, 10, 31, 2,
+    ),
+    (
+        25, 27, 15, 1, 26, 4, 3, 14, 12, 16, 19, 11, 20, 10, 24,
+        11, 27, 9, 46, 2, 25, 3, 19, 1, 6, 1, 1, 7, 25, 11,
+    ),
+)
+# fmt: on
+
 #: Tres iguales en la línea (con comodines): veces la apuesta.
 THREE_OF_A_KIND: dict[str, int] = {
     CHERRY: 4,
@@ -96,6 +137,13 @@ TWO_CHERRIES = 2
 #: para no usar decimales: `PAY_HALVES` guarda todos los premios ×2.
 ONE_CHERRY_HALVES = 1
 
+#: Premio mínimo, en veces la apuesta, que tiene que quedar a un símbolo para
+#: que cuente como casi-premio: desde un trío de 🍇. Quedarse a uno de tres 🍒
+#: no emociona a nadie.
+NEAR_MISS_MIN_TIMES = 10
+#: Valor del jackpot al comparar líneas (`_line_value`): más que cualquier trío.
+JACKPOT_VALUE = 10**9
+
 #: Símbolos que, si salen dos en la línea, hacen girar más el tercer rodillo.
 HIGH_SYMBOLS = frozenset({SEVEN, DIAMOND, WILD})
 
@@ -110,6 +158,21 @@ HOT_MULTIPLIER = 2
 POT_SHARE_PERCENT = 3
 #: Lo que pone la casa en el bote cuando se vacía (y al estrenarlo).
 POT_SEED = 5_000
+#: Tope del bote misterioso: el bote cae solo, sin 🃏 🃏 🃏, al cruzar un punto
+#: oculto elegido al azar entre `POT_SEED` y este tope («tiene que caer antes
+#: de 50.000»). Cuanto más cerca del tope, más prisa le entra a todo el canal.
+POT_CAP = 50_000
+#: Retorno de un re-giro del tercer rodillo: el precio es lo que vale de media
+#: entre esto. El jugador paga un 0,5 % de más por la emoción de casi tenerlo.
+RESPIN_RTP = 0.995
+#: Veces seguidas que se puede jugar a doble o nada un mismo premio.
+DOUBLE_MAX = 5
+#: Segundos sin jugar tras los que la máquina pierde un punto de calor.
+HEAT_DECAY_SECONDS = 600
+#: Apuesta del giro diario gratis por cada día seguido de racha.
+DAILY_STAKE = 100
+#: Días de racha a partir de los que el giro diario ya no sube.
+DAILY_STREAK_MAX = 7
 
 
 #: Veces la apuesta (lo cobrado entre lo apostado) a partir de las que una tirada
@@ -172,11 +235,15 @@ class Spin:
         symbol: Símbolo que paga en un trío; `None` en el resto.
         pay_halves: Premio de la línea en medias apuestas (0 si no paga).
         scatters: 🎟️ visibles en toda la cuadrícula.
-        near_miss: Por poco: los dos primeros de la línea iban a un premio
-            gordo y el que faltaba ha quedado justo encima o debajo, o hay un
-            trío gordo en una fila que no paga.
+        near_miss: Por poco: el tercer rodillo ha dejado justo encima o
+            debajo de la línea el símbolo que completaba un premio de
+            ×`NEAR_MISS_MIN_TIMES` o más (`teaser`), o hay un trío gordo en
+            una fila que no paga.
         anticipation: Los dos primeros rodillos prometen algo gordo (dos
             símbolos altos compatibles o dos 🎟️): el tercero gira más.
+        teaser: El símbolo del tercer rodillo que, de haber parado en la
+            línea, daba un premio mejor. Es el que permite comprar un re-giro
+            (`respin_price`). `None` si no hay.
     """
 
     stops: tuple[int, int, int]
@@ -187,6 +254,7 @@ class Spin:
     scatters: int
     near_miss: bool
     anticipation: bool
+    teaser: str | None = None
 
     @property
     def line(self) -> tuple[str, str, str]:
@@ -210,6 +278,15 @@ class Spin:
             symbols = " ".join(SYMBOLS[s].emoji for s in row)
             rows.append(f"▶️ {symbols} ◀️" if index == 1 else f"⬛ {symbols} ⬛")
         return "\n".join(rows)
+
+
+_CUMULATIVE = tuple(tuple(itertools.accumulate(weights)) for weights in REEL_WEIGHTS)
+_TOTALS = tuple(cumulative[-1] for cumulative in _CUMULATIVE)
+
+
+def stop_probability(reel: int, stop: int) -> float:
+    """Probabilidad de que el rodillo `reel` pare en `stop`."""
+    return REEL_WEIGHTS[reel][stop] / _TOTALS[reel]
 
 
 def _cell(reel: int, stop: int, offset: int) -> str:
@@ -254,6 +331,24 @@ def _is_big_three(row: tuple[str, str, str]) -> bool:
     return kind == Kind.JACKPOT or (kind == Kind.THREE and symbol in HIGH_SYMBOLS)
 
 
+def _line_value(line: tuple[str, str, str]) -> int:
+    """Valor de una línea para compararla con otra: el jackpot vale más que todo."""
+    kind, _symbol, pay_halves = evaluate_line(line)
+    return JACKPOT_VALUE if kind == Kind.JACKPOT else pay_halves
+
+
+def _teaser(grid: tuple[tuple[str, str, str], ...]) -> str | None:
+    """Símbolo del tercer rodillo, encima o debajo, que daba un premio gordo mejor."""
+    first, second, third = grid[1]
+    current = _line_value((first, second, third))
+    best, teaser = current, None
+    for symbol in (grid[0][2], grid[2][2]):
+        value = _line_value((first, second, symbol))
+        if value >= NEAR_MISS_MIN_TIMES * 2 and value > best:
+            best, teaser = value, symbol
+    return teaser
+
+
 def spin_at(stops: tuple[int, int, int], *, count_scatters: bool = True) -> Spin:
     """Resultado de parar los rodillos en `stops` (determinista; útil en pruebas).
 
@@ -269,12 +364,11 @@ def spin_at(stops: tuple[int, int, int], *, count_scatters: bool = True) -> Spin
         scatters = sum(1 for reel in range(3) if any(row[reel] == SCATTER for row in grid))
 
     target = _high_target(line[0], line[1])
-    third_column = (grid[0][2], grid[2][2])
+    teaser = _teaser(grid)
     big_on_line = kind == Kind.JACKPOT or (kind == Kind.THREE and symbol in HIGH_SYMBOLS)
-    near_miss = not big_on_line and (
-        (target is not None and (target in third_column or WILD in third_column))
+    near_miss = teaser is not None or (
         # Un trío gordo en la fila de arriba o la de abajo, que no pagan.
-        or any(_is_big_three(row) for row in (grid[0], grid[2]))
+        not big_on_line and any(_is_big_three(row) for row in (grid[0], grid[2]))
     )
     scatter_tease = count_scatters and all(
         any(row[reel] == SCATTER for row in grid) for reel in (0, 1)
@@ -288,6 +382,7 @@ def spin_at(stops: tuple[int, int, int], *, count_scatters: bool = True) -> Spin
         scatters=scatters,
         near_miss=near_miss,
         anticipation=target is not None or scatter_tease,
+        teaser=teaser,
     )
 
 
@@ -301,10 +396,23 @@ class SlotMachine:
     def __init__(self, randbelow: Callable[[int], int] | None = None) -> None:
         self._randbelow = randbelow or random.SystemRandom().randrange
 
+    def _stop(self, reel: int) -> int:
+        """Parada de un rodillo según los pesos del rodillo virtual."""
+        ticket = self._randbelow(_TOTALS[reel])
+        return bisect.bisect_right(_CUMULATIVE[reel], ticket)
+
     def spin(self, *, free: bool = False) -> Spin:
         """Una tirada al azar. En los giros gratis (`free`) los 🎟️ no cuentan."""
-        stops = tuple(self._randbelow(len(strip)) for strip in REEL_STRIPS)
+        stops = tuple(self._stop(reel) for reel in range(3))
         return spin_at(stops, count_scatters=not free)  # type: ignore[arg-type]
+
+    def respin(self, spin: Spin) -> Spin:
+        """Vuelve a girar solo el tercer rodillo de `spin` (el re-giro de pago).
+
+        Los 🎟️ no cuentan: un re-giro no da giros gratis.
+        """
+        first, second, _third = spin.stops
+        return spin_at((first, second, self._stop(2)), count_scatters=False)
 
 
 # -- Dinero de una tirada -----------------------------------------------------------
@@ -319,6 +427,80 @@ def line_payout(spin: Spin, stake: int, *, hot: bool = False) -> int:
     """
     multiplier = HOT_MULTIPLIER if hot else 1
     return stake * spin.pay_halves * multiplier // 2
+
+
+def respin_odds(spin: Spin) -> tuple[float, float]:
+    """Lo que vale de media volver a girar el tercer rodillo de `spin`.
+
+    Returns:
+        `(medias apuestas esperadas de la línea, probabilidad de jackpot)`,
+        recorriendo cada parada del tercer rodillo con su peso.
+    """
+    first, second, _third = spin.stops
+    halves = jackpot = 0.0
+    for stop in range(len(REEL_STRIPS[2])):
+        chance = stop_probability(2, stop)
+        line = (spin.line[0], spin.line[1], REEL_STRIPS[2][stop])
+        kind, _symbol, pay_halves = evaluate_line(line)
+        halves += chance * pay_halves
+        if kind == Kind.JACKPOT:
+            jackpot += chance
+    return halves, jackpot
+
+
+def respin_price(spin: Spin, stake: int, pot: int) -> int:
+    """Precio de re-girar el tercer rodillo: su valor esperado entre `RESPIN_RTP`.
+
+    Incluye la parte del bote: con 🃏 🃏 en los dos primeros, el re-giro puede
+    llevarse el bote entero y su precio sube con él. Así nunca sale a cuenta
+    re-girar, ni con el bote a rebosar. Se redondea hacia arriba y vale al
+    menos 1 Y$.
+
+    Args:
+        stake: Apuesta de la tirada original (la línea paga en esa escala).
+        pot: Bote actual del servidor.
+    """
+    halves, jackpot = respin_odds(spin)
+    expected = stake * halves / 2 + jackpot * pot
+    return max(1, math.ceil(expected / RESPIN_RTP))
+
+
+def decayed_heat(heat: int, idle_seconds: float) -> int:
+    """Calor que queda tras `idle_seconds` sin jugar: un punto menos cada `HEAT_DECAY_SECONDS`.
+
+    Si te vas, la máquina se enfría y lo que habías calentado se pierde: hay
+    prisa por volver.
+    """
+    lost = int(max(0.0, idle_seconds) // HEAT_DECAY_SECONDS)
+    return max(0, heat - lost)
+
+
+def next_daily_streak(last_day: date | None, today: date, streak: int) -> int:
+    """Racha del giro diario si se cobra `today`: sigue si el último fue ayer, si no vuelve a 1."""
+    if last_day is not None and today - last_day == timedelta(days=1):
+        return streak + 1
+    return 1
+
+
+def daily_stake(streak: int) -> int:
+    """Apuesta del giro diario gratis: `DAILY_STAKE` por día de racha, hasta `DAILY_STREAK_MAX`."""
+    return DAILY_STAKE * max(1, min(streak, DAILY_STREAK_MAX))
+
+
+def prize_table(stake: int) -> list[tuple[str, int | None]]:
+    """Lo que paga cada combinación a la apuesta `stake`, como el cartel de una máquina de bar.
+
+    Returns:
+        Pares `(combinación en emojis, Y$ que devuelve)`, de mayor a menor.
+        El jackpot lleva `None`: se lleva el bote, que cambia.
+    """
+    e = {key: info.emoji for key, info in SYMBOLS.items()}
+    rows: list[tuple[str, int | None]] = [(f"{e[WILD]}{e[WILD]}{e[WILD]}", None)]
+    for symbol, times in sorted(THREE_OF_A_KIND.items(), key=lambda item: -item[1]):
+        rows.append((e[symbol] * 3, stake * times))
+    rows.append((f"{e[CHERRY]}{e[CHERRY]}❔", stake * TWO_CHERRIES))
+    rows.append((f"{e[CHERRY]}❔❔", stake * ONE_CHERRY_HALVES // 2))
+    return rows
 
 
 def pot_share(stake: int) -> int:

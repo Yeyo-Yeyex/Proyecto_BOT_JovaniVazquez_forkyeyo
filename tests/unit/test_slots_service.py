@@ -1,41 +1,62 @@
 """Pruebas de bot.services.slots: líneas, rodillos, retorno de la máquina y calor.
 
 Las cifras del retorno se calculan recorriendo todas las paradas posibles de
-los rodillos (unas 29.000), así que son exactas y no dependen del azar. Lo
-único simulado es el efecto conjunto de los giros gratis y la máquina
-caliente, con una semilla fija.
+los rodillos (unas 29.000), cada una con el peso de su rodillo virtual, así
+que son exactas y no dependen del azar. Lo único simulado es el efecto
+conjunto de los giros gratis y la máquina caliente, con una semilla fija.
 """
 
 from __future__ import annotations
 
 import itertools
 import random
+from datetime import date
 
 import pytest
 
 from bot.services.slots import (
     BELL,
+    BIG_WIN,
     CHERRY,
+    DAILY_STAKE,
+    DAILY_STREAK_MAX,
     DIAMOND,
+    EPIC_WIN,
     FREE_SPINS,
     GRAPE,
+    HEAT_DECAY_SECONDS,
     HEAT_MAX,
     LEMON,
+    MEGA_WIN,
+    NEAR_MISS_MIN_TIMES,
     POT_SHARE_PERCENT,
     REEL_STRIPS,
+    REEL_WEIGHTS,
+    RESPIN_RTP,
     SCATTER,
     SEVEN,
     SYMBOLS,
+    THREE_OF_A_KIND,
+    TWO_CHERRIES,
     WILD,
     Kind,
     SlotMachine,
+    WinTier,
+    daily_stake,
+    decayed_heat,
     evaluate_line,
     heat_bar,
     line_payout,
+    next_daily_streak,
     next_heat,
     paytable_lines,
     pot_share,
+    prize_table,
+    respin_odds,
+    respin_price,
     spin_at,
+    stop_probability,
+    win_tier,
 )
 
 ALL_STOPS = list(itertools.product(*(range(len(strip)) for strip in REEL_STRIPS)))
@@ -111,6 +132,29 @@ def test_la_maquina_elige_paradas_dentro_de_cada_tira() -> None:
         assert all(0 <= s < len(strip) for s, strip in zip(stops, REEL_STRIPS, strict=True))
 
 
+def test_cada_casilla_tiene_su_peso_en_el_rodillo_virtual() -> None:
+    assert [len(w) for w in REEL_WEIGHTS] == [len(s) for s in REEL_STRIPS]
+    assert all(weight >= 1 for weights in REEL_WEIGHTS for weight in weights)
+
+
+def test_el_azar_reparte_las_paradas_segun_los_pesos() -> None:
+    """El billete n cae en la casilla cuyo tramo acumulado lo contiene."""
+    weights = REEL_WEIGHTS[0]
+    tickets = iter([0, weights[0] - 1, weights[0], 0, 0])
+    machine = SlotMachine(lambda _n: next(tickets))
+    assert machine.spin().stops[0] == 0
+    tickets = iter([weights[0], 0, 0])
+    assert SlotMachine(lambda _n: next(tickets)).spin().stops[0] == 1
+
+
+def test_el_siete_del_tercer_rodillo_roza_la_linea_mas_que_entra() -> None:
+    """El truco del rodillo virtual: las casillas vecinas del 7️⃣ pesan más que la suya."""
+    strip = REEL_STRIPS[2]
+    seven = strip.index(SEVEN)
+    neighbours = stop_probability(2, seven - 1) + stop_probability(2, (seven + 1) % len(strip))
+    assert neighbours > 5 * stop_probability(2, seven)
+
+
 def test_en_los_giros_gratis_los_tickets_no_cuentan() -> None:
     stops = find_stops(lambda s: s.triggers_free_spins)
     assert not spin_at(stops, count_scatters=False).triggers_free_spins
@@ -128,13 +172,29 @@ def test_casi_premio_con_el_que_faltaba_justo_encima_o_debajo() -> None:
             lambda s: (
                 s.line[0] == SEVEN
                 and s.line[1] == SEVEN
-                and s.line[2] != SEVEN
+                and s.line[2] not in (SEVEN, WILD)
                 and SEVEN in (s.grid[0][2], s.grid[2][2])
             )
         )
     )
     assert spin.near_miss
     assert spin.anticipation
+    assert spin.teaser in (SEVEN, WILD)
+
+
+def test_quedarse_a_una_cereza_no_es_casi_premio() -> None:
+    """Solo cuenta quedarse a uno de un premio de ×`NEAR_MISS_MIN_TIMES` o más."""
+    spin = spin_at(
+        find_stops(
+            lambda s: (
+                s.line[:2] == (CHERRY, CHERRY)
+                and s.line[2] != CHERRY
+                and (s.grid[0][2], s.grid[2][2]) == (CHERRY, CHERRY)
+            )
+        )
+    )
+    assert spin.teaser is None
+    assert THREE_OF_A_KIND[CHERRY] < NEAR_MISS_MIN_TIMES
 
 
 def test_un_premio_gordo_en_la_linea_no_es_casi_premio() -> None:
@@ -151,36 +211,57 @@ def test_la_cuadricula_en_emojis_marca_la_linea() -> None:
 # -- Retorno de la máquina ------------------------------------------------------------
 
 
+def probability(stops: tuple[int, int, int]) -> float:
+    return (
+        stop_probability(0, stops[0])
+        * stop_probability(1, stops[1])
+        * stop_probability(2, stops[2])
+    )
+
+
+@pytest.fixture(scope="module")
 def exact_stats() -> dict[str, float]:
-    total = len(ALL_STOPS)
-    spins = [spin_at(stops) for stops in ALL_STOPS]
-    return {
-        "line": sum(s.pay_halves for s in spins) / 2 / total,
-        "hit": sum(1 for s in spins if s.pay_halves) / total,
-        "ldw": sum(1 for s in spins if 0 < s.pay_halves < 2) / total,
-        "jackpot": sum(1 for s in spins if s.is_jackpot) / total,
-        "free": sum(1 for s in spins if s.triggers_free_spins) / total,
-    }
+    stats = dict.fromkeys(
+        ("line", "hit", "ldw", "jackpot", "free", "near", "respin", "big", "mega", "epic"), 0.0
+    )
+    for stops in ALL_STOPS:
+        s, p = spin_at(stops), probability(stops)
+        stats["line"] += p * s.pay_halves / 2
+        stats["hit"] += p * (s.pay_halves > 0)
+        stats["ldw"] += p * (0 < s.pay_halves < 2)
+        stats["jackpot"] += p * s.is_jackpot
+        stats["free"] += p * s.triggers_free_spins
+        stats["near"] += p * s.near_miss
+        stats["respin"] += p * (s.teaser is not None)
+        stats["big"] += p * (s.pay_halves >= 2 * BIG_WIN)
+        stats["mega"] += p * (s.pay_halves >= 2 * MEGA_WIN)
+        stats["epic"] += p * (s.pay_halves >= 2 * EPIC_WIN or s.is_jackpot)
+    return stats
 
 
-def test_las_cifras_de_la_documentacion_son_las_reales() -> None:
-    stats = exact_stats()
-    assert stats["line"] == pytest.approx(0.83, abs=0.005)
-    assert stats["hit"] == pytest.approx(0.31, abs=0.01)
+def test_las_cifras_de_la_documentacion_son_las_reales(exact_stats) -> None:  # noqa: ANN001
+    stats = exact_stats
+    assert stats["line"] == pytest.approx(0.875, abs=0.005)
+    assert stats["hit"] == pytest.approx(0.32, abs=0.01)
     # Dos de cada tres premios devuelven menos de lo apostado.
     assert stats["ldw"] / stats["hit"] == pytest.approx(2 / 3, abs=0.03)
-    assert 1 / stats["jackpot"] == pytest.approx(14_400, rel=0.01)
-    assert 1 / stats["free"] == pytest.approx(133, rel=0.02)
+    assert 1 / stats["jackpot"] == pytest.approx(20_000, rel=0.03)
+    assert 1 / stats["free"] == pytest.approx(125, rel=0.02)
+    assert stats["near"] == pytest.approx(0.21, abs=0.01)
+    assert stats["respin"] == pytest.approx(0.205, abs=0.01)
+    assert 1 / stats["epic"] == pytest.approx(2_500, rel=0.1)
+    assert 1 / stats["mega"] == pytest.approx(450, rel=0.1)
+    assert 1 / stats["big"] == pytest.approx(17, rel=0.1)
 
 
 def test_el_retorno_total_es_el_de_un_casino_de_verdad() -> None:
-    """Línea + giros gratis + máquina caliente ≈ 91 %; con el bote, ≈ 94 %.
+    """Línea + giros gratis + máquina caliente ≈ 96,5 %; con el bote, ≈ 99,5 %.
 
     Se simula con apuesta 100 para que el medio premio no pierda decimales.
     """
     machine = SlotMachine(random.Random(2026).randrange)
     stake, paid, returned, heat, free = 100, 0, 0, 0, 0
-    for _ in range(400_000):
+    for _ in range(600_000):
         is_free = free > 0
         if is_free:
             free -= 1
@@ -194,8 +275,81 @@ def test_el_retorno_total_es_el_de_un_casino_de_verdad() -> None:
         if spin.triggers_free_spins:
             free += FREE_SPINS
     house = returned / paid
-    assert 0.88 < house < 0.94
-    assert 0.91 < house + POT_SHARE_PERCENT / 100 < 0.97
+    assert 0.95 < house < 0.98
+    assert 0.98 < house + POT_SHARE_PERCENT / 100 < 1.0
+
+
+# -- Re-giro ------------------------------------------------------------------------------
+
+
+def test_el_re_giro_cambia_solo_el_tercer_rodillo() -> None:
+    spin = spin_at(find_stops(lambda s: s.teaser is not None))
+    again = SlotMachine(random.Random(3).randrange).respin(spin)
+    assert again.stops[:2] == spin.stops[:2]
+    assert not again.triggers_free_spins
+
+
+def test_el_re_giro_nunca_sale_a_cuenta(exact_stats) -> None:  # noqa: ANN001
+    """Precio ≥ valor esperado / `RESPIN_RTP` en cada casi-premio, también con el bote lleno."""
+    for stops in ALL_STOPS:
+        spin = spin_at(stops)
+        if spin.teaser is None:
+            continue
+        halves, jackpot = respin_odds(spin)
+        for pot in (0, 5_000, 50_000):
+            expected = 100 * halves / 2 + jackpot * pot
+            assert respin_price(spin, 100, pot) * RESPIN_RTP >= expected - 1e-9
+
+
+def test_con_dos_comodines_el_re_giro_paga_el_bote_en_el_precio() -> None:
+    spin = spin_at(find_stops(lambda s: s.line[:2] == (WILD, WILD) and s.teaser == WILD))
+    assert respin_price(spin, 100, 50_000) > respin_price(spin, 100, 0)
+
+
+# -- Celebraciones, calor y giro diario --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("won", "tier"),
+    [
+        (0, None),
+        (BIG_WIN * 100 - 1, None),
+        (BIG_WIN * 100, WinTier.BIG),
+        (MEGA_WIN * 100, WinTier.MEGA),
+        (EPIC_WIN * 100, WinTier.EPIC),
+    ],
+)
+def test_nivel_de_celebracion(won: int, tier: str | None) -> None:
+    assert win_tier(won, 100) == tier
+    assert win_tier(won, 0) is None
+
+
+def test_el_calor_se_enfria_un_punto_cada_rato_sin_jugar() -> None:
+    assert decayed_heat(4, HEAT_DECAY_SECONDS - 1) == 4
+    assert decayed_heat(4, HEAT_DECAY_SECONDS) == 3
+    assert decayed_heat(4, 10 * HEAT_DECAY_SECONDS) == 0
+    assert decayed_heat(4, -50) == 4
+
+
+def test_la_racha_del_giro_diario_sigue_solo_si_fue_ayer() -> None:
+    today = date(2026, 10, 9)
+    assert next_daily_streak(None, today, 0) == 1
+    assert next_daily_streak(date(2026, 10, 8), today, 3) == 4
+    assert next_daily_streak(date(2026, 10, 7), today, 3) == 1
+
+
+def test_el_giro_diario_sube_con_la_racha_hasta_el_tope() -> None:
+    assert daily_stake(1) == DAILY_STAKE
+    assert daily_stake(3) == 3 * DAILY_STAKE
+    assert daily_stake(99) == DAILY_STREAK_MAX * DAILY_STAKE
+
+
+def test_el_cartel_de_premios_a_la_apuesta_actual() -> None:
+    rows = dict(prize_table(200))
+    assert rows[SYMBOLS[WILD].emoji * 3] is None
+    assert rows[SYMBOLS[SEVEN].emoji * 3] == 200 * THREE_OF_A_KIND[SEVEN]
+    assert rows[f"{SYMBOLS[CHERRY].emoji}{SYMBOLS[CHERRY].emoji}❔"] == 200 * TWO_CHERRIES
+    assert rows[f"{SYMBOLS[CHERRY].emoji}❔❔"] == 100
 
 
 # -- Dinero y calor -------------------------------------------------------------------
