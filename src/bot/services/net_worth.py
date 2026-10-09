@@ -1,6 +1,6 @@
 """Patrimonio de cada miembro: todo lo que tiene, sumado y valorado.
 
-Lo usan `patrimonio [miembro]` (el de uno, con el detalle) y `fortunas` (la
+Lo usan la sección 🏰 Patrimonio de `perfil` (el de uno, con el detalle) y `fortunas` (la
 lista de todos). No mueve dinero ni toca Discord: recibe lo que leen los
 repositorios y devuelve números y textos.
 

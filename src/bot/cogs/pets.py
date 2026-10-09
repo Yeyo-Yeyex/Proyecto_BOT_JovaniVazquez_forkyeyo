@@ -2,7 +2,7 @@
 
 - `mascota [miembro]` abre el panel de mascotas de alguien. Su dueño elige
   cuál ver, la acaricia, juega con ella, le da de comer lo que tenga en la
-  `mochila`, le pone nombre y elige cuál le acompaña (la **activa**). Los
+  mochila, le pone nombre y elige cuál le acompaña (la **activa**). Los
   demás solo miran. Reglas en `bot.services.pets`; especies en
   `bot.services.pets_catalog`.
 - Las mascotas se adoptan en la `tienda` (pestaña 🐾 Mascotas) o aparecen

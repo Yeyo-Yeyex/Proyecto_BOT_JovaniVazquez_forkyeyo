@@ -764,3 +764,39 @@ async def test_la_beernight_apunta_sus_logros_y_saca_la_mascota_con_el_bot_real(
         assert line is not None and "**Toby**" in line
     finally:
         await client.close()
+
+
+async def test_el_perfil_junta_todas_las_secciones_con_el_bot_real(tmp_path: Path) -> None:
+    """`perfil` pide cada sección a su cog: con el bot real, ninguna sale «no disponible»."""
+    client = await load_bot(tmp_path)
+    await client.lottery.initialize()
+    await client.pets.initialize()
+    try:
+        perfil = client.get_cog("Perfil")
+        module = importer("Perfil", client)
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        owner.guild = guild
+        guild.get_member = MagicMock(return_value=owner)
+        guild.get_role = MagicMock(return_value=None)
+
+        result = await perfil.open(guild=guild, author=owner, target=None, channel=None)
+
+        assert not isinstance(result, str)
+        summary, view = result
+        assert "Diego" in summary.title
+        for marker in ("📊", "🏰", "🪏", "🏆", "🔥", "🎒"):
+            assert marker in summary.description, marker
+        for key in module.SECTION_KEYS:
+            embed = await perfil.section(view, key)
+            assert "no está disponible" not in (embed.description or ""), key
+        # Abrir el perfil propio cuenta para sus logros, en el cog de logros de verdad.
+        profile = await client.get_cog("Achievements").fresh_profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["perfil_views"] == 1
+        assert profile.stats["perfil_seen_resumen"] == 1
+    finally:
+        await client.close()

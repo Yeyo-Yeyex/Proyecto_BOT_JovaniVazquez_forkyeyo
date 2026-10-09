@@ -66,15 +66,15 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | ⚙️ General | `ayuda` · `latencia` |
+  | 👤 Perfil | `perfil [miembro]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
-  | 📊 Niveles | `nivel [miembro]` · `ranking [pagina]` |
+  | 📊 Niveles | `ranking [pagina]` |
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
-  | 🏆 Logros | `logros [miembro]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `mochila [miembro]` · `tienda` |
+  | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `patrimonio [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -202,7 +202,7 @@ python -m bot
     comen). Lo que un administrador retire no vuelve solo. Las reglas para
     añadir artículos (tipo por lo que hace, pasillo por su tema) están en la
     Biblia.
-  - Objetos que se usan (59): desde la `mochila`, contra alguien o sin más:
+  - Objetos que se usan (59): desde la mochila, contra alguien o sin más:
     huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
     Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
     bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
@@ -210,8 +210,9 @@ python -m bot
     coleccionable al azar). El resultado sale en el canal y menciona a quien
     lo recibe. Los de un solo uso se gastan; el resto tiene una espera entre
     usos. Usar no mueve dinero.
-  - `mochila [miembro]` enseña lo que tiene alguien; su dueño puede ponerse y
-    quitarse los roles que compró para siempre y usar sus objetos.
+  - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
+    enseña lo que tiene alguien; su dueño puede ponerse y quitarse los roles
+    que compró para siempre y usar sus objetos.
 - **Mascotas** (`mascota [miembro]`): 28 especies con su personalidad, del
   gato que te tira la ficha de la mesa a Perro Sanxe (una en todo el
   servidor). 22 se adoptan en la tienda (perros, gatos y hurones con «tasa de
@@ -457,7 +458,19 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.936 logros en 39 categorías. El menú
+- **Perfil** (`perfil [miembro]`): todo lo de un miembro en un mismo menú.
+  Un desplegable cambia de sección en el mismo mensaje: 📋 Resumen (un
+  renglón de cada cosa), 📊 Nivel (nivel, XP y racha de días escribiendo),
+  🏰 Patrimonio (activos y el Patrimonio del lunes), 🪏 Trabajo (contrato y
+  vida laboral; para fichar sigue estando `pala`), 🏆 Logros, 🔥 Rachas (la
+  vigente y los récords de todas las rachas que cuentan los logros) y 🎒
+  Objetos (la mochila; su botón la abre para usar objetos y ponerse roles).
+  Sustituye a `nivel`, `patrimonio`, `logros` y `mochila`. Solo lo maneja
+  quien lo abre. Logros en 🏆 Coleccionista: *¿Quién soy yo?*, *Selfie
+  diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
+  *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
+  secretos.
+- **Logros** (sección 🏆 de `perfil`): 1.936 logros en 39 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -470,10 +483,11 @@ python -m bot
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
   2.500 o 10.000 Y$ brutos) con retención de IRPF, y se anuncia en el canal
-  donde se consiguió. `logros` enseña un resumen (total, puntos, últimos
+  donde se consiguió. La sección 🏆 de `perfil` enseña un resumen (total, puntos, últimos
   conseguidos, los más cercanos y el más raro), un menú por categorías con
   el progreso de cada uno y el porcentaje del servidor que lo tiene (las
-  largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos.
+  largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos; el botón
+  🏆 de la sección los abre en un mensaje aparte.
   - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
     minuto en una sola escritura por servidor. Del mensaje solo se miran
     propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.
@@ -778,7 +792,8 @@ src/bot/
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
-│   ├── achievements.py  # Logros: seguimiento, premios, avisos y `logros`
+│   ├── achievements.py  # Logros: seguimiento, premios, avisos y su vista
+│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas y objetos
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .

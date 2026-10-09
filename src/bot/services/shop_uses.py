@@ -1,4 +1,4 @@
-"""Lo que hacen los objetos de la tienda al usarlos desde la `mochila`.
+"""Lo que hacen los objetos de la tienda al usarlos desde la mochila.
 
 Sin Discord ni base de datos: aquí solo se decide qué pasa y qué se cuenta.
 El cog (`bot.cogs.shop`) se encarga de gastar la unidad, enseñar el

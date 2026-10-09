@@ -47,7 +47,7 @@ class Species:
         aisle: Pasillo del colmado (por tema, como cualquier artículo).
         rarity: Una de `RARITIES`.
         price: Tasa de adopción o precio, sin IGIC. Las que aparecen solas
-            lo usan como valor para `patrimonio`.
+            lo usan como valor para el patrimonio.
         personality: Una línea que la describe en `mascota`.
         description: Ficha del escaparate (como mucho 200 caracteres).
         sound: El ruido que hace (`{sound}` en las frases).

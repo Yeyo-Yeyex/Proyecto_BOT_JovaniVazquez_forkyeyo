@@ -1,7 +1,8 @@
-"""Pruebas de `/nivel`, `/ranking` y sus equivalentes de texto (`.nivel`, `.ranking`)."""
+"""Pruebas de la sección de nivel de `perfil` y de `/ranking` (también `.ranking`)."""
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,6 +10,7 @@ import discord
 import pytest
 
 from bot.cogs.message_stats import MessageStats
+from bot.services.levels import MemberActivity, local_day
 
 
 def make_seeded_repository(**overrides: object) -> MagicMock:
@@ -57,50 +59,37 @@ def make_member(display_name: str = "Miembro de prueba", member_id: int = 99) ->
 
 
 @pytest.mark.asyncio
-async def test_nivel_text_usa_al_autor_cuando_no_se_indica_miembro() -> None:
-    """`.nivel` sin argumentos consulta el nivel de quien lo invoca."""
-    repository = make_seeded_repository()
+async def test_seccion_de_nivel_ensena_nivel_xp_y_racha() -> None:
+    """La sección 📊 Nivel de `perfil` lee XP y racha del miembro indicado."""
+    today = local_day(time.time()).isoformat()
+    repository = make_seeded_repository(
+        member_activity=AsyncMock(
+            return_value=MemberActivity(total_xp=250, last_active_day=today, streak_days=4)
+        )
+    )
     cog = MessageStats(MagicMock(), repository)
-    autor = make_member("Autor del mensaje", member_id=42)
-    ctx = make_context(member=autor)
-
-    await cog.level_text.callback(cog, ctx, None)
-
-    repository.member_xp.assert_awaited_once_with(1, 42)
-    ctx.send.assert_awaited_once()
-    message = ctx.send.await_args.args[0]
-    assert "Autor del mensaje" in message
-
-
-@pytest.mark.asyncio
-async def test_nivel_text_admite_consultar_a_otro_miembro() -> None:
-    """`.nivel @otro` consulta el nivel del miembro indicado, no del autor."""
-    repository = make_seeded_repository()
-    cog = MessageStats(MagicMock(), repository)
-    autor = make_member("Autor", member_id=1)
     otro = make_member("Otra persona", member_id=77)
-    ctx = make_context(member=autor)
 
-    await cog.level_text.callback(cog, ctx, otro)
+    embed = await cog.level_embed(SimpleNamespace(id=1), otro)
 
-    repository.member_xp.assert_awaited_once_with(1, 77)
-    message = ctx.send.await_args.args[0]
-    assert "Otra persona" in message
+    repository.member_activity.assert_awaited_once_with(1, 77)
+    assert "Otra persona" in embed.title
+    assert "Nivel 1" in embed.description
+    assert "50/200 XP" in embed.description
+    assert "**4** días seguidos" in embed.fields[0].value
 
 
 @pytest.mark.asyncio
-async def test_nivel_avisa_si_los_niveles_no_estan_inicializados() -> None:
-    """`/nivel` informa con claridad cuando el servidor aún no tiene historial de niveles."""
+async def test_seccion_de_nivel_avisa_si_los_niveles_no_estan_inicializados() -> None:
+    """Sin historial de niveles, la sección lo dice y explica cómo encenderlos."""
     repository = make_seeded_repository()
     repository.level_settings = AsyncMock(return_value=None)
     cog = MessageStats(MagicMock(), repository)
-    interaction = make_interaction(member=make_member())
 
-    await cog.level.callback(cog, interaction, None)
+    embed = await cog.level_embed(SimpleNamespace(id=1), make_member())
 
-    message = interaction.response.send_message.await_args.kwargs["content"]
-    assert "apagados" in message
-    assert "/niveles" in message
+    assert "apagados" in embed.description
+    assert "/niveles" in embed.description
 
 
 @pytest.mark.asyncio

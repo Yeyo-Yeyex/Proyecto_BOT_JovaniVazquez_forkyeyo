@@ -2,7 +2,7 @@
 
 Quién tiene qué mascota no se guarda aquí: una mascota es una fila de la
 mochila de la tienda (`shop_inventory`, tipo `mascota`), igual que cualquier
-compra, así que la venta, el IGIC y `patrimonio` siguen funcionando sin
+compra, así que la venta, el IGIC y el patrimonio siguen funcionando sin
 cambios. Este repositorio guarda lo que la tienda no sabe:
 
 - `pets`: el estado de cada mascota, con el mismo `id` que su fila de la

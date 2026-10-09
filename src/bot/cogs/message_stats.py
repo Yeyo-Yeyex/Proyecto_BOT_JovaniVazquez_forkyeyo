@@ -13,6 +13,9 @@ Nada de esto corre hasta que un administrador enciende los niveles con el
 comando `niveles` (cog `Admin`), que usa `start_import`, `activate` y
 `overview` de este cog. La importación del historial convierte cada mensaje
 antiguo en XP y, la primera vez que termina, enciende los niveles sola.
+
+El nivel de cada uno se consulta en la sección 📊 Nivel de `perfil`
+(`level_embed`); aquí queda `ranking`.
 """
 
 from __future__ import annotations
@@ -52,9 +55,12 @@ from bot.services.levels import (
     MIN_VOICE_XP,
     MemberActivity,
     calculate_level_progress,
+    current_streak,
+    local_day,
     message_award,
     reaction_award,
     rewards_between,
+    streak_multiplier,
     voice_award,
 )
 from bot.services.pets import Event, Moment
@@ -66,6 +72,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RANK_MEDALS = ("🥇", "🥈", "🥉")
+LEVEL_COLOR = discord.Color.from_rgb(88, 101, 242)
+#: Casillas de la barra de avance de nivel en `perfil`.
+LEVEL_BAR = 16
 NOT_READY = (
     "Los niveles están apagados en este servidor. "
     "Un administrador los enciende con `/niveles` (o `.niveles`)."
@@ -161,7 +170,7 @@ def _describe_import(status: ImportStatus | None, *, running: bool) -> str:
 
 IMPORT_DONE_LINES = (
     "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. "
-    "Mirad dónde estáis con `.nivel` y `.ranking`, mi gente.",
+    "Mirad dónde estáis con `.perfil` y `.ranking`, mi gente.",
     "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están "
     "encendidos; a partir de ya, cada mensaje y cada rato en voz suma. "
     "`.ranking` pa' ver quién manda.",
@@ -496,57 +505,41 @@ class MessageStats(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    async def _level_impl(
-        self,
-        responder: CommandResponder,
-        miembro: discord.Member | None,
-    ) -> None:
-        """Lógica compartida entre `/nivel` y `.nivel`."""
-        guild = responder.guild
-        if guild is None:
-            await responder.send_error("Este comando solo está disponible dentro de un servidor.")
-            return
+    async def level_embed(self, guild: discord.Guild, member: discord.abc.User) -> discord.Embed:
+        """Sección 📊 Nivel de `perfil`: nivel, XP, avance y racha de días.
 
-        member = miembro or responder.member
-        if member is None:
-            await responder.send_error("No se pudo identificar a quién consultar.")
-            return
-
+        Si los niveles están apagados en el servidor, lo dice en el embed.
+        """
+        name = discord.utils.escape_markdown(member.display_name)
+        embed = discord.Embed(title=f"📊 Nivel de {name}", color=LEVEL_COLOR)
         settings = await self.repository.level_settings(guild.id)
         if settings is None or not settings.historical_seeded:
-            await responder.send_error(NOT_READY)
-            return
-
-        total_xp = await self.repository.member_xp(guild.id, member.id)
-        progress = calculate_level_progress(total_xp)
-        await responder.send(
-            f"**{discord.utils.escape_markdown(member.display_name)}** — "
-            f"nivel **{progress.level}**, {total_xp:,} XP. "
-            f"Progreso: {progress.xp_in_level:,}/{progress.xp_for_next_level:,} XP "
-            "hacia el siguiente nivel.",
-            ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
+            embed.description = NOT_READY
+            return embed
+        activity = await self.repository.member_activity(guild.id, member.id)
+        progress = calculate_level_progress(activity.total_xp)
+        streak = current_streak(activity, local_day(time.time()))
+        bonus = round((streak_multiplier(streak) - 1) * 100)
+        filled = progress.xp_in_level * LEVEL_BAR // max(1, progress.xp_for_next_level)
+        embed.description = (
+            f"# Nivel {progress.level}\n"
+            f"`{'█' * filled}{'░' * (LEVEL_BAR - filled)}` "
+            + f"{progress.xp_in_level:,}/{progress.xp_for_next_level:,} XP hacia el "
+            f"{progress.level + 1}\n".replace(",", ".")
+            + f"XP total: **{activity.total_xp:,}**".replace(",", ".")
         )
-
-    @app_commands.command(name="nivel", description="Consulta tu nivel o el de otro miembro.")
-    @app_commands.guild_only()
-    async def level(
-        self,
-        interaction: discord.Interaction,
-        miembro: discord.Member | None = None,
-    ) -> None:
-        """Muestra nivel, XP total y avance hacia el siguiente nivel."""
-        await self._level_impl(InteractionResponder(interaction), miembro)
-
-    @commands.command(name="nivel")
-    @commands.guild_only()
-    async def level_text(
-        self,
-        ctx: commands.Context,
-        miembro: discord.Member | None = None,
-    ) -> None:
-        """Versión de texto (`.nivel`) de `/nivel`."""
-        await self._level_impl(ContextResponder(ctx), miembro)
+        embed.add_field(
+            name="🔥 Racha",
+            value=(
+                f"**{streak}** días seguidos escribiendo"
+                + (f" · +{bonus} % de XP" if bonus else "")
+                if streak
+                else "Sin racha: escribe hoy y empieza una."
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="La racha sube un día por cada día con mensajes (hora canaria).")
+        return embed
 
     async def _ranking_impl(self, responder: CommandResponder, pagina: int) -> None:
         """Lógica compartida entre `/ranking` y `.ranking`."""

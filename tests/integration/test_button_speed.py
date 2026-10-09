@@ -288,6 +288,34 @@ async def press_news(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def perfil_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    module = module_of(client, "Perfil")
+    return module.PerfilView(
+        client.get_cog("Perfil"), guild=owner.guild, owner=owner, target=owner, channel=None
+    )
+
+
+async def press_perfil_section(client: BotClient, owner: MagicMock) -> Click:
+    view = perfil_view(client, owner)
+    select = view.children[0]
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["rachas"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["rachas"]}
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_perfil_backpack(client: BotClient, owner: MagicMock) -> Click:
+    view = perfil_view(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._backpack(interaction)
+
+    return click
+
+
 CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
@@ -303,6 +331,8 @@ CASES: dict[str, Press] = {
     "tienda: comprar": press_checkout,
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
+    "perfil: cambiar de sección": press_perfil_section,
+    "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
     "lista: tachar": press_todo,
     "novedades: leído": press_news,

@@ -320,6 +320,8 @@ PRODUCED_STATS = {
     "babel_phrases", "babel_renames", "babel_channels", "babel_full", "babel_lost",
     # `logros` y su ranking, y las virtuales de Coleccionista (meta_stats)
     "logros_views", "logros_others", "logros_ranking",
+    # `perfil` (cogs/perfil.py) y su recuento de secciones (with_derived)
+    "perfil_views", "perfil_others", "perfil_bot", "perfil_night", "perfil_sections",
     *meta_stats([]).keys(),
     # Segunda tanda: más estadísticas del casino, loterías, lista y derivadas
     "roulette_dozen_wins", "roulette_half_wins", "roulette_pyrrhic", "roulette_cover_max",

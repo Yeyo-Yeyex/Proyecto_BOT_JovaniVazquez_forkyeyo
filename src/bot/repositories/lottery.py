@@ -410,7 +410,7 @@ class LotteryRepository:
         return await self._run(self._read, read)
 
     async def open_stakes(self, guild_id: int) -> dict[int, int]:
-        """Lo pagado por cada miembro en boletos de sorteos aún sin celebrar (`patrimonio`)."""
+        """Lo pagado por cada miembro en boletos de sorteos sin celebrar (el patrimonio)."""
 
         def read(connection: sqlite3.Connection) -> dict[int, int]:
             rows = connection.execute(

@@ -714,8 +714,6 @@ def test_las_personas_del_servidor_no_cuentan_bots() -> None:
 async def test_el_sorteo_usa_las_probabilidades_del_servidor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import bot.cogs.lottery as lottery_module
-
     clock = Clock()
     economy, lottery = await make(tmp_path, clock)
     pick = random_pick(PRIMITIVA, random.Random(2))
@@ -723,8 +721,10 @@ async def test_el_sorteo_usa_las_probabilidades_del_servidor(
     cog = make_cog(economy, lottery, clock)
     monkeypatch.setattr(cog, "members", lambda guild_id: 3)
     # Un bote de 1 entre 1: el bombo se carga siempre con la apuesta de Alice.
-    monkeypatch.setattr(
-        lottery_module,
+    # Se cambia en los globales del propio `settle`: si otra prueba ha cargado el
+    # bot real, `bot.cogs.lottery` de `sys.modules` ya no es el módulo de `Loteria`.
+    monkeypatch.setitem(
+        Loteria.settle.__globals__,
         "server_odds",
         lambda game, members: {**real_odds(game), "especial": 1.0},
     )

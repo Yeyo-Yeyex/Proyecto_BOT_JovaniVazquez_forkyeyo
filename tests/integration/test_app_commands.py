@@ -18,7 +18,6 @@ EXPECTED_COMMANDS = {
     "latencia",
     "entrada",
     "ayuda",
-    "nivel",
     "ranking",
     "poner",
     "pausar",
@@ -42,10 +41,8 @@ EXPECTED_COMMANDS = {
     "hongkong",
     "saldo",
     "imv",
-    "logros",
     "hacienda",
     "renta",
-    "patrimonio",
     "fortunas",
     "apuestas",
     "porra",
@@ -56,8 +53,8 @@ EXPECTED_COMMANDS = {
     "donar",
     "tienda",
     "mascota",
-    "mochila",
     "lista",
+    "perfil",
     "pala",
     "beernight",
 }
@@ -115,7 +112,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # Única excepción acordada: `.blackjack` con su atajo `.bj`.
             aliases = {c.name: c.aliases for c in client.commands if c.aliases}
             assert aliases == {"blackjack": ["bj"]}
-            long_names = {"blackjack", "patrimonio", "beernight"}
+            long_names = {"blackjack", "beernight"}
             assert all(
                 len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects - long_names
             )
@@ -154,15 +151,15 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
 
             assert [field.name for field in embed.fields] == [
                 "⚙️ General (2)",
+                "👤 Perfil (1)",
                 "🎵 Música (9)",
-                "📊 Niveles (2)",
-                "🎰 Casino (20)",
-                "🛍️ Tienda (3)",
+                "📊 Niveles (1)",
+                "🎰 Casino (19)",
+                "🛍️ Tienda (2)",
                 "🪏 Trabajo (1)",
                 "🎂 Cumpleaños (2)",
                 "📝 Lista (1)",
                 "🍻 Beernight (1)",
-                "🏆 Logros (1)",
                 "🔔 Entradas (1)",
                 "🎨 Imagen (2)",
                 "🎨 Imagen · avatar (46)",
