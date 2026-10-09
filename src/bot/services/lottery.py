@@ -45,8 +45,19 @@ Lotería Nacional (premios fijos por décimo, el 70 % de la emisión):
 Rascas de la ONCE (instantáneos, con la tabla de premios de su emisión):
 **X10** (2 €, devuelve el 64 %) y **7 y Media** (1 €, devuelve el 59 %).
 
-Las probabilidades son las reales: lo que más toca son reintegros y premios
-bajos, y el gordo cae de vez en cuando.
+En la Nacional y los rascas las probabilidades son las reales. En los juegos
+de bote se ajustan al tamaño del servidor (`server_odds`): con las reales (1
+entre 140 millones el bote de la Primitiva) en un servidor de decenas de
+personas no caería nunca. Se fija que el bote caiga de media una vez cada
+`JACKPOT_PERIOD_DAYS` si cada miembro juega una apuesta por sorteo, y las
+categorías intermedias se acercan en la misma escala (logarítmica), así que
+el orden de las categorías se mantiene: la última sigue con su probabilidad
+real y el bote sigue siendo lo más difícil. Las bolas salen igual que
+siempre; lo que cambia es que, a veces, el bombo se «carga» con la apuesta
+de alguien (`draw_result`). Como los premios salen del fondo del sorteo, que
+toque más a menudo no crea dinero: reparte lo mismo entre menos sorteos. El
+bote garantizado del Estado se encoge en la misma proporción
+(`guarantee_for`), para que el Estado no pague 17 M€ cada mes.
 """
 
 from __future__ import annotations
@@ -71,6 +82,9 @@ GUARANTEE_SHARE = 0.25
 MAX_PER_DRAW = 100
 #: Números de la Lotería Nacional: del 00000 al 99999.
 NACIONAL_NUMBERS = 100_000
+#: Si cada miembro juega una apuesta en cada sorteo, el bote de un juego cae de
+#: media una vez en este plazo (ver `server_odds`).
+JACKPOT_PERIOD_DAYS = 30
 
 
 def eur(amount: float) -> int:
@@ -459,6 +473,165 @@ GAMES: tuple[Game, ...] = (
 GAME_BY_KEY: dict[str, Game] = {g.key: g for g in GAMES}
 
 
+# -- Probabilidades del servidor ------------------------------------------------------
+
+
+def real_odds(game: Game) -> dict[str, float]:
+    """`N` de "1 entre N" de cada categoría de un juego de bote, con las reglas reales."""
+    return {c.key: game.combinations / c.ways for c in game.categories}
+
+
+def draws_per_period(game: Game) -> float:
+    """Sorteos de `game` en `JACKPOT_PERIOD_DAYS` días."""
+    return len(game.weekly) * JACKPOT_PERIOD_DAYS / 7
+
+
+def jackpot_scale(game: Game, members: int) -> float:
+    """Cuánto más fácil es el bote en un servidor de `members` personas (1 = real).
+
+    El "1 entre N" del bote pasa a ser `members × sorteos del periodo`: si cada
+    uno juega una apuesta por sorteo, cae una vez por periodo. Nunca es más
+    difícil que el real ni más fácil que la categoría más baja.
+    """
+    real = real_odds(game)
+    return _jackpot_target(game, members) / real[_jackpot_key(game)]
+
+
+def _jackpot_key(game: Game) -> str:
+    return next(c.key for c in game.categories if c.jackpot)
+
+
+def _jackpot_target(game: Game, members: int) -> float:
+    """`N` de "1 entre N" del bote en un servidor de `members` personas."""
+    real = real_odds(game)
+    top, bottom = real[_jackpot_key(game)], min(real.values())
+    return min(top, max(bottom, max(1, members) * draws_per_period(game)))
+
+
+def _interpolate(real: Mapping[str, float], anchor: float, top: float, target: float) -> dict:
+    """Acerca al bote las categorías por encima de `anchor`, en escala logarítmica."""
+    if target >= top:
+        return dict(real)
+    if anchor >= target:
+        return {key: min(odds, target) for key, odds in real.items()}
+    power = math.log(target / anchor) / math.log(top / anchor)
+    return {key: odds if odds <= anchor else anchor * (odds / anchor) ** power
+            for key, odds in real.items()}  # fmt: skip
+
+
+def _extra_mass(real: Mapping[str, float], odds: Mapping[str, float]) -> float:
+    """Probabilidad que hay que añadir por apuesta, sumando todas las categorías."""
+    return sum(max(0.0, 1 / odds[key] - 1 / real[key]) for key in real)
+
+
+def server_odds(game: Game, members: int) -> dict[str, float]:
+    """`N` de "1 entre N" de cada categoría en un servidor de `members` personas.
+
+    El bote baja a `members × sorteos del periodo` (`jackpot_scale`). Las
+    categorías por encima de un ancla se interpolan en escala logarítmica
+    entre el ancla y el bote: una que en la vida real está a medio camino, en
+    órdenes de magnitud, sigue a medio camino. Así ninguna adelanta a otra
+    superior, el bote sigue siendo lo más difícil y las de abajo se quedan
+    con su probabilidad real.
+
+    El ancla sale de un límite: el bombo solo puede regalar una categoría por
+    sorteo (`draw_result`), así que, si juega todo el servidor, lo regalado
+    no puede pasar de un premio por sorteo. Se empieza anclando en la
+    categoría más baja y, si no cabe, se sube el ancla hasta que cabe; si ni
+    con todas las de arriba igualadas al bote cabe (Gordo y Euromillones en
+    servidores pequeños, con muchas categorías), se quedan igualadas y, con
+    todo el servidor jugando, el bote cae algo menos de una vez al mes.
+    """
+    real = real_odds(game)
+    top, bottom = real[_jackpot_key(game)], min(real.values())
+    target = _jackpot_target(game, members)
+    budget = 1 / max(1, members)
+    odds = _interpolate(real, bottom, top, target)
+    if _extra_mass(real, odds) <= budget:
+        return odds
+    low, high = math.log(bottom), math.log(target)
+    for _ in range(60):
+        middle = (low + high) / 2
+        if _extra_mass(real, _interpolate(real, math.exp(middle), top, target)) > budget:
+            low = middle
+        else:
+            high = middle
+    return _interpolate(real, math.exp(high), top, target)
+
+
+def _forced_category(
+    game: Game, tickets: int, odds: Mapping[str, float], rng: random.Random
+) -> str | None:
+    """Categoría que el bombo "regala" a una apuesta este sorteo, o `None`.
+
+    Cada apuesta debe ganar la categoría `c` con probabilidad `1 / odds[c]`.
+    El azar de las bolas ya da `1 / real[c]`; lo que falta (`extra`) se reparte
+    cargando el bombo con una apuesta vendida. Si entre todas las apuestas se
+    pasa de 1 (muchas apuestas para un servidor pequeño), se regala una
+    categoría en cada sorteo y la probabilidad por apuesta baja un poco.
+    """
+    real = real_odds(game)
+    extra = {key: max(0.0, 1 / odds[key] - 1 / real[key]) for key in real}
+    total = tickets * sum(extra.values())
+    if total <= 0:
+        return None
+    roll = rng.random()
+    if roll >= min(1.0, total):
+        return None
+    # Repartir el mismo tiro entre categorías, en proporción a lo que le falta a cada una.
+    point = roll / min(1.0, total) * sum(extra.values())
+    for key, value in extra.items():
+        if point < value:
+            return key
+        point -= value
+    return max(extra, key=extra.__getitem__)
+
+
+def _hits(pick: Pick, top: int, hits: int, count: int, rng: random.Random) -> list[int]:
+    """`count` bolas de `1..top` de las que exactamente `hits` están en la apuesta."""
+    chosen = rng.sample(pick.numbers, hits)
+    others = [n for n in range(1, top + 1) if n not in pick.numbers]
+    return sorted(chosen + rng.sample(others, count - hits))
+
+
+def result_for(game: Game, pick: Pick, key: str, rng: random.Random) -> dict:
+    """Una combinación ganadora con la que `pick` gana justo la categoría `key`.
+
+    Las bolas que no tienen que coincidir salen al azar, como en un sorteo.
+    """
+    if game.kind is Kind.LOTTO:
+        hits = {"especial": 6, "1": 6, "2": 5, "3": 5, "4": 4, "5": 3}[key]
+        numbers = _hits(pick, 49, hits, 6, rng)
+        missing = [n for n in pick.numbers if n not in numbers]
+        outside = [n for n in range(1, 50) if n not in numbers and n not in pick.numbers]
+        comp = rng.choice(missing) if key == "2" else rng.choice(outside)
+        reintegro = rng.randint(0, 9)
+        especial = any(c.key == "especial" for c in game.categories)
+        if key == "especial":
+            reintegro = pick.extra[0]
+        elif key == "1" and especial:
+            reintegro = rng.choice([d for d in range(10) if d != pick.extra[0]])
+        return {"numbers": numbers, "comp": comp, "reintegro": reintegro}
+    if game.kind is Kind.GORDO:
+        order = {"1": (5, True), "2": (5, False), "3": (4, True), "4": (4, False),
+                 "5": (3, True), "6": (3, False), "7": (2, True), "8": (2, False)}  # fmt: skip
+        hits, clave = order[key]
+        own = pick.extra[0]
+        return {
+            "numbers": _hits(pick, 54, hits, 5, rng),
+            "clave": own if clave else rng.choice([d for d in range(10) if d != own]),
+        }
+    if game.kind is Kind.EURO:
+        hits, stars, _ = _EURO_TABLE[int(key) - 1]
+        own = list(pick.extra)
+        other_stars = [s for s in range(1, 13) if s not in own]
+        return {
+            "numbers": _hits(pick, 50, hits, 5, rng),
+            "stars": sorted(rng.sample(own, stars) + rng.sample(other_stars, 2 - stars)),
+        }
+    raise ValueError(f"{game.key} no es un juego de bote")
+
+
 # -- Calendario -------------------------------------------------------------------------
 
 
@@ -608,8 +781,30 @@ def format_pick(game: Game, pick: Pick) -> str:
 # -- Sorteos ----------------------------------------------------------------------------
 
 
-def draw_result(game: Game, rng: random.Random) -> dict:
-    """Saca las bolas de un sorteo. El resultado se guarda tal cual (JSON)."""
+def draw_result(
+    game: Game,
+    rng: random.Random,
+    *,
+    tickets: Sequence[tuple[Pick, int]] = (),
+    odds: Mapping[str, float] | None = None,
+) -> dict:
+    """Saca las bolas de un sorteo. El resultado se guarda tal cual (JSON).
+
+    Args:
+        tickets: `(apuesta, cuántas)` de lo vendido, para los juegos de bote.
+        odds: Probabilidades del servidor (`server_odds`). Sin ellas, o sin
+            apuestas, las bolas salen con las probabilidades reales.
+    """
+    if odds is not None and tickets and game.categories:
+        total = sum(quantity for _, quantity in tickets)
+        key = _forced_category(game, total, odds, rng)
+        if key is not None:
+            # Cada apuesta tiene las mismas papeletas: se elige por unidades.
+            point = rng.randrange(total)
+            for pick, quantity in tickets:
+                if point < quantity:
+                    return result_for(game, pick, key, rng)
+                point -= quantity
     if game.kind is Kind.LOTTO:
         balls = rng.sample(range(1, 50), 7)
         return {"numbers": sorted(balls[:6]), "comp": balls[6], "reintegro": rng.randint(0, 9)}
@@ -869,11 +1064,19 @@ def jackpot_estimate(game: Game, *, sales: int, carry: int, guarantee: int) -> i
     return max(math.floor(carry + share), guarantee)
 
 
-def guarantee_for(game: Game, state_balance: int) -> int:
-    """Bote mínimo que garantiza ahora el Estado: el real, si le llega el dinero."""
+def guarantee_for(game: Game, state_balance: int, members: int | None = None) -> int:
+    """Bote mínimo que garantiza ahora el Estado, si le llega el dinero.
+
+    Con `members`, el real se encoge con `jackpot_scale`: el mínimo de la vida
+    real está pensado para un bote que cae cada varios meses entre millones
+    de jugadores; si aquí cae cada mes, garantizar 17 M€ vaciaría el Estado.
+    """
     if not game.guarantee:
         return 0
-    return min(game.guarantee, max(0, int(state_balance * GUARANTEE_SHARE)))
+    guarantee = game.guarantee
+    if members is not None:
+        guarantee = round(guarantee * jackpot_scale(game, members))
+    return min(guarantee, max(0, int(state_balance * GUARANTEE_SHARE)))
 
 
 # -- Lotería Nacional --------------------------------------------------------------------

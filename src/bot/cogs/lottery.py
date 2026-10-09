@@ -19,7 +19,11 @@ otro pulsa un botón se le abre su propio panel.
 Sorteos: una tarea cada minuto celebra los sorteos que ya tocan (solo los que
 tienen apuestas en el servidor), paga los premios y anuncia el resultado en el
 canal donde se compró por última vez. Las reglas, las probabilidades y el
-reparto están en `bot.services.lottery`.
+reparto están en `bot.services.lottery`. En los juegos de bote las
+probabilidades dependen de cuántas personas (no bots) tiene el servidor
+(`Loteria.members`): el bote cae de media una vez al mes si cada una juega una
+apuesta por sorteo. Necesita el intent de miembros para contarlas; sin la
+lista en caché usa el recuento de Discord y, sin servidor, las reales.
 
 Dinero: compras y premios pasan por `EconomyService.lottery`. Las compras van
 al Estado sin IGIC y los premios pagan el gravamen especial del 20 % por
@@ -78,9 +82,11 @@ from bot.services.lottery import (
     next_draw,
     parse_pick,
     random_pick,
+    real_odds,
     scratch,
     scratch_grid,
     scratch_odds,
+    server_odds,
     settle_nacional,
     settle_pool,
 )
@@ -154,8 +160,13 @@ def _when(moment: float) -> str:
 # -- Textos ---------------------------------------------------------------------------
 
 
-def odds_table(game: Game) -> str:
-    """Tabla de categorías de un juego de bote: qué acertar, probabilidad y premio."""
+def odds_table(game: Game, members: int | None = None) -> str:
+    """Tabla de categorías de un juego de bote: qué acertar, probabilidad y premio.
+
+    Con `members`, las probabilidades son las del servidor (`server_odds`) y
+    una nota debajo da la real del bote.
+    """
+    odds = server_odds(game, members) if members is not None else real_odds(game)
     rows = []
     for cat in game.categories:
         prize = (
@@ -164,13 +175,20 @@ def odds_table(game: Game) -> str:
             else ("bote" if cat.jackpot else f"{cat.share:.0%} fondo".replace("%", " %"))
         )
         rows.append(
-            f"{cat.label:<9} {cat.rule:<18} 1 entre {_thousands(cat.odds(game.combinations)):>11}"
-            f"  {prize}"
+            f"{cat.label:<9} {cat.rule:<18} 1 entre {_thousands(round(odds[cat.key])):>11}  {prize}"
         )
     if game.reintegro:
         name = "Reintegro" if game.kind is Kind.LOTTO else "Clave"
         rows.append(f"{name:<9} {'la apuesta':<18} 1 entre {'10':>11}  devuelve el precio")
-    return "```\n" + "\n".join(rows) + "\n```"
+    table = "```\n" + "\n".join(rows) + "\n```"
+    jackpot = next(c for c in game.categories if c.jackpot)
+    if members is None or round(odds[jackpot.key]) >= round(real_odds(game)[jackpot.key]):
+        return table
+    return table + (
+        f"\n-# Probabilidades a la medida del servidor ({_thousands(members)} personas): si "
+        "cada uno juega una apuesta por sorteo, el bote cae más o menos una vez al mes. "
+        f"En la vida real, 1 entre {_thousands(jackpot.odds(game.combinations))}."
+    )
 
 
 def nacional_table(game: Game) -> str:
@@ -553,9 +571,26 @@ class Loteria(commands.Cog):
         key = nacional if tab == "nacional" else tab
         return await self._game_text(guild_id, user_id, GAME_BY_KEY[key])
 
+    def members(self, guild_id: int) -> int | None:
+        """Personas (no bots) del servidor, o `None` si el bot no lo tiene en caché.
+
+        Con `None` las loterías usan las probabilidades y el bote garantizado reales.
+        """
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return None
+        humans = sum(1 for member in getattr(guild, "members", ()) if not member.bot)
+        if humans:
+            return humans
+        # Sin la lista de miembros en caché, el recuento de Discord (con bots).
+        count = getattr(guild, "member_count", None)
+        return count if isinstance(count, int) and count > 0 else None
+
     async def _jackpot(self, guild_id: int, game: Game, draw: Draw | None) -> int:
         carry = (await self.repository.pots(guild_id)).get(game.key, 0)
-        guarantee = guarantee_for(game, await self.economy.state_balance(guild_id))
+        guarantee = guarantee_for(
+            game, await self.economy.state_balance(guild_id), self.members(guild_id)
+        )
         sales = draw.sales if draw is not None else 0
         return jackpot_estimate(game, sales=sales, carry=carry, guarantee=guarantee)
 
@@ -571,7 +606,7 @@ class Loteria(commands.Cog):
             draw = open_draws.get((key, at))
             extra = ""
             if game.categories:
-                guarantee = guarantee_for(game, balance)
+                guarantee = guarantee_for(game, balance, self.members(guild_id))
                 bote = jackpot_estimate(
                     game,
                     sales=draw.sales if draw else 0,
@@ -605,7 +640,7 @@ class Loteria(commands.Cog):
         if game.categories:
             bote = await self._jackpot(guild_id, game, draw)
             lines.append(f"💰 Bote: **{format_amount(bote)}**")
-            lines.append(odds_table(game))
+            lines.append(odds_table(game, self.members(guild_id)))
         else:
             lines.append(nacional_table(game))
         mine = await self.repository.member_tickets(guild_id, user_id, game=game.key, draw_at=at)
@@ -830,7 +865,16 @@ class Loteria(commands.Cog):
         """
         game = GAME_BY_KEY[draw.game]
         tickets = await self.repository.tickets(draw.id)
-        result = draw_result(game, self.rng)
+        members = self.members(draw.guild_id)
+        if game.categories and members is not None:
+            result = draw_result(
+                game,
+                self.rng,
+                tickets=[(Pick.decode(t.pick), t.quantity) for t in tickets],
+                odds=server_odds(game, members),
+            )
+        else:
+            result = draw_result(game, self.rng)
         carry: int | None = None
         if game.kind is Kind.NACIONAL:
             settlement = settle_nacional(
@@ -839,7 +883,9 @@ class Loteria(commands.Cog):
                 result=result,
             )
         else:
-            guarantee = guarantee_for(game, await self.economy.state_balance(draw.guild_id))
+            guarantee = guarantee_for(
+                game, await self.economy.state_balance(draw.guild_id), members
+            )
             settlement = settle_pool(
                 game,
                 sales=draw.sales,

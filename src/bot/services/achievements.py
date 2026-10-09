@@ -3629,7 +3629,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "lotto4", "Cuatro de seis", "Acierta 4 números en la Primitiva o la Bonoloto.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_lotto5", [
-        (1, "lotto5", "Rozando el cielo", "Acierta 5 en la Primitiva o la Bonoloto.", M, True),
+        (1, "lotto5", "Rozando el cielo", "Acierta 5 en la Primitiva o la Bonoloto.", L, True),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_jackpot", [
         (1, "lotto_jackpot", "El bote de la Primitiva",
