@@ -23,20 +23,23 @@ rodillo (`respin_price`): cuesta lo que vale de media entre `RESPIN_RTP`.
 Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`
 y buscados con `docs/calibrar_tragaperras.py`):
 
-- La línea devuelve ~87,5 % de lo apostado; con los giros gratis y la máquina
-  caliente, ~96,5 %. El 3 % de cada apuesta va al bote común, que acaba
-  saliendo entero: en total vuelve ~99,5 %. Se pierde despacio, que es lo que
-  alarga las sesiones.
+- La línea devuelve ~84 % de lo apostado; con los giros gratis y la máquina
+  caliente, ~92,5 %; con la barra de bonus (3 giros gratis cada ~80 tiradas),
+  ~96,5 %. El 3 % de cada apuesta va al bote común, que acaba saliendo
+  entero: en total vuelve ~99,5 %. Se pierde despacio, que es lo que alarga
+  las sesiones.
 - El 32 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
   de lo apostado (una 🍒 al principio devuelve la mitad). La máquina lo
   celebra y aun así pierdes.
-- Casi-premio en el 21 % de las tiradas; re-giro ofrecido en el 20,5 % y con
-  premio gordo en el 19 % de los re-giros.
-- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 20.000 tiradas. Además el bote cae
+- Casi-premio en el 20,5 % de las tiradas; re-giro ofrecido en el 20 % y con
+  premio gordo en el 17 % de los re-giros.
+- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 22.000 tiradas. Además el bote cae
   solo antes de llegar a `POT_CAP`.
-- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 125 tiradas.
-- Celebraciones: ÉPICO (×50) 1 de cada ~2.500 tiradas, MEGA (×15) 1 de cada
-  ~450 y GRAN PREMIO (×5) 1 de cada ~17.
+- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 120 tiradas.
+- Barra de bonus: se llena cada ~80 tiradas pagadas, de las que ~18 las pasa
+  por encima del 90 % (`add_bonus`).
+- Celebraciones: ÉPICO (×50) 1 de cada ~2.400 tiradas, MEGA (×15) 1 de cada
+  ~450 y GRAN PREMIO (×5) 1 de cada ~19.
 """
 
 from __future__ import annotations
@@ -108,16 +111,16 @@ REEL_STRIPS: tuple[str, str, str] = (
 # fmt: off
 REEL_WEIGHTS: tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]] = (
     (
-        31, 17, 8, 5, 34, 35, 1, 1, 43, 1, 60, 6, 1, 19, 1, 5,
-        4, 7, 8, 1, 1, 1, 8, 1, 18, 33, 1, 1, 3, 10, 4, 12,
+        4, 1, 12, 1, 39, 17, 13, 4, 14, 3, 5, 6, 9, 6, 8, 1,
+        1, 4, 11, 21, 1, 13, 13, 1, 30, 17, 1, 1, 1, 10, 13, 7,
     ),
     (
-        1, 9, 7, 6, 3, 1, 11, 12, 18, 1, 13, 1, 17, 30, 8,
-        1, 1, 4, 4, 1, 20, 25, 5, 3, 3, 3, 1, 10, 31, 2,
+        1, 13, 1, 1, 1, 4, 5, 8, 1, 1, 7, 5, 22, 42, 2,
+        1, 1, 21, 13, 10, 4, 50, 2, 2, 6, 4, 1, 10, 33, 20,
     ),
     (
-        25, 27, 15, 1, 26, 4, 3, 14, 12, 16, 19, 11, 20, 10, 24,
-        11, 27, 9, 46, 2, 25, 3, 19, 1, 6, 1, 1, 7, 25, 11,
+        19, 28, 10, 1, 21, 2, 1, 46, 14, 15, 29, 25, 32, 8, 49,
+        14, 43, 12, 49, 26, 43, 19, 1, 12, 8, 1, 7, 14, 20, 10,
     ),
 )
 # fmt: on
@@ -165,6 +168,14 @@ POT_CAP = 50_000
 #: Retorno de un re-giro del tercer rodillo: el precio es lo que vale de media
 #: entre esto. El jugador paga un 0,5 % de más por la emoción de casi tenerlo.
 RESPIN_RTP = 0.995
+#: Puntos que llenan la barra de bonus.
+BONUS_MAX = 100
+#: Desde aquí la barra sube a cuentagotas.
+BONUS_SLOW_FROM = 85
+#: Puntos de más que da un casi-premio a la barra de bonus.
+BONUS_NEAR_MISS = 3
+#: Giros gratis que da la barra de bonus llena.
+BONUS_FREE_SPINS = 3
 #: Veces seguidas que se puede jugar a doble o nada un mismo premio.
 DOUBLE_MAX = 5
 #: Segundos sin jugar tras los que la máquina pierde un punto de calor.
@@ -518,6 +529,63 @@ def next_heat(heat: int, *, paid: bool, was_hot: bool) -> int:
     if was_hot:
         return 0
     return min(HEAT_MAX, heat + 1) if paid else heat
+
+
+@dataclass(frozen=True, slots=True)
+class BonusMeter:
+    """La barra de bonus de un jugador.
+
+    Attributes:
+        points: Puntos de la barra, de 0 a `BONUS_MAX`.
+        stake_sum: Suma de las apuestas de las tiradas que la han ido llenando.
+        spins: Cuántas tiradas la han llenado. Los giros del bonus se juegan a
+            la apuesta media (`stake_sum // spins`): así nadie la llena a 10 Y$
+            y la cobra a 10.000.
+    """
+
+    points: int = 0
+    stake_sum: int = 0
+    spins: int = 0
+
+    @property
+    def average_stake(self) -> int:
+        """Apuesta media de las tiradas que han llenado la barra (al menos 1)."""
+        return max(1, self.stake_sum // self.spins) if self.spins else 1
+
+
+def add_bonus(
+    meter: BonusMeter, spin: Spin, stake: int, randbelow: Callable[[int], int]
+) -> tuple[BonusMeter, int]:
+    """Suma una tirada pagada a la barra de bonus.
+
+    Lo que sube parece al azar: de 0 a 2 puntos por tirada y `BONUS_NEAR_MISS`
+    más con un casi-premio, que así «casi» da algo. A partir de
+    `BONUS_SLOW_FROM` sube a cuentagotas (un punto una de cada tres tiradas):
+    la barra se queda un buen rato en el 90 y pico, que es cuando más cuesta
+    levantarse. Es el efecto meta (goal gradient) de Hull y de las tarjetas de
+    fidelidad: cuanto más cerca del final, más prisa. Llena, da
+    `BONUS_FREE_SPINS` giros gratis a la apuesta media y vuelve a cero.
+
+    Returns:
+        `(barra nueva, apuesta de los giros del bonus o 0 si no se ha llenado)`.
+    """
+    if meter.points >= BONUS_SLOW_FROM:
+        gain = int(randbelow(3) == 0) + int(spin.near_miss)
+    else:
+        gain = randbelow(3) + (BONUS_NEAR_MISS if spin.near_miss else 0)
+    meter = BonusMeter(
+        min(BONUS_MAX, meter.points + gain), meter.stake_sum + stake, meter.spins + 1
+    )
+    if meter.points < BONUS_MAX:
+        return meter, 0
+    return BonusMeter(), meter.average_stake
+
+
+def bonus_bar(points: int, width: int = 10) -> str:
+    """Barra de bonus con formas y porcentaje: `▰▰▰▰▰▰▰▱▱▱ 78 %`."""
+    points = max(0, min(BONUS_MAX, points))
+    filled = points * width // BONUS_MAX
+    return "▰" * filled + "▱" * (width - filled) + f" {points * 100 // BONUS_MAX} %"
 
 
 def heat_bar(heat: int) -> str:

@@ -67,6 +67,7 @@ from bot.services.achievements import (  # noqa: E402
     mines_stats,
     pachinko_stats,
     roulette_stats,
+    slots_bonus_stats,
     slots_double_stats,
     slots_respin_stats,
     slots_stats,
@@ -175,7 +176,8 @@ def _jugar_slots(j: Jugador) -> StatDelta:
     """Una tirada de un jugador normal, con lo que haga después.
 
     Re-gira el tercer rodillo la mitad de las veces que se le ofrece (y sigue
-    re-girando mientras se quede a uno), y juega a doble o nada la mitad de
+    re-girando mientras se quede a uno), llena la barra de bonus con cada
+    tirada pagada, y juega a doble o nada la mitad de
     los premios, doblando otra vez la mitad de las veces que acierta. El bote
     cae también por el tope oculto, sorteado entre la semilla y `POT_CAP`.
     """
@@ -198,8 +200,15 @@ def _jugar_slots(j: Jugador) -> StatDelta:
         mystery = spin.kind != slots.Kind.JACKPOT
         jackpot, pot = pot, slots.POT_SEED
         hit_at = rng.randint(slots.POT_SEED, slots.POT_CAP)
+    meter, bonus_stake, fill_spins = j.extra.get("bonus", slots.BonusMeter()), 0, 0
+    if not free:
+        fill_spins = meter.spins + 1
+        meter, bonus_stake = slots.add_bonus(meter, spin, APUESTA, rng.randrange)
     j.extra.update(
-        free=(free - 1 if free else 0) + (slots.FREE_SPINS if spin.triggers_free_spins else 0),
+        bonus=meter,
+        free=(free - 1 if free else 0)
+        + (slots.FREE_SPINS if spin.triggers_free_spins else 0)
+        + (slots.BONUS_FREE_SPINS if bonus_stake else 0),
         heat=slots.next_heat(heat, paid=payout > 0, was_hot=hot),
         session=0 if session >= 150 else session,
         pot=pot,
@@ -221,6 +230,8 @@ def _jugar_slots(j: Jugador) -> StatDelta:
         drought=drought if jackpot else 0,
     )
     delta.add["slots_auto"] = 1 if rng.random() < 0.05 else 0
+    if bonus_stake:
+        delta.merge(slots_bonus_stats(fill_spins=fill_spins))
     paid = 0 if free else APUESTA
     net = payout + jackpot - paid
 

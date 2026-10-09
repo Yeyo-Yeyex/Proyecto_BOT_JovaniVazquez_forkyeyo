@@ -5,6 +5,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
 - `slots_heat`: el calor de la máquina de cada miembro por servidor y cuándo
   se tocó por última vez. Antes vivía en memoria y se perdía al reiniciar el
   bot; guardando la hora, el enfriamiento se puede calcular al volver.
+  También la barra de bonus (`bonus`, `bonus_stake`, `bonus_spins`): los
+  puntos, la suma de las apuestas que la han llenado y cuántas tiradas. Se
+  guarda en la misma fila y en la misma escritura que el calor.
 - `slots_daily`: el giro diario gratis. Último día reclamado (`YYYY-MM-DD`,
   día local del servidor) y la racha de días seguidos.
 
@@ -23,6 +26,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
+from bot.services.slots import BonusMeter
 
 T = TypeVar("T")
 
@@ -69,6 +73,13 @@ class SlotsRepository:
                 );
                 """
             )
+            # Columnas de la barra de bonus, añadidas después de crear la tabla.
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(slots_heat)")}
+            for column in ("bonus", "bonus_stake", "bonus_spins"):
+                if column not in columns:
+                    connection.execute(
+                        f"ALTER TABLE slots_heat ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+                    )
 
     # -- Calor -----------------------------------------------------------------------
 
@@ -86,21 +97,66 @@ class SlotsRepository:
             return None
         return int(row["heat"]), float(row["updated_at"])
 
-    async def save_heat(self, guild_id: int, user_id: int, heat: int, now: float) -> None:
-        """Guarda el calor del miembro con la hora `now` (epoch), pisando el anterior."""
-        await self._run(self._save_heat_sync, guild_id, user_id, heat, now)
+    async def save_heat(
+        self,
+        guild_id: int,
+        user_id: int,
+        heat: int,
+        now: float,
+        bonus: BonusMeter | None = None,
+    ) -> None:
+        """Guarda el calor del miembro con la hora `now` (epoch), pisando el anterior.
 
-    def _save_heat_sync(self, guild_id: int, user_id: int, heat: int, now: float) -> None:
+        Args:
+            bonus: Si se pasa, guarda también la barra de bonus en la misma
+                escritura; si no, la deja como estaba.
+        """
+        await self._run(self._save_heat_sync, guild_id, user_id, heat, now, bonus)
+
+    def _save_heat_sync(
+        self, guild_id: int, user_id: int, heat: int, now: float, bonus: BonusMeter | None
+    ) -> None:
         with closing(self._connect()) as connection, connection:
+            if bonus is None:
+                connection.execute(
+                    """
+                    INSERT INTO slots_heat (guild_id, user_id, heat, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                        heat = excluded.heat, updated_at = excluded.updated_at
+                    """,
+                    (guild_id, user_id, heat, now),
+                )
+                return
             connection.execute(
                 """
-                INSERT INTO slots_heat (guild_id, user_id, heat, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO slots_heat
+                    (guild_id, user_id, heat, updated_at, bonus, bonus_stake, bonus_spins)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (guild_id, user_id) DO UPDATE SET
-                    heat = excluded.heat, updated_at = excluded.updated_at
+                    heat = excluded.heat, updated_at = excluded.updated_at,
+                    bonus = excluded.bonus, bonus_stake = excluded.bonus_stake,
+                    bonus_spins = excluded.bonus_spins
                 """,
-                (guild_id, user_id, heat, now),
+                (guild_id, user_id, heat, now, bonus.points, bonus.stake_sum, bonus.spins),
             )
+
+    async def load_bonus(self, guild_id: int, user_id: int) -> BonusMeter:
+        """Barra de bonus guardada del miembro (vacía si nunca ha jugado)."""
+        return await self._run(self._load_bonus_sync, guild_id, user_id)
+
+    def _load_bonus_sync(self, guild_id: int, user_id: int) -> BonusMeter:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT bonus, bonus_stake, bonus_spins FROM slots_heat
+                WHERE guild_id = ? AND user_id = ?
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+        if row is None:
+            return BonusMeter()
+        return BonusMeter(int(row["bonus"]), int(row["bonus_stake"]), int(row["bonus_spins"]))
 
     # -- Giro diario -----------------------------------------------------------------
 

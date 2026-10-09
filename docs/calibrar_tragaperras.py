@@ -41,7 +41,9 @@ from bot.services.slots import FREE_SPINS, HEAT_MAX, REEL_STRIPS, spin_at  # noq
 #: Cifra: (objetivo, tolerancia). Las de frecuencia van en «1 de cada N» y se
 #: comparan en logaritmo; el resto, en tanto por uno.
 OBJETIVOS = {
-    "base": (0.965, 0.002),  # línea + calor + giros gratis; con el bote, 99,5 %
+    # Línea + calor + giros gratis. La barra de bonus suma ~3,9 % y el bote un
+    # 3 %: con todo, ~99,5 %.
+    "base": (0.926, 0.002),
     "casi": (0.22, 0.01),
     "premio": (0.33, 0.01),
     "ldw_de_premios": (0.6, 0.03),
