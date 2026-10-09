@@ -45,9 +45,13 @@ from bot.services.pachinko_physics import (
 ALL_BOARDS = list(BOARDS.values())
 MISS = Draw((1, 2, 3), Kind.MISS, False, 0)
 
-#: Tandas al azar por tablero. Cada una cuesta ~0,08 s; con 60 por tablero la prueba
-#: tarda unos 20 s en total y cubre 2.400 bolas chocando.
-VOLLEYS_PER_BOARD = 60
+#: Tandas al azar por tablero (semillas 0, 1, 2…). Cada una cuesta ~0,07 s. Se calculan
+#: una sola vez por tablero (`board_runs`) y las pruebas que necesitan tandas al azar
+#: las comparten. Son las mínimas que garantizan algún choque: con 30 grupos distintos
+#: de esa cantidad de tandas seguidas (semillas 0-n, n-2n, …) el menor número de choques
+#: de un grupo es 2 en sakura, 1 en clasica, 1 en dragon y 1 en oni (el que menos choca);
+#: con 8 en dragon y 12 en oni ya había grupos sin ningún choque.
+VOLLEYS_PER_BOARD = {"sakura": 8, "clasica": 8, "dragon": 10, "oni": 15}
 
 #: Una tanda de la Clásica con varios choques (bolas 4 y 5 se tocan cinco veces): el
 #: camino de cada bola y la caída preferida de la biblioteca.
@@ -69,6 +73,17 @@ def random_volley(board: Board, seed: int):  # noqa: ANN201
     """Una tanda al azar con semilla fija, como la lanza el juego."""
     rng = random.Random(f"{board.key}-{seed}")
     return PachinkoMachine(rng.randrange, rng.randrange).launch(board)
+
+
+@pytest.fixture(scope="module", params=ALL_BOARDS, ids=lambda b: b.key)
+def board_runs(request: pytest.FixtureRequest) -> tuple[Board, list]:
+    """Tablero y sus tandas al azar (semillas desde 0, `VOLLEYS_PER_BOARD`) con su movimiento."""
+    board: Board = request.param
+    runs = []
+    for seed in range(VOLLEYS_PER_BOARD[board.key]):
+        volley = random_volley(board, seed)
+        runs.append((volley, motion_for(volley)))
+    return board, runs
 
 
 def crashing_volley():  # noqa: ANN201
@@ -103,14 +118,12 @@ def replay(volley, motion: VolleyMotion) -> list[Body]:  # noqa: ANN001
 # -- El dinero no depende de la física ---------------------------------------------------
 
 
-@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
-def test_con_choques_cada_bola_acaba_en_el_bolsillo_sorteado(board: Board) -> None:
+def test_con_choques_cada_bola_acaba_en_el_bolsillo_sorteado(board_runs: tuple) -> None:
     """La prueba clave: el bolsillo sale del sorteo y la física obedece, choque o no choque."""
+    board, runs = board_runs
     geometry = geometry_for(board)
     collisions = 0
-    for seed in range(VOLLEYS_PER_BOARD):
-        volley = random_volley(board, seed)
-        motion = motion_for(volley)
+    for volley, motion in runs:
         assert len(motion.balls) == len(volley.balls)
         for ball, move in zip(volley.balls, motion.balls, strict=True):
             assert move.pocket == ball.pocket
@@ -120,15 +133,13 @@ def test_con_choques_cada_bola_acaba_en_el_bolsillo_sorteado(board: Board) -> No
             assert all(geometry.left < px < geometry.right for px, _py in move.points)
             assert MIN_SECONDS - 0.05 <= (move.frames - 1) * 0.05 <= MAX_SECONDS + 0.05
         collisions += motion.collisions
-    assert collisions > 0  # en 60 tandas hay choques de verdad
+    assert collisions > 0  # en esas tandas hay choques de verdad
 
 
-@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
-def test_el_movimiento_se_puede_repetir_desde_cero_con_el_simulador(board: Board) -> None:
+def test_el_movimiento_se_puede_repetir_desde_cero_con_el_simulador(board_runs: tuple) -> None:
     """No es un empujón: volver a simular lanzamientos y salidas da los mismos puntos y cuentas."""
-    for seed in range(5):
-        volley = random_volley(board, seed)
-        motion = motion_for(volley)
+    _board, runs = board_runs
+    for volley, motion in runs[:5]:
         for move, body in zip(motion.balls, replay(volley, motion), strict=True):
             assert tuple(body.points) == move.points
             assert body.bounces == move.bounces
@@ -176,10 +187,9 @@ def test_una_bola_que_no_toca_a_nadie_cae_como_su_salida_en_la_biblioteca() -> N
 # -- Lanzamientos --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
-def test_se_lanza_en_fotogramas_enteros_y_en_orden(board: Board) -> None:
-    for seed in range(10):
-        motion = motion_for(random_volley(board, seed))
+def test_se_lanza_en_fotogramas_enteros_y_en_orden(board_runs: tuple) -> None:
+    _board, runs = board_runs
+    for _volley, motion in runs[:10]:
         assert motion.balls[0].launch == 0
         for before, after in zip(motion.balls, motion.balls[1:], strict=False):
             assert isinstance(after.launch, int)

@@ -71,6 +71,8 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+import numpy as np
+
 from bot.services.taxes import YAPDOLLARS_PER_EURO, lottery_tax
 
 #: Los sorteos se celebran en Madrid; Discord enseña la hora local de cada uno.
@@ -1140,14 +1142,43 @@ def nacional_prizes(game: Game, number: int, result: Mapping) -> list[tuple[int,
 def nacional_expected_return(game: Game, rng: random.Random) -> float:
     """Parte de la emisión que vuelve en premios en un sorteo concreto (≈ 0,70).
 
-    Recorre los 100.000 números; solo para pruebas y comprobaciones.
+    Suma lo que paga `nacional_prizes` sobre los 100.000 números, pero premio a
+    premio y con numpy en vez de número a número (mismo resultado, unas 100 veces
+    más rápido). Solo para pruebas y comprobaciones.
     """
+    program = game.program
+    assert program is not None
     result = _draw_nacional(game, rng)
-    total = sum(
-        amount
-        for number in range(NACIONAL_NUMBERS)
-        for amount, _ in nacional_prizes(game, number, result)
-    )
+    numbers = np.arange(NACIONAL_NUMBERS, dtype=np.int64)
+    total = 0
+    for key, winner in result["main"]:
+        prize = next(p for p in program.main if p.key == key)
+        total += prize.amount
+        # Quien acierta el número exacto no cobra aproximación, centena ni terminaciones.
+        others = numbers != winner
+        if prize.approx:
+            neighbours = {(winner - 1) % NACIONAL_NUMBERS, (winner + 1) % NACIONAL_NUMBERS}
+            total += prize.approx * len(neighbours - {winner})
+        if prize.centena:
+            total += prize.centena * int(
+                np.count_nonzero(others & (numbers // 100 == winner // 100))
+            )
+        taken = ~others  # los que ya cobraron una terminación (solo vale la más larga)
+        for digits, amount in prize.endings:
+            hit = (numbers % 10**digits == winner % 10**digits) & ~taken
+            total += amount * int(np.count_nonzero(hit))
+            taken |= hit
+    if program.pedrea:
+        total += program.pedrea.amount * len(set(result["pedrea"]))
+    for digits, _count, amount in program.extractions:
+        modulus = 10**digits
+        for drawn in result["extractions"][str(digits)]:
+            total += amount * int(np.count_nonzero(numbers % modulus == drawn))
+    first = result["main"][0][1]
+    lucky = np.isin(numbers % 10, result["reintegros"])
+    if program.reintegro_excludes_first:
+        lucky &= numbers != first
+    total += game.price * int(np.count_nonzero(lucky))
     return total / (game.price * NACIONAL_NUMBERS)
 
 

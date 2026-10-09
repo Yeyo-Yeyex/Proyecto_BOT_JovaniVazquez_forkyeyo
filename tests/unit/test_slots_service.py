@@ -8,12 +8,14 @@ conjunto de los giros gratis y la máquina caliente, con una semilla fija.
 
 from __future__ import annotations
 
+import functools
 import itertools
 import random
 from datetime import date
 
 import pytest
 
+from bot.services import slots as slots_module
 from bot.services.slots import (
     BELL,
     BIG_WIN,
@@ -261,11 +263,20 @@ def test_las_cifras_de_la_documentacion_son_las_reales(exact_stats) -> None:  # 
     assert 1 / stats["big"] == pytest.approx(19, rel=0.1)
 
 
-def test_el_retorno_total_es_el_de_un_casino_de_verdad() -> None:
+def test_el_retorno_total_es_el_de_un_casino_de_verdad(monkeypatch: pytest.MonkeyPatch) -> None:
     """Línea + giros gratis + calor + barra de bonus ≈ 96,5 %; con el bote, ≈ 99,5 %.
 
     Se simula con apuesta 100 para que el medio premio no pierda decimales.
+
+    No se pueden recortar las 600.000 tiradas: con 24 semillas distintas el retorno
+    queda entre 0,954 y 0,969, ya pegado a la horquilla (0,95 a 0,97), y con 150.000
+    tiradas se salía de ella (0,945 a 0,977).
+
+    Lo que sí se acelera es `spin_at`, que es lo más caro y devuelve siempre lo mismo
+    para las mismas paradas (hay ~29.000 posibles): se guarda cada resultado (`Spin`
+    es inmutable) y la simulación sale idéntica, tirada a tirada.
     """
+    monkeypatch.setattr(slots_module, "spin_at", functools.cache(slots_module.spin_at))
     rng = random.Random(2026)
     machine = SlotMachine(rng.randrange)
     stake, paid, returned, heat, free = 100, 0, 0, 0, 0
