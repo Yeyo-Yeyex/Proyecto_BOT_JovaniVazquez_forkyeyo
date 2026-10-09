@@ -3,21 +3,29 @@
 La máquina imita las de los salones japoneses: un mueble con bombillas que
 persiguen, un rótulo de neón, una pantalla con el sorteo, un campo de clavos
 con dos adornos que se mueven y los bolsillos abajo. Una tanda cuesta ~0,2 s
-de CPU (fuera del event loop) y unos 150-250 KB de GIF, que escribe
-`bot.utils.gif.shared_palette_gif`. El modo turbo solo manda la imagen final.
+de CPU (fuera del event loop) y unos 200-260 KB de GIF, que escribe
+`bot.utils.gif.shared_palette_gif`. Medido con 40 tandas por tablero: mediana
+de 0,18 a 0,24 s según el tablero (el 10 % más largo, hasta ~0,37 s) y de 185
+a 255 KB (hasta ~390 KB). Antes de la física, 0,17-0,19 s y 175-200 KB: las
+bolas tardan más en caer, así que hay más fotogramas. El modo turbo solo manda
+la imagen final.
 
 Cada tablero de `bot.services.pachinko.BOARDS` tiene su tema (`THEMES`):
 colores, rótulo y adorno (molinillos, flores de cerezo, perlas de dragón o
-llamas). La geometría (`Layout`) sale de sus filas: con más filas, los
-clavos se juntan para que todo quepa en la misma imagen.
+llamas). El campo de clavos (`Layout`) es el de `bot.services.pachinko_physics`:
+lo que se dibuja es exactamente lo que golpean las bolas.
 
 La animación sigue la línea de tiempo de una máquina real:
 
-1. Las bolas se lanzan de una en una y bajan rebotando por los clavos, cada
-   una por el camino que ha decidido `bot.services.pachinko`.
+1. Las bolas se lanzan de una en una y caen con física real (gravedad y
+   rebotes en los clavos y las paredes). La caída de cada una es una de las
+   simuladas de antemano (`pachinko_physics.library`) que acaban en el
+   bolsillo que ha sorteado `bot.services.pachinko`; la física no decide
+   nada, solo cómo se ve. Cada caída dura lo suyo, así que las bolas no
+   llegan en el orden en que salen.
 2. Cuando una cae en START, la reserva (los puntos bajo la pantalla) gana una
    tirada, y la pantalla la juega en cuanto queda libre, mientras siguen
-   cayendo bolas.
+   cayendo bolas. Las tiradas se asignan por orden de llegada.
 3. En un reach, el número del centro tarda más y aparece el cartel. En un
    atari, la pantalla se pone dorada, las bombillas se vuelven locas, llueven
    bolas y el contador del rush va subiendo.
@@ -51,6 +59,22 @@ from bot.services.pachinko import (
     Kind,
     Volley,
 )
+from bot.services.pachinko_physics import (
+    BALL_R,
+    CX,
+    DECORATIONS,
+    FRAME_MS,
+    HEIGHT,
+    HOLD_Y,
+    LCD_BOX,
+    PIN_R,
+    POCKET_H,
+    WIDTH,
+    Geometry,
+    Trajectory,
+    geometry_for,
+    library,
+)
 from bot.utils.gif import shared_palette_gif
 
 FONT_PATH = (
@@ -58,40 +82,16 @@ FONT_PATH = (
 )
 
 # -- Geometría ----------------------------------------------------------------------
+# Las medidas del campo (WIDTH, PIN_TOP, LCD_BOX, DECORATIONS…) viven en
+# `bot.services.pachinko_physics`, que las comparte con la física.
 
-WIDTH = 340
-HEIGHT = 500
-CX = WIDTH // 2
-#: Altura de la primera fila de clavos.
-PIN_TOP = 190
-#: Espacio vertical para las filas de clavos y ancho para los bolsillos.
-PIN_SPACE = 192
-POCKET_SPACE = 304
-#: Separación máxima entre clavos (en horizontal y en vertical).
-MAX_DX = 28
-MAX_DY = 24
-PIN_R = 2
-BALL_R = 5
-#: Donde aparece cada bola, encima del primer clavo.
-ENTRY_Y = 168
-POCKET_H = 36
-LCD_BOX = (70, 64, 270, 148)
-HOLD_Y = 162
-DECORATIONS = ((44, 232), (296, 232))
 BULB_SPACING = 20
 BULB_R = 3
 
-# -- Tiempos (en fotogramas) --------------------------------------------------------
+# -- Tiempos (en fotogramas de `FRAME_MS`) -----------------------------------------
 
-FRAME_MS = 50
 #: Fotogramas entre una bola y la siguiente.
 LAUNCH_GAP = 3
-#: Fotogramas de la entrada hasta el primer clavo, por fila y hasta el bolsillo.
-ENTRY_FRAMES = 2
-ROW_FRAMES = 2
-EXIT_FRAMES = 2
-#: Altura del saltito al rebotar en cada clavo, en píxeles.
-HOP = 5
 #: Fotogramas que un bolsillo se queda iluminado al recibir una bola.
 POCKET_FLASH = 4
 #: Paradas de los números del sorteo desde que empieza la tirada.
@@ -186,22 +186,39 @@ THEMES: dict[str, Theme] = {
 
 @dataclass(frozen=True, slots=True)
 class Layout:
-    """Geometría de un tablero según sus filas.
+    """Dónde va cada cosa en la imagen de un tablero.
+
+    La geometría del campo (clavos, paredes, separadores, centro de cada
+    bolsillo) es la de `bot.services.pachinko_physics`: lo que se dibuja es lo
+    que la bola golpea. Aquí se añade lo que solo es dibujo (textos, bandeja).
 
     Attributes:
-        rows: Filas de clavos.
-        dx: Separación horizontal entre clavos y entre bolsillos.
-        dy: Distancia vertical entre filas.
+        board: El tablero.
+        geometry: Su campo de clavos.
     """
 
-    rows: int
-    dx: float
-    dy: float
+    board: Board
+    geometry: Geometry
+
+    @property
+    def rows(self) -> int:
+        """Filas del tablero (los bolsillos son `rows + 1`)."""
+        return self.geometry.rows
+
+    @property
+    def dx(self) -> float:
+        """Ancho de cada bolsillo."""
+        return self.geometry.dx
+
+    @property
+    def dy(self) -> float:
+        """Distancia entre filas del tablero (fija dónde empiezan los bolsillos)."""
+        return self.geometry.dy
 
     @property
     def pocket_top(self) -> float:
         """Borde de arriba de los bolsillos."""
-        return PIN_TOP + self.dy * self.rows + 4
+        return self.geometry.pocket_top
 
     @property
     def label_y(self) -> float:
@@ -213,53 +230,39 @@ class Layout:
         """Borde de arriba de la bandeja con el contador de bolas."""
         return self.label_y + 18
 
-    @property
-    def ball_frames(self) -> int:
-        """Fotogramas desde que se lanza una bola hasta que entra en su bolsillo."""
-        return ENTRY_FRAMES + self.rows * ROW_FRAMES + EXIT_FRAMES
-
-    def pin_x(self, row: int, rights: int) -> float:
-        """Horizontal del clavo que golpea una bola en `row` tras `rights` derechas."""
-        return CX + (rights - row / 2) * self.dx
-
     def pocket_x(self, pocket: int) -> float:
         """Centro del bolsillo `pocket`."""
-        return CX + (pocket - self.rows / 2) * self.dx
+        return self.geometry.pocket_x(pocket)
+
+    def trajectory(self, ball: Ball) -> Trajectory:
+        """La caída de la biblioteca que sigue `ball`: la de su bolsillo y su número."""
+        return library(self.board)[ball.pocket][ball.trajectory]
+
+    def ball_frames(self, ball: Ball) -> int:
+        """Fotogramas desde que se lanza `ball` hasta que entra en su bolsillo."""
+        return self.trajectory(ball).frames
 
     def ball_position(self, ball: Ball, frame: float) -> tuple[float, float] | None:
         """Dónde está una bola `frame` fotogramas después de lanzarla.
 
         Devuelve `None` antes de lanzarla y después de entrar en el bolsillo.
-        Entre dos filas avanza en línea recta con un saltito (`HOP`), que es lo
-        que hace que parezca que rebota en el clavo.
+        Entre dos fotogramas enteros interpola en línea recta entre los puntos
+        de la caída simulada.
         """
-        if frame < 0 or frame >= self.ball_frames:
+        points = self.trajectory(ball).points
+        if frame < 0 or frame >= len(points):
             return None
-        if frame < ENTRY_FRAMES:
-            t = frame / ENTRY_FRAMES
-            return CX, ENTRY_Y + (PIN_TOP - BALL_R - ENTRY_Y) * t * t
-        frame -= ENTRY_FRAMES
-        if frame < self.rows * ROW_FRAMES:
-            row, sub = divmod(frame, ROW_FRAMES)
-            row = int(row)
-            t = sub / ROW_FRAMES
-            rights = sum(ball.path[:row])
-            x0 = self.pin_x(row, rights)
-            x1 = x0 + (self.dx / 2 if ball.path[row] else -self.dx / 2)
-            y0 = PIN_TOP + row * self.dy - BALL_R
-            y1 = y0 + self.dy
-            return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - HOP * math.sin(math.pi * t)
-        t = (frame - self.rows * ROW_FRAMES) / EXIT_FRAMES
-        x = self.pocket_x(ball.pocket)
-        y0 = PIN_TOP + self.rows * self.dy - BALL_R
-        return x, y0 + (self.pocket_top + 10 - y0) * t
+        index = int(frame)
+        if index >= len(points) - 1:
+            return points[-1]
+        t = frame - index
+        (x0, y0), (x1, y1) = points[index], points[index + 1]
+        return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
 
 
 def layout_for(board: Board) -> Layout:
-    """Geometría de `board`: los clavos se juntan si hay muchas filas."""
-    dx = min(MAX_DX, POCKET_SPACE // (board.rows + 1))
-    dy = min(MAX_DY, PIN_SPACE // board.rows)
-    return Layout(board.rows, dx, dy)
+    """Disposición de `board`: su campo de clavos y lo que cuelga de él."""
+    return Layout(board, geometry_for(board))
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,16 +364,21 @@ class Timeline:
 def build_timeline(volley: Volley) -> Timeline:
     """Programa la animación: cuándo cae cada bola y cuándo gira la pantalla.
 
-    Las tiradas entran en la reserva cuando su bola llega a START y la
-    pantalla las juega en orden, en cuanto acaba la anterior. Las bolas de
-    START que no cupieron en la reserva (`Volley.wasted`) son las últimas en
-    llegar.
+    Cada bola tarda lo que dura su caída simulada, así que no llegan en el
+    orden en que se lanzan. Las tiradas entran en la reserva por orden de
+    llegada a START y la pantalla las juega en orden, en cuanto acaba la
+    anterior. Las bolas de START que no cupieron en la reserva
+    (`Volley.wasted`) son las últimas en llegar. El pago no depende de este
+    orden (`build_volley` cuenta bolas), pero la pantalla tiene que ser
+    coherente con lo que se ve.
     """
-    ball_frames = layout_for(volley.board).ball_frames
-    landings = tuple(index * LAUNCH_GAP + ball_frames for index in range(len(volley.balls)))
+    layout = layout_for(volley.board)
+    landings = tuple(
+        index * LAUNCH_GAP + layout.ball_frames(ball) for index, ball in enumerate(volley.balls)
+    )
     start = volley.board.start_pocket
     pairs = zip(volley.balls, landings, strict=True)
-    start_landings = [landing for ball, landing in pairs if ball.pocket == start]
+    start_landings = sorted(landing for ball, landing in pairs if ball.pocket == start)
     queued = start_landings[: len(volley.draws)]
     wasted = tuple(start_landings[len(volley.draws) :])
     slots = []
@@ -380,7 +388,7 @@ def build_timeline(volley: Volley) -> Timeline:
         center, total = draw_length(draw)
         slots.append(DrawSlot(draw, queued_at, start, start + center, start + total))
         free_at = start + total
-    last_landing = landings[-1] if landings else 0
+    last_landing = max(landings, default=0)
     frames = max(last_landing + POCKET_FLASH, free_at)
     return Timeline(landings, tuple(slots), frames, wasted)
 
@@ -556,22 +564,14 @@ class PachinkoRenderer:
         draw.rounded_rectangle((x0 - 3, y0 - 3, x1 + 3, y1 + 3), radius=8, fill=(30, 30, 40))
         draw.rectangle(LCD_BOX, fill=theme.lcd)
 
-        # Campo de clavos: el triángulo por el que bajan las bolas y clavos de
-        # adorno alrededor, como en un tablero de verdad.
-        dx = layout.dx
-        for row in range(layout.rows):
-            y = PIN_TOP + row * layout.dy
-            for j in range(row + 1):
-                x = layout.pin_x(row, j)
-                draw.ellipse((x - PIN_R, y - PIN_R, x + PIN_R, y + PIN_R), fill=PIN)
-            half = (row / 2 + 1) * dx
-            x = 26 + (dx / 2 if row % 2 else 0)
-            while x < WIDTH - 26:
-                inside = abs(x - CX) < half
-                near_deco = any(math.hypot(x - mx, y - my) < 24 for mx, my in DECORATIONS)
-                if not inside and not near_deco:
-                    draw.ellipse((x - PIN_R, y - PIN_R, x + PIN_R, y + PIN_R), fill=PIN)
-                x += dx
+        # Campo de clavos: los mismos que golpea la física, con las paredes y los
+        # separadores de los bolsillos.
+        for wall in layout.geometry.walls:
+            draw.line((wall.x0, wall.y0, wall.x1, wall.y1), fill=theme.accent, width=2)
+        for x, y in layout.geometry.pins:
+            draw.ellipse((x - PIN_R, y - PIN_R, x + PIN_R, y + PIN_R), fill=PIN)
+        for divider in layout.geometry.dividers:
+            draw.line((divider.x0, divider.y0, divider.x1, divider.y1), fill=PIN, width=2)
         for mx, my in DECORATIONS:
             draw.ellipse((mx - 18, my - 18, mx + 18, my + 18), outline=theme.accent, width=2)
 
@@ -928,6 +928,7 @@ class PachinkoRenderer:
     def warm_up(self) -> None:
         """Prepara las piezas de todos los tableros (al cargar el cog)."""
         for board in BOARDS.values():
+            library(board)
             self.assets(board)
 
     def render(self, volley: Volley, *, turbo: bool = False) -> PachinkoMedia:
@@ -943,7 +944,7 @@ class PachinkoRenderer:
             return PachinkoMedia(gif=b"", png=self._png(final), seconds=0.0)
         # Los números que pasan girando son de adorno; con una semilla fija
         # por tanda, la misma tanda se dibuja siempre igual.
-        rng = random.Random(hash(tuple(ball.path for ball in volley.balls)))
+        rng = random.Random(hash(tuple((ball.path, ball.trajectory) for ball in volley.balls)))
         frames = [
             self._quantize(assets, self._frame(assets, volley, timeline, index, rng))
             for index in range(timeline.frames)

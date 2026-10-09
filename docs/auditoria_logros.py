@@ -249,7 +249,7 @@ def _elegir(rng: random.Random, tabla: tuple[tuple[object, int], ...]) -> object
 def _jugar_pachinko(j: Jugador) -> StatDelta:
     rng = j.rng
     board = pachinko.BOARDS[_elegir(rng, _TABLEROS)]  # type: ignore[index]
-    volley = pachinko.PachinkoMachine(rng.randrange).launch(board)
+    volley = pachinko.PachinkoMachine(rng.randrange, rng.randrange).launch(board)
     won = pachinko.payout(volley, APUESTA)
     session = j.extra.get("session", 0) + 1
     j.extra["session"] = 0 if session >= 60 else session

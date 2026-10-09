@@ -70,6 +70,7 @@ from bot.services.mines import Status as MinesStatus
 from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
+from bot.services.pachinko_physics import library as pachinko_library
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.porras import MIN_BET as PORRA_MIN_BET
@@ -2697,6 +2698,72 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pachinko", "pachinko_board_clasica", [
         (1_000, "pachi_clasica_1k", "De toda la vida",
          "Lanza 1.000 tandas en el tablero Clásico.", E),
+    ])  # fmt: skip
+
+    # 🌸 Pachinko: lo que cuentan las caídas simuladas (`pachinko_physics`) ---------------
+    # Rarezas: meta / (60 tandas al día × rebotes medios por tanda); las de suerte,
+    # con la biblioteca de caídas y la probabilidad de cada bolsillo (ver
+    # `docs/auditoria-logros.md`, «Pachinko: la física»).
+    a += _tiers("pachinko", "pachinko_bounces", [
+        (1_000, "pachi_bounce_1k", "Pelotazo urbanístico",
+         "Acumula 1.000 rebotes de bolas en los clavos.", C),
+        (10_000, "pachi_bounce_10k", "Rebote técnico del Ibex",
+         "Acumula 10.000 rebotes en los clavos.", C),
+        (50_000, "pachi_bounce_50k", "Fichaje de exministro",
+         "Acumula 50.000 rebotes: entran, salen y vuelven a entrar.", R),
+        (250_000, "pachi_bounce_250k", "Vuelo en Falcon",
+         "Acumula 250.000 rebotes, de clavo en clavo.", E),
+        (1_000_000, "pachi_bounce_1m", "Resistencia numantina",
+         "Acumula 1.000.000 de rebotes: la bola aguanta lo que le echen.", L),
+        (5_000_000, "pachi_bounce_5m", "Rebote del gato muerto",
+         "Acumula 5.000.000 de rebotes.", M, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_bounce_max", [
+        (15, "pachi_hop_15", "Pinball parlamentario",
+         "Haz que una bola rebote 15 veces en los clavos antes de entrar.", C),
+        (18, "pachi_hop_18", "Tránsfuga de clavos",
+         "Haz que una bola rebote 18 veces: no se queda en ningún sitio.", C),
+        (20, "pachi_hop_20", "Moción de censura",
+         "Haz que una bola rebote 20 veces antes de caer en su bolsillo.", C),
+        (21, "pachi_hop_21", "Récord del Congreso",
+         "Haz que una bola rebote 21 veces, lo máximo que da un tablero.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_bounce_volley_max", [
+        (150, "pachi_tanda_150", "Sesión de control",
+         "Suma 150 rebotes de las diez bolas en una sola tanda.", C),
+        (160, "pachi_tanda_160", "Pleno sin descanso",
+         "Suma 160 rebotes en una sola tanda.", R),
+        (165, "pachi_tanda_165", "Crispación máxima",
+         "Suma 165 rebotes en una sola tanda.", E),
+        (170, "pachi_tanda_170", "Barra libre de rebotes",
+         "Suma 170 rebotes en una sola tanda: una entre decenas de miles.", M, True),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_slow_balls", [
+        (1, "pachi_slow_1", "Retraso de Renfe", "Mira una bola tardar casi 2 segundos en caer.", C),
+        (100, "pachi_slow_100", "Cercanías en hora punta",
+         "Mira 100 bolas tardar casi 2 segundos en caer.", C),
+        (1_000, "pachi_slow_1k", "Obras en la M-30",
+         "Mira 1.000 bolas tardar casi 2 segundos en caer.", R),
+        (10_000, "pachi_slow_10k", "Variante de Pajares",
+         "Mira 10.000 bolas tardar casi 2 segundos en caer.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_swift_balls", [
+        (1, "pachi_swift_1", "Puntual como el AVE",
+         "Mira una bola caer en 1,1 segundos o menos.", C),
+        (100, "pachi_swift_100", "Maquinista con prisa",
+         "Mira 100 bolas caer en 1,1 segundos o menos.", R),
+        (1_000, "pachi_swift_1k", "Alta velocidad, baja fiabilidad",
+         "Mira 1.000 bolas caer en 1,1 segundos o menos.", E),
+        (5_000, "pachi_swift_5k", "Hyperloop de Teruel",
+         "Mira 5.000 bolas caer en 1,1 segundos o menos.", L),
+    ])  # fmt: skip
+    a += _tiers("pachinko", "pachinko_clean_balls", [
+        (1, "pachi_clean_1", "Bola Pegasus",
+         "Haz que una bola baje rebotando 5 veces o menos, sin que nadie se entere.", C),
+        (25, "pachi_clean_25", "Mensajes borrados",
+         "Mira 25 bolas bajar rebotando 5 veces o menos.", C),
+        (250, "pachi_clean_250", "Disco duro formateado",
+         "Mira 250 bolas bajar rebotando 5 veces o menos.", E, True),
     ])  # fmt: skip
 
     # 🏦 Banco: Bizum ----------------------------------------------------------------------
@@ -7200,6 +7267,14 @@ def hacienda_stats(
     return StatDelta(add=add)
 
 
+#: Una bola «tarda casi 2 s» si su caída dura estos fotogramas o más (el máximo es 41).
+PACHINKO_SLOW_FRAMES = 40
+#: Una bola «cae en 1,1 s» si su caída dura estos fotogramas o menos (el mínimo es 22).
+PACHINKO_SWIFT_FRAMES = 23
+#: Una bola «baja sin tocar casi nada» si rebota en los clavos esto o menos.
+PACHINKO_CLEAN_BOUNCES = 5
+
+
 def pachinko_stats(
     volley: PachinkoVolley,
     *,
@@ -7217,6 +7292,10 @@ def pachinko_stats(
         turbo: Si se jugó sin animación (turbo o Ráfaga).
         session_volleys: Tandas en esta máquina, contando esta.
         when: Hora local de la tanda.
+
+    Las estadísticas de rebotes y de duración salen de las caídas que se ven
+    (`pachinko_physics.library`), no de lo que paga la máquina, así que no
+    tocan el dinero.
     """
     delta = StatDelta(add={"pachinko_volleys": 1}, peak={"pachinko_session_max": session_volleys})
     add = delta.add
@@ -7245,6 +7324,19 @@ def pachinko_stats(
     key = volley.board.key
     bump(f"pachinko_board_{key}")
     bump(f"pachinko_atari_{key}", amount=sum(1 for d in volley.draws if d.atari))
+    falls = pachinko_library(volley.board)
+    drops = [falls[ball.pocket][ball.trajectory] for ball in volley.balls]
+    bounces = [drop.bounces for drop in drops]
+    bump("pachinko_bounces", amount=sum(bounces))
+    if bounces:
+        delta.peak["pachinko_bounce_max"] = max(bounces)
+        delta.peak["pachinko_bounce_volley_max"] = sum(bounces)
+    bump("pachinko_slow_balls", amount=sum(1 for d in drops if d.frames >= PACHINKO_SLOW_FRAMES))
+    bump("pachinko_swift_balls", amount=sum(1 for d in drops if d.frames <= PACHINKO_SWIFT_FRAMES))
+    bump(
+        "pachinko_clean_balls",
+        amount=sum(1 for d in drops if d.bounces <= PACHINKO_CLEAN_BOUNCES),
+    )
     return delta
 
 

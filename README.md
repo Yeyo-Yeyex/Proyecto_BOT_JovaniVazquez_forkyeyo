@@ -390,8 +390,11 @@ python -m bot
   encadenan premios en un **RUSH** y el 7 es el **SUPER RUSH**. El reach
   (dos iguales y el centro frenando) es espectáculo y no cambia nada.
   Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
-  Los números salen de fracciones exactas en las pruebas. El GIF (130-370 KB,
-  ~0,8 s de CPU) tiene
+  Los números salen de fracciones exactas en las pruebas. Las bolas caen con
+  física real (gravedad y rebotes en clavos y paredes) calculada de antemano:
+  el bolsillo de cada una lo sortea la máquina y la caída que se ve es una
+  simulación guardada que acaba justo ahí, así que no cambia lo que paga. El
+  GIF (190-390 KB, ~0,2 s de CPU) tiene
   bombillas que persiguen, adornos que se mueven (molinillos, flores,
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
@@ -782,6 +785,7 @@ src/bot/
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
+│   ├── pachinko_physics.py # Clavos, paredes y caída con física de las bolas del pachinko
 │   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
 │   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas
 │   ├── horses_scene.py  # Dibujo con Chromium: parrilla, carrera y boleto en JS/HTML

@@ -37,6 +37,7 @@ from bot.services.pachinko import (
     pocket_probability,
     pocket_return,
 )
+from bot.services.pachinko_physics import TRAJECTORIES_PER_POCKET, library
 
 ALL_BOARDS = list(BOARDS.values())
 
@@ -161,6 +162,43 @@ def test_la_maquina_lanza_diez_bolas_con_un_rebote_por_fila(board: Board) -> Non
     assert len(volley.balls) == BALLS
     assert all(len(ball.path) == board.rows for ball in volley.balls)
     assert len(volley.draws) == min(volley.starts, MAX_HOLD)
+
+
+@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
+def test_la_maquina_elige_la_caida_con_su_propio_azar(board: Board) -> None:
+    """La caída que se ve sale de `pick_trajectory`; el azar del juego no la toca."""
+    asked: list[int] = []
+
+    def pick(n: int) -> int:
+        asked.append(n)
+        return 7
+
+    game = scripted([1] * board.rows)  # solo alcanza para el camino de una bola
+    ball = PachinkoMachine(game, pick).ball(board)
+    assert ball.path == (1,) * board.rows
+    assert ball.trajectory == 7
+    assert asked == [TRAJECTORIES_PER_POCKET]
+    with pytest.raises(StopIteration):
+        game(2)  # el sorteo del juego no gastó ni una tirada de más
+
+
+@pytest.mark.parametrize("board", ALL_BOARDS, ids=lambda b: b.key)
+def test_la_caida_de_cada_bola_existe_en_la_biblioteca_de_su_bolsillo(board: Board) -> None:
+    volley = PachinkoMachine().launch(board)
+    for ball in volley.balls:
+        assert 0 <= ball.trajectory < TRAJECTORIES_PER_POCKET
+        assert library(board)[ball.pocket][ball.trajectory].pocket == ball.pocket
+
+
+def test_la_caida_elegida_no_cambia_lo_que_paga_la_tanda() -> None:
+    rng = random.Random(8)
+    paths = [tuple(rng.randrange(2) for _ in range(CLASSIC.rows)) for _ in range(BALLS)]
+    totals = set()
+    for index in (0, 5, TRAJECTORIES_PER_POCKET - 1):
+        balls = [Ball(path, index) for path in paths]
+        volley = build_volley(CLASSIC, balls, lambda: MISS)
+        totals.add((volley.total_balls, volley.starts, tuple(volley.pocket_counts())))
+    assert len(totals) == 1
 
 
 def test_una_bola_de_otro_tablero_se_rechaza() -> None:
