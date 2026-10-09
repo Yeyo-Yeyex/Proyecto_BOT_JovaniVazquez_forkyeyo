@@ -14,15 +14,23 @@ crear el renderizador:
 - Lo mismo con el marcador del premio (cada carácter, a varios tamaños), los
   carteles de cada nivel, las monedas y los destellos: piezas en la paleta
   común con su máscara, que se pegan sin recalcular colores.
+- Las columnas de luces de los laterales: cada aspecto que pueden tener (unos
+  20) es ya una tira opaca en la paleta común, y en cada fotograma se pegan
+  dos, una a cada lado.
+
+Para que quepan las luces, el lienzo es 32 px más ancho que los rodillos con
+su margen (272 × 206 en vez de 240 × 206); los rodillos, las flechas de la
+línea, el marcador y los carteles siguen centrados.
 
 Cifras medidas (CPU de una tirada, tamaño del GIF; preparar las piezas
-cuesta ~0,2 s una sola vez):
+cuesta ~0,24 s una sola vez):
 
-- Sin premio: ~0,02 s y ~100 KB.
-- Premio sin nivel (cuenta de 0,6 s): ~0,025 s y ~115 KB.
-- GRAN PREMIO: ~0,03 s y ~130 KB. MEGA: ~0,035 s y ~150 KB.
-- ÉPICO con anticipación y jackpot (el peor caso): ~0,055 s y ~240 KB, de
-  los que ~150 KB son ya los rodillos y los parpadeos de la línea.
+- Sin premio: ~0,02 s y ~110 KB.
+- Premio sin nivel (cuenta de 0,6 s): ~0,03 s y ~130 KB.
+- GRAN PREMIO: ~0,037 s y ~147 KB. MEGA: ~0,043 s y ~172 KB.
+- ÉPICO con anticipación y jackpot (el peor caso): ~0,067 s y ~282 KB, de
+  los que ~42 KB son las luces (19 del giro, 8 del parpadeo de la línea y 15
+  de la cuenta) y ~11 KB el lienzo más ancho.
 
 El GIF lo escribe `bot.utils.gif.shared_palette_gif`. El modo turbo se salta
 el GIF y manda solo la imagen final (~5 KB, con o sin premio).
@@ -45,6 +53,25 @@ La animación:
    además suelta monedas y el ÉPICO gira sus rayos, suelta más monedas y
    centellea.
 
+Las luces de los laterales, como las bombillas de una máquina de bar, cambian
+según el momento (`spin_bulbs`, `rollup_bulbs`):
+
+- Mientras giran los rodillos, una de cada tres sube por la columna
+  (persecución), en grupos que alternan ámbar y azul.
+- Con anticipación, mientras el tercer rodillo frena despacio, la
+  persecución va el doble de rápido, en rojo, dos de cada cuatro y con forma
+  de rombo.
+- Si la tirada cobra algo, se encienden todas a la vez y parpadean con la
+  línea y durante la cuenta: más rápido cuanto más alto es el nivel
+  (`WIN_BLINK`). Un premio sin nivel las deja redondas; el GRAN PREMIO y el
+  MEGA las cambian por estrellas (el MEGA alterna dorado y blanco) y el ÉPICO
+  añade una aureola a cada estrella. En la imagen final se quedan todas
+  encendidas con esa forma.
+- Sin premio, al parar se quedan fijas, una sí y una no, redondas y doradas.
+  Así salen también en `still_png`.
+
+Las apagadas se ven como un casquillo oscuro, para que el patrón se lea.
+
 Las filas de arriba y abajo solo están para el near-miss, así que en una
 tirada con premio se pueden tapar: la línea siempre queda a la vista.
 
@@ -57,7 +84,10 @@ Los símbolos son imágenes de `assets/slots` (ver su `LICENSE.txt`); el texto
 usa Montserrat Bold (`assets/memes/fonts`, SIL Open Font License 1.1). Se
 distinguen por la forma y no solo por el color, también con deuteranopia: los
 tres carteles tienen forma y tamaño distintos (rectángulo, cinta con colas y
-estallido de rayos), además del texto.
+estallido de rayos), además del texto. Las luces igual: cada momento tiene su
+patrón (una de tres que sube, dos de cuatro el doble de rápido, todas a la
+vez, una sí y una no quietas) y su forma (redonda, rombo, estrella, estrella
+con aureola), no solo su color.
 """
 
 from __future__ import annotations
@@ -110,8 +140,12 @@ SYMBOL = 50
 ROWS = 3
 GAP = 8
 MARGIN = 16
+#: Ancho que se añade a cada lado del mueble para la columna de luces.
+SIDE = 16
+#: Borde izquierdo de la zona de los rodillos (sin contar las luces).
+LEFT = SIDE + MARGIN
 WINDOW_H = CELL_H * ROWS
-WIDTH = MARGIN * 2 + CELL_W * 3 + GAP * 2
+WIDTH = LEFT * 2 + CELL_W * 3 + GAP * 2
 HEIGHT = MARGIN * 2 + WINDOW_H
 
 FRAME_MS = 70
@@ -151,6 +185,11 @@ EPIC_PURPLE = (92, 40, 168)
 EPIC_RAY = (255, 146, 40)
 EPIC_INK = (36, 10, 72)
 WHITE = (255, 255, 255)
+Rgb = tuple[int, int, int]
+#: Colores de las luces de los laterales.
+BULB_SOCKET = (52, 50, 56)
+BULB_BLUE = (96, 196, 255)
+BULB_TENSION = (236, 56, 44)
 
 # -- Premio: cuenta y carteles ------------------------------------------------------
 
@@ -163,7 +202,7 @@ ROLLUP_SECONDS: dict[str | None, float] = {
     WinTier.EPIC: 2.5,
 }
 #: Marcador del premio: tapa la fila de abajo (la del near-miss).
-METER_BOX = (MARGIN - 4, MARGIN + CELL_H * 2 + 6, WIDTH - MARGIN + 3, HEIGHT - 7)
+METER_BOX = (LEFT - 4, MARGIN + CELL_H * 2 + 6, WIDTH - LEFT + 3, HEIGHT - 7)
 METER_PADDING = 8
 #: Tamaños de letra del marcador, de mayor a menor: se usa el mayor en el que
 #: cabe el importe final, el mismo durante toda la cuenta.
@@ -194,6 +233,114 @@ COIN = 14
 COIN_PHASES = (14, 9, 4, 9)
 SPARKLE_SIZES = (9, 13)
 EPIC_RAYS = 18
+
+# -- Luces de los laterales -----------------------------------------------------------
+
+#: Bombillas de cada columna. La 0 es la de abajo.
+BULBS = 12
+#: Lado de la caja de cada bombilla, en píxeles.
+BULB = 11
+#: Columna de luces: rectángulo opaco que se pega tal cual a cada lado. Deja
+#: libres las esquinas redondeadas y el borde dorado del mueble.
+LIGHTS_X = 6
+LIGHTS_Y = 12
+LIGHTS_W = 13
+LIGHTS_H = HEIGHT - 2 * LIGHTS_Y
+#: Persecución normal: se enciende una de cada tres, alternando ámbar y azul,
+#: y sube una bombilla cada `CHASE_FRAMES` fotogramas.
+CHASE_PERIOD = 3
+CHASE_FRAMES = 2
+#: Anticipación: dos de cada cuatro, en rojo y con forma de rombo, y sube una
+#: bombilla por fotograma (el doble de rápido).
+TENSION_PERIOD = 4
+#: Premio: fotogramas que dura cada mitad del parpadeo según el nivel (`None`:
+#: premio sin nivel). Más nivel, parpadeo más rápido.
+WIN_BLINK: dict[str | None, int] = {None: 4, WinTier.BIG: 3, WinTier.MEGA: 2, WinTier.EPIC: 2}
+
+
+@dataclass(frozen=True, slots=True)
+class Bulbs:
+    """Aspecto de una columna de luces: qué bombillas lucen, con qué forma y color.
+
+    Attributes:
+        shape: `round`, `diamond`, `star` o `burst` (estrella con aureola).
+        lit: Para cada bombilla (de abajo arriba), su color o `None` si está apagada.
+    """
+
+    shape: str
+    lit: tuple[Rgb | None, ...]
+
+
+def _chase(step: int) -> Bulbs:
+    """Una de cada tres encendida, subiendo `step` bombillas; grupos ámbar y azul."""
+    lit = []
+    for bulb in range(BULBS):
+        offset = bulb - step
+        on = offset % CHASE_PERIOD == 0
+        color = HIGHLIGHT if (offset // CHASE_PERIOD) % 2 == 0 else BULB_BLUE
+        lit.append(color if on else None)
+    return Bulbs("round", tuple(lit))
+
+
+def _tension(step: int) -> Bulbs:
+    """Dos de cada cuatro encendidas en rojo, rombos, subiendo `step` bombillas."""
+    lit = [BULB_TENSION if (b - step) % TENSION_PERIOD < 2 else None for b in range(BULBS)]
+    return Bulbs("diamond", tuple(lit))
+
+
+#: Estado tranquilo (máquina parada sin premio): una sí y una no, fijas.
+CALM = Bulbs("round", tuple(GOLD if b % 2 == 0 else None for b in range(BULBS)))
+#: Todas apagadas: la mitad oscura del parpadeo del premio.
+DARK = Bulbs("round", (None,) * BULBS)
+#: Forma de las bombillas encendidas en el premio según su nivel.
+WIN_SHAPE: dict[str | None, str] = {
+    None: "round",
+    WinTier.BIG: "star",
+    WinTier.MEGA: "star",
+    WinTier.EPIC: "burst",
+}
+#: Colores del parpadeo del premio: los niveles altos alternan dos.
+WIN_COLORS: dict[str | None, tuple[Rgb, ...]] = {
+    None: (HIGHLIGHT,),
+    WinTier.BIG: (HIGHLIGHT,),
+    WinTier.MEGA: (HIGHLIGHT, WHITE),
+    WinTier.EPIC: (HIGHLIGHT, WHITE),
+}
+
+
+def win_bulbs(tier: str | None, color: int = 0) -> Bulbs:
+    """Todas encendidas con la forma del nivel del premio."""
+    colors = WIN_COLORS[tier]
+    return Bulbs(WIN_SHAPE[tier], (colors[color % len(colors)],) * BULBS)
+
+
+def spin_bulbs(frame: int, tense: bool, tense_from: int) -> Bulbs:
+    """Luces de un fotograma con los rodillos girando.
+
+    Con `tense` (anticipación), desde `tense_from` la persecución se acelera
+    y cambia de color y forma.
+    """
+    if tense and frame >= tense_from:
+        return _tension(frame)
+    return _chase(frame // CHASE_FRAMES)
+
+
+def rollup_bulbs(tier: str | None, index: int) -> Bulbs:
+    """Luces del fotograma `index` de la cuenta: parpadean todas a la vez."""
+    half = WIN_BLINK[tier]
+    if (index // half) % 2:
+        return DARK
+    return win_bulbs(tier, index // (2 * half))
+
+
+def all_bulbs() -> list[Bulbs]:
+    """Todos los aspectos que puede tener una columna (los que se precalculan)."""
+    looks = [CALM, DARK]
+    looks += [_chase(step) for step in range(CHASE_PERIOD * 2)]
+    looks += [_tension(step) for step in range(TENSION_PERIOD)]
+    for tier, colors in WIN_COLORS.items():
+        looks += [win_bulbs(tier, color) for color in range(len(colors))]
+    return list(dict.fromkeys(looks))
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +428,7 @@ class SlotsRenderer:
             banners = {tier: _banner_variants(tier) for tier in BANNER_TEXT}
             coins = [_coin(width) for width in sorted(set(COIN_PHASES))]
             sparkles = [_sparkle(size) for size in SPARKLE_SIZES]
+            lights = {look: _light_column(look) for look in all_bulbs()}
 
             # La paleta sale de todas las piezas juntas: así cada una cabe sin
             # perder colores y todas comparten índices.
@@ -290,7 +438,10 @@ class SlotsRenderer:
             pieces += list(sharp.values()) + list(blurred.values())
             pieces += [glyph for table in glyphs.values() for glyph in table.values()]
             pieces += [image for variants in banners.values() for image in variants]
-            pieces += coins + sparkles
+            pieces += coins + sparkles + list(lights.values())
+            # Las luces ocupan pocos píxeles: sin una muestra grande de sus
+            # colores, el corte por medianas los funde con los de los símbolos.
+            pieces += [Image.new("RGB", (CELL_W, CELL_H), c) for c in (BULB_BLUE, BULB_TENSION)]
             palette = _sample(pieces).quantize(
                 colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT
             )
@@ -319,6 +470,7 @@ class SlotsRenderer:
             by_width = {width: piece(_coin(width)) for width in set(COIN_PHASES)}
             self._coins = [by_width[width] for width in COIN_PHASES]
             self._sparkles = [piece(sparkle) for sparkle in sparkles]
+            self._lights = {look: q(column) for look, column in lights.items()}
             self._ready = True
 
     def _load(self, name: str) -> Image.Image:
@@ -339,7 +491,7 @@ class SlotsRenderer:
     @staticmethod
     def reel_x(reel: int) -> int:
         """Borde izquierdo de la ventana de un rodillo."""
-        return MARGIN + reel * (CELL_W + GAP)
+        return LEFT + reel * (CELL_W + GAP)
 
     def _frame(self, *, glow: bool = False) -> Image.Image:
         """Marco de la máquina: fondo, ventanas y flechas de la línea.
@@ -355,11 +507,12 @@ class SlotsRenderer:
             box = (x - 3, MARGIN - 3, x + CELL_W + 2, MARGIN + WINDOW_H + 2)
             color = GLOW if glow and reel == 2 else DARK_LINE
             draw.rectangle(box, outline=color, width=3)
-        # Flechas de la línea de pago, fuera de las ventanas.
+        # Flechas de la línea de pago, entre las luces y las ventanas.
         mid = MARGIN + CELL_H * 1.5
         size = 7
-        draw.polygon([(3, mid - size), (3 + size + 2, mid), (3, mid + size)], fill=GOLD)
-        right = WIDTH - 4
+        left = SIDE + 3
+        draw.polygon([(left, mid - size), (left + size + 2, mid), (left, mid + size)], fill=GOLD)
+        right = WIDTH - 4 - SIDE
         draw.polygon([(right, mid - size), (right - size - 2, mid), (right, mid + size)], fill=GOLD)
         return image
 
@@ -369,7 +522,7 @@ class SlotsRenderer:
         draw = ImageDraw.Draw(layer)
         top = MARGIN + CELL_H
         draw.rounded_rectangle(
-            (MARGIN - 6, top - 2, WIDTH - MARGIN + 5, top + CELL_H + 1),
+            (LEFT - 6, top - 2, WIDTH - LEFT + 5, top + CELL_H + 1),
             radius=8,
             outline=HIGHLIGHT,
             width=4,
@@ -402,16 +555,28 @@ class SlotsRenderer:
             frame.paste(column, (self.reel_x(reel), MARGIN))
         return frame
 
+    def _light(self, frame: Image.Image, look: Bulbs) -> Image.Image:
+        """Pega en `frame` (en su sitio) las dos columnas de luces con aspecto `look`."""
+        column = self._lights[look]
+        frame.paste(column, (LIGHTS_X, LIGHTS_Y))
+        frame.paste(column, (WIDTH - LIGHTS_X - LIGHTS_W, LIGHTS_Y))
+        return frame
+
+    def _lit_copy(self, frame: Image.Image, look: Bulbs) -> Image.Image:
+        return self._light(frame.copy(), look)
+
     def _with_highlight(self, frame: Image.Image) -> Image.Image:
         rgb = frame.convert("RGB")
         rgb.paste(self._highlight.convert("RGB"), (0, 0), self._highlight)
         return rgb.quantize(palette=self._palette, dither=Image.Dither.NONE)
 
     def still(self, stops: tuple[int, int, int], *, highlight: bool = False) -> Image.Image:
-        """Fotograma con los rodillos parados en `stops`."""
+        """Fotograma con los rodillos parados en `stops` y las luces tranquilas."""
         self._prepare()
         frame = self._compose(tuple(float(s) for s in stops), (0.0, 0.0, 0.0), glow=False)
-        return self._with_highlight(frame) if highlight else frame
+        if highlight:
+            frame = self._with_highlight(frame)
+        return self._light(frame, CALM)
 
     @staticmethod
     def _png(image: Image.Image) -> bytes:
@@ -458,7 +623,7 @@ class SlotsRenderer:
         """
         span = HEIGHT + COIN
         for coin in range(COINS[tier]):
-            x = COIN // 2 + round((coin * 0.618034) % 1 * (WIDTH - COIN))
+            x = SIDE + COIN // 2 + round((coin * 0.618034) % 1 * (WIDTH - 2 * SIDE - COIN))
             speed = 6 + (coin * 7) % 5
             y = (coin * 53 + index * speed) % span - COIN // 2
             self._paste(frame, self._coins[(index + coin) % len(self._coins)], (x, y))
@@ -517,6 +682,8 @@ class SlotsRenderer:
         tier = win_tier(won, stake) if won > 0 else None
         size = self._meter_size(won) if won > 0 else 0
         final = self._celebrate(lit, won, size, tier) if won > 0 else lit
+        if won > 0:
+            final = self._light(final, win_bulbs(tier))
         if turbo:
             return SlotsMedia(gif=b"", png=self._png(final), seconds=0.0)
 
@@ -539,24 +706,79 @@ class SlotsRenderer:
             previous = positions
             # La ventana del tercero se ilumina mientras se espera que pare.
             glow = spin.anticipation and stop_frames[1] <= index < last and index % 4 < 2
-            frames.append(self._compose(positions, speeds, glow=glow))
+            frame = self._compose(positions, speeds, glow=glow)
+            if index < last:
+                look = spin_bulbs(index, spin.anticipation, stop_frames[1])
+            else:
+                look = win_bulbs(tier) if won > 0 else CALM
+            frames.append(self._light(frame, look))
 
         if wins:
             flashes = FLASHES * (2 if spin.is_jackpot else 1)
-            plain = frames[-1]
+            plain, on = frames[-1], lit
+            if won > 0:
+                # Las luces parpadean a la vez que la línea.
+                plain = self._lit_copy(plain, DARK)
+                on = self._lit_copy(lit, win_bulbs(tier))
             for _ in range(flashes):
-                frames.extend([lit] * FLASH_FRAMES)
+                frames.extend([on] * FLASH_FRAMES)
                 frames.extend([plain] * FLASH_FRAMES)
         if won > 0:
             values = rollup_values(won, rollup_frames(tier))
             for index, amount in enumerate(values):
-                frames.append(self._celebrate(lit, amount, size, tier, index))
+                frame = self._celebrate(lit, amount, size, tier, index)
+                frames.append(self._light(frame, rollup_bulbs(tier, index)))
         frames.append(final)
 
         durations = [FRAME_MS] * (len(frames) - 1) + [FINAL_FRAME_MS]
         seconds = FRAME_MS * (len(frames) - 1) / 1000
         gif = shared_palette_gif(frames, durations)
         return SlotsMedia(gif=gif, png=self._png(final), seconds=seconds)
+
+
+def _bulb(draw: ImageDraw.ImageDraw, center: tuple[int, int], shape: str, color: Rgb) -> None:
+    """Una bombilla encendida de forma `shape` (ver `Bulbs`) centrada en `center`."""
+    cx, cy = center
+    r = BULB // 2
+    if shape == "round":
+        draw.ellipse((cx - r + 1, cy - r + 1, cx + r - 1, cy + r - 1), fill=color, outline=GLOW)
+    elif shape == "diamond":
+        points = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
+        draw.polygon(points, fill=color, outline=WHITE)
+    else:
+        if shape == "burst":
+            # Aureola: un anillo naranja alrededor de la estrella.
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=EPIC_RAY, width=1)
+        points = []
+        for k in range(8):
+            radius = r if k % 2 == 0 else r * 0.42
+            angle = -math.pi / 2 + k * math.pi / 4
+            points.append((cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+        draw.polygon(points, fill=color, outline=CABINET if shape == "star" else color)
+
+
+def bulb_centers() -> list[tuple[int, int]]:
+    """Centro de cada bombilla dentro de la columna, de abajo arriba."""
+    cx = LIGHTS_W // 2
+    top, bottom = BULB // 2 + 1, LIGHTS_H - 1 - BULB // 2 - 1
+    step = (bottom - top) / (BULBS - 1)
+    return [(cx, round(bottom - bulb * step)) for bulb in range(BULBS)]
+
+
+def _light_column(look: Bulbs) -> Image.Image:
+    """Columna de luces con aspecto `look`, sobre el color del mueble.
+
+    Las apagadas se ven como un casquillo oscuro, para que el patrón se lea.
+    """
+    image = Image.new("RGB", (LIGHTS_W, LIGHTS_H), CABINET)
+    draw = ImageDraw.Draw(image)
+    r = BULB // 2 - 1
+    for (cx, cy), color in zip(bulb_centers(), look.lit, strict=True):
+        if color is None:
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=BULB_SOCKET, outline=DARK_LINE)
+        else:
+            _bulb(draw, (cx, cy), look.shape, color)
+    return image
 
 
 def _sample(images: list[Image.Image]) -> Image.Image:
