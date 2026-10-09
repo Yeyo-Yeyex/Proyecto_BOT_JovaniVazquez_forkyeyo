@@ -63,6 +63,7 @@ from bot.services.horses_render import (
     rain_start,
     screen_positions,
 )
+from bot.utils.gif import local_palette_gif
 
 logger = logging.getLogger(__name__)
 
@@ -462,7 +463,7 @@ class SceneRenderer:
             for url in urls
         ]
         durations = [FRAME_MS] * (len(frames) - 1) + [FINAL_FRAME_MS]
-        gif = HorseRenderer._gif(frames, durations)
+        gif = local_palette_gif(frames, durations)
         png = io.BytesIO()
         frames[-1].save(png, format="PNG", optimize=True)
         seconds = FRAME_MS * (len(frames) - 1) / 1000

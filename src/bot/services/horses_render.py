@@ -23,7 +23,7 @@ Coste: el fondo y los dibujos de cada caballo en cada postura se pintan una
 vez al doble de tamaño, se reducen y se guardan. Cada fotograma copia el fondo
 y pega encima los caballos y el marcador. Una carrera son ~120-160
 fotogramas, ~1 s de CPU fuera del event loop, y el GIF pesa ~1-2 MB porque
-cada fotograma solo guarda lo que cambia (como en el Pollo).
+cada fotograma solo guarda lo que cambia (`bot.utils.gif.local_palette_gif`).
 
 Daltonismo: nada depende solo del color. Cada caballo lleva su dorsal escrito
 en el lomo y en el marcador; el ganador sale en el podio con su número.
@@ -40,7 +40,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.services.horses import (
@@ -59,6 +58,7 @@ from bot.services.horses import (
     margin_text,
     photo_finish,
 )
+from bot.utils.gif import local_palette_gif
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 TITLE_FONT = ASSETS / "botes" / "fonts" / "luckiest-guy.woff"
@@ -322,7 +322,7 @@ class HorseRenderer:
         final = self._podium(card, result, frames[-1], photo=photo)
         durations = [FRAME_MS] * len(frames) + [FINAL_FRAME_MS]
         frames.append(final)
-        gif = self._gif(frames, durations)
+        gif = local_palette_gif(frames, durations)
         seconds = FRAME_MS * (len(frames) - 1) / 1000
         return Media(gif=gif, png=self._png(final), seconds=seconds)
 
@@ -637,47 +637,6 @@ class HorseRenderer:
         buffer = io.BytesIO()
         image.convert("RGB").quantize(colors=200, method=Image.Quantize.FASTOCTREE).save(
             buffer, format="PNG", optimize=True
-        )
-        return buffer.getvalue()
-
-    @staticmethod
-    def _gif(frames: Sequence[Image.Image], durations: Sequence[int]) -> bytes:
-        """GIF en el que cada fotograma solo guarda lo que cambia (como el del Pollo)."""
-        transparent = 255
-        images: list[Image.Image] = []
-        previous: np.ndarray | None = None
-        for frame in frames:
-            rgb = np.asarray(frame.convert("RGB"), dtype=np.uint8)
-            packed = np.frombuffer(frame.convert("RGB").tobytes("raw", "RGBX"), dtype=np.uint32)
-            packed = packed.reshape(rgb.shape[:2])
-            changed = np.ones(rgb.shape[:2], dtype=bool) if previous is None else packed != previous
-            previous = packed
-            ys, xs = np.nonzero(changed)
-            if len(ys) == 0:
-                ys, xs = np.array([0]), np.array([0])
-            box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-            region = Image.fromarray(rgb[box[1] : box[3], box[0] : box[2]], "RGB")
-            palette = region.quantize(colors=255, method=Image.Quantize.FASTOCTREE)
-            indexed = np.asarray(
-                Image.fromarray(rgb, "RGB").quantize(palette=palette, dither=Image.Dither.NONE),
-                dtype=np.uint8,
-            )
-            out = np.where(changed, indexed, transparent).astype(np.uint8)
-            image = Image.fromarray(out, "P")
-            colors = (palette.getpalette() or [])[: 255 * 3]
-            image.putpalette(colors + [0] * (768 - len(colors)))
-            images.append(image)
-        buffer = io.BytesIO()
-        images[0].save(
-            buffer,
-            format="GIF",
-            save_all=True,
-            append_images=images[1:],
-            duration=list(durations),
-            loop=0,
-            disposal=1,
-            transparency=transparent,
-            optimize=False,
         )
         return buffer.getvalue()
 

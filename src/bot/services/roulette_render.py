@@ -30,6 +30,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from bot.services.roulette import WHEEL_ORDER, color, label
+from bot.utils.gif import shared_palette_gif
 
 FONT_PATH = (
     Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
@@ -296,17 +297,10 @@ class WheelRenderer:
         ]
         quantized = self._quantize(frames)
 
-        gif = io.BytesIO()
-        # Sin `loop`, Pillow no escribe la extensión NETSCAPE: el GIF se
-        # reproduce una sola vez en los clientes que lo respetan.
-        quantized[0].save(
-            gif,
-            format="GIF",
-            save_all=True,
-            append_images=quantized[1:],
-            duration=[FRAME_MS] * (FRAME_COUNT - 1) + [FINAL_FRAME_MS],
-            disposal=1,
+        # Sin repetir: el GIF se reproduce una sola vez en los clientes que lo respetan.
+        gif = shared_palette_gif(
+            quantized, [FRAME_MS] * (FRAME_COUNT - 1) + [FINAL_FRAME_MS], loop=False
         )
         png = io.BytesIO()
         quantized[-1].save(png, format="PNG", optimize=True)
-        return SpinMedia(gif=gif.getvalue(), png=png.getvalue())
+        return SpinMedia(gif=gif, png=png.getvalue())

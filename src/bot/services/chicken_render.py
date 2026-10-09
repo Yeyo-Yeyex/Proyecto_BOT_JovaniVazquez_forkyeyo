@@ -33,7 +33,8 @@ Coste: el fondo de cada dificultad (asfalto, líneas, alcantarillas con sus
 números) se pinta una vez y se guarda (~4-10 MB por dificultad). Cada
 fotograma recorta la ventana de la cámara y dibuja encima lo que se mueve.
 Un paso son ~20-35 fotogramas, ~0,2-0,4 s de CPU fuera del event loop, y el
-GIF pesa ~100-250 KB porque cada fotograma solo guarda lo que cambia.
+GIF pesa ~100-250 KB porque cada fotograma solo guarda lo que cambia
+(`bot.utils.gif.local_palette_gif`).
 
 Daltonismo (deuteranopia): nada depende solo del color. Carril cruzado =
 valla con rayas y alcantarilla con borde grueso y ✓; atropello = estrella de
@@ -46,12 +47,10 @@ import io
 import math
 import random
 import threading
-from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from bot.services.chicken import (
@@ -62,6 +61,7 @@ from bot.services.chicken import (
     multiplier_cents,
     short_multiplier,
 )
+from bot.utils.gif import local_palette_gif
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 TITLE_FONT = ASSETS / "botes" / "fonts" / "luckiest-guy.woff"
@@ -429,7 +429,8 @@ class ChickenRenderer:
         frames.append(self._frame(self._resting_scene(game, seed=seed, note=note)))
         seconds = sum(durations) / 1000
         durations.append(FINAL_FRAME_MS)
-        return Media(gif=self._gif(frames, durations), png=self._png(frames[-1]), seconds=seconds)
+        gif = local_palette_gif(frames, durations)
+        return Media(gif=gif, png=self._png(frames[-1]), seconds=seconds)
 
     # -- Escenas en reposo ------------------------------------------------------------------
 
@@ -1126,55 +1127,5 @@ class ChickenRenderer:
         buffer = io.BytesIO()
         image.quantize(colors=128, method=Image.Quantize.FASTOCTREE).save(
             buffer, format="PNG", optimize=True
-        )
-        return buffer.getvalue()
-
-    @staticmethod
-    def _gif(frames: Sequence[Image.Image], durations: Sequence[int]) -> bytes:
-        """GIF en el que cada fotograma solo guarda lo que cambia, con su propia paleta.
-
-        Igual que en los Botes (`hold_win_render._gif`): los píxeles iguales al
-        fotograma anterior se marcan transparentes y no se borra lo anterior
-        (`disposal=1`), así las zonas quietas casi no pesan.
-        """
-        transparent = 255
-        images: list[Image.Image] = []
-        previous: np.ndarray | None = None
-        for frame in frames:
-            rgb = np.asarray(frame.convert("RGB"), dtype=np.uint8)
-            # Cada píxel como un entero de 32 bits: comparar es una sola pasada.
-            packed = np.frombuffer(frame.convert("RGB").tobytes("raw", "RGBX"), dtype=np.uint32)
-            packed = packed.reshape(rgb.shape[:2])
-            if previous is None:
-                changed = np.ones(rgb.shape[:2], dtype=bool)
-            else:
-                changed = packed != previous
-            previous = packed
-            ys, xs = np.nonzero(changed)
-            if len(ys) == 0:
-                ys, xs = np.array([0]), np.array([0])
-            box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-            region = Image.fromarray(rgb[box[1] : box[3], box[0] : box[2]], "RGB")
-            palette = region.quantize(colors=255, method=Image.Quantize.FASTOCTREE)
-            indexed = np.asarray(
-                Image.fromarray(rgb, "RGB").quantize(palette=palette, dither=Image.Dither.NONE),
-                dtype=np.uint8,
-            )
-            out = np.where(changed, indexed, transparent).astype(np.uint8)
-            image = Image.fromarray(out, "P")
-            colors = (palette.getpalette() or [])[: 255 * 3]
-            image.putpalette(colors + [0] * (768 - len(colors)))
-            images.append(image)
-        buffer = io.BytesIO()
-        images[0].save(
-            buffer,
-            format="GIF",
-            save_all=True,
-            append_images=images[1:],
-            duration=list(durations),
-            loop=0,
-            disposal=1,
-            transparency=transparent,
-            optimize=False,
         )
         return buffer.getvalue()

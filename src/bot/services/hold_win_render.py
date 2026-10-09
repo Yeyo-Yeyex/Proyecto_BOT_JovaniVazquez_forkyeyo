@@ -23,10 +23,11 @@ revelarse. El modo turbo se salta los GIF y manda solo el PNG final.
 Las imágenes se montan en RGB. El PNG final va a color completo (~120 KB) y es
 lo único que se manda en turbo. En el GIF cada fotograma lleva su propia paleta
 de 255 colores sacada de lo que cambia en él (las fotos de los símbolos no caben
-en una paleta común) y solo guarda los píxeles que cambian. Una tirada base
-cuesta ~0,7 s de CPU fuera del event loop y pesa 300-450 KB; una tirada del
-bonus, ~150-250 KB. Fondo, símbolos y casillas se preparan una vez por máquina
-(unos pocos MB en memoria; el pico al dibujar ronda los 50 MB).
+en una paleta común) y solo guarda los píxeles que cambian
+(`bot.utils.gif.local_palette_gif`). Una tirada base cuesta ~0,6 s de CPU
+fuera del event loop y pesa 300-450 KB; una tirada del bonus, ~150-250 KB.
+Fondo, símbolos y casillas se preparan una vez por máquina (unos pocos MB en
+memoria; el pico al dibujar ronda los 50 MB).
 
 Las monedas se dibujan
 aquí y se distinguen por la forma, no solo por el color
@@ -65,6 +66,7 @@ from bot.services.hold_win import (
     cell_index,
     to_amount,
 )
+from bot.utils.gif import local_palette_gif
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "botes"
 FONT_PATH = (
@@ -102,11 +104,6 @@ OVERSHOOT = 0.16
 BOUNCE_FRAMES = 2
 BLUR_SPEED = 0.45
 BLUR_PIXELS = 14
-#: Colores de la paleta de cada fotograma del GIF (el índice 255 queda para «sin cambios»). El PNG
-#: final va a color completo: las fotos de los símbolos lo necesitan.
-PALETTE_COLORS = 255
-#: Índice de la paleta reservado para «igual que el fotograma anterior».
-TRANSPARENT = 255
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -737,57 +734,6 @@ class HoldWinRenderer:
         image.save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
 
-    def _gif(self, kit: _Kit, frames: list[Image.Image], durations: list[int]) -> bytes:
-        """GIF en el que cada fotograma solo guarda lo que cambia, con su propia paleta.
-
-        Los símbolos son fotos: una paleta común de 255 colores para toda la
-        máquina los dejaba sin verdes ni amarillos. Así que cada fotograma
-        lleva su paleta (tabla de color local del GIF) sacada solo de lo que
-        cambia en él. Los píxeles iguales al fotograma anterior se marcan como
-        transparentes (`TRANSPARENT`) y el GIF no borra lo anterior
-        (`disposal=1`): se ve lo de debajo. Las zonas quietas quedan como
-        largas tiras de un mismo índice, que el LZW comprime casi a cero.
-        """
-        del kit
-        images: list[Image.Image] = []
-        previous: np.ndarray | None = None
-        for frame in frames:
-            rgb = np.asarray(frame.convert("RGB"), dtype=np.uint8)
-            if previous is None:
-                changed = np.ones(rgb.shape[:2], dtype=bool)
-            else:
-                changed = np.any(rgb != previous, axis=2)
-            previous = rgb
-            ys, xs = np.nonzero(changed)
-            if len(ys) == 0:
-                ys, xs = np.array([0]), np.array([0])
-            # La paleta sale de la zona que cambia (recortada a su caja).
-            box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-            region = Image.fromarray(rgb[box[1] : box[3], box[0] : box[2]], "RGB")
-            palette = region.quantize(colors=PALETTE_COLORS, method=Image.Quantize.FASTOCTREE)
-            indexed = np.asarray(
-                Image.fromarray(rgb, "RGB").quantize(palette=palette, dither=Image.Dither.NONE),
-                dtype=np.uint8,
-            )
-            out = np.where(changed, indexed, TRANSPARENT).astype(np.uint8)
-            image = Image.fromarray(out, "P")
-            colors = (palette.getpalette() or [])[: PALETTE_COLORS * 3]
-            image.putpalette(colors + [0] * (768 - len(colors)))
-            images.append(image)
-        buffer = io.BytesIO()
-        images[0].save(
-            buffer,
-            format="GIF",
-            save_all=True,
-            append_images=images[1:],
-            duration=durations,
-            loop=0,
-            disposal=1,
-            transparency=TRANSPARENT,
-            optimize=False,
-        )
-        return buffer.getvalue()
-
     # -- Juego base -----------------------------------------------------------------
 
     def _base_final(
@@ -920,7 +866,7 @@ class HoldWinRenderer:
                 durations.append(220)
         frames.append(final)
         durations.append(FINAL_FRAME_MS)
-        gif = self._gif(kit, frames, durations)
+        gif = local_palette_gif(frames, durations)
         return Media(gif=gif, png=final_png, seconds=sum(durations[:-1]) / 1000)
 
     def _paint_reel(
@@ -1117,7 +1063,7 @@ class HoldWinRenderer:
                 durations.append(170)
         frames.append(final)
         durations.append(FINAL_FRAME_MS)
-        gif = self._gif(kit, frames, durations)
+        gif = local_palette_gif(frames, durations)
         return Media(gif=gif, png=final_png, seconds=sum(durations[:-1]) / 1000)
 
 
