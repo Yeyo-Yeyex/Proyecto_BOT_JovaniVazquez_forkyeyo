@@ -112,6 +112,41 @@ POT_SHARE_PERCENT = 3
 POT_SEED = 5_000
 
 
+#: Veces la apuesta (lo cobrado entre lo apostado) a partir de las que una tirada
+#: se celebra a lo grande. Las máquinas de verdad celebran «BIG WIN» con premios
+#: modestos: cuanto más a menudo suena la fanfarria, más se recuerda haber ganado.
+BIG_WIN = 5
+MEGA_WIN = 15
+EPIC_WIN = 50
+
+
+class WinTier:
+    """Nivel de celebración de un premio; texto estable para el dibujo y los logros."""
+
+    BIG = "big"
+    MEGA = "mega"
+    EPIC = "epic"
+
+
+def win_tier(won: int, stake: int) -> str | None:
+    """Nivel de celebración de lo cobrado (línea más bote) frente a la apuesta.
+
+    Args:
+        won: Todo lo cobrado en la tirada.
+        stake: Apuesta de la tirada; en un giro gratis, la que lo activó.
+
+    Returns:
+        `WinTier.EPIC`, `MEGA` o `BIG`, o `None` si no llega a ×`BIG_WIN`.
+    """
+    if stake <= 0 or won < BIG_WIN * stake:
+        return None
+    if won >= EPIC_WIN * stake:
+        return WinTier.EPIC
+    if won >= MEGA_WIN * stake:
+        return WinTier.MEGA
+    return WinTier.BIG
+
+
 # -- Tirada -------------------------------------------------------------------------
 
 
