@@ -30,6 +30,7 @@ from bot.cogs.slots import (
     machine_embed,
     parse_stake,
     result_text,
+    spinning_embed,
     ticket_text,
 )
 from bot.repositories.economy import EconomyRepository
@@ -1048,3 +1049,10 @@ def test_un_premio_de_diez_veces_se_celebra_como_gran_premio() -> None:
     play = make_play(GRAPES, payout=1_000)
     assert play.tier == WinTier.BIG
     assert result_text(play, random.Random(0)).splitlines()[0][2:] in TIER_LINES[WinTier.BIG]
+
+
+def test_mientras_gira_se_ve_el_cartel_de_premios() -> None:
+    embed = spinning_embed(owner="Diego", stake=300, free=False, hot=False, pot=POT_SEED)
+    fields = {field.name: field.value for field in embed.fields}
+    assert "Premios a 300 Y$" in fields
+    assert f"**{format_amount(300 * THREE_OF_A_KIND[SEVEN])}**" in "".join(fields.values())

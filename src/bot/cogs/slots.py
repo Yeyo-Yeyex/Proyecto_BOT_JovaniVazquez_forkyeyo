@@ -488,6 +488,10 @@ def spinning_embed(*, owner: str, stake: int, free: bool, hot: bool, pot: int) -
         lines.append(f"🔥 Tirada caliente: ×{HOT_MULTIPLIER}")
     embed = discord.Embed(title="🎰 Tragaperras", description="\n".join(lines), color=COLOR_SPIN)
     embed.add_field(name="💰 Bote", value=f"**{format_amount(pot)}**")
+    # El cartel sigue a la vista mientras giran: se mira lo que podría tocar.
+    left, right = prize_columns(stake)
+    embed.add_field(name=f"Premios a {format_amount(stake)}", value=left)
+    embed.add_field(name="\u200b", value=right)
     embed.set_image(url=f"attachment://{GIF_NAME}")
     embed.set_footer(text=f"Máquina de {owner}")
     return embed
