@@ -392,7 +392,11 @@ python -m bot
   pantalla (reserva de 4): tres iguales es **ATARI** (+30 bolas), los impares
   encadenan premios en un **RUSH** y el 7 es el **SUPER RUSH**. El reach
   (dos iguales y el centro frenando) es espectáculo y no cambia nada.
-  Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
+  Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ▶️ Auto, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
+  ▶️ Auto encadena tandas con su animación hasta 25, y para sola con un atari,
+  sin saldo o al perder 10 veces la apuesta; mientras corre, el botón es ⏹️ Parar.
+  La tanda siguiente se sortea y se dibuja mientras miras la anterior, sin mover
+  dinero hasta que pulsas: el clic pasa de ~0,3 s a pocos milisegundos.
   El mueble, los clavos, los bolsillos, la bola y las bombillas se pintan con canvas una sola vez y se guardan como PNG
   (`python docs/pachinko_piezas.py` los regenera); el bot solo los pega, sin abrir ningún navegador.
   Los números salen de fracciones exactas en las pruebas. Las bolas caen con
@@ -435,7 +439,7 @@ python -m bot
   le llega para un premio, emite deuda pública. Los sorteos se celebran solos
   a su hora y se anuncian en el canal; los rascas se rascan pulsando las
   casillas (spoilers).
-- **Logros** (`logros [miembro]`): 1.904 logros en 39 categorías. El menú
+- **Logros** (`logros [miembro]`): 1.936 logros en 39 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -443,7 +447,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 319 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 337 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -752,7 +756,7 @@ src/bot/
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
-│   ├── pachinko.py      # Pachinko con botones, Ráfaga y turbo
+│   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos

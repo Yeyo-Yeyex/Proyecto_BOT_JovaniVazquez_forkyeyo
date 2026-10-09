@@ -9,6 +9,15 @@ Botones:
 
 - 🎯 **Lanzar**: cobra la tanda, lanza las 10 bolas y paga lo que devuelvan.
 - 🔁 **Ráfaga ×5**: cinco tandas seguidas con un solo resumen y una sola imagen.
+- ▶️ **Auto**: tandas normales encadenadas, cada una con su animación y su imagen
+  final, como si el dueño pulsara 🎯 Lanzar una y otra vez. Mientras corre, el
+  botón es ⏹️ **Parar** y es lo único que se puede pulsar (Parar solo marca un
+  flag en memoria y contesta al instante; la tanda en curso termina entera). Para
+  sola si no llega el saldo, si sale un atari (cualquier tanda con premio gordo,
+  como en la Ráfaga), si las pérdidas netas de la sesión llegan a 10 veces la
+  apuesta o al llegar a 25 tandas. Con 🎲 Al azar, cada tanda cae en un tablero
+  distinto. El bucle y sus reglas están en `bot.services.autoplay`; el cog solo
+  pone la tanda (`_autoplay_step`), el cierre (`_autoplay_finish`) y los logros.
 - ⚡ **Turbo**: sin animación, solo la imagen final (más rápido y casi sin datos).
 - **½**, **×2**, 💰 **All-in**: cambian la apuesta. 📋 **Premios**: la tabla.
 - Menú de **tablero**: 🌸 Sakura, 🏮 Clásica, 🐉 Dragón, 👹 Oni o 🎲 Al azar
@@ -22,6 +31,37 @@ monta en cada tanda (~0,8 s de CPU fuera del event loop y 130-370 KB). Al acabar
 se cambia por el PNG final, como en la tragaperras. El turbo y el tablero se
 recuerdan por miembro en memoria hasta reiniciar.
 
+**Precarga de la tanda siguiente.** Cobrar, sortear (`machine.launch`), calcular el
+movimiento (`motion_for`) y dibujar el GIF eran todo trabajo después del clic.
+Ahora, mientras el jugador mira el resultado (y durante la animación de cada
+tanda del ▶️ Auto), la máquina prepara en segundo plano la siguiente
+(`Pachinko.prepare`, en un hilo, en una tarea con nombre
+`pachinko-preload-<servidor>-<miembro>`): el tablero (con 🎲 se sortea ya), el
+`Volley`, el movimiento y la imagen (GIF o solo PNG, según el turbo de ese
+momento). Solo hay una por máquina. Al pulsar 🎯 Lanzar o en el siguiente paso
+del Auto, si la precarga sigue valiendo (mismo tablero elegido, o 🎲, y mismo
+turbo) se cobra con `settle_bet` con su `volley` y se enseña sin dibujar; si aún
+no ha acabado, se espera a ella en vez de sortear otra; si ya no vale (o
+falló, y entonces se registra), se tira y se juega como antes. La Ráfaga no
+dibuja y no usa ni gasta la precarga. Cambiar la apuesta no la invalida: ni el
+sorteo ni ninguna imagen dependen de ella. Cambiar de tablero o de turbo la
+cancela; cerrar la máquina (`on_timeout`) o descargar el cog también.
+
+**El dinero no se mueve hasta el clic**, y por eso es justo: sortear antes o en
+el clic da la misma probabilidad (el sorteo no mira la apuesta ni al jugador),
+nadie ve el resultado antes de pagar y, si el jugador cierra la máquina, cambia
+de tablero o el bot se reinicia, la tanda se tira sin más (no hay cobro, ni
+logro, ni rastro en la economía). Detalle en `Pachinko.prepare`.
+
+Lo que gana (script de usar y tirar con la economía en SQLite, el dibujo real,
+tablero Clásica y dobles de Discord; mediana de 12 clics desde `ack` hasta la
+primera edición del mensaje, sin contar la espera de la animación): con el GIF,
+~290 ms sin precarga y ~2,5 ms con ella; en turbo, ~125 ms y ~2,6 ms. Con 🎲 Al
+azar sale parecido (~350 ms y ~2,3 ms con GIF). Si el clic llega justo después
+del anterior y la precarga aún no está lista, se espera lo que le falte: en el
+peor caso, lo mismo que sin ella. El coste en CPU es el mismo; solo cambia
+cuándo se paga. Los números son de un portátil y varían con el equipo.
+
 Si `CASINO_CHANNEL_IDS` está configurado, la máquina solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes, insertar
 enlaces (embeds) y adjuntar archivos.
@@ -33,6 +73,7 @@ import asyncio
 import io
 import logging
 import random
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,7 +86,21 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
-from bot.services.achievements import StatDelta, casino_stats, pachinko_stats
+from bot.services.achievements import (
+    StatDelta,
+    casino_stats,
+    pachinko_autoplay_stats,
+    pachinko_stats,
+)
+from bot.services.autoplay import (
+    AUTOPLAY_MAX,
+    AUTOPLAY_MIN_GAP,
+    AutoplayOutcome,
+    AutoplaySession,
+    AutoplayStop,
+    SpinResult,
+    StopReason,
+)
 from bot.services.economy import (
     BalanceLimitError,
     BetSettlement,
@@ -99,6 +154,8 @@ BURST_VOLLEYS = 5
 SHOUT_MULTIPLIER = 20
 #: Premios gordos encadenados que se anuncian en el canal aunque paguen poco.
 SHOUT_RUSH = 5
+#: Cómo llama el pachinko a las rondas de ▶️ Auto en los textos de `bot.services.autoplay`.
+AUTOPLAY_UNIT = "tandas"
 
 #: Valor del menú para jugar cada tanda en un tablero al azar.
 RANDOM_BOARD = "azar"
@@ -162,6 +219,44 @@ class PachinkoPlay:
     def balance(self) -> int:
         """Saldo tras la tanda, con el IRPF ya ajustado."""
         return self.settlement.balance
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedVolley:
+    """Una tanda sorteada y dibujada de antemano, todavía sin cobrar.
+
+    No lleva apuesta: ni el sorteo, ni el movimiento ni ninguna imagen
+    (`bot.services.pachinko_render` solo dibuja bolas, nunca la cifra apostada)
+    dependen de ella, así que sirve para cualquier apuesta. Lo único que decide
+    si sigue valiendo es lo que se ve: el tablero elegido y el turbo.
+
+    Attributes:
+        board_key: Lo que había elegido el jugador al prepararla (la clave de
+            un tablero o `RANDOM_BOARD`); con 🎲 el tablero ya está sorteado en
+            `volley.board`.
+        turbo: Si `media` se dibujó sin animación.
+    """
+
+    board_key: str
+    turbo: bool
+    volley: Volley
+    motion: VolleyMotion
+    media: PachinkoMedia
+
+
+@dataclass(slots=True)
+class _Preload:
+    """La precarga en marcha de una máquina: qué se pidió y la tarea que la prepara."""
+
+    board_key: str
+    turbo: bool
+    task: asyncio.Task[PreparedVolley]
+
+
+def _log_preload_failure(task: asyncio.Task[PreparedVolley]) -> None:
+    """Registra una precarga que falló (y la da por leída); jugar sigue sin ella."""
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.warning("Falló la precarga del pachinko: se jugará sin ella", exc_info=error)
 
 
 def _digits(volley: Volley) -> str | None:
@@ -406,6 +501,11 @@ class PachinkoView(discord.ui.View):
 
     Guarda la apuesta, el modo turbo y las tandas de la sesión. No guarda
     dinero: el saldo se lee y se cambia siempre a través de la economía.
+
+    `_busy` vale mientras hay una acción en curso (una tanda, una Ráfaga o todo
+    un ▶️ Auto): dos botones a la vez no pueden cobrar dos veces. `autoplay` es la
+    sesión de ▶️ Auto en marcha, si la hay. `_preload` es la tanda de después,
+    que se prepara mientras el jugador mira la anterior (ver el cog).
     """
 
     def __init__(
@@ -431,6 +531,9 @@ class PachinkoView(discord.ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        self.autoplay: AutoplaySession | None = None
+        self._preload: _Preload | None = None
+        self._closed = False
         self._build_buttons()
 
     # -- Construcción ---------------------------------------------------------------
@@ -455,6 +558,9 @@ class PachinkoView(discord.ui.View):
         green, blue = discord.ButtonStyle.success, discord.ButtonStyle.primary
         self.launch_button = self._add("🎯 Lanzar", 0, self._launch, style=green, custom_id="go")
         self._add(f"🔁 Ráfaga ×{BURST_VOLLEYS}", 0, self._burst, style=blue, custom_id="burst")
+        self.autoplay_button = self._add(
+            "▶️ Auto", 0, self._autoplay_click, style=blue, custom_id="autoplay"
+        )
         self.turbo_button = self._add("⚡ Turbo", 0, self._toggle_turbo, custom_id="turbo")
         self._add("½", 1, self._halve, custom_id="half")
         self._add("×2", 1, self._double_stake, custom_id="x2")
@@ -496,9 +602,19 @@ class PachinkoView(discord.ui.View):
 
     def _set_enabled(self, enabled: bool) -> None:
         """Activa o desactiva los botones y pone al día sus etiquetas."""
+        running = self.autoplay is not None
         for item in self.children:
             if isinstance(item, discord.ui.Button | discord.ui.Select):
-                item.disabled = not enabled
+                # Con ▶️ Auto en marcha solo queda el botón de Parar.
+                item.disabled = running or not enabled
+        stopping = running and self.autoplay is not None and self.autoplay.stop_requested
+        if running:
+            self.autoplay_button.disabled = stopping
+            self.autoplay_button.label = "⏹️ Parando…" if stopping else "⏹️ Parar"
+            self.autoplay_button.style = discord.ButtonStyle.danger
+        else:
+            self.autoplay_button.label = "▶️ Auto"
+            self.autoplay_button.style = discord.ButtonStyle.primary
         self.board_select.options = self._board_options()
         self.launch_button.label = f"🎯 Lanzar · {format_amount(self.stake)}"
         self.turbo_button.label = "⚡ Turbo: sí" if self.turbo else "⚡ Turbo"
@@ -519,7 +635,10 @@ class PachinkoView(discord.ui.View):
         return False
 
     async def on_timeout(self) -> None:
-        """Desactiva los botones al cerrar la máquina por inactividad."""
+        """Cierra la máquina por inactividad: para el Auto, suelta la precarga y apaga todo."""
+        self.cog.machines.discard(self)
+        await self.close_autoplay()
+        self.close_preload()
         for item in self.children:
             if isinstance(item, discord.ui.Button | discord.ui.Select):
                 item.disabled = True
@@ -527,9 +646,80 @@ class PachinkoView(discord.ui.View):
             if self._last_interaction is not None:
                 await self._last_interaction.edit_original_response(view=self)
             elif self.message is not None:
-                await self.message.edit(view=self)
+                # Tras un ▶️ Auto largo el token de la interacción ya habrá caducado.
+                await self._message_edit(None)(view=self)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar el pachinko", exc_info=True)
+
+    async def close_autoplay(self) -> None:
+        """Detiene un ▶️ Auto en marcha: acaba la tanda en curso y cierra la tarea."""
+        session = self.autoplay
+        if session is None:
+            return
+        await session.close()
+        if self.autoplay is session:
+            # La tarea se canceló antes de poder cerrarse sola: deja la vista limpia.
+            self.autoplay = None
+            self.timeout = MACHINE_TIMEOUT
+            self._busy = False
+            self._set_enabled(True)
+
+    # -- Precarga ---------------------------------------------------------------------
+
+    def _start_preload(self) -> None:
+        """Pone a preparar la tanda siguiente, si no hay ya una valiendo."""
+        if self._closed or not self.cog.preload_enabled:
+            return
+        current = self._preload
+        if current is not None:
+            if (current.board_key, current.turbo) == (self.board_key, self.turbo):
+                return
+            current.task.cancel()
+        task = asyncio.create_task(
+            self.cog.prepare(self.board_key, turbo=self.turbo),
+            name=f"pachinko-preload-{self.guild_id}-{self.owner.id}",
+        )
+        task.add_done_callback(_log_preload_failure)
+        self._preload = _Preload(self.board_key, self.turbo, task)
+
+    def _drop_stale_preload(self) -> None:
+        """Tira la precarga si el tablero o el turbo ya no son los suyos."""
+        current = self._preload
+        if current is not None and (current.board_key, current.turbo) != (
+            self.board_key,
+            self.turbo,
+        ):
+            current.task.cancel()
+            self._preload = None
+
+    def close_preload(self) -> None:
+        """Cancela la precarga y no deja que se prepare otra (la máquina se cierra)."""
+        self._closed = True
+        preload, self._preload = self._preload, None
+        if preload is not None:
+            preload.task.cancel()
+
+    async def _take_preload(self, *, turbo: bool) -> PreparedVolley | None:
+        """Entrega la tanda precargada si sigue valiendo; si no, `None` y se tira de nuevo.
+
+        Si todavía se está preparando, espera a que acabe en vez de lanzar otra.
+        Una precarga que falló o que ya no vale (otro tablero, otro turbo) se
+        descarta: el dinero no se ha movido, así que no se pierde nada.
+        """
+        preload, self._preload = self._preload, None
+        if preload is None:
+            return None
+        if (preload.board_key, preload.turbo) != (self.board_key, turbo):
+            preload.task.cancel()
+            return None
+        try:
+            await asyncio.wait({preload.task})
+        except asyncio.CancelledError:
+            preload.task.cancel()
+            raise
+        if preload.task.cancelled() or preload.task.exception() is not None:
+            return None
+        return preload.task.result()
 
     # -- Juego ----------------------------------------------------------------------
 
@@ -556,10 +746,14 @@ class PachinkoView(discord.ui.View):
     async def _play_one(self, *, turbo: bool, render: bool = True) -> PachinkoPlay:
         """Una tanda con la apuesta actual.
 
+        Con animación (`render`) usa la tanda precargada si la hay y vale; la
+        Ráfaga, que no dibuja, siempre sortea la suya y no gasta la precarga.
+
         Raises:
             InsufficientFundsError, BalanceLimitError: Como `Pachinko.play`.
         """
-        board = self.board or self.cog.machine.random_board()
+        prepared = await self._take_preload(turbo=turbo) if render else None
+        board = None if prepared else self.board or self.cog.machine.random_board()
         play = await self.cog.play(
             self.guild_id,
             self.owner.id,
@@ -568,6 +762,7 @@ class PachinkoView(discord.ui.View):
             turbo=turbo,
             render=render,
             session_volleys=self.session_volleys + 1,
+            prepared=prepared,
         )
         self.session_volleys += 1
         return play
@@ -602,11 +797,23 @@ class PachinkoView(discord.ui.View):
         await self._track(play)
         await self.cog.shout(play, self.owner, getattr(self.message, "channel", None))
 
-    async def show(self, play: PachinkoPlay, *, first_edit: EditFn, final_edit: EditFn) -> None:
+    async def show(
+        self,
+        play: PachinkoPlay,
+        *,
+        first_edit: EditFn,
+        final_edit: EditFn,
+        note: str | None = None,
+    ) -> None:
         """Enseña la tanda: el GIF y después el PNG final (o solo el PNG en turbo).
 
         El dinero ya está cobrado y pagado: si Discord falla al editar, el
-        saldo sigue siendo correcto.
+        saldo sigue siendo correcto. En cuanto el jugador tiene algo que mirar
+        (el GIF, o el PNG en turbo) se pone a preparar la tanda siguiente.
+
+        Args:
+            note: Línea pequeña bajo el resultado (el contador de ▶️ Auto). No
+                se guarda en `last_text`: es solo de esta tanda.
         """
         if play.media.gif:
             self._set_enabled(False)
@@ -620,14 +827,15 @@ class PachinkoView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(play.media.gif), filename=GIF_NAME)],
                 view=self,
             )
+            self._start_preload()
             await asyncio.sleep(play.media.seconds + REVEAL_MARGIN_SECONDS)
             edit = final_edit
         else:
             edit = first_edit
 
         text = result_text(play, random_board=self.board is None)
-        if note := tax_note([play]):
-            text += f"\n{note}"
+        if tax := tax_note([play]):
+            text += f"\n{tax}"
         if renta_hint := await renta.hint(
             self.cog.bot,
             self.guild_id,
@@ -639,12 +847,15 @@ class PachinkoView(discord.ui.View):
         self.last_won = play.won > 0
         self._set_enabled(True)
         await edit(
-            embed=await self.current_embed(balance=play.balance),
+            embed=await self.current_embed(
+                balance=play.balance, text=f"{text}\n{note}" if note else text
+            ),
             attachments=[discord.File(io.BytesIO(play.media.png), filename=PNG_NAME)],
             view=self,
         )
+        self._start_preload()
 
-    async def _track(self, play: PachinkoPlay) -> None:
+    async def _track(self, play: PachinkoPlay, *, autoplay: bool = False) -> None:
         """Logros de la tanda, después de enseñarla (antes destriparía el resultado)."""
         delta = pachinko_stats(
             play.volley,
@@ -654,6 +865,7 @@ class PachinkoView(discord.ui.View):
             turbo=not play.media.gif,
             session_volleys=play.session_volleys,
             when=datetime.now(TIMEZONE),
+            autoplay=autoplay,
         )
         delta.merge(
             casino_stats(
@@ -737,6 +949,7 @@ class PachinkoView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
                 view=self,
             )
+            self._start_preload()
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
@@ -748,6 +961,168 @@ class PachinkoView(discord.ui.View):
         )
         for play in plays:
             await self.cog.shout(play, self.owner, channel)
+
+    # -- ▶️ Auto ---------------------------------------------------------------------
+
+    def _message_edit(self, interaction: discord.Interaction | None) -> EditFn:
+        """Cómo editar el mensaje de la máquina sin el token de la interacción.
+
+        El token caduca a los 15 minutos y un ▶️ Auto largo puede pasarse. El mensaje
+        de un slash command es un `InteractionMessage`, cuyo `edit` usa ese token: se
+        edita entonces por el canal. Un mensaje normal (`.pachinko`) ya edita con el
+        token del bot. Sin mensaje guardado, se cae a la respuesta de la interacción.
+        """
+        message = self.message
+        if message is None:
+            if interaction is None:
+                raise RuntimeError("La máquina no tiene mensaje ni interacción que editar")
+            return interaction.edit_original_response
+        if isinstance(message, discord.InteractionMessage):
+            get_partial = getattr(message.channel, "get_partial_message", None)
+            if get_partial is not None:
+                return get_partial(message.id).edit
+        return message.edit
+
+    async def _autoplay_click(self, interaction: discord.Interaction) -> None:
+        """▶️ Auto empieza una sesión; con la sesión en marcha, el mismo botón es ⏹️ Parar."""
+        session = self.autoplay
+        if session is not None:
+            await self._stop_autoplay(interaction, session)
+            return
+        if self._busy:
+            # Doble clic o una tanda en curso: se acepta el clic y se ignora.
+            await ack(interaction)
+            return
+        self._busy = True
+        started = False
+        try:
+            await ack(interaction)
+            self._last_interaction = interaction
+            session = AutoplaySession(
+                stake=self.stake, max_spins=AUTOPLAY_MAX, min_gap=AUTOPLAY_MIN_GAP
+            )
+            self.autoplay = session
+            # Sin clics durante la sesión, la vista caducaría a los 3 minutos.
+            self.timeout = None
+            edit_fn = self._message_edit(interaction)
+
+            async def step(number: int) -> SpinResult:
+                return await self._autoplay_step(interaction, session, number, edit_fn)
+
+            async def finish(outcome: AutoplayOutcome) -> None:
+                await self._autoplay_finish(interaction, session, outcome, edit_fn)
+
+            session.start(
+                step,
+                on_finish=finish,
+                name=f"pachinko-autoplay-{self.guild_id}-{self.owner.id}",
+            )
+            started = True
+        finally:
+            if not started:
+                self.autoplay = None
+                self.timeout = MACHINE_TIMEOUT
+                self._busy = False
+
+    async def _stop_autoplay(
+        self, interaction: discord.Interaction, session: AutoplaySession
+    ) -> None:
+        """⏹️ Parar: marca el flag y contesta ya, sin base de datos (solo memoria)."""
+        if not session.armed:
+            # El mensaje aún no enseña el botón de Parar: es el doble clic de ▶️ Auto.
+            await ack(interaction)
+            return
+        session.request_stop()
+        self._set_enabled(True)
+        await interaction.response.edit_message(view=self)
+
+    async def _autoplay_step(
+        self,
+        interaction: discord.Interaction,
+        session: AutoplaySession,
+        number: int,
+        edit_fn: EditFn,
+    ) -> SpinResult:
+        """Una tanda de ▶️ Auto: igual que 🎯 Lanzar, pero editando sin token.
+
+        Raises:
+            AutoplayStop: Si no llega el saldo o la banca no puede pagar (antes de cobrar).
+        """
+        try:
+            play = await self._play_one(turbo=self.turbo)
+        except InsufficientFundsError:
+            raise AutoplayStop(StopReason.NO_FUNDS) from None
+        except BalanceLimitError:
+            raise AutoplayStop(StopReason.BANK_LIMIT) from None
+
+        async def first_edit(**kwargs: Any) -> None:
+            await edit_fn(**kwargs)
+            session.armed = True
+
+        net = session.net + play.net
+        sign = "+" if net > 0 else "-" if net < 0 else "±"
+        note = (
+            f"-# ▶️ Auto · tanda {number}/{session.max_spins} · neto {sign}{format_amount(abs(net))}"
+        )
+        stop: StopReason | None = None
+        try:
+            await self.show(play, first_edit=first_edit, final_edit=edit_fn, note=note)
+        except discord.HTTPException:
+            # Mensaje borrado o sin permisos: seguir jugando a ciegas gastaría dinero.
+            logger.warning("No se pudo editar el pachinko en pleno Auto", exc_info=True)
+            stop = StopReason.CLOSED
+        edited_at = time.monotonic()
+        await self._track(play, autoplay=True)
+        await self.cog.shout(play, self.owner, getattr(self.message, "channel", None))
+        if number == 1:
+            await renta.remind(self.cog.bot, interaction)
+        return SpinResult(
+            net=play.net, big_prize=play.volley.jackpots > 0, edited_at=edited_at, stop=stop
+        )
+
+    async def _autoplay_finish(
+        self,
+        interaction: discord.Interaction,
+        session: AutoplaySession,
+        outcome: AutoplayOutcome,
+        edit_fn: EditFn,
+    ) -> None:
+        """Cierra la sesión: devuelve los botones, enseña el resumen y apunta los logros."""
+        try:
+            self.autoplay = None
+            self.timeout = MACHINE_TIMEOUT
+            # El token de esta interacción puede caducar antes de que la máquina se cierre.
+            self._last_interaction = None
+            self._set_enabled(True)
+            try:
+                if outcome.spins == 0:
+                    if outcome.reason is StopReason.NO_FUNDS:
+                        await notify(
+                            interaction, insufficient_text(await self.balance(), self.stake)
+                        )
+                    elif outcome.reason is not StopReason.CLOSED:
+                        await notify(interaction, outcome.reason_text(unit=AUTOPLAY_UNIT))
+                    if session.armed:
+                        await edit_fn(embed=await self.current_embed(), view=self)
+                else:
+                    # El resumen va encima de la última tanda para que se siga viendo.
+                    text = outcome.summary(unit=AUTOPLAY_UNIT)
+                    if self.last_text:
+                        text += f"\n\n{self.last_text}"
+                    self.last_text = text
+                    self.last_won = outcome.net > 0
+                    await edit_fn(embed=await self.current_embed(), view=self)
+            except discord.HTTPException:
+                logger.debug("No se pudo cerrar el resumen del Auto", exc_info=True)
+        finally:
+            self._busy = False
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            getattr(self.message, "channel", None),
+            pachinko_autoplay_stats(volleys=outcome.spins, net=outcome.net, reason=outcome.reason),
+        )
 
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
         """Actualiza la máquina (apuesta, turbo) sin tocar la imagen.
@@ -762,6 +1137,7 @@ class PachinkoView(discord.ui.View):
     async def _toggle_turbo(self, interaction: discord.Interaction) -> None:
         self.turbo = not self.turbo
         self.cog.set_turbo_default(self.guild_id, self.owner.id, self.turbo)
+        self._drop_stale_preload()
         await self._refresh(interaction)
 
     async def _halve(self, interaction: discord.Interaction) -> None:
@@ -796,6 +1172,7 @@ class PachinkoView(discord.ui.View):
         if values and (values[0] in BOARDS or values[0] == RANDOM_BOARD):
             self.board_key = values[0]
         self.cog.set_board_default(self.guild_id, self.owner.id, self.board_key)
+        self._drop_stale_preload()
         self.last_text = None
         self.last_won = None
         self._set_enabled(True)
@@ -826,9 +1203,13 @@ class Pachinko(commands.Cog, name="Pachinko"):
         renderer: PachinkoRenderer | None = None,
         machine: PachinkoMachine | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
+        preload: bool = True,
     ) -> None:
         self.bot = bot
         self.economy = economy
+        #: Si las máquinas preparan la tanda siguiente mientras se mira la anterior.
+        #: Solo se apaga en pruebas que cuentan los sorteos uno a uno.
+        self.preload_enabled = preload
         self.renderer = renderer or PachinkoRenderer()
         self.machine = machine or PachinkoMachine()
         self.casino_channel_ids = casino_channel_ids
@@ -836,6 +1217,8 @@ class Pachinko(commands.Cog, name="Pachinko"):
         # miembros que han jugado; se pierde al reiniciar.
         self._turbo: dict[tuple[int, int], bool] = {}
         self._board: dict[tuple[int, int], str] = {}
+        # Máquinas abiertas: para cerrar su ▶️ Auto y su precarga si el bot se apaga.
+        self.machines: set[PachinkoView] = set()
         self._warm_task: asyncio.Task[None] | None = None
 
     async def cog_load(self) -> None:
@@ -845,9 +1228,21 @@ class Pachinko(commands.Cog, name="Pachinko"):
         )
 
     async def cog_unload(self) -> None:
-        """Cancela la preparación si el bot se apaga antes de acabarla."""
+        """Cancela la preparación si el bot se apaga antes de acabarla y cierra las máquinas.
+
+        Un ▶️ Auto en marcha acaba la tanda en curso (ya cobrada) y para; las
+        precargas se tiran sin más, porque no habían movido dinero.
+        """
         if self._warm_task is not None:
             self._warm_task.cancel()
+        for view in list(self.machines):
+            try:
+                await view.close_autoplay()
+            except Exception:
+                logger.exception("No se pudo cerrar el Auto del pachinko al apagar")
+            view.close_preload()
+            view.stop()
+        self.machines.clear()
 
     def turbo_default(self, guild_id: int, user_id: int) -> bool:
         """Si el miembro dejó el turbo puesto la última vez."""
@@ -865,16 +1260,52 @@ class Pachinko(commands.Cog, name="Pachinko"):
         """Recuerda el tablero para la próxima máquina del miembro."""
         self._board[(guild_id, user_id)] = board_key
 
+    def _build_prepared(self, board_key: str, board: Board, turbo: bool) -> PreparedVolley:
+        """Sorteo, movimiento y dibujo de una tanda (CPU: se llama fuera del event loop)."""
+        volley = self.machine.launch(board)
+        motion = motion_for(volley)
+        media = self.renderer.render(volley, turbo=turbo, motion=motion)
+        return PreparedVolley(
+            board_key=board_key, turbo=turbo, volley=volley, motion=motion, media=media
+        )
+
+    async def prepare(self, board_key: str, *, turbo: bool) -> PreparedVolley:
+        """Sortea y dibuja una tanda de antemano, **sin mover dinero**.
+
+        Es lo que la máquina hace mientras el jugador mira el resultado de la
+        anterior (y mientras corre la animación de cada tanda del ▶️ Auto), para
+        que el siguiente clic solo tenga que cobrar y enseñar. Se pasa a
+        `play(prepared=...)` y solo entonces se cobra.
+
+        Es justo porque el azar es el mismo: el sorteo no mira la apuesta ni al
+        jugador, así que sortear antes del clic o en el clic da la misma
+        probabilidad; nadie ve el resultado antes de pagar (no se enseña nada
+        hasta que `play` ha cobrado), y la apuesta no sale en ninguna imagen (el
+        GIF y el PNG solo pintan bolas), de modo que cambiarla no invalida la
+        tanda. Solo la invalidan los cambios de lo que sí se ve: el tablero
+        elegido y el turbo. Si el jugador cierra la máquina, cambia de tablero o
+        el bot se reinicia, la tanda se tira sin más: no había movido un yapdollar
+        ni dejado rastro en la economía ni en los logros.
+
+        Args:
+            board_key: Clave del tablero elegido o `RANDOM_BOARD`; con 🎲 se
+                sortea ya cuál toca.
+            turbo: Si hay que dibujar solo el PNG (sin GIF).
+        """
+        board = BOARDS.get(board_key) or self.machine.random_board()
+        return await asyncio.to_thread(self._build_prepared, board_key, board, turbo)
+
     async def play(
         self,
         guild_id: int,
         user_id: int,
         *,
         stake: int,
-        board: Board,
+        board: Board | None = None,
         turbo: bool,
         render: bool = True,
         session_volleys: int = 1,
+        prepared: PreparedVolley | None = None,
     ) -> PachinkoPlay:
         """Juega una tanda: decide las bolas y el sorteo y mueve el dinero de una vez.
 
@@ -884,23 +1315,37 @@ class Pachinko(commands.Cog, name="Pachinko"):
         (art. 33.1 LIRPF) y las pérdidas del mismo día compensan (art. 33.5.d
         LIRPF). Lo retenido va a la cuenta del Estado en la misma transacción.
 
+        Args:
+            board: Tablero de la tanda; no hace falta si se da `prepared`.
+            prepared: Tanda ya sorteada y dibujada por `prepare` (con el mismo
+                turbo): se cobra tal cual, sin volver a sortear ni a dibujar.
+
         Raises:
-            ValueError: Si la apuesta no llega a `MIN_STAKE`.
+            ValueError: Si la apuesta no llega a `MIN_STAKE` o no hay tablero ni tanda.
             InsufficientFundsError: Si el saldo no cubre la apuesta.
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
         if stake < MIN_STAKE:
             raise ValueError(f"La tanda mínima es {MIN_STAKE}.")
-        volley = self.machine.launch(board)
+        if prepared is not None:
+            if render and prepared.turbo != turbo:
+                raise ValueError("La tanda precargada se dibujó con otro turbo.")
+            volley, motion = prepared.volley, prepared.motion
+        elif board is not None:
+            volley = self.machine.launch(board)
+            # El movimiento (choques incluidos) hace falta para los logros aunque no se
+            # dibuje (turbo, Ráfaga) y se calcula antes de cobrar: si fallara, no se ha
+            # movido dinero. Es CPU (decenas de ms), así que fuera del event loop.
+            motion = await asyncio.to_thread(motion_for, volley)
+        else:
+            raise ValueError("Falta el tablero de la tanda.")
         won = payout(volley, stake)
-        # El movimiento (choques incluidos) hace falta para los logros aunque no se
-        # dibuje (turbo, Ráfaga) y se calcula antes de cobrar: si fallara, no se ha
-        # movido dinero. Es CPU (decenas de ms), así que fuera del event loop.
-        motion = await asyncio.to_thread(motion_for, volley)
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=stake, payout=won
         )
-        if render:
+        if prepared is not None:
+            media = prepared.media if render else PachinkoMedia(gif=b"", png=b"", seconds=0.0)
+        elif render:
             media = await asyncio.to_thread(
                 self.renderer.render, volley, turbo=turbo, motion=motion
             )
@@ -996,6 +1441,7 @@ class Pachinko(commands.Cog, name="Pachinko"):
             file=discord.File(io.BytesIO(png), filename=PNG_NAME),
             view=view,
         )
+        self.machines.add(view)
 
     @app_commands.command(name="pachinko", description="Pachinko japonés con reach y rush.")
     @app_commands.describe(
