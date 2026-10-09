@@ -41,7 +41,13 @@ from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
-from bot.services.blackjack import BlackjackGame, Result, hand_total, is_blackjack
+from bot.services.blackjack import (
+    MAX_STAKE,
+    BlackjackGame,
+    Result,
+    hand_total,
+    is_blackjack,
+)
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
 from bot.services.crash import Seat as CrashSeat
@@ -1811,6 +1817,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_dealer_five", [
         (10, "dealer_five", "La banca se lo curra",
          "Que la banca robe 5 cartas o más 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dealer_bj_saved", [
+        (1, "bj_rescate", "Rescate bancario",
+         "La banca saca blackjack y te devuelve la apuesta.", C),
+        (25, "bj_rescate_25", "El FROB te quiere",
+         "Que la banca te perdone su blackjack 25 veces.", R),
+        (250, "bj_rescate_250", "Too big to fail",
+         "Que la banca te perdone su blackjack 250 veces.", E),
+        (1_000, "bj_rescate_1k", "Rescatado con dinero de todos",
+         "Que la banca te perdone su blackjack 1.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_max_stake", [
+        (1, "bj_tope", "Hasta aquí llega la mesa",
+         "Juega una mano con la apuesta máxima.", C),
+        (100, "bj_tope_100", "Techo de gasto",
+         "Juega 100 manos con la apuesta máxima.", R),
+        (1_000, "bj_tope_1k", "Regla de gasto de Bruselas",
+         "Juega 1.000 manos con la apuesta máxima.", R),
     ])  # fmt: skip
 
     # 💰 Casino ---------------------------------------------------------------------------
@@ -7339,6 +7363,10 @@ def blackjack_stats(game: BlackjackGame) -> StatDelta:
         bump("bj_dealer_busts")
     if is_blackjack(game.dealer):
         bump("bj_dealer_naturals")
+        if not game.hands[0].natural:
+            bump("bj_dealer_bj_saved")
+    if game.stake >= MAX_STAKE:
+        bump("bj_max_stake")
     if any(h.result is Result.LOSE and h.total == 20 and dealer_total == 21 for h in game.hands):
         bump("bj_bad_beat")
     if any(_kamikaze(h.cards, h.doubled, h.busted) for h in game.hands):

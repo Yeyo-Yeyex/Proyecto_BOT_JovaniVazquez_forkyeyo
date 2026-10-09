@@ -301,9 +301,12 @@ python -m bot
   mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
   (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
   pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
-  en 17 (también blando) y mira si tiene blackjack, blackjack paga 3:2,
-  doblar con dos cartas (también tras separar), separar una vez; sin seguro
-  ni rendición. La apuesta se cobra al repartir (y al doblar o separar) y
+  en 17 (también blando) y mira si tiene blackjack; si lo tiene, la mano es
+  empate y recuperas la apuesta. Blackjack paga 3:2, doblar con dos cartas
+  (también tras separar), separar una vez; sin seguro ni rendición. La
+  apuesta inicial es de 5.000 Y$ como mucho (`all` y ×2 se quedan ahí):
+  con el empate ante el blackjack de la banca, jugar bien deja un 3,6 % a
+  favor del jugador y el tope impide exprimirlo con un all-in. La apuesta se cobra al repartir (y al doblar o separar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
 - **Tragaperras** (`/tragas`, `.tragas [cantidad]`): una máquina de 3 rodillos

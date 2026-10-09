@@ -78,7 +78,7 @@ from bot.services.achievements import (
 )
 from bot.services.autoplay import StopReason
 from bot.services.beernight import Reason as BeerReason
-from bot.services.blackjack import BlackjackGame, Card, Hand
+from bot.services.blackjack import MAX_STAKE, BlackjackGame, Card, Hand
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.levels import TIMEZONE
@@ -179,6 +179,7 @@ PRODUCED_STATS = {
     "roulette_streak_max", "roulette_repeat_pocket",
     "bj_hands", "bj_wins", "bj_naturals", "bj_double_wins", "bj_splits", "bj_split_sweeps",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
+    "bj_dealer_bj_saved", "bj_max_stake",
     "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
     "casino_all_in_wins", "casino_broke", "casino_bet_666", "casino_bet_42",
@@ -577,6 +578,21 @@ def test_blackjack_natural() -> None:
     assert delta.add["bj_hands"] == 1
     assert delta.add["bj_naturals"] == 1
     assert delta.add["bj_wins"] == 1
+
+
+def test_blackjack_de_la_banca_cuenta_como_rescate_y_no_si_tambien_tienes_blackjack() -> None:
+    rescued = blackjack_stats(settled_game([[10, 9]], [1, 13]))
+    assert rescued.add["bj_dealer_bj_saved"] == 1
+    assert rescued.add["bj_pushes"] == 1
+    both = blackjack_stats(settled_game([[1, 12]], [1, 13]))
+    assert "bj_dealer_bj_saved" not in both.add
+
+
+def test_blackjack_apuesta_maxima() -> None:
+    game = settled_game([[10, 9]], [10, 8])
+    assert "bj_max_stake" not in blackjack_stats(game).add
+    game.stake = MAX_STAKE
+    assert blackjack_stats(game).add["bj_max_stake"] == 1
 
 
 def test_blackjack_kamikaze_con_17_duro() -> None:

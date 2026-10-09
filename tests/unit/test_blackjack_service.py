@@ -71,12 +71,13 @@ def test_blackjack_con_apuesta_impar_redondea_hacia_abajo() -> None:
     assert finish(g) == 5 + 7
 
 
-def test_banca_con_blackjack_termina_la_mano_al_repartir() -> None:
+def test_banca_con_blackjack_termina_la_mano_en_empate_y_devuelve_la_apuesta() -> None:
     g = game("10♠", "A♥", "Q♦", "K♣")
 
     assert not g.player_turn
-    assert finish(g) == 0
-    assert g.hands[0].result is Result.LOSE
+    assert finish(g) == 100
+    assert g.hands[0].result is Result.PUSH
+    assert g.net == 0
 
 
 def test_blackjack_contra_blackjack_es_empate() -> None:
