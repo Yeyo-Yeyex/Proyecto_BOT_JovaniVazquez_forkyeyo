@@ -269,7 +269,7 @@ def test_el_retorno_total_es_el_de_un_casino_de_verdad(monkeypatch: pytest.Monke
     Se simula con apuesta 100 para que el medio premio no pierda decimales.
 
     No se pueden recortar las 600.000 tiradas: con 24 semillas distintas el retorno
-    queda entre 0,954 y 0,969, ya pegado a la horquilla (0,95 a 0,97), y con 150.000
+    queda entre 0,954 y 0,969, cerca del suelo de la horquilla (0,95 a 0,98), y con 150.000
     tiradas se salía de ella (0,945 a 0,977).
 
     Lo que sí se acelera es `spin_at`, que es lo más caro y devuelve siempre lo mismo
