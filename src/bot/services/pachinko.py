@@ -25,6 +25,10 @@ Cómo funciona una tanda (cada vez que se pulsa 🎯 Lanzar):
 
 Todo lo que paga se cuenta en bolas. Una bola vale `apuesta / BALLS`.
 
+La caída que se ve en el GIF no decide nada: sale de la biblioteca de
+`bot.services.pachinko_physics` (caídas con gravedad y rebotes simuladas de
+antemano), de las que cada bola usa una que acaba en el bolsillo ya sorteado.
+
 Hay cuatro tableros (`BOARDS`). Todos devuelven lo mismo de media, entre el
 94 y el 95 % (la ruleta americana, 94,7 %), y lo que cambia es el riesgo:
 cuánto sale de los bolsillos (poco a poco) y cuánto de los ataris (de golpe).
@@ -47,6 +51,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from math import comb
+
+from bot.services.pachinko_physics import TRAJECTORIES_PER_POCKET
 
 #: Bolas por tanda; lo apostado se reparte entre ellas.
 BALLS = 10
@@ -202,9 +208,12 @@ class Ball:
 
     Attributes:
         path: Un 0 (izquierda) o un 1 (derecha) por fila.
+        trajectory: Qué caída de la biblioteca de su bolsillo se ve
+            (`pachinko_physics.library`); solo afecta al dibujo, nunca al pago.
     """
 
     path: tuple[int, ...]
+    trajectory: int = 0
 
     @property
     def pocket(self) -> int:
@@ -365,11 +374,18 @@ class PachinkoMachine:
     """Lanza tandas al azar.
 
     Args:
-        randbelow: Devuelve un entero en `[0, n)`; inyectable en pruebas.
+        randbelow: Devuelve un entero en `[0, n)`; inyectable en pruebas. Decide
+            todo lo que cuenta: tablero, rebotes y sorteo.
+        pick_trajectory: Lo mismo, solo para elegir la caída que se ve de cada
+            bola. Va aparte para que forzar el azar del juego en las pruebas no
+            dependa de cuántas caídas hay y para que el dinero no la use nunca.
     """
 
-    def __init__(self, randbelow: Randbelow | None = None) -> None:
+    def __init__(
+        self, randbelow: Randbelow | None = None, pick_trajectory: Randbelow | None = None
+    ) -> None:
         self._randbelow = randbelow or random.SystemRandom().randrange
+        self._pick_trajectory = pick_trajectory or random.SystemRandom().randrange
 
     def random_board(self) -> Board:
         """Un tablero al azar (la opción 🎲 del menú)."""
@@ -377,8 +393,9 @@ class PachinkoMachine:
         return boards[self._randbelow(len(boards))]
 
     def ball(self, board: Board) -> Ball:
-        """Una bola con un rebote al azar por fila."""
-        return Ball(tuple(self._randbelow(2) for _ in range(board.rows)))
+        """Una bola con un rebote al azar por fila y una caída de la biblioteca."""
+        path = tuple(self._randbelow(2) for _ in range(board.rows))
+        return Ball(path, self._pick_trajectory(TRAJECTORIES_PER_POCKET))
 
     def launch(self, board: Board) -> Volley:
         """Una tanda completa en `board`."""

@@ -35,7 +35,12 @@ from bot.cogs.pachinko import (
     result_text,
 )
 from bot.repositories.economy import EconomyRepository
-from bot.services.achievements import pachinko_stats
+from bot.services.achievements import (
+    PACHINKO_CLEAN_BOUNCES,
+    PACHINKO_SLOW_FRAMES,
+    PACHINKO_SWIFT_FRAMES,
+    pachinko_stats,
+)
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.pachinko import (
@@ -52,6 +57,7 @@ from bot.services.pachinko import (
     Volley,
     build_volley,
 )
+from bot.services.pachinko_physics import library
 from bot.services.pachinko_render import PachinkoMedia
 
 GUILD_ID = 1
@@ -521,3 +527,62 @@ def test_estadisticas_de_una_tanda_en_blanco() -> None:
     assert delta.add["pachinko_blank"] == 1
     assert delta.add["pachinko_turbo"] == 1
     assert "pachinko_win_max" not in delta.peak
+
+
+def drop_where(board: Board, wanted) -> Ball:  # noqa: ANN001
+    """Una bola cuya caída de la biblioteca cumple `wanted` (fija rebotes y duración)."""
+    for pocket, falls in library(board).items():
+        for index, fall in enumerate(falls):
+            if wanted(fall):
+                return Ball((1,) * pocket + (0,) * (board.rows - pocket), index)
+    raise AssertionError("la biblioteca no tiene una caída así")
+
+
+def test_estadisticas_de_rebotes_y_duracion_de_una_tanda_fija() -> None:
+    """Tres bolas con caídas conocidas y siete más en el bolsillo 0, primera caída."""
+    clean = drop_where(SAKURA, lambda f: f.bounces <= PACHINKO_CLEAN_BOUNCES)
+    slow = drop_where(SAKURA, lambda f: f.frames >= PACHINKO_SLOW_FRAMES)
+    swift = drop_where(SAKURA, lambda f: f.frames <= PACHINKO_SWIFT_FRAMES)
+    balls = [clean, slow, swift] + [Ball((0,) * SAKURA.rows)] * 7
+    volley = build_volley(SAKURA, balls, lambda: MISS)
+    falls = [library(SAKURA)[ball.pocket][ball.trajectory] for ball in balls]
+    delta = pachinko_stats(
+        volley,
+        stake=100,
+        won=0,
+        turbo=False,
+        session_volleys=1,
+        when=datetime(2026, 1, 1, 12, tzinfo=TIMEZONE),
+    )
+    total = sum(f.bounces for f in falls)
+    assert delta.add["pachinko_bounces"] == total
+    assert delta.peak["pachinko_bounce_volley_max"] == total
+    assert delta.peak["pachinko_bounce_max"] == max(f.bounces for f in falls)
+    assert delta.add["pachinko_slow_balls"] == sum(
+        1 for f in falls if f.frames >= PACHINKO_SLOW_FRAMES
+    )
+    assert delta.add["pachinko_swift_balls"] == sum(
+        1 for f in falls if f.frames <= PACHINKO_SWIFT_FRAMES
+    )
+    assert delta.add["pachinko_clean_balls"] == sum(
+        1 for f in falls if f.bounces <= PACHINKO_CLEAN_BOUNCES
+    )
+    assert delta.add["pachinko_clean_balls"] >= 1
+    assert delta.add["pachinko_slow_balls"] >= 1
+    assert delta.add["pachinko_swift_balls"] >= 1
+
+
+def test_los_rebotes_no_dependen_de_lo_que_paga_la_tanda() -> None:
+    """La caída solo se ve: con las mismas bolas, dos sorteos cuentan los mismos rebotes."""
+    balls = [Ball((1,) * 5 + (0,) * 5, index) for index in range(10)]
+    when = datetime(2026, 1, 1, 12, tzinfo=TIMEZONE)
+    miss = pachinko_stats(
+        build_volley(CLASSIC, balls, lambda: MISS),
+        stake=100, won=0, turbo=False, session_volleys=1, when=when,
+    )  # fmt: skip
+    rush = pachinko_stats(
+        build_volley(CLASSIC, balls, lambda: RUSH.draws[0]),
+        stake=100, won=5_000, turbo=False, session_volleys=1, when=when,
+    )  # fmt: skip
+    assert miss.add["pachinko_bounces"] == rush.add["pachinko_bounces"]
+    assert miss.peak["pachinko_bounce_max"] == rush.peak["pachinko_bounce_max"]

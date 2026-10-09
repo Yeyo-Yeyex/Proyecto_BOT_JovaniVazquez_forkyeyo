@@ -48,6 +48,25 @@ Se añadieron después, con 72 logros (11 secretos). La simulación (`_jugar_cab
 - **Se dejan por encima de lo que dice la simulación:** el bote del Gran Premio (Raro, y cinco botes Épico) y la colección de distancias (Raro), porque la simulación corre un Gran Premio de cada diez carreras y en un servidor de verdad sale como mucho uno cada 4 horas y hacen falta ocho carreras normales antes. Igual con «Tribuna llena» y «Derbi de Epsom» (6 y 10 boletos en una carrera), que dependen de cuánta gente juegue en el servidor.
 - **Fuera de la simulación:** los de madrugada, apostar 1.500 Y$ justos, ganar 100.000 Y$ de golpe, la retención de IRPF (el jugador simulado no paga impuestos), el caballo cansado (la simulación no guarda historial) y los que se derivan de los contadores por caballo (todo el establo, hincha, socio y peña), que se cuentan en `with_derived`.
 
+## Pachinko: la física
+
+Las bolas del pachinko caen con física real (`bot.services.pachinko_physics`) y de ahí salen 25 logros nuevos: rebotes en los clavos, caídas lentas y rápidas y bolas que bajan sin tocar casi nada. Se alimentan en `pachinko_stats` con las caídas de la biblioteca guardada (`trayectorias.json`), no con lo que paga la máquina. Cuatro son secretos.
+
+La rareza sale de la biblioteca y de la probabilidad real de cada bolsillo (`pocket_probability`): cada bola elige al azar una de las 24 caídas de su bolsillo, así que la probabilidad de una propiedad de la caída es la suma, sobre bolsillos, de la probabilidad del bolsillo por la parte de sus caídas que la cumple. Con el jugador de la simulación (60 tandas al día, tableros 40 % Clásica, 30 % Sakura, 15 % Dragón y 15 % Oni) y 10 bolas por tanda salen unos 116 rebotes por tanda (6.950 al día), 0,14 bolas lentas por bola, 0,05 rápidas y 0,025 que bajan casi sin tocar clavos:
+
+| Logro | Cuenta | Días (mediana) | Rareza |
+|---|---|---|---|
+| 1.000 y 10.000 rebotes | meta / 6.950 al día | 0,15 y 1,5 | Común |
+| 50.000 / 250.000 / 1.000.000 / 5.000.000 rebotes | idem | 7 / 36 / 144 / 720 | Raro / Épico / Legendario / Mítico |
+| Una bola con 15, 18, 20 y 21 rebotes | 66 %, 11 %, 2,9 % y 1,2 % de las tandas lo traen | 0,01 / 0,1 / 0,4 / 1 | Común (el máximo que da un tablero es 21, solo en Oni) |
+| Una tanda con 150 rebotes | 2,4 % de las tandas | 0,5 | Común |
+| Una tanda con 160, 165 y 170 rebotes | 0,16 %, 0,025 % y 0,003 % | 7 / 46 / 450 | Raro / Épico / Mítico |
+| 1, 100, 1.000 y 10.000 bolas lentas (casi 2 s) | 85 al día | 0,02 / 1,2 / 12 / 118 | Común / Común / Raro / Legendario |
+| 1, 100, 1.000 y 5.000 bolas rápidas (1,1 s o menos) | 30 al día | 0,03 / 3,3 / 33 / 165 | Común / Raro / Épico / Legendario |
+| 1, 25 y 250 bolas con 5 rebotes o menos | 15 al día | 0,06 / 1,7 / 17 | Común / Común / Épico |
+
+Las cifras de las tandas salen de convolucionar la distribución de rebotes de una bola 10 veces por tablero; la simulación de `docs/auditoria_logros.py` (con `PachinkoMachine(rng.randrange, rng.randrange)`) las confirma y no marca ninguna discrepancia. Si se regenera la biblioteca (`docs/pachinko_trayectorias.py`) cambian estas distribuciones: hay que volver a calcular las tablas y las metas de `pachinko_bounce_volley_max`, que son las más sensibles.
+
 ## Excepciones que la simulación marca y se dejan
 
 Tras los cambios, 320 de los 370 logros simulados caen en su banda y 27 están a una de distancia, casi siempre en el límite de tres días. Los 23 restantes no son fallos de rareza:
