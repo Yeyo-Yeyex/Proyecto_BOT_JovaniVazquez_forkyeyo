@@ -88,6 +88,12 @@ Las bolas chocan entre sí (restitución 0,8) y, aun así, cada una acaba en el 
 
 Las rarezas de los de suerte (tandas con muchos choques, bolas con muchos choques, esquinas) salen de las probabilidades de arriba con `0,69 / (−ln(1 − p) × 60)` días, igual que las del apartado anterior. `docs/auditoria_logros.py --juego pachinko --jugadores 4 --dias 20` confirma los de menos de 20 días (el pachinko cuesta ~0,1 s por tanda con choques, así que simular 400 días de 60 tandas llevaría horas) y el resto se deja a las probabilidades. Las colas más raras (diez choques en una tanda, 8 bolas distintas) salen de 2 a 3 casos en 42.000 tandas: su rareza es aproximada, y el techo de 10 y 8 es lo más alto que se ha visto, no un máximo demostrado.
 
+## Tragaperras: el revamp
+
+Re-giro del tercer rodillo, doble o nada, bote misterioso, giro diario, GRAN/MEGA/ÉPICO, calor que se enfría y ticket de sesión traen 81 logros. Se escribieron a la vez que la lógica nueva, así que sus rarezas salen de probabilidades estimadas, no de la simulación: a 200 tiradas al día, re-giro ofrecido en un 20 % de las tiradas (un jugador normal acepta unos 10 al día) y acertado en un 10 %; quedarse otra vez a uno tras fallar, un 20 %; doble o nada al 50 %, unas 10 series al día; GRAN PREMIO 1 de cada 75 tiradas, MEGA 1 de cada 500 y ÉPICO 1 de cada 2.000. Con eso, fallar 3, 4, 5 y 7 re-giros seguidos tarda unos 3, 20, 100 días y años (Raro, Épico, Legendario, Mítico); ganar los cinco dobles, 1 de cada 32 series (Raro); el primer ÉPICO, unos 7 días (Raro).
+
+Los casi-premios pasan del 0,8 % a un 20-25 % de las tiradas: 25 y 100 salían en horas. Las metas de `nearmiss_25`, `nearmiss_100` y `nearmiss_500` suben a 1.000, 5.000 y 25.000 (los `id` y las rarezas se quedan), y la de `antic_100` a 1.000. Cuando la máquina nueva esté en `main`, hay que adaptar `_jugar_slots` del script (re-giros, dobles, tope oculto del bote) y volver a pasarlo, también para los de suerte de antes (tríos, 🃏🃏🃏, medio premio), porque el RTP sube del 94 % al 99,5 %.
+
 ## Excepciones que la simulación marca y se dejan
 
 Tras los cambios, 320 de los 370 logros simulados caen en su banda y 27 están a una de distancia, casi siempre en el límite de tres días. Los 23 restantes no son fallos de rareza:
