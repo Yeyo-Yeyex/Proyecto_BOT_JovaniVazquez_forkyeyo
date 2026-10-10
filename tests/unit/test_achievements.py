@@ -1024,7 +1024,8 @@ async def test_una_tirada_de_ruleta_cuenta_para_los_logros(
     achievements, repository, economy = await make_cog(tmp_path)
     bot = MagicMock()
     bot.get_cog = lambda name: achievements if name == "Achievements" else None
-    casino = Casino(bot, economy=economy, renderer=FakeRenderer(), wheel=Wheel(lambda _n: 17))  # type: ignore[arg-type]
+    wheel = Wheel(lambda _n: 17, lightning=False)
+    casino = Casino(bot, economy=economy, renderer=FakeRenderer(), wheel=wheel)  # type: ignore[arg-type]
     table = RouletteTable(casino, guild_id=GUILD, owner=make_user(USER), stake=100)
     table.message = SimpleNamespace(channel=FakeChannel())  # type: ignore[assignment]
 
@@ -1033,7 +1034,7 @@ async def test_una_tirada_de_ruleta_cuenta_para_los_logros(
     profile = await repository.profile(GUILD, USER)
     assert profile.stats["roulette_spins"] == 1
     assert profile.stats["roulette_straight_wins"] == 1
-    assert profile.stats["casino_win_max"] == 3_500
+    assert profile.stats["casino_win_max"] == 2_900
     assert {"rl_1", "pleno_1", "bigwin_1k"} <= set(profile.unlocked)
     table.message.channel.send.assert_awaited_once()  # type: ignore[union-attr]
 

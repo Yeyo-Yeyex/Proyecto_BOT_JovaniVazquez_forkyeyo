@@ -30,6 +30,7 @@ from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.roulette import (
     DOUBLE_ZERO,
     OUTSIDE_BETS,
+    STRAIGHT_PAYOUT,
     RoundOutcome,
     Wager,
     Wheel,
@@ -67,7 +68,7 @@ async def make_cog(tmp_path: Path, pocket: int = 17, channels=frozenset()) -> Ca
         MagicMock(),
         economy=EconomyService(repository),
         renderer=FakeRenderer(),  # type: ignore[arg-type]
-        wheel=Wheel(lambda n: pocket),
+        wheel=Wheel(lambda n: pocket, lightning=False),
         casino_channel_ids=channels,
     )
 
@@ -168,8 +169,9 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     first, final = interaction.edit_original_response.await_args_list
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
-    withheld = gambling_day_tax(3500, 0)
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 3500 - withheld
+    gain = 100 * STRAIGHT_PAYOUT
+    withheld = gambling_day_tax(gain, 0)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - withheld
     assert cog.history(GUILD_ID) == [17]
     assert table.streak == 1
     assert not table.repeat_button.disabled
@@ -311,11 +313,11 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
 
     assert [f.filename for f in send.await_args.kwargs["files"]] == [GIF_NAME]
     assert attachment_names(message.edit.await_args) == [PNG_NAME]
-    # Gana 35.000 netos en el día: paga IRPF sobre ellos y la mesa lo dice.
-    gain = STARTING_BALANCE * 35
+    # Gana 29 veces el saldo en el día: paga IRPF sobre ello y la mesa lo dice.
+    gain = STARTING_BALANCE * STRAIGHT_PAYOUT
     tax = gambling_day_tax(gain, 0)
     assert tax > 0
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36 - tax
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - tax
     assert "Perro Sanxe" in message.edit.await_args.kwargs["embed"].description
 
 

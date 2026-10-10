@@ -644,7 +644,7 @@ def test_las_categorias_largas_se_parten_en_paginas_sin_perder_logros() -> None:
 def _roulette(pocket: int, *bets: str):
     from bot.services import roulette
 
-    wheel = roulette.Wheel(lambda _n: roulette.POCKETS.index(pocket))
+    wheel = roulette.Wheel(lambda _n: roulette.POCKETS.index(pocket), lightning=False)
     wagers = [roulette.Wager(roulette.parse_bet(bet), 100) for bet in bets]
     return roulette.play_round(wheel, wagers)
 
