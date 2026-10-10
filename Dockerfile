@@ -21,7 +21,9 @@ COPY src ./src
 RUN pip install . && rm -rf /app/src /app/build
 
 # Chromium sin ventana (y sus librerías del sistema) para dibujar las carreras
-# de caballos, cara o cruz y los dados. Ocupa unos 300 MB; si falta, el bot dibuja con Pillow.
+# de caballos, cara o cruz, los dados y la ruleta. Ocupa unos 300 MB de disco; si
+# falta, el bot dibuja con Pillow. Las escenas (assets/*/escena.html) entran en el
+# paquete por pyproject.toml: lo que no esté ahí no llega a la imagen.
 RUN python -m playwright install --with-deps chromium \
     && chmod -R a+rX /ms-playwright
 
