@@ -98,6 +98,7 @@ Lo que más cambia:
 - **El 7️⃣ 7️⃣ 7️⃣ es más raro:** el rodillo virtual hace que el 7️⃣ roce la línea a menudo y entre poco. El primer trío tarda unos 110 días (Raro → Legendario), y lo mismo «Frutería completa», que lo necesita.
 - **Re-giros:** fallar tres, cuatro o cinco seguidos pasa en el primer o segundo día, porque el 81 % de los re-giros fallan. Son Comunes; siete seguidos, Épico.
 - **Barra de bonus:** se llena cada ~80 tiradas pagadas y es regular (el 98 % de las barras tardan entre 60 y 103), así que los de «tardar mucho» o «llenarla rápido» piden 100, 110 y 60 tiradas, no cifras redondas que no salen nunca.
+- **Giros gratis encadenados:** desde que los 🎟️ también cuentan dentro de los giros gratis, `free_again` (sacar giros gratis en un giro gratis) sale a los ~7 días en la simulación: Raro. Pasa en ~4 % de las tandas de giros gratis y sube el retorno de la máquina unas 3 décimas.
 - **Celebraciones:** el GRAN PREMIO (×5) sale una vez cada ~17 tiradas, así que sus logros bajan un escalón.
 
 Los casi-premios pasan del 0,8 % al 21 % de las tiradas: con 25 y 100 salían en horas. Las metas de `nearmiss_25`, `nearmiss_100` y `nearmiss_500` suben a 1.000, 5.000 y 25.000 (los `id` y las rarezas se quedan), y la de `antic_100` a 1.000.

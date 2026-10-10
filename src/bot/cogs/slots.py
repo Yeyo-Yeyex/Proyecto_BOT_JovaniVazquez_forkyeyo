@@ -1667,7 +1667,7 @@ class Slots(commands.Cog, name="Tragaperras"):
         charged = not free and not daily
         await self.load_heat(guild_id, user_id)
         self.cool_down(guild_id, user_id)
-        spin = self.machine.spin(free=free)
+        spin = self.machine.spin()
         hot = self.heat(guild_id, user_id) >= HEAT_MAX
         payout = line_payout(spin, stake, hot=hot)
         settlement = await self.economy.play_slots(

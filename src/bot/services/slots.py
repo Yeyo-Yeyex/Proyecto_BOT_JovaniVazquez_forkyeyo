@@ -23,11 +23,11 @@ rodillo (`respin_price`): cuesta lo que vale de media entre `RESPIN_RTP`.
 Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`
 y buscados con `docs/calibrar_tragaperras.py`):
 
-- La línea devuelve ~84 % de lo apostado; con los giros gratis y la máquina
-  caliente, ~92,5 %; con la barra de bonus (3 giros gratis cada ~80 tiradas),
-  ~96,5 %. El 3 % de cada apuesta va al bote común, que acaba saliendo
-  entero: en total vuelve ~99,5 %. Se pierde despacio, que es lo que alarga
-  las sesiones.
+- La línea devuelve ~84 % de lo apostado; con los giros gratis (que se
+  suman si salen 🎟️ dentro de ellos) y la máquina caliente, ~92,8 %; con la
+  barra de bonus (3 giros gratis cada ~80 tiradas), ~96,8 %. El 3 % de cada
+  apuesta va al bote común, que acaba saliendo entero: en total vuelve ~99,8 %.
+  Se pierde despacio, que es lo que alarga las sesiones.
 - El 32 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
   de lo apostado (una 🍒 al principio devuelve la mitad). La máquina lo
   celebra y aun así pierdes.
@@ -150,8 +150,8 @@ JACKPOT_VALUE = 10**9
 #: Símbolos que, si salen dos en la línea, hacen girar más el tercer rodillo.
 HIGH_SYMBOLS = frozenset({SEVEN, DIAMOND, WILD})
 
-#: Giros gratis por sacar 3 🎟️ (no se encadenan: en los giros gratis los 🎟️
-#: no cuentan, para que una racha no se coma el retorno de la máquina).
+#: Giros gratis por sacar 3 🎟️. También en un giro gratis: se suman a los que
+#: queden (pasa en ~4 % de las tandas y apenas mueve el retorno).
 FREE_SPINS = 5
 #: Tiradas con premio que llenan la barra de la máquina caliente.
 HEAT_MAX = 5
@@ -364,7 +364,7 @@ def spin_at(stops: tuple[int, int, int], *, count_scatters: bool = True) -> Spin
     """Resultado de parar los rodillos en `stops` (determinista; útil en pruebas).
 
     Args:
-        count_scatters: `False` en los giros gratis, donde los 🎟️ no cuentan.
+        count_scatters: `False` en el re-giro, donde los 🎟️ no cuentan.
     """
     grid = tuple(tuple(_cell(reel, stops[reel], row - 1) for reel in range(3)) for row in range(3))
     line = grid[1]
@@ -412,10 +412,10 @@ class SlotMachine:
         ticket = self._randbelow(_TOTALS[reel])
         return bisect.bisect_right(_CUMULATIVE[reel], ticket)
 
-    def spin(self, *, free: bool = False) -> Spin:
-        """Una tirada al azar. En los giros gratis (`free`) los 🎟️ no cuentan."""
+    def spin(self) -> Spin:
+        """Una tirada al azar (también los giros gratis: sus 🎟️ dan más giros)."""
         stops = tuple(self._stop(reel) for reel in range(3))
-        return spin_at(stops, count_scatters=not free)  # type: ignore[arg-type]
+        return spin_at(stops)  # type: ignore[arg-type]
 
     def respin(self, spin: Spin) -> Spin:
         """Vuelve a girar solo el tercer rodillo de `spin` (el re-giro de pago).
