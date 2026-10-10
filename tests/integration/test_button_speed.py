@@ -25,11 +25,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from coin_fakes import Scripted
 from interaction_fakes import fake_interaction
 from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.services.coin import Outcome, Side
 from bot.services.todo import Priority
 
 GUILD_ID = 1
@@ -213,6 +215,38 @@ async def press_pachinko_launch(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def coin_view(client: BotClient, owner: MagicMock, *results: Outcome):  # noqa: ANN201
+    """Mesa de la moneda con dibujo falso, sin esperas y con el azar de guion."""
+    cog = client.get_cog("Moneda")
+    module = module_of(client, "Moneda")
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog.renderer = MagicMock()
+    cog.renderer.toss = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    cog.rng = Scripted(*results, Outcome.CARA)
+    return module.CoinView(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+
+
+async def press_coin_flip(client: BotClient, owner: MagicMock) -> Click:
+    view = coin_view(client, owner, Outcome.CARA)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._flip_cara(interaction)
+
+    return click
+
+
+async def press_coin_cash_out(client: BotClient, owner: MagicMock) -> Click:
+    view = coin_view(client, owner, Outcome.CARA)
+    # Una racha con un acierto ya en marcha (la apuesta cobrada antes de medir).
+    await view.play(Side.CARA, AsyncMock())
+
+    async def click(interaction: MagicMock) -> None:
+        await view._cash_out(interaction)
+
+    return click
+
+
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
     module.SPIN_SECONDS = 0  # sin esperar a que «gire» la rueda: aquí no se enseña
@@ -342,6 +376,8 @@ CASES: dict[str, Press] = {
     "tragaperras: giro del día": press_slots_daily,
     "pachinko: lanzar": press_pachinko_launch,
     "pachinko: auto": press_pachinko_autoplay,
+    "moneda: cara": press_coin_flip,
+    "moneda: cobrar": press_coin_cash_out,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "pala: elegir curro": press_pala_hire,

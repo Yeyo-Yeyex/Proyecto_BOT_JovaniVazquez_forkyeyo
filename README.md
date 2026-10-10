@@ -74,7 +74,7 @@ python -m bot
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
   | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -379,6 +379,17 @@ python -m bot
   tensión) y después un PNG. 🎯 Autocobro cruza solo hasta el multiplicador
   elegido en un único GIF. Al cobrar dice dónde estaba el coche («quedaban 4
   carriles libres»). Devuelve el 99 % de media.
+- **Cara o cruz** (`/moneda`, `.moneda [cantidad] [lado]`): doble o nada.
+  Eliges 👑 cara (la corona) o ✈️ cruz (el Falcon) con los botones y se
+  lanza; si aciertas, lo que hay en juego se dobla y decides si cobras o te
+  la juegas otra vez. A las diez seguidas cobra solo la moneda de oro
+  (×1.024). Una de cada cien cae **de canto**: se queda de pie, Perro Sanxe
+  la sella y pierdes lo que hubiera. Es la ventaja de la casa: cada
+  lanzamiento devuelve el 99 %, así que cobrar tras k aciertos devuelve
+  0,99^k. Cada lanzamiento es un GIF dibujado con canvas en un Chromium sin
+  ventana, como los caballos (la moneda bimetálica gira, rebota
+  y se asienta, o se tambalea y se queda de pie), con Pillow si no hay
+  navegador. Al cobrar dice cómo habría caído la siguiente.
 - **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
   una carrera por canal, solo cuando alguien la pide. Un establo de 16
   caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
@@ -470,7 +481,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 1.936 logros en 39 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 2.103 logros en 40 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -627,9 +638,10 @@ El bot corre bien en cualquier equipo x86_64 con Docker, por ejemplo un NAS
 UGREEN DXP2800 (Intel N100): consume poca CPU y memoria y no necesita abrir
 puertos, porque solo hace conexiones salientes a Discord y a las fuentes de
 audio. La imagen incluye `ffmpeg` y `libopus`, y un Chromium sin ventana
-(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos.
-Mientras se usa ocupa unos 150-250 MB de memoria y se cierra solo tras 10
-minutos sin carreras; si no estuviera, el bot dibuja con Pillow.
+(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos
+y cara o cruz. Cada juego abre el suyo: mientras se usa ocupa unos 150-250 MB
+de memoria (el doble si hay carrera y moneda a la vez) y se cierra solo tras
+10 minutos sin uso; si no estuviera, el bot dibuja con Pillow.
 
 1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
 2. Crea el archivo de configuración y pon tu token:
@@ -790,6 +802,7 @@ src/bot/
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
+│   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
@@ -829,6 +842,10 @@ src/bot/
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
 │   ├── chicken.py       # Pollo: dificultades, multiplicadores y carril del atropello
 │   ├── chicken_render.py # GIF y PNG de la carretera, el pollo y los coches
+│   ├── coin.py          # Cara o cruz: lanzamientos, canto, racha y doble o nada
+│   ├── coin_render.py   # Vuelo de la moneda, lo que se ve en cada fotograma y dibujo con Pillow
+│   ├── coin_scene.py    # Cara o cruz con canvas en Chromium (assets/moneda/escena.html)
+│   ├── browser_scene.py # Pestaña de Chromium sin ventana con una escena HTML cargada
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── pachinko_physics.py # Clavos, paredes y caída con física de las bolas del pachinko

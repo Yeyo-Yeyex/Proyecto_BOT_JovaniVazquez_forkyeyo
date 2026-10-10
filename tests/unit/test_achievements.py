@@ -264,6 +264,13 @@ PRODUCED_STATS = {
     *(f"chicken_finish_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"chicken_lanes_max_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"chicken_hit_{kind}" for kind in CHICKEN_VEHICLE_KINDS),
+    # cogs/coin.py (`coin_stats`)
+    "coin_games", "coin_flips", "coin_wins", "coin_wins_cara", "coin_wins_cruz",
+    "coin_cashouts", "coin_losses", "coin_edges", "coin_streak_max", "coin_cash_mult_max",
+    "coin_finish", "coin_win_max", "coin_lost_big", "coin_edge_big", "coin_gallina",
+    "coin_first_fail", "coin_next_edge", "coin_loyal_cara", "coin_loyal_cruz", "coin_flipflop",
+    "coin_edge_lost", "coin_night", "coin_hispanidad", "coin_nochevieja", "coin_friday13",
+    "coin_cash_666", "coin_first_edge",
     # Trabajo (cogs/work.py: work_stats, el panel y los eventos; cogs/casino.py: el IMV)
     "work_shifts", "work_shifts_day_max", "work_streak_max", "work_perfect", "work_good",
     "work_night", "work_sunday", "work_birthday", "work_christmas", "work_reyes",

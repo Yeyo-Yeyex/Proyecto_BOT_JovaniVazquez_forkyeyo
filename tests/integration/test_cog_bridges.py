@@ -16,11 +16,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from coin_fakes import Scripted
 from interaction_fakes import fake_interaction
 from render_fakes import use_fake_drawings
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
+from bot.services.coin import Outcome
 
 GUILD_ID = 1
 GUILD = GUILD_ID
@@ -33,6 +35,7 @@ GAMES = (
     "Crash",
     "Minas",
     "Pollo",
+    "Moneda",
     "Pachinko",
     "Caballos",
     "Porras",
@@ -295,6 +298,52 @@ async def test_el_pollo_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         assert profile.stats["chicken_games"] == 1
         assert profile.stats["chicken_splats"] == 1
         assert {"pollo_1", "pollos_1", "pollo_ni_acera"} <= set(profile.unlocked)
+    finally:
+        await client.close()
+
+
+async def test_la_moneda_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> None:
+    """La moneda carga antes que los logros: sus partidas deben llegar a `logros`."""
+    client = await load_bot(tmp_path)
+    try:
+        moneda = importer("Moneda", client)
+        moneda.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Moneda")
+        cog.renderer = MagicMock()
+        cog.renderer.toss = AsyncMock(
+            return_value=moneda.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
+        cog.renderer.board = AsyncMock(return_value=b"PNG")
+        cog.rng = Scripted(Outcome.CRUZ, Outcome.CARA)  # pide cara, sale cruz
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._moneda_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            pick=None,
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+        (view,) = cog.views
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await view._flip_cara(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["coin_games"] == 1
+        assert profile.stats["coin_losses"] == 1
+        assert "moneda_1" in profile.unlocked
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["moneda"].plays == 1
     finally:
         await client.close()
 
