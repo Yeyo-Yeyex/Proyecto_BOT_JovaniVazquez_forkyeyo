@@ -385,9 +385,9 @@ python -m bot
   regularidad) y forma guardada por servidor. Las cuotas salen de simular la
   carrera 80.000 veces con su terreno, su distancia y su parte de lluvia:
   ganador y colocado devuelven el 95 %, gemela el 92 % y trío el 90 %. En la
-  parrilla (30 s) se apuesta con 🎟️ Apostar (panel privado) o de un toque con
-  🐶 Lo de Sanxe, 🐑 Con el pueblo o 🎲 Al azar; `.caballo 500 3-5-1` va al
-  trío. La carrera es un GIF dibujado con canvas en un Chromium sin
+  parrilla (2 minutos como mucho) se apuesta con 🎟️ Apostar (panel privado) o de
+  un toque con 🐶 Lo de Sanxe, 🐑 Con el pueblo o 🎲 Al azar; `.caballo 500 3-5-1`
+  va al trío. Si todos los que han apostado pulsan ✅ Listo, salen sin esperar. La carrera es un GIF dibujado con canvas en un Chromium sin
   ventana (grada, sedas, galope, polvo, lluvia, rótulos de la tele) con
   foto-finish a cámara lenta si llegan pegados; se dibuja mientras se
   apuesta, así que sale en cuanto se cierra la parrilla. Cada 8 carreras (y 4 h) sale el Gran Premio con un bote para quien

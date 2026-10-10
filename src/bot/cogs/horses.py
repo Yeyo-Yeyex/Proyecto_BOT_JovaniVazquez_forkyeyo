@@ -6,13 +6,16 @@ avisos a nadie, salvo el anuncio de quien se lleva el bote del Gran Premio.
 
 Cada carrera pasa por tres momentos en el mismo mensaje:
 
-1. **Parrilla** (30 s, 45 en el Gran Premio): la imagen con los caballos, su
+1. **Parrilla** (2 minutos como mucho): la imagen con los caballos, su
    forma, el terreno y las cuotas a ganador; el pronóstico de Perro Sanxe; el
    parte del tiempo; y, en vivo, quién va con quién y con quién va «el
    pueblo». Botones: 🎟️ **Apostar** abre un panel privado con el tipo de
    boleto (ganador, colocado, gemela o trío), los caballos y la cantidad;
    🐶 **Lo de Sanxe**, 🐑 **Con el pueblo** y 🎲 **Al azar** apuestan tu ficha a
    ganador de un toque; 🪙 **Ficha** la cambia. Un boleto por persona y carrera.
+   ✅ **Listo**: quien ya tiene boleto avisa de que no espera a nadie más.
+   Cuando todos los que han apostado están listos, los caballos salen sin
+   esperar al reloj.
    `.caballo 500 3` apuesta 500 a ganador al 3; `.caballo 500 3-5` a la gemela;
    `.caballo 500 3-5-1` al trío; `.caballo 500 3 colocado` a colocado.
 2. **Carrera**: el GIF con los caballos galopando. Se dibuja con canvas y
@@ -134,9 +137,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_STAKE = 100
-#: Parrilla abierta a apuestas: lo justo para que se apunte el canal.
-LOBBY_SECONDS = 30
-GRAND_PRIX_LOBBY_SECONDS = 45
+#: Parrilla abierta a apuestas como mucho. Si todos los que han apostado
+#: pulsan ✅ Listo, los caballos salen antes.
+LOBBY_SECONDS = 120
+GRAND_PRIX_LOBBY_SECONDS = 120
+#: Una carrera que sale con ✅ Listo antes de esto es un «visto y no visto» (logro).
+FLASH_START_SECONDS = 15
 #: Margen tras el GIF antes de enseñar la llegada (lo que tarda en cargar).
 REVEAL_MARGIN_SECONDS = 1.5
 #: Boletos que se listan por nombre; el resto se resume.
@@ -189,6 +195,8 @@ class Ticket:
     settlement: BetSettlement | None = None
     #: Cuándo se hizo el boleto (epoch). Las porras no cuentan los anteriores a su cierre.
     placed_at: float = 0.0
+    #: Si ha pulsado ✅ Listo.
+    ready: bool = False
 
     @property
     def net(self) -> int:
@@ -400,6 +408,7 @@ class LobbyView(discord.ui.View):
         self._add("Con el pueblo", "🐑", discord.ButtonStyle.primary, race.follow_crowd)
         self._add("Al azar", "🎲", discord.ButtonStyle.secondary, race.random_bet)
         self._add("Ficha", "🪙", discord.ButtonStyle.secondary, race.set_ficha)
+        self._add("Listo", "✅", discord.ButtonStyle.success, race.mark_ready)
 
     def _add(
         self,
@@ -471,6 +480,12 @@ class Race:
         self.task: asyncio.Task[None] | None = None
         self._edit_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        #: Se activa cuando todos los que han apostado han pulsado ✅ Listo.
+        self.go = asyncio.Event()
+        #: Quién dio el último ✅ Listo y cuándo salieron por ello (para los logros).
+        self.starter: int | None = None
+        self.opened_at = cog.wall_clock()
+        self.early_start: float | None = None
         self.view = LobbyView(self)
         self.stopping = False
         self.sleeping = False
@@ -486,9 +501,10 @@ class Race:
         return horse, round(100 * votes / len(self.tickets))
 
     def ticket_line(self, ticket: Ticket) -> str:
-        """`🎟️ Diego · 🥇 Ganador 3 · 500 Y$ · 2,85x`."""
+        """`🎟️ Diego · 🥇 Ganador 3 · 500 Y$ · 2,85x` (✅ si ya está listo)."""
+        mark = "✅" if ticket.ready else "🎟️"
         return (
-            f"🎟️ {short_name(ticket.user.display_name)} · {ticket.pick.label()} · "
+            f"{mark} {short_name(ticket.user.display_name)} · {ticket.pick.label()} · "
             f"{format_amount(ticket.stake)} · {format_odds(ticket.odds)}"
         )
 
@@ -520,6 +536,9 @@ class Race:
             horse, share = crowd
             lines.append(f"🐑 El pueblo va con el **{horse_label(card, horse)}** ({share} %).")
         lines.append("Pulsa 🎟️ **Apostar** o escribe `caballo 500 3`.")
+        if self.tickets:
+            ready = sum(t.ready for t in self.tickets.values())
+            lines.append(f"✅ Listos {ready}/{len(self.tickets)}: si estáis todos, salen ya.")
         title = f"🏆 {card.name}" if card.grand_prix else f"🏇 {card.name}"
         embed = discord.Embed(
             title=title,
@@ -803,22 +822,65 @@ class Race:
         """🪙 Ficha: cambia la cantidad de los botones rápidos."""
         await interaction.response.send_modal(AmountModal(self))
 
+    async def mark_ready(self, interaction: discord.Interaction) -> None:
+        """✅ Listo: si todos los que han apostado lo pulsan, los caballos salen ya.
+
+        Solo mira y cambia memoria, así que contesta directamente.
+        """
+        ticket = self.tickets.get(interaction.user.id)
+        if self.phase is not Phase.LOBBY or self.go.is_set():
+            text = "Los caballos ya han salido."
+        elif ticket is None:
+            text = "Primero haz tu boleto: ✅ Listo es para quien ya ha apostado."
+        elif ticket.ready:
+            text = "Ya estabas listo. Falta que se decidan los demás."
+        else:
+            ticket.ready = True
+            waiting = [t for t in self.tickets.values() if not t.ready]
+            if waiting:
+                names = ", ".join(short_name(t.user.display_name) for t in waiting[:3])
+                more = f" y {len(waiting) - 3} más" if len(waiting) > 3 else ""
+                text = f"✅ Listo. Falta{'n' if len(waiting) > 1 else ''}: {names}{more}."
+            else:
+                self.starter = interaction.user.id
+                self.early_start = self.cog.wall_clock()
+                self.go.set()
+                text = "✅ Todos listos. ¡Salen!"
+        await interaction.response.send_message(text, ephemeral=True)
+        if not self.go.is_set():
+            self.edit_soon()
+
     # -- Ciclo -----------------------------------------------------------------------------
 
-    async def nap(self, seconds: float) -> None:
-        """Espera del bucle; el único sitio donde el apagado lo puede cortar."""
+    async def nap(self, seconds: float, *, wake: asyncio.Event | None = None) -> None:
+        """Espera del bucle; el único sitio donde el apagado lo puede cortar.
+
+        Con `wake`, la espera acaba antes si ese evento se activa (✅ Listo).
+        """
         if self.stopping:
             raise asyncio.CancelledError
         self.sleeping = True
         try:
-            await self.cog.sleep(seconds)
+            if wake is None:
+                await self.cog.sleep(seconds)
+                return
+            waiters = {
+                asyncio.ensure_future(self.cog.sleep(seconds)),
+                asyncio.ensure_future(wake.wait()),
+            }
+            try:
+                await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for waiter in waiters:
+                    waiter.cancel()
+                await asyncio.gather(*waiters, return_exceptions=True)
         finally:
             self.sleeping = False
 
     async def run(self) -> None:
         """Parrilla, carrera y llegada; si nadie apuesta, los caballos vuelven a la cuadra."""
         try:
-            await self.nap(max(0.0, self.lobby_ends - self.cog.wall_clock()))
+            await self.nap(max(0.0, self.lobby_ends - self.cog.wall_clock()), wake=self.go)
             if not self.tickets:
                 await self.close()
                 return
@@ -1022,6 +1084,9 @@ class Race:
         when = datetime.fromtimestamp(self.cog.wall_clock(), TIMEZONE)
         favourite = self.odds.favourite()
         photo = photo_finish(result, self.card.distance)
+        flash = (
+            self.early_start is not None and self.early_start - self.opened_at < FLASH_START_SECONDS
+        )
         for ticket in self.tickets.values():
             settlement = ticket.settlement
             first = ticket.pick.horses[0]
@@ -1043,6 +1108,9 @@ class Race:
                 comeback=comeback(result, self.card.distance, first),
                 tax_delta=settlement.tax_delta if settlement else 0,
                 when=when,
+                ready=ticket.ready,
+                starter=ticket.user.id == self.starter,
+                flash=flash,
             )
             delta.merge(
                 casino_stats(
