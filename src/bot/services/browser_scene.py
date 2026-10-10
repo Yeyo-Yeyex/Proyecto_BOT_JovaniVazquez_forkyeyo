@@ -7,24 +7,37 @@ encarga del navegador: arrancarlo cuando hace falta, tener una pestaña con la
 escena, cerrarlo tras un rato sin uso y, si falla, decirlo una vez en el log
 y apagarse para que quien dibuja use su versión de Pillow.
 
-Lo usan Cara o cruz (`bot.services.coin_scene`) y los dados
-(`bot.services.craps_scene`), cada uno con su navegador. Las carreras de caballos
+Lo usan Cara o cruz (`bot.services.coin_scene`), la ruleta
+(`bot.services.roulette_scene`) y los dados (`bot.services.craps_scene`), cada
+uno con su navegador. Las carreras de caballos
 tienen su propia copia de esta lógica en `bot.services.horses_scene`, anterior
 a este módulo.
 
+También monta los fotogramas que devuelven las escenas (`render` y
+`assemble`): cada escena tiene `setup(meta)` y `renderFrames(states, first)`,
+que devuelve de cada fotograma su PNG entero o solo el recuadro que cambia.
+
 Coste: Chromium arranca en ~1-2 s la primera vez y ocupa ~150-250 MB mientras
-está abierto. Los dibujos se hacen uno detrás de otro; dentro de un dibujo, la
-ruleta reparte los fotogramas entre varias pestañas (`run_tabs`), que pintan a
-la vez cada una en su proceso.
+está abierto. Los dibujos se hacen uno detrás de otro; dentro de un dibujo,
+`render` reparte los fotogramas entre `TABS` pestañas que pintan a la vez, cada
+una en su proceso. El NAS tiene 4 hilos: con 2 pestañas, el navegador tarda la
+mitad y quedan hilos para el bot y para montar el GIF.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypeVar
+
+from PIL import Image
+
+from bot.utils.gif import QUANTIZE_THREADS
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +45,44 @@ T = TypeVar("T")
 
 #: Tras este rato sin dibujar nada, el navegador se cierra para liberar memoria.
 IDLE_SECONDS = 10 * 60
+#: Pestañas que pintan un mismo dibujo a la vez (ver la cabecera).
+TABS = 2
+#: Fotogramas que se piden a una pestaña de una vez (cada uno vuelve como PNG en base64).
+BATCH = 20
+
+Patch = dict[str, Any]
+
+
+def png_bytes(patch: Patch) -> bytes:
+    """Los bytes del PNG de un recuadro (viene como data URL)."""
+    return base64.b64decode(patch["u"].split(",", 1)[1])
+
+
+def assemble(patches: list[Patch], size: tuple[int, int]) -> list[Image.Image]:
+    """Monta los fotogramas pegando cada recuadro sobre el fotograma anterior.
+
+    La escena devuelve el fotograma entero (`size`) cuando hace falta y, si no,
+    solo el recuadro que ha cambiado (`x`, `y` y su PNG en `u`). Los PNG se
+    descomprimen en varios hilos (no dependen del orden y Pillow suelta el GIL);
+    pegar sí va en orden.
+
+    Raises:
+        ValueError: Si el primer fotograma no viene entero.
+    """
+    with ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) as pool:
+        images = list(
+            pool.map(lambda p: Image.open(io.BytesIO(png_bytes(p))).convert("RGB"), patches)
+        )
+    frames: list[Image.Image] = []
+    for patch, image in zip(patches, images, strict=True):
+        if image.size != size:
+            if not frames:
+                raise ValueError("El primer fotograma de la escena tiene que ir entero.")
+            frame = frames[-1].copy()
+            frame.paste(image, (patch["x"], patch["y"]))
+            image = frame
+        frames.append(image)
+    return frames
 
 
 class BrowserScene:
@@ -143,6 +194,42 @@ class BrowserScene:
     async def run_tabs(self, count: int, work: Callable[[list[Any]], Awaitable[T]]) -> T | None:
         """Como `run`, pero `work` recibe `count` pestañas para dibujar a la vez."""
         return await self._run(lambda: self._open_tabs(count), work)
+
+    async def render(
+        self, meta: dict[str, Any], states: list[dict[str, Any]], *, tabs: int = TABS
+    ) -> list[Patch] | None:
+        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay navegador.
+
+        Los estados se reparten en tramos seguidos, uno por pestaña. Cada pestaña
+        hace `setup(meta)` y su primer fotograma sale entero, así que los tramos
+        se pegan uno detrás de otro. `renderFrames` recibe el índice absoluto del
+        primer estado de cada lote, por si la escena lo usa (los destellos de la
+        moneda).
+        """
+        tabs = max(1, min(tabs, len(states)))
+        size = -(-len(states) // tabs)
+        chunks = [(i, states[i : i + size]) for i in range(0, len(states), size)]
+
+        async def one(page: Any, offset: int, chunk: list[dict[str, Any]]) -> list[Patch]:
+            await page.evaluate("m => setup(m)", meta)
+            patches: list[Patch] = []
+            for start in range(0, len(chunk), BATCH):
+                patches += await page.evaluate(
+                    "([s, first]) => renderFrames(s, first)",
+                    [chunk[start : start + BATCH], offset + start],
+                )
+            return patches
+
+        async def work(pages: list[Any]) -> list[Patch]:
+            parts = await asyncio.gather(
+                *(
+                    one(page, offset, chunk)
+                    for page, (offset, chunk) in zip(pages, chunks, strict=True)
+                )
+            )
+            return [patch for part in parts for patch in part]
+
+        return await self.run_tabs(len(chunks), work)
 
     async def _run(
         self, open_: Callable[[], Awaitable[Any]], work: Callable[[Any], Awaitable[T]]
