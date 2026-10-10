@@ -153,3 +153,15 @@ def test_el_establo_y_el_caballo_favorito_se_derivan() -> None:
     full = with_derived({"horse_backed_falcon": 30, "horse_backed_uco": 2, "horse_backed_x": 99})
     assert full[HORSE_BACKED_KINDS_STAT] == 2
     assert full[HORSE_BACKED_MAX_STAT] == 30
+
+
+def test_listo_cuenta_quien_lo_pulsa_y_quien_arranca() -> None:
+    card = card_of()
+    result = result_of((0, 1, 2, 3, 4, 5))
+    pick = Pick(BetKind.WIN, (1,))
+    got = stats(card, result, pick, ready=True, starter=True, flash=True)
+    assert got["horse_ready"] == 1
+    assert got["horse_starter"] == 1
+    assert got["horse_flash"] == 1
+    calm = stats(card, result, pick)
+    assert "horse_ready" not in calm and "horse_starter" not in calm

@@ -6223,6 +6223,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("horses", "horse_via_azar", [
         (10, "caballo_via_azar", "Dios proveerá", "Pulsa 🎲 Al azar 10 veces.", C),
     ])  # fmt: skip
+    a += _tiers("horses", "horse_ready", [
+        (1, "caballo_listo", "Ni un minuto más", "Pulsa ✅ Listo en una carrera.", C),
+        (25, "caballo_listo_25", "Agenda de ministro",
+         "Pulsa ✅ Listo en 25 carreras. Tienes un Falcon esperando.", R),
+        (200, "caballo_listo_200", "Prisa de fin de legislatura",
+         "Pulsa ✅ Listo en 200 carreras.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_starter", [
+        (1, "caballo_pistoletazo", "Pistoletazo de salida",
+         "Sé el último en pulsar ✅ Listo y que los caballos salgan por ti.", C),
+        (20, "caballo_decreto", "Real Decreto-ley",
+         "Arranca 20 carreras con tu ✅ Listo. Sin pasar por el Congreso.", R),
+        (100, "caballo_rodillo", "Mayoría absoluta de prisas",
+         "Arranca 100 carreras con tu ✅ Listo.", E),
+    ])  # fmt: skip
+    a += _tiers("horses", "horse_flash", [
+        (1, "caballo_visto_no_visto", "Ni el BOE va tan rápido",
+         "Corre una carrera que sale con ✅ Listo en menos de 15 segundos.", C, True),
+    ])  # fmt: skip
     a += _tiers("horses", "horse_lone_wins", [
         (1, "caballo_verso_suelto", "Verso suelto",
          "Gana con un caballo al que no apostaba nadie más, con 3 boletos o más en la carrera.",
@@ -8229,6 +8248,9 @@ def horses_stats(
     comeback: bool,
     tax_delta: int,
     when: datetime,
+    ready: bool = False,
+    starter: bool = False,
+    flash: bool = False,
 ) -> StatDelta:
     """Contadores de un boleto de las carreras ya pagado (sin lo común del casino).
 
@@ -8250,6 +8272,9 @@ def horses_stats(
         comeback: Si su caballo iba último a mitad de carrera.
         tax_delta: IRPF retenido (positivo) o devuelto en la jugada.
         when: Hora local.
+        ready: Si pulsó ✅ Listo.
+        starter: Si su ✅ Listo fue el último y los caballos salieron por él.
+        flash: Si la carrera salió con ✅ Listo a los pocos segundos de abrirse.
     """
     kind = pick.kind
     first = pick.horses[0]
@@ -8273,6 +8298,9 @@ def horses_stats(
     bump("horse_falcon_bets", any(card.horses[i].key == "falcon" for i in pick.horses))
     bump("horse_gp_bets", card.grand_prix)
     bump(f"horse_via_{via}", via in ("sanxe", "pueblo", "azar"))
+    bump("horse_ready", ready)
+    bump("horse_starter", starter)
+    bump("horse_flash", flash)
     night = 3 <= when.hour < 6
     bump("horse_night", night)
     backed = {card.horses[i].key for i in pick.horses}

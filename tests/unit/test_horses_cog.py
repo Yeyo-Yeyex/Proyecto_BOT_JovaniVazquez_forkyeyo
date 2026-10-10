@@ -8,6 +8,7 @@ El bucle no se arranca solo: cada prueba llama a `race()` o `run()`.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sqlite3
 from pathlib import Path
@@ -413,6 +414,59 @@ async def test_bucle_completo_corre_y_libera_el_canal(
     errors = await caballo(cog, channel)
     errors.assert_not_awaited()
     assert cog.races[CHANNEL_ID] is not race
+
+
+async def test_listo_es_solo_para_quien_tiene_boleto(tmp_path: Path) -> None:
+    cog, _clock = await make_cog(tmp_path)
+    channel = make_channel()
+    await caballo(cog, channel)
+    race = cog.races[CHANNEL_ID]
+    race.message = channel.test_message
+    nadie = make_interaction(ANA)
+    await race.mark_ready(nadie)
+    assert "Primero haz tu boleto" in nadie.response.send_message.await_args.args[0]
+    assert not race.go.is_set()
+
+
+async def test_si_todos_estan_listos_salen_sin_esperar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog, clock = await make_cog(tmp_path)
+
+    async def slow_sleep(seconds: float) -> None:
+        # La parrilla no acaba nunca por reloj: solo ✅ Listo la cierra.
+        if seconds >= cog_module.LOBBY_SECONDS / 2:
+            await asyncio.Event().wait()
+        clock.now += seconds
+
+    cog.sleep = slow_sleep  # type: ignore[method-assign]
+    channel = make_channel()
+    await caballo(cog, channel, amount="100", pick="1")
+    await caballo(cog, channel, user_id=LEO, name="Leo", amount="100", pick="2")
+    race = cog.races[CHANNEL_ID]
+    race.message = channel.test_message
+    force(monkeypatch, fixed_result((0, 1, 2, 3, 4, 5)))
+    task = asyncio.create_task(race.run())
+    await asyncio.sleep(0)
+
+    ana = make_interaction(ANA)
+    await race.mark_ready(ana)
+    assert "Falta: Leo" in ana.response.send_message.await_args.args[0]
+    assert race.tickets[ANA].ready
+    assert not race.go.is_set()
+    otra = make_interaction(ANA)
+    await race.mark_ready(otra)
+    assert "Ya estabas listo" in otra.response.send_message.await_args.args[0]
+
+    leo = make_interaction(LEO, "Leo")
+    await race.mark_ready(leo)
+    assert "Salen" in leo.response.send_message.await_args.args[0]
+    assert race.go.is_set()
+    assert race.starter == LEO
+    await asyncio.wait_for(task, timeout=5)
+    assert race.phase is Phase.DONE
+    assert clock.now < race.lobby_ends
+    assert CHANNEL_ID not in cog.races
 
 
 # -- Gran Premio ---------------------------------------------------------------------------
