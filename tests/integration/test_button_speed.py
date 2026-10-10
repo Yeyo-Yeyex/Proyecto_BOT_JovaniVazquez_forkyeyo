@@ -305,8 +305,7 @@ async def press_dice_odds_max(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
-    module.SPIN_SECONDS = 0  # sin esperar a que «gire» la rueda: aquí no se enseña
-    module.REVEAL_MARGIN_SECONDS = 0
+    module.REVEAL_MARGIN_SECONDS = 0  # el doble del dibujo ya dice que la rueda gira en 0 s
     table = module.RouletteTable(client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=1)
 
     async def click(interaction: MagicMock) -> None:

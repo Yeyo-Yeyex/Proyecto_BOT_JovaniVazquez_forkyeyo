@@ -1735,6 +1735,61 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde todo 10 veces porque sale el 0 o el 00.", R),
         (100, "zero_100", "Gafe del cero", "Que el cero te barra la mesa 100 veces.", E),
     ])  # fmt: skip
+    # Rayos: la ruleta relámpago de los casinos en línea, con Perro Sanxe de Zeus.
+    a += _tiers("roulette", "roulette_lucky_wins", [
+        (1, "rayo_1", "Le ha caído un rayo",
+         "Acierta un pleno con rayo. Hacienda ya ha visto el resplandor.", E),
+        (5, "rayo_5", "Pararrayos humano", "Acierta 5 plenos con rayo.", L),
+        (20, "rayo_20", "Zeus en el Falcon", "Acierta 20 plenos con rayo.", M),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_lucky_max", [
+        (200, "rayo_x200", "Tormenta de verano", "Cobra un rayo de ×200 o más.", L),
+        (500, "rayo_x500", "El rayo que no cesa",
+         "Cobra un rayo de ×500. Miguel Hernández lo escribió para ti.", L, True),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_lucky_missed", [
+        (1, "rayo_fallo_1", "Rayo sin trueno",
+         "Ten un pleno con rayo y que la bola caiga en otro sitio.", C),
+        (25, "rayo_fallo_25", "La AEMET no avisó",
+         "Ten rayo en tu número 25 veces sin que salga.", E),
+        (100, "rayo_fallo_100", "Me cae el rayo al lado",
+         "Ten rayo en tu número 100 veces sin que salga.", L),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_lucky_zero", [
+        (1, "rayo_verde", "Rayo verde",
+         "Acierta un pleno con rayo al 0 o al 00. Ni el Gobierno lo vio venir.", M, True),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_storm_max", [
+        (4, "storm_4", "Ciclogénesis explosiva", "Juega una tirada con 4 rayos.", C),
+        (5, "storm_5", "Gota fría", "Juega una tirada con 5 rayos a la vez.", C, True),
+    ])  # fmt: skip
+    # El casi: la bola pasa por tu número y se va al de al lado.
+    a += _tiers("roulette", "roulette_near_miss", [
+        (1, "casi_1", "Por una casilla", "Que la bola caiga a una o dos casillas de tu pleno.", C),
+        (25, "casi_25", "Casi, casi", "Quédate a una o dos casillas de tu pleno 25 veces.", R),
+        (250, "casi_250", "El casi es mi apellido",
+         "Quédate a una o dos casillas de tu pleno 250 veces.", L),
+        (1_000, "casi_1k", "Resiliencia, dijo el ministro",
+         "Quédate a una o dos casillas de tu pleno 1.000 veces y sigue jugando.", M),
+    ])  # fmt: skip
+    # Calientes y fríos: la falacia del jugador con botón propio.
+    a += _tiers("roulette", "roulette_hot_bets", [
+        (1, "rl_hot_1", "Está que arde", "Apuesta al número caliente con 🔥.", C),
+        (50, "rl_hot_50", "Sondeo del CIS",
+         "Apuesta 50 veces al número caliente. Lo que sale, sale.", R),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_cold_bets", [
+        (1, "rl_cold_1", "Le toca", "Apuesta al número frío con ❄️.", C),
+        (50, "rl_cold_50", "Falacia del jugador",
+         "Apuesta 50 veces al número frío. La bola no tiene memoria; tú tampoco.", R),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_hot_hits", [
+        (1, "rl_hot_hit", "Seguía caliente", "Acierta el número caliente con 🔥.", E),
+    ])  # fmt: skip
+    a += _tiers("roulette", "roulette_cold_hits", [
+        (1, "rl_cold_hit", "Ya tocaba",
+         "Acierta el número frío con ❄️. Tenías razón (por casualidad).", E, True),
+    ])  # fmt: skip
 
     # 🃏 Blackjack ------------------------------------------------------------------------
     a += _tiers("blackjack", "bj_hands", [
@@ -7737,13 +7792,18 @@ def casino_stats(*, stake: int, net: int, balance_after: int, tax_delta: int = 0
 
 
 def roulette_stats(
-    outcome: RoundOutcome, *, table_streak: int, previous_pocket: int | None
+    outcome: RoundOutcome,
+    *,
+    table_streak: int,
+    previous_pocket: int | None,
+    hunches: Mapping[str, str] | None = None,
 ) -> StatDelta:
     """Contadores de una tirada de ruleta (sin lo común del casino).
 
     Args:
         table_streak: Tiradas ganadas seguidas en la mesa, contando esta.
         previous_pocket: Número de la tirada anterior en la misma mesa.
+        hunches: Apuestas puestas con 🔥 Caliente o ❄️ Frío, `{clave: "hot"|"cold"}`.
     """
     delta = StatDelta(
         add={"roulette_spins": 1},
@@ -7781,6 +7841,23 @@ def roulette_stats(
     delta.peak["roulette_cover_max"] = len(covered)
     if outcome.pocket in ZEROS and not any(outcome.returns):
         add["roulette_zero_sweep"] = 1
+    # Los rayos, el casi y las corazonadas (ver `bot.services.roulette`).
+    delta.peak["roulette_storm_max"] = len(outcome.lucky)
+    if outcome.lucky_hit:
+        add["roulette_lucky_wins"] = 1
+        delta.peak["roulette_lucky_max"] = outcome.lucky_hit
+        if outcome.pocket in ZEROS:
+            add["roulette_lucky_zero"] = 1
+    elif outcome.lucky_covered:
+        add["roulette_lucky_missed"] = 1
+    if outcome.near_miss is not None:
+        add["roulette_near_miss"] = 1
+    for wager, returned in zip(outcome.wagers, outcome.returns, strict=True):
+        kind = (hunches or {}).get(wager.bet.key)
+        if kind in ("hot", "cold"):
+            add[f"roulette_{kind}_bets"] = add.get(f"roulette_{kind}_bets", 0) + 1
+            if returned:
+                add[f"roulette_{kind}_hits"] = add.get(f"roulette_{kind}_hits", 0) + 1
     return delta
 
 

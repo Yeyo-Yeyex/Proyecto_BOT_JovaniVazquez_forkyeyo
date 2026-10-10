@@ -11,6 +11,12 @@ mesa, un mensaje con botones que solo él puede pulsar. Tiene dos modos:
 - **Varias apuestas**: cada clic pone una ficha en la mesa y 🎰 Girar las
   juega todas en la misma tirada.
 
+Cada tirada trae los trucos de las ruletas de casino (`bot.services.roulette`
+y `bot.services.roulette_scene`): rayos con multiplicador sobre los plenos,
+la bola que pasa por tu número antes de caer al lado, lo recuperado celebrado
+como premio y el marcador de números calientes y fríos, con sus botones
+🔥 Caliente y ❄️ Frío para apostar a pleno a lo que «toca».
+
 Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes,
 insertar enlaces (embeds) y adjuntar archivos (el GIF de la rueda).
@@ -22,6 +28,7 @@ import asyncio
 import io
 import logging
 import random
+import secrets
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -56,20 +63,20 @@ from bot.services.pets import Event, Moment, bet_moment
 from bot.services.roulette import (
     COLOR_EMOJI,
     OUTSIDE_BETS,
-    POCKETS,
     Bet,
     RoundOutcome,
     Wager,
     Wheel,
     add_wager,
     color,
+    hot_cold,
     label,
     parse_bet,
     parse_bets,
     play_round,
     pretty,
 )
-from bot.services.roulette_render import SPIN_SECONDS, SpinMedia, WheelRenderer
+from bot.services.roulette_scene import Media, RouletteScene
 from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
 from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
@@ -89,8 +96,10 @@ TABLE_TIMEOUT = 180
 #: Margen tras la animación: el cliente tarda un poco en descargar el GIF y
 #: empezar a reproducirlo; sin margen se cortaría el final del frenazo.
 REVEAL_MARGIN_SECONDS = 0.4
-#: Últimos números que se muestran en la mesa, por servidor.
+#: Últimos números que se muestran en el pie de la mesa.
 HISTORY_SIZE = 12
+#: Números que se guardan por servidor para los calientes y los fríos.
+HOT_WINDOW = 100
 
 GIF_NAME = "ruleta.gif"
 
@@ -112,7 +121,7 @@ LOSS_LINES = ("Casi.", "La próxima es la buena.", "La bola no quiso.", "Uf, por
 
 def history_line(history: Iterable[int]) -> str:
     """Últimos resultados con su color, el más reciente primero."""
-    items = [f"{COLOR_EMOJI[color(p)]}{label(p)}" for p in history]
+    items = [f"{COLOR_EMOJI[color(p)]}{label(p)}" for p in list(history)[:HISTORY_SIZE]]
     return "Últimos: " + " · ".join(items) if items else "Aún no ha salido ningún número."
 
 
@@ -134,26 +143,40 @@ def result_text(outcome: RoundOutcome, rng: random.Random | None = None) -> str:
     """
     rng = rng or random.Random()
     lines = [f"# {pretty(outcome.pocket)}"]
-    if outcome.won:
+    if outcome.lucky_hit:
+        lines.append(f"## ⚡ ¡RAYO x{outcome.lucky_hit}! +{format_amount(outcome.net)}")
+    elif outcome.won:
         if outcome.max_payout >= 8:
             lines.append(f"## {rng.choice(BIG_WIN_LINES)} +{format_amount(outcome.net)}")
         else:
             lines.append(f"### {rng.choice(WIN_LINES)} +{format_amount(outcome.net)}")
-    elif outcome.total_return:
-        # Ha acertado algo, pero menos de lo apostado en total.
+    elif outcome.total_return and outcome.net < 0:
+        # Ha acertado algo, pero menos de lo apostado en total. Se celebra lo
+        # recuperado y la pérdida va debajo, pequeña: el truco de las tragaperras.
+        lines.append(f"### ✅ ¡Recuperas {format_amount(outcome.total_return)}!")
         lines.append(
-            f"### -{format_amount(-outcome.net)} · Recuperas "
-            f"{format_amount(outcome.total_return)} de {format_amount(outcome.stake)}"
+            f"-# Ponías {format_amount(outcome.stake)} en la mesa: "
+            f"-{format_amount(-outcome.net)} en total."
         )
-    elif outcome.net == 0:
+    elif outcome.total_return:
         lines.append("### Te quedas igual.")
+    elif outcome.near_miss is not None:
+        lines.append(
+            f"### -{format_amount(outcome.stake)} · ¡Por una casilla! "
+            f"Tu {label(outcome.near_miss)} estaba al lado."
+        )
     else:
         lines.append(f"### -{format_amount(outcome.stake)} · {rng.choice(LOSS_LINES)}")
+    if outcome.lucky:
+        rays = " · ".join(f"{pretty(p)} ×{m}" for p, m in outcome.lucky.items())
+        lines.append(f"-# ⚡ Rayos: {rays}")
 
     if len(outcome.wagers) == 1:
         (wager,) = outcome.wagers
         if outcome.won:
-            lines.append(f"{wager.bet.name} paga {wager.bet.payout}:1")
+            lines.append(
+                f"{wager.bet.name} paga {wager.bet.payout_for(outcome.pocket, outcome.lucky)}:1"
+            )
         else:
             lines.append(f"Ibas a {wager.bet.name}")
         return "\n".join(lines)
@@ -199,6 +222,8 @@ def table_embed(
         description = (
             "Pulsa una apuesta y la rueda gira al momento.\n"
             "🎯 **Números** para plenos, caballos, cuadros…\n"
+            "⚡ En cada tirada caen rayos: un pleno con rayo cobra de ×50 a ×500.\n"
+            "🔥 **Caliente** y ❄️ **Frío**: pleno al número que más sale o al que más tarda.\n"
             "🧩 **Varias** para jugar varias apuestas en la misma tirada."
         )
         embed_color = COLOR_IDLE
@@ -219,18 +244,29 @@ def table_embed(
     return embed
 
 
-def spinning_embed(*, owner: str, wagers: Sequence[Wager], history: Iterable[int]) -> discord.Embed:
-    """Embed mientras la bola gira: solo dice a qué se ha apostado."""
+def spinning_embed(
+    *,
+    owner: str,
+    wagers: Sequence[Wager],
+    history: Iterable[int],
+    closed: bool = False,
+) -> discord.Embed:
+    """Embed mientras la bola gira: solo dice a qué se ha apostado.
+
+    Args:
+        closed: El «no va más» de justo después de cobrar, mientras se dibuja el
+            giro: la mesa enseña aún su imagen quieta (el PNG) en vez del GIF.
+    """
     if len(wagers) == 1:
         bets = f"**{wagers[0].bet.name}** · {format_amount(wagers[0].stake)}"
     else:
         bets = f"{wagers_lines(wagers)}\n**Total** · {format_amount(wagers_total(wagers))}"
     embed = discord.Embed(
         title="🎰 Ruleta americana",
-        description=f"# 🌀 Girando…\n{bets}",
+        description=f"# {'🎲 No va más…' if closed else '🌀 Girando…'}\n{bets}",
         color=COLOR_SPIN,
     )
-    embed.set_image(url=f"attachment://{GIF_NAME}")
+    embed.set_image(url=f"attachment://{PNG_NAME if closed else GIF_NAME}")
     embed.set_footer(text=f"Mesa de {owner} · {history_line(history)}")
     return embed
 
@@ -307,7 +343,7 @@ class SpinResult:
 
     outcome: RoundOutcome
     balance: int
-    media: SpinMedia
+    media: Media
     #: Línea de IRPF de esta tirada (retención o devolución), si la hay.
     tax_note: str | None = None
     #: IRPF retenido (positivo) o devuelto (negativo) en esta tirada.
@@ -362,6 +398,8 @@ class RouletteTable(discord.ui.View):
         self.last_outcome: RoundOutcome | None = None
         self.last_text: str | None = None
         self.streak = 0
+        #: Apuestas puestas con 🔥 o ❄️ en esta tirada (clave → "hot"/"cold"), para los logros.
+        self.hunches: dict[str, str] = {}
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
@@ -422,7 +460,9 @@ class RouletteTable(discord.ui.View):
         )
         self.mode_button = self._add("🧩 Varias", 4, self._toggle_mode, custom_id="mode")
         self.spin_button = self._add("🎰 Girar", 4, self._spin_slip, style=green, custom_id="spin")
-        self.clear_button = self._add("🗑️ Quitar fichas", 4, self._clear_slip, custom_id="clear")
+        self.clear_button = self._add("🗑️ Quitar", 4, self._clear_slip, custom_id="clear")
+        self._add("🔥 Caliente", 4, self._hot, style=red, custom_id="hot")
+        self._add("❄️ Frío", 4, self._cold, style=blue, custom_id="cold")
         self._set_enabled(True)
 
     def _set_enabled(self, enabled: bool) -> None:
@@ -523,8 +563,19 @@ class RouletteTable(discord.ui.View):
         try:
             # Cobrar y dibujar el giro tardan: se acepta el clic antes.
             await ack(interaction)
+            closing: asyncio.Task[None] | None = None
+
+            async def close_bets() -> None:
+                # Cobrado: «no va más» mientras se dibuja el giro (~2 s), que el
+                # clic se note al momento. A la vez que el dibujo, no antes.
+                nonlocal closing
+                self._set_enabled(False)
+                closing = asyncio.create_task(self._close_bets(interaction, wagers))
+
             try:
-                result = await self.cog.spin(self.guild_id, self.owner.id, wagers)
+                result = await self.cog.spin(
+                    self.guild_id, self.owner.id, wagers, on_paid=close_bets
+                )
             except InsufficientFundsError as error:
                 await notify(interaction, insufficient_text(error.balance, wagers_total(wagers)))
                 return
@@ -532,6 +583,9 @@ class RouletteTable(discord.ui.View):
                 await notify(interaction, "La banca no puede pagar tanto. Baja la ficha.")
                 return
             self._last_interaction = interaction
+            if closing is not None:
+                # Que el «no va más» no llegue a Discord después del giro.
+                await asyncio.gather(closing, return_exceptions=True)
             await self.show_spin(
                 result,
                 first_edit=interaction.edit_original_response,
@@ -540,6 +594,22 @@ class RouletteTable(discord.ui.View):
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
+
+    async def _close_bets(self, interaction: discord.Interaction, wagers: Sequence[Wager]) -> None:
+        """Pone la mesa en «no va más», sin tocar la imagen ni esperar al dibujo."""
+        try:
+            await edit(
+                interaction,
+                embed=spinning_embed(
+                    owner=self.owner.display_name,
+                    wagers=wagers,
+                    history=self.cog.history(self.guild_id),
+                    closed=True,
+                ),
+                view=self,
+            )
+        except discord.HTTPException:
+            logger.debug("No se pudo poner la mesa en «no va más»", exc_info=True)
 
     async def show_spin(
         self, result: SpinResult, *, first_edit: EditFn, final_edit: EditFn
@@ -562,7 +632,7 @@ class RouletteTable(discord.ui.View):
             attachments=[discord.File(io.BytesIO(result.media.gif), filename=GIF_NAME)],
             view=self,
         )
-        await asyncio.sleep(SPIN_SECONDS + REVEAL_MARGIN_SECONDS)
+        await asyncio.sleep(result.media.seconds + REVEAL_MARGIN_SECONDS)
 
         self.cog.record(self.guild_id, outcome.pocket)
         previous_pocket = self.last_outcome.pocket if self.last_outcome is not None else None
@@ -585,7 +655,10 @@ class RouletteTable(discord.ui.View):
             view=self,
         )
         # Después de enseñar el número: un aviso de logro antes destriparía la tirada.
-        delta = roulette_stats(outcome, table_streak=self.streak, previous_pocket=previous_pocket)
+        hunches, self.hunches = self.hunches, {}
+        delta = roulette_stats(
+            outcome, table_streak=self.streak, previous_pocket=previous_pocket, hunches=hunches
+        )
         delta.merge(
             casino_stats(
                 stake=outcome.stake,
@@ -625,6 +698,29 @@ class RouletteTable(discord.ui.View):
 
     async def _open_numbers(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(NumberBetModal(self))
+
+    async def _hunch(self, interaction: discord.Interaction, kind: str) -> None:
+        """Pleno al número más caliente (`hot`) o al más frío (`cold`) del servidor.
+
+        El historial está en memoria: si no hay, se contesta al momento.
+        """
+        hot, cold = hot_cold(self.cog.history(self.guild_id))
+        picks = hot if kind == "hot" else cold
+        if not picks:
+            await interaction.response.send_message(
+                "Aún no ha salido ningún número en este servidor. Gira una vez y vuelve.",
+                ephemeral=True,
+            )
+            return
+        bet = parse_bet(label(picks[0][0]))
+        self.hunches[bet.key] = kind
+        await self.choose(interaction, bet)
+
+    async def _hot(self, interaction: discord.Interaction) -> None:
+        await self._hunch(interaction, "hot")
+
+    async def _cold(self, interaction: discord.Interaction) -> None:
+        await self._hunch(interaction, "cold")
 
     def _free_balance(self, balance: int) -> int:
         """Saldo que queda sin comprometer por las fichas ya puestas."""
@@ -677,6 +773,7 @@ class RouletteTable(discord.ui.View):
     async def _toggle_mode(self, interaction: discord.Interaction) -> None:
         self.multi = not self.multi
         self.slip = ()
+        self.hunches = {}
         await self._refresh(interaction)
 
     async def _spin_slip(self, interaction: discord.Interaction) -> None:
@@ -687,6 +784,7 @@ class RouletteTable(discord.ui.View):
 
     async def _clear_slip(self, interaction: discord.Interaction) -> None:
         self.slip = ()
+        self.hunches = {}
         await self._refresh(interaction)
 
 
@@ -701,45 +799,22 @@ class Casino(commands.Cog):
         bot: commands.Bot,
         *,
         economy: EconomyService,
-        renderer: WheelRenderer | None = None,
+        renderer: RouletteScene | None = None,
         wheel: Wheel | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
     ) -> None:
         self.bot = bot
         self.economy = economy
-        self.renderer = renderer or WheelRenderer()
+        self.renderer = renderer or RouletteScene()
         self.wheel = wheel or Wheel()
         self.casino_channel_ids = casino_channel_ids
         # Una cola corta por servidor: el tamaño total está acotado por el
         # número de servidores del bot.
         self._history: dict[int, deque[int]] = {}
-        self._warm_task: asyncio.Task[None] | None = None
-
-    async def cog_load(self) -> None:
-        """Prepara en segundo plano las 38 animaciones (~5 s de CPU una vez).
-
-        Así ninguna tirada espera a que se dibuje su GIF.
-        """
-        self._warm_task = asyncio.create_task(self._warm_up(), name="ruleta-warm-up")
 
     async def cog_unload(self) -> None:
-        """Cancela el precalculado si aún no ha terminado."""
-        if self._warm_task is not None:
-            self._warm_task.cancel()
-
-    async def _warm_up(self) -> None:
-        # Una casilla por llamada al hilo: así cancelar la tarea (al apagar el
-        # bot) para el trabajo en ~0,1 s en vez de esperar a las 38.
-        try:
-            await asyncio.to_thread(self.renderer.idle_png)
-            for pocket in POCKETS:
-                await asyncio.to_thread(self.renderer.media, pocket)
-            logger.info("Animaciones de la ruleta listas.")
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            # No es grave: cada animación se dibujará al usarse por primera vez.
-            logger.exception("No se pudieron precalcular las animaciones de la ruleta")
+        """Cierra el navegador de la ruleta."""
+        await self.renderer.close()
 
     # -- Estado compartido ----------------------------------------------------------
 
@@ -749,14 +824,24 @@ class Casino(commands.Cog):
 
     def record(self, guild_id: int, pocket: int) -> None:
         """Añade un número al historial del servidor."""
-        self._history.setdefault(guild_id, deque(maxlen=HISTORY_SIZE)).appendleft(pocket)
+        self._history.setdefault(guild_id, deque(maxlen=HOT_WINDOW)).appendleft(pocket)
 
-    async def spin(self, guild_id: int, user_id: int, wagers: Sequence[Wager]) -> SpinResult:
+    async def spin(
+        self,
+        guild_id: int,
+        user_id: int,
+        wagers: Sequence[Wager],
+        *,
+        on_paid: Callable[[], Awaitable[None]] | None = None,
+    ) -> SpinResult:
         """Juega una tirada: decide el número y mueve el dinero de forma atómica.
 
         Todas las apuestas se cobran y se pagan en una sola operación. El
         número se decide antes de cobrar, pero solo se muestra si el cobro
         sale bien; así no se puede "ver" el resultado sin pagarlo.
+
+        Args:
+            on_paid: Se llama tras cobrar y antes de dibujar el giro.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre el total apostado.
@@ -766,7 +851,11 @@ class Casino(commands.Cog):
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
-        media = await asyncio.to_thread(self.renderer.media, outcome.pocket)
+        if on_paid is not None:
+            await on_paid()
+        media = await self.renderer.spin(
+            outcome, history=self.history(guild_id), seed=secrets.randbits(32)
+        )
         return SpinResult(
             outcome=outcome,
             balance=settlement.balance,
@@ -817,7 +906,7 @@ class Casino(commands.Cog):
 
         table = RouletteTable(self, guild_id=guild.id, owner=user, stake=stake)
         if not bets:
-            png = await asyncio.to_thread(self.renderer.idle_png)
+            png = await self.renderer.board(self.history(guild.id))
             table.message = await send(
                 embed=await table.current_embed(balance),
                 file=discord.File(io.BytesIO(png), filename=PNG_NAME),

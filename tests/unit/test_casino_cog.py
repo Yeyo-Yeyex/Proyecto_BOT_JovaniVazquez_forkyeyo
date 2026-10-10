@@ -30,12 +30,13 @@ from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.roulette import (
     DOUBLE_ZERO,
     OUTSIDE_BETS,
+    STRAIGHT_PAYOUT,
     RoundOutcome,
     Wager,
     Wheel,
     parse_bet,
 )
-from bot.services.roulette_render import SpinMedia
+from bot.services.roulette_scene import Media
 from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
@@ -46,17 +47,23 @@ CASINO_CHANNEL = 555
 class FakeRenderer:
     """Devuelve bytes fijos: las pruebas no necesitan dibujar la rueda."""
 
-    def media(self, pocket: int) -> SpinMedia:
-        return SpinMedia(gif=b"GIF", png=b"PNG")
+    def __init__(self) -> None:
+        self.histories: list[list[int]] = []
 
-    def idle_png(self) -> bytes:
+    async def spin(self, outcome: RoundOutcome, *, history: list[int], seed: int) -> Media:
+        self.histories.append(list(history))
+        return Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+
+    async def board(self, history: list[int], wagers: object = ()) -> bytes:
         return b"IDLE"
+
+    async def close(self) -> None:
+        return None
 
 
 @pytest.fixture(autouse=True)
 def no_spin_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     """La animación no hace falta esperarla en las pruebas."""
-    monkeypatch.setattr(casino_module, "SPIN_SECONDS", 0)
     monkeypatch.setattr(casino_module, "REVEAL_MARGIN_SECONDS", 0)
 
 
@@ -67,7 +74,7 @@ async def make_cog(tmp_path: Path, pocket: int = 17, channels=frozenset()) -> Ca
         MagicMock(),
         economy=EconomyService(repository),
         renderer=FakeRenderer(),  # type: ignore[arg-type]
-        wheel=Wheel(lambda n: pocket),
+        wheel=Wheel(lambda n: pocket, lightning=False),
         casino_channel_ids=channels,
     )
 
@@ -165,11 +172,15 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     await table.choose(interaction, parse_bet("17"))
 
     interaction.response.defer.assert_awaited_once()
-    first, final = interaction.edit_original_response.await_args_list
+    closed, first, final = interaction.edit_original_response.await_args_list
+    # Cobrado: «no va más» con la imagen quieta mientras se dibuja el giro.
+    assert "No va más" in closed.kwargs["embed"].description
+    assert "attachments" not in closed.kwargs
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
-    withheld = gambling_day_tax(3500, 0)
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 3500 - withheld
+    gain = 100 * STRAIGHT_PAYOUT
+    withheld = gambling_day_tax(gain, 0)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - withheld
     assert cog.history(GUILD_ID) == [17]
     assert table.streak == 1
     assert not table.repeat_button.disabled
@@ -311,11 +322,11 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
 
     assert [f.filename for f in send.await_args.kwargs["files"]] == [GIF_NAME]
     assert attachment_names(message.edit.await_args) == [PNG_NAME]
-    # Gana 35.000 netos en el día: paga IRPF sobre ellos y la mesa lo dice.
-    gain = STARTING_BALANCE * 35
+    # Gana 29 veces el saldo en el día: paga IRPF sobre ello y la mesa lo dice.
+    gain = STARTING_BALANCE * STRAIGHT_PAYOUT
     tax = gambling_day_tax(gain, 0)
     assert tax > 0
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE * 36 - tax
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - tax
     assert "Perro Sanxe" in message.edit.await_args.kwargs["embed"].description
 
 
@@ -422,7 +433,8 @@ def test_texto_de_acierto_parcial_dice_cuanto_recuperas() -> None:
     text = result_text(outcome, random.Random(0))
 
     assert "-90 Y$" in text
-    assert "Recuperas 20 Y$ de 110 Y$" in text
+    assert "¡Recuperas 20 Y$!" in text
+    assert "Ponías 110 Y$" in text
 
 
 async def test_modo_varias_pone_fichas_sin_cobrar(tmp_path: Path) -> None:
@@ -448,7 +460,7 @@ async def test_girar_juega_todas_las_fichas_en_una_tirada(tmp_path: Path) -> Non
 
     await table._spin_slip(interaction)
 
-    assert attachment_names(interaction.edit_original_response.await_args_list[0]) == [GIF_NAME]
+    assert attachment_names(interaction.edit_original_response.await_args_list[1]) == [GIF_NAME]
     # Rojo 100 gana +100; pleno 17 pierde 100: se queda igual.
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
     assert table.slip == ()
@@ -572,3 +584,54 @@ async def test_hacienda_con_miembro_enseña_su_factura_completa(tmp_path: Path) 
     fields = {field.name.split(" · ")[0]: field.value for field in embed.fields}
     assert "Seguridad Social que paga la empresa" in fields["Indirectos (sin verlos)"]
     assert "IRPF de las nóminas" in fields["Directos"]
+
+
+async def test_caliente_juega_a_pleno_el_numero_que_mas_sale(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17)
+    for pocket in (5, 17, 5, 9):
+        cog.record(GUILD_ID, pocket)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+
+    await table._hot(make_interaction())
+
+    assert [w.bet.key for w in table.last_wagers] == ["in:5"]
+    # La escena recibe el historial de antes de la tirada, el más reciente primero.
+    assert cog.renderer.histories == [[9, 5, 17, 5]]
+    assert table.hunches == {}
+
+
+async def test_frio_juega_a_pleno_el_que_mas_tarda(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17)
+    cog.record(GUILD_ID, 17)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+    table.multi = True
+
+    await table._cold(make_interaction())
+
+    (wager,) = table.slip
+    assert wager.bet.key != "in:17"
+    assert table.hunches == {wager.bet.key: "cold"}
+
+
+async def test_caliente_sin_historial_avisa_al_momento(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+    interaction = make_interaction()
+
+    await table._hot(interaction)
+
+    interaction.response.send_message.assert_awaited_once()
+    assert not table.last_wagers
+
+
+async def test_sin_saldo_no_dice_no_va_mas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=STARTING_BALANCE * 2)
+    interaction = make_interaction()
+
+    await table.choose(interaction, OUTSIDE_BETS["red"])
+
+    interaction.edit_original_response.assert_not_awaited()
+    # La mesa sigue abierta: los botones de apostar no se apagan.
+    red = next(item for item in table.children if item.custom_id == "ruleta:bet:red")
+    assert not red.disabled

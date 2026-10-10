@@ -234,6 +234,7 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - No crear cachés globales sin política de caducidad y límites de memoria.
 - Evitar consultas redundantes a Discord: aprovechar los datos de la interacción y las cachés de la librería cuando sean suficientes.
 - Nada de trabajo lento antes de contestar a una interacción (ver «Cogs y comandos»). Los clics que llegan en ráfaga contra un mismo candado se aceptan fuera de él: dentro, cada uno espera al anterior y los últimos pasan de los 3 segundos de Discord.
+- El NAS tiene 4 hilos: el trabajo de imagen que no depende del orden va en paralelo (pestañas de `BrowserScene.render`, paletas de `local_palette_gif`, PNG de `browser_scene.assemble`). Detalle en «Rendimiento en el NAS» de CLAUDE.md.
 - Los GIF animados se escriben con `bot.utils.gif` (`shared_palette_gif` si los fotogramas comparten paleta, `local_palette_gif` si van a color completo), nunca con `save(save_all=True)` a pelo: la optimización por defecto de Pillow recorre los píxeles en Python y en el pachinko se comía ~750 ms de los ~870 de una tanda. Los efectos de imagen de los miembros (`services/memes`) son la excepción, porque sus fotogramas vienen de fuera.
 - Un panel con estado por usuario (como el de `pala`) admite una sola acción en curso: el cog guarda quién está en una (`working`) y rechaza la segunda, porque dos botones de dos paneles pueden llegar a la vez y cobrar dos veces.
 

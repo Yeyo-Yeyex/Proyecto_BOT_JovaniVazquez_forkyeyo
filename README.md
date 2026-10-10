@@ -282,11 +282,14 @@ python -m bot
   10 % de lo que ganes esa semana y sin pasar del IRPF pagado.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
   mesa con botones que solo puede usar quien la abre. Cada clic en una
-  apuesta cobra, gira (GIF de 2 s) y paga. Botones: rojo/negro, par/impar,
+  apuesta cobra, gira (GIF de ~4 s) y paga. En cada tirada caen de 1 a 5
+  ⚡ rayos sobre números al azar, con multiplicadores de ×50 a ×500: un
+  pleno con rayo cobra eso y uno sin rayo, 29 a 1. Botones: rojo/negro, par/impar,
   1-18/19-36, docenas, columnas, 0 y 00; 🎯 **Números** abre un formulario
   para plenos, caballos, transversales, cuadros, seisenas y la línea
   0-00-1-2-3. Con ½, ×2 y 💰 All-in se cambia la ficha; 🔁 Repetir y
-  ⏫ Doblar repiten la última tirada.
+  ⏫ Doblar repiten la última tirada. 🔥 **Caliente** y ❄️ **Frío** apuestan
+  a pleno al número que más ha salido en el servidor o al que más tarda.
   🧩 **Varias** cambia al modo de varias apuestas: cada botón pone una
   ficha (pulsar dos veces la misma apila fichas), 🎰 **Girar** las juega
   todas en la misma tirada y 🗑️ las quita. Hasta 10 apuestas distintas;
@@ -294,8 +297,11 @@ python -m bot
   entró. Atajos de texto: `.ruleta 500`, `.ruleta all rojo`,
   `.ruleta 50 17-20`, `.ruleta rojo`, `.ruleta 100 rojo + 17 + d2` (varias
   con `+`, la cantidad es por apuesta; con `all` se reparte el saldo).
-  Las 38 animaciones (~50 KB cada una) se precalculan al arrancar (~5 s de
-  CPU), así que una tirada no dibuja nada.
+  La rueda la pinta Chromium con canvas (`assets/ruleta/escena.html`): gira
+  en perspectiva, la bola corre al revés, rebota y salta de casilla en
+  casilla a cámara lenta, y el marcador enseña los últimos números, los
+  calientes y los fríos. Cada tirada se dibuja al momento (~2 s, en dos pestañas a la vez; mientras, la mesa dice «🎲 No va más…»); sin
+  navegador se usa la rueda de Pillow de antes.
 - **Blackjack** (`/blackjack`, `.blackjack` o `.bj`): reparte al momento con la apuesta indicada
   (`.bj 500`, `.bj all`) y se juega con botones: 🃏 Pedir, ✋ Plantarse,
   ⏫ Doblar y ✂️ Separar. Al terminar, 🃏 Repartir juega otra mano en el mismo
@@ -494,7 +500,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 2.192 logros en 41 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 2.213 logros en 41 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -847,7 +853,8 @@ src/bot/
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── cards_render.py  # Imagen de la mesa de blackjack
-│   ├── roulette_render.py # GIF y PNG de la rueda, precalculados
+│   ├── roulette_render.py # Rueda de Pillow, de reserva si no hay navegador
+│   ├── roulette_scene.py # Ruleta con canvas en Chromium (assets/ruleta/escena.html)
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
 │   ├── autoplay.py      # Autoplay común: bucle, tope, límite de pérdidas y Parar
 │   ├── slots_render.py  # GIF de cada tirada con piezas precalculadas
