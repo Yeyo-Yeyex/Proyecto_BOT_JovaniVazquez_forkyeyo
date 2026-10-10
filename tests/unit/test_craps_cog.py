@@ -801,6 +801,30 @@ async def test_al_caducar_con_el_punto_puesto_el_bot_tira_solo_hasta_decidir_y_p
     assert [r for r, _ in ledger(tmp_path)].count("dados:premio") == 1
 
 
+async def test_al_caducar_con_el_punto_puesto_la_imagen_enseña_la_tirada_que_decidio(
+    tmp_path: Path,
+) -> None:
+    """Si no, el PNG se quedaría con el disco ON y los dados de antes de caducar."""
+    cog = await make_cog(tmp_path, SIX, NOTHING, SIX_MADE)
+    view, _ = await open_table(cog, amount="100")
+    await press(view, "_pass")
+    cog.renderer.board.reset_mock()
+    await view.on_timeout()
+    (table, rest), _ = cog.renderer.board.await_args
+    assert table.game is played(view) and table.game.status is Status.WON
+    assert (rest[0].value, rest[1].value) == SIX_MADE
+    assert (rest[0].x, rest[0].y) == (OPENING_REST[0].x, OPENING_REST[0].y)
+
+
+async def test_caducar_tras_una_partida_terminada_no_repinta_la_imagen(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, NATURAL)
+    view, _ = await open_table(cog, amount="100")
+    await press(view, "_pass")
+    cog.renderer.board.reset_mock()
+    await view.on_timeout()
+    cog.renderer.board.assert_not_awaited()
+
+
 async def test_al_caducar_el_bot_puede_perder_la_partida_por_el_jugador(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, SIX, NATURAL)
     view, _ = await open_table(cog, amount="100")
