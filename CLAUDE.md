@@ -119,6 +119,13 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
 - **Menos fotogramas donde no se notan.** Una fase rápida (la bola en la pista) va
   a 20 fps sin que se vea; la cámara lenta se hace con fotogramas más largos, no
   con más fotogramas.
+- **Comprobar que llega al NAS.** La imagen instala el paquete y borra `src/`:
+  un archivo nuevo de `assets/` tiene que entrar en `package-data` de
+  `pyproject.toml` (lo vigila `tests/unit/test_packaging.py`). Si una escena no
+  llega, el juego se dibuja con Pillow sin dar error: así estuvieron la moneda,
+  los dados y la ruleta. Lo mismo con la memoria: cada Chromium abierto suma
+  ~170 MB (la ruleta, ~370 con sus dos pestañas) contra el `mem_limit` de
+  `docker-compose.yml`; un juego nuevo con navegador se suma a la cuenta de ahí.
 - **Tapar la espera.** Si el dibujo tarda más de un segundo, la jugada se enseña
   ya («🎲 No va más…» con los botones apagados) y el GIF llega después. El cambio
   va en paralelo al dibujo, nunca antes.
