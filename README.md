@@ -74,7 +74,7 @@ python -m bot
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
   | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -390,6 +390,19 @@ python -m bot
   ventana, como los caballos (la moneda bimetálica gira, rebota
   y se asienta, o se tambalea y se queda de pie), con Pillow si no hay
   navegador. Al cobrar dice cómo habría caído la siguiente.
+- **Dados** (`/dados`, `.dados [cantidad] [apuesta]`): craps de casino. Eliges
+  ✅ Pase o 🚫 No pase y tiras la salida: con Pase, el 7 y el 11 ganan y el 2,
+  el 3 y el 12 pierden; con No pase, al revés, y el 12 empata. Cualquier otro
+  total es el **punto**: se sigue tirando hasta repetirlo (gana Pase) o sacar
+  un 7, el **siete fuera** (gana No pase). Con el punto puesto, ➕ Odds pone
+  encima hasta tres veces la apuesta a la probabilidad exacta (2:1 al 4 y al
+  10, 3:2 al 5 y al 9, 6:5 al 6 y al 8), sin ventaja para la casa. Pase
+  devuelve el 98,6 % y No pase el 98,6 %, con las reglas de cualquier casino.
+  La mesa lleva la mano del tirador hasta el siete fuera, y las manos de 5
+  puntos o más se anuncian en el canal. Cada tirada es un GIF dibujado con
+  canvas en Chromium: los dados rojos vuelan en 3D, chocan contra la pared de
+  pirámides, ruedan y se paran; luego se encienden el total y el cartel, el
+  disco ON/OFF se mueve a su casilla y Perro Sanxe recoge o paga las fichas.
 - **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
   una carrera por canal, solo cuando alguien la pide. Un establo de 16
   caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
@@ -481,7 +494,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 2.103 logros en 40 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 2.192 logros en 41 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -489,7 +502,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
   coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 337 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 380 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -638,10 +651,10 @@ El bot corre bien en cualquier equipo x86_64 con Docker, por ejemplo un NAS
 UGREEN DXP2800 (Intel N100): consume poca CPU y memoria y no necesita abrir
 puertos, porque solo hace conexiones salientes a Discord y a las fuentes de
 audio. La imagen incluye `ffmpeg` y `libopus`, y un Chromium sin ventana
-(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos
-y cara o cruz. Cada juego abre el suyo: mientras se usa ocupa unos 150-250 MB
-de memoria (el doble si hay carrera y moneda a la vez) y se cierra solo tras
-10 minutos sin uso; si no estuviera, el bot dibuja con Pillow.
+(Playwright, unos 300 MB más) con el que se dibujan las carreras de caballos,
+cara o cruz y los dados. Cada juego abre el suyo: mientras se usa ocupa unos
+150-250 MB de memoria (el doble o el triple si coinciden varios juegos) y se
+cierra solo tras 10 minutos sin uso; si no estuviera, el bot dibuja con Pillow.
 
 1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
 2. Crea el archivo de configuración y pon tu token:
@@ -803,6 +816,7 @@ src/bot/
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
+│   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
@@ -845,6 +859,9 @@ src/bot/
 │   ├── coin.py          # Cara o cruz: lanzamientos, canto, racha y doble o nada
 │   ├── coin_render.py   # Vuelo de la moneda, lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── coin_scene.py    # Cara o cruz con canvas en Chromium (assets/moneda/escena.html)
+│   ├── craps.py         # Dados: salida, punto, Odds a la probabilidad exacta y la mano
+│   ├── craps_render.py  # Física de la tirada, cámara, dados en 3D y dibujo con Pillow
+│   ├── craps_scene.py   # Dados con canvas en Chromium (assets/dados/escena.html)
 │   ├── browser_scene.py # Pestaña de Chromium sin ventana con una escena HTML cargada
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
