@@ -223,6 +223,8 @@ def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
         ("natural", [play(150, game="blackjack", natural=1)], 0),
         ("racha", [play(-100, game="moneda", wins=2), play(700, game="moneda", wins=3)], 0),
         ("racha", [play(100, game="moneda", wins=1), play(-100, game="moneda", wins=2)], 1),
+        ("trayecto", [play(-100, game="autobus", wins=3), play(900, game="autobus", wins=4)], 0),
+        ("trayecto", [play(100, game="autobus", wins=3), play(-100, game="autobus", wins=0)], 1),
         ("punto", [play(-100, game="dados", made=0), play(100, game="dados", made=1)], 0),
         ("punto", [play(100, game="dados", made=0), play(-100, game="dados", made=0)], 1),
     ],

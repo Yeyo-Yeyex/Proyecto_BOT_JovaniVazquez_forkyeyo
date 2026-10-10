@@ -36,6 +36,7 @@ EXPECTED_COMMANDS = {
     "minas",
     "pollo",
     "moneda",
+    "autobus",
     "dados",
     "pachinko",
     "loteria",

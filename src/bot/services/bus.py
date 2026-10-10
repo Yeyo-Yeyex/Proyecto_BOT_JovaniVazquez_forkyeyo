@@ -76,6 +76,11 @@ def draw_card(rng: random.Random) -> Card:
     return Card(rank=rng.randint(1, 13), suit=rng.randrange(4))
 
 
+def deal(rng: random.Random) -> tuple[Card, ...]:
+    """Las cinco cartas de una partida, en orden."""
+    return tuple(draw_card(rng) for _ in range(CARDS))
+
+
 class Hand(Enum):
     """Las preguntas, en orden. El valor es el número de la mano (1-5)."""
 
@@ -268,15 +273,24 @@ class BusGame:
     status: Status = Status.PLAYING
 
     @classmethod
-    def new(cls, stake: int, rng: random.Random) -> BusGame:
-        """Empieza una partida y sortea sus cartas.
+    def new(
+        cls, stake: int, rng: random.Random, *, cards: tuple[Card, ...] | None = None
+    ) -> BusGame:
+        """Empieza una partida con sus cartas.
+
+        Args:
+            cards: Las cartas ya sorteadas (`deal`), si se sortearon antes para
+                dibujar la animación por adelantado; si no, se sortean aquí.
 
         Raises:
-            ValueError: Si la apuesta no es positiva.
+            ValueError: Si la apuesta no es positiva o no hay cinco cartas.
         """
         if stake <= 0:
             raise ValueError("La apuesta debe ser positiva.")
-        return cls(stake=stake, cards=tuple(draw_card(rng) for _ in range(CARDS)))
+        cards = cards if cards is not None else deal(rng)
+        if len(cards) != CARDS:
+            raise ValueError("Una partida lleva cinco cartas.")
+        return cls(stake=stake, cards=cards)
 
     # -- Estado -----------------------------------------------------------------------
 
