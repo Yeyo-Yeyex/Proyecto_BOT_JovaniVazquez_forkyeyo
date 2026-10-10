@@ -41,6 +41,7 @@ import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -390,27 +391,44 @@ class CrapsView(ui.View):
     async def on_timeout(self) -> None:
         """Caduca: si había un punto puesto, el bot tira solo hasta decidirlo."""
         self.cog.views.discard(self)
-        await self.force_settle()
+        forced = await self.force_settle()
         self.rebuild()
         self.disable_all()
+        kwargs: dict[str, Any] = {"embed": self.embed(), "view": self}
         try:
+            if forced:
+                # Los dados de la imagen tienen que ser los de la tirada que decidió.
+                png = await self.cog.renderer.board(self.table(), self.rest)
+                kwargs["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]
             if self._last_interaction is not None:
-                await self._last_interaction.edit_original_response(embed=self.embed(), view=self)
+                await self._last_interaction.edit_original_response(**kwargs)
             elif self.message is not None:
-                await self.message.edit(embed=self.embed(), view=self)
+                await self.message.edit(**kwargs)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar la mesa de los dados", exc_info=True)
 
-    async def force_settle(self) -> None:
-        """Decide la partida a medias tirando sin animación, y la paga y apunta."""
+    async def force_settle(self) -> bool:
+        """Decide la partida a medias tirando sin animación, y la paga y apunta.
+
+        Returns:
+            Si había una partida a medias (y por tanto la imagen ya no vale).
+        """
         async with self._lock:
             game = self.game
             if game is None or not game.playing:
-                return
+                return False
             while game.playing:
                 self._observe(game.play(self.cog.rng), game)
+            last = game.last
+            assert last is not None
+            # Mismo sitio en el tapete, con los valores de la última tirada.
+            self.rest = (
+                replace(self.rest[0], value=last.dice[0]),
+                replace(self.rest[1], value=last.dice[1]),
+            )
             settlement = await self._settle(game)
         await self._after_game(None, game, settlement)
+        return True
 
     # -- Dinero y partida -------------------------------------------------------------
 
