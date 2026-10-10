@@ -127,7 +127,14 @@ REFRESH_DELAY = 1.5
 #: Ganadores que se nombran en el resultado; el resto se resume.
 MAX_WINNER_LINES = 10
 #: Nombres que también valen para elegir el juego en `.porra`.
-GAME_ALIASES = {"tragas": "tragaperras", "bj": "blackjack", "volcan": "botes", "gallina": "pollo"}
+GAME_ALIASES = {
+    "tragas": "tragaperras",
+    "bj": "blackjack",
+    "volcan": "botes",
+    "gallina": "pollo",
+    "cara": "moneda",
+    "cruz": "moneda",
+}
 #: Qué opciones de la propuesta caben como botones (5 filas de 5, una para el resto).
 MAX_OPTION_BUTTONS = 20
 

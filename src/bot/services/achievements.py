@@ -12,7 +12,7 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `pachinko_stats`, `horses_stats`,
+`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `pachinko_stats`, `horses_stats`,
 `porra_open_stats`, `porra_bet_stats`, `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
 `voice_move_stats`, `music_queue_stats`, `image_stats`, `babel_stats`…) y se
@@ -50,6 +50,11 @@ from bot.services.blackjack import (
 )
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
+from bot.services.coin import MAX_FLIPS as COIN_MAX_FLIPS
+from bot.services.coin import CoinGame
+from bot.services.coin import Outcome as CoinOutcome
+from bot.services.coin import Side as CoinSide
+from bot.services.coin import Status as CoinStatus
 from bot.services.crash import Seat as CrashSeat
 from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
@@ -202,6 +207,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("crash", "🚀 Crash", group=_CG),
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
+    Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
@@ -2739,6 +2745,144 @@ def _build_catalog() -> tuple[Achievement, ...]:
     )
     a += _tiers("mines", f"mines_level_{MINES_MAX}", [
         (100, "mines_12_100", "Kamikaze del 12", "Juega 100 partidas con 12 minas.", E),
+    ])  # fmt: skip
+
+    # 🪙 Cara o cruz -----------------------------------------------------------------------
+    a += _tiers("coin", "coin_games", [
+        (1, "moneda_1", "Echarlo a suertes", "Juega tu primera partida a cara o cruz.", C),
+        (100, "moneda_100", "Decisiones de Estado", "Juega 100 partidas a cara o cruz.", C),
+        (1_000, "moneda_1k", "Así se decide en Moncloa", "Juega 1.000 partidas a cara o cruz.", E),
+        (10_000, "moneda_10k", "Política monetaria",
+         "Juega 10.000 partidas a cara o cruz. El Banco de España pregunta por ti.", L),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_flips", [
+        (100, "monedal_100", "Pulgar de oro", "Lanza la moneda 100 veces.", C),
+        (1_000, "monedal_1k", "Tendinitis del pulgar", "Lanza la moneda 1.000 veces.", R),
+        (5_000, "monedal_5k", "Fábrica Nacional de Moneda y Timbre",
+         "Lanza la moneda 5.000 veces.", E),
+        (20_000, "monedal_20k", "La máquina de hacer euros", "Lanza la moneda 20.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_wins", [
+        (50, "monedaw_50", "Echador de cartas", "Acierta 50 lanzamientos.", C),
+        (500, "monedaw_500", "Mejor que el CIS", "Acierta 500 lanzamientos.", R),
+        (2_500, "monedaw_2500", "Tezanos te pide consejo", "Acierta 2.500 lanzamientos.", E),
+        (10_000, "monedaw_10k", "Oráculo de Moncloa", "Acierta 10.000 lanzamientos.", L),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_cashouts", [
+        (10, "monedac_10", "Más vale pájaro en mano", "Cobra 10 partidas a cara o cruz.", C),
+        (100, "monedac_100", "Hucha de cerdito", "Cobra 100 partidas a cara o cruz.", R),
+        (800, "monedac_800", "Plan de pensiones", "Cobra 800 partidas a cara o cruz.", E),
+        (3_000, "monedac_3k", "Banca Sanxe", "Cobra 3.000 partidas a cara o cruz.", L),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_losses", [
+        (1, "monedap_1", "Salió la otra", "Falla tu primer lanzamiento.", C),
+        (10, "monedap_10", "Mal fario", "Falla 10 lanzamientos.", C),
+        (100, "monedap_100", "Ni a cara ni a cruz", "Falla 100 lanzamientos.", C),
+        (1_000, "monedap_1k", "Manual de resistencia numismático",
+         "Falla 1.000 lanzamientos y sigue jugando como si nada.", E),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_edges", [
+        (1, "moneda_canto", "De canto", "Que la moneda caiga de canto. Para Hacienda.", C),
+        (10, "moneda_canto_10", "Inspección rutinaria",
+         "Que la moneda caiga de canto 10 veces.", R),
+        (50, "moneda_canto_50", "Expediente abierto en la Agencia Tributaria",
+         "Que la moneda caiga de canto 50 veces.", E),
+        (150, "moneda_canto_150", "Perro Sanxe te tiene en favoritos",
+         "Que la moneda caiga de canto 150 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_streak_max", [
+        (3, "moneda_r3", "Racha de tres", "Acierta 3 seguidas en una partida.", C),
+        (5, "moneda_r5", "Repóker de caras (o cruces)", "Acierta 5 seguidas en una partida.", R),
+        (7, "moneda_r7", "Siete y sin despeinarse", "Acierta 7 seguidas en una partida.", E),
+        (9, "moneda_r9", "A una de la gloria", "Acierta 9 seguidas en una partida.", M),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_cash_mult_max", [
+        (4, "moneda_x4", "Doble de doble", "Cobra en ×4 o más.", C),
+        (16, "moneda_x16", "La paguita", "Cobra en ×16 o más.", C),
+        (64, "moneda_x64", "Fondos europeos", "Cobra en ×64 o más.", E),
+        (256, "moneda_x256", "La banca siempre gana (hoy tú)", "Cobra en ×256 o más.", M),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_finish", [
+        (1, "moneda_oro", "La moneda de oro",
+         f"Acierta {COIN_MAX_FLIPS} seguidas y cobra ×1.024. Sale en el BOE.", M),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_win_max", [
+        (10_000, "moneda_rich", "Lluvia de euros", "Gana 10.000 Y$ en una partida a cara o cruz.",
+         E),
+        (100_000, "moneda_richer", "Hacienda somos todos (tú más)",
+         f"Gana 100.000 Y$ en una partida a cara o cruz. {TAX_COLLECTOR} ya ha hecho números.",
+         M),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_lost_big", [
+        (1, "moneda_rescate", "Del Falcon al autobús",
+         "Pierde con ×16 o más en juego.", C, True),
+        (10, "moneda_rescate_10", "Burbuja inmobiliaria",
+         "Pierde con ×16 o más en juego 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_edge_big", [
+        (1, "moneda_canto_gordo", "Embargo preventivo",
+         "Que caiga de canto con ×8 o más en juego.", E, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_gallina", [
+        (25, "moneda_gallina", "Prudencia fiscal", "Cobra 25 veces tras un solo acierto.", C),
+        (250, "moneda_gallina_250", "Oposición aprobada a la prudencia",
+         "Cobra 250 veces tras un solo acierto. Nada de riesgos.", E),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_first_fail", [
+        (10, "moneda_ni_una", "Ni una", "Falla el primer lanzamiento de 10 partidas.", C),
+        (250, "moneda_ni_una_250", "Mal fario con sello oficial",
+         "Falla el primer lanzamiento de 250 partidas.", R),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_next_edge", [
+        (1, "moneda_librado", "Te has librado de Hacienda",
+         "Cobra justo cuando la siguiente iba a caer de canto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_loyal_cara", [
+        (1, "moneda_monarquico", "Monárquico de toda la vida",
+         "Acierta 5 o más seguidas pidiendo siempre cara.", R, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_loyal_cruz", [
+        (1, "moneda_falcon", "Tarjeta de embarque del Falcon",
+         "Acierta 5 o más seguidas pidiendo siempre cruz.", R, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_flipflop", [
+        (1, "moneda_chaquetero", "No es un cambio de opinión",
+         "Acierta 4 o más seguidas cambiando de lado en cada lanzamiento.", R, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="moneda_equidistante",
+        name="Equidistante",
+        description="Acierta 100 lanzamientos pidiendo cara y 100 pidiendo cruz.",
+        category="coin",
+        rarity=R,
+        conditions=(("coin_wins_cara", 100), ("coin_wins_cruz", 100)),
+    ))  # fmt: skip
+    a += _tiers("coin", "coin_edge_lost", [
+        (5_000, "moneda_contribuyente", "Contribuyente de pie",
+         "Pierde 5.000 Y$ en monedas de canto.", E),
+        (100_000, "moneda_mecenas", "Mecenas involuntario del Estado",
+         "Pierde 100.000 Y$ en monedas de canto.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("coin", "coin_night", [
+        (1, "moneda_madrugada", "Insomnio de Moncloa",
+         "Juega a cara o cruz de madrugada (de 2 a 6).", C),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_hispanidad", [
+        (1, "moneda_hispanidad", "Cara de la Hispanidad",
+         "Juega a cara o cruz el 12 de octubre.", C),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_nochevieja", [
+        (1, "moneda_uvas", "Cara o cruz y las uvas", "Juega a cara o cruz en Nochevieja.", C),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_friday13", [
+        (1, "moneda_viernes13", "Moneda negra", "Pierde a cara o cruz un viernes 13.", C, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_cash_666", [
+        (1, "moneda_666", "La moneda de la bestia", "Cobra exactamente 666 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("coin", "coin_first_edge", [
+        (1, "moneda_canto_primera", "Ni empezar",
+         "Que la moneda caiga de canto en el primer lanzamiento de la partida.", C, True),
     ])  # fmt: skip
 
     # 🐔 Pollo ---------------------------------------------------------------------------
@@ -8437,6 +8581,59 @@ def chicken_stats(game: ChickenGame, *, vehicle: str | None = None) -> StatDelta
         bump("chicken_lost_big", game.cents >= 1_000)
         if vehicle in CHICKEN_VEHICLE_KINDS:
             bump(f"chicken_hit_{vehicle}")
+    return delta
+
+
+def coin_stats(game: CoinGame, *, when: datetime) -> StatDelta:
+    """Contadores de una partida de cara o cruz terminada (sin lo común del casino).
+
+    Args:
+        game: La partida terminada.
+        when: Hora local.
+    """
+    delta = StatDelta(
+        add={"coin_games": 1, "coin_flips": len(game.flips)},
+        peak={"coin_streak_max": game.wins},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    won = [f for f in game.flips if f.won]
+    bump("coin_wins", amount=len(won))
+    bump("coin_wins_cara", amount=sum(1 for f in won if f.pick is CoinSide.CARA))
+    bump("coin_wins_cruz", amount=sum(1 for f in won if f.pick is CoinSide.CRUZ))
+    picks = [f.pick for f in won]
+    if len(won) >= 5 and len(set(picks)) == 1:
+        bump("coin_loyal_cara" if picks[0] is CoinSide.CARA else "coin_loyal_cruz")
+    bump(
+        "coin_flipflop",
+        len(won) >= 4 and all(a is not b for a, b in zip(picks, picks[1:], strict=False)),
+    )
+    if game.status is CoinStatus.CASHED:
+        bump("coin_cashouts")
+        delta.peak["coin_cash_mult_max"] = game.multiplier
+        if game.net > 0:
+            delta.peak["coin_win_max"] = game.net
+        bump("coin_finish", game.maxed)
+        bump("coin_gallina", game.wins == 1)
+        bump("coin_next_edge", not game.maxed and game.upcoming is CoinOutcome.EDGE)
+        bump("coin_cash_666", game.payout == 666)
+    elif game.status is CoinStatus.LOST:
+        bump("coin_losses")
+        bump("coin_first_fail", game.wins == 0)
+        bump("coin_lost_big", game.multiplier >= 16)
+    elif game.status is CoinStatus.EDGE:
+        bump("coin_edges")
+        bump("coin_edge_big", game.multiplier >= 8)
+        bump("coin_first_edge", len(game.flips) == 1)
+        bump("coin_edge_lost", amount=game.pot)
+    bump("coin_night", 2 <= when.hour < 6)
+    bump("coin_hispanidad", when.month == 10 and when.day == 12)
+    bump("coin_nochevieja", when.month == 12 and when.day == 31)
+    bump("coin_friday13", game.net < 0 and when.weekday() == 4 and when.day == 13)
     return delta
 
 

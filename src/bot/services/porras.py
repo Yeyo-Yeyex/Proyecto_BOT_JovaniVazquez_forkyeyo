@@ -220,6 +220,14 @@ PROPOSITIONS: tuple[Proposition, ...] = (
         details=frozenset({"splat"}),
     ),
     Proposition(
+        "racha", "🪙", "¿Llega a ×8?",
+        "¿{who} acierta 3 seguidas en alguna de las {n} partidas a cara o cruz?",
+        ("🪙 Llega a ×8", "🙃 Ni a ×8"),
+        lambda plays, _stake: 0 if any(p.detail("wins") >= 3 for p in plays) else 1,
+        games=frozenset({"moneda"}),
+        details=frozenset({"wins"}),
+    ),
+    Proposition(
         "pasarse", "💥", "¿Se pasa de 21?", "¿{who} juega las {n} manos sin pasarse de 21?",
         ("🧊 No se pasa nunca", "💥 Se pasa alguna vez"),
         lambda plays, _stake: 1 if any(p.detail("bust") for p in plays) else 0,

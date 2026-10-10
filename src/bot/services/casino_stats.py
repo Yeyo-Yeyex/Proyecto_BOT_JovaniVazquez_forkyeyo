@@ -20,7 +20,8 @@ Qué es una «jugada»:
 
 - Una tirada de ruleta, una mano de blackjack (con dobles y separaciones), una
   tirada de tragaperras, una tanda de pachinko, una ronda de crash por jugador,
-  una partida de minas o de pollo y una tirada base de los botes.
+  una partida de minas, de pollo o de cara o cruz y una tirada base de los
+  botes.
 - El bonus de los botes y los giros gratis de la tragaperras son jugadas
   **gratis** (apuesta 0): suman a lo pagado y a los premios, pero no cuentan
   como apuestas ni bajan la apuesta media.
@@ -49,6 +50,7 @@ GAMES: dict[str, tuple[str, str]] = {
     "crash": ("🚀", "Crash"),
     "minas": ("💣", "Minas"),
     "pollo": ("🐔", "Pollo"),
+    "moneda": ("🪙", "Cara o cruz"),
     "pachinko": ("🌸", "Pachinko"),
     "caballos": ("🏇", "Caballos"),
     "porra": ("🎫", "Porras"),

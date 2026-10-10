@@ -47,7 +47,16 @@ import numpy as np
 sys.path.insert(0, "src")
 
 from bot.services import blackjack as bj  # noqa: E402
-from bot.services import chicken, crash, hold_win, mines, pachinko, roulette, slots  # noqa: E402
+from bot.services import (  # noqa: E402
+    chicken,
+    coin,
+    crash,
+    hold_win,
+    mines,
+    pachinko,
+    roulette,
+    slots,
+)
 from bot.services import horses as caballos  # noqa: E402
 from bot.services.achievements import (  # noqa: E402
     AVAILABLE,
@@ -60,6 +69,7 @@ from bot.services.achievements import (  # noqa: E402
     blackjack_stats,
     casino_stats,
     chicken_stats,
+    coin_stats,
     crash_stats,
     hold_win_bonus_stats,
     hold_win_stats,
@@ -106,6 +116,7 @@ RITMO_CASINO = {
     "crash": 30,
     "mines": 40,
     "chicken": 60,
+    "coin": 60,
     "pachinko": 60,
     "horses": 30,
 }
@@ -365,6 +376,29 @@ def _jugar_pollo(j: Jugador) -> StatDelta:
     return _con_casino(chicken_stats(game, vehicle=vehicle), stake=APUESTA, net=game.net)
 
 
+#: Aciertos a los que cobra un jugador normal de cara o cruz (el 10 es ir a por el oro).
+_RACHAS = ((1, 30), (2, 25), (3, 20), (4, 11), (5, 7), (6, 3), (7, 2), (10, 2))
+#: Cómo elige lado: siempre el mismo, alternando o al azar.
+_ESTILOS = (("cara", 25), ("cruz", 25), ("alterna", 10), ("azar", 40))
+
+
+def _jugar_moneda(j: Jugador) -> StatDelta:
+    rng = j.rng
+    game = coin.CoinGame.new(APUESTA, rng)
+    target = _elegir(rng, _RACHAS)
+    estilo = _elegir(rng, _ESTILOS)
+    side = coin.Side.CRUZ if estilo == "cruz" else coin.Side.CARA
+    while game.playing and not game.maxed and game.wins < target:  # type: ignore[operator]
+        if estilo == "azar":
+            side = rng.choice(list(coin.Side))
+        game.flip(side, rng)
+        if estilo == "alterna":
+            side = side.other
+    if game.playing:
+        game.cash_out()
+    return _con_casino(coin_stats(game, when=NOON), stake=APUESTA, net=game.net)
+
+
 _CRASH = ((120, 15), (150, 20), (200, 25), (300, 12), (500, 10), (1_000, 8), (2_000, 4),
           (5_000, 3), (10_000, 2), (100_000, 1))  # fmt: skip
 
@@ -498,6 +532,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "pachinko": _jugar_pachinko,
     "mines": _jugar_minas,
     "chicken": _jugar_pollo,
+    "coin": _jugar_moneda,
     "crash": _jugar_crash,
     "roulette": _jugar_ruleta,
     "blackjack": _jugar_blackjack,
