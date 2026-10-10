@@ -19,9 +19,15 @@ services:
       # Buzón con actualizar.sh para el comando `reinicio` (ver
       # src/bot/services/deploy.py). Lo crea el script con permisos de escritura.
       - ./.despliegue/buzon:/app/.despliegue/buzon
-    # El bot es ligero; los límites evitan que un fallo acapare el NAS.
-    mem_limit: 768m
-    cpus: 2.0
+    # Los límites evitan que un fallo acapare el NAS. La memoria se la llevan los
+    # Chromium de los juegos (ver bot/services/browser_scene.py): la ruleta con
+    # sus dos pestañas ocupa ~370 MB y la moneda, los dados y los caballos unos
+    # 170 MB cada uno, que se cierran tras 10 min sin uso. Con el bot (~300 MB)
+    # y todos abiertos se rondan los 1,2 GB; con 768 MB el sistema mataba
+    # procesos. CPU: 3,5 de los 4 hilos del NAS, para que las dos pestañas y
+    # los hilos que montan el GIF trabajen a la vez y quede medio hilo al NAS.
+    mem_limit: 2g
+    cpus: 3.5
     security_opt:
       - no-new-privileges:true
     cap_drop:
