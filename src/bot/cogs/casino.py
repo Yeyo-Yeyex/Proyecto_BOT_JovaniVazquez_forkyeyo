@@ -244,18 +244,29 @@ def table_embed(
     return embed
 
 
-def spinning_embed(*, owner: str, wagers: Sequence[Wager], history: Iterable[int]) -> discord.Embed:
-    """Embed mientras la bola gira: solo dice a qué se ha apostado."""
+def spinning_embed(
+    *,
+    owner: str,
+    wagers: Sequence[Wager],
+    history: Iterable[int],
+    closed: bool = False,
+) -> discord.Embed:
+    """Embed mientras la bola gira: solo dice a qué se ha apostado.
+
+    Args:
+        closed: El «no va más» de justo después de cobrar, mientras se dibuja el
+            giro: la mesa enseña aún su imagen quieta (el PNG) en vez del GIF.
+    """
     if len(wagers) == 1:
         bets = f"**{wagers[0].bet.name}** · {format_amount(wagers[0].stake)}"
     else:
         bets = f"{wagers_lines(wagers)}\n**Total** · {format_amount(wagers_total(wagers))}"
     embed = discord.Embed(
         title="🎰 Ruleta americana",
-        description=f"# 🌀 Girando…\n{bets}",
+        description=f"# {'🎲 No va más…' if closed else '🌀 Girando…'}\n{bets}",
         color=COLOR_SPIN,
     )
-    embed.set_image(url=f"attachment://{GIF_NAME}")
+    embed.set_image(url=f"attachment://{PNG_NAME if closed else GIF_NAME}")
     embed.set_footer(text=f"Mesa de {owner} · {history_line(history)}")
     return embed
 
@@ -552,8 +563,19 @@ class RouletteTable(discord.ui.View):
         try:
             # Cobrar y dibujar el giro tardan: se acepta el clic antes.
             await ack(interaction)
+            closing: asyncio.Task[None] | None = None
+
+            async def close_bets() -> None:
+                # Cobrado: «no va más» mientras se dibuja el giro (~2 s), que el
+                # clic se note al momento. A la vez que el dibujo, no antes.
+                nonlocal closing
+                self._set_enabled(False)
+                closing = asyncio.create_task(self._close_bets(interaction, wagers))
+
             try:
-                result = await self.cog.spin(self.guild_id, self.owner.id, wagers)
+                result = await self.cog.spin(
+                    self.guild_id, self.owner.id, wagers, on_paid=close_bets
+                )
             except InsufficientFundsError as error:
                 await notify(interaction, insufficient_text(error.balance, wagers_total(wagers)))
                 return
@@ -561,6 +583,9 @@ class RouletteTable(discord.ui.View):
                 await notify(interaction, "La banca no puede pagar tanto. Baja la ficha.")
                 return
             self._last_interaction = interaction
+            if closing is not None:
+                # Que el «no va más» no llegue a Discord después del giro.
+                await asyncio.gather(closing, return_exceptions=True)
             await self.show_spin(
                 result,
                 first_edit=interaction.edit_original_response,
@@ -569,6 +594,22 @@ class RouletteTable(discord.ui.View):
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
+
+    async def _close_bets(self, interaction: discord.Interaction, wagers: Sequence[Wager]) -> None:
+        """Pone la mesa en «no va más», sin tocar la imagen ni esperar al dibujo."""
+        try:
+            await edit(
+                interaction,
+                embed=spinning_embed(
+                    owner=self.owner.display_name,
+                    wagers=wagers,
+                    history=self.cog.history(self.guild_id),
+                    closed=True,
+                ),
+                view=self,
+            )
+        except discord.HTTPException:
+            logger.debug("No se pudo poner la mesa en «no va más»", exc_info=True)
 
     async def show_spin(
         self, result: SpinResult, *, first_edit: EditFn, final_edit: EditFn
@@ -785,12 +826,22 @@ class Casino(commands.Cog):
         """Añade un número al historial del servidor."""
         self._history.setdefault(guild_id, deque(maxlen=HOT_WINDOW)).appendleft(pocket)
 
-    async def spin(self, guild_id: int, user_id: int, wagers: Sequence[Wager]) -> SpinResult:
+    async def spin(
+        self,
+        guild_id: int,
+        user_id: int,
+        wagers: Sequence[Wager],
+        *,
+        on_paid: Callable[[], Awaitable[None]] | None = None,
+    ) -> SpinResult:
         """Juega una tirada: decide el número y mueve el dinero de forma atómica.
 
         Todas las apuestas se cobran y se pagan en una sola operación. El
         número se decide antes de cobrar, pero solo se muestra si el cobro
         sale bien; así no se puede "ver" el resultado sin pagarlo.
+
+        Args:
+            on_paid: Se llama tras cobrar y antes de dibujar el giro.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre el total apostado.
@@ -800,6 +851,8 @@ class Casino(commands.Cog):
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
+        if on_paid is not None:
+            await on_paid()
         media = await self.renderer.spin(
             outcome, history=self.history(guild_id), seed=secrets.randbits(32)
         )

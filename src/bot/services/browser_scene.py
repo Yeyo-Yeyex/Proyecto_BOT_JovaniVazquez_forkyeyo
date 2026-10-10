@@ -13,7 +13,9 @@ tienen su propia copia de esta lógica en `bot.services.horses_scene`, anterior
 a este módulo.
 
 Coste: Chromium arranca en ~1-2 s la primera vez y ocupa ~150-250 MB mientras
-está abierto. Una sola pestaña: los dibujos se hacen uno detrás de otro.
+está abierto. Los dibujos se hacen uno detrás de otro; dentro de un dibujo, la
+ruleta reparte los fotogramas entre varias pestañas (`run_tabs`), que pintan a
+la vez cada una en su proceso.
 """
 
 from __future__ import annotations
@@ -63,6 +65,8 @@ class BrowserScene:
         self._playwright: Any = None
         self._browser: Any = None
         self._page: Any = None
+        #: Pestañas de más para `run_tabs`, con la escena ya cargada.
+        self._extra: list[Any] = []
         self._lock = asyncio.Lock()
         self._idle: asyncio.TimerHandle | None = None
         #: Tras un fallo no se reintenta en cada dibujo: se usa Pillow.
@@ -87,7 +91,22 @@ class BrowserScene:
         )
         await self._page.goto(self.scene.as_uri())
         await self._page.evaluate(self.ready)
+        self._extra = []
         return self._page
+
+    async def _open_tabs(self, count: int) -> list[Any]:
+        """`count` pestañas con la escena cargada: la principal y las de más."""
+        first = await self._open()
+        self._extra = [page for page in self._extra if not page.is_closed()]
+        width, height = self.viewport
+        while len(self._extra) < count - 1:
+            page = await self._browser.new_page(
+                viewport={"width": width, "height": height}, device_scale_factor=1
+            )
+            await page.goto(self.scene.as_uri())
+            await page.evaluate(self.ready)
+            self._extra.append(page)
+        return [first, *self._extra[: count - 1]]
 
     def _touch(self) -> None:
         """Programa el cierre del navegador tras `idle_seconds` sin uso."""
@@ -104,6 +123,7 @@ class BrowserScene:
                 self._idle = None
             browser, playwright = self._browser, self._playwright
             self._page = self._browser = self._playwright = None
+            self._extra = []
             try:
                 if browser is not None:
                     await browser.close()
@@ -118,11 +138,20 @@ class BrowserScene:
         El primer fallo apaga el navegador para siempre (`disabled`) y se
         avisa en el log: quien llama dibuja entonces con Pillow.
         """
+        return await self._run(self._open, work)
+
+    async def run_tabs(self, count: int, work: Callable[[list[Any]], Awaitable[T]]) -> T | None:
+        """Como `run`, pero `work` recibe `count` pestañas para dibujar a la vez."""
+        return await self._run(lambda: self._open_tabs(count), work)
+
+    async def _run(
+        self, open_: Callable[[], Awaitable[Any]], work: Callable[[Any], Awaitable[T]]
+    ) -> T | None:
         if self.disabled:
             return None
         async with self._lock:
             try:
-                page = await self._open()
+                page = await open_()
                 result = await work(page)
             except Exception:
                 logger.warning(

@@ -29,8 +29,9 @@ decidido y cobrado cuando se pinta):
 rueda de antes, sin marcador ni rayos). El primer fallo de Chromium se avisa
 en el log y desde entonces cada imagen sale de ahí (`bot.services.browser_scene`).
 
-Coste de una tirada: ~75 fotogramas en ~1-2 s de navegador y ~0,5 s de montar
-el GIF en un hilo. Un navegador propio, como la moneda y los dados, que se
+Coste de una tirada: ~70 fotogramas, ~2 s de navegador (pintar, comprimir
+cada recuadro en PNG y pasarlo a Python) y ~1 s de montar el GIF en un hilo.
+El GIF pesa ~1,5-2 MB. Un navegador propio, como la moneda y los dados, que se
 cierra tras 10 minutos sin uso.
 """
 
@@ -43,6 +44,7 @@ import math
 import random
 import re
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,15 +61,21 @@ from bot.services.roulette import (
     label,
 )
 from bot.services.roulette_render import SPIN_SECONDS, WheelRenderer
-from bot.utils.gif import local_palette_gif
+from bot.utils.gif import QUANTIZE_THREADS, local_palette_gif
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "ruleta" / "escena.html"
 #: Tamaño de la imagen, el mismo que la moneda y los dados.
 W, H = 640, 360
 #: Fotogramas que se piden al navegador de una vez (cada uno vuelve como PNG en base64).
-BATCH = 40
+BATCH = 20
+#: Pestañas que pintan una tirada a la vez: con dos, el navegador tarda la mitad
+#: (cada pestaña es un proceso y el NAS tiene varios núcleos).
+TABS = 2
 
 FRAME_MS = 40
+#: La pista va a 20 fotogramas por segundo: la bola corre tanto que no se nota y
+#: cada fotograma de menos son ~45 ms menos de dibujo y de GIF.
+TRACK_FRAME_MS = 50
 #: Los saltos de la bola van a cámara lenta: fotogramas más largos, no más fotogramas.
 HOP_FRAME_MS = 70
 SETTLE_FRAME_MS = 90
@@ -77,16 +85,16 @@ FINAL_FRAME_MS = 60_000
 STEP = 360 / len(WHEEL_ORDER)
 
 # Fases del giro, en fotogramas.
-TRACK_FRAMES = 44  # la bola en la pista; los rayos caen en esta fase
-DROP_FRAMES = 10  # de la pista a la primera casilla, con el golpe en un rombo
+TRACK_FRAMES = 32  # la bola en la pista; los rayos caen en esta fase
+DROP_FRAMES = 8  # de la pista a la primera casilla, con el golpe en un rombo
 HOP_FRAMES = 6  # cada salto entre casillas
 SETTLE_FRAMES = 5  # botes pequeños en la casilla final
 REVEAL_FRAMES = 10  # el cartel aparece
 
 #: Fotograma en que cae cada rayo y cuánto dura su destello.
-STRIKE_FIRST, STRIKE_EVERY, STRIKE_FLASH = 6, 5, 4
+STRIKE_FIRST, STRIKE_EVERY, STRIKE_FLASH = 4, 4, 3
 #: Fotogramas que dura el «NO VA MÁS» del principio.
-CALLOUT_FRAMES = 16
+CALLOUT_FRAMES = 12
 
 # Radios en fracción del radio de la rueda: la escena los pasa a píxeles.
 R_TRACK = 0.94  # la pista de madera por la que corre la bola
@@ -266,9 +274,8 @@ def spin_frames(outcome: RoundOutcome, rng: random.Random) -> list[dict[str, Any
         if 0 < drop < 1:
             # El golpe contra un rombo a mitad de la caída.
             z = 9 * math.sin(math.pi * drop) * (1.2 - drop)
-        frames.append(
-            {"wheel": wheel_at(f), "ball": {"a": angle, "r": radius, "z": z}, "ms": FRAME_MS}
-        )
+        ms = TRACK_FRAME_MS if f < TRACK_FRAMES else FRAME_MS
+        frames.append({"wheel": wheel_at(f), "ball": {"a": angle, "r": radius, "z": z}, "ms": ms})
     # Saltos de casilla en casilla, a cámara lenta y cada vez más bajos.
     for hop, (a, b) in enumerate(zip(stops, stops[1:], strict=False)):
         height = 14 / (1 + hop) + 2 * abs(b - a)
@@ -330,11 +337,11 @@ def spin_states(
     near = outcome.near_miss
     near_index = WHEEL_ORDER.index(near) if near is not None else None
 
+    spinning_panel = Panel(history=history, wagers=outcome.wagers).state()
     states: list[dict[str, Any]] = []
     previous_panel: dict[str, Any] | None = None
     for f, frame in enumerate(frames):
         lucky = []
-        struck = {}
         for n, (pocket, mult) in enumerate(order):
             at = STRIKE_FIRST + n * STRIKE_EVERY
             if f >= at:
@@ -348,8 +355,9 @@ def spin_states(
                         "bolt": bolt,
                     }
                 )
-                struck[pocket] = mult
-        panel = Panel(history=history, wagers=outcome.wagers, lucky=struck).state()
+        # Los rayos salen en las placas de la rueda y no en el marcador hasta el
+        # final: cambiar el marcador obliga a devolver el fotograma entero.
+        panel = spinning_panel
         state = {
             **frame,
             "lucky": lucky,
@@ -437,8 +445,10 @@ def assemble(patches: list[dict[str, Any]]) -> list[Image.Image]:
     solo el recuadro que ha cambiado (`x`, `y` y su PNG en `u`).
     """
     frames: list[Image.Image] = []
-    for patch in patches:
-        image = _decode(patch["u"])
+    # Descomprimir los PNG no depende del orden y Pillow suelta el GIL: en paralelo.
+    with ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) as pool:
+        images = list(pool.map(lambda patch: _decode(patch["u"]), patches))
+    for patch, image in zip(patches, images, strict=True):
         if image.size != (W, H):
             if not frames:
                 raise ValueError("El primer fotograma de la escena tiene que ir entero.")
@@ -491,18 +501,32 @@ class RouletteScene:
         await self.browser.close()
 
     async def _frames(self, states: list[dict[str, Any]], seed: int) -> list[dict[str, Any]] | None:
-        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay navegador."""
+        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay navegador.
 
-        async def work(page: Any) -> list[dict[str, Any]]:
-            await page.evaluate("m => setup(m)", {**meta_state(), "seed": seed})
+        Los fotogramas se reparten en tramos seguidos entre `TABS` pestañas que
+        pintan a la vez. Cada tramo empieza con un fotograma entero (lo hace la
+        escena con `first == 0`), así que se pueden pegar uno detrás de otro.
+        """
+        meta = {**meta_state(), "seed": seed}
+
+        async def one(page: Any, chunk: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            await page.evaluate("m => setup(m)", meta)
             patches: list[dict[str, Any]] = []
-            for start in range(0, len(states), BATCH):
+            for start in range(0, len(chunk), BATCH):
                 patches += await page.evaluate(
-                    "([s, first]) => renderFrames(s, first)", [states[start : start + BATCH], start]
+                    "([s, first]) => renderFrames(s, first)", [chunk[start : start + BATCH], start]
                 )
             return patches
 
-        return await self.browser.run(work)
+        tabs = min(TABS, len(states))
+        size = -(-len(states) // tabs)
+        chunks = [states[i : i + size] for i in range(0, len(states), size)]
+
+        async def work(pages: list[Any]) -> list[dict[str, Any]]:
+            parts = await asyncio.gather(*(one(p, c) for p, c in zip(pages, chunks, strict=False)))
+            return [patch for part in parts for patch in part]
+
+        return await self.browser.run_tabs(len(chunks), work)
 
     async def board(self, history: Sequence[int], wagers: Sequence[Wager] = ()) -> bytes:
         """PNG de la mesa recién abierta."""

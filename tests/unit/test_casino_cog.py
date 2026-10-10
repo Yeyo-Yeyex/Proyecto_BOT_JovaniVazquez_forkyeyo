@@ -172,7 +172,10 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     await table.choose(interaction, parse_bet("17"))
 
     interaction.response.defer.assert_awaited_once()
-    first, final = interaction.edit_original_response.await_args_list
+    closed, first, final = interaction.edit_original_response.await_args_list
+    # Cobrado: «no va más» con la imagen quieta mientras se dibuja el giro.
+    assert "No va más" in closed.kwargs["embed"].description
+    assert "attachments" not in closed.kwargs
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
     gain = 100 * STRAIGHT_PAYOUT
@@ -457,7 +460,7 @@ async def test_girar_juega_todas_las_fichas_en_una_tirada(tmp_path: Path) -> Non
 
     await table._spin_slip(interaction)
 
-    assert attachment_names(interaction.edit_original_response.await_args_list[0]) == [GIF_NAME]
+    assert attachment_names(interaction.edit_original_response.await_args_list[1]) == [GIF_NAME]
     # Rojo 100 gana +100; pleno 17 pierde 100: se queda igual.
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
     assert table.slip == ()
@@ -619,3 +622,16 @@ async def test_caliente_sin_historial_avisa_al_momento(tmp_path: Path) -> None:
 
     interaction.response.send_message.assert_awaited_once()
     assert not table.last_wagers
+
+
+async def test_sin_saldo_no_dice_no_va_mas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=STARTING_BALANCE * 2)
+    interaction = make_interaction()
+
+    await table.choose(interaction, OUTSIDE_BETS["red"])
+
+    interaction.edit_original_response.assert_not_awaited()
+    # La mesa sigue abierta: los botones de apostar no se apagan.
+    red = next(item for item in table.children if item.custom_id == "ruleta:bet:red")
+    assert not red.disabled
