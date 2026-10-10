@@ -150,9 +150,7 @@ class Bet:
             return lucky[pocket]
         return self.payout
 
-    def total_return(
-        self, stake: int, pocket: int, lucky: Mapping[int, int] | None = None
-    ) -> int:
+    def total_return(self, stake: int, pocket: int, lucky: Mapping[int, int] | None = None) -> int:
         """Lo que se devuelve al jugador (apuesta incluida); 0 si pierde."""
         payout = self.payout_for(pocket, lucky)
         return stake * (payout + 1) if payout else 0

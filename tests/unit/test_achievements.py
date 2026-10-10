@@ -348,6 +348,9 @@ PRODUCED_STATS = {
     # Segunda tanda: más estadísticas del casino, loterías, lista y derivadas
     "roulette_dozen_wins", "roulette_half_wins", "roulette_pyrrhic", "roulette_cover_max",
     "roulette_zero_sweep", *(f"{ROULETTE_HIT_PREFIX}{n}" for n in range(38)),
+    "roulette_storm_max", "roulette_lucky_wins", "roulette_lucky_max", "roulette_lucky_zero",
+    "roulette_lucky_missed", "roulette_near_miss", "roulette_hot_bets", "roulette_cold_bets",
+    "roulette_hot_hits", "roulette_cold_hits",
     ROULETTE_NUMBERS_STAT, ROULETTE_FAVOURITE_STAT,
     "bj_suited_natural", "bj_triple_seven", "bj_five_21", "bj_double_loss", "bj_stand_low",
     "bj_split_aces", "bj_both_bj", "bj_dealer_five",
@@ -1019,7 +1022,6 @@ async def test_una_tirada_de_ruleta_cuenta_para_los_logros(
     from bot.services.roulette import Wheel
     from tests.unit.test_casino_cog import FakeRenderer, make_interaction, make_user
 
-    monkeypatch.setattr(casino_module, "SPIN_SECONDS", 0)
     monkeypatch.setattr(casino_module, "REVEAL_MARGIN_SECONDS", 0)
     achievements, repository, economy = await make_cog(tmp_path)
     bot = MagicMock()

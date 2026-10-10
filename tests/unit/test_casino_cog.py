@@ -36,7 +36,7 @@ from bot.services.roulette import (
     Wheel,
     parse_bet,
 )
-from bot.services.roulette_render import SpinMedia
+from bot.services.roulette_scene import Media
 from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
@@ -47,17 +47,23 @@ CASINO_CHANNEL = 555
 class FakeRenderer:
     """Devuelve bytes fijos: las pruebas no necesitan dibujar la rueda."""
 
-    def media(self, pocket: int) -> SpinMedia:
-        return SpinMedia(gif=b"GIF", png=b"PNG")
+    def __init__(self) -> None:
+        self.histories: list[list[int]] = []
 
-    def idle_png(self) -> bytes:
+    async def spin(self, outcome: RoundOutcome, *, history: list[int], seed: int) -> Media:
+        self.histories.append(list(history))
+        return Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+
+    async def board(self, history: list[int], wagers: object = ()) -> bytes:
         return b"IDLE"
+
+    async def close(self) -> None:
+        return None
 
 
 @pytest.fixture(autouse=True)
 def no_spin_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     """La animación no hace falta esperarla en las pruebas."""
-    monkeypatch.setattr(casino_module, "SPIN_SECONDS", 0)
     monkeypatch.setattr(casino_module, "REVEAL_MARGIN_SECONDS", 0)
 
 
@@ -424,7 +430,8 @@ def test_texto_de_acierto_parcial_dice_cuanto_recuperas() -> None:
     text = result_text(outcome, random.Random(0))
 
     assert "-90 Y$" in text
-    assert "Recuperas 20 Y$ de 110 Y$" in text
+    assert "¡Recuperas 20 Y$!" in text
+    assert "Ponías 110 Y$" in text
 
 
 async def test_modo_varias_pone_fichas_sin_cobrar(tmp_path: Path) -> None:
@@ -574,3 +581,41 @@ async def test_hacienda_con_miembro_enseña_su_factura_completa(tmp_path: Path) 
     fields = {field.name.split(" · ")[0]: field.value for field in embed.fields}
     assert "Seguridad Social que paga la empresa" in fields["Indirectos (sin verlos)"]
     assert "IRPF de las nóminas" in fields["Directos"]
+
+
+async def test_caliente_juega_a_pleno_el_numero_que_mas_sale(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17)
+    for pocket in (5, 17, 5, 9):
+        cog.record(GUILD_ID, pocket)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+
+    await table._hot(make_interaction())
+
+    assert [w.bet.key for w in table.last_wagers] == ["in:5"]
+    # La escena recibe el historial de antes de la tirada, el más reciente primero.
+    assert cog.renderer.histories == [[9, 5, 17, 5]]
+    assert table.hunches == {}
+
+
+async def test_frio_juega_a_pleno_el_que_mas_tarda(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17)
+    cog.record(GUILD_ID, 17)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+    table.multi = True
+
+    await table._cold(make_interaction())
+
+    (wager,) = table.slip
+    assert wager.bet.key != "in:17"
+    assert table.hunches == {wager.bet.key: "cold"}
+
+
+async def test_caliente_sin_historial_avisa_al_momento(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=10)
+    interaction = make_interaction()
+
+    await table._hot(interaction)
+
+    interaction.response.send_message.assert_awaited_once()
+    assert not table.last_wagers
