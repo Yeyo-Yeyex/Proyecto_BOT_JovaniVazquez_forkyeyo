@@ -164,7 +164,7 @@ def test_el_siete_del_tercer_rodillo_roza_la_linea_mas_que_entra() -> None:
     assert neighbours > 5 * stop_probability(2, seven)
 
 
-def test_en_los_giros_gratis_los_tickets_no_cuentan() -> None:
+def test_en_el_re_giro_los_tickets_no_cuentan() -> None:
     stops = find_stops(lambda s: s.triggers_free_spins)
     assert not spin_at(stops, count_scatters=False).triggers_free_spins
 
@@ -287,7 +287,7 @@ def test_el_retorno_total_es_el_de_un_casino_de_verdad(monkeypatch: pytest.Monke
             free -= 1
         else:
             paid += stake
-        spin = machine.spin(free=is_free)
+        spin = machine.spin()
         hot = heat >= HEAT_MAX
         payout = line_payout(spin, stake, hot=hot)
         returned += payout

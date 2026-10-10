@@ -101,9 +101,9 @@ class RiggedMachine(SlotMachine):
         super().__init__()
         self.sequence = list(sequence)
 
-    def spin(self, *, free: bool = False):  # noqa: ANN201
+    def spin(self):  # noqa: ANN201
         stops = self.sequence.pop(0) if self.sequence else LOSS
-        return spin_at(stops, count_scatters=not free)
+        return spin_at(stops)
 
     def respin(self, spin):  # noqa: ANN001, ANN201
         stops = self.sequence.pop(0) if self.sequence else LOSS
@@ -319,6 +319,16 @@ async def test_los_tickets_dan_giros_gratis_que_no_se_cobran(tmp_path: Path) -> 
 
     assert view.free_spins == FREE_SPINS - 1
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == after_trigger
+
+
+async def test_los_tickets_en_un_giro_gratis_suman_mas_giros(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [FREE, FREE])
+    view = make_view(cog)
+
+    await view.play(make_interaction())
+    await view.play(make_interaction())
+
+    assert view.free_spins == 2 * FREE_SPINS - 1
 
 
 async def test_la_maquina_caliente_paga_doble(tmp_path: Path) -> None:

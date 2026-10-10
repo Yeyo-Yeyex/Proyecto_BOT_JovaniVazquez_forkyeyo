@@ -188,7 +188,8 @@ PRODUCED_STATS = {
     "slots_spins", "slots_wins", "slots_jackpots", "slots_jackpot_max", "slots_win_max",
     *(f"slots_three_{symbol}" for symbol in "CLGBD7"),
     "slots_ldw", "slots_near_miss", "slots_anticipation", "slots_scatter_tease",
-    "slots_free_triggers", "slots_free_spins", "slots_hot_spins", "slots_hot_big",
+    "slots_free_triggers", "slots_free_spins", "slots_free_retriggers", "slots_hot_spins",
+    "slots_hot_big",
     "slots_wild_wins", "slots_turbo", "slots_auto", "slots_session_max", "slots_pot_fed",
     "slots_night",
     "slots_autoplay_spins", "slots_autoplay_sessions", "slots_autoplay_full",
@@ -1109,6 +1110,17 @@ def test_giro_gratis_no_aporta_al_bote_y_cualquier_premio_es_ganar() -> None:
     assert delta.add["slots_wins"] == 1
     assert delta.add["slots_free_spins"] == 1
     assert "slots_pot_fed" not in delta.add
+    assert "slots_free_retriggers" not in delta.add
+
+
+def test_giros_gratis_dentro_de_un_giro_gratis_cuentan_como_prorroga() -> None:
+    spin = spin_at(_slots_stops(lambda s: s.triggers_free_spins))
+    when = datetime(2026, 1, 1, 12, tzinfo=TIMEZONE)
+    common = dict(
+        stake=100, payout=0, jackpot=0, hot=False, turbo=False, session_spins=2, when=when
+    )
+    assert slots_stats(spin, free=True, **common).add["slots_free_retriggers"] == 1
+    assert "slots_free_retriggers" not in slots_stats(spin, free=False, **common).add
 
 
 def _autoplay_spin_delta(*, autoplay: bool, free: bool = False, jackpot: int = 0) -> StatDelta:
