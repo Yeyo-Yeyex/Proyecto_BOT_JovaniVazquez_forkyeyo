@@ -2978,21 +2978,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_hands", [
         (100, "busm_100", "Billete sencillo", "Juega 100 manos al autobús.", C),
         (1_000, "busm_1k", "Bonobús de diez viajes", "Juega 1.000 manos al autobús.", R),
-        (10_000, "busm_10k", "La Global de punta a punta", "Juega 10.000 manos al autobús.", E),
+        (10_000, "busm_10k", "La Global de punta a punta", "Juega 10.000 manos al autobús.", L),
         (50_000, "busm_50k", "Más kilómetros que el Falcon",
-         "Juega 50.000 manos al autobús.", L),
+         "Juega 50.000 manos al autobús.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_wins", [
         (50, "busw_50", "Cartomante de parada", "Acierta 50 manos al autobús.", C),
         (500, "busw_500", "Echadora de cartas del Puerto", "Acierta 500 manos al autobús.", R),
         (5_000, "busw_5k", "Tezanos al volante",
-         "Acierta 5.000 manos al autobús. El CIS quiere tu método.", E),
-        (20_000, "busw_20k", "Vidente de la DGT", "Acierta 20.000 manos al autobús.", L),
+         "Acierta 5.000 manos al autobús. El CIS quiere tu método.", L),
+        (20_000, "busw_20k", "Vidente de la DGT", "Acierta 20.000 manos al autobús.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_cashouts", [
         (10, "busc_10", "Próxima parada: mi casa", "Cobra 10 partidas al autobús.", C),
         (100, "busc_100", "Picar el billete", "Cobra 100 partidas al autobús.", R),
-        (1_000, "busc_1k", "Concesión de la línea", "Cobra 1.000 partidas al autobús.", E),
+        (1_000, "busc_1k", "Concesión de la línea", "Cobra 1.000 partidas al autobús.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_losses", [
         (1, "busp_1", "Se te escapó la guagua", "Pierde tu primera partida al autobús.", C),
@@ -3004,23 +3004,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_complete", [
         (1, "bus_completo", "Fin de trayecto", "Acierta las cuatro manos del autobús.", C),
         (10, "bus_completo_10", "Abono anual", "Acierta las cuatro manos 10 veces.", R),
-        (100, "bus_completo_100", "Jefe de cocheras", "Acierta las cuatro manos 100 veces.", E),
+        (100, "bus_completo_100", "Jefe de cocheras", "Acierta las cuatro manos 100 veces.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_turned", [
         (1, "bus_vuelta", "Billete de ida y vuelta",
          "Completa el autobús y acierta también la vuelta.", R),
-        (10, "bus_vuelta_10", "Línea circular", "Acierta la vuelta 10 veces.", E),
+        (10, "bus_vuelta_10", "Línea circular", "Acierta la vuelta 10 veces.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_turn_lost", [
         (1, "bus_vuelta_perdida", "Doble o nada: nada",
-         "Completa el autobús, juégatelo a la vuelta y piérdelo todo.", C, True),
+         "Completa el autobús, juégatelo a la vuelta y piérdelo todo.", R, True),
     ])  # fmt: skip
     a += _tiers("bus", "bus_mult_max", [
         (500, "bus_x5", "Suplemento de equipaje", "Cobra al autobús en ×5 o más.", C),
-        (2_000, "bus_x20", "Primera clase en la guagua", "Cobra al autobús en ×20 o más.", R),
+        (2_000, "bus_x20", "Primera clase en la guagua", "Cobra al autobús en ×20 o más.", C),
         (10_000, "bus_x100", "El autobús de los fondos europeos",
          "Cobra al autobús en ×100 o más.", E),
-        (50_000, "bus_x500", "Autobús oficial de Moncloa", "Cobra al autobús en ×500 o más.", L),
+        (50_000, "bus_x500", "Autobús oficial de Moncloa", "Cobra al autobús en ×500 o más.", M),
         (200_000, "bus_x2000", "La guagua dorada", "Cobra al autobús en ×2.000 o más.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_win_max", [
@@ -3029,26 +3029,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana 100.000 Y$ en una partida al autobús. La UCO toma nota.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("bus", "bus_win_igual", [
-        (1, "bus_igual", "Clavado", "Acierta «igual» al autobús.", C),
-        (10, "bus_igual_10", "Gemelos del Congreso", "Acierta «igual» 10 veces.", R),
-        (50, "bus_igual_50", "Fotocopiadora del BOE", "Acierta «igual» 50 veces.", E),
+        (1, "bus_igual", "Clavado", "Acierta «igual» al autobús.", R),
+        (10, "bus_igual_10", "Gemelos del Congreso", "Acierta «igual» 10 veces.", E),
+        (50, "bus_igual_50", "Fotocopiadora del BOE", "Acierta «igual» 50 veces.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_win_poste", [
-        (1, "bus_poste", "Al palo", "Acierta «poste» al autobús.", C),
-        (10, "bus_poste_10", "Parada de la marquesina", "Acierta «poste» 10 veces.", R),
-        (50, "bus_poste_50", "Francotirador de Pegasus", "Acierta «poste» 50 veces.", E),
+        (1, "bus_poste", "Al palo", "Acierta «poste» al autobús.", R),
+        (10, "bus_poste_10", "Parada de la marquesina", "Acierta «poste» 10 veces.", L),
+        (50, "bus_poste_50", "Francotirador de Pegasus", "Acierta «poste» 50 veces.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_suit_wins", [
-        (10, "buss_10", "Echar las cartas", "Acierta el palo 10 veces.", C),
-        (100, "buss_100", "Tarotista de madrugada", "Acierta el palo 100 veces.", R),
-        (1_000, "buss_1k", "Bruja con licencia de Hacienda", "Acierta el palo 1.000 veces.", E),
+        (10, "buss_10", "Echar las cartas", "Acierta el palo 10 veces.", R),
+        (100, "buss_100", "Tarotista de madrugada", "Acierta el palo 100 veces.", L),
+        (1_000, "buss_1k", "Bruja con licencia de Hacienda", "Acierta el palo 1.000 veces.", M),
     ])  # fmt: skip
     a.append(Achievement(
         id="bus_baraja",
         name="Baraja completa",
         description="Acierta el palo con picas, corazones, diamantes y tréboles.",
         category="bus",
-        rarity=C,
+        rarity=R,
         conditions=tuple((f"{BUS_WIN_PREFIX}{p.key}", 1) for p in bus_picks_for(BusHand.SUIT)),
     ))  # fmt: skip
     a.append(Achievement(
@@ -3056,7 +3056,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         name="Me sé todas las paradas",
         description="Acierta al autobús con cada una de las opciones, la vuelta incluida.",
         category="bus",
-        rarity=R,
+        rarity=E,
         conditions=tuple((f"{BUS_WIN_PREFIX}{p.key}", 1) for p in BusPick),
     ))  # fmt: skip
     a.append(Achievement(
@@ -3069,11 +3069,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("bus", "bus_longshots", [
         (25, "bus_largas", "Amante de las cuotas largas",
-         "Acierta 25 manos con 2 de 13 cartas o menos a favor.", R),
+         "Acierta 25 manos con 2 de 13 cartas o menos a favor.", E),
     ])  # fmt: skip
     a += _tiers("bus", "bus_contrarian", [
         (10, "bus_contra_10", "Llevar la contraria",
-         "Acierta 10 manos eligiendo una opción menos probable que otra.", C),
+         "Acierta 10 manos eligiendo una opción menos probable que otra.", R),
         (100, "bus_contra_100", "Oposición de manual",
          "Acierta 100 manos eligiendo una opción menos probable que otra.", R),
     ])  # fmt: skip
@@ -3091,7 +3091,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("bus", "bus_gallina", [
         (25, "bus_gallina", "Me bajo aquí mismo",
-         "Cobra 25 veces tras acertar solo el color.", C),
+         "Cobra 25 veces tras acertar solo el color.", R),
         (250, "bus_gallina_250", "Una parada y a casa",
          "Cobra 250 veces tras acertar solo el color.", R),
     ])  # fmt: skip
@@ -3100,9 +3100,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cobra justo cuando la carta siguiente pagaba ×6,5 o más.", C, True),
     ])  # fmt: skip
     a += _tiers("bus", "bus_lost_big", [
-        (1, "bus_rescate", "Del Falcon a la guagua", "Pierde con ×20 o más en juego.", C, True),
+        (1, "bus_rescate", "Del Falcon a la guagua", "Pierde con ×20 o más en juego.", R, True),
         (10, "bus_rescate_10", "Rescate de aerolínea",
-         "Pierde con ×20 o más en juego 10 veces.", E),
+         "Pierde con ×20 o más en juego 10 veces.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_all_red", [
         (1, "bus_todo_rojo", "Ni el PSOE es tan rojo",
