@@ -190,7 +190,7 @@ def _jugar_slots(j: Jugador) -> StatDelta:
     hit_at = j.extra.get("hit_at") or rng.randint(slots.POT_SEED, slots.POT_CAP)
     drought = j.extra.get("drought", 0)
     hot = heat >= slots.HEAT_MAX
-    spin = machine.spin(free=bool(free))
+    spin = machine.spin()
     payout = slots.line_payout(spin, APUESTA, hot=hot)
     # El bote lo alimentan cinco jugadores: el simulado y cuatro más.
     pot += 5 * slots.pot_share(APUESTA)

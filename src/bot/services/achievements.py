@@ -2019,6 +2019,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_free_spins", [
         (100, "freespin_100", "Barra libre", "Juega 100 giros gratis.", R),
     ])  # fmt: skip
+    a += _tiers("slots", "slots_free_retriggers", [
+        (1, "free_again", "Presupuestos prorrogados",
+         "Saca giros gratis en un giro gratis: lo de antes sigue valiendo un año más.", R),
+    ])  # fmt: skip
     a += _tiers("slots", "slots_hot_spins", [
         (1, "hot_1", "Al rojo vivo", "Juega una tirada con la máquina caliente.", C),
         (50, "hot_50", "Quemado", "Juega 50 tiradas con la máquina caliente.", R),
@@ -7524,6 +7528,7 @@ def slots_stats(
     bump("slots_scatter_tease", spin.scatters == 2)
     bump("slots_free_triggers", spin.triggers_free_spins)
     bump("slots_free_spins", free)
+    bump("slots_free_retriggers", free and spin.triggers_free_spins)
     bump("slots_hot_spins", hot)
     bump("slots_hot_big", hot and stake > 0 and payout >= 20 * stake)
     bump("slots_wild_wins", payout > 0 and SLOT_WILD in spin.line)
