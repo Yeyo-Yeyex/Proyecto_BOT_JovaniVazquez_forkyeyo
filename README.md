@@ -300,8 +300,11 @@ python -m bot
   La rueda la pinta Chromium con canvas (`assets/ruleta/escena.html`): gira
   en perspectiva, la bola corre al revés, rebota y salta de casilla en
   casilla a cámara lenta, y el marcador enseña los últimos números, los
-  calientes y los fríos. Cada tirada se dibuja al momento (~2 s, en dos pestañas a la vez; mientras, la mesa dice «🎲 No va más…»); sin
-  navegador se usa la rueda de Pillow de antes.
+  calientes y los fríos. Cada tirada se dibuja al momento (~2 s, en dos
+  pestañas a la vez; mientras, la mesa dice «🎲 No va más…»), salvo la que
+  repite la última apuesta: esa se precarga mientras gira la anterior y sale
+  al instante, como en el pachinko. Sin navegador se usa la rueda de Pillow
+  de antes.
 - **Blackjack** (`/blackjack`, `.blackjack` o `.bj`): reparte al momento con la apuesta indicada
   (`.bj 500`, `.bj all`) y se juega con botones: 🃏 Pedir, ✋ Plantarse,
   ⏫ Doblar y ✂️ Separar. Al terminar, 🃏 Repartir juega otra mano en el mismo
