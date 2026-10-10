@@ -440,6 +440,36 @@ def add_wager(wagers: Sequence[Wager], bet: Bet, stake: int) -> tuple[Wager, ...
     return tuple(result)
 
 
+@dataclass(frozen=True, slots=True)
+class Draw:
+    """Lo que sale de la rueda en una tirada, antes de mirar las apuestas.
+
+    El número y los rayos no dependen de lo apostado: sortearlos antes del clic
+    (la precarga de la mesa) da exactamente la misma probabilidad.
+    """
+
+    pocket: int
+    lucky: Mapping[int, int] = field(default_factory=dict)
+
+
+def draw(wheel: Wheel) -> Draw:
+    """Gira la rueda: número ganador y rayos."""
+    pocket = wheel.spin()
+    return Draw(pocket, wheel.strike())
+
+
+def resolve(result: Draw, wagers: Sequence[Wager]) -> RoundOutcome:
+    """Calcula el pago de cada apuesta con una tirada ya sorteada.
+
+    Raises:
+        ValueError: Si no hay apuestas.
+    """
+    if not wagers:
+        raise ValueError("No hay ninguna apuesta en la mesa.")
+    returns = tuple(w.bet.total_return(w.stake, result.pocket, result.lucky) for w in wagers)
+    return RoundOutcome(result.pocket, tuple(wagers), returns, result.lucky)
+
+
 def play_round(wheel: Wheel, wagers: Sequence[Wager]) -> RoundOutcome:
     """Gira la rueda una vez y calcula el pago de cada apuesta.
 
@@ -448,10 +478,7 @@ def play_round(wheel: Wheel, wagers: Sequence[Wager]) -> RoundOutcome:
     """
     if not wagers:
         raise ValueError("No hay ninguna apuesta en la mesa.")
-    pocket = wheel.spin()
-    lucky = wheel.strike()
-    returns = tuple(w.bet.total_return(w.stake, pocket, lucky) for w in wagers)
-    return RoundOutcome(pocket, tuple(wagers), returns, lucky)
+    return resolve(draw(wheel), wagers)
 
 
 def play(wheel: Wheel, bet: Bet, stake: int) -> RoundOutcome:
