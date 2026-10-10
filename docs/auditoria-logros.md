@@ -14,11 +14,11 @@ La rareza dice cuánto le cuesta a un miembro activo que hace esa cosa:
 | 🌟 Legendario | hasta 8 meses | 2.500 Y$ | 100 |
 | 👑 Mítico | más de 8 meses, o suerte de 1 entre decenas de miles | 10.000 Y$ | 250 |
 
-Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60, cara o cruz 60 partidas, pachinko 60 tandas y caballos 30 boletos. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
+Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60, cara o cruz 60 partidas, dados 50 partidas, pachinko 60 tandas y caballos 30 boletos. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
 
 ## Método
 
-1. **Casino, simulado.** Cada jugador juega con el código de verdad (`SlotMachine`, `spin_base` y `BonusGame`, `PachinkoMachine`, `MinesGame`, `ChickenGame`, `CoinGame`, `crash_point`, `Wheel`, `BlackjackGame`, `run_race`) y la misma función de estadísticas que usa el cog. La estrategia imita a un jugador normal: apuestas a color, a número y a docenas en la ruleta; estrategia básica simplificada en el blackjack; minas, dificultades y objetivos de cobro variados en Minas, Pollo y Crash; en cara o cruz, cobrar entre 1 y 7 aciertos (y a veces ir a por el oro) pidiendo siempre el mismo lado, alternando o al azar. Se toma la mediana del día en que salta cada logro.
+1. **Casino, simulado.** Cada jugador juega con el código de verdad (`SlotMachine`, `spin_base` y `BonusGame`, `PachinkoMachine`, `MinesGame`, `ChickenGame`, `CoinGame`, `CrapsGame`, `crash_point`, `Wheel`, `BlackjackGame`, `run_race`) y la misma función de estadísticas que usa el cog. La estrategia imita a un jugador normal: apuestas a color, a número y a docenas en la ruleta; estrategia básica simplificada en el blackjack; minas, dificultades y objetivos de cobro variados en Minas, Pollo y Crash; en cara o cruz, cobrar entre 1 y 7 aciertos (y a veces ir a por el oro) pidiendo siempre el mismo lado, alternando o al azar; en los dados, Pase casi siempre (85 %) y Odds variadas (ninguna, una ficha o al tope), con la mano del tirador de una partida a otra. Se toma la mediana del día en que salta cada logro.
 2. **Contadores, por ritmo.** Meta entre ritmo diario. Es orientativo: sirve para ver saltos de dos rarezas, no para afinar.
 3. **Fechas y decisiones, a mano.** Los logros de un día del año (Halloween, Reyes…) se quedan en Común: basta con estar ese día. Lo que depende de una decisión del jugador (apostar 1 Y$, plantarse con 11, cobrar a 1,10x) se puede forzar a propósito y va en Común o Raro.
 
@@ -33,6 +33,7 @@ Rarezas cambiadas: 130.
 - **Botes.** MINI, MAJOR, bonus rojo y gran bonus salían en 1 a 5 días con rareza de semanas: bajan uno. Los multiplicadores inmediatos y los misteriosos tardan 18 y 24 días: suben de Común a Épico.
 - **Pollo.** Llegar a la meta en Fácil y en Media (1 de cada 2,7 y 1 de cada 17 intentos), Por los pelos y la colección de matrículas bajaban de sobra. ×50, ×1.000, 50 cobros en Hardcore y 10 carriles en Hardcore suben.
 - **Cara o cruz** (nuevo, calibrado con la simulación desde el principio). La racha de 9 y cobrar en ×256 son Míticos: con un 49,5 % por lanzamiento, ×256 sale una de cada ~330 partidas en que se intenta, y casi nadie lo intenta. El primer canto es Común (1 de cada 100 lanzamientos, ~115 lanzamientos al día); 150 cantos, Legendario. Los logros de fecha y el de cobrar 666 Y$ no se simulan: son Comunes por la norma de fechas y por ser una decisión.
+- **Dados** (nuevo, calibrado con la simulación desde el principio, con 41 jugadores: con 9, la mediana de los logros de pura suerte bailaba de 0,3 a 34 días). La mano caliente sigue la cuenta exacta: un punto se hace el 40,6 % de las veces, así que k puntos en una mano salen en 1 de cada 0,406^-k manos (unas 20 manos al día). Por eso la escalera es 2 y 4 (Comunes), 6 (Raro, ~8 días), 8 (Épico) y 10 (Mítico, ~257 días). Los seis puntos distintos en una mano son Legendarios. Los de fecha, ganar 10.000 y 100.000 Y$ de golpe y cobrar 777 Y$ no se simulan: fecha, apuesta y decisión.
 - **Minas.** ×100 tarda unos 110 días y ×1.000 más de un año: suben a Legendario y Mítico. Limpiar el tablero con una mina (1 de cada 24 partidas con 1 mina, pero casi nadie juega con una) sube a Épico.
 - **Crash.** Una ronda que llega a 100x pasa en 1 de cada 101: baja a Raro. 1.000 retiradas suben a Legendario.
 - **Ruleta y blackjack.** Acertar un pleno, que salga el mismo número dos veces, separar y ganar las dos o acabar con 5 cartas bajan a Común. 12 tiradas seguidas ganadas (14.600 tiradas a color de media) sube a Mítico.
@@ -111,7 +112,7 @@ No se simulan, y se revisan a mano, los que dependen de lo que hace el miembro y
 Tras los cambios, 320 de los 370 logros simulados caen en su banda y 27 están a una de distancia, casi siempre en el límite de tres días. Los 23 restantes no son fallos de rareza:
 
 - **Dependen de la hora:** los de madrugada (`slots_night`, `botes_night`, `pachi_night`). La simulación juega a las 18:00.
-- **Dependen de la apuesta, no de la suerte:** ganar 10.000 o 100.000 Y$ de golpe (`crash_fuel`, `mines_rich`, `pollo_rich`, `moneda_rich`, `pachi_rich`, `botes_win_10k`). Con 100 Y$ por jugada son imposibles; con apuestas grandes, no.
+- **Dependen de la apuesta, no de la suerte:** ganar 10.000 o 100.000 Y$ de golpe (`crash_fuel`, `mines_rich`, `pollo_rich`, `moneda_rich`, `dados_rich`, `pachi_rich`, `botes_win_10k`). Con 100 Y$ por jugada son imposibles; con apuestas grandes, no.
 - **Dependen de una decisión:** cobrar tras un diamante o a 1,10x, plantarse con 11, ser gallina en el Pollo, cubrir toda la ruleta, jugar con las 12 cantidades de minas, el pleno repetido al número de siempre. El jugador simulado no lo hace; uno de verdad lo hace cuando quiere.
 - **Dependen de la mesa o de la sesión:** 10 apuestas a la vez en la ruleta, 500 tiradas sin cerrar la tragaperras, la racha de 8 en la ruleta (con apuestas solo a color sale en unos 19 días, Épico).
 
@@ -123,4 +124,4 @@ Tras los cambios, 320 de los 370 logros simulados caen en su banda y 27 están a
 | Secretos | 127 | 213 |
 | Míticos | 17 | 65 |
 
-Primera tanda (chat y voz): 262 logros. Segunda tanda (el resto de funcionalidades): 240. Ninguna categoría baja de 12 logros. Ruleta, blackjack, tragaperras, Botes, Pollo, cara o cruz, pachinko, loterías, tienda, banco, trabajo, oficios y Hong Kong pasan de 40; Crash, Minas, Sanidad y Oficina rondan los 35. Las que no caben en un embed se parten en hojas con ◀ y ▶ en `logros`, así que el tamaño de una categoría ya no pone techo.
+Primera tanda (chat y voz): 262 logros. Segunda tanda (el resto de funcionalidades): 240. Ninguna categoría baja de 12 logros. Ruleta, blackjack, tragaperras, Botes, Pollo, cara o cruz, dados, pachinko, loterías, tienda, banco, trabajo, oficios y Hong Kong pasan de 40; Crash, Minas, Sanidad y Oficina rondan los 35. Las que no caben en un embed se parten en hojas con ◀ y ▶ en `logros`, así que el tamaño de una categoría ya no pone techo.

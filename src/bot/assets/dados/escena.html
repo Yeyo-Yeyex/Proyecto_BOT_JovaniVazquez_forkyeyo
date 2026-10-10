@@ -1,0 +1,540 @@
+<!doctype html>
+<!--
+Escena de los dados (craps), dibujada con canvas en un Chromium sin ventana
+(ver bot/services/craps_scene.py).
+
+No decide nada: Python le pasa dónde está cada cosa en cada fotograma, ya
+en píxeles de pantalla (bot/services/craps_render.py, throw_states y
+board_state): las esquinas de cada cara visible de los dados, su luz y su
+sombra, las fichas, el disco del punto, el panel y el cartel. La tirada ya
+está resuelta. Aquí solo se pinta. Funciones que llama Python:
+
+- loadFonts()           espera a las fuentes (canvas no las carga solo).
+- setup(meta)           las filas del tapete y de la pared en perspectiva.
+- renderFrames(states)  dibuja los fotogramas y devuelve, de cada uno, el PNG
+                        (data URL) del recuadro que ha cambiado y dónde va.
+
+El tapete se pinta visto desde arriba (en unidades de mesa) y se pasa a la
+cámara fila a fila con las filas de `meta.floor`: cada fila de la pantalla
+es una franja del tapete estirada. Igual la pared de pirámides.
+
+Cada cara de un dado es una textura cuadrada (rojo translúcido con los
+puntos taladrados) que se pega en su cuadrilátero con una transformación
+afín. Debajo va la silueta del dado en rojo oscuro, que asoma por las
+esquinas redondeadas y hace de bisel. Todo se dibuja al doble (S = 2) y se
+reduce al copiarlo. Sin emojis: el Chromium del Docker no trae su fuente.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+const W = 640, H = 360;
+const PANEL_X = 452, PANEL_W = 176;
+const BANNER_Y = 72;
+
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const bctx = big.getContext("2d");
+const octx = out.getContext("2d");
+
+let META = null;
+let BG = null;
+const FACES = new Map();           // "valor:luz" → textura de la cara con esa luz
+let HUD = new Map();
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function outlined(g, text, x, y, fill, stroke, width) {
+  g.lineJoin = "round"; g.lineWidth = width; g.strokeStyle = stroke; g.strokeText(text, x, y);
+  g.fillStyle = fill; g.fillText(text, x, y);
+}
+
+// -- El tapete y la pared (una vez) ---------------------------------------------------------
+
+function paintFelt() {
+  // El tapete visto desde arriba: x de -half a half, y de near (abajo) a far (arriba).
+  const T = META.table, k = T.scale;
+  const tw = Math.round(2 * T.half * k), th = Math.round((T.far - T.near) * k);
+  const c = document.createElement("canvas"); c.width = tw; c.height = th;
+  const g = c.getContext("2d");
+  const tx = x => (x + T.half) * k, ty = y => (T.far - y) * k;
+  let grad = g.createRadialGradient(tw / 2, ty(150), 40 * k, tw / 2, ty(140), 330 * k);
+  grad.addColorStop(0, "#2c9a60"); grad.addColorStop(0.6, "#1b7546"); grad.addColorStop(1, "#0d4a2b");
+  g.fillStyle = grad; g.fillRect(0, 0, tw, th);
+  // Pelusa del fieltro.
+  const r = rng(11);
+  for (let i = 0; i < 26000; i++) {
+    g.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
+    g.fillRect(r() * tw, r() * th, 1.5, 1.5);
+  }
+  const line = "#efe3b8", gold = "#f0c75a";
+  g.lineJoin = "round";
+  // Casillas de los puntos.
+  const [b0, b1] = T.boxY;
+  for (const [p, cx] of Object.entries(T.boxes)) {
+    const x0 = tx(cx - 33), x1 = tx(cx + 33), y0 = ty(b1), y1 = ty(b0);
+    g.save(); roundRect(g, x0, y0, x1 - x0, y1 - y0, 4 * k);
+    g.fillStyle = "rgba(0,0,0,0.12)"; g.fill();
+    g.lineWidth = 2.2 * k; g.strokeStyle = line; g.stroke(); g.restore();
+    const label = { "6": "SEIS", "9": "NUEVE" }[p] || p;
+    g.save(); g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = `${(label.length > 2 ? 15 : 30) * k}px Luckiest`;
+    g.fillStyle = label.length > 2 ? gold : line;
+    g.fillText(label, (x0 + x1) / 2, (y0 + y1) / 2 + 2 * k);
+    g.restore();
+  }
+  // Bandas de Pase y No pase.
+  const band = (y0w, y1w, title, sub, fill) => {
+    const x0 = tx(-218), x1 = tx(218), y0 = ty(y1w), y1 = ty(y0w);
+    g.save(); roundRect(g, x0, y0, x1 - x0, y1 - y0, 8 * k);
+    g.fillStyle = fill; g.fill(); g.lineWidth = 2.2 * k; g.strokeStyle = line; g.stroke(); g.restore();
+    g.save(); g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = `${16 * k}px Luckiest`; g.fillStyle = line;
+    g.fillText(title, tx(40), (y0 + y1) / 2 + 1.5 * k);
+    if (sub) { g.font = `700 ${7 * k}px Montserrat`; g.fillStyle = "rgba(239,227,184,0.75)"; g.fillText(sub, tx(160), (y0 + y1) / 2 + 1 * k); }
+    g.restore();
+  };
+  band(T.dont[0], T.dont[1], "NO PASE", "BARRA 12", "rgba(0,0,0,0.16)");
+  band(T.pass[0], T.pass[1], "PASE", "PAGA 1 A 1", "rgba(240,199,90,0.10)");
+  // El escudo del casino en el centro.
+  g.save(); g.translate(tx(0), ty(165)); g.globalAlpha = 0.12;
+  g.strokeStyle = gold; g.lineWidth = 2 * k;
+  g.beginPath(); g.ellipse(0, 0, 150 * k, 60 * k, 0, 0, Math.PI * 2); g.stroke();
+  g.setLineDash([3 * k, 5 * k]); g.beginPath(); g.ellipse(0, 0, 138 * k, 50 * k, 0, 0, Math.PI * 2); g.stroke();
+  g.setLineDash([]);
+  g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = gold;
+  g.font = `${30 * k}px Luckiest`; g.fillText("CASINO DEL ESTADO", 0, -4 * k);
+  g.font = `700 ${8 * k}px Montserrat`; g.fillText("CRUPIER: PERRO SANXE  ·  LAS ODDS NO PAGAN COMISIÓN", 0, 22 * k);
+  g.restore();
+  return c;
+}
+
+function paintWall() {
+  // La pared del fondo con sus pirámides de goma, de frente: x de -half a half, z de 0 a wall.
+  const T = META.table, k = T.scale;
+  const tw = Math.round(2 * T.half * k), th = Math.round(T.wall * k);
+  const c = document.createElement("canvas"); c.width = tw; c.height = th;
+  const g = c.getContext("2d");
+  const cell = 24 * k;
+  for (let y = -cell / 2; y < th + cell; y += cell / 2) {
+    const row = Math.round(y / (cell / 2));
+    for (let x = (row % 2 ? cell / 2 : 0) - cell; x < tw + cell; x += cell) {
+      const cx = x, cy = y, h = cell / 2;
+      const tri = (pts, color) => { g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo : g.moveTo).call(g, px, py)); g.closePath(); g.fillStyle = color; g.fill(); };
+      tri([[cx, cy - h], [cx + h, cy], [cx, cy], [cx - h, cy]], "#5a1d22");   // arriba: le da la luz
+      tri([[cx - h, cy], [cx, cy], [cx, cy + h]], "#3b0f13");
+      tri([[cx + h, cy], [cx, cy + h], [cx, cy]], "#2a080b");
+      g.fillStyle = "rgba(255,190,170,0.18)"; g.fillRect(cx - 1, cy - 1, 2, 2);
+    }
+  }
+  const grad = g.createLinearGradient(0, 0, 0, th);
+  grad.addColorStop(0, "rgba(0,0,0,0.35)"); grad.addColorStop(0.5, "rgba(0,0,0,0)"); grad.addColorStop(1, "rgba(0,0,0,0.25)");
+  g.fillStyle = grad; g.fillRect(0, 0, tw, th);
+  g.fillStyle = "#c9a14a"; g.fillRect(0, 0, tw, 2 * k);   // el remate dorado de arriba
+  return c;
+}
+
+function paintBackground() {
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d");
+  // Fuera de la mesa: la baranda acolchada y la penumbra del casino.
+  let grad = g.createLinearGradient(0, 0, 0, H * S);
+  grad.addColorStop(0, "#160b07"); grad.addColorStop(1, "#2a140b");
+  g.fillStyle = grad; g.fillRect(0, 0, W * S, H * S);
+  const felt = paintFelt(), wall = paintWall(), T = META.table, k = T.scale;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  for (const [sy, y0, y1, left, right] of META.floor) {
+    const t0 = (T.far - y1) * k, t1 = (T.far - y0) * k;
+    g.drawImage(felt, 0, t0, felt.width, Math.max(1, t1 - t0), left * S, sy * S, (right - left) * S, 1);
+  }
+  for (const [sy, z0, z1, left, right] of META.wall) {
+    const t0 = (T.wall - z1) * k, t1 = (T.wall - z0) * k;
+    g.drawImage(wall, 0, t0, wall.width, Math.max(1, t1 - t0), left * S, sy * S, (right - left) * S, 1);
+  }
+  g.setTransform(S, 0, 0, S, 0, 0);
+  // Luz cenital sobre la mesa y viñeta.
+  grad = g.createRadialGradient(215, 170, 40, 225, 190, 420);
+  grad.addColorStop(0, "rgba(255,236,190,0.10)"); grad.addColorStop(0.55, "rgba(0,0,0,0)"); grad.addColorStop(1, "rgba(0,0,0,0.55)");
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  // Sombra que la pared echa sobre el tapete.
+  const wallBase = META.floor[0][0];
+  grad = g.createLinearGradient(0, wallBase, 0, wallBase + 16);
+  grad.addColorStop(0, "rgba(0,0,0,0.45)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grad; g.fillRect(0, wallBase, PANEL_X, 16);
+  // Título.
+  g.save(); g.font = "26px Luckiest"; g.textBaseline = "alphabetic";
+  grad = g.createLinearGradient(0, 2, 0, 26);
+  grad.addColorStop(0, "#fff1b8"); grad.addColorStop(1, "#f0b429");
+  outlined(g, "DADOS", 16, 25, grad, "#1a0b05", 5);
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.7)";
+  g.fillText("CRAPS  ·  PASE O NO PASE  ·  ODDS SIN COMISIÓN", 104, 22);
+  g.restore();
+  // Panel.
+  g.save(); roundRect(g, PANEL_X, 10, PANEL_W, 340, 14);
+  grad = g.createLinearGradient(0, 10, 0, 350);
+  grad.addColorStop(0, "rgba(20,12,8,0.93)"); grad.addColorStop(1, "rgba(8,16,11,0.93)");
+  g.fillStyle = grad; g.fill();
+  g.strokeStyle = "rgba(240,199,90,0.35)"; g.lineWidth = 1.2; g.stroke(); g.restore();
+  return c;
+}
+
+// -- Las caras de los dados ------------------------------------------------------------------
+
+const PIPS = {
+  1: [[0.5, 0.5]],
+  2: [[0.27, 0.27], [0.73, 0.73]],
+  3: [[0.27, 0.27], [0.5, 0.5], [0.73, 0.73]],
+  4: [[0.27, 0.27], [0.73, 0.27], [0.27, 0.73], [0.73, 0.73]],
+  5: [[0.27, 0.27], [0.73, 0.27], [0.5, 0.5], [0.27, 0.73], [0.73, 0.73]],
+  6: [[0.27, 0.25], [0.73, 0.25], [0.27, 0.5], [0.73, 0.5], [0.27, 0.75], [0.73, 0.75]],
+};
+const FACE_PX = 128;
+
+function faceTexture(value, level) {
+  const key = value + ":" + level;
+  if (FACES.has(key)) return FACES.get(key);
+  const n = FACE_PX, c = document.createElement("canvas"); c.width = n; c.height = n;
+  const g = c.getContext("2d");
+  const light = level / 10;
+  // Rojo translúcido: más claro en el centro, como un dado de casino al trasluz.
+  roundRect(g, 0, 0, n, n, n * 0.16); g.save(); g.clip();
+  let grad = g.createRadialGradient(n * 0.4, n * 0.35, n * 0.05, n * 0.5, n * 0.5, n * 0.75);
+  grad.addColorStop(0, "#ff5a5f"); grad.addColorStop(0.45, "#d7202c"); grad.addColorStop(1, "#8e0f19");
+  g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  // Bisel: borde claro arriba a la izquierda y oscuro abajo a la derecha.
+  g.lineWidth = n * 0.06;
+  g.strokeStyle = "rgba(255,170,170,0.45)"; g.beginPath(); g.moveTo(n * 0.06, n * 0.94); g.lineTo(n * 0.06, n * 0.06); g.lineTo(n * 0.94, n * 0.06); g.stroke();
+  g.strokeStyle = "rgba(60,0,8,0.45)"; g.beginPath(); g.moveTo(n * 0.94, n * 0.06); g.lineTo(n * 0.94, n * 0.94); g.lineTo(n * 0.06, n * 0.94); g.stroke();
+  // Puntos taladrados y rellenos de blanco.
+  for (const [px, py] of PIPS[value]) {
+    const x = px * n, y = py * n, r = n * (value === 1 ? 0.13 : 0.095);
+    g.fillStyle = "rgba(70,0,8,0.55)"; g.beginPath(); g.arc(x + r * 0.12, y + r * 0.12, r * 1.08, 0, Math.PI * 2); g.fill();
+    grad = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+    grad.addColorStop(0, "#ffffff"); grad.addColorStop(0.7, "#f3eee6"); grad.addColorStop(1, "#c9bfb3");
+    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  // Luz de la cara: sombra si mira lejos de la lámpara, brillo si mira hacia ella.
+  g.fillStyle = `rgba(30,0,4,${0.62 * (1 - light)})`; g.fillRect(0, 0, n, n);
+  if (light > 0.6) {
+    grad = g.createLinearGradient(0, 0, n, n);
+    const a = (light - 0.6) * 0.9;
+    grad.addColorStop(0.15, `rgba(255,255,255,${a})`); grad.addColorStop(0.45, "rgba(255,255,255,0)");
+    g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  }
+  g.restore();
+  FACES.set(key, c);
+  return c;
+}
+
+function drawShadow(g, sh) {
+  g.save(); g.translate(sh.x, sh.y); g.scale(1, sh.ry / sh.rx);
+  const grad = g.createRadialGradient(0, 0, sh.rx * 0.15, 0, 0, sh.rx * 1.3);
+  grad.addColorStop(0, `rgba(0,0,0,${sh.a})`); grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grad; g.beginPath(); g.arc(0, 0, sh.rx * 1.3, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+function drawDie(g, d) {
+  if (d.hull.length >= 3) {
+    g.beginPath(); d.hull.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, x, y)); g.closePath();
+    g.fillStyle = "#5c0910"; g.fill();
+    g.lineWidth = 0.6; g.strokeStyle = "rgba(20,0,2,0.6)"; g.stroke();
+  }
+  for (const f of d.faces) {
+    const [[x0, y0], [x1, y1], , [x3, y3]] = f.q;
+    const tex = faceTexture(f.v, Math.round(clamp(f.l, 0, 1) * 10));
+    g.save();
+    g.transform((x1 - x0) / FACE_PX, (y1 - y0) / FACE_PX, (x3 - x0) / FACE_PX, (y3 - y0) / FACE_PX, x0, y0);
+    g.drawImage(tex, 0, 0);
+    g.restore();
+  }
+}
+
+// -- Fichas, disco, impacto y brillo ----------------------------------------------------------
+
+function drawChip(g, c) {
+  if (c.a <= 0.02) return;
+  g.save(); g.globalAlpha = clamp(c.a, 0, 1);
+  const r = c.r, ry = r * 0.42, step = 3.2;
+  for (let i = 0; i < c.n; i++) {
+    const y = c.y - i * step;
+    g.fillStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.ellipse(c.x, y + 2.4, r, ry, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = c.c; g.beginPath(); g.ellipse(c.x, y, r, ry, 0, 0, Math.PI * 2); g.fill();
+    // Rayas del canto.
+    g.strokeStyle = c.c === "#e8e4da" ? "rgba(200,40,40,0.9)" : "rgba(255,255,255,0.85)"; g.lineWidth = 1.6;
+    for (let s = 0; s < 8; s++) {
+      const a = s * Math.PI / 4;
+      g.beginPath(); g.ellipse(c.x, y, r, ry, 0, a, a + 0.22); g.stroke();
+    }
+  }
+  const top = c.y - (c.n - 1) * step;
+  g.fillStyle = "rgba(255,255,255,0.18)"; g.beginPath(); g.ellipse(c.x, top, r * 0.66, ry * 0.66, 0, 0, Math.PI * 2); g.fill();
+  g.textAlign = "center"; g.textBaseline = "middle"; g.font = "700 8px Montserrat";
+  g.fillStyle = c.c === "#e8e4da" ? "#2a1a10" : "#ffffff";
+  g.fillText(c.t, c.x, top + 0.5);
+  g.restore();
+}
+
+function drawPuck(g, p) {
+  const r = p.r, ry = r * 0.5, depth = 3;
+  g.save();
+  g.fillStyle = "rgba(0,0,0,0.4)"; g.beginPath(); g.ellipse(p.x + 1, p.y + depth + 1.5, r, ry, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = p.on ? "#bdbdbd" : "#0c0c0c"; g.beginPath(); g.ellipse(p.x, p.y + depth, r, ry, 0, 0, Math.PI * 2); g.fill();
+  g.fillRect(p.x - r, p.y, r * 2, depth);
+  const grad = g.createLinearGradient(p.x - r, p.y - ry, p.x + r, p.y + ry);
+  if (p.on) { grad.addColorStop(0, "#ffffff"); grad.addColorStop(1, "#d9d9d9"); }
+  else { grad.addColorStop(0, "#3a3a3a"); grad.addColorStop(1, "#111111"); }
+  g.fillStyle = grad; g.beginPath(); g.ellipse(p.x, p.y, r, ry, 0, 0, Math.PI * 2); g.fill();
+  g.textAlign = "center"; g.textBaseline = "middle"; g.font = "9px Luckiest";
+  g.fillStyle = p.on ? "#111" : "#f2f2f2";
+  g.save(); g.translate(p.x, p.y + 0.5); g.scale(1, 0.62); g.fillText(p.on ? "ON" : "OFF", 0, 0); g.restore();
+  g.restore();
+}
+
+function drawImpact(g, im) {
+  if (!im || im.a <= 0) return;
+  const r = rng(5);
+  g.save(); g.globalAlpha = clamp(im.a, 0, 1);
+  g.strokeStyle = "#fff4d6"; g.lineCap = "round";
+  for (let i = 0; i < 9; i++) {
+    const a = Math.PI + (i / 8) * Math.PI + (r() - 0.5) * 0.25, len = 8 + r() * 10, d0 = 6 + (1 - im.a) * 10;
+    g.lineWidth = 1.2 + r();
+    g.beginPath(); g.moveTo(im.x + Math.cos(a) * d0, im.y + Math.sin(a) * d0 * 0.6);
+    g.lineTo(im.x + Math.cos(a) * (d0 + len), im.y + Math.sin(a) * (d0 + len) * 0.6); g.stroke();
+  }
+  g.restore();
+}
+
+function drawGlow(g, gl) {
+  if (gl.a <= 0) return;
+  const reach = 46;
+  g.save(); g.globalAlpha = clamp(gl.a, 0, 1);
+  const grad = g.createRadialGradient(gl.x, gl.y, 4, gl.x, gl.y, reach);
+  grad.addColorStop(0, "rgba(255,233,150,0.55)"); grad.addColorStop(1, "rgba(255,233,150,0)");
+  g.fillStyle = grad; g.fillRect(gl.x - reach, gl.y - reach, reach * 2, reach * 2);
+  g.restore();
+}
+
+// -- Panel, historial, total y cartel ----------------------------------------------------------
+
+const KIND = { win: "#3ccf72", lose: "#ff6464", push: "#9fb4d8", point: "#ffc83d", none: "#b8c8bf" };
+
+function miniDie(g, x, y, s, v) {
+  g.save(); g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 3; g.shadowOffsetY = 1.5;
+  roundRect(g, x, y, s, s, s * 0.2);
+  const grad = g.createLinearGradient(x, y, x + s, y + s);
+  grad.addColorStop(0, "#ef3a44"); grad.addColorStop(1, "#9e1520");
+  g.fillStyle = grad; g.fill(); g.restore();
+  g.fillStyle = "#fff";
+  for (const [px, py] of PIPS[v]) { g.beginPath(); g.arc(x + px * s, y + py * s, s * 0.09, 0, Math.PI * 2); g.fill(); }
+}
+
+function drawPanel(g, p) {
+  const x0 = PANEL_X + 14, x1 = PANEL_X + PANEL_W - 14;
+  g.save(); g.textBaseline = "middle";
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("TU APUESTA", x0, 26);
+  g.font = "20px Luckiest"; g.fillStyle = p.betKey === "pase" ? "#ffe08a" : "#ffb0a0"; g.fillText(p.bet, x0, 44);
+  g.font = "700 11px Montserrat"; g.fillStyle = "#f5efe0"; g.textAlign = "right"; g.fillText(p.stake, x1, 45);
+  g.textAlign = "left";
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("ODDS", x0, 66);
+  g.textAlign = "right"; g.font = "700 11px Montserrat"; g.fillStyle = p.odds ? "#f5efe0" : "rgba(245,239,224,0.35)";
+  g.fillText(p.odds || "—", x1, 66);
+  g.textAlign = "left";
+  // El punto, en un disco como el de la mesa.
+  const cx = x0 + 26, cy = 104;
+  g.save(); g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.beginPath(); g.arc(cx, cy, 24, 0, Math.PI * 2);
+  g.fillStyle = p.point ? "#f7f7f2" : "#151515"; g.fill(); g.restore();
+  g.lineWidth = 2; g.strokeStyle = p.point ? "#ffc83d" : "rgba(255,255,255,0.25)"; g.stroke();
+  g.textAlign = "center";
+  if (p.point) { g.font = "26px Luckiest"; g.fillStyle = "#1a1a1a"; g.fillText(String(p.point), cx, cy + 2); }
+  else { g.font = "11px Luckiest"; g.fillStyle = "#f2f2f2"; g.fillText("OFF", cx, cy + 1); }
+  g.textAlign = "left";
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("PUNTO", x0 + 60, 92);
+  g.font = "14px Luckiest"; g.fillStyle = "#fff1b8";
+  const phase = { idle: "SALIDA", comeout: "SALIDA", point: "A POR EL " + p.point, won: "GANADA", lost: "PERDIDA", push: "EMPATE" }[p.status];
+  g.fillText(phase, x0 + 60, 107);
+  if (p.pays) { g.font = "700 8px Montserrat"; g.fillStyle = "rgba(245,239,224,0.7)"; g.fillText("ODDS PAGAN " + p.pays, x0 + 60, 121); }
+  g.strokeStyle = "rgba(240,199,90,0.18)"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(x0, 140); g.lineTo(x1, 140); g.stroke();
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("MANO", x0, 152);
+  g.textAlign = "right"; g.fillStyle = "#f5efe0"; g.fillText(p.hand.toUpperCase(), x1, 152); g.textAlign = "left";
+  g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("TIRADAS", x0, 172);
+  [...p.history].reverse().forEach((roll, i) => {
+    const y = 184 + i * 27;
+    g.globalAlpha = 1 - i * 0.11;
+    miniDie(g, x0, y, 20, roll.d[0]); miniDie(g, x0 + 24, y, 20, roll.d[1]);
+    g.font = "20px Luckiest"; g.fillStyle = KIND[roll.k]; g.textAlign = "right";
+    g.fillText(String(roll.t), x1, y + 12);
+    const tag = { win: "GANA", lose: "PIERDE", push: "EMPATE", point: "PUNTO", none: "" }[roll.k];
+    g.font = "700 7px Montserrat"; g.fillStyle = KIND[roll.k]; g.fillText(tag, x1 - 26, y + 11);
+    g.textAlign = "left";
+  });
+  g.globalAlpha = 1;
+  g.restore();
+}
+
+function drawTotal(g, t) {
+  if (!t || t.a <= 0) return;
+  const pop = 0.7 + 0.3 * clamp(t.a, 0, 1) + 0.12 * Math.sin(clamp(t.a, 0, 1) * Math.PI);
+  g.save(); g.globalAlpha = clamp(t.a, 0, 1); g.translate(t.x, t.y); g.scale(pop, pop);
+  g.textAlign = "center"; g.textBaseline = "middle"; g.font = "40px Luckiest";
+  outlined(g, String(t.t), 0, 0, KIND[t.k], "rgba(10,6,4,0.9)", 7);
+  g.restore();
+}
+
+const BANNER = {
+  win:   { fill: ["#1f9d55", "#0f5c31"], edge: "#7dffb0", ink: "#ffffff" },
+  lose:  { fill: ["#c43b3b", "#6e1717"], edge: "#ff9d9d", ink: "#ffffff" },
+  push:  { fill: ["#51658a", "#28344d"], edge: "#c2d3f2", ink: "#ffffff" },
+  point: { fill: ["#ffcf3a", "#e08a00"], edge: "#fff1b8", ink: "#2a1a00" },
+  fire:  { fill: ["#ff8a1f", "#b8260b"], edge: "#ffe08a", ink: "#ffffff" },
+};
+
+function drawBanner(g, banner, alpha) {
+  if (!banner || alpha <= 0) return;
+  const style = BANNER[banner.kind];
+  const a = clamp(alpha, 0, 1);
+  const pop = 0.82 + 0.18 * a + 0.06 * Math.sin(a * Math.PI);
+  g.save(); g.globalAlpha = a; g.translate(225, BANNER_Y); g.scale(pop, pop);
+  g.save(); roundRect(g, -180, -36, 360, 70, 18);
+  const grad = g.createLinearGradient(0, -36, 0, 34);
+  grad.addColorStop(0, style.fill[0]); grad.addColorStop(1, style.fill[1]);
+  g.shadowColor = "rgba(0,0,0,0.55)"; g.shadowBlur = 18; g.shadowOffsetY = 6;
+  g.fillStyle = grad; g.fill(); g.restore();
+  g.save(); roundRect(g, -180, -36, 360, 70, 18); g.lineWidth = 2.5; g.strokeStyle = style.edge; g.stroke(); g.restore();
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.font = "32px Luckiest";
+  if (style.ink === "#ffffff") outlined(g, banner.title, 0, -8, style.ink, "rgba(0,0,0,0.35)", 5);
+  else { g.fillStyle = style.ink; g.fillText(banner.title, 0, -8); }
+  g.fillStyle = style.ink; g.font = "700 12px Montserrat"; g.fillText(banner.sub, 0, 20);
+  g.restore();
+}
+
+function hud(st) {
+  const key = JSON.stringify([st.panel, st.hint && !st.banner]);
+  if (HUD.has(key)) return HUD.get(key);
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d");
+  g.drawImage(BG, 0, 0);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  drawPanel(g, st.panel);
+  if (st.hint && !st.banner) {
+    g.save(); roundRect(g, 225 - 150, BANNER_Y - 30, 300, 62, 16);
+    g.fillStyle = "rgba(6,14,10,0.72)"; g.fill();
+    g.strokeStyle = "rgba(240,199,90,0.45)"; g.lineWidth = 1.5; g.stroke(); g.restore();
+    g.save(); g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "30px Luckiest"; outlined(g, "¿PASE O NO PASE?", 225, BANNER_Y - 4, "#fff1b8", "#06180f", 6);
+    g.font = "700 10px Montserrat"; g.fillStyle = "rgba(255,240,210,0.85)";
+    g.fillText("ELIGE CON LOS BOTONES Y TIRA", 225, BANNER_Y + 20);
+    g.restore();
+  }
+  if (HUD.size > 8) HUD.clear();
+  HUD.set(key, c);
+  return c;
+}
+
+// -- Fotogramas -------------------------------------------------------------------------------
+//
+// Igual que en la moneda: cada fotograma devuelve solo el recuadro que ha
+// cambiado (lo pintado encima del marcador en este fotograma y en el
+// anterior) y Python lo pega sobre el anterior. Cuando cambia el marcador,
+// el fotograma va entero. Las fichas y el disco solo se marcan cuando se
+// mueven: quietos, sus píxeles ya están en el fotograma anterior.
+
+let DIRTY = null, PREV = null, PREV_HUD = null, PREV_STILL = null, PREV_STILL_BOX = null;
+function mark(x0, y0, x1, y1) {
+  if (!DIRTY) DIRTY = [x0, y0, x1, y1];
+  else DIRTY = [Math.min(DIRTY[0], x0), Math.min(DIRTY[1], y0), Math.max(DIRTY[2], x1), Math.max(DIRTY[3], y1)];
+}
+function stillBox(st) {
+  let box = null;
+  const add = (x0, y0, x1, y1) => { box = box ? [Math.min(box[0], x0), Math.min(box[1], y0), Math.max(box[2], x1), Math.max(box[3], y1)] : [x0, y0, x1, y1]; };
+  for (const c of st.chips) add(c.x - c.r - 2, c.y - c.r - c.n * 3.2 - 2, c.x + c.r + 2, c.y + c.r + 4);
+  const p = st.puck; add(p.x - p.r - 3, p.y - p.r - 3, p.x + p.r + 4, p.y + p.r + 6);
+  return box;
+}
+
+function paint(st, frame) {
+  const g = bctx;
+  const base = hud(st);
+  const fresh = base !== PREV_HUD;
+  PREV_HUD = base;
+  DIRTY = null;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.drawImage(base, 0, 0);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  const still = JSON.stringify([st.chips, st.puck]);
+  const box = stillBox(st);
+  if (still !== PREV_STILL) {
+    mark(...box);
+    if (PREV_STILL_BOX) mark(...PREV_STILL_BOX);
+  }
+  PREV_STILL = still; PREV_STILL_BOX = box;
+  drawPuck(g, st.puck);
+  for (const c of st.chips) drawChip(g, c);
+  for (const gl of st.glow) { drawGlow(g, gl); mark(gl.x - 48, gl.y - 48, gl.x + 48, gl.y + 48); }
+  for (const d of st.dice) {
+    drawShadow(g, d.shadow);
+    const s = d.shadow;
+    mark(s.x - s.rx * 1.35, s.y - s.ry * 1.35, s.x + s.rx * 1.35, s.y + s.ry * 1.35);
+  }
+  for (const d of st.dice) {
+    drawDie(g, d);
+    const xs = d.hull.map(p => p[0]), ys = d.hull.map(p => p[1]);
+    if (xs.length) mark(Math.min(...xs) - 2, Math.min(...ys) - 2, Math.max(...xs) + 2, Math.max(...ys) + 2);
+  }
+  if (st.impact) { drawImpact(g, st.impact); mark(st.impact.x - 32, st.impact.y - 22, st.impact.x + 32, st.impact.y + 22); }
+  if (st.total && st.total.a > 0) { drawTotal(g, st.total); mark(st.total.x - 40, st.total.y - 34, st.total.x + 40, st.total.y + 34); }
+  if (st.banner && st.bannerA > 0) {
+    drawBanner(g, st.banner, st.bannerA); mark(225 - 205, BANNER_Y - 62, 225 + 205, BANNER_Y + 60);
+  }
+  if (!DIRTY) mark(0, 0, 1, 1);
+  return fresh;
+}
+
+function snapshot(full) {
+  let [x0, y0, x1, y1] = full || !PREV ? [0, 0, W, H] : [
+    Math.min(DIRTY[0], PREV[0]), Math.min(DIRTY[1], PREV[1]),
+    Math.max(DIRTY[2], PREV[2]), Math.max(DIRTY[3], PREV[3]),
+  ];
+  PREV = DIRTY;
+  x0 = clamp(Math.floor(x0), 0, W); y0 = clamp(Math.floor(y0), 0, H);
+  x1 = clamp(Math.ceil(x1), x0 + 1, W); y1 = clamp(Math.ceil(y1), y0 + 1, H);
+  const w = x1 - x0, h = y1 - y0;
+  out.width = w; out.height = h;
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, x0 * S, y0 * S, w * S, h * S, 0, 0, w, h);
+  return { x: x0, y: y0, u: out.toDataURL("image/png") };
+}
+
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("30px Luckiest"), document.fonts.load("700 12px Montserrat")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = (meta) => {
+  if (!BG) { META = meta; BG = paintBackground(); }
+  HUD = new Map(); PREV = PREV_HUD = PREV_STILL = PREV_STILL_BOX = null;
+  return true;
+};
+window.renderFrames = (states, first = 0) => states.map((st, i) => snapshot(paint(st, first + i)));
+</script>
+</body>
+</html>

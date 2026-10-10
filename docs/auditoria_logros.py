@@ -50,6 +50,7 @@ from bot.services import blackjack as bj  # noqa: E402
 from bot.services import (  # noqa: E402
     chicken,
     coin,
+    craps,
     crash,
     hold_win,
     mines,
@@ -70,6 +71,7 @@ from bot.services.achievements import (  # noqa: E402
     casino_stats,
     chicken_stats,
     coin_stats,
+    craps_stats,
     crash_stats,
     hold_win_bonus_stats,
     hold_win_stats,
@@ -117,6 +119,7 @@ RITMO_CASINO = {
     "mines": 40,
     "chicken": 60,
     "coin": 60,
+    "dice": 50,
     "pachinko": 60,
     "horses": 30,
 }
@@ -399,6 +402,29 @@ def _jugar_moneda(j: Jugador) -> StatDelta:
     return _con_casino(coin_stats(game, when=NOON), stake=APUESTA, net=game.net)
 
 
+#: Apuesta de salida de un jugador normal de dados: casi siempre Pase.
+_APUESTAS_DADOS = ((craps.Bet.PASS, 85), (craps.Bet.DONT, 15))
+#: Cuántas Odds pone con el punto puesto: ninguna, una ficha o al tope.
+_ODDS = ((0, 40), (1, 30), (craps.ODDS_MAX, 30))
+
+
+def _jugar_dados(j: Jugador) -> StatDelta:
+    rng = j.rng
+    hand = j.extra.get("mano")
+    if not isinstance(hand, craps.Hand) or hand.seven_out:
+        hand = craps.Hand()
+        j.extra["mano"] = hand
+    game = craps.CrapsGame.new(APUESTA, _elegir(rng, _APUESTAS_DADOS))  # type: ignore[arg-type]
+    hand.observe(game.play(rng))
+    if game.playing:
+        fichas = _elegir(rng, _ODDS)
+        if fichas:
+            game.add_odds(APUESTA * fichas)  # type: ignore[operator]
+    while game.playing:
+        hand.observe(game.play(rng))
+    return _con_casino(craps_stats(game, hand, when=NOON), stake=game.wagered, net=game.net)
+
+
 _CRASH = ((120, 15), (150, 20), (200, 25), (300, 12), (500, 10), (1_000, 8), (2_000, 4),
           (5_000, 3), (10_000, 2), (100_000, 1))  # fmt: skip
 
@@ -533,6 +559,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "mines": _jugar_minas,
     "chicken": _jugar_pollo,
     "coin": _jugar_moneda,
+    "dice": _jugar_dados,
     "crash": _jugar_crash,
     "roulette": _jugar_ruleta,
     "blackjack": _jugar_blackjack,

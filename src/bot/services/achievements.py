@@ -12,8 +12,9 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `pachinko_stats`, `horses_stats`,
-`porra_open_stats`, `porra_bet_stats`, `porra_bettor_stats`, `porra_subject_stats`,
+`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `craps_stats`,
+`pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
+`porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
 `voice_move_stats`, `music_queue_stats`, `image_stats`, `babel_stats`…) y se
 lo pasan al cog de logros. Las risas escritas las reconoce `analyze_laugh`.
@@ -55,6 +56,12 @@ from bot.services.coin import CoinGame
 from bot.services.coin import Outcome as CoinOutcome
 from bot.services.coin import Side as CoinSide
 from bot.services.coin import Status as CoinStatus
+from bot.services.craps import CRAPS as CRAPS_CRAPS
+from bot.services.craps import NATURALS as CRAPS_NATURALS
+from bot.services.craps import POINTS as CRAPS_POINTS
+from bot.services.craps import Bet as CrapsBet
+from bot.services.craps import CrapsGame, Hand
+from bot.services.craps import Status as CrapsStatus
 from bot.services.crash import Seat as CrashSeat
 from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
@@ -208,6 +215,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
+    Category("dice", "🎲 Dados", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
@@ -2885,6 +2893,231 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que la moneda caiga de canto en el primer lanzamiento de la partida.", C, True),
     ])  # fmt: skip
 
+    # 🎲 Dados ----------------------------------------------------------------------------
+    a += _tiers("dice", "dice_games", [
+        (1, "dados_1", "Alea iacta est", "Juega tu primera partida de dados.", C),
+        (100, "dados_100", "Habitual de la mesa de craps", "Juega 100 partidas de dados.", C),
+        (1_000, "dados_1k", "Tirador de plantilla", "Juega 1.000 partidas de dados.", E),
+        (10_000, "dados_10k", "Funcionario de carrera del cubilete",
+         "Juega 10.000 partidas de dados. Plaza fija y trienios.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_rolls", [
+        (100, "dadost_100", "Muñeca suelta", "Tira los dados 100 veces.", C),
+        (1_000, "dadost_1k", "Codo de tirador", "Tira los dados 1.000 veces.", R),
+        (10_000, "dadost_10k", "Ruido de fondo en Moncloa", "Tira los dados 10.000 veces.", E),
+        (50_000, "dadost_50k", "El cubilete no descansa", "Tira los dados 50.000 veces.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_wins", [
+        (50, "dadosw_50", "Mayoría simple", "Gana 50 partidas de dados.", C),
+        (500, "dadosw_500", "Mayoría absoluta en el cubilete", "Gana 500 partidas de dados.", E),
+        (2_500, "dadosw_2500", "Decreto ley tras decreto ley", "Gana 2.500 partidas de dados.", L),
+        (10_000, "dadosw_10k", "Legislatura completa, sin adelanto electoral",
+         "Gana 10.000 partidas de dados.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_naturals", [
+        (1, "dados_natural", "¡Natural!", "Saca un 7 o un 11 en la tirada de salida.", C),
+        (100, "dados_natural_100", "Naturalidad institucional",
+         "Saca 100 sietes u onces en la salida.", R),
+        (1_000, "dados_natural_1k", "Más natural que el gofio",
+         "Saca 1.000 sietes u onces en la salida.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_craps_rolls", [
+        (1, "dados_pifia", "Pifia de salida", "Saca un 2, un 3 o un 12 en la tirada de salida.", C),
+        (100, "dados_pifia_100", "Gafe de Estado", "Saca 100 pifias en la salida.", E),
+        (1_000, "dados_pifia_1k", "Crisis diplomática permanente",
+         "Saca 1.000 pifias en la salida.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_points_set", [
+        (10, "dados_punto_10", "Punto de partida", "Pon el punto 10 veces.", C),
+        (300, "dados_punto_300", "Punto y seguido", "Pon el punto 300 veces.", R),
+        (2_000, "dados_punto_2k", "Punto de inflexión", "Pon el punto 2.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_points_made", [
+        (1, "dados_hecho", "Promesa cumplida",
+         "Repite el punto antes que el siete. No es tan habitual como parece.", C),
+        (50, "dados_hecho_50", "Cumplir el programa electoral", "Haz 50 puntos.", R),
+        (500, "dados_hecho_500", "Hemeroteca impecable", "Haz 500 puntos.", E),
+        (2_500, "dados_hecho_2500", "Esto no lo ha hecho ni un Gobierno", "Haz 2.500 puntos.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_seven_outs", [
+        (1, "dados_siete_fuera", "Siete fuera",
+         "Saca un 7 con el punto puesto y pierde los dados.", C),
+        (100, "dados_siete_fuera_100", "Moción de censura con dados", "Saca 100 sietes fuera.", R),
+        (1_000, "dados_siete_fuera_1k", "Disolución de las Cortes", "Saca 1.000 sietes fuera.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_hand_points_max", [
+        (2, "dados_mano_2", "Mano tibia", "Haz 2 puntos en la misma mano.", C),
+        (4, "dados_mano_4", "Mano caliente", "Haz 4 puntos en la misma mano.", C),
+        (6, "dados_mano_6", "Llamad a los bomberos", "Haz 6 puntos en la misma mano.", R),
+        (8, "dados_mano_8", "Sale en el telediario", "Haz 8 puntos en la misma mano.", E),
+        (10, "dados_mano_10", "Leyenda del Casino del Estado",
+         "Haz 10 puntos en la misma mano.", M, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_hand_rolls_max", [
+        (20, "dados_ronda_20", "Turno de palabra", "Aguanta 20 tiradas en la misma mano.", C),
+        (40, "dados_ronda_40", "Filibusterismo", "Aguanta 40 tiradas en la misma mano.", R),
+        (60, "dados_ronda_60", "Sesión de investidura",
+         "Aguanta 60 tiradas en la misma mano.", L),
+        (100, "dados_ronda_100", "Debate del estado de la nación",
+         "Aguanta 100 tiradas en la misma mano.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_fire_max", [
+        (4, "dados_fuego_4", "Fuego cruzado", "Haz 4 puntos distintos en la misma mano.", R),
+        (5, "dados_fuego_5", "Incendio de verano", "Haz 5 puntos distintos en la misma mano.",
+         R),
+        (6, "dados_fuego_6", "Los seis puntos en una mano",
+         "Haz el 4, el 5, el 6, el 8, el 9 y el 10 en la misma mano.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_game_rolls_max", [
+        (10, "dados_larga_10", "Partida maratoniana", "Una partida de dados de 10 tiradas.", C),
+        (20, "dados_larga_20", "Comisión de investigación del craps",
+         "Una partida de dados de 20 tiradas.", R),
+        (30, "dados_larga_30", "Más larga que unos Presupuestos prorrogados",
+         "Una partida de dados de 30 tiradas.", L, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_snake_eyes", [
+        (1, "dados_pegasus", "Ojos de Pegasus",
+         "Saca dos unos. Alguien te está leyendo el móvil.", C, True),
+        (50, "dados_pegasus_50", "Pinchazo telefónico", "Saca dos unos 50 veces.", R),
+        (300, "dados_pegasus_300", "El CNI ya ni disimula", "Saca dos unos 300 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_boxcars", [
+        (1, "dados_doble_seis", "Doble seis", "Saca dos seises.", C),
+        (50, "dados_doble_seis_50", "Puente aéreo del Falcon", "Saca dos seises 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_elevens", [
+        (1, "dados_once", "Como la ONCE", "Saca un 11 en la tirada de salida.", C, True),
+        (100, "dados_once_100", "Cupón diario", "Saca 100 onces en la salida.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_hard", [
+        (1, "dados_malas", "Por las malas", "Haz un punto con dobles (2-2, 3-3, 4-4 o 5-5).", C),
+        (100, "dados_malas_100", "Siempre por las malas", "Haz 100 puntos con dobles.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="dados_malas_todas",
+        name="Las cuatro por las malas",
+        description="Haz el 4, el 6, el 8 y el 10 con dobles alguna vez.",
+        category="dice",
+        rarity=R,
+        conditions=tuple((f"dice_hard_{p}", 1) for p in (4, 6, 8, 10)),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="dados_seis_puntos",
+        name="Programa electoral completo",
+        description="Haz alguna vez cada uno de los seis puntos: 4, 5, 6, 8, 9 y 10.",
+        category="dice",
+        rarity=C,
+        conditions=tuple((f"dice_point_made_{p}", 1) for p in CRAPS_POINTS),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="dados_2_al_12",
+        name="Del 2 al 12, como el BOE",
+        description="Saca alguna vez cada total, del 2 al 12.",
+        category="dice",
+        rarity=C,
+        conditions=tuple((f"dice_total_{t}", 1) for t in range(2, 13)),
+    ))  # fmt: skip
+    a += _tiers("dice", "dice_odds_games", [
+        (1, "dados_odds", "Odds de verdad",
+         "Pon Odds por primera vez: la única apuesta del casino que no lleva trampa.", C),
+        (100, "dados_odds_100", "El que sabe, sabe", "Pon Odds en 100 partidas.", R),
+        (1_000, "dados_odds_1k", "Catedrático de probabilidad", "Pon Odds en 1.000 partidas.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_odds_full", [
+        (1, "dados_odds_tope", "Hasta el fondo", "Pon las Odds al tope.", C),
+        (100, "dados_odds_tope_100", "Apalancamiento de manual",
+         "Pon las Odds al tope en 100 partidas.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_odds_full_lost", [
+        (1, "dados_tezanos", "Te fiaste de Tezanos",
+         "Pierde con las Odds al tope.", C, True),
+        (25, "dados_tezanos_25", "Cocina de Tezanos", "Pierde 25 veces con las Odds al tope.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_odds_full_won", [
+        (1, "dados_lo_vio", "Lo vio venir", "Gana con las Odds al tope.", C),
+        (50, "dados_lo_vio_50", "Soplo de la UCO",
+         "Gana 50 veces con las Odds al tope.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_dont_wins", [
+        (1, "dados_en_contra", "Votar en contra", "Gana apostando a No pase.", C),
+        (100, "dados_en_contra_100", "Oposición útil", "Gana 100 veces apostando a No pase.", E),
+        (500, "dados_en_contra_500", "Oposición de Estado",
+         "Gana 500 veces apostando a No pase.", L),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_dont_bar", [
+        (1, "dados_barra", "Empate técnico", "Saca un 12 en la salida apostando a No pase.", C,
+         True),
+        (10, "dados_barra_10", "Ni vencedores ni vencidos", "Empata 10 veces en la barra.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_dont_seven", [
+        (1, "dados_ajena", "Alegrarse de la desgracia ajena",
+         "Gana con No pase gracias a un siete fuera.", C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="dados_equidistante",
+        name="Ni sí ni no, sino todo lo contrario",
+        description="Gana 50 partidas con Pase y 50 con No pase.",
+        category="dice",
+        rarity=R,
+        conditions=(("dice_pass_wins", 50), ("dice_dont_wins", 50)),
+    ))  # fmt: skip
+    a += _tiers("dice", "dice_seven_first", [
+        (1, "dados_expres", "Cesado antes de jurar el cargo",
+         "Saca el siete justo después de poner el punto.", C, True),
+        (50, "dados_expres_50", "Legislatura exprés",
+         "Saca el siete justo después de poner el punto 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_long_lost", [
+        (1, "dados_para_nada", "Tanto para nada",
+         "Pierde una partida de dados de 10 tiradas o más.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_boxcars_lost", [
+        (1, "dados_doble_seis_casa", "Doble seis y para casa",
+         "Pierde con Pase por un 12 en la salida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_win_max", [
+        (10_000, "dados_rich", "Pelotazo en el tapete",
+         "Gana 10.000 Y$ en una partida de dados.", E),
+        (100_000, "dados_richer", "Recalificación del tapete",
+         f"Gana 100.000 Y$ en una partida de dados. {TAX_COLLECTOR} ya ha hecho números.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_profit", [
+        (10_000, "dados_plusvalia", "Plusvalía", "Gana 10.000 Y$ en total con los dados.", C),
+        (250_000, "dados_plusvalia_250k", "Patrimonio a declarar",
+         "Gana 250.000 Y$ en total con los dados.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("dice", "dice_repeat_max", [
+        (3, "dados_deja_vu", "Repetición de la jugada",
+         "Saca el mismo total 3 veces seguidas en una mano.", C, True),
+        (4, "dados_bucle", "Bucle temporal", "Saca el mismo total 4 veces seguidas en una mano.",
+         C),
+        (5, "dados_marmota", "El día de la marmota",
+         "Saca el mismo total 5 veces seguidas en una mano.", E, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_night", [
+        (1, "dados_madrugada", "Timba de madrugada", "Juega a los dados de madrugada (de 2 a 6).",
+         C),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_canarias", [
+        (1, "dados_canarias", "Dados y papas arrugadas", "Juega a los dados el Día de Canarias.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_nochevieja", [
+        (1, "dados_uvas", "Doce uvas, dos dados", "Juega a los dados en Nochevieja.", C),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_inocentes", [
+        (1, "dados_trucados", "Dados trucados", "Juega a los dados el día de los Inocentes.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_friday13", [
+        (1, "dados_viernes13", "Dados negros", "Pierde a los dados un viernes 13.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_cash_777", [
+        (1, "dados_777", "El 777 del cubilete", "Cobra exactamente 777 Y$ en los dados.", C,
+         True),
+    ])  # fmt: skip
+
     # 🐔 Pollo ---------------------------------------------------------------------------
     a += _tiers("chicken", "chicken_games", [
         (1, "pollo_1", "¿Por qué cruzó el pollo la carretera?",
@@ -3194,6 +3427,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
             ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
             ("botes_spins", 1), ("chicken_games", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_eleven_games",
+        name="Once apellidos ludópatas",
+        description="Juega a los once juegos del casino, de la ruleta a los dados.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1),
         ),
     ))  # fmt: skip
 
@@ -8634,6 +8880,78 @@ def coin_stats(game: CoinGame, *, when: datetime) -> StatDelta:
     bump("coin_hispanidad", when.month == 10 and when.day == 12)
     bump("coin_nochevieja", when.month == 12 and when.day == 31)
     bump("coin_friday13", game.net < 0 and when.weekday() == 4 and when.day == 13)
+    return delta
+
+
+def craps_stats(game: CrapsGame, hand: Hand, *, when: datetime) -> StatDelta:
+    """Contadores de una partida de dados terminada (sin lo común del casino).
+
+    Args:
+        game: La partida terminada.
+        hand: La mano del tirador tras la partida (con sus tiradas ya
+            apuntadas): da los récords de la mano caliente.
+        when: Hora local.
+    """
+    rolls = game.rolls
+    delta = StatDelta(
+        add={"dice_games": 1, "dice_rolls": len(rolls)},
+        peak={
+            "dice_game_rolls_max": len(rolls),
+            "dice_hand_points_max": len(hand.points),
+            "dice_hand_rolls_max": hand.rolls,
+            "dice_fire_max": hand.distinct_points,
+            "dice_repeat_max": hand.repeat_max,
+        },
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    passing = game.bet is CrapsBet.PASS
+    bump("dice_pass_games" if passing else "dice_dont_games")
+    for roll in rolls:
+        bump(f"dice_total_{roll.total}")
+        bump("dice_snake_eyes", roll.dice == (1, 1))
+        bump("dice_boxcars", roll.dice == (6, 6))
+    first, last = rolls[0], rolls[-1]
+    bump("dice_naturals", first.total in CRAPS_NATURALS)
+    bump("dice_craps_rolls", first.total in CRAPS_CRAPS)
+    bump("dice_elevens", first.total == 11)
+    bump("dice_points_set", game.point is not None)
+    if last.made:
+        bump("dice_points_made")
+        bump(f"dice_point_made_{last.total}")
+        if last.hard:
+            bump("dice_hard")
+            bump(f"dice_hard_{last.total}")
+    if last.seven_out:
+        bump("dice_seven_outs")
+        bump("dice_seven_first", len(rolls) == 2)
+    if game.odds:
+        bump("dice_odds_games")
+        bump("dice_odds_full", game.odds_full)
+    if game.status is CrapsStatus.WON:
+        bump("dice_wins")
+        bump("dice_pass_wins" if passing else "dice_dont_wins")
+        bump("dice_dont_seven", not passing and last.seven_out)
+        bump("dice_odds_full_won", game.odds_full)
+        bump("dice_profit", amount=game.net)
+        bump("dice_cash_777", game.payout == 777)
+        delta.peak["dice_win_max"] = game.net
+    elif game.status is CrapsStatus.LOST:
+        bump("dice_losses")
+        bump("dice_long_lost", len(rolls) >= 10)
+        bump("dice_odds_full_lost", game.odds_full)
+        bump("dice_boxcars_lost", passing and len(rolls) == 1 and first.total == 12)
+    elif game.status is CrapsStatus.PUSH:
+        bump("dice_dont_bar")
+    bump("dice_night", 2 <= when.hour < 6)
+    bump("dice_canarias", when.month == 5 and when.day == 30)
+    bump("dice_nochevieja", when.month == 12 and when.day == 31)
+    bump("dice_inocentes", when.month == 12 and when.day == 28)
+    bump("dice_friday13", game.net < 0 and when.weekday() == 4 and when.day == 13)
     return delta
 
 

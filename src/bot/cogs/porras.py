@@ -134,6 +134,7 @@ GAME_ALIASES = {
     "gallina": "pollo",
     "cara": "moneda",
     "cruz": "moneda",
+    "craps": "dados",
 }
 #: Qué opciones de la propuesta caben como botones (5 filas de 5, una para el resto).
 MAX_OPTION_BUTTONS = 20

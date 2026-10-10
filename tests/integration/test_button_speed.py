@@ -26,12 +26,14 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from coin_fakes import Scripted
+from craps_fakes import Scripted as DiceScripted
 from interaction_fakes import fake_interaction
 from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.services.coin import Outcome, Side
+from bot.services.craps import Bet
 from bot.services.todo import Priority
 
 GUILD_ID = 1
@@ -247,6 +249,60 @@ async def press_coin_cash_out(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def dice_view(client: BotClient, owner: MagicMock, *rolls: tuple[int, int]):  # noqa: ANN201
+    """Mesa de los dados con dibujo falso, sin esperas y con el azar de guion."""
+    cog = client.get_cog("Dados")
+    module = module_of(client, "Dados")
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog.renderer = MagicMock()
+    cog.renderer.throw = AsyncMock(
+        return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0, rest=module.OPENING_REST)
+    )
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    cog.rng = DiceScripted(*rolls)
+    return module.CrapsView(cog, guild_id=GUILD_ID, owner=owner, stake=10, bet=Bet.PASS)
+
+
+async def press_dice_pass(client: BotClient, owner: MagicMock) -> Click:
+    view = dice_view(client, owner, (3, 4))
+
+    async def click(interaction: MagicMock) -> None:
+        await view._pass(interaction)
+
+    return click
+
+
+async def press_dice_roll(client: BotClient, owner: MagicMock) -> Click:
+    view = dice_view(client, owner, (1, 5), (3, 4))
+    # El punto ya puesto (la apuesta cobrada antes de medir).
+    await view.play(Bet.PASS, AsyncMock())
+
+    async def click(interaction: MagicMock) -> None:
+        await view._roll(interaction)
+
+    return click
+
+
+async def press_dice_odds(client: BotClient, owner: MagicMock) -> Click:
+    view = dice_view(client, owner, (1, 5))
+    await view.play(Bet.PASS, AsyncMock())
+
+    async def click(interaction: MagicMock) -> None:
+        await view._odds_one(interaction)
+
+    return click
+
+
+async def press_dice_odds_max(client: BotClient, owner: MagicMock) -> Click:
+    view = dice_view(client, owner, (1, 5))
+    await view.play(Bet.PASS, AsyncMock())
+
+    async def click(interaction: MagicMock) -> None:
+        await view._odds_max(interaction)
+
+    return click
+
+
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
     module.SPIN_SECONDS = 0  # sin esperar a que «gire» la rueda: aquí no se enseña
@@ -378,6 +434,10 @@ CASES: dict[str, Press] = {
     "pachinko: auto": press_pachinko_autoplay,
     "moneda: cara": press_coin_flip,
     "moneda: cobrar": press_coin_cash_out,
+    "dados: pase": press_dice_pass,
+    "dados: tirar": press_dice_roll,
+    "dados: odds": press_dice_odds,
+    "dados: odds al máximo": press_dice_odds_max,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "pala: elegir curro": press_pala_hire,
