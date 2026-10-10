@@ -3007,7 +3007,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "bus_completo_100", "Jefe de cocheras", "Acierta las cuatro manos 100 veces.", E),
     ])  # fmt: skip
     a += _tiers("bus", "bus_turned", [
-        (1, "bus_vuelta", "Ida y vuelta", "Completa el autobús y acierta también la vuelta.", R),
+        (1, "bus_vuelta", "Billete de ida y vuelta",
+         "Completa el autobús y acierta también la vuelta.", R),
         (10, "bus_vuelta_10", "Línea circular", "Acierta la vuelta 10 veces.", E),
     ])  # fmt: skip
     a += _tiers("bus", "bus_turn_lost", [

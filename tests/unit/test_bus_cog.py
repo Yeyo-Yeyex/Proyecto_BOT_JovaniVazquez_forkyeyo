@@ -283,11 +283,14 @@ async def test_el_autobus_entero_y_la_vuelta_se_cobran_solos(tmp_path: Path) -> 
         await press(view, pick)
     game = view.game
     assert game is not None and game.playing and game.completed
-    assert labels(view)[:2] == ["🔴 Rojo · ×1.786,40 · 50 %", "⚫ Negro · ×1.786,40 · 50 %"]
+    assert labels(view)[:2] == ["🔴 Rojo · ×191,21 · 50 %", "⚫ Negro · ×191,21 · 50 %"]
     await press(view, Pick.TURN_BLACK)
     assert game.status is Status.CASHED and game.turned
-    assert await balance(cog) == STARTING_BALANCE - 10 + game.payout
-    assert game.payout == 17_864
+    assert game.payout == 1_912
+    # Un premio así ya paga la retención del juego, que se queda el Estado.
+    tax = await cog.economy.state_balance(GUILD_ID)
+    assert tax > 0
+    assert await balance(cog) == STARTING_BALANCE - 10 + game.payout - tax
 
 
 async def test_un_intruso_no_juega_pero_puede_ver_la_tabla(tmp_path: Path) -> None:
