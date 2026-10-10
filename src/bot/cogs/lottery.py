@@ -21,7 +21,7 @@ tienen apuestas en el servidor), paga los premios y anuncia el resultado en el
 canal donde se compró por última vez. Las reglas, las probabilidades y el
 reparto están en `bot.services.lottery`. En los juegos de bote las
 probabilidades dependen de cuántas personas (no bots) tiene el servidor
-(`Loteria.members`): el bote cae de media una vez al mes si cada una juega una
+(`Loteria.members`): el bote cae de media cada dos meses si cada una juega una
 apuesta por sorteo. Necesita el intent de miembros para contarlas; sin la
 lista en caché usa el recuento de Discord y, sin servidor, las reales.
 
@@ -186,7 +186,7 @@ def odds_table(game: Game, members: int | None = None) -> str:
         return table
     return table + (
         f"\n-# Probabilidades a la medida del servidor ({_thousands(members)} personas): si "
-        "cada uno juega una apuesta por sorteo, el bote cae más o menos una vez al mes. "
+        "cada uno juega una apuesta por sorteo, el bote cae más o menos cada dos meses. "
         f"En la vida real, 1 entre {_thousands(jackpot.odds(game.combinations))}."
     )
 

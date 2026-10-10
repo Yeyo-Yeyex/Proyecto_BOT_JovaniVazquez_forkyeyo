@@ -629,20 +629,14 @@ def test_las_probabilidades_del_servidor_mantienen_el_orden_y_nunca_son_peores(
 
 
 @pytest.mark.parametrize("game", POOL, ids=lambda g: g.key)
-def test_con_todo_el_servidor_jugando_el_bote_cae_una_vez_al_mes(game) -> None:
+def test_con_todo_el_servidor_jugando_el_bote_cae_una_vez_por_periodo(game) -> None:
     jackpot = next(c.key for c in game.categories if c.jackpot)
     members = 30
     odds = server_odds(game, members)
     assert odds[jackpot] == pytest.approx(members * draws_per_period(game))
-    # El bombo solo regala una categoría por sorteo. En Primitiva y Bonoloto cabe
-    # con una apuesta por persona; Gordo y Euromillones tienen tantas categorías
-    # que no caben ni igualándolas al bote, y se quedan igualadas.
-    mass = members * _extra_mass(real_odds(game), odds)
-    if game in (PRIMITIVA, BONOLOTO):
-        assert mass <= 1 + 1e-9
-    else:
-        boosted = [k for k in odds if odds[k] < real_odds(game)[k]]
-        assert mass <= 1 + 1e-9 or all(odds[k] == pytest.approx(odds[jackpot]) for k in boosted)
+    # El bombo solo regala una categoría por sorteo. Con un periodo de dos meses
+    # cabe en los cuatro juegos con una apuesta por persona.
+    assert members * _extra_mass(real_odds(game), odds) <= 1 + 1e-9
 
 
 def test_en_un_servidor_enorme_las_probabilidades_son_las_reales() -> None:
@@ -663,7 +657,7 @@ def test_el_bombo_cargado_da_justo_la_categoria_pedida(game) -> None:
 
 
 def test_el_bote_cae_con_la_frecuencia_del_servidor() -> None:
-    """30 personas con una apuesta cada una: el bote cae en uno de cada ~13 sorteos."""
+    """30 personas con una apuesta cada una: el bote cae en uno de cada ~26 sorteos."""
     rng = random.Random(11)
     members = 30
     odds = server_odds(PRIMITIVA, members)
@@ -694,7 +688,7 @@ def test_el_bote_garantizado_se_encoge_con_el_servidor() -> None:
 def test_la_tabla_del_servidor_avisa_de_la_probabilidad_real() -> None:
     table = odds_table(PRIMITIVA, 30)
     assert "30 personas" in table
-    assert re.search(r"Especial .* 1 entre +386 ", table)
+    assert re.search(r"Especial .* 1 entre +771 ", table)
     assert "139.838.160" in table
     assert "personas" not in odds_table(PRIMITIVA)
 

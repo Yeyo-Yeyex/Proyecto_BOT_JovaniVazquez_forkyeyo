@@ -459,8 +459,8 @@ python -m bot
   son los reales (normas de SELAE y tablas de la ONCE) a 10 Y$ por euro, y
   las probabilidades de la Nacional y los rascas también. En los juegos de
   bote se ajustan al servidor: si cada persona (sin contar bots) juega una
-  apuesta por sorteo, el bote cae más o menos una vez al mes. Con 30
-  personas, el bote de la Primitiva es 1 entre 386 (en la vida real, 1 entre
+  apuesta por sorteo, el bote cae más o menos cada dos meses. Con 30
+  personas, el bote de la Primitiva es 1 entre 771 (en la vida real, 1 entre
   139.838.160). La cuenta del Estado hace de banca: cobra los boletos sin
   IGIC, paga los premios con el gravamen especial del 20 % por encima de
   400.000 Y$ y garantiza el bote mínimo del Gordo y de Euromillones,

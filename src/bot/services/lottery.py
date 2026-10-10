@@ -57,7 +57,7 @@ siempre; lo que cambia es que, a veces, el bombo se «carga» con la apuesta
 de alguien (`draw_result`). Como los premios salen del fondo del sorteo, que
 toque más a menudo no crea dinero: reparte lo mismo entre menos sorteos. El
 bote garantizado del Estado se encoge en la misma proporción
-(`guarantee_for`), para que el Estado no pague 17 M€ cada mes.
+(`guarantee_for`), para que el Estado no pague 17 M€ cada dos meses.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ MAX_PER_DRAW = 100
 NACIONAL_NUMBERS = 100_000
 #: Si cada miembro juega una apuesta en cada sorteo, el bote de un juego cae de
 #: media una vez en este plazo (ver `server_odds`).
-JACKPOT_PERIOD_DAYS = 30
+JACKPOT_PERIOD_DAYS = 60
 
 
 def eur(amount: float) -> int:
@@ -542,7 +542,7 @@ def server_odds(game: Game, members: int) -> dict[str, float]:
     categoría más baja y, si no cabe, se sube el ancla hasta que cabe; si ni
     con todas las de arriba igualadas al bote cabe (Gordo y Euromillones en
     servidores pequeños, con muchas categorías), se quedan igualadas y, con
-    todo el servidor jugando, el bote cae algo menos de una vez al mes.
+    todo el servidor jugando, el bote cae algo menos de una vez por periodo.
     """
     real = real_odds(game)
     top, bottom = real[_jackpot_key(game)], min(real.values())
@@ -1071,7 +1071,7 @@ def guarantee_for(game: Game, state_balance: int, members: int | None = None) ->
 
     Con `members`, el real se encoge con `jackpot_scale`: el mínimo de la vida
     real está pensado para un bote que cae cada varios meses entre millones
-    de jugadores; si aquí cae cada mes, garantizar 17 M€ vaciaría el Estado.
+    de jugadores; si aquí cae cada dos meses, garantizar 17 M€ vaciaría el Estado.
     """
     if not game.guarantee:
         return 0
