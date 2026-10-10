@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from coin_fakes import Scripted
+from craps_fakes import Scripted as DiceScripted
 from interaction_fakes import fake_interaction
 from render_fakes import use_fake_drawings
 
@@ -36,6 +37,7 @@ GAMES = (
     "Minas",
     "Pollo",
     "Moneda",
+    "Dados",
     "Pachinko",
     "Caballos",
     "Porras",
@@ -344,6 +346,53 @@ async def test_la_moneda_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> No
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.by_game["moneda"].plays == 1
+    finally:
+        await client.close()
+
+
+async def test_los_dados_apuntan_sus_logros_y_jugadas_con_el_bot_real(tmp_path: Path) -> None:
+    """Los dados cargan antes que los logros: sus partidas deben llegar a `logros`."""
+    client = await load_bot(tmp_path)
+    try:
+        dados = importer("Dados", client)
+        dados.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Dados")
+        cog.renderer = MagicMock()
+        cog.renderer.throw = AsyncMock(
+            return_value=dados.Media(gif=b"GIF", png=b"PNG", seconds=0.0, rest=dados.OPENING_REST)
+        )
+        cog.renderer.board = AsyncMock(return_value=b"PNG")
+        cog.rng = DiceScripted((1, 1))  # pide pase, sale pifia
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._dados_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            bet=None,
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+        (view,) = cog.views
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await view._pass(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["dice_games"] == 1
+        assert profile.stats["dice_losses"] == 1
+        assert profile.stats["dice_snake_eyes"] == 1
+        assert {"dados_1", "dados_pegasus", "dados_pifia"} <= set(profile.unlocked)
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["dados"].plays == 1
     finally:
         await client.close()
 
