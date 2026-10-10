@@ -17,6 +17,7 @@ from interaction_fakes import fake_interaction
 from bot.cogs import blackjack as blackjack_cog
 from bot.cogs import chicken as chicken_cog
 from bot.cogs import coin as coin_cog
+from bot.cogs import craps as craps_cog
 from bot.cogs import mines as mines_cog
 from bot.cogs.porras import Porras, Table, parse_text_args, resolve_game
 from bot.repositories.economy import (
@@ -186,7 +187,8 @@ def test_un_juego_nuevo_tiene_porras_genericas_sin_hacer_nada(
 def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
     """Si un juego deja de mandar `boom`, `splat` o `bust`, su propuesta se rompería."""
     modules = {
-        m.GAME: inspect.getsource(m) for m in (mines_cog, chicken_cog, coin_cog, blackjack_cog)
+        m.GAME: inspect.getsource(m)
+        for m in (mines_cog, chicken_cog, coin_cog, craps_cog, blackjack_cog)
     }
     for prop in PROPOSITIONS:
         if prop.games is None:
@@ -221,6 +223,8 @@ def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
         ("natural", [play(150, game="blackjack", natural=1)], 0),
         ("racha", [play(-100, game="moneda", wins=2), play(700, game="moneda", wins=3)], 0),
         ("racha", [play(100, game="moneda", wins=1), play(-100, game="moneda", wins=2)], 1),
+        ("punto", [play(-100, game="dados", made=0), play(100, game="dados", made=1)], 0),
+        ("punto", [play(100, game="dados", made=0), play(-100, game="dados", made=0)], 1),
     ],
 )
 def test_cada_propuesta_decide_bien(key: str, plays: list[Play], expected: int) -> None:

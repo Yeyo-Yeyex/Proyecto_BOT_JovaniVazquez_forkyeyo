@@ -7,7 +7,8 @@ encarga del navegador: arrancarlo cuando hace falta, tener una pestaña con la
 escena, cerrarlo tras un rato sin uso y, si falla, decirlo una vez en el log
 y apagarse para que quien dibuja use su versión de Pillow.
 
-Lo usa Cara o cruz (`bot.services.coin_scene`). Las carreras de caballos
+Lo usan Cara o cruz (`bot.services.coin_scene`) y los dados
+(`bot.services.craps_scene`), cada uno con su navegador. Las carreras de caballos
 tienen su propia copia de esta lógica en `bot.services.horses_scene`, anterior
 a este módulo.
 

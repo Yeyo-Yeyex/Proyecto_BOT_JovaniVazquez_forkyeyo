@@ -228,6 +228,14 @@ PROPOSITIONS: tuple[Proposition, ...] = (
         details=frozenset({"wins"}),
     ),
     Proposition(
+        "punto", "🎯", "¿Hace algún punto?",
+        "¿{who} repite el punto en alguna de las {n} partidas a los dados?",
+        ("🎯 Hace un punto", "🎲 Ni uno"),
+        lambda plays, _stake: 0 if any(p.detail("made") for p in plays) else 1,
+        games=frozenset({"dados"}),
+        details=frozenset({"made"}),
+    ),
+    Proposition(
         "pasarse", "💥", "¿Se pasa de 21?", "¿{who} juega las {n} manos sin pasarse de 21?",
         ("🧊 No se pasa nunca", "💥 Se pasa alguna vez"),
         lambda plays, _stake: 1 if any(p.detail("bust") for p in plays) else 0,
