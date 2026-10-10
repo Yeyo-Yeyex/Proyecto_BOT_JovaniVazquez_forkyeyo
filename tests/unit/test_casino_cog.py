@@ -6,6 +6,7 @@ dinero se mueve de verdad), una rueda trucada y un renderizador falso.
 
 from __future__ import annotations
 
+import asyncio
 import random
 from pathlib import Path
 from types import SimpleNamespace
@@ -67,7 +68,10 @@ def no_spin_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(casino_module, "REVEAL_MARGIN_SECONDS", 0)
 
 
-async def make_cog(tmp_path: Path, pocket: int = 17, channels=frozenset()) -> Casino:
+async def make_cog(
+    tmp_path: Path, pocket: int = 17, channels=frozenset(), *, preload: bool = False
+) -> Casino:
+    """Casino con la rueda trucada; sin precarga salvo en sus pruebas (cuentan dibujos)."""
     repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await repository.initialize()
     return Casino(
@@ -76,6 +80,7 @@ async def make_cog(tmp_path: Path, pocket: int = 17, channels=frozenset()) -> Ca
         renderer=FakeRenderer(),  # type: ignore[arg-type]
         wheel=Wheel(lambda n: pocket, lightning=False),
         casino_channel_ids=channels,
+        preload=preload,
     )
 
 
@@ -635,3 +640,92 @@ async def test_sin_saldo_no_dice_no_va_mas(tmp_path: Path) -> None:
     # La mesa sigue abierta: los botones de apostar no se apagan.
     red = next(item for item in table.children if item.custom_id == "ruleta:bet:red")
     assert not red.disabled
+
+
+# -- Precarga de la tirada siguiente -----------------------------------------------
+
+
+async def settle_preload(table: RouletteTable) -> None:
+    """Deja que acabe la precarga en marcha (el doble del dibujo es instantáneo)."""
+    if table._preload is not None:
+        await asyncio.wait({table._preload})
+
+
+async def test_repetir_usa_la_tirada_precargada_sin_dibujar(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    await settle_preload(table)
+    # Un dibujo por la tirada y otro por la precarga, con el 17 ya en el marcador.
+    assert cog.renderer.histories == [[], [17]]
+    balance = await cog.economy.balance(GUILD_ID, OWNER_ID)
+    interaction = make_interaction()
+
+    await table._repeat(interaction)
+
+    # No se dibuja otra vez y no hace falta el «no va más»: el GIF sale ya.
+    first = interaction.edit_original_response.await_args_list[0]
+    assert attachment_names(first) == [GIF_NAME]
+    assert len(cog.renderer.histories) == 3  # solo la precarga de la siguiente
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) != balance
+    assert cog.history(GUILD_ID) == [17, 17]
+
+
+async def test_precargar_no_mueve_dinero(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    before = await cog.economy.balance(GUILD_ID, OWNER_ID)
+
+    await settle_preload(table)
+
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == before
+    assert cog.history(GUILD_ID) == [17]
+
+
+async def test_otra_apuesta_tira_la_precarga_y_dibuja_la_suya(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    await settle_preload(table)
+    interaction = make_interaction()
+
+    await table.choose(interaction, OUTSIDE_BETS["red"])
+
+    closed, first, _final = interaction.edit_original_response.await_args_list
+    assert "No va más" in closed.kwargs["embed"].description
+    assert [w.bet.key for w in table.last_wagers] == ["red"]
+    # La tirada, la precarga tirada, la tirada roja y la precarga de la siguiente.
+    assert len(cog.renderer.histories) == 4
+
+
+async def test_la_precarga_no_vale_si_cambia_el_historial(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    await settle_preload(table)
+    cog.record(GUILD_ID, 5)  # otra mesa del servidor ha girado entre medias
+    interaction = make_interaction()
+
+    await table._repeat(interaction)
+
+    assert (
+        "No va más"
+        in interaction.edit_original_response.await_args_list[0].kwargs["embed"].description
+    )
+
+
+async def test_cambiar_la_ficha_seguido_precarga_una_sola_vez(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=800)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    await settle_preload(table)
+    drawn = len(cog.renderer.histories)
+
+    for _ in range(3):
+        await table._halve(make_interaction())
+    await settle_preload(table)
+
+    # Las dos primeras se cancelan en su espera: solo dibuja la de 100.
+    assert len(cog.renderer.histories) == drawn + 1
+    assert table._preload_for == (Wager(OUTSIDE_BETS["black"], 100),)

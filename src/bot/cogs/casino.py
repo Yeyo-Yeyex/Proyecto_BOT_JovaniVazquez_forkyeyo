@@ -11,6 +11,17 @@ mesa, un mensaje con botones que solo él puede pulsar. Tiene dos modos:
 - **Varias apuestas**: cada clic pone una ficha en la mesa y 🎰 Girar las
   juega todas en la misma tirada.
 
+**Precarga de la tirada siguiente.** Dibujar un giro cuesta ~2 s. Mientras el
+jugador mira el resultado, la mesa sortea y dibuja en segundo plano la jugada
+más probable: repetir la última apuesta con la ficha actual (`_preload_wagers`,
+que es lo que hacen 🔁 Repetir y volver a pulsar el mismo botón). Si el clic
+pide justo eso y el historial del servidor no ha cambiado, se cobra y el GIF
+sale al momento; si aún se está dibujando, se espera lo que falte. Si pide otra
+cosa, la precarga se tira y se juega como siempre (con el «no va más» mientras
+se dibuja). Igual que en el pachinko, el dinero no se mueve hasta el clic: el
+número y los rayos no miran la apuesta (`roulette.draw`), así que sortearlos
+antes da la misma probabilidad, y nadie ve el resultado sin haber pagado.
+
 Cada tirada trae los trucos de las ruletas de casino (`bot.services.roulette`
 y `bot.services.roulette_scene`): rayos con multiplicador sobre los plenos,
 la bola que pasa por tu número antes de caer al lado, lo recuperado celebrado
@@ -64,17 +75,19 @@ from bot.services.roulette import (
     COLOR_EMOJI,
     OUTSIDE_BETS,
     Bet,
+    Draw,
     RoundOutcome,
     Wager,
     Wheel,
     add_wager,
     color,
+    draw,
     hot_cold,
     label,
     parse_bet,
     parse_bets,
-    play_round,
     pretty,
+    resolve,
 )
 from bot.services.roulette_scene import Media, RouletteScene
 from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
@@ -100,6 +113,9 @@ REVEAL_MARGIN_SECONDS = 0.4
 HISTORY_SIZE = 12
 #: Números que se guardan por servidor para los calientes y los fríos.
 HOT_WINDOW = 100
+#: Espera antes de precargar tras cambiar la ficha: si llega otro cambio (½ ½ ½),
+#: la precarga anterior se cancela antes de tocar el navegador.
+PRELOAD_DEBOUNCE_SECONDS = 0.6
 
 GIF_NAME = "ruleta.gif"
 
@@ -350,6 +366,26 @@ class SpinResult:
     tax_delta: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedSpin:
+    """Una tirada sorteada y dibujada antes del clic, sin cobrar (ver la cabecera).
+
+    Vale solo para las mismas fichas (`wagers`) y el mismo historial del
+    servidor (`history`, que sale en el marcador del dibujo).
+    """
+
+    wagers: tuple[Wager, ...]
+    history: tuple[int, ...]
+    outcome: RoundOutcome
+    media: Media
+
+
+def _log_preload_failure(task: asyncio.Task[PreparedSpin]) -> None:
+    """Registra una precarga que falló (y la da por leída); jugar sigue sin ella."""
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.warning("Falló la precarga de la ruleta: se jugará sin ella", exc_info=error)
+
+
 EditFn = Callable[..., Awaitable[Any]]
 
 
@@ -403,6 +439,13 @@ class RouletteTable(discord.ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        #: La tirada siguiente preparándose en segundo plano, si la hay.
+        self._preload: asyncio.Task[PreparedSpin] | None = None
+        #: Las fichas para las que es esa precarga.
+        self._preload_for: tuple[Wager, ...] = ()
+        #: Si esa precarga ya ha pasado su espera y está en el navegador.
+        self._preload_drawing = False
+        self._closed = False
         self._build_buttons()
 
     # -- Construcción ---------------------------------------------------------------
@@ -496,6 +539,10 @@ class RouletteTable(discord.ui.View):
 
     async def on_timeout(self) -> None:
         """Desactiva los botones cuando la mesa lleva un rato sin usarse."""
+        self._closed = True
+        if self._preload is not None and not self._preload_drawing:
+            self._preload.cancel()
+        self._preload = None
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
@@ -509,6 +556,72 @@ class RouletteTable(discord.ui.View):
                 await self.message.edit(view=self)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar la mesa de ruleta", exc_info=True)
+
+    # -- Precarga ---------------------------------------------------------------------
+
+    def _preload_wagers(self) -> tuple[Wager, ...]:
+        """La jugada que se precarga: la última, con la ficha actual si era una sola."""
+        if len(self.last_wagers) == 1 and not self.multi:
+            return (Wager(self.last_wagers[0].bet, self.stake),)
+        return self.last_wagers
+
+    def _start_preload(self, history: Sequence[int] | None = None, *, delay: float = 0) -> None:
+        """Pone a preparar la tirada siguiente, si hay jugada que repetir.
+
+        Args:
+            history: El historial del servidor que tendrá el marcador al jugarla.
+                Al empezar el GIF aún no incluye el número que está saliendo.
+            delay: Espera antes de dibujar (ver `PRELOAD_DEBOUNCE_SECONDS`).
+
+        La anterior se cancela si aún no ha empezado a dibujar; si ya dibuja, se
+        abandona y acaba sola: cortar a Chromium a mitad de un dibujo deja la
+        pestaña a medias, y acabar cuesta poco.
+        """
+        wagers = self._preload_wagers()
+        if self._closed or not self.cog.preload_enabled or not wagers:
+            return
+        if history is None:
+            history = self.cog.history(self.guild_id)
+        if self._preload is not None and not self._preload_drawing:
+            self._preload.cancel()
+        self._preload_drawing = False
+
+        async def prepare() -> PreparedSpin:
+            if delay:
+                await asyncio.sleep(delay)
+            self._preload_drawing = True
+            return await self.cog.prepare(self.guild_id, wagers, history=history)
+
+        task = asyncio.create_task(
+            prepare(), name=f"ruleta-preload-{self.guild_id}-{self.owner.id}"
+        )
+        task.add_done_callback(_log_preload_failure)
+        self._preload = task
+        self._preload_for = wagers
+
+    async def _take_preload(self, wagers: Sequence[Wager]) -> PreparedSpin | None:
+        """La tirada precargada si es para estas fichas y este historial; si no, `None`.
+
+        Si aún se está dibujando, espera a que acabe. Una que falló o que ya no
+        vale se tira: el dinero no se ha movido, así que no se pierde nada.
+        """
+        task, self._preload = self._preload, None
+        target, self._preload_for = self._preload_for, ()
+        if task is None:
+            return None
+        if target != tuple(wagers):
+            # Otra jugada: ni se espera. Si aún dibuja, acaba sola y se tira.
+            return None
+        if not task.done():
+            await asyncio.wait({task})
+        if task.cancelled() or task.exception() is not None:
+            return None
+        prepared = task.result()
+        if prepared.wagers != tuple(wagers):
+            return None
+        if prepared.history != tuple(self.cog.history(self.guild_id)):
+            return None
+        return prepared
 
     # -- Juego ----------------------------------------------------------------------
 
@@ -572,9 +685,10 @@ class RouletteTable(discord.ui.View):
                 self._set_enabled(False)
                 closing = asyncio.create_task(self._close_bets(interaction, wagers))
 
+            prepared = await self._take_preload(wagers)
             try:
                 result = await self.cog.spin(
-                    self.guild_id, self.owner.id, wagers, on_paid=close_bets
+                    self.guild_id, self.owner.id, wagers, on_paid=close_bets, prepared=prepared
                 )
             except InsufficientFundsError as error:
                 await notify(interaction, insufficient_text(error.balance, wagers_total(wagers)))
@@ -632,6 +746,9 @@ class RouletteTable(discord.ui.View):
             attachments=[discord.File(io.BytesIO(result.media.gif), filename=GIF_NAME)],
             view=self,
         )
+        # La siguiente se dibuja mientras esta gira: ~4 s de GIF dan para los ~2 s
+        # del dibujo. Su marcador ya lleva el número que está saliendo.
+        self._start_preload(history=[outcome.pocket, *self.cog.history(self.guild_id)])
         await asyncio.sleep(result.media.seconds + REVEAL_MARGIN_SECONDS)
 
         self.cog.record(self.guild_id, outcome.pocket)
@@ -690,11 +807,15 @@ class RouletteTable(discord.ui.View):
         """Actualiza la mesa (ficha, modo, fichas puestas) sin tocar la imagen.
 
         El embed lee el saldo de la base de datos: se acepta el clic antes.
+        Si cambia la jugada que se repetiría (otra ficha, otro modo), se vuelve
+        a precargar.
         """
         await ack(interaction)
         self._set_enabled(True)
         await edit(interaction, embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
+        if self._preload is None or self._preload_for != self._preload_wagers():
+            self._start_preload(delay=PRELOAD_DEBOUNCE_SECONDS)
 
     async def _open_numbers(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_modal(NumberBetModal(self))
@@ -802,9 +923,13 @@ class Casino(commands.Cog):
         renderer: RouletteScene | None = None,
         wheel: Wheel | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
+        preload: bool = True,
     ) -> None:
         self.bot = bot
         self.economy = economy
+        #: Si las mesas preparan la tirada siguiente mientras se mira la anterior.
+        #: Solo se apaga en pruebas que cuentan los sorteos o los dibujos uno a uno.
+        self.preload_enabled = preload
         self.renderer = renderer or RouletteScene()
         self.wheel = wheel or Wheel()
         self.casino_channel_ids = casino_channel_ids
@@ -833,6 +958,7 @@ class Casino(commands.Cog):
         wagers: Sequence[Wager],
         *,
         on_paid: Callable[[], Awaitable[None]] | None = None,
+        prepared: PreparedSpin | None = None,
     ) -> SpinResult:
         """Juega una tirada: decide el número y mueve el dinero de forma atómica.
 
@@ -841,21 +967,27 @@ class Casino(commands.Cog):
         sale bien; así no se puede "ver" el resultado sin pagarlo.
 
         Args:
-            on_paid: Se llama tras cobrar y antes de dibujar el giro.
+            on_paid: Se llama tras cobrar y antes de dibujar el giro (no si
+                la tirada ya venía dibujada: no hay espera que tapar).
+            prepared: La tirada precargada para estas mismas fichas; se cobra
+                y se enseña sin sortear ni dibujar.
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre el total apostado.
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
-        outcome = play_round(self.wheel, wagers)
+        outcome = prepared.outcome if prepared else resolve(draw(self.wheel), wagers)
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=outcome.stake, payout=outcome.total_return
         )
-        if on_paid is not None:
-            await on_paid()
-        media = await self.renderer.spin(
-            outcome, history=self.history(guild_id), seed=secrets.randbits(32)
-        )
+        if prepared is not None:
+            media = prepared.media
+        else:
+            if on_paid is not None:
+                await on_paid()
+            media = await self.renderer.spin(
+                outcome, history=self.history(guild_id), seed=secrets.randbits(32)
+            )
         return SpinResult(
             outcome=outcome,
             balance=settlement.balance,
@@ -863,6 +995,24 @@ class Casino(commands.Cog):
             tax_note=gambling_tax_line(settlement),
             tax_delta=settlement.tax_delta,
         )
+
+    async def prepare(
+        self, guild_id: int, wagers: Sequence[Wager], *, history: Sequence[int]
+    ) -> PreparedSpin:
+        """Sortea y dibuja una tirada para `wagers` sin cobrar nada (la precarga).
+
+        El sorteo no mira las fichas ni al jugador: hacerlo antes del clic da la
+        misma probabilidad. Si la tirada no se juega, se tira sin dejar rastro.
+
+        Args:
+            history: El historial del servidor con el que se jugará (sale en el
+                marcador); si al jugar es otro, la precarga no vale.
+        """
+        history = tuple(list(history)[:HOT_WINDOW])
+        result: Draw = draw(self.wheel)
+        outcome = resolve(result, wagers)
+        media = await self.renderer.spin(outcome, history=history, seed=secrets.randbits(32))
+        return PreparedSpin(tuple(wagers), history, outcome, media)
 
     def _casino_channel_error(self, channel: object) -> str | None:
         return casino_channel_error(self.casino_channel_ids, channel, "La ruleta")
