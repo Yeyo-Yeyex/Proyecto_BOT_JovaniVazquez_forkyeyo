@@ -1,13 +1,13 @@
 """Dobles de los dibujantes de las máquinas del casino, para pruebas que no miran la imagen.
 
-`SlotsRenderer`, `WheelRenderer` y `PachinkoRenderer` tardan entre 0,05 y 3 s por
+`SlotsRenderer`, `WheelRenderer`, `RouletteScene` y `PachinkoRenderer` tardan entre 0,05 y 3 s por
 tirada (más el precalentamiento de los tres al cargar el cog, que dibuja las 38 casillas
 de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los botones
 (`tests/integration/test_button_speed.py`) y de los puentes entre cogs
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia las tres clases en sus módulos de servicio ANTES de cargar los
+`use_fake_drawings` cambia las cuatro clases en sus módulos de servicio ANTES de cargar los
 cogs. `load_extension` vuelve a ejecutar cada cog y su `from ... import SlotsRenderer`
 recoge el doble, así que el cog, el bot y la base de datos son los reales y solo se
 sustituye el dibujo. Los dobles devuelven los mismos tipos (`SlotsMedia`, `SpinMedia`,
@@ -25,6 +25,7 @@ import pytest
 
 import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
+import bot.services.roulette_scene as roulette_scene
 import bot.services.slots_render as slots_render
 
 
@@ -50,6 +51,19 @@ class FakeWheelRenderer:
         return b"PNG"
 
 
+class FakeRouletteScene:
+    """`RouletteScene` sin abrir Chromium: PNG y GIF de relleno y giro de 0 s."""
+
+    async def spin(self, outcome: object, *, history: object, seed: int) -> roulette_scene.Media:
+        return roulette_scene.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+
+    async def board(self, history: object, wagers: object = ()) -> bytes:
+        return b"PNG"
+
+    async def close(self) -> None:
+        return None
+
+
 class FakePachinkoRenderer:
     """`PachinkoRenderer` sin dibujar: PNG y GIF de relleno, y sin piezas que precalentar."""
 
@@ -69,7 +83,8 @@ class FakePachinkoRenderer:
 
 
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sustituye los tres dibujantes por sus dobles; llamar antes de cargar los cogs."""
+    """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_render, "SlotsRenderer", FakeSlotsRenderer)
     monkeypatch.setattr(roulette_render, "WheelRenderer", FakeWheelRenderer)
+    monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)

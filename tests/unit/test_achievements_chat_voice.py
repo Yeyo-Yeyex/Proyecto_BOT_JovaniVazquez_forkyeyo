@@ -644,7 +644,7 @@ def test_las_categorias_largas_se_parten_en_paginas_sin_perder_logros() -> None:
 def _roulette(pocket: int, *bets: str):
     from bot.services import roulette
 
-    wheel = roulette.Wheel(lambda _n: roulette.POCKETS.index(pocket))
+    wheel = roulette.Wheel(lambda _n: roulette.POCKETS.index(pocket), lightning=False)
     wagers = [roulette.Wager(roulette.parse_bet(bet), 100) for bet in bets]
     return roulette.play_round(wheel, wagers)
 
@@ -757,3 +757,39 @@ def test_loterias_cuentan_por_juego() -> None:
 def test_no_hay_dos_logros_con_el_mismo_nombre() -> None:
     names = [a.name for a in CATALOG]
     assert len(names) == len(set(names))
+
+
+def test_ruleta_cuenta_rayos_casis_y_corazonadas() -> None:
+    from bot.services import roulette
+    from bot.services.achievements import roulette_stats
+
+    class Tormenta(roulette.Wheel):
+        def strike(self) -> dict[int, int]:
+            return {1: 500, 13: 50, 0: 100, 5: 50, 9: 50}
+
+    def play(pocket: int, *bets: str):
+        wheel = Tormenta(lambda _n: roulette.POCKETS.index(pocket))
+        wagers = [roulette.Wager(roulette.parse_bet(bet), 10) for bet in bets]
+        return roulette.play_round(wheel, wagers)
+
+    won = roulette_stats(
+        play(1, "1"), table_streak=1, previous_pocket=None, hunches={"in:1": "hot"}
+    )
+    assert won.add["roulette_lucky_wins"] == 1
+    assert won.peak["roulette_lucky_max"] == 500
+    assert won.peak["roulette_storm_max"] == 5
+    assert won.add["roulette_hot_bets"] == 1
+    assert won.add["roulette_hot_hits"] == 1
+
+    # En la rueda: 13, 1, 00. El 13 tenía rayo, está al lado y no sale.
+    missed = roulette_stats(
+        play(1, "13"), table_streak=0, previous_pocket=None, hunches={"in:13": "cold"}
+    )
+    assert missed.add["roulette_lucky_missed"] == 1
+    assert missed.add["roulette_near_miss"] == 1
+    assert missed.add["roulette_cold_bets"] == 1
+    assert "roulette_cold_hits" not in missed.add
+    assert "roulette_lucky_wins" not in missed.add
+
+    green = roulette_stats(play(0, "0"), table_streak=1, previous_pocket=None)
+    assert green.add["roulette_lucky_zero"] == 1

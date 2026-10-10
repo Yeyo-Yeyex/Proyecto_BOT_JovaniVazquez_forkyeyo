@@ -88,6 +88,41 @@ Un botón nuevo que toque la base de datos se añade a
 `tests/integration/test_button_speed.py`, que pulsa botones del bot real y falla si
 la primera conexión a SQLite llega antes que la respuesta a Discord.
 
+## Rendimiento en el NAS (4 hilos)
+
+El bot corre en un NAS con 4 hilos. Lo lento de un juego casi nunca es la lógica:
+es dibujar, comprimir y mover imágenes. Antes de optimizar, se mide por tramos
+(navegador, montar fotogramas, codificar el GIF) con el navegador ya abierto: el
+primer dibujo tras arrancar Chromium siempre es más lento. Lo aprendido con la
+ruleta, que pasó de 4-7 s a ~2 s por tirada:
+
+- **Escenas de Chromium: `BrowserScene.render`.** Reparte los fotogramas entre
+  `TABS` (2) pestañas que pintan a la vez, cada una en su proceso: el navegador
+  tarda la mitad. Cada pestaña hace `setup` y su primer fotograma sale entero, y
+  `renderFrames(states, first)` recibe el índice absoluto, así que una escena
+  nueva no puede guardar estado entre lotes que no se reinicie en `setup`. Se
+  comprueba que dos pestañas dan los mismos fotogramas que una. Más de 2
+  pestañas no compensa: deja sin hilos al bot y a la codificación del GIF.
+- **En el navegador, lo caro es el PNG.** `toDataURL` comprime en un solo hilo
+  (`toBlob` no ayuda sin GPU) y cada fotograma viaja en base64 a Python. Hay
+  que devolver solo el recuadro que cambia y no marcar `full` sin necesidad: un
+  marcador que cambia en cada fotograma obliga a mandarlos enteros. WebP sin
+  pérdida pesa menos pero tarda más en comprimirse.
+- **En Python, lo que no depende del orden va en varios hilos.** Pillow suelta el
+  GIL al cuantizar y al descomprimir: `local_palette_gif` calcula las paletas
+  con `QUANTIZE_THREADS` (4) y `browser_scene.assemble` descomprime los PNG igual.
+  Lo que sí depende del fotograma anterior (comparar, pegar recuadros) va en orden.
+  Los pools se crean dentro de la función, que ya corre en `asyncio.to_thread`.
+- **Trabajar solo sobre lo que cambia.** Cuantizar la caja que cambia y no el
+  fotograma entero: sin tramado, el resultado es idéntico. Antes de tocar
+  `bot.utils.gif` se comprueba que el GIF sale con los mismos bytes.
+- **Menos fotogramas donde no se notan.** Una fase rápida (la bola en la pista) va
+  a 20 fps sin que se vea; la cámara lenta se hace con fotogramas más largos, no
+  con más fotogramas.
+- **Tapar la espera.** Si el dibujo tarda más de un segundo, la jugada se enseña
+  ya («🎲 No va más…» con los botones apagados) y el GIF llega después. El cambio
+  va en paralelo al dibujo, nunca antes.
+
 ## Dos repositorios
 
 - `godzilin/Proyecto_BOT_JovaniVazquez` es el del bot: su `main` es lo que se despliega.

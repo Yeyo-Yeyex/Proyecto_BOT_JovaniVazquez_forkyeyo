@@ -18,14 +18,13 @@ el GIF en un hilo.
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
-from bot.services.browser_scene import BrowserScene
+from bot.services import browser_scene
+from bot.services.browser_scene import BrowserScene, png_bytes
 from bot.services.craps_render import (
     CrapsRenderer,
     DieRest,
@@ -40,31 +39,11 @@ from bot.services.craps_render import (
 )
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "dados" / "escena.html"
-#: Fotogramas que se piden al navegador de una vez (cada uno vuelve como PNG en base64).
-BATCH = 40
-
-
-def _decode(url: str) -> Image.Image:
-    return Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
 
 
 def assemble(patches: list[dict[str, Any]]) -> list[Image.Image]:
-    """Monta los fotogramas pegando cada recuadro sobre el fotograma anterior.
-
-    La escena devuelve el fotograma entero cuando cambia el marcador y, si no,
-    solo el recuadro que ha cambiado (`x`, `y` y su PNG en `u`).
-    """
-    frames: list[Image.Image] = []
-    for patch in patches:
-        image = _decode(patch["u"])
-        if image.size != (W, H):
-            if not frames:
-                raise ValueError("El primer fotograma de la escena tiene que ir entero.")
-            frame = frames[-1].copy()
-            frame.paste(image, (patch["x"], patch["y"]))
-            image = frame
-        frames.append(image)
-    return frames
+    """Fotogramas enteros a partir de los recuadros de la escena (`browser_scene.assemble`)."""
+    return browser_scene.assemble(patches, (W, H))
 
 
 class CrapsScene:
@@ -97,24 +76,14 @@ class CrapsScene:
 
     async def _frames(self, states: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
         """Recuadros de cada fotograma (ver `assemble`); `None` si no hay navegador."""
-
-        async def work(page: Any) -> list[dict[str, Any]]:
-            await page.evaluate("m => setup(m)", meta_state())
-            patches: list[dict[str, Any]] = []
-            for start in range(0, len(states), BATCH):
-                patches += await page.evaluate(
-                    "([s, first]) => renderFrames(s, first)", [states[start : start + BATCH], start]
-                )
-            return patches
-
-        return await self.browser.run(work)
+        return await self.browser.render(meta_state(), states)
 
     async def board(self, table: Table, rest: tuple[DieRest, DieRest]) -> bytes:
         """PNG de la mesa quieta: al abrir, al poner Odds y al repintar."""
         patches = await self._frames([board_state(table, rest)])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, table, rest)
-        return base64.b64decode(patches[0]["u"].split(",", 1)[1])
+        return png_bytes(patches[0])
 
     async def throw(self, table: Table, *, seed: int) -> Media:
         """GIF de la última tirada de `table.game` y PNG del final."""

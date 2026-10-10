@@ -6,16 +6,39 @@ probar resultados concretos; en producción se usa `secrets.SystemRandom`.
 Representación: las casillas son enteros 0-36 y `DOUBLE_ZERO` (37) para el
 `00`. Las apuestas son conjuntos de casillas; el pago sale del tamaño del
 conjunto con la fórmula estándar `36 / n - 1` a uno, salvo la línea de cinco
-números (0-00-1-2-3), que paga 6 a 1. Con 38 casillas, la casa gana el 5,26 %
-de lo apostado en todas las apuestas excepto la de cinco números (7,89 %).
+números (0-00-1-2-3), que paga 6 a 1, y el pleno. Con 38 casillas, la casa
+gana el 5,26 % de lo apostado en todas las apuestas excepto la de cinco
+números (7,89 %) y el pleno (5,5 %, ver abajo).
+
+**Los rayos.** Copia de la Lightning Roulette de los casinos en línea: en
+cada tirada, con las apuestas ya cerradas, caen de 1 a 5 rayos sobre números
+al azar y cada uno lleva un multiplicador de 50 a 500. Un pleno que acierta un
+número con rayo cobra ese multiplicador; sin rayo, cobra 29 a 1 en vez de 35.
+Lo que se quita a todos los plenos se reparte en los pocos que tienen rayo:
+la ventaja de la casa apenas cambia (`straight_return`), pero la varianza se
+dispara. Es el gancho de la tragaperras metido en la ruleta: cada tirada
+puede ser la de 500x y el ojo se va solo a los números con rayo.
+
+**El casi.** `near_miss` dice si la bola ha caído a una o dos casillas de un
+pleno perdido. La escena hace que la bola pase por él antes de caer en el
+suyo y el resultado lo grita («¡POR UNA CASILLA!»). En las tragaperras, los
+casi activan el mismo circuito de recompensa que un premio y alargan el juego
+(Clark et al., Neuron, 2009). Es solo dibujo: el número ya está decidido.
+
+**Calientes y fríos.** `hot_cold` saca del historial del servidor los
+números que más salen y los que llevan más sin salir. Los casinos los ponen
+en el marcador aunque cada tirada sea independiente: invitan a la falacia
+del jugador («al 17 le toca»).
 """
 
 from __future__ import annotations
 
 import re
 import secrets
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from fractions import Fraction
 
 DOUBLE_ZERO = 37
 POCKETS: tuple[int, ...] = tuple(range(38))
@@ -41,6 +64,49 @@ def color(pocket: int) -> str:
     if pocket in ZEROS:
         return "green"
     return "red" if pocket in RED_NUMBERS else "black"
+
+
+#: Pago "a uno" de un pleno sin rayo (35 en la ruleta de siempre).
+STRAIGHT_PAYOUT = 29
+
+#: Cuántos rayos caen en una tirada: `(rayos, peso sobre 100)`.
+LIGHTNING_COUNTS: tuple[tuple[int, int], ...] = ((1, 50), (2, 30), (3, 15), (4, 4), (5, 1))
+#: Multiplicador de cada rayo (pago "a uno" del pleno): `(multiplicador, peso sobre 100)`.
+#: Calibrado para que el pleno devuelva un poco menos que el resto de apuestas
+#: (`straight_return`, 94,5 % frente a 94,7 %); una prueba lo comprueba.
+LIGHTNING_MULTIPLIERS: tuple[tuple[int, int], ...] = (
+    (50, 30), (100, 25), (150, 15), (200, 12), (300, 10), (500, 8),
+)  # fmt: skip
+#: Distancia en la rueda (en casillas) a la que una caída cuenta como «casi».
+NEAR_MISS_DISTANCE = 2
+
+
+def _pick(table: Sequence[tuple[int, int]], roll: int) -> int:
+    """Valor de `table` (pares valor/peso sobre 100) que cae con `roll` en [0, 100)."""
+    for value, weight in table:
+        if roll < weight:
+            return value
+        roll -= weight
+    raise ValueError("Los pesos tienen que sumar 100.")
+
+
+def straight_return() -> Fraction:
+    """Lo que devuelve de media un pleno por cada Y$ apostado, rayos incluidos.
+
+    Un número concreto lleva rayo con probabilidad `E[rayos] / 38`. Si sale y
+    tiene rayo cobra `m + 1`; si no tiene, `STRAIGHT_PAYOUT + 1`.
+    """
+    expected_count = Fraction(sum(n * w for n, w in LIGHTNING_COUNTS), 100)
+    expected_mult = Fraction(sum(m * w for m, w in LIGHTNING_MULTIPLIERS), 100)
+    p_lucky = expected_count / len(POCKETS)
+    hit = (1 - p_lucky) * (STRAIGHT_PAYOUT + 1) + p_lucky * (expected_mult + 1)
+    return hit / len(POCKETS)
+
+
+def wheel_distance(a: int, b: int) -> int:
+    """Casillas que separan `a` y `b` en la rueda, por el lado más corto."""
+    diff = abs(WHEEL_ORDER.index(a) - WHEEL_ORDER.index(b))
+    return min(diff, len(WHEEL_ORDER) - diff)
 
 
 COLOR_EMOJI = {"red": "🔴", "black": "⚫", "green": "🟢"}
@@ -71,9 +137,23 @@ class Bet:
         """Si la casilla hace ganar esta apuesta."""
         return pocket in self.numbers
 
-    def total_return(self, stake: int, pocket: int) -> int:
+    @property
+    def straight(self) -> bool:
+        """Si es un pleno (un solo número), la única apuesta que cobra rayos."""
+        return len(self.numbers) == 1
+
+    def payout_for(self, pocket: int, lucky: Mapping[int, int] | None = None) -> int:
+        """Pago "a uno" si sale `pocket`: el del rayo en un pleno con rayo; 0 si pierde."""
+        if not self.wins(pocket):
+            return 0
+        if self.straight and lucky and pocket in lucky:
+            return lucky[pocket]
+        return self.payout
+
+    def total_return(self, stake: int, pocket: int, lucky: Mapping[int, int] | None = None) -> int:
         """Lo que se devuelve al jugador (apuesta incluida); 0 si pierde."""
-        return stake * (self.payout + 1) if self.wins(pocket) else 0
+        payout = self.payout_for(pocket, lucky)
+        return stake * (payout + 1) if payout else 0
 
 
 def _outside(key: str, name: str, numbers: set[int] | frozenset[int]) -> Bet:
@@ -164,7 +244,10 @@ def inside_bet(numbers: frozenset[int]) -> Bet:
             "(`17-20`), una fila (`13-14-15`), un cuadro (`17-18-20-21`), dos filas "
             "(`13-14-15-16-17-18`) o `0-00-1-2-3`."
         )
-    payout = 6 if len(numbers) == 5 else 36 // len(numbers) - 1
+    if len(numbers) == 1:
+        payout = STRAIGHT_PAYOUT
+    else:
+        payout = 6 if len(numbers) == 5 else 36 // len(numbers) - 1
     ordered = sorted(numbers, key=lambda p: (p != 0, p != DOUBLE_ZERO, p))
     joined = "-".join(label(p) for p in ordered)
     return Bet(f"in:{joined}", f"{kind} {joined}", numbers, payout)
@@ -223,14 +306,33 @@ class Wheel:
         randbelow: Función `n -> entero en [0, n)`. Por defecto usa el
             generador criptográfico del sistema, que no se puede predecir a
             partir de tiradas anteriores.
+        lightning: Si caen rayos. Las pruebas que miran un pago concreto los apagan.
     """
 
-    def __init__(self, randbelow: Callable[[int], int] = secrets.randbelow) -> None:
+    def __init__(
+        self, randbelow: Callable[[int], int] = secrets.randbelow, *, lightning: bool = True
+    ) -> None:
         self._randbelow = randbelow
+        self.lightning = lightning
 
     def spin(self) -> int:
         """Devuelve la casilla ganadora, con las 38 equiprobables."""
         return POCKETS[self._randbelow(len(POCKETS))]
+
+    def strike(self) -> dict[int, int]:
+        """Rayos de la tirada: `{casilla: multiplicador}`, en el orden en que caen.
+
+        Independiente del número que sale: se sortean aparte, sin repetir casilla.
+        """
+        if not self.lightning:
+            return {}
+        count = _pick(LIGHTNING_COUNTS, self._randbelow(100))
+        remaining = list(POCKETS)
+        lucky: dict[int, int] = {}
+        for _ in range(count):
+            pocket = remaining.pop(self._randbelow(len(remaining)))
+            lucky[pocket] = _pick(LIGHTNING_MULTIPLIERS, self._randbelow(100))
+        return lucky
 
 
 #: Máximo de apuestas distintas en una misma tirada. Con 10 líneas el
@@ -255,11 +357,13 @@ class RoundOutcome:
         wagers: Apuestas jugadas, en el orden en que se pusieron.
         returns: Lo devuelto por cada apuesta (apuesta incluida; 0 si pierde),
             en el mismo orden que `wagers`.
+        lucky: Rayos de la tirada, `{casilla: multiplicador}`.
     """
 
     pocket: int
     wagers: tuple[Wager, ...]
     returns: tuple[int, ...]
+    lucky: Mapping[int, int] = field(default_factory=dict)
 
     @property
     def stake(self) -> int:
@@ -283,11 +387,38 @@ class RoundOutcome:
 
     @property
     def max_payout(self) -> int:
-        """Pago "a uno" más alto entre las apuestas acertadas (0 si ninguna)."""
-        return max(
-            (w.bet.payout for w, r in zip(self.wagers, self.returns, strict=True) if r),
-            default=0,
-        )
+        """Pago "a uno" más alto entre las apuestas acertadas, rayos incluidos (0 si ninguna)."""
+        return max((w.bet.payout_for(self.pocket, self.lucky) for w in self.wagers), default=0)
+
+    @property
+    def lucky_hit(self) -> int:
+        """Multiplicador cobrado por un pleno con rayo; 0 si ninguno."""
+        if self.pocket not in self.lucky:
+            return 0
+        if any(w.bet.straight and w.bet.wins(self.pocket) for w in self.wagers):
+            return self.lucky[self.pocket]
+        return 0
+
+    @property
+    def lucky_covered(self) -> bool:
+        """Si algún pleno de la tirada llevaba rayo (haya salido o no)."""
+        return any(w.bet.straight and w.bet.numbers & self.lucky.keys() for w in self.wagers)
+
+    @property
+    def near_miss(self) -> int | None:
+        """Pleno perdido a `NEAR_MISS_DISTANCE` casillas o menos de la bola; el más cercano.
+
+        Es la casilla por la que la escena hace pasar la bola antes de caer.
+        """
+        lost = [
+            number
+            for w in self.wagers
+            if w.bet.straight and not w.bet.wins(self.pocket)
+            for number in w.bet.numbers
+        ]
+        close = [(wheel_distance(n, self.pocket), n) for n in lost]
+        close = [pair for pair in close if pair[0] <= NEAR_MISS_DISTANCE]
+        return min(close)[1] if close else None
 
 
 def add_wager(wagers: Sequence[Wager], bet: Bet, stake: int) -> tuple[Wager, ...]:
@@ -318,8 +449,9 @@ def play_round(wheel: Wheel, wagers: Sequence[Wager]) -> RoundOutcome:
     if not wagers:
         raise ValueError("No hay ninguna apuesta en la mesa.")
     pocket = wheel.spin()
-    returns = tuple(w.bet.total_return(w.stake, pocket) for w in wagers)
-    return RoundOutcome(pocket, tuple(wagers), returns)
+    lucky = wheel.strike()
+    returns = tuple(w.bet.total_return(w.stake, pocket, lucky) for w in wagers)
+    return RoundOutcome(pocket, tuple(wagers), returns, lucky)
 
 
 def play(wheel: Wheel, bet: Bet, stake: int) -> RoundOutcome:
@@ -339,3 +471,28 @@ def parse_bets(text: str) -> list[Bet]:
     if len(bets) > MAX_WAGERS:
         raise ValueError(f"Como mucho {MAX_WAGERS} apuestas distintas por tirada.")
     return bets
+
+
+#: Números calientes y fríos que enseña el marcador.
+HOT_COLD_COUNT = 3
+
+
+def hot_cold(
+    history: Sequence[int], count: int = HOT_COLD_COUNT
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """Números calientes y fríos de un historial (el más reciente primero).
+
+    Returns:
+        `(calientes, fríos)`. Calientes: `(casilla, veces)` de los que más han
+        salido, desempatando por el más reciente. Fríos: `(casilla, tiradas sin
+        salir)` de los que llevan más sin salir; uno que no ha salido nunca
+        cuenta todo el historial. Vacíos si no hay historial.
+    """
+    if not history:
+        return [], []
+    counts = Counter(history)
+    first_seen = {pocket: history.index(pocket) for pocket in counts}
+    hot = sorted(counts.items(), key=lambda item: (-item[1], first_seen[item[0]]))[:count]
+    gaps = [(pocket, first_seen.get(pocket, len(history))) for pocket in WHEEL_ORDER]
+    cold = sorted(gaps, key=lambda item: -item[1])[:count]
+    return hot, cold

@@ -460,11 +460,19 @@ def _jugar_ruleta(j: Jugador) -> StatDelta:
             bet = roulette.OUTSIDE_BETS[rng.choice(list(roulette.OUTSIDE_BETS))]
         if all(w.bet != bet for w in bets):
             bets.append(roulette.Wager(bet, APUESTA))
+    # Uno de cada diez plenos sale de los botones 🔥 Caliente y ❄️ Frío.
+    hunches = {
+        w.bet.key: rng.choice(("hot", "cold"))
+        for w in bets
+        if w.bet.straight and rng.random() < 0.1
+    }
     outcome = roulette.play_round(wheel, bets)
     streak = j.extra.get("streak", 0) + 1 if outcome.won else 0
     previous = j.extra.get("prev")
     j.extra.update(streak=streak, prev=outcome.pocket)
-    delta = roulette_stats(outcome, table_streak=streak, previous_pocket=previous)  # type: ignore[arg-type]
+    delta = roulette_stats(  # type: ignore[arg-type]
+        outcome, table_streak=streak, previous_pocket=previous, hunches=hunches
+    )
     return _con_casino(delta, stake=outcome.stake, net=outcome.net)
 
 

@@ -21,6 +21,7 @@ from bot.services.roulette import (
     label,
     parse_bet,
     play,
+    straight_return,
 )
 
 
@@ -51,12 +52,122 @@ def test_en_la_rueda_se_alternan_rojo_y_negro_salvo_en_los_ceros() -> None:
 
 @pytest.mark.parametrize("bet", list(all_bets()), ids=lambda bet: bet.key)
 def test_la_casa_gana_el_5_26_por_ciento_en_toda_apuesta_salvo_la_de_cinco(bet) -> None:
+    if len(bet.numbers) == 1:
+        pytest.skip("El pleno se mide con los rayos: test_el_pleno_con_rayos_no_regala_dinero.")
     expected = Fraction(3, 38) if len(bet.numbers) == 5 else Fraction(2, 38)
     assert house_edge(bet) == expected
 
 
+def test_el_pleno_con_rayos_no_regala_dinero() -> None:
+    # Los rayos reparten lo que se quita al pleno sin rayo (29 a 1 en vez de 35):
+    # la casa gana algo más que en el resto de apuestas, pero poco más.
+    assert Fraction(94, 100) < straight_return() <= Fraction(36, 38)
+
+
+def test_el_pleno_con_rayos_devuelve_lo_que_dice_la_formula() -> None:
+    # Simulación exacta: todas las combinaciones de la rueda con rayos, pesadas.
+    import itertools
+
+    from bot.services.roulette import LIGHTNING_COUNTS, LIGHTNING_MULTIPLIERS, Wager, play_round
+
+    rolls = iter(())
+
+    def randbelow(n: int) -> int:
+        return next(rolls)
+
+    bet = parse_bet("17")
+    total = Fraction(0)
+    # Un rayo (peso 50) sobre el 17 con cada multiplicador, y uno sobre otro número.
+    for mult_roll, (mult, weight) in zip(
+        itertools.accumulate([0] + [w for _, w in LIGHTNING_MULTIPLIERS[:-1]]),
+        LIGHTNING_MULTIPLIERS,
+        strict=True,
+    ):
+        rolls = iter([POCKETS.index(17), 0, POCKETS.index(17), mult_roll])
+        outcome = play_round(Wheel(randbelow), [Wager(bet, 1)])
+        assert outcome.lucky == {17: mult}
+        assert outcome.total_return == mult + 1
+        assert outcome.lucky_hit == mult
+        total += weight
+    assert total == 100
+    assert LIGHTNING_COUNTS[0][0] == 1
+
+
+def test_los_rayos_caen_en_casillas_distintas() -> None:
+    wheel = Wheel()
+    for _ in range(500):
+        lucky = wheel.strike()
+        assert 1 <= len(lucky) <= 5
+        assert set(lucky) <= set(POCKETS)
+        assert all(50 <= m <= 500 for m in lucky.values())
+
+
+def test_un_rayo_solo_paga_al_pleno() -> None:
+    from bot.services.roulette import Wager, play_round
+
+    class Rayo(Wheel):
+        def strike(self) -> dict[int, int]:
+            return {1: 200}
+
+    outcome = play_round(
+        Rayo(lambda n: 1), [Wager(OUTSIDE_BETS["red"], 10), Wager(parse_bet("1"), 10)]
+    )
+
+    assert outcome.returns == (20, 2010)
+    assert outcome.max_payout == 200
+    assert outcome.lucky_hit == 200
+    assert outcome.lucky_covered
+
+
+def test_un_rayo_en_tu_numero_que_no_sale() -> None:
+    from bot.services.roulette import Wager, play_round
+
+    class Rayo(Wheel):
+        def strike(self) -> dict[int, int]:
+            return {17: 500}
+
+    outcome = play_round(Rayo(lambda n: 1), [Wager(parse_bet("17"), 10)])
+
+    assert outcome.lucky_hit == 0
+    assert outcome.lucky_covered
+    assert outcome.net == -10
+
+
+def test_casi_es_un_pleno_perdido_a_dos_casillas_o_menos() -> None:
+    from bot.services.roulette import Wager, play_round, wheel_distance
+
+    # En la rueda: ... 3, 24, 36, 13, 1, 00, 27 ...
+    assert wheel_distance(13, 1) == 1
+    assert wheel_distance(36, 1) == 2
+    assert wheel_distance(0, 2) == 1  # la rueda da la vuelta
+
+    def outcome(*numbers: str):
+        return play_round(
+            Wheel(lambda n: POCKETS.index(1), lightning=False),
+            [Wager(parse_bet(n), 10) for n in numbers],
+        )
+
+    assert outcome("36", "13").near_miss == 13
+    assert outcome("36").near_miss == 36
+    assert outcome("24").near_miss is None
+    assert outcome("1", "17").near_miss is None
+    assert outcome("13-14").near_miss is None  # solo cuentan los plenos
+
+
+def test_calientes_y_frios_del_historial() -> None:
+    from bot.services.roulette import hot_cold
+
+    assert hot_cold([]) == ([], [])
+    hot, cold = hot_cold([17, 5, 17, 5, 17, 3, 8])
+
+    assert hot == [(17, 3), (5, 2), (3, 1)]
+    # Los que no han salido nunca llevan todo el historial sin salir.
+    assert all(gap == 7 for _, gap in cold)
+    assert not {pocket for pocket, _ in cold} & {17, 5, 3, 8}
+
+
 @pytest.mark.parametrize(
-    ("size", "payout"), [(1, 35), (2, 17), (3, 11), (4, 8), (5, 6), (6, 5), (12, 2), (18, 1)]
+    ("size", "payout"), [(1, 29), (2, 17), (3, 11), (4, 8), (5, 6), (6, 5), (12, 2), (18, 1)]
 )
 def test_pagos_del_tapete_americano(size: int, payout: int) -> None:
     bets = [bet for bet in all_bets() if len(bet.numbers) == size]
@@ -119,14 +230,14 @@ def test_el_id_de_un_boton_cabe_en_el_limite_de_discord() -> None:
     assert longest + len("ruleta:bet:") <= 100
 
 
-def test_play_paga_pleno_35_a_1() -> None:
-    wheel = Wheel(lambda n: 17)
+def test_play_paga_pleno_sin_rayo_29_a_1() -> None:
+    wheel = Wheel(lambda n: 17, lightning=False)
 
     outcome = play(wheel, parse_bet("17"), 100)
 
     assert outcome.pocket == 17
-    assert outcome.total_return == 3600
-    assert outcome.net == 3500
+    assert outcome.total_return == 3000
+    assert outcome.net == 2900
     assert outcome.won
 
 
@@ -173,7 +284,7 @@ def test_play_round_paga_cada_apuesta_con_el_mismo_numero() -> None:
     from bot.services.roulette import Wager, play_round
 
     outcome = play_round(
-        Wheel(lambda n: 1),
+        Wheel(lambda n: 1, lightning=False),
         [
             Wager(OUTSIDE_BETS["red"], 100),
             Wager(parse_bet("1"), 50),
@@ -181,10 +292,10 @@ def test_play_round_paga_cada_apuesta_con_el_mismo_numero() -> None:
         ],
     )
 
-    assert outcome.returns == (200, 1800, 0)
+    assert outcome.returns == (200, 1500, 0)
     assert outcome.stake == 180
-    assert outcome.net == 1820
-    assert outcome.max_payout == 35
+    assert outcome.net == 1520
+    assert outcome.max_payout == 29
     assert outcome.won
 
 
