@@ -263,7 +263,9 @@ async def test_no_se_puede_fichar_en_dos_paneles_a_la_vez(tmp_path: Path) -> Non
     blocked = make_interaction()
     await second._clock_in(blocked)
     assert second.shift is None
-    blocked.response.send_message.assert_awaited_once()
+    blocked.response.defer.assert_awaited_once()
+    blocked.followup.send.assert_awaited_once()
+    assert "otro panel" in blocked.followup.send.await_args.args[0]
     await first._finish(None)
     assert not cog.working
 
