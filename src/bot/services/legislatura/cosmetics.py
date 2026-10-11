@@ -68,13 +68,22 @@ class Skin:
 
 SKINS: tuple[Skin, ...] = (
     Skin(
+        "tapete_casino",
+        SkinSlot.TAPETE,
+        "Tapete del Casino del Estado",
+        "🟩",
+        Bloc.ESPANA,
+        felt=((42, 138, 87), (6, 40, 26)),
+        default=True,
+    ),
+    Skin(
         "tapete_congreso",
         SkinSlot.TAPETE,
         "Escaño del Congreso",
         "🟥",
         Bloc.ESPANA,
-        felt=((120, 22, 30), (80, 14, 20)),
-        default=True,
+        price=120_000,
+        felt=((150, 30, 40), (40, 6, 10)),
     ),
     Skin("dorso_clasico", SkinSlot.DORSO, "Dorso de Fournier", "🂠", Bloc.ESPANA, default=True),
     Skin(

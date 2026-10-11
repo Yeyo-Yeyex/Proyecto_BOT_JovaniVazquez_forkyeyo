@@ -1,0 +1,457 @@
+<!doctype html>
+<!--
+Escena de Legislatura (prototipo), dibujada con canvas. La pinta Node con Skia
+(assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana.
+
+Dos vistas con el mismo alto, como las dos mitades de la pantalla de Balatro
+pero con el estilo de los juegos del bot (tapete verde, Luckiest dorada,
+paneles oscuros con filo dorado):
+
+- "panel": la sesión, el objetivo, el jefe, los votos, la combinación con sus
+  votos × mult, jugadas, descartes, fondos, periodo y prima.
+- "mesa": asesores y consumibles arriba, la jugada en el centro, la mano y el
+  mazo abajo.
+
+No decide nada: Python le pasa cada estado (bot/services/legislatura/view.py).
+Funciones que llama Python:
+
+- setup(meta)                 tamaños y aspectos (tapete).
+- renderFrames(states, first) dibuja cada estado y lo devuelve entero.
+
+Se dibuja al doble (S = 2) y se reduce al copiar. Sin emojis: el Docker no
+trae su fuente; palos, banderas e iconos son trazados de canvas. Los palos se
+distinguen por la forma, no solo por el color.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+let META = { h: 450, panel_w: 240, table_w: 800, felt: null };
+
+const GOLD = "#f0b429", GOLD_LIGHT = "#fff1b8", INK = "#06180f";
+const LABEL = "rgba(220,240,228,0.72)";
+const BLUE = ["#4aa3ff", "#1f6fd1"], RED = ["#ff6b5a", "#d23a2a"];
+const BLOC = {
+  espana: "#c8102e", ue: "#1f4fbf", eeuu: "#3c3b6e", china: "#de2910", israel: "#1d5fd1", neutro: "#6b7a72",
+};
+const SUIT = { oros: "#e2a31b", copas: "#c8352b", espadas: "#2f6fb5", bastos: "#3f8a3a" };
+const RANK = { 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 10: "10", 11: "11", 12: "12" };
+const FACE = { 10: "SOTA", 11: "CABALLO", 12: "REY" };
+
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+const fmtMult = (m) => (Math.round(m * 10) / 10).toString().replace(".", ",");
+
+// -- Fondo, paneles y textos con el estilo de la casa ---------------------------------------
+
+function felt(g, w, h, cx, cy) {
+  // Tapete de serie: el verde de los demás juegos. Un tapete comprado cambia centro y borde.
+  const [a, b] = META.felt || [[42, 138, 87], [6, 40, 26]];
+  const mid = a.map((v, i) => Math.round(v * 0.45 + b[i] * 0.55));
+  const grad = g.createRadialGradient(cx, cy, 30, cx, cy, Math.max(w, h) * 0.85);
+  grad.addColorStop(0, `rgb(${a})`); grad.addColorStop(0.55, `rgb(${mid})`); grad.addColorStop(1, `rgb(${b})`);
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+}
+
+function box(g, x, y, w, h, opts = {}) {
+  g.save(); roundRect(g, x, y, w, h, opts.r ?? 12);
+  if (opts.glow) { g.shadowColor = opts.glow; g.shadowBlur = 14; }
+  g.fillStyle = opts.fill || "rgba(4,20,13,0.55)"; g.fill(); g.shadowBlur = 0;
+  g.lineWidth = opts.lw || 1; g.strokeStyle = opts.stroke || "rgba(255,214,110,0.18)"; g.stroke();
+  g.restore();
+}
+
+function title(g, text, x, y, size, align = "left") {
+  g.save(); g.font = `${size}px Luckiest`; g.textAlign = align; g.textBaseline = "alphabetic";
+  g.lineJoin = "round"; g.lineWidth = Math.max(4, size * 0.2); g.strokeStyle = INK; g.strokeText(text, x, y);
+  const grad = g.createLinearGradient(0, y - size, 0, y);
+  grad.addColorStop(0, GOLD_LIGHT); grad.addColorStop(1, GOLD);
+  g.fillStyle = grad; g.fillText(text, x, y); g.restore();
+}
+
+function label(g, text, x, y, align = "left", size = 9, color = LABEL) {
+  g.save(); g.font = `700 ${size}px Montserrat`; g.fillStyle = color; g.textAlign = align;
+  g.textBaseline = "middle"; g.fillText(text, x, y); g.restore();
+}
+
+function value(g, text, x, y, size, color = GOLD_LIGHT, align = "center") {
+  g.save(); g.font = `${size}px Luckiest`; g.textAlign = align; g.textBaseline = "middle";
+  g.lineJoin = "round"; g.lineWidth = 4; g.strokeStyle = "rgba(0,0,0,0.45)"; g.strokeText(text, x, y + 1);
+  g.fillStyle = color; g.fillText(text, x, y + 1); g.restore();
+}
+
+function wrap(g, text, x, y, maxW, lineH, align = "center") {
+  const words = text.split(" "); let line = ""; const lines = [];
+  for (const w of words) {
+    const t = line ? line + " " + w : w;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  g.textAlign = align;
+  lines.forEach((l, i) => g.fillText(l, x, y + i * lineH));
+  return lines.length;
+}
+
+// Ficha de votos (azul) o mult (rojo).
+function chip(g, x, y, w, h, text, colors, size = 22) {
+  g.save(); roundRect(g, x, y, w, h, 8);
+  const grad = g.createLinearGradient(0, y, 0, y + h);
+  grad.addColorStop(0, colors[0]); grad.addColorStop(1, colors[1]);
+  g.shadowColor = "rgba(0,0,0,0.45)"; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.fillStyle = grad; g.fill(); g.restore();
+  value(g, text, x + w / 2, y + h / 2, size, "#ffffff");
+}
+
+// -- Palos (formas distintas, no solo colores) -----------------------------------------------
+
+function suitIcon(g, suit, x, y, s) {
+  g.save(); g.translate(x, y);
+  if (suit === "oros") {
+    let grad = g.createRadialGradient(-s * 0.2, -s * 0.2, s * 0.1, 0, 0, s);
+    grad.addColorStop(0, "#fff0b0"); grad.addColorStop(0.6, "#e6ac2a"); grad.addColorStop(1, "#9a6a10");
+    g.fillStyle = grad; g.beginPath(); g.arc(0, 0, s, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "#7a520a"; g.lineWidth = s * 0.12; g.beginPath(); g.arc(0, 0, s * 0.62, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = "#7a520a"; g.beginPath(); g.arc(0, 0, s * 0.18, 0, Math.PI * 2); g.fill();
+  } else if (suit === "copas") {
+    g.fillStyle = SUIT.copas;
+    g.beginPath(); g.moveTo(-s * 0.85, -s * 0.8); g.lineTo(s * 0.85, -s * 0.8);
+    g.quadraticCurveTo(s * 0.8, s * 0.15, s * 0.12, s * 0.25); g.lineTo(s * 0.12, s * 0.6);
+    g.lineTo(s * 0.55, s * 0.8); g.lineTo(s * 0.55, s * 0.95); g.lineTo(-s * 0.55, s * 0.95); g.lineTo(-s * 0.55, s * 0.8);
+    g.lineTo(-s * 0.12, s * 0.6); g.lineTo(-s * 0.12, s * 0.25); g.quadraticCurveTo(-s * 0.8, s * 0.15, -s * 0.85, -s * 0.8);
+    g.fill(); g.fillStyle = "#f2c94c"; g.fillRect(-s * 0.85, -s * 0.8, s * 1.7, s * 0.18);
+  } else if (suit === "espadas") {
+    g.rotate(-Math.PI / 4);
+    g.fillStyle = "#9fb7cf"; g.beginPath(); g.moveTo(0, -s * 1.15); g.lineTo(s * 0.18, -s * 0.9);
+    g.lineTo(s * 0.14, s * 0.35); g.lineTo(-s * 0.14, s * 0.35); g.lineTo(-s * 0.18, -s * 0.9); g.closePath(); g.fill();
+    g.fillStyle = SUIT.espadas; g.fillRect(-s * 0.5, s * 0.35, s, s * 0.16); g.fillRect(-s * 0.09, s * 0.5, s * 0.18, s * 0.5);
+    g.beginPath(); g.arc(0, s * 1.05, s * 0.14, 0, Math.PI * 2); g.fill();
+  } else {
+    g.rotate(Math.PI / 5);
+    const grad = g.createLinearGradient(-s * 0.3, 0, s * 0.3, 0);
+    grad.addColorStop(0, "#2f6b2b"); grad.addColorStop(1, "#5aa64f");
+    g.fillStyle = grad; g.beginPath(); g.moveTo(-s * 0.16, s * 1.05); g.lineTo(s * 0.16, s * 1.05);
+    g.quadraticCurveTo(s * 0.5, -s * 0.5, s * 0.3, -s * 1.05); g.quadraticCurveTo(0, -s * 1.2, -s * 0.3, -s * 1.05);
+    g.quadraticCurveTo(-s * 0.5, -s * 0.5, -s * 0.16, s * 1.05); g.fill();
+    g.fillStyle = "#2a5a24"; [[-0.2, -0.5], [0.18, -0.1], [-0.1, 0.35]].forEach(([a, b]) => {
+      g.beginPath(); g.arc(s * a, s * b, s * 0.09, 0, Math.PI * 2); g.fill();
+    });
+  }
+  g.restore();
+}
+
+// -- Cartas ---------------------------------------------------------------------------------
+
+const CW = 76, CH = 108;
+// La «pinta» de la baraja española: cortes en el marco según el palo (1 oros … 4 bastos).
+const PINTA = { oros: 1, copas: 2, espadas: 3, bastos: 4 };
+const ENH = {
+  enchufado: ["ENCHUFADO", "#4aa3ff"], mitin: ["MITIN", "#ff6b5a"], transfuga: ["TRÁNSFUGA", "#b36bff"],
+  promesa: ["PROMESA", "#7fd6ff"], funcionario: ["FUNCIONARIO", "#9aa7b4"], ladrillo: ["LADRILLO", "#a0703c"],
+  lingote: ["LINGOTE", GOLD], loteria: ["LOTERÍA", "#3ccf72"],
+};
+
+function card(g, c, x, y, opts = {}) {
+  g.save(); g.translate(x, y);
+  if (opts.rot) g.rotate(opts.rot);
+  roundRect(g, -CW / 2, -CH / 2, CW, CH, 8);
+  g.shadowColor = opts.glow || "rgba(0,0,0,0.5)"; g.shadowBlur = opts.glow ? 18 : 8; g.shadowOffsetY = opts.glow ? 0 : 3;
+  g.fillStyle = c.enh === "ladrillo" ? "#b5835a" : "#fbfaf5"; g.fill(); g.shadowBlur = 0; g.shadowOffsetY = 0;
+  if (opts.glow) { g.lineWidth = 2.5; g.strokeStyle = opts.glow; g.stroke(); }
+  if (c.enh === "ladrillo") {
+    g.strokeStyle = "rgba(80,40,10,0.5)"; g.lineWidth = 1;
+    for (let r = 0; r < 7; r++) for (let k = 0; k < 3; k++) g.strokeRect(-CW / 2 + 4 + k * 23 + (r % 2) * 11, -CH / 2 + 6 + r * 14, 22, 13);
+    g.restore(); return;
+  }
+  // Marco con la pinta.
+  const col = SUIT[c.suit];
+  g.strokeStyle = col; g.lineWidth = 1.6; const ix = -CW / 2 + 5, iy = -CH / 2 + 5, iw = CW - 10, ih = CH - 10;
+  g.strokeRect(ix, iy, iw, ih);
+  g.strokeStyle = "#fbfaf5"; g.lineWidth = 3.2;
+  for (let k = 0; k < PINTA[c.suit]; k++) {
+    const gx = ix + 16 + k * 7;
+    g.beginPath(); g.moveTo(gx, iy); g.lineTo(gx + 3, iy); g.stroke();
+    g.beginPath(); g.moveTo(gx, iy + ih); g.lineTo(gx + 3, iy + ih); g.stroke();
+  }
+  // Número en las esquinas.
+  g.font = "18px Luckiest"; g.fillStyle = col; g.textAlign = "left"; g.textBaseline = "top";
+  g.fillText(RANK[c.rank], -CW / 2 + 8, -CH / 2 + 8);
+  g.save(); g.rotate(Math.PI); g.fillText(RANK[c.rank], -CW / 2 + 8, -CH / 2 + 8); g.restore();
+  if (FACE[c.rank]) {
+    g.fillStyle = "rgba(0,0,0,0.05)"; g.fillRect(-CW / 2 + 10, -CH / 2 + 28, CW - 20, CH - 56);
+    suitIcon(g, c.suit, 0, -4, 17);
+    g.font = "700 8px Montserrat"; g.fillStyle = "#3b3b3b"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(FACE[c.rank], 0, 24);
+  } else {
+    suitIcon(g, c.suit, 0, 2, c.rank === 1 ? 22 : 16);
+  }
+  if (c.enh && ENH[c.enh]) {
+    const [t, k] = ENH[c.enh];
+    g.fillStyle = k; roundRect(g, -CW / 2 + 6, CH / 2 - 20, CW - 12, 13, 4); g.fill();
+    g.font = "700 7px Montserrat"; g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(t, 0, CH / 2 - 13);
+  }
+  if (c.seal) {
+    const sc = { boe: GOLD, voto_delegado: "#e64646", bruselas: "#2f6fd1", partido: "#8e44ad" }[c.seal];
+    g.fillStyle = sc; g.beginPath(); g.arc(CW / 2 - 12, -CH / 2 + 30, 6, 0, Math.PI * 2); g.fill();
+  }
+  if (c.off) { g.fillStyle = "rgba(20,20,20,0.55)"; roundRect(g, -CW / 2, -CH / 2, CW, CH, 8); g.fill(); }
+  g.restore();
+}
+
+function back(g, x, y) {
+  g.save(); g.translate(x, y); roundRect(g, -CW / 2, -CH / 2, CW, CH, 8);
+  g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  const grad = g.createLinearGradient(0, -CH / 2, 0, CH / 2);
+  grad.addColorStop(0, "#9b1b1b"); grad.addColorStop(1, "#5c0d0d"); g.fillStyle = grad; g.fill();
+  g.shadowBlur = 0; g.shadowOffsetY = 0;
+  g.save(); roundRect(g, -CW / 2 + 5, -CH / 2 + 5, CW - 10, CH - 10, 5); g.clip();
+  g.strokeStyle = "rgba(255,214,110,0.22)"; g.lineWidth = 1;
+  for (let k = -CH - CW; k < CH; k += 9) { g.beginPath(); g.moveTo(-CW / 2, k); g.lineTo(CW / 2, k + CW); g.stroke(); }
+  g.restore();
+  g.strokeStyle = GOLD; g.lineWidth = 1.5; roundRect(g, -CW / 2 + 5, -CH / 2 + 5, CW - 10, CH - 10, 5); g.stroke();
+  g.fillStyle = "#7a1010"; g.beginPath(); g.arc(0, 0, 17, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = GOLD; g.lineWidth = 1.5; g.stroke();
+  value(g, "L", 0, 1, 18, GOLD_LIGHT);
+  g.restore();
+}
+
+// -- Banderas de los bloques ------------------------------------------------------------------
+
+function flag(g, bloc, x, y, w, h) {
+  g.save(); roundRect(g, x, y, w, h, 2); g.clip();
+  if (bloc === "espana") {
+    g.fillStyle = "#c60b1e"; g.fillRect(x, y, w, h); g.fillStyle = "#ffc400"; g.fillRect(x, y + h / 4, w, h / 2);
+  } else if (bloc === "ue") {
+    g.fillStyle = "#003399"; g.fillRect(x, y, w, h); g.fillStyle = "#ffcc00";
+    for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6; g.beginPath(); g.arc(x + w / 2 + Math.cos(a) * h * 0.32, y + h / 2 + Math.sin(a) * h * 0.32, h * 0.06, 0, Math.PI * 2); g.fill();
+    }
+  } else if (bloc === "eeuu") {
+    for (let k = 0; k < 7; k++) { g.fillStyle = k % 2 ? "#fff" : "#b22234"; g.fillRect(x, y + k * h / 7, w, h / 7 + 0.5); }
+    g.fillStyle = "#3c3b6e"; g.fillRect(x, y, w * 0.42, h * 4 / 7);
+  } else if (bloc === "china") {
+    g.fillStyle = "#de2910"; g.fillRect(x, y, w, h); g.fillStyle = "#ffde00"; star(g, x + w * 0.22, y + h * 0.32, h * 0.2);
+  } else if (bloc === "israel") {
+    g.fillStyle = "#fff"; g.fillRect(x, y, w, h); g.fillStyle = "#0038b8";
+    g.fillRect(x, y + h * 0.12, w, h * 0.13); g.fillRect(x, y + h * 0.75, w, h * 0.13);
+    g.strokeStyle = "#0038b8"; g.lineWidth = 1;
+    [0, Math.PI].forEach((r) => { g.beginPath(); for (let k = 0; k < 3; k++) { const a = r - Math.PI / 2 + k * 2 * Math.PI / 3; const px = x + w / 2 + Math.cos(a) * h * 0.2, py = y + h / 2 + Math.sin(a) * h * 0.2; k ? g.lineTo(px, py) : g.moveTo(px, py); } g.closePath(); g.stroke(); });
+  } else {
+    // Neutro / ONU: azul claro con un globo esquemático.
+    g.fillStyle = "#5b92e5"; g.fillRect(x, y, w, h); g.strokeStyle = "#fff"; g.lineWidth = 0.9;
+    g.beginPath(); g.arc(x + w / 2, y + h / 2, h * 0.3, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(x + w / 2 - h * 0.3, y + h / 2); g.lineTo(x + w / 2 + h * 0.3, y + h / 2); g.stroke();
+  }
+  g.restore();
+}
+function star(g, x, y, r) {
+  g.beginPath();
+  for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  g.closePath(); g.fill();
+}
+
+// -- Asesores ---------------------------------------------------------------------------------
+
+const AW = 80, AH = 104;
+function advisor(g, a, x, y, opts = {}) {
+  g.save(); g.translate(x, y);
+  roundRect(g, -AW / 2, -AH / 2, AW, AH, 9);
+  g.shadowColor = opts.glow || "rgba(0,0,0,0.5)"; g.shadowBlur = opts.glow ? 18 : 8; g.shadowOffsetY = opts.glow ? 0 : 3;
+  const grad = g.createLinearGradient(0, -AH / 2, 0, AH / 2);
+  grad.addColorStop(0, "#fdf6e3"); grad.addColorStop(1, "#ead9b0"); g.fillStyle = grad; g.fill();
+  g.shadowBlur = 0; g.shadowOffsetY = 0;
+  g.lineWidth = opts.glow ? 2.5 : 2; g.strokeStyle = opts.glow || BLOC[a.bloc]; g.stroke();
+  // Retrato provisional: medallón con la inicial (el arte de cada asesor va aparte).
+  flag(g, a.bloc, -AW / 2 + 7, -AH / 2 + 7, 18, 12);
+  const m = g.createRadialGradient(0, -12, 4, 0, -10, 26);
+  m.addColorStop(0, "#ffffff"); m.addColorStop(1, BLOC[a.bloc]);
+  g.fillStyle = m; g.beginPath(); g.arc(0, -12, 22, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "rgba(0,0,0,0.25)"; g.lineWidth = 1; g.stroke();
+  value(g, a.name.replace(/^(el|la|los|las|de) /i, "").charAt(0).toUpperCase(), 0, -11, 24, "#ffffff");
+  g.font = "700 8px Montserrat"; g.fillStyle = "#2a2015"; g.textBaseline = "middle";
+  wrap(g, a.name.toUpperCase(), 0, 24, AW - 10, 10);
+  if (a.ed) {
+    const [t, k] = { fondos_ue: ["FONDOS UE", "#2f6fd1"], viral: ["VIRAL", "#e64646"], patrocinado: ["PATROCINADO", "#8e44ad"], offshore: ["OFFSHORE", "#222"] }[a.ed];
+    g.fillStyle = k; roundRect(g, -AW / 2 + 8, AH / 2 - 15, AW - 16, 11, 4); g.fill();
+    g.font = "700 6.5px Montserrat"; g.fillStyle = "#fff"; g.textAlign = "center"; g.fillText(t, 0, AH / 2 - 9.5);
+  }
+  g.restore();
+}
+
+// -- Vista: panel ----------------------------------------------------------------------------
+
+function drawPanel(g, st) {
+  const W = META.panel_w, H = META.h;
+  felt(g, W, H, W * 0.4, H * 0.3);
+  g.fillStyle = "rgba(0,0,0,0.18)"; g.fillRect(W - 3, 0, 3, H);
+  const x = 10, w = W - 20;
+  // Sesión y objetivo.
+  const boss = st.boss;
+  box(g, x, 10, w, boss ? 136 : 104, { stroke: boss ? "rgba(230,70,70,0.6)" : undefined, lw: boss ? 1.5 : 1 });
+  title(g, st.session.toUpperCase(), W / 2, 36, st.session.length > 18 ? 15 : 18, "center");
+  let y = 50;
+  if (boss) {
+    flag(g, boss.bloc, x + 12, y - 5, 16, 11);
+    label(g, boss.name.toUpperCase(), x + 34, y + 1, "left", 10, "#ffb3a8");
+    g.save(); g.font = "700 8px Montserrat"; g.fillStyle = LABEL; g.textBaseline = "middle";
+    wrap(g, boss.text, W / 2, y + 16, w - 20, 10); g.restore();
+    y += 34;
+  }
+  label(g, "HACEN FALTA", W / 2, y + 12, "center");
+  value(g, fmt(st.target), W / 2, y + 34, 28, GOLD_LIGHT);
+  label(g, "VOTOS", W / 2, y + 52, "center", 8);
+  y = boss ? 154 : 122;
+  // Votos de la sesión.
+  box(g, x, y, w, 46);
+  label(g, "VOTOS DE LA SESIÓN", x + 12, y + 14);
+  value(g, fmt(st.score), x + w - 12, y + 30, 22, "#ffffff", "right");
+  const pct = Math.min(1, st.score / st.target);
+  g.fillStyle = "rgba(255,255,255,0.08)"; roundRect(g, x + 12, y + 37, w - 24, 4, 2); g.fill();
+  g.fillStyle = GOLD; roundRect(g, x + 12, y + 37, Math.max(4, (w - 24) * pct), 4, 2); g.fill();
+  y += 54;
+  // Combinación.
+  box(g, x, y, w, 70);
+  if (st.hand) {
+    label(g, st.hand.name.toUpperCase(), x + 12, y + 14, "left", 10, "#ffffff");
+    label(g, `NIV. ${st.hand.level}`, x + w - 12, y + 14, "right", 9, GOLD);
+  } else {
+    label(g, "ELIGE TU JUGADA", x + 12, y + 14);
+  }
+  const cw = (w - 44) / 2;
+  chip(g, x + 12, y + 26, cw, 34, st.hand ? fmt(st.hand.votes) : "0", BLUE);
+  value(g, "×", x + w / 2, y + 43, 20, "#ffffff");
+  chip(g, x + w - 12 - cw, y + 26, cw, 34, st.hand ? fmtMult(st.hand.mult) : "0", RED);
+  y += 76;
+  // Jugadas, descartes, fondos, periodo y prima.
+  const half = (w - 8) / 2;
+  box(g, x, y, half, 48); label(g, "JUGADAS", x + half / 2, y + 13, "center");
+  value(g, String(st.hands), x + half / 2, y + 32, 22, "#7cc0ff");
+  box(g, x + half + 8, y, half, 48); label(g, "DESCARTES", x + half + 8 + half / 2, y + 13, "center");
+  value(g, String(st.discards), x + half + 8 + half / 2, y + 32, 22, "#ff9a8a");
+  y += 54;
+  box(g, x, y, w, 40, { stroke: "rgba(255,214,110,0.45)" });
+  label(g, "FONDOS", x + 12, y + 20);
+  value(g, `${st.fondos}`, x + w - 12, y + 21, 24, GOLD, "right");
+  y += 48;
+  box(g, x, y, half, 48); label(g, "PERIODO", x + half / 2, y + 13, "center");
+  value(g, `${st.period}/${st.periods}`, x + half / 2, y + 32, 20, "#ffffff");
+  box(g, x + half + 8, y, half, 48); label(g, "PRIMA", x + half + 8 + half / 2, y + 13, "center");
+  g.save(); g.font = "700 9px Montserrat"; g.fillStyle = "#ffffff"; g.textBaseline = "middle";
+  wrap(g, st.stake.toUpperCase(), x + half + 8 + half / 2, y + 31, half - 10, 10); g.restore();
+}
+
+// -- Vista: mesa ------------------------------------------------------------------------------
+
+function drawMesa(g, st) {
+  const W = META.table_w, H = META.h;
+  felt(g, W, H, W * 0.45, H * 0.55);
+  g.save(); g.strokeStyle = "rgba(255,214,110,0.14)"; g.lineWidth = 1.5;
+  g.beginPath(); g.ellipse(W * 0.44, H * 0.48, 260, 70, 0, 0, Math.PI * 2); g.stroke(); g.restore();
+  // Asesores.
+  const ax = 12, ay = 6, aw = 520, ah = 128;
+  box(g, ax, ay, aw, ah);
+  label(g, `ASESORES  ${st.advisors.length}/${st.max_advisors}`, ax + 12, ay + 12);
+  const focusAdv = st.stage === "step" ? st.advisor : null;
+  for (let k = 0; k < st.max_advisors; k++) {
+    const cx = ax + 58 + k * 101, cy = ay + 74;
+    const a = st.advisors[k];
+    if (a) advisor(g, a, cx, cy - (a.key === focusAdv ? 6 : 0), { glow: a.key === focusAdv ? GOLD : null });
+    else {
+      g.save(); g.setLineDash([4, 5]); g.strokeStyle = "rgba(255,214,110,0.22)"; roundRect(g, cx - AW / 2, cy - AH / 2, AW, AH, 9); g.stroke(); g.restore();
+    }
+  }
+  // Consumibles.
+  const kx = ax + aw + 10, kw = W - kx - 12;
+  box(g, kx, ay, kw, ah);
+  label(g, `CONSUMIBLES  ${st.consumables.length}/${st.max_consumables}`, kx + 12, ay + 12);
+  for (let k = 0; k < st.max_consumables; k++) {
+    const cx = kx + 62 + k * 118, cy = ay + 74, c = st.consumables[k];
+    if (!c) { g.save(); g.setLineDash([4, 5]); g.strokeStyle = "rgba(255,214,110,0.22)"; roundRect(g, cx - 50, cy - 48, 100, 96, 9); g.stroke(); g.restore(); continue; }
+    g.save(); roundRect(g, cx - 50, cy - 48, 100, 96, 9);
+    const grad = g.createLinearGradient(0, cy - 48, 0, cy + 48); grad.addColorStop(0, "#2a3d6b"); grad.addColorStop(1, "#16213f");
+    g.fillStyle = grad; g.fill(); g.strokeStyle = GOLD; g.lineWidth = 1.2; g.stroke();
+    g.font = "700 9px Montserrat"; g.fillStyle = "#fff"; g.textBaseline = "middle";
+    title(g, c.kind || "NORMATIVA", cx, cy - 20, 12, "center");
+    wrap(g, c.name.toUpperCase(), cx, cy + 8, 86, 11); g.restore();
+  }
+
+  // Centro: la jugada.
+  const scoring = new Set(st.scoring || []);
+  if (st.played && st.played.length) {
+    const n = st.played.length, step = 86, cx0 = W * 0.44 - (n - 1) * step / 2, cy = 234;
+    // El nombre de la jugada sale al empezar y con el total; mientras cuenta, mandan los carteles.
+    if (st.hand_name && st.stage !== "step") title(g, st.hand_name.toUpperCase(), W * 0.44, 160, 22, "center");
+    st.played.forEach((c, i) => {
+      const focus = st.stage === "step" && st.card === c.id;
+      const up = scoring.has(c.id) ? -10 : 0;
+      card(g, c, cx0 + i * step, cy + up - (focus ? 8 : 0), { glow: focus ? GOLD : null });
+      if (focus && st.text) popup(g, st.text, st.kind, cx0 + i * step, cy + up - 72);
+    });
+    if (st.stage === "step" && st.advisor && st.text) {
+      const k = st.advisors.findIndex((a) => a.key === st.advisor);
+      if (k >= 0) popup(g, st.text, st.kind, ax + 58 + k * 101, ay + 138);
+    }
+    // Ficha que va sumando.
+    const bx = W * 0.44 - 110, by = 290;
+    chip(g, bx, by, 96, 30, fmt(st.votes), BLUE, 20);
+    value(g, "×", W * 0.44, by + 15, 18, "#fff");
+    chip(g, bx + 124, by, 96, 30, fmtMult(st.mult), RED, 20);
+    if (st.stage === "total") {
+      value(g, "=", W * 0.44 + 140, by + 15, 20, "#fff");
+      value(g, fmt(st.total), W * 0.44 + 160, by + 16, 26, GOLD_LIGHT, "left");
+    }
+  } else {
+    label(g, "MARCA DE 1 A 5 CARTAS Y JUEGA", W * 0.44, 225, "center", 10, "rgba(255,214,110,0.35)");
+  }
+
+  // Mano.
+  const hand = st.hand || [], n = hand.length;
+  const spread = Math.min(80, 600 / Math.max(n, 1)), hx0 = W * 0.44 - (n - 1) * spread / 2;
+  hand.forEach((c, i) => {
+    const t = n > 1 ? i / (n - 1) - 0.5 : 0;
+    const x = hx0 + i * spread, y = 380 + Math.abs(t) * 14 - (c.up ? 22 : 0);
+    card(g, c, x, y, { rot: t * 0.16, glow: c.up ? GOLD : null });
+  });
+  // Mazo.
+  for (let k = 3; k >= 0; k--) back(g, W - 60 - k * 1.5, 380 - k * 1.5);
+  label(g, `${st.deck}/${st.deck_total}`, W - 60, H - 10, "center", 9, "#ffffff");
+}
+
+function popup(g, text, kind, x, y) {
+  const colors = kind === "votos" ? BLUE : kind === "fondos" ? [GOLD_LIGHT, GOLD] : RED;
+  g.save(); g.font = "16px Luckiest"; const w = g.measureText(text).width + 18; g.restore();
+  chip(g, x - w / 2, y - 13, w, 26, text, colors, 16);
+}
+
+// -- Contrato con Python --------------------------------------------------------------------
+
+function paint(st) {
+  const w = st.view === "panel" ? META.panel_w : META.table_w;
+  const big = document.createElement("canvas"); big.width = w * S; big.height = META.h * S;
+  const g = big.getContext("2d"); g.scale(S, S);
+  if (st.view === "panel") drawPanel(g, st); else drawMesa(g, st);
+  const out = document.createElement("canvas"); out.width = w; out.height = META.h;
+  const o = out.getContext("2d"); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = "high";
+  o.drawImage(big, 0, 0, w, META.h);
+  return out;
+}
+
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => { if (document.fonts) { await document.fonts.load("20px Luckiest"); await document.fonts.load("700 10px Montserrat"); } };
+window.setup = (meta) => { META = { ...META, ...meta }; };
+window.renderFrames = (states, first = 0) => states.map((st) => ({ x: 0, y: 0, full: true, u: window.exportFrame(paint(st)) }));
+</script>
+</body>
+</html>

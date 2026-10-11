@@ -150,7 +150,10 @@ def table_state(run: Run, *, selected: Collection[int] = ()) -> dict[str, Any]:
             for s in run.advisors
         ],
         "max_advisors": run.max_advisors,
-        "consumables": [{"key": k, "name": ITEMS[k].name} for k in run.consumables],
+        "consumables": [
+            {"key": k, "name": ITEMS[k].name, "kind": ITEMS[k].category.value.upper()}
+            for k in run.consumables
+        ],
         "max_consumables": run.max_consumables,
         "hand": [
             {
