@@ -24,6 +24,8 @@ Capas, de abajo arriba (cada una solo importa las de debajo):
 - `market`: la tienda de dentro de la partida (no confundir con la `tienda` del bot).
 - `prizes`: entradas y premios en yapdollars por prima de riesgo.
 - `cosmetics`: tapetes, dorsos y aspectos que se compran en la `tienda` del bot.
+- `view`: qué se ve (panel y mesa) y la animación de cada jugada, en estados
+  que pinta la escena de canvas; aquí no se pinta nada.
 
 Nada de aquí toca la base de datos ni el dinero: el cog guarda el estado con
 `bot.repositories.legislatura` y cobra y paga con `EconomyService`. El detalle

@@ -112,6 +112,62 @@ por valor) para medir:
 3. El Falcon cuesta 50.000.000 Y$: son 500 victorias en la prima 8 sin prórroga. Decidir si es
    el techo inalcanzable a propósito o si hacen falta escalones intermedios (1-5 millones).
 
+## Cómo se ve
+
+El modelo es la pantalla de Balatro: panel de información a la izquierda, mesa a la derecha,
+fondo de remolinos tipo CRT, letra pixelada y cartas con mucho color. El aire, no el arte: las
+cartas son baraja española dibujada por nosotros y los asesores, retratos propios (nada de los
+comodines de Balatro).
+
+**Dos imágenes** (`services/legislatura/view.py`):
+
+| | Tamaño | Formato | Cuándo cambia |
+|---|---|---|---|
+| Panel | 240×450 | PNG | Al acabar cada jugada, descarte o compra |
+| Mesa | 800×450 | GIF al puntuar; PNG quieta el resto | Al jugar, descartar y cambiar de fase |
+
+Las dos tienen el mismo alto para que queden a la par una al lado de la otra.
+
+- **El GIF solo lleva la mesa.** Menos píxeles que cuantizar y comprimir, que es lo caro en el
+  NAS. El panel se cambia aparte: al editar el mensaje se conserva el adjunto de la mesa y se
+  sube solo el panel nuevo.
+- **El panel nuevo llega después del GIF.** Si se subiera a la vez, los votos nuevos
+  destriparían la cuenta mientras el GIF la está haciendo. El cog sube el GIF con el panel de
+  antes (`panel_state(run, round_score=antes)`) y, pasados `Timeline.seconds` más el margen
+  de siempre (`REVEAL_MARGIN_SECONDS`), cambia solo el panel.
+- **La cuenta va en la mesa.** Como el panel está quieto mientras se anima, la ficha de votos
+  × mult que crece y los carteles («+30 votos», «×1,5 mult») van en el GIF, encima de cada
+  carta o asesor que puntúa (`score_timeline`).
+- **GIF solo si es rápido.** `should_animate` decide antes de pintar, con lo que tarda de
+  media un fotograma en el bot (lo mide el pintor), si la animación cabe en
+  `ANIMATION_BUDGET_MS` (1,5 s). Si no cabe, PNG del final con la cuenta en texto, como el
+  blackjack. No se corta a medias, porque cortar un dibujo en Node obliga a reiniciar sus
+  procesos. Además, la animación tiene tope de fotogramas (`MAX_FRAMES`, 72): con una
+  cascada de combos, cada paso dura menos y, si hace falta, se agrupan pasos.
+- **Marcar cartas no repinta.** Solo cambian los botones, y contestar es instantáneo. Subir
+  una imagen por clic sería lento.
+
+**Una escena, dos vistas.** `assets/legislatura/escena.html`, solo canvas, con `setup(meta)` y
+`renderFrames(states)` como las demás. La pinta Node con Skia (`NodeScene`) y, si falla,
+Chromium (`BrowserScene`). Cada estado dice `view: "panel"` o `"mesa"`. Un solo pintor para
+las dos vistas: ~180 MB más en el `mem_limit` de 2 GB, no 360. Lo fijo se pinta una vez en
+`setup` y se cachea, como el tapete de la moneda: el fondo de remolinos, las 40 caras, los
+dorsos y los marcos de asesor. Cada fotograma solo pega recortes. Los palos se distinguen por
+la forma y no solo por el color, como en el blackjack. Sin emojis en la escena: el Docker no
+trae su fuente. Las banderas y los iconos se dibujan.
+
+**Plan B sin Node ni Chromium:** un PNG sencillo con Pillow (mano y totales), para que el juego
+no se quede sin imagen. No intenta imitar el aspecto.
+
+**Lo primero en la fase 2, antes que nada:** mandar a Discord dos PNG de prueba de esos
+tamaños (galería de componentes V2 y dos adjuntos sueltos) y mirar en el móvil cómo quedan.
+En la galería, dos imágenes salen lado a lado pero Discord puede recortarlas; en el móvil, el
+panel a la izquierda puede quedar muy pequeño. De eso depende si van en galería o una encima
+de otra.
+
+**Fuente:** una pixelada con licencia libre (por ejemplo Silkscreen o Pixelify Sans, OFL), con
+su licencia en `assets/legislatura/`, como las de los botes.
+
 ## Fase 2: el cog
 
 - **Comando:** `legislar` (8 letras, en español). Un panel: elegir modo (diaria, libre,
@@ -121,9 +177,7 @@ por valor) para medir:
   con `response.edit_message`; Jugar, Descartar y el mercado hacen `ack` antes de cargar,
   guardar o dibujar (CLAUDE.md, «Botones rápidos»).
 - **Un candado por jugador** y una acción en curso, como `pala`.
-- **Dibujo:** Pillow, como `cards_render.py` del blackjack (~10 ms por imagen): las 40 caras y
-  los dorsos se pintan una vez y se cachean, y cada estado solo pega recortes sobre el tapete
-  elegido. Sin Chromium ni Node: no suma memoria al `mem_limit` de 2 GB.
+- **Dibujo:** ver «Cómo se ve».
 - **Al cerrar** (perder, cobrar o abandonar): `pay_winnings`, `repository.finish`, desbloqueo
   de la siguiente prima y gobiernos, logros (`track`), `apuestas.record`, `renta.remind` y
   `renta.hint` con el `Moment` de la mascota.
