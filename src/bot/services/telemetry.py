@@ -41,7 +41,13 @@ from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from typing import TYPE_CHECKING, Any
 
-from bot.repositories import economy as economy_repository
+from bot.repositories.economy import (
+    HK_ACCOUNT_ID,
+    PORRA_ACCOUNT_ID,
+    SHOP_ACCOUNT_ID,
+    SLOTS_POT_ACCOUNT_ID,
+    STATE_ACCOUNT_ID,
+)
 from bot.services.levels import TIMEZONE
 
 if TYPE_CHECKING:
@@ -66,19 +72,13 @@ REPORT_VERSION = 1
 # Tipos cuyo nombre es un id de canal que se traduce a «#nombre» en el informe.
 CHANNEL_KINDS = frozenset({"message", "voice", "reaction"})
 
-# Nombres de las cuentas del sistema de la economía (user_id <= 0). Las
-# constantes se leen con getattr porque no todas las versiones del repositorio
-# de economía las tienen todas (las porras llegaron más tarde).
+# Nombres de las cuentas del sistema de la economía (user_id <= 0) en el informe.
 SYSTEM_ACCOUNTS: dict[int, str] = {
-    account_id: name
-    for constant, name in (
-        ("STATE_ACCOUNT_ID", "estado"),
-        ("SLOTS_POT_ACCOUNT_ID", "bote_tragaperras"),
-        ("SHOP_ACCOUNT_ID", "tienda"),
-        ("HK_ACCOUNT_ID", "hong_kong"),
-        ("PORRA_ACCOUNT_ID", "porras"),
-    )
-    if (account_id := getattr(economy_repository, constant, None)) is not None
+    STATE_ACCOUNT_ID: "estado",
+    SLOTS_POT_ACCOUNT_ID: "bote_tragaperras",
+    SHOP_ACCOUNT_ID: "tienda",
+    HK_ACCOUNT_ID: "hong_kong",
+    PORRA_ACCOUNT_ID: "porras",
 }
 
 

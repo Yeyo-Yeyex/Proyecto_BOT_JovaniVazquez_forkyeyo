@@ -31,20 +31,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TypeVar
 
+from bot.repositories import sqlite
 from bot.services.levels import TIMEZONE
 from bot.services.telemetry import Batch, ReportData
-
-try:
-    from bot.repositories.sqlite import connect as _open_connection
-except ImportError:  # pragma: no cover - versiones sin el módulo común de conexión
-
-    def _open_connection(path: Path) -> sqlite3.Connection:
-        """Abre SQLite en modo WAL (copia del módulo común, que esta versión no tiene)."""
-        connection = sqlite3.connect(path, timeout=30)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-        return connection
-
 
 T = TypeVar("T")
 
@@ -138,10 +127,7 @@ class TelemetryRepository:
         self._ready = False
 
     def _connect(self) -> sqlite3.Connection:
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = _open_connection(self.database_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return sqlite.connect(self.database_path)
 
     async def _run(self, operation: Callable[..., T], *args: object) -> T:
         """Ejecuta una operación SQLite fuera del event loop."""
