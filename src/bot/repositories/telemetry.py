@@ -242,6 +242,8 @@ class TelemetryRepository:
         return row is not None
 
     def _report_data_sync(self, guild_id: int, since_day: str, since_ts: float) -> ReportData:
+        # Los contadores del servidor 0 (avisos del log, dibujos) no son de ningún
+        # servidor y salen en el informe de todos.
         if not self._ready:
             self._initialize_sync()
         data = ReportData()
@@ -253,7 +255,7 @@ class TelemetryRepository:
                     "SUM(ms_count) AS ms_count, SUM(ms_total) AS ms_total, "
                     "MAX(ms_max) AS ms_max, SUM(ms_lt500) AS lt500, SUM(ms_lt1000) AS lt1000, "
                     "SUM(ms_lt3000) AS lt3000, SUM(ms_ge3000) AS ge3000 "
-                    "FROM telemetry_counts WHERE guild_id = ? AND day >= ? "
+                    "FROM telemetry_counts WHERE guild_id IN (?, 0) AND day >= ? "
                     "GROUP BY kind, name",
                     (guild_id, since_day),
                 )
@@ -262,7 +264,7 @@ class TelemetryRepository:
                 (r["day"], r["kind"], r["events"], r["errors"])
                 for r in connection.execute(
                     "SELECT day, kind, SUM(events) AS events, SUM(errors) AS errors "
-                    "FROM telemetry_counts WHERE guild_id = ? AND day >= ? "
+                    "FROM telemetry_counts WHERE guild_id IN (?, 0) AND day >= ? "
                     "GROUP BY day, kind",
                     (guild_id, since_day),
                 )
@@ -271,7 +273,7 @@ class TelemetryRepository:
                 (r["hour"], r["kind"], r["events"])
                 for r in connection.execute(
                     "SELECT hour, kind, SUM(events) AS events FROM telemetry_counts "
-                    "WHERE guild_id = ? AND day >= ? AND hour >= 0 GROUP BY hour, kind",
+                    "WHERE guild_id IN (?, 0) AND day >= ? AND hour >= 0 GROUP BY hour, kind",
                     (guild_id, since_day),
                 )
             ]

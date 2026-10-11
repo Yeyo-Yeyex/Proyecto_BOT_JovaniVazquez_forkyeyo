@@ -30,11 +30,13 @@ from bot.repositories.pets import PetRepository
 from bot.repositories.porras import PorraRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.slots import SlotsRepository
+from bot.repositories.telemetry import TelemetryRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.pala import WorkService
+from bot.services.telemetry import TelemetryService
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,7 @@ logger = logging.getLogger(__name__)
 INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.general",
     "bot.cogs.errors",
+    "bot.cogs.telemetry",
     "bot.cogs.message_stats",
     "bot.cogs.welcome",
     "bot.cogs.music",
@@ -151,6 +154,10 @@ class BotClient(commands.Bot):
         # Histórico de la beernight (`beernight`) y sus audios, en el mismo volumen.
         self.beernight = BeernightRepository(database_path)
         self.beernight_sounds = BeernightSoundStore(database_path.parent / "beernight")
+        # Telemetría interna (`informe`): cuánto se usa cada cosa, sin contenido de
+        # mensajes. Cuenta en memoria y la vuelca cada minuto el cog `Telemetry`.
+        self.telemetry_repository = TelemetryRepository(database_path)
+        self.telemetry = TelemetryService(self.telemetry_repository)
         super().__init__(
             command_prefix=command_prefix,
             intents=build_intents(),
@@ -184,6 +191,7 @@ class BotClient(commands.Bot):
         await self.porras.initialize()
         await self.work.repository.initialize()
         await self.beernight.initialize()
+        await self.telemetry_repository.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)

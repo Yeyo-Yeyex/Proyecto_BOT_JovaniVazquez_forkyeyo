@@ -81,6 +81,7 @@ ADMIN_COMMANDS = {
     "cambios",
     "catalogo",
     "tajo",
+    "informe",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.

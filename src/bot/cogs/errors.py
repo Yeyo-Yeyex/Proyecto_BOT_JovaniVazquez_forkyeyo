@@ -15,6 +15,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.services.telemetry import TelemetryService
+
 logger = logging.getLogger(__name__)
 
 GENERIC_ERROR = "Algo salió mal ejecutando el comando. Inténtalo de nuevo."
@@ -93,6 +95,17 @@ class Errors(commands.Cog):
         error: app_commands.AppCommandError,
     ) -> None:
         """Informa del error de un comando de aplicación y registra los inesperados."""
+        telemetry = getattr(self.bot, "telemetry", None)
+        if isinstance(telemetry, TelemetryService) and interaction.command is not None:
+            # El cog `Telemetry` cuenta los que terminan bien; los fallidos solo pasan por aquí.
+            telemetry.count(
+                "slash",
+                interaction.command.qualified_name,
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                ms=telemetry.take_answer(interaction.id),
+                error=True,
+            )
         if isinstance(error, app_commands.CommandInvokeError):
             logger.error(
                 "Error en el comando de aplicación %r",

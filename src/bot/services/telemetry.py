@@ -206,6 +206,18 @@ class ReportData:
     ledger: list[dict[str, Any]] = field(default_factory=list)
 
 
+#: Quien quiera saber lo que tarda cada dibujo se apunta aquí (el cog `Telemetry`).
+#: Las escenas (`NodeScene`, `BrowserScene`) no tienen el bot a mano y avisan con
+#: `report_render`; sin nadie apuntado no pasa nada.
+render_observers: set[Callable[[str, float], None]] = set()
+
+
+def report_render(scene: str, ms: float) -> None:
+    """Avisa de que la escena `scene` ha pintado en `ms` milisegundos."""
+    for observer in tuple(render_observers):
+        observer(scene, ms)
+
+
 def local_moment(at: float) -> tuple[str, int]:
     """Devuelve el día (`YYYY-MM-DD`) y la hora (0-23) canarios de un epoch."""
     moment = datetime.fromtimestamp(at, TIMEZONE)

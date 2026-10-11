@@ -24,12 +24,14 @@ import io
 import json
 import logging
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
 from bot.services.browser_scene import BATCH, IDLE_SECONDS, TABS, Patch, png_bytes
+from bot.services.telemetry import report_render
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +242,8 @@ class NodeScene:
         if self.disabled:
             return None
         async with self._lock:
+            # Se mide dentro del candado: lo que tarda pintar, no la cola de espera.
+            start = time.perf_counter()
             try:
                 result = await work(await self._open(count))
             except asyncio.CancelledError:
@@ -257,5 +261,6 @@ class NodeScene:
                 for proc in procs:
                     await proc.close()
                 return None
+            report_render(self.name, (time.perf_counter() - start) * 1000)
             self._touch()
             return result
