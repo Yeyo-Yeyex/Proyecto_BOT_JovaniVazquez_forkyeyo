@@ -258,6 +258,15 @@ PRODUCED_STATS = {
     *(f"horse_kind_{kind}" for kind in HORSE_BET_KINDS),
     *(f"horse_hits_{kind}" for kind in HORSE_BET_KINDS),
     *(f"horse_dist_{d}" for d in HORSE_DISTANCES),
+    # cogs/bacara.py (`baccarat_stats`)
+    "bac_all_three", "bac_alone_win", "bac_banker_min", "bac_banker_wins", "bac_comebacks",
+    "bac_commission", "bac_dragon_ride", "bac_dragon_slay", "bac_friday13", "bac_hands",
+    "bac_hedge", "bac_herd_loss", "bac_losses", "bac_lost_by_one", "bac_natural_beaten",
+    "bac_natural_tie", "bac_naturals_won", "bac_newyear", "bac_night", "bac_nine_wins",
+    "bac_pingpong", "bac_pino", "bac_player_wins", "bac_pushes", "bac_road_longest",
+    "bac_shoe_first", "bac_shoe_hands_max", "bac_shoe_last", "bac_six_cards",
+    "bac_squeeze_nine", "bac_starter", "bac_table_max", "bac_tie_wins", "bac_tie_zero",
+    "bac_win_max", "bac_win_streak_max", "bac_wins",
     # cogs/chicken.py (`chicken_stats`)
     "chicken_games", "chicken_lanes", "chicken_auto_lanes", "chicken_auto_runs",
     "chicken_cashouts", "chicken_mult_max", "chicken_win_max", "chicken_hardcore_cashouts",

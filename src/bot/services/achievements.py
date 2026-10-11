@@ -7067,9 +7067,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana 1.000 manos apostando al Jugador.", L),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_tie_wins", [
-        (1, "bac_empate", "Ni pa ti ni pa mí", "Acierta un empate en el bacará (paga 8 a 1).", C),
-        (10, "bac_empate_10", "Equidistante profesional", "Acierta 10 empates.", E),
-        (50, "bac_empate_50", "Tablas en el Congreso", "Acierta 50 empates.", L),
+        (1, "bac_empate", "Empate a todo", "Acierta un empate en el bacará (paga 8 a 1).", C),
+        (10, "bac_empate_10", "Equidistante profesional", "Acierta 10 empates.", R),
+        (50, "bac_empate_50", "Tablas en el Congreso", "Acierta 50 empates.", E),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_pushes", [
         (1, "bac_devuelto", "Que me quede como estaba",
@@ -7078,7 +7078,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Te devuelven lo apostado por empate 100 veces.", E),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_naturals_won", [
-        (1, "bac_natural", "¡Natural!", "Gana una mano con un natural (8 o 9 en dos cartas).", C),
+        (1, "bac_natural", "Natural como la vida misma",
+         "Gana una mano con un natural (8 o 9 en dos cartas).", C),
         (100, "bac_natural_100", "Naturalidad ministerial", "Gana 100 manos con natural.", R),
         (1_000, "bac_natural_1k", "Más natural que el agua de Firgas",
          "Gana 1.000 manos con natural.", L),
@@ -7099,7 +7100,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Llega a 9 con la tercera carta y gana 50 veces.", E),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_lost_by_one", [
-        (1, "bac_por_uno", "Por un pelo", "Pierde una mano de bacará por un solo punto.", C),
+        (1, "bac_por_uno", "A un punto del escaño",
+         "Pierde una mano de bacará por un solo punto.", C),
         (100, "bac_por_uno_100", "Siempre a un escaño", "Pierde 100 manos por un solo punto.", E),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_six_cards", [
@@ -7111,24 +7113,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde con un natural de 8 contra un natural de 9.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_tie_zero", [
-        (1, "bac_cero", "Cero patatero",
-         "Juega una mano que acaba en empate a cero.", R, True),
+        (1, "bac_cero", "Cero a cero en el Bernabéu",
+         "Juega una mano que acaba en empate a cero.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_natural_tie", [
         (1, "bac_empate_natural", "Empate técnico en el CIS",
-         "Juega una mano en la que los dos sacan el mismo natural.", R, True),
+         "Juega una mano en la que los dos sacan el mismo natural.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_win_streak_max", [
         (3, "bac_racha_3", "Tres de tres", "Gana 3 manos de bacará seguidas.", C),
-        (6, "bac_racha_6", "Legislatura sin sobresaltos", "Gana 6 manos de bacará seguidas.", R),
+        (6, "bac_racha_6", "Legislatura sin sobresaltos", "Gana 6 manos de bacará seguidas.", C),
         (9, "bac_racha_9", "Mayoría absoluta en la mesa", "Gana 9 manos de bacará seguidas.", E),
         (12, "bac_racha_12", "Ni una moción de censura",
-         "Gana 12 manos de bacará seguidas.", L),
+         "Gana 12 manos de bacará seguidas.", M),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_win_max", [
         (10_000, "bac_rico", "Martini con aceituna de oro",
          "Gana 10.000 Y$ en una mano de bacará.", E),
-        (100_000, "bac_millonario", "Casino Royale", "Gana 100.000 Y$ en una mano de bacará.", M),
+        (100_000, "bac_millonario", "Al servicio de Su Majestad",
+         "Gana 100.000 Y$ en una mano de bacará.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("baccarat", "bac_road_longest", [
         (8, "bac_dragon", "Ver al dragón",
@@ -7144,19 +7147,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("baccarat", "bac_dragon_slay", [
         (1, "bac_cortar", "Cortarle la cola al dragón",
          "Apuesta contra una racha de 5 o más y gana.", C),
-        (50, "bac_cortar_50", "San Jorge de Moncloa", "Corta al dragón 50 veces.", E),
+        (50, "bac_cortar_50", "San Jorge de Moncloa", "Corta al dragón 50 veces.", L),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_pingpong", [
         (1, "bac_pingpong", "Ping-pong parlamentario",
-         "Gana una mano tras 6 o más que alternan Banca y Jugador.", R, True),
+         "Gana una mano tras 6 o más que alternan Banca y Jugador.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_table_max", [
         (3, "bac_mus", "Partida de mus", "Juega una mano de bacará con 3 personas en la mesa.", C),
-        (6, "bac_consejo", "Consejo de Ministros",
+        (6, "bac_consejo", "Mesa del Congreso",
          "Juega una mano de bacará con 6 personas en la mesa.", R),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_alone_win", [
-        (1, "bac_verso_suelto", "Verso suelto",
+        (1, "bac_verso_suelto", "Voto en contra de mi grupo",
          "Gana siendo el único en tu lado, con al menos dos en el contrario.", R, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_herd_loss", [
@@ -7172,7 +7175,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apuesta a la Banca y al Jugador en la misma mano.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_all_three", [
-        (1, "bac_cafe", "Café para todos",
+        (1, "bac_cafe", "Geometría variable",
          "Apuesta a Jugador, Banca y Empate en la misma mano.", C, True),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_shoe_first", [
@@ -7182,8 +7185,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bac_cierre", "Cierre de zapato", "Juega la última mano de un zapato.", C),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_shoe_hands_max", [
-        (30, "bac_zapato_30", "Zapato gastado", "Juega 30 manos del mismo zapato.", R),
-        (70, "bac_zapato_70", "Del corte a la quema", "Juega 70 manos del mismo zapato.", E),
+        (30, "bac_zapato_30", "Zapato gastado", "Juega 30 manos del mismo zapato.", C),
+        (70, "bac_zapato_70", "Del corte a la quema", "Juega 70 manos del mismo zapato.", R),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_commission", [
         (1_000, "bac_comision", "El 5 % de toda la vida",

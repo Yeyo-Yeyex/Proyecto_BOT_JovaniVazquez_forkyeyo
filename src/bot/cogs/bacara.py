@@ -1109,8 +1109,13 @@ class Bacara(commands.Cog, name="Bacará"):
         finally:
             self._opening.discard(channel_id)
         self.tables[channel_id] = table
-        table.task = asyncio.create_task(table.run(), name=f"bacara-{channel_id}")
+        self.start(table)
         return table, True
+
+    def start(self, table: Table) -> None:
+        """Arranca el bucle de una mesa recién abierta."""
+        channel_id = getattr(table.channel, "id", 0)
+        table.task = asyncio.create_task(table.run(), name=f"bacara-{channel_id}")
 
     async def _bacara_impl(
         self,

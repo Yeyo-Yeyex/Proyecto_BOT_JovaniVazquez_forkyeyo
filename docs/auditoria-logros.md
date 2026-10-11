@@ -14,7 +14,7 @@ La rareza dice cuánto le cuesta a un miembro activo que hace esa cosa:
 | 🌟 Legendario | hasta 8 meses | 2.500 Y$ | 100 |
 | 👑 Mítico | más de 8 meses, o suerte de 1 entre decenas de miles | 10.000 Y$ | 250 |
 
-Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60, cara o cruz 60 partidas, autobús 60 partidas, dados 50 partidas, pachinko 60 tandas y caballos 30 boletos. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
+Ritmos supuestos de un jugador habitual de cada juego, al día: ruleta 40 tiradas, blackjack 40 manos, tragaperras 200 (con Auto y turbo), Botes 150, Crash 30 rondas, Minas 40, Pollo 60, cara o cruz 60 partidas, autobús 60 partidas, dados 50 partidas, pachinko 60 tandas, caballos 30 boletos y bacará 60 manos. Los contadores que no son del casino (mensajes, voz, reacciones, IMV…) usan los ritmos de `RITMO` del script.
 
 ## Método
 
@@ -52,6 +52,15 @@ Se añadieron después, con 72 logros (11 secretos). La simulación (`_jugar_cab
 - **Bajan:** que tu caballo se desboque (1 de cada 250 boletos, día y medio) y el secreto de Puerta Giratoria, que pide 5x en vez de 10x (a 10x tardaba nueve meses).
 - **Se dejan por encima de lo que dice la simulación:** el bote del Gran Premio (Raro, y cinco botes Épico) y la colección de distancias (Raro), porque la simulación corre un Gran Premio de cada diez carreras y en un servidor de verdad sale como mucho uno cada 4 horas y hacen falta ocho carreras normales antes. Igual con «Tribuna llena» y «Derbi de Epsom» (6 y 10 boletos en una carrera), que dependen de cuánta gente juegue en el servidor.
 - **Fuera de la simulación:** los de madrugada, apostar 1.500 Y$ justos, ganar 100.000 Y$ de golpe, la retención de IRPF (el jugador simulado no paga impuestos), el caballo cansado (la simulación no guarda historial) y los que se derivan de los contadores por caballo (todo el establo, hincha, socio y peña), que se cuentan en `with_derived`.
+
+## Bacará
+
+Llegó con 68 logros (10 secretos). La simulación (`_jugar_bacara`) juega zapatos enteros de 8 barajas con su quema y su corte, y en cada mano elige lado como un jugador normal (Banca 55 %, Jugador 35 %, Empate 10 %) y una vez de cada doce añade 20 Y$ al empate. Lo que se calibró con ella:
+
+- **Bajan:** acertar 10 y 50 empates (11 y 53 días: Raro y Épico), el empate a cero y el empate de naturales (salen en menos de dos días: Comunes aunque parezcan raros), la racha de 6 manos ganadas (dos días) y el ping-pong de 7 manos alternas.
+- **Suben:** la racha de 12 manos ganadas (281 días, Mítico) y cortar al dragón 50 veces (71 días, Legendario).
+- **Se dejan a mano:** jugar 30 y 70 manos del mismo zapato. El jugador simulado juega todas las manos de su zapato, y en una mesa compartida eso no pasa: 70 manos son media hora seguida en la mesa (Raro). Ganar 10.000 Y$ de golpe se mide, como en el resto de juegos, por lo que apuesta un jugador normal (Épico).
+- **Fuera de la simulación:** la mesa (mesa de 3 y de 6, verso suelto, efecto rebaño, el crupier), apostar a dos o tres lados, el mínimo de la Banca y las fechas, porque el jugador simulado juega solo, a mediodía y a un lado.
 
 ## Pachinko: la física
 

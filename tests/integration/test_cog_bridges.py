@@ -41,6 +41,7 @@ GAMES = (
     "Dados",
     "Pachinko",
     "Caballos",
+    "Bacará",
     "Porras",
     "Loteria",
 )
@@ -460,6 +461,59 @@ async def test_las_carreras_apuntan_sus_logros_y_jugadas_con_el_bot_real(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert plays.by_game["caballos"].plays == 1
+    finally:
+        await client.close()
+
+
+async def test_el_bacara_apunta_sus_logros_y_jugadas_con_el_bot_real(tmp_path: Path) -> None:
+    """El bacará carga antes que los logros y `apuestas`: cada mano jugada debe llegar."""
+    from bot.services.bacara import Coup
+    from bot.services.blackjack import Card
+
+    client = await load_bot(tmp_path)
+    try:
+        bacara = importer("Bacará", client)
+        cog = client.get_cog("Bacará")
+        cog.ahead = False
+        cog.renderer = MagicMock()
+        cog.renderer.board = AsyncMock(return_value=b"PNG")
+        cog.renderer.coup = AsyncMock(
+            return_value=bacara.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
+        cog.sleep = AsyncMock()
+        cog.start = MagicMock()
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 78
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        await cog._bacara_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=channel,
+            user=owner,
+            amount_text="100",
+            side_text="banca",
+            confirm=AsyncMock(),
+            send_error=AsyncMock(),
+        )
+        table = cog.tables[78]
+        # Banca 9 de salida contra Jugador 3: natural de 9 para la Banca.
+        table.state.pending = Coup((Card(1, 0), Card(2, 1)), (Card(4, 2), Card(5, 3)))
+
+        await table.deal()
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["bac_hands"] == 1
+        assert profile.stats["bac_banker_wins"] == 1
+        assert profile.stats["bac_nine_wins"] == 1
+        assert {"bac_1", "bac_natural", "bac_nueve", "bac_estreno"} <= set(profile.unlocked)
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["bacara"].plays == 1
     finally:
         await client.close()
 
