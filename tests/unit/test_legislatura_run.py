@@ -462,3 +462,33 @@ def test_partidas_al_azar_no_rompen_nada_y_se_guardan_igual(seed: int) -> None:
     assert run.fondos >= 0 or run.phase is Phase.PERDIDA
     assert all(isinstance(c, Card) for c in run.cards.values())
     assert run.boss in BOSSES and Suit(run.cards[min(run.cards)].suit)
+
+
+def test_el_cunado_conspiranoico_se_crece_al_perder_y_se_desinfla_al_ganar() -> None:
+    run = fresh()
+    slot = run.add_advisor("cunado_conspiranoico")
+    assert slot is not None
+    run.round_score = 0
+    ctx = run.play(run.hand[:1]).context
+    assert any(s.source == "cunado_conspiranoico" and s.kind.value == "nota" for s in ctx.steps)
+    assert slot.state["razon"] == 3
+    run.round_score = run.target
+    run.play(run.hand[:1])
+    assert slot.state["razon"] == 1  # 3 // 2: al ganar pierde la mitad.
+
+
+def test_el_cunado_no_suma_si_hay_un_asesor_israeli_que_vigilar() -> None:
+    run = fresh()
+    slot = run.add_advisor("cunado_conspiranoico")
+    assert slot is not None
+    slot.state["razon"] = 30
+    run.add_advisor("paquete_ayuda")
+    ctx = run.play(run.hand[:1]).context
+    assert not any(s.source == "cunado_conspiranoico" and s.kind.value == "mult" for s in ctx.steps)
+
+
+def test_las_frases_del_cunado_son_suyas_y_se_rien_de_el() -> None:
+    quotes = ITEMS["cunado_conspiranoico"].quotes
+    assert len(quotes) >= 6
+    # Cada frase va entre comillas: siempre es él quien habla, nunca el bot.
+    assert all(q.startswith("«") and q.endswith("»") for q in quotes)

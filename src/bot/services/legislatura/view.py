@@ -82,6 +82,7 @@ def _skins(skins: Mapping[str, Skin] | None) -> dict[str, Any]:
     felt = skins.get("tapete")
     return {
         "felt": list(map(list, felt.felt)) if felt and felt.felt else None,
+        "pattern": felt.pattern if felt else None,
         "back": skins["dorso"].key if "dorso" in skins else None,
         "art": {
             where.split(":", 1)[1]: skin.key

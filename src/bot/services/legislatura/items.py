@@ -150,6 +150,7 @@ class ItemDef:
         pack: Solo sobres.
         redeem: Solo tratados: se aplica una vez al comprarlo.
         visible: Si sale en la tienda (los legendarios no).
+        quotes: Frases que suelta al activarse (el efecto elige cuál).
     """
 
     key: str
@@ -166,3 +167,4 @@ class ItemDef:
     pack: PackSpec | None = None
     redeem: Callable[[Run], None] | None = None
     visible: bool = True
+    quotes: tuple[str, ...] = ()

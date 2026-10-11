@@ -63,6 +63,24 @@ function felt(g, w, h, cx, cy) {
   const grad = g.createRadialGradient(cx, cy, 30, cx, cy, Math.max(w, h) * 0.85);
   grad.addColorStop(0, `rgb(${a})`); grad.addColorStop(0.55, `rgb(${mid})`); grad.addColorStop(1, `rgb(${b})`);
   g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  if (META.pattern === "bandera_israel") flagFelt(g, w, h, cx, cy);
+}
+
+// Tapete con la bandera de Israel: dos franjas azules y la estrella en el centro.
+function flagFelt(g, w, h, cx, cy) {
+  g.save(); g.fillStyle = "rgba(0,56,184,0.85)";
+  g.fillRect(0, h * 0.07, w, h * 0.09); g.fillRect(0, h * 0.84, w, h * 0.09);
+  g.strokeStyle = "rgba(0,56,184,0.55)"; g.lineWidth = 10; const r = h * 0.2;
+  [0, Math.PI].forEach((rot) => {
+    g.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const ang = rot - Math.PI / 2 + k * 2 * Math.PI / 3;
+      const px = cx + Math.cos(ang) * r, py = h / 2 + Math.sin(ang) * r;
+      k ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath(); g.stroke();
+  });
+  g.restore();
 }
 
 function box(g, x, y, w, h, opts = {}) {
@@ -413,7 +431,7 @@ function drawMesa(g, st) {
       value(g, fmt(st.total), W * 0.44 + 160, by + 16, 26, GOLD_LIGHT, "left");
     }
   } else {
-    label(g, "MARCA DE 1 A 5 CARTAS Y JUEGA", W * 0.44, 225, "center", 10, "rgba(255,214,110,0.35)");
+    if (!META.pattern) label(g, "MARCA DE 1 A 5 CARTAS Y JUEGA", W * 0.44, 225, "center", 10, "rgba(255,214,110,0.35)");
   }
 
   // Mano.
@@ -426,11 +444,12 @@ function drawMesa(g, st) {
   });
   // Mazo.
   for (let k = 3; k >= 0; k--) back(g, W - 60 - k * 1.5, 380 - k * 1.5);
-  label(g, `${st.deck}/${st.deck_total}`, W - 60, H - 10, "center", 9, "#ffffff");
+  value(g, `${st.deck}/${st.deck_total}`, W - 60, H - 11, 13, "#ffffff");
 }
 
 function popup(g, text, kind, x, y) {
-  const colors = kind === "votos" ? BLUE : kind === "fondos" ? [GOLD_LIGHT, GOLD] : RED;
+  // Las notas (frases de asesores, vetos) van en bocadillo oscuro para no confundirlas con mult.
+  const colors = kind === "votos" ? BLUE : kind === "fondos" ? [GOLD_LIGHT, GOLD] : kind === "nota" ? ["#2d2a24", "#14120e"] : RED;
   g.save(); g.font = "16px Luckiest"; const w = g.measureText(text).width + 18; g.restore();
   chip(g, x - w / 2, y - 13, w, 26, text, colors, 16);
 }

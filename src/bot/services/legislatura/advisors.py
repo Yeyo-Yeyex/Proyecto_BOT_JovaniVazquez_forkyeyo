@@ -173,3 +173,33 @@ class PaqueteAyuda(Effect):
         if run.advisors_of(Bloc.EEUU):
             run.fondos += 4
             run.say("📦 El Congreso de EE. UU. aprueba otro paquete de ayuda: +4.")
+
+
+class CunadoConspiranoico(Effect):
+    """🇪🇸 Se cree todos los bulos y la broma es él.
+
+    Cada jugada que no basta para ganar la sesión le da la razón: +3 mult para
+    siempre («¡lo sabía!»). Cuando la sesión sale bien, pierde la mitad, porque
+    eso es justo lo que quieren que pienses. Con un asesor de Israel en la mesa
+    no suma nada: se pasa la sesión vigilándolo.
+    """
+
+    def on_hand(self, ctx: ScoreContext, slot: AdvisorSlot | None) -> None:
+        if slot is None:
+            return
+        quotes = ctx.run.item(slot.key).quotes
+        if quotes:
+            ctx.note(slot.key, ctx.run.rng.choice("asesor:cunado", quotes))
+        if ctx.run.advisors_of(Bloc.ISRAEL):
+            ctx.note(slot.key, "🔍 No suma: está demasiado ocupado vigilando al asesor israelí.")
+            return
+        ctx.add_mult(slot.key, int(slot.state.get("razon", 0)))
+
+    def after_hand(self, ctx: ScoreContext, slot: AdvisorSlot | None) -> None:
+        if slot is not None and ctx.run.round_score + ctx.total < ctx.run.target:
+            slot.state["razon"] = int(slot.state.get("razon", 0)) + 3
+
+    def on_round_end(self, run: Run, slot: AdvisorSlot | None) -> None:
+        if slot is not None and slot.state.get("razon"):
+            slot.state["razon"] = int(slot.state["razon"]) // 2
+            run.say("🤔 El cuñado pierde convicción: ganar es justo lo que quieren que pienses.")

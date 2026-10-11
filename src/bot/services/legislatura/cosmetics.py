@@ -52,6 +52,7 @@ class Skin:
         felt: Colores del tapete (fondo, borde) en RGB; solo tapetes.
         target: Asesor al que viste; solo arte de asesores.
         default: Si es el de serie (gratis, sin artículo en la tienda).
+        pattern: Dibujo que la escena pinta encima del tapete (una bandera, p. ej.).
     """
 
     key: str
@@ -64,6 +65,7 @@ class Skin:
     felt: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
     target: str | None = None
     default: bool = False
+    pattern: str | None = None
 
 
 SKINS: tuple[Skin, ...] = (
@@ -105,6 +107,17 @@ SKINS: tuple[Skin, ...] = (
         aisle="lujo",
         price=400_000,
         felt=((196, 170, 96), (140, 118, 60)),
+    ),
+    Skin(
+        "tapete_bandera_israel",
+        SkinSlot.TAPETE,
+        "Bandera de Israel",
+        "🇮🇱",
+        Bloc.ISRAEL,
+        aisle="lujo",
+        price=400_000,
+        felt=((246, 248, 252), (196, 206, 222)),
+        pattern="bandera_israel",
     ),
     Skin(
         "tapete_gran_salon",

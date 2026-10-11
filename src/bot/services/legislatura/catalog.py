@@ -127,6 +127,30 @@ _ITEMS: tuple[ItemDef, ...] = (
         adv.BoicotEurovision(),
         "+5 mult. Echa a los asesores de Israel y no deja comprar más.",
     ),
+    ItemDef(
+        "cunado_conspiranoico",
+        Category.ASESOR,
+        "Cuñado conspiranoico",
+        "🤔",
+        Bloc.ESPANA,
+        5,
+        "+3 mult para siempre por cada jugada que no basta («¡lo sabía!»); al ganar la "
+        "sesión pierde la mitad. Con un asesor de Israel en la mesa no suma: lo vigila.",
+        Rarity.POCO_COMUN,
+        adv.CunadoConspiranoico(),
+        quotes=(
+            "«Los judíos controlan el mundo entero y aun así no consiguen que me salga "
+            "una pareja.»",
+            "«Mi fuente son los Protocolos de Sion. Que sean un plagio de una sátira contra "
+            "Napoleón III es un detalle.»",
+            "«¿Que no hay pruebas? Eso demuestra que lo tapan. Y si hubiera pruebas, también.»",
+            "«Lo dice un canal de Telegram de 40 personas. Están todos despiertos.»",
+            "«Haz tu propia investigación. Yo la he hecho: tres memes y un audio de WhatsApp.»",
+            "«Todo está conectado: el IMV, la sota de bastos y el 5G.»",
+            "«Mi primo tiene un vídeo de tres horas. No lo he visto, pero sé lo que dice.»",
+            "«Si pierdo es por ellos. Si gano, también: me han dejado ganar para despistar.»",
+        ),
+    ),
     _advisor(
         "aforado",
         "Aforado",
