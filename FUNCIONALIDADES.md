@@ -592,6 +592,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `tajo [canal] [todos]` | Canales donde se puede usar `pala`. Un canal lo añade o, si ya estaba, lo quita; `todos` (en `.tajo`, también `cualquiera`) vuelve a permitirla en cualquier canal. Sin argumentos enseña los actuales. Responde solo a ti en `/`. Ver sección 6 ter.7 quater. |
 | `niveles [acción] [canal] [segundos]` | Sin argumentos, enseña el estado de los niveles. Acciones: `importar` (lee el historial y, al acabar la primera vez, enciende los niveles), `activar`, `desactivar` (no borra XP) y `mismo` (avisos donde se sube). Un canal fija dónde se anuncian las subidas; unos segundos (10–3600), el enfriamiento del XP por mensaje. En `.niveles` van en cualquier orden. Ver sección 4.0. |
 | `cambios [acción] [canal]` | Configura el aviso de novedades de cada despliegue. Sin argumentos, enseña la configuración. Acciones: `activar`, `desactivar`, `detallado` (lista y una ficha por PR con su descripción, el de serie), `resumen` (solo la lista) y `defecto` (vuelve a `#chat-general`). Un canal o un hilo (aunque esté archivado) fija dónde se publica. En `.cambios` van en cualquier orden. |
+| `informe [días]` | Descarga el informe interno de uso de los últimos días (1–90, 30 por defecto) en un JSON: comandos y botones con su latencia y fallos, actividad por día y hora, canales, retención por seudónimos, sistema del NAS, casino y economía. Sin mensajes ni IDs de miembros. En `/` solo lo ves tú; en `.`, queda en el canal. Ver sección 6 quater.3. |
 
 `reinicio` va aparte: no es de administración sino de mantenimiento, y solo
 lo pueden usar dos IDs (Yeyo y Dani, en `DEPLOYERS` de `bot.cogs.deploy`),
@@ -614,6 +615,23 @@ pide a GitHub la descripción de cada PR y, si no responde, publica solo los
 títulos. El aviso es informativo: sin botones, logros, mascota ni bromas. Se
 configura con `cambios` (sección 6 quater). Detalle en el README
 («Novedades»).
+
+### 6 quater.3. Telemetría interna
+
+Es para decidir mejoras, no para los miembros: no tiene logros, no mueve dinero y
+no sale en ningún mensaje del bot salvo en `informe`.
+
+- **Qué cuenta:** comandos `/` y `.` (terminados y fallidos), clics y formularios
+  por vista y botón (`CoinView.heads`), la latencia de la primera respuesta a
+  Discord, los clics que acaban sin respuesta, mensajes por canal y su clase
+  (adjunto, sticker, enlace, respuesta, corto, medio o largo), reacciones, minutos
+  de voz por canal, altas y bajas, avisos y errores del log por plantilla, lo que
+  tarda cada dibujo de Node o Chromium y una muestra del sistema por minuto.
+- **Qué no guarda:** el texto de los mensajes ni los argumentos de los avisos del
+  log. El único dato por persona es quién hizo cada cosa cada día, que se borra a
+  los 90 días y en el informe sale como u1, u2…
+- **Coste:** contar es una suma en memoria; se escribe una vez por minuto, así que
+  ningún botón espera a la base de datos por la telemetría.
 
 ### 6 quater.2. Autorización y seguridad
 

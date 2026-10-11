@@ -78,7 +78,7 @@ python -m bot
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
-  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `niveles` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
 
   La ayuda cabe en un solo embed: categorías con los nombres en orden
   alfabético, sin descripciones. La categoría Admin solo la ve quien es
@@ -821,6 +821,29 @@ docker run --rm -v bot-jovani-vazquez-data:/data -v "$PWD":/backup alpine \
 ```
 La cola de música está en memoria y se pierde al reiniciar el contenedor.
 
+### Telemetría interna: `informe`
+
+El bot cuenta cuánto se usa cada cosa para poder decidir mejoras con datos: comandos
+y botones (con lo que tardan en contestar y si se quedaron sin respuesta), mensajes
+por canal, reacciones, minutos de voz, altas y bajas, avisos del log, lo que tarda
+cada dibujo y, cada minuto, la memoria del contenedor, el retraso del bucle de
+eventos y los procesos de Chromium y Node. Nunca guarda el texto de un mensaje.
+
+Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
+`telemetry_*` del mismo archivo). Las horas sueltas se pliegan en días a los 90 días
+y los contadores se borran a los 400; quién hizo algo cada día, a los 90; las
+muestras del sistema, a los 14.
+
+Un administrador saca el informe con `/informe [días]` (1–90, 30 por defecto): un
+JSON que solo ve él, con cantidades y seudónimos (u1, u2…), sin IDs de miembros. Se
+guarda en `docs/metricas/` del fork y se resume con:
+
+```bash
+python docs/analisis_metricas.py docs/metricas/informe-AAAA-MM-DD.json
+```
+
+No hay nada que configurar ni pasos a mano en el NAS.
+
 ## Pruebas y calidad
 
 ```bash
@@ -846,6 +869,7 @@ src/bot/
 │   ├── admin.py         # Moderación solo para administradores
 │   ├── deploy.py        # reinicio: pide al NAS que actualice y avisa del resultado
 │   ├── errors.py        # Mensajes claros ante errores de comandos (/ y .)
+│   ├── telemetry.py     # Telemetría interna: cuenta usos, latencias y memoria
 │   ├── message_stats.py # Recuento de mensajes y niveles
 │   ├── welcome.py       # Bienvenidas (GIF, frases, botón 👋) y despedidas
 │   ├── images.py        # Comandos de imagen: magik, memes y los 108 efectos

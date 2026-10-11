@@ -258,6 +258,7 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - Capturar excepciones únicamente cuando se puedan manejar, contextualizar o registrar. No usar `except Exception: pass`.
 - Los errores esperados deben producir mensajes comprensibles para el usuario; los errores inesperados deben quedar registrados con su traza en los logs internos.
 - El apagado debe cerrar el cliente y los recursos compartidos de forma ordenada.
+- Telemetría interna (`bot.cogs.telemetry`, `bot.services.telemetry`): cuenta usos, latencias y memoria para decidir mejoras, nunca contenido. Contar es `bot.telemetry.count(...)`, una suma en memoria que se vuelca cada minuto: se puede llamar desde un botón antes de contestar. Comandos, botones, formularios, mensajes, voz, log y dibujos ya se cuentan solos; una funcionalidad nueva solo llama a `count` si hace algo que no pasa por ahí (un bucle propio, un evento distinto). No es una funcionalidad para los miembros: no lleva logros (excepción a la sección 10). Antes de optimizar o de quitar algo, pide el informe (`informe`) y mira `docs/analisis_metricas.py`.
 
 ## 8. Pruebas y calidad
 
