@@ -484,3 +484,24 @@ async def test_si_el_dibujo_aun_no_esta_se_apagan_los_botones_ya(tmp_path: Path)
     assert first["view"] is table.closed_view
     gate.set()
     await dealing
+
+
+async def test_la_mano_siguiente_se_pinta_mientras_se_ve_el_gif(tmp_path: Path) -> None:
+    """Quien vuelve a apostar nada más ver el resultado no espera al dibujo (CLAUDE.md)."""
+    cog, _clock = await make_cog(tmp_path, ahead=True)
+    channel = make_channel()
+    table = await open_table(cog, channel)
+    await bacara(cog, channel, amount="100", side="jugador")
+    await table.prepared
+    renderer: FakeRenderer = cog.renderer  # type: ignore[assignment]
+    drawn_when_gif: list[int] = []
+
+    async def edit(**kwargs) -> None:  # noqa: ANN003
+        for attachment in kwargs.get("attachments") or []:
+            if attachment.filename == cog_module.HAND_GIF:
+                await asyncio.sleep(0)  # deja arrancar la tarea del dibujo
+                drawn_when_gif.append(len(renderer.coups))
+
+    channel.test_message.edit = edit
+    await table.deal()
+    assert drawn_when_gif == [2]

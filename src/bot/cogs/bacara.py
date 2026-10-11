@@ -729,8 +729,8 @@ class Table:
         finally:
             self.sleeping = False
 
-    def open_round(self) -> None:
-        """Abre las apuestas de una mano nueva y empieza a pintarla."""
+    def open_round(self, *, prepare: bool = True) -> None:
+        """Abre las apuestas de una mano nueva y, con `prepare`, empieza a pintarla."""
         self.seats = {}
         self.deadline = None
         self.starter = None
@@ -738,7 +738,8 @@ class Table:
         self.go.clear()
         self.opened_at = self.cog.wall_clock()
         self.phase = Phase.OPEN
-        self.prepare()
+        if prepare:
+            self.prepare()
 
     def prepare(self) -> None:
         """Reparte la mano siguiente del zapato y la pinta en segundo plano.
@@ -816,6 +817,9 @@ class Table:
                 seed=self.cog.rng.getrandbits(32),
             )
         state.commit(coup)
+        # La mano siguiente se pinta ya, mientras se ve el GIF de esta: así quien
+        # vuelve a apostar nada más ver el resultado tampoco espera.
+        self.prepare()
         await self.pay(coup, seats)
         if media.gif is not None:
             await self.edit(
@@ -838,7 +842,7 @@ class Table:
             )
         self.last_round = Round(coup=coup, seats=seats, before=before)
         starter = self.starter
-        self.open_round()
+        self.open_round(prepare=False)
         await self.edit(embed=self.open_embed(), view=self.view, attachments=[self.table_file()])
         await self.track(coup, seats, before, starter)
 
