@@ -2,7 +2,8 @@
 
 Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pala`):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
-`slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`.
+`slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
+`informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`).
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -23,7 +24,10 @@ quién la pidió.
 
 from __future__ import annotations
 
+import io
+import json
 import logging
+import math
 import re
 from collections.abc import Awaitable
 from datetime import timedelta
@@ -44,6 +48,7 @@ from bot.services.moderation import (
     parse_duration,
     parse_user_id,
 )
+from bot.services.telemetry import TelemetryService
 from bot.services.welcome import GifError, classify_gif
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -67,6 +72,11 @@ SAY_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 TAJO_ALL_WORDS = {"todos", "todas", "cualquiera", "quitar"}
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
+
+# Ventana del informe de uso (`informe`), en días. Más de 90 no aporta: los
+# usuarios por día se borran a los 90 (`bot.repositories.telemetry`).
+DEFAULT_REPORT_DAYS = 30
+MAX_REPORT_DAYS = 90
 
 # Acciones de `niveles`; "mismo" vuelve a anunciar donde se sube de nivel.
 LEVEL_ACTIONS = ("importar", "activar", "desactivar", "mismo")
@@ -1026,6 +1036,59 @@ class Admin(commands.Cog):
             await ctx.send("La tienda no está disponible ahora mismo.")
             return
         await shop.open_admin_panel(ctx=ctx)  # type: ignore[attr-defined]
+
+    # --- informe ----------------------------------------------------------
+
+    @app_commands.command(name="informe", description="Descarga el informe interno de uso del bot.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        dias=f"Días hacia atrás (1–{MAX_REPORT_DAYS}; por defecto {DEFAULT_REPORT_DAYS})."
+    )
+    async def informe(
+        self,
+        interaction: discord.Interaction,
+        dias: app_commands.Range[int, 1, MAX_REPORT_DAYS] = DEFAULT_REPORT_DAYS,
+    ) -> None:
+        """Manda el informe de uso en un JSON que solo ves tú."""
+        await self._informe_impl(InteractionResponder(interaction), dias)
+
+    @commands.command(name="informe")
+    async def informe_text(self, ctx: commands.Context, dias: int = DEFAULT_REPORT_DAYS) -> None:
+        """Versión de texto: deja el JSON en el canal donde se pide."""
+        if not 1 <= dias <= MAX_REPORT_DAYS:
+            await ctx.send(f"Uso: `.informe [días]`, de 1 a {MAX_REPORT_DAYS}.")
+            return
+        await self._informe_impl(ContextResponder(ctx), dias)
+
+    async def _informe_impl(self, responder: CommandResponder, days: int) -> None:
+        """Vuelca la telemetría y adjunta el informe de los últimos `days` días.
+
+        El informe (ver `bot.services.telemetry.build_report`) lleva cantidades y
+        seudónimos (u1, u2…), nunca mensajes ni IDs de miembros. Sirve para que un
+        agente decida mejoras: se guarda en `docs/metricas/` del fork y se analiza
+        con `docs/analisis_metricas.py`.
+        """
+        guild = responder.guild
+        telemetry = getattr(self.bot, "telemetry", None)
+        if guild is None or not isinstance(telemetry, TelemetryService):
+            await responder.send_error("La telemetría no está disponible ahora mismo.")
+            return
+        await responder.start_progress("📊 Preparando el informe…", ephemeral=True)
+        channel_names = {channel.id: channel.name for channel in guild.channels}
+        channel_names.update({thread.id: thread.name for thread in guild.threads})
+        # Los efectos de imagen son más de cien comandos de texto: si se listaran,
+        # `comandos_sin_uso` sería casi entero de efectos.
+        names = [c.name for c in self.bot.commands if "help_group" not in c.extras]
+        report = await telemetry.report(
+            guild_id=guild.id, days=days, commands=names, channel_names=channel_names
+        )
+        data = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode()
+        await responder.finish(
+            f"📊 Informe de {days} días ({math.ceil(len(data) / 1024)} KB). Súbelo a "
+            "`docs/metricas/` del fork o pásaselo a Claude.",
+            file=discord.File(io.BytesIO(data), filename=f"informe-{report['hasta']}.json"),
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

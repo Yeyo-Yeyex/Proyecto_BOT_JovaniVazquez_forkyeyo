@@ -30,6 +30,7 @@ import asyncio
 import base64
 import io
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -37,6 +38,7 @@ from typing import Any, TypeVar
 
 from PIL import Image
 
+from bot.services.telemetry import report_render
 from bot.utils.gif import QUANTIZE_THREADS
 
 logger = logging.getLogger(__name__)
@@ -245,6 +247,8 @@ class BrowserScene:
         if self.disabled:
             return None
         async with self._lock:
+            # Se mide dentro del candado: lo que tarda pintar, no la cola de espera.
+            start = time.perf_counter()
             try:
                 page = await open_()
                 result = await work(page)
@@ -255,5 +259,6 @@ class BrowserScene:
                 self.disabled = True
                 self._page = None
                 return None
+            report_render(self.name, (time.perf_counter() - start) * 1000)
             self._touch()
             return result

@@ -34,6 +34,10 @@ Lo que más se olvida:
 - **Subagentes:** solo Haiku (lo mecánico) o Sonnet (programar), en su última versión, uno a
   la vez y para una tarea bien acotada. Si pueden hacerlo, se les delega y se espera, revisando
   siempre su trabajo antes de fusionar. Sección «Agentes y subagentes» de `Biblia.txt`.
+- **Decidir con datos:** antes de optimizar, quitar o rehacer algo, mira si hay
+  informes de uso en `docs/metricas/` y pásalos por `docs/analisis_metricas.py`
+  (botones lentos, fallos, retención, memoria del NAS). Si no hay uno reciente, pídeselo
+  a la persona: lo saca un administrador con `/informe`. La telemetría no lleva logros.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
 
