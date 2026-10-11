@@ -124,8 +124,8 @@ python -m bot
 - **Economía (yapdollars):** una sola moneda, ficticia y no comprable,
   para todo el bot. Cada miembro empieza con 1.000 Y$ por servidor y
   `imv` (Ingreso Mínimo Vital, antes `daily`, exento de IRPF) paga 500 Y$
-  más 100 por cada día seguido (tope 1.500 Y$; se cobra cada 20 h y la racha se
-  pierde tras 48 h). Lo cobrado trabajando con `pala` lo reduce (ver Trabajo).
+  más 100 por cada día seguido (tope 1.500 Y$; se cobra una vez por día natural,
+  que empieza a medianoche en hora canaria, y la racha se pierde si te saltas un día). Lo cobrado trabajando con `pala` lo reduce (ver Trabajo).
 - **Cumpleaños:** `cumple 14/02` guarda el tuyo (solo día y mes; una vez
   puesto, solo un administrador lo cambia) y `cumples` lista los próximos.
   Ese día (hora canaria) el bot lo anuncia en `#chat-general` y el

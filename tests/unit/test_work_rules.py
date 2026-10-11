@@ -7,6 +7,7 @@ from datetime import datetime
 from bot.services.levels import TIMEZONE
 from bot.services.work import (
     BATTERY_MAX,
+    BATTERY_MIN,
     FAMILY_EXTRA,
     FAMILY_NIGHT,
     FAMILY_REST_DAY,
@@ -19,12 +20,14 @@ from bot.services.work import (
     ShiftKind,
     accident_chance,
     apply_performance,
+    battery_eta,
     battery_now,
     family_cost,
     next_shift_kind,
     performance_delta,
     promote,
     promotion_blockers,
+    rested_at,
     roll_over_day,
     shift_pay,
 )
@@ -97,6 +100,21 @@ def test_la_bateria_se_recarga_cinco_puntos_por_hora_hasta_el_maximo() -> None:
     contract = Contract(job="obra", level=1, battery=10, battery_at=0)
     assert battery_now(contract, 3600) == 15
     assert battery_now(contract, 100 * 3600) == BATTERY_MAX
+
+
+def test_battery_eta_cuadra_con_la_recarga() -> None:
+    contract = Contract(job="obra", level=1, battery=40, battery_at=0)
+    full = battery_eta(40, BATTERY_MAX, 0)
+    assert battery_now(contract, full) == BATTERY_MAX
+    assert battery_now(contract, full - 60) < BATTERY_MAX
+    assert battery_eta(BATTERY_MAX, BATTERY_MAX, 123) == 123
+
+
+def test_rested_at_es_cuando_se_puede_volver_a_fichar() -> None:
+    contract = Contract(job="obra", level=1, battery=BATTERY_MIN - 10, battery_at=0)
+    back = rested_at(contract.battery, 0)
+    assert battery_now(contract, back) > BATTERY_MIN
+    assert battery_now(contract, back - 120) <= BATTERY_MIN
 
 
 def test_cuatro_ordinarios_dos_extras_legales_y_luego_b() -> None:

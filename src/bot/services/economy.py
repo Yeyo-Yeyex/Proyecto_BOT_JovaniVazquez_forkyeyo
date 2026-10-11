@@ -148,15 +148,12 @@ CURRENCY_EMOJI = "🪙"
 STARTING_BALANCE = 1_000
 
 #: IMV (recompensa diaria): base más un extra por cada día seguido, con tope.
-#: Exento de IRPF, como el real (art. 7.y LIRPF).
+#: Exento de IRPF, como el real (art. 7.y LIRPF). Se cobra una vez por día
+#: natural en hora canaria (`next_daily_at`): a medianoche vuelve a tocar, y la
+#: racha se pierde si se salta un día entero.
 DAILY_BASE = 500
 DAILY_STREAK_BONUS = 100
 DAILY_MAX_BONUS = 1_000
-#: Se usan horas en vez de días de calendario para no depender de zonas
-#: horarias: 20 h permite cobrar cada día aunque se haga a horas distintas,
-#: y la racha se pierde si pasan más de 48 h sin cobrar.
-DAILY_COOLDOWN_SECONDS = 20 * 3600
-DAILY_STREAK_WINDOW_SECONDS = 48 * 3600
 
 #: Compatibilidad del IMV con el trabajo (`pala`), inspirada en el incentivo al
 #: empleo de los arts. 3 y 4 del RD 789/2022 (redacción del RD 240/2026): no
@@ -485,6 +482,12 @@ class DailyResult:
     def reduction(self) -> int:
         """Lo que se ha quitado del IMV por trabajar."""
         return max(0, self.full_amount - self.amount)
+
+
+def next_daily_at(claimed_at: float) -> float:
+    """Medianoche canaria siguiente a `claimed_at`: cuándo vuelve a tocar el IMV."""
+    tomorrow = local_day(claimed_at) + timedelta(days=1)
+    return datetime.combine(tomorrow, datetime.min.time(), TIMEZONE).timestamp()
 
 
 def daily_amount(streak: int) -> int:
@@ -1182,14 +1185,16 @@ class EconomyService:
         work_net = await self.repository.work_net(guild_id, user_id, now - IMV_WORK_WINDOW_SECONDS)
         full: list[int] = []
 
+        today = local_day(now)
+
         def decide(previous: DailyClaim | None) -> tuple[int, int] | None:
             if previous is None:
                 streak = 1
             else:
-                elapsed = now - previous.last_claimed_at
-                if elapsed < DAILY_COOLDOWN_SECONDS:
+                last = local_day(previous.last_claimed_at)
+                if last >= today:
                     return None
-                streak = previous.streak + 1 if elapsed <= DAILY_STREAK_WINDOW_SECONDS else 1
+                streak = previous.streak + 1 if last == today - timedelta(days=1) else 1
             full.append(daily_amount(streak))
             return imv_after_work(full[-1], work_net), streak
 
@@ -1203,7 +1208,7 @@ class EconomyService:
                 amount=amount,
                 balance=balance,
                 streak=state.streak,
-                next_claim_at=now + DAILY_COOLDOWN_SECONDS,
+                next_claim_at=next_daily_at(now),
                 full_amount=full[-1],
                 work_net=work_net,
             )
@@ -1215,7 +1220,7 @@ class EconomyService:
             amount=0,
             balance=await self.balance(guild_id, user_id),
             streak=state.streak,
-            next_claim_at=state.last_claimed_at + DAILY_COOLDOWN_SECONDS,
+            next_claim_at=next_daily_at(state.last_claimed_at),
             work_net=work_net,
         )
 

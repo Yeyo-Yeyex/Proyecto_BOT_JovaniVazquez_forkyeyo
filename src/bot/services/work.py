@@ -62,7 +62,7 @@ BATTERY_MAX = 100
 BATTERY_MIN = -30
 #: Por debajo de esto estás reventado.
 TIRED = 20
-#: Puntos por hora; de 0 a 100 en 20 h, la misma espera que el IMV.
+#: Puntos por hora; de 0 a 100 en 20 h.
 BATTERY_REGEN_PER_HOUR = 5.0
 SHIFT_COST = 18
 EXTRA_SHIFT_COST = 27
@@ -374,6 +374,16 @@ def battery_now(contract: Contract, now: float) -> float:
     """Batería en `now`, con la recarga de las horas pasadas."""
     hours = max(0.0, now - contract.battery_at) / 3600
     return min(float(BATTERY_MAX), contract.battery + hours * BATTERY_REGEN_PER_HOUR)
+
+
+def battery_eta(battery: float, target: float, now: float) -> float:
+    """Momento (epoch) en que la batería, recargándose sola, llega a `target`."""
+    return now + max(0.0, target - battery) / BATTERY_REGEN_PER_HOUR * 3600
+
+
+def rested_at(battery: float, now: float) -> float:
+    """Momento desde el que se puede volver a fichar (la batería pasa de `BATTERY_MIN`)."""
+    return battery_eta(battery, BATTERY_MIN, now) + 60
 
 
 def battery_state(battery: float) -> str:

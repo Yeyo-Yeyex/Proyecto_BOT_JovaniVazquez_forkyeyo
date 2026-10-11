@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -16,8 +17,6 @@ from bot.repositories.economy import (
     LedgerEntry,
 )
 from bot.services.economy import (
-    DAILY_COOLDOWN_SECONDS,
-    DAILY_STREAK_WINDOW_SECONDS,
     STARTING_BALANCE,
     STATE_ACCOUNT_ID,
     EconomyService,
@@ -26,10 +25,12 @@ from bot.services.economy import (
     parse_amount,
     tax_line,
 )
+from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import gambling_day_tax
 
 GUILD = 1
 USER = 10
+DAY = 86_400
 
 
 class FakeClock:
@@ -156,11 +157,11 @@ async def test_daily_primera_vez_cobra_la_base(tmp_path: Path) -> None:
     assert result.balance == STARTING_BALANCE + daily_amount(1)
 
 
-async def test_daily_repetido_antes_de_tiempo_no_cobra(tmp_path: Path) -> None:
+async def test_daily_repetido_el_mismo_dia_no_cobra(tmp_path: Path) -> None:
     clock = FakeClock()
     service = await make_service(tmp_path, clock)
     first = await service.claim_daily(GUILD, USER)
-    clock.now += DAILY_COOLDOWN_SECONDS - 1
+    clock.now = first.next_claim_at - 1
 
     second = await service.claim_daily(GUILD, USER)
 
@@ -169,26 +170,41 @@ async def test_daily_repetido_antes_de_tiempo_no_cobra(tmp_path: Path) -> None:
     assert second.next_claim_at == first.next_claim_at
 
 
-async def test_daily_seguido_sube_la_racha_y_la_cantidad(tmp_path: Path) -> None:
+async def test_daily_vuelve_a_tocar_a_medianoche_canaria(tmp_path: Path) -> None:
     clock = FakeClock()
     service = await make_service(tmp_path, clock)
+
+    first = await service.claim_daily(GUILD, USER)
+
+    midnight = datetime.fromtimestamp(first.next_claim_at, TIMEZONE)
+    assert (midnight.hour, midnight.minute, midnight.second) == (0, 0, 0)
+    assert midnight.date() == local_day(clock.now) + timedelta(days=1)
+
+
+async def test_daily_a_las_2359_y_a_las_0001_sigue_la_racha(tmp_path: Path) -> None:
+    clock = FakeClock()
+    service = await make_service(tmp_path, clock)
+    first = await service.claim_daily(GUILD, USER)
+    clock.now = first.next_claim_at - 60
     await service.claim_daily(GUILD, USER)
-    clock.now += DAILY_COOLDOWN_SECONDS
+    clock.now = first.next_claim_at + 60
 
     result = await service.claim_daily(GUILD, USER)
 
+    assert result.claimed
     assert result.streak == 2
     assert result.amount == daily_amount(2) > daily_amount(1)
 
 
-async def test_daily_tras_mas_de_48h_reinicia_la_racha(tmp_path: Path) -> None:
+async def test_daily_saltarse_un_dia_reinicia_la_racha(tmp_path: Path) -> None:
     clock = FakeClock()
     service = await make_service(tmp_path, clock)
-    await service.claim_daily(GUILD, USER)
-    clock.now += DAILY_STREAK_WINDOW_SECONDS + 1
+    first = await service.claim_daily(GUILD, USER)
+    clock.now = first.next_claim_at + DAY + 60
 
     result = await service.claim_daily(GUILD, USER)
 
+    assert result.claimed
     assert result.streak == 1
 
 
@@ -310,7 +326,7 @@ async def test_el_imv_no_cuenta_para_la_renta_que_tributa(tmp_path: Path) -> Non
     service = await make_service(tmp_path, clock)
     for _ in range(30):
         await service.claim_daily(GUILD, USER)
-        clock.now += DAILY_COOLDOWN_SECONDS
+        clock.now += DAY
 
     result = await service.pay_income(GUILD, USER, gross=500, concept="nivel:2")
 

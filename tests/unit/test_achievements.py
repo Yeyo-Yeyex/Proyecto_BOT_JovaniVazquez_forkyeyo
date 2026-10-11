@@ -113,7 +113,7 @@ PRODUCED_STATS = {
     "reactions_given", "reactions_received", "reactions_on_message_max",
     # Cumpleaños, niveles, IMV, renta y premios
     "greetings_sent", "greetings_received", "level_max", "activity_streak_max",
-    "imv_claims", "imv_streak_max", "renta_filed", "renta_refunded", "tax_paid",
+    "imv_claims", "imv_streak_max", "imv_midnight", "renta_filed", "renta_refunded", "tax_paid",
     "balance_max",
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
