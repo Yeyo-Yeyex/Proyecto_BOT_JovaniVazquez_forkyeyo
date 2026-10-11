@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"→ devuelve {insurance_rtp:.2%}")
     if t["bj_offers"]:
         p_bj = t["bj_offer_dealer"] / t["bj_offers"]
-        pays = bj.BLACKJACK_PAYS
+        pays = bj.blackjack_prize(100) / 100
         half = 0.5
         # Asegurado: con blackjack de la banca, empate y el seguro cobra 2:1; si no,
         # la mano cobra su premio y la media apuesta del seguro se pierde.

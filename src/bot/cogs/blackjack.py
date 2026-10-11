@@ -34,12 +34,12 @@ from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import blackjack_stats, casino_stats
 from bot.services.blackjack import (
-    BLACKJACK_PAYS,
     INSURANCE_PAYS,
     Action,
     BlackjackGame,
     Card,
     Result,
+    blackjack_prize,
     new_shoe,
 )
 from bot.services.cards_render import CardRenderer, HandView
@@ -72,7 +72,7 @@ COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
 
-RULES_FOOTER = "Blackjack paga 2:1 · seguro 2:1 · la banca se planta en 17"
+RULES_FOOTER = "Blackjack paga 3:2 · seguro 2:1 · la banca se planta en 17"
 
 BLACKJACK_LINES = ("🂡 ¡BLACKJACK!", "💥 ¡BLACKJACK!", "🔥 ¡BLACKJACK!")
 WIN_LINES = ("¡Ganas", "¡Le ganas a la banca!", "¡Cobras", "¡Toma ya!")
@@ -163,6 +163,25 @@ def insurance_line(game: BlackjackGame) -> str:
     return f"\n🛡️ Seguro perdido: -{format_amount(game.insurance)}."
 
 
+def natural_insurance_text(stake: int, cost: int) -> str:
+    """Lo que cobra un blackjack propio con y sin seguro, con las cifras de la apuesta.
+
+    Asegurado es el «dinero par» de las mesas: si la banca tiene blackjack, la mano
+    empata y el seguro paga; si no, la mano paga 3:2 y el seguro se pierde. Con una
+    apuesta par sale lo mismo en los dos casos; con una impar, el redondeo del 3:2
+    y de la media apuesta los separa en una unidad.
+    """
+    prize = blackjack_prize(stake)
+    low, high = sorted((cost * INSURANCE_PAYS, prize - cost))
+    insured = (
+        f"{format_amount(low)} pase lo que pase (dinero par)"
+        if low == high
+        else f"{format_amount(low)} o {format_amount(high)}"
+    )
+    plain = f"{format_amount(prize)} o empate"
+    return f" Tienes blackjack: asegurado cobras {insured}; sin seguro, {plain}."
+
+
 def table_embed(
     *,
     owner: str,
@@ -184,12 +203,7 @@ def table_embed(
             else "Con una ficha de 1 no hay seguro."
         )
         if cost and game.current.natural:
-            # Con blackjack propio el seguro garantiza cobrar algo: se dice cuánto.
-            offer += (
-                f" Tienes blackjack: asegurado cobras al menos"
-                f" {format_amount(cost * INSURANCE_PAYS)}; sin seguro,"
-                f" {format_amount(game.stake * BLACKJACK_PAYS)} o empate."
-            )
+            offer += natural_insurance_text(game.stake, cost)
         description = (
             f"## Tú {game.current.total} · Banca {game.visible_dealer_total}\n"
             f"La banca enseña un as. {offer}"

@@ -1936,7 +1936,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # algo seguro, pero menos de media que arriesgar (ver `bot.services.blackjack`).
     a += _tiers("blackjack", "bj_natural_insured", [
         (1, "bj_letras_tesoro", "Te pasas a las Letras del Tesoro",
-         "Asegura tu propio blackjack: rentabilidad garantizada, aunque menor.", E),
+         "Coge el dinero par con tu blackjack: rentabilidad garantizada, aunque menor.", E),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_natural_insured_saved", [
         (1, "bj_cinturon_tirantes", "Cinturón y tirantes",
