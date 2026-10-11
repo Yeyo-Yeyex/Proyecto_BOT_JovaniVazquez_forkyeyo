@@ -257,6 +257,24 @@ PROPOSITIONS: tuple[Proposition, ...] = (
         games=frozenset({"blackjack"}),
         details=frozenset({"natural"}),
     ),
+    Proposition(
+        "bacara_natural", "🍸", "¿Gana con natural?",
+        "¿{who} gana alguna de sus {n} manos de bacará con un natural (8 o 9 de salida)?",
+        ("🍸 Gana con natural", "🃏 Ni uno"),
+        lambda plays, _stake: 0 if any(p.detail("natural") for p in plays) else 1,
+        games=frozenset({"bacara"}),
+        details=frozenset({"natural"}),
+    ),
+    Proposition(
+        "bacara_banca", "🔴", "¿Va con la Banca?",
+        "¿{who} apuesta a la Banca en todas sus {n} manos de bacará?",
+        ("🔴 Siempre Banca", "🔵 Se pasa a otro lado alguna vez"),
+        lambda plays, _stake: 0 if plays and all(p.detail("banca") for p in plays) else 1,
+        favourable=None,
+        games=frozenset({"bacara"}),
+        details=frozenset({"banca"}),
+        min_plays=2,
+    ),
 )  # fmt: skip
 PROPOSITION_BY_KEY: dict[str, Proposition] = {p.key: p for p in PROPOSITIONS}
 
