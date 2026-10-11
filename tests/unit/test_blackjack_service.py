@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 
 from bot.services.blackjack import (
+    BLACKJACK_PAYS,
+    INSURANCE_PAYS,
     SUITS,
     Action,
     BlackjackGame,
@@ -57,18 +59,18 @@ def test_total_blando_y_duro() -> None:
     assert hand_total([card("A♠"), card("A♥"), card("9♣")]) == (21, True)
 
 
-def test_blackjack_del_jugador_paga_3_a_2_sin_turno() -> None:
+def test_blackjack_del_jugador_paga_2_a_1_sin_turno() -> None:
     g = game("A♠", "7♥", "K♦", "9♣")
 
     assert not g.player_turn
-    assert finish(g) == 250
+    assert finish(g) == 100 + 100 * BLACKJACK_PAYS
     assert g.hands[0].result is Result.BLACKJACK
 
 
-def test_blackjack_con_apuesta_impar_redondea_hacia_abajo() -> None:
+def test_blackjack_con_apuesta_impar_paga_entero() -> None:
     g = game("A♠", "7♥", "K♦", "9♣", stake=5)
 
-    assert finish(g) == 5 + 7
+    assert finish(g) == 5 + 5 * BLACKJACK_PAYS
 
 
 def test_banca_con_blackjack_y_un_10_a_la_vista_gana_sin_turno() -> None:
@@ -124,11 +126,42 @@ def test_seguro_se_pierde_si_la_banca_no_tiene_blackjack_y_se_juega() -> None:
     assert g.net == 50
 
 
-def test_con_blackjack_propio_no_hay_seguro() -> None:
+def test_con_blackjack_propio_tambien_se_ofrece_el_seguro() -> None:
     g = game("A♠", "A♥", "K♦", "7♣")
 
-    assert not g.insurance_pending
-    assert finish(g) == 250
+    assert g.insurance_pending
+    assert not g.player_turn
+    assert not g.hole_revealed
+
+
+def test_blackjack_asegurado_y_banca_sin_blackjack_gana_la_mano_y_pierde_el_seguro() -> None:
+    g = game("A♠", "A♥", "K♦", "7♣")
+
+    g.decide_insurance(True)
+
+    assert not g.player_turn
+    assert finish(g) == 100 + 100 * BLACKJACK_PAYS
+    assert g.net == 100 * BLACKJACK_PAYS - 50
+
+
+def test_blackjack_asegurado_y_banca_con_blackjack_empata_y_cobra_el_seguro() -> None:
+    g = game("A♠", "A♥", "K♦", "K♣")
+
+    g.decide_insurance(True)
+
+    assert finish(g) == 100 + 50 * (1 + INSURANCE_PAYS)
+    assert g.hands[0].result is Result.PUSH
+    assert g.insurance_paid
+    assert g.net == 50 * INSURANCE_PAYS
+
+
+def test_blackjack_sin_asegurar_contra_blackjack_de_la_banca_empata() -> None:
+    g = game("A♠", "A♥", "K♦", "K♣")
+
+    g.decide_insurance(False)
+
+    assert finish(g) == 100
+    assert g.net == 0
 
 
 def test_seguro_imposible_con_ficha_de_1() -> None:
@@ -160,8 +193,9 @@ def test_stand_all_con_seguro_pendiente_lo_rechaza() -> None:
 
 
 def test_blackjack_contra_blackjack_es_empate() -> None:
-    g = game("A♠", "A♥", "Q♦", "K♣")
+    g = game("A♠", "10♥", "Q♦", "A♣")
 
+    assert not g.insurance_pending
     assert finish(g) == 100
     assert g.hands[0].result is Result.PUSH
 

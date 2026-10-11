@@ -18,7 +18,7 @@ from interaction_fakes import fake_interaction
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
 from bot.repositories.economy import EconomyRepository
-from bot.services.blackjack import Action, Card
+from bot.services.blackjack import BLACKJACK_PAYS, INSURANCE_PAYS, Action, Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 GUILD_ID = 1
@@ -109,13 +109,13 @@ async def test_bj_reparte_al_momento_y_cobra_la_apuesta(tmp_path: Path) -> None:
     assert await balance(cog) == STARTING_BALANCE - 100
 
 
-async def test_blackjack_al_repartir_paga_3_a_2(tmp_path: Path) -> None:
+async def test_blackjack_al_repartir_paga_2_a_1(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, c(1), c(9), c(13), c(8))
 
     table, *_ = await open_table(cog)
 
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 150
+    assert await balance(cog) == STARTING_BALANCE + 100 * BLACKJACK_PAYS
     assert not table.deal_button.disabled
 
 
@@ -319,6 +319,35 @@ async def test_sin_seguro_y_sin_blackjack_de_la_banca_se_juega(tmp_path: Path) -
     assert table.game.player_turn
     assert not table.action_buttons[Action.HIT].disabled
     assert await balance(cog) == STARTING_BALANCE - 100
+
+
+async def test_con_blackjack_y_as_de_la_banca_se_ofrece_el_seguro_con_sus_cifras(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, c(1), c(1), c(13), c(13))
+    table, *_ = await open_table(cog)
+
+    assert table.game.insurance_pending
+    embed = blackjack_module.table_embed(
+        owner="Diego", game=table.game, balance=0, stake=100, streak=0
+    )
+    assert "Tienes blackjack: asegurado cobras al menos 100" in (embed.description or "")
+
+    await table.insure(make_interaction(), take=True)
+
+    # La banca también tenía blackjack: la mano empata y el seguro paga 2:1.
+    assert table.game.settled
+    assert await balance(cog) == STARTING_BALANCE + 50 * INSURANCE_PAYS
+
+
+async def test_blackjack_sin_asegurar_y_banca_sin_blackjack_cobra_2_a_1(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(1), c(1), c(13), c(7))
+    table, *_ = await open_table(cog)
+
+    await table.insure(make_interaction(), take=False)
+
+    assert table.game.settled
+    assert await balance(cog) == STARTING_BALANCE + 100 * BLACKJACK_PAYS
 
 
 async def test_la_mesa_no_tiene_tope_de_apuesta(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import blackjack_stats, casino_stats
 from bot.services.blackjack import (
+    BLACKJACK_PAYS,
     INSURANCE_PAYS,
     Action,
     BlackjackGame,
@@ -71,7 +72,7 @@ COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
 
-RULES_FOOTER = "Blackjack paga 3:2 · seguro 2:1 · la banca se planta en 17"
+RULES_FOOTER = "Blackjack paga 2:1 · seguro 2:1 · la banca se planta en 17"
 
 BLACKJACK_LINES = ("🂡 ¡BLACKJACK!", "💥 ¡BLACKJACK!", "🔥 ¡BLACKJACK!")
 WIN_LINES = ("¡Ganas", "¡Le ganas a la banca!", "¡Cobras", "¡Toma ya!")
@@ -182,6 +183,13 @@ def table_embed(
             if cost
             else "Con una ficha de 1 no hay seguro."
         )
+        if cost and game.current.natural:
+            # Con blackjack propio el seguro garantiza cobrar algo: se dice cuánto.
+            offer += (
+                f" Tienes blackjack: asegurado cobras al menos"
+                f" {format_amount(cost * INSURANCE_PAYS)}; sin seguro,"
+                f" {format_amount(game.stake * BLACKJACK_PAYS)} o empate."
+            )
         description = (
             f"## Tú {game.current.total} · Banca {game.visible_dealer_total}\n"
             f"La banca enseña un as. {offer}"

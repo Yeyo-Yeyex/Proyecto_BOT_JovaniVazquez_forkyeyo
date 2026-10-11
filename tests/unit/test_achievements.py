@@ -181,6 +181,7 @@ PRODUCED_STATS = {
     "bj_hands", "bj_wins", "bj_naturals", "bj_double_wins", "bj_splits", "bj_split_sweeps",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
     "bj_dealer_bj_saved", "bj_max_stake", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
+    "bj_natural_insured", "bj_natural_insured_saved", "bj_natural_greed",
     "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
     "casino_all_in_wins", "casino_broke", "casino_bet_666", "casino_bet_42",
@@ -648,6 +649,20 @@ def test_blackjack_seguro_perdido_y_siniestro_total() -> None:
     assert "bj_insured_bust" not in wasted.add
     bust = blackjack_stats(insured_game([10, 6, 9], [1, 7]))
     assert bust.add["bj_insured_bust"] == 1
+
+
+def test_blackjack_propio_asegurado_y_rechazado() -> None:
+    natural, ace_ten = [1, 13], [1, 13]
+    saved = blackjack_stats(insured_game(natural, ace_ten))
+    assert saved.add["bj_natural_insured"] == 1
+    assert saved.add["bj_natural_insured_saved"] == 1
+    lost = blackjack_stats(insured_game(natural, [1, 7]))
+    assert lost.add["bj_natural_insured"] == 1
+    assert "bj_natural_insured_saved" not in lost.add
+    declined = settled_game([natural], ace_ten)
+    assert blackjack_stats(declined).add["bj_natural_greed"] == 1
+    # Con un 10 a la vista no hay seguro que rechazar.
+    assert "bj_natural_greed" not in blackjack_stats(settled_game([natural], [13, 1])).add
 
 
 def test_blackjack_mano_de_5000_o_mas() -> None:
