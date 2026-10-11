@@ -14,7 +14,8 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   (`CoinView.heads`). discord.py no avisa de los clics con un evento que diga qué
   botón fue, así que se envuelve el método que los despacha (ver `install_hooks`).
   Un clic que termina sin respuesta a Discord cuenta como error: es el «Esta
-  interacción ha fallado» que ve el miembro.
+  interacción ha fallado» que ve el miembro. Los botones que atiende un listener
+  (marcados con `LISTENER_ITEM`) no los cuenta la vista sino el listener.
 - Latencia de la primera respuesta (`defer`, `send_message`, `edit_message`,
   `send_modal`), desde que Discord creó la interacción. Es lo que tiene que
   quedar por debajo de 3 segundos.
@@ -55,7 +56,7 @@ from discord.ext import commands, tasks
 from discord.ui.view import BaseView, ViewStore
 
 from bot.services import telemetry as telemetry_service
-from bot.services.telemetry import SystemSample, TelemetryService, local_moment
+from bot.services.telemetry import LISTENER_ITEM, SystemSample, TelemetryService, local_moment
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,8 @@ def _counted_view_task(original: Callable[..., Awaitable[Any]]) -> Callable[...,
         try:
             return await original(self, item, interaction)
         finally:
-            _count_interaction(interaction, "button", item_name(self, item))
+            if not getattr(item, LISTENER_ITEM, False):
+                _count_interaction(interaction, "button", item_name(self, item))
 
     return run
 

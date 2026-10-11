@@ -64,6 +64,14 @@ PENDING_SECONDS = 600
 MAX_PENDING = 5000
 """Latencias pendientes como mucho; al pasarse se tiran las más antiguas."""
 
+LISTENER_ITEM = "telemetry_listener"
+"""Atributo de un botón cuyos clics atiende un listener y no su vista.
+
+La vista recibe el clic, lo rechaza sin contestar y el listener contesta después:
+si la vista lo contara, saldría siempre sin respuesta. Lo cuenta el listener con
+`TelemetryService.count` (como `Work.on_interaction` con el minijuego de `pala`).
+"""
+
 LATENCY_BUCKETS = (500, 1000, 3000)
 """Cortes de latencia en ms: `<500`, `<1000`, `<3000` y `>=3000`."""
 

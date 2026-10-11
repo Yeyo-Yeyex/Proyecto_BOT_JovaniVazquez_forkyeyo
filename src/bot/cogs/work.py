@@ -76,6 +76,7 @@ from bot.services.pala import (
 from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
+from bot.services.telemetry import LISTENER_ITEM
 from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
@@ -455,10 +456,16 @@ class PalaPanel(ui.LayoutView):
         *,
         style: discord.ButtonStyle = discord.ButtonStyle.secondary,
     ) -> ui.Button:
-        """Botón del minijuego: lo atiende `Work.on_interaction` por su `custom_id`."""
-        return ui.Button(
+        """Botón del minijuego: lo atiende `Work.on_interaction` por su `custom_id`.
+
+        Va marcado para que la telemetría no lo cuente al pasar por la vista, que
+        lo rechaza sin contestar: lo cuenta el listener.
+        """
+        button: ui.Button = ui.Button(
             label=label[:80], style=style, custom_id=game_id(self.token, round_index, choice)
         )
+        setattr(button, LISTENER_ITEM, True)
+        return button
 
     def _frame(self, text: str, color: discord.Color, rows: list[ui.ActionRow]) -> None:
         self.clear_items()
@@ -855,19 +862,20 @@ class PalaPanel(ui.LayoutView):
         guard: bool = False,
         remote: bool = False,
     ) -> None:
+        # Antes del candado: un segundo clic esperaría a que el primero acabe con la
+        # base de datos sin haber contestado a Discord.
+        await ack(interaction)
         async with self._lock:
             if self.shift is not None:
-                await ack(interaction)
                 return
             key = (self.guild_id, self.owner.id)
             if key in self.cog.working:
                 # Dos paneles abiertos no pueden fichar a la vez: el segundo se
                 # saltaría la jornada, la batería y la pregunta del B.
-                await interaction.response.send_message(
-                    "Ya estás fichando en otro panel. Una pala cada vez, mi amor.", ephemeral=True
+                await notify(
+                    interaction, "Ya estás fichando en otro panel. Una pala cada vez, mi amor."
                 )
                 return
-            await ack(interaction)
             owned = await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id)
             try:
                 shift = await self.service.start_shift(
@@ -1283,13 +1291,26 @@ class Work(commands.Cog, name="Trabajo"):
         if not isinstance(custom_id, str) or (parsed := parse_game_id(custom_id)) is None:
             return
         token, round_index, choice = parsed
-        panel = next((p for p in self.panels if p.token == token), None)
-        if panel is None:
-            await interaction.response.send_message(
-                "Este panel de la pala ya caducó. Abre otro con `pala`.", ephemeral=True
+        try:
+            panel = next((p for p in self.panels if p.token == token), None)
+            if panel is None:
+                await interaction.response.send_message(
+                    "Este panel de la pala ya caducó. Abre otro con `pala`.", ephemeral=True
+                )
+                return
+            await panel.game_click(interaction, round_index, choice)
+        finally:
+            # La vista no cuenta estos botones (`LISTENER_ITEM`): se cuentan aquí,
+            # ya contestados, con el mismo nombre en cada clic.
+            telemetry = self.bot.telemetry
+            telemetry.count(
+                "button",
+                "PalaPanel.game_click",
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                ms=telemetry.take_answer(interaction.id),
+                error=not interaction.response.is_done(),
             )
-            return
-        await panel.game_click(interaction, round_index, choice)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
