@@ -116,6 +116,8 @@ HOT_WINDOW = 100
 #: Espera antes de precargar tras cambiar la ficha: si llega otro cambio (½ ½ ½),
 #: la precarga anterior se cancela antes de tocar el navegador.
 PRELOAD_DEBOUNCE_SECONDS = 0.6
+#: Cobrar el IMV en estos primeros minutos del día cuenta para `imv_midnight`.
+IMV_MIDNIGHT_MINUTES = 5
 
 GIF_NAME = "ruleta.gif"
 
@@ -1256,7 +1258,8 @@ class Casino(commands.Cog):
                 f"{streak} · Saldo: **{format_amount(result.balance)}**{work}\n"
                 f"Vuelve {next_at} y cobras {format_amount(daily_amount(result.streak + 1))}"
                 f"{' (menos lo que trabajes)' if result.work_net else ''}. "
-                f"Si pasan más de 48 h, la racha se pierde.\n"
+                "Toca uno por día (se cuenta a medianoche, hora canaria) y si te saltas "
+                "un día, la racha se pierde.\n"
                 f"-# 🐶 {TAX_COLLECTOR} no puede tocarlo: el IMV está exento de IRPF "
                 "(art. 7.y LIRPF)." + (f"\n{pet}" if pet else "")
             ),
@@ -1270,6 +1273,9 @@ class Casino(commands.Cog):
         )
         if result.work_net:
             delta.add["imv_with_salary"] = 1
+        clock = datetime.now(TIMEZONE)
+        if clock.hour == 0 and clock.minute < IMV_MIDNIGHT_MINUTES:
+            delta.add["imv_midnight"] = 1
         if result.reduction and result.amount <= round(result.full_amount * IMV_FLOOR_SHARE):
             delta.add["imv_floor"] = 1
         await logros.track(self.bot, responder.guild.id, user, responder.channel, delta)

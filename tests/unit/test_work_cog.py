@@ -24,7 +24,15 @@ from bot.services import pala
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.levels import local_day
 from bot.services.pala import WorkService
-from bot.services.work import LEGAL_EXTRAS_PER_WEEK, ORDINARY_SHIFTS, Mechanic
+from bot.services.work import (
+    BATTERY_MAX,
+    BATTERY_MIN,
+    LEGAL_EXTRAS_PER_WEEK,
+    ORDINARY_SHIFTS,
+    Mechanic,
+    battery_eta,
+    rested_at,
+)
 
 GUILD = 1
 OWNER = 10
@@ -473,3 +481,18 @@ async def test_las_herramientas_de_la_mochila_ayudan_en_el_turno(
     assert "fallo gratis gastado" in texts(panel)
     await panel._finish(None)
     assert panel._tools_owned == 2
+
+
+def test_el_panel_dice_cuando_se_llena_la_bateria() -> None:
+    status = MagicMock(battery=50.0, now=1_000.0)
+    note = work_cog.battery_note(status)
+    assert note == f" · llena <t:{int(battery_eta(50.0, BATTERY_MAX, 1_000.0))}:R>"
+    assert "fichar" not in note
+    assert work_cog.battery_note(MagicMock(battery=float(BATTERY_MAX), now=0.0)) == " · llena"
+
+
+def test_el_panel_dice_cuando_se_puede_volver_a_fichar() -> None:
+    status = MagicMock(battery=float(BATTERY_MIN), now=1_000.0)
+    note = work_cog.battery_note(status)
+    assert f"vuelves a fichar <t:{int(rested_at(BATTERY_MIN, 1_000.0))}:R>" in note
+    assert f"llena <t:{int(battery_eta(BATTERY_MIN, BATTERY_MAX, 1_000.0))}:R>" in note

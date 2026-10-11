@@ -77,6 +77,8 @@ from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
 from bot.services.work import (
+    BATTERY_MAX,
+    BATTERY_MIN,
     FAMILY_WORRIED,
     FLIGHT_PRICE,
     LEGAL_EXTRAS_PER_WEEK,
@@ -86,8 +88,10 @@ from bot.services.work import (
     Mechanic,
     ShiftKind,
     battery_bar,
+    battery_eta,
     battery_state,
     performance_bar,
+    rested_at,
 )
 from bot.services.work_catalog import CAUGHT_TEXT, COFFEES, JOB_BY_KEY, JOBS, Event
 from bot.services.work_games import GRACE_SECONDS
@@ -225,6 +229,16 @@ def foreign_payslip_text(slip: ForeignPayslip, *, title: str) -> str:
     return "\n".join(lines)
 
 
+def battery_note(status: Status) -> str:
+    """Cuándo se puede volver a fichar y cuándo estará llena la batería."""
+    if status.battery >= BATTERY_MAX:
+        return " · llena"
+    full = f"llena <t:{int(battery_eta(status.battery, BATTERY_MAX, status.now))}:R>"
+    if status.battery <= BATTERY_MIN:
+        return f" · 🛏️ vuelves a fichar <t:{int(rested_at(status.battery, status.now))}:R> · {full}"
+    return f" · {full}"
+
+
 def status_text(status: Status, notes: list[str]) -> str:
     """Texto del panel de un contrato."""
     contract, job, position = status.contract, status.job, status.position
@@ -235,7 +249,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         f"Sueldo base: **{format_amount(position.base_pay)}** por turno · Minijuego: "
         f"{MECHANIC_NAMES[position.mechanic]} ({position.seconds} s)"
         + (" · autónomo" if position.self_employed else ""),
-        f"{battery_bar(status.battery)}{state_text}",
+        f"{battery_bar(status.battery)}{state_text}{battery_note(status)}",
         performance_bar(contract.performance)
         + (" · ⚠️ aviso: si vuelve a 0, te bajan" if contract.warned else ""),
         f"❤️ Familia: {contract.family}/100" + (" 😟" if contract.family < FAMILY_WORRIED else ""),

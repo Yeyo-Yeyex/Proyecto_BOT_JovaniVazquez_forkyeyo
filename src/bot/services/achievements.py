@@ -4079,6 +4079,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (30, "imvs_30", "Disciplina", "Cobra el IMV 30 días seguidos.", E),
         (100, "imvs_100", "Inquebrantable", "Cobra el IMV 100 días seguidos.", L),
     ])  # fmt: skip
+    a += _tiers("economy", "imv_midnight", [
+        (1, "imv_midnight_1", "Cola del SEPE a las 00:00",
+         "Cobra el IMV en los primeros 5 minutos del día, hora canaria.", C),
+        (30, "imv_midnight_30", "La paguita no duerme",
+         "Cobra el IMV 30 veces en los primeros 5 minutos del día.", E),
+    ])  # fmt: skip
     a.append(Achievement(
         id="tax_first",
         name="Bienvenido a España",

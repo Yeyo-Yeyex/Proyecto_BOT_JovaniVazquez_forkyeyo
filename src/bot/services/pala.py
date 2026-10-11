@@ -50,7 +50,6 @@ from bot.services.work import (
     BANKRUPT_CHANCE,
     BATTERY_MAX,
     BATTERY_MIN,
-    BATTERY_REGEN_PER_HOUR,
     BECKHAM_WEEKS,
     EVENT_CHANCE,
     EXIT_CHANCE,
@@ -94,6 +93,7 @@ from bot.services.work import (
     promote,
     promotion_blockers,
     residence_phase,
+    rested_at,
     roll,
     roll_over_day,
     shift_cost,
@@ -485,10 +485,10 @@ class WorkService:
         if status.off_duty:
             raise OffDuty(contract.off_duty_until)
         if status.battery <= BATTERY_MIN:
-            hours = max(1, round(-status.battery / BATTERY_REGEN_PER_HOUR))
+            back = int(rested_at(status.battery, status.now))
             raise WorkError(
-                f"🪫 Estás tan reventado que te quedas dormido de pie. Descansa unas "
-                f"{hours} h o tómate un barraquito."
+                "🪫 Estás tan reventado que te quedas dormido de pie. Vuelve a fichar "
+                f"<t:{back}:R> o tómate un barraquito."
             )
         if guard and not status.can_guard:
             raise WorkError("En tu puesto no hay guardias.")
