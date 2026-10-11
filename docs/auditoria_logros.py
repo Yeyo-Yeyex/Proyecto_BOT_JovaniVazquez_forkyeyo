@@ -46,6 +46,7 @@ import numpy as np
 
 sys.path.insert(0, "src")
 
+from bot.services import bacara as bacara_rules  # noqa: E402
 from bot.services import blackjack as bj  # noqa: E402
 from bot.services import (  # noqa: E402
     bus,
@@ -68,6 +69,7 @@ from bot.services.achievements import (  # noqa: E402
     Achievement,
     Rarity,
     StatDelta,
+    baccarat_stats,
     blackjack_stats,
     bus_stats,
     casino_stats,
@@ -125,6 +127,7 @@ RITMO_CASINO = {
     "dice": 50,
     "pachinko": 60,
     "horses": 30,
+    "baccarat": 60,
 }
 
 #: Cuánto suma al día cada contador para un miembro activo que hace esa cosa.
@@ -592,6 +595,46 @@ def _jugar_caballos(j: Jugador) -> StatDelta:
     return _con_casino(delta, stake=APUESTA, net=prize - APUESTA)
 
 
+#: Lado de un jugador normal de bacará: sobre todo Banca, bastante Jugador y algún
+#: empate suelto. A veces añade una ficha pequeña al empate.
+_LADOS_BACARA = ((bacara_rules.Side.BANKER, 55), (bacara_rules.Side.PLAYER, 35),
+                 (bacara_rules.Side.TIE, 10))  # fmt: skip
+
+
+def _jugar_bacara(j: Jugador) -> StatDelta:
+    rng = j.rng
+    shoe = j.extra.get("bac_shoe")
+    if not isinstance(shoe, bacara_rules.Shoe) or shoe.finished:
+        shoe = bacara_rules.Shoe.open(rng.shuffle)
+        j.extra["bac_shoe"] = shoe
+        j.extra["bac_road"] = []
+        j.extra["bac_hands"] = 0
+    road: list[bacara_rules.Result] = j.extra["bac_road"]  # type: ignore[assignment]
+    coup = shoe.deal()
+    side = _elegir(rng, _LADOS_BACARA)
+    bets = {side: APUESTA}
+    if side is not bacara_rules.Side.TIE and rng.random() < 0.08:
+        bets[bacara_rules.Side.TIE] = 20
+    prize = sum(bacara_rules.payout(s, v, coup.winner) for s, v in bets.items())
+    net = prize - sum(bets.values())
+    streak = int(j.extra.get("bac_streak", 0))  # type: ignore[call-overload]
+    streak = streak + 1 if net > 0 else (0 if net < 0 else streak)
+    j.extra["bac_streak"] = streak
+    hands = int(j.extra["bac_hands"]) + 1  # type: ignore[call-overload]
+    j.extra["bac_hands"] = hands
+    delta = baccarat_stats(
+        coup,
+        bets=bets,
+        prize=prize,
+        before=list(road),
+        shoe_hands=hands,
+        win_streak=streak if net > 0 else 0,
+        when=NOON,
+    )
+    road.append(bacara_rules.Result.of(coup))
+    return _con_casino(delta, stake=sum(bets.values()), net=net)
+
+
 JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "slots": _jugar_slots,
     "botes": _jugar_botes,
@@ -605,6 +648,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "roulette": _jugar_ruleta,
     "blackjack": _jugar_blackjack,
     "horses": _jugar_caballos,
+    "baccarat": _jugar_bacara,
 }
 
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 import re
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -40,6 +40,14 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from bot.services.autoplay import StopReason
+from bot.services.bacara import BANKER_MIN_STAKE as BACCARAT_BANKER_MIN
+from bot.services.bacara import Coup as BaccaratCoup
+from bot.services.bacara import Result as BaccaratResult
+from bot.services.bacara import Side as BaccaratSide
+from bot.services.bacara import chop_run as baccarat_chop_run
+from bot.services.bacara import commission as baccarat_commission
+from bot.services.bacara import hand_points as baccarat_points
+from bot.services.bacara import road_stats as baccarat_road_stats
 from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
@@ -227,6 +235,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("dice", "🎲 Dados", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
+    Category("baccarat", "🍸 Bacará", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
@@ -3723,6 +3732,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1),
         ),
     ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_thirteen_games",
+        name="Trece apellidos ludópatas",
+        description="Juega a los trece juegos del casino, de la ruleta al bacará. Y sin gafe.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+        ),
+    ))  # fmt: skip
 
     a += _tiers("pachinko", "pachinko_volleys", [
         (50_000, "pachi_50k", "Pachinko de por vida", "Lanza 50.000 tandas en el pachinko.", M),
@@ -7024,6 +7046,189 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
 
+    # 🍸 Bacará ---------------------------------------------------------------------------
+    a += _tiers("baccarat", "bac_hands", [
+        (1, "bac_1", "Bond, James Bond", "Juega tu primera mano de bacará.", C),
+        (100, "bac_100", "Habitual de Punto y Banca", "Juega 100 manos de bacará.", C),
+        (1_000, "bac_1k", "Socio del casino de Torrelodones", "Juega 1.000 manos de bacará.", E),
+        (10_000, "bac_10k", "Ballena de Macao", "Juega 10.000 manos de bacará.", L),
+        (50_000, "bac_50k", "Dueño del zapato",
+         "Juega 50.000 manos de bacará. El crupier ya te llama por tu nombre.", M),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_wins", [
+        (50, "bacw_50", "Punto a favor", "Gana 50 manos de bacará.", C),
+        (500, "bacw_500", "Mayoría en la mesa verde", "Gana 500 manos de bacará.", E),
+        (5_000, "bacw_5k", "Sanchismo de casino",
+         "Gana 5.000 manos de bacará. Pierdes elecciones, pero gobiernas.", L),
+        (20_000, "bacw_20k", "Manual de resistencia en Macao", "Gana 20.000 manos de bacará.", M),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_losses", [
+        (1, "bacp_1", "Shaken, not stirred", "Pierde tu primera mano de bacará.", C),
+        (50, "bacp_50", "Rescate a la Banca", "Pierde 50 manos de bacará.", C),
+        (500, "bacp_500", "Contribuyente neto del casino", "Pierde 500 manos de bacará.", E),
+        (5_000, "bacp_5k", "Déficit estructural", "Pierde 5.000 manos de bacará.", L),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_banker_wins", [
+        (100, "bac_banca_100", "La Banca siempre gana", "Gana 100 manos apostando a la Banca.", R),
+        (1_000, "bac_banca_1k", "Consejero del Banco de España",
+         "Gana 1.000 manos apostando a la Banca.", L),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_player_wins", [
+        (100, "bac_jugador_100", "Del lado del pueblo",
+         "Gana 100 manos apostando al Jugador.", R),
+        (1_000, "bac_jugador_1k", "Sindicalista de la mesa verde",
+         "Gana 1.000 manos apostando al Jugador.", L),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_tie_wins", [
+        (1, "bac_empate", "Empate a todo", "Acierta un empate en el bacará (paga 8 a 1).", C),
+        (10, "bac_empate_10", "Equidistante profesional", "Acierta 10 empates.", R),
+        (50, "bac_empate_50", "Tablas en el Congreso", "Acierta 50 empates.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_pushes", [
+        (1, "bac_devuelto", "Que me quede como estaba",
+         "Te devuelven lo apostado a Jugador o a Banca porque empatan.", C),
+        (100, "bac_devuelto_100", "Ni sube ni baja, como el IPC oficial",
+         "Te devuelven lo apostado por empate 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_naturals_won", [
+        (1, "bac_natural", "Natural como la vida misma",
+         "Gana una mano con un natural (8 o 9 en dos cartas).", C),
+        (100, "bac_natural_100", "Naturalidad ministerial", "Gana 100 manos con natural.", R),
+        (1_000, "bac_natural_1k", "Más natural que el agua de Firgas",
+         "Gana 1.000 manos con natural.", L),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_nine_wins", [
+        (1, "bac_nueve", "El nueve de toda la vida", "Gana con un natural de 9.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_comebacks", [
+        (1, "bac_remontada", "Remontada de la tercera carta",
+         "Gana una mano que ibas perdiendo con las dos primeras cartas.", C),
+        (100, "bac_remontada_100", "Moción de censura constructiva",
+         "Gana 100 manos remontando con la tercera carta.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_squeeze_nine", [
+        (1, "bac_apreton", "Apretar hasta el nueve",
+         "Gana una mano en la que tu lado llega a 9 con la tercera carta.", C),
+        (50, "bac_apreton_50", "Dedos de crupier de Macao",
+         "Llega a 9 con la tercera carta y gana 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_lost_by_one", [
+        (1, "bac_por_uno", "A un punto del escaño",
+         "Pierde una mano de bacará por un solo punto.", C),
+        (100, "bac_por_uno_100", "Siempre a un escaño", "Pierde 100 manos por un solo punto.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_six_cards", [
+        (100, "bac_seis", "Mano larga",
+         "Juega 100 manos en las que salen las seis cartas.", R),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_natural_beaten", [
+        (1, "bac_natural_pero", "Natural, pero menos",
+         "Pierde con un natural de 8 contra un natural de 9.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_tie_zero", [
+        (1, "bac_cero", "Cero a cero en el Bernabéu",
+         "Juega una mano que acaba en empate a cero.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_natural_tie", [
+        (1, "bac_empate_natural", "Empate técnico en el CIS",
+         "Juega una mano en la que los dos sacan el mismo natural.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_win_streak_max", [
+        (3, "bac_racha_3", "Tres de tres", "Gana 3 manos de bacará seguidas.", C),
+        (6, "bac_racha_6", "Legislatura sin sobresaltos", "Gana 6 manos de bacará seguidas.", C),
+        (9, "bac_racha_9", "Mayoría absoluta en la mesa", "Gana 9 manos de bacará seguidas.", E),
+        (12, "bac_racha_12", "Ni una moción de censura",
+         "Gana 12 manos de bacará seguidas.", M),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_win_max", [
+        (10_000, "bac_rico", "Martini con aceituna de oro",
+         "Gana 10.000 Y$ en una mano de bacará.", E),
+        (100_000, "bac_millonario", "Al servicio de Su Majestad",
+         "Gana 100.000 Y$ en una mano de bacará.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("baccarat", "bac_road_longest", [
+        (8, "bac_dragon", "Ver al dragón",
+         "Juega en un zapato en el que un lado gana 8 manos seguidas.", R),
+        (12, "bac_dragon_12", "El dragón de Komodo",
+         "Juega en un zapato en el que un lado gana 12 manos seguidas.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_dragon_ride", [
+        (1, "bac_montar", "Montar al dragón",
+         "Apuesta a favor de una racha de 5 o más y gana.", C),
+        (50, "bac_montar_50", "Jinete del dragón", "Monta al dragón y gana 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_dragon_slay", [
+        (1, "bac_cortar", "Cortarle la cola al dragón",
+         "Apuesta contra una racha de 5 o más y gana.", C),
+        (50, "bac_cortar_50", "San Jorge de Moncloa", "Corta al dragón 50 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_pingpong", [
+        (1, "bac_pingpong", "Ping-pong parlamentario",
+         "Gana una mano tras 6 o más que alternan Banca y Jugador.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_table_max", [
+        (3, "bac_mus", "Partida de mus", "Juega una mano de bacará con 3 personas en la mesa.", C),
+        (6, "bac_consejo", "Mesa del Congreso",
+         "Juega una mano de bacará con 6 personas en la mesa.", R),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_alone_win", [
+        (1, "bac_verso_suelto", "Voto en contra de mi grupo",
+         "Gana siendo el único en tu lado, con al menos dos en el contrario.", R, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_herd_loss", [
+        (1, "bac_rebano", "Efecto rebaño",
+         "Pierde una mano en la que los 3 o más de la mesa iban al mismo lado.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_starter", [
+        (25, "bac_crupier", "El crupier eres tú",
+         "Sé quien pulsa el ¡Cartas! que reparte 25 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_hedge", [
+        (1, "bac_pacto", "Pacto de Gobierno",
+         "Apuesta a la Banca y al Jugador en la misma mano.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_all_three", [
+        (1, "bac_cafe", "Geometría variable",
+         "Apuesta a Jugador, Banca y Empate en la misma mano.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_shoe_first", [
+        (1, "bac_estreno", "Estreno de zapato", "Juega la primera mano de un zapato nuevo.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_shoe_last", [
+        (1, "bac_cierre", "Cierre de zapato", "Juega la última mano de un zapato.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_shoe_hands_max", [
+        (30, "bac_zapato_30", "Zapato gastado", "Juega 30 manos del mismo zapato.", C),
+        (70, "bac_zapato_70", "Del corte a la quema", "Juega 70 manos del mismo zapato.", R),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_commission", [
+        (1_000, "bac_comision", "El 5 % de toda la vida",
+         "Paga 1.000 Y$ de comisión a la Banca.", R),
+        (10_000, "bac_comision_10k", "Comisionista de mascarillas",
+         "Paga 10.000 Y$ de comisión a la Banca.", L),
+        (100_000, "bac_comision_100k", "La UCO pregunta por el 5 %",
+         "Paga 100.000 Y$ de comisión a la Banca.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("baccarat", "bac_banker_min", [
+        (1, "bac_justo", "Lo justo para la comisión",
+         "Apuesta a la Banca el mínimo, 20 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_night", [
+        (1, "bac_madrugada", "Ludópata de madrugada",
+         "Juega al bacará de madrugada (de 2 a 6).", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_newyear", [
+        (1, "bac_uvas", "Uvas y bacará", "Juega al bacará en Nochevieja.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_pino", [
+        (1, "bac_pino", "Romería al casino",
+         "Juega al bacará el 8 de septiembre, día del Pino.", C),
+    ])  # fmt: skip
+    a += _tiers("baccarat", "bac_friday13", [
+        (1, "bac_viernes13", "Gafe de mesa verde",
+         "Pierde una mano de bacará un viernes 13.", C, True),
+    ])  # fmt: skip
+
     countable = sum(
         1 for x in a if x.category != "meta" and not CATEGORY_BY_KEY[x.category].upcoming
     )
@@ -9270,6 +9475,121 @@ def bus_stats(game: BusGame, *, when: datetime) -> StatDelta:
     bump("bus_night", 2 <= when.hour < 6)
     bump("bus_rush", when.weekday() < 5 and 7 <= when.hour < 9)
     bump("bus_canarias", when.month == 5 and when.day == 30)
+    return delta
+
+
+#: Racha de la carretera (manos seguidas de un lado) a partir de la cual hay «dragón».
+BACCARAT_DRAGON = 5
+#: Manos alternas (Banca, Jugador, Banca…) para el ping-pong.
+BACCARAT_PINGPONG = 6
+
+
+def baccarat_stats(
+    coup: BaccaratCoup,
+    *,
+    bets: Mapping[BaccaratSide, int],
+    prize: int,
+    before: Sequence[BaccaratResult],
+    players: int = 1,
+    alone_win: bool = False,
+    herd_loss: bool = False,
+    starter: bool = False,
+    shoe_hands: int = 1,
+    win_streak: int = 0,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una mano de bacará para un miembro (sin lo común del casino).
+
+    Args:
+        coup: La mano repartida.
+        bets: Lo que puso en cada lado (solo los lados con apuesta).
+        prize: Lo que le devuelve la mano (apuesta incluida).
+        before: Resultados del zapato antes de esta mano (para el dragón y el ping-pong).
+        players: Personas con apuesta en la mano.
+        alone_win: Ganó siendo el único de su lado, con dos o más en el contrario.
+        herd_loss: Perdió en una mano en la que los 3 o más de la mesa iban al mismo lado.
+        starter: Pulsó el ¡Cartas! que hizo repartir.
+        shoe_hands: Manos que lleva en este zapato, contando esta.
+        win_streak: Manos de bacará ganadas seguidas, contando esta (0 si no gana).
+        when: Hora local.
+    """
+    stake = sum(bets.values())
+    net = prize - stake
+    winner = coup.winner
+    after = [*before, BaccaratResult.of(coup)]
+    road = baccarat_road_stats(after)
+    delta = StatDelta(
+        add={"bac_hands": 1},
+        peak={
+            "bac_table_max": players,
+            "bac_shoe_hands_max": shoe_hands,
+            "bac_road_longest": road.longest,
+            "bac_win_streak_max": win_streak,
+        },
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    main = [s for s in (BaccaratSide.BANKER, BaccaratSide.PLAYER) if s in bets]
+    won_sides = [s for s in bets if s is winner]
+    bump("bac_wins", net > 0)
+    bump("bac_losses", net < 0)
+    if net > 0:
+        delta.peak["bac_win_max"] = net
+    bump("bac_banker_wins", winner is BaccaratSide.BANKER and BaccaratSide.BANKER in bets)
+    bump("bac_player_wins", winner is BaccaratSide.PLAYER and BaccaratSide.PLAYER in bets)
+    bump("bac_tie_wins", winner is BaccaratSide.TIE and BaccaratSide.TIE in bets)
+    bump("bac_pushes", winner is BaccaratSide.TIE and bool(main))
+    for side in won_sides:
+        if side is BaccaratSide.TIE:
+            continue
+        natural = coup.natural_of(side)
+        bump("bac_naturals_won", natural is not None)
+        bump("bac_nine_wins", natural == 9)
+        bump("bac_comebacks", coup.comeback(side))
+        cards = coup.player if side is BaccaratSide.PLAYER else coup.banker
+        bump("bac_squeeze_nine", len(cards) == 3 and baccarat_points(cards) == 9)
+    for side in main:
+        if winner not in (side, BaccaratSide.TIE):
+            bump("bac_lost_by_one", coup.margin == 1)
+            other = BaccaratSide.PLAYER if side is BaccaratSide.BANKER else BaccaratSide.BANKER
+            bump("bac_natural_beaten", coup.natural_of(side) == 8 and coup.natural_of(other) == 9)
+    bump("bac_six_cards", coup.cards == 6)
+    bump("bac_tie_zero", winner is BaccaratSide.TIE and coup.player_total == 0)
+    bump(
+        "bac_natural_tie",
+        winner is BaccaratSide.TIE
+        and coup.natural_of(BaccaratSide.PLAYER) is not None
+        and coup.natural_of(BaccaratSide.BANKER) is not None,
+    )
+    # El dragón: la racha que había antes de esta mano.
+    previous = baccarat_road_stats(before)
+    if previous.streak >= BACCARAT_DRAGON and previous.streak_side is not None:
+        streak_side = previous.streak_side
+        against = BaccaratSide.PLAYER if streak_side is BaccaratSide.BANKER else BaccaratSide.BANKER
+        bump("bac_dragon_ride", streak_side in bets and winner is streak_side)
+        bump("bac_dragon_slay", against in bets and winner is against)
+    bump(
+        "bac_pingpong",
+        net > 0 and winner is not BaccaratSide.TIE and baccarat_chop_run(after) > BACCARAT_PINGPONG,
+    )
+    bump("bac_alone_win", alone_win)
+    bump("bac_herd_loss", herd_loss)
+    bump("bac_starter", starter)
+    bump("bac_hedge", BaccaratSide.BANKER in bets and BaccaratSide.PLAYER in bets)
+    bump("bac_all_three", len(bets) == 3)
+    bump("bac_shoe_first", coup.number == 1)
+    bump("bac_shoe_last", coup.last)
+    if winner is BaccaratSide.BANKER and BaccaratSide.BANKER in bets:
+        bump("bac_commission", amount=baccarat_commission(bets[BaccaratSide.BANKER]))
+    bump("bac_banker_min", bets.get(BaccaratSide.BANKER) == BACCARAT_BANKER_MIN)
+    bump("bac_night", 2 <= when.hour < 6)
+    bump("bac_newyear", when.month == 12 and when.day == 31)
+    bump("bac_pino", when.month == 9 and when.day == 8)
+    bump("bac_friday13", net < 0 and when.weekday() == 4 and when.day == 13)
     return delta
 
 

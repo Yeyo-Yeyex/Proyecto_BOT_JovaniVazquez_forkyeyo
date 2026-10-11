@@ -74,7 +74,7 @@ python -m bot
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
   | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `bacara [cantidad] [lado]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -447,6 +447,15 @@ python -m bot
   Gran Premio con un bote para quien acierte el ganador, que crece si nadie
   acierta. Tributa como el resto del
   casino.
+- **Bacará** (`/bacara`, `.bacara [cantidad] [lado]`): Punto y Banca con las
+  reglas de casino y un zapato de 8 barajas compartido por todo el canal. Se
+  apuesta a 🔵 Jugador (1:1), 🟢 Empate (8:1) o 🔴 Banca (0,95:1, mínimo 20 Y$),
+  con 🔁 Repetir para jugar de un clic. Cada mano es un GIF dibujado con canvas
+  en Node: las cartas vuelan del zapato, se descubren y las terceras se
+  aprietan a tirones; abajo, la carretera grande con las rachas del zapato.
+  La mano siguiente se pinta mientras se ve la anterior, así que sale al
+  instante. Ventaja de la casa: 1,06 % en Banca, 1,24 % en Jugador y 14,36 % en
+  Empate (`docs/rtp_bacara.py`). Tributa como el resto del casino.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
   japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
   bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
@@ -685,8 +694,8 @@ audio. La imagen incluye `ffmpeg` y `libopus`, y un Chromium sin ventana
 de los caballos y, si falla Node, el resto de juegos. Los caballos abren el
 suyo: mientras se usa ocupa unos 150-250 MB de memoria y se cierra solo tras
 10 minutos sin uso; si no estuviera, el bot dibuja con Pillow.
-Cara o cruz, los dados, la ruleta, el autobús y la carrera de los caballos
-ya no usan Chromium: los pinta Node con `@napi-rs/canvas` (Skia, el mismo
+Cara o cruz, los dados, la ruleta, el autobús, el bacará y la carrera de los
+caballos ya no usan Chromium: los pinta Node con `@napi-rs/canvas` (Skia, el mismo
 motor de dibujo), con procesos de unos 90 MB que arrancan en menos de medio
 segundo.
 
@@ -895,6 +904,7 @@ src/bot/
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
+│   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y su vista
@@ -952,6 +962,9 @@ src/bot/
 │   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
 │   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas
 │   ├── horses_scene.py  # Caballos: carrera en Node, parrilla y boleto en Chromium
+│   ├── bacara.py        # Bacará: zapato, tercera carta, pagos y carretera grande
+│   ├── bacara_render.py # Bacará: lo que se ve en cada fotograma y dibujo con Pillow
+│   ├── bacara_scene.py  # Bacará con canvas en Node o Chromium (assets/bacara/escena.html)
 │   ├── porras.py        # Propuestas, tope del bote y reparto mutuo de las porras
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
@@ -966,6 +979,7 @@ src/bot/
     ├── bienvenidas.txt # Frases de bienvenida y de vuelta, editables sin tocar código
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
     ├── caballos/       # escena.html: canvas y HTML/CSS de las carreras de caballos
+    ├── bacara/         # escena.html: canvas de la mesa de bacará
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```

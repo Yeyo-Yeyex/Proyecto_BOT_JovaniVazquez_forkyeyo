@@ -464,6 +464,47 @@ async def press_perfil_backpack(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def bacara_table(client: BotClient):  # noqa: ANN201
+    """Una mesa de bacará del bot real, abierta y sin pintar nada por adelantado."""
+    cog = client.get_cog("Bacará")
+    cog.ahead = False
+    module = module_of(client, "Bacará")
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 5
+    table = module.Table(cog, guild_id=GUILD_ID, channel=channel, state=cog.shoe_for(5), png=b"PNG")
+    table.open_round()
+    return module, table
+
+
+async def press_bacara_bet(client: BotClient, owner: MagicMock) -> Click:
+    module, table = bacara_table(client)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.bet_callback(module.Side.BANKER)(interaction)
+
+    return click
+
+
+async def press_bacara_repeat(client: BotClient, owner: MagicMock) -> Click:
+    module, table = bacara_table(client)
+    table.cog.last_bets[(GUILD_ID, OWNER_ID)] = {module.Side.PLAYER: 100, module.Side.TIE: 20}
+
+    async def click(interaction: MagicMock) -> None:
+        await table.repeat(interaction)
+
+    return click
+
+
+async def press_bacara_double(client: BotClient, owner: MagicMock) -> Click:
+    module, table = bacara_table(client)
+    await table.place(owner, module.Side.PLAYER, 100)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.double(interaction)
+
+    return click
+
+
 CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
@@ -484,6 +525,9 @@ CASES: dict[str, Press] = {
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "blackjack: seguro": press_blackjack_insurance,
+    "bacará: apostar": press_bacara_bet,
+    "bacará: repetir": press_bacara_repeat,
+    "bacará: doblar": press_bacara_double,
     "pala: elegir curro": press_pala_hire,
     "tienda: comprar": press_checkout,
     "apuestas: cambiar de página": press_casino_stats,
