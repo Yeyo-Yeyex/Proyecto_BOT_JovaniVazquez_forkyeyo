@@ -313,11 +313,14 @@ python -m bot
   (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
   pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
-  apuesta (empate si tú también lo tienes). Seguro con un as de la banca:
-  cuesta media apuesta y paga 2:1 si tiene blackjack. Blackjack paga 3:2,
+  apuesta (empate si tú también lo tienes). Seguro con un as de la banca,
+  también si tienes blackjack: cuesta media apuesta y paga 2:1 si ella lo
+  tiene; con tu blackjack es el «dinero par»: cobras una apuesta pase lo
+  que pase. Blackjack paga 3:2,
   doblar con dos cartas (también tras separar), separar una vez; sin
-  rendición ni tope de apuesta. Jugando bien y sin seguro, el juego devuelve ≈ 99,7 % de lo
-  apostado; el seguro, ≈ 92 % de lo que se mete en él. La apuesta se cobra al repartir (y al doblar, separar o asegurar) y
+  rendición ni tope de apuesta. Jugando bien y sin seguro, el juego devuelve ≈ 99,8 % de lo
+  apostado y un jugador normal, ≈ 97,3 %; el seguro, ≈ 92 % de lo que se mete en él
+  (`docs/rtp_blackjack.py`). La apuesta se cobra al repartir (y al doblar, separar o asegurar) y
   el premio se paga al acabar. Si la mesa caduca o el bot se apaga con una
   mano a medias, se planta y se paga.
 - **Tragaperras** (`/tragas`, `.tragas [cantidad]`): una máquina de 3 rodillos

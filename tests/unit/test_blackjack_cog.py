@@ -18,7 +18,7 @@ from interaction_fakes import fake_interaction
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
 from bot.repositories.economy import EconomyRepository
-from bot.services.blackjack import Action, Card
+from bot.services.blackjack import INSURANCE_PAYS, Action, Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 GUILD_ID = 1
@@ -321,6 +321,37 @@ async def test_sin_seguro_y_sin_blackjack_de_la_banca_se_juega(tmp_path: Path) -
     assert await balance(cog) == STARTING_BALANCE - 100
 
 
+async def test_con_blackjack_y_as_de_la_banca_se_ofrece_el_seguro_con_sus_cifras(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, c(1), c(1), c(13), c(13))
+    table, *_ = await open_table(cog)
+
+    assert table.game.insurance_pending
+    embed = blackjack_module.table_embed(
+        owner="Diego", game=table.game, balance=0, stake=100, streak=0
+    )
+    assert "Tienes blackjack: asegurado cobras 100 Y$ pase lo que pase (dinero par)" in (
+        embed.description or ""
+    )
+
+    await table.insure(make_interaction(), take=True)
+
+    # La banca también tenía blackjack: la mano empata y el seguro paga 2:1.
+    assert table.game.settled
+    assert await balance(cog) == STARTING_BALANCE + 50 * INSURANCE_PAYS
+
+
+async def test_blackjack_sin_asegurar_y_banca_sin_blackjack_cobra_3_a_2(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(1), c(1), c(13), c(7))
+    table, *_ = await open_table(cog)
+
+    await table.insure(make_interaction(), take=False)
+
+    assert table.game.settled
+    assert await balance(cog) == STARTING_BALANCE + 150
+
+
 async def test_la_mesa_no_tiene_tope_de_apuesta(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, c(10), c(9), c(6), c(8))
     await cog.economy.grant(GUILD_ID, OWNER_ID, amount=50_000, reason="prueba")
@@ -345,3 +376,10 @@ async def test_all_in_y_doblar_ficha_llegan_al_saldo(tmp_path: Path) -> None:
     await table._halve(make_interaction())
     await table._double_stake(make_interaction())
     assert table.stake == left // 2 * 2
+
+
+def test_dinero_par_con_apuesta_impar_da_las_dos_cifras() -> None:
+    # 5 de apuesta: el seguro cuesta 2 y paga 4; sin él, el 3:2 da 7 y quedan 5.
+    text = blackjack_module.natural_insurance_text(5, 2)
+    assert "asegurado cobras 4 Y$ o 5 Y$" in text
+    assert "sin seguro, 7 Y$ o empate" in text

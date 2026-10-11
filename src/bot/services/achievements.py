@@ -1920,7 +1920,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bj_seguro", "Seguro a todo riesgo",
          "Paga el seguro cuando la banca enseña un as.", C),
         (25, "bj_seguro_25", "Cliente de la Mutua",
-         "Paga el seguro 25 veces.", R),
+         "Paga el seguro 25 veces.", E),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_insurance_wasted", [
         (1, "bj_letra_pequena", "La letra pequeña",
@@ -1931,6 +1931,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_insured_bust", [
         (1, "bj_siniestro_total", "Parte amistoso con la banca",
          "Paga el seguro, la banca no tiene blackjack y encima te pasas.", C, True),
+    ])  # fmt: skip
+    # Con blackjack propio y un as de la banca también se ofrece el seguro: cobra
+    # algo seguro, pero menos de media que arriesgar (ver `bot.services.blackjack`).
+    a += _tiers("blackjack", "bj_natural_insured", [
+        (1, "bj_letras_tesoro", "Te pasas a las Letras del Tesoro",
+         "Coge el dinero par con tu blackjack: rentabilidad garantizada, aunque menor.", E),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_natural_insured_saved", [
+        (1, "bj_cinturon_tirantes", "Cinturón y tirantes",
+         "Asegura tu blackjack y que la banca también lo tenga.", L, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_natural_greed", [
+        (1, "bj_lechera", "El cuento de la lechera",
+         "Rechaza el seguro con blackjack y que la banca también lo tenga.", E, True),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_max_stake", [
         (1, "bj_tope", "Aquí ya no hay techo",
@@ -8112,6 +8126,15 @@ def blackjack_stats(game: BlackjackGame) -> StatDelta:
             bump("bj_insurance_wasted")
             if all(h.busted for h in game.hands):
                 bump("bj_insured_bust")
+    natural = bool(game.hands) and game.hands[0].natural
+    # El seguro se ofreció si la banca enseñaba un as (con ficha de 1 no se puede tomar).
+    offered = natural and game.dealer[0].rank == 1 and game.insurance_cost > 0
+    if offered and game.insurance:
+        bump("bj_natural_insured")
+        if game.insurance_paid:
+            bump("bj_natural_insured_saved")
+    elif offered and is_blackjack(game.dealer):
+        bump("bj_natural_greed")
     if game.stake >= BJ_HIGH_STAKE:
         bump("bj_max_stake")
     if any(h.result is Result.LOSE and h.total == 20 and dealer_total == 21 for h in game.hands):

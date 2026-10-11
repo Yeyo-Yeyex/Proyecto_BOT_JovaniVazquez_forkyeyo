@@ -13,9 +13,13 @@ Reglas (las habituales de un casino):
 - La banca mira si tiene blackjack cuando enseña un as o una figura/10; si
   lo tiene, la mano acaba ahí y se pierde la apuesta (empate si el jugador
   también tiene blackjack).
-- Seguro cuando la banca enseña un as: media apuesta que paga 2:1 si la
-  banca tiene blackjack. Se decide antes de que la banca mire su carta.
-  Con blackjack propio no se ofrece.
+- Seguro cuando la banca enseña un as, como en cualquier mesa: media apuesta
+  que paga 2:1 si la banca tiene blackjack. Se decide antes de que la banca
+  mire su carta, y se ofrece también a quien tiene blackjack. Es lo que en las
+  mesas se llama «dinero par»: asegurado cobra una apuesta pase lo que pase (si
+  la banca tiene blackjack, empata la mano y el seguro paga una apuesta; si no,
+  la mano paga 3:2 y se pierde la media del seguro). Sin asegurar cobra 3:2 o
+  empata.
 - Blackjack paga 3:2 (redondeando hacia abajo los céntimos que no existen).
 - Doblar con cualquier par de cartas, también tras separar.
 - Separar una vez dos cartas del mismo valor. Los ases separados reciben
@@ -23,11 +27,14 @@ Reglas (las habituales de un casino):
 - Sin rendición.
 - Sin tope de apuesta: lo había mientras el juego favorecía al jugador.
 
-Con estrategia básica (sin seguro) el juego devuelve ≈ 99,7 % de lo apostado.
-El seguro devuelve ≈ 92 % de lo que se mete en él: la banca solo tiene
-blackjack 4 de cada 13 veces que enseña un as, y pagar 2:1 necesitaría una
-de cada tres. Hasta este cambio el blackjack de la banca era empate y el
-juego devolvía ≈ 103,6 %. Cifras sacadas simulando manos con el código real.
+Lo que devuelve, simulado con el código real (`docs/rtp_blackjack.py`, 2 millones
+de manos): con estrategia básica y sin seguro, ≈ 99,8 % de lo apostado. Un jugador
+normal (el de `docs/auditoria_logros.py`, que se equivoca y a veces se asegura) se
+queda en ≈ 97,3 %. Pagar el blackjack 2:1 lo subía a ≈ 101,8 %: quien juega
+perfecto le ganaba a la casa, y por eso se dejó en 3:2. El seguro devuelve ≈ 92 %
+de lo que se mete en él: la banca solo tiene blackjack 4 de cada 13 veces que
+enseña un as, y pagar 2:1 necesitaría una de cada tres. Con blackjack propio
+tampoco compensa: el dinero par da una apuesta y no asegurar, ≈ 1,03 de media.
 """
 
 from __future__ import annotations
@@ -78,6 +85,11 @@ def hand_total(cards: Sequence[Card]) -> tuple[int, bool]:
     if any(card.rank == 1 for card in cards) and total + 10 <= 21:
         return total + 10, True
     return total, False
+
+
+def blackjack_prize(stake: int) -> int:
+    """Lo que se gana con blackjack, además de la apuesta: 3:2, sin céntimos."""
+    return stake * 3 // 2
 
 
 def is_blackjack(cards: Sequence[Card]) -> bool:
@@ -136,7 +148,7 @@ class Hand:
     def payout(self) -> int:
         """Lo que se devuelve al jugador por esta mano (apuesta incluida)."""
         if self.result is Result.BLACKJACK:
-            return self.stake + self.stake * 3 // 2
+            return self.stake + blackjack_prize(self.stake)
         if self.result is Result.WIN:
             return self.stake * 2
         if self.result is Result.PUSH:
@@ -189,7 +201,8 @@ class BlackjackGame:
 
         Si alguien tiene blackjack la mano termina aquí: la banca enseña su
         carta tapada y no hay turno de jugador. Si la banca enseña un as, la
-        mano espera a `decide_insurance` antes de que la banca mire.
+        mano espera a `decide_insurance` antes de que la banca mire, también
+        con blackjack del jugador.
         """
         if self.stake <= 0:
             raise ValueError("La apuesta debe ser positiva.")
@@ -199,7 +212,7 @@ class BlackjackGame:
         self.dealer.append(self._draw())
         self.hands = [Hand(player, self.stake)]
 
-        if self.dealer[0].rank == 1 and not self.hands[0].natural:
+        if self.dealer[0].rank == 1:
             self.insurance_pending = True
             return
         self._peek()
