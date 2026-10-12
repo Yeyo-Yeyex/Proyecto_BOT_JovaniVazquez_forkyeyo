@@ -21,6 +21,12 @@ probabilidades, pagos ni tiempos (como las supersticiones de la tienda).
   logro ya estaba (`Tienda.sync_reward_skins`).
 - *Por temporada* (`season`): solo se vende en esos meses; fuera de ellos no
   sale en el escaparate ni se puede pagar. Quien ya la tiene la conserva.
+- *Gratis* (`free`): no se vende (artículo oculto; el precio es lo que vale
+  para el patrimonio, como en las de logro); la tienda la mete en la mochila
+  al abrir el 🎨 de su juego o cuando el juego la pide
+  (`Tienda.grant_free_skins`), y no antes: así no llena la mochila de quien
+  nunca ha jugado. Sirven para que un juego tenga donde elegir desde el
+  primer día (los gallos).
 
 **El dibujo de reserva.** Si Node y Chromium fallan, el juego se dibuja con
 Pillow, que no conoce las skins: la mesa sale como siempre. Es raro y no
@@ -37,6 +43,10 @@ parámetros de serie (los colores que hoy están escritos en su escena), que la
 escena lea `meta.skin` en vez de esos colores, que el cog pida la skin con
 `shop.skin_of` y la pase al dibujo, y que la skin entre en la clave de lo que
 se pinta antes del clic. Ver la Biblia, «Tienda», y la ruleta como ejemplo.
+
+Los gallos son el otro caso: cada skin es un gallo entero y en un duelo se
+ven las dos, la de cada dueño (la escena recibe una por esquina). Los gallos
+de la casa usan los mismos parámetros (`bot.services.gallos.HOUSE`).
 """
 
 from __future__ import annotations
@@ -119,6 +129,8 @@ class Skin:
         stock: Unidades numeradas, si es limitada.
         achievement: Id del logro que la regala. Si lo tiene, no se vende.
         season: Temporada en la que se vende, si es de temporada.
+        free: La tiene todo el mundo sin pagar: no se vende y la tienda la
+            regala (ver la docstring del módulo).
     """
 
     key: str
@@ -134,6 +146,7 @@ class Skin:
     stock: int | None = None
     achievement: str | None = None
     season: Season | None = None
+    free: bool = False
 
     @property
     def catalog_key(self) -> str:
@@ -142,8 +155,8 @@ class Skin:
 
     @property
     def for_sale(self) -> bool:
-        """Si se vende en la tienda (las de logro no)."""
-        return self.achievement is None
+        """Si se vende en la tienda (las de logro y las gratis no)."""
+        return self.achievement is None and not self.free
 
     @property
     def label(self) -> str:
@@ -163,6 +176,24 @@ GAMES: dict[str, Game] = {g.key: g for g in (
         # Contorno del título, sobre el fieltro.
         "ink": "#10190f",
     })),
+    # El gallo de serie es un giro colorado: pecho rojizo, esclavina naranja y
+    # cola negra con reflejos verdes. Cada skin es un gallo entero.
+    Game("gallos", "Gallos", "🐓", "gallo", _frozen({
+        # Plumas del cuerpo, de la esclavina (cuello) y del ala.
+        "body": "#b5341f",
+        "hackle": "#e8862a",
+        "wing": "#7a2416",
+        # Las tres hoces de la cola, de dentro afuera.
+        "tail": ("#123a2a", "#1f5a3a", "#0e2a1e"),
+        # Cresta y barbillas, pico y patas (con los espolones).
+        "comb": "#e0242a",
+        "beak": "#e8b04a",
+        "legs": "#e8b04a",
+        # Dibujo de las plumas: `liso`, `moteado` o `barrado`.
+        "pattern": "liso",
+        # Lo que lleva puesto (la escena sabe pintar cada clave; vacío, nada).
+        "accessory": "",
+    })),
 )}
 
 SKINS: tuple[Skin, ...] = (
@@ -174,6 +205,105 @@ SKINS: tuple[Skin, ...] = (
         "fiber": ("rgba(255,200,205,0.045)", "rgba(30,0,6,0.08)"),
         "ink": "#1c0508",
     }), price=15_000, aisle="lujo"),
+    # -- 🐓 Gallos: tres gratis, el resto en la tienda, uno de logro y dos de temporada.
+    Skin("gallo_blanco", "gallos", "🤍", "Gallo blanco", (
+        "Leghorn de granja, blanco nuclear. Lo tiene todo el mundo y aun así impone."
+    ), _frozen({
+        "body": "#f2efe6", "hackle": "#ffffff", "wing": "#d8d3c4",
+        "tail": ("#e8e4d8", "#ffffff", "#cfc9b8"),
+    }), price=2_000, aisle="espana", free=True),
+    Skin("gallo_negro", "gallos", "🖤", "Gallo azabache", (
+        "Negro con reflejos verdes, como el de las peleas de toda la vida. Gratis."
+    ), _frozen({
+        "body": "#1c1f1c", "hackle": "#2a3a2a", "wing": "#121612",
+        "tail": ("#0f2a1c", "#1d4a30", "#0a1a12"),
+    }), price=2_000, aisle="espana", free=True),
+    Skin("gallo_pinto", "gallos", "🤎", "Gallo pinto", (
+        "Moteado en blanco y negro, como un dálmata con espolones. Gratis."
+    ), _frozen({
+        "body": "#3a3530", "hackle": "#e8e2d6", "wing": "#2a2622",
+        "tail": ("#1a1714", "#e8e2d6", "#1a1714"), "pattern": "moteado",
+    }), price=2_000, aisle="espana", free=True),
+    Skin("gallo_corral", "gallos", "🧺", "Gallo del corral de la abuela", (
+        "Barrado gris, criado a base de sobras del cocido. No cambia ni un "
+        "picotazo: solo cómo luce en el reñidero."
+    ), _frozen({
+        "body": "#7a7670", "hackle": "#bdb7ad", "wing": "#5a5650",
+        "tail": ("#3a3834", "#8a857c", "#3a3834"), "pattern": "barrado",
+        "accessory": "pañuelo",
+    }), price=6_000, aisle="espana"),
+    Skin("gallo_canario", "gallos", "🌴", "Gallo de la Fiesta del Pino", (
+        "Amarillo canario, con sombrero de mago y olor a gofio. De Teror de toda "
+        "la vida."
+    ), _frozen({
+        "body": "#f2c81a", "hackle": "#ffe066", "wing": "#d4a40e",
+        "tail": ("#2a6ab8", "#f2f2f2", "#f2c81a"), "accessory": "sombrero",
+    }), price=9_000, aisle="canarias"),
+    Skin("gallo_moncloa", "gallos", "🌹", "Gallo de Moncloa", (
+        "Rojo PSOE con la rosa en la cresta. Resiste a todo: a las encuestas, a la "
+        "UCO y a los picotazos."
+    ), _frozen({
+        "body": "#d81e2a", "hackle": "#ff4a50", "wing": "#a01018",
+        "tail": ("#1a1a1a", "#d81e2a", "#f2f2f2"), "accessory": "rosa",
+    }), price=20_000, aisle="moncloa"),
+    Skin("gallo_eurocrata", "gallos", "🇪🇺", "Gallo eurócrata", (
+        "Azul Bruselas con doce estrellas y el tapón pegado. Viene con su propia "
+        "directiva de 400 páginas."
+    ), _frozen({
+        "body": "#1f3fa0", "hackle": "#3c64d0", "wing": "#162e78",
+        "tail": ("#f2c42a", "#1f3fa0", "#f2c42a"), "comb": "#f2c42a",
+        "accessory": "estrellas",
+    }), price=12_000, aisle="ventanilla"),
+    Skin("gallo_boricua", "gallos", "🇵🇷", "Gallo boricua", (
+        "Con pañuelo de la monoestrellada, como los de las galleras de la isla. "
+        "¡Wepa!"
+    ), _frozen({
+        "body": "#c8202e", "hackle": "#f2f2f2", "wing": "#1a4ab0",
+        "tail": ("#1a4ab0", "#f2f2f2", "#c8202e"), "accessory": "pañuelo",
+    }), price=15_000, aisle="boricua"),
+    Skin("gallo_dragon", "gallos", "🐉", "Gallo del dragón", (
+        "Rojo y oro, de importación directa. Robuso jura que en Hong Kong pelea "
+        "solo."
+    ), _frozen({
+        "body": "#b80c1e", "hackle": "#ffcc33", "wing": "#8a0816",
+        "tail": ("#ffcc33", "#b80c1e", "#ffcc33"), "comb": "#ffcc33",
+        "pattern": "barrado",
+    }), price=18_000, aisle="hongkong"),
+    Skin("gallo_maga", "gallos", "🧢", "Gallo MAGA", (
+        "Tupé naranja y gorra roja. Make Gallinero Great Again. Con arancel "
+        "incluido."
+    ), _frozen({
+        "body": "#f0a030", "hackle": "#ffcc55", "wing": "#c87818",
+        "tail": ("#c8102e", "#f2f2f2", "#1a3a8a"), "accessory": "gorra",
+    }), price=16_000, aisle="shitpost"),
+    Skin("gallo_motosierra", "gallos", "🪚", "Gallo motosierra", (
+        "Celeste y blanco, patillas de león y una motosierra para el gasto público "
+        "del gallinero."
+    ), _frozen({
+        "body": "#74acdf", "hackle": "#f2f2f2", "wing": "#4a8ac0",
+        "tail": ("#74acdf", "#f2f2f2", "#f6b40e"), "accessory": "patillas",
+    }), price=16_000, aisle="shitpost"),
+    Skin("gallo_oro", "gallos", "🏆", "Gallo de oro", (
+        "Solo para quien gana 100 peleas. Oro de verdad, o eso dice el certificado."
+    ), _frozen({
+        "body": "#d4a017", "hackle": "#ffe27a", "wing": "#a87c0c",
+        "tail": ("#ffe27a", "#d4a017", "#fff4c2"), "comb": "#ff3a3a",
+        "accessory": "corona",
+    }), price=50_000, aisle="lujo", achievement="gallos_wins_100"),
+    Skin("gallo_calavera", "gallos", "💀", "Gallo calavera", (
+        "Huesos pintados y velas del Día de Muertos. Solo en octubre y noviembre."
+    ), _frozen({
+        "body": "#1a1a1a", "hackle": "#f2f2f2", "wing": "#2a2a2a",
+        "tail": ("#ff8a00", "#7a2ab8", "#ff8a00"), "comb": "#7a2ab8",
+        "accessory": "calavera",
+    }), price=10_000, aisle="cotillon", season=Season("Halloween", frozenset({10, 11}))),
+    Skin("gallo_navidad", "gallos", "🎄", "Gallo navideño", (
+        "Gorro de Papá Noel y bufanda. El único gallo que canta villancicos en "
+        "vez de al amanecer."
+    ), _frozen({
+        "body": "#c41e3a", "hackle": "#f2f2f2", "wing": "#1e6a32",
+        "tail": ("#1e6a32", "#c41e3a", "#f2f2f2"), "accessory": "gorro",
+    }), price=10_000, aisle="cotillon", season=Season("Navidad", frozenset({12, 1}))),
 )
 # fmt: on
 
@@ -224,3 +354,8 @@ def rewards_for(achievement_ids: list[str] | set[str] | frozenset[str]) -> tuple
     """Skins que regalan estos logros."""
     wanted = set(achievement_ids)
     return tuple(s for s in SKINS if s.achievement in wanted)
+
+
+def free_skins(game: str) -> tuple[Skin, ...]:
+    """Las skins gratis de un juego (las que la tienda regala a todos)."""
+    return tuple(s for s in skins_of(game) if s.free)

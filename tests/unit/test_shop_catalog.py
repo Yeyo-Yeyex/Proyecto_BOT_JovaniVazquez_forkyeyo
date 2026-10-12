@@ -67,6 +67,7 @@ from bot.services.shop_uses import (
     mystery_weight,
     resolve,
 )
+from bot.services.skins import skin_of_item
 from bot.services.taxes import IGIC_BY_KEY
 from bot.services.work_catalog import GIFT_BY_KEY
 from bot.services.work_tools import TOOL_KEYS
@@ -105,8 +106,11 @@ def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
             assert species is not None, entry.key
             assert entry.per_user == 1, "una de cada especie por persona"
             assert entry.visible is species.adoptable, entry.key
+        elif (skin := skin_of_item(entry.key)) is not None:
+            # Las skins de logro y las gratis no se venden: van ocultas.
+            assert entry.visible is skin.for_sale, entry.key
         else:
-            assert entry.visible, "solo las mascotas que aparecen solas van ocultas"
+            assert entry.visible, "solo las mascotas que aparecen solas y algunas skins van ocultas"
         if entry.food:
             assert entry.kind is Kind.TROPHY, entry.key
         if entry.kind is Kind.BOOST:

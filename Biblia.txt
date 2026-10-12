@@ -164,7 +164,16 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
 **Cada funcionalidad del bot tiene logros asociados.** Una funcionalidad nueva no está terminada hasta que tiene los suyos en el catálogo (en su propia categoría o en una existente) y los alimenta. Si se cambia una funcionalidad, se revisan sus logros en el mismo cambio. Excepciones: los comandos de administración y las utilidades internas (`ayuda`, `latencia`).
 
-**Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira de la España actual de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la máquina del fango, la UCO, Pegasus, la burocracia. También valen el tono boricua de Jovani Vázquez, Canarias (canarismos, el Pino, el gofio) y Robuso en Hong Kong. Sin nombrar a personas reales que no sean figuras públicas.
+**Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira de la actualidad. El campo es amplio:
+  - **España**, la de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la máquina del fango, la UCO, Pegasus, la burocracia.
+  - **Europa**: Bruselas y sus directivas, el tapón pegado a la botella, los fondos Next Generation, el eje franco-alemán, Eurovisión, las cookies que hay que aceptar.
+  - **Estados Unidos**: Trump y los aranceles, Elon Musk, el Despacho Oval, la Super Bowl, las propinas del 25 %, el seguro médico.
+  - **África**: los golpes de Estado del Sahel, los mandatos que no se acaban nunca, el cayuco y la ruta canaria, las empresas que se llevan el litio, la Copa África.
+  - **Sudamérica**: Milei y la motosierra, Maduro y las actas, Lula, el dólar blue, el Bukele de Centroamérica que vale igual.
+  - **China**: Xi, el crédito social, TikTok, Temu y AliExpress, el Partido que lo ve todo, Robuso en Hong Kong.
+  - **Israel**: Netanyahu y su juicio eterno, la Knesset, los vetos de Eurovisión, la Cúpula de Hierro.
+
+  También valen el tono boricua de Jovani Vázquez y Canarias (canarismos, el Pino, el gofio). La sátira apunta a gobiernos, partidos, instituciones, empresas y figuras públicas, nunca a un pueblo, una etnia o una religión: la broma es Netanyahu, no los judíos; Xi, no los chinos; el golpista del Sahel, no los africanos. Sin nombrar a personas reales que no sean figuras públicas.
 
 **Qué logros tiene que tener cada funcionalidad.** Al diseñar los de algo nuevo, o al repasar los de algo que ya existe, se piensa en todas estas familias y se meten todas las que encajen:
 

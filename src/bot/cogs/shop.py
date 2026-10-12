@@ -128,7 +128,15 @@ from bot.services.shop_uses import (
     pick_mystery,
     resolve,
 )
-from bot.services.skins import GAMES, SKIN_BY_KEY, Skin, in_season, rewards_for, skin_of_item
+from bot.services.skins import (
+    GAMES,
+    SKIN_BY_KEY,
+    Skin,
+    free_skins,
+    in_season,
+    rewards_for,
+    skin_of_item,
+)
 from bot.services.skins import params as skin_params_of
 from bot.services.skins import skins_of as game_skins
 from bot.services.taxes import TAX_COLLECTOR
@@ -1223,13 +1231,26 @@ class Tienda(commands.Cog):
         también las skins nuevas de logros que ya se tenían). Devuelve las
         que ha dado.
         """
-        rewards = rewards_for(set(achievement_ids))
-        if not rewards:
+        return await self._grant_skins(guild_id, user_id, rewards_for(set(achievement_ids)))
+
+    async def grant_free_skins(self, guild_id: int, user_id: int, game: str) -> list[Skin]:
+        """Mete en la mochila las skins gratis de `game` que le falten (`Skin.free`).
+
+        Se llama al abrir el 🎨 de ese juego y desde el propio juego, no al abrir
+        la mochila: así no se llena la de quien nunca ha jugado.
+        """
+        return await self._grant_skins(guild_id, user_id, free_skins(game))
+
+    async def _grant_skins(
+        self, guild_id: int, user_id: int, wanted: tuple[Skin, ...]
+    ) -> list[Skin]:
+        """Da las skins de `wanted` que no tenga; devuelve las que ha dado."""
+        if not wanted:
             return []
         now = self.clock()
         owned = {e.catalog_key for e in await self.repository.inventory(guild_id, user_id, now)}
         given = []
-        for skin in rewards:
+        for skin in wanted:
             if skin.catalog_key in owned:
                 continue
             await self.stock_up(guild_id)
@@ -1312,6 +1333,7 @@ class Tienda(commands.Cog):
         await ack(interaction, new_message=True)
         member = interaction.user
         await self.claim_reward_skins(guild.id, member.id)
+        await self.grant_free_skins(guild.id, member.id, game)
         entries = await self.repository.inventory(guild.id, member.id, self.clock())
         options = skin_options(entries, game)
         g = GAMES[game]
@@ -2118,6 +2140,19 @@ async def grant_reward_skins(
     except Exception:
         logger.exception("No se pudieron dar las skins de logros a %s", user_id)
         return []
+
+
+async def grant_free_skins(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> None:
+    """Da las skins gratis de `game` que le falten (`Tienda.grant_free_skins`).
+
+    No lanza: si la tienda no está o falla, el juego sigue con el gallo de serie.
+    """
+    if (cog := find_cog(bot, Tienda)) is None:
+        return
+    try:
+        await cog.grant_free_skins(guild_id, user_id, game)
+    except Exception:
+        logger.exception("No se pudieron dar las skins gratis de %s a %s", game, user_id)
 
 
 async def consume_key(bot: commands.Bot, guild_id: int, user_id: int, catalog_key: str) -> bool:
