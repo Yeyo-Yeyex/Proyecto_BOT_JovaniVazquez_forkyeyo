@@ -401,6 +401,55 @@ async def press_pala_study(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def politics_panel(client: BotClient, owner: MagicMock, level: int, branch: str):  # noqa: ANN201
+    """Panel de pala con un contrato de política en ese puesto y rama."""
+    cog = client.get_cog("Trabajo")
+    await cog.service.hire(GUILD_ID, owner.id, "politica")
+    contract = await cog.service.repository.contract(GUILD_ID, owner.id)
+    contract.level, contract.branch = level, branch
+    await cog.service.repository.save_contract(GUILD_ID, owner.id, contract)
+    panel = module_of(client, "Trabajo").PalaPanel(cog, guild_id=GUILD_ID, owner=owner)
+    panel.channel = MagicMock(send=AsyncMock())
+    return panel
+
+
+async def press_pala_branch(client: BotClient, owner: MagicMock) -> Click:
+    panel = await politics_panel(client, owner, 5, "")
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._accept_branch("moncloa")(interaction)
+
+    return click
+
+
+async def press_pala_retire_offer(client: BotClient, owner: MagicMock) -> Click:
+    panel = await politics_panel(client, owner, 10, "moncloa")
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._retire_offer(interaction)
+
+    return click
+
+
+async def press_pala_retire(client: BotClient, owner: MagicMock) -> Click:
+    panel = await politics_panel(client, owner, 10, "moncloa")
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._retire(interaction)
+
+    return click
+
+
+async def press_pala_pension(client: BotClient, owner: MagicMock) -> Click:
+    panel = await politics_panel(client, owner, 10, "bruselas")
+    await panel.service.retire(GUILD_ID, owner.id)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._claim_pension(interaction)
+
+    return click
+
+
 async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -599,6 +648,10 @@ CASES: dict[str, Press] = {
     "bacará: doblar": press_bacara_double,
     "pala: elegir curro": press_pala_hire,
     "pala: estudiar la oposición": press_pala_study,
+    "pala: elegir rama": press_pala_branch,
+    "pala: ofrecer la jubilación": press_pala_retire_offer,
+    "pala: jubilarse": press_pala_retire,
+    "pala: cobrar la pensión": press_pala_pension,
     "tienda: comprar": press_checkout,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,

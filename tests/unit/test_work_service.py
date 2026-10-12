@@ -36,6 +36,7 @@ from bot.services.work import (
     LEGAL_EXTRAS_PER_WEEK,
     MEGAVIRAL,
     ORDINARY_SHIFTS,
+    PERFORMANCE_START,
     RAIN_ACCIDENT,
     RAIN_PAY,
     RATING_BLOCK,
@@ -43,9 +44,15 @@ from bot.services.work import (
     RATING_RESET,
     RATING_START,
     SELF_EMPLOYED_FEE,
+    SHIFT_COST,
     TRIENNIUM_DAYS,
     TRIENNIUM_PAY,
+    WISH_BY_KEY,
+    WISH_PAY,
+    WISH_PERFORMANCE,
+    Career,
     ShiftKind,
+    Wish,
     follower_gain,
     rating_pay,
     shift_pay,
@@ -84,6 +91,19 @@ def dice(monkeypatch: pytest.MonkeyPatch) -> Dice:
     fake = Dice()
     monkeypatch.setattr(pala, "roll", fake)
     return fake
+
+
+#: Un deseo que ningún turno cumple.
+NO_WISH = Wish("ninguno", "Nada.", lambda facts: False)
+
+
+@pytest.fixture(autouse=True)
+def sin_deseo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El deseo del día cambia el sueldo y la barra: fuera, salvo en sus pruebas.
+
+    Las pruebas del deseo vuelven a sustituir `pala.wish_for` por el que quieren.
+    """
+    monkeypatch.setattr(pala, "wish_for", lambda *args: NO_WISH)
 
 
 async def make(tmp_path: Path, clock: Clock | None = None) -> WorkService:
@@ -228,7 +248,8 @@ async def test_el_trabajo_reduce_el_imv_pero_nunca_lo_quita(tmp_path: Path, dice
     await service.hire(GUILD, USER, "politica")
     status = await service.status(GUILD, USER)
     assert status is not None
-    status.contract.level = 5  # consejero: sueldos enormes
+    # Comisario europeo, lo más alto de la rama Bruselas: sueldos enormes.
+    status.contract.level, status.contract.branch = JOB_BY_KEY["politica"].top, "bruselas"
     await service.repository.save_contract(GUILD, USER, status.contract)
     for _ in range(5):
         await work(service)
@@ -344,7 +365,7 @@ async def test_cambiar_de_oficio_y_volver_recupera_el_puesto(tmp_path: Path, dic
     assert status.contract.level == 3
     with pytest.raises(WorkError):
         await service.hire(GUILD, USER, "obra")
-    assert (await service.history(GUILD, USER))["obra"] == (3, 3)
+    assert (await service.history(GUILD, USER))["obra"] == Career(3, 3, "")
 
 
 # -- Eventos -------------------------------------------------------------------------
@@ -847,3 +868,247 @@ async def test_la_funa_quita_seguidores_y_cambiar_de_curro_no(tmp_path: Path, di
     await service.hire(GUILD, USER, "influencer")
     status = await service.status(GUILD, USER)
     assert status is not None and status.contract.followers == 700
+
+
+# -- Carrera larga: ramas, ventajas, jubilación, pensión y deseo del día ----------------------
+
+POLITICA = JOB_BY_KEY["politica"]
+DAY = 86_400
+
+
+async def at_level(service: WorkService, level: int, branch: str = "", **fields: object) -> None:
+    """Contrato de política en ese puesto y rama (y con esos campos)."""
+    await service.hire(GUILD, USER, "politica")
+    contract = await service.repository.contract(GUILD, USER)
+    assert contract is not None
+    contract.level, contract.branch = level, branch
+    for name, value in fields.items():
+        setattr(contract, name, value)
+    await service.repository.save_contract(GUILD, USER, contract)
+
+
+async def test_al_acabar_el_tronco_se_elige_rama_y_se_recuerda(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "promotion_blockers", lambda *args, **kwargs: [])
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.trunk_top)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert [b.key for b in status.fork] == ["moncloa", "bruselas"]
+    assert status.next_position is None
+    with pytest.raises(WorkError, match="rama"):
+        await service.accept_promotion(GUILD, USER)
+    status = await service.accept_promotion(GUILD, USER, "bruselas")
+    assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top + 1, "bruselas")
+    assert status.position.title == "Eurodiputado"
+    assert not status.fork
+    # Cambiar de oficio y volver te deja en la misma rama.
+    await service.hire(GUILD, USER, "obra")
+    status = await service.hire(GUILD, USER, "politica")
+    assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top + 1, "bruselas")
+    history = await service.history(GUILD, USER)
+    assert history["politica"] == Career(POLITICA.trunk_top + 1, POLITICA.trunk_top + 1, "bruselas")
+
+
+async def test_en_una_rama_no_se_elige_otra_al_ascender(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "promotion_blockers", lambda *args, **kwargs: [])
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.trunk_top + 1, "moncloa")
+    # La rama que llegue se ignora: el ascenso sigue por la suya.
+    status = await service.accept_promotion(GUILD, USER, "bruselas")
+    assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top + 2, "moncloa")
+    assert status.position.title == "Ministro"
+
+
+async def test_si_te_bajan_al_tronco_se_olvida_la_rama(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.trunk_top + 1, "moncloa", performance=0, warned=True)
+    outcome = await work(service, perfect=False)
+    assert outcome.performance == "demoted"
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top, "")
+    assert status.fork  # vuelve a elegir
+
+
+async def test_las_ventajas_de_los_puestos_se_suman_al_turno(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.trunk_top)
+    shift = await service.start_shift(GUILD, USER)
+    perks = shift.perks
+    # Concejal (+5 % de tiempo), diputado autonómico (−10 % de cansancio), diputado en
+    # el Congreso (un fallo gratis) y portavoz (una respuesta tachada).
+    assert len(perks.rewards) == 4
+    assert perks.extra_time == pytest.approx(0.05)
+    assert perks.battery == pytest.approx(0.10)
+    assert perks.retries == 1 and perks.fifty
+    assert shift.game.seconds == pytest.approx(POLITICA.position(5).seconds * 1.05)
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert outcome.battery_before - outcome.battery_after == pytest.approx(SHIFT_COST * 0.9)
+
+
+async def test_en_lo_mas_alto_de_una_rama_te_jubilas_y_sigues_por_la_otra(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.top, "moncloa", performance=90)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.can_retire
+    retirement = await service.retire(GUILD, USER)
+    assert retirement.branch.key == "moncloa"
+    assert retirement.title == "Consejero de una eléctrica"
+    assert retirement.following is not None and retirement.following.key == "bruselas"
+    contract = retirement.status.contract
+    assert (contract.level, contract.branch) == (POLITICA.trunk_top + 1, "bruselas")
+    assert contract.performance == PERFORMANCE_START
+    assert retirement.status.retired == {"moncloa"}
+    assert not retirement.status.can_retire
+    with pytest.raises(WorkError):
+        await service.retire(GUILD, USER)
+    # Si le bajan al tronco, ya solo puede elegir la rama que le queda.
+    contract.level, contract.branch = POLITICA.trunk_top, ""
+    await service.repository.save_contract(GUILD, USER, contract)
+    status = await service.status(GUILD, USER)
+    assert status is not None and [b.key for b in status.fork] == ["bruselas"]
+
+
+async def test_jubilado_de_todas_las_ramas_se_queda_arriba(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.top, "moncloa")
+    await service.retire(GUILD, USER)
+    contract = await service.repository.contract(GUILD, USER)
+    assert contract is not None
+    contract.level = POLITICA.top
+    await service.repository.save_contract(GUILD, USER, contract)
+    retirement = await service.retire(GUILD, USER)
+    assert retirement.following is None
+    contract = retirement.status.contract
+    assert (contract.level, contract.branch) == (POLITICA.top, "bruselas")
+    pension = await service.pension(GUILD, USER)
+    assert pension.amount == sum(b.pension for b in POLITICA.branches)
+    assert [branch.key for _job, branch in pension.branches] == ["bruselas", "moncloa"]
+
+
+async def test_la_pension_se_cobra_una_vez_al_dia_con_irpf_y_sin_cotizar(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    assert not (await service.pension(GUILD, USER)).due
+    with pytest.raises(WorkError, match="jubilarse"):
+        await service.claim_pension(GUILD, USER)
+    await at_level(service, POLITICA.top, "moncloa")
+    await service.retire(GUILD, USER)
+    moncloa = POLITICA.branch("moncloa")
+    assert moncloa is not None
+    pension = await service.pension(GUILD, USER)
+    assert pension.due and pension.amount == moncloa.pension
+    state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
+    slip, balance = await service.claim_pension(GUILD, USER)
+    assert slip.gross == moncloa.pension
+    assert slip.ss_worker == slip.ss_employer == 0
+    assert slip.net == slip.gross - slip.irpf
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] - state_before == slip.irpf
+    total, wallet = ledger(tmp_path, USER)
+    assert total == wallet == balance
+    assert not (await service.pension(GUILD, USER)).due
+    with pytest.raises(WorkError, match="Ya cobraste"):
+        await service.claim_pension(GUILD, USER)
+    clock.now += DAY
+    assert (await service.pension(GUILD, USER)).due
+    await service.claim_pension(GUILD, USER)
+
+
+async def test_si_el_pago_de_la_pension_falla_se_puede_volver_a_cobrar(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.top, "bruselas")
+    await service.retire(GUILD, USER)
+
+    async def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("la base de datos se ha ido de vacaciones")
+
+    monkeypatch.setattr(service.economy, "pay_salary", broken)
+    with pytest.raises(RuntimeError):
+        await service.claim_pension(GUILD, USER)
+    assert (await service.pension(GUILD, USER)).due
+
+
+async def test_cumplir_el_deseo_del_dia_paga_mas_sube_la_barra_y_hace_racha(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wish = WISH_BY_KEY["nota_90"]
+    monkeypatch.setattr(pala, "wish_for", lambda *args: wish)
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await service.hire(GUILD, USER, "obra")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.wish is wish
+    outcome = await work(service)
+    base = JOB_BY_KEY["obra"].position(1).base_pay
+    assert outcome.wish is wish and outcome.wish_streak == 1
+    assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * WISH_PAY)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.wish is None
+    assert status.contract.performance == PERFORMANCE_START + 25 + WISH_PERFORMANCE
+    stats = work_stats(outcome)
+    assert stats.add["work_wishes"] == stats.add["work_wish_nota_90"] == 1
+    assert stats.peak["work_wish_streak_max"] == 1
+    # El mismo día no se cobra dos veces.
+    clock.now += 600
+    second = await work(service)
+    assert second.wish is None
+    assert second.gross == shift_pay(base, 100, ShiftKind.ORDINARY)
+    # Al día siguiente, racha; si se salta un día, vuelve a 1.
+    clock.now += DAY
+    assert (await work(service)).wish_streak == 2
+    clock.now += 2 * DAY
+    assert (await work(service)).wish_streak == 1
+
+
+async def test_un_turno_malo_no_cumple_el_deseo(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "wish_for", lambda *args: WISH_BY_KEY["nota_90"])
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    outcome = await work(service, perfect=False)
+    assert outcome.wish is None
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.wish is not None
+
+
+async def test_el_historial_de_antes_de_las_ramas_se_migra(tmp_path: Path) -> None:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            """
+            CREATE TABLE work_history (
+                guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, job TEXT NOT NULL,
+                level INTEGER NOT NULL, max_level INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, user_id, job)
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO work_history VALUES (?, ?, ?, 5, 5)", (GUILD, USER, "politica")
+        )
+    service = await make(tmp_path)
+    assert (await service.history(GUILD, USER))["politica"] == Career(5, 5, "")
+    # Quien era consejero (puesto 5) sigue en el 5: ahora es portavoz y elige rama.
+    status = await service.hire(GUILD, USER, "politica")
+    assert status.position.title == "Portavoz del grupo parlamentario"
+    assert status.fork
+
+
+async def test_una_rama_que_ya_no_existe_devuelve_al_final_del_tronco(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await at_level(service, POLITICA.trunk_top + 2, "andorra")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top, "")
+    assert status.fork

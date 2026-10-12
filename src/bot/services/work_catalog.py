@@ -1,16 +1,21 @@
 """Catálogo del trabajo (`pala`): oficios, puestos, contenido de minijuegos y eventos.
 
-Solo datos. Añadir un oficio es añadir un `Job` a `JOBS` con sus puestos (hoy
-cinco; el código admite los que haya), su contenido de minijuego (si usa uno
-nuevo) y, si se quiere, sus eventos. Los `key` (oficios, formaciones, tareas, eventos) no se cambian
-nunca: son lo que se guarda en la base de datos.
+Solo datos. Añadir un oficio es añadir un `Job` a `JOBS` con sus puestos (el
+código admite los que haya), su contenido de minijuego (si usa uno nuevo) y, si
+se quiere, sus eventos. Para la carrera larga, un oficio lleva un tronco de
+puestos y sus ramas (`Branch`): todas con los mismos puestos, la primera sin
+formación y cada una con su pensión; los puestos pueden dar una ventaja
+(`Perk`) y los eventos pueden ser de una rama (`Event.branches`). Los `key`
+(oficios, ramas, formaciones, tareas, eventos) no se cambian nunca: son lo que
+se guarda en la base de datos.
 
 Sueldos, en Y$ de nómina (100 Y$ por euro, ver
 `taxes.WAGE_YAPDOLLARS_PER_EURO`): el puesto 1 de cada oficio paga entre 1.600 y
 1.800 Y$ por turno con nota media, un poco más que un IMV entero (1.500 Y$), y
-el puesto 5 entre 13.000 y 25.000. Un turno son unas dos horas: la jornada
-completa (4 turnos) de un celador equivale a unos 25.000 € al año y la de un
-consejero de eléctrica, a 365.000 €, con la retención que toca a cada uno. Las
+el puesto 5 entre 13.000 y 18.000 y lo más alto de una rama, entre 18.000 y
+45.000. Un turno son unas dos horas: la jornada completa (4 turnos) de un
+celador equivale a unos 25.000 € al año y la de un comisario europeo, a
+438.000 €, con la retención que toca a cada uno. Las
 formaciones cuestan de 2 a 4 turnos del puesto al que dan acceso. El análisis
 que fija estas cifras está en `docs/economia-trabajo.md`.
 
@@ -3505,7 +3510,7 @@ EVENTS: tuple[Event, ...] = (
                 Outcome(
                     "Lo cargas en el coche. Pesa lo que pesan las buenas relaciones "
                     "internacionales.",
-                    black=5.0,
+                    black=3.0,
                     risk=0.3,
                     caught_by="olaf",
                     stat="work_suitcase",
@@ -3562,7 +3567,7 @@ EVENTS: tuple[Event, ...] = (
                 Outcome(
                     "Firmas, cobras la dieta y desapareces entre los tulipanes. Nadie "
                     "lo comprueba, casi nadie.",
-                    fine=1.2,
+                    black=0.5,
                     risk=0.25,
                     caught_by="olaf",
                     performance=-5,
@@ -3592,7 +3597,6 @@ EVENTS: tuple[Event, ...] = (
                 Outcome(
                     "Cenas, brindas y sales sin haber firmado nada. La cuenta la paga "
                     "un sector entero.",
-                    pay=0.4,
                     performance=10,
                     battery=-10,
                     family=-3,

@@ -493,6 +493,7 @@ class WorkService:
         leave = on_leave(contract, now)
         roll_over_day(contract, now)
         job = JOB_BY_KEY[contract.job]
+        settle_branch(contract, job)
         days = await self.repository.days_in_position(
             guild_id, user_id, contract.job, contract.level, contract.position_since
         )
@@ -565,9 +566,7 @@ class WorkService:
                 battery_at=now,
                 job_since=now,
             )
-            # Un historial con una rama que ya no está en el catálogo vuelve al tronco.
-            if contract.level > job.trunk_top and job.branch(contract.branch) is None:
-                contract.level, contract.branch = job.trunk_top, ""
+            settle_branch(contract, job)
             if current is not None:
                 contract.battery = battery_now(current, now)
                 for name in (

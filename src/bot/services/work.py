@@ -916,9 +916,16 @@ def open_branches(job: Job, retired: Collection[str] = ()) -> tuple[Branch, ...]
 
 
 def settle_branch(contract: Contract, job: Job) -> None:
-    """Olvida la rama si el contrato ha vuelto al tronco (te han bajado)."""
+    """Deja la rama del contrato en un estado que existe.
+
+    Si ha vuelto al tronco (te han bajado), la rama se olvida. Si está pasado
+    el tronco en una rama que ya no está en el catálogo, vuelve al final del
+    tronco a elegir otra.
+    """
     if contract.level <= job.trunk_top:
         contract.branch = ""
+    elif job.branch(contract.branch) is None:
+        contract.level, contract.branch = job.trunk_top, ""
 
 
 def promote(contract: Contract, now: float, branch: str = "") -> None:

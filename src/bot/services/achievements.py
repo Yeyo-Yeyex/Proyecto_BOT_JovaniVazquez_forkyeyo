@@ -7583,7 +7583,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("work", "work_pensions", [
         (1, "pension_1", "Pensión cobrada", "Cobra tu pensión por primera vez.", E),
-        (30, "pension_30", "Paguita vitalicia", "Cobra la pensión 30 días.", L),
+        (30, "pension_30", "Pensión vitalicia", "Cobra la pensión 30 días.", L),
         (365, "pension_365", "Más años cobrando que cotizando",
          "Cobra la pensión 365 días.", M),
     ])  # fmt: skip
@@ -7610,7 +7610,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_decrees", [
         (30, "decretos_30", "Al BOE", "Despacha 30 papeles como secretario de Estado.", E),
-        (300, "decretos_300", "Gobernar por decreto", "Despacha 300 papeles.", L),
+        (300, "decretos_300", "Real Decreto a granel", "Despacha 300 papeles.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_ministry", [
         (25, "ministerio_25", "Ministro de lo suyo", "Sal airoso de 25 marrones del ministerio.",
@@ -7620,7 +7620,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_partners", [
         (15, "socios_15", "Agenda de socios",
          "Recuerda 15 veces lo que le prometiste a cada socio.", E),
-        (150, "socios_150", "Geometría variable",
+        (150, "socios_150", "Socios hasta en la sopa",
          "Recuerda 150 veces lo que le prometiste a cada socio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_control", [
@@ -7652,7 +7652,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_censure_survived", [
         (1, "mocion", "Moción de censura superada", "Aguanta una moción de censura.", E),
-        (3, "resistencia", "Manual de resistencia", "Aguanta 3 mociones de censura.", L),
+        (3, "resistencia", "Resistiré (en el sillón)", "Aguanta 3 mociones de censura.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_snap_election", [
         (1, "adelanto", "Adelanto electoral", "Convoca elecciones por sorpresa.", E, True),
