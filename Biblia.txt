@@ -160,20 +160,31 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 - **Cameos: toda funcionalidad nueva que enseñe un resultado a un miembro deja hablar a su mascota.** Si el resultado lleva dinero, ya llama a `renta.hint(bot, guild_id, user_id, moment)`: basta con pasarle el `Moment` (en el casino, `pets.bet_moment(stake=..., net=..., balance_after=...)`; fuera del casino, `Moment(Event.X)`). Si no lleva dinero, llama a `mascotas.cameo(bot, guild_id, user_id, Moment(Event.X))` (`bot.cogs.pets`) y añade la línea si no es `None`. Un momento nuevo es un valor nuevo de `Event`, con sus frases genéricas en `GENERIC_LINES`; las especies pueden tener frases propias para él. Sin `moment` la mascota habla de dinero en general y no aparece ninguna nueva.
 - Una especie nueva tiene frases para los tres ánimos (`good`, `bad`, `neutral`), tres trucos, rareza y, si aparece sola, una pista (`Spawn.hint`) y su logro. Sin adjetivos con género en las frases: el nombre lo pone el dueño. `tests/unit/test_pets.py` arma todas las frases de todas las especies en todos los momentos.
 
+### Personalidad: frases y fuentes de ironía
+
+Todo lo que dice el bot (las frases de Jovani en cada juego y comando, los anuncios, los nombres y descripciones de los logros) tiene que notar esfuerzo y cariño: variado, con gracia y sin repetir la misma broma con otras palabras. Una lista de frases no tiene cupo ni mínimo; se mira al revés: **de cuántas cosas me puedo reír en este momento**. Ganar, perder, quedarse a cero o esperar a que caiga la bola dan para muchas bromas distintas, y cada una que se pueda hacer bien se mete. Si un texto que se repite a menudo sale siempre igual, se convierte en una lista de frases y se elige al azar.
+
+Todo, en última instancia, es jocoso. El campo de la ironía es amplio:
+  - **España**, la de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la máquina del fango, la UCO, Pegasus, la burocracia.
+  - **La oposición española**: el PP (Feijóo, Ayuso y la fruta, Rajoy y sus frases —«un vaso es un vaso», «es el vecino el que elige al alcalde»—, los sobres de Bárcenas, el «sé fuerte»), Vox (Abascal a caballo, la Reconquista desde un plató), Podemos y Sumar (el chalet de Galapagar, los cielos que no se asaltaron, Yolanda y su sonrisa), Junts (Puigdemont en el maletero, Waterloo, la amnistía).
+  - **La España de Franco**: el NO-DO, «atado y bien atado», la cartilla de racionamiento, el Seiscientos, el pantano inaugurado, los veinte años de autarquía, «Franco sigue muerto», la exhumación del Valle. La broma es el régimen y su propaganda, nunca la apología ni las víctimas.
+  - **Europa**: Bruselas y sus directivas, el tapón pegado a la botella, los fondos Next Generation, el eje franco-alemán, Macron y sus discursos, Boris Johnson y el Brexit, Erdoğan y su palacio, Eurovisión, las cookies que hay que aceptar.
+  - **Estados Unidos**: Trump y los aranceles, Elon Musk, el Despacho Oval, los Clinton (Bill y el becario, Hillary y los correos), Obama («Yes we can», el Nobel de la Paz por adelantado), Biden y las escaleras, Kamala y sus carcajadas, la Super Bowl, las propinas del 25 %, el seguro médico.
+  - **Rusia y Corea del Norte**: Putin y la mesa larguísima, las elecciones con el 87 %, Kim Jong-un y los misiles de cumpleaños, el aplauso obligatorio.
+  - **África**: los golpes de Estado del Sahel, los mandatos que no se acaban nunca, el cayuco y la ruta canaria, las empresas que se llevan el litio, la Copa África.
+  - **Sudamérica**: Milei y la motosierra, Maduro y las actas, Lula, Bolsonaro y su vacuna, el dólar blue, el Bukele de Centroamérica que vale igual.
+  - **China**: Xi, el crédito social, TikTok, Temu y AliExpress, el Partido que lo ve todo, Robuso en Hong Kong.
+  - **Israel**: Netanyahu y su juicio eterno, la Knesset, los vetos de Eurovisión, la Cúpula de Hierro.
+
+  También valen el tono boricua de Jovani Vázquez y Canarias (canarismos, el Pino, el gofio). Las coletillas de Jovani (¡Wepa!, ¡Ay, bendito!, mi amor, «Toma mango», «Quiero café») son una fuente más de ironía y se cuelan **de vez en cuando**, no en cada frase: si todo es «¡Wepa!», ya no hace gracia. La sátira apunta a gobiernos, partidos, regímenes, instituciones, empresas y figuras públicas, nunca a un pueblo, una etnia o una religión: la broma es Netanyahu, no los judíos; Xi, no los chinos; Putin, no los rusos; el golpista del Sahel, no los africanos. Sin nombrar a personas reales que no sean figuras públicas.
+
+  Las frases que van en un titular (`# … +500 Y$`) son cortas para que quepan en una línea y se leen bien con la cifra detrás.
+
 ### Logros
 
 **Cada funcionalidad del bot tiene logros asociados.** Una funcionalidad nueva no está terminada hasta que tiene los suyos en el catálogo (en su propia categoría o en una existente) y los alimenta. Si se cambia una funcionalidad, se revisan sus logros en el mismo cambio. Excepciones: los comandos de administración y las utilidades internas (`ayuda`, `latencia`).
 
-**Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira de la actualidad. El campo es amplio:
-  - **España**, la de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la máquina del fango, la UCO, Pegasus, la burocracia.
-  - **Europa**: Bruselas y sus directivas, el tapón pegado a la botella, los fondos Next Generation, el eje franco-alemán, Eurovisión, las cookies que hay que aceptar.
-  - **Estados Unidos**: Trump y los aranceles, Elon Musk, el Despacho Oval, la Super Bowl, las propinas del 25 %, el seguro médico.
-  - **África**: los golpes de Estado del Sahel, los mandatos que no se acaban nunca, el cayuco y la ruta canaria, las empresas que se llevan el litio, la Copa África.
-  - **Sudamérica**: Milei y la motosierra, Maduro y las actas, Lula, el dólar blue, el Bukele de Centroamérica que vale igual.
-  - **China**: Xi, el crédito social, TikTok, Temu y AliExpress, el Partido que lo ve todo, Robuso en Hong Kong.
-  - **Israel**: Netanyahu y su juicio eterno, la Knesset, los vetos de Eurovisión, la Cúpula de Hierro.
-
-  También valen el tono boricua de Jovani Vázquez y Canarias (canarismos, el Pino, el gofio). La sátira apunta a gobiernos, partidos, instituciones, empresas y figuras públicas, nunca a un pueblo, una etnia o una religión: la broma es Netanyahu, no los judíos; Xi, no los chinos; el golpista del Sahel, no los africanos. Sin nombrar a personas reales que no sean figuras públicas.
+**Muchos logros y con gracia.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. Siempre que la broma lo permita, los nombres y descripciones son jocosos, y mejor aún si son sátira, con todo el campo de «Personalidad: frases y fuentes de ironía». Un logro existente cuyo nombre se queda soso se puede rebautizar con una broma mejor: se cambian el nombre y la descripción, nunca la clave (`key`), que es lo que guarda quién lo tiene.
 
 **Qué logros tiene que tener cada funcionalidad.** Al diseñar los de algo nuevo, o al repasar los de algo que ya existe, se piensa en todas estas familias y se meten todas las que encajen:
 

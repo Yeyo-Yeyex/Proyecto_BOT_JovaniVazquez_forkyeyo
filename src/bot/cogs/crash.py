@@ -111,9 +111,39 @@ COLOR_LOBBY = discord.Color.from_rgb(43, 45, 49)
 COLOR_BOOM = discord.Color.from_rgb(255, 128, 48)
 
 # Textos en el tono de Jovani Vázquez.
-TAKEOFF_LINES = ("¡Despegamos, mi amor!", "¡Wepa, arriba!", "¡Agárrate!", "¡Pa' la Luna!")
-CASH_LINES = ("¡Saltaste a tiempo!", "¡Eso es, cobras!", "¡Wepa!", "¡Qué olfato!")
-BOOM_LINES = ("¡BOOM!", "¡Se fue!", "¡Ay, bendito!", "¡Kaboom!")
+TAKEOFF_LINES = (
+    "¡Despegamos, mi amor!",
+    "¡Wepa, arriba!",
+    "¡Agárrate!",
+    "¡Pa' la Luna!",
+    "¡Sube más que el IPC!",
+    "¡Rumbo a Marte con Elon!",
+    "¡Despega como un misil de Kim!",
+    "¡Sube como la factura de la luz!",
+    "¡Embarque en el Falcon!",
+)
+CASH_LINES = (
+    "¡Saltaste a tiempo!",
+    "¡Eso es, cobras!",
+    "¡Wepa!",
+    "¡Qué olfato!",
+    "¡Saltas del Falcon en marcha!",
+    "¡Te bajas antes que Biden!",
+    "¡Paracaídas dorado de consejero!",
+    "¡Te bajas como Boris del Gobierno!",
+    "¡Ni Fabra tiene ese olfato!",
+)
+BOOM_LINES = (
+    "¡BOOM!",
+    "¡Se fue!",
+    "¡Ay, bendito!",
+    "¡Kaboom!",
+    "¡Musk dice que ha sido un éxito!",
+    "¡Otro ensayo de Kim!",
+    "¡Pinchazo de la burbuja!",
+    "¡Lehman Brothers!",
+    "¡Brexit!",
+)
 
 
 class Phase(Enum):
@@ -372,6 +402,8 @@ class CrashTable:
         cents = self.current_cents()
         riding = self.round.riding
         lines = [f"# 🚀 {format_multiplier(cents)}", trail([*self.samples, cents])]
+        # Una frase por ronda, no por fotograma: el embed se redibuja varias veces por segundo.
+        lines.append(f"-# {random.Random(self.round_no).choice(TAKEOFF_LINES)}")
         if riding:
             lines.append(f"-# {len(riding)} dentro · pulsa 💸 **Retirar** para cobrar")
         embed = discord.Embed(

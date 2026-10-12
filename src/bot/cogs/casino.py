@@ -138,9 +138,46 @@ COLOR_SPIN = discord.Color.from_rgb(222, 178, 70)
 COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 
-WIN_LINES = ("¡Ganas", "¡Toma ya!", "¡Cobras", "¡Dentro!", "¡Bingo!")
-BIG_WIN_LINES = ("💥 ¡PLENAZO!", "💥 ¡REVIENTAS LA BANCA!", "💥 ¡LOCURA!")
-LOSS_LINES = ("Casi.", "La próxima es la buena.", "La bola no quiso.", "Uf, por poco.")
+WIN_LINES = (
+    "¡Ganas",
+    "¡Toma ya!",
+    "¡Cobras",
+    "¡Dentro!",
+    "¡Bingo!",
+    "¡Wepa!",
+    "La bola vota por ti.",
+    "Escaño ganado.",
+    "Pleno en el CIS.",
+    "La UCO no se entera.",
+    "¡Arancel cero!",
+    "La bola se exilia en tu casilla.",
+)
+BIG_WIN_LINES = (
+    "💥 ¡PLENAZO!",
+    "💥 ¡REVIENTAS LA BANCA!",
+    "💥 ¡LOCURA!",
+    "💥 ¡MAYORÍA ABSOLUTA!",
+    "💥 ¡NI FABRA CON LA LOTERÍA!",
+    "💥 ¡RESCATE BANCARIO AL REVÉS!",
+    "💥 ¡TREMENDO, TREMENDO!",
+    "💥 ¡CRECIMIENTO A LA CHINA!",
+    "💥 ¡TOMA MANGO!",
+)
+LOSS_LINES = (
+    "Casi.",
+    "La próxima es la buena.",
+    "La bola no quiso.",
+    "Uf, por poco.",
+    "La bola se fue a Waterloo.",
+    "La bola, como Maduro: no enseña las actas.",
+    "Hacienda apostó al cero y ganó.",
+    "La bola dimite. Ah, no, que aquí no dimite nadie.",
+    "Has hecho un Feijóo: ganas en tu cabeza.",
+    "La bola sigue el «Manual de resistencia».",
+    "La casa agradece tu aportación al PIB.",
+    "El crupier te manda un «sé fuerte».",
+    "Quiero café. Y otra ficha.",
+)
 
 
 # -- Presentación -------------------------------------------------------------------

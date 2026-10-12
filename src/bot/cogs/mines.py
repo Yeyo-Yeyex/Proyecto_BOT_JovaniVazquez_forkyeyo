@@ -96,8 +96,26 @@ COLOR_BUSTED = discord.Color.from_rgb(80, 84, 92)
 COLOR_CASHED = discord.Color.from_rgb(255, 196, 0)
 
 # Textos en el tono de Jovani Vázquez.
-CASH_LINES = ("¡Wepa!", "¡Cobras, mi amor!", "¡Eso es!", "¡Qué olfato!")
-BOOM_LINES = ("¡BOOM!", "¡Ay, bendito!", "¡Kaboom!", "¡Se acabó la fiesta!")
+CASH_LINES = (
+    "¡Wepa!",
+    "¡Cobras, mi amor!",
+    "¡Eso es!",
+    "¡Qué olfato!",
+    "¡Desminado con éxito!",
+    "¡Mina de litio sin multinacional!",
+    "¡Más fino que un ministro con información privilegiada!",
+    "¡Toma mango!",
+)
+BOOM_LINES = (
+    "¡BOOM!",
+    "¡Ay, bendito!",
+    "¡Kaboom!",
+    "¡Se acabó la fiesta!",
+    "¡Mina de Temu!",
+    "¡Te pilló la UCO!",
+    "¡Mina de carbón cerrada por Bruselas!",
+    "¡Era un campo de Hacienda!",
+)
 #: Estadística de logros con el récord de casillas en una partida.
 RECORD_STAT = "mines_streak_max"
 

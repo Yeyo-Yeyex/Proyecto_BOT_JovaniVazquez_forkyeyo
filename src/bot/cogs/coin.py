@@ -110,13 +110,49 @@ COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 COLOR_EDGE = discord.Color.from_rgb(123, 75, 214)
 
 # Textos en el tono de Jovani Vázquez.
-WIN_LINES = ("¡Wepa!", "¡Eso es, mi amor!", "¡Acertaste!", "¡Dale!", "¡Qué suerte, bendito!")
-CASH_LINES = ("¡Wepa!", "¡Cobras, mi amor!", "¡A la saca!", "¡Plata en mano!")
-LOSE_LINES = ("¡Ay, bendito!", "¡Fallaste!", "¡Se acabó la racha!", "¡Nooo!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es, mi amor!",
+    "¡Acertaste!",
+    "¡Dale!",
+    "¡Qué suerte, bendito!",
+    "¡Moneda de curso legal!",
+    "¡Ni Fabra tiene tanta suerte!",
+    "¡Lo clavas, no como el CIS!",
+    "¡Moneda indultada!",
+    "¡Toma mango!",
+)
+CASH_LINES = (
+    "¡Wepa!",
+    "¡Cobras, mi amor!",
+    "¡A la saca!",
+    "¡Plata en mano!",
+    "¡Al Falcon con la plata!",
+    "¡A la cuenta de Suiza!",
+    "¡Libre de aranceles!",
+    "¡Antes de que llegue Perro Sanxe!",
+    "¡Al maletero, rumbo a Waterloo!",
+)
+LOSE_LINES = (
+    "¡Ay, bendito!",
+    "¡Fallaste!",
+    "¡Se acabó la racha!",
+    "¡Nooo!",
+    "¡La moneda se fue a Andorra!",
+    "¡Devaluada como el bolívar!",
+    "¡Te la cambian por pesetas!",
+    "¡Requisada por el Banco de España!",
+    "¡Te la ha cogido la inflación!",
+    "¡Moneda de la autarquía!",
+)
 EDGE_LINES = (
     "La moneda se ha quedado **de pie**. {collector} la sella y se la queda.",
     "**De canto.** Ni cara ni cruz: Hacienda. {collector} ya la ha embargado.",
     "¿De canto? {collector} lo llama «ajuste técnico» y se lleva la moneda.",
+    "**De canto**, como el voto de Junts. {collector} se queda la moneda mientras negocian.",
+    "La moneda, **de pie** y atada y bien atada. {collector} la expropia igual.",
+    "**De canto.** {collector} lo ve, lo grava y lo celebra en el Falcon.",
+    "Ni cara ni cruz: **de canto**. {collector} lo declara bien de interés general.",
 )
 FLYING_LINES = (
     "🪙 La moneda vuela…",
@@ -124,6 +160,11 @@ FLYING_LINES = (
     "🙏 Que salga, que salga…",
     "😬 Gira, gira, gira…",
     "👀 Todos miran la moneda…",
+    "🪙 Da más vueltas que Sánchez con la amnistía…",
+    "🪙 Sube como el IPC…",
+    "🪙 Ni Bruselas sabe dónde caerá…",
+    "🪙 Trump dice que la moneda es suya…",
+    "☕ Quiero café… y que salga…",
 )
 
 
