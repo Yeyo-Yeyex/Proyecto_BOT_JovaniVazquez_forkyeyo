@@ -15,7 +15,8 @@ from bot.cogs.admin import CHANNEL_REFERENCE, Admin
 from bot.repositories.news import NewsRepository, NewsSettings
 from bot.services.changelog import REPOS, NewsItem, clean_body, find_pull, parse_news
 
-GODZILIN, FORK = REPOS
+(GODZILIN,) = REPOS
+FORK = "Yeyo-Yeyex/Proyecto_BOT_JovaniVazquez_forkyeyo"
 
 
 def test_lee_titulos_y_agrupa_los_commits_de_un_mismo_pr() -> None:
@@ -61,8 +62,8 @@ def _github(head: str, number: int = 5) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_el_pr_se_busca_en_el_repo_cuya_rama_coincide() -> None:
-    """El mismo número existe en los dos repos; vale el que sale de la rama apuntada."""
+async def test_solo_se_buscan_los_pr_de_godzilin() -> None:
+    """El mismo número existe en el fork; solo vale el de godzilin con la rama apuntada."""
     answers = {
         (GODZILIN, 6): _github("Yeyo-Yeyex:main", 6),
         (FORK, 6): _github("Yeyo-Yeyex:claude/ruleta", 6),
@@ -71,10 +72,11 @@ async def test_el_pr_se_busca_en_el_repo_cuya_rama_coincide() -> None:
     async def fetch(repo: str, number: int) -> dict | None:
         return answers.get((repo, number))
 
-    pull = await find_pull(NewsItem("Ruleta", 6, "Yeyo-Yeyex/claude/ruleta"), fetch)
+    assert await find_pull(NewsItem("Ruleta", 6, "Yeyo-Yeyex/claude/ruleta"), fetch) is None
+    pull = await find_pull(NewsItem("Ruleta", 6, "Yeyo-Yeyex/main"), fetch)
 
     assert pull is not None
-    assert pull.repo == FORK
+    assert pull.repo == GODZILIN
     assert pull.author == "Yeyo-Yeyex"
     assert pull.merged_at is not None and pull.merged_at.year == 2026
 

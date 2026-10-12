@@ -392,7 +392,7 @@ def test_despliegue_deja_los_titulos_de_los_pr_para_el_bot(entorno):
     ]
 
 
-def test_el_pr_que_junta_el_fork_cede_ante_los_pr_que_trae(entorno):
+def test_solo_salen_los_pr_de_main_no_los_del_fork_que_traen(entorno):
     _ejecutar(entorno)
     origin = entorno["origin"]
     # El fork fusiona su PR en su main y luego todo su main entra de golpe.
@@ -410,7 +410,7 @@ def test_el_pr_que_junta_el_fork_cede_ante_los_pr_que_trae(entorno):
 
     _ejecutar(entorno)
 
-    assert _novedades(entorno) == ["Carreras de caballos"]
+    assert _novedades(entorno) == ["Caballos"]
 
 
 def test_sin_pr_nuevos_no_hay_novedades(entorno):

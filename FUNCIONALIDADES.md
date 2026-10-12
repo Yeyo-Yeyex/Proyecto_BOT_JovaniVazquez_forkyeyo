@@ -640,8 +640,10 @@ desde Discord»).
 `reinicio`) que arranque bien, el bot publica «📜 Novedades del bot»: la lista
 de PR fusionados desde el despliegue anterior, con enlace y autor, y en modo
 detallado una ficha por PR con su descripción de GitHub, autor y fecha. Salen
-12 cambios como mucho y «…y N más». `actualizar.sh` saca la lista de los
-commits `Merge pull request` y la deja en el buzón (`novedades.txt`); el bot
+todos los PR nuevos, sin tope y con la descripción entera (lo que no cabe
+sigue en otro embed o mensaje). Solo cuentan los PR del `main` de godzilin, no
+los del fork que traen dentro. `actualizar.sh` saca la lista de los commits
+`Merge pull request` de ese `main` y la deja en el buzón (`novedades.txt`); el bot
 pide a GitHub la descripción de cada PR y, si no responde, publica solo los
 títulos. El aviso es informativo: sin botones, logros, mascota ni bromas. Se
 configura con `cambios` (sección 6 quater). Detalle en el README
