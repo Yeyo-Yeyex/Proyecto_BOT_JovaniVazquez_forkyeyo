@@ -3836,6 +3836,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
         ),
     ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_fourteen_games",
+        name="Catorce apellidos y un gallo",
+        description="Juega a los catorce juegos del casino, reñidero de gallos incluido.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1),
+        ),
+    ))  # fmt: skip
 
     a += _tiers("pachinko", "pachinko_volleys", [
         (50_000, "pachi_50k", "Pachinko de por vida", "Lanza 50.000 tandas en el pachinko.", M),
