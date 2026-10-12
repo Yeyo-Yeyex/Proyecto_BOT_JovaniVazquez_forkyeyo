@@ -820,6 +820,29 @@ async def test_la_pala_ve_las_herramientas_de_la_mochila_con_el_bot_real(
         await client.close()
 
 
+async def test_la_pala_da_los_regalos_de_la_mochila_con_el_bot_real(tmp_path: Path) -> None:
+    """El regalo se compra en la tienda y `pala` lo gasta por su puente."""
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        items = await client.shop.items(GUILD_ID)
+        flores = next(item for item in items if item.catalog_key == "flores_mama")
+        await client.shop.grant(GUILD_ID, OWNER_ID, flores, 0.0)
+        work = importer("Trabajo", client)
+        cog = client.get_cog("Trabajo")
+        await cog.service.hire(GUILD_ID, OWNER_ID, "obra")
+
+        async def consume() -> bool:
+            return await work.tienda.consume_key(client, GUILD_ID, OWNER_ID, "flores_mama")
+
+        await cog.service.give_gift(GUILD_ID, OWNER_ID, "flores_mama", consume)
+        assert "flores_mama" not in await work.tienda.owned_keys(client, GUILD_ID, OWNER_ID)
+        assert not await work.tienda.consume_key(client, GUILD_ID, OWNER_ID, "flores_mama")
+    finally:
+        await client.close()
+
+
 async def test_perfil_fortunas_y_ranking_ven_el_titulo_con_el_bot_real(tmp_path: Path) -> None:
     """Los tres cogs cargan antes que la tienda: su puente tiene que ver el título puesto."""
     client = await load_bot(tmp_path)

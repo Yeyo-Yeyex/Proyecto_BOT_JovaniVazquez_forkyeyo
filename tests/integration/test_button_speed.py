@@ -450,6 +450,57 @@ async def press_pala_pension(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def obra_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Panel de pala con un contrato de obra."""
+    cog = client.get_cog("Trabajo")
+    await cog.service.hire(GUILD_ID, owner.id, "obra")
+    panel = module_of(client, "Trabajo").PalaPanel(cog, guild_id=GUILD_ID, owner=owner)
+    panel.channel = MagicMock(send=AsyncMock())
+    return panel
+
+
+async def press_pala_favor(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._favor(interaction, "tupper")
+
+    return click
+
+
+async def press_pala_gift(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    items = await client.shop.items(GUILD_ID)
+    flores = next(item for item in items if item.catalog_key == "flores_mama")
+    await client.shop.grant(GUILD_ID, owner.id, flores, 0.0)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._give_gift(interaction, "flores_mama")
+
+    return click
+
+
+async def press_pala_gift_shop(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._gift_shop(interaction)
+
+    return click
+
+
+async def press_pala_dodge(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+    panel.pending_event = module_of(client, "Trabajo").EVENT_BY_KEY["quedarse"]
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._dodge("quedarse")(interaction)
+
+    return click
+
+
 async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -672,6 +723,10 @@ CASES: dict[str, Press] = {
     "pala: ofrecer la jubilación": press_pala_retire_offer,
     "pala: jubilarse": press_pala_retire,
     "pala: cobrar la pensión": press_pala_pension,
+    "pala: pedir un favor a la familia": press_pala_favor,
+    "pala: dar un regalo": press_pala_gift,
+    "pala: ir a los regalos de la tienda": press_pala_gift_shop,
+    "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,

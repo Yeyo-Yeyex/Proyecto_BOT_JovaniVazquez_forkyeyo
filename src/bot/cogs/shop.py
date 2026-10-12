@@ -1144,6 +1144,15 @@ class Tienda(commands.Cog):
         entries = await self.repository.inventory(guild_id, user_id, self.clock())
         return frozenset(e.catalog_key for e in entries if e.catalog_key)
 
+    async def consume_key(self, guild_id: int, user_id: int, catalog_key: str) -> bool:
+        """Gasta una unidad del objeto de serie `catalog_key` (los regalos de `pala`).
+
+        `False` si no le queda ninguna.
+        """
+        entries = await self.repository.inventory(guild_id, user_id, self.clock())
+        ids = sorted(e.id for e in entries if e.catalog_key == catalog_key)
+        return bool(ids) and await self.repository.consume(guild_id, user_id, ids[0])
+
     def queued_boosts(
         self, guild_id: int, user_id: int, now: float
     ) -> list[tuple[float, float, int]]:
@@ -2109,6 +2118,32 @@ async def grant_reward_skins(
     except Exception:
         logger.exception("No se pudieron dar las skins de logros a %s", user_id)
         return []
+
+
+async def consume_key(bot: commands.Bot, guild_id: int, user_id: int, catalog_key: str) -> bool:
+    """Gasta una unidad de un objeto de serie; `False` si no lo tiene o la tienda no está.
+
+    `pala` lo usa para dar los regalos para la familia.
+    """
+    if (cog := find_cog(bot, Tienda)) is None:
+        return False
+    return await cog.consume_key(guild_id, user_id, catalog_key)
+
+
+async def open_aisle(bot: commands.Bot, interaction: discord.Interaction, aisle: str) -> bool:
+    """Rellena una respuesta ya aceptada (`ack`) con el escaparate abierto en `aisle`.
+
+    Es el atajo 🎁 de `pala` al pasillo de la familia. `False` si la tienda no
+    está cargada (y no se toca la respuesta).
+    """
+    if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
+        return False
+    view = await cog.storefront(interaction.guild, interaction.user)
+    view.aisle, view.page = aisle, 0
+    view.rebuild()
+    await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
+    view.interaction = interaction
+    return True
 
 
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:

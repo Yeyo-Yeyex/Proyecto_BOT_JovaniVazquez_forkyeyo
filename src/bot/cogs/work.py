@@ -73,6 +73,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.services.achievements import StatDelta, work_stats
@@ -80,6 +81,7 @@ from bot.services.economy import CURRENCY_EMOJI, format_amount
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import (
     EventResult,
+    FavorResult,
     NeedsBlack,
     OffDuty,
     Pension,
@@ -97,10 +99,12 @@ from bot.services.telemetry import LISTENER_ITEM
 from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
-    FAMILY_WORRIED,
+    FAMILY_REGEN_PER_HOUR,
+    FAMILY_TIERS,
     FLIGHT_PRICE,
     LEGAL_EXTRAS_PER_WEEK,
     MAX_COFFEES,
+    MOM_REPAY_SHARE,
     ORDINARY_SHIFTS,
     RAIN_PAY,
     SELF_EMPLOYED_FEE,
@@ -109,16 +113,30 @@ from bot.services.work import (
     WISH_PAY,
     WISH_PERFORMANCE,
     Career,
+    Contract,
+    FamilyTier,
     Mechanic,
     ShiftKind,
     battery_bar,
     battery_eta,
     battery_state,
+    family_ready_at,
+    family_tier,
     performance_bar,
     rested_at,
     stars,
 )
-from bot.services.work_catalog import CAUGHT_TEXT, COFFEES, JOB_BY_KEY, JOBS, Event
+from bot.services.work_catalog import (
+    CAUGHT_TEXT,
+    COFFEES,
+    EVENT_BY_KEY,
+    FAVOR_BY_KEY,
+    FAVORS,
+    GIFTS,
+    JOB_BY_KEY,
+    JOBS,
+    Event,
+)
 from bot.services.work_games import GRACE_SECONDS
 from bot.services.work_tools import TOOL_KEYS
 from bot.utils.interactions import ack, edit, notify
@@ -168,6 +186,11 @@ HOW_TO = {
     Mechanic.SORT: "Lee el papel y mándalo a su sitio con el botón que toque.",
     Mechanic.CALC: "Haz la cuenta y elige la mejor oferta. La buena gana por goleada.",
 }
+#: Pasillo de la tienda con los regalos para la familia (botón 🎁 del panel).
+GIFT_AISLE = "familia"
+GIFT_KEYS = frozenset(gift.key for gift in GIFTS)
+#: Marrones de los que te libra la excusa familiar (no la dimisión).
+EVENT_KEYS = frozenset(EVENT_BY_KEY)
 #: Prefijo de los `custom_id` de los botones del minijuego.
 GAME_ID_PREFIX = "pala:"
 #: Opción del botón ✅ Memorizado en el `custom_id`.
@@ -272,10 +295,100 @@ def battery_note(status: Status) -> str:
     """Cuándo se puede volver a fichar y cuándo estará llena la batería."""
     if status.battery >= BATTERY_MAX:
         return " · llena"
-    full = f"llena <t:{int(battery_eta(status.battery, BATTERY_MAX, status.now))}:R>"
+    contract, now = status.contract, status.now
+    full = f"llena <t:{int(battery_eta(contract, BATTERY_MAX, now))}:R>"
     if status.battery <= BATTERY_MIN:
-        return f" · 🛏️ vuelves a fichar <t:{int(rested_at(status.battery, status.now))}:R> · {full}"
+        return f" · 🛏️ vuelves a fichar <t:{int(rested_at(contract, now))}:R> · {full}"
     return f" · {full}"
+
+
+#: Qué hace cada tramo de la familia, para el panel.
+TIER_EFFECT = {
+    "En casa feliz": "la batería recarga ×1,5 y la barra sube +3 por turno",
+    "Tranquila": "recargas a ritmo normal",
+    "Mosqueada": "la batería recarga a la mitad y la barra sube la mitad",
+    "En crisis": "la batería recarga a un cuarto y la barra no sube",
+}
+
+
+def tier_text(tier: FamilyTier) -> str:
+    """`🏡 **En casa feliz**: la batería recarga ×1,5…`."""
+    return f"{tier.emoji} **{tier.name}**: {TIER_EFFECT[tier.name]}"
+
+
+def family_lines(status: Status) -> list[str]:
+    """La familia en el panel: valor, tramo, qué hace y cómo cambia."""
+    contract, family = status.contract, status.family
+    tier = family_tier(family)
+    lines = [f"❤️ Familia: {round(family)}/100 · {tier_text(tier)}."]
+    better = [t for t in FAMILY_TIERS if t.low > family]
+    hint = (
+        f"Con {better[-1].low} pasas a {better[-1].emoji} {better[-1].name}"
+        if better
+        else f"Bajo {tier.low} pierdes el bonus"
+    )
+    lines.append(
+        f"-# Sube {decimal(FAMILY_REGEN_PER_HOUR)} por hora sola y con los regalos de la "
+        f"tienda; cada turno cuesta (las extras, el B y la madrugada, más). {hint}."
+    )
+    if contract.no_extras_day == local_day(status.now).isoformat():
+        lines.append("👪 **Intervención familiar:** hoy, ni extras, ni B, ni guardias.")
+    if contract.motivated:
+        lines.append("💪 El próximo turno va con +15 % de tiempo (lo haces por los niños).")
+    if contract.mom_debt:
+        lines.append(
+            f"💸 Le debes **{format_amount(contract.mom_debt)}** a tu madre: se lleva el "
+            f"{round(MOM_REPAY_SHARE * 100)} % de lo que cobras en cada turno."
+        )
+    return lines
+
+
+def family_change(before: float, after: float, parts: list[tuple[str, int]]) -> str:
+    """`❤️ 70/100 (−11: turno −6, madrugada −5)`."""
+    text = f"❤️ {round(after)}/100"
+    if parts:
+        detail = ", ".join(f"{name} {value:+d}".replace("-", "−") for name, value in parts)
+        text += f" ({round(after - before):+d}: {detail})".replace("-", "−")
+    return text
+
+
+def wait_text(ready: float, now: float) -> str:
+    """`listo`, `en 40 min` o `en 5 h`."""
+    left = ready - now
+    if left <= 0:
+        return "listo"
+    if left < 3600:
+        return f"en {max(1, round(left / 60))} min"
+    return f"en {round(left / 3600)} h"
+
+
+def family_options(
+    contract: Contract, gifts: frozenset[str], now: float
+) -> list[discord.SelectOption]:
+    """Opciones del desplegable de la familia: los regalos que tienes y los favores."""
+    options = [
+        discord.SelectOption(
+            label=f"Dar: {gift.name} · +{gift.family} ❤️",
+            value=f"g:{gift.key}",
+            emoji=gift.emoji,
+            description="Regalo de tu mochila · "
+            + wait_text(family_ready_at(contract, gift.key, gift.cooldown), now),
+        )
+        for gift in GIFTS
+        if gift.key in gifts
+    ]
+    options.extend(
+        discord.SelectOption(
+            label=f"{favor.name} · −{favor.cost} ❤️",
+            value=f"f:{favor.key}",
+            emoji=favor.emoji,
+            description=f"{favor.text} · "
+            f"{wait_text(family_ready_at(contract, favor.key, favor.cooldown), now)}"[:100],
+        )
+        for favor in FAVORS
+        if favor.key != "excusa"
+    )
+    return options
 
 
 def where_text(status: Status) -> str:
@@ -297,7 +410,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         f"{battery_bar(status.battery)}{state_text}{battery_note(status)}",
         performance_bar(contract.performance)
         + (" · ⚠️ aviso: si vuelve a 0, te bajan" if contract.warned else ""),
-        f"❤️ Familia: {contract.family}/100" + (" 😟" if contract.family < FAMILY_WORRIED else ""),
+        *family_lines(status),
         f"🗓️ Hoy: {min(contract.shifts_today, ORDINARY_SHIFTS)}/{ORDINARY_SHIFTS} turnos "
         f"ordinarios · Extras legales esta semana: "
         f"{min(contract.extras_week, LEGAL_EXTRAS_PER_WEEK)}/{LEGAL_EXTRAS_PER_WEEK}",
@@ -485,12 +598,14 @@ def study_text(outcome: ShiftOutcome) -> str:
         f"## 📚 Estudio de la oposición · {outcome.score}/100",
         f"Aciertas **{outcome.temario}** preguntas del temario. No cobras nada: "
         "opositar es invertir en ti (eso dice la academia).",
-        f"{battery_bar(outcome.battery_after)} · ❤️ {outcome.family_after}/100 · "
+        f"{battery_bar(outcome.battery_after)} · "
+        f"{family_change(outcome.family_before, outcome.family_after, outcome.family_parts)} · "
         f"Saldo: **{format_amount(outcome.balance)}**",
     ]
     if outcome.intervention:
         lines.append(
-            "👪 **Intervención familiar.** Tu familia ya no te reconoce detrás del temario."
+            "👪 **Intervención familiar.** Tu familia ya no te reconoce detrás del temario: "
+            "mañana, ni extras, ni B, ni guardias."
         )
     if outcome.promotion_ready:
         lines.append("📈 **¡Te ofrecen el ascenso!** Vuelve al panel y pulsa 📈 Ascender.")
@@ -567,8 +682,11 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         lines.append(f"-# Multa cobrada: {format_amount(outcome.fine)}.")
     if outcome.fee:
         lines.append(f"🧾 Cuota de autónomos de la semana: −{format_amount(outcome.fee)}.")
+    if outcome.mom_repaid:
+        lines.append(f"💸 Le devuelves {format_amount(outcome.mom_repaid)} a tu madre.")
     lines.append(
-        f"{battery_bar(outcome.battery_after)} · ❤️ {outcome.family_after}/100 · "
+        f"{battery_bar(outcome.battery_after)} · "
+        f"{family_change(outcome.family_before, outcome.family_after, outcome.family_parts)} · "
         f"Saldo: **{format_amount(outcome.balance)}**"
     )
     if outcome.rating:
@@ -601,11 +719,23 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         lines.append("📉 **Te han bajado de puesto.** De vuelta a la pala.")
     if outcome.intervention:
         lines.append(
-            "👪 **Intervención familiar.** Tu familia ya no te reconoce: mañana, nada de extras."
+            "👪 **Intervención familiar.** Tu familia ya no te reconoce: mañana, ni extras, "
+            "ni B, ni guardias."
         )
     if outcome.promotion_ready:
         lines.append("📈 **¡Te ofrecen el ascenso!** Vuelve al panel y pulsa 📈 Ascender.")
     return "\n".join(lines)
+
+
+def favor_text(result: FavorResult) -> str:
+    """Lo que pasa al pedirle un favor a la familia."""
+    text = f"{result.favor.done} ❤️ {round(result.family)}/100."
+    if result.amount:
+        text += (
+            f"\n{CURRENCY_EMOJI} +{format_amount(result.amount)} (Bizum exento, como entre "
+            "colegas). Se lo devuelves con la mitad de cada turno."
+        )
+    return text
 
 
 def event_result_text(result: EventResult) -> str:
@@ -663,6 +793,8 @@ class PalaPanel(ui.LayoutView):
         self._tools_owned = 0
         #: La pensión, leída al abrir o refrescar el panel (botón 💰).
         self.pension: Pension | None = None
+        #: Regalos para la familia que tiene en la mochila (claves de la tienda).
+        self.gifts: frozenset[str] = frozenset()
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -785,6 +917,22 @@ class PalaPanel(ui.LayoutView):
         select.callback = callback  # type: ignore[method-assign]
         return select
 
+    def _family_select(self, status: Status) -> ui.Select:
+        select: ui.Select = ui.Select(
+            placeholder="❤️ Familia: dar un regalo o pedir un favor",
+            options=family_options(status.contract, self.gifts, status.now),
+        )
+
+        async def callback(interaction: discord.Interaction) -> None:
+            kind, _, key = select.values[0].partition(":")
+            if kind == "g":
+                await self._give_gift(interaction, key)
+            else:
+                await self._favor(interaction, key)
+
+        select.callback = callback  # type: ignore[method-assign]
+        return select
+
     def show_status(self, status: Status) -> None:
         """Panel de un contrato."""
         notes, self.notes = self.notes, []
@@ -839,9 +987,12 @@ class PalaPanel(ui.LayoutView):
             more.add_item(self._button(f"🌏 Irse a Hong Kong · {flight}", self._go_abroad))
         elif status.contract.abroad:
             more.add_item(self._button(f"✈️ Volver a casa · {flight}", self._go_home))
+        more.add_item(self._button("🎁 Regalos", self._gift_shop))
         coffee_row: ui.ActionRow = ui.ActionRow()
         coffee_row.add_item(self._coffee_select(status.contract.coffees))
-        rows = [actions, more, coffee_row]
+        family_row: ui.ActionRow = ui.ActionRow()
+        family_row.add_item(self._family_select(status))
+        rows = [actions, more, coffee_row, family_row]
         if not status.contract.abroad:
             job_row: ui.ActionRow = ui.ActionRow()
             job_row.add_item(self._job_select(status.contract.job))
@@ -924,6 +1075,14 @@ class PalaPanel(ui.LayoutView):
                         label, self._choose(event.key, index), style=discord.ButtonStyle.primary
                     )
                 )
+            if event.key in EVENT_KEYS:
+                excuse = FAVOR_BY_KEY["excusa"]
+                row.add_item(
+                    self._button(
+                        f"{excuse.emoji} Me llama mi madre (−{excuse.cost} ❤️)",
+                        self._dodge(event.key),
+                    )
+                )
         else:
             row.add_item(
                 self._button("⛏️ Otro turno", self._clock_in, style=discord.ButtonStyle.success)
@@ -972,6 +1131,8 @@ class PalaPanel(ui.LayoutView):
     async def refresh(self, interaction: discord.Interaction | None = None) -> None:
         """Vuelve al panel con el estado actual."""
         self.pension = await self.service.pension(self.guild_id, self.owner.id)
+        owned = await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id)
+        self.gifts = frozenset(owned & GIFT_KEYS)
         status = await self.service.status(self.guild_id, self.owner.id)
         if status is None:
             history = await self.service.history(self.guild_id, self.owner.id)
@@ -1040,6 +1201,92 @@ class PalaPanel(ui.LayoutView):
             self.channel,
             StatDelta(peak={"work_coffees_day_max": coffees}),
         )
+
+    async def _gift_shop(self, interaction: discord.Interaction) -> None:
+        """Atajo al pasillo de la familia de la tienda, en privado."""
+        await ack(interaction, new_message=True)
+        if not await tienda.open_aisle(self.cog.bot, interaction, GIFT_AISLE):
+            await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+
+    async def _give_gift(self, interaction: discord.Interaction, key: str) -> None:
+        await ack(interaction)
+
+        async def consume() -> bool:
+            return await tienda.consume_key(self.cog.bot, self.guild_id, self.owner.id, key)
+
+        try:
+            gift, family = await self.service.give_gift(self.guild_id, self.owner.id, key, consume)
+        except WorkError as error:
+            await notify(interaction, str(error))
+            return
+        note = f"{gift.emoji} Le das {gift.name.lower()} a tu familia: ❤️ {round(family)}/100."
+        if pet := await mascotas.cameo(
+            self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK)
+        ):
+            note += f"\n{pet}"
+        self.notes.append(note)
+        await self.refresh(interaction)
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            self.channel,
+            StatDelta(add={"work_gifts": 1, f"work_gift_{gift.key}": 1}),
+        )
+
+    async def _favor(self, interaction: discord.Interaction, key: str) -> None:
+        await ack(interaction)
+        try:
+            result = await self.service.ask_favor(self.guild_id, self.owner.id, key)
+        except WorkError as error:
+            await notify(interaction, str(error))
+            return
+        note = favor_text(result)
+        if result.amount:
+            extra = await renta.hint(
+                self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.BIZUM)
+            )
+        else:
+            extra = await mascotas.cameo(
+                self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK)
+            )
+        if extra:
+            note += f"\n{extra}"
+        self.notes.append(note)
+        await self.refresh(interaction)
+        if result.amount:
+            await renta.remind(self.cog.bot, interaction)
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            self.channel,
+            StatDelta(add={"work_favors": 1, f"work_favor_{result.favor.key}": 1}),
+        )
+
+    def _dodge(self, event_key: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            if self.pending_event is None or self.pending_event.key != event_key:
+                await ack(interaction)
+                return
+            await ack(interaction)
+            try:
+                result = await self.service.dodge_event(self.guild_id, self.owner.id, event_key)
+            except WorkError as error:
+                await notify(interaction, str(error))
+                return
+            self.pending_event = None
+            self._show_after(favor_text(result), None)
+            await self._edit(interaction)
+            await logros.track(
+                self.cog.bot,
+                self.guild_id,
+                self.owner,
+                self.channel,
+                StatDelta(add={"work_favors": 1, "work_favor_excusa": 1}),
+            )
+
+        return callback
 
     async def _training(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
