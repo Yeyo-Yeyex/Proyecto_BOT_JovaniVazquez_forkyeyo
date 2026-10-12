@@ -55,12 +55,10 @@ POLL_SECONDS = 15
 NEWS_CHANNEL_NAME = "chat-general"
 NEWS_COLOR = discord.Color.from_rgb(200, 160, 60)
 NEWS_TITLE = "📜 Novedades del bot"
-#: Cambios que se enseñan en un aviso; el resto se resume en "y N más".
-NEWS_LIMIT = 12
 #: Largo máximo de cada línea de la lista, para que quepa en un embed.
 NEWS_LINE_CHARS = 160
-#: Largo máximo de la descripción de un PR en su ficha (un embed admite 4.096).
-DETAIL_CHARS = 3_000
+#: Largo máximo de la descripción de un embed; lo que no cabe sigue en otro.
+DESCRIPTION_CHARS = 4_096
 #: Límites de Discord por mensaje: 10 embeds y 6.000 caracteres entre todos.
 EMBEDS_PER_MESSAGE = 10
 CHARS_PER_MESSAGE = 6_000
@@ -91,57 +89,60 @@ def _summary_line(entry: NewsEntry) -> str:
     return text
 
 
-def news_summary(entries: list[NewsEntry], limit: int = NEWS_LIMIT) -> discord.Embed:
-    """Primer embed del aviso: la lista de cambios desplegados."""
-    lines = [_summary_line(entry) for entry in entries[:limit]]
-    if len(entries) > limit:
-        lines.append(f"…y {len(entries) - limit} más.")
+def _split(text: str, limit: int = DESCRIPTION_CHARS) -> list[str]:
+    """Parte un texto en trozos de `limit` caracteres como mucho, por saltos de línea."""
+    chunks: list[str] = []
+    for line in text.split("\n"):
+        while len(line) > limit:
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if chunks and len(chunks[-1]) + 1 + len(line) <= limit:
+            chunks[-1] += "\n" + line
+        else:
+            chunks.append(line)
+    # Un trozo que solo sea un salto de línea daría un embed vacío, que Discord rechaza.
+    return [chunk for chunk in chunks if chunk.strip()] or [text]
+
+
+def news_summary(entries: list[NewsEntry]) -> list[discord.Embed]:
+    """Primeros embeds del aviso: la lista entera de cambios desplegados."""
     header = "Cambios incluidos en la versión que acaba de desplegarse:"
-    return discord.Embed(
-        title=NEWS_TITLE, description="\n".join([header, "", *lines]), color=NEWS_COLOR
-    )
+    text = "\n".join([header, "", *(_summary_line(entry) for entry in entries)])
+    embeds = [discord.Embed(description=chunk, color=NEWS_COLOR) for chunk in _split(text)]
+    embeds[0].title = NEWS_TITLE
+    return embeds
 
 
-def _cut_body(body: str, url: str) -> str:
-    """Recorta la descripción por un salto de línea y enlaza al resto."""
-    if len(body) <= DETAIL_CHARS:
-        return body
-    more = f"\n\n[Sigue en GitHub]({url})"
-    cut = body[: DETAIL_CHARS - len(more) - 1]
-    newline = cut.rfind("\n")
-    if newline > len(cut) // 2:
-        cut = cut[:newline]
-    return cut.rstrip() + "\n…" + more
+def news_detail(entry: NewsEntry) -> list[discord.Embed]:
+    """Ficha de un PR con su descripción entera, en varios embeds si no cabe en uno.
 
-
-def news_detail(entry: NewsEntry) -> discord.Embed | None:
-    """Ficha de un PR con su descripción; `None` si GitHub no lo encontró."""
+    Vacía si GitHub no lo encontró.
+    """
     pull = entry.pull
     if pull is None:
-        return None
+        return []
     if pull.body:
-        description = _cut_body(pull.body, pull.url)
+        description = pull.body
     elif entry.item.commits:
         description = "\n".join(f"• {commit}" for commit in entry.item.commits)
     else:
         description = "Sin descripción."
-    embed = discord.Embed(
-        title=_clip(entry.item.headline, 256),
-        url=pull.url,
-        description=description,
-        color=NEWS_COLOR,
-        timestamp=pull.merged_at,
-    )
+    embeds = [discord.Embed(description=chunk, color=NEWS_COLOR) for chunk in _split(description)]
+    first, last = embeds[0], embeds[-1]
+    first.title = _clip(entry.item.headline, 256)
+    first.url = pull.url
     if pull.author:
-        embed.set_author(name=pull.author, url=pull.author_url, icon_url=pull.author_avatar)
-    return embed.set_footer(text=f"{pull.repo} · PR #{pull.number}")
+        first.set_author(name=pull.author, url=pull.author_url, icon_url=pull.author_avatar)
+    last.timestamp = pull.merged_at
+    last.set_footer(text=f"{pull.repo} · PR #{pull.number}")
+    return embeds
 
 
 def news_messages(entries: list[NewsEntry], *, detailed: bool) -> list[list[discord.Embed]]:
     """Embeds del aviso repartidos en mensajes que caben en los límites de Discord."""
-    embeds = [news_summary(entries)]
+    embeds = news_summary(entries)
     if detailed:
-        embeds += [e for entry in entries[:NEWS_LIMIT] if (e := news_detail(entry)) is not None]
+        embeds += [embed for entry in entries for embed in news_detail(entry)]
     messages: list[list[discord.Embed]] = []
     size = 0
     for embed in embeds:

@@ -52,9 +52,8 @@
 # en el canal donde se pidió. Detalle del protocolo en bot/services/deploy.py.
 #
 # Novedades: entre el commit que había y el nuevo, cada `Merge pull request`
-# aporta una línea con el título del PR. Los PR que juntan el main del fork
-# (rama `main`) se saltan si hay otros PR dentro, que ya cuentan lo mismo con
-# más detalle. Si un título es el que GitHub inventa con el nombre de la rama
+# hecho en el propio main (los PR de godzilin, no los que traen dentro desde el
+# fork) aporta una línea con el título del PR. Si un título es el que GitHub inventa con el nombre de la rama
 # ("Claude/adoring tesla ybmnco"), se usan los asuntos de sus commits. Cada
 # línea son cuatro campos separados por tabuladores: `#número`, `dueño/rama`
 # de origen, `titulo` o `commit`, y el texto. Con el número y la rama, el bot
@@ -277,7 +276,7 @@ volver_atras() {
 # "Novedades" arriba). Usa el `git` de main().
 listar_novedades() {
     local merge asunto numero dueno rama titulo auto pr
-    local -a propios=() paquetes=()
+    local -a lineas=()
     while IFS=$'\t' read -r merge asunto; do
         [[ "$asunto" =~ ^Merge\ pull\ request\ \#([0-9]+)\ from\ ([^/]+)/(.+)$ ]] || continue
         numero="${BASH_REMATCH[1]}"
@@ -290,29 +289,30 @@ listar_novedades() {
         if [[ -z "$titulo" || "${titulo,,}" == "${auto,,}" ]]; then
             # Título de relleno: lo que cuentan sus commits, sin los merges.
             while IFS= read -r titulo; do
-                [[ -n "$titulo" ]] && propios+=("$pr"$'\tcommit\t'"$titulo")
+                [[ -n "$titulo" ]] && lineas+=("$pr"$'\tcommit\t'"$titulo")
             done < <("${git[@]}" log --no-merges --reverse --format=%s "$merge^1..$merge^2")
             continue
         fi
-        if [[ "$rama" == main ]]; then
-            paquetes+=("$pr"$'\ttitulo\t'"$titulo")
-        else
-            propios+=("$pr"$'\ttitulo\t'"$titulo")
-        fi
-    done < <("${git[@]}" log --merges --reverse --format=$'%H\t%s' "$1..$2")
-    if ((${#propios[@]} == 0)); then
-        propios=("${paquetes[@]}")
-    fi
-    # Un mismo texto sale una vez aunque llegue por dos PR (el del fork y el suyo).
-    ((${#propios[@]})) && printf '%s\n' "${propios[@]}" | awk -F'\t' '!visto[$4]++'
+        lineas+=("$pr"$'\ttitulo\t'"$titulo")
+    # --first-parent: solo los merges hechos en main, no los PR del fork que traen dentro.
+    done < <("${git[@]}" log --first-parent --merges --reverse --format=$'%H\t%s' "$1..$2" 2>/dev/null)
+    ((${#lineas[@]})) && printf '%s\n' "${lineas[@]}"
     return 0
 }
 
 # Añade las novedades de $1..$2 al buzón para que el bot las publique. Si el
 # bot aún no había publicado las anteriores, se juntan.
 apuntar_novedades() {
-    local lista archivo="$BUZON/novedades.txt"
+    local lista archivo="$BUZON/novedades.txt" repesca="$BUZON/../repesca_88_90"
     lista="$(listar_novedades "$1" "$2")"
+    # shortcut: una sola vez, los PR #88-#90 de godzilin que tapó el formato
+    # anterior del aviso; borrar este bloque cuando ya se hayan publicado.
+    if [[ ! -e "$repesca" ]]; then
+        lista="$(listar_novedades da749ef3215574abf2429e3cbd2e53c8ee1ece31 19b98620f548f8ed48adbd15ed4b1b7660e63b2b)"$'\n'"$lista"
+        # Sin líneas vacías ni repetidas si el último despliegue ya los incluía.
+        lista="$(awk -F'\t' 'NF && !visto[$1 FS $4]++' <<<"$lista")"
+        touch "$repesca"
+    fi
     [[ -n "$lista" ]] || return 0
     { cat "$archivo" 2>/dev/null; printf '%s\n' "$lista"; } >"$archivo.tmp"
     # El bot (uid 1000) tiene que poder borrarlo después de publicarlo.

@@ -16,9 +16,8 @@ from interaction_fakes import fake_interaction
 from bot.cogs.deploy import (
     CHARS_PER_MESSAGE,
     DEPLOYERS,
-    DETAIL_CHARS,
+    DESCRIPTION_CHARS,
     EMBEDS_PER_MESSAGE,
-    NEWS_LIMIT,
     Deploy,
     OldNewsButton,
     news_messages,
@@ -294,27 +293,31 @@ def test_el_aviso_es_serio() -> None:
         assert broma not in texto
 
 
-def test_una_descripcion_larga_se_corta_y_enlaza_a_github() -> None:
+def test_una_descripcion_larga_sale_entera_en_varios_embeds() -> None:
     body = "\n".join(f"Línea {n} " + "x" * 80 for n in range(200))
 
-    ficha = news_messages([_entry(5, body)], detailed=True)[0][1]
+    embeds = [e for m in news_messages([_entry(5, body)], detailed=True) for e in m][1:]
 
-    assert len(ficha.description or "") <= DETAIL_CHARS
-    assert (ficha.description or "").endswith(f"[Sigue en GitHub]({_pull(5).url})")
+    assert len(embeds) > 1
+    assert "\n".join(e.description or "" for e in embeds) == body
+    assert all(len(e.description or "") <= DESCRIPTION_CHARS for e in embeds)
+    assert embeds[0].title == "Cambio 5"
+    assert (embeds[-1].footer.text or "").endswith("PR #5")
 
 
-def test_muchos_cambios_se_reparten_en_mensajes_que_caben_en_discord() -> None:
-    body = "x" * DETAIL_CHARS
-    entries = [_entry(n, body) for n in range(NEWS_LIMIT + 5)]
+def test_muchos_cambios_salen_todos_en_mensajes_que_caben_en_discord() -> None:
+    entries = [_entry(n, "x" * 3_000) for n in range(40)]
 
     messages = news_messages(entries, detailed=True)
 
-    assert sum(len(embeds) for embeds in messages) == 1 + NEWS_LIMIT
-    for embeds in messages:
-        assert len(embeds) <= EMBEDS_PER_MESSAGE
-        assert sum(len(e) for e in embeds) <= CHARS_PER_MESSAGE
-        assert all(len(e.description or "") <= 4096 for e in embeds)
-    assert (messages[0][0].description or "").endswith("…y 5 más.")
+    embeds = [e for m in messages for e in m]
+    summary = "\n".join(e.description or "" for e in embeds if e.footer.text is None)
+    assert all(f"[#{n}]" in summary for n in range(40)), "la lista no tiene tope"
+    assert sum(1 for e in embeds if e.footer.text) == 40, "una ficha por PR"
+    for m in messages:
+        assert len(m) <= EMBEDS_PER_MESSAGE
+        assert sum(len(e) for e in m) <= CHARS_PER_MESSAGE
+        assert all(len(e.description or "") <= DESCRIPTION_CHARS for e in m)
 
 
 def _guild_with_channel(guild_id: int = 1) -> tuple[MagicMock, MagicMock]:

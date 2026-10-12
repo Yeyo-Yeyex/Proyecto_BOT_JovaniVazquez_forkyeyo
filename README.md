@@ -833,22 +833,24 @@ El aviso es como la página de un PR en GitHub, sin botones ni bromas:
 
 - Primero, la lista de cambios: título, enlace al PR y autor.
 - En modo detallado (el de serie), una ficha por PR con su descripción,
-  autor y fecha. Las descripciones largas se cortan con un enlace a GitHub.
+  autor y fecha. La descripción sale entera: si no cabe en un embed, sigue
+  en el siguiente.
   Por eso la descripción de un PR acaba en Discord tal cual (ver «Títulos y
   descripciones de PR» en `CLAUDE.md`).
-- Se enseñan 12 cambios como mucho; el resto queda en «…y N más».
+- Salen todos los PR nuevos, sin tope. Lo que no cabe en un mensaje de
+  Discord sigue en otro.
 
 De dónde sale cada cambio:
 
-- Cada `Merge pull request` entre los dos commits aporta el título de su PR.
-- Los PR que traen entero el `main` del fork (rama `main`) se saltan si dentro
-  hay otros PR, que ya cuentan lo mismo con más detalle.
+- Cada `Merge pull request` hecho en el `main` de godzilin entre los dos
+  commits aporta el título de su PR. Los PR del fork que llegan dentro de
+  ellos no salen: el aviso cuenta los PR de godzilin, que son los que componen
+  la imagen.
 - Si el título es el que GitHub pone solo con el nombre de la rama
   («Claude/adoring tesla ybmnco»), salen los asuntos de sus commits.
 - Los commits subidos directamente a `main`, sin PR, no salen.
-- El número de PR no dice de qué repositorio es (los PR del fork llegan
-  dentro de `main`). El bot lo busca en el de godzilin y en el fork, y vale el
-  que sale de la misma rama. Usa la API pública de GitHub sin token (60
+- El bot busca cada PR en el repositorio de godzilin y comprueba que sale de
+  la misma rama. Usa la API pública de GitHub sin token (60
   peticiones por hora); si no responde, el aviso sale solo con los títulos.
 
 Los administradores lo configuran con `cambios` (`/cambios` o `.cambios`):

@@ -270,10 +270,10 @@ servidor, no programadores.
     del casino con el bot real».
 - **Un tema por PR.** Cada PR es una línea del aviso; si un PR junta tres cosas, el
   título las nombra todas o se parte en tres.
-- **La PR del fork a godzilin** se salta en el aviso si trae otros PR dentro, pero si
-  lo que trae llegó al `main` del fork sin PR, su título es la única línea que saldrá:
-  resume todo lo nuevo («Caballos y una sola semana para el IRPF»), nunca «Caballos»
-  ni «Merge main».
+- **La PR del fork a godzilin** es lo único que sale en el aviso: los PR del fork que
+  trae dentro no se anuncian. Su título resume todo lo nuevo («Caballos y una sola
+  semana para el IRPF»), nunca «Caballos» ni «Merge main», y su descripción cuenta
+  cada cambio, porque sale entera en Discord.
 - **Asuntos de commit** en español y legibles: si un PR queda con el título
   automático, el aviso usa los asuntos de sus commits.
 - **Descripción** (sale en Discord en el aviso detallado y la lee también quien

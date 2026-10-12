@@ -9,11 +9,10 @@ sin tabuladores es el formato anterior (solo el título) y se acepta igual: el
 despliegue que trae este código lo apunta todavía el script viejo.
 
 Con el número y la rama, `fetch_pulls` pide a la API pública de GitHub la
-descripción, el autor y el enlace de cada PR, como en la página del PR. El
-número no dice de qué repositorio es: los PR del fork llegan a `main` junto a
-los del repositorio del bot. Se prueba en cada uno de `REPOS` y vale el que
-tenga la misma rama de origen. Si GitHub no responde, el aviso sale solo con
-los títulos.
+descripción, el autor y el enlace de cada PR, como en la página del PR. Solo
+se anuncian los PR del repositorio que se despliega (`REPOS`), no los del fork
+que traen dentro; vale el que tenga la misma rama de origen. Si GitHub no
+responde, el aviso sale solo con los títulos.
 
 Este módulo no depende de discord.py; el aviso lo monta `bot.cogs.deploy`.
 """
@@ -31,12 +30,9 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-#: Repositorios donde buscar cada PR, en orden: el que se despliega y su fork
-#: (ver «Dos repositorios» en CLAUDE.md).
-REPOS: tuple[str, ...] = (
-    "godzilin/Proyecto_BOT_JovaniVazquez",
-    "Yeyo-Yeyex/Proyecto_BOT_JovaniVazquez_forkyeyo",
-)
+#: Repositorios donde buscar cada PR: el que se despliega (ver «Dos repositorios»
+#: en CLAUDE.md).
+REPOS: tuple[str, ...] = ("godzilin/Proyecto_BOT_JovaniVazquez",)
 API_URL = "https://api.github.com/repos/{repo}/pulls/{number}"
 #: Segundos que se espera a GitHub por petición.
 TIMEOUT_SECONDS = 10
