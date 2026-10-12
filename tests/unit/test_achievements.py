@@ -57,6 +57,7 @@ from bot.services.achievements import (
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
+    SECRET_STAKES,
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
     SHOP_USE_KINDS_STAT,
@@ -416,7 +417,7 @@ PRODUCED_STATS = {
     ROULETTE_NUMBERS_STAT, ROULETTE_FAVOURITE_STAT,
     "bj_suited_natural", "bj_triple_seven", "bj_five_21", "bj_double_loss", "bj_stand_low",
     "bj_split_aces", "bj_both_bj", "bj_dealer_five",
-    "casino_bet_1", "casino_bet_69", "casino_bet_777",
+    *(f"casino_bet_{n}" for n in SECRET_STAKES),
     "crash_cash_low", "crash_missed_moon",
     "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
@@ -620,6 +621,10 @@ def test_casino_detecta_all_in_ruina_y_cifras_secretas() -> None:
     partial = casino_stats(stake=100, net=-100, balance_after=900, tax_delta=-20)
     assert "casino_all_in" not in partial.add
     assert partial.add["tax_refunds"] == 1
+
+    franco = casino_stats(stake=1975, net=-1975, balance_after=5_000)
+    assert franco.add["casino_bet_1975"] == 1
+    assert "casino_bet_1975" not in casino_stats(stake=1976, net=0, balance_after=5_000).add
 
 
 def outcome(pocket: int, *bets: tuple[str, int]) -> RoundOutcome:
