@@ -596,6 +596,7 @@ async def test_la_lista_apunta_sus_logros_con_el_bot_real(tmp_path: Path) -> Non
         guild = MagicMock(spec=discord.Guild)
         guild.id = GUILD_ID
         guild.get_member = MagicMock(return_value=owner)
+        owner.guild = guild
         ctx = MagicMock()
         ctx.guild = guild
         ctx.author = owner
