@@ -1481,6 +1481,61 @@ SORT_PACKS: dict[str, SortPack] = {
             ("Una cadena de WhatsApp impresa «para que la vea el concejal»", 3),
         ),
     ),
+    "decretos": SortPack(
+        "📜 Eres secretario de Estado. Cada papel de la mesa va a su sitio: decreto, "
+        "moneda de cambio, filtración o cajón.",
+        "🗂️ Papel {n}/{total}:",
+        (
+            "📜 Real Decreto-ley",
+            "🤝 Moneda de cambio con socios",
+            "📰 Filtrar a la prensa",
+            "🗄️ Al cajón",
+        ),
+        (
+            ("Una medida urgente que hay que aprobar el martes sin pasar por comisión", 0),
+            ("Una prórroga de ayudas que caduca el día 31", 0),
+            ("Un cambio fiscal que no puede esperar al trámite parlamentario", 0),
+            ("Un traspaso de competencias que pide un partido de la investidura", 1),
+            ("Una partida para las infraestructuras de un socio", 1),
+            ("Una comisión bilateral que un grupo exige para apoyar los presupuestos", 1),
+            ("Un indulto que sirve para asegurar siete votos", 1),
+            ("El borrador de una subida de impuestos, para ver cómo reacciona la gente", 2),
+            ("La lista de nombres de la próxima remodelación del Gobierno", 2),
+            ("Un informe incómodo sobre el ministro de al lado", 2),
+            ("Un dato favorable del paro que conviene que salga hoy", 2),
+            ("Una propuesta de reforma de hace diez legislaturas que nadie ha vuelto a abrir", 3),
+            ("El informe que dice que el plan estrella no funciona", 3),
+            ("Una iniciativa popular con medio millón de firmas", 3),
+            ("Una promesa electoral de 2019 que ya nadie recuerda", 3),
+            ("Una queja del Tribunal de Cuentas que «ya se verá»", 3),
+            ("Una ley de transparencia que nunca llegó a la mesa", 3),
+        ),
+    ),
+    "enmiendas": SortPack(
+        "🇪🇺 Eres ponente de un reglamento. Cada enmienda va a su sitio: aceptar, "
+        "transaccional, rechazar o inadmisible.",
+        "✏️ Enmienda {n}/{total}:",
+        ("✅ Aceptar", "🔀 Transaccional", "❌ Rechazar", "🗑️ Inadmisible"),
+        (
+            ("Corrige una errata de numeración en el artículo 12", 0),
+            ("Añade un «a más tardar» que todos los grupos piden", 0),
+            ("Precisa una definición que ya nadie discute", 0),
+            ("Aclara que la fecha del artículo 3 se refiere a días hábiles", 0),
+            ("Pide fusionar dos propuestas de redacción casi idénticas", 1),
+            ("Quiere cambiar «obligatorio» por «recomendado», pero con matices", 1),
+            ("Propone una cifra intermedia entre las dos enmiendas enfrentadas", 1),
+            ("Combina la idea de dos grupos en un único texto de compromiso", 1),
+            ("Elimina todo el reglamento y propone no hacer nada", 2),
+            ("Exige multiplicar por diez las sanciones", 2),
+            ("Pide que el reglamento no se aplique a ningún país", 2),
+            ("Duplica los costes de aplicación sin explicar de dónde sale el dinero", 2),
+            ("Introduce un tema que no tiene nada que ver con el reglamento", 3),
+            ("Modifica un artículo de otro reglamento ya aprobado", 3),
+            ("Contradice un artículo del Tratado de Funcionamiento de la UE", 3),
+            ("Llega fuera de plazo, entregada en mano a las tres de la mañana", 3),
+            ("Propone legislar sobre una competencia que es solo de los Estados miembros", 3),
+        ),
+    ),
 }
 
 # -- Contenido: calcular -----------------------------------------------------------------
@@ -1538,6 +1593,36 @@ MEMORY_PACKS.update(
             "Repite la coreografía en orden. Grabando…",
             (("👈", "Izquierda"), ("👉", "Derecha"), ("🙌", "Manos arriba"), ("💃", "Giro"),
              ("🦵", "Patada"), ("🫶", "Corazón"), ("🤸", "Voltereta")),
+        ),
+        "socios": MemoryPack(
+            "🤝 Cena con los socios de investidura. Esto es lo que les prometiste, por "
+            "orden (ronda {n}):",
+            "Recuerda en el mismo orden lo que prometiste a cada socio.",
+            (
+                ("🚆", "Un tren"),
+                ("💶", "Transferencias"),
+                ("🏛️", "Una comisión"),
+                ("📜", "Un indulto"),
+                ("🌉", "Un puente"),
+                ("🏥", "Un hospital"),
+                ("🗣️", "Un traspaso de competencias"),
+                ("🚧", "Una autovía"),
+                ("🎫", "Una cartera"),
+            ),
+        ),
+        "plenos": MemoryPack(
+            "🇪🇺 Pleno en Estrasburgo. Esta es la secuencia de votaciones de hoy "
+            "(tanda {n}):",
+            "Vota en el mismo orden que la lista de votación.",
+            (
+                ("👍", "A favor"),
+                ("👎", "En contra"),
+                ("✋", "Abstención"),
+                ("✏️", "Enmienda"),
+                ("✂️", "Votación por partes"),
+                ("🔒", "Votación secreta"),
+                ("🙋", "Votación nominal"),
+            ),
         ),
     }
 )  # fmt: skip
@@ -1829,6 +1914,357 @@ DIALOGUE_PACKS.update(
                     "La marca de tu perfume quiere que digas que lo creaste tú.",
                     "Es mi esencia hecha fragancia.",
                     ("No sé ni a qué huele.", "Me pagan por decirlo."),
+                ),
+            ),
+        ),
+        "portavoz": DialoguePack(
+            "📣 Portavoz en el Congreso. Regla de oro: **contesta sin contestar nada.**",
+            (
+                Dialogue(
+                    "Señoría, ¿va a explicar por fin las cuentas del partido?",
+                    "Lo que importa es que este Gobierno cumple y la oposición solo grita.",
+                    ("Sí, pero tengo que buscar el Excel.", "Esas cuentas las lleva el tesorero."),
+                ),
+                Dialogue(
+                    "¿Piensa su grupo apoyar la ley que ayer criticaba?",
+                    "Evolucionamos con los tiempos; la rigidez es cosa de otros.",
+                    ("No, qué va, ya está bien.", "Si me dan algo a cambio, quizá."),
+                ),
+                Dialogue(
+                    "¿Por qué no comparece el presidente para dar explicaciones?",
+                    "El presidente comparece cuando toca, y la agenda la marca España.",
+                    ("Porque le da miedo.", "Está de viaje, como siempre."),
+                ),
+                Dialogue(
+                    "¿Qué le parece el último escándalo de su partido?",
+                    "Mi grupo trabaja por la gente mientras otros viven de la bronca.",
+                    ("Un escándalo, sí.", "Yo no sabía nada, lo leí en el periódico."),
+                ),
+                Dialogue(
+                    "¿Se compromete a bajar los impuestos?",
+                    "Nos comprometemos con la justicia fiscal y con quien más lo necesita.",
+                    ("No, los vamos a subir.", "Sí, a ver si cuela."),
+                ),
+                Dialogue(
+                    "¿Admite que el Gobierno ha maquillado las cifras de empleo?",
+                    "Las cifras son las mejores de nuestra historia reciente.",
+                    ("Maquillar es una palabra fuerte, pero sí.", "Eso lo dirá la oposición."),
+                ),
+                Dialogue(
+                    "¿Va a pedir perdón a las víctimas del desastre?",
+                    "Nuestra prioridad es la reconstrucción y mirar hacia adelante.",
+                    ("Sí, pero tarde.", "No, ya pidieron perdón los de antes."),
+                ),
+                Dialogue(
+                    "¿Votará su grupo a favor de la enmienda de los socios?",
+                    "Estamos dialogando con todos los grupos desde la responsabilidad.",
+                    ("Sí, nos tienen cogidos.", "No sé qué enmienda es."),
+                ),
+                Dialogue(
+                    "¿Quién ha filtrado la conversación privada del ministro?",
+                    "No vamos a entrar en cuestiones que están en manos de los tribunales.",
+                    ("Fue un asesor, seguro.", "Yo, para ver qué pasaba."),
+                ),
+                Dialogue(
+                    "¿Cuántos cargos de confianza ha colocado su partido este año?",
+                    "Los que exige una administración moderna y comprometida.",
+                    ("Unos trescientos, aproximadamente.", "Todos los primos que había libres."),
+                ),
+                Dialogue(
+                    "¿Por qué ha cambiado de postura sobre el referéndum?",
+                    "Porque la realidad es dinámica y la política, también.",
+                    ("Por los votos.", "No he cambiado: la que cambió fue mi memoria."),
+                ),
+            ),
+        ),
+        "ministerio": DialoguePack(
+            "🗂️ Despacho del ministro. Regla de oro: **todo es una oportunidad, nada es "
+            "culpa tuya y las filtraciones vienen de fuera.**",
+            (
+                Dialogue(
+                    "Se ha filtrado el borrador de la ley a un periódico.",
+                    "Pedir una investigación interna... que no acabe nunca.",
+                    ("Admitir que lo filtraste tú.", "Echarle la culpa al becario por escrito."),
+                ),
+                Dialogue(
+                    "El presupuesto de la obra se ha disparado un 60 %.",
+                    "Hablar de «ajuste técnico» y de «mayor inversión en seguridad».",
+                    ("Decir que nadie sabe sumar.", "Cancelar la obra y no decir nada."),
+                ),
+                Dialogue(
+                    "Un socio de coalición amenaza con romper si no tiene su cartera.",
+                    "Un café largo y una promesa vaga para después de las elecciones.",
+                    ("Dárselo todo a la primera.", "Mandarlo a freír espárragos por Telegram."),
+                ),
+                Dialogue(
+                    "La prensa pregunta por el sobrecoste del coche oficial.",
+                    "Remitir al portal de transparencia, que nadie ha abierto nunca.",
+                    ("Reconocer que fue un capricho.", "Decir que se compró barato."),
+                ),
+                Dialogue(
+                    "Estalla una crisis con un país vecino por un comentario tuyo.",
+                    "Emitir un comunicado de «máximo respeto y relaciones históricas».",
+                    ("Repetir el comentario más alto.", "Desaparecer una semana."),
+                ),
+                Dialogue(
+                    "Un alto cargo del ministerio ha cobrado dos sueldos.",
+                    "Abrir un expediente informativo y pasar al siguiente tema.",
+                    ("Aplaudir su iniciativa.", "Pedirle que devuelva el dinero por Bizum."),
+                ),
+                Dialogue(
+                    "Los sindicatos convocan huelga del sector.",
+                    "Convocar una mesa de diálogo con fecha para dentro de seis meses.",
+                    ("Subir el sueldo de golpe.", "Reírte en directo."),
+                ),
+                Dialogue(
+                    "Te piden cuentas por un contrato a dedo.",
+                    "Aclarar que se ajustó al procedimiento de emergencia.",
+                    ("Decir que era un amigo.", "Asegurar que fue un error de la fotocopiadora."),
+                ),
+                Dialogue(
+                    "Un informe interno dice que el plan estrella no funciona.",
+                    "Encargar otro informe que diga lo contrario.",
+                    ("Publicarlo entero.", "Quemar el único ejemplar delante de testigos."),
+                ),
+                Dialogue(
+                    "Toca presentar un recorte y todos los grupos se te echan encima.",
+                    "Llamarlo «optimización del gasto» y repetirlo cinco veces.",
+                    ("Pedir perdón a todo el mundo.", "Culpar a la herencia de Felipe II."),
+                ),
+            ),
+        ),
+        "control": DialoguePack(
+            "🏛️ Sesión de control, miércoles. Regla de oro: **nunca contestes a la "
+            "pregunta; devuelve la pelota con un «¿y usted más?»**",
+            (
+                Dialogue(
+                    "Presidente, ¿cuándo convocará elecciones?",
+                    "Cuando toque, y mientras tanto usted gobernó con corrupción.",
+                    ("Pronto, si me deja.", "El mes que viene, creo."),
+                ),
+                Dialogue(
+                    "¿Sabía usted lo de las comisiones de su exsecretario?",
+                    "Y usted, ¿sabía lo de su tesorero, señoría?",
+                    ("Algo me sonaba.", "Me enteré el mismo día que usted."),
+                ),
+                Dialogue(
+                    "¿Por qué sube el precio de la luz?",
+                    "Gobernaron ocho años y dejaron la factura más cara de Europa.",
+                    ("Por el mercado marginalista, que lo explico.", "No tengo ni idea."),
+                ),
+                Dialogue(
+                    "¿Ha pagado usted ese viaje de su bolsillo?",
+                    "Hablemos de los viajes que pagaron ustedes en su día.",
+                    ("Pagó el partido.", "Sí, todo en metálico."),
+                ),
+                Dialogue(
+                    "¿Va a rectificar la política de vivienda?",
+                    "Su partido vendió pisos a fondos buitre; nosotros construimos.",
+                    ("Sí, rectifico hoy mismo.", "La vivienda no es mi competencia."),
+                ),
+                Dialogue(
+                    "¿Respeta usted las sentencias del Supremo?",
+                    "Respeto las sentencias, y ustedes, ¿respetan las urnas?",
+                    ("Depende de la sentencia.", "No las leo, pero me las resumen."),
+                ),
+                Dialogue(
+                    "Su ministro ha mentido al Congreso.",
+                    "Más mintió su líder prometiendo bajar impuestos.",
+                    ("Es verdad, y me da vergüenza.", "Lo he sabido siempre."),
+                ),
+                Dialogue(
+                    "¿Por qué no hay presupuestos?",
+                    "Porque ustedes bloquean todo, como siempre.",
+                    ("Porque no los he hecho.", "Los hice, pero se me perdieron."),
+                ),
+                Dialogue(
+                    "¿Qué piensa de la última encuesta?",
+                    "Las encuestas las ganan ustedes; las elecciones, nosotros.",
+                    ("Pinta muy mal, la verdad.", "La encuesta la hice yo, ya sabe."),
+                ),
+                Dialogue(
+                    "¿Cuántos asesores hay en la Moncloa?",
+                    "Los mismos que cuando gobernaban ustedes, pero más baratos.",
+                    ("Unos mil trescientos.", "No me los sé, los contrato por grupos."),
+                ),
+                Dialogue(
+                    "¿Se arrepiente de haber pactado con quien dijo que no pactaría?",
+                    "Y usted, ¿se arrepiente de haber hecho lo mismo en tres autonomías?",
+                    ("Un poco, sí.", "Qué va, me lo recomendaron."),
+                ),
+                Dialogue(
+                    "Presidente, ¿es cierto que va a indultar a sus socios?",
+                    "Aquí lo que importa es la concordia, señoría, y sus tribunales ya veremos.",
+                    ("Claro, ya está firmado.", "Solo a mis amigos."),
+                ),
+            ),
+        ),
+        "lobbies": DialoguePack(
+            "🤝 Pasillos del Parlamento Europeo. Regla de oro: **escucha, sonríe y no firmes "
+            "nada.**",
+            (
+                Dialogue(
+                    "Un lobista de una gran tecnológica te invita a un desayuno «informal».",
+                    "Vas, escuchas, te llevas la tarjeta y no prometes nada.",
+                    ("Aceptas todo lo que te dice.", "Le firmas un papel «de buena voluntad»."),
+                ),
+                Dialogue(
+                    "Una petrolera pide que el reglamento «reconozca la transición gradual».",
+                    "«Muy interesante, lo estudiaremos con el máximo rigor».",
+                    ("Le copias su texto tal cual.", "Le dices que se vaya al diablo en directo."),
+                ),
+                Dialogue(
+                    "La agroindustria quiere una exención para los pesticidas.",
+                    "Sonríes, tomas notas y lo remites a la comisión competente.",
+                    ("Le das la exención ahora mismo.", "Le haces un discurso sobre las abejas."),
+                ),
+                Dialogue(
+                    "Un lobista te regala un maletín de «material informativo».",
+                    "Aceptas el folleto, rechazas el maletín.",
+                    ("Aceptas el maletín entero.", "Lo abres delante de las cámaras."),
+                ),
+                Dialogue(
+                    "Una asociación farmacéutica te pide una reunión urgente.",
+                    "Que la pidan por el registro de transparencia, con cita el mes que viene.",
+                    ("Quedas a cenar esta misma noche.", "Le das tu número personal."),
+                ),
+                Dialogue(
+                    "Una empresa de datos te ofrece un «estudio independiente» ya escrito.",
+                    "Lo recibes, lo guardas y lo dejas junto a los demás estudios.",
+                    ("Lo presentas como propio.", "Firmas el prólogo."),
+                ),
+                Dialogue(
+                    "Un lobby te propone un viaje a una conferencia en una isla.",
+                    "Lo declinas con cortesía y lo apuntas en el registro.",
+                    ("Aceptas e invitas a un amigo.", "Dices que sí, pero que pagas tú... luego."),
+                ),
+                Dialogue(
+                    "Te piden que enmiendes un párrafo para «clarificar» el texto.",
+                    "«Lo valoraremos en el momento procesal oportuno».",
+                    ("Lo cambias en el acto.", "Le preguntas cuánto vale la clarificación."),
+                ),
+                Dialogue(
+                    "Un lobista te asegura que su cliente genera cien mil empleos.",
+                    "«Fascinante cifra». Sonríes y pides que la envíen por escrito.",
+                    ("Le preguntas dónde están.", "Le ofreces un puesto a un primo."),
+                ),
+                Dialogue(
+                    "Una alianza de empresas energéticas te invita a su cóctel anual.",
+                    "Pasas un rato, saludas y te vas antes del brindis.",
+                    ("Brindas con ellos por el reglamento.", "Te quedas a dormir en el hotel."),
+                ),
+            ),
+        ),
+        "trilogo": DialoguePack(
+            "🇪🇺 Trílogo con el Consejo y la Comisión. Regla de oro: **cierra un acuerdo tan "
+            "ambiguo que todos puedan venderlo como victoria.**",
+            (
+                Dialogue(
+                    "El Consejo quiere 2030 y el Parlamento, 2025, para el objetivo.",
+                    "Propones «ambición progresiva con hitos intermedios flexibles».",
+                    ("Aceptas 2030 sin más.", "Exiges 2025 o te levantas de la mesa."),
+                ),
+                Dialogue(
+                    "La Comisión pide mantener su propuesta original intacta.",
+                    "Se mantiene el espíritu y se «adapta» el articulado.",
+                    ("Aceptas el texto original.", "Lo reescribes entero en la servilleta."),
+                ),
+                Dialogue(
+                    "Un Estado miembro exige una excepción para su país.",
+                    "Una cláusula de «circunstancias nacionales específicas».",
+                    ("Le das la excepción completa.", "Le dices que no, bajo ningún concepto."),
+                ),
+                Dialogue(
+                    "Son las tres de la mañana y nadie cede en el artículo 7.",
+                    "Lo dejas en «cuando proceda y de conformidad con la legislación».",
+                    ("Te duermes en la silla.", "Sacas el artículo y lo borras."),
+                ),
+                Dialogue(
+                    "Hay que decidir quién fija la fecha de aplicación.",
+                    "«La fecha será determinada por los Estados miembros en coordinación».",
+                    ("Pones una fecha y la defiendes.", "Lo pospones a 2040."),
+                ),
+                Dialogue(
+                    "El Parlamento quiere sanciones; el Consejo, recomendaciones.",
+                    "Sanciones «proporcionadas, disuasorias y, en su caso, recomendadas».",
+                    ("Sanciones duras o nada.", "Solo recomendaciones, y gracias."),
+                ),
+                Dialogue(
+                    "La prensa espera un titular claro de la reunión.",
+                    "Sales con tus socios y dices que ha sido «un paso decisivo».",
+                    ("Dices que no hay acuerdo.", "Explicas el acuerdo con detalle."),
+                ),
+                Dialogue(
+                    "Quedan cinco minutos antes de que cierre la presidencia semestral.",
+                    "Aprobáis un texto con tres interpretaciones posibles.",
+                    ("Pedís otra reunión para después.", "Lo votáis sin leerlo."),
+                ),
+                Dialogue(
+                    "Un jurista advierte de que el texto no se entiende.",
+                    "«Se aclarará en los actos delegados». Y todos felices.",
+                    ("Le das la razón y repites la ronda.", "Despides al jurista."),
+                ),
+                Dialogue(
+                    "Hay que repartir la financiación entre las partes.",
+                    "Cifras entre corchetes y un «sin perjuicio del marco financiero».",
+                    ("Fijas cantidades exactas.", "Dices que cada uno pague lo suyo."),
+                ),
+            ),
+        ),
+        "comisario": DialoguePack(
+            "🏢 Despacho en el Berlaymont. Regla de oro: **la respuesta buena es la más "
+            "comunitaria, la más burocrática y la que no compromete a nadie.**",
+            (
+                Dialogue(
+                    "Una gran tecnológica recurre la multa de miles de millones.",
+                    "«La Comisión ha actuado con arreglo a los Tratados y confía en el control "
+                    "jurisdiccional».",
+                    ("Le subes la multa por insolente.", "Le dices que no pasa nada."),
+                ),
+                Dialogue(
+                    "Un Estado miembro se queja de que el reglamento le cuesta mucho.",
+                    "Remites a la «evaluación de impacto» y a una consulta pública.",
+                    ("Le das dinero ahora mismo.", "Le dices que se aguante."),
+                ),
+                Dialogue(
+                    "Un eurodiputado te pregunta por escrito cuántos funcionarios hay.",
+                    "«La Comisión remite a su respuesta a la pregunta E-004321/2024».",
+                    ("Contestas con la cifra exacta.", "No contestas nunca."),
+                ),
+                Dialogue(
+                    "Una audiencia en el Parlamento te interroga sobre tu programa.",
+                    "«Trabajaremos con los colegisladores en un espíritu constructivo».",
+                    ("Explicas tu plan en detalle.", "Les cuentas tus vacaciones."),
+                ),
+                Dialogue(
+                    "La prensa pregunta si habrá nuevo reglamento sobre el tema.",
+                    "«Se estudiará en el marco del programa de trabajo de la Comisión».",
+                    ("Anuncias el reglamento en directo.", "Dices que no habrá nada."),
+                ),
+                Dialogue(
+                    "Un país te pide flexibilidad con el déficit.",
+                    "«Se aplicarán las cláusulas de salvaguardia conforme al marco fiscal».",
+                    ("Le dices que sí a todo.", "Le abres un procedimiento por si acaso."),
+                ),
+                Dialogue(
+                    "Dos direcciones generales discuten por quién redacta el informe.",
+                    "Creas un grupo de trabajo interservicios.",
+                    ("Lo redactas tú esa noche.", "Las mandas a la cantina a resolverlo."),
+                ),
+                Dialogue(
+                    "Un Estado miembro incumple una directiva desde hace diez años.",
+                    "Una carta de emplazamiento, con plazo de dos meses ampliable.",
+                    ("Le impones una multa inmediata.", "Mirar a otro lado, que ya se acordará."),
+                ),
+                Dialogue(
+                    "La gente en redes pregunta qué hace Bruselas por ellos.",
+                    "Un comunicado con la palabra «ciudadanos» cinco veces.",
+                    ("Les respondes con memes.", "Les mandas el informe de 800 páginas."),
+                ),
+                Dialogue(
+                    "Una asociación pide transparencia sobre una reunión a puerta cerrada.",
+                    "«El documento solicitado queda fuera del ámbito del Reglamento 1049/2001».",
+                    ("Les envías las actas completas.", "Les dices que se las inventen."),
                 ),
             ),
         ),
@@ -2945,6 +3381,237 @@ EVENTS: tuple[Event, ...] = (
         ),
         jobs=("influencer",),
     ),
+    # -- Política: Moncloa --------------------------------------------------------------
+    Event(
+        "mocion",
+        "🗳️ Registran una moción de censura contra el Gobierno. Esta tarde cuentan los votos.",
+        (
+            (
+                "Aguantar",
+                Outcome(
+                    "Aguantas con tres cafés, dos llamadas a los socios y una promesa de tren. "
+                    "La moción decae y Ferraz te debe una.",
+                    pay=0.5,
+                    performance=20,
+                    battery=-20,
+                    stat="work_censure_survived",
+                ),
+            ),
+            (
+                "Elecciones por sorpresa",
+                Outcome(
+                    "Convocas elecciones a las seis de la mañana. Nadie lo vio venir, ni tú.",
+                    pay=1.0,
+                    performance=10,
+                    battery=-25,
+                    family=-5,
+                    stat="work_snap_election",
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("moncloa",),
+    ),
+    Event(
+        "socio",
+        "🤝 Un socio de la investidura pide algo a cambio de sus votos. «Es una cuestión "
+        "de Estado», dice.",
+        (
+            (
+                "Ceder",
+                Outcome(
+                    "Cedes. Los votos llegan, la factura la pagará otro Gobierno.",
+                    pay=0.5,
+                    performance=15,
+                    stat="work_partner_deal",
+                ),
+            ),
+            (
+                "Plantarse",
+                Outcome(
+                    "Te plantas. El socio vota con la oposición y en Ferraz te miran fatal.",
+                    performance=-20,
+                    battery=-10,
+                    stat="work_partner_refused",
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("moncloa",),
+    ),
+    Event(
+        "cis",
+        "📊 Te sugieren «afinar» la encuesta del CIS antes de que salga publicada.",
+        (
+            (
+                "La cocino",
+                Outcome(
+                    "Cocinas la encuesta a fuego lento. Sale una ventaja de diez puntos y "
+                    "ningún sociólogo la entiende.",
+                    pay=0.6,
+                    performance=20,
+                    stat="work_cis",
+                ),
+            ),
+            (
+                "Sin tocar",
+                Outcome(
+                    "La publicas tal cual. Sale fatal y el titular es tuyo.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("moncloa",),
+    ),
+    Event(
+        "omnibus",
+        "📦 Hay veinte medidas pendientes y poco tiempo. Alguien susurra: «Un ómnibus y a correr».",
+        (
+            (
+                "Todo al ómnibus",
+                Outcome(
+                    "Metes pensiones, vivienda, una ley de pesca y un indulto en un solo "
+                    "decreto. Nadie lo ha leído entero.",
+                    pay=0.7,
+                    performance=15,
+                    battery=-10,
+                    stat="work_omnibus",
+                ),
+            ),
+            (
+                "Por separado",
+                Outcome(
+                    "Tramitas cada ley por su cuenta. Es correcto, lento y nadie te lo agradece.",
+                    performance=-5,
+                    battery=-15,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("moncloa",),
+    ),
+    # -- Política: Bruselas -------------------------------------------------------------
+    Event(
+        "qatargate",
+        "💼 Un enviado de un emirato te deja un maletín «para estrechar lazos entre pueblos».",
+        (
+            (
+                "Lo cojo",
+                Outcome(
+                    "Lo cargas en el coche. Pesa lo que pesan las buenas relaciones "
+                    "internacionales.",
+                    black=5.0,
+                    risk=0.3,
+                    caught_by="olaf",
+                    stat="work_suitcase",
+                ),
+            ),
+            (
+                "Lo rechazo",
+                Outcome(
+                    "Lo devuelves y lo cuentas en el registro de transparencia. Parece que "
+                    "has perdido el norte.",
+                    performance=-10,
+                    stat="work_suitcase_refused",
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("bruselas",),
+    ),
+    Event(
+        "estrasburgo",
+        "🚆 Toca el traslado mensual a Estrasburgo: cuatro mil funcionarios, ciento "
+        "ochenta cajas de documentos y un tren.",
+        (
+            (
+                "Voy con todos",
+                Outcome(
+                    "Viajas con la comitiva y las cajas. Cuando llegas, ya es el pleno siguiente.",
+                    battery=-25,
+                    family=-5,
+                    stat="work_strasbourg",
+                ),
+            ),
+            (
+                "Me quedo en Bruselas",
+                Outcome(
+                    "Te quedas en Bruselas y lo sigues por pantalla. En casa respiran.",
+                    performance=-10,
+                    battery=-10,
+                    family=5,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("bruselas",),
+    ),
+    Event(
+        "dietas",
+        "✍️ El pleno es largo y las dietas se cobran con solo firmar en el registro de la entrada.",
+        (
+            (
+                "Firmo y me voy",
+                Outcome(
+                    "Firmas, cobras la dieta y desapareces entre los tulipanes. Nadie "
+                    "lo comprueba, casi nadie.",
+                    fine=1.2,
+                    risk=0.25,
+                    caught_by="olaf",
+                    performance=-5,
+                    stat="work_per_diem",
+                ),
+            ),
+            (
+                "Me quedo al pleno",
+                Outcome(
+                    "Te quedas. Aprendes lo que es una votación por partes y no cobras extra.",
+                    performance=15,
+                    battery=-15,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("bruselas",),
+    ),
+    Event(
+        "cena_lobby",
+        "🍽️ Un lobby te invita a una cena de cuatro platos en un restaurante con "
+        "estrella. «Solo para conocernos».",
+        (
+            (
+                "Acepto",
+                Outcome(
+                    "Cenas, brindas y sales sin haber firmado nada. La cuenta la paga "
+                    "un sector entero.",
+                    pay=0.4,
+                    performance=10,
+                    battery=-10,
+                    family=-3,
+                    stat="work_lobby_dinner",
+                ),
+            ),
+            (
+                "Declino",
+                Outcome(
+                    "Te vas a casa con un bocadillo. Tu asistente te mira con tristeza.",
+                    performance=-5,
+                    family=5,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("bruselas",),
+    ),
 )
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
@@ -2978,6 +3645,10 @@ CAUGHT_TEXT: dict[str, str] = {
     "regalos": (
         "📨 **Hacienda cruza datos con la marca.** El regalo era renta en especie: lo "
         "regularizas con un 20 % de recargo."
+    ),
+    "olaf": (
+        "🇪🇺 **La OLAF (Oficina Europea de Lucha contra el Fraude) abre una investigación.** "
+        "Tras tres años de papeleo bilingüe, devuelves lo cobrado con un 20 % de recargo."
     ),
 }
 #: Pillados que además dejan sin IMV unos días.
