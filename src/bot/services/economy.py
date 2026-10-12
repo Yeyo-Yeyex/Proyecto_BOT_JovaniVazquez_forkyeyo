@@ -1088,6 +1088,41 @@ class EconomyService:
             guild_id, sender_id, receiver_id, amount=amount, now=now, day_start=day_start
         )
 
+    async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
+        """El Bizum de mamá de `pala`: tu madre te adelanta `amount`.
+
+        Tratamiento fiscal: el mismo que un Bizum entre miembros (`bizum`), por
+        decisión del proyecto: exento de Sucesiones y Donaciones y sin IRPF
+        (art. 6.4 LIRPF). En la vida real un préstamo familiar sin intereses no
+        es renta (lo prestado se devuelve) y Hacienda solo pide que conste por
+        escrito. Tu madre no es un miembro, así que el dinero se crea de la nada,
+        pero vuelve a ella entero con `repay_mom`: la suma es cero.
+
+        Returns:
+            El saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("El Bizum tiene que ser positivo.")
+        return await self.repository.apply(guild_id, user_id, [LedgerEntry(amount, "bizum:mama")])
+
+    async def repay_mom(self, guild_id: int, user_id: int, *, amount: int) -> int:
+        """Devuelve parte del Bizum de mamá: sale del saldo y desaparece.
+
+        Tratamiento fiscal: como `mom_bizum`, exento. Es la otra mitad del
+        préstamo: lo que se creó al pedirlo se destruye al devolverlo.
+
+        Raises:
+            InsufficientFundsError: Si no le llega. No se mueve nada.
+
+        Returns:
+            El saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("La devolución tiene que ser positiva.")
+        return await self.repository.apply(
+            guild_id, user_id, [LedgerEntry(-amount, "bizum:mama_devuelto")]
+        )
+
     async def purchase(
         self,
         guild_id: int,

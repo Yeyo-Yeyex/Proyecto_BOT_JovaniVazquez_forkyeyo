@@ -3730,3 +3730,130 @@ COFFEES: tuple[Coffee, ...] = (
     Coffee("barraquito", "Barraquito", "🥃", 20, 25),
 )
 COFFEE_BY_KEY: dict[str, Coffee] = {coffee.key: coffee for coffee in COFFEES}
+
+
+# -- Familia: regalos y favores ---------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Gift:
+    """Un regalo de la tienda (pasillo 🏠 La familia) que sube la familia en `pala`.
+
+    Se compra en `tienda` como cualquier objeto y se da desde el panel de `pala`
+    (se gasta). La clave es la del artículo en `bot.services.shop_catalog`.
+
+    Attributes:
+        family: Lo que sube la familia.
+        cooldown: Segundos hasta poder dar otro igual (tu madre no quiere
+            veinte ramos el mismo día).
+    """
+
+    key: str
+    emoji: str
+    name: str
+    family: int
+    cooldown: int
+
+
+HOUR = 3600
+DAY = 24 * HOUR
+
+GIFTS: tuple[Gift, ...] = (
+    Gift("bombones_mama", "🍫", "Caja de bombones", 6, 8 * HOUR),
+    Gift("flores_mama", "💐", "Ramo para tu madre", 10, 12 * HOUR),
+    Gift("pizza_familiar", "🍕", "Pizza familiar", 12, 12 * HOUR),
+    Gift("tarta_abuela", "🎂", "Tarta de la abuela", 15, DAY),
+    Gift("juguete_sobrino", "🧸", "Juguete para el sobrino", 20, 3 * DAY),
+    Gift("entradas_concierto", "🎟️", "Entradas para un concierto", 20, 3 * DAY),
+    Gift("cena_guachinche", "🍷", "Cena en un guachinche", 25, 4 * DAY),
+    Gift("finde_sur", "🏖️", "Finde en el sur", 50, 7 * DAY),
+)
+GIFT_BY_KEY: dict[str, Gift] = {gift.key: gift for gift in GIFTS}
+
+
+@dataclass(frozen=True, slots=True)
+class Favor:
+    """Algo que le pides a la familia desde `pala`: cuesta familia, no dinero.
+
+    No se piden si dejarían la familia por debajo de `work.FAVOR_FLOOR`: quien
+    ya la tiene en crisis no tiene a quién pedirle nada.
+
+    Attributes:
+        cost: Lo que baja la familia.
+        cooldown: Segundos hasta poder pedirlo otra vez.
+        text: Qué hace, para el desplegable.
+        done: Lo que se cuenta al pedirlo.
+    """
+
+    key: str
+    emoji: str
+    name: str
+    cost: int
+    cooldown: int
+    text: str
+    done: str
+
+
+FAVORS: tuple[Favor, ...] = (
+    Favor(
+        "tupper",
+        "🍲",
+        "El tupper de tu madre",
+        15,
+        20 * HOUR,
+        "+30 de batería, sin temblores",
+        "🍲 Tu madre te da un tupper de lentejas «para que comas algo caliente». +30 de batería.",
+    ),
+    Favor(
+        "ninos",
+        "💪",
+        "Lo hago por los niños",
+        15,
+        12 * HOUR,
+        "+15 % de tiempo en el próximo turno",
+        "💪 Miras la foto de los niños en el móvil. El próximo turno va con +15 % de tiempo.",
+    ),
+    Favor(
+        "cubre",
+        "👵",
+        "Te cubre tu madre",
+        25,
+        3 * DAY,
+        "Quita el saliente de guardia",
+        "👵 Tu madre llama al hospital: «Mi niño no puede, que tiene fiebre». Se acabó el "
+        "saliente.",
+    ),
+    Favor(
+        "cambio",
+        "👯",
+        "Tu hermana te cambia el turno",
+        20,
+        7 * DAY,
+        "Un turno ordinario más hoy",
+        "👯 Tu hermana se queda con los niños y te cambia el turno. Hoy tienes un turno "
+        "ordinario más, sin extras ni B.",
+    ),
+    Favor(
+        "excusa",
+        "📞",
+        "Excusa familiar",
+        10,
+        DAY,
+        "Te libras del marrón que tengas delante",
+        "📞 «Perdona, jefe, me llama mi madre». Te libras del marrón.",
+    ),
+    Favor(
+        "bizum",
+        "💸",
+        "Bizum de mamá",
+        20,
+        7 * DAY,
+        "Te adelanta un sueldo base; se devuelve con media nómina",
+        "💸 Tu madre te manda un Bizum con el concepto «para que no pases fatigas».",
+    ),
+)
+FAVOR_BY_KEY: dict[str, Favor] = {favor.key: favor for favor in FAVORS}
+#: Lo que sube la batería el tupper.
+TUPPER_BATTERY = 30
+#: Lo que da de tiempo «Lo hago por los niños», en tanto por uno.
+MOTIVATED_TIME = 0.15

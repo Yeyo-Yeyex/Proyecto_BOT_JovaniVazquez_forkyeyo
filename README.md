@@ -202,13 +202,13 @@ python -m bot
     granate (15.000 Y$). Se compran, se ganan con logros o se venden solo en
     su temporada; se cambian en la mochila o con el botón 🎨 de la mesa. Las
     reglas para añadir skins y abrir más juegos están en la Biblia.
-  - Surtido de serie: 233 artículos a la venta (196 objetos, 15
+  - Surtido de serie: 250 artículos a la venta (213 objetos, 15
     potenciadores y 22 mascotas) que se meten solos en cada servidor la
-    primera vez que se abre la tienda, repartidos en 14 pasillos por tema (La
+    primera vez que se abre la tienda, repartidos en 15 pasillos por tema (La
     Moncloa, Ventanilla, Canarias, Typical Spanish, Fiestas y verbenas,
     Supersticiones, Bazar de todo a 100, Rincón boricua, Importación de Hong
     Kong, Vida de rico, Lo que no debería venderse, Tienda de animales,
-    Ferretería del curro y Peña de la porra). Del
+    Ferretería del curro, Peña de la porra y Detalles para la familia). Del
     Falcon (50 millones, una unidad) a la piedra (1 Y$), cada uno con el IGIC
     que le tocaría de verdad. Lo que se come lleva 🍽️ (las mascotas se lo
     comen). Lo que un administrador retire no vuelve solo. Las reglas para
@@ -276,6 +276,13 @@ python -m bot
   libreta de comandas, pinganillo, vademécum…) que, con tenerlas, ayudan en
   el minijuego de su oficio: más tiempo, un fallo gratis por turno, un seguro
   para las tuberías o una respuesta mala tachada.
+  La familia ❤️ es el freno al que encadena turnos: cada turno cuesta, se
+  recupera sola por horas y, según su tramo (de 🏡 en casa feliz a 💔 en
+  crisis), la batería recarga más rápido o más lento y la barra sube más o
+  menos. Se sube con los regalos del pasillo 🏠 Detalles para la familia (el
+  botón 🎁 del panel lleva allí) y se gasta pidiendo favores: el tupper de tu
+  madre, que te cubra el saliente, la excusa para librarte de un marrón o un
+  Bizum de mamá que se devuelve con la mitad de cada turno.
   Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,
   cunde como un IMV a racha máxima; ver `docs/economia-trabajo.md`).
   El IMV se reduce 1 Y$ por cada 20 Y$ netos de nómina que pasen de 11.506 a la semana

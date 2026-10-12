@@ -15,8 +15,10 @@ from bot.services.work import (
     BATTERY_MIN,
     FAMILY_EXTRA,
     FAMILY_NIGHT,
-    FAMILY_REST_DAY,
+    FAMILY_ORDINARY,
+    FAMILY_REGEN_PER_HOUR,
     FAMILY_SUNDAY,
+    FAMILY_TIERS,
     LEGAL_EXTRAS_PER_WEEK,
     MAX_TRIENNIA,
     MEGAVIRAL,
@@ -35,7 +37,12 @@ from bot.services.work import (
     apply_performance,
     battery_eta,
     battery_now,
+    change_family,
+    family_breakdown,
     family_cost,
+    family_now,
+    family_ready_at,
+    family_tier,
     follower_gain,
     next_shift_kind,
     performance_delta,
@@ -149,22 +156,50 @@ def test_los_eventos_familiares_solo_salen_con_la_familia_tocada() -> None:
 
 
 def test_la_bateria_se_recarga_cinco_puntos_por_hora_hasta_el_maximo() -> None:
-    contract = Contract(job="obra", level=1, battery=10, battery_at=0)
+    # Familia tranquila (y que no sube de tramo en una hora): recarga normal.
+    contract = Contract(job="obra", level=1, battery=10, battery_at=0, family=50, family_at=0)
     assert battery_now(contract, 3600) == 15
     assert battery_now(contract, 100 * 3600) == BATTERY_MAX
 
 
+def test_la_recarga_depende_del_tramo_de_la_familia() -> None:
+    def after_one_hour(family: float) -> float:
+        contract = Contract(
+            job="obra", level=1, battery=0, battery_at=0, family=family, family_at=0
+        )
+        return battery_now(contract, 3600)
+
+    assert after_one_hour(100) == 7.5
+    assert after_one_hour(50) == 5
+    assert after_one_hour(20) == 2.5
+    assert after_one_hour(0) == 1.25
+
+
+def test_la_recarga_cambia_de_ritmo_cuando_la_familia_sube_de_tramo() -> None:
+    # De 0 a 15 (en crisis) tarda 7,5 h a ×0,25; luego ×0,5.
+    contract = Contract(job="obra", level=1, battery=0, battery_at=0, family=0, family_at=0)
+    crossing = 15 / FAMILY_REGEN_PER_HOUR
+    expected = crossing * 5 * 0.25 + (10 - crossing) * 5 * 0.5
+    assert battery_now(contract, 10 * 3600) == pytest.approx(expected)
+
+
 def test_battery_eta_cuadra_con_la_recarga() -> None:
-    contract = Contract(job="obra", level=1, battery=40, battery_at=0)
-    full = battery_eta(40, BATTERY_MAX, 0)
-    assert battery_now(contract, full) == BATTERY_MAX
-    assert battery_now(contract, full - 60) < BATTERY_MAX
-    assert battery_eta(BATTERY_MAX, BATTERY_MAX, 123) == 123
+    for family in (0, 30, 60, 100):
+        contract = Contract(
+            job="obra", level=1, battery=40, battery_at=0, family=family, family_at=0
+        )
+        full = battery_eta(contract, BATTERY_MAX, 0)
+        assert battery_now(contract, full) == pytest.approx(BATTERY_MAX)
+        assert battery_now(contract, full - 60) < BATTERY_MAX
+    full_contract = Contract(job="obra", level=1, battery=BATTERY_MAX, battery_at=0)
+    assert battery_eta(full_contract, BATTERY_MAX, 123) == 123
 
 
 def test_rested_at_es_cuando_se_puede_volver_a_fichar() -> None:
-    contract = Contract(job="obra", level=1, battery=BATTERY_MIN - 10, battery_at=0)
-    back = rested_at(contract.battery, 0)
+    contract = Contract(
+        job="obra", level=1, battery=BATTERY_MIN - 10, battery_at=0, family=0, family_at=0
+    )
+    back = rested_at(contract, 0)
     assert battery_now(contract, back) > BATTERY_MIN
     assert battery_now(contract, back - 120) <= BATTERY_MIN
 
@@ -208,18 +243,58 @@ def test_accidentes_solo_si_vas_reventado() -> None:
     assert 0 < accident_chance(10) < accident_chance(-5)
 
 
-def test_la_familia_sufre_con_extras_madrugada_y_domingo() -> None:
+def test_cada_turno_cuesta_familia_y_mas_las_extras_la_madrugada_y_el_domingo() -> None:
     sunday_night = at(2026, 10, 11, hour=2)
-    assert family_cost(ShiftKind.ORDINARY, at(2026, 10, 6)) == 0
+    assert family_cost(ShiftKind.ORDINARY, at(2026, 10, 6)) == FAMILY_ORDINARY
     assert family_cost(ShiftKind.EXTRA, sunday_night) == FAMILY_EXTRA + FAMILY_NIGHT + FAMILY_SUNDAY
+    assert family_breakdown(ShiftKind.EXTRA, sunday_night) == [
+        ("extra", FAMILY_EXTRA),
+        ("madrugada", FAMILY_NIGHT),
+        ("domingo", FAMILY_SUNDAY),
+    ]
+    assert family_cost(ShiftKind.ORDINARY, at(2026, 10, 6), remote=True) > FAMILY_ORDINARY
 
 
-def test_los_dias_libres_devuelven_familia_y_cortan_la_racha() -> None:
+def test_la_familia_se_recupera_sola_por_horas_hasta_el_maximo() -> None:
+    contract = Contract(job="obra", level=1, family=20, family_at=0)
+    assert family_now(contract, 5 * 3600) == 20 + 5 * FAMILY_REGEN_PER_HOUR
+    assert family_now(contract, 1_000 * 3600) == 100
+
+
+def test_los_dias_libres_cortan_la_racha_pero_no_suman_familia_de_golpe() -> None:
     contract = Contract(job="obra", level=1, family=20, shift_day="2026-10-01", streak_days=5)
     rest = roll_over_day(contract, at(2026, 10, 5))
     assert rest == 3
-    assert contract.family == 20 + 3 * FAMILY_REST_DAY
+    assert contract.family == 20
     assert contract.streak_days == 0
+
+
+def test_los_tramos_de_la_familia_van_de_mejor_a_peor() -> None:
+    assert [t.low for t in FAMILY_TIERS] == sorted((t.low for t in FAMILY_TIERS), reverse=True)
+    assert FAMILY_TIERS[-1].low == 0
+    assert family_tier(100).name == "En casa feliz"
+    assert family_tier(74.9).name == "Tranquila"
+    assert family_tier(0).name == "En crisis"
+    happy, calm, angry, crisis = FAMILY_TIERS
+    assert happy.performance(12) == 15 and calm.performance(12) == 12
+    assert angry.performance(12) == 6 and crisis.performance(12) == 0
+    # Lo que baja la barra no cambia con la familia.
+    assert all(t.performance(-10) == -10 for t in FAMILY_TIERS)
+
+
+def test_a_cero_llega_la_intervencion_para_el_dia_siguiente() -> None:
+    now = at(2026, 10, 6, 12)
+    contract = Contract(job="obra", level=1, family=5, family_at=now, battery_at=now)
+    assert change_family(contract, -20, now) is True
+    assert contract.family == 0 and contract.no_extras_day == "2026-10-07"
+    # Ya estaba a cero: no vuelve a saltar.
+    assert change_family(contract, -5, now) is False
+
+
+def test_la_espera_de_regalos_y_favores_va_por_clave() -> None:
+    contract = Contract(job="obra", level=1, family_used={"tupper": 1_000.0})
+    assert family_ready_at(contract, "tupper", 3600) == 4_600
+    assert family_ready_at(contract, "flores_mama", 3600) == 0
 
 
 # -- Rendimiento y ascensos ------------------------------------------------------------
@@ -276,16 +351,6 @@ def test_ascender_sube_un_puesto_y_reinicia_tareas() -> None:
     assert contract.position_since == 123.0
 
 
-def test_la_familia_no_se_recupera_dos_veces_por_los_mismos_dias() -> None:
-    """Un café o un ascenso guardan el contrato sin fichar: no debe sumar otra vez."""
-    contract = Contract(job="obra", level=1, family=20, shift_day="2026-10-01")
-    roll_over_day(contract, at(2026, 10, 5))
-    roll_over_day(contract, at(2026, 10, 5, hour=18))
-    assert contract.family == 20 + 3 * FAMILY_REST_DAY
-    roll_over_day(contract, at(2026, 10, 6))
-    assert contract.family == 20 + 4 * FAMILY_REST_DAY
-
-
 # -- Oficios nuevos: el tiempo, la app, la plaza fija, los trienios y la viralidad ------------
 
 
@@ -337,7 +402,7 @@ def test_la_viralidad_paga_de_media_como_un_sueldo_normal() -> None:
 
 def test_estudiar_cansa_como_un_turno_y_no_resta_familia_como_un_extra() -> None:
     assert shift_cost(ShiftKind.STUDY) == shift_cost(ShiftKind.ORDINARY)
-    assert family_cost(ShiftKind.STUDY, at(2026, 10, 6, 12)) == 0
+    assert family_cost(ShiftKind.STUDY, at(2026, 10, 6, 12)) == FAMILY_ORDINARY
 
 
 # -- Carrera larga ----------------------------------------------------------------------------

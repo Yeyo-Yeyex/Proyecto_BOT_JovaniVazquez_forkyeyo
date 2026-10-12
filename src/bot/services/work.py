@@ -20,9 +20,13 @@ Cómo funciona un turno, en resumen:
   cansan más. El art. 35.2 ET las limita a 80 horas al año; en el juego,
   `LEGAL_EXTRAS_PER_WEEK` turnos extra por semana. Pasado el límite, el jefe
   ofrece pagarlas en B.
-- La **familia** (0–100) no da dinero: baja con las horas extra, la
-  madrugada y los domingos, y sube con los días libres. Alimenta eventos y
-  logros. A 0 llega la intervención familiar: al día siguiente, sin extras.
+- La **familia** (0–100) no da dinero: baja con cada turno (más las extras,
+  el B, las guardias, la madrugada y los domingos) y se recupera sola por horas
+  (`family_now`). Su tramo (`FAMILY_TIERS`) acelera o frena la recarga de la
+  batería y lo que sube la barra: quien reparte sus turnos va «en casa feliz»
+  y quien encadena turnos recarga a paso de tortuga. Alimenta eventos y logros.
+  A 0 llega la intervención familiar: al día siguiente, sin extras, B ni
+  guardias. Los regalos de la tienda la suben y los favores (`FAVORS`) la gastan.
 - **Ascensos** al estilo de los Sims (`promotion_blockers`): barra llena, unos
   días en el puesto, las tareas del puesto y, a veces, una formación.
 - **Sin despidos**: con la barra a cero hay un aviso y, si se repite, te bajan
@@ -57,7 +61,7 @@ Reglas propias de algunos oficios (campos de `Job`):
   quedas saliente `GUARD_REST_SECONDS`. Los turnos ordinarios de sanidad suben
   la barra como mucho `Job.ordinary_cap`: para rendir hay que hacer guardias.
   El residente (MIR) tiene guardias mínimas por semana (`Job.guards_required`).
-- **Teletrabajo** (oficina, Ley 10/2021): cansa la mitad y no resta familia,
+- **Teletrabajo** (oficina, Ley 10/2021): cansa la mitad y resta menos familia,
   pero la barra sube la mitad porque el jefe no te ve, y a veces te escriben
   fuera de hora.
 - **Expatriarse** (oficina, `Job.abroad_from`): trabajar desde Hong Kong. La
@@ -85,6 +89,7 @@ Reglas propias de algunos oficios (campos de `Job`):
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
@@ -133,12 +138,59 @@ SICK_PAY_RATE = 0.75
 # -- Familia ---------------------------------------------------------------------------
 
 FAMILY_MAX = 100
-FAMILY_EXTRA = -8
+#: Lo que se recupera sola cada hora, como la batería.
+FAMILY_REGEN_PER_HOUR = 1.5
+#: Lo que cuesta cada turno, según su tipo, más los recargos de madrugada y domingo.
+FAMILY_ORDINARY = -6
+FAMILY_EXTRA = -12
+FAMILY_BLACK = -15
 FAMILY_NIGHT = -5
 FAMILY_SUNDAY = -3
-FAMILY_REST_DAY = 10
 #: Por debajo de esto salen los eventos familiares.
 FAMILY_WORRIED = 40
+#: Los favores no se piden si dejarían la familia por debajo de esto (en crisis).
+FAVOR_FLOOR = 15
+#: Bizum de mamá: te adelanta un sueldo base del puesto y se le devuelve con
+#: esta parte de lo que llega de cada turno, hasta saldar la deuda.
+MOM_REPAY_SHARE = 0.5
+
+
+@dataclass(frozen=True, slots=True)
+class FamilyTier:
+    """Un tramo de la familia y lo que hace.
+
+    No da dinero: cambia lo rápido que se recarga la batería (cuándo puedes
+    volver a fichar) y lo que sube la barra de rendimiento (cuándo asciendes).
+    Los números salen de simular tres estilos de juego (`docs/familia_pala.py`).
+
+    Attributes:
+        low: Desde qué valor de familia se está en el tramo.
+        regen: Multiplica la recarga de la batería.
+        bonus: Puntos de barra extra en cada turno que la sube.
+        gain: Multiplica lo que sube la barra (nunca lo que baja).
+    """
+
+    low: int
+    emoji: str
+    name: str
+    regen: float
+    bonus: int = 0
+    gain: float = 1.0
+
+    def performance(self, delta: int) -> int:
+        """Lo que mueve la barra un turno con la familia en este tramo."""
+        if delta <= 0:
+            return delta
+        return int(delta * self.gain) + self.bonus
+
+
+#: De mejor a peor. El primero cuyo `low` alcanza la familia es su tramo.
+FAMILY_TIERS: tuple[FamilyTier, ...] = (
+    FamilyTier(75, "🏡", "En casa feliz", 1.5, bonus=3),
+    FamilyTier(40, "🙂", "Tranquila", 1.0),
+    FamilyTier(15, "😤", "Mosqueada", 0.5, gain=0.5),
+    FamilyTier(0, "💔", "En crisis", 0.25, gain=0.0),
+)
 #: Horas de madrugada (hora canaria), [inicio, fin).
 NIGHT_HOURS = (0, 6)
 
@@ -163,7 +215,7 @@ EVENT_CHANCE = 1 / 6
 GUARD_COST = 45
 GUARD_PAY = 1.6
 GUARD_TIME_FACTOR = 2
-GUARD_FAMILY = -15
+GUARD_FAMILY = -20
 #: Saliente de guardia: no se puede fichar. Valor de juego; en la realidad el
 #: Supremo reconoció al personal sanitario 36 h seguidas de descanso semanal (2019).
 GUARD_REST_SECONDS = 12 * 3600
@@ -173,7 +225,8 @@ MISSED_GUARD_PENALTY = 20
 # -- Teletrabajo (oficina) ---------------------------------------------------------------
 
 REMOTE_COST_FACTOR = 0.5
-REMOTE_FAMILY = 2
+#: Teletrabajar en casa devuelve parte de lo que cuesta el turno.
+REMOTE_FAMILY = 4
 #: Probabilidad de que te escriban fuera de hora en un turno de teletrabajo.
 REMOTE_PING_CHANCE = 0.3
 
@@ -568,7 +621,9 @@ class Contract:
     position_since: float = 0.0
     battery: float = BATTERY_MAX
     battery_at: float = 0.0
-    family: int = FAMILY_MAX
+    #: Familia en `family_at`; desde entonces se recupera sola (`family_now`).
+    family: float = FAMILY_MAX
+    family_at: float = 0.0
     last_shift_at: float = 0.0
     shift_day: str = ""
     shifts_today: int = 0
@@ -581,8 +636,6 @@ class Contract:
     sick_until: float = 0.0
     declined_day: str = ""
     no_extras_day: str = ""
-    #: Último día de descanso ya sumado a la familia (ver `roll_over_day`).
-    rest_day: str = ""
     #: Guardias de la semana `guard_week` (lunes ISO).
     guards_week: int = 0
     guard_week: str = ""
@@ -611,22 +664,99 @@ class Contract:
     #: Último día (ISO) en que cumplió el deseo del día, y cuántos días seguidos.
     wish_day: str = ""
     wish_streak: int = 0
+    #: Último uso (epoch) de cada regalo y favor de la familia, por su clave.
+    family_used: dict[str, float] = field(default_factory=dict)
+    #: Lo que queda por devolverle a tu madre del Bizum de mamá (`MOM_REPAY_SHARE`).
+    mom_debt: int = 0
+    #: «Lo hago por los niños»: el próximo turno trae más tiempo.
+    motivated: bool = False
+
+
+def family_now(contract: Contract, now: float) -> float:
+    """Familia en `now`, con lo que se ha recuperado sola desde `family_at`."""
+    hours = max(0.0, now - contract.family_at) / 3600
+    return min(float(FAMILY_MAX), contract.family + hours * FAMILY_REGEN_PER_HOUR)
+
+
+def family_tier(family: float) -> FamilyTier:
+    """Tramo de un valor de familia."""
+    return next(t for t in FAMILY_TIERS if family >= t.low)
+
+
+def _recharge(contract: Contract, at: float) -> tuple[float, float]:
+    """Recarga de la batería por hora en `at` y hasta cuándo dura así.
+
+    La recarga depende del tramo de la familia, y la familia sube sola: dura
+    hasta que la familia llega al tramo siguiente (o para siempre en el mejor).
+    """
+    family = family_now(contract, at)
+    rate = BATTERY_REGEN_PER_HOUR * family_tier(family).regen
+    above = [t.low for t in FAMILY_TIERS if t.low > family]
+    if not above or family >= FAMILY_MAX:
+        return rate, math.inf
+    # Al menos un segundo, para que el redondeo en el borde no deje el bucle quieto.
+    return rate, at + max(1.0, (min(above) - family) / FAMILY_REGEN_PER_HOUR * 3600)
 
 
 def battery_now(contract: Contract, now: float) -> float:
-    """Batería en `now`, con la recarga de las horas pasadas."""
-    hours = max(0.0, now - contract.battery_at) / 3600
-    return min(float(BATTERY_MAX), contract.battery + hours * BATTERY_REGEN_PER_HOUR)
+    """Batería en `now`, con la recarga de las horas pasadas, tramo a tramo de familia."""
+    battery, at = contract.battery, contract.battery_at
+    while at < now and battery < BATTERY_MAX:
+        rate, until = _recharge(contract, at)
+        end = min(now, until)
+        battery += (end - at) / 3600 * rate
+        at = end
+    return min(float(BATTERY_MAX), battery)
 
 
-def battery_eta(battery: float, target: float, now: float) -> float:
+def battery_eta(contract: Contract, target: float, now: float) -> float:
     """Momento (epoch) en que la batería, recargándose sola, llega a `target`."""
-    return now + max(0.0, target - battery) / BATTERY_REGEN_PER_HOUR * 3600
+    battery, at = battery_now(contract, now), now
+    while battery < target:
+        rate, until = _recharge(contract, at)
+        reach = at + (target - battery) / rate * 3600
+        if reach <= until:
+            return reach
+        battery += (until - at) / 3600 * rate
+        at = until
+    return now
 
 
-def rested_at(battery: float, now: float) -> float:
+def rested_at(contract: Contract, now: float) -> float:
     """Momento desde el que se puede volver a fichar (la batería pasa de `BATTERY_MIN`)."""
-    return battery_eta(battery, BATTERY_MIN, now) + 60
+    return battery_eta(contract, BATTERY_MIN, now) + 60
+
+
+def settle(contract: Contract, now: float) -> None:
+    """Apunta batería y familia tal como están en `now`.
+
+    Hay que llamarlo antes de cambiar cualquiera de las dos: la recarga de la
+    batería se calcula con la familia desde `battery_at`, así que las dos
+    tienen que partir del mismo momento.
+    """
+    contract.battery = battery_now(contract, now)
+    contract.family = family_now(contract, now)
+    contract.battery_at = contract.family_at = now
+
+
+def change_family(contract: Contract, delta: float, now: float) -> bool:
+    """Suma `delta` a la familia (entre 0 y el máximo) y dice si llega la intervención.
+
+    Si la familia cae a 0, mañana no hay extras, B ni guardias. `settle` va dentro.
+    """
+    settle(contract, now)
+    before = contract.family
+    contract.family = max(0.0, min(float(FAMILY_MAX), before + delta))
+    if contract.family == 0 and before > 0:
+        contract.no_extras_day = (local_day(now) + timedelta(days=1)).isoformat()
+        return True
+    return False
+
+
+def family_ready_at(contract: Contract, key: str, cooldown: int) -> float:
+    """Desde cuándo se puede volver a dar un regalo o pedir un favor (0 si nunca se usó)."""
+    last = contract.family_used.get(key)
+    return 0.0 if last is None else last + cooldown
 
 
 def battery_state(battery: float) -> str:
@@ -665,11 +795,9 @@ def is_night(now: float, tz: ZoneInfo = TIMEZONE) -> bool:
 def roll_over_day(contract: Contract, now: float) -> int:
     """Pone a cero los contadores del día y de la semana si han cambiado.
 
-    También aplica la recuperación de la familia por los días enteros sin
-    fichar desde el último turno y corta la racha si hubo descanso. Es
-    idempotente: se puede llamar y guardar varias veces el mismo día (al
-    tomar un café, al ascender) sin que la familia se recupere dos veces,
-    porque `rest_day` recuerda hasta qué día ya se contó.
+    También corta la racha si hubo descanso. Es idempotente: se puede llamar
+    y guardar varias veces el mismo día (al tomar un café, al ascender). La
+    familia no pasa por aquí: se recupera sola por horas (`family_now`).
 
     Returns:
         Días enteros de descanso desde el último turno (0 si fichó ayer u hoy).
@@ -682,12 +810,6 @@ def roll_over_day(contract: Contract, now: float) -> int:
             rest_days = max(0, (today - last).days - 1)
             if rest_days:
                 contract.streak_days = 0
-                last_rest = today - timedelta(days=1)
-                counted = date.fromisoformat(contract.rest_day) if contract.rest_day else last
-                new = (last_rest - max(last, counted)).days
-                if new > 0:
-                    contract.family = min(FAMILY_MAX, contract.family + new * FAMILY_REST_DAY)
-                    contract.rest_day = last_rest.isoformat()
         contract.shifts_today = 0
     week = week_of(today)
     if contract.week != week:
@@ -745,13 +867,18 @@ def performance_delta(
     *,
     remote: bool = False,
     cap: int | None = None,
+    family: FamilyTier | None = None,
 ) -> int:
     """Cuánto mueve la barra un turno: +25 uno perfecto, −25 uno a cero.
 
-    Una guardia lo mueve el doble; el teletrabajo, la mitad. `cap` limita lo que
-    sube un turno que no es guardia (sanidad: para rendir, guardias).
+    El tramo de la familia con el que llegas (`family`) va primero: en casa
+    feliz suma, en crisis no sube. Luego, una guardia lo mueve el doble y el
+    teletrabajo, la mitad. `cap` limita lo que sube un turno que no es guardia
+    (sanidad: para rendir, guardias).
     """
     delta = (max(0, min(100, score)) - 50) // 2
+    if family is not None:
+        delta = family.performance(delta)
     if kind is ShiftKind.GUARD:
         return delta * 2
     if remote:
@@ -770,6 +897,37 @@ def accident_chance(battery_before: float) -> float:
     return 0.0
 
 
+def family_breakdown(
+    kind: ShiftKind,
+    now: float,
+    *,
+    remote: bool = False,
+    tz: ZoneInfo = TIMEZONE,
+    abroad: bool = False,
+) -> list[tuple[str, int]]:
+    """Lo que cambia la familia un turno, partida a partida: `[("extra", -12), …]`.
+
+    Todo turno cuesta (estudiar en casa, como uno ordinario). La madrugada se
+    mide en la hora de donde trabajas (`tz`); el domingo y los festivos, en la
+    de casa.
+    """
+    base = {
+        ShiftKind.GUARD: ("guardia", GUARD_FAMILY),
+        ShiftKind.EXTRA: ("extra", FAMILY_EXTRA),
+        ShiftKind.BLACK: ("en B", FAMILY_BLACK),
+    }.get(kind, ("turno", FAMILY_ORDINARY))
+    parts = [base]
+    if is_night(now, tz):
+        parts.append(("madrugada", FAMILY_NIGHT))
+    if local_day(now).weekday() == 6 or holiday(local_day(now)) is not None:
+        parts.append(("domingo" if local_day(now).weekday() == 6 else "festivo", FAMILY_SUNDAY))
+    if remote:
+        parts.append(("en casa", REMOTE_FAMILY))
+    if abroad:
+        parts.append(("lejos de casa", ABROAD_FAMILY))
+    return parts
+
+
 def family_cost(
     kind: ShiftKind,
     now: float,
@@ -778,25 +936,8 @@ def family_cost(
     tz: ZoneInfo = TIMEZONE,
     abroad: bool = False,
 ) -> int:
-    """Lo que cambia la familia un turno (casi siempre, a peor).
-
-    La madrugada se mide en la hora de donde trabajas (`tz`); el domingo y los
-    festivos, en la de casa.
-    """
-    cost = 0
-    if kind is ShiftKind.GUARD:
-        cost += GUARD_FAMILY
-    elif kind not in (ShiftKind.ORDINARY, ShiftKind.STUDY):
-        cost += FAMILY_EXTRA
-    if is_night(now, tz):
-        cost += FAMILY_NIGHT
-    if local_day(now).weekday() == 6 or holiday(local_day(now)) is not None:
-        cost += FAMILY_SUNDAY
-    if remote:
-        cost += REMOTE_FAMILY
-    if abroad:
-        cost += ABROAD_FAMILY
-    return cost
+    """Lo que cambia la familia un turno, en total (casi siempre, a peor)."""
+    return sum(v for _, v in family_breakdown(kind, now, remote=remote, tz=tz, abroad=abroad))
 
 
 def residence_phase(contract: Contract, now: float) -> str:
