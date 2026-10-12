@@ -118,19 +118,49 @@ COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 150, 190)
 
 # Textos en el tono de Jovani Vázquez.
-WIN_LINES = ("¡Wepa!", "¡Eso es, mi amor!", "¡Dale!", "¡Qué suerte, bendito!", "¡A la saca!")
-LOSE_LINES = ("¡Ay, bendito!", "¡Nooo!", "¡Se acabó lo que se daba!", "¡Qué mala pata!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es, mi amor!",
+    "¡Dale!",
+    "¡Qué suerte, bendito!",
+    "¡A la saca!",
+    "¡Los dados votan contigo, como Junts… esta vez!",
+    "¡Suerte de Fabra!",
+    "¡Ni el CIS lo predice!",
+    "¡Mano de santo!",
+    "¡Toma mangó!",
+    "¡Everybody want mango!",
+)
+LOSE_LINES = (
+    "¡Ay, bendito!",
+    "¡Nooo!",
+    "¡Se acabó lo que se daba!",
+    "¡Qué mala pata!",
+    "¡Los dados votan con la oposición!",
+    "¡Dados de Temu!",
+    "¡Craps! Que en inglés suena aún peor.",
+    "¡Los dados piden asilo en Waterloo!",
+    "¡Dados cargados en el Kremlin!",
+)
 FLYING_LINES = (
     "🎲 ¡Los dados vuelan!",
     "🎲 Sopla los dados, que da suerte…",
     "🙏 Que salga, que salga…",
     "👀 Toda la mesa mira los dados…",
     "🎲 ¡Contra la pared!",
+    "🎲 Más vueltas que una negociación con Puigdemont…",
+    "🎲 Trump grita «¡tremendo!» a los dados…",
+    "🎲 Kim lanza los dados (y un misil)…",
+    "☕ Quiero café… y un siete…",
 )
 NOTHING_LINES = (
     "Nada: sigue tirando.",
     "Ni chicha ni limoná: otra.",
     "No decide nada. Los dados son tuyos.",
+    "Como una comisión de investigación: no decide nada.",
+    "Sigue tirando, que esto va más largo que el juicio de Netanyahu.",
+    "Ni sí ni no, sino todo lo contrario.",
+    "Como un pleno del Senado: nada. Otra.",
 )
 
 

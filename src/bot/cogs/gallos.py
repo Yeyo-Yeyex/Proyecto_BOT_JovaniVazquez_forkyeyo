@@ -126,13 +126,38 @@ COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 COLOR_DUEL = discord.Color.from_rgb(200, 30, 60)
 
-WIN_LINES = ("¡Wepa!", "¡Kikirikí!", "¡Ese es mi gallo!", "¡Dale, campeón!")
-LOSE_LINES = ("¡Ay, bendito!", "¡Caldo de gallina!", "¡Al puchero!", "¡Nooo!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Kikirikí!",
+    "¡Ese es mi gallo!",
+    "¡Dale, campeón!",
+    "¡Gallo con mayoría absoluta!",
+    "¡Más gallo que Putin a caballo!",
+    "¡El gallo sale en el NO-DO!",
+    "¡Kikirikí, mi amor!",
+    "¡Toma mangó!",
+    "¡Yo soy yo, y así me tienes que soportar!",
+)
+LOSE_LINES = (
+    "¡Ay, bendito!",
+    "¡Caldo de gallina!",
+    "¡Al puchero!",
+    "¡Nooo!",
+    "¡Gallo en pepitoria!",
+    "¡El gallo dimite! Algo inédito.",
+    "¡Más desplumado que un autónomo!",
+    "¡Caldito para Waterloo!",
+)
 WAITING_LINES = (
     "🐓 Los gallos salen al ruedo…",
     "📣 ¡Hagan sus apuestas… ya no!",
     "🥁 Se calienta el reñidero…",
     "👀 Todo el barrio mirando…",
+    "📣 Trump anuncia que su gallo es el más grande…",
+    "🐓 Kim asegura que su gallo ya ganó ayer…",
+    "☕ El barrio pide café y apuesta…",
+    "🎙️ El NO-DO ya tiene escrito el resultado…",
+    "🐎 Abascal llega a caballo a ver la pelea…",
 )
 
 

@@ -141,15 +141,41 @@ BONUS_TIER = {BonusKind.GREEN: Tier.GREEN, BonusKind.BLUE: Tier.BLUE, BonusKind.
 # -- Textos en el tono de Jovani Vázquez ---------------------------------------------------
 
 WIN_TITLES = {1: "¡GRAN PREMIO!", 2: "¡MEGA PREMIO!", 3: "¡PREMIO ÉPICO!"}
-WIN_LINES = ("¡Wepa!", "¡Eso es, mi amor!", "¡Cobras!", "¡Tilín, tilín!", "¡Acho, qué bueno!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es, mi amor!",
+    "¡Cobras!",
+    "¡Tilín, tilín!",
+    "¡Acho, qué bueno!",
+    "¡Monedas como en la cuenta de Bárcenas!",
+    "¡Lluvia de fondos europeos!",
+    "¡Esto es la Next Generation!",
+    "¡Toma mangó!",
+    "¡American people want mango!",
+)
 COLLECT_LINES = {
-    "volcan": ("🌋 ¡El volcán escupe dinero!", "🌋 ¡Erupción de monedas!"),
+    "volcan": (
+        "🌋 ¡El volcán escupe dinero!",
+        "🌋 ¡Erupción de monedas!",
+        "🌋 ¡El Teide se pone celoso!",
+        "🌋 ¡Erupción fiscal, y esta vez a tu favor!",
+    ),
 }
 NEAR_MISS_LINES = (
     "Tanta moneda y sin nadie que la recoja… ¡Ay, bendito!",
     "Las monedas ahí tiradas. Al maletín van, mi amor.",
+    "Monedas sin recoger, como los fondos europeos sin ejecutar.",
+    "Monedas en la mesa, como las promesas de campaña: ahí se quedan.",
 )
-LOSS_LINES = ("La próxima es la buena.", "Nada, mi amor. Otra.", "Calentando…")
+LOSS_LINES = (
+    "La próxima es la buena.",
+    "Nada, mi amor. Otra.",
+    "Calentando…",
+    "Como el AVE a Extremadura: no llega.",
+    "La máquina está en huelga de celo.",
+    "Quiero café.",
+    "Calentando, como el planeta.",
+)
 BONUS_INTRO = {
     "volcan": "La montaña ruge. Caen monedas y se quedan pegadas a la roca.",
 }

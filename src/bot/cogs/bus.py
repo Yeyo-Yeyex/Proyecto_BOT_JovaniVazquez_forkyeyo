@@ -104,15 +104,58 @@ COLOR_HOT = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 
 # Textos en el tono de Jovani Vázquez.
-WIN_LINES = ("¡Wepa!", "¡Eso es, mi amor!", "¡Acertaste!", "¡Dale!", "¡Siguiente parada!")
-CASH_LINES = ("¡Wepa!", "¡Te bajas con la plata!", "¡Parada solicitada!", "¡A la saca!")
-LOSE_LINES = ("¡Ay, bendito!", "¡Fin del trayecto!", "¡Se averió la guagua!", "¡Nooo!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es, mi amor!",
+    "¡Acertaste!",
+    "¡Dale!",
+    "¡Siguiente parada!",
+    "¡Billete validado!",
+    "¡Abono gratis, cortesía del Gobierno!",
+    "¡Ni el Falcon va tan fino!",
+    "¡Tezanos lo vio venir!",
+    "¡Puntual, como un tren que no es de Renfe!",
+    "¡Esta guagua la inauguró Franco y aún tira!",
+    "¡Toma mangó!",
+)
+CASH_LINES = (
+    "¡Wepa!",
+    "¡Te bajas con la plata!",
+    "¡Parada solicitada!",
+    "¡A la saca!",
+    "¡Te bajas en Waterloo!",
+    "¡Al Falcon con la plata!",
+    "¡Te bajas antes de que Óscar Puente lo tuitee!",
+    "¡Fin de trayecto, y cobrando!",
+    "¡Bajada en marcha y con la saca!",
+    "¡Toma mangó y a casa!",
+)
+LOSE_LINES = (
+    "¡Ay, bendito!",
+    "¡Fin del trayecto!",
+    "¡Se averió la guagua!",
+    "¡Nooo!",
+    "¡Incidencia en Rodalies!",
+    "¡Retraso de Renfe!",
+    "¡Óscar Puente lo achaca a un robo de cable!",
+    "¡Huelga de conductores!",
+    "¡La guagua se fue sin ti!",
+    "¡Revisor de Hacienda a bordo!",
+    "¡Se acabó el abono gratis!",
+)
 FLIPPING_LINES = (
     "🃏 La carta tiembla…",
     "🚌 El autobús frena…",
     "🙏 Que salga, que salga…",
     "😬 Se levanta la carta…",
     "👀 Todos miran la carta…",
+    "🚏 Próxima parada: la ruina o la gloria…",
+    "📱 Óscar Puente tuitea que todo va bien…",
+    "📜 Un funcionario sella la carta en tres ventanillas…",
+    "☕ El conductor para a por café…",
+    "📺 El NO-DO retransmite el trayecto…",
+    "🚌 Conduce Kim: nadie se queja…",
+    "🏍️ Y Víctor le dijo a Joel: móntate en mi guagua…",
 )
 
 

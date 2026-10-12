@@ -74,10 +74,67 @@ COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
 
 RULES_FOOTER = "Blackjack paga 3:2 · seguro 2:1 · la banca se planta en 17"
 
-BLACKJACK_LINES = ("🂡 ¡BLACKJACK!", "💥 ¡BLACKJACK!", "🔥 ¡BLACKJACK!")
-WIN_LINES = ("¡Ganas", "¡Le ganas a la banca!", "¡Cobras", "¡Toma ya!")
-LOSS_LINES = ("La banca gana.", "Casi.", "La próxima es tuya.")
-BUST_LINES = ("Te pasas.", "Demasiado.", "Una carta de más.")
+BLACKJACK_LINES = (
+    "🂡 ¡BLACKJACK!",
+    "💥 ¡BLACKJACK!",
+    "🔥 ¡BLACKJACK!",
+    "🂡 ¡VEINTIUNO, MI AMOR!",
+    "🂡 ¡21! Mayoría absoluta",
+    "🂡 ¡21! Ni Tezanos lo clava así",
+    "🂡 ¡BLACKJACK! Yes we can",
+    "🂡 ¡21! Atado y bien atado",
+    "🂡 ¡BLACKJACK! Toma mangó",
+    "🂡 ¡21! Trump dice que es el mejor de la historia",
+    "🂡 ¡BLACKJACK! Sale en el NO-DO",
+    "🂡 ¡21! Kim ordena aplaudir",
+)
+WIN_LINES = (
+    "¡Ganas",
+    "¡Le ganas a la banca!",
+    "¡Cobras",
+    "¡Toma ya!",
+    "¡Wepa!",
+    "La banca pide el rescate.",
+    "La banca convoca elecciones anticipadas.",
+    "Ganas, y sin colegio electoral.",
+    "Ganas por la mínima, como una investidura.",
+    "Ganas de verdad, no como Feijóo en 2023.",
+    "La banca se va al bar, como Rajoy en la moción.",
+    "Tremendo. Tremendo, de verdad. Pregúntale a Trump.",
+    "La banca, a Waterloo.",
+    "El Falcon ya calienta motores.",
+    "Arancel del 0 % a tus ganancias.",
+)
+LOSS_LINES = (
+    "La banca gana.",
+    "Casi.",
+    "La próxima es tuya.",
+    "La banca gana. Como Hacienda: siempre.",
+    "Ganaste en votos, pero gobierna la banca. Feijóo te entiende.",
+    "Luis, sé fuerte.",
+    "La banca, como Maduro: las actas no las enseña.",
+    "La banca te pone un arancel del 100 %. Trump aplaude.",
+    "El NO-DO lo contará como una victoria.",
+    "Capítulo uno del «Manual de resistencia».",
+    "Ay, bendito. Quiero café.",
+    "Kim aplaude a la banca. Tú también, por si acaso.",
+    "Recurso a Bruselas: desestimado.",
+    "Hillary también ganó en votos, y mírala.",
+    "Yo soy yo… y así me tienes que soportar.",
+)
+BUST_LINES = (
+    "Te pasas.",
+    "Demasiado.",
+    "Una carta de más.",
+    "Te pasas como un arancel de Trump.",
+    "Te pasas como Putin contando votos.",
+    "Te pasas más que el déficit.",
+    "Te pasas como un misil de Kim.",
+    "Más cartas que promesas de campaña.",
+    "Una de más. Como las cuentas de Bárcenas en Suiza.",
+    "Te pasas de frenada, mi amor.",
+    "Te pasas. La UCO ya tiene el informe.",
+)
 
 RESULT_BADGES = {
     Result.BLACKJACK: "BLACKJACK",

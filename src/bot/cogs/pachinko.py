@@ -170,21 +170,61 @@ COLOR_WIN = discord.Color.from_rgb(255, 200, 60)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 
 # Textos en el tono de Jovani Vázquez: alegre, exagerado y cariñoso.
-SUPER_LINES = ("7️⃣7️⃣7️⃣ ¡SUPER RUSH, MI AMOR!", "7️⃣7️⃣7️⃣ ¡SE ROMPIÓ LA MÁQUINA!", "7️⃣7️⃣7️⃣ ¡JOVANAZO JAPONÉS!")
-RUSH_LINES = ("🔥 ¡RUSH! ¡Esto no para!", "🔥 ¡RUSH, bendito!", "🔥 ¡Encadenando, wepa!")
-ATARI_LINES = ("🎉 ¡ATARI!", "🎉 ¡ATARI, papi!", "🎉 ¡Se abrió la compuerta!")
-WIN_LINES = ("¡Wepa!", "¡Eso es!", "¡Cobras, mi amor!", "¡Lluvia de bolas!")
-SMALL_WIN_LINES = ("🎯 ¡Premio!", "🎯 ¡Algo cae!", "🎯 ¡Tilín, tilín!")
+SUPER_LINES = (
+    "7️⃣7️⃣7️⃣ ¡SUPER RUSH, MI AMOR!",
+    "7️⃣7️⃣7️⃣ ¡SE ROMPIÓ LA MÁQUINA!",
+    "7️⃣7️⃣7️⃣ ¡JOVANAZO JAPONÉS!",
+    "7️⃣7️⃣7️⃣ ¡NI FABRA CON LA LOTERÍA!",
+    "7️⃣7️⃣7️⃣ ¡KIM ORDENA APLAUDIR!",
+)
+RUSH_LINES = (
+    "🔥 ¡RUSH! ¡Esto no para!",
+    "🔥 ¡RUSH, bendito!",
+    "🔥 ¡Encadenando, wepa!",
+    "🔥 ¡RUSH! Más rápido que un decreto ley",
+    "🔥 ¡RUSH! Milagro económico",
+)
+ATARI_LINES = (
+    "🎉 ¡ATARI!",
+    "🎉 ¡ATARI, papi!",
+    "🎉 ¡Se abrió la compuerta!",
+    "🎉 ¡ATARI! Bruselas abre el grifo",
+    "🎉 ¡ATARI, toma mangó!",
+)
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es!",
+    "¡Cobras, mi amor!",
+    "¡Lluvia de bolas!",
+    "¡Lluvia de bolas y de fondos europeos!",
+    "¡Crecimiento a la japonesa!",
+    "¡Bolas para dar y regalar!",
+    "¡Jota Uve! ¡Pre!",
+)
+SMALL_WIN_LINES = (
+    "🎯 ¡Premio!",
+    "🎯 ¡Algo cae!",
+    "🎯 ¡Tilín, tilín!",
+    "🎯 ¡Una paguita!",
+    "🎯 ¡Pa'l café!",
+)
 REACH_LINES = (
     "👀 ¡REACH!… y nada. Por un pelo.",
     "👀 ¡Ay, bendito! El del centro se pasó.",
     "👀 Casi, casi… la próxima es la buena.",
+    "👀 ¡REACH!… y se cae, como una investidura fallida.",
+    "👀 Casi. Como Hillary en 2016.",
+    "👀 ¡REACH! La bola duda más que Junts antes de votar.",
 )
 LOSS_LINES = (
     "Las bolas se fueron por el desagüe.",
     "Nada, mi amor. Otra.",
     "La máquina se hace la difícil.",
     "Calentando la compuerta…",
+    "Las bolas se fueron a Andorra.",
+    "Bolas al desagüe, como los fondos de los ERE.",
+    "La máquina se ha puesto en modo ventanilla.",
+    "Quiero café.",
 )
 
 

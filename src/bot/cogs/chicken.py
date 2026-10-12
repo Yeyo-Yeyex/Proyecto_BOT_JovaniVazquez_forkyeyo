@@ -122,8 +122,24 @@ CASH_LINES = (
     "¡Eso es!",
     "¡Pollo listo!",
     "¡Al corral con la plata!",
+    "¡Pollo de corral, cuenta en Suiza!",
+    "¡El pollo se planta a tiempo, no como Biden!",
+    "¡El pollo llega a Waterloo!",
+    "¡Al Falcon con el pollo!",
+    "¡Toma mangó!",
 )
-SPLAT_LINES = ("¡PLAF!", "¡Ay, bendito!", "¡Pollo a la plancha!", "¡Se acabó el corral!")
+SPLAT_LINES = (
+    "¡PLAF!",
+    "¡Ay, bendito!",
+    "¡Pollo a la plancha!",
+    "¡Se acabó el corral!",
+    "¡Lo pilló el coche oficial!",
+    "¡Lo arrolló la comitiva de Trump!",
+    "¡Se lo llevó por delante el caballo de Abascal!",
+    "¡Pollo en pepitoria!",
+    "¡Nuggets de Temu!",
+    "¡Lo atropelló un Tesla sin conductor!",
+)
 TENSION_LINES = (
     "😰 Se oye un motor…",
     "🚗💨 ¿Viene algo?",
@@ -131,8 +147,22 @@ TENSION_LINES = (
     "👀 Unos faros al fondo…",
     "🐔 El pollo mira a los dos lados…",
     "😬 Ese ruido no me gusta, mi amor…",
+    "🚔 Se acerca una comitiva oficial…",
+    "🐎 Se oyen cascos: Abascal viene a caballo…",
+    "🚗 Un Seiscientos petardea al fondo…",
+    "🚜 Pasa un tractor con la PAC…",
+    "✈️ ¿Eso que suena es el Falcon?",
+    "☕ El pollo pide un café antes de seguir…",
+    "🦎 Lagartijo, iguana, lagarto… ¿y eso que viene?",
 )
-AUTO_LINES = ("🎯 Piloto automático, agárrate…", "🎯 El pollo corre solo…", "🎯 ¡A toda pastilla!")
+AUTO_LINES = (
+    "🎯 Piloto automático, agárrate…",
+    "🎯 El pollo corre solo…",
+    "🎯 ¡A toda pastilla!",
+    "🎯 Piloto automático de Tesla: que Dios nos pille confesados…",
+    "🎯 El pollo va con chófer, como un ministro…",
+    "🎯 Modo Falcon activado…",
+)
 #: Estadística de logros con el récord de carriles, por dificultad.
 RECORD_STAT = "chicken_lanes_max_{key}"
 #: Vehículos en `vehicle_for` → clave de la estadística de atropellos.

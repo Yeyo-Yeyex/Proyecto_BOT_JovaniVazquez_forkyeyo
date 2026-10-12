@@ -218,6 +218,21 @@ def test_reirse_de_uno_mismo_y_del_bot() -> None:
         ("el PSOE y el Congreso", "msg_politics"),
         ("ya despega el Falcon", "msg_falcon"),
         ("eso es un bulo", "msg_fango"),
+        ("el franquismo y el NO-DO", "msg_franco"),
+        ("todo atado y bien atado", "msg_franco"),
+        ("Trump otra vez con aranceles", "msg_trump"),
+        ("Putin y su mesa", "msg_putin"),
+        ("Kim Jong-un lanza otro misil", "msg_kim"),
+        ("Xi Jinping lo ve todo", "msg_xi"),
+        ("Netanyahu sigue sin juicio", "msg_netanyahu"),
+        ("yes we can, Obama", "msg_obama"),
+        ("los correos de Hillary Clinton", "msg_clinton"),
+        ("Elon Musk a Marte", "msg_musk"),
+        ("Milei con la motosierra", "msg_milei"),
+        ("¿qué? ¡toma mangó!", "msg_mango"),
+        ("hazme café, quiero café", "msg_cafe"),
+        ("¿con pulpa? ¡sin pulpa!", "msg_pulpa"),
+        ("móntate en mi motora", "msg_motora"),
         ("¿y mi paguita?", "msg_paguita"),
         ("léete el Manual de resistencia", "msg_manual"),
         ("Hacienda somos todos", "msg_hacienda"),
@@ -246,6 +261,11 @@ def test_lo_que_se_dice_cuenta(text: str, stat: str) -> None:
     [
         ("nos vemos", "msg_canario"),  # «nos» no es «ños»
         ("podemos quedar", "msg_politics"),  # el verbo, no el partido
+        ("te lo digo franco", "msg_franco"),  # el adjetivo, no el dictador
+        ("un mango maduro", "msg_mango"),
+        ("quiero un café con leche", "msg_cafe"),
+        ("mi moto", "msg_motora"),
+        ("kimono nuevo", "msg_kim"),
         ("tengo 690 Y$", "msg_nice"),
         ("jajajaja", "msg_palindrome"),  # palíndromo de dos letras: no vale
         ("hola 🗿", "msg_only_emoji"),

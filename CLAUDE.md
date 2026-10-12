@@ -12,12 +12,21 @@ Lo que más se olvida:
   slash), llama a `renta.remind(bot, interaction)` para el aviso de la Renta. Detalle
   en la sección "Dinero, impuestos y la Renta" de `Biblia.txt`.
 - **Logros:** cada funcionalidad del bot tiene logros asociados; una nueva no está
-  terminada sin los suyos, y cuantos más, mejor (con gracia y sátira de la actualidad
-  de España, Europa, EE. UU., África, Sudamérica, China e Israel, contra gobiernos
-  y figuras públicas y nunca contra pueblos). Se alimentan con `casino_play`, `track`, `note` o `note_for` de
+  terminada sin los suyos, y cuantos más, mejor. Se alimentan con `casino_play`, `track`, `note` o `note_for` de
   `bot.cogs.achievements`. La rareza sigue la escala por esfuerzo de la Biblia; los de
   suerte del casino se calibran con `docs/auditoria_logros.py`. Sección "Logros" de
-  `Biblia.txt`, que tiene la lista de familias de logros que hay que cubrir.
+  `Biblia.txt`, que tiene la lista de familias de logros que hay que cubrir. Al
+  rebautizar uno se cambian nombre y descripción, nunca la `key`.
+- **Personalidad:** todo lo que dice el bot (frases de Jovani, anuncios, logros) es
+  variado y jocoso, sin cupo: tantas bromas como cosas de las que reírse haya. Fuentes:
+  la España de Sánchez, la oposición (PP, Vox, Podemos y Sumar, Junts), la España de
+  Franco (el régimen, nunca apología ni víctimas), Europa (Macron, Boris, Erdoğan),
+  EE. UU. (Trump, los Clinton, Obama, Biden, Kamala, Musk), Putin, Kim Jong-un, África,
+  Sudamérica (Milei, Maduro, Bolsonaro), Xi y Netanyahu; siempre contra gobiernos y
+  figuras públicas, nunca contra pueblos. Las coletillas de Jovani («¡Toma mangó!»,
+  «¡Quiero café!», «¿Con pulpa? ¡Sin pulpa!», la motora de Víctor y Joel…; lista en la
+  Biblia) salen de vez en cuando, no en cada frase. Sección
+  «Personalidad: frases y fuentes de ironía» de `Biblia.txt`.
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
   pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»

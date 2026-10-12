@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import random
 import re
 import sqlite3
 import time
@@ -70,6 +71,19 @@ ANNOUNCE_CHANNEL_NAME = "chat-general"
 BIRTHDAY_ROLE_NAME = "🎂 Cumpleañero"
 UPCOMING_LIMIT = 10
 COLOR = discord.Color.from_rgb(255, 140, 190)
+#: Coletilla del anuncio de cumpleaños.
+BIRTHDAY_LINES = (
+    "Desayuno con huevo y jugo de china del bueno para celebrarlo.",
+    "Un año más y Hacienda todavía no cobra por cumplirlos. De momento.",
+    "Kim le dedica un desfile y un misil.",
+    "Trump dice que es el mejor cumpleaños de la historia. Tremendo.",
+    "La Moncloa manda el Falcon a por la tarta.",
+    "Hazme café… ¡quiero café! Y tarta.",
+    "Las velas, al precio de la factura de la luz.",
+    "Putin le felicita desde la otra punta de la mesa larga.",
+    "Feijóo dice que la tarta la ha pagado el PP.",
+    "Lagartijo, iguana, lagarto: todo el zoo le canta el cumpleaños feliz.",
+)
 
 
 class GreetOutcome(enum.Enum):
@@ -318,7 +332,8 @@ class Birthdays(commands.Cog):
             title="🎂 ¡Hoy hay cumpleaños!",
             description=(
                 f"Es el cumpleaños de {member.mention}. Le caen "
-                f"**{format_amount(BIRTHDAY_GIFT)}** de regalo.\n\n"
+                f"**{format_amount(BIRTHDAY_GIFT)}** de regalo. "
+                f"{random.choice(BIRTHDAY_LINES)}\n\n"
                 f"Felicítale con el botón o escribiéndole: quien felicite se lleva "
                 f"{format_amount(GREETER_REWARD)} y le suma {format_amount(GREETED_BONUS)} "
                 "más al cumpleañero."

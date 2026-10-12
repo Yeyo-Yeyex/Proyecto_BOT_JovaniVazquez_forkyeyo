@@ -157,36 +157,109 @@ COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_HOT = discord.Color.from_rgb(255, 110, 40)
 
 # Textos en el tono de Jovani Vázquez: alegre, exagerado y cariñoso.
-JACKPOT_LINES = ("🃏🃏🃏 ¡JOVANAZO!", "🃏🃏🃏 ¡EL BOTE ES TUYO!", "🃏🃏🃏 ¡WEPAAA!")
-MYSTERY_LINES = ("💰 ¡HA CAÍDO EL BOTE!", "💰 ¡LE TOCABA!", "💰 ¡BOTE MISTERIOSO!")
+JACKPOT_LINES = (
+    "🃏🃏🃏 ¡JOVANAZO!",
+    "🃏🃏🃏 ¡EL BOTE ES TUYO!",
+    "🃏🃏🃏 ¡WEPAAA!",
+    "🃏🃏🃏 ¡NI FABRA TIENE TANTA SUERTE!",
+    "🃏🃏🃏 ¡TOMA MANGÓ, MI AMOR!",
+    "🃏🃏🃏 ¡ESTO SALE EN EL NO-DO!",
+    "🃏🃏🃏 ¡RESCATE A LA PERSONA!",
+)
+MYSTERY_LINES = (
+    "💰 ¡HA CAÍDO EL BOTE!",
+    "💰 ¡LE TOCABA!",
+    "💰 ¡BOTE MISTERIOSO!",
+    "💰 ¡SE HA CAÍDO DEL FALCON!",
+    "💰 ¡FONDOS NEXT GENERATION!",
+    "💰 ¡UN SOBRE DE BÁRCENAS!",
+)
 TIER_LINES = {
-    WinTier.EPIC: ("🌋 ¡ÉPICO!", "🌋 ¡REVIENTAS LA MÁQUINA!", "🌋 ¡ESTO NO SE VE NUNCA!"),
-    WinTier.MEGA: ("💥 ¡MEGAPREMIO!", "💥 ¡QUÉ LOCURA!", "💥 ¡AY, BENDITO, QUÉ PREMIO!"),
-    WinTier.BIG: ("✨ ¡GRAN PREMIO!", "✨ ¡TOMA YA!", "✨ ¡ESO ES CALIDAD!"),
+    WinTier.EPIC: (
+        "🌋 ¡ÉPICO!",
+        "🌋 ¡REVIENTAS LA MÁQUINA!",
+        "🌋 ¡ESTO NO SE VE NUNCA!",
+        "🌋 ¡MÁS VOTOS QUE PUTIN!",
+        "🌋 ¡EL TEIDE SE PONE CELOSO!",
+    ),
+    WinTier.MEGA: (
+        "💥 ¡MEGAPREMIO!",
+        "💥 ¡QUÉ LOCURA!",
+        "💥 ¡AY, BENDITO, QUÉ PREMIO!",
+        "💥 ¡TREMENDO, TREMENDO!",
+        "💥 ¡TOMA MANGÓ!",
+    ),
+    WinTier.BIG: (
+        "✨ ¡GRAN PREMIO!",
+        "✨ ¡TOMA YA!",
+        "✨ ¡ESO ES CALIDAD!",
+        "✨ ¡YES WE CAN!",
+        "✨ ¡A LA SACA!",
+    ),
 }
-WIN_LINES = ("¡Wepa!", "¡Eso es!", "¡Cobras, mi amor!", "¡Tilín, tilín!", "¡Acho, qué bueno!")
-SMALL_WIN_LINES = ("🍒 ¡Premio!", "🍒 ¡Algo cae!", "🍒 ¡Tilín!")
+WIN_LINES = (
+    "¡Wepa!",
+    "¡Eso es!",
+    "¡Cobras, mi amor!",
+    "¡Tilín, tilín!",
+    "¡Acho, qué bueno!",
+    "¡Más suerte que Fabra!",
+    "¡Paguita!",
+    "¡Arancel cero!",
+    "¡Al maletero!",
+)
+SMALL_WIN_LINES = (
+    "🍒 ¡Premio!",
+    "🍒 ¡Algo cae!",
+    "🍒 ¡Tilín!",
+    "🍒 ¡Una paguita!",
+    "🍒 ¡Calderilla de Bruselas!",
+    "🍒 ¡Pa'l café!",
+)
 NEAR_MISS_LINES = (
     "¡Ay, bendito! Por un pelo.",
     "¡Uff! Lo tenías ahí.",
     "Casi, casi… la próxima es la buena.",
+    "¡Casi! Como Feijóo en la investidura.",
+    "Por un pelo. Hillary sabe lo que se siente.",
+    "Faltó uno. Junts tiene la llave.",
 )
 LOSS_LINES = (
     "La próxima es la buena.",
     "Nada, mi amor. Otra.",
     "La máquina se hace la difícil.",
     "Calentando motores…",
+    "La máquina vota con la oposición.",
+    "Como el AVE a Extremadura: no llega.",
+    "Premios con cartilla de racionamiento.",
+    "Pierdes. Pero el CIS dice que ganas.",
+    "Quiero café.",
+    "Estoy destruido, pero por fuera. Por dentro, como un coco.",
 )
-DOUBLE_WIN_LINES = ("¡Dentro!", "¡Lo sabía!", "¡Olfato de casino!", "¡Tienes el don!")
+DOUBLE_WIN_LINES = (
+    "¡Dentro!",
+    "¡Lo sabía!",
+    "¡Olfato de casino!",
+    "¡Tienes el don!",
+    "¡Ni Tezanos acierta así!",
+    "¡Visión de Estado!",
+)
 DOUBLE_LOSS_LINES = (
     "La casa agradece tu aportación.",
     "Era el otro color, obviamente.",
     "Como un rescate bancario, pero al revés.",
+    "Doble o nada. Ha salido nada.",
+    "Ni el CIS lo habría fallado tanto.",
+    "Rojo o azul: perdían los dos, como en el bipartidismo.",
 )
 TICKET_LINES = (
     "Gracias por su visita. Vuelva pronto.",
     "Hacienda ya tiene una copia.",
     "Conserve este ticket para su psicólogo.",
+    "Ticket sellado por la UCO.",
+    "Válido como justificante en Bruselas.",
+    "No canjeable en Waterloo.",
+    "Esto no es una factura de Koldo.",
 )
 #: Colores del doble o nada. Da igual cuál se elija: es cara o cruz.
 RED = "red"

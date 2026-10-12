@@ -165,6 +165,23 @@ COLOR_RUNNING = discord.Color.from_rgb(88, 101, 242)
 COLOR_FINISH = discord.Color.from_rgb(43, 45, 49)
 
 NO_MENTIONS = discord.AllowedMentions.none()
+#: Coletilla del resultado en privado de un boleto.
+TICKET_WIN_LINES = (
+    "¡Wepa! Ese caballo lo monta Abascal.",
+    "Ni Putin a caballo y sin camiseta llega tan fresco.",
+    "Trump dice que el caballo lo entrenó él.",
+    "Más rápido que Puigdemont saliendo de Barcelona.",
+    "¿Qué? ¿Qué? ¡Toma mangó!",
+    "Por la mínima, como una investidura.",
+)
+TICKET_LOSE_LINES = (
+    "Tu caballo se paró a cobrar la paguita.",
+    "El caballo ha pedido asilo en Waterloo.",
+    "Más lento que una reforma de la Constitución.",
+    "Llegó cuando el AVE a Extremadura: nunca.",
+    "Estaba destruido por fuera… y por dentro también.",
+    "Se quedó comiendo gofio en la curva.",
+)
 
 
 class Phase(Enum):
@@ -1071,14 +1088,16 @@ class Race:
             if ticket.prize:
                 text = (
                     f"## ✅ ¡Boleto premiado! {ticket.pick.label()}\n"
-                    f"Cobras **{format_amount(ticket.prize)}** (+{format_amount(ticket.net)})."
+                    f"Cobras **{format_amount(ticket.prize)}** (+{format_amount(ticket.net)}). "
+                    f"{secrets.choice(TICKET_WIN_LINES)}"
                 )
             else:
                 position = result.position(ticket.pick.horses[0])
                 text = (
                     f"## ❌ {ticket.pick.label()}\n"
                     f"Tu {self.card.horses[ticket.pick.horses[0]].name} entró {position}º. "
-                    f"Pierdes {format_amount(ticket.stake)}."
+                    f"Pierdes {format_amount(ticket.stake)}. "
+                    f"{secrets.choice(TICKET_LOSE_LINES)}"
                 )
                 if miss := near_miss(self.card, result, self.odds, ticket.pick, ticket.stake):
                     text += f"\n😫 {miss}"

@@ -24,7 +24,7 @@ async def test_level_up_announcement_uses_message_channel() -> None:
 
     channel.send.assert_awaited_once()
     args, kwargs = channel.send.await_args
-    assert args == ("¡Nombre Visible ha alcanzado el nivel **2**!",)
+    assert args[0].startswith("¡Nombre Visible ha alcanzado el nivel **2**! ")
     assert kwargs["allowed_mentions"].to_dict() == discord.AllowedMentions.none().to_dict()
 
 

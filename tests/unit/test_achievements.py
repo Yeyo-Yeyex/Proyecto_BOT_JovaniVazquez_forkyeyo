@@ -44,6 +44,7 @@ from bot.services.achievements import (
     HORSE_BET_KINDS,
     HORSE_DISTANCES,
     IMG_EFFECTS_STAT,
+    IRONY_PATTERNS,
     LAUGH_KINDS,
     MESSAGES_TOTAL_STAT,
     PET_SPAWN_KINDS_STAT,
@@ -57,6 +58,7 @@ from bot.services.achievements import (
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
+    SECRET_STAKES,
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
     SHOP_USE_KINDS_STAT,
@@ -379,7 +381,8 @@ PRODUCED_STATS = {
     "msg_emoji_heavy", "msg_only_emoji", "msg_stretch", "msg_long_word", "msg_palindrome",
     "msg_nice", "msg_canario", "msg_boricua", "msg_swear", "msg_mild_swear", "msg_thanks",
     "msg_sorry", "msg_good_morning", "msg_good_night", "msg_politics", "msg_falcon",
-    "msg_fango", "msg_paguita", "msg_manual", "msg_hacienda", "msg_cuñado", "msg_ola_k_ase",
+    "msg_fango", *IRONY_PATTERNS, "msg_23f", "msg_july4", "msg_20n", "msg_paguita", "msg_manual",
+    "msg_hacienda", "msg_cuñado", "msg_ola_k_ase",
     "msg_bizum_ask", "msg_siesta", "msg_office", "msg_weekend", "msg_cinderella", "msg_reyes",
     "msg_valentin", "msg_pino", "msg_hispanidad", "msg_inocentes", "msg_friday13",
     "msg_monologue_max", "msg_day_max", "msg_first_of_day", "msg_echo", "msg_necro",
@@ -416,7 +419,7 @@ PRODUCED_STATS = {
     ROULETTE_NUMBERS_STAT, ROULETTE_FAVOURITE_STAT,
     "bj_suited_natural", "bj_triple_seven", "bj_five_21", "bj_double_loss", "bj_stand_low",
     "bj_split_aces", "bj_both_bj", "bj_dealer_five",
-    "casino_bet_1", "casino_bet_69", "casino_bet_777",
+    *(f"casino_bet_{n}" for n in SECRET_STAKES),
     "crash_cash_low", "crash_missed_moon",
     "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
@@ -620,6 +623,10 @@ def test_casino_detecta_all_in_ruina_y_cifras_secretas() -> None:
     partial = casino_stats(stake=100, net=-100, balance_after=900, tax_delta=-20)
     assert "casino_all_in" not in partial.add
     assert partial.add["tax_refunds"] == 1
+
+    franco = casino_stats(stake=1975, net=-1975, balance_after=5_000)
+    assert franco.add["casino_bet_1975"] == 1
+    assert "casino_bet_1975" not in casino_stats(stake=1976, net=0, balance_after=5_000).add
 
 
 def outcome(pocket: int, *bets: tuple[str, int]) -> RoundOutcome:
