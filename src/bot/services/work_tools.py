@@ -18,14 +18,18 @@ No mueven dinero: suben la nota y, con ella, el sueldo (del 70 % al 130 % de
 la base, `bot.services.work.shift_pay`). Un fallo gratis vale como mucho una
 ronda: unos pocos puntos de nota, un 3–9 % del bruto. El precio es el
 sumidero que lo compensa.
+
+Las ventajas que dan los puestos (`bot.services.work.Perk`, ganadas al
+ascender) se suman a las herramientas con `with_rewards`, y además pueden
+ahorrar batería.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
-from bot.services.work import Mechanic
+from bot.services.work import Mechanic, Perk
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +132,8 @@ class Perks:
         retries: Fallos gratis del turno.
         insured: Si romper algo al cavar no resta.
         fifty: Si se tacha una respuesta mala en los diálogos.
+        battery: Lo que se ahorra de batería en el turno, en tanto por uno.
+        rewards: Ventajas de puesto que cuentan (`with_rewards`).
     """
 
     tools: tuple[Tool, ...] = ()
@@ -135,11 +141,13 @@ class Perks:
     retries: int = 0
     insured: bool = False
     fifty: bool = False
+    battery: float = 0.0
+    rewards: tuple[Perk, ...] = ()
 
     @property
     def summary(self) -> str:
-        """`⌚⛑️ +25 % de tiempo · 🛟 1 fallo gratis`, o `""` sin herramientas."""
-        if not self.tools:
+        """`⌚⛑️🏅 +25 % de tiempo · 🛟 1 fallo gratis`, o `""` si no hay nada."""
+        if not self.tools and not self.rewards:
             return ""
         parts = []
         if self.extra_time:
@@ -150,7 +158,10 @@ class Perks:
             parts.append("📄 asegurado")
         if self.fifty:
             parts.append("✂️ una respuesta tachada")
-        return "".join(t.emoji for t in self.tools) + " " + " · ".join(parts)
+        if self.battery:
+            parts.append(f"🔋 −{round(self.battery * 100)} % de cansancio")
+        emojis = "".join(t.emoji for t in self.tools) + ("🏅" if self.rewards else "")
+        return emojis + " " + " · ".join(parts)
 
 
 NO_PERKS = Perks()
@@ -167,4 +178,19 @@ def perks_for(job: str, mechanic: Mechanic, owned: Collection[str]) -> Perks:
         retries=sum(1 for t in tools if t.retry),
         insured=any(t.insured for t in tools),
         fifty=any(t.fifty for t in tools),
+    )
+
+
+def with_rewards(perks: Perks, rewards: Sequence[Perk]) -> Perks:
+    """Suma a las herramientas las ventajas ganadas en los puestos del oficio."""
+    if not rewards:
+        return perks
+    return Perks(
+        tools=perks.tools,
+        extra_time=perks.extra_time + sum(r.extra_time for r in rewards),
+        retries=perks.retries + sum(1 for r in rewards if r.retry),
+        insured=perks.insured,
+        fifty=perks.fifty or any(r.fifty for r in rewards),
+        battery=min(0.5, perks.battery + sum(r.battery for r in rewards)),
+        rewards=tuple(rewards),
     )

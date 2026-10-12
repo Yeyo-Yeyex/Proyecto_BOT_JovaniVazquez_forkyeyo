@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, "src")
 from bot.services.economy import IMV_WORK_EXEMPT, imv_after_work
-from bot.services.taxes import compute_payslip, payroll_rates
+from bot.services.taxes import compute_payslip, compute_pension_payslip, payroll_rates
 from bot.services.work_catalog import JOBS
 
 OLD = {
@@ -35,6 +35,10 @@ def old_net(gross, recent):
 
 def new_net(gross, recent):
     return compute_payslip(gross, recent).net
+
+
+def pension_net(gross):
+    return compute_pension_payslip(gross, 0).net
 
 
 out = {}
@@ -98,21 +102,26 @@ out["per_min"] = [
     ["Turno de celador antes", cel_old],
     ["Casino, tiradas de 100 (≈6 s)", -round(100 * 0.04 * 10)],
 ]
-# 6) Escalera de sueldos.
+# 6) Escalera de sueldos: una por carrera completa (con ramas, una por rama).
 out["ladder"] = [
     {
-        "job": j.name,
+        "job": j.name + (f" · {j.branch(branch).name}" if branch else ""),
         "emoji": j.emoji,
         # Los oficios nuevos (reparto, funcionariado, influencer) no tenían escala anterior.
         "old": OLD.get(j.key, []),
-        "new": [p.base_pay for p in j.positions],
-        "net_one": [new_net(p.base_pay, p.base_pay * 6) for p in j.positions],
+        "new": [p.base_pay for p in ladder],
+        "net_one": [new_net(p.base_pay, p.base_pay * 6) for p in ladder],
         "old_one": [old_net(g, g * 29) for g in OLD.get(j.key, [])],
-        "net_full": [new_net(p.base_pay, p.base_pay * 4 * 7 - p.base_pay) for p in j.positions],
-        "irpf": [irpf_rate(p.base_pay, 100) for p in j.positions],
-        "eur_year": [round(p.base_pay * 4 * 365 / 100) for p in j.positions],
+        "net_full": [new_net(p.base_pay, p.base_pay * 4 * 7 - p.base_pay) for p in ladder],
+        "irpf": [irpf_rate(p.base_pay, 100) for p in ladder],
+        "eur_year": [round(p.base_pay * 4 * 365 / 100) for p in ladder],
+        # Pensión diaria al jubilarse de la rama: bruto y neto de un día sin más renta.
+        "pension": [j.branch(branch).pension, pension_net(j.branch(branch).pension)]
+        if branch
+        else [],
     }
     for j in JOBS
+    for branch, ladder in j.ladders
 ]
 out["imv_exempt"] = IMV_WORK_EXEMPT
 print(json.dumps(out, ensure_ascii=False))

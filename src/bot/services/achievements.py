@@ -129,6 +129,7 @@ from bot.services.work import (
     RATING_MAX,
     SELF_EMPLOYED_FEE,
     VIRAL_AT,
+    WISHES,
     Mechanic,
 )
 from bot.services.work_tools import TOOLS as WORK_TOOLS
@@ -541,6 +542,27 @@ DECLINE_STORY = (
     "pobreza», y por eso existe el incentivo al empleo del IMV (RD 789/2022): lo que "
     "ganas trabajando solo te quita una parte. Aquí, cada Y$ de más te quita medio de "
     "IMV, así que ascender siempre compensa. Pero tú sabrás, mi amor."
+)
+
+#: Prefijo de los deseos del día cumplidos por clave (`work_wish_nota_90`…).
+WISH_STAT_PREFIX = "work_wish_"
+#: Deseos que pueden salir en cualquier curro (para «Lo he deseado todo»).
+GENERIC_WISHES = tuple(wish.key for wish in WISHES if wish.fits is None)
+
+#: Discurso del logro `pension_irpf`: la primera pensión con retención.
+PENSION_STORY = (
+    "🏖️ **Jubilado, pero no de Hacienda.** Las pensiones son rendimientos del trabajo "
+    "(art. 17.2.a LIRPF): tributan en el IRPF como un sueldo, con su retención y su "
+    "reducción del art. 20. Lo único que te ahorras es cotizar a la Seguridad Social, "
+    "que ya cotizaste bastante. Perro Sanxe no se jubila nunca."
+)
+
+#: Discurso del logro `rama_1`: elegir rama en un oficio.
+BRANCH_STORY = (
+    "🔀 **Has elegido rama.** Como en los Sims: el tronco es igual para todos y al final "
+    "toca decidir. Cada rama tiene sus puestos, sus minijuegos, sus marrones y su "
+    "pensión. Si llegas a lo más alto, te puedes jubilar de ella y empezar la otra "
+    "desde abajo, con la pensión de la primera en el bolsillo."
 )
 
 #: Discurso del logro `ochenta_horas`: pasar del límite legal de horas extra.
@@ -5298,8 +5320,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_resigned", [
         (1, "dimision", "Dimisión", "Dimite. Algo insólito.", L, True),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_top_politica", [
-        (1, "giratoria", "Puerta giratoria", "Llega a consejero de una eléctrica.", L),
+    a += _tiers("jobs", "work_top_politica_moncloa", [
+        (1, "giratoria", "Puerta giratoria",
+         "Llega a consejero de una eléctrica (rama 🏛️ Moncloa).", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_communion_bizum", [
         (1, "comunion", "La comunión del sobrino, en diferido",
@@ -7514,6 +7537,160 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("influencer", "work_top_influencer", [
         (1, "celebrity", "Celebrity", "Llega a celebrity de reality.", L),
+    ])  # fmt: skip
+
+    # 🪏 Carrera larga: deseo del día, ramas, jubilación y pensión --------------------------
+    a += _tiers("work", "work_wishes", [
+        (1, "deseo_1", "Pide un deseo", "Cumple tu primer deseo del día.", C),
+        (10, "deseo_10", "Hada madrina sindical", "Cumple 10 deseos del día.", R),
+        (50, "deseo_50", "Frotando la lámpara", "Cumple 50 deseos del día.", E),
+        (200, "deseo_200", "Los Reyes Magos te tienen en nómina",
+         "Cumple 200 deseos del día.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_wish_streak_max", [
+        (7, "deseo_racha_7", "Siete deseos, siete días", "Cumple el deseo 7 días seguidos.", R),
+        (30, "deseo_racha_30", "Un mes de estrellas fugaces",
+         "Cumple el deseo 30 días seguidos.", E),
+        (100, "deseo_racha_100", "Cien días pidiendo", "Cumple el deseo 100 días seguidos.", L),
+        (365, "deseo_racha_365", "Un año de deseos", "Cumple el deseo 365 días seguidos.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="deseos_todos", name="Lo he deseado todo",
+        description="Cumple cada uno de los deseos que salen en cualquier curro.",
+        category="work", rarity=E,
+        conditions=tuple((f"{WISH_STAT_PREFIX}{key}", 1) for key in GENERIC_WISHES),
+    ))  # fmt: skip
+    a += _tiers("work", "work_wish_perfecto", [
+        (5, "deseo_perfecto_5", "Un 100 por encargo", "Cumple 5 veces el deseo de sacar un 100.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_wish_nocturno", [
+        (10, "deseo_nocturno_10", "Lechuza sindical",
+         "Cumple 10 veces el deseo de fichar de noche.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="rama_1", name="Encrucijada", description="Elige rama en un oficio.",
+        category="work", rarity=R, conditions=(("work_branch_chosen", 1),), story=BRANCH_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_branch_chosen", [
+        (5, "rama_5", "Indeciso con carrera", "Elige rama 5 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_retired", [
+        (1, "jubilado_1", "Jubilación anticipada (a los dos meses)",
+         "Jubílate de una rama.", E),
+        (3, "jubilado_3", "Pensionista profesional", "Jubílate de 3 ramas.", L),
+        (8, "jubilado_8", "El sistema de pensiones no aguanta", "Jubílate de 8 ramas.", M),
+    ])  # fmt: skip
+    a += _tiers("work", "work_pensions", [
+        (1, "pension_1", "Pensión cobrada", "Cobra tu pensión por primera vez.", E),
+        (30, "pension_30", "Pensión vitalicia", "Cobra la pensión 30 días.", L),
+        (365, "pension_365", "Más años cobrando que cotizando",
+         "Cobra la pensión 365 días.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pension_irpf", name="Hacienda no se jubila",
+        description="Paga IRPF por tu pensión.", category="work", rarity=E,
+        conditions=(("work_pension_irpf", 1),), story=PENSION_STORY,
+    ))  # fmt: skip
+
+    # 🌹 Política: las ramas Moncloa y Bruselas -------------------------------------------
+    a += _tiers("jobs", "work_top_politica_bruselas", [
+        (1, "comisario", "Bruselas me espera",
+         "Llega a comisario europeo (rama 🇪🇺 Bruselas).", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_retired_politica", [
+        (2, "doble_militancia", "Doble militancia",
+         "Jubílate de la Moncloa y de Bruselas.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_spokes", [
+        (25, "portavoz_25", "Lo que diga el argumentario",
+         "Contesta 25 preguntas como portavoz sin contestar nada.", E),
+        (250, "portavoz_250", "Máquina de titulares vacíos",
+         "Contesta 250 preguntas como portavoz.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_decrees", [
+        (30, "decretos_30", "Al BOE", "Despacha 30 papeles como secretario de Estado.", E),
+        (300, "decretos_300", "Real Decreto a granel", "Despacha 300 papeles.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_ministry", [
+        (25, "ministerio_25", "Ministro de lo suyo", "Sal airoso de 25 marrones del ministerio.",
+         E),
+        (250, "ministerio_250", "Superministro", "Sal airoso de 250 marrones del ministerio.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_partners", [
+        (15, "socios_15", "Agenda de socios",
+         "Recuerda 15 veces lo que le prometiste a cada socio.", E),
+        (150, "socios_150", "Socios hasta en la sopa",
+         "Recuerda 150 veces lo que le prometiste a cada socio.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_control", [
+        (30, "control_30", "Y tú más", "Sobrevive a 30 preguntas de la sesión de control.", E),
+        (300, "control_300", "Los miércoles son míos",
+         "Sobrevive a 300 preguntas de la sesión de control.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_plenary", [
+        (15, "plenos_15", "Botón verde, botón rojo", "Vota bien 15 tandas del pleno europeo.", E),
+        (150, "plenos_150", "Eurodiputado de manual", "Vota bien 150 tandas del pleno.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_amendments", [
+        (30, "enmiendas_30", "Enmienda a la totalidad", "Manda 30 enmiendas a su sitio.", E),
+        (300, "enmiendas_300", "Ponente estrella", "Manda 300 enmiendas a su sitio.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_lobbies", [
+        (25, "lobbies_25", "Puertas abiertas (al lobby)", "Torea a 25 lobistas.", E),
+        (250, "lobbies_250", "Registro de transparencia", "Torea a 250 lobistas.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_trilogues", [
+        (30, "trilogo_30", "Trílogo a las cuatro de la mañana", "Cierra 30 puntos de un trílogo.",
+         E),
+        (300, "trilogo_300", "Acuerdo provisional", "Cierra 300 puntos de un trílogo.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_commission", [
+        (20, "comision_20", "Multa a una tecnológica",
+         "Acierta 20 respuestas como comisario europeo.", L),
+        (200, "comision_200", "Bruselas manda", "Acierta 200 respuestas como comisario.", M),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_censure_survived", [
+        (1, "mocion", "Moción de censura superada", "Aguanta una moción de censura.", E),
+        (3, "resistencia", "Resistiré (en el sillón)", "Aguanta 3 mociones de censura.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_snap_election", [
+        (1, "adelanto", "Adelanto electoral", "Convoca elecciones por sorpresa.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_partner_deal", [
+        (1, "socio_cede", "Socio preferente", "Cede ante un socio a cambio de sus votos.",
+         E, True),
+        (10, "frankenstein", "Gobierno Frankenstein", "Cede 10 veces ante los socios.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_partner_refused", [
+        (1, "plantado", "Ni un paso atrás", "Planta a un socio que te chantajea.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_cis", [
+        (1, "cis", "Cocina de encuestas", "Cocina el CIS.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_omnibus", [
+        (1, "omnibus", "Decreto ómnibus", "Mételo todo en el mismo decreto.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_suitcase", [
+        (1, "maletin", "Maletín del Golfo", "Acepta un maletín en Bruselas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_suitcase_refused", [
+        (1, "maletin_no", "Manos limpias en Bruselas", "Rechaza un maletín.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_caught_olaf", [
+        (1, "olaf", "La OLAF toca el timbre",
+         "Que te pille la Oficina Europea de Lucha contra el Fraude.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_strasbourg", [
+        (1, "estrasburgo", "Circo itinerante", "Múdate a Estrasburgo para el pleno.", E),
+        (10, "estrasburgo_10", "Abono Bruselas-Estrasburgo", "Haz 10 traslados a Estrasburgo.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_per_diem", [
+        (1, "dietas", "Firma y vete", "Cobra las dietas de un pleno al que no vas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_lobby_dinner", [
+        (1, "cena_lobby", "Cena de trabajo", "Cena con un lobby (paga él).", E, True),
     ])  # fmt: skip
 
     # 👷 Los ocho oficios ------------------------------------------------------------------
@@ -10394,6 +10571,16 @@ _WORK_CONTENT_STATS = {
     "directo": "work_stream",
     "colaboraciones": "work_collabs",
     "plato": "work_tv",
+    "portavoz": "work_spokes",
+    "decretos": "work_decrees",
+    "ministerio": "work_ministry",
+    "socios": "work_partners",
+    "control": "work_control",
+    "plenos": "work_plenary",
+    "enmiendas": "work_amendments",
+    "lobbies": "work_lobbies",
+    "trilogo": "work_trilogues",
+    "comisario": "work_commission",
 }
 
 
@@ -10505,6 +10692,10 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_exit"] = 1
     if outcome.bankrupt:
         add["work_bankrupt"] = 1
+    if outcome.wish is not None:
+        add["work_wishes"] = 1
+        add[f"{WISH_STAT_PREFIX}{outcome.wish.key}"] = 1
+        delta.peak["work_wish_streak_max"] = outcome.wish_streak
     _work_job_stats(outcome, delta)
     _work_game_stats(outcome, add)
     return delta
@@ -10580,5 +10771,7 @@ MEMORY_CONTENT = frozenset(
         "entregas",
         "sellos",
         "baile",
+        "socios",
+        "plenos",
     }
 )

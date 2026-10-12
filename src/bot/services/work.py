@@ -8,7 +8,7 @@ módulo) junta todo con la economía.
 Cómo funciona un turno, en resumen:
 
 - Cada miembro tiene, como mucho, un contrato: un oficio y un puesto (de 1 a
-  `Job.top`; hoy todos tienen 5, pero nada da por hecho ese número).
+  `Job.top`; nada da por hecho cuántos hay).
 - Fichar lanza el minijuego del puesto. La puntuación (0–100) mueve el sueldo
   entre el 70 % y el 130 % de la base (`shift_pay`) y la barra de rendimiento.
 - La **batería** baja con cada turno y se recarga sola (`battery_now`). Por
@@ -27,6 +27,25 @@ Cómo funciona un turno, en resumen:
   días en el puesto, las tareas del puesto y, a veces, una formación.
 - **Sin despidos**: con la barra a cero hay un aviso y, si se repite, te bajan
   un puesto. Tras `LEAVE_AFTER_DAYS` días sin fichar, excedencia.
+
+Carrera larga, también al estilo de los Sims:
+
+- **Ramas** (`Job.branches`): un oficio puede tener un tronco común
+  (`Job.positions`) y, al acabarlo, dos o más ramas (`Branch`) con sus propios
+  puestos hasta `Job.top`. Al ascender desde el último puesto del tronco se
+  elige rama (`Contract.branch`). Si te bajan al tronco, la rama se olvida y se
+  vuelve a elegir.
+- **Ventajas** (`Position.perk`): cada puesto puede dar una ventaja pequeña
+  (más tiempo, un fallo gratis, una respuesta tachada, menos batería) que se
+  conserva mientras sigas en ese oficio en ese puesto o más arriba
+  (`Job.perks`). Se suman a las herramientas de la tienda.
+- **Jubilación** (`Branch.pension`): en lo más alto de una rama te puedes
+  jubilar de ella. Desde entonces cobras una pensión diaria (con su botón) y
+  sigues en la otra rama, desde su primer puesto. La pensión es para siempre.
+- **Deseo del día** (`wish_for`, `wish_met`): cada día, un objetivo pequeño
+  al azar (estable para cada miembro y día). El turno que lo cumple paga
+  `WISH_PAY` veces más y sube `WISH_PERFORMANCE` la barra. Cumplirlo días
+  seguidos hace racha (`Contract.wish_streak`).
 
 Reglas propias de algunos oficios (campos de `Job`):
 
@@ -67,9 +86,11 @@ Reglas propias de algunos oficios (campos de `Job`):
 from __future__ import annotations
 
 import random
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import StrEnum
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from bot.services.levels import TIMEZONE, local_day
@@ -239,6 +260,13 @@ MEGAVIRAL = 15.0
 #: Por debajo de este multiplicador, el vídeo solo lo ha visto tu madre.
 FLOP_BELOW = 0.35
 
+# -- Deseo del día -----------------------------------------------------------------------
+
+#: El turno que cumple el deseo del día paga esto más (como un plus de objetivos).
+WISH_PAY = 1.25
+#: Y sube esto la barra de rendimiento (además de lo que suba por la nota).
+WISH_PERFORMANCE = 10
+
 
 class Mechanic(StrEnum):
     """Motor de minijuego de un puesto (ver `bot.services.work_games`)."""
@@ -295,6 +323,25 @@ class Training:
 
 
 @dataclass(frozen=True, slots=True)
+class Perk:
+    """Ventaja que da un puesto, para siempre mientras sigas en él o más arriba.
+
+    Attributes:
+        text: Lo que hace, en una línea (para el panel y la oferta de ascenso).
+        extra_time: Tiempo extra del minijuego, en tanto por uno.
+        retry: Si perdona el primer fallo del turno.
+        fifty: Si tacha una respuesta mala en los diálogos.
+        battery: Lo que se ahorra de batería por turno, en tanto por uno.
+    """
+
+    text: str
+    extra_time: float = 0.0
+    retry: bool = False
+    fifty: bool = False
+    battery: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class Position:
     """Un puesto de un oficio.
 
@@ -310,6 +357,7 @@ class Position:
         self_employed: Si es autónomo (sin cotización por turno, con cuota).
         content: Clave del contenido del minijuego.
         fee: Cuota semanal de autónomos si `self_employed` (la tarifa plana es menor).
+        perk: Ventaja que se gana al llegar a este puesto (`None` = ninguna).
     """
 
     level: int
@@ -323,11 +371,40 @@ class Position:
     training: Training | None = None
     self_employed: bool = False
     fee: int = SELF_EMPLOYED_FEE
+    perk: Perk | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Branch:
+    """Una rama de un oficio: los puestos que siguen al tronco común.
+
+    Attributes:
+        key: Identificador estable; es lo que se guarda en el contrato.
+        name: Cómo se enseña («Moncloa»).
+        emoji: Su emoji.
+        blurb: Una línea para elegirla.
+        positions: Sus puestos, del siguiente al tronco hasta `Job.top`.
+        pension: Bruto de la pensión diaria al jubilarse de ella (Y$ de nómina).
+        retired_as: Cómo se llama al jubilado de esta rama («consejero de una
+            eléctrica»), para el panel y el anuncio.
+    """
+
+    key: str
+    name: str
+    emoji: str
+    blurb: str
+    positions: tuple[Position, ...]
+    pension: int
+    retired_as: str
 
 
 @dataclass(frozen=True, slots=True)
 class Job:
-    """Un oficio con sus puestos (hoy cinco; el código admite los que haya)."""
+    """Un oficio: un tronco de puestos y, si los tiene, varias ramas al final.
+
+    Sin ramas, `positions` son todos los puestos. Con ramas, `positions` es el
+    tronco común y cada rama sigue desde el puesto siguiente hasta `top`.
+    """
 
     key: str
     name: str
@@ -359,10 +436,59 @@ class Job:
     seniority: bool = False
     #: Si el sueldo depende de hacerse viral.
     viral: bool = False
+    #: Ramas que siguen al tronco (vacío = el oficio acaba en el tronco).
+    branches: tuple[Branch, ...] = ()
 
-    def position(self, level: int) -> Position:
-        """Puesto de nivel `level` (de 1 a `top`)."""
-        return self.positions[level - 1]
+    def branch(self, key: str) -> Branch | None:
+        """La rama con esa clave, o `None` (también con `""`, el tronco)."""
+        return next((b for b in self.branches if b.key == key), None)
+
+    def ladder(self, branch: str = "") -> tuple[Position, ...]:
+        """Puestos en orden por esa rama: el tronco y, si la hay, la rama."""
+        chosen = self.branch(branch)
+        return self.positions + chosen.positions if chosen else self.positions
+
+    def position(self, level: int, branch: str = "") -> Position:
+        """Puesto de nivel `level` (de 1 a `top`) por la rama `branch`.
+
+        Raises:
+            ValueError: Si el puesto está pasado el tronco y la rama no existe.
+        """
+        ladder = self.ladder(branch)
+        if not 1 <= level <= len(ladder):
+            raise ValueError(f"{self.key} no tiene puesto {level} por la rama {branch!r}.")
+        return ladder[level - 1]
+
+    def next_position(self, level: int, branch: str = "") -> Position | None:
+        """Puesto siguiente, o `None` si no hay o si toca elegir rama (`forks`)."""
+        if level >= self.top or self.forks(level, branch):
+            return None
+        return self.position(level + 1, branch)
+
+    def forks(self, level: int, branch: str = "") -> bool:
+        """Si el siguiente ascenso obliga a elegir rama (fin del tronco, sin rama)."""
+        return bool(self.branches) and level == self.trunk_top and not self.branch(branch)
+
+    def perks(self, level: int, branch: str = "") -> tuple[Perk, ...]:
+        """Ventajas ganadas por el camino hasta el puesto `level`."""
+        return tuple(p.perk for p in self.ladder(branch)[:level] if p.perk is not None)
+
+    @property
+    def all_positions(self) -> tuple[Position, ...]:
+        """Todos los puestos: el tronco y los de todas las ramas."""
+        return self.positions + tuple(p for b in self.branches for p in b.positions)
+
+    @property
+    def ladders(self) -> tuple[tuple[str, tuple[Position, ...]], ...]:
+        """Cada carrera completa posible: `(rama, puestos)`; sin ramas, `("", tronco)`."""
+        if not self.branches:
+            return (("", self.positions),)
+        return tuple((b.key, self.ladder(b.key)) for b in self.branches)
+
+    @property
+    def trunk_top(self) -> int:
+        """Último puesto del tronco común (con ramas, donde se elige)."""
+        return len(self.positions)
 
     def has_guards(self, level: int) -> bool:
         """Si en ese puesto se pueden hacer guardias."""
@@ -386,11 +512,25 @@ class Job:
 
     @property
     def top(self) -> int:
-        """Nivel máximo del oficio."""
-        return len(self.positions)
+        """Nivel máximo del oficio (todas sus ramas acaban en el mismo)."""
+        return self.trunk_top + (len(self.branches[0].positions) if self.branches else 0)
 
 
 # -- Contrato --------------------------------------------------------------------------
+
+
+class Career(NamedTuple):
+    """Lo que queda guardado de un oficio en `work_history`.
+
+    Attributes:
+        level: Puesto en el que se quedó (al volver se entra en él).
+        max_level: El puesto más alto al que llegó.
+        branch: Rama en la que se quedó (`""` = tronco).
+    """
+
+    level: int
+    max_level: int
+    branch: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,6 +606,11 @@ class Contract:
     blocked_until: float = 0.0
     #: Seguidores (influencer).
     followers: int = FOLLOWERS_START
+    #: Rama del oficio (`""` = tronco, o un oficio sin ramas).
+    branch: str = ""
+    #: Último día (ISO) en que cumplió el deseo del día, y cuántos días seguidos.
+    wish_day: str = ""
+    wish_streak: int = 0
 
 
 def battery_now(contract: Contract, now: float) -> float:
@@ -726,17 +871,24 @@ def promotion_blockers(
     days_in_position: int,
     trainings: set[str],
     today: str,
+    retired: Collection[str] = (),
 ) -> list[str]:
     """Lo que falta para que te ofrezcan el ascenso (vacío = ya toca).
+
+    Al final del tronco, el ascenso es a la rama que se elija al aceptarlo; las
+    ramas no piden formación para entrar (lo comprueba una prueba del catálogo).
 
     Args:
         days_in_position: Días distintos fichando en el puesto actual.
         trainings: Formaciones que ya tiene el miembro.
         today: Día de hoy (ISO); si rechazó una oferta hoy, no se repite.
+        retired: Ramas de este oficio de las que ya se jubiló.
     """
     if contract.level >= job.top:
         return ["Ya estás en lo más alto. Más arriba solo hay una puerta giratoria."]
-    position = job.position(contract.level)
+    if job.forks(contract.level, contract.branch) and not open_branches(job, retired):
+        return ["Ya te jubilaste de todas las ramas. Más arriba no queda nada."]
+    position = job.position(contract.level, contract.branch)
     missing: list[str] = []
     if contract.performance < PERFORMANCE_MAX:
         missing.append(f"Llenar la barra de rendimiento ({contract.performance}/100)")
@@ -746,16 +898,44 @@ def promotion_blockers(
         done = contract.progress.get(task.stat, 0)
         if done < task.goal:
             missing.append(f"{task.text} ({done}/{task.goal})")
-    following = job.position(contract.level + 1)
-    if following.training is not None and following.training.key not in trainings:
+    following = job.next_position(contract.level, contract.branch)
+    if (
+        following is not None
+        and following.training is not None
+        and following.training.key not in trainings
+    ):
         missing.append(f"Conseguir {following.training.name} (en 🎓 Formación)")
     if contract.declined_day == today and not missing:
         missing.append("Rechazaste el ascenso hoy. Mañana te lo vuelven a ofrecer.")
     return missing
 
 
-def promote(contract: Contract, now: float) -> None:
-    """Sube un puesto: barra a la mitad, tareas a cero y nueva antigüedad."""
+def open_branches(job: Job, retired: Collection[str] = ()) -> tuple[Branch, ...]:
+    """Ramas del oficio que aún se pueden elegir (de las otras ya se jubiló)."""
+    return tuple(b for b in job.branches if b.key not in retired)
+
+
+def settle_branch(contract: Contract, job: Job) -> None:
+    """Deja la rama del contrato en un estado que existe.
+
+    Si ha vuelto al tronco (te han bajado), la rama se olvida. Si está pasado
+    el tronco en una rama que ya no está en el catálogo, vuelve al final del
+    tronco a elegir otra.
+    """
+    if contract.level <= job.trunk_top:
+        contract.branch = ""
+    elif job.branch(contract.branch) is None:
+        contract.level, contract.branch = job.trunk_top, ""
+
+
+def promote(contract: Contract, now: float, branch: str = "") -> None:
+    """Sube un puesto: barra a la mitad, tareas a cero y nueva antigüedad.
+
+    Args:
+        branch: Rama elegida, si el ascenso es el que sale del tronco.
+    """
+    if branch:
+        contract.branch = branch
     contract.level += 1
     contract.performance = PERFORMANCE_START
     contract.warned = False
@@ -843,3 +1023,123 @@ def follower_gain(score: int, level: int, multiplier: float) -> int:
 def roll(rng: random.Random, chance: float) -> bool:
     """`True` con probabilidad `chance`."""
     return chance > 0 and rng.random() < chance
+
+
+# -- Deseo del día -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class WishFacts:
+    """Lo que se sabe de un turno para ver si cumple el deseo del día.
+
+    Attributes:
+        hour: Hora local (canaria) al cerrar el turno.
+        time_left: Segundos que sobraron del minijuego (0 si se agotó).
+        seconds: Duración total del minijuego.
+        completed: Si se jugaron todas las rondas antes de que se acabara el tiempo.
+        shifts_today: Turnos de jornada del día, contando este.
+        viral: Multiplicador de la viralidad (0 si el oficio no la tiene).
+    """
+
+    score: int
+    kind: ShiftKind
+    battery_before: float
+    hour: int
+    weather: str
+    time_left: float
+    seconds: float
+    completed: bool
+    shifts_today: int
+    remote: bool
+    viral: float
+
+
+@dataclass(frozen=True, slots=True)
+class Wish:
+    """Un deseo del día: un objetivo pequeño para un turno.
+
+    Attributes:
+        key: Identificador estable (para logros y pruebas).
+        text: Cómo se enseña en el panel.
+        met: Si un turno lo cumple.
+        fits: Si tiene sentido en ese oficio y puesto (`None` = en todos).
+    """
+
+    key: str
+    text: str
+    met: Callable[[WishFacts], bool]
+    fits: Callable[[Job, int], bool] | None = None
+
+
+#: Todos los deseos. Los que dependen del oficio solo salen donde se pueden cumplir.
+WISHES: tuple[Wish, ...] = (
+    Wish("nota_90", "Saca 90 o más en un turno.", lambda f: f.score >= 90),
+    Wish("perfecto", "Saca un 100 redondo.", lambda f: f.score >= 100),
+    Wish(
+        "rapido",
+        "Acaba el minijuego con la mitad del tiempo de sobra.",
+        lambda f: f.completed and f.time_left >= f.seconds / 2,
+    ),
+    Wish(
+        "madrugador",
+        "Ficha antes de las 10:00 (hora canaria) y saca 70 o más.",
+        lambda f: f.hour < 10 and f.score >= 70,
+    ),
+    Wish(
+        "nocturno",
+        "Ficha a partir de las 21:00 (hora canaria) y saca 70 o más.",
+        lambda f: f.hour >= 21 and f.score >= 70,
+    ),
+    Wish(
+        "reventado",
+        "Saca 80 o más con la batería por debajo de 30.",
+        lambda f: f.battery_before < 30 and f.score >= 80,
+    ),
+    Wish("tres", "Haz 3 turnos de jornada hoy (cuenta el tercero).", lambda f: f.shifts_today >= 3),
+    Wish(
+        "extra",
+        "Echa un turno extra legal y saca 70 o más.",
+        lambda f: f.kind is ShiftKind.EXTRA and f.score >= 70,
+    ),
+    Wish(
+        "lluvia",
+        "Reparte bajo la lluvia y saca 70 o más.",
+        lambda f: f.weather == "lluvia" and f.score >= 70,
+        lambda job, _level: job.weather,
+    ),
+    Wish(
+        "guardia",
+        "Haz una guardia y saca 70 o más.",
+        lambda f: f.kind is ShiftKind.GUARD and f.score >= 70,
+        lambda job, level: job.has_guards(level),
+    ),
+    Wish(
+        "teletrabajo",
+        "Teletrabaja un turno y saca 80 o más.",
+        lambda f: f.remote and f.score >= 80,
+        lambda job, _level: job.remote,
+    ),
+    Wish(
+        "algoritmo",
+        "Que el algoritmo te quiera: un turno que pase de ×1.",
+        lambda f: f.viral > 1,
+        lambda job, _level: job.viral,
+    ),
+)  # fmt: skip
+WISH_BY_KEY: dict[str, Wish] = {wish.key: wish for wish in WISHES}
+
+
+def wish_for(user_id: int, day: str, job: Job, level: int) -> Wish:
+    """El deseo del día de un miembro: el mismo todo el día para el mismo puesto.
+
+    Se sortea con una semilla de texto (miembro y día), que `random` convierte
+    con SHA-512: sale igual tras reiniciar el bot, al revés que `hash()`.
+    """
+    options = [w for w in WISHES if w.fits is None or w.fits(job, level)]
+    return random.Random(f"deseo:{user_id}:{day}").choice(options)
+
+
+def wish_streak(contract: Contract, today: date) -> int:
+    """Racha de deseos si hoy se cumple uno (sigue si el último fue ayer)."""
+    yesterday = (today - timedelta(days=1)).isoformat()
+    return contract.wish_streak + 1 if contract.wish_day == yesterday else 1

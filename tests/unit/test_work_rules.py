@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import random
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
 from bot.services.levels import TIMEZONE
+from bot.services.taxes import compute_pension_payslip, compute_self_employed_payslip
 from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
@@ -26,8 +27,10 @@ from bot.services.work import (
     RATING_MAX,
     RATING_MIN,
     TRIENNIUM_DAYS,
+    WISH_BY_KEY,
     Contract,
     ShiftKind,
+    WishFacts,
     accident_chance,
     apply_performance,
     battery_eta,
@@ -42,12 +45,15 @@ from bot.services.work import (
     rating_pay,
     rested_at,
     roll_over_day,
+    settle_branch,
     shift_cost,
     shift_pay,
     stars,
     triennia,
     viral_roll,
     weather,
+    wish_for,
+    wish_streak,
 )
 from bot.services.work_catalog import (
     DIALOGUE_PACKS,
@@ -59,6 +65,7 @@ from bot.services.work_catalog import (
     events_for,
 )
 from bot.services.work_games import _SPOT
+from bot.services.work_tools import NO_PERKS, with_rewards
 
 
 def at(year: int, month: int, day: int, hour: int = 12) -> float:
@@ -80,23 +87,40 @@ def test_cada_oficio_tiene_puestos_correlativos_con_sueldo_creciente() -> None:
         "influencer",
     }
     for job in JOBS:
-        assert [p.level for p in job.positions] == list(range(1, job.top + 1))
-        pays = [p.base_pay for p in job.positions]
-        assert pays == sorted(pays), job.key
-        assert not job.positions[-1].tasks  # del último no se asciende
-        for position in job.positions[:-1]:
-            assert position.tasks and position.days >= 2
+        for branch, ladder in job.ladders:
+            assert [p.level for p in ladder] == list(range(1, job.top + 1)), (job.key, branch)
+            pays = [p.base_pay for p in ladder]
+            assert pays == sorted(pays), (job.key, branch)
+            assert not ladder[-1].tasks  # del último no se asciende
+            for position in ladder[:-1]:
+                assert position.tasks and position.days >= 2
+
+
+def test_las_ramas_salen_del_final_del_tronco_sin_formacion_y_con_pension() -> None:
+    for job in JOBS:
+        if not job.branches:
+            continue
+        assert len(job.branches) >= 2, job.key
+        assert len({len(b.positions) for b in job.branches}) == 1, job.key  # mismo techo
+        assert len({b.key for b in job.branches}) == len(job.branches)
+        for branch in job.branches:
+            # Al elegir rama no se puede comprar antes su formación: la entrada es gratis.
+            assert branch.positions[0].training is None, (job.key, branch.key)
+            assert branch.positions[0].level == job.trunk_top + 1
+            assert branch.pension > 0 and branch.retired_as
+    keys = [p.training.key for j in JOBS for p in j.all_positions if p.training]
+    assert len(keys) == len(set(keys))  # una formación no sirve para dos puestos
 
 
 def test_los_minijuegos_duran_de_30_a_60_segundos_segun_el_nivel() -> None:
     for job in JOBS:
         assert [p.seconds for p in job.positions[:2]] == [30, 30]
-        assert all(p.seconds == 60 for p in job.positions[3:])
+        assert all(p.seconds == 60 for p in job.all_positions[3:])
 
 
 def test_el_contenido_de_cada_puesto_existe() -> None:
     for job in JOBS:
-        for position in job.positions:
+        for position in job.all_positions:
             kind = position.content.partition(":")[0]
             known = kind in MEMORY_PACKS or kind in DIALOGUE_PACKS or kind in SORT_PACKS
             assert known or kind in {"cavar", "pedidos", "metricas", *_SPOT}, position.content
@@ -314,3 +338,152 @@ def test_la_viralidad_paga_de_media_como_un_sueldo_normal() -> None:
 def test_estudiar_cansa_como_un_turno_y_no_resta_familia_como_un_extra() -> None:
     assert shift_cost(ShiftKind.STUDY) == shift_cost(ShiftKind.ORDINARY)
     assert family_cost(ShiftKind.STUDY, at(2026, 10, 6, 12)) == 0
+
+
+# -- Carrera larga ----------------------------------------------------------------------------
+
+
+def facts(**changes: object) -> WishFacts:
+    """Un turno normal (nota 70 a mediodía), con lo que se cambie."""
+    base = {
+        "score": 70,
+        "kind": ShiftKind.ORDINARY,
+        "battery_before": 80.0,
+        "hour": 12,
+        "weather": "",
+        "time_left": 0.0,
+        "seconds": 60.0,
+        "completed": False,
+        "shifts_today": 1,
+        "remote": False,
+        "viral": 0.0,
+    }
+    base.update(changes)
+    return WishFacts(**base)  # type: ignore[arg-type]
+
+
+def test_el_deseo_del_dia_es_el_mismo_todo_el_dia_y_cambia_de_un_dia_a_otro() -> None:
+    obra = JOB_BY_KEY["obra"]
+    first = wish_for(10, "2026-10-12", obra, 1)
+    assert all(wish_for(10, "2026-10-12", obra, 1) is first for _ in range(5))
+    month = {wish_for(10, f"2026-10-{day:02d}", obra, 1).key for day in range(1, 31)}
+    assert len(month) > 3
+
+
+def test_el_deseo_del_dia_solo_pide_lo_que_se_puede_hacer_en_el_puesto() -> None:
+    def keys(job: str, level: int) -> set[str]:
+        return {wish_for(user, "2026-10-12", JOB_BY_KEY[job], level).key for user in range(400)}
+
+    assert not keys("obra", 1) & {"lluvia", "guardia", "teletrabajo", "algoritmo"}
+    assert "lluvia" in keys("reparto", 1)
+    assert "guardia" not in keys("sanidad", 1)  # el celador no hace guardias
+    assert "guardia" in keys("sanidad", 2)
+    assert "algoritmo" in keys("influencer", 1)
+
+
+def test_cada_deseo_se_cumple_con_su_turno_y_no_con_uno_normal() -> None:
+    met = {
+        "nota_90": facts(score=90),
+        "perfecto": facts(score=100),
+        "rapido": facts(completed=True, time_left=30.0),
+        "madrugador": facts(hour=9),
+        "nocturno": facts(hour=21),
+        "reventado": facts(score=80, battery_before=29.0),
+        "tres": facts(shifts_today=3),
+        "extra": facts(kind=ShiftKind.EXTRA),
+        "lluvia": facts(weather="lluvia"),
+        "guardia": facts(kind=ShiftKind.GUARD),
+        "teletrabajo": facts(remote=True, score=80),
+        "algoritmo": facts(viral=1.2),
+    }
+    assert set(met) == set(WISH_BY_KEY)
+    for key, shift in met.items():
+        assert WISH_BY_KEY[key].met(shift), key
+        assert not WISH_BY_KEY[key].met(facts()), key
+    # Un turno extra en B no vale para el deseo del turno extra.
+    assert not WISH_BY_KEY["extra"].met(facts(kind=ShiftKind.BLACK))
+
+
+def test_la_racha_de_deseos_sigue_si_fue_ayer_y_si_no_vuelve_a_uno() -> None:
+    contract = Contract(job="obra", level=1, wish_day="2026-10-11", wish_streak=4)
+    assert wish_streak(contract, date(2026, 10, 12)) == 5
+    assert wish_streak(contract, date(2026, 10, 13)) == 1
+
+
+def test_la_carrera_por_ramas() -> None:
+    politica = JOB_BY_KEY["politica"]
+    assert (politica.trunk_top, politica.top) == (5, 10)
+    assert politica.forks(5) and not politica.forks(5, "moncloa") and not politica.forks(4)
+    assert politica.next_position(5) is None
+    assert politica.next_position(6, "bruselas") is politica.position(7, "bruselas")
+    assert politica.position(10, "moncloa").title == "Consejero de una eléctrica"
+    assert politica.position(10, "bruselas").title == "Comisario europeo"
+    with pytest.raises(ValueError):
+        politica.position(6)
+    assert len(politica.all_positions) == 15
+    # Un oficio sin ramas sigue igual.
+    obra = JOB_BY_KEY["obra"]
+    assert obra.top == obra.trunk_top == 5 and not obra.forks(5)
+    assert obra.ladders == (("", obra.positions),)
+
+
+def test_las_ventajas_son_las_de_los_puestos_por_los_que_has_pasado() -> None:
+    politica = JOB_BY_KEY["politica"]
+    assert politica.perks(1) == ()
+    assert len(politica.perks(5)) == 4
+    moncloa = politica.perks(7, "moncloa")
+    assert len(moncloa) == 6 and moncloa[-1] is politica.position(7, "moncloa").perk
+    perks = with_rewards(NO_PERKS, moncloa)
+    assert perks.retries == 1 and perks.fifty
+    assert perks.extra_time == pytest.approx(0.10)
+    assert perks.battery == pytest.approx(0.15)
+    assert "🏅" in perks.summary
+    assert with_rewards(NO_PERKS, ()) is NO_PERKS
+
+
+def test_al_final_del_tronco_no_se_pide_formacion_y_sin_ramas_libres_no_se_asciende() -> None:
+    politica = JOB_BY_KEY["politica"]
+    contract = Contract(job="politica", level=5, performance=PERFORMANCE_MAX)
+    contract.progress = {"smooth": 99, "good": 99, "events": 99}
+    kwargs = {"days_in_position": 99, "trainings": set(), "today": "2026-10-12"}
+    assert promotion_blockers(contract, politica, **kwargs) == []  # type: ignore[arg-type]
+    blocked = promotion_blockers(
+        contract,
+        politica,
+        retired={"moncloa", "bruselas"},
+        **kwargs,  # type: ignore[arg-type]
+    )
+    assert blocked and "jubilaste" in blocked[0]
+
+
+def test_al_bajar_al_tronco_se_olvida_la_rama() -> None:
+    politica = JOB_BY_KEY["politica"]
+    contract = Contract(job="politica", level=5, branch="moncloa")
+    settle_branch(contract, politica)
+    assert contract.branch == ""
+    contract = Contract(job="politica", level=8, branch="moncloa")
+    settle_branch(contract, politica)
+    assert (contract.level, contract.branch) == (8, "moncloa")
+
+
+def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
+    moncloa = {e.key for e in events_for("politica", 6, 100, branch="moncloa")}
+    bruselas = {e.key for e in events_for("politica", 6, 100, branch="bruselas")}
+    trunk = {e.key for e in events_for("politica", 5, 100)}
+    assert {"mocion", "socio", "cis", "omnibus"} <= moncloa
+    assert {"qatargate", "estrasburgo", "dietas", "cena_lobby"} <= bruselas
+    assert not moncloa & {"qatargate", "estrasburgo", "dietas", "cena_lobby"}
+    assert not trunk & (moncloa ^ bruselas)
+    assert "sobre" in moncloa and "sobre" in bruselas  # los de toda la política siguen
+
+
+def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:
+    gross, recent = 5_000, 5_000 * 6
+    pension = compute_pension_payslip(gross, recent)
+    assert pension.ss_worker == pension.ss_employer == 0
+    assert 0 < pension.irpf < gross
+    # Con los gastos y la reducción de los rendimientos del trabajo, retiene menos
+    # que la misma cifra cobrada como autónomo.
+    assert pension.irpf <= compute_self_employed_payslip(gross, recent).irpf
+    with pytest.raises(ValueError):
+        compute_pension_payslip(0, 0)

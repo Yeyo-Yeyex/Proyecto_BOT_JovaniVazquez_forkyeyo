@@ -93,6 +93,7 @@ from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
+from bot.services.work import WISHES
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
 
 GUILD = 1
@@ -340,6 +341,16 @@ PRODUCED_STATS = {
     "work_top_funcionariado", "work_dances", "work_metrics", "work_stream", "work_collabs",
     "work_tv", "work_viral", "work_megaviral", "work_flop", "work_followers_max",
     "work_caught_consumo", "work_caught_regalos", "work_top_influencer",
+    # Carrera larga (ramas, jubilación, pensión y deseo del día) y las ramas de la política
+    "work_wishes", "work_wish_streak_max", "work_wish_perfecto", "work_wish_nocturno",
+    *(f"work_wish_{wish.key}" for wish in WISHES),
+    "work_branch_chosen", "work_retired", "work_pensions", "work_pension_irpf",
+    "work_top_politica_moncloa", "work_top_politica_bruselas", "work_retired_politica",
+    "work_spokes", "work_decrees", "work_ministry", "work_partners", "work_control",
+    "work_plenary", "work_amendments", "work_lobbies", "work_trilogues", "work_commission",
+    "work_censure_survived", "work_snap_election", "work_partner_deal", "work_partner_refused",
+    "work_cis", "work_omnibus", "work_suitcase", "work_suitcase_refused", "work_caught_olaf",
+    "work_strasbourg", "work_per_diem", "work_lobby_dinner",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",
