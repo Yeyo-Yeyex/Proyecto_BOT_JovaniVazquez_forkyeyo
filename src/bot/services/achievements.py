@@ -5747,8 +5747,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_calima", [
         (1, "calima", "Parada por calima", "Para la obra por calima.", C),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_top_obra", [
-        (1, "constructor", "Constructor de aeropuertos sin aviones", "Llega a constructor.", E),
+    a += _tiers("jobs", "work_top_obra_publica", [
+        (1, "constructor", "Constructor de aeropuertos sin aviones",
+         "Llega a presidente de una constructora del IBEX (rama 🚄 Obra pública).", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_perfect_orders", [
         (100, "una_cana", "Ponme una caña", "Saca 100 comandas perfectas.", E),
@@ -5766,18 +5767,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "chiringuito", "Chiringuito propio", "Llega a dueño del chiringuito.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_perfect_votes", [
-        (50, "disciplina", "Disciplina de voto", "Vota 50 veces lo que diga el partido.", R),
+        (1, "voto_1", "Primer botonazo", "Vota una vez lo que diga el partido.", C),
+        (50, "disciplina", "Disciplina de voto, como en la Duma de Putin",
+         "Vota 50 veces lo que diga el partido.", R),
     ])  # fmt: skip
     a += _tiers("jobs", "work_dodged", [
+        (1, "plasma", "Rueda de prensa por plasma",
+         "Esquiva tu primera pregunta en rueda de prensa.", R),
         (20, "mi_libro", "No he venido a hablar de mi libro",
          "Esquiva 20 preguntas en rueda de prensa.", R),
     ])  # fmt: skip
     a += _tiers("jobs", "work_no_recuerdo", [
-        (20, "no_me_consta", "No me consta", "Sal vivo de 20 preguntas en comisión.", E),
+        (1, "no_recuerdo_1", "Señoría, no recuerdo", "Sal vivo de tu primera pregunta en comisión.",
+         R),
+        (20, "no_me_consta", "No me consta (ni a Rajoy)", "Sal vivo de 20 preguntas en comisión.",
+         E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_envelope", [
         (1, "sobre", "Sobre en la gabardina", "Acepta un sobre.", R, True),
-        (10, "sobres", "Coleccionista de sobres", "Acepta 10 sobres.", E, True),
+        (10, "sobres", "Coleccionista de sobres, como un tesorero de Génova",
+         "Acepta 10 sobres.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_envelope_refused", [
         (1, "honrado", "Honrado (de momento)", "Rechaza un sobre.", C, True),
@@ -5786,22 +5795,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "fundacion", "Para la fundación", "Acepta una comisión de obra pública.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_cronyism", [
-        (1, "enchufe", "Enchufado", "Coloca a un sobrino.", R, True),
+        (1, "enchufe", "Enchufado en la Diputación", "Coloca a un sobrino.", R, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_falcon", [
-        (1, "falcon", "Agenda oficial", "Vete a un concierto en el avión oficial.", E, True),
+        (1, "falcon", "Agenda oficial en el Falcon", "Vete a un concierto en el avión oficial.",
+         E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_caught_uco", [
-        (1, "imputado", "Imputado", "Que te pille la UCO.", E, True),
+        (1, "imputado", "Imputado, sé fuerte", "Que te pille la UCO.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_pardoned", [
-        (1, "indultado", "Indultado", "Que te indulten después de pillarte.", L, True),
+        (1, "indultado", "Indultado, amnistiado y a Waterloo",
+         "Que te indulten después de pillarte.", L, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_clinging", [
-        (1, "sillon", "Pegado al sillón", "Niégate a dimitir.", R, True),
+        (1, "sillon", "Pegado al sillón, como Maduro", "Niégate a dimitir.", R, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_resigned", [
-        (1, "dimision", "Dimisión", "Dimite. Algo insólito.", L, True),
+        (1, "dimision", "Dimisión, especie en peligro de extinción", "Dimite. Algo insólito.",
+         E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_top_politica_moncloa", [
         (1, "giratoria", "Puerta giratoria",
@@ -5843,7 +5855,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "no_recuerdo_100", "Amnesia selectiva", "Sal vivo de 100 preguntas en comisión.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_envelope", [
-        (50, "sobres_50", "Caja B", "Acepta 50 sobres.", L, True),
+        (50, "sobres_50", "Caja B con papeles de Bárcenas", "Acepta 50 sobres.", M, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_kickback", [
         (10, "kickback_10", "Mordida del 3 %", "Acepta 10 comisiones de obra pública.", L, True),
@@ -5865,6 +5877,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "sinpa_10", "Velocista de terraza", "Persigue a 10 mesas que se iban sin pagar.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_posters", [
+        (1, "cartel_1", "Engrudo en los dedos", "Pega tu primera ruta de carteles perfecta.", C),
         (10, "carteles_10", "Empapelando el barrio", "Pega 10 rutas de carteles perfectas.", C),
         (100, "carteles_100", "Las farolas son del partido",
          "Pega 100 rutas de carteles perfectas.", R),
@@ -5876,9 +5889,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_board", [
         (20, "consejero_20", "Consejero de nada",
-         "Acierta 20 respuestas en el consejo de administración.", R),
+         "Acierta 20 respuestas en el consejo de administración.", L),
         (200, "consejero_200", "Dietas por asistir",
-         "Acierta 200 respuestas en el consejo de administración.", E),
+         "Acierta 200 respuestas en el consejo de administración.", L),
     ])  # fmt: skip
 
     # 🏥 Sanidad ------------------------------------------------------------------------
@@ -8511,17 +8524,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_decrees", [
         (30, "decretos_30", "Al BOE", "Despacha 30 papeles como secretario de Estado.", E),
-        (300, "decretos_300", "Real Decreto a granel", "Despacha 300 papeles.", L),
+        (300, "decretos_300", "Gobernar por decreto, como Trump con el rotulador",
+         "Despacha 300 papeles.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_ministry", [
         (25, "ministerio_25", "Ministro de lo suyo", "Sal airoso de 25 marrones del ministerio.",
          E),
-        (250, "ministerio_250", "Superministro", "Sal airoso de 250 marrones del ministerio.", L),
+        (250, "ministerio_250", "Superministro de veintidós ministerios",
+         "Sal airoso de 250 marrones del ministerio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_partners", [
-        (15, "socios_15", "Agenda de socios",
+        (15, "socios_15", "Agenda de socios con prefijo de Bélgica",
          "Recuerda 15 veces lo que le prometiste a cada socio.", E),
-        (150, "socios_150", "Socios hasta en la sopa",
+        (150, "socios_150", "Geometría variable, con siete socios",
          "Recuerda 150 veces lo que le prometiste a cada socio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_control", [
@@ -8547,16 +8562,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (300, "trilogo_300", "Acuerdo provisional", "Cierra 300 puntos de un trílogo.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_commission", [
-        (20, "comision_20", "Multa a una tecnológica",
+        (20, "comision_20", "Multa a la red social de Musk",
          "Acierta 20 respuestas como comisario europeo.", L),
-        (200, "comision_200", "Bruselas manda", "Acierta 200 respuestas como comisario.", M),
+        (200, "comision_200", "Bruselas manda, como el tapón pegado a la botella",
+         "Acierta 200 respuestas como comisario.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_censure_survived", [
-        (1, "mocion", "Moción de censura superada", "Aguanta una moción de censura.", E),
+        (1, "mocion", "Manual de resistencia, capítulo uno", "Aguanta una moción de censura.", E),
         (3, "resistencia", "Resistiré (en el sillón)", "Aguanta 3 mociones de censura.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_snap_election", [
-        (1, "adelanto", "Adelanto electoral", "Convoca elecciones por sorpresa.", E, True),
+        (1, "adelanto", "Elecciones en pleno julio", "Convoca elecciones por sorpresa.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_partner_deal", [
         (1, "socio_cede", "Socio preferente", "Cede ante un socio a cambio de sus votos.",
@@ -8567,10 +8583,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "plantado", "Ni un paso atrás", "Planta a un socio que te chantajea.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_cis", [
-        (1, "cis", "Cocina de encuestas", "Cocina el CIS.", E, True),
+        (1, "cis", "La cocina de Tezanos", "Cocina el CIS.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_omnibus", [
-        (1, "omnibus", "Decreto ómnibus", "Mételo todo en el mismo decreto.", E, True),
+        (1, "omnibus", "Decreto ómnibus, con indulto de regalo",
+         "Mételo todo en el mismo decreto.", E, True),
     ])  # fmt: skip
     a += _tiers("jobs", "work_suitcase", [
         (1, "maletin", "Maletín del Golfo", "Acepta un maletín en Bruselas.", E, True),
@@ -8592,6 +8609,167 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("jobs", "work_lobby_dinner", [
         (1, "cena_lobby", "Cena de trabajo", "Cena con un lobby (paga él).", E, True),
+    ])  # fmt: skip
+
+    # 🌹 Política: lo que faltaba (auditoría de octubre de 2026) --------------------------
+    a += _tiers("jobs", "work_clean_tender", [
+        (1, "concurso_limpio", "Concurso limpio, como en Suiza",
+         "Haz un concurso público de verdad.", C, True),
+        (10, "concurso_limpio_10", "Licitador ejemplar (y aburrido)",
+         "Haz 10 concursos públicos de verdad.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_cronyism_refused", [
+        (1, "sin_plaza", "Desterrado a Fuerteventura", "Niégate a colocar a un sobrino.", C, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_falcon_refused", [
+        (1, "guagua", "En guagua, como el pueblo", "Deja el avión oficial y ve en guagua.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_cis_honest", [
+        (1, "cis_limpio", "Encuesta sin cocinar (insólito)", "Publica el CIS tal cual sale.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_constitution", [
+        (1, "constitucion", "Constitucionalista de guardia",
+         "Ficha en la política el 6 de diciembre, Día de la Constitución.", R),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_fango", [
+        (1, "fango_bulo", "Víctima oficial del fango", "Denuncia la máquina del fango por un bulo.",
+         R, True),
+        (10, "fango_10", "Ingeniero jefe del fango", "Denuncia la máquina del fango 10 veces.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_pegasus", [
+        (1, "pegasus", "Móvil en la nevera", "Cambia de móvil por miedo a Pegasus.", R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_pegasus_listened", [
+        (1, "pegasus_escucha", "Que escuchen, que aprendan", "Deja que te espíen con Pegasus.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_exhumation", [
+        (1, "exhumacion", "Franco sigue muerto",
+         "Organiza una exhumación con helicóptero antes de las elecciones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_waterloo", [
+        (1, "waterloo", "Peregrino a Waterloo", "Viaja a Waterloo a por siete votos.", E, True),
+        (5, "waterloo_5", "Abono Madrid-Waterloo", "Viaja 5 veces a Waterloo.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_letter", [
+        (1, "carta", "Querida ciudadanía",
+         "Escribe una carta y desaparece cinco días a reflexionar.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_tariffs", [
+        (1, "aranceles", "Aranceles espejo", "Contesta con firmeza a los aranceles de Trump.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_oval_office", [
+        (1, "despacho_oval", "En espera con el Despacho Oval",
+         "Llama a Trump y que te dejen en espera.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_cap", [
+        (1, "tapon", "Tapón pegado hasta en el brick",
+         "Vota que el tapón vaya pegado también a los bricks.", E, True),
+    ])  # fmt: skip
+
+    # 🦺 Obra: las ramas Ladrillo y Obra pública ------------------------------------------
+    a += _tiers("jobs", "work_top_obra_ladrillo", [
+        (1, "palco", "Del ladrillo al palco",
+         "Llega a presidente de un club de fútbol (rama 🏖️ Ladrillo).", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_retired_obra", [
+        (2, "ladrillo_y_boe", "Del pelotazo al BOE",
+         "Jubílate del Ladrillo y de la Obra pública.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_no_invoice", [
+        (1, "sin_factura", "¿Con factura o sin factura?", "Haz una reforma sin factura.", R, True),
+        (10, "sin_factura_10", "Economía sumergida con casco", "Haz 10 reformas sin factura.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_flats", [
+        (15, "pisos_15", "Piso piloto con vistas (de lado)",
+         "Enseña 15 pisos piloto como los pidió el cliente.", E),
+        (150, "pisos_150", "Burbuja 2.0", "Enseña 150 pisos piloto.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_land", [
+        (30, "terrenos_30", "Recalificador de guardia", "Manda 30 terrenos a su sitio.", E),
+        (300, "terrenos_300", "Ni un pinar en pie", "Manda 300 terrenos a su sitio.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_bank", [
+        (25, "banco_25", "Refinanciado a treinta años", "Refinancia 25 deudas con el banco.", E),
+        (250, "banco_250", "Rescate bancario a medida", "Refinancia 250 deudas.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_mayor", [
+        (30, "alcalde_30", "Convenio urbanístico", "Cierra 30 convenios con el alcalde.", E),
+        (300, "alcalde_300", "Marbella era esto", "Cierra 300 convenios con el alcalde.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_box", [
+        (20, "palco_20", "De fútbol, lo justo", "Acierta 20 respuestas en el palco.", L),
+        (200, "palco_200", "Presidente vitalicio (como Florentino)",
+         "Acierta 200 respuestas en el palco.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_tenders", [
+        (30, "licitaciones_30", "Baja temeraria", "Manda 30 concursos a su sitio.", E),
+        (300, "licitaciones_300", "Rey de la UTE", "Manda 300 concursos a su sitio.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_concessions", [
+        (15, "concesiones_15", "Radial rescatada", "Renueva 15 tandas de concesiones.", E),
+        (150, "concesiones_150", "Peaje eterno", "Renueva 150 tandas de concesiones.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_ministry_deals", [
+        (30, "modificados_30", "El modificado del modificado",
+         "Saca 30 modificados en el ministerio.", E),
+        (300, "modificados_300", "Presupuesto por tres", "Saca 300 modificados en el ministerio.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_abroad_deals", [
+        (20, "internacional_20", "Marca España (con sobrecoste)",
+         "Acierta 20 respuestas en los contratos por el mundo.", L),
+        (200, "internacional_200", "Del canal de Panamá al palacio de Erdoğan",
+         "Acierta 200 respuestas en los contratos por el mundo.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_vulture", [
+        (1, "fondo_buitre", "Vendido al fondo buitre",
+         "Vende trescientos pisos de golpe a un fondo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_bubble_held", [
+        (1, "burbuja", "El ladrillo nunca baja", "Aguanta los pisos cuando estalla la burbuja.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_rezoning", [
+        (1, "recalificacion", "Pinar con vistas", "Acepta un «detalle» por recalificar un pinar.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_rezoning_refused", [
+        (1, "recalificacion_no", "Licencia para 2041", "Pide la licencia por la vía legal.", E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_oligarch", [
+        (1, "oligarca", "Áticos al contado", "Vende diez áticos en billetes de 500.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_caught_sepblac", [
+        (1, "sepblac", "Blanqueo con vistas al mar", "Que te pille el Sepblac.", L, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_tourist_flats", [
+        (1, "turisticos", "Caja de llaves en el portal",
+         "Convierte un bloque entero en pisos turísticos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_social_rent", [
+        (1, "alquiler_barrio", "Casero de los de antes", "Alquila el bloque a gente del barrio.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_change_order", [
+        (1, "modificado", "Modificado al canto", "Pide un modificado con la obra a medias.", E),
+        (10, "modificado_10", "El AVE más caro de Europa", "Pide 10 modificados.", L),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_ribbon", [
+        (1, "cinta", "Inauguración hasta el kilómetro 3", "Inaugura una autovía sin terminar.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_ghost_airport", [
+        (1, "aeropuerto", "Aeropuerto con estatua", "Construye un aeropuerto sin aviones.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("jobs", "work_wall", [
+        (1, "muro", "Muro pagado por México (en teoría)",
+         "Cobra por adelantado el muro de Trump.", E, True),
     ])  # fmt: skip
 
     # 👷 Los ocho oficios ------------------------------------------------------------------
@@ -11623,6 +11801,15 @@ _WORK_CONTENT_STATS = {
     "lobbies": "work_lobbies",
     "trilogo": "work_trilogues",
     "comisario": "work_commission",
+    "pisos": "work_flats",
+    "terrenos": "work_land",
+    "banco": "work_bank",
+    "alcalde": "work_mayor",
+    "palco": "work_box",
+    "licitaciones": "work_tenders",
+    "concesiones": "work_concessions",
+    "fomento": "work_ministry_deals",
+    "internacional": "work_abroad_deals",
 }
 
 
@@ -11664,6 +11851,8 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_reyes"] = 1
     elif outcome.holiday == "el Día del Trabajador":
         add["work_mayday"] = 1
+    elif outcome.holiday == "el Día de la Constitución" and outcome.job.key == "politica":
+        add["work_constitution"] = 1
     if outcome.kind.value == "negro":
         add["work_black"] = 1
         add["work_past_limit"] = 1
@@ -11817,5 +12006,7 @@ MEMORY_CONTENT = frozenset(
         "baile",
         "socios",
         "plenos",
+        "pisos",
+        "concesiones",
     }
 )

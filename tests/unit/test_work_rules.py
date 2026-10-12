@@ -486,10 +486,15 @@ def test_la_carrera_por_ramas() -> None:
     with pytest.raises(ValueError):
         politica.position(6)
     assert len(politica.all_positions) == 15
-    # Un oficio sin ramas sigue igual.
     obra = JOB_BY_KEY["obra"]
-    assert obra.top == obra.trunk_top == 5 and not obra.forks(5)
-    assert obra.ladders == (("", obra.positions),)
+    assert (obra.trunk_top, obra.top) == (5, 10) and obra.forks(5)
+    assert obra.position(10, "ladrillo").title == "Presidente de un club de fútbol"
+    assert obra.position(10, "publica").title == "Presidente de una constructora del IBEX"
+    assert [branch for branch, _ladder in obra.ladders] == ["ladrillo", "publica"]
+    # Un oficio sin ramas sigue igual.
+    hosteleria = JOB_BY_KEY["hosteleria"]
+    assert hosteleria.top == hosteleria.trunk_top == 5 and not hosteleria.forks(5)
+    assert hosteleria.ladders == (("", hosteleria.positions),)
 
 
 def test_las_ventajas_son_las_de_los_puestos_por_los_que_has_pasado() -> None:
@@ -540,6 +545,13 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert not moncloa & {"qatargate", "estrasburgo", "dietas", "cena_lobby"}
     assert not trunk & (moncloa ^ bruselas)
     assert "sobre" in moncloa and "sobre" in bruselas  # los de toda la política siguen
+    ladrillo = {e.key for e in events_for("obra", 10, 100, branch="ladrillo")}
+    publica = {e.key for e in events_for("obra", 10, 100, branch="publica")}
+    assert {"burbuja", "recalificacion", "oligarca", "turisticos"} <= ladrillo
+    assert {"modificado", "inauguracion", "aeropuerto", "muro"} <= publica
+    assert not ladrillo & {"modificado", "inauguracion", "aeropuerto", "muro"}
+    assert {"jubilado", "sin_factura"} <= ladrillo & publica
+    assert "sin_factura" not in {e.key for e in events_for("obra", 4, 100)}
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:
