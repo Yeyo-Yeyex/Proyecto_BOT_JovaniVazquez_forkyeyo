@@ -12,8 +12,9 @@ Lo que más se olvida:
   slash), llama a `renta.remind(bot, interaction)` para el aviso de la Renta. Detalle
   en la sección "Dinero, impuestos y la Renta" de `Biblia.txt`.
 - **Logros:** cada funcionalidad del bot tiene logros asociados; una nueva no está
-  terminada sin los suyos, y cuantos más, mejor (con gracia y sátira de la España
-  actual). Se alimentan con `casino_play`, `track`, `note` o `note_for` de
+  terminada sin los suyos, y cuantos más, mejor (con gracia y sátira de la actualidad
+  de España, Europa, EE. UU., África, Sudamérica, China e Israel, contra gobiernos
+  y figuras públicas y nunca contra pueblos). Se alimentan con `casino_play`, `track`, `note` o `note_for` de
   `bot.cogs.achievements`. La rareza sigue la escala por esfuerzo de la Biblia; los de
   suerte del casino se calibran con `docs/auditoria_logros.py`. Sección "Logros" de
   `Biblia.txt`, que tiene la lista de familias de logros que hay que cubrir.

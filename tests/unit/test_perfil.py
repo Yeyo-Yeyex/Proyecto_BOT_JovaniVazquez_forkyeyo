@@ -82,7 +82,7 @@ def test_mirarse_el_perfil_de_madrugada_es_secreto_y_el_de_otro_es_cotilleo() ->
 def test_expediente_completo_cuenta_las_secciones_distintas() -> None:
     seen = {f"perfil_seen_{key}": 1 for key in PERFIL_SECTIONS[:-1]}
     assert with_derived(seen)["perfil_sections"] == len(PERFIL_SECTIONS) - 1
-    seen["perfil_seen_objetos"] = 3
+    seen[f"perfil_seen_{PERFIL_SECTIONS[-1]}"] = 3
     assert with_derived(seen)["perfil_sections"] == len(PERFIL_SECTIONS)
 
 

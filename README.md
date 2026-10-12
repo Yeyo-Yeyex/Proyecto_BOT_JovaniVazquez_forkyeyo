@@ -76,7 +76,7 @@ python -m bot
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
   | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
   | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `bacara [cantidad] [lado]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `bacara [cantidad] [lado]` · `gallos [cantidad] [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
   | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -573,7 +573,7 @@ python -m bot
   Sustituye a `nivel`, `patrimonio`, `logros` y `mochila`. Solo lo maneja
   quien lo abre. Logros en 🏆 Coleccionista: *¿Quién soy yo?*, *Selfie
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
-  *Pegasus de barrio*, *Expediente completo* (ver las siete secciones) y dos
+  *Pegasus de barrio*, *Expediente completo* (ver las ocho secciones) y dos
   secretos.
 - **Logros** (sección 🏆 de `perfil`): 2.213 logros en 41 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
@@ -949,10 +949,11 @@ src/bot/
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
+│   ├── gallos.py        # gallos: reñidero contra la casa, retos, grada y la pelea
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y su vista
-│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas y objetos
+│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas, objetos y gallo
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
@@ -1010,6 +1011,9 @@ src/bot/
 │   ├── bacara.py        # Bacará: zapato, tercera carta, pagos y carretera grande
 │   ├── bacara_render.py # Bacará: lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── bacara_scene.py  # Bacará con canvas en Node o Chromium (assets/bacara/escena.html)
+│   ├── gallos.py        # Gallos: rivales, cuotas, la pelea, la grada y la ficha del gallo
+│   ├── gallos_render.py # Gallos: lo que se ve en cada fotograma y dibujo con Pillow
+│   ├── gallos_scene.py  # Gallos con canvas en Node o Chromium (assets/gallos/escena.html)
 │   ├── porras.py        # Propuestas, tope del bote y reparto mutuo de las porras
 │   ├── deploy.py        # Buzón con actualizar.sh para el comando reinicio
 │   ├── moderation.py    # Duraciones, IDs y jerarquía de roles de los comandos de admin
@@ -1025,6 +1029,7 @@ src/bot/
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
     ├── caballos/       # escena.html: canvas y HTML/CSS de las carreras de caballos
     ├── bacara/         # escena.html: canvas de la mesa de bacará
+    ├── gallos/         # escena.html: canvas del reñidero y los gallos
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
 ```

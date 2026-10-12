@@ -43,6 +43,7 @@ GAMES = (
     "Pachinko",
     "Caballos",
     "Bacará",
+    "Gallos",
     "Porras",
     "Loteria",
 )
@@ -71,6 +72,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.shop.initialize()
     await client.work.repository.initialize()
     await client.horses.initialize()
+    await client.gallos.initialize()
     await client.porras.initialize()
     await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
@@ -876,6 +878,58 @@ async def test_la_ruleta_pinta_con_la_skin_de_la_tienda_con_el_bot_real(tmp_path
         # Los logros piden las skins de regalo a la tienda del bot cargado.
         shop_module = importer("Tienda", client)
         assert await shop_module.grant_reward_skins(client, GUILD_ID, OWNER_ID, ["x"]) == []
+    finally:
+        await client.close()
+
+
+async def test_los_gallos_apuntan_logros_y_jugadas_y_reciben_sus_skins_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Los gallos cargan antes que la tienda y los logros: sus puentes tienen que verlos."""
+    client = await load_bot(tmp_path)
+    try:
+        gallos = importer("Gallos", client)
+        gallos.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Gallos")
+        cog.renderer = MagicMock()
+        cog.renderer.still = AsyncMock(return_value=b"PNG")
+        cog.renderer.fight = AsyncMock(
+            return_value=gallos.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+        )
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._gallos_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            rival=None,
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+        # Al abrir el reñidero, la tienda le da los gallos gratis.
+        mochila = {e.catalog_key for e in await client.shop.inventory(GUILD_ID, OWNER_ID, 0.0)}
+        assert {"skin_gallo_blanco", "skin_gallo_negro", "skin_gallo_pinto"} <= mochila
+        tienda = client.get_cog("Tienda")
+        await tienda.wear_skin(GUILD_ID, OWNER_ID, "gallos", SKIN_BY_KEY["gallo_negro"])
+        (panel,) = cog.panels
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await panel._fight(interaction)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["gallos_fights"] == 1
+        assert profile.stats["gallos_skin_gallo_negro"] == 1
+        assert "gallos_1" in profile.unlocked
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["gallos"].plays == 1
     finally:
         await client.close()
 

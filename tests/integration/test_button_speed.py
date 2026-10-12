@@ -70,6 +70,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.shop.initialize()
     await client.work.repository.initialize()
     await client.horses.initialize()
+    await client.gallos.initialize()
     await client.porras.initialize()
     await client.todo.initialize()
     await client.slots_repository.initialize()
@@ -247,6 +248,45 @@ async def press_coin_cash_out(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await view._cash_out(interaction)
+
+    return click
+
+
+def gallos_cog(client: BotClient):  # noqa: ANN201
+    """Los gallos con dibujo falso y sin esperas."""
+    cog = client.get_cog("Gallos")
+    module = module_of(client, "Gallos")
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog.renderer = MagicMock()
+    cog.renderer.still = AsyncMock(return_value=b"PNG")
+    cog.renderer.fight = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    return cog, module
+
+
+async def press_gallos_fight(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = gallos_cog(client)
+    panel = module.HousePanel(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._fight(interaction)
+
+    return click
+
+
+async def press_gallos_accept(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = gallos_cog(client)
+    rival = make_owner()
+    rival.id = owner.id + 1
+    red = module.Owner(rival, module.RoosterRecord(name="Rojo"), None)
+    blue = module.Owner(owner, module.RoosterRecord(name="Azul"), None)
+    duel = module.Duel(cog, guild_id=GUILD_ID, channel=None, red=red, blue=blue, stake=10)
+
+    async def click(interaction: MagicMock) -> None:
+        await duel.accept(interaction)
+        if duel.task is not None:
+            duel.task.cancel()
+        if duel.prepared is not None:
+            await duel.prepared
 
     return click
 
@@ -705,6 +745,8 @@ CASES: dict[str, Press] = {
     "pachinko: auto": press_pachinko_autoplay,
     "moneda: cara": press_coin_flip,
     "moneda: cobrar": press_coin_cash_out,
+    "gallos: pelear contra la casa": press_gallos_fight,
+    "gallos: aceptar un duelo": press_gallos_accept,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
     "dados: pase": press_dice_pass,
