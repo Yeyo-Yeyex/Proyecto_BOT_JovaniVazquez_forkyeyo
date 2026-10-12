@@ -1,18 +1,21 @@
 """Lista de cosas que hacer del servidor: el comando `lista`.
 
 - `lista`: vuelve a publicar la lista en el canal actual.
-- `lista <tarea> [prioridad alta|media|baja]`: la apunta (media si no se
-  dice) y vuelve a publicar la lista. Con `/lista`, la prioridad también
-  se puede elegir en un desplegable.
+- `lista <tarea> [prioridad alta|media|baja]`: la apunta y vuelve a publicar
+  la lista. Con `/lista`, la prioridad también se puede elegir en un
+  desplegable. Si no se dice, el bot la pregunta con tres botones (en privado
+  con `/lista`; con `.lista`, en un mensaje que solo puede pulsar quien la
+  apunta y que se borra al elegir). Sin respuesta en dos minutos, es media.
 
 La lista sale siempre ordenada (alta, media, baja y, dentro de cada una, de
-la más antigua a la más nueva) y solo hay una a la vista: al publicar otra,
-el bot borra la anterior. Con `.lista <tarea>` también borra el mensaje de
-quien la apunta, para que el canal no se llene de órdenes sueltas; para eso
-necesita **Gestionar mensajes** (si no lo tiene, lo deja y sigue).
+la más antigua a la más nueva), en páginas de 25 que se pasan con ◀ y ▶, y
+solo hay una a la vista: al publicar otra, el bot borra la anterior. Con
+`.lista <tarea>` también borra el mensaje de quien la apunta, para que el
+canal no se llene de órdenes sueltas; para eso necesita **Gestionar
+mensajes** (si no lo tiene, lo deja y sigue).
 
-Las tareas se tachan con el menú de la propia lista. Puede tacharlas quien
-las apuntó o un administrador; al tacharlas se borran.
+Las tareas se tachan con el menú de la propia lista (el de cada página).
+Puede tacharlas quien las apuntó o un administrador; al tacharlas se borran.
 
 Logros: apuntar (`todo_added`) y tachar (`todo_done`), categoría 📝 Lista.
 """
@@ -21,7 +24,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
+from functools import partial
 from typing import TYPE_CHECKING
 
 import discord
@@ -32,8 +37,10 @@ from bot.cogs import achievements as logros
 from bot.repositories.todo import TodoRepository
 from bot.services.achievements import StatDelta
 from bot.services.todo import (
+    DEFAULT_PRIORITY,
     MAX_TASK_LENGTH,
     MAX_TASKS,
+    PAGE_SIZE,
     Priority,
     Task,
     TaskError,
@@ -51,8 +58,11 @@ logger = logging.getLogger(__name__)
 
 COLOR = discord.Color.from_rgb(250, 190, 60)
 SELECT_ID = "lista:hecha"
+PAGE_ID = "lista:pag"
 NO_MENTIONS = discord.AllowedMentions.none()
 USAGE = "`lista <tarea> prioridad alta|media|baja`"
+#: Segundos para elegir la prioridad antes de apuntarla como media.
+PICK_TIMEOUT = 120
 
 
 def _author_name(guild: discord.Guild, user_id: int) -> str:
@@ -62,22 +72,27 @@ def _author_name(guild: discord.Guild, user_id: int) -> str:
 
 
 def build_board(
-    guild: discord.Guild, tasks: list[Task], note: str | None = None
+    guild: discord.Guild, tasks: list[Task], note: str | None = None, page: int = 0
 ) -> tuple[discord.Embed, discord.ui.View | None]:
-    """Embed con la lista ordenada y el menú para tachar.
+    """Embed con una página de la lista ordenada y el menú para tachar.
 
     Args:
         note: Línea opcional sobre el último cambio («Diego apuntó…»).
+        page: Página que se enseña, desde 0. Si ya no existe (se tacharon
+            tareas), sale la última.
 
     Returns:
         `(embed, vista)`; la vista es `None` si no queda nada pendiente.
     """
     ordered = sort_tasks(tasks)
+    pages = max(1, math.ceil(len(ordered) / PAGE_SIZE))
+    page = min(max(page, 0), pages - 1)
+    shown = ordered[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
     if ordered:
         lines = [
             f"`{index:>2}.` {task.priority.emoji} **{discord.utils.escape_markdown(task.text)}**"
             f" · {_author_name(guild, task.author_id)}"
-            for index, task in enumerate(ordered, start=1)
+            for index, task in enumerate(shown, start=page * PAGE_SIZE + 1)
         ]
         description = "\n".join(lines)
     else:
@@ -89,14 +104,17 @@ def build_board(
         description=description,
         color=COLOR,
     )
-    embed.set_footer(text="🔥 alta · 📌 media · 💤 baja — apunta con .lista <tarea> prioridad alta")
+    footer = "🔥 alta · 📌 media · 💤 baja — apunta con .lista <tarea> prioridad alta"
+    if pages > 1:
+        footer = f"Página {page + 1}/{pages} · {footer}"
+    embed.set_footer(text=footer)
     if not ordered:
         return embed, None
     select: discord.ui.Select = discord.ui.Select(
-        custom_id=SELECT_ID,
+        custom_id=f"{SELECT_ID}:{page}",
         placeholder="✅ Tachar tareas hechas…",
         min_values=1,
-        max_values=len(ordered),
+        max_values=len(shown),
         options=[
             discord.SelectOption(
                 label=task.text[:100],
@@ -104,24 +122,43 @@ def build_board(
                 emoji=task.priority.emoji,
                 description=f"Prioridad {task.priority.label}",
             )
-            for task in ordered
+            for task in shown
         ],
+        row=0,
     )
     view = discord.ui.View(timeout=None)
-    view.add_item(DoneSelect(select))
+    view.add_item(DoneSelect(select, page))
+    if pages > 1:
+        # Cada flecha lleva su destino: Discord no admite dos custom_id iguales.
+        for label, target, disabled in (
+            ("◀", max(page - 1, 0), page == 0),
+            ("▶", min(page + 1, pages - 1), page == pages - 1),
+        ):
+            button: discord.ui.Button = discord.ui.Button(
+                label=label,
+                custom_id=f"{PAGE_ID}:{target}",
+                style=discord.ButtonStyle.secondary,
+                disabled=disabled,
+                row=1,
+            )
+            view.add_item(PageButton(button, target))
     return embed, view
 
 
-class DoneSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"lista:hecha"):
+class DoneSelect(
+    discord.ui.DynamicItem[discord.ui.Select], template=r"lista:hecha(?::(?P<page>\d+))?"
+):
     """Menú ✅ para tachar tareas de la lista.
 
     Es un `DynamicItem` para que siga funcionando tras reiniciar el bot: las
     opciones viajan en el propio mensaje y aquí solo se leen los valores
-    elegidos (ids de tarea).
+    elegidos (ids de tarea) y la página, para volver a enseñar la misma. Las
+    listas de antes de las páginas (`lista:hecha` a secas) son la página 0.
     """
 
-    def __init__(self, item: discord.ui.Select) -> None:
+    def __init__(self, item: discord.ui.Select, page: int = 0) -> None:
         super().__init__(item)
+        self.page = page
 
     @classmethod
     async def from_custom_id(
@@ -131,13 +168,109 @@ class DoneSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"lista:hec
         match: re.Match[str],
         /,
     ) -> DoneSelect:
-        return cls(item)
+        return cls(item, int(match["page"] or 0))
 
     async def callback(self, interaction: discord.Interaction) -> None:
         cog = find_cog(interaction.client, Lista)  # type: ignore[arg-type]
         if cog is not None:
             ids = [int(value) for value in self.item.values if value.isdigit()]
-            await cog.complete_from_menu(interaction, ids)
+            await cog.complete_from_menu(interaction, ids, self.page)
+
+
+class PageButton(discord.ui.DynamicItem[discord.ui.Button], template=r"lista:pag:(?P<page>\d+)"):
+    """Flecha ◀/▶ de la lista; lleva en el custom_id la página a la que va."""
+
+    def __init__(self, item: discord.ui.Button, page: int) -> None:
+        super().__init__(item)
+        self.page = page
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ) -> PageButton:
+        return cls(item, int(match["page"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = find_cog(interaction.client, Lista)  # type: ignore[arg-type]
+        if cog is not None:
+            await cog.show_page(interaction, self.page)
+
+
+class PriorityPicker(discord.ui.View):
+    """Tres botones para elegir la prioridad de una tarea que llegó sin ella.
+
+    Solo los pulsa quien la apunta. Sin elegir en `PICK_TIMEOUT` segundos, se
+    apunta como media. La tarea no se guarda hasta entonces: si el bot se
+    reinicia en medio, se pierde y hay que volver a escribirla.
+
+    Args:
+        prompt: La interacción de `/lista` cuya respuesta privada es esta
+            pregunta, o `None` con `.lista`, que guarda su mensaje en `message`.
+    """
+
+    def __init__(
+        self,
+        cog: Lista,
+        author: discord.Member,
+        channel: discord.abc.Messageable,
+        text: str,
+        prompt: discord.Interaction | None = None,
+    ) -> None:
+        super().__init__(timeout=PICK_TIMEOUT)
+        self.cog, self.author, self.channel, self.text = cog, author, channel, text
+        self.prompt = prompt
+        self.message: discord.Message | None = None
+        # Un clic y el fin del plazo pueden llegar juntos: solo apunta el primero.
+        self.done = False
+        for priority in Priority:
+            button: discord.ui.Button = discord.ui.Button(
+                label=priority.label.capitalize(),
+                emoji=priority.emoji,
+                style=discord.ButtonStyle.secondary,
+            )
+            button.callback = partial(self.choose, priority)  # type: ignore[method-assign]
+            self.add_item(button)
+
+    async def choose(self, priority: Priority, interaction: discord.Interaction) -> None:
+        """Clic en una prioridad: apunta la tarea y quita la pregunta."""
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message(
+                "Esa tarea no es tuya: apunta las tuyas con `/lista`.", ephemeral=True
+            )
+            return
+        if self.done:
+            return
+        self.done = True
+        self.stop()
+        # Apuntar espera al candado y escribe: se acepta el clic antes.
+        await ack(interaction)
+        await self._finish(priority, interaction)
+
+    async def on_timeout(self) -> None:
+        if self.done:
+            return
+        self.done = True
+        await self._finish(DEFAULT_PRIORITY, self.prompt)
+
+    async def _finish(self, priority: Priority, answer: discord.Interaction | None) -> None:
+        """Apunta la tarea y quita la pregunta (o la cambia por el error)."""
+        error = await self.cog.save(self.author, self.channel, self.text, priority)
+        try:
+            if self.message is not None:
+                if error:
+                    await self.message.edit(content=error, view=None)
+                else:
+                    await self.message.delete()
+            elif answer is not None:
+                text = error or f"{priority.emoji} Apuntada con prioridad {priority.label}."
+                await edit(answer, content=text, view=None)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            # Alguien borró la pregunta: la tarea ya está apuntada igual.
+            pass
 
 
 class Lista(commands.Cog):
@@ -151,10 +284,10 @@ class Lista(commands.Cog):
         self._locks: dict[int, asyncio.Lock] = {}
 
     async def cog_load(self) -> None:
-        self.bot.add_dynamic_items(DoneSelect)
+        self.bot.add_dynamic_items(DoneSelect, PageButton)
 
     async def cog_unload(self) -> None:
-        self.bot.remove_dynamic_items(DoneSelect)
+        self.bot.remove_dynamic_items(DoneSelect, PageButton)
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
         return self._locks.setdefault(guild_id, asyncio.Lock())
@@ -188,12 +321,27 @@ class Lista(commands.Cog):
         await self._delete_old_board(guild.id, keep=message.id)
         await self.repository.set_board(guild.id, message.channel.id, message.id)
 
-    async def _add(
-        self, guild: discord.Guild, author: discord.Member, raw: str, priority: Priority | None
-    ) -> Task:
-        """Valida y apunta una tarea. Lanza `TaskError` con el motivo si no se puede."""
-        text, chosen = parse_task(raw, priority)
-        return await self.repository.add_task(guild.id, author.id, text, chosen)
+    async def save(
+        self,
+        author: discord.Member,
+        channel: discord.abc.Messageable,
+        text: str,
+        priority: Priority,
+    ) -> str | None:
+        """Apunta una tarea ya validada y publica la lista en `channel`.
+
+        Returns:
+            El motivo si no se pudo apuntar (lista llena), o `None`.
+        """
+        guild = author.guild
+        async with self._lock(guild.id):
+            try:
+                task = await self.repository.add_task(guild.id, author.id, text, priority)
+            except TaskError as error:
+                return str(error)
+            await self._publish(guild, channel, self._added_note(author, task))
+        await logros.track(self.bot, guild.id, author, channel, StatDelta(add={"todo_added": 1}))
+        return None
 
     @staticmethod
     def _added_note(author: discord.Member, task: Task) -> str:
@@ -201,10 +349,15 @@ class Lista(commands.Cog):
         text = discord.utils.escape_markdown(task.text)
         return f"➕ **{name}** apuntó {task.priority.emoji} «{text}»."
 
-    # -- Tachar ----------------------------------------------------------------------
+    @staticmethod
+    def _ask_priority(author: discord.Member, text: str) -> str:
+        name = discord.utils.escape_markdown(author.display_name)
+        return f"**{name}**, ¿qué prioridad tiene «{discord.utils.escape_markdown(text)}»?"
+
+    # -- Tachar y pasar página -------------------------------------------------------
 
     async def complete_from_menu(
-        self, interaction: discord.Interaction, task_ids: list[int]
+        self, interaction: discord.Interaction, task_ids: list[int], page: int = 0
     ) -> None:
         """Tacha las tareas elegidas en el menú y actualiza esa misma lista."""
         guild, user = interaction.guild, interaction.user
@@ -235,7 +388,8 @@ class Lista(commands.Cog):
             skipped = len(tasks) - len(allowed)
             if skipped:
                 note = (note or "") + f"\n-# {skipped} no eran suyas y siguen en la lista."
-            embed, view = build_board(guild, await self.repository.list_tasks(guild.id), note)
+            remaining = await self.repository.list_tasks(guild.id)
+            embed, view = build_board(guild, remaining, note, page)
             # Editar el mismo mensaje lo mantiene en su sitio y sin avisos extra.
             await edit(interaction, embed=embed, view=view)
         if done:
@@ -247,12 +401,22 @@ class Lista(commands.Cog):
                 StatDelta(add={"todo_done": len(done)}, peak={"todo_done_batch_max": len(done)}),
             )
 
+    async def show_page(self, interaction: discord.Interaction, page: int) -> None:
+        """Flechas ◀/▶: enseña otra página en el mismo mensaje."""
+        guild = interaction.guild
+        if guild is None:
+            return
+        # Lee la base de datos: se acepta el clic antes.
+        await ack(interaction)
+        embed, view = build_board(guild, await self.repository.list_tasks(guild.id), page=page)
+        await edit(interaction, embed=embed, view=view)
+
     # -- Comandos --------------------------------------------------------------------
 
     @app_commands.command(name="lista", description="Lista de cosas que hacer: apunta o enséñala.")
     @app_commands.describe(
         tarea=f"Qué hay que hacer (máx. {MAX_TASK_LENGTH} caracteres). Vacío: enseña la lista.",
-        prioridad="Alta, media o baja. Por defecto, media.",
+        prioridad="Alta, media o baja. Si no la eliges, te la pregunta.",
     )
     @app_commands.choices(
         prioridad=[
@@ -271,28 +435,33 @@ class Lista(commands.Cog):
         guild, user, channel = interaction.guild, interaction.user, interaction.channel
         if guild is None or not isinstance(user, discord.Member) or channel is None:
             return
-        note = None
-        async with self._lock(guild.id):
-            if tarea is not None:
-                chosen = Priority(prioridad.value) if prioridad is not None else None
-                try:
-                    task = await self._add(guild, user, tarea, chosen)
-                except TaskError as error:
-                    await interaction.response.send_message(str(error), ephemeral=True)
-                    return
-                note = self._added_note(user, task)
-            embed, view = build_board(guild, await self.repository.list_tasks(guild.id), note)
-            kwargs: dict[str, object] = {"embed": embed, "allowed_mentions": NO_MENTIONS}
-            if view is not None:
-                kwargs["view"] = view
-            # La respuesta del slash es la propia lista: así no queda el
-            # «X usó /lista» suelto encima de otro mensaje del bot.
-            await interaction.response.send_message(**kwargs)  # type: ignore[arg-type]
-            message = await interaction.original_response()
-            await self._delete_old_board(guild.id, keep=message.id)
-            await self.repository.set_board(guild.id, message.channel.id, message.id)
-        if tarea is not None:
-            await logros.track(self.bot, guild.id, user, channel, StatDelta(add={"todo_added": 1}))
+        if tarea is None:
+            # Leer la lista y esperar al candado puede pasar de los 3 segundos de
+            # Discord: se acepta antes. La respuesta del slash es la propia lista,
+            # así no queda el «X usó /lista» suelto encima de otro mensaje del bot.
+            await ack(interaction)
+            async with self._lock(guild.id):
+                embed, view = build_board(guild, await self.repository.list_tasks(guild.id))
+                await edit(interaction, embed=embed, view=view, allowed_mentions=NO_MENTIONS)
+                message = await interaction.original_response()
+                await self._delete_old_board(guild.id, keep=message.id)
+                await self.repository.set_board(guild.id, message.channel.id, message.id)
+            return
+        chosen = Priority(prioridad.value) if prioridad is not None else None
+        try:
+            text, priority = parse_task(tarea, chosen)
+        except TaskError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        if priority is None:
+            picker = PriorityPicker(self, user, channel, text, prompt=interaction)
+            await interaction.response.send_message(
+                self._ask_priority(user, text), view=picker, ephemeral=True
+            )
+            return
+        await ack(interaction, new_message=True)
+        error = await self.save(user, channel, text, priority)
+        await edit(interaction, content=error or f"{priority.emoji} Apuntada.")
 
     @commands.command(name="lista")
     @commands.guild_only()
@@ -301,24 +470,30 @@ class Lista(commands.Cog):
         guild, author = ctx.guild, ctx.author
         if guild is None or not isinstance(author, discord.Member):
             return
-        note = None
-        async with self._lock(guild.id):
-            if tarea is not None:
-                try:
-                    task = await self._add(guild, author, tarea, None)
-                except TaskError as error:
-                    await ctx.send(f"{error}\nUso: {USAGE}", allowed_mentions=NO_MENTIONS)
-                    return
-                note = self._added_note(author, task)
-            try:
-                # El texto ya queda en la lista: el mensaje de la orden sobra.
-                await ctx.message.delete()
-            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-                pass
-            await self._publish(guild, ctx.channel, note)
+        text, priority = None, None
         if tarea is not None:
-            await logros.track(
-                self.bot, guild.id, author, ctx.channel, StatDelta(add={"todo_added": 1})
+            try:
+                text, priority = parse_task(tarea)
+            except TaskError as error:
+                await ctx.send(f"{error}\nUso: {USAGE}", allowed_mentions=NO_MENTIONS)
+                return
+        if text is not None and priority is not None:
+            error = await self.save(author, ctx.channel, text, priority)
+            if error:
+                await ctx.send(error, allowed_mentions=NO_MENTIONS)
+                return
+        try:
+            # El texto ya queda en la lista (o en la pregunta): la orden sobra.
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        if text is None:
+            async with self._lock(guild.id):
+                await self._publish(guild, ctx.channel)
+        elif priority is None:
+            picker = PriorityPicker(self, author, ctx.channel, text)
+            picker.message = await ctx.send(
+                self._ask_priority(author, text), view=picker, allowed_mentions=NO_MENTIONS
             )
 
     @commands.Cog.listener()
