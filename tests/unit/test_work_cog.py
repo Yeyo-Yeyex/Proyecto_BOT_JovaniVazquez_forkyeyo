@@ -30,6 +30,7 @@ from bot.services.work import (
     LEGAL_EXTRAS_PER_WEEK,
     MEGAVIRAL,
     ORDINARY_SHIFTS,
+    Contract,
     Mechanic,
     battery_eta,
     rested_at,
@@ -491,18 +492,20 @@ async def test_las_herramientas_de_la_mochila_ayudan_en_el_turno(
 
 
 def test_el_panel_dice_cuando_se_llena_la_bateria() -> None:
-    status = MagicMock(battery=50.0, now=1_000.0)
+    contract = Contract(job="obra", level=1, battery=50.0, battery_at=1_000.0)
+    status = MagicMock(battery=50.0, now=1_000.0, contract=contract)
     note = work_cog.battery_note(status)
-    assert note == f" · llena <t:{int(battery_eta(50.0, BATTERY_MAX, 1_000.0))}:R>"
+    assert note == f" · llena <t:{int(battery_eta(contract, BATTERY_MAX, 1_000.0))}:R>"
     assert "fichar" not in note
     assert work_cog.battery_note(MagicMock(battery=float(BATTERY_MAX), now=0.0)) == " · llena"
 
 
 def test_el_panel_dice_cuando_se_puede_volver_a_fichar() -> None:
-    status = MagicMock(battery=float(BATTERY_MIN), now=1_000.0)
+    contract = Contract(job="obra", level=1, battery=float(BATTERY_MIN), battery_at=1_000.0)
+    status = MagicMock(battery=float(BATTERY_MIN), now=1_000.0, contract=contract)
     note = work_cog.battery_note(status)
-    assert f"vuelves a fichar <t:{int(rested_at(BATTERY_MIN, 1_000.0))}:R>" in note
-    assert f"llena <t:{int(battery_eta(BATTERY_MIN, BATTERY_MAX, 1_000.0))}:R>" in note
+    assert f"vuelves a fichar <t:{int(rested_at(contract, 1_000.0))}:R>" in note
+    assert f"llena <t:{int(battery_eta(contract, BATTERY_MAX, 1_000.0))}:R>" in note
 
 
 async def test_cada_oficio_nuevo_ensena_lo_suyo_en_el_panel(tmp_path: Path) -> None:
@@ -653,3 +656,53 @@ def test_los_turnos_con_hito_se_anuncian_y_los_normales_no() -> None:
     assert work_cog.outcome_announcement("Diego", normal) is None
     rich = MagicMock(exit_payout=1_000_000, bankrupt=False, viral=0.0)
     assert "EXIT" in (work_cog.outcome_announcement("Diego", rich) or "")
+
+
+# -- Familia ------------------------------------------------------------------------------
+
+
+def selects(panel: PalaPanel) -> list[ui.Select]:
+    return [item for item in panel.walk_children() if isinstance(item, ui.Select)]
+
+
+async def test_el_panel_explica_la_familia_y_ofrece_regalos_y_favores(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    text = texts(panel)
+    assert "❤️ Familia: 100/100 · 🏡 **En casa feliz**" in text
+    assert "por hora" in text
+    assert any(b.label == "🎁 Regalos" for b in buttons(panel))
+    family = next(s for s in selects(panel) if s.placeholder and "Familia" in s.placeholder)
+    values = {o.value for o in family.options}
+    assert {"f:tupper", "f:bizum"} <= values
+    assert "f:excusa" not in values  # la excusa va en los marrones
+    assert not any(v.startswith("g:") for v in values)  # sin regalos en la mochila
+    check_limits(panel)
+
+
+def test_los_regalos_de_la_mochila_salen_en_el_desplegable() -> None:
+    contract = Contract(job="obra", level=1, family_used={"flores_mama": 1_000.0})
+    options = work_cog.family_options(contract, frozenset({"flores_mama"}), 1_000.0 + 3600)
+    gift = next(o for o in options if o.value == "g:flores_mama")
+    assert "+10 ❤️" in gift.label and "en 11 h" in (gift.description or "")
+
+
+def test_el_resultado_cuenta_lo_que_costo_la_familia() -> None:
+    text = work_cog.family_change(80, 69, [("turno", -6), ("madrugada", -5)])
+    assert text == "❤️ 69/100 (−11: turno −6, madrugada −5)"
+
+
+async def test_en_un_marron_se_puede_tirar_de_excusa(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "obra")
+    event = work_cog.EVENT_BY_KEY["quedarse"]
+    panel.pending_event = event
+    panel._show_after("Turno", event)
+    excuse = next(b for b in buttons(panel) if "Me llama mi madre" in b.label)
+    await excuse.callback(make_interaction())
+    assert panel.pending_event is None
+    assert "me llama mi madre" in texts(panel)

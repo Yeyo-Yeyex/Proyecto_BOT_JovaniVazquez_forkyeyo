@@ -123,6 +123,7 @@ from bot.services.slots import Spin
 from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
 from bot.services.work import (
+    FAMILY_TIERS,
     FLOP_BELOW,
     MAX_COFFEES,
     MEGAVIRAL,
@@ -5079,6 +5080,40 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "madre_discord", "Tu madre se enteró de que existes por Discord",
          "Deja la familia a 0.", R, True),
         (3, "intervencion", "Intervención familiar", "Deja la familia a 0 tres veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_happy_shifts", [
+        (25, "conciliacion", "Conciliación", "Ficha 25 turnos con la familia en casa feliz.", R),
+        (200, "conciliacion_real", "Conciliación de la de verdad",
+         "Ficha 200 turnos con la familia en casa feliz.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_gifts", [
+        (1, "un_detalle", "Un detalle", "Dale un regalo a tu familia desde `pala`.", C),
+        (10, "floristeria", "Cliente fijo de la floristería", "Dale 10 regalos a tu familia.", R),
+        (50, "paz_a_plazos", "La paz en casa, a plazos", "Dale 50 regalos a tu familia.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_gift_finde_sur", [
+        (1, "todo_incluido", "Pulserita de todo incluido",
+         "Llévate a la familia un finde al sur.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favors", [
+        (1, "mama_favor", "Mamá, ¿me haces un favor?", "Pídele un favor a tu familia.", C),
+        (25, "familia_primero", "La familia es lo primero (para pedir)",
+         "Pídele 25 favores a tu familia.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favor_bizum", [
+        (1, "bizum_mama", "Bizum de mamá", "Pídele a tu madre que te adelante un sueldo.", C),
+        (5, "banco_mama", "El banco de mamá, sin comisiones",
+         "Pídele el Bizum a tu madre 5 veces.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favor_excusa", [
+        (1, "me_llama", "Me llama mi madre", "Líbrate de un marrón con la excusa familiar.", C),
+        (10, "excusas_manual", "Excusas de manual", "Líbrate de 10 marrones con la excusa.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favor_cubre", [
+        (1, "fiebre", "El niño tiene fiebre", "Que tu madre te cubra el saliente de guardia.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favor_tupper", [
+        (10, "lentejas", "Lentejas de los lunes", "Cómete 10 tuppers de tu madre.", R),
     ])  # fmt: skip
     a.append(Achievement(
         id="ochenta_horas", name="80 horas al año, ja",
@@ -10633,6 +10668,8 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_accidents"] = 1
     if outcome.intervention:
         add["work_family_zero"] = 1
+    if outcome.family_before >= FAMILY_TIERS[0].low:
+        add["work_happy_shifts"] = 1
     if outcome.fee:
         add["work_fee"] = 1
     if outcome.game.broken:

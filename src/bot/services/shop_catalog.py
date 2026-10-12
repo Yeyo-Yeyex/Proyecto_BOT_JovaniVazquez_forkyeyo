@@ -146,6 +146,12 @@ AISLES: tuple[Aisle, ...] = (
         "Peña de la porra",
         "El bar de las apuestas entre colegas: la porra, la quiniela y el árbitro.",
     ),
+    Aisle(
+        "familia",
+        "🏠",
+        "Detalles para la familia",
+        "Lo que compra la paz en casa: flores, tartas y el finde en el sur.",
+    ),
 )
 #: Pasillo de lo que crean los administradores con `catalogo`.
 HOUSE_AISLE = Aisle("casa", "🏷️", "De la casa", "Lo que añaden los administradores.")
@@ -980,6 +986,31 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("cana_tapa", "porra", "🍺", "Caña con tapa de ensaladilla", 250,
        "Lo que se pide mientras se espera la jugada de otro. La tapa se la puedes dar a "
        "tu mascota.", food=True),
+    # 🏠 Detalles para la familia (efectos en `bot.services.work_catalog.GIFTS`) ---------
+    _t("bombones_mama", "familia", "🍫", "Caja de bombones", 1_000,
+       "Los de la caja con lazo, para quedar bien sin pensar mucho. En `pala`: +6 de "
+       "familia (otra caja, a las 8 h)."),
+    _t("flores_mama", "familia", "💐", "Ramo para tu madre", 1_800,
+       "Del puesto de la plaza, envuelto en papel de estraza. En `pala`: +10 de familia "
+       "(otro ramo, a las 12 h)."),
+    _t("pizza_familiar", "familia", "🍕", "Pizza familiar", 2_200,
+       "Mitad barbacoa, mitad cuatro quesos, para que nadie se queje. En `pala`: +12 de "
+       "familia (otra, a las 12 h)."),
+    _t("tarta_abuela", "familia", "🎂", "Tarta de la abuela", 3_000,
+       "De galletas y chocolate, la de los cumpleaños de toda la vida. En `pala`: +15 de "
+       "familia (otra, al día siguiente)."),
+    _t("juguete_sobrino", "familia", "🧸", "Juguete para el sobrino", 6_000,
+       "El que sale en la tele, con pilas no incluidas. Tu hermana te perdona la "
+       "comunión. En `pala`: +20 de familia (otro, a los 3 días)."),
+    _t("entradas_concierto", "familia", "🎟️", "Entradas para un concierto", 7_000,
+       "Dos, en la grada, para el concierto que tu pareja lleva meses nombrando. En "
+       "`pala`: +20 de familia (otras, a los 3 días)."),
+    _t("cena_guachinche", "familia", "🍷", "Cena en un guachinche", 9_000,
+       "Carne de cabra, papas con mojo y vino del año, con toda la familia. En `pala`: "
+       "+25 de familia (otra, a los 4 días)."),
+    _t("finde_sur", "familia", "🏖️", "Finde en el sur", 30_000,
+       "Dos noches en un hotel de Maspalomas con pulsera de todo incluido. En `pala`: "
+       "+50 de familia (otro, a la semana)."),
 )
 # fmt: on
 
