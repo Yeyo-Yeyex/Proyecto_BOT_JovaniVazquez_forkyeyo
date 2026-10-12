@@ -63,6 +63,11 @@ se lucen: su dueño elige uno en la mochila y sale junto a su nombre en
 pone. Son la forma de que gastar se vea: los más caros son únicos o
 numerados y piden nivel. Uno de cada por persona. No dan dinero ni XP.
 
+**Skins.** Salen de `bot.services.skins`: cada skin es un objeto con la clave
+`skin_<clave>` en el pasillo de su tema, una por persona. Las que se ganan con
+un logro están ocultas (`visible=False`), como las mascotas que aparecen
+solas. Cambian el aspecto de una mesa del casino y nada más.
+
 **Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
 desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
 (`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
@@ -77,6 +82,7 @@ from dataclasses import dataclass
 from bot.services.pets_catalog import SPECIES, Species
 from bot.services.shop import Kind
 from bot.services.shop_uses import USES, Use
+from bot.services.skins import SKINS, Skin
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +262,24 @@ def _title(
         per_user=1,
         min_level=level,
         title=True,
+    )
+
+
+def _skin(skin: Skin) -> CatalogEntry:
+    """El artículo de una skin (oculto si solo se gana con un logro)."""
+    return CatalogEntry(
+        key=skin.catalog_key,
+        kind=Kind.TROPHY,
+        aisle=skin.aisle,
+        emoji=skin.emoji,
+        name=skin.name,
+        price=skin.price,
+        description=skin.description,
+        igic=skin.igic,
+        stock=skin.stock,
+        per_user=1,
+        min_level=skin.min_level,
+        visible=skin.for_sale,
     )
 
 
@@ -933,6 +957,8 @@ CATALOG: tuple[CatalogEntry, ...] = (
 
 #: Las mascotas van detrás, con su artículo generado desde `pets_catalog`.
 CATALOG += tuple(_pet(species) for species in SPECIES)
+#: Y las skins, con el suyo generado desde `skins`.
+CATALOG += tuple(_skin(skin) for skin in SKINS)
 
 CATALOG_BY_KEY: dict[str, CatalogEntry] = {entry.key: entry for entry in CATALOG}
 
@@ -956,6 +982,15 @@ TITLE_KEYS: frozenset[str] = frozenset(entry.key for entry in CATALOG if entry.t
 def is_title(catalog_key: str | None) -> bool:
     """Si un artículo es un título que se luce junto al nombre."""
     return (catalog_key or "") in TITLE_KEYS
+
+
+#: Claves de los artículos que son skins.
+SKIN_KEYS: frozenset[str] = frozenset(skin.catalog_key for skin in SKINS)
+
+
+def is_skin(catalog_key: str | None) -> bool:
+    """Si un artículo es una skin de una mesa del casino."""
+    return (catalog_key or "") in SKIN_KEYS
 
 
 def food_of(catalog_key: str | None) -> bool:

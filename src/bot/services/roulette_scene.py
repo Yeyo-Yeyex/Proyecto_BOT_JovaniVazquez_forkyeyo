@@ -25,6 +25,10 @@ decidido y cobrado cuando se pinta):
 - *El marcador.* Los últimos números, los calientes y los fríos del servidor
   (`roulette.hot_cold`), como las pantallas de las mesas de casino.
 
+**Skins.** El tapete (fieltro, fibras, filete y contorno del título) sale de
+la skin de quien juega (`bot.services.skins`, juego `ruleta`), que llega en
+`meta.skin`. La escena repinta el fondo solo cuando cambia de skin.
+
 La misma escena se pinta de tres maneras, de mejor a peor:
 
 1. **Node con Skia** (`bot.services.node_scene`): sin navegador y con los
@@ -56,7 +60,7 @@ from typing import Any
 
 from PIL import Image
 
-from bot.services import browser_scene
+from bot.services import browser_scene, skins
 from bot.services.browser_scene import BrowserScene
 from bot.services.node_scene import NodeScene, patch_png
 from bot.services.roulette import (
@@ -71,6 +75,8 @@ from bot.services.roulette_render import SPIN_SECONDS, WheelRenderer
 from bot.utils.gif import local_palette_gif
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "ruleta" / "escena.html"
+#: Clave del juego en `skins.GAMES`: la skin cambia el tapete.
+GAME = "ruleta"
 #: Tamaño de la imagen, el mismo que la moneda y los dados.
 W, H = 640, 360
 
@@ -489,25 +495,47 @@ class RouletteScene:
         await self.painter.close()
         await self.browser.close()
 
-    async def _frames(self, states: list[dict[str, Any]], seed: int) -> list[dict[str, Any]] | None:
-        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador."""
-        meta = {**meta_state(), "seed": seed}
+    async def _frames(
+        self, states: list[dict[str, Any]], seed: int, skin: dict[str, object] | None = None
+    ) -> list[dict[str, Any]] | None:
+        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador.
+
+        Args:
+            skin: Colores del tapete (`skins.params("ruleta", …)`); `None`, los de serie.
+        """
+        meta = {**meta_state(), "seed": seed, "skin": skin or skins.params(GAME)}
         patches = await self.painter.render(meta, states)
         if patches is None:
             patches = await self.browser.render(meta, states)
         return patches
 
-    async def board(self, history: Sequence[int], wagers: Sequence[Wager] = ()) -> bytes:
-        """PNG de la mesa recién abierta."""
-        patches = await self._frames([board_state(history, wagers)], seed=0)
+    async def board(
+        self,
+        history: Sequence[int],
+        wagers: Sequence[Wager] = (),
+        *,
+        skin: dict[str, object] | None = None,
+    ) -> bytes:
+        """PNG de la mesa recién abierta, con el tapete de `skin`."""
+        patches = await self._frames([board_state(history, wagers)], seed=0, skin=skin)
         if patches is None:
             return await asyncio.to_thread(self.fallback.idle_png)
         return patch_png(patches[0])
 
-    async def spin(self, outcome: RoundOutcome, *, history: Sequence[int], seed: int) -> Media:
-        """GIF de la tirada, su PNG final y lo que dura hasta el cartel."""
+    async def spin(
+        self,
+        outcome: RoundOutcome,
+        *,
+        history: Sequence[int],
+        seed: int,
+        skin: dict[str, object] | None = None,
+    ) -> Media:
+        """GIF de la tirada, su PNG final y lo que dura hasta el cartel, con el tapete de `skin`.
+
+        Pillow no conoce las skins: si se dibuja con él, sale el de siempre.
+        """
         states = spin_states(outcome, history=history, seed=seed)
-        patches = await self._frames(states, seed)
+        patches = await self._frames(states, seed, skin)
         if patches is None:
             media = await asyncio.to_thread(self.fallback.media, outcome.pocket)
             return Media(gif=media.gif, png=media.png, seconds=SPIN_SECONDS)

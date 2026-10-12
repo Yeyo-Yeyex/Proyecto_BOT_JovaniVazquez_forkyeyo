@@ -897,8 +897,11 @@ class Achievements(commands.Cog):
         ids: list[str],
         channel: discord.abc.Messageable | None,
     ) -> None:
-        """Paga los logros (con IRPF) y los anuncia en `channel`."""
+        """Paga los logros (con IRPF), da sus skins y los anuncia en `channel`."""
+        from bot.cogs import shop as tienda  # evita el import circular
+
         income = await self._pay(guild_id, user_id, ids)
+        skins = await tienda.grant_reward_skins(self.bot, guild_id, user_id, ids)
         if channel is None:
             return
         guild = self.bot.get_guild(guild_id)
@@ -906,6 +909,9 @@ class Achievements(commands.Cog):
         name = member.display_name if member is not None else f"Miembro {user_id}"
         avatar = member.display_avatar.url if member is not None else None
         embed = unlock_embed(name, avatar, ids, income)
+        if skins:
+            gifts = ", ".join(f"**{skin.label}**" for skin in skins)
+            embed.description = f"{embed.description}\n🎨 De regalo, en la mochila: {gifts}."
         if pet := await mascotas.cameo(self.bot, guild_id, user_id, Moment(Event.ACHIEVEMENT)):
             embed.description = f"{embed.description}\n{pet}"
         try:

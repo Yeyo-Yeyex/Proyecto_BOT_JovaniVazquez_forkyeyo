@@ -149,6 +149,8 @@ PRODUCED_STATS = {
     "shop_broke_buy", SHOP_AISLES_STAT, *(f"shop_key_{key}" for key in SHOP_TRACKED_KEYS),
     # Títulos (cogs/shop.py: shop_stats al comprar y shop_title_stats en la mochila)
     "shop_titles", "shop_title_swaps", "shop_title_off",
+    # Skins (cogs/shop.py: shop_stats al comprar y shop_skin_stats al cambiarla)
+    "shop_skins", "shop_skin_swaps",
     # Usar objetos (cogs/shop.py: shop_use_stats y shop_hit_stats)
     "shop_uses", SHOP_USE_KINDS_STAT, *(f"shop_used_{key}" for key in SHOP_USES),
     "shop_consumed", "shop_use_targeted", "shop_use_self", "shop_use_bot", "shop_use_hits",

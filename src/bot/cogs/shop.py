@@ -58,6 +58,7 @@ import random
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import discord
@@ -68,8 +69,10 @@ from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
+from bot.services import skins as skins_registry
 from bot.services.achievements import (
     shop_hit_stats,
+    shop_skin_stats,
     shop_stats,
     shop_title_stats,
     shop_use_stats,
@@ -80,7 +83,7 @@ from bot.services.economy import (
     InsufficientFundsError,
     format_amount,
 )
-from bot.services.levels import calculate_level_progress
+from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.pets import Event, Moment
 from bot.services.pets_catalog import species_of
 from bot.services.shop import (
@@ -104,10 +107,12 @@ from bot.services.shop_catalog import (
     AISLES,
     CATALOG,
     HOUSE_AISLE,
+    SKIN_KEYS,
     TITLE_KEYS,
     CatalogEntry,
     aisle_of,
     food_of,
+    is_skin,
     is_title,
     use_of,
 )
@@ -123,6 +128,9 @@ from bot.services.shop_uses import (
     pick_mystery,
     resolve,
 )
+from bot.services.skins import GAMES, SKIN_BY_KEY, Skin, in_season, rewards_for, skin_of_item
+from bot.services.skins import params as skin_params_of
+from bot.services.skins import skins_of as game_skins
 from bot.services.taxes import TAX_COLLECTOR
 from bot.services.work_tools import TOOL_BY_KEY
 from bot.utils.cogs import find_cog
@@ -197,6 +205,7 @@ TABS: tuple[tuple[str, str], ...] = (
     ("mascota", "🐾 Mascotas"),
     ("objeto", "💎 Vitrina"),
     ("uso", "🫳 Para usar"),
+    ("skin", "🎨 Skins"),
 )
 #: Valor del desplegable de títulos para quitárselo.
 NO_TITLE = "-"
@@ -224,6 +233,17 @@ def _button(
 # -- Textos ---------------------------------------------------------------------------
 
 
+def local_now(epoch: float) -> datetime:
+    """La hora de Canarias en `epoch`: la que manda en las temporadas."""
+    return datetime.fromtimestamp(epoch, TIMEZONE)
+
+
+def on_sale(item: ShopItem, when: datetime) -> bool:
+    """Si un artículo se vende ahora: las skins de temporada, solo en sus meses."""
+    skin = skin_of_item(item.catalog_key)
+    return skin is None or in_season(skin, when)
+
+
 def kind_detail(item: ShopItem) -> str:
     """Qué es el artículo, en pocas palabras."""
     if item.kind is Kind.ROLE:
@@ -242,16 +262,23 @@ def kind_detail(item: ShopItem) -> str:
         return f"🛠️ Herramienta de `pala`: {tool.effect}"
     if is_title(item.catalog_key):
         return "🎖️ Título: se luce junto a tu nombre"
+    if (skin := skin_of_item(item.catalog_key)) is not None:
+        game = GAMES[skin.game]
+        season = f" · 🗓️ de {skin.season.name}" if skin.season else ""
+        return f"🎨 Skin de {game.label}: cambia el {game.thing}{season}"
     return "Coleccionable"
 
 
 def in_tab(item: ShopItem, tab: str) -> bool:
     """Si un artículo sale en una pestaña del escaparate."""
     usable = use_of(item.catalog_key) is not None
+    skin = is_skin(item.catalog_key)
     if tab == "uso":
         return usable
+    if tab == "skin":
+        return skin
     if tab == "objeto":
-        return item.kind is Kind.TROPHY and not usable
+        return item.kind is Kind.TROPHY and not usable and not skin
     return tab == "todo" or item.kind.value == tab
 
 
@@ -368,6 +395,21 @@ def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
     return lines
 
 
+def skin_lines(entries: list[InventoryEntry]) -> list[str]:
+    """Las skins de la mochila, por juego, con la que lleva puesta cada uno."""
+    lines = []
+    for game in GAMES.values():
+        mine = [e for e in entries if (k := skin_of_item(e.catalog_key)) and k.game == game.key]
+        if not mine:
+            continue
+        worn = max((e.id for e in mine if e.equipped), default=None)
+        names = [f"**{e.emoji} {e.name}**" + (" *(puesta)*" if e.id == worn else "") for e in mine]
+        if worn is None:
+            names.append("*de serie (puesta)*")
+        lines.append(f"{game.label}: " + " · ".join(names))
+    return lines
+
+
 def _usable(entry: InventoryEntry) -> bool:
     return entry.kind is Kind.TROPHY and use_of(entry.catalog_key) is not None
 
@@ -429,11 +471,13 @@ class Storefront(ui.LayoutView):
     @property
     def shown(self) -> list[ShopItem]:
         """Artículos de la pestaña y el pasillo elegidos."""
+        when = local_now(self.cog.clock())
         return [
             i
             for i in self.items_all
             if in_tab(i, self.tab)
             and (self.aisle is None or aisle_of(i.catalog_key).key == self.aisle)
+            and on_sale(i, when)
         ]
 
     @property
@@ -725,7 +769,9 @@ def backpack_text(entries: list[InventoryEntry], now: float) -> str:
     """Lo que hay en una mochila, por tipos, en texto (mochila y `perfil`)."""
     sections = []
     for kind in Kind:
-        mine = [e for e in entries if e.kind is kind and not _usable(e)]
+        mine = [
+            e for e in entries if e.kind is kind and not _usable(e) and not is_skin(e.catalog_key)
+        ]
         if not mine:
             continue
         lines = (
@@ -739,9 +785,54 @@ def backpack_text(entries: list[InventoryEntry], now: float) -> str:
     usable = [e for e in entries if _usable(e)]
     if usable:
         sections.append("### 🫳 Para usar\n" + "\n".join(trophy_lines(usable)))
+    if skins := skin_lines(entries):
+        sections.append("### 🎨 Skins\n" + "\n".join(skins))
     if not sections:
         sections.append("Vacía. Date una vuelta por la `tienda`, que hay cositas.")
     return _clip("\n\n".join(sections), 3800)
+
+
+def skin_options(
+    entries: list[InventoryEntry], game: str | None = None
+) -> list[discord.SelectOption]:
+    """Opciones para elegir skin: por juego, la de serie y las que tiene.
+
+    El valor es `juego:clave` (`ruleta:` para la de serie). Con `game`, solo
+    las de ese juego (el botón 🎨 de una mesa).
+    """
+    options: list[discord.SelectOption] = []
+    for g in GAMES.values():
+        if game is not None and g.key != game:
+            continue
+        mine = [e for e in entries if (k := skin_of_item(e.catalog_key)) and k.game == g.key]
+        if not mine:
+            continue
+        worn = max((e.id for e in mine if e.equipped), default=None)
+        options.append(
+            discord.SelectOption(
+                label=f"{g.name}: de serie"[:100],
+                value=f"{g.key}:",
+                emoji=_select_emoji(g.emoji),
+                default=worn is None,
+            )
+        )
+        for e in mine:
+            skin = skin_of_item(e.catalog_key)
+            assert skin is not None  # filtrado arriba
+            options.append(
+                discord.SelectOption(
+                    label=f"{g.name}: {e.name}"[:100],
+                    value=f"{g.key}:{skin.key}",
+                    emoji=_select_emoji(e.emoji),
+                    default=e.id == worn,
+                )
+            )
+    # Un desplegable admite 25 opciones y una sola marcada por defecto.
+    options = options[:25]
+    marked = [o for o in options if o.default]
+    for extra in marked[1:]:
+        extra.default = False
+    return options
 
 
 class Backpack(ui.LayoutView):
@@ -854,6 +945,17 @@ class Backpack(ui.LayoutView):
             title_row.add_item(title_select)
             self.add_item(title_row)
 
+        if self.viewer.id == self.member.id and (options := skin_options(self.entries)):
+            skin_select: ui.Select = ui.Select(placeholder="🎨 Cambiar una skin", options=options)
+
+            async def skin_callback(interaction: discord.Interaction) -> None:
+                await self.cog.choose_skin(interaction, skin_select.values[0], backpack=self)
+
+            skin_select.callback = skin_callback  # type: ignore[method-assign]
+            skin_row: ui.ActionRow = ui.ActionRow()
+            skin_row.add_item(skin_select)
+            self.add_item(skin_row)
+
     def _role_name(self, entry: InventoryEntry) -> str | None:
         role = self.guild.get_role(entry.role_id or 0)
         return role.name if role else None
@@ -927,6 +1029,45 @@ class UseTextForm(ui.Modal):
         )
 
 
+class SkinPicker(ui.View):
+    """Selector privado de skin que abre el botón 🎨 de una mesa."""
+
+    def __init__(self, cog: Tienda, options: list[discord.SelectOption], game: object) -> None:
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        select: ui.Select = ui.Select(placeholder="🎨 Elige", options=options)
+
+        async def callback(interaction: discord.Interaction) -> None:
+            self.stop()
+            await self.cog.choose_skin(interaction, select.values[0])
+
+        select.callback = callback  # type: ignore[method-assign]
+        self.select = select
+        self.add_item(select)
+
+
+def skin_button(bot: commands.Bot, game: str, *, row: int | None = None) -> ui.Button | None:
+    """El botón 🎨 para poner en una mesa de `game`, o `None` si no tiene skins.
+
+    El juego lo añade a su vista; el clic abre el selector privado
+    (`Tienda.open_skin_picker`). Sin la tienda cargada, no hay botón.
+    """
+    if game not in GAMES or not game_skins(game) or find_cog(bot, Tienda) is None:
+        return None
+    button: ui.Button = ui.Button(
+        emoji="🎨", style=discord.ButtonStyle.secondary, row=row, custom_id=f"{game}:skin"
+    )
+
+    async def callback(interaction: discord.Interaction) -> None:
+        if (cog := find_cog(bot, Tienda)) is None:
+            await notify(interaction, "La tienda está cerrada ahora mismo.")
+            return
+        await cog.open_skin_picker(interaction, game)
+
+    button.callback = callback  # type: ignore[method-assign]
+    return button
+
+
 # -- Cog ------------------------------------------------------------------------------
 
 
@@ -961,16 +1102,23 @@ class Tienda(commands.Cog):
         #: Título que luce cada `(servidor, miembro)`, ya con su emoji. En memoria
         #: para que `fortunas` y `ranking` no lean la base de datos por cada nombre.
         self.titles: dict[tuple[int, int], str] = {}
+        #: Skin que lleva cada `(servidor, miembro, juego)`: su clave de `skins`.
+        #: Sin entrada, la de serie. En memoria para no leer la base de datos al
+        #: pintar cada tirada.
+        self.skins: dict[tuple[int, int, str], str] = {}
 
     async def cog_load(self) -> None:
-        """Carga los potenciadores en curso y los títulos puestos, y arranca la caducidad."""
+        """Carga potenciadores, títulos y skins puestos, y arranca la caducidad."""
         # Idempotente: el bot ya lo hace en `setup_hook`, pero así el cog se
         # puede cargar solo (pruebas, recarga en caliente).
         await self.repository.initialize()
         for guild_id, user_id, start, end, pct in await self.repository.active_boosts(self.clock()):
             self.boosts[(guild_id, user_id)].append((start, end, pct))
-        for guild_id, user_id, emoji, name in await self.repository.worn_titles(TITLE_KEYS):
+        for guild_id, user_id, _key, emoji, name in await self.repository.worn_among(TITLE_KEYS):
             self.titles[(guild_id, user_id)] = f"{emoji} {name}"
+        for guild_id, user_id, key, _emoji, _name in await self.repository.worn_among(SKIN_KEYS):
+            if (skin := skin_of_item(key)) is not None:
+                self.skins[(guild_id, user_id, skin.game)] = skin.key
         self._expire.start()
 
     async def cog_unload(self) -> None:
@@ -1010,7 +1158,7 @@ class Tienda(commands.Cog):
 
     async def wear_title(self, guild_id: int, user_id: int, catalog_key: str | None) -> None:
         """Le pone a un miembro el título `catalog_key` (o se lo quita con `None`)."""
-        await self.repository.wear_title(guild_id, user_id, catalog_key, TITLE_KEYS)
+        await self.repository.wear_one(guild_id, user_id, catalog_key, TITLE_KEYS)
         entries = await self.repository.inventory(guild_id, user_id, self.clock())
         worn = next((e for e in entries if e.catalog_key == catalog_key), None)
         if catalog_key is None or worn is None:
@@ -1040,6 +1188,135 @@ class Tienda(commands.Cog):
                 interaction.channel,
                 shop_title_stats(worn=after is not None),
             )
+
+    # -- Skins -----------------------------------------------------------------------
+
+    def skin(self, guild_id: int, user_id: int, game: str) -> Skin | None:
+        """La skin que lleva un miembro en `game`, o `None` (la de serie)."""
+        key = self.skins.get((guild_id, user_id, game))
+        return SKIN_BY_KEY.get(key) if key else None
+
+    async def wear_skin(self, guild_id: int, user_id: int, game: str, skin: Skin | None) -> None:
+        """Le pone a un miembro la skin `skin` en `game` (la de serie con `None`)."""
+        keys = [s.catalog_key for s in game_skins(game)]
+        await self.repository.wear_one(guild_id, user_id, skin.catalog_key if skin else None, keys)
+        if skin is None:
+            self.skins.pop((guild_id, user_id, game), None)
+        else:
+            self.skins[(guild_id, user_id, game)] = skin.key
+
+    async def sync_reward_skins(
+        self, guild_id: int, user_id: int, achievement_ids: list[str] | set[str]
+    ) -> list[Skin]:
+        """Mete en la mochila las skins que regalan estos logros y le faltan.
+
+        Se llama al desbloquear un logro y al abrir la mochila (así llegan
+        también las skins nuevas de logros que ya se tenían). Devuelve las
+        que ha dado.
+        """
+        rewards = rewards_for(set(achievement_ids))
+        if not rewards:
+            return []
+        now = self.clock()
+        owned = {e.catalog_key for e in await self.repository.inventory(guild_id, user_id, now)}
+        given = []
+        for skin in rewards:
+            if skin.catalog_key in owned:
+                continue
+            await self.stock_up(guild_id)
+            item = await self.repository.item_by_key(guild_id, skin.catalog_key)
+            if item is None:
+                continue
+            await self.repository.grant(guild_id, user_id, item, now)
+            given.append(skin)
+        return given
+
+    async def claim_reward_skins(self, guild_id: int, user_id: int) -> None:
+        """Da las skins de logros que ya tenía y le faltan (al abrir la mochila o el 🎨).
+
+        Si ninguna skin se gana con logros, ni mira los logros: abrir la mochila
+        no paga una lectura de más.
+        """
+        if any(skin.achievement for skin in skins_registry.SKINS):
+            await self.sync_reward_skins(guild_id, user_id, await self._unlocked(guild_id, user_id))
+
+    async def _unlocked(self, guild_id: int, user_id: int) -> set[str]:
+        """Logros que tiene un miembro, para las skins que se ganan con ellos."""
+        from bot.cogs.achievements import Achievements  # evita el import circular
+
+        cog = find_cog(self.bot, Achievements)
+        if cog is None:
+            return set()
+        return set((await cog.fresh_profile(guild_id, user_id)).unlocked)
+
+    async def choose_skin(
+        self,
+        interaction: discord.Interaction,
+        value: str,
+        *,
+        backpack: Backpack | None = None,
+    ) -> None:
+        """Cambia la skin de un juego (`juego:clave`; `juego:` para la de serie).
+
+        Desde la mochila la repinta; desde el botón 🎨 de una mesa contesta en
+        el mensaje privado del selector.
+        """
+        member = interaction.user
+        guild = interaction.guild
+        game, _sep, key = value.partition(":")
+        if guild is None or game not in GAMES:
+            await notify(interaction, "Esa skin ya no existe.")
+            return
+        # Comprobar la mochila y guardarlo van a la base de datos: se acepta antes.
+        await ack(interaction)
+        skin = SKIN_BY_KEY.get(key) if key else None
+        if skin is not None:
+            owned = await self.repository.inventory(guild.id, member.id, self.clock())
+            if not any(e.catalog_key == skin.catalog_key for e in owned):
+                await notify(interaction, "Esa skin no está en tu mochila.")
+                return
+        before = self.skin(guild.id, member.id, game)
+        await self.wear_skin(guild.id, member.id, game, skin)
+        label = skin.label if skin else f"{GAMES[game].thing} de serie"
+        if backpack is not None:
+            backpack.entries = await self.repository.inventory(guild.id, member.id, self.clock())
+            backpack.rebuild()
+            await edit(interaction, view=backpack, allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await edit(
+                interaction,
+                content=f"🎨 Listo: en {GAMES[game].label} verás **{label}** en la próxima jugada.",
+                view=None,
+            )
+        if before != skin:
+            await logros.track(
+                self.bot, guild.id, member, interaction.channel, shop_skin_stats(swapped=True)
+            )
+
+    async def open_skin_picker(self, interaction: discord.Interaction, game: str) -> None:
+        """El botón 🎨 de una mesa: elige tu skin de `game` en un mensaje privado."""
+        guild = interaction.guild
+        if guild is None or game not in GAMES:
+            await notify(interaction, "Aquí no hay skins que elegir.")
+            return
+        # Leer la mochila va a la base de datos: «pensando…» privado mientras tanto.
+        await ack(interaction, new_message=True)
+        member = interaction.user
+        await self.claim_reward_skins(guild.id, member.id)
+        entries = await self.repository.inventory(guild.id, member.id, self.clock())
+        options = skin_options(entries, game)
+        g = GAMES[game]
+        if not options:
+            await edit(
+                interaction,
+                content=(
+                    f"🎨 No tienes ningún {g.thing} para {g.label}. Mira la pestaña "
+                    "🎨 Skins de la `tienda`."
+                ),
+            )
+            return
+        picker = SkinPicker(self, options, g)
+        await edit(interaction, content=f"🎨 ¿Qué {g.thing} quieres en {g.label}?", view=picker)
 
     # -- Comprobaciones --------------------------------------------------------------
 
@@ -1121,7 +1398,13 @@ class Tienda(commands.Cog):
     async def backpack_view(
         self, guild: discord.Guild, member: discord.abc.User, viewer: discord.abc.User
     ) -> Backpack:
-        """Mochila de `member` vista por `viewer`."""
+        """Mochila de `member` vista por `viewer`.
+
+        Antes de leerla, le da las skins de logros que le falten (las de logros
+        que ya tenía cuando la skin llegó al bot).
+        """
+        if viewer.id == member.id:
+            await self.claim_reward_skins(guild.id, member.id)
         entries = await self.repository.inventory(guild.id, member.id, self.clock())
         return Backpack(self, guild, member, viewer, entries)
 
@@ -1346,6 +1629,7 @@ class Tienda(commands.Cog):
             and item.id != box.item_id
             and use_of(item.catalog_key) is None
             and not is_title(item.catalog_key)
+            and not is_skin(item.catalog_key)
         ]
         if not candidates:
             return None
@@ -1431,6 +1715,10 @@ class Tienda(commands.Cog):
         dentro de la transacción (`ShopRepository.reserve`).
         """
         note = None
+        if not on_sale(item, local_now(now)):
+            skin = skin_of_item(item.catalog_key)
+            season = skin.season.name if skin and skin.season else "su temporada"
+            return f"Eso solo se vende en {season}. Vuelve entonces, mi amor.", None
         if item.kind is Kind.ROLE:
             role = guild.get_role(item.role_id or 0)
             if (problem := self.role_problem(guild, role)) is not None:
@@ -1472,6 +1760,10 @@ class Tienda(commands.Cog):
         """
         guild, buyer = view.guild, view.buyer
         now = self.clock()
+        if not on_sale(view.item, local_now(now)):
+            # La caja se abrió en temporada y se ha pagado fuera: no se cobra.
+            view.failed, view.result = True, "❌ Se acabó la temporada de esa skin."
+            return None
         level = await self.member_level(guild.id, buyer.id) if view.item.min_level else 0
         try:
             (item, sale), balance = await self.economy.purchase(
@@ -1576,6 +1868,12 @@ class Tienda(commands.Cog):
                 got += f" Úsalo desde la mochila ({use.verb.lower()})."
             if is_title(item.catalog_key):
                 got += " Ya lo luces junto a tu nombre; lo cambias en la mochila."
+            if (skin := skin_of_item(item.catalog_key)) is not None:
+                game = GAMES[skin.game]
+                got += (
+                    f" Ya la llevas puesta en {game.label}; la cambias en la mochila o con "
+                    "el botón 🎨 de la mesa."
+                )
         lines = [
             "### ✅ ¡Wepa! Es tuyo",
             got,
@@ -1604,6 +1902,10 @@ class Tienda(commands.Cog):
         """Aviso público, aviso de la Renta y logros, después de enseñar la factura."""
         item, sale, balance = paid
         title = is_title(item.catalog_key)
+        skin = skin_of_item(item.catalog_key)
+        if skin is not None:
+            # Comprar una skin te la pone en su juego.
+            await self.wear_skin(view.guild.id, view.buyer.id, skin.game, skin)
         if title:
             # Comprar un título te lo pone, antes de anunciarlo.
             await self.wear_title(view.guild.id, view.buyer.id, item.catalog_key)
@@ -1651,6 +1953,7 @@ class Tienda(commands.Cog):
                 catalog_key=item.catalog_key,
                 aisle=aisle_of(item.catalog_key).key,
                 title=title,
+                skin=skin is not None,
             ),
         )
 
@@ -1703,6 +2006,8 @@ class Tienda(commands.Cog):
             del self.boosts[key]
         for key in [k for k in self.titles if k[0] == guild.id]:
             del self.titles[key]
+        for skin_key in [k for k in self.skins if k[0] == guild.id]:
+            del self.skins[skin_key]
 
     # -- Comandos --------------------------------------------------------------------
 
@@ -1775,6 +2080,35 @@ def title_of(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
     if (cog := find_cog(bot, Tienda)) is not None:
         return cog.title(guild_id, user_id)
     return None
+
+
+def skin_of(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> Skin | None:
+    """La skin que lleva un miembro en `game`, o `None` (la de serie). De memoria."""
+    if (cog := find_cog(bot, Tienda)) is not None:
+        return cog.skin(guild_id, user_id, game)
+    return None
+
+
+def skin_params(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> dict[str, object]:
+    """Lo que la escena de `game` tiene que pintar para este miembro.
+
+    Los parámetros de serie con los de su skin encima (`skins.params`). Si la
+    tienda no está cargada, los de serie: el juego nunca se queda sin dibujo.
+    """
+    return skin_params_of(game, skin_of(bot, guild_id, user_id, game))
+
+
+async def grant_reward_skins(
+    bot: commands.Bot, guild_id: int, user_id: int, achievement_ids: list[str]
+) -> list[Skin]:
+    """Da las skins que regalan estos logros recién desbloqueados (`achievements`)."""
+    if (cog := find_cog(bot, Tienda)) is None:
+        return []
+    try:
+        return await cog.sync_reward_skins(guild_id, user_id, achievement_ids)
+    except Exception:
+        logger.exception("No se pudieron dar las skins de logros a %s", user_id)
+        return []
 
 
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:

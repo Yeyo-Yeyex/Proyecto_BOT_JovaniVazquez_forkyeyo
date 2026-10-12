@@ -4722,6 +4722,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_title_swaps", [
         (10, "title_swap_10", "Tratamiento a la carta", "Cambia de título 10 veces.", C),
     ])  # fmt: skip
+    a += _tiers("shop", "shop_skins", [
+        (1, "skin_1", "Mesa a mi gusto", "Compra una skin para una mesa del casino.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_skin_swaps", [
+        (10, "skin_swap_10", "Interiorista de casino", "Cambia de skin 10 veces.", C),
+    ])  # fmt: skip
     a += _tiers("shop", "shop_title_off", [
         (1, "title_off", "Llámame de tú", "Quítate el título y quédate sin ninguno.", C, True),
     ])  # fmt: skip
@@ -9721,6 +9727,7 @@ def shop_stats(
     catalog_key: str | None = None,
     aisle: str | None = None,
     title: bool = False,
+    skin: bool = False,
 ) -> StatDelta:
     """Estadísticas de una compra de la tienda.
 
@@ -9740,6 +9747,7 @@ def shop_stats(
         aisle: Pasillo del colmado del artículo.
         title: Si es un título. Hay uno de cada por persona, así que contar
             compras es contar títulos distintos.
+        skin: Si es una skin de una mesa del casino (también una por persona).
     """
     delta = StatDelta(
         add={"shop_purchases": 1, "shop_spent": total, "shop_igic": tax},
@@ -9760,6 +9768,7 @@ def shop_stats(
     bump("shop_last_unit", last_unit)
     bump("shop_broke_buy", balance_after == 0)
     bump("shop_titles", title)
+    bump("shop_skins", skin)
     if discount_pct:
         delta.peak["shop_discount_max"] = discount_pct
     if kind == "objeto":
@@ -9964,6 +9973,15 @@ def shop_title_stats(*, worn: bool) -> StatDelta:
     if not worn:
         delta.add["shop_title_off"] = 1
     return delta
+
+
+def shop_skin_stats(*, swapped: bool) -> StatDelta:
+    """Estadísticas de quien cambia la skin de una mesa (mochila o botón 🎨).
+
+    Args:
+        swapped: Si ha cambiado de verdad (elegir la que ya llevaba no cuenta).
+    """
+    return StatDelta(add={"shop_skin_swaps": 1} if swapped else {})
 
 
 def shop_hit_stats(*, use: str) -> StatDelta:
