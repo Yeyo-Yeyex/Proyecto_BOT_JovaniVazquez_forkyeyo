@@ -7,6 +7,7 @@ sustituye por dobles mínimos (roles con posición, miembros con `add_roles`).
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -24,6 +25,7 @@ from bot.repositories.economy import (
     STATE_ACCOUNT_ID,
     EconomyRepository,
     InsufficientFundsError,
+    LedgerEntry,
 )
 from bot.repositories.shop import ShopRepository
 from bot.services.achievements import shop_stats
@@ -49,6 +51,7 @@ from bot.services.shop import (
     rental_end,
     split_emoji,
 )
+from bot.services.shop_catalog import CATALOG_BY_KEY
 from bot.services.taxes import IGIC_BY_KEY
 
 GUILD = 1
@@ -805,3 +808,124 @@ async def test_formulario_con_error_lo_explica(tmp_path: Path) -> None:
     await form.on_submit(submit)
     assert "multiplicador" in submit.followup.send.await_args.args[0]
     assert await cog.repository.items(GUILD) == []
+
+
+# -- Títulos ---------------------------------------------------------------------------
+
+#: Dos títulos del surtido, baratos para no tener que dar dinero en cada prueba.
+TITLES = (
+    replace(CATALOG_BY_KEY["verificado"], price=100),
+    replace(CATALOG_BY_KEY["carne_partido"], price=100),
+)
+
+
+async def pay_for(cog: Tienda, guild: MagicMock, member: MagicMock, key: str) -> MagicMock:
+    """Compra un artículo del surtido por la caja y devuelve la interacción de pagar."""
+    await cog.stock_up(GUILD)
+    it = await cog.repository.item_by_key(GUILD, key)
+    assert it is not None
+    opening = make_interaction(member)
+    await cog.open_checkout(opening, it.id)
+    paying = make_interaction(member)
+    await opening.edit_original_response.await_args.kwargs["view"]._pay(paying)
+    return paying
+
+
+def title_select(view: Backpack) -> ui.Select:
+    return next(
+        c for c in view.walk_children()
+        if isinstance(c, ui.Select) and c.placeholder == "🎖️ Qué título luces"
+    )  # fmt: skip
+
+
+async def test_comprar_un_titulo_te_lo_pone_y_lo_anuncia(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=TITLES)
+    guild = make_guild()
+    member = make_member(guild)
+    paying = await pay_for(cog, guild, member, "verificado")
+    assert cog.title(GUILD, BUYER) == "☑️ Cuenta verificada"
+    assert "☑️ **Cuenta verificada**" in paying.followup.send.await_args.args[0]
+    assert not paying.followup.send.await_args.args[0].startswith("📣"), "100 Y$ no es gorda"
+
+    bot = MagicMock()
+    bot.get_cog.return_value = cog
+    assert shop_cog.title_of(bot, GUILD, BUYER) == "☑️ Cuenta verificada"
+    assert shop_cog.title_of(bot, GUILD, OTHER) is None
+    bot.get_cog.return_value = None
+    assert shop_cog.title_of(bot, GUILD, BUYER) is None
+
+
+async def test_el_ultimo_titulo_comprado_es_el_que_se_luce(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=TITLES)
+    guild = make_guild()
+    member = make_member(guild)
+    await pay_for(cog, guild, member, "verificado")
+    await pay_for(cog, guild, member, "carne_partido")
+    assert cog.title(GUILD, BUYER) == "🪪 Carné del partido"
+    entries = await cog.repository.inventory(GUILD, BUYER, NOW)
+    assert [e.catalog_key for e in entries if e.equipped] == ["carne_partido"]
+
+
+async def test_cambiar_y_quitarse_el_titulo_desde_la_mochila(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=TITLES)
+    guild = make_guild()
+    member = make_member(guild)
+    await pay_for(cog, guild, member, "verificado")
+    await pay_for(cog, guild, member, "carne_partido")
+    backpack = await cog.backpack_view(guild, member, member)
+    select = title_select(backpack)
+    assert [o.value for o in select.options if o.default] == ["carne_partido"]
+    assert "lo luces" in texts(backpack)
+
+    await cog.choose_title(make_interaction(member), backpack, "verificado")
+    assert cog.title(GUILD, BUYER) == "☑️ Cuenta verificada"
+    assert [o.value for o in title_select(backpack).options if o.default] == ["verificado"]
+
+    await cog.choose_title(make_interaction(member), backpack, shop_cog.NO_TITLE)
+    assert cog.title(GUILD, BUYER) is None
+    entries = await cog.repository.inventory(GUILD, BUYER, NOW)
+    assert not any(e.equipped for e in entries), "sin título, ninguno queda marcado"
+
+
+async def test_la_mochila_ajena_no_deja_cambiar_el_titulo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=TITLES)
+    guild = make_guild()
+    member = make_member(guild)
+    await pay_for(cog, guild, member, "verificado")
+    other = await cog.backpack_view(guild, member, make_member(guild, OTHER))
+    assert not any(
+        isinstance(c, ui.Select) and c.placeholder == "🎖️ Qué título luces"
+        for c in other.walk_children()
+    )
+
+
+async def test_los_titulos_se_recuperan_al_arrancar(tmp_path: Path) -> None:
+    clock = Clock()
+    cog = await make_cog(tmp_path, clock, catalog=TITLES)
+    guild = make_guild()
+    await pay_for(cog, guild, make_member(guild), "verificado")
+    fresh = Tienda(MagicMock(), cog.economy, cog.repository, clock=clock)
+    fresh._expire = MagicMock()  # sin bucle real en las pruebas
+    await fresh.cog_load()
+    assert fresh.title(GUILD, BUYER) == "☑️ Cuenta verificada"
+
+
+async def test_una_compra_gorda_se_anuncia_con_pregon(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=(CATALOG_BY_KEY["moto_agua"],))
+    await cog.economy.repository.apply(GUILD, BUYER, [LedgerEntry(200_000, "test")])
+    guild = make_guild()
+    member = make_member(guild)
+    cog.member_level = AsyncMock(return_value=99)  # type: ignore[method-assign]
+    paying = await pay_for(cog, guild, member, "moto_agua")
+    announcement = paying.followup.send.await_args.args[0]
+    assert announcement.startswith("📣") and "Moto de agua" in announcement
+    assert cog.title(GUILD, BUYER) is None, "un capricho no es un título"
+
+
+async def test_la_caja_botin_no_regala_titulos(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock(), catalog=(*TITLES, CATALOG_BY_KEY["caja_botin"]))
+    await cog.stock_up(GUILD)
+    box = await cog.repository.item_by_key(GUILD, "caja_botin")
+    assert box is not None
+    entry = await cog.repository.grant(GUILD, BUYER, box, NOW)
+    assert await cog._open_mystery(GUILD, BUYER, "Diego", entry[0], NOW) is None

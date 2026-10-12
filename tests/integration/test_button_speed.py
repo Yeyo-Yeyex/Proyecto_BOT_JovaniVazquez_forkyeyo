@@ -399,6 +399,26 @@ async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_wear_title(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    item = await client.shop.item_by_key(GUILD_ID, "verificado")
+    assert item is not None
+    await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+    backpack = await tienda.backpack_view(owner.guild, owner, owner)
+    select = next(
+        c for c in backpack.walk_children()
+        if isinstance(c, discord.ui.Select) and c.placeholder == "🎖️ Qué título luces"
+    )  # fmt: skip
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["verificado"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["verificado"]}
+        await select.callback(interaction)
+
+    return click
+
+
 async def press_casino_stats(client: BotClient, owner: MagicMock) -> Click:
     view = module_of(client, "Apuestas").StatsView(
         client.get_cog("Apuestas"), owner=owner, guild=owner.guild, member=owner
@@ -530,6 +550,7 @@ CASES: dict[str, Press] = {
     "bacará: doblar": press_bacara_double,
     "pala: elegir curro": press_pala_hire,
     "tienda: comprar": press_checkout,
+    "tienda: lucir un título": press_wear_title,
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
     "perfil: cambiar de sección": press_perfil_section,

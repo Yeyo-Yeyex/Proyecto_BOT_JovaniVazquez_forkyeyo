@@ -190,7 +190,12 @@ python -m bot
     tiempo; si ya tienes uno, el nuevo se pone a la cola.
   - Coleccionables: de capricho; con existencias limitadas, cada unidad sale
     numerada ("nº 3 de 10").
-  - Surtido de serie: 213 artículos a la venta (176 objetos, 15
+  - Títulos (15): coleccionables que se lucen junto a tu nombre en `perfil`,
+    `fortunas` y `ranking`, de la ESO aprobada (2.000 Y$) a la Grandeza de
+    España (20 millones, una sola). Comprar uno te lo pone; en la mochila se
+    elige cuál llevas o ninguno. No dan dinero ni XP: son para presumir.
+  - Las compras de 100.000 Y$ o más se anuncian con un pregón en el canal.
+  - Surtido de serie: 232 artículos a la venta (195 objetos, 15
     potenciadores y 22 mascotas) que se meten solos en cada servidor la
     primera vez que se abre la tienda, repartidos en 14 pasillos por tema (La
     Moncloa, Ventanilla, Canarias, Typical Spanish, Fiestas y verbenas,
@@ -212,7 +217,7 @@ python -m bot
     usos. Usar no mueve dinero.
   - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
     enseña lo que tiene alguien; su dueño puede ponerse y quitarse los roles
-    que compró para siempre y usar sus objetos.
+    que compró para siempre, elegir qué título luce y usar sus objetos.
 - **Mascotas** (`mascota [miembro]`): 28 especies con su personalidad, del
   gato que te tira la ficha de la mesa a Perro Sanxe (una en todo el
   servidor). 22 se adoptan en la tienda (perros, gatos y hurones con «tasa de

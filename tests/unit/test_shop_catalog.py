@@ -289,7 +289,9 @@ def test_megafono_limpia_el_grito() -> None:
 def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
     box = CATALOG_BY_KEY["caja_botin"]
     prizes = [
-        e.price for e in CATALOG if e.kind is Kind.TROPHY and e.use is None and e.stock is None
+        e.price
+        for e in CATALOG
+        if e.kind is Kind.TROPHY and e.use is None and e.stock is None and not e.title
     ]
     expected = mystery_expected(prizes)
     assert 0.5 * box.price < expected < box.price

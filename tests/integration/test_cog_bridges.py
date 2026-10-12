@@ -818,6 +818,23 @@ async def test_la_pala_ve_las_herramientas_de_la_mochila_con_el_bot_real(
         await client.close()
 
 
+async def test_perfil_fortunas_y_ranking_ven_el_titulo_con_el_bot_real(tmp_path: Path) -> None:
+    """Los tres cogs cargan antes que la tienda: su puente tiene que ver el título puesto."""
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        item = await client.shop.item_by_key(GUILD_ID, "verificado")
+        assert item is not None
+        await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+        await tienda.wear_title(GUILD_ID, OWNER_ID, "verificado")
+        for cog_name in ("Perfil", "Patrimonio", "MessageStats"):
+            module = importer(cog_name, client)
+            assert module.tienda.title_of(client, GUILD_ID, OWNER_ID) == "☑️ Cuenta verificada"
+    finally:
+        await client.close()
+
+
 async def test_una_porra_cuenta_las_jugadas_y_apunta_logros_con_el_bot_real(
     tmp_path: Path,
 ) -> None:

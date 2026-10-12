@@ -303,3 +303,32 @@ async def test_patrimonio_y_fortunas_responden_con_un_embed(tmp_path: Path) -> N
 def test_quien_no_tiene_nada_tiene_patrimonio_cero() -> None:
     assert NetWorth(ANA).total == 0
     assert NetWorth(ANA).illiquid_share == 0.0
+
+
+async def test_fortunas_enseña_el_titulo_que_luce_cada_uno(tmp_path: Path) -> None:
+    economy, shop, lottery = await stores(tmp_path)
+    await economy.grant(GUILD, ANA, amount=80_000, reason="prueba")
+    tienda = MagicMock()
+    tienda.title = lambda guild_id, user_id: "🏰 Marquesado de Mogán" if user_id == ANA else None
+    bot = MagicMock()
+    cog = Patrimonio(bot, economy, shop=shop, lottery=lottery)
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = GUILD
+    guild.get_member = MagicMock(side_effect=lambda uid: member(uid, f"m{uid}"))
+    responder = MagicMock()
+    responder.guild = guild
+    responder.member = member(BEA, "Bea")
+    responder.channel = None
+    responder.send = AsyncMock()
+    original = patrimonio_cog.tienda.title_of
+    patrimonio_cog.tienda.title_of = lambda _bot, g, u: tienda.title(g, u)
+    track = patrimonio_cog.logros.track
+    patrimonio_cog.logros.track = AsyncMock()
+    try:
+        await cog._fortunas_impl(responder)
+    finally:
+        patrimonio_cog.tienda.title_of = original
+        patrimonio_cog.logros.track = track
+    listing = responder.send.await_args.kwargs["embed"]
+    text = "\n".join(f.value for f in listing.fields)
+    assert f"m{ANA} · *🏰 Marquesado de Mogán*" in text

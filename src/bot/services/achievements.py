@@ -114,6 +114,7 @@ from bot.services.porras import allowed_games as porra_allowed_games
 from bot.services.roulette import DOUBLE_ZERO, ZEROS, RoundOutcome
 from bot.services.shop_catalog import AISLES as SHOP_AISLES
 from bot.services.shop_catalog import RETIRED_AISLES as SHOP_RETIRED_AISLES
+from bot.services.shop_catalog import TITLE_KEYS as SHOP_TITLE_KEYS
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import HEAT_MAX as SLOT_HEAT_MAX
 from bot.services.slots import WILD as SLOT_WILD
@@ -376,6 +377,16 @@ SHOP_TRACKED_KEYS = frozenset(
         "patata_espana",
         "caca_oro",
         "yate",
+        "verificado",
+        "master_express",
+        "doctorado",
+        "aforamiento",
+        "puerta_giratoria",
+        "condado_teide",
+        "marquesado_mogan",
+        "grandeza",
+        "palco_bernabeu",
+        "porsche",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -4701,6 +4712,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "ball_dogs", "Suelta de perros",
          "Lanza la pelota y que salga detrás medio barrio de perros.", C),
     ])  # fmt: skip
+    a += _tiers("shop", "shop_titles", [
+        (1, "title_1", "Con tratamiento", "Compra un título para lucirlo junto a tu nombre.", C),
+        (3, "title_3", "Currículum de alto standing", "Ten 3 títulos.", R),
+        (6, "title_6", "Más títulos que la casa de Alba", "Ten 6 títulos.", E),
+        (len(SHOP_TITLE_KEYS), "title_all", "Todos los honores",
+         f"Ten los {len(SHOP_TITLE_KEYS)} títulos del colmado.", M),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_title_swaps", [
+        (10, "title_swap_10", "Tratamiento a la carta", "Cambia de título 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_title_off", [
+        (1, "title_off", "Llámame de tú", "Quítate el título y quédate sin ninguno.", C, True),
+    ])  # fmt: skip
     a += _tiers("shop", SHOP_AISLES_STAT, [
         (3, "aisles_3", "De paseo por el colmado", "Compra en 3 pasillos distintos.", C),
         (len(SHOP_AISLES), "aisles_all", "Me conozco todos los pasillos",
@@ -4728,6 +4752,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el plátano pegado a la pared con cinta.", L, True),
         ("falcon", "buy_falcon", "Yo también tengo Falcon", "Compra el Falcon de Moncloa.", M,
          True),
+        ("verificado", "buy_verificado", "Check azul", "Compra la cuenta verificada.", R, False),
+        ("master_express", "buy_master", "Máster exprés", "Compra el máster convalidado.", R,
+         False),
+        ("doctorado", "buy_doctorado", "Cum laude", "Compra el doctorado cum laude.", E, False),
+        ("aforamiento", "buy_aforamiento", "Intocable", "Compra el aforamiento.", E, False),
+        ("palco_bernabeu", "buy_palco", "Los negocios, en el palco",
+         "Compra un asiento en el palco del Bernabéu.", L, False),
+        ("puerta_giratoria", "buy_puerta", "Del Consejo de Ministros al de administración",
+         "Compra un sillón en el consejo de administración.", L, False),
+        ("porsche", "buy_porsche", "Concejal de urbanismo", "Compra el Porsche 911.", L, True),
+        ("condado_teide", "buy_condado", "Señorío del volcán", "Compra el Condado del Teide.", L,
+         False),
+        ("marquesado_mogan", "buy_marquesado", "Con vistas al puerto",
+         "Compra el Marquesado de Mogán.", L, False),
+        ("grandeza", "buy_grandeza", "Grande entre los grandes",
+         "Compra la Grandeza de España.", M, False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
@@ -9680,6 +9720,7 @@ def shop_stats(
     balance_after: int,
     catalog_key: str | None = None,
     aisle: str | None = None,
+    title: bool = False,
 ) -> StatDelta:
     """Estadísticas de una compra de la tienda.
 
@@ -9697,6 +9738,8 @@ def shop_stats(
         balance_after: Saldo tras pagar.
         catalog_key: Clave del surtido de serie, si viene de ahí.
         aisle: Pasillo del colmado del artículo.
+        title: Si es un título. Hay uno de cada por persona, así que contar
+            compras es contar títulos distintos.
     """
     delta = StatDelta(
         add={"shop_purchases": 1, "shop_spent": total, "shop_igic": tax},
@@ -9716,6 +9759,7 @@ def shop_stats(
     bump("shop_first_serial", serial == 1)
     bump("shop_last_unit", last_unit)
     bump("shop_broke_buy", balance_after == 0)
+    bump("shop_titles", title)
     if discount_pct:
         delta.peak["shop_discount_max"] = discount_pct
     if kind == "objeto":
@@ -9907,6 +9951,18 @@ def pet_name_stats(*, name: str) -> StatDelta:
     delta = StatDelta(add={"pet_renamed": 1})
     for mark in _pet_name_marks(name):
         delta.add[mark] = 1
+    return delta
+
+
+def shop_title_stats(*, worn: bool) -> StatDelta:
+    """Estadísticas de quien cambia el título que luce en la mochila.
+
+    Args:
+        worn: Si se ha puesto uno (falso si se ha quedado sin título).
+    """
+    delta = StatDelta(add={"shop_title_swaps": 1})
+    if not worn:
+        delta.add["shop_title_off"] = 1
     return delta
 
 

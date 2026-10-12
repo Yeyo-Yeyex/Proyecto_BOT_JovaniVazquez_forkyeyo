@@ -7,13 +7,20 @@
   otro: la caja se abre solo para quien pulsa.
 - La caja enseña el ticket antes de pagar (precio, rebaja, base, IGIC y
   total) y pide confirmar. Al pagar sale la factura simplificada, que solo ve
-  el comprador, y un aviso público en el canal para presumir.
+  el comprador, y un aviso público en el canal para presumir. Desde
+  `BIG_PURCHASE` (100.000 Y$) el aviso lleva un pregón delante.
 - La mochila (botón 🎒 del escaparate, o sección 🎒 Objetos de `perfil`)
   enseña lo que tiene alguien. Su dueño puede ponerse y
   quitarse los roles que compró para siempre (útil para los de color) y usar
   los objetos que se usan: tirarle un huevo a alguien, mandar un burofax,
   abrir una caja botín… (reglas en `bot.services.shop_uses`). El resultado
-  sale en el canal; si es contra alguien, se le menciona.
+  sale en el canal; si es contra alguien, se le menciona. También elige qué
+  título luce (o ninguno).
+- **Títulos** (`CatalogEntry.title`): objetos que se lucen junto al nombre en
+  `perfil`, `fortunas` y `ranking`. Comprar uno te lo pone; uno a la vez. Se
+  guarda en la columna `equipped` de la mochila, como los roles, y el cog lo
+  tiene en memoria (`titles`) para que esas listas no lean la base de datos.
+  No salen en la caja botín ni en los regalos de las mascotas.
 - Surtido de serie: la primera vez que se abre la tienda en un servidor se
   llena con los artículos de `bot.services.shop_catalog`, repartidos en
   pasillos que el escaparate deja filtrar. Desde ahí, los administradores los
@@ -35,6 +42,8 @@ potenciadores; lo usa `bot.cogs.message_stats` al dar XP por mensajes y voz.
 Lo lee de una caché en memoria, sin tocar la base de datos en cada mensaje.
 `owned_keys(bot, …)` da las claves de serie de lo que tiene un miembro; lo
 usa `bot.cogs.work` al fichar para aplicar las herramientas de curro.
+`title_of(bot, …)` da el título que luce un miembro, de memoria; lo usan
+`perfil`, `fortunas` y `ranking`.
 
 Permisos: **Gestionar roles** y que el rol del bot esté por encima de los
 roles que se venden. Sin ellos, la tienda no deja ponerlos a la venta ni
@@ -59,7 +68,12 @@ from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
-from bot.services.achievements import shop_hit_stats, shop_stats, shop_use_stats
+from bot.services.achievements import (
+    shop_hit_stats,
+    shop_stats,
+    shop_title_stats,
+    shop_use_stats,
+)
 from bot.services.economy import (
     CURRENCY_EMOJI,
     EconomyService,
@@ -90,9 +104,11 @@ from bot.services.shop_catalog import (
     AISLES,
     CATALOG,
     HOUSE_AISLE,
+    TITLE_KEYS,
     CatalogEntry,
     aisle_of,
     food_of,
+    is_title,
     use_of,
 )
 from bot.services.shop_uses import (
@@ -158,6 +174,21 @@ ANNOUNCE_USABLE: tuple[str, ...] = (
     "{who} pilla {item}. Esto no va a acabar bien, mi amor.",
 )
 
+#: Aviso de compra de un título: se estrena puesto.
+ANNOUNCE_TITLE: tuple[str, ...] = (
+    "Desde hoy, {who} luce {item}. Tratamiento de usted, por favor.",
+    "{who} se compra {item} y ya no saluda igual.",
+    "{who} estrena {item}. Que conste en el BOE.",
+)
+#: Desde cuánto (IGIC incluido) una compra se anuncia a bombo y platillo.
+BIG_PURCHASE = 100_000
+#: Aviso de una compra de las gordas, delante del aviso normal.
+ANNOUNCE_BIG: tuple[str, ...] = (
+    "📣 ¡Atención, servidor! Ha entrado dinero de verdad en el colmado.",
+    "📣 Se paran las máquinas del casino: alguien acaba de tirar la casa por la ventana.",
+    "📣 Jovani cierra la caja y sale a la puerta a mirar: compra gorda.",
+)
+
 #: Pestañas del escaparate: clave, etiqueta y si un artículo entra en ella.
 TABS: tuple[tuple[str, str], ...] = (
     ("todo", "🛍️ Todo"),
@@ -167,6 +198,8 @@ TABS: tuple[tuple[str, str], ...] = (
     ("objeto", "💎 Vitrina"),
     ("uso", "🫳 Para usar"),
 )
+#: Valor del desplegable de títulos para quitárselo.
+NO_TITLE = "-"
 #: Botones por fila de pestañas (Discord admite 5 por fila).
 TABS_PER_ROW = 5
 
@@ -207,6 +240,8 @@ def kind_detail(item: ShopItem) -> str:
         return use.summary
     if (tool := TOOL_BY_KEY.get(item.catalog_key or "")) is not None:
         return f"🛠️ Herramienta de `pala`: {tool.effect}"
+    if is_title(item.catalog_key):
+        return "🎖️ Título: se luce junto a tu nombre"
     return "Coleccionable"
 
 
@@ -327,6 +362,8 @@ def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
             text += f" · nº {numbers} de {first.edition}"
         if (use := use_of(first.catalog_key)) is not None:
             text += f" · *{use.verb.lower()}*"
+        if is_title(first.catalog_key):
+            text += " · 🎖️ *lo luces*" if any(e.equipped for e in group) else " · 🎖️ título"
         lines.append(text)
     return lines
 
@@ -788,6 +825,35 @@ class Backpack(ui.LayoutView):
             row.add_item(select)
             self.add_item(row)
 
+        titles = [e for e in self.entries if is_title(e.catalog_key)]
+        if titles and self.viewer.id == self.member.id:
+            # Uno a la vez; si hubiera dos marcados, vale el más reciente.
+            worn = max((e.id for e in titles if e.equipped), default=None)
+            title_options = [
+                discord.SelectOption(
+                    label=e.name[:100],
+                    value=e.catalog_key or "",
+                    emoji=_select_emoji(e.emoji),
+                    description="Lo luces ahora" if e.id == worn else "Elígelo para lucirlo",
+                    default=e.id == worn,
+                )
+                for e in titles[:24]
+            ]
+            title_options.append(
+                discord.SelectOption(label="Sin título", value=NO_TITLE, emoji="🚫")
+            )
+            title_select: ui.Select = ui.Select(
+                placeholder="🎖️ Qué título luces", options=title_options
+            )
+
+            async def title_callback(interaction: discord.Interaction) -> None:
+                await self.cog.choose_title(interaction, self, title_select.values[0])
+
+            title_select.callback = title_callback  # type: ignore[method-assign]
+            title_row: ui.ActionRow = ui.ActionRow()
+            title_row.add_item(title_select)
+            self.add_item(title_row)
+
     def _role_name(self, entry: InventoryEntry) -> str | None:
         role = self.guild.get_role(entry.role_id or 0)
         return role.name if role else None
@@ -892,14 +958,19 @@ class Tienda(commands.Cog):
         self._stocked: set[int] = set()
         #: Último uso de cada objeto que no se gasta: `(servidor, miembro, uso)` → epoch.
         self.last_used: dict[tuple[int, int, str], float] = {}
+        #: Título que luce cada `(servidor, miembro)`, ya con su emoji. En memoria
+        #: para que `fortunas` y `ranking` no lean la base de datos por cada nombre.
+        self.titles: dict[tuple[int, int], str] = {}
 
     async def cog_load(self) -> None:
-        """Carga los potenciadores en curso y arranca la caducidad de alquileres."""
+        """Carga los potenciadores en curso y los títulos puestos, y arranca la caducidad."""
         # Idempotente: el bot ya lo hace en `setup_hook`, pero así el cog se
         # puede cargar solo (pruebas, recarga en caliente).
         await self.repository.initialize()
         for guild_id, user_id, start, end, pct in await self.repository.active_boosts(self.clock()):
             self.boosts[(guild_id, user_id)].append((start, end, pct))
+        for guild_id, user_id, emoji, name in await self.repository.worn_titles(TITLE_KEYS):
+            self.titles[(guild_id, user_id)] = f"{emoji} {name}"
         self._expire.start()
 
     async def cog_unload(self) -> None:
@@ -930,6 +1001,45 @@ class Tienda(commands.Cog):
     ) -> list[tuple[float, float, int]]:
         """Potenciadores del miembro que no han acabado, en orden."""
         return sorted(w for w in self.boosts.get((guild_id, user_id), []) if w[1] > now)
+
+    # -- Títulos ---------------------------------------------------------------------
+
+    def title(self, guild_id: int, user_id: int) -> str | None:
+        """Título que luce un miembro (`🏰 Marquesado de Mogán`), o `None`."""
+        return self.titles.get((guild_id, user_id))
+
+    async def wear_title(self, guild_id: int, user_id: int, catalog_key: str | None) -> None:
+        """Le pone a un miembro el título `catalog_key` (o se lo quita con `None`)."""
+        await self.repository.wear_title(guild_id, user_id, catalog_key, TITLE_KEYS)
+        entries = await self.repository.inventory(guild_id, user_id, self.clock())
+        worn = next((e for e in entries if e.catalog_key == catalog_key), None)
+        if catalog_key is None or worn is None:
+            self.titles.pop((guild_id, user_id), None)
+        else:
+            self.titles[(guild_id, user_id)] = f"{worn.emoji} {worn.name}"
+
+    async def choose_title(
+        self, interaction: discord.Interaction, view: Backpack, value: str
+    ) -> None:
+        """Cambia el título que luce el dueño de la mochila y la repinta."""
+        member = interaction.user
+        key = None if value == NO_TITLE else value
+        before = self.title(view.guild.id, member.id)
+        # Guardarlo va a la base de datos: se acepta el clic antes.
+        await ack(interaction)
+        await self.wear_title(view.guild.id, member.id, key)
+        view.entries = await self.repository.inventory(view.guild.id, member.id, self.clock())
+        view.rebuild()
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
+        after = self.title(view.guild.id, member.id)
+        if after != before:
+            await logros.track(
+                self.bot,
+                view.guild.id,
+                member,
+                interaction.channel,
+                shop_title_stats(worn=after is not None),
+            )
 
     # -- Comprobaciones --------------------------------------------------------------
 
@@ -1225,7 +1335,8 @@ class Tienda(commands.Cog):
         """Sortea y entrega el premio de una caja botín, o `None` si no hay premios.
 
         Premios: coleccionables visibles, sin uso y de existencias ilimitadas,
-        para no gastar unidades numeradas de nadie.
+        para no gastar unidades numeradas de nadie. Los títulos no tocan: se
+        lucen porque se han pagado.
         """
         candidates = [
             item
@@ -1234,6 +1345,7 @@ class Tienda(commands.Cog):
             and item.stock is None
             and item.id != box.item_id
             and use_of(item.catalog_key) is None
+            and not is_title(item.catalog_key)
         ]
         if not candidates:
             return None
@@ -1462,6 +1574,8 @@ class Tienda(commands.Cog):
                 got += f" Unidad nº {sale.serial} de {sale.edition}."
             if (use := use_of(item.catalog_key)) is not None:
                 got += f" Úsalo desde la mochila ({use.verb.lower()})."
+            if is_title(item.catalog_key):
+                got += " Ya lo luces junto a tu nombre; lo cambias en la mochila."
         lines = [
             "### ✅ ¡Wepa! Es tuyo",
             got,
@@ -1489,14 +1603,24 @@ class Tienda(commands.Cog):
     ) -> None:
         """Aviso público, aviso de la Renta y logros, después de enseñar la factura."""
         item, sale, balance = paid
-        lines = ANNOUNCE_USABLE if use_of(item.catalog_key) else ANNOUNCE_LINES[item.kind]
+        title = is_title(item.catalog_key)
+        if title:
+            # Comprar un título te lo pone, antes de anunciarlo.
+            await self.wear_title(view.guild.id, view.buyer.id, item.catalog_key)
+            lines = ANNOUNCE_TITLE
+        elif use_of(item.catalog_key):
+            lines = ANNOUNCE_USABLE
+        else:
+            lines = ANNOUNCE_LINES[item.kind]
         line = self.rng.choice(lines).format(
             who=f"**{_name(view.buyer)}**", item=f"{item.emoji} **{item.name}**"
         )
         extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
+        big = view.price.total >= BIG_PURCHASE
+        header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if big else ""
         try:
             await interaction.followup.send(
-                f"🛍️ {line}{extra}\n-# Pagó {format_amount(view.price.total)}, de los que "
+                f"{header}🛍️ {line}{extra}\n-# Pagó {format_amount(view.price.total)}, de los que "
                 f"{format_amount(view.price.tax)} son IGIC para {TAX_COLLECTOR}.",
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -1526,6 +1650,7 @@ class Tienda(commands.Cog):
                 balance_after=balance,
                 catalog_key=item.catalog_key,
                 aisle=aisle_of(item.catalog_key).key,
+                title=title,
             ),
         )
 
@@ -1576,6 +1701,8 @@ class Tienda(commands.Cog):
         await self.repository.delete_guild_data(guild.id)
         for key in [k for k in self.boosts if k[0] == guild.id]:
             del self.boosts[key]
+        for key in [k for k in self.titles if k[0] == guild.id]:
+            del self.titles[key]
 
     # -- Comandos --------------------------------------------------------------------
 
@@ -1637,6 +1764,17 @@ def xp_multiplier(bot: commands.Bot, guild_id: int, user_id: int, now: float) ->
     if (cog := find_cog(bot, Tienda)) is not None:
         return cog.xp_multiplier(guild_id, user_id, now)
     return 1.0
+
+
+def title_of(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
+    """Título que luce un miembro (`🏰 Marquesado de Mogán`), o `None`.
+
+    Lo usan `perfil`, `fortunas` y `ranking`. Sale de memoria: no toca la base
+    de datos, así que se puede llamar por cada nombre de una lista.
+    """
+    if (cog := find_cog(bot, Tienda)) is not None:
+        return cog.title(guild_id, user_id)
+    return None
 
 
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:
