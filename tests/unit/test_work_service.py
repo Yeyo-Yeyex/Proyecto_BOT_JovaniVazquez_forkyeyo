@@ -519,7 +519,8 @@ async def test_el_teletrabajo_cansa_la_mitad_y_rinde_la_mitad(tmp_path: Path, di
     assert outcome.remote
     assert outcome.battery_after == BATTERY_MAX - 9
     status = await service.status(GUILD, USER)
-    assert status is not None and status.contract.performance == 50 + 12
+    # Teletrabajo: la mitad de 25 más el bonus de la familia feliz.
+    assert status is not None and status.contract.performance == 50 + (25 + 3) // 2
 
 
 async def test_teletrabajando_te_escriben_fuera_de_hora(tmp_path: Path, dice: Dice) -> None:
@@ -1055,7 +1056,8 @@ async def test_cumplir_el_deseo_del_dia_paga_mas_sube_la_barra_y_hace_racha(
     assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * WISH_PAY)
     status = await service.status(GUILD, USER)
     assert status is not None and status.wish is None
-    assert status.contract.performance == PERFORMANCE_START + 25 + WISH_PERFORMANCE
+    # +3 de la familia en casa feliz.
+    assert status.contract.performance == PERFORMANCE_START + 25 + 3 + WISH_PERFORMANCE
     stats = work_stats(outcome)
     assert stats.add["work_wishes"] == stats.add["work_wish_nota_90"] == 1
     assert stats.peak["work_wish_streak_max"] == 1
@@ -1112,3 +1114,191 @@ async def test_una_rama_que_ya_no_existe_devuelve_al_final_del_tronco(tmp_path: 
     assert status is not None
     assert (status.contract.level, status.contract.branch) == (POLITICA.trunk_top, "")
     assert status.fork
+
+
+# -- Familia: tramos, regalos y favores -----------------------------------------------------
+
+
+async def set_family(service: WorkService, family: float) -> None:
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.family = family
+    status.contract.family_at = status.contract.battery_at = status.now
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_cada_turno_cuesta_familia_y_lo_cuenta_partida_a_partida(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await set_family(service, 50)
+    outcome = await work(service)
+    assert outcome.family_parts == [("turno", -6)]
+    assert outcome.family_after == 44
+
+
+async def test_con_la_familia_en_crisis_la_barra_no_sube(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await set_family(service, 5)
+    await work(service)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.performance == PERFORMANCE_START
+
+
+async def test_un_regalo_sube_la_familia_se_gasta_y_tiene_espera(tmp_path: Path) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await service.hire(GUILD, USER, "obra")
+    await set_family(service, 50)
+    spent: list[str] = []
+
+    async def consume() -> bool:
+        spent.append("flores_mama")
+        return True
+
+    gift, family = await service.give_gift(GUILD, USER, "flores_mama", consume)
+    assert gift.family == 10 and family == 60 and spent == ["flores_mama"]
+    with pytest.raises(WorkError, match="todavía está con el último"):
+        await service.give_gift(GUILD, USER, "flores_mama", consume)
+    assert spent == ["flores_mama"]  # en espera no se gasta
+    clock.now += gift.cooldown
+    await service.give_gift(GUILD, USER, "flores_mama", consume)
+    assert len(spent) == 2
+
+
+async def test_un_regalo_que_ya_no_tienes_no_cuenta(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+
+    async def gone() -> bool:
+        return False
+
+    with pytest.raises(WorkError, match="ya no está"):
+        await service.give_gift(GUILD, USER, "flores_mama", gone)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.family_used == {}
+
+
+async def test_el_tupper_recarga_y_cuesta_familia(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await work(service)
+    before = await service.status(GUILD, USER)
+    assert before is not None
+    result = await service.ask_favor(GUILD, USER, "tupper")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.battery == pytest.approx(min(BATTERY_MAX, before.battery + 30))
+    assert result.family == pytest.approx(before.family - 15)
+    assert status.contract.coffees == 0  # no cuenta para los temblores
+    with pytest.raises(WorkError, match="otra vez"):
+        await service.ask_favor(GUILD, USER, "tupper")
+
+
+async def test_sin_familia_no_hay_favores(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await set_family(service, 20)
+    with pytest.raises(WorkError, match="no está para favores"):
+        await service.ask_favor(GUILD, USER, "tupper")
+
+
+async def test_tu_madre_te_cubre_el_saliente(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_level(service, "sanidad", 2)
+    shift = await service.start_shift(GUILD, USER, guard=True)
+    play(shift.game)
+    await service.finish_shift(GUILD, USER, shift)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.off_duty
+    await service.ask_favor(GUILD, USER, "cubre")
+    status = await service.status(GUILD, USER)
+    assert status is not None and not status.off_duty
+
+
+async def test_tu_hermana_te_da_un_ordinario_mas(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    with pytest.raises(WorkError, match="Aún te quedan"):
+        await service.ask_favor(GUILD, USER, "cambio")
+    for _ in range(ORDINARY_SHIFTS):
+        await work(service)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.next_kind is ShiftKind.EXTRA
+    await set_family(service, 100)
+    await service.ask_favor(GUILD, USER, "cambio")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.next_kind is ShiftKind.ORDINARY
+
+
+async def test_lo_haces_por_los_ninos_y_el_turno_trae_mas_tiempo(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    plain = await service.start_shift(GUILD, USER)
+    play(plain.game)
+    await service.finish_shift(GUILD, USER, plain)
+    await set_family(service, 100)
+    await service.ask_favor(GUILD, USER, "ninos")
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.perks.extra_time == pytest.approx(plain.perks.extra_time + 0.15)
+    play(shift.game)
+    await service.finish_shift(GUILD, USER, shift)
+    status = await service.status(GUILD, USER)
+    assert status is not None and not status.contract.motivated
+
+
+async def test_el_bizum_de_mama_adelanta_un_sueldo_y_se_devuelve_entero(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    base = JOB_BY_KEY["obra"].position(1).base_pay
+    before = await service.economy.balance(GUILD, USER)
+    state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
+    result = await service.ask_favor(GUILD, USER, "bizum")
+    assert result.amount == base and result.balance == before + base
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == state_before  # exento, como un Bizum
+    with pytest.raises(WorkError, match="otra vez"):
+        await service.ask_favor(GUILD, USER, "bizum")
+    repaid = 0
+    for _ in range(10):
+        outcome = await work(service)
+        assert outcome.mom_repaid <= round(outcome.net * 0.5) + 1
+        repaid += outcome.mom_repaid
+        status = await service.status(GUILD, USER)
+        assert status is not None
+        if not status.contract.mom_debt:
+            break
+    assert repaid == base
+    total, balance = ledger(tmp_path, USER)
+    assert total == balance
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (net,) = connection.execute(
+            "SELECT SUM(delta) FROM economy_ledger WHERE reason LIKE ?", ("bizum:mama%",)
+        ).fetchone()
+    assert net == 0  # lo que se creó al pedirlo se destruye al devolverlo
+
+
+async def test_la_excusa_familiar_te_libra_del_marron_pero_no_de_dimitir(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    result = await service.dodge_event(GUILD, USER, "quedarse")
+    assert result.family == pytest.approx(90)
+    with pytest.raises(WorkError, match="otra vez"):
+        await service.dodge_event(GUILD, USER, "quedarse")
+    with pytest.raises(WorkError, match="ni tu madre"):
+        await service.dodge_event(GUILD, USER, "dimision")
+
+
+async def test_cambiar_de_curro_conserva_la_familia_y_lo_que_le_debes(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await service.ask_favor(GUILD, USER, "bizum")
+    status = await service.hire(GUILD, USER, "hosteleria")
+    assert status.contract.mom_debt == JOB_BY_KEY["obra"].position(1).base_pay
+    assert "bizum" in status.contract.family_used
+    assert status.family == pytest.approx(80)

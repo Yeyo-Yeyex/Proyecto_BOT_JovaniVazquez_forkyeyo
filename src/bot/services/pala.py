@@ -40,9 +40,9 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from collections.abc import Callable, Collection
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from collections.abc import Awaitable, Callable, Collection
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from bot.services.economy import EconomyService, InsufficientFundsError
@@ -64,7 +64,7 @@ from bot.services.work import (
     EVENT_CHANCE,
     EXIT_CHANCE,
     EXIT_MULTIPLIER,
-    FAMILY_MAX,
+    FAVOR_FLOOR,
     FLIGHT_PRICE,
     GOOD_SCORE,
     GUARD_REST_SECONDS,
@@ -76,7 +76,9 @@ from bot.services.work import (
     JET_LAG,
     MAX_COFFEES,
     MISSED_GUARD_PENALTY,
+    MOM_REPAY_SHARE,
     OPTIONS_SHARE,
+    ORDINARY_SHIFTS,
     PERFORMANCE_MAX,
     PERFORMANCE_START,
     RAIN_ACCIDENT,
@@ -107,7 +109,11 @@ from bot.services.work import (
     apply_performance,
     battery_now,
     beckham_eligible,
-    family_cost,
+    change_family,
+    family_breakdown,
+    family_now,
+    family_ready_at,
+    family_tier,
     follower_gain,
     holiday,
     is_night,
@@ -123,6 +129,7 @@ from bot.services.work import (
     rested_at,
     roll,
     roll_over_day,
+    settle,
     settle_branch,
     shift_cost,
     shift_pay,
@@ -137,10 +144,16 @@ from bot.services.work_catalog import (
     CAUGHT_SUSPENDS_IMV,
     COFFEE_BY_KEY,
     EVENT_BY_KEY,
+    FAVOR_BY_KEY,
+    GIFT_BY_KEY,
     JOB_BY_KEY,
+    MOTIVATED_TIME,
     PARDON_CHANCE,
     RESIGN_EVENT,
+    TUPPER_BATTERY,
     Event,
+    Favor,
+    Gift,
     events_for,
 )
 from bot.services.work_games import MiniGame, new_game
@@ -173,6 +186,7 @@ class Status:
         triennia: Trienios cumplidos si el oficio los cobra.
         retired: Ramas de este oficio de las que ya se jubiló.
         wish: El deseo del día (`None` si ya lo cumplió hoy).
+        family: Familia ahora mismo (con lo que se ha recuperado sola).
     """
 
     contract: Contract
@@ -190,6 +204,7 @@ class Status:
     triennia: int = 0
     retired: frozenset[str] = frozenset()
     wish: Wish | None = None
+    family: float = 100.0
 
     @property
     def fork(self) -> tuple[Branch, ...]:
@@ -309,6 +324,8 @@ class ShiftOutcome:
         temario: Preguntas del temario acertadas (turno de estudio).
         wish: El deseo del día que cumplió este turno (`None` si no cumplió ninguno).
         wish_streak: Días seguidos cumpliendo el deseo, si lo cumplió.
+        family_parts: Lo que movió la familia el turno, partida a partida.
+        mom_repaid: Lo que se le devolvió a tu madre del Bizum en este turno.
     """
 
     job: Job
@@ -319,8 +336,8 @@ class ShiftOutcome:
     balance: int
     battery_before: float
     battery_after: float
-    family_before: int
-    family_after: int
+    family_before: float
+    family_after: float
     now: float
     shifts_today: int
     streak_days: int
@@ -358,6 +375,8 @@ class ShiftOutcome:
     temario: int = 0
     wish: Wish | None = None
     wish_streak: int = 0
+    family_parts: list[tuple[str, int]] = field(default_factory=list)
+    mom_repaid: int = 0
 
     @property
     def night(self) -> bool:
@@ -403,6 +422,23 @@ class EventResult:
     stats: dict[str, int] = field(default_factory=dict)
     #: Evento que viene a continuación (la pregunta de la dimisión).
     follow_up: Event | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FavorResult:
+    """Lo que pasa al pedirle un favor a la familia.
+
+    Attributes:
+        favor: El favor.
+        family: Familia después.
+        amount: Lo que llegó por el Bizum de mamá (0 en los demás).
+        balance: Saldo después, si el favor movió dinero.
+    """
+
+    favor: Favor
+    family: float
+    amount: int = 0
+    balance: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -529,6 +565,7 @@ class WorkService:
             triennia=triennia(contract, now) if job.seniority else 0,
             retired=retired,
             wish=wish,
+            family=family_now(contract, now),
         )
 
     async def history(self, guild_id: int, user_id: int) -> dict[str, Career]:
@@ -568,9 +605,14 @@ class WorkService:
             )
             settle_branch(contract, job)
             if current is not None:
-                contract.battery = battery_now(current, now)
+                settle(current, now)
                 for name in (
+                    "battery",
                     "family",
+                    "family_at",
+                    "family_used",
+                    "mom_debt",
+                    "motivated",
                     "last_shift_at",
                     "shift_day",
                     "shifts_today",
@@ -582,7 +624,6 @@ class WorkService:
                     "coffees",
                     "sick_until",
                     "no_extras_day",
-                    "rest_day",
                     "guards_week",
                     "guard_week",
                     "off_duty_until",
@@ -647,7 +688,7 @@ class WorkService:
                 f"<t:{int(contract.blocked_until)}:t>. Ni un pedido, ni una explicación."
             )
         if status.battery <= BATTERY_MIN:
-            back = int(rested_at(status.battery, status.now))
+            back = int(rested_at(contract, status.now))
             raise WorkError(
                 "🪫 Estás tan reventado que te quedas dormido de pie. Vuelve a fichar "
                 f"<t:{back}:R> o tómate un barraquito."
@@ -698,10 +739,13 @@ class WorkService:
     def _perks(status: Status, mechanic: Mechanic, tools: Collection[str]) -> Perks:
         """Herramientas de la tienda que sirven más las ventajas ganadas en el oficio."""
         contract = status.contract
-        return with_rewards(
+        perks = with_rewards(
             perks_for(status.job.key, mechanic, tools),
             status.job.perks(contract.level, contract.branch),
         )
+        if contract.motivated:
+            perks = replace(perks, extra_time=perks.extra_time + MOTIVATED_TIME)
+        return perks
 
     def _study_shift(self, status: Status, tools: Collection[str]) -> Shift:
         """Prepara un turno de estudio: el test del temario, sin sueldo."""
@@ -797,7 +841,8 @@ class WorkService:
         kind = shift.kind
         score = shift.game.score()
         battery_before = battery_now(contract, now)
-        family_before = contract.family
+        family_before = family_now(contract, now)
+        settle(contract, now)
         concept = f"pala:{job.key}"
         abroad = contract.abroad
         phase = residence_phase(contract, now)
@@ -820,18 +865,15 @@ class WorkService:
             contract.shift_day = today.isoformat()
         cost = shift_cost(kind, remote=shift.remote, calima=shift.weather == "calima")
         contract.battery = battery_before - cost * (1 - shift.perks.battery)
-        contract.battery_at = now
-        family = family_cost(
+        family_parts = family_breakdown(
             kind,
             now,
             remote=shift.remote,
             tz=HK_TIMEZONE if abroad else TIMEZONE,
             abroad=bool(abroad),
         )
-        contract.family = max(0, min(FAMILY_MAX, contract.family + family))
-        intervention = contract.family == 0 and family_before > 0
-        if intervention:
-            contract.no_extras_day = (today + timedelta(days=1)).isoformat()
+        intervention = change_family(contract, sum(v for _, v in family_parts), now)
+        contract.motivated = False
         if kind is ShiftKind.GUARD:
             contract.guards_week += 1
             contract.off_duty_until = now + GUARD_REST_SECONDS
@@ -924,7 +966,13 @@ class WorkService:
             progress["sorted"] = progress.get("sorted", 0) + game.correct
         if game.mechanic is Mechanic.CALC:
             progress["best"] = progress.get("best", 0) + game.correct
-        delta = performance_delta(score, kind, remote=shift.remote, cap=job.ordinary_cap)
+        delta = performance_delta(
+            score,
+            kind,
+            remote=shift.remote,
+            cap=job.ordinary_cap,
+            family=family_tier(family_before),
+        )
         if wish is not None:
             delta += WISH_PERFORMANCE
         performance = apply_performance(contract, delta, tenured=job.tenured(contract.level))
@@ -965,6 +1013,14 @@ class WorkService:
                 )
 
         net = payslip.net if payslip else foreign.net if foreign else 0 if caught else black
+        mom_repaid = 0
+        if contract.mom_debt and net > 0:
+            # Nunca más de lo que hay: la cuota o una multa pueden haberse llevado parte.
+            mom_repaid = min(contract.mom_debt, max(1, round(net * MOM_REPAY_SHARE)), balance)
+            if mom_repaid > 0:
+                balance = await self.economy.repay_mom(guild_id, user_id, amount=mom_repaid)
+                contract.mom_debt -= mom_repaid
+            mom_repaid = max(0, mom_repaid)
         await self.repository.save_contract(guild_id, user_id, contract)
         await self.repository.add_shift(
             guild_id,
@@ -1045,6 +1101,8 @@ class WorkService:
             triennia=years,
             wish=wish,
             wish_streak=contract.wish_streak if wish is not None else 0,
+            family_parts=family_parts,
+            mom_repaid=mom_repaid,
         )
 
     def _wish(
@@ -1096,15 +1154,12 @@ class WorkService:
         """
         roll_over_day(contract, now)
         battery_before = battery_now(contract, now)
-        family_before = contract.family
+        family_before = family_now(contract, now)
+        settle(contract, now)
         contract.battery = battery_before - shift_cost(ShiftKind.STUDY)
-        contract.battery_at = now
-        contract.family = max(
-            0, min(FAMILY_MAX, contract.family + family_cost(ShiftKind.STUDY, now))
-        )
-        intervention = contract.family == 0 and family_before > 0
-        if intervention:
-            contract.no_extras_day = (local_day(now) + timedelta(days=1)).isoformat()
+        family_parts = family_breakdown(ShiftKind.STUDY, now)
+        intervention = change_family(contract, sum(v for _, v in family_parts), now)
+        contract.motivated = False
         game = shift.game
         contract.progress["temario"] = contract.progress.get("temario", 0) + game.correct
         await self.repository.save_contract(guild_id, user_id, contract)
@@ -1129,6 +1184,7 @@ class WorkService:
             intervention=intervention,
             promotion_ready=status.promotion_ready,
             temario=game.correct,
+            family_parts=family_parts,
         )
 
     async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
@@ -1304,7 +1360,8 @@ class WorkService:
             contract.performance = max(
                 0, min(PERFORMANCE_MAX, contract.performance + outcome.performance)
             )
-            contract.family = max(0, min(FAMILY_MAX, contract.family + outcome.family))
+            if outcome.family:
+                change_family(contract, outcome.family, now)
             if outcome.rating and job.rating:
                 contract.rating = max(RATING_MIN, min(RATING_MAX, contract.rating + outcome.rating))
             if outcome.followers and job.viral:
@@ -1521,6 +1578,142 @@ class WorkService:
             contract.coffees += 1
             await self.repository.save_contract(guild_id, user_id, contract)
             return contract.battery, contract.coffees, balance
+
+    # -- Familia: regalos y favores -----------------------------------------------------
+
+    async def give_gift(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        consume: Callable[[], Awaitable[bool]],
+    ) -> tuple[Gift, float]:
+        """Da un regalo de la mochila: sube la familia y se gasta.
+
+        No mueve dinero: lo que tributó fue la compra en la tienda (IGIC).
+
+        Args:
+            consume: Gasta una unidad del regalo en la tienda; `False` si ya no
+                la tiene. Se llama dentro del candado, después de comprobar la
+                espera, para no gastar un regalo que no se puede dar.
+
+        Returns:
+            `(regalo, familia después)`.
+
+        Raises:
+            WorkError: Sin curro, si no es un regalo, si aún está en espera o si
+                ya no lo tiene.
+        """
+        gift = GIFT_BY_KEY.get(key)
+        if gift is None:
+            raise WorkError("Eso no es un regalo para la familia.")
+        async with self._lock(guild_id, user_id):
+            contract = await self.repository.contract(guild_id, user_id)
+            if contract is None:
+                raise WorkError("Los regalos se dan desde `pala`: primero búscate un curro.")
+            now = self._clock()
+            ready = family_ready_at(contract, gift.key, gift.cooldown)
+            if ready > now:
+                raise WorkError(
+                    f"{gift.emoji} Tu familia todavía está con el último. Otro <t:{int(ready)}:R>."
+                )
+            if not await consume():
+                raise WorkError("Ese regalo ya no está en tu mochila.")
+            change_family(contract, gift.family, now)
+            contract.family_used[gift.key] = now
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return gift, contract.family
+
+    @staticmethod
+    def _check_favor(contract: Contract, favor: Favor, now: float) -> None:
+        """Espera y familia mínima de un favor.
+
+        Raises:
+            WorkError: Si aún está en espera o dejaría la familia en crisis.
+        """
+        ready = family_ready_at(contract, favor.key, favor.cooldown)
+        if ready > now:
+            raise WorkError(f"{favor.emoji} {favor.name}: otra vez <t:{int(ready)}:R>.")
+        family = family_now(contract, now)
+        if family - favor.cost < FAVOR_FLOOR:
+            raise WorkError(
+                f"{family_tier(family).emoji} Tu familia no está para favores "
+                f"({round(family)}/100; este cuesta {favor.cost}). Descansa o regálale algo."
+            )
+
+    async def ask_favor(self, guild_id: int, user_id: int, key: str) -> FavorResult:
+        """Le pide un favor a la familia: cuesta familia, no dinero (salvo el Bizum).
+
+        El Bizum de mamá adelanta un sueldo base del puesto (`economy.mom_bizum`)
+        y apunta la deuda, que se devuelve con parte de cada turno
+        (`MOM_REPAY_SHARE`, en `finish_shift`).
+
+        Raises:
+            WorkError: Sin curro, si no existe, si no sirve ahora (no hay saliente
+                que cubrir, quedan turnos ordinarios, ya debes el Bizum…), si
+                está en espera o si la familia no da para más.
+        """
+        favor = FAVOR_BY_KEY.get(key)
+        if favor is None or favor.key == "excusa":
+            # La excusa se pide en un marrón (`dodge_event`).
+            raise WorkError("Eso no se le pide a la familia.")
+        async with self._lock(guild_id, user_id):
+            status = await self.status(guild_id, user_id)
+            if status is None:
+                raise WorkError("Sin curro no hay a quién darle pena. Abre `pala` y elige uno.")
+            contract, now = status.contract, status.now
+            self._check_favor(contract, favor, now)
+            amount = 0
+            balance = None
+            if favor.key == "tupper":
+                settle(contract, now)
+                contract.battery = min(float(BATTERY_MAX), contract.battery + TUPPER_BATTERY)
+            elif favor.key == "ninos":
+                if contract.motivated:
+                    raise WorkError("Ya vas motivado para el próximo turno.")
+                contract.motivated = True
+            elif favor.key == "cubre":
+                if not status.off_duty:
+                    raise WorkError("No estás saliente de guardia: no hay nada que cubrir.")
+                contract.off_duty_until = now
+            elif favor.key == "cambio":
+                if contract.shifts_today < ORDINARY_SHIFTS:
+                    raise WorkError("Aún te quedan turnos ordinarios hoy: guárdate a tu hermana.")
+                contract.shifts_today -= 1
+            elif favor.key == "bizum":
+                if contract.mom_debt:
+                    raise WorkError(
+                        f"Todavía le debes {contract.mom_debt} Y$ a tu madre. Primero, eso."
+                    )
+                amount = status.position.base_pay
+                balance = await self.economy.mom_bizum(guild_id, user_id, amount=amount)
+                contract.mom_debt = amount
+            change_family(contract, -favor.cost, now)
+            contract.family_used[favor.key] = now
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return FavorResult(favor, contract.family, amount, balance)
+
+    async def dodge_event(self, guild_id: int, user_id: int, event_key: str) -> FavorResult:
+        """La excusa familiar: te libras de un marrón sin elegir ninguna opción.
+
+        No vale para la dimisión: de esa no te salva ni tu madre.
+
+        Raises:
+            WorkError: Sin curro, si el marrón no existe, en espera o sin familia.
+        """
+        favor = FAVOR_BY_KEY["excusa"]
+        if event_key == RESIGN_EVENT.key or event_key not in EVENT_BY_KEY:
+            raise WorkError("De esta no te saca ni tu madre.")
+        async with self._lock(guild_id, user_id):
+            contract = await self.repository.contract(guild_id, user_id)
+            if contract is None:
+                raise WorkError("No tienes curro.")
+            now = self._clock()
+            self._check_favor(contract, favor, now)
+            change_family(contract, -favor.cost, now)
+            contract.family_used[favor.key] = now
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return FavorResult(favor, contract.family)
 
     # -- Canales ------------------------------------------------------------------------
 

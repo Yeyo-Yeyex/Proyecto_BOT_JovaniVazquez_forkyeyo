@@ -68,6 +68,7 @@ from bot.services.shop_uses import (
     resolve,
 )
 from bot.services.taxes import IGIC_BY_KEY
+from bot.services.work_catalog import GIFT_BY_KEY
 from bot.services.work_tools import TOOL_KEYS
 
 GUILD = 1
@@ -133,9 +134,19 @@ def test_ficha_de_alta_de_cada_pasillo(aisle: Aisle) -> None:
     on_sale = [e for e in CATALOG if e.aisle == aisle.key and e.visible]
     assert len(on_sale) >= MIN_AISLE_SIZE, f"{aisle.key}: si no llega, va dentro de otro"
     # «Hacer algo» es usarse desde la mochila o tener efecto con solo tenerlo (las
-    # herramientas de `pala`, los prismáticos y la libreta de la porra).
-    passive = TOOL_KEYS | {BINOCULARS_KEY, NOTEBOOK_KEY}
+    # herramientas de `pala`, los prismáticos y la libreta de la porra), o darse
+    # desde `pala` (los regalos para la familia).
+    passive = TOOL_KEYS | set(GIFT_BY_KEY) | {BINOCULARS_KEY, NOTEBOOK_KEY}
     assert any(e.use or e.key in passive for e in on_sale), f"{aisle.key}: nada hace nada"
+
+
+def test_cada_regalo_de_la_familia_es_un_articulo_del_pasillo() -> None:
+    for key, gift in GIFT_BY_KEY.items():
+        entry = CATALOG_BY_KEY[key]
+        assert entry.aisle == "familia", key
+        assert entry.emoji == gift.emoji and entry.name == gift.name, key
+        assert f"+{gift.family} de familia" in entry.description, key
+    assert {e.key for e in CATALOG if e.aisle == "familia"} == set(GIFT_BY_KEY)
 
 
 def test_pasillos_retirados_no_vuelven_y_heredan_en_uno_que_existe() -> None:
