@@ -46,6 +46,7 @@ from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs.achievements import Achievements, progress_bar
+from bot.cogs.gallos import Gallos
 from bot.cogs.message_stats import MessageStats
 from bot.cogs.patrimonio import Patrimonio
 from bot.cogs.shop import Tienda
@@ -80,6 +81,7 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("logros", "🏆", "Logros", "Puntos, categorías y los últimos"),
     ("rachas", "🔥", "Rachas", "Tus mejores rachas de todo"),
     ("objetos", "🎒", "Objetos", "Lo que llevas en la mochila"),
+    ("gallo", "🐓", "Gallo", "Tu gallo de pelea y su historial"),
 )
 SECTION_KEYS = tuple(key for key, *_ in SECTIONS)
 assert SECTION_KEYS == PERFIL_SECTIONS, "el logro «Expediente completo» cuenta estas secciones"
@@ -308,6 +310,11 @@ class Perfil(commands.Cog):
             if shop is None:
                 return missing_embed("🎒 Objetos")
             return await shop.backpack_embed(guild, target)
+        if key == "gallo":
+            gallos = find_cog(self.bot, Gallos)
+            if gallos is None:
+                return missing_embed("🐓 Gallo")
+            return await gallos.gallo_embed(guild.id, target)
         return await self.summary(view)
 
     async def _stats(self, guild_id: int, user_id: int) -> dict[str, int]:

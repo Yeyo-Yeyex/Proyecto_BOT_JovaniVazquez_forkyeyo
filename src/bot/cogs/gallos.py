@@ -1158,6 +1158,7 @@ class Duel:
             attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
         )
         self.phase = Phase.DONE
+        self.cog.release(self)
         await self.tell_everyone(fight)
         await self.track(fight)
 
@@ -1433,6 +1434,33 @@ class Gallos(commands.Cog, name="Gallos"):
         await tienda.grant_free_skins(self.bot, guild_id, member.id, SKIN_GAME)
         record = await self.repository.get(guild_id, member.id)
         return Owner(member, record, tienda.skin_of(self.bot, guild_id, member.id, SKIN_GAME))
+
+    async def gallo_embed(self, guild_id: int, member: discord.abc.User) -> discord.Embed:
+        """La sección 🐓 Gallo de `perfil`: la ficha del gallo de un miembro."""
+        record = await self.repository.get(guild_id, member.id)
+        skin = tienda.skin_of(self.bot, guild_id, member.id, SKIN_GAME)
+        ranking = await self.repository.ranking(guild_id, limit=100)
+        place = next((i for i, (uid, _r) in enumerate(ranking, 1) if uid == member.id), None)
+        lines = [
+            f"### 🐓 {record.name}",
+            f"Aspecto: {skin.label if skin else '🐓 Gallo colorado (de serie)'}",
+            record_line(record),
+        ]
+        if record.fights:
+            lines.append(
+                f"{record.losses} derrota{'s' if record.losses != 1 else ''} · "
+                f"{round(100 * record.wins / record.fights)} % de victorias"
+            )
+        if record.day_streak > 1:
+            lines.append(f"📅 {record.day_streak} días seguidos peleando")
+        if place is not None:
+            lines.append(f"🏟️ Puesto {place} del reñidero del servidor")
+        lines.append("-# `gallos` para pelear · ✏️ para bautizarlo · 🎨 para cambiarle el aspecto")
+        return discord.Embed(
+            title=f"🐓 El gallo de {member.display_name}",
+            description="\n".join(lines),
+            color=COLOR_IDLE,
+        )
 
     # -- gallos -----------------------------------------------------------------------
 

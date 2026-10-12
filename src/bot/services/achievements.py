@@ -354,7 +354,16 @@ IMG_EFFECTS_STAT = "img_effects_tried"
 PERFIL_SEEN_PREFIX = "perfil_seen_"
 PERFIL_SECTIONS_STAT = "perfil_sections"
 #: Secciones de `perfil` (las mismas claves que `bot.cogs.perfil.SECTIONS`).
-PERFIL_SECTIONS = ("resumen", "nivel", "patrimonio", "trabajo", "logros", "rachas", "objetos")
+PERFIL_SECTIONS = (
+    "resumen",
+    "nivel",
+    "patrimonio",
+    "trabajo",
+    "logros",
+    "rachas",
+    "objetos",
+    "gallo",
+)
 #: Prefijo de los plenos acertados en cada número de la ruleta (`roulette_hit_17`).
 ROULETTE_HIT_PREFIX = "roulette_hit_"
 #: Estadísticas virtuales: números distintos acertados a pleno y el más repetido.
