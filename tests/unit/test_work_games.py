@@ -33,7 +33,7 @@ def play_perfect(game: MiniGame, *, step: float = 0.5) -> float:
 
 
 def all_positions():  # noqa: ANN201
-    return [position for job in JOBS for position in job.positions]
+    return [position for job in JOBS for position in job.all_positions]
 
 
 def test_jugar_perfecto_saca_100_en_todos_los_puestos() -> None:
@@ -287,7 +287,7 @@ def test_en_las_metricas_la_respuesta_es_la_de_mas_engagement() -> None:
 def test_clasificar_manda_cada_papel_a_su_sitio() -> None:
     for key, pack in SORT_PACKS.items():
         targets = dict(pack.items)
-        position = next(p for job in JOBS for p in job.positions if p.content == key)
+        position = next(p for job in JOBS for p in job.all_positions if p.content == key)
         game = new_game(position, random.Random(5), now=NOW)
         assert game.header == pack.rule
         for round_ in game.rounds:

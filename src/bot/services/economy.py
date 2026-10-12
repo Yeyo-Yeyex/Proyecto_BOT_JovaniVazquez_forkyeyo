@@ -81,6 +81,7 @@ from bot.services.taxes import (
     compute_beckham_payslip,
     compute_hk_payslip,
     compute_payslip,
+    compute_pension_payslip,
     compute_self_employed_payslip,
     compute_withholding,
     donation_deduction,
@@ -1315,8 +1316,9 @@ class EconomyService:
         concept: str,
         self_employed: bool = False,
         beckham: bool = False,
+        pension: bool = False,
     ) -> SalaryResult:
-        """Paga la nómina de un turno de `pala`.
+        """Paga la nómina de un turno de `pala` (o la pensión de un jubilado).
 
         Tratamiento fiscal: rendimiento del trabajo (art. 17.1 LIRPF) con
         retención de IRPF y cotización a la Seguridad Social (ver la nómina en
@@ -1338,16 +1340,24 @@ class EconomyService:
         misma renta que ven los premios y el casino, pasada a la escala de
         nóminas con `fiscal_to_wage`.
 
+        La pensión de jubilación de `pala` (`pension=True`) también es
+        rendimiento del trabajo (art. 17.2.a.1ª LIRPF): retención por la escala
+        con la reducción del art. 20, pero sin cotizaciones
+        (`taxes.compute_pension_payslip`).
+
         Args:
             gross: Bruto del turno; positivo.
             concept: Motivo corto y estable para el libro (`"pala:obra"`).
             self_employed: Si quien cobra es autónomo.
             beckham: Si tributa por la Ley Beckham.
+            pension: Si es una pensión de jubilación.
         """
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
         rule = (
-            compute_self_employed_payslip
+            compute_pension_payslip
+            if pension
+            else compute_self_employed_payslip
             if self_employed
             else compute_beckham_payslip
             if beckham

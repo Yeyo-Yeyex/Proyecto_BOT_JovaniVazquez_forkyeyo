@@ -26,7 +26,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bot.services.work import FLAT_RATE_FEE, Job, Mechanic, Position, Task, Training
+from bot.services.work import (
+    FLAT_RATE_FEE,
+    Branch,
+    Job,
+    Mechanic,
+    Perk,
+    Position,
+    Task,
+    Training,
+)
 
 # -- Tareas comunes --------------------------------------------------------------------
 #
@@ -197,7 +206,7 @@ POLITICA = Job(
     key="politica",
     name="Política (PSOE)",
     emoji="🌹",
-    blurb="Del pegacarteles al consejo de una eléctrica. Sobres incluidos.",
+    blurb="Del pegacarteles a la Moncloa o a Bruselas. Sobres incluidos.",
     rgb=(225, 6, 19),
     positions=(
         Position(
@@ -223,6 +232,7 @@ POLITICA = Job(
             days=3,
             content="votos:3",
             training=Training("listas", "un puesto de salida en las listas", 8_000),
+            perk=Perk("Te sabes el argumentario: +5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3,
@@ -233,10 +243,11 @@ POLITICA = Job(
             (Task("smooth", "Esquiva 15 preguntas en rueda de prensa", "smooth", 15), _good(5)),
             days=4,
             content="prensa",
+            perk=Perk("Coche oficial: cada turno cansa un 10 % menos.", battery=0.10),
         ),
         Position(
             4,
-            "Ministro",
+            "Diputado en el Congreso",
             10_000,
             Mechanic.DIALOGUE,
             60,
@@ -247,18 +258,228 @@ POLITICA = Job(
             ),
             days=5,
             content="comision",
-            training=Training("cartera", "la cartera ministerial (cena en Ferraz)", 30_000),
+            # Clave heredada de cuando el puesto 4 era ministro: quien ya la
+            # compró no paga dos veces.
+            training=Training("cartera", "el escaño en el Congreso (cena en Ferraz)", 30_000),
+            perk=Perk("Asesores de confianza: un fallo gratis por turno.", retry=True),
         ),
         Position(
             5,
-            "Consejero de una eléctrica",
-            25_000,
+            "Portavoz del grupo parlamentario",
+            13_000,
             Mechanic.DIALOGUE,
             60,
-            (),
-            days=0,
-            content="consejo",
-            training=Training("giratoria", "el paso por la puerta giratoria", 100_000),
+            (
+                Task("smooth", "Contesta 25 preguntas sin contestar nada", "smooth", 25),
+                _good(5),
+                _events(3),
+            ),
+            days=4,
+            content="portavoz",
+            training=Training("portavoz", "el móvil de portavoz (nunca se apaga)", 40_000),
+            perk=Perk(
+                "Argumentario de Ferraz memorizado: una respuesta mala tachada en los diálogos.",
+                fifty=True,
+            ),
+        ),
+    ),
+    branches=(
+        Branch(
+            "moncloa",
+            "Moncloa",
+            "🏛️",
+            "Consejos de ministros, socios que chantajean y, al final, la puerta "
+            "giratoria. Cobra menos, se jubila mejor.",
+            (
+                Position(
+                    6,
+                    "Secretario de Estado",
+                    14_200,
+                    Mechanic.SORT,
+                    60,
+                    (
+                        Task("sorted", "Despacha 30 papeles al cajón correcto", "sorted", 30),
+                        _good(5),
+                        _events(2),
+                    ),
+                    days=5,
+                    content="decretos",
+                    perk=Perk("Chófer oficial: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7,
+                    "Ministro",
+                    15_500,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Sal airoso de 25 marrones del ministerio", "smooth", 25),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=5,
+                    content="ministerio",
+                    training=Training(
+                        "ministerio", "la cartera ministerial (otra cena en Ferraz)", 45_000
+                    ),
+                    perk=Perk(
+                        "Gabinete de prensa: +5 % de tiempo en el minijuego.", extra_time=0.05
+                    ),
+                ),
+                Position(
+                    8,
+                    "Vicepresidente del Gobierno",
+                    16_900,
+                    Mechanic.MEMORY,
+                    60,
+                    (
+                        Task(
+                            "perfect",
+                            "Recuerda 15 veces lo que le prometiste a cada socio",
+                            "perfect_rounds",
+                            15,
+                        ),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=6,
+                    content="socios:4",
+                    perk=Perk("Falcon a demanda: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    9,
+                    "Presidente del Gobierno",
+                    18_400,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task(
+                            "smooth",
+                            "Sobrevive a 30 preguntas en la sesión de control",
+                            "smooth",
+                            30,
+                        ),
+                        _good(6),
+                        _events(4),
+                    ),
+                    days=6,
+                    content="control",
+                    training=Training("investidura", "una investidura (pactos incluidos)", 55_000),
+                    perk=Perk("Manual de resistencia: otro fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    10,
+                    "Consejero de una eléctrica",
+                    20_000,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (),
+                    days=0,
+                    content="consejo",
+                    # Clave heredada del antiguo puesto 5: quien ya la compró la conserva.
+                    training=Training("giratoria", "el paso por la puerta giratoria", 70_000),
+                    perk=Perk("El sillón ya está caliente: +10 % de tiempo.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="expresidente con sillón vitalicio en la eléctrica",
+        ),
+        Branch(
+            "bruselas",
+            "Bruselas",
+            "🇪🇺",
+            "Eurocámara: dietas, lobbies, trílogos y Estrasburgo una vez al mes. Lejos de "
+            "la UCO, cerca de la OLAF. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6,
+                    "Eurodiputado",
+                    15_400,
+                    Mechanic.MEMORY,
+                    60,
+                    (
+                        Task("perfect", "Vota bien 15 tandas del pleno", "perfect_rounds", 15),
+                        _good(5),
+                        _events(2),
+                    ),
+                    days=5,
+                    content="plenos:4",
+                    perk=Perk(
+                        "Dietas de Estrasburgo: cada turno cansa un 5 % menos.", battery=0.05
+                    ),
+                ),
+                Position(
+                    7,
+                    "Ponente de un reglamento",
+                    18_200,
+                    Mechanic.SORT,
+                    60,
+                    (
+                        Task("sorted", "Manda 30 enmiendas a su sitio", "sorted", 30),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=5,
+                    content="enmiendas",
+                    training=Training(
+                        "ponencia", "la ponencia de un reglamento (te la cede tu grupo)", 50_000
+                    ),
+                    perk=Perk(
+                        "Intérpretes en cabina: +5 % de tiempo en el minijuego.", extra_time=0.05
+                    ),
+                ),
+                Position(
+                    8,
+                    "Jefe de delegación",
+                    21_500,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Torea a 25 lobistas sin firmar nada", "smooth", 25),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=6,
+                    content="lobbies",
+                    perk=Perk("Asistente acreditado: un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9,
+                    "Vicepresidente del Parlamento Europeo",
+                    25_400,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Cierra 30 puntos de un trílogo", "smooth", 30),
+                        _good(6),
+                        _events(4),
+                    ),
+                    days=6,
+                    content="trilogo",
+                    training=Training(
+                        "vicepresidencia",
+                        "el apoyo de los grandes grupos para la vicepresidencia",
+                        75_000,
+                    ),
+                    perk=Perk(
+                        "Coche con chófer en Bruselas: cada turno cansa un 5 % menos.",
+                        battery=0.05,
+                    ),
+                ),
+                Position(
+                    10,
+                    "Comisario europeo",
+                    30_000,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (),
+                    days=0,
+                    content="comisario",
+                    perk=Perk("Gabinete de veinte personas: +10 % de tiempo.", extra_time=0.10),
+                ),
+            ),
+            pension=3_000,
+            retired_as="eurócrata jubilado con pensión comunitaria",
         ),
     ),
 )
@@ -1666,6 +1887,7 @@ class Event:
         abroad: `True`, solo trabajando fuera; `False`, solo en casa; `None`, siempre.
         phase: Solo con esa situación fiscal (`work.residence_phase`).
         special: No sale al azar; lo lanza una regla (p. ej., el teletrabajo).
+        branches: Ramas donde sale (vacío = en cualquiera y en el tronco).
     """
 
     key: str
@@ -1677,6 +1899,7 @@ class Event:
     abroad: bool | None = None
     phase: str | None = None
     special: bool = False
+    branches: tuple[str, ...] = ()
 
 
 EVENTS: tuple[Event, ...] = (
@@ -2791,14 +3014,21 @@ RESIGN_EVENT = Event(
 
 
 def events_for(
-    job: str, level: int, family: int, *, abroad: bool = False, phase: str = "casa"
+    job: str,
+    level: int,
+    family: int,
+    *,
+    abroad: bool = False,
+    phase: str = "casa",
+    branch: str = "",
 ) -> list[Event]:
-    """Eventos que pueden salir al azar con este oficio, puesto, familia y país."""
+    """Eventos que pueden salir al azar con este oficio, puesto, rama, familia y país."""
     return [
         event
         for event in EVENTS
         if not event.special
         and (not event.jobs or job in event.jobs)
+        and (not event.branches or branch in event.branches)
         and level >= event.min_level
         and (not event.family_below or family < event.family_below)
         and (event.abroad is None or event.abroad == abroad)

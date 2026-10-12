@@ -5,8 +5,12 @@ guarda el estado laboral. Tablas:
 
 - `work_contracts`: el contrato en curso de cada miembro (`Contract`). El
   progreso de las tareas va en JSON porque cambia con el catálogo.
-- `work_history`: el puesto en el que se quedó cada miembro en cada oficio y
-  el más alto al que llegó. Al volver a un oficio se entra en ese puesto.
+- `work_history`: el puesto (y la rama) en el que se quedó cada miembro en
+  cada oficio y el más alto al que llegó. Al volver a un oficio se entra en ese
+  puesto.
+- `work_retirements`: las ramas de las que se jubiló cada miembro (para siempre).
+- `work_pension_claims`: el último día que cobró la pensión, para cobrarla una
+  vez al día.
 - `work_training`: formaciones compradas (valen para siempre).
 - `work_shifts`: un registro corto de turnos (puntuación, tipo, dinero) para
   contar días en el puesto, el sueldo medio de la baja y los logros. Se
@@ -25,7 +29,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
-from bot.services.work import Contract, ShiftRecord
+from bot.services.work import Career, Contract, ShiftRecord
 
 T = TypeVar("T")
 
@@ -106,8 +110,30 @@ class WorkRepository:
                     guild_id INTEGER PRIMARY KEY,
                     channel_ids TEXT NOT NULL DEFAULT '[]'
                 );
+
+                CREATE TABLE IF NOT EXISTS work_retirements (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    job TEXT NOT NULL,
+                    branch TEXT NOT NULL,
+                    retired_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, job, branch)
+                );
+
+                CREATE TABLE IF NOT EXISTS work_pension_claims (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
+                );
                 """
             )
+            # Bases de datos de antes de las ramas: todo el mundo estaba en el tronco.
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(work_history)")}
+            if "branch" not in columns:
+                connection.execute(
+                    "ALTER TABLE work_history ADD COLUMN branch TEXT NOT NULL DEFAULT ''"
+                )
         finally:
             connection.close()
 
@@ -141,39 +167,164 @@ class WorkRepository:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                """
-                INSERT INTO work_contracts (guild_id, user_id, data) VALUES (?, ?, ?)
-                ON CONFLICT(guild_id, user_id) DO UPDATE SET data = excluded.data
-                """,
-                (guild_id, user_id, json.dumps(asdict(contract))),
-            )
-            connection.execute(
-                """
-                INSERT INTO work_history (guild_id, user_id, job, level, max_level)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(guild_id, user_id, job) DO UPDATE SET
-                    level = excluded.level,
-                    max_level = MAX(max_level, excluded.level)
-                """,
-                (guild_id, user_id, contract.job, contract.level, contract.level),
-            )
+            self._write_contract(connection, guild_id, user_id, contract)
             connection.execute("COMMIT")
         finally:
             connection.close()
 
-    async def history(self, guild_id: int, user_id: int) -> dict[str, tuple[int, int]]:
-        """`{oficio: (puesto en el que se quedó, puesto máximo)}`."""
+    @staticmethod
+    def _write_contract(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, contract: Contract
+    ) -> None:
+        """Escribe el contrato y su historial dentro de la transacción abierta."""
+        connection.execute(
+            """
+            INSERT INTO work_contracts (guild_id, user_id, data) VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET data = excluded.data
+            """,
+            (guild_id, user_id, json.dumps(asdict(contract))),
+        )
+        connection.execute(
+            """
+            INSERT INTO work_history (guild_id, user_id, job, level, max_level, branch)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id, job) DO UPDATE SET
+                level = excluded.level,
+                max_level = MAX(max_level, excluded.level),
+                branch = excluded.branch
+            """,
+            (guild_id, user_id, contract.job, contract.level, contract.level, contract.branch),
+        )
+
+    async def history(self, guild_id: int, user_id: int) -> dict[str, Career]:
+        """`{oficio: Career(puesto en el que se quedó, puesto máximo, rama)}`."""
         return await self._run(self._history_sync, guild_id, user_id)
 
-    def _history_sync(self, guild_id: int, user_id: int) -> dict[str, tuple[int, int]]:
+    def _history_sync(self, guild_id: int, user_id: int) -> dict[str, Career]:
         connection = self._connect()
         try:
             rows = connection.execute(
-                "SELECT job, level, max_level FROM work_history WHERE guild_id = ? AND user_id = ?",
+                """
+                SELECT job, level, max_level, branch FROM work_history
+                WHERE guild_id = ? AND user_id = ?
+                """,
                 (guild_id, user_id),
             ).fetchall()
-            return {r["job"]: (int(r["level"]), int(r["max_level"])) for r in rows}
+            return {
+                r["job"]: Career(int(r["level"]), int(r["max_level"]), r["branch"]) for r in rows
+            }
+        finally:
+            connection.close()
+
+    # -- Jubilación ----------------------------------------------------------------------
+
+    async def retirements(self, guild_id: int, user_id: int) -> frozenset[tuple[str, str]]:
+        """Ramas de las que se jubiló: `{(oficio, rama)}`."""
+        return await self._run(self._retirements_sync, guild_id, user_id)
+
+    def _retirements_sync(self, guild_id: int, user_id: int) -> frozenset[tuple[str, str]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT job, branch FROM work_retirements WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchall()
+            return frozenset((r["job"], r["branch"]) for r in rows)
+        finally:
+            connection.close()
+
+    async def retire(
+        self, guild_id: int, user_id: int, branch: str, contract: Contract, now: float
+    ) -> None:
+        """Apunta la jubilación de la rama `branch` del oficio del contrato y guarda
+        el contrato nuevo (ya en la otra rama), todo en la misma transacción.
+
+        Raises:
+            ValueError: Si ya estaba jubilado de esa rama; no se guarda nada.
+        """
+        await self._run(self._retire_sync, guild_id, user_id, branch, contract, now)
+
+    def _retire_sync(
+        self, guild_id: int, user_id: int, branch: str, contract: Contract, now: float
+    ) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO work_retirements (guild_id, user_id, job, branch, retired_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, contract.job, branch, now),
+                )
+            except sqlite3.IntegrityError as error:
+                connection.execute("ROLLBACK")
+                raise ValueError("Ya estás jubilado de esa rama.") from error
+            self._write_contract(connection, guild_id, user_id, contract)
+            connection.execute("COMMIT")
+        finally:
+            connection.close()
+
+    async def claim_pension_day(self, guild_id: int, user_id: int, day: str) -> str | None:
+        """Apunta que hoy (`day`) cobra la pensión, si no la había cobrado ya.
+
+        Returns:
+            El día del cobro anterior (`""` si es el primero), para deshacerlo si
+            el pago falla, o `None` si hoy ya la había cobrado.
+        """
+        return await self._run(self._claim_pension_sync, guild_id, user_id, day)
+
+    def _claim_pension_sync(self, guild_id: int, user_id: int, day: str) -> str | None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT day FROM work_pension_claims WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            previous = row["day"] if row else ""
+            if previous == day:
+                connection.execute("ROLLBACK")
+                return None
+            connection.execute(
+                """
+                INSERT INTO work_pension_claims (guild_id, user_id, day) VALUES (?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET day = excluded.day
+                """,
+                (guild_id, user_id, day),
+            )
+            connection.execute("COMMIT")
+            return previous
+        finally:
+            connection.close()
+
+    async def pension_day(self, guild_id: int, user_id: int) -> str:
+        """Último día (ISO) en que cobró la pensión (`""` si nunca)."""
+        return await self._run(self._pension_day_sync, guild_id, user_id)
+
+    def _pension_day_sync(self, guild_id: int, user_id: int) -> str:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT day FROM work_pension_claims WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return row["day"] if row else ""
+        finally:
+            connection.close()
+
+    async def restore_pension_day(self, guild_id: int, user_id: int, day: str) -> None:
+        """Deshace un cobro apuntado con `claim_pension_day` (si el pago falló)."""
+        await self._run(self._restore_pension_sync, guild_id, user_id, day)
+
+    def _restore_pension_sync(self, guild_id: int, user_id: int, day: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                "UPDATE work_pension_claims SET day = ? WHERE guild_id = ? AND user_id = ?",
+                (day, guild_id, user_id),
+            )
         finally:
             connection.close()
 
@@ -342,6 +493,8 @@ class WorkRepository:
                 "work_training",
                 "work_shifts",
                 "work_settings",
+                "work_retirements",
+                "work_pension_claims",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

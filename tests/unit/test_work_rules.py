@@ -80,23 +80,40 @@ def test_cada_oficio_tiene_puestos_correlativos_con_sueldo_creciente() -> None:
         "influencer",
     }
     for job in JOBS:
-        assert [p.level for p in job.positions] == list(range(1, job.top + 1))
-        pays = [p.base_pay for p in job.positions]
-        assert pays == sorted(pays), job.key
-        assert not job.positions[-1].tasks  # del último no se asciende
-        for position in job.positions[:-1]:
-            assert position.tasks and position.days >= 2
+        for branch, ladder in job.ladders:
+            assert [p.level for p in ladder] == list(range(1, job.top + 1)), (job.key, branch)
+            pays = [p.base_pay for p in ladder]
+            assert pays == sorted(pays), (job.key, branch)
+            assert not ladder[-1].tasks  # del último no se asciende
+            for position in ladder[:-1]:
+                assert position.tasks and position.days >= 2
+
+
+def test_las_ramas_salen_del_final_del_tronco_sin_formacion_y_con_pension() -> None:
+    for job in JOBS:
+        if not job.branches:
+            continue
+        assert len(job.branches) >= 2, job.key
+        assert len({len(b.positions) for b in job.branches}) == 1, job.key  # mismo techo
+        assert len({b.key for b in job.branches}) == len(job.branches)
+        for branch in job.branches:
+            # Al elegir rama no se puede comprar antes su formación: la entrada es gratis.
+            assert branch.positions[0].training is None, (job.key, branch.key)
+            assert branch.positions[0].level == job.trunk_top + 1
+            assert branch.pension > 0 and branch.retired_as
+    keys = [p.training.key for j in JOBS for p in j.all_positions if p.training]
+    assert len(keys) == len(set(keys))  # una formación no sirve para dos puestos
 
 
 def test_los_minijuegos_duran_de_30_a_60_segundos_segun_el_nivel() -> None:
     for job in JOBS:
         assert [p.seconds for p in job.positions[:2]] == [30, 30]
-        assert all(p.seconds == 60 for p in job.positions[3:])
+        assert all(p.seconds == 60 for p in job.all_positions[3:])
 
 
 def test_el_contenido_de_cada_puesto_existe() -> None:
     for job in JOBS:
-        for position in job.positions:
+        for position in job.all_positions:
             kind = position.content.partition(":")[0]
             known = kind in MEMORY_PACKS or kind in DIALOGUE_PACKS or kind in SORT_PACKS
             assert known or kind in {"cavar", "pedidos", "metricas", *_SPOT}, position.content
