@@ -33,7 +33,7 @@ import math
 import re
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import Enum
 from fractions import Fraction
@@ -79,6 +79,11 @@ from bot.services.craps import Bet as CrapsBet
 from bot.services.craps import CrapsGame, Hand
 from bot.services.craps import Status as CrapsStatus
 from bot.services.crash import Seat as CrashSeat
+from bot.services.gallos import HOUSE as GALLOS_HOUSE
+from bot.services.gallos import Corner as GallosCorner
+from bot.services.gallos import Fight as GallosFight
+from bot.services.gallos import Finish as GallosFinish
+from bot.services.gallos import RoosterRecord
 from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
 from bot.services.hold_win import BonusStep as HoldWinStep
@@ -247,6 +252,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
     Category("baccarat", "🍸 Bacará", group=_CG),
+    Category("gallos", "🐓 Gallos", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
@@ -534,6 +540,21 @@ BIZUM_LIMIT_STORY = (
     "el banco te lo para en seco. Aquí te ha colado porque Perro Sanxe estaba mirando "
     "despegar el Falcon. Si alguien pregunta, era para el cumple de tu prima."
 )
+
+#: Discurso del primer logro de los gallos (`gallos_1`).
+GALLOS_STORY = (
+    "🐓 **Bienvenido al reñidero, mi amor.** En casi toda España las peleas de gallos "
+    "están prohibidas, pero la ley canaria de protección animal de 1991 las sigue "
+    "permitiendo allí donde son tradición. Aquí son de dibujos animados: ningún gallo "
+    "sufre, solo tu cartera. Y lo que ganes, Perro Sanxe lo mira con lupa: tributa "
+    "como cualquier juego del casino."
+)
+#: Rivales de la casa ganados: un contador por rival (`gallos_beat_falcon`).
+GALLOS_BEAT_PREFIX = "gallos_beat_"
+#: Skins con las que ha peleado: un contador por skin (`gallos_skin_serie`).
+GALLOS_SKIN_PREFIX = "gallos_skin_"
+#: Las skins gratis de los gallos (claves de `bot.services.skins`).
+GALLOS_FREE_SKINS = ("gallo_blanco", "gallo_negro", "gallo_pinto")
 
 
 #: Discurso del logro `paguita`: rechazar un ascenso.
@@ -7361,6 +7382,356 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde una mano de bacará un viernes 13.", C, True),
     ])  # fmt: skip
 
+    # 🐓 Gallos ---------------------------------------------------------------------------
+    fights = _tiers("gallos", "gallos_fights", [
+        (1, "gallos_1", "Al reñidero", "Pelea con tu gallo por primera vez.", C),
+        (10, "gallos_10", "Gallo de corral", "Pelea 10 veces con tu gallo.", C),
+        (100, "gallos_100", "Gallera de barrio", "Pelea 100 veces con tu gallo.", R),
+        (1_000, "gallos_1k", "Gallero de toda la vida", "Pelea 1.000 veces con tu gallo.", E),
+        (5_000, "gallos_5k", "Federación Gallística Internacional",
+         "Pelea 5.000 veces. La FIFA de los gallos ya te manda la acreditación.", L),
+    ])  # fmt: skip
+    fights[0] = replace(fights[0], story=GALLOS_STORY)
+    a += fights
+    a += _tiers("gallos", "gallos_wins", [
+        (1, "gallos_wins_1", "Kikirikí", "Gana tu primera pelea de gallos.", C),
+        (25, "gallos_wins_25", "Rey del corral", "Gana 25 peleas de gallos.", C),
+        (100, "gallos_wins_100", "Gallo de oro",
+         "Gana 100 peleas. Te regalan el Gallo de oro, con certificado y todo.", R),
+        (500, "gallos_wins_500", "Imperio del espolón", "Gana 500 peleas de gallos.", E),
+        (2_500, "gallos_wins_2500", "Manual de resistencia gallístico",
+         "Gana 2.500 peleas de gallos. Ni las mociones de censura pueden contigo.", L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_losses", [
+        (1, "gallos_loss_1", "Caldo de gallina", "Pierde tu primera pelea de gallos.", C),
+        (10, "gallos_loss_10", "Pollo asado", "Pierde 10 peleas de gallos.", C),
+        (100, "gallos_loss_100", "Gallina en pepitoria", "Pierde 100 peleas de gallos.", R),
+        (1_000, "gallos_loss_1k", "Más palos que una piñata",
+         "Pierde 1.000 peleas y sigue llevando al gallo al reñidero.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_kos", [
+        (1, "gallos_ko_1", "KO técnico", "Gana una pelea por KO.", C),
+        (25, "gallos_ko_25", "Mike Tyson con plumas", "Gana 25 peleas por KO.", R),
+        (250, "gallos_ko_250", "La UCO del reñidero", "Gana 250 peleas por KO.", E),
+        (1_000, "gallos_ko_1k", "Pegasus te tiene fichado",
+         "Gana 1.000 peleas por KO. Hasta los servicios secretos quieren tu gallo.", L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_ko_taken", [
+        (1, "gallos_estrellitas", "Viendo estrellitas", "Que tumben a tu gallo por KO.", C),
+        (50, "gallos_sparring", "Sparring profesional",
+         "Que tumben a tu gallo 50 veces. Ya cobra por dejarse.", R, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_fled", [
+        (1, "gallos_maletero", "Huida en el maletero",
+         "Que tu gallo salga por patas del reñidero. Waterloo queda a dos horas.", C, True),
+        (25, "gallos_waterloo", "Exilio en Waterloo", "Que tu gallo huya 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_made_flee", [
+        (1, "gallos_que_se_vaya", "Que se vaya, que se vaya",
+         "Haz que el gallo rival salga corriendo.", C),
+        (50, "gallos_devolucion", "Devolución en caliente",
+         "Haz que 50 gallos salgan corriendo del reñidero.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_points_wins", [
+        (1, "gallos_jueces", "Decisión de los jueces", "Gana una pelea a los puntos.", C),
+        (50, "gallos_constitucional", "El Constitucional te da la razón",
+         "Gana 50 peleas a los puntos.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_crits", [
+        (10, "gallos_crit_10", "Golpe crítico", "Da 10 golpes críticos.", C),
+        (100, "gallos_crit_100", "Recorte con motosierra", "Da 100 golpes críticos.", R),
+        (1_000, "gallos_crit_1k", "Arancel del 200 %", "Da 1.000 golpes críticos.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_dodges", [
+        (50, "gallos_cintura", "Cintura de torero", "Esquiva 50 golpes.", C),
+        (500, "gallos_ministro", "Respuesta de ministro",
+         "Esquiva 500 golpes. Ni una pregunta de control te ha tocado.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_damage_max", [
+        (40, "gallos_dmg_40", "Pegada seca", "Quita 40 de vida de un solo golpe.", C),
+        (60, "gallos_dmg_60", "Golpe de efecto",
+         "Quita 60 de vida de un solo golpe. Un crítico de patada voladora, mínimo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_flawless", [
+        (1, "gallos_ni_un_rasguno", "Ni un rasguño",
+         "Gana una pelea sin que te toquen ni una pluma.", R, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_close_win", [
+        (1, "gallos_por_los_pelos", "Con la última pluma",
+         "Gana una pelea con 10 de vida o menos.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_blitz", [
+        (1, "gallos_relampago", "Guerra relámpago",
+         "Gana por KO en el primer asalto.", C),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_streak_max", [
+        (3, "gallos_racha_3", "Hat-trick de espolones", "Gana 3 peleas seguidas con tu gallo.", C),
+        (5, "gallos_racha_5", "Pentacampeón", "Gana 5 peleas seguidas con tu gallo.", C),
+        (10, "gallos_racha_10", "Mandato eterno", "Gana 10 peleas seguidas con tu gallo.", R),
+        (20, "gallos_racha_20", "Presidente vitalicio del gallinero",
+         "Gana 20 peleas seguidas. Las elecciones, ya si eso, otro año.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_days_max", [
+        (7, "gallos_dias_7", "Gallo madrugador", "Pelea 7 días seguidos.", R),
+        (30, "gallos_dias_30", "Kikirikí diario", "Pelea 30 días seguidos.", E),
+        (100, "gallos_dias_100", "El despertador de todo el barrio",
+         "Pelea 100 días seguidos.", L),
+    ])  # fmt: skip
+    for key, achievement_id, name, description, rarity, secret in (
+        (
+            "temu",
+            "gallos_beat_temu",
+            "Devolución gratuita",
+            "Gánale al Gallo de Temu. Tampoco tenía mucho mérito.",
+            C,
+            False,
+        ),
+        ("teror", "gallos_beat_teror", "Bajada del Pino", "Gánale al Pollo de Teror.", C, False),
+        (
+            "directiva",
+            "gallos_beat_directiva",
+            "Recurso estimado",
+            "Gánale a la Directiva 2019/904. Bruselas lo apela.",
+            C,
+            False,
+        ),
+        (
+            "falcon",
+            "gallos_beat_falcon",
+            "Moción de censura con espolones",
+            "Gánale al Gallo del Falcon. Y aun así no dimite.",
+            C,
+            False,
+        ),
+        (
+            "motosierra",
+            "gallos_beat_motosierra",
+            "¡Afuera tú!",
+            "Gánale a La Motosierra.",
+            C,
+            False,
+        ),
+        (
+            "sahel",
+            "gallos_beat_sahel",
+            "Contragolpe",
+            "Gánale al Coronel del Sahel. Promete elecciones para la revancha.",
+            C,
+            False,
+        ),
+        (
+            "arancel",
+            "gallos_beat_arancel",
+            "Liberation Day",
+            "Gánale a Arancel. Mañana te pone un 300 %.",
+            C,
+            False,
+        ),
+        (
+            "credito",
+            "gallos_beat_credito",
+            "Crédito social: −1.000",
+            "Gánale a Crédito Social. Ya no te dejan coger el tren.",
+            C,
+            False,
+        ),
+        (
+            "cupula",
+            "gallos_beat_cupula",
+            "Se coló por la Cúpula",
+            "Gánale a Cúpula de Hierro.",
+            C,
+            False,
+        ),
+        (
+            "actas",
+            "gallos_beat_actas",
+            "Ahora sí aparecen las actas",
+            "Gánale al Gallo de las Actas. Él dice que ganó.",
+            R,
+            False,
+        ),
+        (
+            "marte",
+            "gallos_beat_marte",
+            "Cohete que no despega",
+            "Gánale al Gallo de Marte. Ya lo está anunciando en X como una victoria.",
+            R,
+            False,
+        ),
+    ):
+        a += _tiers("gallos", f"{GALLOS_BEAT_PREFIX}{key}", [
+            (1, achievement_id, name, description, rarity, secret),
+        ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_gira_mundial",
+            name="Gira mundial",
+            description="Gánale a todos los gallos de la casa.",
+            category="gallos",
+            rarity=E,
+            conditions=tuple((f"{GALLOS_BEAT_PREFIX}{r.key}", 1) for r in GALLOS_HOUSE),
+        )
+    )
+    a += _tiers("gallos", "gallos_temu_loss", [
+        (1, "gallos_pieza_recambio", "Pieza de recambio",
+         "Pierde contra el Gallo de Temu. Llegó en tres cajas y aun así.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_favourite_loss", [
+        (1, "gallos_cis", "Encuesta fallida",
+         "Pierde siendo el gran favorito (un 80 % o más). El CIS lo daba por hecho.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_win_max", [
+        (10_000, "gallos_bolsa", "La bolsa de la pelea", "Gana 10.000 Y$ en una pelea.", R),
+        (100_000, "gallos_velada", "Velada del año", "Gana 100.000 Y$ en una pelea.", E),
+        (1_000_000, "gallos_millonario", "Combate del siglo",
+         "Gana 1.000.000 Y$ en una pelea. Ni Las Vegas.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("gallos", "gallos_duels", [
+        (1, "gallos_duelo_1", "Duelo al amanecer", "Pelea contra el gallo de otra persona.", C),
+        (10, "gallos_duelo_10", "Pique de barrio", "Pelea 10 duelos contra otras personas.", C),
+        (100, "gallos_duelo_100", "Rivalidad histórica", "Pelea 100 duelos.", R),
+        (500, "gallos_duelo_500", "El clásico del gallinero", "Pelea 500 duelos.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_duel_wins", [
+        (1, "gallos_cuarenta", "Le has cantado las cuarenta", "Gana un duelo.", C),
+        (25, "gallos_terror", "El terror del barrio", "Gana 25 duelos.", R),
+        (250, "gallos_maton", "Matón del gallinero", "Gana 250 duelos.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_duel_big", [
+        (1, "gallos_ppv", "Pago por visión",
+         "Pelea un duelo de 10.000 Y$ o más por cabeza.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_crowd_max", [
+        (1_000, "gallos_publico", "Con público",
+         "Que el público apueste 1.000 Y$ en uno de tus duelos.", C),
+        (10_000, "gallos_lleno", "Lleno en el reñidero",
+         "Que el público apueste 10.000 Y$ en uno de tus duelos.", R),
+        (100_000, "gallos_pantalla", "Pantalla gigante en Sol",
+         "Que el público apueste 100.000 Y$ en uno de tus duelos.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("gallos", "gallos_bets", [
+        (1, "gallos_grada_1", "Apuesta de grada", "Apuesta en el duelo de otros.", C),
+        (10, "gallos_grada_10", "Abonado de grada", "Apuesta en 10 duelos de otros.", C),
+        (100, "gallos_grada_100", "Gallero de sofá", "Apuesta en 100 duelos de otros.", R),
+        (1_000, "gallos_grada_1k", "Palco VIP", "Apuesta en 1.000 duelos de otros.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_bets_won", [
+        (1, "gallos_ojo", "Ojo de gallero", "Acierta una apuesta de grada.", C),
+        (50, "gallos_tipster", "Tipster del reñidero", "Acierta 50 apuestas de grada.", R),
+        (500, "gallos_vidente", "Vidente con espolones", "Acierta 500 apuestas de grada.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_bet_odds_max", [
+        (300, "gallos_contra_el_pueblo", "Contra el pueblo",
+         "Acierta una apuesta de grada que pagaba ×3 o más.", C),
+        (1_000, "gallos_tapado", "Todo al tapado",
+         "Acierta una apuesta de grada que pagaba ×10 o más.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_bet_refund", [
+        (1, "gallos_porra_desierta", "Porra desierta",
+         "Apuesta en un duelo en el que nadie apuesta por el otro gallo. "
+         "Te lo devuelven, qué remedio.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_challenges", [
+        (1, "gallos_te_reto", "Te reto", "Reta a alguien a una pelea de gallos.", C),
+        (50, "gallos_buscabroncas", "Buscabroncas", "Reta a 50 personas.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_rejects", [
+        (1, "gallos_gallina", "Co-co-co", "Rechaza un reto de pelea de gallos.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_rejected", [
+        (1, "gallos_cobra", "Te han hecho la cobra",
+         "Que alguien rechace tu reto. Como Bisbal en la tele.", C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_renamed", [
+        (1, "gallos_bautizo", "Bautizo en el corral", "Ponle nombre a tu gallo.", C),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_rake", [
+        (1_000, "gallos_comision", "El reñidero también cobra",
+         "Deja 1.000 Y$ de comisión en duelos y apuestas de grada.", C),
+        (100_000, "gallos_comisionista", "Comisionista del reñidero",
+         "Deja 100.000 Y$ de comisión en el reñidero.", E, True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("gallos", "gallos_paid_skin_win", [
+        (1, "gallos_pasarela", "Gallo de pasarela", "Gana una pelea con un gallo de la tienda.", C),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_vestuario",
+            name="Prueba de vestuario",
+            description="Pelea con el gallo de serie y con cada uno de los gratis.",
+            category="gallos",
+            rarity=C,
+            conditions=tuple(
+                (f"{GALLOS_SKIN_PREFIX}{key}", 1) for key in ("serie", *GALLOS_FREE_SKINS)
+            ),
+        )
+    )
+    a += _tiers("gallos", "gallos_stake_155", [
+        (1, "gallos_155", "Aplicar el 155", "Apuesta exactamente 155 Y$ en una pelea.", C, True),
+    ])  # fmt: skip
+    for stat, achievement_id, name, description, secret in (
+        (
+            "gallos_hispanidad",
+            "gallos_hispanidad",
+            "Pelea de la Hispanidad",
+            "Pelea un 12 de octubre.",
+            False,
+        ),
+        (
+            "gallos_canarias",
+            "gallos_dia_canarias",
+            "Gallo del Día de Canarias",
+            "Pelea un 30 de mayo.",
+            False,
+        ),
+        (
+            "gallos_july4",
+            "gallos_july4",
+            "Independence Day",
+            "Pelea un 4 de julio. God bless America y sus aranceles.",
+            False,
+        ),
+        (
+            "gallos_china_day",
+            "gallos_china",
+            "Fiesta Nacional china",
+            "Pelea un 1 de octubre. El Partido te observa con orgullo.",
+            True,
+        ),
+        (
+            "gallos_europe_day",
+            "gallos_europa",
+            "Día de Europa",
+            "Pelea un 9 de mayo, con el tapón bien pegado.",
+            False,
+        ),
+        ("gallos_africa_day", "gallos_africa", "Día de África", "Pelea un 25 de mayo.", False),
+        (
+            "gallos_night",
+            "gallos_deshoras",
+            "Kikirikí a deshoras",
+            "Pelea de madrugada (de 2 a 6).",
+            True,
+        ),
+        (
+            "gallos_dawn",
+            "gallos_amanecer",
+            "Al amanecer, como Dios manda",
+            "Pelea entre las 6 y las 8 de la mañana.",
+            False,
+        ),
+        ("gallos_nochevieja", "gallos_uvas", "Uvas y espolones", "Pelea en Nochevieja.", True),
+        (
+            "gallos_friday13",
+            "gallos_viernes13",
+            "Gallo negro, viernes 13",
+            "Pierde una pelea un viernes 13.",
+            True,
+        ),
+    ):
+        a += _tiers("gallos", stat, [(1, achievement_id, name, description, C, secret)])
+
     # 🛵 Reparto ------------------------------------------------------------------------
     a += _tiers("reparto", "work_orders", [
         (1, "primer_pedido", "Su pedido está en camino", "Elige bien tu primer pedido.", C),
@@ -9989,6 +10360,122 @@ def bus_stats(game: BusGame, *, when: datetime) -> StatDelta:
 BACCARAT_DRAGON = 5
 #: Manos alternas (Banca, Jugador, Banca…) para el ping-pong.
 BACCARAT_PINGPONG = 6
+
+
+def gallos_stats(
+    *,
+    fight: GallosFight,
+    corner: GallosCorner,
+    rival: str | None,
+    chance: float,
+    stake: int,
+    net: int,
+    record: RoosterRecord,
+    skin: str,
+    paid_skin: bool,
+    crowd_pool: int,
+    rake: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una pelea de gallos para uno de los dos dueños (sin lo común del casino).
+
+    Args:
+        fight: La pelea.
+        corner: La esquina de este dueño.
+        rival: Clave del gallo de la casa (`gallos.HOUSE`), o `None` en un duelo.
+        chance: Probabilidad que tenía de ganar.
+        stake: Lo apostado.
+        net: Ganado menos apostado.
+        record: La ficha de su gallo tras la pelea.
+        skin: Clave de la skin con la que peleó (`serie` si ninguna).
+        paid_skin: Si esa skin es de las de la tienda (ni de serie ni gratis).
+        crowd_pool: Lo que apostó el público en el duelo (0 contra la casa).
+        rake: Comisión de la casa que se ha dejado (0 contra la casa).
+        when: Hora local.
+    """
+    won = fight.winner is corner
+    mine = corner
+    hits = fight.hits(mine)
+    delta = StatDelta(
+        add={"gallos_fights": 1, f"{GALLOS_SKIN_PREFIX}{skin}": 1},
+        peak={
+            "gallos_streak_max": record.best_streak,
+            "gallos_days_max": record.day_streak,
+        },
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("gallos_wins", won)
+    bump("gallos_losses", not won)
+    bump("gallos_crits", amount=fight.crits(mine))
+    bump("gallos_dodges", amount=fight.dodges(mine))
+    if hits:
+        delta.peak["gallos_damage_max"] = max(e.damage for e in hits)
+    if won:
+        bump("gallos_kos", fight.finish is GallosFinish.KO)
+        bump("gallos_made_flee", fight.finish is GallosFinish.FLED)
+        bump("gallos_points_wins", fight.finish is GallosFinish.POINTS)
+        bump("gallos_flawless", fight.damage_taken(mine) == 0)
+        bump("gallos_close_win", fight.hp(mine) <= 10)
+        bump("gallos_blitz", fight.finish is GallosFinish.KO and fight.rounds == 1)
+        bump("gallos_paid_skin_win", paid_skin)
+        if net > 0:
+            delta.peak["gallos_win_max"] = net
+    else:
+        bump("gallos_ko_taken", fight.finish is GallosFinish.KO)
+        bump("gallos_fled", fight.finish is GallosFinish.FLED)
+        bump("gallos_favourite_loss", chance >= 0.8)
+        bump("gallos_friday13", when.weekday() == 4 and when.day == 13)
+    if rival is not None:
+        bump(f"{GALLOS_BEAT_PREFIX}{rival}", won)
+        bump("gallos_temu_loss", not won and rival == "temu")
+    else:
+        bump("gallos_duels")
+        bump("gallos_duel_wins", won)
+        bump("gallos_duel_big", stake >= 10_000)
+        if crowd_pool:
+            delta.peak["gallos_crowd_max"] = crowd_pool
+    bump("gallos_rake", amount=rake)
+    bump("gallos_stake_155", stake == 155)
+    bump("gallos_hispanidad", when.month == 10 and when.day == 12)
+    bump("gallos_canarias", when.month == 5 and when.day == 30)
+    bump("gallos_july4", when.month == 7 and when.day == 4)
+    bump("gallos_china_day", when.month == 10 and when.day == 1)
+    bump("gallos_europe_day", when.month == 5 and when.day == 9)
+    bump("gallos_africa_day", when.month == 5 and when.day == 25)
+    bump("gallos_night", 2 <= when.hour < 6)
+    bump("gallos_dawn", 6 <= when.hour < 8)
+    bump("gallos_nochevieja", when.month == 12 and when.day == 31)
+    return delta
+
+
+def gallos_bet_stats(
+    *, won: bool, refunded: bool, odds_cents: int, rake: int, when: datetime
+) -> StatDelta:
+    """Contadores de una apuesta de grada en un duelo de gallos (sin lo común del casino).
+
+    Args:
+        won: Si acertó.
+        refunded: Si se devolvió porque nadie apostó por el otro gallo.
+        odds_cents: Cuota cobrada, en centésimas (0 si no cobró).
+        rake: Comisión de la casa que se ha dejado.
+        when: Hora local.
+    """
+    delta = StatDelta(add={"gallos_bets": 1})
+    if refunded:
+        delta.add["gallos_bet_refund"] = 1
+    elif won:
+        delta.add["gallos_bets_won"] = 1
+        delta.peak["gallos_bet_odds_max"] = odds_cents
+    if rake:
+        delta.add["gallos_rake"] = rake
+    if 2 <= when.hour < 6:
+        delta.add["gallos_night"] = 1
+    return delta
 
 
 def baccarat_stats(

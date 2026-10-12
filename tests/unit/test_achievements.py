@@ -36,6 +36,9 @@ from bot.services.achievements import (
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
+    GALLOS_BEAT_PREFIX,
+    GALLOS_FREE_SKINS,
+    GALLOS_SKIN_PREFIX,
     HORSE_BACKED_KINDS_STAT,
     HORSE_BACKED_MAX_STAT,
     HORSE_BET_KINDS,
@@ -84,6 +87,7 @@ from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
+from bot.services.gallos import HOUSE as GALLOS_HOUSE
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
@@ -280,6 +284,20 @@ PRODUCED_STATS = {
     *(f"chicken_finish_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"chicken_lanes_max_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"chicken_hit_{kind}" for kind in CHICKEN_VEHICLE_KINDS),
+    # cogs/gallos.py (`gallos_stats`, `gallos_bet_stats` y lo social)
+    "gallos_fights", "gallos_wins", "gallos_losses", "gallos_kos", "gallos_ko_taken",
+    "gallos_fled", "gallos_made_flee", "gallos_points_wins", "gallos_crits", "gallos_dodges",
+    "gallos_damage_max", "gallos_flawless", "gallos_close_win", "gallos_blitz",
+    "gallos_streak_max", "gallos_days_max", "gallos_temu_loss", "gallos_favourite_loss",
+    "gallos_win_max", "gallos_duels", "gallos_duel_wins", "gallos_duel_big",
+    "gallos_crowd_max", "gallos_bets", "gallos_bets_won", "gallos_bet_odds_max",
+    "gallos_bet_refund", "gallos_challenges", "gallos_rejects", "gallos_rejected",
+    "gallos_renamed", "gallos_rake", "gallos_paid_skin_win", "gallos_stake_155",
+    "gallos_hispanidad", "gallos_canarias", "gallos_july4", "gallos_china_day",
+    "gallos_europe_day", "gallos_africa_day", "gallos_night", "gallos_dawn",
+    "gallos_nochevieja", "gallos_friday13",
+    *(f"{GALLOS_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
+    *(f"{GALLOS_SKIN_PREFIX}{k}" for k in ("serie", *GALLOS_FREE_SKINS)),
     # cogs/coin.py (`coin_stats`)
     "coin_games", "coin_flips", "coin_wins", "coin_wins_cara", "coin_wins_cruz",
     "coin_cashouts", "coin_losses", "coin_edges", "coin_streak_max", "coin_cash_mult_max",
