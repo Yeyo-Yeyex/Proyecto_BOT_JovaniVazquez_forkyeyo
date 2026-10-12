@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import random
+import re
 
 import pytest
 
 from bot.services.work import Mechanic
-from bot.services.work_catalog import JOBS
-from bot.services.work_games import GRACE_SECONDS, MiniGame, new_game
+from bot.services.work_catalog import JOB_BY_KEY, JOBS, SORT_PACKS
+from bot.services.work_games import GRACE_SECONDS, MiniGame, _best_index, new_game
 from bot.services.work_tools import NO_PERKS, TOOLS, perks_for
 
 NOW = 1_000.0
@@ -253,3 +254,43 @@ def test_el_tiempo_sobrante_solo_cuenta_si_se_acaban_las_rondas() -> None:
     late = new_game(JOBS[0].position(1), random.Random(17), now=NOW)
     late.finish(late.deadline)
     assert not late.completed and late.time_left == 0
+
+
+def test_calcular_la_mejor_oferta_gana_por_margen_claro() -> None:
+    assert _best_index([1.0, 1.3, 0.5]) == 1
+    assert _best_index([1.0, 1.1, 0.5]) is None  # demasiado justo: se vuelve a sortear
+
+
+def test_en_los_pedidos_la_respuesta_es_la_que_mas_paga_por_kilometro() -> None:
+    position = JOB_BY_KEY["reparto"].position(2)
+    for seed in range(20):
+        game = new_game(position, random.Random(seed), now=NOW)
+        for round_ in game.rounds:
+            offers = re.findall(r"(\d+,\d) km · \*\*(\d+,\d+) €", round_.prompt)
+            ratios = [
+                float(pay.replace(",", ".")) / float(km.replace(",", ".")) for km, pay in offers
+            ]
+            assert len(ratios) == len(round_.options) == 4
+            assert round_.answer == [ratios.index(max(ratios))]
+
+
+def test_en_las_metricas_la_respuesta_es_la_de_mas_engagement() -> None:
+    position = JOB_BY_KEY["influencer"].position(2)
+    for seed in range(20):
+        game = new_game(position, random.Random(seed), now=NOW)
+        for round_ in game.rounds:
+            pairs = re.findall(r"([\d.]+) visitas · ([\d.]+) ❤️", round_.prompt)
+            rates = [int(lk.replace(".", "")) / int(v.replace(".", "")) for v, lk in pairs]
+            assert round_.answer == [rates.index(max(rates))]
+
+
+def test_clasificar_manda_cada_papel_a_su_sitio() -> None:
+    for key, pack in SORT_PACKS.items():
+        targets = dict(pack.items)
+        position = next(p for job in JOBS for p in job.positions if p.content == key)
+        game = new_game(position, random.Random(5), now=NOW)
+        assert game.header == pack.rule
+        for round_ in game.rounds:
+            assert round_.options == list(pack.bins)
+            text = round_.prompt.split("**")[1]
+            assert round_.answer == [targets[text]]

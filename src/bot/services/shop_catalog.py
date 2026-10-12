@@ -946,6 +946,34 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("ia_premium", "curro", "🤖", "Suscripción a la IA de moda", 15_000,
        "Responde con mucha seguridad, a veces bien. En `pala`, reuniones e inversores: "
        "tacha una respuesta mala.", per_user=1),
+    _t("mochila_termica", "curro", "🎒", "Mochila térmica", 4_000,
+       "Cúbica, con el logo de la app y sitio para tres pizzas y un hielo. En `pala`, "
+       "reparto: +15 % de tiempo.", per_user=1),
+    _t("soporte_movil", "curro", "📲", "Soporte de móvil para el manillar", 5_000,
+       "Para ver el mapa sin soltar el manillar. En `pala`, reparto: un fallo gratis por "
+       "turno.", per_user=1),
+    _t("manual_fundador", "curro", "📕", "Manual del fundador", 12_000,
+       "«De rider a unicornio en 7 pasos», de aeropuerto. Es un libro: IGIC tipo cero. En "
+       "`pala`, el fundador de la app: tacha una respuesta mala.", igic="cero", per_user=1),
+    _t("pluma_firmar", "curro", "🖋️", "Pluma de firmar", 3_500,
+       "Con tu nombre grabado: firmar «el enterado» nunca fue tan elegante. En `pala`, "
+       "funcionariado: +15 % de tiempo.", per_user=1),
+    _t("posits", "curro", "📌", "Pósits de colores", 4_000,
+       "Uno amarillo para lo urgente y uno rosa para lo que ya no es urgente porque "
+       "caducó. En `pala`, funcionariado: un fallo gratis por turno.", per_user=1),
+    _t("temario_subrayado", "curro", "📗", "Temario subrayado", 12_000,
+       "De segunda mano, subrayado en cuatro colores por alguien que ya tiene plaza. Es un "
+       "libro: IGIC tipo cero. En `pala`, funcionariado (el estudio y la ventanilla): "
+       "tacha una respuesta mala.", igic="cero", per_user=1),
+    _t("aro_led", "curro", "💡", "Aro de luz LED", 4_000,
+       "Ilumina tu cara y tus decisiones. En `pala`, influencer: +15 % de tiempo.",
+       per_user=1),
+    _t("filtro_premium", "curro", "✨", "Filtro de belleza premium", 6_000,
+       "Te quita las ojeras, los granos y la dignidad. En `pala`, influencer: un fallo "
+       "gratis por turno.", per_user=1),
+    _t("community_manager", "curro", "💬", "Community manager en prácticas", 15_000,
+       "Contesta los comentarios por ti a cambio de «visibilidad». En `pala`, el directo "
+       "y el plató: tacha una respuesta mala.", per_user=1),
     _t("domino_bar", "porra", "🁫", "Fichas de dominó del bar", 600,
        "Las de la mesa del fondo, con la doble seis mordida. Se juega en silencio y se "
        "discute a gritos."),

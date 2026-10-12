@@ -7,7 +7,8 @@ módulo) junta todo con la economía.
 
 Cómo funciona un turno, en resumen:
 
-- Cada miembro tiene, como mucho, un contrato: un oficio y un puesto (1 a 5).
+- Cada miembro tiene, como mucho, un contrato: un oficio y un puesto (de 1 a
+  `Job.top`; hoy todos tienen 5, pero nada da por hecho ese número).
 - Fichar lanza el minijuego del puesto. La puntuación (0–100) mueve el sueldo
   entre el 70 % y el 130 % de la base (`shift_pay`) y la barra de rendimiento.
 - La **batería** baja con cada turno y se recarga sola (`battery_now`). Por
@@ -43,6 +44,24 @@ Reglas propias de algunos oficios (campos de `Job`):
 - **Expatriarse** (oficina, `Job.abroad_from`): trabajar desde Hong Kong. La
   fiscalidad está en `bot.services.taxes` (salaries tax, MPF, art. 7.p LIRPF,
   art. 80 LIRPF y Ley Beckham) y la residencia, aquí (`residence_phase`).
+- **El tiempo** (reparto, `Job.weather`): cada hora hace sol, llueve o hay
+  calima (`weather`). Con lluvia el turno paga más (`RAIN_PAY`) y hay riesgo de
+  caída aunque vayas descansado; con calima cansa más.
+- **Valoración de la app** (reparto, `Job.rating`): de 1 a 5 estrellas, se
+  mueve con la nota de cada turno (`rating_delta`) y multiplica el sueldo
+  (`rating_pay`). Por debajo de `RATING_BLOCK`, la app te desconecta unas horas.
+- **Tarifa plana** (reparto): los falsos autónomos pagan una cuota reducida
+  (`Position.fee`, art. 38 ter de la Ley 20/2007 del Trabajo Autónomo).
+- **Oposición** (funcionariado, `Job.study`): turnos de estudio que no pagan,
+  cansan y suman temario (`ShiftKind.STUDY`). Hay que estudiar para ascender.
+- **Plaza fija** (funcionariado, `Job.tenure_from`): desde ese puesto no te
+  bajan nunca y la nota mueve poco el sueldo (`TENURE_PAY_SPREAD`); a cambio,
+  **trienios** (`Job.seniority`): cada `TRIENNIUM_DAYS` días en el oficio, un
+  `TRIENNIUM_PAY` más de sueldo, con tope (`MAX_TRIENNIA`).
+- **Viralidad** (influencer, `Job.viral`): el sueldo de cada turno se
+  multiplica por una tirada (`viral_roll`) que casi siempre se queda corta y a
+  veces revienta. Los seguidores (`Contract.followers`) suben con los turnos
+  buenos y bajan con las funas; no dan dinero, dan logros y postureo.
 """
 
 from __future__ import annotations
@@ -174,6 +193,51 @@ BECKHAM_WEEKS = 6
 #: depende de los rendimientos; aquí es fija y se cobra al fichar el primer turno
 #: de la semana, trabajes lo que trabajes.
 SELF_EMPLOYED_FEE = 10_000
+#: Tarifa plana de los nuevos autónomos: 80 € al mes (art. 38 ter de la Ley 20/2007),
+#: unos 18,5 € a la semana. La pagan los falsos autónomos del reparto.
+FLAT_RATE_FEE = 1_850
+
+# -- El tiempo (reparto) -----------------------------------------------------------------
+
+RAIN_CHANCE = 0.15
+CALIMA_CHANCE = 0.10
+#: Lo que paga de más un turno con lluvia (las apps suben la tarifa).
+RAIN_PAY = 1.4
+#: Riesgo de caída con lluvia, aunque vayas descansado.
+RAIN_ACCIDENT = 0.05
+#: Con calima, el turno cansa esto más.
+CALIMA_COST_FACTOR = 1.5
+
+# -- Valoración de la app (reparto) --------------------------------------------------------
+
+#: En décimas de estrella: 50 = ⭐ 5,0.
+RATING_MAX = 50
+RATING_MIN = 10
+RATING_START = 45
+#: Por debajo de esto la app te desconecta.
+RATING_BLOCK = 35
+RATING_BLOCK_SECONDS = 6 * 3600
+#: Con lo que vuelves tras la desconexión.
+RATING_RESET = 40
+
+# -- Funcionariado ----------------------------------------------------------------------
+
+#: Con plaza fija la nota mueve el sueldo entre el 90 % y el 110 % de la base.
+TENURE_PAY_SPREAD = (0.9, 0.2)
+#: Un trienio son 3 «años»; a la escala del juego (una semana, un año), 21 días.
+TRIENNIUM_DAYS = 21
+TRIENNIUM_PAY = 0.05
+MAX_TRIENNIA = 8
+
+# -- Influencer -------------------------------------------------------------------------
+
+FOLLOWERS_START = 100
+#: Desde este multiplicador, el turno se ha hecho viral.
+VIRAL_AT = 3.0
+#: El premio gordo de la viralidad.
+MEGAVIRAL = 15.0
+#: Por debajo de este multiplicador, el vídeo solo lo ha visto tu madre.
+FLOP_BELOW = 0.35
 
 
 class Mechanic(StrEnum):
@@ -183,6 +247,8 @@ class Mechanic(StrEnum):
     SPOT = "detectar"
     MEMORY = "memoria"
     DIALOGUE = "dialogo"
+    SORT = "clasificar"
+    CALC = "calcular"
 
 
 class ShiftKind(StrEnum):
@@ -192,6 +258,8 @@ class ShiftKind(StrEnum):
     EXTRA = "extra"
     BLACK = "negro"
     GUARD = "guardia"
+    #: Estudiar la oposición: no paga ni cuenta en la jornada.
+    STUDY = "estudio"
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +299,7 @@ class Position:
     """Un puesto de un oficio.
 
     Attributes:
-        level: 1 a 5.
+        level: De 1 a `Job.top`.
         title: Nombre del puesto.
         base_pay: Bruto de un turno ordinario con puntuación media.
         mechanic: Motor del minijuego.
@@ -241,6 +309,7 @@ class Position:
         training: Formación necesaria para ENTRAR en este puesto.
         self_employed: Si es autónomo (sin cotización por turno, con cuota).
         content: Clave del contenido del minijuego.
+        fee: Cuota semanal de autónomos si `self_employed` (la tarifa plana es menor).
     """
 
     level: int
@@ -253,11 +322,12 @@ class Position:
     content: str
     training: Training | None = None
     self_employed: bool = False
+    fee: int = SELF_EMPLOYED_FEE
 
 
 @dataclass(frozen=True, slots=True)
 class Job:
-    """Un oficio con sus cinco puestos."""
+    """Un oficio con sus puestos (hoy cinco; el código admite los que haya)."""
 
     key: str
     name: str
@@ -277,9 +347,21 @@ class Job:
     abroad_from: int | None = None
     #: Puesto que cobra parte del sueldo en stock options (`None` = ninguno).
     options_level: int | None = None
+    #: Si cada hora hace un tiempo que cambia el turno (lluvia, calima).
+    weather: bool = False
+    #: Si hay valoración de la app (estrellas que multiplican el sueldo).
+    rating: bool = False
+    #: Contenido de diálogo de los turnos de estudio (`None` = no se estudia).
+    study: str | None = None
+    #: Desde qué puesto hay plaza fija (`None` = nunca).
+    tenure_from: int | None = None
+    #: Si se cobran trienios.
+    seniority: bool = False
+    #: Si el sueldo depende de hacerse viral.
+    viral: bool = False
 
     def position(self, level: int) -> Position:
-        """Puesto de nivel `level` (1–5)."""
+        """Puesto de nivel `level` (de 1 a `top`)."""
         return self.positions[level - 1]
 
     def has_guards(self, level: int) -> bool:
@@ -289,6 +371,14 @@ class Job:
     def can_go_abroad(self, level: int) -> bool:
         """Si en ese puesto se puede trabajar desde Hong Kong."""
         return self.abroad_from is not None and level >= self.abroad_from
+
+    def can_study(self, level: int) -> bool:
+        """Si en ese puesto se estudia la oposición (en el último ya no hay a qué opositar)."""
+        return self.study is not None and level < self.top
+
+    def tenured(self, level: int) -> bool:
+        """Si en ese puesto hay plaza fija."""
+        return self.tenure_from is not None and level >= self.tenure_from
 
     def required_guards(self, level: int) -> int:
         """Guardias mínimas por semana en ese puesto."""
@@ -368,6 +458,14 @@ class Contract:
     #: Exención del art. 7.p LIRPF usada el día `exempt_day`.
     exempt_day: str = ""
     exempt_used: int = 0
+    #: Desde cuándo trabaja en este oficio (trienios).
+    job_since: float = 0.0
+    #: Valoración de la app, en décimas de estrella (reparto).
+    rating: int = RATING_START
+    #: Hasta cuándo la app te tiene desconectado (reparto).
+    blocked_until: float = 0.0
+    #: Seguidores (influencer).
+    followers: int = FOLLOWERS_START
 
 
 def battery_now(contract: Contract, now: float) -> float:
@@ -468,20 +566,25 @@ def next_shift_kind(contract: Contract, now: float) -> ShiftKind:
     return ShiftKind.BLACK
 
 
-def shift_cost(kind: ShiftKind, *, remote: bool = False) -> int:
-    """Batería que gasta un turno."""
+def shift_cost(kind: ShiftKind, *, remote: bool = False, calima: bool = False) -> int:
+    """Batería que gasta un turno (estudiar cansa como un turno ordinario)."""
     if kind is ShiftKind.GUARD:
         cost = GUARD_COST
-    elif kind is ShiftKind.ORDINARY:
+    elif kind in (ShiftKind.ORDINARY, ShiftKind.STUDY):
         cost = SHIFT_COST
     else:
         cost = EXTRA_SHIFT_COST
-    return round(cost * (REMOTE_COST_FACTOR if remote else 1))
+    factor = (REMOTE_COST_FACTOR if remote else 1) * (CALIMA_COST_FACTOR if calima else 1)
+    return round(cost * factor)
 
 
-def shift_pay(base: int, score: int, kind: ShiftKind) -> int:
-    """Bruto (o lo cobrado en B) de un turno con puntuación `score` (0–100)."""
-    factor = 0.7 + 0.6 * max(0, min(100, score)) / 100
+def shift_pay(base: int, score: int, kind: ShiftKind, *, tenured: bool = False) -> int:
+    """Bruto (o lo cobrado en B) de un turno con puntuación `score` (0–100).
+
+    Con plaza fija (`tenured`) la nota apenas mueve el sueldo: del 90 % al 110 %.
+    """
+    low, spread = TENURE_PAY_SPREAD if tenured else (0.7, 0.6)
+    factor = low + spread * max(0, min(100, score)) / 100
     if kind is ShiftKind.EXTRA:
         factor *= OVERTIME_PAY
     elif kind is ShiftKind.BLACK:
@@ -538,7 +641,7 @@ def family_cost(
     cost = 0
     if kind is ShiftKind.GUARD:
         cost += GUARD_FAMILY
-    elif kind is not ShiftKind.ORDINARY:
+    elif kind not in (ShiftKind.ORDINARY, ShiftKind.STUDY):
         cost += FAMILY_EXTRA
     if is_night(now, tz):
         cost += FAMILY_NIGHT
@@ -588,8 +691,10 @@ def holiday(day: date) -> str | None:
     return HOLIDAYS.get((day.day, day.month))
 
 
-def apply_performance(contract: Contract, delta: int) -> str | None:
+def apply_performance(contract: Contract, delta: int, *, tenured: bool = False) -> str | None:
     """Mueve la barra y aplica el aviso o la degradación.
+
+    Con plaza fija (`tenured`) no te bajan nunca: como mucho, el aviso.
 
     Returns:
         `"warned"` si es el primer aviso, `"demoted"` si te bajan de puesto o
@@ -603,8 +708,9 @@ def apply_performance(contract: Contract, delta: int) -> str | None:
     if not contract.warned:
         contract.warned = True
         return "warned"
-    if contract.level <= 1:
-        # En el primer puesto no hay a dónde bajar: se queda el aviso.
+    if contract.level <= 1 or tenured:
+        # En el primer puesto no hay a dónde bajar, y a un funcionario de carrera
+        # no lo baja nadie: se queda el aviso.
         return "warned"
     contract.level -= 1
     contract.performance = PERFORMANCE_START
@@ -663,6 +769,75 @@ def on_leave(contract: Contract, now: float) -> bool:
     return bool(contract.last_shift_at) and now - contract.last_shift_at >= (
         LEAVE_AFTER_DAYS * 86_400
     )
+
+
+def weather(now: float) -> str:
+    """Tiempo que hace en Canarias esa hora: `"sol"`, `"lluvia"` o `"calima"`.
+
+    Sale de la hora (canaria), no del azar del servicio: así el panel puede
+    enseñarlo antes de fichar y es el mismo para todo el servidor.
+    """
+    moment = datetime.fromtimestamp(now, TIMEZONE)
+    draw = random.Random(moment.strftime("%Y-%m-%d %H")).random()
+    if draw < RAIN_CHANCE:
+        return "lluvia"
+    if draw < RAIN_CHANCE + CALIMA_CHANCE:
+        return "calima"
+    return "sol"
+
+
+def rating_delta(score: int) -> int:
+    """Cuánto mueve la valoración un turno, en décimas de estrella."""
+    if score >= 90:
+        return 2
+    if score >= 70:
+        return 1
+    if score >= 50:
+        return 0
+    if score >= 30:
+        return -2
+    return -4
+
+
+def rating_pay(rating: int) -> float:
+    """Lo que multiplica el sueldo la valoración: de ×0,85 (3,5 ⭐) a ×1,15 (5 ⭐)."""
+    clamped = max(RATING_BLOCK, min(RATING_MAX, rating))
+    return 0.85 + 0.3 * (clamped - RATING_BLOCK) / (RATING_MAX - RATING_BLOCK)
+
+
+def stars(rating: int) -> str:
+    """`⭐ 4,5`."""
+    return f"⭐ {rating // 10},{rating % 10}"
+
+
+def triennia(contract: Contract, now: float) -> int:
+    """Trienios cumplidos en el oficio (con tope)."""
+    if not contract.job_since:
+        return 0
+    days = (now - contract.job_since) / 86_400
+    return min(MAX_TRIENNIA, int(days // TRIENNIUM_DAYS))
+
+
+def viral_roll(rng: random.Random) -> float:
+    """Lo que multiplica el sueldo de un turno de influencer.
+
+    Casi siempre se queda corto, a veces va bien y muy de vez en cuando
+    revienta. La media ronda 1,04: un influencer gana como los demás, pero a
+    golpes.
+    """
+    draw = rng.random()
+    if draw < 0.005:
+        return MEGAVIRAL
+    if draw < 0.05:
+        return rng.uniform(3.0, 6.0)
+    if draw < 0.30:
+        return rng.uniform(1.0, 2.0)
+    return rng.uniform(0.3, 0.8)
+
+
+def follower_gain(score: int, level: int, multiplier: float) -> int:
+    """Seguidores que trae un turno: más con buena nota, más arriba y si se hace viral."""
+    return round(max(0, score - 40) * level * level * multiplier)
 
 
 def roll(rng: random.Random, chance: float) -> bool:

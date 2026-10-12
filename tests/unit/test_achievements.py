@@ -332,6 +332,14 @@ PRODUCED_STATS = {
     "work_tools_owned", "work_saves", "work_insured", "work_fifty", "work_fast",
     "work_last_second", "work_first_miss", "work_stale_clicks", "work_tremor_perfect",
     "work_memory_flawless", "work_posters", "work_clean_digs", "work_board",
+    # Oficios nuevos: reparto, funcionariado e influencer (work_stats y eventos)
+    "work_orders", "work_routes", "work_fleet", "work_founder", "work_rain", "work_calima",
+    "work_rain_fall", "work_app_blocked", "work_five_stars", "work_flat_fee",
+    "work_top_reparto", "work_study", "work_temario", "work_ventanilla", "work_registro",
+    "work_stamps", "work_citizens", "work_frauds", "work_triennia_max", "work_caught_defensor",
+    "work_top_funcionariado", "work_dances", "work_metrics", "work_stream", "work_collabs",
+    "work_tv", "work_viral", "work_megaviral", "work_flop", "work_followers_max",
+    "work_caught_consumo", "work_caught_regalos", "work_top_influencer",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

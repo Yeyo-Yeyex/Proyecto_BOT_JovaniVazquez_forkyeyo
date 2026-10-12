@@ -2,19 +2,22 @@
 
 `pala` abre el panel de tu curro (solo lo toca su dueño):
 
-- Sin contrato, un menú para elegir oficio (obra, hostelería, política, sanidad u
-  oficina).
+- Sin contrato, un menú para elegir oficio (obra, hostelería, política, sanidad,
+  oficina, reparto, funcionariado o influencer).
 - Con contrato: puesto, sueldo, batería, rendimiento, familia, jornada y lo
   que falta para ascender. Botones para ⛏️ **Fichar**, 📈 **Ascender** cuando
   toca, 🎓 **Formación** cuando hace falta un curso y 📜 **Vida laboral**, y
   menús para la máquina de café y para cambiar de oficio.
 
 Según el oficio y el puesto aparecen también 🚑 **Guardia** (sanidad), 🏠
-**Teletrabajo** (oficina) y 🌏 **Irse a Hong Kong** / ✈️ **Volver a casa**
-(oficina, desde senior). Viviendo fuera no se cambia de oficio.
+**Teletrabajo** (oficina), 🌏 **Irse a Hong Kong** / ✈️ **Volver a casa**
+(oficina, desde senior) y 📚 **Estudiar** (funcionariado: la oposición, sin
+sueldo). Viviendo fuera no se cambia de oficio. El panel enseña también lo
+propio de cada oficio: el tiempo y las estrellas de la app (reparto), los
+trienios y la plaza fija (funcionariado) y los seguidores (influencer).
 
 Fichar lanza el minijuego del puesto en el mismo mensaje (cavar, detectar,
-memoria o diálogo; de 30 a 60 s). Al acabar, o al agotarse el tiempo, se
+memoria, diálogo, clasificar o calcular; de 30 a 60 s). Al acabar, o al agotarse el tiempo, se
 cobra la nómina y se enseña con su desglose; a veces sale un evento con dos
 opciones. Las herramientas de curro de la tienda (`bot.services.work_tools`)
 se aplican solas al fichar si el miembro las tiene.
@@ -85,7 +88,10 @@ from bot.services.work import (
     LEGAL_EXTRAS_PER_WEEK,
     MAX_COFFEES,
     ORDINARY_SHIFTS,
+    RAIN_PAY,
     SELF_EMPLOYED_FEE,
+    TRIENNIUM_PAY,
+    VIRAL_AT,
     Mechanic,
     ShiftKind,
     battery_bar,
@@ -93,6 +99,7 @@ from bot.services.work import (
     battery_state,
     performance_bar,
     rested_at,
+    stars,
 )
 from bot.services.work_catalog import CAUGHT_TEXT, COFFEES, JOB_BY_KEY, JOBS, Event
 from bot.services.work_games import GRACE_SECONDS
@@ -116,12 +123,22 @@ MECHANIC_NAMES = {
     Mechanic.SPOT: "detectar",
     Mechanic.MEMORY: "memoria",
     Mechanic.DIALOGUE: "diálogo",
+    Mechanic.SORT: "clasificar",
+    Mechanic.CALC: "calcular",
+}
+#: Cómo se ve el tiempo en el panel del reparto.
+WEATHER_TEXT = {
+    "sol": "☀️ Sol: un día normal de reparto.",
+    "lluvia": f"🌧️ **Llueve**: los pedidos pagan ×{str(RAIN_PAY).replace('.', ',')}, "
+    "pero el suelo resbala (riesgo de caída).",
+    "calima": "🌫️ **Calima**: el turno cansa la mitad más.",
 }
 KIND_TEXT = {
     ShiftKind.ORDINARY: "ordinario",
     ShiftKind.EXTRA: "extra (×1,25)",
     ShiftKind.BLACK: "extra en B 🤫",
     ShiftKind.GUARD: "de guardia 🚑",
+    ShiftKind.STUDY: "de estudio 📚",
 }
 #: Cómo se juega cada minijuego, en una línea.
 HOW_TO = {
@@ -131,6 +148,8 @@ HOW_TO = {
     Mechanic.MEMORY: "Memoriza la secuencia, pulsa ✅ Memorizado y repítela en el mismo "
     "orden. Puedes pulsar seguido: no hace falta esperar a que se actualice el panel.",
     Mechanic.DIALOGUE: "Lee la situación y elige la mejor respuesta.",
+    Mechanic.SORT: "Lee el papel y mándalo a su sitio con el botón que toque.",
+    Mechanic.CALC: "Haz la cuenta y elige la mejor oferta. La buena gana por goleada.",
 }
 #: Prefijo de los `custom_id` de los botones del minijuego.
 GAME_ID_PREFIX = "pala:"
@@ -172,7 +191,9 @@ def _pct(rate: float) -> str:
     return format_rate(rate)
 
 
-def payslip_text(slip: Payslip, *, title: str, self_employed: bool) -> str:
+def payslip_text(
+    slip: Payslip, *, title: str, self_employed: bool, fee: int = SELF_EMPLOYED_FEE
+) -> str:
     """Desglose de una nómina para enseñarla."""
     lines = [f"📄 **Nómina** · {title}", f"Bruto: **{format_amount(slip.gross)}**"]
     if slip.ss_worker:
@@ -187,7 +208,7 @@ def payslip_text(slip: Payslip, *, title: str, self_employed: bool) -> str:
     if self_employed:
         lines.append(
             "-# 🧾 Eres autónomo: no cotizas por turno, pagas la cuota cada semana "
-            f"({format_amount(SELF_EMPLOYED_FEE)})."
+            f"({format_amount(fee)}" + (", tarifa plana" if fee < SELF_EMPLOYED_FEE else "") + ")."
         )
     else:
         lines.append(
@@ -283,6 +304,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         lines.append(
             f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
         )
+    lines.extend(job_lines(status))
     if status.sick:
         lines.append(f"🩹 **De baja** hasta <t:{int(contract.sick_until)}:t>.")
     if status.on_leave:
@@ -306,8 +328,53 @@ def status_text(status: Status, notes: list[str]) -> str:
     return "\n".join(lines)
 
 
+def job_lines(status: Status) -> list[str]:
+    """Lo propio de cada oficio en el panel: tiempo, estrellas, trienios, seguidores."""
+    contract, job = status.contract, status.job
+    lines = []
+    if status.weather:
+        lines.append(WEATHER_TEXT[status.weather])
+    if job.rating:
+        line = f"📱 Valoración en la app: {stars(contract.rating)}"
+        if status.blocked:
+            line += f" · 📵 **desconectado** hasta <t:{int(contract.blocked_until)}:t>"
+        lines.append(line + " · por debajo de 3,5 la app te desconecta")
+    if job.seniority:
+        tenure = " · 🔒 plaza fija: no te baja nadie" if job.tenured(contract.level) else ""
+        bonus = round(TRIENNIUM_PAY * status.triennia * 100)
+        lines.append(f"📅 Trienios: {status.triennia} (+{bonus} % de sueldo){tenure}")
+    if status.can_study:
+        lines.append(
+            f"📚 Temario acertado en este puesto: {contract.progress.get('temario', 0)}. "
+            "Estudiar no paga, pero sin oposición no hay ascenso."
+        )
+    if job.viral:
+        lines.append(f"👥 Seguidores: **{contract.followers:,}**".replace(",", "."))
+    return lines
+
+
+def study_text(outcome: ShiftOutcome) -> str:
+    """Resultado de un turno de estudio."""
+    lines = [
+        f"## 📚 Estudio de la oposición · {outcome.score}/100",
+        f"Aciertas **{outcome.temario}** preguntas del temario. No cobras nada: "
+        "opositar es invertir en ti (eso dice la academia).",
+        f"{battery_bar(outcome.battery_after)} · ❤️ {outcome.family_after}/100 · "
+        f"Saldo: **{format_amount(outcome.balance)}**",
+    ]
+    if outcome.intervention:
+        lines.append(
+            "👪 **Intervención familiar.** Tu familia ya no te reconoce detrás del temario."
+        )
+    if outcome.promotion_ready:
+        lines.append("📈 **¡Te ofrecen el ascenso!** Vuelve al panel y pulsa 📈 Ascender.")
+    return "\n".join(lines)
+
+
 def outcome_text(outcome: ShiftOutcome) -> str:
     """Resultado de un turno."""
+    if outcome.kind is ShiftKind.STUDY:
+        return study_text(outcome)
     game = outcome.game
     where = " · 🏠 teletrabajo" if outcome.remote else " · 🇭🇰" if outcome.abroad else ""
     lines = [f"## ⛏️ Turno {KIND_TEXT[outcome.kind]}{where} · {outcome.score}/100"]
@@ -322,12 +389,24 @@ def outcome_text(outcome: ShiftOutcome) -> str:
     if game.mechanic is Mechanic.MEMORY:
         detail = f"{game.perfect_rounds} rondas perfectas"
     lines.append(f"-# {detail}")
+    if outcome.weather == "lluvia":
+        lines.append(f"🌧️ Con lluvia, el turno paga ×{str(RAIN_PAY).replace('.', ',')}.")
+    if outcome.triennia:
+        lines.append(
+            f"📅 Con tus {outcome.triennia} trienios cobras un "
+            f"{round(TRIENNIUM_PAY * outcome.triennia * 100)} % más."
+        )
+    if outcome.viral >= VIRAL_AT:
+        lines.append(f"## 🔥 ¡VIRAL! El vídeo revienta: sueldo ×{decimal(outcome.viral)}")
+    elif outcome.viral:
+        lines.append(f"-# 📉 El algoritmo te da ×{decimal(outcome.viral)} hoy.")
     if outcome.payslip is not None:
         lines.append(
             payslip_text(
                 outcome.payslip,
                 title=outcome.position.title,
                 self_employed=outcome.position.self_employed,
+                fee=outcome.position.fee,
             )
         )
     if outcome.foreign is not None:
@@ -361,7 +440,25 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         f"{battery_bar(outcome.battery_after)} · ❤️ {outcome.family_after}/100 · "
         f"Saldo: **{format_amount(outcome.balance)}**"
     )
-    if outcome.accident:
+    if outcome.rating:
+        lines.append(f"📱 Valoración: {stars(outcome.rating)}")
+    if outcome.blocked:
+        lines.append(
+            "📵 **La app te desconecta** por mala valoración: 6 horas sin pedidos. "
+            "Vuelves con 4 estrellas."
+        )
+    if outcome.followers_gained or outcome.followers:
+        lines.append(
+            f"👥 +{outcome.followers_gained:,} seguidores · ahora {outcome.followers:,}".replace(
+                ",", "."
+            )
+        )
+    if outcome.accident and outcome.weather == "lluvia" and outcome.battery_before >= 20:
+        lines.append(
+            "🚑 **Te caes con la moto en un charco.** 24 h de baja. La mutua te paga "
+            f"{format_amount(outcome.sick_pay)} brutos (el 75 % de tu sueldo diario medio)."
+        )
+    elif outcome.accident:
         lines.append(
             "🚑 **Accidente laboral.** Ibas reventado y pasó lo que tenía que pasar: 24 h de "
             f"baja. La mutua te paga {format_amount(outcome.sick_pay)} brutos (el 75 % de tu "
@@ -480,7 +577,7 @@ class PalaPanel(ui.LayoutView):
         """Pantalla para elegir oficio (sin contrato)."""
         lines = [
             "## 🪏 Coge la pala",
-            "Elige un curro. Cada uno tiene 5 puestos, su minijuego y sus marrones. "
+            "Elige un curro. Cada uno tiene sus puestos, sus minijuegos y sus marrones. "
             "Puedes cambiar cuando quieras: si vuelves a un oficio, entras en el puesto "
             "en el que lo dejaste.",
             "",
@@ -544,8 +641,17 @@ class PalaPanel(ui.LayoutView):
         notes, self.notes = self.notes, []
         green = discord.ButtonStyle.success
         actions: ui.ActionRow = ui.ActionRow()
-        blocked = status.sick or status.off_duty
+        blocked = status.sick or status.off_duty or status.blocked
         actions.add_item(self._button("⛏️ Fichar", self._clock_in, style=green, disabled=blocked))
+        if status.can_study:
+            actions.add_item(
+                self._button(
+                    "📚 Estudiar",
+                    self._clock_in_study,
+                    style=discord.ButtonStyle.primary,
+                    disabled=status.sick,
+                )
+            )
         if status.can_guard:
             actions.add_item(
                 self._button(
@@ -861,6 +967,7 @@ class PalaPanel(ui.LayoutView):
         black_ok: bool = False,
         guard: bool = False,
         remote: bool = False,
+        study: bool = False,
     ) -> None:
         # Antes del candado: un segundo clic esperaría a que el primero acabe con la
         # base de datos sin haber contestado a Discord.
@@ -884,6 +991,7 @@ class PalaPanel(ui.LayoutView):
                     black_ok=black_ok,
                     guard=guard,
                     remote=remote,
+                    study=study,
                     tools=owned,
                 )
             except NeedsBlack as error:
@@ -935,6 +1043,9 @@ class PalaPanel(ui.LayoutView):
 
     async def _clock_in_remote(self, interaction: discord.Interaction) -> None:
         await self._clock_in(interaction, remote=True)
+
+    async def _clock_in_study(self, interaction: discord.Interaction) -> None:
+        await self._clock_in(interaction, study=True)
 
     # -- Hong Kong --------------------------------------------------------------------
 

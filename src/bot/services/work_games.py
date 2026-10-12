@@ -1,4 +1,4 @@
-"""Minijuegos del trabajo (`pala`): cavar, detectar, memoria y diálogo.
+"""Minijuegos del trabajo (`pala`): cavar, detectar, memoria, diálogo, clasificar y calcular.
 
 Lógica pura: generan las rondas a partir del contenido de
 `bot.services.work_catalog`, reciben pulsaciones y calculan la puntuación. El
@@ -24,6 +24,11 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
 - **Diálogo**: una situación y tres respuestas. La buena suma.
+- **Clasificar**: cada ronda trae un papel o una persona y unos sitios fijos
+  (los negociados, los registros). Mandarlo al suyo suma.
+- **Calcular**: varias ofertas con números y una cuenta (euros por kilómetro,
+  me gusta por visita). Elegir la mejor suma; siempre gana por un margen claro
+  (`CALC_MARGIN`), para que no dependa de redondeos.
 """
 
 from __future__ import annotations
@@ -35,6 +40,8 @@ from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Po
 from bot.services.work_catalog import (
     BUDGET_ITEMS,
     CODE_BUGS,
+    COLLAB_FINE,
+    COLLAB_SHADY,
     DIALOGUE_PACKS,
     DIG_DANGERS,
     DIG_HINTS,
@@ -42,9 +49,16 @@ from bot.services.work_catalog import (
     MEMORY_PACKS,
     PR_DANGER,
     PR_SAFE,
+    RESTAURANTS,
+    RIDER_SLACKING,
+    RIDER_WORKING,
     SLACKING,
+    SORT_PACKS,
+    TAX_CLEAN,
+    TAX_FRAUD,
     TRIAGE_TRIVIAL,
     TRIAGE_URGENT,
+    VIDEO_TOPICS,
     WORKER_NAMES,
     WORKING,
 )
@@ -54,6 +68,8 @@ from bot.services.work_tools import NO_PERKS, Perks
 TIME_BONUS = 10
 #: Segundos de margen tras el reloj para pulsaciones que ya iban de camino.
 GRACE_SECONDS = 1.5
+#: En calcular, la mejor oferta vale al menos esto más que la segunda.
+CALC_MARGIN = 1.25
 
 
 @dataclass(slots=True)
@@ -326,18 +342,46 @@ def _dig(rng: random.Random, spots: int, rounds: int) -> tuple[str, list[Round]]
     return header, built
 
 
-def _slackers(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+def _culprits(
+    rng: random.Random,
+    rounds: int,
+    *,
+    ask: str,
+    working: tuple[str, ...],
+    slacking: tuple[str, ...],
+) -> list[Round]:
+    """Rondas de «¿quién se escaquea?»: cinco nombres y uno que no hace lo que debe."""
     built = []
     for number in range(1, rounds + 1):
         names = rng.sample(WORKER_NAMES, 5)
-        lines = rng.sample(WORKING, 4)
+        lines = rng.sample(working, 4)
         culprit = rng.randrange(5)
-        lines.insert(culprit, rng.choice(SLACKING))
+        lines.insert(culprit, rng.choice(slacking))
         text = "\n".join(f"**{name}**: {line}" for name, line in zip(names, lines, strict=True))
-        built.append(
-            Round(f"👷 Ronda {number}/{rounds}. ¿Quién se escaquea?\n{text}", names, [culprit])
-        )
+        built.append(Round(f"{ask.format(n=number, total=rounds)}\n{text}", names, [culprit]))
+    return built
+
+
+def _slackers(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _culprits(
+        rng,
+        rounds,
+        ask="👷 Ronda {n}/{total}. ¿Quién se escaquea?",
+        working=WORKING,
+        slacking=SLACKING,
+    )
     return "🦺 Eres el encargado. Pilla al que no da palo al agua.", built
+
+
+def _fleet(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _culprits(
+        rng,
+        rounds,
+        ask="🛵 Ronda {n}/{total}. ¿Qué rider se está comiendo el pedido?",
+        working=RIDER_WORKING,
+        slacking=RIDER_SLACKING,
+    )
+    return "📊 Eres jefe de flota. A los clientes les llegan las papas contadas.", built
 
 
 def _overruns(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
@@ -454,6 +498,30 @@ def _reviews(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
     return "🛡️ Eres el último muro antes de producción.", built
 
 
+def _audits(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🔎 Inspección {n}/{total}. ¿Qué declaración huele a fraude?",
+        good=TAX_FRAUD,
+        bad=TAX_CLEAN,
+        label="Declaración",
+    )
+    return "🐶 Eres inspector de Hacienda. Perro Sanxe confía en ti.", built
+
+
+def _collabs(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="💼 Propuesta {n}/{total}. ¿Cuál rechazas (si te queda vergüenza)?",
+        good=COLLAB_SHADY,
+        bad=COLLAB_FINE,
+        label="Marca",
+    )
+    return "📩 Tu agencia te pasa propuestas. Una te puede costar la reputación.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -461,7 +529,84 @@ _SPOT = {
     "triaje": _triage,
     "bugs": _bugs,
     "revisiones": _reviews,
+    "flota": _fleet,
+    "inspeccion": _audits,
+    "colaboraciones": _collabs,
 }
+
+
+def _sort(rng: random.Random, pack_key: str, rounds: int) -> tuple[str, list[Round]]:
+    """Rondas de clasificar: un papel por ronda y los sitios del paquete como botones."""
+    pack = SORT_PACKS[pack_key]
+    rounds = min(rounds, len(pack.items))
+    built = [
+        Round(f"{pack.ask.format(n=number, total=rounds)} **{text}**", list(pack.bins), [target])
+        for number, (text, target) in enumerate(rng.sample(pack.items, rounds), 1)
+    ]
+    return pack.rule, built
+
+
+def _best_index(values: list[float]) -> int | None:
+    """Índice de la mejor si saca `CALC_MARGIN` a la segunda; si no, `None`."""
+    ranked = sorted(range(len(values)), key=values.__getitem__, reverse=True)
+    best, second = ranked[0], ranked[1]
+    return best if values[best] >= values[second] * CALC_MARGIN else None
+
+
+def _decimal(value: float, places: int = 2) -> str:
+    return f"{value:.{places}f}".replace(".", ",")
+
+
+def _orders(rng: random.Random, offers: int, rounds: int) -> tuple[str, list[Round]]:
+    """Reparto: ¿qué pedido paga más por kilómetro?"""
+    built = []
+    for number in range(1, rounds + 1):
+        while True:
+            km = [round(rng.uniform(0.8, 6.0), 1) for _ in range(offers)]
+            pay = [round(k * rng.uniform(0.5, 1.6) + 1, 2) for k in km]
+            best = _best_index([p / k for p, k in zip(pay, km, strict=True)])
+            if best is not None:
+                break
+        names = rng.sample(RESTAURANTS, offers)
+        lines = [
+            f"`{i + 1}.` {name} · {_decimal(km[i], 1)} km · **{_decimal(pay[i])} €**"
+            for i, name in enumerate(names)
+        ]
+        built.append(
+            Round(
+                f"🛵 Pedido {number}/{rounds}. ¿Cuál paga más por kilómetro?\n" + "\n".join(lines),
+                [f"{i + 1}. {name}"[:80] for i, name in enumerate(names)],
+                [best],
+            )
+        )
+    return "📱 La app te ofrece pedidos. Cuenta rápido: euros entre kilómetros.", built
+
+
+def _metrics(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    """Influencer: ¿qué vídeo tiene más engagement (me gusta entre visitas)?"""
+    built = []
+    for number in range(1, rounds + 1):
+        while True:
+            views = [rng.randrange(2_000, 80_000, 100) for _ in range(4)]
+            likes = [round(v * rng.uniform(0.01, 0.12)) for v in views]
+            best = _best_index([lk / v for lk, v in zip(likes, views, strict=True)])
+            if best is not None:
+                break
+        topics = rng.sample(VIDEO_TOPICS, 4)
+        lines = [
+            f"`{i + 1}.` {topic} · {views[i]:,} visitas · {likes[i]:,} ❤️".replace(",", ".")
+            for i, topic in enumerate(topics)
+        ]
+        built.append(
+            Round(
+                f"📊 Métricas {number}/{rounds}. ¿Qué vídeo tiene más engagement?\n"
+                + "\n".join(lines),
+                [f"{i + 1}. {topic.removeprefix('📹 ')}"[:80] for i, topic in enumerate(topics)],
+                [best],
+            )
+        )
+    header = "📈 La marca quiere saber qué funciona: me gusta entre visitas, no visitas a secas."
+    return header, built
 
 
 def _dialogue(
@@ -496,6 +641,11 @@ def rounds_for(position: Position) -> int:
         return 6
     if position.mechanic is Mechanic.MEMORY:
         return {30: 3, 40: 4}.get(position.seconds, 5)
+    if position.mechanic is Mechanic.SORT:
+        return 6 if position.seconds <= 30 else 8
+    if position.mechanic is Mechanic.CALC:
+        # Hacer cuentas lleva más que leer: menos rondas por segundo.
+        return 4 if position.seconds <= 30 else 6
     return 5 if position.seconds <= 40 else 6
 
 
@@ -524,6 +674,13 @@ def new_game(
         header, built = _SPOT[kind](rng, min(rounds, len(CODE_BUGS)) if kind == "bugs" else rounds)
     elif position.mechanic is Mechanic.MEMORY:
         header, built = _memory(rng, kind, int(arg or 3), rounds)
+    elif position.mechanic is Mechanic.SORT:
+        header, built = _sort(rng, kind, rounds)
+    elif position.mechanic is Mechanic.CALC:
+        if kind == "pedidos":
+            header, built = _orders(rng, int(arg or 3), rounds)
+        else:
+            header, built = _metrics(rng, rounds)
     else:
         header, built = _dialogue(rng, kind, rounds, fifty=perks.fifty)
     seconds = position.seconds * factor * (TIRED_TIME_FACTOR if tired else 1)

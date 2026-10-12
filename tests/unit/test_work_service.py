@@ -15,6 +15,7 @@ import pytest
 from bot.repositories.economy import SHOP_ACCOUNT_ID, STATE_ACCOUNT_ID, EconomyRepository
 from bot.repositories.work import WorkRepository
 from bot.services import pala
+from bot.services.achievements import work_stats
 from bot.services.economy import (
     DAILY_BASE,
     IMV_FLOOR_SHARE,
@@ -29,11 +30,25 @@ from bot.services.taxes import igic
 from bot.services.work import (
     ACCIDENT_ZOMBIE,
     BATTERY_MAX,
+    FLAT_RATE_FEE,
+    FOLLOWERS_START,
     INSPECTION_SURCHARGE,
     LEGAL_EXTRAS_PER_WEEK,
+    MEGAVIRAL,
     ORDINARY_SHIFTS,
+    RAIN_ACCIDENT,
+    RAIN_PAY,
+    RATING_BLOCK,
+    RATING_BLOCK_SECONDS,
+    RATING_RESET,
+    RATING_START,
     SELF_EMPLOYED_FEE,
+    TRIENNIUM_DAYS,
+    TRIENNIUM_PAY,
     ShiftKind,
+    follower_gain,
+    rating_pay,
+    shift_pay,
 )
 from bot.services.work_catalog import COFFEE_BY_KEY, JOB_BY_KEY
 from bot.services.work_games import MiniGame
@@ -663,3 +678,172 @@ async def test_un_turno_limpio_y_rapido_cuenta_para_sus_logros(tmp_path: Path, d
     assert add["work_posters"] == len(shift.game.rounds)
     assert add["work_memory_flawless"] == 1 and add["work_fast"] == 1
     assert "work_first_miss" not in add and "work_last_second" not in add
+
+
+# -- Reparto: el tiempo, la valoración de la app y la tarifa plana -------------------------
+
+
+async def test_con_lluvia_el_rider_cobra_mas_y_paga_la_tarifa_plana(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "lluvia")
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    outcome = await work(service)
+    base = JOB_BY_KEY["reparto"].position(1).base_pay
+    gross = round(shift_pay(base, 100, ShiftKind.ORDINARY) * rating_pay(RATING_START))
+    assert outcome.weather == "lluvia"
+    assert outcome.gross == round(gross * RAIN_PAY)
+    assert outcome.fee == FLAT_RATE_FEE < SELF_EMPLOYED_FEE
+    assert outcome.payslip is not None and outcome.payslip.ss_worker == 0
+    assert outcome.rating == RATING_START + 2
+    total, balance = ledger(tmp_path, USER)
+    assert total == balance
+
+
+async def test_con_lluvia_te_puedes_caer_aunque_vayas_descansado(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "lluvia")
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    dice.hits.add(RAIN_ACCIDENT)
+    outcome = await work(service)
+    assert outcome.battery_before == BATTERY_MAX
+    assert outcome.accident
+
+
+async def test_con_calima_el_turno_cansa_la_mitad_mas(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "calima")
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    outcome = await work(service)
+    assert outcome.battery_after == BATTERY_MAX - round(18 * 1.5)
+
+
+async def test_con_mala_valoracion_la_app_te_desconecta(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "sol")
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await service.hire(GUILD, USER, "reparto")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.rating = RATING_BLOCK + 1
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    outcome = await work(service, perfect=False)
+    assert outcome.blocked and outcome.rating == RATING_RESET
+    with pytest.raises(WorkError, match="desconectado"):
+        await service.start_shift(GUILD, USER)
+    clock.now += RATING_BLOCK_SECONDS + 1
+    await service.start_shift(GUILD, USER)
+
+
+async def test_un_evento_del_reparto_mueve_la_valoracion(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    await service.resolve_event(GUILD, USER, "sexto_sin_ascensor", 1)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.rating == RATING_START - 4
+
+
+# -- Funcionariado: oposición, plaza fija y trienios ---------------------------------------
+
+
+async def test_estudiar_no_paga_ni_es_jornada_pero_suma_temario(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "funcionariado")
+    shift = await service.start_shift(GUILD, USER, study=True)
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert outcome.kind is ShiftKind.STUDY
+    assert outcome.gross == 0 and outcome.payslip is None
+    assert outcome.temario == len(shift.game.rounds)
+    assert outcome.battery_after == BATTERY_MAX - 18
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.contract.shifts_today == 0
+    assert status.contract.progress["temario"] == outcome.temario
+    assert outcome.balance == STARTING_BALANCE  # no se mueve ni un Y$
+    stats = work_stats(outcome)
+    assert stats.add == {"work_study": 1, "work_temario": outcome.temario}
+
+
+async def test_solo_se_estudia_si_hay_oposicion(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    with pytest.raises(WorkError, match="opositar"):
+        await service.start_shift(GUILD, USER, study=True)
+    await set_level(service, "funcionariado", JOB_BY_KEY["funcionariado"].top)
+    with pytest.raises(WorkError, match="opositar"):
+        await service.start_shift(GUILD, USER, study=True)
+
+
+async def test_con_plaza_fija_no_te_bajan_de_puesto(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_level(service, "funcionariado", 3)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.performance = 10
+    status.contract.warned = True
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    outcome = await work(service, perfect=False)
+    assert outcome.performance == "warned"
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.level == 3
+
+
+async def test_los_trienios_suben_el_sueldo(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_level(service, "funcionariado", 2)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.job_since = START - 2 * TRIENNIUM_DAYS * 86_400
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    outcome = await work(service)
+    base = JOB_BY_KEY["funcionariado"].position(2).base_pay
+    assert outcome.triennia == 2
+    tenured = shift_pay(base, 100, ShiftKind.ORDINARY, tenured=True)
+    assert tenured == round(base * 1.1)
+    assert outcome.gross == round(tenured * (1 + 2 * TRIENNIUM_PAY))
+
+
+# -- Influencer: viralidad y seguidores ----------------------------------------------------
+
+
+async def test_hacerse_viral_multiplica_el_sueldo_y_los_seguidores(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "viral_roll", lambda rng: MEGAVIRAL)
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "influencer")
+    outcome = await work(service)
+    base = JOB_BY_KEY["influencer"].position(1).base_pay
+    assert outcome.viral == MEGAVIRAL
+    assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * MEGAVIRAL)
+    gained = follower_gain(100, 1, MEGAVIRAL)
+    assert outcome.followers_gained == gained
+    assert outcome.followers == FOLLOWERS_START + gained
+    stats = work_stats(outcome)
+    assert stats.add["work_viral"] == stats.add["work_megaviral"] == 1
+    assert stats.peak["work_followers_max"] == outcome.followers
+    total, balance = ledger(tmp_path, USER)
+    assert total == balance
+
+
+async def test_la_funa_quita_seguidores_y_cambiar_de_curro_no(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "influencer")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.followers = 1_000
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    result = await service.resolve_event(GUILD, USER, "funa", 1)
+    assert result.stats == {"work_cancelled": 1}
+    await service.hire(GUILD, USER, "obra")
+    await service.hire(GUILD, USER, "influencer")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.followers == 700
