@@ -100,6 +100,19 @@ TOOLS: tuple[Tool, ...] = (
     Tool("tecla_deshacer", "⌨️", "Teclado con Ctrl+Z", job="oficina", retry=True),
     Tool("ia_premium", "🤖", "Suscripción a la IA de moda", job="oficina", mechanics=_TALK,
          fifty=True),
+    Tool("mochila_termica", "🎒", "Mochila térmica", job="reparto", extra_time=0.15),
+    Tool("soporte_movil", "📲", "Soporte de móvil para el manillar", job="reparto",
+         retry=True),
+    Tool("manual_fundador", "📕", "Manual del fundador", job="reparto", mechanics=_TALK,
+         fifty=True),
+    Tool("pluma_firmar", "🖋️", "Pluma de firmar", job="funcionariado", extra_time=0.15),
+    Tool("posits", "📌", "Pósits de colores", job="funcionariado", retry=True),
+    Tool("temario_subrayado", "📗", "Temario subrayado", job="funcionariado",
+         mechanics=_TALK, fifty=True),
+    Tool("aro_led", "💡", "Aro de luz LED", job="influencer", extra_time=0.15),
+    Tool("filtro_premium", "✨", "Filtro de belleza premium", job="influencer", retry=True),
+    Tool("community_manager", "💬", "Community manager en prácticas", job="influencer",
+         mechanics=_TALK, fifty=True),
 )  # fmt: skip
 TOOL_BY_KEY: dict[str, Tool] = {tool.key: tool for tool in TOOLS}
 TOOL_KEYS = frozenset(TOOL_BY_KEY)

@@ -1,8 +1,8 @@
 """Catálogo del trabajo (`pala`): oficios, puestos, contenido de minijuegos y eventos.
 
-Solo datos. Añadir un oficio es añadir un `Job` a `JOBS` con sus cinco
-puestos, su contenido de minijuego (si usa uno nuevo) y, si se quiere, sus
-eventos. Los `key` (oficios, formaciones, tareas, eventos) no se cambian
+Solo datos. Añadir un oficio es añadir un `Job` a `JOBS` con sus puestos (hoy
+cinco; el código admite los que haya), su contenido de minijuego (si usa uno
+nuevo) y, si se quiere, sus eventos. Los `key` (oficios, formaciones, tareas, eventos) no se cambian
 nunca: son lo que se guarda en la base de datos.
 
 Sueldos, en Y$ de nómina (100 Y$ por euro, ver
@@ -15,15 +15,18 @@ formaciones cuestan de 2 a 4 turnos del puesto al que dan acceso. El análisis
 que fija estas cifras está en `docs/economia-trabajo.md`.
 
 La política es una sátira del PSOE, el partido del Gobierno, y de sus
-tópicos (sobres, enchufes, comisiones, puertas giratorias). No se nombra a
-ninguna persona real: los personajes son genéricos.
+tópicos (sobres, enchufes, comisiones, puertas giratorias). El reparto se ríe
+de las apps de reparto y de los falsos autónomos; el funcionariado, de la
+burocracia (con las preguntas del temario de verdad); el influencer, de la
+fama a golpes. No se nombra a ninguna persona ni marca real: los personajes
+son genéricos.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bot.services.work import Job, Mechanic, Position, Task, Training
+from bot.services.work import FLAT_RATE_FEE, Job, Mechanic, Position, Task, Training
 
 # -- Tareas comunes --------------------------------------------------------------------
 #
@@ -31,7 +34,9 @@ from bot.services.work import Job, Mechanic, Position, Task, Training
 # `good` turnos de 90 o más, `extras` turnos extra, `events` eventos
 # resueltos, y los del minijuego: `clean` (turnos de cavar sin romper nada),
 # `caught` (aciertos de detectar), `perfect_rounds` (rondas de memoria sin
-# fallo) y `smooth` (respuestas buenas en un diálogo).
+# fallo), `smooth` (respuestas buenas en un diálogo), `sorted` (aciertos de
+# clasificar), `best` (aciertos de calcular) y `temario` (preguntas del
+# temario acertadas estudiando la oposición).
 
 
 def _good(goal: int) -> Task:
@@ -44,6 +49,10 @@ def _extras(goal: int) -> Task:
 
 def _guards(goal: int) -> Task:
     return Task("guards", f"Haz {goal} guardias", "guards", goal)
+
+
+def _study(goal: int) -> Task:
+    return Task("temario", f"Acierta {goal} preguntas del temario", "temario", goal)
 
 
 def _events(goal: int) -> Task:
@@ -336,7 +345,147 @@ OFICINA = Job(
     ),
 )  # fmt: skip
 
-JOBS: tuple[Job, ...] = (OBRA, HOSTELERIA, POLITICA, SANIDAD, OFICINA)
+REPARTO = Job(
+    key="reparto",
+    name="Reparto (rider)",
+    emoji="🛵",
+    blurb="Pedidos, estrellas en la app y lluvia que paga más. De la bici a fundar la app.",
+    rgb=(0, 204, 188),
+    weather=True,
+    rating=True,
+    positions=(
+        Position(
+            1, "Rider en bici", 1_650, Mechanic.CALC, 30,
+            (_good(3), Task("best", "Elige bien 15 pedidos", "best", 15)),
+            days=2, content="pedidos:3", self_employed=True, fee=FLAT_RATE_FEE,
+        ),
+        Position(
+            2, "Rider en moto", 2_700, Mechanic.CALC, 30,
+            (Task("best", "Elige bien 25 pedidos", "best", 25), _good(4)),
+            days=3, content="pedidos:4", self_employed=True, fee=FLAT_RATE_FEE,
+            training=Training("carnet_a2", "el carnet de moto (A2) y una moto de segunda mano",
+                              8_000),
+        ),
+        Position(
+            3, "Rider con contrato", 4_500, Mechanic.MEMORY, 40,
+            (Task("perfect", "Haz 15 rutas perfectas", "perfect_rounds", 15), _good(5)),
+            days=4, content="entregas:4",
+            training=Training("ley_rider", "el abogado laboralista que te gana la laboralidad "
+                              "(Ley 12/2021, la «Ley Rider»)", 15_000),
+        ),
+        Position(
+            4, "Jefe de flota", 7_500, Mechanic.SPOT, 60,
+            (Task("caught", "Pilla a 25 riders comiéndose el pedido", "caught", 25), _good(5),
+             _events(2)),
+            days=5, content="flota",
+            training=Training("flotas", "el curso de gestión de flotas", 20_000),
+        ),
+        Position(
+            5, "Fundador de app de reparto", 14_000, Mechanic.DIALOGUE, 60, (),
+            days=0, content="fundador", self_employed=True,
+            training=Training("semilla", "la ronda semilla (familia, amigos y algún incauto)",
+                              60_000),
+        ),
+    ),
+)  # fmt: skip
+
+FUNCIONARIADO = Job(
+    key="funcionariado",
+    name="Funcionariado",
+    emoji="🗂️",
+    blurb="Oposita, saca la plaza y que no te mueva nadie. Trienios y desayuno sagrado.",
+    rgb=(149, 165, 166),
+    study="temario",
+    tenure_from=2,
+    seniority=True,
+    positions=(
+        Position(
+            1, "Interino", 1_700, Mechanic.SORT, 30,
+            (_good(3), _study(20)),
+            days=2, content="ventanilla",
+        ),
+        Position(
+            2, "Auxiliar administrativo (C2)", 2_700, Mechanic.SORT, 30,
+            (_study(40), Task("sorted", "Tramita 40 papeles al sitio correcto", "sorted", 40)),
+            days=3, content="registro",
+            training=Training("ope_c2", "las tasas y la academia de la oposición de auxiliar "
+                              "(C2)", 6_000),
+        ),
+        Position(
+            3, "Administrativo (C1)", 4_400, Mechanic.MEMORY, 40,
+            (_study(60), Task("perfect", "Haz 15 circuitos de firmas perfectos",
+                              "perfect_rounds", 15), _good(4)),
+            days=4, content="sellos:4",
+            training=Training("ope_c1", "la promoción interna a administrativo (C1)", 15_000),
+        ),
+        Position(
+            4, "Técnico de gestión (A2)", 7_500, Mechanic.DIALOGUE, 60,
+            (_study(80), Task("smooth", "Atiende bien a 25 ciudadanos", "smooth", 25),
+             _events(2)),
+            days=5, content="ciudadano",
+            training=Training("ope_a2", "la oposición de técnico de gestión (A2)", 30_000),
+        ),
+        Position(
+            5, "Inspector de Hacienda (A1)", 14_000, Mechanic.SPOT, 60, (),
+            days=0, content="inspeccion",
+            training=Training("ope_a1", "la oposición a Inspector de Hacienda (cinco años de "
+                              "academia)", 60_000),
+        ),
+    ),
+)  # fmt: skip
+
+INFLUENCER = Job(
+    key="influencer",
+    name="Influencer",
+    emoji="🤳",
+    blurb="Unos días no te ve ni tu madre y otros te haces viral. Funas incluidas.",
+    rgb=(233, 30, 99),
+    viral=True,
+    positions=(
+        Position(
+            1, "Tiktoker de barrio", 1_700, Mechanic.MEMORY, 30,
+            (_good(3), Task("perfect", "Clava 6 coreografías", "perfect_rounds", 6)),
+            days=2, content="baile:3",
+        ),
+        Position(
+            2, "Microinfluencer", 2_800, Mechanic.CALC, 30,
+            (Task("best", "Acierta 20 métricas", "best", 20), _good(4)),
+            days=3, content="metricas",
+            training=Training("aro_luz", "el aro de luz y el curso de marca personal", 6_000),
+        ),
+        Position(
+            3, "Streamer", 4_800, Mechanic.DIALOGUE, 40,
+            (Task("smooth", "Sobrevive a 25 momentos del directo", "smooth", 25), _good(5)),
+            days=4, content="directo", self_employed=True,
+            training=Training("setup", "el setup de streamer (silla gamer incluida)", 15_000),
+        ),
+        Position(
+            4, "Influencer con agencia", 9_000, Mechanic.SPOT, 60,
+            (Task("caught", "Rechaza 20 colaboraciones turbias", "caught", 20), _good(5),
+             _events(2)),
+            days=5, content="colaboraciones", self_employed=True,
+            training=Training("agencia", "el contrato con una agencia de representación (se "
+                              "queda el 20 %)", 25_000),
+        ),
+        Position(
+            5, "Celebrity de reality", 16_000, Mechanic.DIALOGUE, 60, (),
+            days=0, content="plato", self_employed=True,
+            training=Training("reality", "el casting de un reality en una isla desierta",
+                              70_000),
+        ),
+    ),
+)  # fmt: skip
+
+JOBS: tuple[Job, ...] = (
+    OBRA,
+    HOSTELERIA,
+    POLITICA,
+    SANIDAD,
+    OFICINA,
+    REPARTO,
+    FUNCIONARIADO,
+    INFLUENCER,
+)
 JOB_BY_KEY: dict[str, Job] = {job.key: job for job in JOBS}
 
 # -- Contenido: cavar --------------------------------------------------------------------
@@ -1049,6 +1198,422 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: clasificar ---------------------------------------------------------------
+#
+# Cada ronda trae un papel o una persona y hay que mandarla al sitio correcto.
+# Los sitios (botones) son los mismos toda la partida.
+
+
+@dataclass(frozen=True, slots=True)
+class SortPack:
+    """Contenido de un minijuego de clasificar.
+
+    Attributes:
+        rule: Lo que se enseña arriba toda la partida.
+        ask: Encabezado de cada ronda (`{n}` y `{total}`).
+        bins: Sitios donde clasificar (los botones), de 2 a 5.
+        items: `(texto, índice del sitio correcto)`.
+    """
+
+    rule: str
+    ask: str
+    bins: tuple[str, ...]
+    items: tuple[tuple[str, int], ...]
+
+
+SORT_PACKS: dict[str, SortPack] = {
+    "ventanilla": SortPack(
+        "🪟 Eres el interino de la ventanilla única. Manda a cada vecino a su negociado.",
+        "🙋 Vecino {n}/{total}:",
+        ("🏠 Padrón", "💶 Recaudación", "🏗️ Urbanismo", "🤝 Servicios sociales"),
+        (
+            ("Necesita un certificado de empadronamiento para la beca", 0),
+            ("Se ha mudado al municipio y quiere darse de alta", 0),
+            ("Ha cambiado de piso dentro del mismo pueblo", 0),
+            ("Quiere pagar el IBI, que le venció ayer", 1),
+            ("Le ha llegado el recibo de la basura dos veces", 1),
+            ("Pide fraccionar el impuesto de circulación", 1),
+            ("Quiere licencia para cerrar la azotea", 2),
+            ("Denuncia que el vecino ha hecho una piscina sin permiso", 2),
+            ("Pide licencia de obra menor para cambiar el baño", 2),
+            ("Solicita ayuda a domicilio para su madre", 3),
+            ("Pregunta por la ayuda de emergencia social", 3),
+            ("Quiere pedir la valoración de la dependencia", 3),
+        ),
+    ),
+    "registro": SortPack(
+        "📮 Eres auxiliar en el registro. Cada papel va a su sitio (y el spam, a la papelera).",
+        "📄 Papel {n}/{total}:",
+        ("📨 Entrada", "📤 Salida", "🗄️ Archivo", "🗑️ Papelera"),
+        (
+            ("Una instancia que acaba de traer un vecino", 0),
+            ("Un recurso de alzada presentado hoy", 0),
+            ("La factura de un proveedor del ayuntamiento", 0),
+            ("La notificación de una multa que manda el ayuntamiento", 1),
+            ("Un requerimiento de documentación para un vecino", 1),
+            ("La resolución de una subvención que hay que notificar", 1),
+            ("Un expediente cerrado de 1994", 2),
+            ("Las actas del pleno del año pasado", 2),
+            ("Un expediente ya resuelto y notificado", 2),
+            ("Un correo de un príncipe extranjero para el alcalde", 3),
+            ("Publicidad de una academia de oposiciones", 3),
+            ("Una cadena de WhatsApp impresa «para que la vea el concejal»", 3),
+        ),
+    ),
+}
+
+# -- Contenido: calcular -----------------------------------------------------------------
+#
+# Cada ronda trae varias ofertas con números y hay que quedarse con la mejor
+# según una cuenta (euros por kilómetro, me gusta por visita). La mejor saca
+# siempre un margen claro a la segunda (`work_games.CALC_MARGIN`).
+
+#: Restaurantes de los pedidos del reparto.
+RESTAURANTS: tuple[str, ...] = (
+    "🍔 Burger del polígono",
+    "🍕 Pizzería Vesubio",
+    "🥙 Kebab de la esquina",
+    "🍣 Sushi de Mesa y López",
+    "🥡 Chino del barrio",
+    "🍗 Pollos asados Chacho",
+    "🥗 Poke «healthy»",
+    "🌮 Tacos de Triana",
+    "🧁 Dulcería de Vegueta",
+    "🍝 Italiano de Las Canteras",
+)
+#: Temas de los vídeos del influencer.
+VIDEO_TOPICS: tuple[str, ...] = (
+    "📹 Probando el gofio por primera vez",
+    "📹 Mi rutina de mañana (a las 13:00)",
+    "📹 Reacciono a los precios de Maspalomas",
+    "📹 Un día en mi vida de influencer",
+    "📹 Le pongo nota a los barraquitos",
+    "📹 Sigo la receta de mi abuela",
+    "📹 Abro el paquete que me mandó una marca",
+    "📹 Bailo el trend con mi madre",
+    "📹 Cuento mi ruptura (con música triste)",
+    "📹 Pruebo la comida del aeropuerto",
+)
+
+# -- Contenido: memoria, detectar y diálogos de los oficios nuevos ---------------------------
+
+MEMORY_PACKS.update(
+    {
+        "entregas": MemoryPack(
+            "📱 La app te encadena pedidos. Ruta {n}:",
+            "Entrega en el mismo orden (el cliente valora con estrellas).",
+            (("🍕", "Pizzería"), ("🏢", "Oficina del 7.º"), ("🏠", "Chalé con perro"),
+             ("🏫", "Residencia de estudiantes"), ("🏥", "Hospital (turno de noche)"),
+             ("⛱️", "Chiringuito de Las Canteras"), ("🅿️", "Parking del centro comercial")),
+        ),
+        "sellos": MemoryPack(
+            "📋 Expediente {n}. El jefe de negociado te dicta el circuito de firmas:",
+            "Pasa el expediente por las mismas mesas, en orden.",
+            (("📥", "Registro de entrada"), ("🖋️", "Firma"), ("🔖", "Sello"),
+             ("📑", "Compulsa"), ("🗂️", "Archivo"), ("📎", "Grapa"), ("☕", "Desayuno")),
+        ),
+        "baile": MemoryPack(
+            "🎵 Trend nuevo. La coreografía va así (toma {n}):",
+            "Repite la coreografía en orden. Grabando…",
+            (("👈", "Izquierda"), ("👉", "Derecha"), ("🙌", "Manos arriba"), ("💃", "Giro"),
+             ("🦵", "Patada"), ("🫶", "Corazón"), ("🤸", "Voltereta")),
+        ),
+    }
+)  # fmt: skip
+
+#: Jefe de flota: lo que hacen los riders currando y lo que hace el que se come el pedido.
+RIDER_WORKING: tuple[str, ...] = (
+    "🛵 entregando en un 4.º sin ascensor",
+    "📍 esperando en la puerta del restaurante",
+    "🌧️ pedaleando bajo la lluvia",
+    "🧾 confirmando la entrega en la app",
+    "🔋 cambiando la batería de la bici",
+    "🗺️ buscando el portal B (no existe)",
+    "📦 recogiendo tres pedidos a la vez",
+    "🧊 metiendo los helados en la mochila térmica",
+    "🚦 parado en el semáforo, como manda la ley",
+    "📞 llamando al cliente, que no abre",
+)
+RIDER_SLACKING: tuple[str, ...] = (
+    "🍟 se está comiendo las papas del pedido",
+    "🥤 se ha bebido el refresco «porque se iba a derramar»",
+    "🍕 ha abierto la pizza «para ver si estaba bien»",
+    "📵 tiene la app en «ocupado» y está en la playa",
+    "😴 lleva una hora «en un atasco» en su sofá",
+    "🍦 se ha comido el helado «porque se derretía»",
+    "🔄 acepta y cancela pedidos hasta que le sale uno bueno",
+)
+
+#: Inspector de Hacienda: declaraciones con fraude y declaraciones normales.
+TAX_FRAUD: tuple[str, ...] = (
+    "Declara 9.000 € al año y tiene tres deportivos a su nombre",
+    "Dice vivir en Andorra, pero sube stories desde Maspalomas cada día",
+    "Restaurante que solo cobra en efectivo y declara pérdidas desde 2009",
+    "Desgrava como gasto de empresa un yate «para reuniones»",
+    "Sociedad con sede en las Islas Caimán y oficina en Telde",
+    "Factura 40.000 € de «asesoramiento verbal» a la empresa del cuñado",
+    "Tiene a sus cinco gatos dados de alta como empleados",
+)
+TAX_CLEAN: tuple[str, ...] = (
+    "Asalariado con una nómina y la deducción por alquiler antiguo",
+    "Pensionista con su pensión y un plan de pensiones pequeño",
+    "Autónoma que declara todo lo que factura, con sus facturas",
+    "Familia numerosa con la deducción que le toca",
+    "Estudiante con una beca y un verano de camarero",
+    "Funcionario con su nómina y nada más",
+    "Jubilado que vendió el piso del pueblo y lo declara",
+    "Rider que declara sus ingresos de autónomo al céntimo",
+    "Profesora que dona a una ONG y lo desgrava",
+)
+
+#: Influencer con agencia: colaboraciones turbias y colaboraciones normales.
+COLLAB_SHADY: tuple[str, ...] = (
+    "Una cripto que «se va a multiplicar por cien» seguro",
+    "Unas pastillas que adelgazan 10 kilos en una semana",
+    "Un curso para hacerte millonario vendiendo cursos",
+    "Una casa de apuestas que te paga por cada seguidor que pierda",
+    "Un «préstamo rápido» al 3.000 % TAE",
+    "Una clínica de retoques sin título sanitario",
+)
+COLLAB_FINE: tuple[str, ...] = (
+    "Una marca de gofio de la isla",
+    "Una tienda de ropa del barrio",
+    "Un festival de música en el sur",
+    "Unas zapatillas de correr",
+    "Una app para aprender idiomas",
+    "Un restaurante de Vegueta",
+    "Una marca de protector solar",
+    "Un hotel rural en la cumbre",
+    "Una protectora de animales",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "temario": DialoguePack(
+            "📚 Test de la oposición. Regla de oro: **la respuesta es la de la ley**, no la "
+            "de la vida.",
+            (
+                Dialogue("¿Cuántos artículos tiene la Constitución de 1978?", "169",
+                         ("155", "200")),
+                Dialogue("¿Qué artículo de la Constitución recoge el derecho a una vivienda "
+                         "digna?", "El 47", ("El 14", "El 155")),
+                Dialogue("¿Qué artículo de la Constitución recoge la igualdad ante la ley?",
+                         "El 14", ("El 1", "El 47")),
+                Dialogue("¿Qué artículo de la Constitución permite al Gobierno obligar a una "
+                         "comunidad autónoma a cumplir la ley?", "El 155", ("El 47", "El 2")),
+                Dialogue("¿Qué día se aprobó la Constitución en referéndum?",
+                         "El 6 de diciembre de 1978",
+                         ("El 29 de diciembre de 1978", "El 20 de noviembre de 1975")),
+                Dialogue("¿Cuántos diputados tiene el Congreso?", "350", ("300", "400")),
+                Dialogue("¿Cuántos senadores elige cada provincia peninsular?", "Cuatro",
+                         ("Dos", "Seis")),
+                Dialogue("¿Quién sanciona y promulga las leyes?", "El Rey",
+                         ("El presidente del Gobierno", "La presidencia del Congreso")),
+                Dialogue("Ley 39/2015: si la norma no fija plazo para resolver, ¿cuál es?",
+                         "Tres meses", ("Diez días", "Un año")),
+                Dialogue("Ley 39/2015: en un procedimiento a solicitud del interesado, ¿qué "
+                         "es, por regla general, el silencio administrativo?", "Estimatorio",
+                         ("Desestimatorio", "Lo que diga el jefe de negociado")),
+                Dialogue("¿Qué plazo hay para el recurso de alzada contra un acto expreso?",
+                         "Un mes", ("Tres meses", "Quince días")),
+                Dialogue("Ley 39/2015: ¿qué días no son hábiles?",
+                         "Sábados, domingos y festivos",
+                         ("Solo domingos y festivos", "Los viernes por la tarde")),
+                Dialogue("¿Qué título se pide para el subgrupo C2?",
+                         "Graduado en Educación Secundaria Obligatoria",
+                         ("Grado universitario", "Bachillerato")),
+                Dialogue("¿Qué norma regula el empleo público?",
+                         "El Estatuto Básico del Empleado Público",
+                         ("El Estatuto de los Trabajadores", "El Reglamento del Congreso")),
+                Dialogue("Si a tu solicitud le falta algo, ¿cuánto plazo te dan para "
+                         "subsanarla?", "Diez días", ("Un mes", "Veinticuatro horas")),
+            ),
+        ),
+        "ciudadano": DialoguePack(
+            "🪟 Atención al ciudadano. Regla de oro: **sigue el procedimiento**, aunque se caiga "
+            "el mundo.",
+            (
+                Dialogue(
+                    "Un señor quiere que le atiendas sin cita «porque solo es una pregunta».",
+                    "Le doy cita para el primer hueco y le resuelvo la duda rápida.",
+                    ("Le atiendo y que esperen los de la cola.", "«Vuelva usted mañana»."),
+                ),
+                Dialogue(
+                    "Le falta la fotocopia del DNI para el trámite.",
+                    "La Administración no puede pedirle lo que ya tiene: lo consulto yo.",
+                    ("Que vuelva con la fotocopia.",
+                     "Que vaya a la papelería de enfrente, que es de mi cuñado."),
+                ),
+                Dialogue(
+                    "Te traen un recurso sin firmar.",
+                    "Le pido que lo firme o que lo subsane en diez días.",
+                    ("Lo tiro a la papelera.", "Lo firmo yo, que tengo buena letra."),
+                ),
+                Dialogue(
+                    "Te pide que le adelantes si le van a dar la subvención.",
+                    "Se resolverá en plazo y se le notificará.",
+                    ("Sí, que el concejal es su primo.", "No, se la dan a los de siempre."),
+                ),
+                Dialogue(
+                    "Un vecino grita que tu sueldo lo paga él con sus impuestos.",
+                    "Le agradezco su contribución y le ofrezco la hoja de reclamaciones.",
+                    ("Entonces súbamelo.", "Le cierro la ventanilla en la cara."),
+                ),
+                Dialogue(
+                    "Te piden un certificado que se saca en la sede electrónica.",
+                    "Le enseño a sacarlo con su certificado digital.",
+                    ("Que pida cita para dentro de un mes.", "Le digo que eso no existe."),
+                ),
+                Dialogue(
+                    "Alguien llega justo cuando sales a desayunar.",
+                    "Le atiendo y luego desayuno.",
+                    ("Cuelgo «Vuelvo en 5 minutos» y vuelvo en 45.",
+                     "Le digo que se ha caído el sistema."),
+                ),
+                Dialogue(
+                    "Presenta la solicitud un minuto antes de cerrar el registro.",
+                    "La registro con su hora y le doy el resguardo.",
+                    ("Le digo que ya está cerrado.", "La dejo en la mesa para mañana."),
+                ),
+            ),
+        ),
+        "fundador": DialoguePack(
+            "🚀 Fundas una app de reparto. Regla de oro: **los riders no son trabajadores, son "
+            "«colaboradores»**.",
+            (
+                Dialogue(
+                    "La Inspección de Trabajo pregunta por qué tus riders no tienen contrato.",
+                    "Son emprendedores independientes que eligen su horario.",
+                    ("Porque contratar es caro.", "¿Qué riders?"),
+                ),
+                Dialogue(
+                    "Un rider pregunta por qué ha bajado la tarifa por kilómetro.",
+                    "Hemos optimizado el algoritmo para darte más oportunidades.",
+                    ("Porque podemos.", "Porque el inversor quiere beneficios."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta cuánto gana un rider a la hora.",
+                    "Nuestros colaboradores pueden llegar a ganar hasta 20 € a la hora.",
+                    ("Unos 4 €, si no llueve.", "Ni idea, nunca lo he probado."),
+                ),
+                Dialogue(
+                    "Los inversores preguntan cuándo daréis beneficios.",
+                    "Ahora toca crecer: primero, conquistar el mercado.",
+                    ("Nunca.", "Cuando dejemos de pagar a los riders."),
+                ),
+                Dialogue(
+                    "Un juez dice que tus riders son falsos autónomos.",
+                    "Respetamos la sentencia y la recurriremos hasta el Supremo.",
+                    ("Vale, mañana los contrato a todos.", "¿Falsos qué?"),
+                ),
+                Dialogue(
+                    "Te preguntan por la sostenibilidad.",
+                    "Repartimos en bici: somos la empresa más verde del mercado.",
+                    ("Repartimos un rollito en una furgoneta diésel.",
+                     "La sostenibilidad no da dinero."),
+                ),
+                Dialogue(
+                    "Un cliente se queja de que la comida llegó fría.",
+                    "Le pedimos disculpas y le damos un cupón de 3 €.",
+                    ("Que se la caliente.", "Le bajamos la valoración al rider y listo."),
+                ),
+                Dialogue(
+                    "El Gobierno aprueba la Ley Rider.",
+                    "Cumpliremos la ley con un modelo innovador de subcontratas.",
+                    ("Cerramos y nos vamos del país.", "Contratamos a todos mañana."),
+                ),
+            ),
+        ),
+        "directo": DialoguePack(
+            "🎮 Directo. Regla de oro: **el chat siempre entretenido** (y la marca, contenta).",
+            (
+                Dialogue(
+                    "Un hater escribe en el chat «eres malísimo».",
+                    "«Gracias por el engagement, rey». Y sigues.",
+                    ("Le contestas durante 40 minutos.", "Cierras el directo llorando."),
+                ),
+                Dialogue(
+                    "Te donan 50 € con un mensaje que no se puede leer en voz alta.",
+                    "Das las gracias sin leerlo y avisas al moderador.",
+                    ("Lo lees entero.", "Devuelves los 50 €."),
+                ),
+                Dialogue(
+                    "Se ve en pantalla una factura con tu dirección.",
+                    "Cambias de escena al momento.",
+                    ("Haces zoom para que se vea mejor.", "Dices que no es tuya."),
+                ),
+                Dialogue(
+                    "Te llega la publi de una casa de apuestas.",
+                    "La rechazas: la ley casi no deja anunciarlas con caras conocidas.",
+                    ("La metes sin decir que es publi.", "Apuestas el sueldo en directo."),
+                ),
+                Dialogue(
+                    "Llevas 8 horas de directo y el chat pide «una más».",
+                    "Anuncias la última y quedas para mañana.",
+                    ("Sigues hasta las 6 de la mañana.", "Te duermes en directo."),
+                ),
+                Dialogue(
+                    "Otro streamer te manda 3.000 personas de golpe.",
+                    "Les das la bienvenida y otro día le devuelves el favor.",
+                    ("Sigues sin decir nada.", "Les pides que se suscriban o se vayan."),
+                ),
+                Dialogue(
+                    "El chat pregunta por qué no vives en Andorra «como todos».",
+                    "«Yo pago aquí, que la sanidad la uso».",
+                    ("«Me voy la semana que viene».", "«Es por el clima»."),
+                ),
+                Dialogue(
+                    "Se cae internet en la partida decisiva.",
+                    "Avisas por redes y vuelves con el vídeo resumen.",
+                    ("Culpas a tu madre en directo.", "Subes 40 stories llorando."),
+                ),
+            ),
+        ),
+        "plato": DialoguePack(
+            "📺 Plató de televisión. Regla de oro: **ni confirmo ni desmiento**: el misterio paga "
+            "la hipoteca.",
+            (
+                Dialogue(
+                    "¿Es verdad que estás con tu compañero del reality?",
+                    "Ni confirmo ni desmiento: lo contaré en exclusiva.",
+                    ("Sí, desde el martes.", "No, es mi primo."),
+                ),
+                Dialogue(
+                    "Otra cadena te ofrece 20.000 € por una entrevista.",
+                    "Lo hablo con mi agencia, a ver si suben.",
+                    ("Acepto sin leer el contrato.", "La hago gratis, por amor al arte."),
+                ),
+                Dialogue(
+                    "Un paparazzi te pilla saliendo del gimnasio sin maquillar.",
+                    "Sonríes y saludas: mañana, portada amable.",
+                    ("Le tiras el batido.", "Te escondes detrás de un contenedor."),
+                ),
+                Dialogue(
+                    "Te preguntan en directo por tu residencia en Andorra.",
+                    "Eso lo lleva mi gestor; aquí he venido a hablar de mi libro.",
+                    ("«Vivo en Maspalomas, pero no se lo digan a nadie».",
+                     "Enseñas el piso de Andorra vacío en un story."),
+                ),
+                Dialogue(
+                    "Tu ex sale en el programa de enfrente contando cosas.",
+                    "No entras al trapo: tu silencio cotiza más.",
+                    ("Llamas en directo al otro programa.", "Subes 40 stories llorando."),
+                ),
+                Dialogue(
+                    "Te preguntan por tu libro, que no has escrito tú.",
+                    "Es un proyecto muy personal en el que he volcado mi alma.",
+                    ("Lo escribió un escritor fantasma.", "No sé de qué va, no lo he leído."),
+                ),
+                Dialogue(
+                    "La marca de tu perfume quiere que digas que lo creaste tú.",
+                    "Es mi esencia hecha fragancia.",
+                    ("No sé ni a qué huele.", "Me pagan por decirlo."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -1068,6 +1633,8 @@ class Outcome:
         stat: Estadística de logros que suma 1 al elegirla.
         demote: Si te bajan un puesto (p. ej., dimitir).
         fine: Sin dinero en negro, la multa (parte de la base) si sale `risk`.
+        rating: Cambio de la valoración de la app, en décimas de estrella (reparto).
+        followers: Cambio de los seguidores, en tanto por uno (influencer).
     """
 
     text: str
@@ -1081,6 +1648,8 @@ class Outcome:
     stat: str | None = None
     demote: bool = False
     fine: float = 0.0
+    rating: int = 0
+    followers: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1813,6 +2382,346 @@ EVENTS: tuple[Event, ...] = (
         abroad=True,
         phase="no_residente",
     ),
+    # -- Reparto ------------------------------------------------------------------------
+    Event(
+        "sexto_sin_ascensor",
+        "🏢 El cliente deja 0,50 € de propina y te pide que se lo subas a un 6.º sin ascensor.",
+        (
+            (
+                "Subo",
+                Outcome(
+                    "Subes. Llegas sin aire, pero el cliente te pone cinco estrellas.",
+                    battery=-10,
+                    rating=2,
+                    stat="work_sixth_floor",
+                ),
+            ),
+            (
+                "Que baje él",
+                Outcome(
+                    "«Te espero en el portal». El cliente baja en pijama y te pone una estrella.",
+                    rating=-4,
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "diluvio",
+        "🌧️ Diluvia en Las Palmas (tres gotas) y la app ofrece 2 € más por pedido. ¿Sales?",
+        (
+            (
+                "Salgo",
+                Outcome(
+                    "Sales con el chubasquero del chino. Cobras más y llegas empapado.",
+                    pay=0.5,
+                    battery=-15,
+                    stat="work_storm",
+                ),
+            ),
+            ("Me quedo en casa", Outcome("Te quedas en casa viendo llover.", family=6)),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "perro_entrega",
+        "🐕 En la entrega te espera un perro sin atar. El dueño grita: «¡No hace nada!».",
+        (
+            (
+                "Corro",
+                Outcome(
+                    "Corres como nunca. El perro también. Entregas el pedido desde la valla.",
+                    battery=-10,
+                    stat="work_dog_chase",
+                ),
+            ),
+            (
+                "Le doy una papa",
+                Outcome(
+                    "Le das una papa del pedido. El perro, feliz; el cliente, no tanto.",
+                    rating=-2,
+                    stat="work_dog_bribe",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "huelga_riders",
+        "✊ Los riders convocan una desconexión masiva contra la bajada de tarifas.",
+        (
+            (
+                "Me desconecto",
+                Outcome(
+                    "Te desconectas con los compañeros. La app toma nota.",
+                    performance=-10,
+                    family=5,
+                    stat="work_rider_strike",
+                ),
+            ),
+            (
+                "Reparto igual",
+                Outcome(
+                    "Repartes tú solo media ciudad. Pedidos a montones, compañeros mirando mal.",
+                    pay=0.4,
+                    battery=-10,
+                    stat="work_rider_scab",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "un_hielo",
+        "🧊 Un cliente pide a las 4 de la mañana un solo cubito de hielo. Gastos de envío: 3 €.",
+        (
+            (
+                "Lo llevo",
+                Outcome(
+                    "Llevas un hielo en una mochila térmica de 40 litros. Cinco estrellas.",
+                    pay=0.1,
+                    rating=2,
+                    stat="work_ice_cube",
+                ),
+            ),
+            ("Lo rechazo", Outcome("Lo rechazas. La app te lo apunta.", rating=-2)),
+        ),
+        jobs=("reparto",),
+    ),
+    # -- Funcionariado ---------------------------------------------------------------------
+    Event(
+        "desayuno",
+        "🥐 Son las 10:00: la hora sagrada del desayuno. Hay cola en la ventanilla.",
+        (
+            (
+                "Me voy a desayunar",
+                Outcome(
+                    "Cuelgas «Vuelvo en 5 minutos» y vuelves en 40, con el barraquito dentro.",
+                    battery=15,
+                    performance=-5,
+                    stat="work_breakfast",
+                ),
+            ),
+            (
+                "Atiendo la cola",
+                Outcome(
+                    "Atiendes la cola en ayunas. Nadie te lo agradece.", performance=5, battery=-5
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "expediente_perdido",
+        "📁 Aparece detrás del archivador un expediente de 2011 sin resolver.",
+        (
+            (
+                "Lo tramito",
+                Outcome(
+                    "Lo tramitas. El vecino lleva trece años esperando y llora al teléfono.",
+                    performance=10,
+                    battery=-10,
+                    stat="work_lost_file",
+                ),
+            ),
+            (
+                "Lo vuelvo a esconder",
+                Outcome(
+                    "Lo vuelves a dejar donde estaba. Ojos que no ven…",
+                    risk=0.15,
+                    fine=0.5,
+                    caught_by="defensor",
+                    stat="work_hidden_file",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "sistema_caido",
+        "💻 Se ha caído el sistema informático. Otra vez.",
+        (
+            (
+                "Lo apunto a mano",
+                Outcome("Lo apuntas todo a boli, como en 1985.", performance=5, battery=-10),
+            ),
+            (
+                "Cartel de «sin sistema»",
+                Outcome(
+                    "Cuelgas el cartel y te vas a casa antes. Mañana, el doble de cola.",
+                    family=5,
+                    stat="work_no_system",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "sobrino_concejal",
+        "🤝 Un concejal te pide que «mires con cariño» el expediente de su sobrino.",
+        (
+            (
+                "Lo miro con cariño",
+                Outcome(
+                    "Lo pones el primero de la pila. El concejal te deja un sobre «para el café».",
+                    black=0.5,
+                    risk=0.15,
+                    caught_by="uco",
+                    stat="work_favor",
+                ),
+            ),
+            (
+                "Por orden de entrada",
+                Outcome(
+                    "«Va por orden de entrada, como todos». El concejal ya no te saluda.",
+                    performance=-5,
+                    stat="work_by_the_book",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=2,
+    ),
+    Event(
+        "moscosos",
+        "🏖️ Te quedan días de asuntos propios (los moscosos) sin gastar y acaba el año.",
+        (
+            (
+                "Me los cojo",
+                Outcome(
+                    "Te los coges todos seguidos. Tu familia ya no se acordaba de ti.",
+                    family=15,
+                    performance=-5,
+                    stat="work_moscosos",
+                ),
+            ),
+            (
+                "Los regalo",
+                Outcome("Los pierdes. Tu jefe de negociado te mira raro.", performance=5),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=2,
+    ),
+    # -- Influencer -----------------------------------------------------------------------
+    Event(
+        "funa",
+        "🔥 Te están funando: alguien ha encontrado un tuit tuyo de 2014.",
+        (
+            (
+                "Vídeo pidiendo perdón",
+                Outcome(
+                    "Subes un vídeo llorando con sudadera gris. Pierdes seguidores, pero menos.",
+                    followers=-0.1,
+                    performance=-5,
+                    stat="work_apology",
+                ),
+            ),
+            (
+                "Doblo la apuesta",
+                Outcome(
+                    "Dices que es la «cultura de la cancelación». Te funan más fuerte.",
+                    followers=-0.3,
+                    performance=5,
+                    stat="work_cancelled",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+    ),
+    Event(
+        "andorra",
+        "🏔️ Tu agencia te propone irte a vivir a Andorra «por el clima».",
+        (
+            (
+                "Me voy",
+                Outcome(
+                    "Te vas una semana. Hace frío, no hay playa y echas de menos el gofio. "
+                    "Vuelves sin decir nada a nadie.",
+                    family=-10,
+                    battery=-10,
+                    stat="work_andorra",
+                ),
+            ),
+            (
+                "Me quedo",
+                Outcome(
+                    "Te quedas en Canarias pagando lo tuyo. Hacienda te manda un corazón.",
+                    family=5,
+                    stat="work_andorra_no",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=3,
+    ),
+    Event(
+        "publi_encubierta",
+        "📦 Una marca te paga por enseñar su crema, pero sin poner que es publicidad.",
+        (
+            (
+                "Pongo #publi",
+                Outcome(
+                    "Pones #publi. Cobras y duermes tranquilo.",
+                    pay=0.3,
+                    stat="work_ad_tagged",
+                ),
+            ),
+            (
+                "Sin #publi",
+                Outcome(
+                    "Lo cuelas como si te encantara de verdad.",
+                    black=0.5,
+                    risk=0.2,
+                    caught_by="consumo",
+                    stat="work_hidden_ad",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+    ),
+    Event(
+        "regalo_marca",
+        "🎁 Te llega a casa una caja enorme de una marca: un móvil nuevo «de regalo».",
+        (
+            (
+                "Lo declaro",
+                Outcome(
+                    "Lo declaras: un regalo por publicidad es renta en especie y tributa.",
+                    pay=0.2,
+                    stat="work_gift_declared",
+                ),
+            ),
+            (
+                "Calladito",
+                Outcome(
+                    "Lo estrenas en un story y no le dices nada a nadie (salvo a tus seguidores).",
+                    black=0.4,
+                    risk=0.15,
+                    caught_by="regalos",
+                    stat="work_gift_hidden",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+    ),
+    Event(
+        "colaboracion_amiga",
+        "🤝 Otro influencer te propone un vídeo juntos para «ayudarnos a crecer».",
+        (
+            (
+                "Hecho",
+                Outcome(
+                    "Hacéis un baile juntos. Sus seguidores te descubren.",
+                    followers=0.1,
+                    battery=-5,
+                    stat="work_collab",
+                ),
+            ),
+            ("Paso", Outcome("Pasas. Él lo hace con otro y se hace viral.", performance=-5)),
+        ),
+        jobs=("influencer",),
+    ),
 )
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
@@ -1834,6 +2743,18 @@ CAUGHT_TEXT: dict[str, str] = {
     "hacienda": (
         "📨 **Hacienda te regulariza.** Dice que tu centro de intereses económicos sigue en "
         "España (art. 9.1.b LIRPF) y te cobra la diferencia con recargo."
+    ),
+    "defensor": (
+        "📮 **Queja al Diputado del Común.** El vecino del expediente escondido se ha quejado "
+        "y te abren un expediente a ti: multa."
+    ),
+    "consumo": (
+        "📢 **Consumo te expedienta por publicidad encubierta** (art. 26 de la Ley de "
+        "Competencia Desleal): devuelves lo de la marca con un 20 % de recargo."
+    ),
+    "regalos": (
+        "📨 **Hacienda cruza datos con la marca.** El regalo era renta en especie: lo "
+        "regularizas con un 20 % de recargo."
     ),
 }
 #: Pillados que además dejan sin IMV unos días.

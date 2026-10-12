@@ -23,6 +23,11 @@ Todo el dinero pasa por `EconomyService`:
   startup sale a bolsa o la compran (exit), se cobran: exentas hasta 50.000 €
   (`grant`, Ley 28/2022 para empleados de empresas emergentes) y el resto como
   nómina en especie (`pay_salary`). Si quiebra, se pierden.
+- Reparto, funcionariado e influencer no tienen caminos de dinero propios: la
+  lluvia, la valoración de la app, los trienios y la viralidad solo cambian el
+  bruto del turno, que se cobra como cualquier nómina (`pay_salary`; los
+  autónomos, con su cuota, que en los falsos autónomos es la tarifa plana).
+  Estudiar la oposición no paga nada.
 """
 
 from __future__ import annotations
@@ -69,11 +74,18 @@ from bot.services.work import (
     OPTIONS_SHARE,
     PERFORMANCE_MAX,
     PERFORMANCE_START,
+    RAIN_ACCIDENT,
+    RAIN_PAY,
+    RATING_BLOCK,
+    RATING_BLOCK_SECONDS,
+    RATING_MAX,
+    RATING_MIN,
+    RATING_RESET,
     REMOTE_PING_CHANCE,
-    SELF_EMPLOYED_FEE,
     SICK_LEAVE_SECONDS,
     SICK_PAY_RATE,
     TIRED,
+    TRIENNIUM_PAY,
     Contract,
     Job,
     Mechanic,
@@ -85,6 +97,7 @@ from bot.services.work import (
     battery_now,
     beckham_eligible,
     family_cost,
+    follower_gain,
     holiday,
     is_night,
     next_shift_kind,
@@ -92,12 +105,17 @@ from bot.services.work import (
     performance_delta,
     promote,
     promotion_blockers,
+    rating_delta,
+    rating_pay,
     residence_phase,
     rested_at,
     roll,
     roll_over_day,
     shift_cost,
     shift_pay,
+    triennia,
+    viral_roll,
+    weather,
     week_of,
 )
 from bot.services.work_catalog import (
@@ -136,6 +154,8 @@ class Status:
         days_in_position: Días distintos fichando en el puesto.
         on_leave: Si vuelve de una excedencia.
         phase: Situación fiscal (`work.residence_phase`).
+        weather: El tiempo de esta hora si el oficio lo nota (`""` si no).
+        triennia: Trienios cumplidos si el oficio los cobra.
     """
 
     contract: Contract
@@ -149,6 +169,18 @@ class Status:
     on_leave: bool
     now: float
     phase: str = "casa"
+    weather: str = ""
+    triennia: int = 0
+
+    @property
+    def blocked(self) -> bool:
+        """Si la app le tiene desconectado por mala valoración."""
+        return self.contract.blocked_until > self.now
+
+    @property
+    def can_study(self) -> bool:
+        """Si en su puesto se estudia la oposición."""
+        return self.job.can_study(self.contract.level)
 
     @property
     def off_duty(self) -> bool:
@@ -201,6 +233,8 @@ class Shift:
     returned_from_leave: bool
     remote: bool = False
     perks: Perks = NO_PERKS
+    #: El tiempo al fichar (`""` si el oficio no lo nota).
+    weather: str = ""
 
 
 @dataclass(slots=True)
@@ -228,6 +262,13 @@ class ShiftOutcome:
         exit_payout: Lo cobrado por un exit (bruto).
         bankrupt: Si la startup quebró (adiós opciones).
         missed_guards: Guardias mínimas que faltaron la semana pasada.
+        weather: El tiempo del turno (`""` si el oficio no lo nota).
+        rating: Valoración de la app después del turno (reparto).
+        blocked: Si la app te ha desconectado en este turno.
+        viral: Lo que multiplicó la viralidad el sueldo (influencer; 0 si no aplica).
+        followers: Seguidores después del turno; `followers_gained`, los de este turno.
+        triennia: Trienios que se cobraron en el turno.
+        temario: Preguntas del temario acertadas (turno de estudio).
     """
 
     job: Job
@@ -267,6 +308,14 @@ class ShiftOutcome:
     exit_payout: int = 0
     bankrupt: bool = False
     missed_guards: int = 0
+    weather: str = ""
+    rating: int = 0
+    blocked: bool = False
+    viral: float = 0.0
+    followers: int = 0
+    followers_gained: int = 0
+    triennia: int = 0
+    temario: int = 0
 
     @property
     def night(self) -> bool:
@@ -390,6 +439,8 @@ class WorkService:
             on_leave=leave,
             now=now,
             phase=residence_phase(contract, now),
+            weather=weather(now) if job.weather else "",
+            triennia=triennia(contract, now) if job.seniority else 0,
         )
 
     async def history(self, guild_id: int, user_id: int) -> dict[str, tuple[int, int]]:
@@ -418,7 +469,9 @@ class WorkService:
                 raise WorkError("Estás en Hong Kong. Vuelve primero y luego cambias de curro.")
             history = await self.repository.history(guild_id, user_id)
             level = history.get(job_key, (1, 1))[0]
-            contract = Contract(job=job_key, level=level, position_since=now, battery_at=now)
+            contract = Contract(
+                job=job_key, level=level, position_since=now, battery_at=now, job_since=now
+            )
             if current is not None:
                 contract.battery = battery_now(current, now)
                 for name in (
@@ -439,6 +492,10 @@ class WorkService:
                     "guard_week",
                     "off_duty_until",
                     "beckham_until",
+                    # La valoración de la app y los seguidores son de la persona.
+                    "rating",
+                    "blocked_until",
+                    "followers",
                 ):
                     setattr(contract, name, getattr(current, name))
             await self.repository.save_contract(guild_id, user_id, contract)
@@ -454,6 +511,7 @@ class WorkService:
         black_ok: bool = False,
         guard: bool = False,
         remote: bool = False,
+        study: bool = False,
         tools: Collection[str] = (),
     ) -> Shift:
         """Comprueba que se puede fichar y prepara el minijuego. No guarda nada.
@@ -463,6 +521,7 @@ class WorkService:
                 extra pasado el límite legal).
             guard: Si es una guardia (sanidad).
             remote: Si es en teletrabajo (oficina).
+            study: Si es un turno de estudio de la oposición (funcionariado).
             tools: Claves de la tienda que tiene el miembro; las herramientas de
                 curro que sirvan para el puesto ayudan en el minijuego
                 (`bot.services.work_tools`).
@@ -484,6 +543,11 @@ class WorkService:
             )
         if status.off_duty:
             raise OffDuty(contract.off_duty_until)
+        if status.blocked and not study:
+            raise WorkError(
+                f"📵 **La app te ha desconectado** por mala valoración hasta "
+                f"<t:{int(contract.blocked_until)}:t>. Ni un pedido, ni una explicación."
+            )
         if status.battery <= BATTERY_MIN:
             back = int(rested_at(status.battery, status.now))
             raise WorkError(
@@ -494,6 +558,10 @@ class WorkService:
             raise WorkError("En tu puesto no hay guardias.")
         if remote and not status.job.remote:
             raise WorkError("En tu curro no se teletrabaja.")
+        if study and not status.can_study:
+            raise WorkError("En tu puesto no hay nada que opositar.")
+        if study:
+            return self._study_shift(status, tools)
         kind = ShiftKind.GUARD if guard else status.next_kind
         if contract.abroad and kind is ShiftKind.BLACK:
             # En Hong Kong no hay límite de horas extra como el del art. 35.2 ET.
@@ -524,6 +592,36 @@ class WorkService:
             tremors=contract.coffees > MAX_COFFEES,
             returned_from_leave=status.on_leave,
             remote=remote,
+            perks=perks,
+            weather=status.weather,
+        )
+
+    def _study_shift(self, status: Status, tools: Collection[str]) -> Shift:
+        """Prepara un turno de estudio: el test del temario, sin sueldo."""
+        job = status.job
+        assert job.study is not None
+        position = Position(
+            status.contract.level,
+            "Estudiando la oposición",
+            0,
+            Mechanic.DIALOGUE,
+            40,
+            (),
+            0,
+            job.study,
+        )
+        perks = perks_for(job.key, Mechanic.DIALOGUE, tools)
+        game = new_game(
+            position, self.rng, now=status.now, tired=status.battery < TIRED, perks=perks
+        )
+        return Shift(
+            job=job,
+            position=position,
+            kind=ShiftKind.STUDY,
+            game=game,
+            battery_before=status.battery,
+            tremors=status.contract.coffees > MAX_COFFEES,
+            returned_from_leave=False,
             perks=perks,
         )
 
@@ -579,6 +677,8 @@ class WorkService:
         contract = await self.repository.contract(guild_id, user_id)
         if contract is None or contract.job != shift.job.key:
             raise WorkError("Cambiaste de curro a mitad de turno. Este no cuenta.")
+        if shift.kind is ShiftKind.STUDY:
+            return await self._finish_study(guild_id, user_id, shift, contract, now)
         if shift.returned_from_leave:
             contract.performance = PERFORMANCE_START
             contract.warned = False
@@ -611,7 +711,9 @@ class WorkService:
         if contract.shift_day != today.isoformat():
             contract.streak_days += 1
             contract.shift_day = today.isoformat()
-        contract.battery = battery_before - shift_cost(kind, remote=shift.remote)
+        contract.battery = battery_before - shift_cost(
+            kind, remote=shift.remote, calima=shift.weather == "calima"
+        )
         contract.battery_at = now
         family = family_cost(
             kind,
@@ -634,9 +736,18 @@ class WorkService:
         contract.last_shift_at = now
 
         # Dinero del turno.
-        gross = shift_pay(position.base_pay, score, kind)
+        gross = shift_pay(position.base_pay, score, kind, tenured=job.tenured(contract.level))
         if abroad:
             gross = round(gross * ABROAD_PAY)
+        if job.rating:
+            gross = round(gross * rating_pay(contract.rating))
+        if shift.weather == "lluvia":
+            gross = round(gross * RAIN_PAY)
+        years = triennia(contract, now) if job.seniority else 0
+        gross = round(gross * (1 + TRIENNIUM_PAY * years))
+        viral = viral_roll(self.rng) if job.viral else 0.0
+        if viral:
+            gross = max(1, round(gross * viral))
         payslip: Payslip | None = None
         foreign: ForeignPayslip | None = None
         black = fine = options_added = exit_payout = 0
@@ -679,7 +790,7 @@ class WorkService:
         if position.self_employed and contract.fee_week != week:
             contract.fee_week = week
             fee, balance = await self.economy.charge_self_employed_fee(
-                guild_id, user_id, amount=SELF_EMPLOYED_FEE, concept="autonomos"
+                guild_id, user_id, amount=position.fee, concept="autonomos"
             )
 
         # Tareas y rendimiento (las tareas primero: si te bajan de puesto, se
@@ -700,13 +811,35 @@ class WorkService:
             progress["perfect_rounds"] = progress.get("perfect_rounds", 0) + game.perfect_rounds
         if game.mechanic is Mechanic.DIALOGUE:
             progress["smooth"] = progress.get("smooth", 0) + game.correct
+        if game.mechanic is Mechanic.SORT:
+            progress["sorted"] = progress.get("sorted", 0) + game.correct
+        if game.mechanic is Mechanic.CALC:
+            progress["best"] = progress.get("best", 0) + game.correct
         delta = performance_delta(score, kind, remote=shift.remote, cap=job.ordinary_cap)
-        performance = apply_performance(contract, delta)
+        performance = apply_performance(contract, delta, tenured=job.tenured(contract.level))
         if performance == "demoted":
             contract.position_since = now
 
-        # Accidente laboral.
-        accident = roll(self.rng, accident_chance(battery_before))
+        # Valoración de la app: por debajo del mínimo, desconexión.
+        blocked = False
+        if job.rating:
+            contract.rating = max(
+                RATING_MIN, min(RATING_MAX, contract.rating + rating_delta(score))
+            )
+            if contract.rating < RATING_BLOCK:
+                blocked = True
+                contract.blocked_until = now + RATING_BLOCK_SECONDS
+                contract.rating = RATING_RESET
+
+        # Seguidores: los trae cada turno, más si se hace viral.
+        gained = follower_gain(score, contract.level, viral) if job.viral else 0
+        contract.followers += gained
+
+        # Accidente laboral (con lluvia, aunque vayas descansado).
+        chance = accident_chance(battery_before)
+        if shift.weather == "lluvia":
+            chance += RAIN_ACCIDENT
+        accident = roll(self.rng, chance)
         sick_pay = 0
         if accident:
             contract.sick_until = now + SICK_LEAVE_SECONDS
@@ -786,6 +919,58 @@ class WorkService:
             exit_payout=exit_payout,
             bankrupt=bankrupt,
             missed_guards=missed,
+            weather=shift.weather,
+            rating=contract.rating if job.rating else 0,
+            blocked=blocked,
+            viral=viral,
+            followers=contract.followers if job.viral else 0,
+            followers_gained=gained,
+            triennia=years,
+        )
+
+    async def _finish_study(
+        self, guild_id: int, user_id: int, shift: Shift, contract: Contract, now: float
+    ) -> ShiftOutcome:
+        """Cierra un turno de estudio: cansa y suma temario, pero no paga ni es jornada.
+
+        No se guarda en `work_shifts`: estudiar no cuenta como día en el puesto
+        ni entra en la base de la baja. Tampoco hay accidentes ni eventos.
+        """
+        roll_over_day(contract, now)
+        battery_before = battery_now(contract, now)
+        family_before = contract.family
+        contract.battery = battery_before - shift_cost(ShiftKind.STUDY)
+        contract.battery_at = now
+        contract.family = max(
+            0, min(FAMILY_MAX, contract.family + family_cost(ShiftKind.STUDY, now))
+        )
+        intervention = contract.family == 0 and family_before > 0
+        if intervention:
+            contract.no_extras_day = (local_day(now) + timedelta(days=1)).isoformat()
+        game = shift.game
+        contract.progress["temario"] = contract.progress.get("temario", 0) + game.correct
+        await self.repository.save_contract(guild_id, user_id, contract)
+        status = await self._status(guild_id, user_id, contract)
+        balance = await self.economy.balance(guild_id, user_id)
+        return ShiftOutcome(
+            job=shift.job,
+            position=shift.position,
+            kind=ShiftKind.STUDY,
+            score=game.score(),
+            gross=0,
+            balance=balance,
+            battery_before=battery_before,
+            battery_after=contract.battery,
+            family_before=family_before,
+            family_after=contract.family,
+            now=now,
+            shifts_today=contract.shifts_today,
+            streak_days=contract.streak_days,
+            coffees=contract.coffees,
+            game=game,
+            intervention=intervention,
+            promotion_ready=status.promotion_ready,
+            temario=game.correct,
         )
 
     async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
@@ -962,6 +1147,10 @@ class WorkService:
                 0, min(PERFORMANCE_MAX, contract.performance + outcome.performance)
             )
             contract.family = max(0, min(FAMILY_MAX, contract.family + outcome.family))
+            if outcome.rating and job.rating:
+                contract.rating = max(RATING_MIN, min(RATING_MAX, contract.rating + outcome.rating))
+            if outcome.followers and job.viral:
+                contract.followers = max(0, round(contract.followers * (1 + outcome.followers)))
             if outcome.battery:
                 contract.battery = min(
                     float(BATTERY_MAX), battery_now(contract, now) + outcome.battery

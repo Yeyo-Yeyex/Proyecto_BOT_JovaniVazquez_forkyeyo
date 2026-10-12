@@ -122,7 +122,15 @@ from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
-from bot.services.work import MAX_COFFEES, Mechanic
+from bot.services.work import (
+    FLOP_BELOW,
+    MAX_COFFEES,
+    MEGAVIRAL,
+    RATING_MAX,
+    SELF_EMPLOYED_FEE,
+    VIRAL_AT,
+    Mechanic,
+)
 from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
@@ -248,6 +256,9 @@ CATEGORIES: tuple[Category, ...] = (
     Category("jobs", "👷 Oficios"),
     Category("sanidad", "🏥 Sanidad"),
     Category("oficina", "💻 Oficina"),
+    Category("reparto", "🛵 Reparto"),
+    Category("funcionariado", "🗂️ Funcionariado"),
+    Category("influencer", "🤳 Influencer"),
     Category("hongkong", "🇭🇰 Hong Kong"),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -572,6 +583,22 @@ GUARD_STORY = (
     "pagan 1,6 veces la base por el doble de trabajo: la hora de guardia sale más barata "
     "que la normal, como en muchos hospitales de verdad. Pero en sanidad la barra solo sube "
     "con guardias. Bienvenido, y ahora a dormir: estás saliente."
+)
+
+#: Discurso del logro `tarifa_plana`: la primera cuota de falso autónomo.
+FLAT_FEE_STORY = (
+    "🧾 **Tarifa plana.** Los nuevos autónomos pagan 80 € al mes de cuota durante el primer "
+    "año (art. 38 ter de la Ley 20/2007, del Trabajo Autónomo). Tú no eres autónomo de "
+    "verdad: no eliges precio, ni horario, ni cliente. Eso tiene nombre, falso autónomo, y "
+    "desde la Ley 12/2021 (la «Ley Rider») a los repartidores se les presume contrato. Pero "
+    "eso, para el puesto 3."
+)
+
+#: Discurso del logro `renta_especie`: declarar el regalo de una marca.
+GIFT_STORY = (
+    "🎁 **Renta en especie.** Lo que te da una marca a cambio de enseñarlo no es un regalo: "
+    "es el pago de tu actividad, aunque llegue en una caja, y tributa en el IRPF por su "
+    "valor de mercado. Hacienda lleva años mirando a los influencers con lupa. Has hecho bien."
 )
 
 #: Discurso del logro `no_residente`: dejar de ser residente fiscal en España.
@@ -4978,8 +5005,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "ascenso_1", "Me han subido el sueldo (en bruto)", "Asciende por primera vez.", C),
     ])  # fmt: skip
     a += _tiers("work", "work_jobs_top", [
-        (1, "top_1", "Lo más alto del escalafón", "Llega al puesto 5 de un oficio.", E),
-        (3, "top_3", "Currículum de Pokédex", "Llega al puesto 5 de 3 oficios.", L),
+        (1, "top_1", "Lo más alto del escalafón", "Llega a lo más alto de un oficio.", E),
+        (3, "top_3", "Currículum de Pokédex", "Llega a lo más alto de 3 oficios.", L),
     ])  # fmt: skip
     a.append(Achievement(
         id="paguita", name="Me quedo con la paguita",
@@ -5101,7 +5128,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (15, "ascenso_15", "Techo de cristal roto", "Asciende 15 veces.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_jobs_top", [
-        (5, "top_5", "Pluriempleado de élite", "Llega al puesto 5 de los 5 oficios.", M),
+        (5, "top_5", "Pluriempleado de élite", "Llega a lo más alto de 5 oficios.", M),
     ])  # fmt: skip
     a += _tiers("work", "work_perfect", [
         (10, "turno_100_10", "Perfeccionista de la pala", "Saca un 100 en 10 turnos.", E),
@@ -5697,7 +5724,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 🪏 Trabajo (más) --------------------------------------------------------------------
     a += _tiers("jobs", "work_jobs_tried", [
         (3, "probador", "Probando oficios", "Trabaja en 3 oficios distintos.", R),
-        (5, "curriculum_infinito", "Currículum infinito", "Trabaja en los 5 oficios.", E),
+        (5, "curriculum_infinito", "Currículum infinito", "Trabaja en 5 oficios distintos.",
+         E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_zero", [
         (1, "cero", "¿Has venido a trabajar?", "Saca un 0 en un turno.", C, True),
@@ -7273,6 +7301,227 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("baccarat", "bac_friday13", [
         (1, "bac_viernes13", "Gafe de mesa verde",
          "Pierde una mano de bacará un viernes 13.", C, True),
+    ])  # fmt: skip
+
+    # 🛵 Reparto ------------------------------------------------------------------------
+    a += _tiers("reparto", "work_orders", [
+        (1, "primer_pedido", "Su pedido está en camino", "Elige bien tu primer pedido.", C),
+        (100, "pedidos_100", "Cuentas de cabeza", "Elige bien 100 pedidos.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_routes", [
+        (50, "rutas_50", "GPS humano", "Haz 50 rutas de entregas perfectas.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_fleet", [
+        (30, "flota_30", "Ni una papa menos", "Pilla a 30 riders comiéndose el pedido.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_founder", [
+        (30, "colaboradores", "Colaboradores, no trabajadores",
+         "Sal airoso de 30 preguntas como fundador de la app.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rain", [
+        (1, "mojado", "Mojado y contento", "Reparte con lluvia.", C),
+        (25, "lluvia_25", "Rider anfibio", "Reparte 25 turnos con lluvia.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_calima", [
+        (1, "calima_reparto", "Repartiendo polvo del Sáhara", "Reparte con calima.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rain_fall", [
+        (1, "charco", "El charco traidor", "Cáete con la moto en un día de lluvia.", R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_app_blocked", [
+        (1, "desconectado", "Desconectado por el algoritmo",
+         "Que la app te desconecte por mala valoración.", C, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_five_stars", [
+        (1, "cinco_estrellas_app", "Rider de cinco estrellas",
+         "Llega a 5,0 de valoración en la app.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="tarifa_plana", name="Tarifa plana",
+        description="Paga la cuota de autónomos con la tarifa plana.", category="reparto",
+        rarity=C, conditions=(("work_flat_fee", 1),), story=FLAT_FEE_STORY,
+    ))  # fmt: skip
+    a += _tiers("reparto", "work_sixth_floor", [
+        (1, "sexto_sin_ascensor", "Sexto sin ascensor", "Sube un pedido a un 6.º a pie.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_storm", [
+        (1, "tres_gotas", "Cuatro gotas en Las Palmas", "Sal a repartir con el diluvio.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_dog_chase", [
+        (1, "no_hace_nada", "«¡No hace nada!»", "Huye de un perro en una entrega.", C, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_dog_bribe", [
+        (1, "soborno_canino", "Soborno canino", "Compra al perro con una papa del pedido.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rider_strike", [
+        (1, "desconexion_masiva", "Desconexión masiva", "Súmate a la huelga de riders.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rider_scab", [
+        (1, "media_ciudad", "Media ciudad para mí solo", "Reparte durante la huelga de riders.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_ice_cube", [
+        (1, "un_hielo", "Un hielo, por favor", "Lleva un cubito de hielo a domicilio.", R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_top_reparto", [
+        (1, "fundador_app", "Unicornio del reparto", "Llega a fundador de la app de reparto.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_orders", [
+        (1_000, "pedidos_1k", "Algoritmo con patas", "Elige bien 1.000 pedidos.", E),
+    ])  # fmt: skip
+
+    # 🗂️ Funcionariado ----------------------------------------------------------------------
+    a += _tiers("funcionariado", "work_study", [
+        (1, "codos", "Hincar codos", "Estudia la oposición por primera vez.", C),
+        (10, "biblioteca", "Opositor de biblioteca", "Estudia 10 turnos.", R),
+        (50, "opositor_pro", "Opositor profesional", "Estudia 50 turnos.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_temario", [
+        (100, "temario_100", "Me sé la Constitución", "Acierta 100 preguntas del temario.", R),
+        (500, "temario_500", "Temario cantado", "Acierta 500 preguntas del temario.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_ventanilla", [
+        (50, "ventanilla_unica", "Ventanilla única",
+         "Manda a 50 vecinos al negociado correcto.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_registro", [
+        (50, "sello_entrada", "Sello de entrada", "Registra bien 50 papeles.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_stamps", [
+        (50, "circuito_firmas", "Circuito de firmas", "Haz 50 circuitos de firmas perfectos.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_citizens", [
+        (30, "vuelva_manana", "Vuelva usted mañana (no)", "Atiende bien a 30 ciudadanos.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_frauds", [
+        (30, "olfato_fiscal", "Olfato fiscal", "Destapa 30 declaraciones fraudulentas.", E),
+        (200, "perro_te_quiere", "Perro Sanxe te quiere",
+         "Destapa 200 declaraciones fraudulentas.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_triennia_max", [
+        (1, "primer_trienio", "Primer trienio", "Cumple un trienio en el funcionariado.", R),
+        (4, "cuatro_trienios", "Funcionario de toda la vida", "Cumple 4 trienios.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_breakfast", [
+        (1, "desayuno_sagrado", "Desayuno sagrado", "Vete a desayunar con cola en ventanilla.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_lost_file", [
+        (1, "expediente_2011", "Expediente de 2011", "Tramita un expediente olvidado.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_hidden_file", [
+        (1, "ojos_no_ven", "Ojos que no ven", "Vuelve a esconder un expediente olvidado.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_caught_defensor", [
+        (1, "diputado_comun", "Queja al Diputado del Común",
+         "Que te pillen escondiendo un expediente.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_no_system", [
+        (1, "sin_sistema", "Se ha caído el sistema", "Cuelga el cartel de «sin sistema».",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_favor", [
+        (1, "con_carino", "Mirar con cariño", "Adelanta el expediente del sobrino del concejal.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_by_the_book", [
+        (1, "orden_entrada", "Por orden de entrada", "Dile que no a un concejal.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_moscosos", [
+        (1, "moscosos", "Moscosos", "Gasta tus días de asuntos propios.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_top_funcionariado", [
+        (1, "inspector_hacienda", "Inspector de Hacienda", "Llega a Inspector de Hacienda.", L),
+    ])  # fmt: skip
+
+    # 🤳 Influencer ------------------------------------------------------------------------
+    a += _tiers("influencer", "work_dances", [
+        (1, "primer_trend", "Primer trend", "Clava tu primera coreografía.", C),
+        (30, "coreografo", "Coreógrafo del barrio", "Clava 30 coreografías.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_metrics", [
+        (50, "engagement", "Engagement", "Acierta 50 métricas.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_stream", [
+        (30, "directo_limpio", "Directo sin incidentes", "Sobrevive a 30 momentos del directo.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_collabs", [
+        (30, "con_verguenza", "Con vergüenza", "Rechaza 30 colaboraciones turbias.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_tv", [
+        (30, "ni_confirmo", "Ni confirmo ni desmiento", "Sal airoso de 30 preguntas en plató.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_viral", [
+        (1, "viral", "Me he hecho viral", "Hazte viral en un turno.", R),
+        (10, "viral_pala_10", "El algoritmo te quiere", "Hazte viral 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_megaviral", [
+        (1, "megaviral", "Megaviral", "Multiplica tu sueldo por 15 en un turno.", L, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_flop", [
+        (1, "algoritmo_odia", "El algoritmo me odia", "Que un turno te lo vea solo tu madre.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_followers_max", [
+        (10_000, "seguidores_10k", "Diez mil seguidores", "Llega a 10.000 seguidores.", R),
+        (100_000, "seguidores_100k", "Cien mil seguidores", "Llega a 100.000 seguidores.", E),
+        (1_000_000, "seguidores_1m", "Un millón de seguidores",
+         "Llega a 1.000.000 de seguidores.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_apology", [
+        (1, "sudadera_gris", "Sudadera gris", "Pide perdón en vídeo tras una funa.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_cancelled", [
+        (1, "funado", "Funado", "Dobla la apuesta en plena funa.", R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_andorra", [
+        (1, "por_el_clima", "Por el clima", "Múdate a Andorra (una semana).", R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_andorra_no", [
+        (1, "yo_pago_aqui", "Yo pago aquí", "Rechaza irte a Andorra.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_ad_tagged", [
+        (1, "hashtag_publi", "#publi", "Avisa de que es publicidad.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_hidden_ad", [
+        (1, "publi_encubierta", "Me encanta de verdad", "Cuela publicidad encubierta.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_consumo", [
+        (1, "expedientado_consumo", "Expedientado por Consumo",
+         "Que te pillen la publicidad encubierta.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="renta_especie", name="Renta en especie",
+        description="Declara un regalo de una marca.", category="influencer", rarity=R,
+        conditions=(("work_gift_declared", 1),), story=GIFT_STORY,
+    ))  # fmt: skip
+    a += _tiers("influencer", "work_gift_hidden", [
+        (1, "unboxing_calladito", "Unboxing calladito", "No declares el regalo de una marca.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_regalos", [
+        (1, "hacienda_cruza", "Hacienda cruza datos", "Que te pillen el regalo sin declarar.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_collab", [
+        (1, "colab", "Colab", "Haz un vídeo con otro influencer.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_top_influencer", [
+        (1, "celebrity", "Celebrity", "Llega a celebrity de reality.", L),
+    ])  # fmt: skip
+
+    # 👷 Los ocho oficios ------------------------------------------------------------------
+    a += _tiers("jobs", "work_jobs_tried", [
+        (8, "ocho_oficios", "Vida laboral de ocho páginas", "Trabaja en los 8 oficios.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_jobs_top", [
+        (8, "top_8", "Lo he sido todo", "Llega a lo más alto de los 8 oficios.", M),
     ])  # fmt: skip
 
     countable = sum(
@@ -10131,6 +10380,20 @@ _WORK_CONTENT_STATS = {
     "prensa": "work_dodged",
     "comision": "work_no_recuerdo",
     "consejo": "work_board",
+    "pedidos": "work_orders",
+    "entregas": "work_routes",
+    "flota": "work_fleet",
+    "fundador": "work_founder",
+    "ventanilla": "work_ventanilla",
+    "registro": "work_registro",
+    "sellos": "work_stamps",
+    "ciudadano": "work_citizens",
+    "inspeccion": "work_frauds",
+    "baile": "work_dances",
+    "metricas": "work_metrics",
+    "directo": "work_stream",
+    "colaboraciones": "work_collabs",
+    "plato": "work_tv",
 }
 
 
@@ -10141,6 +10404,12 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         outcome: Lo que ha pasado en el turno.
         birthday: Si el miembro ha fichado el día de su cumpleaños.
     """
+    if outcome.kind.value == "estudio":
+        # Estudiar no es fichar: no cuenta como turno ni para las rachas.
+        study = StatDelta(add={"work_study": 1})
+        if outcome.temario:
+            study.add["work_temario"] = outcome.temario
+        return study
     delta = StatDelta(
         add={"work_shifts": 1},
         peak={
@@ -10236,8 +10505,36 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_exit"] = 1
     if outcome.bankrupt:
         add["work_bankrupt"] = 1
+    _work_job_stats(outcome, delta)
     _work_game_stats(outcome, add)
     return delta
+
+
+def _work_job_stats(outcome: ShiftOutcome, delta: StatDelta) -> None:
+    """Lo propio de cada oficio: el tiempo, la app, los trienios y la viralidad."""
+    add = delta.add
+    if outcome.weather == "lluvia":
+        add["work_rain"] = 1
+        if outcome.accident:
+            add["work_rain_fall"] = 1
+    elif outcome.weather == "calima":
+        add["work_calima"] = 1
+    if outcome.blocked:
+        add["work_app_blocked"] = 1
+    if outcome.rating >= RATING_MAX:
+        add["work_five_stars"] = 1
+    if outcome.fee and outcome.position.fee < SELF_EMPLOYED_FEE:
+        add["work_flat_fee"] = 1
+    if outcome.viral >= MEGAVIRAL:
+        add["work_megaviral"] = 1
+    if outcome.viral >= VIRAL_AT:
+        add["work_viral"] = 1
+    elif 0 < outcome.viral < FLOP_BELOW:
+        add["work_flop"] = 1
+    if outcome.followers:
+        delta.peak["work_followers_max"] = outcome.followers
+    if outcome.triennia:
+        delta.peak["work_triennia_max"] = outcome.triennia
 
 
 def _work_game_stats(outcome: ShiftOutcome, add: dict[str, int]) -> None:
@@ -10271,5 +10568,17 @@ def _work_game_stats(outcome: ShiftOutcome, add: dict[str, int]) -> None:
 
 #: Contenidos de memoria: cuentan las rondas perfectas, no los aciertos sueltos.
 MEMORY_CONTENT = frozenset(
-    {"platos", "comandas", "cocina", "carteles", "votos", "camilla", "ronda", "cafes"}
+    {
+        "platos",
+        "comandas",
+        "cocina",
+        "carteles",
+        "votos",
+        "camilla",
+        "ronda",
+        "cafes",
+        "entregas",
+        "sellos",
+        "baile",
+    }
 )
