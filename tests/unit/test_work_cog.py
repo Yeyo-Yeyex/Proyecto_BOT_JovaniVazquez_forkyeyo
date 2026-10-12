@@ -103,7 +103,7 @@ def check_limits(panel: PalaPanel) -> None:
             assert len(item.children) <= 5
 
 
-async def test_sin_curro_el_panel_ofrece_los_cinco_oficios(tmp_path: Path) -> None:
+async def test_sin_curro_el_panel_ofrece_todos_los_oficios(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     panel, errors = await open_panel(cog)
     errors.assert_not_awaited()
@@ -115,6 +115,9 @@ async def test_sin_curro_el_panel_ofrece_los_cinco_oficios(tmp_path: Path) -> No
         "politica",
         "sanidad",
         "oficina",
+        "reparto",
+        "funcionariado",
+        "influencer",
     }
     assert "Coge la pala" in texts(panel)
     check_limits(panel)
@@ -498,3 +501,37 @@ def test_el_panel_dice_cuando_se_puede_volver_a_fichar() -> None:
     note = work_cog.battery_note(status)
     assert f"vuelves a fichar <t:{int(rested_at(BATTERY_MIN, 1_000.0))}:R>" in note
     assert f"llena <t:{int(battery_eta(BATTERY_MIN, BATTERY_MAX, 1_000.0))}:R>" in note
+
+
+async def test_cada_oficio_nuevo_ensena_lo_suyo_en_el_panel(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "reparto")
+    assert "Valoración en la app: ⭐ 4,5" in texts(panel)
+    assert not any(b.label == "📚 Estudiar" for b in buttons(panel))
+    await panel._hire(make_interaction(), "influencer")
+    assert "Seguidores" in texts(panel)
+    await panel._hire(make_interaction(), "funcionariado")
+    assert "Trienios: 0" in texts(panel)
+    check_limits(panel)
+
+
+async def test_estudiar_la_oposicion_con_botones_no_paga(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "funcionariado")
+    assert any(b.label == "📚 Estudiar" for b in buttons(panel))
+    await panel._clock_in_study(make_interaction())
+    assert panel.shift is not None
+    game = panel.shift.game
+    assert game.mechanic is Mechanic.DIALOGUE
+    while panel.shift is not None:
+        current = game.current
+        assert current is not None
+        await panel.game_click(make_interaction(), game.index, current.answer[0])
+    assert "Estudio de la oposición" in texts(panel) and "Nómina" not in texts(panel)
+    check_limits(panel)
+    assert await cog.service.economy.balance(GUILD, OWNER) == STARTING_BALANCE
+    await asyncio.sleep(0)

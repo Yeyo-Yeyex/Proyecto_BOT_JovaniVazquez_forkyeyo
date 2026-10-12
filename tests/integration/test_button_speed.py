@@ -388,6 +388,19 @@ async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pala_study(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Trabajo")
+    await cog.service.hire(GUILD_ID, owner.id, "funcionariado")
+    panel = module_of(client, "Trabajo").PalaPanel(cog, guild_id=GUILD_ID, owner=owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._clock_in_study(interaction)
+        if panel._timer is not None:
+            panel._timer.cancel()
+
+    return click
+
+
 async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -585,6 +598,7 @@ CASES: dict[str, Press] = {
     "bacará: repetir": press_bacara_repeat,
     "bacará: doblar": press_bacara_double,
     "pala: elegir curro": press_pala_hire,
+    "pala: estudiar la oposición": press_pala_study,
     "tienda: comprar": press_checkout,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,

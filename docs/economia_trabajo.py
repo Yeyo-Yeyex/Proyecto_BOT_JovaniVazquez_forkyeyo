@@ -103,10 +103,11 @@ out["ladder"] = [
     {
         "job": j.name,
         "emoji": j.emoji,
-        "old": OLD[j.key],
+        # Los oficios nuevos (reparto, funcionariado, influencer) no tenían escala anterior.
+        "old": OLD.get(j.key, []),
         "new": [p.base_pay for p in j.positions],
         "net_one": [new_net(p.base_pay, p.base_pay * 6) for p in j.positions],
-        "old_one": [old_net(g, g * 29) for g in OLD[j.key]],
+        "old_one": [old_net(g, g * 29) for g in OLD.get(j.key, [])],
         "net_full": [new_net(p.base_pay, p.base_pay * 4 * 7 - p.base_pay) for p in j.positions],
         "irpf": [irpf_rate(p.base_pay, 100) for p in j.positions],
         "eur_year": [round(p.base_pay * 4 * 365 / 100) for p in j.positions],

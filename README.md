@@ -253,11 +253,14 @@ python -m bot
   administración. **📦 Reponer surtido** vuelve a poner a la venta los
   artículos de serie retirados. El bot necesita **Gestionar roles** (y
   **Gestionar apodos** para el DNI falso).
-- **Trabajo** (`pala`): coges la pala y curras. Cinco oficios con 5 puestos cada
+- **Trabajo** (`pala`): coges la pala y curras. Ocho oficios con 5 puestos cada
   uno (🦺 obra, 🍽️ hostelería, 🌹 política en el PSOE, de pegacarteles a
-  consejero de una eléctrica, 🏥 sanidad y 💻 oficina). Cada turno es un minijuego de decidir rápido, de
+  consejero de una eléctrica, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
+  funcionariado e 🤳 influencer). Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
-  memorizar comandas o votaciones, esquivar preguntas en rueda de prensa), y la
+  memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
+  mandar cada papel a su negociado, elegir el pedido que más paga por
+  kilómetro), y la
   nota mueve el sueldo entre el 70 % y el 130 %. Cada turno es una nómina de
   verdad: Seguridad Social del trabajador (6,5 %), IRPF con la reducción por
   rendimientos del trabajo y la cotización de la empresa (32 %), que va al
@@ -265,7 +268,7 @@ python -m bot
   barraquito), 4 turnos ordinarios al día, 2 extras legales a la semana y,
   después, extras en B con riesgo de Inspección. Ascensos al estilo de los Sims
   (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
-  En la Ferretería del curro de la `tienda` hay 16 herramientas (casco,
+  En la Ferretería del curro de la `tienda` hay 25 herramientas (casco,
   libreta de comandas, pinganillo, vademécum…) que, con tenerlas, ayudan en
   el minijuego de su oficio: más tiempo, un fallo gratis por turno, un seguro
   para las tuberías o una respuesta mala tachada.
@@ -280,7 +283,17 @@ python -m bot
   cobra parte en **stock options** (exit o quiebra) y desde programador senior
   te puedes **ir a Hong Kong**: sueldo doble, MPF y salaries tax, exención del
   art. 7.p LIRPF mientras sigues siendo residente, sin IMV, y Ley Beckham si
-  vuelves tras 5 «años» fuera. Un administrador limita los canales con `tajo`.
+  vuelves tras 5 «años» fuera. En el **reparto** cada hora hace un tiempo
+  (con lluvia los pedidos pagan ×1,4, pero puedes caerte), la valoración de la
+  app (de 3,5 a 5 estrellas) multiplica el sueldo y por debajo te desconecta 6
+  h, y los dos primeros puestos son falsos autónomos con tarifa plana. En el
+  **funcionariado** hay que **estudiar la oposición** (turnos sin sueldo que
+  suman temario, con preguntas de la Constitución y la Ley 39/2015 de
+  verdad), desde auxiliar tienes plaza fija (no te bajan nunca y la nota mueve
+  poco el sueldo) y cada 3 «años» un trienio (+5 %, hasta 8). El **influencer**
+  cobra a golpes: casi siempre se queda corto y a veces se hace viral (hasta
+  ×15), suma seguidores y sufre funas. Un administrador limita los canales con
+  `tajo`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$
@@ -549,10 +562,10 @@ python -m bot
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
   (una sección por juego); y además social, lista, beernight, niveles, loterías,
-  tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, Hong Kong y
-  coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
+  tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, reparto,
+  funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 380 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 428 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,

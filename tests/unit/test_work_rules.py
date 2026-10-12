@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import random
+from collections import Counter
 from datetime import datetime
+
+import pytest
 
 from bot.services.levels import TIMEZONE
 from bot.services.work import (
@@ -13,9 +17,15 @@ from bot.services.work import (
     FAMILY_REST_DAY,
     FAMILY_SUNDAY,
     LEGAL_EXTRAS_PER_WEEK,
+    MAX_TRIENNIA,
+    MEGAVIRAL,
     ORDINARY_SHIFTS,
     PERFORMANCE_MAX,
     PERFORMANCE_START,
+    RATING_BLOCK,
+    RATING_MAX,
+    RATING_MIN,
+    TRIENNIUM_DAYS,
     Contract,
     ShiftKind,
     accident_chance,
@@ -23,13 +33,21 @@ from bot.services.work import (
     battery_eta,
     battery_now,
     family_cost,
+    follower_gain,
     next_shift_kind,
     performance_delta,
     promote,
     promotion_blockers,
+    rating_delta,
+    rating_pay,
     rested_at,
     roll_over_day,
+    shift_cost,
     shift_pay,
+    stars,
+    triennia,
+    viral_roll,
+    weather,
 )
 from bot.services.work_catalog import (
     DIALOGUE_PACKS,
@@ -37,6 +55,7 @@ from bot.services.work_catalog import (
     JOB_BY_KEY,
     JOBS,
     MEMORY_PACKS,
+    SORT_PACKS,
     events_for,
 )
 from bot.services.work_games import _SPOT
@@ -49,10 +68,19 @@ def at(year: int, month: int, day: int, hour: int = 12) -> float:
 # -- Catálogo --------------------------------------------------------------------------
 
 
-def test_cada_oficio_tiene_cinco_puestos_con_sueldo_creciente() -> None:
-    assert {job.key for job in JOBS} == {"obra", "hosteleria", "politica", "sanidad", "oficina"}
+def test_cada_oficio_tiene_puestos_correlativos_con_sueldo_creciente() -> None:
+    assert {job.key for job in JOBS} == {
+        "obra",
+        "hosteleria",
+        "politica",
+        "sanidad",
+        "oficina",
+        "reparto",
+        "funcionariado",
+        "influencer",
+    }
     for job in JOBS:
-        assert [p.level for p in job.positions] == [1, 2, 3, 4, 5]
+        assert [p.level for p in job.positions] == list(range(1, job.top + 1))
         pays = [p.base_pay for p in job.positions]
         assert pays == sorted(pays), job.key
         assert not job.positions[-1].tasks  # del último no se asciende
@@ -70,8 +98,8 @@ def test_el_contenido_de_cada_puesto_existe() -> None:
     for job in JOBS:
         for position in job.positions:
             kind = position.content.partition(":")[0]
-            known = kind in MEMORY_PACKS or kind in DIALOGUE_PACKS
-            assert known or kind in {"cavar", *_SPOT}, position.content
+            known = kind in MEMORY_PACKS or kind in DIALOGUE_PACKS or kind in SORT_PACKS
+            assert known or kind in {"cavar", "pedidos", "metricas", *_SPOT}, position.content
 
 
 def test_los_dialogos_tienen_rondas_de_sobra() -> None:
@@ -232,3 +260,57 @@ def test_la_familia_no_se_recupera_dos_veces_por_los_mismos_dias() -> None:
     assert contract.family == 20 + 3 * FAMILY_REST_DAY
     roll_over_day(contract, at(2026, 10, 6))
     assert contract.family == 20 + 4 * FAMILY_REST_DAY
+
+
+# -- Oficios nuevos: el tiempo, la app, la plaza fija, los trienios y la viralidad ------------
+
+
+def test_el_tiempo_es_el_mismo_toda_la_hora_y_casi_siempre_hace_sol() -> None:
+    start = at(2026, 10, 6, 0)
+    assert weather(start) == weather(start + 3599)
+    seen = Counter(weather(start + hour * 3600) for hour in range(24 * 365))
+    assert set(seen) == {"sol", "lluvia", "calima"}
+    assert seen["sol"] > seen["lluvia"] > seen["calima"]
+
+
+def test_la_valoracion_multiplica_el_sueldo_entre_085_y_115() -> None:
+    assert rating_pay(RATING_MAX) == pytest.approx(1.15)
+    assert rating_pay(RATING_BLOCK) == pytest.approx(0.85)
+    assert rating_pay(RATING_MIN) == pytest.approx(0.85)
+    assert rating_delta(100) > 0 > rating_delta(0)
+    assert stars(45) == "⭐ 4,5"
+
+
+def test_los_trienios_tienen_tope() -> None:
+    contract = Contract(job="funcionariado", level=2, job_since=at(2026, 1, 1))
+    assert triennia(contract, at(2026, 1, 1) + (TRIENNIUM_DAYS - 1) * 86_400) == 0
+    assert triennia(contract, at(2026, 1, 1) + TRIENNIUM_DAYS * 86_400) == 1
+    assert triennia(contract, at(2030, 1, 1)) == MAX_TRIENNIA
+    assert triennia(Contract(job="obra", level=1), at(2030, 1, 1)) == 0
+
+
+def test_con_plaza_fija_la_nota_mueve_poco_el_sueldo() -> None:
+    assert shift_pay(1_000, 0, ShiftKind.ORDINARY, tenured=True) == 900
+    assert shift_pay(1_000, 100, ShiftKind.ORDINARY, tenured=True) == 1_100
+    assert shift_pay(1_000, 0, ShiftKind.ORDINARY) == 700
+
+
+def test_con_plaza_fija_solo_hay_aviso() -> None:
+    contract = Contract(job="funcionariado", level=4, performance=10, warned=True)
+    assert apply_performance(contract, -25, tenured=True) == "warned"
+    assert contract.level == 4
+    assert apply_performance(contract, -25) == "demoted"
+
+
+def test_la_viralidad_paga_de_media_como_un_sueldo_normal() -> None:
+    rng = random.Random(3)
+    rolls = [viral_roll(rng) for _ in range(100_000)]
+    assert 0.95 < sum(rolls) / len(rolls) < 1.15
+    assert min(rolls) >= 0.3 and max(rolls) == MEGAVIRAL
+    assert follower_gain(40, 5, 10.0) == 0
+    assert follower_gain(100, 2, 1.0) == 240
+
+
+def test_estudiar_cansa_como_un_turno_y_no_resta_familia_como_un_extra() -> None:
+    assert shift_cost(ShiftKind.STUDY) == shift_cost(ShiftKind.ORDINARY)
+    assert family_cost(ShiftKind.STUDY, at(2026, 10, 6, 12)) == 0
