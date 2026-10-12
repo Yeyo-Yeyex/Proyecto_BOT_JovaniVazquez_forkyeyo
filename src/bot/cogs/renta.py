@@ -21,6 +21,12 @@ caducidad; cuando sale a devolver una tercera, la más antigua se pierde.
 Cada semana el bot crea un evento de Discord ("📬 Campaña de la Renta") que
 dura hasta el domingo, para que se vea sin ocupar un canal. Necesita el
 permiso **Gestionar eventos**; sin él, todo lo demás funciona igual.
+
+El año fiscal del bot es la semana: la renta con la que se calcula cada
+retención se reinicia el lunes. La primera vez que el cog arranca en un
+servidor devuelve lo retenido de más cuando la renta arrastraba los últimos 7
+días (`EconomyService.regularize_irpf`) y lo anuncia en `#chat-general` (o en
+el canal del sistema). Cuenta para los logros de la Renta (`renta_refunded`).
 """
 
 from __future__ import annotations
@@ -58,6 +64,26 @@ logger = logging.getLogger(__name__)
 
 EVENT_PREFIX = "📬 Campaña de la Renta"
 VIEW_TIMEOUT = 300
+ANNOUNCE_CHANNEL_NAME = "chat-general"
+#: Miembros que se nombran en el anuncio de la regularización; el resto se cuenta.
+REGULARIZATION_SHOWN = 15
+
+
+def regularization_text(paid: list[tuple[int, int]], names: dict[int, str]) -> str:
+    """Anuncio de la devolución del IRPF cobrado de más, de más a menos."""
+    total = sum(amount for _, amount in paid)
+    lines = [
+        f"🐶 **{TAX_COLLECTOR} devuelve {format_amount(total)} de IRPF cobrado de más.**",
+        "Desde ahora el año fiscal es la semana: la retención se calcula con lo "
+        "ganado desde el lunes y vuelve a empezar cada lunes.",
+    ]
+    lines += [
+        f"- {names.get(user_id, f'<@{user_id}>')}: +{format_amount(amount)}"
+        for user_id, amount in paid[:REGULARIZATION_SHOWN]
+    ]
+    if len(paid) > REGULARIZATION_SHOWN:
+        lines.append(f"-# Y {len(paid) - REGULARIZATION_SHOWN} más.")
+    return "\n".join(lines)
 
 
 def draft_text(declarations: list[Declaration]) -> str:
@@ -146,6 +172,8 @@ class Renta(commands.Cog):
         #: el efímero; en esta campaña solo verán la línea pequeña.
         self._reminded: set[tuple[int, int, date]] = set()
         self._events_forbidden: set[int] = set()
+        #: Servidores donde ya se ha pasado la regularización del IRPF.
+        self._regularized: set[int] = set()
 
     async def cog_load(self) -> None:
         self._campaign_events.start()
@@ -289,6 +317,7 @@ class Renta(commands.Cog):
         name = f"{EVENT_PREFIX} · semana {week_label(monday - timedelta(days=7))}"
         end = datetime.combine(monday + timedelta(days=7), datetime.min.time(), TIMEZONE)
         for guild in self.bot.guilds:
+            await self._regularize(guild)
             if guild.id in self._events_forbidden:
                 continue
             try:
@@ -302,6 +331,44 @@ class Renta(commands.Cog):
                 )
             except Exception:
                 logger.exception("Error con el evento de la renta en el servidor %s", guild.id)
+
+    async def _regularize(self, guild: discord.Guild) -> None:
+        """Devuelve una vez el IRPF retenido de más y lo anuncia. Nunca lanza."""
+        if guild.id in self._regularized:
+            return
+        try:
+            paid = await self.economy.regularize_irpf(guild.id)
+        except Exception:
+            logger.exception("No se pudo regularizar el IRPF en el servidor %s", guild.id)
+            return
+        self._regularized.add(guild.id)
+        if not paid:
+            return
+        channel = (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+        names = {}
+        for user_id, _ in paid:
+            member = guild.get_member(user_id)
+            if member is not None:
+                names[user_id] = discord.utils.escape_markdown(member.display_name)
+        if channel is not None:
+            try:
+                await channel.send(
+                    regularization_text(paid, names),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.HTTPException:
+                logger.warning("No se pudo anunciar la regularización", exc_info=True)
+        for user_id, amount in paid:
+            logros.note(
+                self.bot,
+                guild.id,
+                user_id,
+                StatDelta(add={"renta_refunded": amount}),
+                channel.id if channel is not None else None,
+            )
 
     @_campaign_events.before_loop
     async def _before_campaign_events(self) -> None:

@@ -17,12 +17,13 @@ Cómo se calcula, imitando el sistema real:
    equivaldría a unos 55.000 € al año, así que las rentas del juego caen en
    los tramos donde la escala real tiene sentido. Ajustar este valor cuando
    haya más fuentes de ingresos sujetos.
-2. Se proyecta la renta anual a partir de **toda** la renta sujeta de los
-   últimos 7 días (incluido el cobro actual): nóminas, premios, niveles,
-   regalos y días de casino en positivo, todo junto. Es la misma idea que las
-   retenciones de una nómina (Hacienda estima tu renta del año y te retiene a
-   cuenta) con la ventana de la campaña semanal de la Renta, para que todo el
-   sistema mire la misma semana.
+2. Se proyecta la renta anual a partir de **toda** la renta sujeta desde el
+   lunes (incluido el cobro actual): nóminas, premios, niveles, regalos y días
+   de casino en positivo, todo junto. Es la misma idea que las retenciones de
+   una nómina (Hacienda estima tu renta del año y te retiene a cuenta). En el
+   bot el año fiscal es la semana de la campaña de la Renta: la renta se
+   reinicia cada lunes, el día de la declaración, y la retención va subiendo a
+   lo largo de la semana. La ventana la calcula `economy.fiscal_window`.
 3. A esa base se le aplican la escala estatal (art. 63.1 de la Ley 35/2006
    del IRPF) y la autonómica de Canarias (Ley 9/2025 de Presupuestos de
    Canarias para 2026), descontando en cada una el mínimo personal (art. 57
@@ -42,9 +43,9 @@ from dataclasses import dataclass
 #: Tipo de cambio de juego. Ver punto 1 del docstring del módulo.
 YAPDOLLARS_PER_EURO = 10
 
-#: Ventana que se usa para proyectar la renta anual: la última semana, la misma
-#: que la campaña de la Renta. Todas las retenciones (premios, casino y nóminas)
-#: proyectan con ella y con toda la renta sujeta del miembro en esa ventana.
+#: Duración del año fiscal del bot. Las retenciones proyectan con la renta desde
+#: el lunes (`economy.fiscal_window`) multiplicada por 365/7; la ventana entera
+#: la usan la declaración de la semana y lo cobrado en Hong Kong.
 _WINDOW_DAYS = 7
 PROJECTION_WINDOW_SECONDS = _WINDOW_DAYS * 24 * 3600
 _DAYS_PER_YEAR = 365
@@ -133,12 +134,12 @@ class Withholding:
 
 
 def compute_withholding(gross: int, recent_income: int) -> Withholding:
-    """Retención de un cobro, dados los ingresos de los últimos 7 días.
+    """Retención de un cobro, dados los ingresos de la semana fiscal.
 
     Args:
         gross: Cantidad bruta del cobro, en Y$.
-        recent_income: Ingresos brutos sujetos a IRPF de los últimos 7
-            días, sin contar este cobro.
+        recent_income: Ingresos brutos sujetos a IRPF desde el lunes, sin
+            contar este cobro.
     """
     if gross <= 0:
         return Withholding(gross=max(0, gross), tax=0, rate=0.0)
