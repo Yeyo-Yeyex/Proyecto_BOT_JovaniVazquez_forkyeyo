@@ -23,8 +23,9 @@ Lo que más se olvida:
   Franco (el régimen, nunca apología ni víctimas), Europa (Macron, Boris, Erdoğan),
   EE. UU. (Trump, los Clinton, Obama, Biden, Kamala, Musk), Putin, Kim Jong-un, África,
   Sudamérica (Milei, Maduro, Bolsonaro), Xi y Netanyahu; siempre contra gobiernos y
-  figuras públicas, nunca contra pueblos. Las coletillas de Jovani («Toma mango»,
-  «Quiero café», ¡Wepa!) salen de vez en cuando, no en cada frase. Sección
+  figuras públicas, nunca contra pueblos. Las coletillas de Jovani («¡Toma mangó!»,
+  «¡Quiero café!», «¿Con pulpa? ¡Sin pulpa!», la motora de Víctor y Joel…; lista en la
+  Biblia) salen de vez en cuando, no en cada frase. Sección
   «Personalidad: frases y fuentes de ironía» de `Biblia.txt`.
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:

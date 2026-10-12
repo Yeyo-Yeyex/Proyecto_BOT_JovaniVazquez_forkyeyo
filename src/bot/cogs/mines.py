@@ -104,7 +104,8 @@ CASH_LINES = (
     "¡Desminado con éxito!",
     "¡Mina de litio sin multinacional!",
     "¡Más fino que un ministro con información privilegiada!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
+    "¿Con pulpa? ¡Sin pulpa! ¡Con plata!",
 )
 BOOM_LINES = (
     "¡BOOM!",

@@ -111,10 +111,14 @@ class UseResult:
 
 #: Frase cuando alguien usa un objeto contra el propio bot.
 BOT_LINES: tuple[str, ...] = (
-    "{who} intenta usar {item} contra Jovani. Jovani lo esquiva con un paso de perreo "
-    "y le guiña un ojo. Al bot no, mi amor.",
+    "{who} intenta usar {item} contra Jovani. Jovani lo esquiva con un paso de perreo y le guiña "
+    "un ojo. Al bot no, mi amor.",
     "{who} apunta a Jovani con {item}. Jovani se agacha, sigue cantando y ni se despeina.",
     "{who} va a por Jovani con {item}. Rebota en el autotune y vuelve a su dueño. 🎤",
+    "{who} intenta usar {item} contra Jovani. Jovani, sin despeinarse: «Yo soy yo… y así me "
+    "tienes que soportar».",
+    "{who} le lanza {item} a Jovani. Jovani lo coge al vuelo y pide: «Hazme café… ¡quiero café!».",
+    "{who} va a por Jovani con {item}. Jovani se monta en la motora de Víctor y desaparece. 🏍️",
 )
 #: Frase por defecto si te eliges a ti mismo.
 SELF_LINE = "{who} se aplica {item} a sí mismo. Nadie entiende nada, pero el colmado no devuelve."

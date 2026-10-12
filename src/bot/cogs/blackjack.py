@@ -83,7 +83,7 @@ BLACKJACK_LINES = (
     "🂡 ¡21! Ni Tezanos lo clava así",
     "🂡 ¡BLACKJACK! Yes we can",
     "🂡 ¡21! Atado y bien atado",
-    "🂡 ¡BLACKJACK! Toma mango",
+    "🂡 ¡BLACKJACK! Toma mangó",
     "🂡 ¡21! Trump dice que es el mejor de la historia",
     "🂡 ¡BLACKJACK! Sale en el NO-DO",
     "🂡 ¡21! Kim ordena aplaudir",
@@ -120,6 +120,7 @@ LOSS_LINES = (
     "Kim aplaude a la banca. Tú también, por si acaso.",
     "Recurso a Bruselas: desestimado.",
     "Hillary también ganó en votos, y mírala.",
+    "Yo soy yo… y así me tienes que soportar.",
 )
 BUST_LINES = (
     "Te pasas.",

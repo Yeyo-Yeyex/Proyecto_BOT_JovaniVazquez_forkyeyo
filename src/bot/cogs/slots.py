@@ -162,7 +162,7 @@ JACKPOT_LINES = (
     "🃏🃏🃏 ¡EL BOTE ES TUYO!",
     "🃏🃏🃏 ¡WEPAAA!",
     "🃏🃏🃏 ¡NI FABRA TIENE TANTA SUERTE!",
-    "🃏🃏🃏 ¡TOMA MANGO, MI AMOR!",
+    "🃏🃏🃏 ¡TOMA MANGÓ, MI AMOR!",
     "🃏🃏🃏 ¡ESTO SALE EN EL NO-DO!",
     "🃏🃏🃏 ¡RESCATE A LA PERSONA!",
 )
@@ -187,7 +187,7 @@ TIER_LINES = {
         "💥 ¡QUÉ LOCURA!",
         "💥 ¡AY, BENDITO, QUÉ PREMIO!",
         "💥 ¡TREMENDO, TREMENDO!",
-        "💥 ¡TOMA MANGO!",
+        "💥 ¡TOMA MANGÓ!",
     ),
     WinTier.BIG: (
         "✨ ¡GRAN PREMIO!",
@@ -234,6 +234,7 @@ LOSS_LINES = (
     "Premios con cartilla de racionamiento.",
     "Pierdes. Pero el CIS dice que ganas.",
     "Quiero café.",
+    "Estoy destruido, pero por fuera. Por dentro, como un coco.",
 )
 DOUBLE_WIN_LINES = (
     "¡Dentro!",

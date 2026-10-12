@@ -120,7 +120,7 @@ WIN_LINES = (
     "¡Ni Fabra tiene tanta suerte!",
     "¡Lo clavas, no como el CIS!",
     "¡Moneda indultada!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
 )
 CASH_LINES = (
     "¡Wepa!",

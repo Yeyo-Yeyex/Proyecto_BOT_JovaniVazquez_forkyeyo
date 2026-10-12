@@ -135,7 +135,8 @@ WIN_LINES = (
     "¡Más gallo que Putin a caballo!",
     "¡El gallo sale en el NO-DO!",
     "¡Kikirikí, mi amor!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
+    "¡Yo soy yo, y así me tienes que soportar!",
 )
 LOSE_LINES = (
     "¡Ay, bendito!",

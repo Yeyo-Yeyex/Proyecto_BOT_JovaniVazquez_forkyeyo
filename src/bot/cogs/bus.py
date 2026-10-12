@@ -116,7 +116,7 @@ WIN_LINES = (
     "¡Tezanos lo vio venir!",
     "¡Puntual, como un tren que no es de Renfe!",
     "¡Esta guagua la inauguró Franco y aún tira!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
 )
 CASH_LINES = (
     "¡Wepa!",
@@ -128,7 +128,7 @@ CASH_LINES = (
     "¡Te bajas antes de que Óscar Puente lo tuitee!",
     "¡Fin de trayecto, y cobrando!",
     "¡Bajada en marcha y con la saca!",
-    "¡Toma mango y a casa!",
+    "¡Toma mangó y a casa!",
 )
 LOSE_LINES = (
     "¡Ay, bendito!",
@@ -155,6 +155,7 @@ FLIPPING_LINES = (
     "☕ El conductor para a por café…",
     "📺 El NO-DO retransmite el trayecto…",
     "🚌 Conduce Kim: nadie se queja…",
+    "🏍️ Y Víctor le dijo a Joel: móntate en mi guagua…",
 )
 
 

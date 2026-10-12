@@ -126,7 +126,7 @@ CASH_LINES = (
     "¡El pollo se planta a tiempo, no como Biden!",
     "¡El pollo llega a Waterloo!",
     "¡Al Falcon con el pollo!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
 )
 SPLAT_LINES = (
     "¡PLAF!",
@@ -153,6 +153,7 @@ TENSION_LINES = (
     "🚜 Pasa un tractor con la PAC…",
     "✈️ ¿Eso que suena es el Falcon?",
     "☕ El pollo pide un café antes de seguir…",
+    "🦎 Lagartijo, iguana, lagarto… ¿y eso que viene?",
 )
 AUTO_LINES = (
     "🎯 Piloto automático, agárrate…",

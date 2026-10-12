@@ -150,7 +150,8 @@ WIN_LINES = (
     "¡Monedas como en la cuenta de Bárcenas!",
     "¡Lluvia de fondos europeos!",
     "¡Esto es la Next Generation!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
+    "¡American people want mango!",
 )
 COLLECT_LINES = {
     "volcan": (

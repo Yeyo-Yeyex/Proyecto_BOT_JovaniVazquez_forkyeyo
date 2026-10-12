@@ -151,6 +151,7 @@ WIN_LINES = (
     "La UCO no se entera.",
     "¡Arancel cero!",
     "La bola se exilia en tu casilla.",
+    "¿Qué? ¿Qué? ¡Toma mangó!",
 )
 BIG_WIN_LINES = (
     "💥 ¡PLENAZO!",
@@ -161,7 +162,7 @@ BIG_WIN_LINES = (
     "💥 ¡RESCATE BANCARIO AL REVÉS!",
     "💥 ¡TREMENDO, TREMENDO!",
     "💥 ¡CRECIMIENTO A LA CHINA!",
-    "💥 ¡TOMA MANGO!",
+    "💥 ¡TOMA MANGÓ!",
 )
 LOSS_LINES = (
     "Casi.",
@@ -177,6 +178,7 @@ LOSS_LINES = (
     "La casa agradece tu aportación al PIB.",
     "El crupier te manda un «sé fuerte».",
     "Quiero café. Y otra ficha.",
+    "Sofía, cállate… que la bola no quiso.",
 )
 
 

@@ -189,7 +189,7 @@ ATARI_LINES = (
     "🎉 ¡ATARI, papi!",
     "🎉 ¡Se abrió la compuerta!",
     "🎉 ¡ATARI! Bruselas abre el grifo",
-    "🎉 ¡ATARI, toma mango!",
+    "🎉 ¡ATARI, toma mangó!",
 )
 WIN_LINES = (
     "¡Wepa!",
@@ -199,6 +199,7 @@ WIN_LINES = (
     "¡Lluvia de bolas y de fondos europeos!",
     "¡Crecimiento a la japonesa!",
     "¡Bolas para dar y regalar!",
+    "¡Jota Uve! ¡Pre!",
 )
 SMALL_WIN_LINES = (
     "🎯 ¡Premio!",

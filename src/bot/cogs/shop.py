@@ -166,21 +166,30 @@ ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
         "{who} estrena {item}. ¡Qué flow, bebé!",
         "{who} se ha comprado {item}. Ahora sí que brilla.",
         "{who} sale del colmado con {item} puesto. Mírala, mírala.",
+        "{who} luce {item}. Yo soy yo, y así me tienes que soportar.",
+        "{who} se pone {item} y sale en el NO-DO de esta semana.",
+        "{who} estrena {item} con más orgullo que Ayuso en la Puerta del Sol.",
     ),
     Kind.BOOST: (
         "{who} se mete un {item} en vena. A yapear se ha dicho.",
         "{who} pilla {item}: ojo, que viene con turbo.",
         "{who} compra {item}. El XP no se va a ganar solo, mi amor.",
+        "{who} se toma {item}. Más chute que un decreto ley.",
+        "{who} activa {item}: crecimiento a la china, sin crédito social.",
     ),
     Kind.TROPHY: (
         "{who} se lleva {item} pa' la casa. ¡Wepa!",
         "{who} compra {item}. Pa' presumir, que pa' eso está.",
         "{who} añade {item} a la vitrina. Qué nivel.",
+        "{who} pone {item} en la vitrina, al lado del Nobel de la Paz de Obama.",
+        "{who} se lleva {item}. Trump ya ha preguntado si se lo pueden regalar a él.",
     ),
     Kind.PET: (
         "{who} sale del colmado con {item} en brazos. Familia nueva.",
         "{who} adopta {item}. Ya tiene a quien contarle sus pérdidas.",
         "{who} se lleva {item} a casa. Que alguien avise a la protectora: ha ido bien.",
+        "{who} adopta {item}. Lagartijo, iguana, lagarto: la familia crece.",
+        "{who} adopta {item}, el primero de la familia que no le pide un Bizum.",
     ),
 }
 #: Aviso de compra de un objeto que se usa (un huevo, un burofax…): suena a amenaza.

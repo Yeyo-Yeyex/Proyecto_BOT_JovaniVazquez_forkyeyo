@@ -53,6 +53,7 @@ import asyncio
 import io
 import logging
 import math
+import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
@@ -112,6 +113,26 @@ IDLE_SECONDS = 10 * 60
 REVEAL_MARGIN_SECONDS = 1.5
 #: Apuestas y resultados que se listan por nombre; el resto se resume.
 LIST_LIMIT = 10
+#: Coletilla de la mano jugada, según quién gana.
+COUP_LINES = {
+    Side.BANKER: (
+        "La Banca gana. Botín sonríe desde el palco.",
+        "Gana la Banca: un rescate, pero al revés.",
+        "La Banca siempre gana, como el PRI.",
+        "Gana la Banca y Bruselas aplaude.",
+    ),
+    Side.PLAYER: (
+        "Gana el pueblo, que dirían en Galapagar.",
+        "Gana el Jugador. ¡Viva la libertad, carajo!",
+        "Moción de censura a la Banca: gana el Jugador.",
+        "¡Wepa! El Jugador se lleva la mano.",
+    ),
+    Side.TIE: (
+        "Empate. Ni sí ni no, sino todo lo contrario.",
+        "Empate técnico, como en el CIS.",
+        "Tablas: repetición electoral.",
+    ),
+}
 #: Personas cuya mascota puede hablar en el resultado (para no llenar la mesa).
 HINTS_LIMIT = 4
 #: Racha de la carretera a partir de la cual la mesa lo avisa.
@@ -439,7 +460,9 @@ class Table:
         if played is None:
             return []
         coup = played.coup
-        lines = [f"Mano {coup.number}: {coup_line(coup)}"]
+        # Una coletilla por mano, no por redibujo: el embed se repinta varias veces.
+        quip = random.Random(coup.number).choice(COUP_LINES[coup.winner])
+        lines = [f"Mano {coup.number}: {coup_line(coup)}", f"-# {quip}"]
         seats = sorted(played.seats, key=lambda s: -s.net)
         for seat in seats[:LIST_LIMIT]:
             lines.append(seat_result_line(seat))

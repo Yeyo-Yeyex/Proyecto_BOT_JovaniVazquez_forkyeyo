@@ -128,7 +128,8 @@ WIN_LINES = (
     "¡Suerte de Fabra!",
     "¡Ni el CIS lo predice!",
     "¡Mano de santo!",
-    "¡Toma mango!",
+    "¡Toma mangó!",
+    "¡Everybody want mango!",
 )
 LOSE_LINES = (
     "¡Ay, bendito!",

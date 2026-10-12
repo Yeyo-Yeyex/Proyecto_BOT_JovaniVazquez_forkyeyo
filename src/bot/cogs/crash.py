@@ -121,6 +121,8 @@ TAKEOFF_LINES = (
     "¡Despega como un misil de Kim!",
     "¡Sube como la factura de la luz!",
     "¡Embarque en el Falcon!",
+    "¡Y Víctor le dijo a Joel: móntate en mi cohete!",
+    "¡Azul, azul, como el mar azul… y arriba!",
 )
 CASH_LINES = (
     "¡Saltaste a tiempo!",
