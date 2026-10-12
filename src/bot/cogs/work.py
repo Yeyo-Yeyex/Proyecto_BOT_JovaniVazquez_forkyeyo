@@ -16,6 +16,18 @@ sueldo). Viviendo fuera no se cambia de oficio. El panel enseña también lo
 propio de cada oficio: el tiempo y las estrellas de la app (reparto), los
 trienios y la plaza fija (funcionariado) y los seguidores (influencer).
 
+**Carrera larga.** Los oficios con ramas (`Job.branches`) piden elegir una al
+ascender desde el final del tronco: 📈 **Ascender** enseña las ramas con su
+primer puesto, su techo y su pensión. Cada puesto puede dar una ventaja (🏅)
+que se suma a las herramientas. En lo más alto de una rama aparece 🏖️
+**Jubilarse**: se sigue por la otra rama y se gana una pensión diaria que se
+cobra con 💰 **Cobrar pensión** (también sin contrato). El panel enseña el
+🌠 **deseo del día**: el turno que lo cumple paga más y sube la barra.
+
+**Anuncios.** Los hitos se cuentan en el canal del panel, en un mensaje aparte
+y sin mencionar a nadie: ascensos pasado el tronco, llegar a lo más alto,
+jubilarse, un exit o una quiebra y los vídeos virales.
+
 Fichar lanza el minijuego del puesto en el mismo mensaje (cavar, detectar,
 memoria, diálogo, clasificar o calcular; de 30 a 60 s). Al acabar, o al agotarse el tiempo, se
 cobra la nómina y se enseña con su desglose; a veces sale un evento con dos
@@ -70,6 +82,8 @@ from bot.services.pala import (
     EventResult,
     NeedsBlack,
     OffDuty,
+    Pension,
+    Retirement,
     Shift,
     ShiftOutcome,
     Status,
@@ -92,6 +106,9 @@ from bot.services.work import (
     SELF_EMPLOYED_FEE,
     TRIENNIUM_PAY,
     VIRAL_AT,
+    WISH_PAY,
+    WISH_PERFORMANCE,
+    Career,
     Mechanic,
     ShiftKind,
     battery_bar,
@@ -261,13 +278,19 @@ def battery_note(status: Status) -> str:
     return f" · {full}"
 
 
+def where_text(status: Status) -> str:
+    """`Política (PSOE) · 🏛️ Moncloa`: el oficio y, si está en una, la rama."""
+    branch = status.branch
+    return status.job.name + (f" · {branch.emoji} {branch.name}" if branch else "")
+
+
 def status_text(status: Status, notes: list[str]) -> str:
     """Texto del panel de un contrato."""
     contract, job, position = status.contract, status.job, status.position
     state = battery_state(status.battery)
     state_text = {"bien": "", "reventado": " · **reventado**", "zombi": " · **zombi** 🧟"}[state]
     lines = [
-        f"## {job.emoji} {position.title} · {job.name} ({contract.level}/{job.top})",
+        f"## {job.emoji} {position.title} · {where_text(status)} ({contract.level}/{job.top})",
         f"Sueldo base: **{format_amount(position.base_pay)}** por turno · Minijuego: "
         f"{MECHANIC_NAMES[position.mechanic]} ({position.seconds} s)"
         + (" · autónomo" if position.self_employed else ""),
@@ -305,6 +328,16 @@ def status_text(status: Status, notes: list[str]) -> str:
             f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
         )
     lines.extend(job_lines(status))
+    perks = job.perks(contract.level, contract.branch)
+    if perks:
+        lines.append("🏅 Ventajas del puesto: " + " · ".join(p.text for p in perks))
+    if status.wish is not None:
+        lines.append(
+            f"🌠 **Deseo del día:** {status.wish.text} Premio: sueldo ×{decimal(WISH_PAY)} "
+            f"y +{WISH_PERFORMANCE} de barra."
+        )
+    elif contract.wish_streak:
+        lines.append(f"🌠 Deseo del día cumplido · racha de {contract.wish_streak} días.")
     if status.sick:
         lines.append(f"🩹 **De baja** hasta <t:{int(contract.sick_until)}:t>.")
     if status.on_leave:
@@ -312,8 +345,23 @@ def status_text(status: Status, notes: list[str]) -> str:
             "🏖️ Vuelves de una excedencia: la barra empieza a la mitad en tu próximo turno."
         )
     following = status.next_position
-    if following is None:
+    fork = status.fork
+    if fork:
+        names = " o ".join(f"{b.emoji} {b.name}" for b in fork)
+        if status.promotion_ready:
+            lines.append(f"\n📈 **¡Te ofrecen el ascenso!** Eliges rama: {names}.")
+        else:
+            lines.append(f"\n**Para ascender** (eliges rama: {names}):")
+            lines.extend(f"- {item}" for item in status.blockers)
+    elif following is None:
         lines.append("\n🏆 **Estás en lo más alto del oficio.**")
+        if status.can_retire:
+            branch = status.branch
+            assert branch is not None
+            lines.append(
+                f"🏖️ Puedes jubilarte de {branch.emoji} {branch.name}: "
+                f"{format_amount(branch.pension)} brutos de pensión al día, para siempre."
+            )
     elif status.promotion_ready:
         lines.append(f"\n📈 **¡Te ofrecen el ascenso a {following.title}!** Pulsa 📈 Ascender.")
     else:
@@ -322,6 +370,8 @@ def status_text(status: Status, notes: list[str]) -> str:
             f"({format_amount(following.base_pay)} por turno):"
         )
         lines.extend(f"- {item}" for item in status.blockers)
+    if following is not None and following.perk is not None:
+        lines.append(f"-# 🏅 Desbloquea: {following.perk.text}")
     if notes:
         lines.append("")
         lines.extend(notes)
@@ -351,6 +401,82 @@ def job_lines(status: Status) -> list[str]:
     if job.viral:
         lines.append(f"👥 Seguidores: **{contract.followers:,}**".replace(",", "."))
     return lines
+
+
+def branch_offer_text(status: Status) -> str:
+    """La oferta de ascenso al final del tronco: una ficha por rama."""
+    lines = [
+        "## 📈 Te ofrecen el ascenso",
+        "Se acabó el tronco: ahora eliges rama. Puedes cambiar más adelante, pero solo "
+        "jubilándote de la que elijas.",
+    ]
+    for branch in status.fork:
+        first, last = branch.positions[0], branch.positions[-1]
+        lines.append(
+            f"\n### {branch.emoji} {branch.name}\n{branch.blurb}\n"
+            f"- Empiezas de **{first.title}** ({format_amount(first.base_pay)} por turno)\n"
+            f"- Llegas a **{last.title}** ({format_amount(last.base_pay)} por turno)\n"
+            f"- Te jubilas con **{format_amount(branch.pension)}** brutos al día"
+        )
+    return "\n".join(lines)
+
+
+def pension_text(slip: Payslip, pension: Pension) -> str:
+    """El cobro de la pensión del día."""
+    lines = ["## 🏖️ Pensión de hoy"]
+    lines.extend(
+        f"- {job.emoji} {branch.emoji} {branch.retired_as}" for job, branch in pension.branches
+    )
+    lines.append(f"Bruto: **{format_amount(slip.gross)}**")
+    if slip.irpf:
+        lines.append(f"IRPF: −{format_amount(slip.irpf)} ({_pct(slip.rates.irpf)})")
+    else:
+        lines.append("IRPF: 0 Y$ (con toda tu renta desde el lunes, aún no llegas al mínimo)")
+    lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
+    lines.append(
+        "-# Las pensiones son rendimientos del trabajo (art. 17.2.a LIRPF): IRPF sí, "
+        f"cotizar ya no. {TAX_COLLECTOR} te sigue queriendo igual."
+    )
+    return "\n".join(lines)
+
+
+def promotion_announcement(name: str, status: Status) -> str | None:
+    """Anuncio de un ascenso, solo pasado el tronco (los primeros no se cuentan)."""
+    job, contract, position = status.job, status.contract, status.position
+    if contract.level <= job.trunk_top:
+        return None
+    where = where_text(status)
+    if contract.level >= job.top:
+        return f"🏆 **{name}** llega a lo más alto: **{position.title}** ({job.emoji} {where})."
+    return f"📣 **{name}** asciende a **{position.title}** ({job.emoji} {where})."
+
+
+def retirement_announcement(name: str, retirement: Retirement) -> str:
+    """Anuncio de una jubilación."""
+    branch = retirement.branch
+    text = (
+        f"🏖️ **{name}** se jubila de {retirement.title} ({retirement.job.emoji} "
+        f"{branch.emoji} {branch.name}). Ahora es {branch.retired_as}, con "
+        f"{format_amount(branch.pension)} brutos al día."
+    )
+    following = retirement.following
+    if following is not None:
+        text += f" Y vuelve a la carga por {following.emoji} {following.name}."
+    return text
+
+
+def outcome_announcement(name: str, outcome: ShiftOutcome) -> str | None:
+    """Anuncio de un turno con un hito (exit, quiebra o vídeo viral), o `None`."""
+    if outcome.exit_payout:
+        return (
+            f"🚀 **¡EXIT!** La startup de **{name}** sale a bolsa: sus stock options valen "
+            f"{format_amount(outcome.exit_payout)}."
+        )
+    if outcome.bankrupt:
+        return f"💀 La startup de **{name}** quiebra. Sus stock options valen lo que el papel."
+    if outcome.viral >= VIRAL_AT:
+        return f"🔥 **¡VIRAL!** Un vídeo de **{name}** revienta: sueldo ×{decimal(outcome.viral)}."
+    return None
 
 
 def study_text(outcome: ShiftOutcome) -> str:
@@ -395,6 +521,11 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         lines.append(
             f"📅 Con tus {outcome.triennia} trienios cobras un "
             f"{round(TRIENNIUM_PAY * outcome.triennia * 100)} % más."
+        )
+    if outcome.wish is not None:
+        lines.append(
+            f"🌠 **¡Deseo del día cumplido!** {outcome.wish.text} Sueldo ×{decimal(WISH_PAY)} "
+            f"y +{WISH_PERFORMANCE} de barra · racha de {outcome.wish_streak} días."
         )
     if outcome.viral >= VIRAL_AT:
         lines.append(f"## 🔥 ¡VIRAL! El vídeo revienta: sueldo ×{decimal(outcome.viral)}")
@@ -530,6 +661,8 @@ class PalaPanel(ui.LayoutView):
         self._ticket = 0
         #: Herramientas de curro que tenía al fichar (para los logros).
         self._tools_owned = 0
+        #: La pensión, leída al abrir o refrescar el panel (botón 💰).
+        self.pension: Pension | None = None
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -573,7 +706,7 @@ class PalaPanel(ui.LayoutView):
             if row.children:
                 self.add_item(row)
 
-    def show_hiring(self, history: dict[str, tuple[int, int]], notes: list[str]) -> None:
+    def show_hiring(self, history: dict[str, Career], notes: list[str]) -> None:
         """Pantalla para elegir oficio (sin contrato)."""
         lines = [
             "## 🪏 Coge la pala",
@@ -583,16 +716,32 @@ class PalaPanel(ui.LayoutView):
             "",
         ]
         for job in JOBS:
-            level = history.get(job.key, (1, 1))[0]
+            career = history.get(job.key, Career(1, 1))
+            if career.level > job.trunk_top and job.branch(career.branch) is None:
+                career = Career(job.trunk_top, career.max_level)
+            position = job.position(career.level, career.branch)
             lines.append(
                 f"{job.emoji} **{job.name}** · {job.blurb}\n-# Entrarías de "
-                f"{job.position(level).title} ({format_amount(job.position(level).base_pay)} "
-                "por turno)"
+                f"{position.title} ({format_amount(position.base_pay)} por turno)"
             )
         lines.extend(notes)
         row: ui.ActionRow = ui.ActionRow()
         row.add_item(self._job_select(None))
-        self._frame("\n".join(lines), COLOR_IDLE, [row])
+        rows = [row]
+        if (button := self._pension_button()) is not None:
+            rows.append(ui.ActionRow(button))
+        self._frame("\n".join(lines), COLOR_IDLE, rows)
+
+    def _pension_button(self) -> ui.Button | None:
+        """💰 Cobrar pensión, si la tiene y aún no la ha cobrado hoy."""
+        pension = self.pension
+        if pension is None or not pension.due:
+            return None
+        return self._button(
+            f"💰 Cobrar pensión · {format_amount(pension.amount)}",
+            self._claim_pension,
+            style=discord.ButtonStyle.success,
+        )
 
     def _job_select(self, current: str | None) -> ui.Select:
         options = [
@@ -679,6 +828,12 @@ class PalaPanel(ui.LayoutView):
             actions.add_item(self._button(f"🎓 Formación · {format_amount(price)}", self._training))
         more: ui.ActionRow = ui.ActionRow()
         more.add_item(self._button("📜 Vida laboral", self._career))
+        if status.can_retire:
+            more.add_item(
+                self._button("🏖️ Jubilarse", self._retire_offer, style=discord.ButtonStyle.primary)
+            )
+        if (pension := self._pension_button()) is not None:
+            more.add_item(pension)
         flight = format_amount(FLIGHT_PRICE + igic(FLIGHT_PRICE))
         if status.can_go_abroad:
             more.add_item(self._button(f"🌏 Irse a Hong Kong · {flight}", self._go_abroad))
@@ -816,6 +971,7 @@ class PalaPanel(ui.LayoutView):
 
     async def refresh(self, interaction: discord.Interaction | None = None) -> None:
         """Vuelve al panel con el estado actual."""
+        self.pension = await self.service.pension(self.guild_id, self.owner.id)
         status = await self.service.status(self.guild_id, self.owner.id)
         if status is None:
             history = await self.service.history(self.guild_id, self.owner.id)
@@ -911,6 +1067,20 @@ class PalaPanel(ui.LayoutView):
     async def _offer(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
         status = await self.service.status(self.guild_id, self.owner.id)
+        if status is not None and status.promotion_ready and status.fork:
+            row: ui.ActionRow = ui.ActionRow()
+            for branch in status.fork:
+                row.add_item(
+                    self._button(
+                        f"{branch.emoji} {branch.name}",
+                        self._accept_branch(branch.key),
+                        style=discord.ButtonStyle.success,
+                    )
+                )
+            row.add_item(self._button("🙅 Me quedo con la paguita", self._decline))
+            self._frame(branch_offer_text(status), COLOR_IDLE, [row])
+            await self._edit(interaction)
+            return
         if status is None or not status.promotion_ready or status.next_position is None:
             await self.refresh(interaction)
             return
@@ -920,7 +1090,7 @@ class PalaPanel(ui.LayoutView):
             f"{format_amount(following.base_pay)} por turno (ahora "
             f"{format_amount(status.position.base_pay)}).\n"
             "Cobrar más reduce tu IMV, pero cada Y$ de más solo te quita medio. "
-            "¿Lo aceptas?"
+            "¿Lo aceptas?" + (f"\n🏅 Desbloquea: {following.perk.text}" if following.perk else "")
         )
         row: ui.ActionRow = ui.ActionRow()
         row.add_item(self._button("✅ Acepto", self._accept, style=discord.ButtonStyle.success))
@@ -928,22 +1098,123 @@ class PalaPanel(ui.LayoutView):
         self._frame(text, COLOR_IDLE, [row])
         await self._edit(interaction)
 
-    async def _accept(self, interaction: discord.Interaction) -> None:
+    async def _accept(self, interaction: discord.Interaction, branch: str = "") -> None:
         await ack(interaction)
         try:
-            status = await self.service.accept_promotion(self.guild_id, self.owner.id)
+            status = await self.service.accept_promotion(self.guild_id, self.owner.id, branch)
         except WorkError as error:
             await notify(interaction, str(error))
             return
-        self.notes.append(
+        note = (
             f"🎉 **¡Ascendido a {status.position.title}!** Ahora cobras "
             f"{format_amount(status.position.base_pay)} brutos por turno. ¡Wepa!"
         )
+        if status.branch is not None and branch:
+            note += f" Has elegido {status.branch.emoji} **{status.branch.name}**."
+        if status.position.perk is not None:
+            note += f"\n🏅 Nueva ventaja: {status.position.perk.text}"
+        self.notes.append(note)
         self.show_status(status)
         await self._edit(interaction)
+        if text := promotion_announcement(self._name, status):
+            await self._announce(text)
         delta = StatDelta(add={"work_promotions": 1})
+        if branch:
+            delta.add["work_branch_chosen"] = 1
         delta.merge(await self.cog.top_stats(self.guild_id, self.owner.id))
         await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
+
+    def _accept_branch(self, branch: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._accept(interaction, branch)
+
+        return callback
+
+    # -- Jubilación y pensión ---------------------------------------------------------
+
+    async def _retire_offer(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        status = await self.service.status(self.guild_id, self.owner.id)
+        if status is None or not status.can_retire or status.branch is None:
+            await self.refresh(interaction)
+            return
+        branch = status.branch
+        others = [b for b in status.job.branches if b.key not in status.retired | {branch.key}]
+        then = (
+            f"Sigues en {status.job.name} por {others[0].emoji} {others[0].name}, desde "
+            f"{others[0].positions[0].title}, con la barra a la mitad."
+            if others
+            else "Ya no te queda otra rama: te quedas donde estás, pero con pensión."
+        )
+        text = (
+            f"## 🏖️ Jubilarse de {branch.emoji} {branch.name}\n"
+            f"Dejas de ser {status.position.title} y pasas a ser {branch.retired_as}. "
+            f"Cobrarás **{format_amount(branch.pension)}** brutos al día, para siempre, "
+            f"con el botón 💰 del panel.\n{then}\n-# No tiene vuelta atrás."
+        )
+        row: ui.ActionRow = ui.ActionRow()
+        row.add_item(self._button("✅ Me jubilo", self._retire, style=discord.ButtonStyle.success))
+        row.add_item(self._button("🏠 Todavía no", self._home))
+        self._frame(text, COLOR_IDLE, [row])
+        await self._edit(interaction)
+
+    async def _retire(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        try:
+            retirement = await self.service.retire(self.guild_id, self.owner.id)
+        except WorkError as error:
+            await notify(interaction, str(error))
+            return
+        branch = retirement.branch
+        self.notes.append(
+            f"🏖️ **¡Te jubilas!** Ahora eres {branch.retired_as}. Pulsa 💰 cada día para "
+            "cobrar la pensión."
+        )
+        self.pension = await self.service.pension(self.guild_id, self.owner.id)
+        self.show_status(retirement.status)
+        await self._edit(interaction)
+        await self._announce(retirement_announcement(self._name, retirement))
+        retired_here = len(retirement.status.retired)
+        delta = StatDelta(
+            add={"work_retired": 1}, peak={f"work_retired_{retirement.job.key}": retired_here}
+        )
+        await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
+
+    async def _claim_pension(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        try:
+            slip, _balance = await self.service.claim_pension(self.guild_id, self.owner.id)
+        except WorkError as error:
+            await notify(interaction, str(error))
+            return
+        pension = self.pension or await self.service.pension(self.guild_id, self.owner.id)
+        self.notes.append(pension_text(slip, pension))
+        extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.MONEY))
+        if extra:
+            self.notes.append(extra)
+        await self.refresh(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        delta = StatDelta(add={"work_pensions": 1})
+        if slip.irpf:
+            delta.add["tax_paid"] = slip.irpf
+            delta.add["work_pension_irpf"] = 1
+        await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
+
+    # -- Anuncios ---------------------------------------------------------------------
+
+    @property
+    def _name(self) -> str:
+        return discord.utils.escape_markdown(self.owner.display_name)
+
+    async def _announce(self, text: str) -> None:
+        """Cuenta un hito en el canal del panel, aparte y sin mencionar a nadie."""
+        send = getattr(self.channel, "send", None)
+        if send is None:
+            return
+        try:
+            await send(text, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            logger.debug("No se pudo anunciar un hito de pala", exc_info=True)
 
     async def _decline(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
@@ -1181,6 +1452,8 @@ class PalaPanel(ui.LayoutView):
             await self._edit(interaction)
         if interaction is not None:
             await renta.remind(self.cog.bot, interaction)
+        if text := outcome_announcement(self._name, outcome):
+            await self._announce(text)
         delta = work_stats(
             outcome, birthday=await self.cog.is_birthday(self.guild_id, self.owner.id)
         )
@@ -1277,25 +1550,46 @@ class Work(commands.Cog, name="Trabajo"):
         return (birthday.day, birthday.month) == (today.day, today.month)
 
     async def top_stats(self, guild_id: int, user_id: int) -> StatDelta:
-        """Máximos de la carrera: oficios coronados y puesto 5 de cada uno."""
+        """Máximos de la carrera: oficios coronados, lo más alto de cada uno y de cada rama."""
         history = await self.service.history(guild_id, user_id)
         delta = StatDelta(peak={})
-        tops = [job for job, (_level, top) in history.items() if top >= JOB_BY_KEY[job].top]
+        known = {job: career for job, career in history.items() if job in JOB_BY_KEY}
+        tops = [job for job, career in known.items() if career.max_level >= JOB_BY_KEY[job].top]
         delta.peak["work_jobs_top"] = len(tops)
         delta.peak["work_jobs_tried"] = len(history)
         for job in tops:
             delta.peak[f"work_top_{job}"] = 1
+        for job, career in known.items():
+            # Solo se ve la rama en la que está: se apunta al llegar arriba.
+            if career.branch and career.level >= JOB_BY_KEY[job].top:
+                delta.peak[f"work_top_{job}_{career.branch}"] = 1
         return delta
 
     async def career_lines(self, guild_id: int, user_id: int) -> list[str]:
-        """Vida laboral: un renglón por oficio con el puesto actual y el más alto."""
+        """Vida laboral: un renglón por oficio con el puesto actual y el más alto,
+        y otro por cada jubilación."""
         history = await self.service.history(guild_id, user_id)
-        return [
-            f"{job.emoji} {job.name}: {job.position(history[job.key][0]).title} "
-            f"(máximo: {job.position(history[job.key][1]).title})"
-            for job in JOBS
-            if job.key in history
-        ]
+        lines = []
+        for job in JOBS:
+            career = history.get(job.key)
+            if career is None:
+                continue
+            branch = career.branch if job.branch(career.branch) else ""
+            level = min(career.level, job.trunk_top) if not branch else career.level
+            # shortcut: el máximo se nombra por la rama actual, porque el historial
+            # no guarda en qué rama se llegó a él; si hace falta, guardarlo aparte.
+            top = career.max_level if branch else min(career.max_level, job.trunk_top)
+            lines.append(
+                f"{job.emoji} {job.name}: {job.position(level, branch).title} "
+                f"(máximo: {job.position(top, branch).title})"
+            )
+        pension = await self.service.pension(guild_id, user_id)
+        lines.extend(
+            f"🏖️ Jubilado de {job.emoji} {branch.emoji} {branch.name}: {branch.retired_as} "
+            f"({format_amount(branch.pension)} al día)"
+            for job, branch in pension.branches
+        )
+        return lines
 
     async def job_line(self, guild_id: int, user_id: int) -> str:
         """El curro de alguien en un renglón, para el resumen de `perfil`."""
@@ -1305,7 +1599,7 @@ class Work(commands.Cog, name="Trabajo"):
         job, position = status.job, status.position
         where = " · en Hong Kong 🇭🇰" if status.contract.abroad else ""
         level = f"{status.contract.level}/{job.top}"
-        return f"{job.emoji} {position.title} · {job.name} ({level}){where}"
+        return f"{job.emoji} {position.title} · {where_text(status)} ({level}){where}"
 
     async def work_embed(self, guild_id: int, member: discord.abc.User) -> discord.Embed:
         """Sección 🪏 Trabajo de `perfil`: contrato actual y vida laboral. No ficha nada."""
@@ -1352,6 +1646,7 @@ class Work(commands.Cog, name="Trabajo"):
             return
         panel = PalaPanel(self, guild_id=guild.id, owner=user)
         panel.channel = channel
+        panel.pension = await self.service.pension(guild.id, user.id)
         status = await self.service.status(guild.id, user.id)
         if status is None:
             panel.show_hiring(await self.service.history(guild.id, user.id), [])

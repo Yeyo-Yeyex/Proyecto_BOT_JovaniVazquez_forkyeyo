@@ -28,11 +28,13 @@ from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
     LEGAL_EXTRAS_PER_WEEK,
+    MEGAVIRAL,
     ORDINARY_SHIFTS,
     Mechanic,
     battery_eta,
     rested_at,
 )
+from bot.services.work_catalog import JOB_BY_KEY
 
 GUILD = 1
 OWNER = 10
@@ -535,3 +537,119 @@ async def test_estudiar_la_oposicion_con_botones_no_paga(tmp_path: Path) -> None
     check_limits(panel)
     assert await cog.service.economy.balance(GUILD, OWNER) == STARTING_BALANCE
     await asyncio.sleep(0)
+
+
+# -- Carrera larga: ramas, jubilación, pensión y anuncios -----------------------------------
+
+
+async def set_career(cog: Work, level: int, branch: str = "") -> None:
+    """Pone el contrato de política en ese puesto y rama."""
+    contract = await cog.service.repository.contract(GUILD, OWNER)
+    assert contract is not None and contract.job == "politica"
+    contract.level, contract.branch = level, branch
+    await cog.service.repository.save_contract(GUILD, OWNER, contract)
+
+
+def button(panel: PalaPanel, label: str) -> ui.Button:
+    return next(b for b in buttons(panel) if (b.label or "").startswith(label))
+
+
+async def politics_panel(tmp_path: Path) -> tuple[Work, PalaPanel, AsyncMock]:
+    """Panel de política con un canal que apunta lo que se anuncia."""
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    channel_send = AsyncMock()
+    panel.channel = MagicMock(send=channel_send)
+    await panel._hire(make_interaction(), "politica")
+    return cog, panel, channel_send
+
+
+async def test_al_final_del_tronco_el_ascenso_ofrece_las_ramas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "promotion_blockers", lambda *args, **kwargs: [])
+    cog, panel, channel_send = await politics_panel(tmp_path)
+    await set_career(cog, 5)
+    await panel.refresh(make_interaction())
+    assert "eliges rama" in texts(panel).lower()
+    await button(panel, "📈 Ascender").callback(make_interaction())
+    text = texts(panel)
+    assert "Moncloa" in text and "Bruselas" in text and "Comisario europeo" in text
+    assert "al día" in text  # la pensión de cada rama
+    check_limits(panel)
+    await button(panel, "🏛️ Moncloa").callback(make_interaction())
+    assert "Secretario de Estado" in texts(panel)
+    status = await cog.service.status(GUILD, OWNER)
+    assert status is not None and status.contract.branch == "moncloa"
+    announced = channel_send.await_args
+    assert "Secretario de Estado" in announced.args[0]
+    assert announced.kwargs["allowed_mentions"].users is False  # sin mencionar a nadie
+
+
+async def test_los_ascensos_del_tronco_no_se_anuncian(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "promotion_blockers", lambda *args, **kwargs: [])
+    _cog, panel, channel_send = await politics_panel(tmp_path)
+    await panel.refresh(make_interaction())
+    await button(panel, "📈 Ascender").callback(make_interaction())
+    await button(panel, "✅ Acepto").callback(make_interaction())
+    assert "Concejal" in texts(panel)
+    channel_send.assert_not_awaited()
+
+
+async def test_jubilarse_y_cobrar_la_pension_desde_el_panel(tmp_path: Path) -> None:
+    cog, panel, channel_send = await politics_panel(tmp_path)
+    await set_career(cog, 10, "bruselas")
+    await panel.refresh(make_interaction())
+    assert "jubilarte" in texts(panel)
+    await button(panel, "🏖️ Jubilarse").callback(make_interaction())
+    assert "No tiene vuelta atrás" in texts(panel) and "Moncloa" in texts(panel)
+    await button(panel, "✅ Me jubilo").callback(make_interaction())
+    assert "Te jubilas" in texts(panel)
+    assert "se jubila" in channel_send.await_args.args[0]
+    status = await cog.service.status(GUILD, OWNER)
+    assert status is not None and status.contract.branch == "moncloa"
+    check_limits(panel)
+    await button(panel, "💰 Cobrar pensión").callback(make_interaction())
+    assert "Pensión de hoy" in texts(panel) and "Neto" in texts(panel)
+    assert not any("Cobrar pensión" in (b.label or "") for b in buttons(panel))
+    again = make_interaction()
+    await panel._claim_pension(again)
+    assert "Ya cobraste" in again.followup.send.await_args.args[0]
+    lines = await cog.career_lines(GUILD, OWNER)
+    assert any("Jubilado de" in line and "Bruselas" in line for line in lines)
+
+
+async def test_sin_curro_tambien_se_cobra_la_pension(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    panel.pension = pala.Pension(
+        ((JOB_BY_KEY["politica"], JOB_BY_KEY["politica"].branches[0]),), 5_000, True
+    )
+    panel.show_hiring({}, [])
+    assert any("Cobrar pensión" in (b.label or "") for b in buttons(panel))
+    check_limits(panel)
+
+
+async def test_el_panel_ensena_el_deseo_del_dia_y_las_ventajas(tmp_path: Path) -> None:
+    cog, panel, _ = await politics_panel(tmp_path)
+    assert "Deseo del día" in texts(panel)
+    assert "Ventajas del puesto" not in texts(panel)  # el pegacarteles no tiene ninguna
+    assert "Desbloquea" in texts(panel)  # la del concejal
+    await set_career(cog, 5)
+    await panel.refresh(make_interaction())
+    text = texts(panel)
+    assert "Ventajas del puesto" in text and "Coche oficial" in text
+    assert "Política (PSOE) (5/10)" in text
+
+
+def test_los_turnos_con_hito_se_anuncian_y_los_normales_no() -> None:
+    viral = MagicMock(exit_payout=0, bankrupt=False, viral=MEGAVIRAL)
+    assert "VIRAL" in (work_cog.outcome_announcement("Diego", viral) or "")
+    normal = MagicMock(exit_payout=0, bankrupt=False, viral=1.0)
+    assert work_cog.outcome_announcement("Diego", normal) is None
+    rich = MagicMock(exit_payout=1_000_000, bankrupt=False, viral=0.0)
+    assert "EXIT" in (work_cog.outcome_announcement("Diego", rich) or "")

@@ -253,10 +253,12 @@ python -m bot
   administración. **📦 Reponer surtido** vuelve a poner a la venta los
   artículos de serie retirados. El bot necesita **Gestionar roles** (y
   **Gestionar apodos** para el DNI falso).
-- **Trabajo** (`pala`): coges la pala y curras. Ocho oficios con 5 puestos cada
-  uno (🦺 obra, 🍽️ hostelería, 🌹 política en el PSOE, de pegacarteles a
-  consejero de una eléctrica, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
-  funcionariado e 🤳 influencer). Cada turno es un minijuego de decidir rápido, de
+- **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
+  hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
+  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, que
+  ya tiene la carrera larga: 5 puestos de tronco (de pegacarteles a portavoz) y
+  dos ramas de 5 más, 🏛️ Moncloa (hasta consejero de una eléctrica) y 🇪🇺
+  Bruselas (hasta comisario europeo). Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
   mandar cada papel a su negociado, elegir el pedido que más paga por
@@ -292,8 +294,15 @@ python -m bot
   verdad), desde auxiliar tienes plaza fija (no te bajan nunca y la nota mueve
   poco el sueldo) y cada 3 «años» un trienio (+5 %, hasta 8). El **influencer**
   cobra a golpes: casi siempre se queda corto y a veces se hace viral (hasta
-  ×15), suma seguidores y sufre funas. Un administrador limita los canales con
-  `tajo`.
+  ×15), suma seguidores y sufre funas. **Carrera larga**, como en los Sims: al
+  acabar el tronco se elige rama; cada puesto da una ventaja 🏅 para siempre
+  (más tiempo, un fallo gratis, menos cansancio…); en lo más alto de una rama
+  te puedes **jubilar** y seguir por la otra, con una **pensión** diaria que se
+  cobra con un botón (IRPF sin cotizar, art. 17.2.a LIRPF); y cada día hay un
+  🌠 **deseo del día** (sacar un 90, fichar de madrugada…) que paga ×1,25 y
+  sube la barra, con racha. Los ascensos de las ramas, las jubilaciones, los
+  exits y los vídeos virales se anuncian en el canal. Un administrador limita
+  los canales con `tajo`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$

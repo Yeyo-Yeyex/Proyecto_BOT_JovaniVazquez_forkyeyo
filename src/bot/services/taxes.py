@@ -620,6 +620,30 @@ def compute_self_employed_payslip(gross: int, recent_income: int) -> Payslip:
     )
 
 
+def compute_pension_payslip(gross: int, recent_income: int) -> Payslip:
+    """«Nómina» de una pensión de jubilación: IRPF sin cotización.
+
+    Las pensiones son rendimientos del trabajo (art. 17.2.a.1ª LIRPF): llevan
+    retención por la escala, con los gastos deducibles y la reducción del art.
+    20 LIRPF como cualquier sueldo, pero el pensionista ya no cotiza a la
+    Seguridad Social y no hay empresa que cotice por él.
+    """
+    if gross <= 0:
+        raise ValueError("El bruto de una nómina debe ser positivo.")
+    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
+    annual = projected / WAGE_YAPDOLLARS_PER_EURO
+    net = max(0.0, annual - WORK_OTHER_EXPENSES_EUR)
+    taxable = max(0.0, net - work_income_reduction(net))
+    rate = round(annual_tax(taxable) / annual * 100, 2) / 100 if annual else 0.0
+    return Payslip(
+        gross=gross,
+        ss_worker=0,
+        irpf=round(gross * rate),
+        ss_employer=0,
+        rates=PayrollRates(0.0, 0.0, rate, False),
+    )
+
+
 def compute_beckham_payslip(gross: int, recent_income: int) -> Payslip:
     """`compute_payslip` con la Ley Beckham (para pasarla como función)."""
     return compute_payslip(gross, recent_income, beckham=True)

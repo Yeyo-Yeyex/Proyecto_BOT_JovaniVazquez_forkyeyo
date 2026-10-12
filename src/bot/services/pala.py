@@ -28,6 +28,11 @@ Todo el dinero pasa por `EconomyService`:
   bruto del turno, que se cobra como cualquier nómina (`pay_salary`; los
   autónomos, con su cuota, que en los falsos autónomos es la tarifa plana).
   Estudiar la oposición no paga nada.
+- Deseo del día: el turno que lo cumple paga `WISH_PAY` veces más; es el mismo
+  bruto de la nómina, sin camino propio.
+- Pensión de jubilación (`claim_pension`): una vez al día, la suma de las
+  pensiones de las ramas de las que se jubiló, por `pay_salary(pension=True)`
+  (rendimiento del trabajo, art. 17.2.a.1ª LIRPF: IRPF sin cotizaciones).
 """
 
 from __future__ import annotations
@@ -37,7 +42,7 @@ import random
 import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.economy import EconomyService, InsufficientFundsError
@@ -86,12 +91,18 @@ from bot.services.work import (
     SICK_PAY_RATE,
     TIRED,
     TRIENNIUM_PAY,
+    WISH_PAY,
+    WISH_PERFORMANCE,
+    Branch,
+    Career,
     Contract,
     Job,
     Mechanic,
     Position,
     ShiftKind,
     ShiftRecord,
+    Wish,
+    WishFacts,
     accident_chance,
     apply_performance,
     battery_now,
@@ -102,6 +113,7 @@ from bot.services.work import (
     is_night,
     next_shift_kind,
     on_leave,
+    open_branches,
     performance_delta,
     promote,
     promotion_blockers,
@@ -111,12 +123,15 @@ from bot.services.work import (
     rested_at,
     roll,
     roll_over_day,
+    settle_branch,
     shift_cost,
     shift_pay,
     triennia,
     viral_roll,
     weather,
     week_of,
+    wish_for,
+    wish_streak,
 )
 from bot.services.work_catalog import (
     CAUGHT_SUSPENDS_IMV,
@@ -129,7 +144,7 @@ from bot.services.work_catalog import (
     events_for,
 )
 from bot.services.work_games import MiniGame, new_game
-from bot.services.work_tools import NO_PERKS, Perks, perks_for
+from bot.services.work_tools import NO_PERKS, Perks, perks_for, with_rewards
 
 if TYPE_CHECKING:
     from bot.repositories.work import WorkRepository
@@ -156,6 +171,8 @@ class Status:
         phase: Situación fiscal (`work.residence_phase`).
         weather: El tiempo de esta hora si el oficio lo nota (`""` si no).
         triennia: Trienios cumplidos si el oficio los cobra.
+        retired: Ramas de este oficio de las que ya se jubiló.
+        wish: El deseo del día (`None` si ya lo cumplió hoy).
     """
 
     contract: Contract
@@ -171,6 +188,29 @@ class Status:
     phase: str = "casa"
     weather: str = ""
     triennia: int = 0
+    retired: frozenset[str] = frozenset()
+    wish: Wish | None = None
+
+    @property
+    def fork(self) -> tuple[Branch, ...]:
+        """Ramas entre las que elegir en el próximo ascenso (vacío si no toca elegir)."""
+        if not self.job.forks(self.contract.level, self.contract.branch):
+            return ()
+        return open_branches(self.job, self.retired)
+
+    @property
+    def branch(self) -> Branch | None:
+        """Rama en la que está, si está en una."""
+        return self.job.branch(self.contract.branch)
+
+    @property
+    def can_retire(self) -> bool:
+        """Si puede jubilarse: en lo más alto de una rama de la que no se ha jubilado."""
+        return (
+            self.branch is not None
+            and self.contract.level >= self.job.top
+            and self.branch.key not in self.retired
+        )
 
     @property
     def blocked(self) -> bool:
@@ -209,10 +249,8 @@ class Status:
 
     @property
     def next_position(self) -> Position | None:
-        """Puesto siguiente, si lo hay."""
-        if self.contract.level >= self.job.top:
-            return None
-        return self.job.position(self.contract.level + 1)
+        """Puesto siguiente, si lo hay y no toca elegir rama."""
+        return self.job.next_position(self.contract.level, self.contract.branch)
 
     @property
     def sick(self) -> bool:
@@ -269,6 +307,8 @@ class ShiftOutcome:
         followers: Seguidores después del turno; `followers_gained`, los de este turno.
         triennia: Trienios que se cobraron en el turno.
         temario: Preguntas del temario acertadas (turno de estudio).
+        wish: El deseo del día que cumplió este turno (`None` si no cumplió ninguno).
+        wish_streak: Días seguidos cumpliendo el deseo, si lo cumplió.
     """
 
     job: Job
@@ -316,6 +356,8 @@ class ShiftOutcome:
     followers_gained: int = 0
     triennia: int = 0
     temario: int = 0
+    wish: Wish | None = None
+    wish_streak: int = 0
 
     @property
     def night(self) -> bool:
@@ -361,6 +403,41 @@ class EventResult:
     stats: dict[str, int] = field(default_factory=dict)
     #: Evento que viene a continuación (la pregunta de la dimisión).
     follow_up: Event | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Pension:
+    """La pensión de un miembro.
+
+    Attributes:
+        branches: `(oficio, rama)` de las que se jubiló y siguen en el catálogo.
+        amount: Bruto diario: la suma de las pensiones de esas ramas.
+        due: Si hoy aún no la ha cobrado (y hay algo que cobrar).
+    """
+
+    branches: tuple[tuple[Job, Branch], ...]
+    amount: int
+    due: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Retirement:
+    """Lo que pasa al jubilarse de una rama.
+
+    Attributes:
+        job: El oficio.
+        branch: La rama de la que se jubila.
+        title: El puesto que deja (lo más alto de la rama).
+        following: La rama en la que sigue, desde su primer puesto (`None` si ya
+            se jubiló de todas y se queda donde está).
+        status: El contrato después.
+    """
+
+    job: Job
+    branch: Branch
+    title: str
+    following: Branch | None
+    status: Status
 
 
 class WorkService:
@@ -416,21 +493,30 @@ class WorkService:
         leave = on_leave(contract, now)
         roll_over_day(contract, now)
         job = JOB_BY_KEY[contract.job]
+        settle_branch(contract, job)
         days = await self.repository.days_in_position(
             guild_id, user_id, contract.job, contract.level, contract.position_since
         )
         trainings = await self.repository.trainings(guild_id, user_id)
+        retired = frozenset(
+            branch
+            for retired_job, branch in await self.repository.retirements(guild_id, user_id)
+            if retired_job == job.key
+        )
+        today = local_day(now).isoformat()
         blockers = promotion_blockers(
             contract,
             job,
             days_in_position=days,
             trainings=trainings,
-            today=local_day(now).isoformat(),
+            today=today,
+            retired=retired,
         )
+        wish = None if contract.wish_day == today else wish_for(user_id, today, job, contract.level)
         return Status(
             contract=contract,
             job=job,
-            position=job.position(contract.level),
+            position=job.position(contract.level, contract.branch),
             battery=battery_now(contract, now),
             next_kind=next_shift_kind(contract, now),
             blockers=blockers,
@@ -441,10 +527,12 @@ class WorkService:
             phase=residence_phase(contract, now),
             weather=weather(now) if job.weather else "",
             triennia=triennia(contract, now) if job.seniority else 0,
+            retired=retired,
+            wish=wish,
         )
 
-    async def history(self, guild_id: int, user_id: int) -> dict[str, tuple[int, int]]:
-        """`{oficio: (puesto en el que se quedó, puesto máximo)}`."""
+    async def history(self, guild_id: int, user_id: int) -> dict[str, Career]:
+        """`{oficio: Career(puesto en el que se quedó, puesto máximo, rama)}`."""
         return await self.repository.history(guild_id, user_id)
 
     # -- Contratar ----------------------------------------------------------------------
@@ -464,14 +552,21 @@ class WorkService:
             now = self._clock()
             current = await self.repository.contract(guild_id, user_id)
             if current is not None and current.job == job_key:
-                raise WorkError(f"Ya trabajas de {job.position(current.level).title}.")
+                title = job.position(current.level, current.branch).title
+                raise WorkError(f"Ya trabajas de {title}.")
             if current is not None and current.abroad:
                 raise WorkError("Estás en Hong Kong. Vuelve primero y luego cambias de curro.")
             history = await self.repository.history(guild_id, user_id)
-            level = history.get(job_key, (1, 1))[0]
+            career = history.get(job_key, Career(1, 1))
             contract = Contract(
-                job=job_key, level=level, position_since=now, battery_at=now, job_since=now
+                job=job_key,
+                level=career.level,
+                branch=career.branch,
+                position_since=now,
+                battery_at=now,
+                job_since=now,
             )
+            settle_branch(contract, job)
             if current is not None:
                 contract.battery = battery_now(current, now)
                 for name in (
@@ -496,6 +591,9 @@ class WorkService:
                     "rating",
                     "blocked_until",
                     "followers",
+                    # El deseo del día también: cambiar de curro no da otro.
+                    "wish_day",
+                    "wish_streak",
                 ):
                     setattr(contract, name, getattr(current, name))
             await self.repository.save_contract(guild_id, user_id, contract)
@@ -574,7 +672,7 @@ class WorkService:
             )
         if kind is ShiftKind.BLACK and not black_ok:
             raise NeedsBlack()
-        perks = perks_for(status.job.key, status.position.mechanic, tools)
+        perks = self._perks(status, status.position.mechanic, tools)
         game = new_game(
             status.position,
             self.rng,
@@ -596,6 +694,15 @@ class WorkService:
             weather=status.weather,
         )
 
+    @staticmethod
+    def _perks(status: Status, mechanic: Mechanic, tools: Collection[str]) -> Perks:
+        """Herramientas de la tienda que sirven más las ventajas ganadas en el oficio."""
+        contract = status.contract
+        return with_rewards(
+            perks_for(status.job.key, mechanic, tools),
+            status.job.perks(contract.level, contract.branch),
+        )
+
     def _study_shift(self, status: Status, tools: Collection[str]) -> Shift:
         """Prepara un turno de estudio: el test del temario, sin sueldo."""
         job = status.job
@@ -610,7 +717,7 @@ class WorkService:
             0,
             job.study,
         )
-        perks = perks_for(job.key, Mechanic.DIALOGUE, tools)
+        perks = self._perks(status, Mechanic.DIALOGUE, tools)
         game = new_game(
             position, self.rng, now=status.now, tired=status.battery < TIRED, perks=perks
         )
@@ -645,7 +752,7 @@ class WorkService:
         now: float,
     ) -> tuple[Payslip | ForeignPayslip, int]:
         """Paga un bruto por el camino que toque: nómina, autónomo, Beckham o Hong Kong."""
-        position = JOB_BY_KEY[contract.job].position(contract.level)
+        position = JOB_BY_KEY[contract.job].position(contract.level, contract.branch)
         if contract.abroad:
             today = local_day(now).isoformat()
             if contract.exempt_day != today:
@@ -711,9 +818,8 @@ class WorkService:
         if contract.shift_day != today.isoformat():
             contract.streak_days += 1
             contract.shift_day = today.isoformat()
-        contract.battery = battery_before - shift_cost(
-            kind, remote=shift.remote, calima=shift.weather == "calima"
-        )
+        cost = shift_cost(kind, remote=shift.remote, calima=shift.weather == "calima")
+        contract.battery = battery_before - cost * (1 - shift.perks.battery)
         contract.battery_at = now
         family = family_cost(
             kind,
@@ -748,6 +854,9 @@ class WorkService:
         viral = viral_roll(self.rng) if job.viral else 0.0
         if viral:
             gross = max(1, round(gross * viral))
+        wish = self._wish(user_id, contract, job, shift, battery_before, viral, now)
+        if wish is not None:
+            gross = round(gross * WISH_PAY)
         payslip: Payslip | None = None
         foreign: ForeignPayslip | None = None
         black = fine = options_added = exit_payout = 0
@@ -816,9 +925,12 @@ class WorkService:
         if game.mechanic is Mechanic.CALC:
             progress["best"] = progress.get("best", 0) + game.correct
         delta = performance_delta(score, kind, remote=shift.remote, cap=job.ordinary_cap)
+        if wish is not None:
+            delta += WISH_PERFORMANCE
         performance = apply_performance(contract, delta, tenured=job.tenured(contract.level))
         if performance == "demoted":
             contract.position_since = now
+            settle_branch(contract, job)
 
         # Valoración de la app: por debajo del mínimo, desconexión.
         blocked = False
@@ -875,7 +987,12 @@ class WorkService:
                 event = EVENT_BY_KEY["desconexion"]
             elif roll(self.rng, EVENT_CHANCE):
                 options = events_for(
-                    job.key, contract.level, contract.family, abroad=bool(abroad), phase=phase
+                    job.key,
+                    contract.level,
+                    contract.family,
+                    abroad=bool(abroad),
+                    phase=phase,
+                    branch=contract.branch,
                 )
                 event = self.rng.choice(options) if options else None
 
@@ -926,7 +1043,48 @@ class WorkService:
             followers=contract.followers if job.viral else 0,
             followers_gained=gained,
             triennia=years,
+            wish=wish,
+            wish_streak=contract.wish_streak if wish is not None else 0,
         )
+
+    def _wish(
+        self,
+        user_id: int,
+        contract: Contract,
+        job: Job,
+        shift: Shift,
+        battery_before: float,
+        viral: float,
+        now: float,
+    ) -> Wish | None:
+        """El deseo del día, si este turno lo cumple (y lo apunta en el contrato).
+
+        Se mira con el puesto de antes de mover la barra, el mismo que veía el
+        panel al fichar. Debe llamarse después de contar el turno en la jornada.
+        """
+        today = local_day(now)
+        if contract.wish_day == today.isoformat():
+            return None
+        game = shift.game
+        facts = WishFacts(
+            score=game.score(),
+            kind=shift.kind,
+            battery_before=battery_before,
+            hour=datetime.fromtimestamp(now, TIMEZONE).hour,
+            weather=shift.weather,
+            time_left=game.time_left,
+            seconds=game.seconds,
+            completed=game.completed,
+            shifts_today=contract.shifts_today,
+            remote=shift.remote,
+            viral=viral,
+        )
+        wish = wish_for(user_id, today.isoformat(), job, contract.level)
+        if not wish.met(facts):
+            return None
+        contract.wish_streak = wish_streak(contract, today)
+        contract.wish_day = today.isoformat()
+        return wish
 
     async def _finish_study(
         self, guild_id: int, user_id: int, shift: Shift, contract: Contract, now: float
@@ -1103,7 +1261,7 @@ class WorkService:
                 raise WorkError("No tienes curro.")
             now = self._clock()
             job = JOB_BY_KEY[contract.job]
-            base = job.position(contract.level).base_pay
+            base = job.position(contract.level, contract.branch).base_pay
             outcome = event.options[option][1]
             result = EventResult(event=event, text=outcome.text)
             if outcome.stat:
@@ -1161,6 +1319,7 @@ class WorkService:
                 contract.performance = PERFORMANCE_START
                 contract.progress = {}
                 contract.position_since = now
+                settle_branch(contract, job)
                 result.demoted = True
             if event is not RESIGN_EVENT:
                 contract.progress["events"] = contract.progress.get("events", 0) + 1
@@ -1169,11 +1328,15 @@ class WorkService:
 
     # -- Ascensos -----------------------------------------------------------------------
 
-    async def accept_promotion(self, guild_id: int, user_id: int) -> Status:
+    async def accept_promotion(self, guild_id: int, user_id: int, branch: str = "") -> Status:
         """Acepta el ascenso si toca.
 
+        Args:
+            branch: Rama elegida, obligatoria si el ascenso sale del tronco (y
+                entonces tiene que ser una de las que quedan, `Status.fork`).
+
         Raises:
-            WorkError: Si todavía no toca (con lo que falta).
+            WorkError: Si todavía no toca (con lo que falta) o la rama no vale.
         """
         async with self._lock(guild_id, user_id):
             status = await self.status(guild_id, user_id)
@@ -1181,9 +1344,94 @@ class WorkService:
                 raise WorkError("No tienes curro.")
             if not status.promotion_ready:
                 raise WorkError("Aún no te toca:\n- " + "\n- ".join(status.blockers))
-            promote(status.contract, status.now)
+            if status.fork:
+                if branch not in {b.key for b in status.fork}:
+                    raise WorkError("Elige una de las ramas que te ofrecen.")
+            else:
+                branch = ""
+            promote(status.contract, status.now, branch)
             await self.repository.save_contract(guild_id, user_id, status.contract)
             return await self._status(guild_id, user_id, status.contract)
+
+    async def retire(self, guild_id: int, user_id: int) -> Retirement:
+        """Se jubila de la rama en la que está (en lo más alto de ella).
+
+        Desde ese mismo día cobra su pensión (`claim_pension`). Sigue en el oficio
+        por la otra rama, desde su primer puesto, con la barra a la mitad; si ya
+        se jubiló de todas, se queda donde está.
+
+        Raises:
+            WorkError: Si no está en lo más alto de una rama o ya se jubiló de ella.
+        """
+        async with self._lock(guild_id, user_id):
+            status = await self.status(guild_id, user_id)
+            if status is None or not status.can_retire:
+                raise WorkError("Para jubilarte tienes que llegar a lo más alto de una rama.")
+            job, branch = status.job, status.branch
+            assert branch is not None
+            contract = status.contract
+            title = status.position.title
+            remaining = open_branches(job, status.retired | {branch.key})
+            following = remaining[0] if remaining else None
+            if following is not None:
+                contract.branch = following.key
+                contract.level = job.trunk_top + 1
+                contract.performance = PERFORMANCE_START
+                contract.warned = False
+                contract.progress = {}
+                contract.position_since = status.now
+                contract.declined_day = ""
+            try:
+                await self.repository.retire(guild_id, user_id, branch.key, contract, status.now)
+            except ValueError as error:
+                raise WorkError(str(error)) from error
+            after = await self._status(guild_id, user_id, contract)
+            return Retirement(job, branch, title, following, after)
+
+    async def pension(self, guild_id: int, user_id: int) -> Pension:
+        """La pensión de un miembro (con o sin contrato)."""
+        retired = await self.repository.retirements(guild_id, user_id)
+        branches = []
+        for job_key, branch_key in sorted(retired):
+            job = JOB_BY_KEY.get(job_key)
+            branch = job.branch(branch_key) if job is not None else None
+            if job is not None and branch is not None:
+                branches.append((job, branch))
+        amount = sum(branch.pension for _job, branch in branches)
+        today = local_day(self._clock()).isoformat()
+        claimed = await self.repository.pension_day(guild_id, user_id)
+        return Pension(tuple(branches), amount, amount > 0 and claimed != today)
+
+    async def claim_pension(self, guild_id: int, user_id: int) -> tuple[Payslip, int]:
+        """Cobra la pensión del día.
+
+        Tratamiento fiscal: rendimiento del trabajo (art. 17.2.a.1ª LIRPF), con
+        retención de IRPF y sin cotizaciones (`pay_salary(pension=True)`). El
+        día se apunta antes de pagar, para que dos clics no cobren dos veces; si
+        el pago falla, se deshace.
+
+        Returns:
+            `(nómina, saldo final)`.
+
+        Raises:
+            WorkError: Si no tiene pensión o ya la cobró hoy.
+        """
+        async with self._lock(guild_id, user_id):
+            pension = await self.pension(guild_id, user_id)
+            if not pension.amount:
+                raise WorkError("No tienes pensión. Para eso hay que jubilarse, mi amor.")
+            today = local_day(self._clock()).isoformat()
+            previous = await self.repository.claim_pension_day(guild_id, user_id, today)
+            if previous is None:
+                raise WorkError("Ya cobraste la pensión de hoy. Vuelve mañana.")
+            try:
+                result = await self.economy.pay_salary(
+                    guild_id, user_id, gross=pension.amount, concept="pala:pension", pension=True
+                )
+            except BaseException:
+                await self.repository.restore_pension_day(guild_id, user_id, previous)
+                raise
+            return result.payslip, result.balance
 
     async def decline_promotion(self, guild_id: int, user_id: int) -> None:
         """Rechaza el ascenso de hoy (mañana te lo vuelven a ofrecer)."""
