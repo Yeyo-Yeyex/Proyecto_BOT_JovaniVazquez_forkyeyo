@@ -700,6 +700,11 @@ async def test_un_turno_limpio_y_rapido_cuenta_para_sus_logros(tmp_path: Path, d
     assert add["work_posters"] == len(shift.game.rounds)
     assert add["work_memory_flawless"] == 1 and add["work_fast"] == 1
     assert "work_first_miss" not in add and "work_last_second" not in add
+    assert "work_constitution" not in add
+    from datetime import datetime
+
+    outcome.now = datetime(2026, 12, 6, 12, tzinfo=TIMEZONE).timestamp()
+    assert work_stats(outcome).add["work_constitution"] == 1
 
 
 # -- Reparto: el tiempo, la valoración de la app y la tarifa plana -------------------------

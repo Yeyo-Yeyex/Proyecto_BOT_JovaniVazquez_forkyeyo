@@ -257,10 +257,12 @@ python -m bot
   **Gestionar apodos** para el DNI falso).
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
-  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, que
-  ya tiene la carrera larga: 5 puestos de tronco (de pegacarteles a portavoz) y
-  dos ramas de 5 más, 🏛️ Moncloa (hasta consejero de una eléctrica) y 🇪🇺
-  Bruselas (hasta comisario europeo). Cada turno es un minijuego de decidir rápido, de
+  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política y la
+  obra, que ya tienen la carrera larga: 5 puestos de tronco y dos ramas de 5
+  más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
+  consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
+  va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
+  de fútbol) o 🚄 Obra pública (hasta presidente de una constructora del IBEX). Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
   mandar cada papel a su negociado, elegir el pedido que más paga por

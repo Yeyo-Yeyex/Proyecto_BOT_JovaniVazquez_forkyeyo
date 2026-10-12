@@ -372,7 +372,11 @@ PRODUCED_STATS = {
     "work_plenary", "work_amendments", "work_lobbies", "work_trilogues", "work_commission",
     "work_censure_survived", "work_snap_election", "work_partner_deal", "work_partner_refused",
     "work_cis", "work_omnibus", "work_suitcase", "work_suitcase_refused", "work_caught_olaf",
-    "work_strasbourg", "work_per_diem", "work_lobby_dinner",
+    "work_strasbourg", "work_per_diem", "work_lobby_dinner", "work_constitution",
+    # Las ramas de la obra: Ladrillo y Obra pública
+    "work_top_obra_ladrillo", "work_top_obra_publica", "work_retired_obra", "work_flats",
+    "work_land", "work_bank", "work_mayor", "work_box", "work_tenders", "work_concessions",
+    "work_ministry_deals", "work_abroad_deals", "work_caught_sepblac",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

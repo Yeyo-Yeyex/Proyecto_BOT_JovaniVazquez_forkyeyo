@@ -966,6 +966,7 @@ HOLIDAYS: dict[tuple[int, int], str] = {
     (6, 1): "Reyes",
     (1, 5): "el Día del Trabajador",
     (30, 5): "el Día de Canarias",
+    (6, 12): "el Día de la Constitución",
     (24, 12): "Nochebuena",
     (25, 12): "Navidad",
     (31, 12): "Nochevieja",

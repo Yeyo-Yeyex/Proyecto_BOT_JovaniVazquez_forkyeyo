@@ -20,11 +20,16 @@ formaciones cuestan de 2 a 4 turnos del puesto al que dan acceso. El análisis
 que fija estas cifras está en `docs/economia-trabajo.md`.
 
 La política es una sátira del PSOE, el partido del Gobierno, y de sus
-tópicos (sobres, enchufes, comisiones, puertas giratorias). El reparto se ríe
-de las apps de reparto y de los falsos autónomos; el funcionariado, de la
-burocracia (con las preguntas del temario de verdad); el influencer, de la
-fama a golpes. No se nombra a ninguna persona ni marca real: los personajes
-son genéricos.
+tópicos (sobres, enchufes, comisiones, puertas giratorias, el Falcon, la
+máquina del fango). La obra se ríe del ladrillo (recalificaciones, la
+burbuja, los pisos turísticos) y de la obra pública (modificados, aeropuertos
+sin aviones, el AVE a ninguna parte). El reparto se ríe de las apps de reparto
+y de los falsos autónomos; el funcionariado, de la burocracia (con las
+preguntas del temario de verdad); el influencer, de la fama a golpes. Los
+personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
+Trump, Erdoğan…) salen como en el resto del bot, con las fuentes de ironía de
+la Biblia. No se nombra a ninguna persona que no sea figura pública ni a una
+marca.
 """
 
 from __future__ import annotations
@@ -79,7 +84,7 @@ OBRA = Job(
     key="obra",
     name="Obra",
     emoji="🦺",
-    blurb="El oficio de la pala. Estable, duro y con jubilados mirando.",
+    blurb="De la pala al palco o al IBEX. Estable, duro y con jubilados mirando.",
     rgb=(240, 160, 30),
     positions=(
         Position(
@@ -102,6 +107,7 @@ OBRA = Job(
             days=3,
             content="cavar:3",
             training=Training("prl20", "el curso de PRL de 20 horas", 6_000),
+            perk=Perk("Sabes leer el plano: +5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3,
@@ -112,6 +118,7 @@ OBRA = Job(
             (_good(5), Task("clean", "Haz 4 turnos sin romper nada", "clean", 4)),
             days=4,
             content="cavar:4",
+            perk=Perk("Bocadillo de las diez: cada turno cansa un 10 % menos.", battery=0.10),
         ),
         Position(
             4,
@@ -123,6 +130,7 @@ OBRA = Job(
             days=5,
             content="vagos",
             training=Training("recurso", "el curso de recurso preventivo de 60 horas", 15_000),
+            perk=Perk("Ojo de encargado: un fallo gratis por turno.", retry=True),
         ),
         Position(
             5,
@@ -130,11 +138,220 @@ OBRA = Job(
             13_000,
             Mechanic.SPOT,
             60,
-            (),
-            days=0,
+            (
+                Task("caught", "Encuentra 25 partidas con sobrecoste", "caught", 25),
+                _good(5),
+                _events(3),
+            ),
+            days=4,
             content="sobrecostes",
             self_employed=True,
             training=Training("rea", "el alta en el Registro de Empresas Acreditadas", 50_000),
+            perk=Perk(
+                "Gestoría de confianza: una respuesta mala tachada en los diálogos.", fifty=True
+            ),
+        ),
+    ),
+    branches=(
+        Branch(
+            "ladrillo",
+            "Ladrillo",
+            "🏖️",
+            "Promotora en la costa: pisos sobre plano, recalificaciones y la burbuja "
+            "que siempre vuelve. Autónomo. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6,
+                    "Promotor inmobiliario",
+                    15_000,
+                    Mechanic.MEMORY,
+                    60,
+                    (
+                        Task(
+                            "perfect",
+                            "Enseña 15 pisos piloto tal como los pidió el cliente",
+                            "perfect_rounds",
+                            15,
+                        ),
+                        _good(5),
+                        _events(2),
+                    ),
+                    days=5,
+                    content="pisos:4",
+                    self_employed=True,
+                    perk=Perk(
+                        "Oficina de ventas en primera línea: +5 % de tiempo.", extra_time=0.05
+                    ),
+                ),
+                Position(
+                    7,
+                    "Urbanizador de la costa",
+                    18_000,
+                    Mechanic.SORT,
+                    60,
+                    (
+                        Task("sorted", "Manda 30 terrenos a su sitio", "sorted", 30),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=5,
+                    content="terrenos",
+                    self_employed=True,
+                    training=Training(
+                        "costas", "el informe favorable de Costas (con mariscada)", 50_000
+                    ),
+                    perk=Perk(
+                        "Todoterreno de promotor: cada turno cansa un 5 % menos.", battery=0.05
+                    ),
+                ),
+                Position(
+                    8,
+                    "Rey del ladrillo",
+                    21_500,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Refinancia 25 deudas sin asustar al banco", "smooth", 25),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=6,
+                    content="banco",
+                    self_employed=True,
+                    perk=Perk("Asesor fiscal en Andorra: un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9,
+                    "Magnate inmobiliario",
+                    26_000,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Cierra 30 convenios con el alcalde", "smooth", 30),
+                        _good(6),
+                        _events(4),
+                    ),
+                    days=6,
+                    content="alcalde",
+                    self_employed=True,
+                    training=Training(
+                        "convenio", "un convenio urbanístico con el ayuntamiento", 75_000
+                    ),
+                    perk=Perk(
+                        "El alcalde en favoritos: cada turno cansa un 5 % menos.", battery=0.05
+                    ),
+                ),
+                Position(
+                    10,
+                    "Presidente de un club de fútbol",
+                    32_000,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (),
+                    days=0,
+                    content="palco",
+                    self_employed=True,
+                    perk=Perk("Palco VIP con catering: +10 % de tiempo.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="promotor jubilado con el chalet embargado",
+        ),
+        Branch(
+            "publica",
+            "Obra pública",
+            "🚄",
+            "Gran constructora: túneles, licitaciones, modificados y ese AVE que para en "
+            "mitad del campo. En nómina. Cobra menos, se jubila mejor.",
+            (
+                Position(
+                    6,
+                    "Jefe de obra de una gran constructora",
+                    14_000,
+                    Mechanic.DIG,
+                    60,
+                    (
+                        _good(5),
+                        Task("clean", "Haz 6 turnos de tuneladora sin romper nada", "clean", 6),
+                        _events(2),
+                    ),
+                    days=5,
+                    content="cavar:5",
+                    perk=Perk(
+                        "Caseta de obra con aire acondicionado: cada turno cansa un 5 % menos.",
+                        battery=0.05,
+                    ),
+                ),
+                Position(
+                    7,
+                    "Director de licitaciones",
+                    15_500,
+                    Mechanic.SORT,
+                    60,
+                    (
+                        Task("sorted", "Manda 30 concursos a su sitio", "sorted", 30),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=5,
+                    content="licitaciones",
+                    training=Training(
+                        "clasificacion", "la clasificación de contratista del Estado", 45_000
+                    ),
+                    perk=Perk(
+                        "Los pliegos, de memoria: +5 % de tiempo en el minijuego.", extra_time=0.05
+                    ),
+                ),
+                Position(
+                    8,
+                    "Director de concesiones",
+                    17_000,
+                    Mechanic.MEMORY,
+                    60,
+                    (
+                        Task(
+                            "perfect",
+                            "Renueva 15 tandas de concesiones sin olvidar ninguna",
+                            "perfect_rounds",
+                            15,
+                        ),
+                        _good(6),
+                        _events(3),
+                    ),
+                    days=6,
+                    content="concesiones:4",
+                    perk=Perk("Jefe de gabinete: un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9,
+                    "Consejero delegado",
+                    18_800,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (
+                        Task("smooth", "Saca 30 modificados en el ministerio", "smooth", 30),
+                        _good(6),
+                        _events(4),
+                    ),
+                    days=6,
+                    content="fomento",
+                    training=Training("ute", "la UTE con las otras cinco grandes", 55_000),
+                    perk=Perk("Chófer de la empresa: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10,
+                    "Presidente de una constructora del IBEX",
+                    21_000,
+                    Mechanic.DIALOGUE,
+                    60,
+                    (),
+                    days=0,
+                    content="internacional",
+                    perk=Perk("Avión privado del consejo: +10 % de tiempo.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="expresidente de constructora con medalla al mérito civil",
         ),
     ),
 )
@@ -864,6 +1081,8 @@ MEMORY_PACKS: dict[str, MemoryPack] = {
             ("🧱", "Muro del solar"),
             ("🏪", "Persiana del bazar"),
             ("📮", "Buzón de Correos"),
+            ("🗿", "Pedestal sin estatua (Ley de Memoria)"),
+            ("🚌", "Guagua del IMSERSO"),
         ),
     ),
     "votos": MemoryPack(
@@ -968,6 +1187,39 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
                 "Toda mi actividad está publicada en el portal de transparencia.",
                 ("Sí, pero poquito.", "Estuve en espíritu."),
             ),
+            Dialogue(
+                "¿Le ha llamado Puigdemont desde Waterloo?",
+                "Hablamos con todas las fuerzas democráticas por la convivencia.",
+                ("Sí, desde el maletero de un coche.", "Cada noche, para darme las buenas noches."),
+            ),
+            Dialogue(
+                "Ayuso dice que su ley es comunismo. ¿Qué responde?",
+                "Nosotros, a lo nuestro: gobernar para la mayoría social.",
+                ("Que tiene razón: la copiamos de Cuba.", "Que a mí también me gusta la fruta."),
+            ),
+            Dialogue(
+                "¿Es verdad que tenía Pegasus en el móvil?",
+                "La seguridad del Estado no se comenta en una rueda de prensa.",
+                (
+                    "Sí, y me escuchan cantar en la ducha.",
+                    "Lo tenía, pero me he pasado a un Nokia.",
+                ),
+            ),
+            Dialogue(
+                "Feijóo dice que usted miente más que habla.",
+                "La oposición vive instalada en el ruido y en la máquina del fango.",
+                ("Es que hablo poco.", "Un vaso es un vaso, y una mentira es una mentira."),
+            ),
+            Dialogue(
+                "¿Qué opina de los aranceles de Trump al aceite?",
+                "Defenderemos a nuestros sectores productivos de la mano de Europa.",
+                ("Que nos hunde el olivar.", "Que le mando papas arrugadas a ver si se ablanda."),
+            ),
+            Dialogue(
+                "¿En qué se han gastado los fondos europeos?",
+                "Es la mayor transformación de nuestra economía en décadas.",
+                ("¿Qué? ¿Qué? ¡Toma mangó!", "En un PERTE de cosas variadas."),
+            ),
         ),
     ),
     "comision": DialoguePack(
@@ -1019,6 +1271,26 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
                 "Colaboraremos con esta comisión en todo lo que permita la ley.",
                 ("No, se mojaron.", "Sí, los que no he quemado."),
             ),
+            Dialogue(
+                "¿Le mandó usted mensajes de ánimo al tesorero?",
+                "No me consta haber enviado mensajes de esa naturaleza.",
+                ("Sí: «Sé fuerte».", "Le mandé un sticker de un gatito con casco."),
+            ),
+            Dialogue(
+                "¿Qué hacía de madrugada en el aeropuerto con una vicepresidenta venezolana?",
+                "Fue un encuentro fortuito en una zona de tránsito, señoría.",
+                ("Que no pisara suelo español, técnicamente.", "Traía unas maletas; no pregunté."),
+            ),
+            Dialogue(
+                "¿Sabe usted lo que es una caja B?",
+                "Conozco la contabilidad del partido, que está auditada y es ejemplar.",
+                ("La que va debajo de la caja A.", "La llevaba en el maletero, como todo."),
+            ),
+            Dialogue(
+                "¿Qué recuerda de aquella cena con el comisionista?",
+                "Señoría, recuerdo que se habló de fútbol. Nada más.",
+                ("Que pidió café… ¡Quiero café!", "Que pagó él, en chistorras."),
+            ),
         ),
     ),
     "consejo": DialoguePack(
@@ -1064,6 +1336,24 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
                 "El presidente se duerme a mitad de su propio discurso.",
                 "Aplaudes fuerte para que se despierte con dignidad.",
                 ("Le haces una foto para el grupo.", "Te vas a casa, que ya has cobrado."),
+            ),
+            Dialogue(
+                "Un consejero pregunta si las placas solares nos quitan el negocio.",
+                "Diversificamos: cobramos el sol al precio del gas.",
+                ("Pues sí, el sol no se puede facturar.", "Propongo bajar la luz por solidaridad."),
+            ),
+            Dialogue(
+                "Trump amenaza con aranceles al gas europeo.",
+                "Una gran oportunidad para revisar las tarifas al alza.",
+                ("Habrá que bajar márgenes.", "Le llamamos y le pedimos perdón en inglés."),
+            ),
+            Dialogue(
+                "Llega al consejo un exministro, recién salido del Gobierno.",
+                "Bienvenido: aquí tu experiencia vale oro, y tu agenda, más.",
+                (
+                    "¿Y tú qué sabes de electricidad?",
+                    "Pedimos antes un informe de incompatibilidades.",
+                ),
             ),
         ),
     ),
@@ -1514,6 +1804,10 @@ SORT_PACKS: dict[str, SortPack] = {
             ("Una promesa electoral de 2019 que ya nadie recuerda", 3),
             ("Una queja del Tribunal de Cuentas que «ya se verá»", 3),
             ("Una ley de transparencia que nunca llegó a la mesa", 3),
+            ("Un informe de la UCO que salpica a tu jefe de gabinete", 3),
+            ("La respuesta a los aranceles de Trump, antes de que abran las bolsas", 0),
+            ("La amnistía que piden siete votos desde Waterloo", 1),
+            ("La fecha de una exhumación, justo antes de las elecciones", 2),
         ),
     ),
     "enmiendas": SortPack(
@@ -1539,6 +1833,9 @@ SORT_PACKS: dict[str, SortPack] = {
             ("Contradice un artículo del Tratado de Funcionamiento de la UE", 3),
             ("Llega fuera de plazo, entregada en mano a las tres de la mañana", 3),
             ("Propone legislar sobre una competencia que es solo de los Estados miembros", 3),
+            ("Obliga a aceptar las cookies dos veces, por si acaso", 2),
+            ("Rebautiza el reglamento de pesca como «Ley Eurovisión»", 3),
+            ("Une la propuesta del tapón pegado y la de los bricks en un solo artículo", 1),
         ),
     ),
 }
@@ -1613,6 +1910,9 @@ MEMORY_PACKS.update(
                 ("🗣️", "Un traspaso de competencias"),
                 ("🚧", "Una autovía"),
                 ("🎫", "Una cartera"),
+                ("🧳", "Un viaje a Waterloo"),
+                ("🕊️", "Una amnistía"),
+                ("🚂", "El Cercanías transferido"),
             ),
         ),
         "plenos": MemoryPack(
@@ -1980,6 +2280,35 @@ DIALOGUE_PACKS.update(
                     "Porque la realidad es dinámica y la política, también.",
                     ("Por los votos.", "No he cambiado: la que cambió fue mi memoria."),
                 ),
+                Dialogue(
+                    "¿Han cambiado la amnistía por la investidura?",
+                    "Hemos apostado por la convivencia y por pasar página.",
+                    (
+                        "Sí, y ahora me toca explicarlo.",
+                        "La amnistía se pagó en Waterloo, en efectivo.",
+                    ),
+                ),
+                Dialogue(
+                    "Vox ha presentado una moción montado a caballo. ¿Qué opina?",
+                    "Con todo respeto, la derecha y la ultraderecha cada día se parecen más.",
+                    (
+                        "Si viene a caballo, por lo menos la leo.",
+                        "Que se traigan también la Reconquista.",
+                    ),
+                ),
+                Dialogue(
+                    "¿Qué le parece lo último que ha dicho Yolanda Díaz?",
+                    "En el Gobierno de coalición hay diversidad y una sola dirección.",
+                    (
+                        "No lo he entendido, pero sonreía mucho.",
+                        "Que monte otro partido, que ya toca.",
+                    ),
+                ),
+                Dialogue(
+                    "¿Qué opina de Milei y su motosierra?",
+                    "Respetamos a todos los gobiernos elegidos democráticamente.",
+                    ("Que me la preste para los ministerios.", "Que se corte antes el pelo."),
+                ),
             ),
         ),
         "ministerio": DialoguePack(
@@ -2035,6 +2364,21 @@ DIALOGUE_PACKS.update(
                     "Toca presentar un recorte y todos los grupos se te echan encima.",
                     "Llamarlo «optimización del gasto» y repetirlo cinco veces.",
                     ("Pedir perdón a todo el mundo.", "Culpar a la herencia de Felipe II."),
+                ),
+                Dialogue(
+                    "Toca inaugurar un pantano y no hay pantano.",
+                    "Inauguras la primera piedra; el agua ya vendrá.",
+                    ("Cancelas el acto.", "Inauguras un charco y lo graba el NO-DO."),
+                ),
+                Dialogue(
+                    "Bruselas pide justificar los fondos Next Generation.",
+                    "Mandas un Excel de 4.000 filas con la palabra «resiliencia».",
+                    ("Reconoces que se fueron en asesores.", "Mandas una postal de Canarias."),
+                ),
+                Dialogue(
+                    "Tu jefe de gabinete sale en un audio con un comisionista.",
+                    "Lo cesas «a petición propia» y agradeces los servicios prestados.",
+                    ("Lo ascienes a secretario de Estado.", "Pides que te pasen el audio entero."),
                 ),
             ),
         ),
@@ -2102,6 +2446,29 @@ DIALOGUE_PACKS.update(
                     "Aquí lo que importa es la concordia, señoría, y sus tribunales ya veremos.",
                     ("Claro, ya está firmado.", "Solo a mis amigos."),
                 ),
+                Dialogue(
+                    "¿Por qué no condena usted a Maduro?",
+                    "Y ustedes, ¿por qué no condenaron los sobres de su tesorero?",
+                    ("Porque nunca enseña las actas.", "Lo condenaré cuando publique las actas."),
+                ),
+                Dialogue(
+                    "¿Va a escribir otra carta a la ciudadanía?",
+                    "Escribiré cuando la máquina del fango deje de funcionar, señoría.",
+                    (
+                        "Sí, y me iré cinco días a reflexionar.",
+                        "Ya la tengo escrita para el jueves.",
+                    ),
+                ),
+                Dialogue(
+                    "¿Le parece normal un Gobierno con veintidós ministerios?",
+                    "Más asesores tenían ustedes en Génova.",
+                    ("Son pocos: quiero treinta.", "Uno por socio, más o menos."),
+                ),
+                Dialogue(
+                    "Feijóo le pregunta cuándo va a dimitir.",
+                    "Usted ganó las elecciones y no gobierna: dimita usted de la oposición.",
+                    ("Mañana a primera hora.", "Le dejo el sillón un rato, si quiere."),
+                ),
             ),
         ),
         "lobbies": DialoguePack(
@@ -2157,6 +2524,20 @@ DIALOGUE_PACKS.update(
                     "Una alianza de empresas energéticas te invita a su cóctel anual.",
                     "Pasas un rato, saludas y te vas antes del brindis.",
                     ("Brindas con ellos por el reglamento.", "Te quedas a dormir en el hotel."),
+                ),
+                Dialogue(
+                    "Un enviado de Musk pide que el reglamento proteja «la libertad de "
+                    "expresión» de su dueño.",
+                    "Lo escuchas y le pides que lo mande por el registro de transparencia.",
+                    (
+                        "Le pones un check azul al reglamento.",
+                        "Le prometes una exención para Marte.",
+                    ),
+                ),
+                Dialogue(
+                    "Un lobby de Pekín te regala un móvil de última generación.",
+                    "Lo devuelves con una nota amable; tu móvil ya te espía bastante.",
+                    ("Lo usas para el trabajo.", "Te haces un selfi con él y lo subes a TikTok."),
                 ),
             ),
         ),
@@ -2214,6 +2595,24 @@ DIALOGUE_PACKS.update(
                     "Cifras entre corchetes y un «sin perjuicio del marco financiero».",
                     ("Fijas cantidades exactas.", "Dices que cada uno pague lo suyo."),
                 ),
+                Dialogue(
+                    "La presidencia húngara amenaza con vetar el texto.",
+                    "Una «declaración de la presidencia» anexa que no obliga a nadie.",
+                    ("Aceptas el veto.", "Llamas a Orbán a las tres de la mañana."),
+                ),
+                Dialogue(
+                    "Macron quiere dar un discurso de veinte minutos antes de firmar.",
+                    "Le das la palabra y adelantas el café para todos.",
+                    ("Le cortas el micrófono.", "Le pides que lo resuma en un tuit."),
+                ),
+                Dialogue(
+                    "Los fabricantes piden una prórroga para el tapón pegado a la botella.",
+                    "Prórroga «técnica», con cláusula de revisión en 2030.",
+                    (
+                        "Despegar los tapones de toda Europa.",
+                        "Que cada uno lleve el tapón en la mano.",
+                    ),
+                ),
             ),
         ),
         "comisario": DialoguePack(
@@ -2270,6 +2669,379 @@ DIALOGUE_PACKS.update(
                     "Una asociación pide transparencia sobre una reunión a puerta cerrada.",
                     "«El documento solicitado queda fuera del ámbito del Reglamento 1049/2001».",
                     ("Les envías las actas completas.", "Les dices que se las inventen."),
+                ),
+                Dialogue(
+                    "Trump anuncia aranceles del 50 % a todo lo europeo.",
+                    "«La Unión responderá de manera firme, proporcionada y unida».",
+                    (
+                        "Le mandas una tarta con un 50 % menos.",
+                        "Te rindes y compras gas a precio Trump.",
+                    ),
+                ),
+                Dialogue(
+                    "Erdoğan te invita a su palacio de mil habitaciones a hablar de la adhesión.",
+                    "«El diálogo con Turquía sigue abierto en el marco de las negociaciones».",
+                    ("Vas y te pierdes en el ala oeste.", "Le dices que entra en la UE el lunes."),
+                ),
+                Dialogue(
+                    "Boris Johnson quiere volver a la UE, pero sin pagar.",
+                    "«La puerta está abierta conforme al artículo 49 del Tratado».",
+                    (
+                        "Le dices que sí y que traiga el té.",
+                        "Le pides el cheque británico de vuelta.",
+                    ),
+                ),
+                Dialogue(
+                    "Un país pide que las cookies no haya que aceptarlas.",
+                    "«La Comisión evaluará la experiencia del usuario al revisar la directiva».",
+                    ("Aceptas todas las cookies.", "Prohíbes las galletas."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+# -- Contenido: las ramas de la obra (Ladrillo y Obra pública) --------------------------
+
+MEMORY_PACKS.update(
+    {
+        "pisos": MemoryPack(
+            "🏖️ Venta sobre plano. El cliente {n} quiere su piso con esto, por orden:",
+            "Enséñale el piso piloto en el mismo orden (y no menciones la depuradora).",
+            (
+                ("🏊", "Piscina comunitaria"),
+                ("🅿️", "Plaza de garaje"),
+                ("🌊", "Vistas al mar (de lado)"),
+                ("⛳", "Campo de golf"),
+                ("🧱", "Trastero"),
+                ("🛗", "Ascensor"),
+                ("🌴", "Palmera"),
+                ("☀️", "Solárium"),
+                ("🛋️", "Cocina americana"),
+            ),
+        ),
+        "concesiones": MemoryPack(
+            "📋 Consejo de concesiones. Renueva en este orden (tanda {n}):",
+            "Renueva las concesiones en el mismo orden, antes de que caduquen.",
+            (
+                ("🛣️", "Autopista radial (rescatada)"),
+                ("✈️", "Aeropuerto sin aviones"),
+                ("🚄", "Estación del AVE en mitad del campo"),
+                ("🚇", "Línea de metro"),
+                ("💧", "Desaladora"),
+                ("🅿️", "Parking municipal"),
+                ("🏟️", "Estadio"),
+                ("🏥", "Hospital de gestión privada"),
+                ("⚓", "Puerto deportivo"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "terrenos": SortPack(
+            "🗺️ Eres urbanizador. Cada terreno va a su sitio: construir ya, recalificar "
+            "(con mariscada), dejarlo protegido o devolverlo, que es de Costas.",
+            "🌄 Terreno {n}/{total}:",
+            ("🏗️ Construir ya", "🦐 Recalificar", "🦎 Protegido", "🌊 Es de Costas"),
+            (
+                ("Un solar con licencia en el centro del pueblo", 0),
+                ("Una parcela urbanizable al lado del polígono", 0),
+                ("El hueco de una gasolinera cerrada", 0),
+                ("Un pinar justo detrás de tu última urbanización", 1),
+                ("Una finca de plataneras que «ya no da»", 1),
+                ("El campo de fútbol del pueblo", 1),
+                ("Un barranco «seco desde hace años»", 1),
+                ("El hábitat del lagarto gigante de El Hierro", 2),
+                ("Las dunas de Maspalomas", 2),
+                ("Un yacimiento con grabados guanches", 2),
+                ("La primera línea de una playa virgen", 3),
+                ("Un hotel a medio hacer en plena arena desde 2008", 3),
+                ("Un paseo marítimo «que total, nadie usa»", 3),
+            ),
+        ),
+        "licitaciones": SortPack(
+            "📑 Eres director de licitaciones. Cada concurso va a su sitio: nos "
+            "presentamos, en UTE con la competencia, baja temeraria (y luego "
+            "modificado) o pasamos.",
+            "📂 Concurso {n}/{total}:",
+            (
+                "✅ Nos presentamos",
+                "🤝 En UTE con la competencia",
+                "📉 Baja y luego modificado",
+                "🚪 Pasamos",
+            ),
+            (
+                ("Un tramo de autovía normal, con presupuesto razonable", 0),
+                ("La reforma de un colegio, con plazos claros", 0),
+                ("Un hospital con el proyecto ya redactado", 0),
+                ("Un AVE de 4.000 millones que ninguna empresa puede hacer sola", 1),
+                ("Un túnel bajo el mar que asusta hasta al banco", 1),
+                ("Ocho estadios para un Mundial con un plazo imposible", 1),
+                ("Un tramo con un presupuesto que no da ni para el asfalto", 2),
+                ("Una obra que el ministro quiere inaugurar antes de las elecciones", 2),
+                ("Un puerto que «seguro que se amplía después»", 2),
+                ("Un concurso a medida de otra empresa (su logo sale en el pliego)", 3),
+                ("Una obra en un país del Sahel que va por su tercer golpe de Estado", 3),
+                ("Un pliego que exige haber construido antes un muro de 3.000 km", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+DIALOGUE_PACKS.update(
+    {
+        "banco": DialoguePack(
+            "🏦 Reunión con el banco para refinanciar. Regla de oro: **nunca digas que no "
+            "puedes pagar: el mercado está «en un momento de oportunidad».**",
+            (
+                Dialogue(
+                    "¿Cómo piensa devolver los 40 millones?",
+                    "Con la venta de la fase dos, que tiene una demanda espectacular.",
+                    ("No pienso.", "Con un décimo de Navidad que llevo en la cartera."),
+                ),
+                Dialogue(
+                    "Los pisos de la fase uno siguen vacíos.",
+                    "Están en fase de comercialización estratégica.",
+                    ("Sí, solo vive un gato.", "Es que están en mitad del desierto."),
+                ),
+                Dialogue(
+                    "El tasador dice que valen la mitad.",
+                    "Buscamos otro tasador con más visión de futuro.",
+                    ("Tiene razón el hombre.", "La mitad de la mitad, si le soy sincero."),
+                ),
+                Dialogue(
+                    "¿Qué avales tiene?",
+                    "Veinte años en el sector y la confianza del ayuntamiento.",
+                    ("La bici de mi hijo.", "Una foto con Florentino, firmada."),
+                ),
+                Dialogue(
+                    "En la tele dicen que estalla la burbuja.",
+                    "El ladrillo nunca baja: como mucho, se toma un respiro.",
+                    ("Ya ha estallado; por eso vengo.", "¿Qué burbuja? ¿La del jacuzzi?"),
+                ),
+                Dialogue(
+                    "Necesitamos ver las cuentas de la sociedad.",
+                    "Se las mando el lunes, auditadas y en tres idiomas.",
+                    ("Están en una servilleta.", "¿De cuál de las cuarenta sociedades?"),
+                ),
+                Dialogue(
+                    "El banco se quiere quedar los pisos como pago.",
+                    "Dación en pago no: refinanciamos a treinta años y todos contentos.",
+                    ("Vale, quedáoslos.", "Os doy también el chalet, que me ahoga."),
+                ),
+                Dialogue(
+                    "¿Por qué hay un yate a nombre de la empresa?",
+                    "Es la oficina de ventas flotante para el mercado internacional.",
+                    ("Para escaparme.", "Es de mi cuñado, que vive en Andorra."),
+                ),
+                Dialogue(
+                    "¿Le suena la palabra «concurso de acreedores»?",
+                    "Como concepto académico, sí.",
+                    (
+                        "La estoy rellenando ahora mismo.",
+                        "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+                    ),
+                ),
+            ),
+        ),
+        "alcalde": DialoguePack(
+            "🏛️ Comisión de urbanismo con el alcalde. Regla de oro: **todo se arregla con un "
+            "convenio urbanístico y una foto con casco.**",
+            (
+                Dialogue(
+                    "El alcalde dice que el pinar es suelo protegido.",
+                    "Proponemos un convenio: el pinar se urbaniza y el pueblo gana un "
+                    "polideportivo.",
+                    ("Lo talamos y ya se verá.", "Le invito a una mariscada y lo hablamos."),
+                ),
+                Dialogue(
+                    "La oposición pide un informe medioambiental.",
+                    "Encantados: lo encargamos nosotros, que conocemos a un técnico estupendo.",
+                    ("¿Medioambiental? ¿Eso qué es?", "Que lo haga mi primo, que es fontanero."),
+                ),
+                Dialogue(
+                    "Los vecinos protestan por el rascacielos en primera línea.",
+                    "Es un hito arquitectónico que pondrá el pueblo en el mapa.",
+                    ("Que se muden.", "Le quito una planta y se queda en veintinueve."),
+                ),
+                Dialogue(
+                    "El alcalde pregunta qué gana el pueblo con todo esto.",
+                    "Una rotonda con una escultura de dos millones.",
+                    ("Atascos.", "El pueblo, nada; usted, ya hablaremos."),
+                ),
+                Dialogue(
+                    "El secretario municipal no quiere firmar.",
+                    "Pedimos un informe jurídico externo que diga que sí.",
+                    (
+                        "Lo cambiamos por otro secretario.",
+                        "Firmo yo por él, que tengo buena letra.",
+                    ),
+                ),
+                Dialogue(
+                    "Te piden viviendas protegidas en la urbanización.",
+                    "Las hacemos, en la parcela que da justo a la autopista.",
+                    ("Ni una.", "Todas protegidas, ¡wepa!"),
+                ),
+                Dialogue(
+                    "La prensa local habla de «un nuevo Marbella».",
+                    "Marbella es un modelo de éxito turístico, no hay más que verla.",
+                    (
+                        "Ojalá: allí sí se recalificaba bien.",
+                        "Sin comentarios, que me escucha el juez.",
+                    ),
+                ),
+                Dialogue(
+                    "Bruselas avisa de que la Ley de Costas prohíbe construir en la arena.",
+                    "Construimos a 101 metros y llamamos «paseo marítimo» a la terraza.",
+                    ("Pues construimos en el mar.", "Que vengan a echarnos de la playa."),
+                ),
+            ),
+        ),
+        "palco": DialoguePack(
+            "⚽ Palco del estadio. Regla de oro: **en el palco no se habla de fútbol; se habla "
+            "de obra pública y recalificaciones.**",
+            (
+                Dialogue(
+                    "El alcalde te pregunta qué tal va el equipo.",
+                    "Muy bien, igual que la recalificación de la ciudad deportiva.",
+                    ("Fatal, bajamos.", "Ni idea: no he visto un partido en mi vida."),
+                ),
+                Dialogue(
+                    "Un ministro quiere saber si apoyarás el Mundial en España.",
+                    "Si hay estadio nuevo, mis máquinas están listas.",
+                    ("No, que sale carísimo.", "Solo si juega Messi."),
+                ),
+                Dialogue(
+                    "La afición pide fichajes.",
+                    "Primero el estadio nuevo: los fichajes vienen con los palcos VIP.",
+                    ("Fichamos al portero de mi cuñado.", "Que los pague la afición."),
+                ),
+                Dialogue(
+                    "Un jeque quiere comprar el club.",
+                    "Hablamos, pero el suelo de la ciudad deportiva se queda en casa.",
+                    ("Vendido, con todos dentro.", "Solo si me regala un Mundial."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta quién construye el estadio nuevo.",
+                    "La mejor empresa del país, adjudicada con todas las garantías.",
+                    ("La mía, casualmente.", "Lo firmé en una servilleta en el descanso."),
+                ),
+                Dialogue(
+                    "Te sientas al lado del presidente del Gobierno.",
+                    "Le hablas del tiempo y, en el descanso, del AVE a tu pueblo.",
+                    ("Le pides que dimita.", "Le cantas el himno del rival."),
+                ),
+                Dialogue(
+                    "El árbitro pita un penalti en contra.",
+                    "Pides calma y un comunicado oficial contra el sistema.",
+                    ("Bajas al campo a por él.", "Le mandas un Bizum al árbitro."),
+                ),
+                Dialogue(
+                    "El equipo baja a segunda.",
+                    "Es un año de transición hacia un proyecto ganador (y un estadio nuevo).",
+                    ("Lo pago con dinero del ayuntamiento.", "Me compro otro club."),
+                ),
+            ),
+        ),
+        "fomento": DialoguePack(
+            "🚄 Despacho del Ministerio de Transportes. Regla de oro: **pide el modificado y "
+            "ofrece la inauguración.**",
+            (
+                Dialogue(
+                    "El ministro pregunta por qué el AVE va con tres años de retraso.",
+                    "Por las mejoras de seguridad que exige la nueva normativa europea.",
+                    ("Por la siesta.", "Porque se nos olvidó el túnel."),
+                ),
+                Dialogue(
+                    "El presupuesto del túnel se ha duplicado.",
+                    "Es un modificado técnico por la geología, imprevisible como la política.",
+                    ("Es que cavamos dos veces.", "Pusimos mármol en el túnel."),
+                ),
+                Dialogue(
+                    "Te piden que el tren pare en el pueblo del ministro.",
+                    "Una estación nueva, con aparcamiento, en mitad del campo.",
+                    ("Imposible.", "Que vaya andando, que es sano."),
+                ),
+                Dialogue(
+                    "La UCO investiga al asesor del ministerio que os adjudicaba obras.",
+                    "Colaboraremos con la justicia; nuestras adjudicaciones son impecables.",
+                    ("Nos cobraba en chistorras.", "Ya le dije que no usara WhatsApp."),
+                ),
+                Dialogue(
+                    "Los trenes nuevos no caben por los túneles.",
+                    "Se adaptarán los túneles con un nuevo contrato.",
+                    ("Los trenes los hicieron mal.", "Que pasen de lado."),
+                ),
+                Dialogue(
+                    "Hay que poner la primera piedra antes de las elecciones.",
+                    "La ponemos el viernes; el resto de piedras ya irán llegando.",
+                    ("No hay ni proyecto.", "La ponemos de cartón piedra."),
+                ),
+                Dialogue(
+                    "El Tribunal de Cuentas pregunta por el aeropuerto sin aviones.",
+                    "Es una infraestructura estratégica a la espera de demanda.",
+                    ("Tiene estatua, ¿no le vale?", "Lo usan los conejos para correr."),
+                ),
+                Dialogue(
+                    "El ministerio quiere licitar sin la ampliación que pedisteis.",
+                    "Sin ampliación no hay oferta: el mercado está muy tensionado.",
+                    ("Vale, la hacemos gratis.", "La hacemos y la cobramos en B."),
+                ),
+            ),
+        ),
+        "internacional": DialoguePack(
+            "🌍 Contratos por el mundo. Regla de oro: **firma todo, cobra por adelantado y que "
+            "el sobrecoste lo pague el país.**",
+            (
+                Dialogue(
+                    "Trump quiere un muro en la frontera y dice que lo paga México.",
+                    "Encantados: nuestra tarifa, en dólares y por adelantado.",
+                    ("Que lo pague México, pues.", "Le hacemos una valla de cañas."),
+                ),
+                Dialogue(
+                    "Erdoğan quiere ampliar su palacio de mil habitaciones.",
+                    "Mil cien, con helipuerto, y la factura en euros.",
+                    ("¿No le bastan mil?", "Le recomendamos un piso en Vallecas."),
+                ),
+                Dialogue(
+                    "Arabia quiere un tren de alta velocidad en mitad del desierto.",
+                    "Firmamos, y el sobrecoste de la arena lo pactamos después.",
+                    (
+                        "La arena estropea las vías; mejor no.",
+                        "Mejor un camello de alta velocidad.",
+                    ),
+                ),
+                Dialogue(
+                    "Panamá dice que la ampliación del canal cuesta más de lo pactado.",
+                    "Abrimos un arbitraje internacional que dure diez años.",
+                    ("Pagamos la diferencia.", "Lo dejamos a medias y nos vamos."),
+                ),
+                Dialogue(
+                    "Kim Jong-un quiere un hotel de 105 plantas para su cumpleaños.",
+                    "Lo acabamos para la fecha y cobramos antes del aplauso obligatorio.",
+                    ("Ya tiene uno sin terminar desde 1987.", "Le regalamos un misil de cartón."),
+                ),
+                Dialogue(
+                    "Milei cancela toda la obra pública con una motosierra.",
+                    "Le ofrecemos una concesión privada con peaje: ¡libertad, carajo!",
+                    ("Le pedimos que no corte.", "Le mandamos una motosierra más grande."),
+                ),
+                Dialogue(
+                    "Qatar necesita ocho estadios con aire acondicionado para un Mundial.",
+                    "Con aire, con césped y con calendario de pagos.",
+                    ("Que jueguen en invierno.", "Mejor un estadio en Las Palmas."),
+                ),
+                Dialogue(
+                    "Xi te invita a entrar en la Ruta de la Seda.",
+                    "Un memorando de entendimiento con las cláusulas en chino y en inglés.",
+                    ("Sí, pero que me den TikTok.", "Me lo pienso, que me baja el crédito social."),
+                ),
+                Dialogue(
+                    "Maduro quiere un metro nuevo en Caracas y paga en bolívares.",
+                    "Por adelantado, en euros y depositado en Suiza.",
+                    ("Aceptamos bolívares.", "Primero, que enseñe las actas."),
                 ),
             ),
         ),
@@ -2523,6 +3295,31 @@ EVENTS: tuple[Event, ...] = (
         ),
         jobs=("obra",),
     ),
+    Event(
+        "sin_factura",
+        "🧾 Un cliente te pide la reforma del baño «sin factura, que sale más barato».",
+        (
+            (
+                "Sin factura",
+                Outcome(
+                    "Sin factura, sin IGIC y sin garantía. Cobras en un sobre de la panadería.",
+                    black=0.8,
+                    risk=0.2,
+                    stat="work_no_invoice",
+                ),
+            ),
+            (
+                "Con factura",
+                Outcome(
+                    "Factura con IGIC. El cliente te mira como si fueras Hacienda.",
+                    pay=0.4,
+                    performance=-5,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=5,
+    ),
     # -- Hostelería ---------------------------------------------------------------------
     Event(
         "propina",
@@ -2612,6 +3409,7 @@ EVENTS: tuple[Event, ...] = (
                 Outcome(
                     "Le dices que no hay plaza. Te mandan a pegar carteles a Fuerteventura.",
                     performance=-15,
+                    stat="work_cronyism_refused",
                 ),
             ),
         ),
@@ -2658,10 +3456,69 @@ EVENTS: tuple[Event, ...] = (
                     stat="work_falcon",
                 ),
             ),
-            ("Voy en guagua", Outcome("Vas en guagua. Llegas tarde y sin batería.", battery=-15)),
+            (
+                "Voy en guagua",
+                Outcome(
+                    "Vas en guagua. Llegas tarde y sin batería.",
+                    battery=-15,
+                    stat="work_falcon_refused",
+                ),
+            ),
         ),
         jobs=("politica",),
         min_level=4,
+    ),
+    Event(
+        "fango",
+        "📰 Un digital publica que tienes un yate en Marbella. No tienes ni bici.",
+        (
+            (
+                "Máquina del fango",
+                Outcome(
+                    "Denuncias la máquina del fango en un vídeo de cinco minutos. El bulo se "
+                    "hace el doble de famoso, pero los tuyos te aplauden.",
+                    performance=10,
+                    stat="work_fango",
+                ),
+            ),
+            (
+                "Lo desmiento con papeles",
+                Outcome(
+                    "Publicas tu declaración de bienes. Nadie la lee; todos comparten el bulo.",
+                    performance=-5,
+                    battery=-5,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=2,
+    ),
+    Event(
+        "pegasus",
+        "📱 Tu móvil se calienta solo y pita de madrugada. Los de informática susurran: «Pegasus».",
+        (
+            (
+                "Móvil nuevo",
+                Outcome(
+                    "Te compras otro móvil y metes el viejo en la nevera. Por si acaso.",
+                    performance=5,
+                    battery=-5,
+                    stat="work_pegasus",
+                ),
+            ),
+            (
+                "Que escuchen",
+                Outcome(
+                    "Que escuchen lo aburrida que es tu agenda: plenos, comidas y la siesta. "
+                    "En algún despacho, alguien bosteza.",
+                    performance=-5,
+                    family=-3,
+                    stat="work_pegasus_listened",
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=3,
     ),
     # -- Sanidad ------------------------------------------------------------------------
     Event(
@@ -3465,6 +4322,7 @@ EVENTS: tuple[Event, ...] = (
                 Outcome(
                     "La publicas tal cual. Sale fatal y el titular es tuyo.",
                     performance=-10,
+                    stat="work_cis_honest",
                 ),
             ),
         ),
@@ -3616,6 +4474,365 @@ EVENTS: tuple[Event, ...] = (
         min_level=6,
         branches=("bruselas",),
     ),
+    Event(
+        "exhumacion",
+        "⚰️ Faltan tres meses para las elecciones y alguien propone otra exhumación «histórica».",
+        (
+            (
+                "Con helicóptero",
+                Outcome(
+                    "Helicóptero, cámaras y directo como en el NO-DO. Franco sigue muerto y tú "
+                    "subes dos puntos en el CIS.",
+                    pay=0.5,
+                    performance=15,
+                    stat="work_exhumation",
+                ),
+            ),
+            (
+                "No toca",
+                Outcome(
+                    "Lo dejas para después de las elecciones. Tu jefe de campaña llora en el baño.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("moncloa",),
+    ),
+    Event(
+        "waterloo",
+        "🧳 Para sacar la próxima ley te faltan siete votos, y se deciden en Waterloo.",
+        (
+            (
+                "Voy a Waterloo",
+                Outcome(
+                    "Viajas a Bélgica, te hacen esperar en la puerta y vuelves con los votos "
+                    "y una lista de deberes más larga que el Estatut.",
+                    pay=0.5,
+                    performance=15,
+                    battery=-15,
+                    family=-5,
+                    stat="work_waterloo",
+                ),
+            ),
+            (
+                "Que vengan ellos",
+                Outcome(
+                    "Esperas sentado. Los votos no llegan y la ley, tampoco.",
+                    performance=-15,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=7,
+        branches=("moncloa",),
+    ),
+    Event(
+        "carta",
+        "✉️ Te sientes acosado por la prensa. Tu equipo propone una carta a la ciudadanía "
+        "y cinco días de reflexión.",
+        (
+            (
+                "Escribo la carta",
+                Outcome(
+                    "Escribes la carta, desapareces cinco días y vuelves más fuerte. El país, "
+                    "en vilo; el resultado, el de siempre.",
+                    pay=0.5,
+                    performance=20,
+                    family=10,
+                    stat="work_letter",
+                ),
+            ),
+            (
+                "Sigo trabajando",
+                Outcome(
+                    "Sigues al pie del cañón. Ni una portada te dedican.",
+                    performance=-5,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=9,
+        branches=("moncloa",),
+    ),
+    Event(
+        "aranceles",
+        "🇺🇸 Trump anuncia aranceles del 200 % al aceite, al vino y a los quesos europeos.",
+        (
+            (
+                "Respuesta firme",
+                Outcome(
+                    "Aranceles espejo a las motos y al bourbon. Trump te llama «tremendous» y "
+                    "sube otro 100 %.",
+                    pay=0.5,
+                    performance=10,
+                    battery=-10,
+                    stat="work_tariffs",
+                ),
+            ),
+            (
+                "Llamar al Despacho Oval",
+                Outcome(
+                    "Llamas, te ponen en espera con el himno de fondo y cuelgas sin hablar con "
+                    "nadie.",
+                    performance=-5,
+                    battery=-5,
+                    stat="work_oval_office",
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=7,
+        branches=("bruselas",),
+    ),
+    Event(
+        "tapon",
+        "🍶 Toca votar si el tapón pegado a la botella llega también a los bricks de leche.",
+        (
+            (
+                "Tapón para todos",
+                Outcome(
+                    "Aprobado. Medio continente se mancha la nariz al beber. Bruselas en estado "
+                    "puro.",
+                    performance=10,
+                    stat="work_cap",
+                ),
+            ),
+            (
+                "Libertad de tapón",
+                Outcome(
+                    "Votas en contra. En tu grupo te llaman euroescéptico y te quitan el turno "
+                    "de palabra.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("politica",),
+        min_level=6,
+        branches=("bruselas",),
+    ),
+    # -- Obra: Ladrillo -----------------------------------------------------------------
+    Event(
+        "burbuja",
+        "📉 En la tele dicen que estalla la burbuja. Tienes trescientos pisos sin vender.",
+        (
+            (
+                "Vender a un fondo",
+                Outcome(
+                    "Se los vendes todos a un fondo buitre a mitad de precio. Al mes los "
+                    "alquila al doble.",
+                    pay=0.6,
+                    performance=-5,
+                    stat="work_vulture",
+                ),
+            ),
+            (
+                "Aguantar",
+                Outcome(
+                    "«El ladrillo nunca baja». Aguantas con los pisos vacíos y el banco "
+                    "llamando a diario.",
+                    performance=15,
+                    battery=-15,
+                    family=-5,
+                    stat="work_bubble_held",
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=6,
+        branches=("ladrillo",),
+    ),
+    Event(
+        "recalificacion",
+        "🌲 El concejal de urbanismo te ofrece recalificar un pinar «a cambio de un detalle».",
+        (
+            (
+                "Un detalle",
+                Outcome(
+                    "Un detalle en un sobre y el pinar ya es urbanizable. Las ardillas, "
+                    "desahuciadas.",
+                    black=2.5,
+                    risk=0.3,
+                    caught_by="uco",
+                    stat="work_rezoning",
+                ),
+            ),
+            (
+                "Por la vía legal",
+                Outcome(
+                    "Pides la licencia por la vía legal. Te la darán en 2041.",
+                    performance=-10,
+                    stat="work_rezoning_refused",
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=6,
+        branches=("ladrillo",),
+    ),
+    Event(
+        "oligarca",
+        "🛥️ Un oligarca quiere diez áticos al contado, en billetes de 500 y sin preguntas.",
+        (
+            (
+                "Vendo",
+                Outcome(
+                    "Cuentas los billetes con una máquina que se calienta. Venta cerrada.",
+                    pay=1.0,
+                    risk=0.25,
+                    fine=1.5,
+                    caught_by="sepblac",
+                    stat="work_oligarch",
+                ),
+            ),
+            (
+                "Transferencia o nada",
+                Outcome(
+                    "Le pides una transferencia con su origen. Se va a la promoción de al lado.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=7,
+        branches=("ladrillo",),
+    ),
+    Event(
+        "turisticos",
+        "🧳 Un fondo quiere tu bloque nuevo entero para pisos turísticos.",
+        (
+            (
+                "Todo turístico",
+                Outcome(
+                    "Cuarenta pisos con caja de llaves en el portal. Los vecinos de toda la "
+                    "vida, a la periferia.",
+                    pay=0.7,
+                    family=-3,
+                    stat="work_tourist_flats",
+                ),
+            ),
+            (
+                "Para el barrio",
+                Outcome(
+                    "Lo alquilas a gente del barrio. Ganas menos y te saludan por la calle.",
+                    performance=-5,
+                    family=5,
+                    stat="work_social_rent",
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=6,
+        branches=("ladrillo",),
+    ),
+    # -- Obra: Obra pública -------------------------------------------------------------
+    Event(
+        "modificado",
+        "📈 La obra va por la mitad y el presupuesto ya está gastado.",
+        (
+            (
+                "Modificado al canto",
+                Outcome(
+                    "Pides un modificado «por la geología». Te lo aprueban en una semana: el "
+                    "ministerio también quiere inaugurar.",
+                    pay=0.7,
+                    performance=15,
+                    stat="work_change_order",
+                ),
+            ),
+            (
+                "Acabar con lo que hay",
+                Outcome(
+                    "Terminas con lo que queda. La carretera acaba en un descampado.",
+                    performance=-10,
+                    battery=-15,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=6,
+        branches=("publica",),
+    ),
+    Event(
+        "inauguracion",
+        "✂️ El ministro quiere inaugurar la autovía antes de las elecciones. Falta la mitad.",
+        (
+            (
+                "Cortar la cinta",
+                Outcome(
+                    "Cinta, tijeras y foto en el kilómetro 3. El kilómetro 4 sigue siendo tierra.",
+                    pay=0.5,
+                    performance=15,
+                    stat="work_ribbon",
+                ),
+            ),
+            (
+                "Cuando esté acabada",
+                Outcome(
+                    "Le dices que cuando esté acabada. El ministro deja de contestarte.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=6,
+        branches=("publica",),
+    ),
+    Event(
+        "aeropuerto",
+        "✈️ Te encargan un aeropuerto en una provincia sin vuelos. Con estatua en la rotonda.",
+        (
+            (
+                "Lo construyo",
+                Outcome(
+                    "Lo levantas en tiempo récord. La estatua mide veinticuatro metros; los "
+                    "aviones, de momento, cero.",
+                    pay=0.8,
+                    performance=10,
+                    stat="work_ghost_airport",
+                ),
+            ),
+            (
+                "Mejor un tren",
+                Outcome(
+                    "Propones un tren. Te miran como si hubieras pedido un concurso limpio.",
+                    performance=-5,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=7,
+        branches=("publica",),
+    ),
+    Event(
+        "muro",
+        "🧱 Trump te llama: quiere un muro en la frontera y jura que lo paga México.",
+        (
+            (
+                "Por adelantado",
+                Outcome(
+                    "Presupuesto en dólares, cobrado por adelantado. Quién lo pague al final "
+                    "ya no es cosa tuya.",
+                    pay=1.0,
+                    performance=10,
+                    battery=-10,
+                    stat="work_wall",
+                ),
+            ),
+            (
+                "Mejor un puente",
+                Outcome(
+                    "Le propones un puente. Te cuelga y te pone un arancel.",
+                    performance=-5,
+                    family=5,
+                ),
+            ),
+        ),
+        jobs=("obra",),
+        min_level=8,
+        branches=("publica",),
+    ),
 )
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
@@ -3649,6 +4866,10 @@ CAUGHT_TEXT: dict[str, str] = {
     "regalos": (
         "📨 **Hacienda cruza datos con la marca.** El regalo era renta en especie: lo "
         "regularizas con un 20 % de recargo."
+    ),
+    "sepblac": (
+        "🏦 **El Sepblac (prevención del blanqueo) pregunta por los áticos.** Los billetes "
+        "de 500 dejan rastro: multa por no identificar el origen del dinero."
     ),
     "olaf": (
         "🇪🇺 **La OLAF (Oficina Europea de Lucha contra el Fraude) abre una investigación.** "
