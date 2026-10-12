@@ -9,8 +9,9 @@ Internet.
 
 from __future__ import annotations
 
+import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Límite de duración por pista, para evitar que una única canción (o un
 # directo sin duración conocida) acapare el reproductor de un servidor.
@@ -18,6 +19,10 @@ MAX_TRACK_DURATION_SECONDS = 30 * 60
 
 # Límite de pistas en cola por servidor, para acotar el uso de memoria.
 MAX_QUEUE_SIZE = 50
+
+# Las URL de audio de YouTube caducan a las ~6 h. Una pista que lleva más de
+# esto en cola se vuelve a resolver justo antes de sonar.
+STREAM_TTL_SECONDS = 2 * 3600
 
 # El volumen se expresa al usuario como un porcentaje entero; internamente
 # se traduce a un factor 0.0-2.0 que acepta `discord.PCMVolumeTransformer`.
@@ -55,6 +60,12 @@ class Track:
     # YouTube rechaza con 403 las peticiones de `ffmpeg` que no las
     # reproducen exactamente, así que hay que reenviarlas al reproducir.
     http_headers: dict[str, str] | None = None
+    # Momento (`time.monotonic`) en que se resolvió `stream_url`.
+    resolved_at: float = field(default_factory=time.monotonic, compare=False)
+
+    def is_stale(self, now: float | None = None) -> bool:
+        """Indica si `stream_url` es tan vieja que puede haber caducado."""
+        return (time.monotonic() if now is None else now) - self.resolved_at > STREAM_TTL_SECONDS
 
 
 def format_duration(duration_seconds: int | None) -> str:
@@ -146,8 +157,8 @@ def format_ffmpeg_headers(http_headers: dict[str, str] | None) -> str | None:
 class MusicQueue:
     """Cola de reproducción en memoria, aislada por servidor.
 
-    No es segura para hilos; el cog que la usa debe serializar el acceso
-    con un `asyncio.Lock` si varias interacciones pueden llegar a la vez.
+    No es segura para hilos: se usa solo desde el event loop, donde cada
+    operación es atómica porque no espera nada.
     """
 
     def __init__(self, max_size: int = MAX_QUEUE_SIZE) -> None:

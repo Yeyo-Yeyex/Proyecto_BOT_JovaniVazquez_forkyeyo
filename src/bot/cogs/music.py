@@ -1,11 +1,17 @@
 """Reproductor de música por servidor: cola, control y conexión de voz.
 
 Cada servidor tiene su propio `GuildMusicState` con cola, pista actual y
-volumen independientes. La extracción de audio (`yt-dlp`) y la propia
-reproducción (`ffmpeg`) son operaciones bloqueantes o dirigidas por hilos
-ajenos al event loop; este cog las aísla con `asyncio.to_thread` y con el
-patrón `after=` de `discord.py`, que llama a nuestro código desde un hilo
-distinto y por eso se reencola con `asyncio.run_coroutine_threadsafe`.
+volumen independientes. Un único bucle por servidor (`_player_loop`) saca
+pistas de la cola, las reproduce y espera a que acaben; cuando la cola se
+queda vacía espera nuevas pistas y, pasado `IDLE_DISCONNECT_SECONDS`, sale
+del canal. Parar es cancelar ese bucle: su `finally` limpia la cola y
+desconecta, sea cual sea el motivo (`parar`, inactividad, canal vacío o
+expulsión). Así no hay banderas compartidas entre el hilo de audio y el
+event loop.
+
+La extracción de audio (`yt-dlp`) es bloqueante y va en `asyncio.to_thread`.
+El hilo de audio de `discord.py` solo avisa del fin de pista con
+`loop.call_soon_threadsafe`.
 
 Cada acción tiene un único nombre corto, idéntico en las dos interfaces:
 comando de aplicación (`/poner`) y comando de texto (`.poner`). Ambas
@@ -17,6 +23,7 @@ que oculta si el origen fue una `discord.Interaction` o un mensaje de texto.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 import discord
@@ -28,6 +35,7 @@ from bot.cogs import achievements as logros
 from bot.services.achievements import StatDelta, music_queue_stats, music_volume_stats
 from bot.services.music import (
     DEFAULT_VOLUME_PERCENT,
+    MAX_TRACK_DURATION_SECONDS,
     MAX_VOLUME_PERCENT,
     MIN_VOLUME_PERCENT,
     MusicQueue,
@@ -49,6 +57,11 @@ logger = logging.getLogger(__name__)
 # el bot ocupe un canal indefinidamente tras vaciarse la cola.
 IDLE_DISCONNECT_SECONDS = 5 * 60
 
+# Una pista que acaba antes de esto sin que nadie la salte no llegó a sonar:
+# ffmpeg sale enseguida si la URL da 403 o ha caducado, y discord.py no lo
+# trata como error.
+FAILED_START_SECONDS = 3.0
+
 # Reconectar el flujo de audio ante cortes de red transitorios del origen.
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
@@ -62,11 +75,14 @@ class GuildMusicState:
         self.voice_client: discord.VoiceClient | None = None
         self.current: Track | None = None
         self.volume_percent: int = DEFAULT_VOLUME_PERCENT
-        self.lock = asyncio.Lock()
-        self.idle_task: asyncio.Task[None] | None = None
-        # Un `/parar` deliberado pone esto en True para que el callback de
-        # fin de pista no encadene la siguiente canción de la cola.
-        self.stopping = False
+        # Bucle de reproducción (`Music._player_loop`); `None` si no hay.
+        self.player: asyncio.Task[None] | None = None
+        # Despierta al bucle cuando llega una pista con la cola vacía.
+        self.wakeup = asyncio.Event()
+        # Dos `poner` a la vez con el bot fuera del canal conectarían dos veces.
+        self.connect_lock = asyncio.Lock()
+        # `saltar` lo marca para que el corte no se avise como fallo.
+        self.skip_requested = False
         # Canal donde se pidió la última pista, para poder avisar de
         # fallos de reproducción que ocurren fuera de una interacción.
         self.text_channel: discord.abc.Messageable | None = None
@@ -149,41 +165,19 @@ class Music(commands.Cog):
 
         await responder.start_progress()
 
-        if state.voice_client is None:
-            try:
-                if guild.voice_client is not None:
-                    # Conexión ajena a la música: un sonido de entrada de pocos
-                    # segundos (`bot.cogs.entrance`). La música tiene prioridad.
-                    await guild.voice_client.disconnect(force=True)
-                # Ensordecido: Discord deja de enviar al bot el audio de los
-                # demás, que no necesita, y la bajada en voz cae a casi cero.
-                state.voice_client = await member.voice.channel.connect(self_deaf=True)
-            except (discord.ClientException, TimeoutError) as error:
-                logger.warning(
-                    "No se pudo conectar al canal de voz %s del servidor %s: %s",
-                    member.voice.channel.id,
-                    guild.id,
-                    error,
-                )
-                await responder.finish("No se pudo conectar al canal de voz. Inténtalo de nuevo.")
-                return
-
+        # Se busca antes de entrar al canal: si no hay pista, el bot no entra.
         try:
-            info = await asyncio.to_thread(extract_track_info, consulta)
+            track = await self._resolve(consulta, member.display_name)
         except yt_dlp.utils.DownloadError as error:
             logger.info("No se pudo resolver la consulta de música %r: %s", consulta, error)
             await responder.finish(
                 "No se encontró ninguna pista reproducible para esa búsqueda o enlace."
             )
             return
-
-        try:
-            track = build_track_from_info(info, requested_by=member.display_name)
         except TrackTooLongError as error:
-            limit_text = format_duration(30 * 60)
             await responder.finish(
                 f"Esa pista dura demasiado o es un directo sin duración conocida "
-                f"(límite: {limit_text}). Duración detectada: "
+                f"(límite: {format_duration(MAX_TRACK_DURATION_SECONDS)}). Duración detectada: "
                 f"{format_duration(error.duration_seconds)}."
             )
             return
@@ -191,33 +185,26 @@ class Music(commands.Cog):
             await responder.finish("La fuente no proporcionó audio reproducible para esa consulta.")
             return
 
-        async with state.lock:
-            try:
-                state.queue.add(track)
-            except QueueFullError:
-                await responder.finish(
-                    "La cola de este servidor está llena; espera a que avancen pistas."
-                )
-                return
+        if not await self._ensure_connected(state, guild, member.voice.channel):
+            await responder.finish("No se pudo conectar al canal de voz. Inténtalo de nuevo.")
+            return
 
-            state.text_channel = responder.channel
-            position = len(state.queue)
-            starting_now = state.current is None and not (
-                state.voice_client and state.voice_client.is_playing()
+        starting_now = state.current is None and len(state.queue) == 0
+        try:
+            state.queue.add(track)
+        except QueueFullError:
+            await responder.finish(
+                "La cola de este servidor está llena; espera a que avancen pistas."
             )
-            if starting_now:
-                await self._play_next(guild.id)
+            return
+        position = len(state.queue)
+        state.text_channel = responder.channel
+        state.wakeup.set()
+        if state.player is None:
+            state.player = asyncio.create_task(
+                self._player_loop(guild.id), name=f"music-player-{guild.id}"
+            )
 
-        logros.note_for(
-            self.bot,
-            responder,
-            music_queue_stats(
-                query=consulta,
-                title=track.title,
-                duration_seconds=track.duration_seconds,
-                position=1 if starting_now else position,
-            ),
-        )
         if starting_now:
             await responder.finish(
                 f"▶️ Reproduciendo ahora: **{track.title}** "
@@ -228,69 +215,138 @@ class Music(commands.Cog):
                 f"🎶 Añadida a la cola en la posición {position}: **{track.title}** "
                 f"({format_duration(track.duration_seconds)})."
             )
+        logros.note_for(
+            self.bot,
+            responder,
+            music_queue_stats(
+                query=consulta,
+                title=track.title,
+                duration_seconds=track.duration_seconds,
+                position=1 if starting_now else position,
+            ),
+        )
 
-    async def _play_next(self, guild_id: int) -> None:
-        """Reproduce la siguiente pista de la cola, o queda a la espera si no hay más.
+    @staticmethod
+    async def _resolve(query: str, requested_by: str) -> Track:
+        """Busca la consulta con `yt-dlp` fuera del event loop y la valida."""
+        info = await asyncio.to_thread(extract_track_info, query)
+        return build_track_from_info(info, requested_by=requested_by)
 
-        Debe llamarse siempre con `state.lock` ya adquirido.
+    async def _ensure_connected(
+        self,
+        state: GuildMusicState,
+        guild: discord.Guild,
+        channel: discord.VoiceChannel | discord.StageChannel,
+    ) -> bool:
+        """Conecta el bot al canal si aún no lo está; `False` si no se pudo."""
+        async with state.connect_lock:
+            if state.voice_client is not None:
+                return True
+            try:
+                if guild.voice_client is not None:
+                    # Conexión ajena a la música: un sonido de entrada de pocos
+                    # segundos (`bot.cogs.entrance`). La música tiene prioridad.
+                    await guild.voice_client.disconnect(force=True)
+                # Ensordecido: Discord deja de enviar al bot el audio de los
+                # demás, que no necesita, y la bajada en voz cae a casi cero.
+                state.voice_client = await channel.connect(self_deaf=True)
+            except (discord.ClientException, TimeoutError) as error:
+                logger.warning(
+                    "No se pudo conectar al canal de voz %s del servidor %s: %s",
+                    channel.id,
+                    guild.id,
+                    error,
+                )
+                return False
+            return True
+
+    async def _player_loop(self, guild_id: int) -> None:
+        """Reproduce la cola del servidor hasta que se para o se queda inactiva.
+
+        Es la única tarea que cambia `current` y la conexión mientras suena
+        música. Cancelarla es la forma de parar: su `finally` deja el estado
+        limpio y sale del canal.
         """
-        state = self._states.get(guild_id)
-        if state is None or state.voice_client is None:
-            return
-
-        self._cancel_idle_task(state)
-
-        track = state.queue.pop_next()
-        if track is None:
-            state.current = None
-            self._schedule_idle_disconnect(guild_id)
-            return
-
-        state.current = track
+        state = self._states[guild_id]
         try:
+            while state.voice_client is not None and state.voice_client.is_connected():
+                track = state.queue.pop_next()
+                if track is None:
+                    state.wakeup.clear()
+                    try:
+                        await asyncio.wait_for(state.wakeup.wait(), IDLE_DISCONNECT_SECONDS)
+                    except TimeoutError:
+                        return
+                    continue
+                await self._play_track(state, track)
+        except Exception:
+            logger.exception("Error inesperado en el reproductor del servidor %s", guild_id)
+        finally:
+            state.player = None
+            state.current = None
+            state.queue.clear()
+            voice, state.voice_client = state.voice_client, None
+            if voice is not None:
+                voice.stop()
+                try:
+                    await voice.disconnect(force=True)
+                except discord.HTTPException:
+                    logger.warning("Error al desconectar del canal de voz", exc_info=True)
+
+    async def _play_track(self, state: GuildMusicState, track: Track) -> None:
+        """Reproduce una pista y vuelve cuando acaba, se salta o no llega a sonar."""
+        state.current = track
+        state.skip_requested = False
+        try:
+            if track.is_stale():
+                track = await self._resolve(track.webpage_url, track.requested_by)
+                state.current = track
             before_options = FFMPEG_BEFORE_OPTIONS
             headers = format_ffmpeg_headers(track.http_headers)
             if headers:
                 # ffmpeg exige que el valor de -headers vaya entre comillas
                 # y termine en salto de línea; se concatena tras el resto.
                 before_options = f'{before_options} -headers "{headers}"'
-            source = discord.FFmpegPCMAudio(
-                track.stream_url,
-                before_options=before_options,
-                options=FFMPEG_OPTIONS,
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(
+                    track.stream_url, before_options=before_options, options=FFMPEG_OPTIONS
+                ),
+                volume=volume_percent_to_factor(state.volume_percent),
             )
-            volume_source = discord.PCMVolumeTransformer(
-                source, volume=volume_percent_to_factor(state.volume_percent)
-            )
-        except discord.ClientException:
-            logger.exception(
-                "No se pudo iniciar ffmpeg para reproducir en el servidor %s", guild_id
-            )
+            loop = asyncio.get_running_loop()
+            finished = asyncio.Event()
+
+            def _after_playback(error: Exception | None) -> None:
+                # Lo llama el hilo de audio de discord.py, no el event loop.
+                if error is not None:
+                    logger.warning("Error de reproducción de %r: %s", track.title, error)
+                loop.call_soon_threadsafe(finished.set)
+
+            started = loop.time()
+            state.voice_client.play(source, after=_after_playback)
+            await finished.wait()
+            if not state.skip_requested and loop.time() - started < FAILED_START_SECONDS:
+                logger.warning("La pista %r terminó nada más empezar", track.webpage_url)
+                await self._notify(state, f"⚠️ No se pudo reproducir **{track.title}**.")
+        except (
+            yt_dlp.utils.DownloadError,
+            TrackUnavailableError,
+            TrackTooLongError,
+            discord.ClientException,
+        ):
+            logger.warning("No se pudo reproducir %r", track.webpage_url, exc_info=True)
             await self._notify(state, f"⚠️ No se pudo reproducir **{track.title}**.")
-            await self._play_next(guild_id)
+        finally:
+            state.current = None
+
+    async def _stop_player(self, state: GuildMusicState) -> None:
+        """Para la música, vacía la cola y sale del canal (vía el `finally` del bucle)."""
+        player = state.player
+        if player is None or player is asyncio.current_task():
             return
-
-        def _after_playback(error: Exception | None) -> None:
-            # discord.py invoca este callback desde el hilo del reproductor
-            # de audio, nunca desde el event loop: hay que reencolar la
-            # continuación como una tarea segura para hilos.
-            asyncio.run_coroutine_threadsafe(self._advance(guild_id, error), self.bot.loop)
-
-        state.voice_client.play(volume_source, after=_after_playback)
-
-    async def _advance(self, guild_id: int, error: Exception | None) -> None:
-        """Continúa la cola tras el fin de una pista, salvo que sea un `/parar`."""
-        state = self._states.get(guild_id)
-        if state is None:
-            return
-
-        async with state.lock:
-            if state.stopping:
-                state.stopping = False
-                return
-            if error is not None:
-                logger.warning("Error de reproducción en el servidor %s: %s", guild_id, error)
-            await self._play_next(guild_id)
+        player.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await player
 
     async def _notify(self, state: GuildMusicState, content: str) -> None:
         """Avisa en el último canal conocido; ignora fallos de envío."""
@@ -300,50 +356,6 @@ class Music(commands.Cog):
             await state.text_channel.send(content)
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo enviar un aviso de música", exc_info=True)
-
-    def _cancel_idle_task(self, state: GuildMusicState) -> None:
-        """Cancela el temporizador de desconexión por inactividad si existe."""
-        if state.idle_task is not None and not state.idle_task.done():
-            state.idle_task.cancel()
-        state.idle_task = None
-
-    def _schedule_idle_disconnect(self, guild_id: int) -> None:
-        """Programa una desconexión tras `IDLE_DISCONNECT_SECONDS` sin cola."""
-        state = self._states.get(guild_id)
-        if state is None:
-            return
-        self._cancel_idle_task(state)
-        state.idle_task = asyncio.create_task(self._idle_disconnect(guild_id))
-
-    async def _idle_disconnect(self, guild_id: int) -> None:
-        """Desconecta el canal de voz si sigue inactivo tras la espera."""
-        try:
-            await asyncio.sleep(IDLE_DISCONNECT_SECONDS)
-        except asyncio.CancelledError:
-            return
-
-        state = self._states.get(guild_id)
-        if state is None or state.current is not None:
-            return
-        async with state.lock:
-            if state.current is not None or len(state.queue) > 0:
-                return
-            await self._disconnect(state)
-
-    async def _disconnect(self, state: GuildMusicState) -> None:
-        """Detiene la reproducción, vacía la cola y sale del canal de voz."""
-        self._cancel_idle_task(state)
-        state.stopping = True
-        state.queue.clear()
-        state.current = None
-        if state.voice_client is not None:
-            if state.voice_client.is_playing() or state.voice_client.is_paused():
-                state.voice_client.stop()
-            try:
-                await state.voice_client.disconnect(force=True)
-            except discord.HTTPException:
-                logger.warning("Error al desconectar del canal de voz", exc_info=True)
-            state.voice_client = None
 
     @app_commands.command(name="pausar", description="Pausa la canción actual.")
     @app_commands.guild_only()
@@ -394,7 +406,7 @@ class Music(commands.Cog):
     @app_commands.command(name="saltar", description="Salta a la siguiente canción.")
     @app_commands.guild_only()
     async def skip(self, interaction: discord.Interaction) -> None:
-        """Detiene la pista actual; el callback de fin de pista encola la siguiente."""
+        """Corta la pista actual; el bucle del reproductor pasa a la siguiente."""
         await self._skip_impl(InteractionResponder(interaction))
 
     @commands.command(name="saltar")
@@ -413,9 +425,10 @@ class Music(commands.Cog):
         ):
             await responder.send_error("No hay ninguna pista que saltar.")
             return
+        state.skip_requested = True
         state.voice_client.stop()
-        logros.note_for(self.bot, responder, StatDelta(add={"music_skips": 1}))
         await responder.send("⏭️ Pista saltada.")
+        logros.note_for(self.bot, responder, StatDelta(add={"music_skips": 1}))
 
     @app_commands.command(name="parar", description="Detiene la música y desconecta al bot.")
     @app_commands.guild_only()
@@ -434,10 +447,9 @@ class Music(commands.Cog):
         state = await self._require_connected_state(responder)
         if state is None:
             return
-        async with state.lock:
-            await self._disconnect(state)
-        logros.note_for(self.bot, responder, StatDelta(add={"music_stops": 1}))
+        await self._stop_player(state)
         await responder.send("⏹️ Música detenida y bot desconectado.")
+        logros.note_for(self.bot, responder, StatDelta(add={"music_stops": 1}))
 
     @app_commands.command(name="cola", description="Muestra la canción actual y la cola.")
     @app_commands.guild_only()
@@ -459,16 +471,18 @@ class Music(commands.Cog):
             return
 
         state = self._get_state(guild.id)
-        if state.current is None:
+        upcoming = state.queue.snapshot()
+        if state.current is None and not upcoming:
             await responder.send_error("No hay ninguna pista en reproducción ni en cola.")
             return
 
-        lines = [
-            f"▶️ **Ahora:** {state.current.title} "
-            f"({format_duration(state.current.duration_seconds)}) — "
-            f"pedida por {state.current.requested_by}"
-        ]
-        upcoming = state.queue.snapshot()
+        lines = []
+        if state.current is not None:
+            lines.append(
+                f"▶️ **Ahora:** {state.current.title} "
+                f"({format_duration(state.current.duration_seconds)}) — "
+                f"pedida por {state.current.requested_by}"
+            )
         for position, track in enumerate(upcoming[:10], start=1):
             lines.append(
                 f"{position}. {track.title} ({format_duration(track.duration_seconds)}) — "
@@ -497,14 +511,13 @@ class Music(commands.Cog):
         state = await self._require_connected_state(responder)
         if state is None:
             return
-        async with state.lock:
-            try:
-                track = state.queue.remove_at(posicion)
-            except IndexError:
-                await responder.send_error(f"No hay ninguna pista en la posición {posicion}.")
-                return
-        logros.note_for(self.bot, responder, StatDelta(add={"music_removes": 1}))
+        try:
+            track = state.queue.remove_at(posicion)
+        except IndexError:
+            await responder.send_error(f"No hay ninguna pista en la posición {posicion}.")
+            return
         await responder.send(f"🗑️ Se quitó de la cola: **{track.title}**.")
+        logros.note_for(self.bot, responder, StatDelta(add={"music_removes": 1}))
 
     @app_commands.command(name="vaciar", description="Vacía la cola sin parar la canción actual.")
     @app_commands.guild_only()
@@ -523,10 +536,9 @@ class Music(commands.Cog):
         state = await self._require_connected_state(responder)
         if state is None:
             return
-        async with state.lock:
-            state.queue.clear()
-        logros.note_for(self.bot, responder, StatDelta(add={"music_clears": 1}))
+        state.queue.clear()
         await responder.send("🧹 Cola vaciada.")
+        logros.note_for(self.bot, responder, StatDelta(add={"music_clears": 1}))
 
     @app_commands.command(name="volumen", description="Cambia el volumen (1-200%).")
     @app_commands.guild_only()
@@ -564,8 +576,8 @@ class Music(commands.Cog):
             state.voice_client.source, discord.PCMVolumeTransformer
         ):
             state.voice_client.source.volume = volume_percent_to_factor(valor)
-        logros.note_for(self.bot, responder, music_volume_stats(valor))
         await responder.send(f"🔊 Volumen ajustado al {valor}%.")
+        logros.note_for(self.bot, responder, music_volume_stats(valor))
 
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -574,40 +586,24 @@ class Music(commands.Cog):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
-        """Limpia el estado si el bot se queda solo o lo desconectan externamente."""
+        """Para la música si echan al bot del canal o este se queda sin humanos."""
         state = self._states.get(member.guild.id)
         if state is None or state.voice_client is None:
             return
 
-        if member.id == self.bot.user.id and after.channel is None:
-            # El bot fue expulsado del canal o desconectado por otra vía;
-            # se descarta la referencia para no operar sobre un cliente muerto.
-            async with state.lock:
-                state.voice_client = None
-                state.current = None
-                state.queue.clear()
-                self._cancel_idle_task(state)
+        if member.id == self.bot.user.id:
+            if after.channel is None:
+                await self._stop_player(state)
             return
 
         channel = state.voice_client.channel
-        if channel is None or member.id == self.bot.user.id:
-            return
-        human_members = [candidate for candidate in channel.members if not candidate.bot]
-        if not human_members:
-            async with state.lock:
-                await self._disconnect(state)
+        if channel is not None and not any(not candidate.bot for candidate in channel.members):
+            await self._stop_player(state)
 
     async def cog_unload(self) -> None:
-        """Cierra conexiones de voz y cancela temporizadores al descargar el cog."""
+        """Para todos los reproductores (y sale de los canales) al descargar el cog."""
         for state in self._states.values():
-            self._cancel_idle_task(state)
-            if state.voice_client is not None:
-                try:
-                    await state.voice_client.disconnect(force=True)
-                except discord.HTTPException:
-                    logger.warning(
-                        "Error al desconectar durante la descarga del cog", exc_info=True
-                    )
+            await self._stop_player(state)
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -6,6 +6,7 @@ import pytest
 
 from bot.services.music import (
     MAX_TRACK_DURATION_SECONDS,
+    STREAM_TTL_SECONDS,
     MusicQueue,
     QueueFullError,
     Track,
@@ -27,6 +28,18 @@ def make_track(title: str = "Canción de prueba") -> Track:
         duration_seconds=120,
         requested_by="Alguien",
     )
+
+
+class TestTrackIsStale:
+    def test_una_pista_recien_resuelta_no_esta_caducada(self) -> None:
+        track = make_track()
+
+        assert not track.is_stale(now=track.resolved_at + STREAM_TTL_SECONDS)
+
+    def test_una_pista_que_pasa_del_plazo_esta_caducada(self) -> None:
+        track = make_track()
+
+        assert track.is_stale(now=track.resolved_at + STREAM_TTL_SECONDS + 1)
 
 
 class TestFormatDuration:

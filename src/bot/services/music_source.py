@@ -22,12 +22,11 @@ _YDL_OPTIONS: dict[str, Any] = {
     "quiet": True,
     "no_warnings": True,
     "ignoreerrors": False,
-    "nocheckcertificate": True,
     "source_address": "0.0.0.0",
-    # Forzar el cliente "android" evita el 403 que YouTube devuelve a
-    # menudo cuando se reproduce el enlace directo con el cliente "web"
-    # por defecto fuera de un navegador real.
-    "extractor_args": {"youtube": {"player_client": ["android"]}},
+    # YouTube cifra las URL de audio con un reto en JavaScript: sin un motor JS,
+    # yt-dlp solo ve el formato 18 (vídeo 360p) o URLs que dan 403 en ffmpeg.
+    # La imagen Docker ya trae `node` para las escenas; con él sale el opus (251).
+    "js_runtimes": {"node": {}},
 }
 
 

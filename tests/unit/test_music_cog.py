@@ -1,7 +1,14 @@
-"""Pruebas de bot.cogs.music: control del reproductor con mocks de discord.py."""
+"""Pruebas de bot.cogs.music: comandos y bucle del reproductor sin Discord ni red.
+
+`FakeVoice` imita un `discord.VoiceClient`: `play` guarda el callback `after`
+y `finish` (o `stop`) lo llama como haría el hilo de audio al acabar la pista.
+Así se prueba el ciclo completo (sonar, acabar, siguiente, inactividad,
+reconexión) que con mocks sueltos no se veía.
+"""
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,15 +16,71 @@ import discord
 import pytest
 
 from bot.cogs.music import GuildMusicState, Music
-from bot.services.music import Track
+from bot.services.music import STREAM_TTL_SECONDS, Track
+
+
+class Silence(discord.AudioSource):
+    """Fuente de audio vacía en lugar de `FFmpegPCMAudio`."""
+
+    def __init__(self, url: str, **_kwargs: object) -> None:
+        self.url = url
+
+    def read(self) -> bytes:
+        return b""
+
+
+class FakeVoice:
+    """Doble de `discord.VoiceClient` con reproducción controlada por la prueba."""
+
+    def __init__(self, channel: object) -> None:
+        self.channel = channel
+        self.source: discord.AudioSource | None = None
+        self.played: list[str] = []
+        self.connected = True
+        self.paused = False
+        self.disconnects = 0
+        self._after = None
+
+    def is_connected(self) -> bool:
+        return self.connected
+
+    def is_playing(self) -> bool:
+        return self._after is not None and not self.paused
+
+    def is_paused(self) -> bool:
+        return self._after is not None and self.paused
+
+    def play(self, source: discord.AudioSource, *, after) -> None:
+        self.source = source
+        self.played.append(source.original.url)
+        self._after = after
+
+    def finish(self, error: Exception | None = None) -> None:
+        """La pista llega a su fin (o ffmpeg se cierra)."""
+        after, self._after = self._after, None
+        if after is not None:
+            after(error)
+
+    def stop(self) -> None:
+        self.finish()
+
+    def pause(self) -> None:
+        self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
+
+    async def disconnect(self, *, force: bool = False) -> None:
+        self.connected = False
+        self.disconnects += 1
 
 
 def make_track(title: str = "Canción de prueba", duration: int = 120) -> Track:
     """Crea una pista de prueba lista para encolarse."""
     return Track(
         title=title,
-        webpage_url="https://example.com/video",
-        stream_url="https://example.com/stream",
+        webpage_url=f"https://example.com/{title}",
+        stream_url=f"https://example.com/stream/{title}",
         duration_seconds=duration,
         requested_by="Alguien",
     )
@@ -29,6 +92,7 @@ def make_interaction(*, guild_id: int = 1, member: object | None = None) -> Magi
     interaction.guild = SimpleNamespace(id=guild_id, voice_client=None)
     interaction.user = member
     interaction.channel = MagicMock()
+    interaction.channel.send = AsyncMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
     interaction.response.is_done = MagicMock(return_value=False)
@@ -42,6 +106,7 @@ def make_voice_member(channel: object) -> SimpleNamespace:
     member = MagicMock(spec=discord.Member)
     member.voice = SimpleNamespace(channel=channel)
     member.display_name = "Miembro de prueba"
+    member.bot = False
     return member
 
 
@@ -57,118 +122,329 @@ def make_context(*, guild_id: int = 1, member: object | None = None) -> MagicMoc
     return ctx
 
 
-@pytest.mark.asyncio
+def connected(cog: Music, channel: object, guild_id: int = 1) -> GuildMusicState:
+    """Estado de un servidor con el bot ya en `channel` (sin bucle de reproducción)."""
+    state = cog._get_state(guild_id)
+    state.voice_client = FakeVoice(channel)
+    return state
+
+
+async def settle() -> None:
+    """Deja correr las tareas pendientes (bucle del reproductor, avisos)."""
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+@pytest.fixture
+async def player(monkeypatch: pytest.MonkeyPatch):
+    """Cog con yt-dlp y ffmpeg sustituidos y un canal de voz donde conectar.
+
+    Se parchea el espacio de nombres real del módulo (`__globals__`): si otra
+    prueba cargó la extensión con `load_extension`, `sys.modules` puede tener
+    otra copia distinta de la que usa `Music`.
+    """
+    cog = Music(MagicMock())
+    module = cog.play.callback.__globals__
+    searches: list[str] = []
+
+    def fake_extract(query: str) -> dict:
+        searches.append(query)
+        return {
+            "url": f"https://example.com/stream/{query}",
+            "webpage_url": f"https://example.com/{query}",
+            "title": query,
+            "duration": 120,
+        }
+
+    monkeypatch.setitem(module, "extract_track_info", fake_extract)
+    monkeypatch.setitem(module, "FAILED_START_SECONDS", 0)
+    monkeypatch.setattr(discord, "FFmpegPCMAudio", Silence)
+    channel = MagicMock(name="canal-de-voz")
+    channel.members = []
+    voices: list[FakeVoice] = []
+
+    async def connect(**_kwargs: object) -> FakeVoice:
+        voice = FakeVoice(channel)
+        voices.append(voice)
+        return voice
+
+    channel.connect = AsyncMock(side_effect=connect)
+    member = make_voice_member(channel)
+    channel.members = [member]
+    yield SimpleNamespace(
+        cog=cog, module=module, channel=channel, member=member, voices=voices, searches=searches
+    )
+    for state in cog._states.values():
+        if state.player is not None:
+            state.player.cancel()
+    await settle()
+
+
+async def poner(env: SimpleNamespace, query: str) -> MagicMock:
+    """Lanza `/poner query` como el miembro del canal y deja correr el reproductor."""
+    interaction = make_interaction(member=env.member)
+    await env.cog.play.callback(env.cog, interaction, query)
+    await settle()
+    return interaction
+
+
+async def test_poner_conecta_y_reproduce_la_pista(player: SimpleNamespace) -> None:
+    interaction = await poner(player, "uno")
+
+    assert len(player.voices) == 1
+    assert player.voices[0].played == ["https://example.com/stream/uno"]
+    final = interaction.edit_original_response.await_args.kwargs["content"]
+    assert "Reproduciendo ahora" in final
+
+
+async def test_al_acabar_una_pista_suena_la_siguiente_de_la_cola(
+    player: SimpleNamespace,
+) -> None:
+    await poner(player, "uno")
+    interaction = await poner(player, "dos")
+    voice = player.voices[0]
+
+    assert "posición 1" in interaction.edit_original_response.await_args.kwargs["content"]
+    voice.finish()
+    await settle()
+
+    assert voice.played == ["https://example.com/stream/uno", "https://example.com/stream/dos"]
+
+
+async def test_si_la_busqueda_falla_el_bot_no_entra_al_canal(
+    player: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import yt_dlp
+
+    def broken(_query: str) -> dict:
+        raise yt_dlp.utils.DownloadError("sin resultados")
+
+    monkeypatch.setitem(player.module, "extract_track_info", broken)
+
+    interaction = await poner(player, "nada")
+
+    player.channel.connect.assert_not_awaited()
+    assert "No se encontró" in interaction.edit_original_response.await_args.kwargs["content"]
+
+
+async def test_tras_la_inactividad_sale_del_canal_y_vuelve_a_funcionar(
+    player: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regresión: la desconexión por inactividad se cancelaba a sí misma y la
+    siguiente sesión dejaba la cola congelada tras la primera canción."""
+    monkeypatch.setitem(player.module, "IDLE_DISCONNECT_SECONDS", 0.01)
+    await poner(player, "uno")
+    player.voices[0].finish()
+    await asyncio.sleep(0.05)
+    await settle()
+
+    state = player.cog._get_state(1)
+    assert player.voices[0].disconnects == 1
+    assert state.voice_client is None
+    assert state.player is None
+
+    monkeypatch.setitem(player.module, "IDLE_DISCONNECT_SECONDS", 60)
+    await poner(player, "dos")
+    await poner(player, "tres")
+    voice = player.voices[1]
+    voice.finish()
+    await settle()
+
+    assert voice.played[-1] == "https://example.com/stream/tres"
+
+
+async def test_parar_sin_nada_sonando_no_congela_la_siguiente_sesion(
+    player: SimpleNamespace,
+) -> None:
+    """Regresión: `parar` en vacío dejaba una bandera que frenaba la cola después."""
+    await poner(player, "uno")
+    player.voices[0].finish()
+    await settle()
+    await player.cog.stop.callback(player.cog, make_interaction(member=player.member))
+    await settle()
+
+    await poner(player, "dos")
+    await poner(player, "tres")
+    player.voices[1].finish()
+    await settle()
+
+    assert player.voices[1].played[-1] == "https://example.com/stream/tres"
+
+
+async def test_parar_vacia_la_cola_y_desconecta(player: SimpleNamespace) -> None:
+    await poner(player, "uno")
+    await poner(player, "dos")
+    interaction = make_interaction(member=player.member)
+
+    await player.cog.stop.callback(player.cog, interaction)
+
+    state = player.cog._get_state(1)
+    assert player.voices[0].disconnects == 1
+    assert state.voice_client is None
+    assert state.current is None
+    assert len(state.queue) == 0
+    assert state.player is None
+
+
+async def test_una_pista_que_no_llega_a_sonar_se_avisa_y_pasa_a_la_siguiente(
+    player: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(player.module, "FAILED_START_SECONDS", 60)
+    await poner(player, "rota")
+    last = await poner(player, "buena")  # se avisa en el canal del último `poner`
+    voice = player.voices[0]
+
+    voice.finish()  # ffmpeg se cierra nada más empezar (403, URL caducada…)
+    await settle()
+
+    last.channel.send.assert_awaited_once()
+    assert "No se pudo reproducir **rota**" in last.channel.send.await_args.args[0]
+    assert voice.played[-1] == "https://example.com/stream/buena"
+
+
+async def test_saltar_no_se_avisa_como_fallo(
+    player: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(player.module, "FAILED_START_SECONDS", 60)
+    await poner(player, "uno")
+    interaction = await poner(player, "dos")
+
+    await player.cog.skip.callback(player.cog, make_interaction(member=player.member))
+    await settle()
+
+    interaction.channel.send.assert_not_awaited()
+    assert player.voices[0].played[-1] == "https://example.com/stream/dos"
+
+
+async def test_una_pista_caducada_se_vuelve_a_resolver_antes_de_sonar(
+    player: SimpleNamespace,
+) -> None:
+    await poner(player, "uno")
+    state = player.cog._get_state(1)
+    old = make_track("vieja")
+    state.queue.add(
+        Track(
+            title=old.title,
+            webpage_url=old.webpage_url,
+            stream_url="https://example.com/caducada",
+            duration_seconds=old.duration_seconds,
+            requested_by=old.requested_by,
+            resolved_at=old.resolved_at - STREAM_TTL_SECONDS - 1,
+        )
+    )
+
+    player.voices[0].finish()
+    await settle()
+
+    assert player.searches[-1] == "https://example.com/vieja"
+    assert player.voices[0].played[-1] != "https://example.com/caducada"
+
+
+async def test_si_echan_al_bot_del_canal_se_para_la_musica(player: SimpleNamespace) -> None:
+    await poner(player, "uno")
+    await poner(player, "dos")
+    bot_member = MagicMock()
+    bot_member.id = player.cog.bot.user.id
+    bot_member.guild.id = 1
+
+    await player.cog.on_voice_state_update(
+        bot_member, SimpleNamespace(channel=player.channel), SimpleNamespace(channel=None)
+    )
+
+    state = player.cog._get_state(1)
+    assert state.player is None
+    assert len(state.queue) == 0
+
+
+async def test_si_se_quedan_sin_humanos_el_bot_sale(player: SimpleNamespace) -> None:
+    await poner(player, "uno")
+    leaving = player.member
+    leaving.guild.id = 1
+    player.channel.members = []
+
+    await player.cog.on_voice_state_update(
+        leaving, SimpleNamespace(channel=player.channel), SimpleNamespace(channel=None)
+    )
+
+    assert player.voices[0].disconnects == 1
+    assert player.cog._get_state(1).voice_client is None
+
+
+async def test_volumen_cambia_la_pista_que_ya_suena(player: SimpleNamespace) -> None:
+    await poner(player, "uno")
+
+    await player.cog.volume.callback(player.cog, make_interaction(member=player.member), 50)
+
+    assert player.cog._get_state(1).volume_percent == 50
+    assert player.voices[0].source.volume == pytest.approx(0.5)
+
+
 async def test_pausar_sin_conexion_de_voz_responde_error() -> None:
     """No se puede pausar si el bot no está conectado a ningún canal."""
     cog = Music(MagicMock())
-    channel = MagicMock()
-    interaction = make_interaction(member=make_voice_member(channel))
+    interaction = make_interaction(member=make_voice_member(MagicMock()))
 
     await cog.pause.callback(cog, interaction)
 
-    interaction.response.send_message.assert_awaited_once()
     message = interaction.response.send_message.await_args.kwargs["content"]
     assert "no está conectado" in message
 
 
-@pytest.mark.asyncio
 async def test_pausar_con_miembro_en_otro_canal_responde_error() -> None:
     """El control de música exige estar en el mismo canal que el bot."""
     cog = Music(MagicMock())
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = MagicMock(name="canal-del-bot")
-    state.voice_client.is_playing.return_value = True
-    otro_canal = MagicMock(name="otro-canal")
-    interaction = make_interaction(member=make_voice_member(otro_canal))
+    state = connected(cog, MagicMock(name="canal-del-bot"))
+    interaction = make_interaction(member=make_voice_member(MagicMock(name="otro-canal")))
 
     await cog.pause.callback(cog, interaction)
 
-    interaction.response.send_message.assert_awaited_once()
     message = interaction.response.send_message.await_args.kwargs["content"]
     assert "mismo canal de voz" in message
-    state.voice_client.pause.assert_not_called()
+    assert not state.voice_client.paused
 
 
-@pytest.mark.asyncio
-async def test_pausar_detiene_la_reproduccion_en_curso() -> None:
-    """/pausar pausa el reproductor cuando hay una pista en curso."""
-    cog = Music(MagicMock())
-    channel = MagicMock(name="canal-compartido")
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    state.voice_client.is_playing.return_value = True
-    interaction = make_interaction(member=make_voice_member(channel))
+async def test_pausar_y_seguir(player: SimpleNamespace) -> None:
+    await poner(player, "uno")
+    voice = player.voices[0]
 
-    await cog.pause.callback(cog, interaction)
-
-    state.voice_client.pause.assert_called_once()
-    interaction.response.send_message.assert_awaited_once()
+    await player.cog.pause.callback(player.cog, make_interaction(member=player.member))
+    assert voice.is_paused()
+    await player.cog.resume.callback(player.cog, make_interaction(member=player.member))
+    assert voice.is_playing()
 
 
-@pytest.mark.asyncio
 async def test_saltar_sin_reproduccion_responde_error() -> None:
     """/saltar avisa si no hay nada que saltar."""
     cog = Music(MagicMock())
     channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    state.voice_client.is_playing.return_value = False
-    state.voice_client.is_paused.return_value = False
+    connected(cog, channel)
     interaction = make_interaction(member=make_voice_member(channel))
 
     await cog.skip.callback(cog, interaction)
 
-    state.voice_client.stop.assert_not_called()
     message = interaction.response.send_message.await_args.kwargs["content"]
     assert "no hay ninguna pista" in message.lower()
 
 
-@pytest.mark.asyncio
-async def test_saltar_detiene_la_pista_actual_para_encadenar_la_siguiente() -> None:
-    """/saltar deja que el callback `after` continúe con la siguiente pista."""
-    cog = Music(MagicMock())
-    channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    state.voice_client.is_playing.return_value = True
-    interaction = make_interaction(member=make_voice_member(channel))
-
-    await cog.skip.callback(cog, interaction)
-
-    state.voice_client.stop.assert_called_once()
-    assert state.stopping is False  # a diferencia de /parar, no se frena la cola
-
-
-@pytest.mark.asyncio
-async def test_limpiar_vacia_la_cola_sin_tocar_la_pista_actual() -> None:
+async def test_vaciar_vacia_la_cola_sin_tocar_la_pista_actual() -> None:
     """/vaciar deja la pista en curso intacta y vacía solo lo pendiente."""
     cog = Music(MagicMock())
     channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
+    state = connected(cog, channel)
     state.current = make_track("En curso")
     state.queue.add(make_track("Pendiente"))
-    interaction = make_interaction(member=make_voice_member(channel))
 
-    await cog.clear.callback(cog, interaction)
+    await cog.clear.callback(cog, make_interaction(member=make_voice_member(channel)))
 
     assert len(state.queue) == 0
     assert state.current is not None
 
 
-@pytest.mark.asyncio
 async def test_quitar_posicion_invalida_responde_error() -> None:
     """/quitar informa si la posición pedida no existe en la cola."""
     cog = Music(MagicMock())
     channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
+    connected(cog, channel)
     interaction = make_interaction(member=make_voice_member(channel))
 
     await cog.remove.callback(cog, interaction, 3)
@@ -177,109 +453,29 @@ async def test_quitar_posicion_invalida_responde_error() -> None:
     assert "posición 3" in message
 
 
-@pytest.mark.asyncio
 async def test_quitar_elimina_la_pista_pedida() -> None:
     """/quitar elimina exactamente la pista de la posición indicada."""
     cog = Music(MagicMock())
     channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
+    state = connected(cog, channel)
     state.queue.add(make_track("Primera"))
     state.queue.add(make_track("Segunda"))
-    interaction = make_interaction(member=make_voice_member(channel))
 
-    await cog.remove.callback(cog, interaction, 1)
+    await cog.remove.callback(cog, make_interaction(member=make_voice_member(channel)), 1)
 
-    assert len(state.queue) == 1
-    assert state.queue.snapshot()[0].title == "Segunda"
+    assert [track.title for track in state.queue.snapshot()] == ["Segunda"]
 
 
-@pytest.mark.asyncio
-async def test_volumen_ajusta_la_fuente_en_reproduccion() -> None:
-    """/volumen actualiza el estado guardado y la fuente activa si existe."""
-    cog = Music(MagicMock())
-    channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    fake_source = MagicMock(spec=discord.PCMVolumeTransformer)
-    state.voice_client.source = fake_source
-    interaction = make_interaction(member=make_voice_member(channel))
-
-    await cog.volume.callback(cog, interaction, 50)
-
-    assert state.volume_percent == 50
-    assert fake_source.volume == pytest.approx(0.5)
-
-
-@pytest.mark.asyncio
-async def test_parar_marca_stopping_y_desconecta() -> None:
-    """/parar vacía la cola, detiene la reproducción y desconecta del canal."""
-    cog = Music(MagicMock())
-    channel = MagicMock()
-    state = cog._get_state(1)
-    voice_client = MagicMock()
-    voice_client.channel = channel
-    voice_client.is_playing.return_value = True
-    voice_client.disconnect = AsyncMock()
-    state.voice_client = voice_client
-    state.queue.add(make_track())
-    interaction = make_interaction(member=make_voice_member(channel))
-
-    await cog.stop.callback(cog, interaction)
-
-    voice_client.stop.assert_called_once()
-    voice_client.disconnect.assert_awaited_once_with(force=True)
-    assert state.voice_client is None
-    assert len(state.queue) == 0
-    assert state.current is None
-
-
-@pytest.mark.asyncio
-async def test_advance_no_reproduce_siguiente_si_estaba_parando() -> None:
-    """El callback de fin de pista respeta un /parar en curso y no reanuda la cola."""
+async def test_cola_lista_lo_pendiente_aunque_aun_no_suene_nada() -> None:
+    """Entre dos pistas `current` está vacío, pero la cola sí tiene pistas."""
     cog = Music(MagicMock())
     state = cog._get_state(1)
-    state.stopping = True
-    state.voice_client = None  # ya desconectado por /parar
+    state.queue.add(make_track("Pendiente"))
+    interaction = make_interaction(member=make_voice_member(MagicMock()))
 
-    await cog._advance(1, None)
+    await cog.queue_.callback(cog, interaction)
 
-    assert state.stopping is False
-
-
-@pytest.mark.asyncio
-async def test_advance_reproduce_la_siguiente_pista_tras_un_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Tras un error de reproducción normal (sin /parar), se continúa la cola."""
-    import bot.cogs.music as music_module
-
-    monkeypatch.setattr(music_module.discord, "FFmpegPCMAudio", MagicMock())
-    monkeypatch.setattr(music_module.discord, "PCMVolumeTransformer", MagicMock())
-    cog = Music(MagicMock())
-    channel = MagicMock()
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    state.queue.add(make_track("Siguiente"))
-
-    await cog._advance(1, RuntimeError("fallo de red"))
-
-    state.voice_client.play.assert_called_once()
-    assert state.current is not None
-    assert state.current.title == "Siguiente"
-
-
-def test_guild_music_state_valores_por_defecto() -> None:
-    """El estado nuevo de un servidor no tiene conexión, cola vacía y volumen base."""
-    state = GuildMusicState()
-
-    assert state.voice_client is None
-    assert state.current is None
-    assert len(state.queue) == 0
-    assert state.stopping is False
+    assert "1. Pendiente" in interaction.response.send_message.await_args.kwargs["content"]
 
 
 # Contrato de nombres: cada acción tiene UN solo nombre corto, idéntico en
@@ -315,61 +511,21 @@ def test_los_comandos_de_texto_de_musica_no_definen_alias() -> None:
     assert all(not command.aliases for command in cog.get_commands())
 
 
-@pytest.mark.asyncio
-async def test_comando_de_texto_reproducir_encola_la_pista_igual_que_el_slash(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_comando_de_texto_poner_reproduce_igual_que_el_slash(
+    player: SimpleNamespace,
 ) -> None:
     """`.poner` reproduce una pista igual que `/poner`."""
-    cog = Music(MagicMock())
-    channel = MagicMock(name="canal-de-voz")
-    voice_client = MagicMock()
-    voice_client.is_playing.return_value = False
-    member = make_voice_member(channel)
-    member.voice.channel.connect = AsyncMock(return_value=voice_client)
-    ctx = make_context(member=member)
+    ctx = make_context(member=player.member)
 
-    # Se parchea el espacio de nombres real que usa la función en tiempo de
-    # ejecución (`__globals__`), en vez de reimportar el módulo por nombre:
-    # si otra prueba de la suite carga esta misma extensión vía
-    # `Bot.load_extension`, discord.py puede reejecutar el módulo y dejar
-    # una segunda instancia en `sys.modules` distinta de la que usa `Music`.
-    music_module_globals = cog.play_text.callback.__globals__
-    monkeypatch.setitem(music_module_globals, "extract_track_info", lambda _query: {})
-    monkeypatch.setitem(
-        music_module_globals,
-        "build_track_from_info",
-        lambda *_a, **_k: make_track("Pista de prefijo"),
-    )
-    monkeypatch.setattr(cog, "_play_next", AsyncMock())
-
-    await cog.play_text.callback(cog, ctx, consulta="cancion de prueba")
+    await player.cog.play_text.callback(player.cog, ctx, consulta="prefijo")
+    await settle()
 
     ctx.send.assert_awaited_once_with("🔎 Buscando...")
-    # El mensaje de progreso enviado por `ctx.send` se edita con el resultado.
-    sent_message = ctx.send.return_value
-    sent_message.edit.assert_awaited_once()
-    final_content = sent_message.edit.await_args.kwargs["content"]
-    assert "Pista de prefijo" in final_content
+    final_content = ctx.send.return_value.edit.await_args.kwargs["content"]
+    assert "prefijo" in final_content
+    assert player.voices[0].played == ["https://example.com/stream/prefijo"]
 
 
-@pytest.mark.asyncio
-async def test_comando_de_texto_pausar_pausa_igual_que_el_slash() -> None:
-    """`.pausar` pausa la reproducción igual que `/pausar`."""
-    cog = Music(MagicMock())
-    channel = MagicMock(name="canal-compartido")
-    state = cog._get_state(1)
-    state.voice_client = MagicMock()
-    state.voice_client.channel = channel
-    state.voice_client.is_playing.return_value = True
-    ctx = make_context(member=make_voice_member(channel))
-
-    await cog.pause_text.callback(cog, ctx)
-
-    state.voice_client.pause.assert_called_once()
-    ctx.send.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_comando_de_texto_volumen_valida_rango_antes_de_delegar() -> None:
     """`.volumen` rechaza valores fuera de rango sin llegar a `_volume_impl`."""
     cog = Music(MagicMock())
@@ -378,5 +534,4 @@ async def test_comando_de_texto_volumen_valida_rango_antes_de_delegar() -> None:
     await cog.volume_text.callback(cog, ctx, 999)
 
     ctx.send.assert_awaited_once()
-    message = ctx.send.await_args.args[0]
-    assert "entre" in message
+    assert "entre" in ctx.send.await_args.args[0]

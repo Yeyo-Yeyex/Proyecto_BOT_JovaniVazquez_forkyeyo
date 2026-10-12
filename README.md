@@ -14,6 +14,8 @@ en [FUNCIONALIDADES.md](./FUNCIONALIDADES.md).
 - `ffmpeg` instalado en el sistema y accesible en el `PATH`, necesario para
   reproducir audio en canales de voz (comandos de música). No se instala
   con `pip`; en Debian/Ubuntu basta con `sudo apt install ffmpeg`.
+- `node` en el `PATH` para la música: `yt-dlp` lo usa para descifrar las URL
+  de audio de YouTube (la imagen Docker ya lo trae).
 - Las dependencias de Python `PyNaCl` y `davey` (cifrado de voz) se
   instalan automáticamente con `pip install -e .`; si el bot lanza
   `RuntimeError: davey library needed in order to use voice` al intentar

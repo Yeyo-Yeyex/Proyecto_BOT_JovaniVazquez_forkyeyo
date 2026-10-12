@@ -139,15 +139,18 @@ Los comandos de texto con prefijo requieren el intent privilegiado **Message Con
 ### 5.2. Comportamiento y límites
 
 - Se informa con un mensaje claro si la consulta no se puede resolver, la pista dura demasiado, la cola está llena o el miembro no está en el canal de voz adecuado.
-- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `parar` es la única acción que corta ese encadenamiento.
+- Al terminar una pista (o al fallar su reproducción), se continúa automáticamente con la siguiente de la cola; `parar` es la única acción que corta ese encadenamiento. Si una pista no llega a sonar (se corta en menos de 3 segundos sin que nadie la salte), se avisa en el canal donde se pidió la última canción.
+- Un único bucle por servidor reproduce la cola (`Music._player_loop`); parar, salir por inactividad, quedarse sin oyentes o que echen al bot cancelan ese bucle, y su cierre vacía la cola y desconecta. No hay banderas compartidas con el hilo de audio.
+- `poner` busca la pista antes de entrar al canal: si no hay resultado, el bot no se conecta.
+- La URL de audio se resuelve al encolar; si la pista lleva más de 2 horas en cola (`STREAM_TTL_SECONDS`), se vuelve a resolver antes de sonar, porque YouTube las caduca a las ~6 horas.
 - Duración máxima por pista: 30 minutos (`MAX_TRACK_DURATION_SECONDS`); se rechazan también los directos, al no tener duración conocida. Tamaño máximo de cola: 50 pistas por servidor (`MAX_QUEUE_SIZE`).
 - El bot abandona el canal de voz automáticamente si se queda sin oyentes humanos, o tras 5 minutos de inactividad sin pistas en cola (`IDLE_DISCONNECT_SECONDS`).
 - El bot se conecta ensordecido (`self_deaf=True`): Discord deja de reenviarle el audio de los participantes, que no usa, y el tráfico de bajada en voz cae a casi cero.
 - Si al pedir música el bot está en voz por un sonido de entrada (sección 6 bis), lo corta y conecta la música: la música tiene prioridad.
-- Todas las conexiones de voz, procesos de `ffmpeg` y temporizadores de inactividad se cierran al detener, saltar, desconectar o descargar el cog (`cog_unload`).
+- Todas las conexiones de voz y procesos de `ffmpeg` se cierran al detener, desconectar o descargar el cog (`cog_unload`).
 - La cola vive en memoria y se pierde al reiniciar el bot; no se persiste audio ni historial de reproducción.
 - Solo se admiten fuentes resueltas por `yt-dlp` (típicamente YouTube); no se intenta eludir restricciones de acceso, DRM ni condiciones de uso de los proveedores.
-- Para evitar el `403 Forbidden` que YouTube devuelve si `ffmpeg` solicita el flujo sin las cabeceras HTTP originales, `yt-dlp` se configura para resolver con el cliente `android` y las cabeceras (`http_headers`) que devuelve se reenvían a `ffmpeg` mediante `-headers` al reproducir.
+- YouTube cifra las URL de audio con un reto en JavaScript: `yt-dlp` usa `node` (el de la imagen Docker) como motor JS (`js_runtimes`). Sin él solo ve el formato 18 (vídeo 360p) o URLs que dan `403 Forbidden`. Las cabeceras (`http_headers`) que devuelve se reenvían a `ffmpeg` mediante `-headers` al reproducir. En local hace falta `node` en el `PATH`.
 
 ### 5.3. Criterios de aceptación
 
