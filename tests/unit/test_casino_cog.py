@@ -50,12 +50,20 @@ class FakeRenderer:
 
     def __init__(self) -> None:
         self.histories: list[list[int]] = []
+        #: Clave del tapete de cada dibujo (mesa y tiradas), en orden.
+        self.skins: list[object] = []
 
-    async def spin(self, outcome: RoundOutcome, *, history: list[int], seed: int) -> Media:
+    async def spin(
+        self, outcome: RoundOutcome, *, history: list[int], seed: int, skin: dict | None = None
+    ) -> Media:
         self.histories.append(list(history))
+        self.skins.append((skin or {}).get("key"))
         return Media(gif=b"GIF", png=b"PNG", seconds=0.0)
 
-    async def board(self, history: list[int], wagers: object = ()) -> bytes:
+    async def board(
+        self, history: list[int], wagers: object = (), *, skin: dict | None = None
+    ) -> bytes:
+        self.skins.append((skin or {}).get("key"))
         return b"IDLE"
 
     async def close(self) -> None:
@@ -729,3 +737,28 @@ async def test_cambiar_la_ficha_seguido_precarga_una_sola_vez(tmp_path: Path) ->
     # Las dos primeras se cancelan en su espera: solo dibuja la de 100.
     assert len(cog.renderer.histories) == drawn + 1
     assert table._preload_for == (Wager(OUTSIDE_BETS["black"], 100),)
+
+
+async def test_la_precarga_no_vale_si_cambia_el_tapete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cambiar de skin entre tiradas tira la precarga: se pintó con el tapete de antes."""
+    worn = {"key": "serie"}
+    monkeypatch.setattr(
+        casino_module.tienda, "skin_params", lambda bot, guild_id, user_id, game: dict(worn)
+    )
+    cog = await make_cog(tmp_path, pocket=17, preload=True)
+    table = RouletteTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    await table.choose(make_interaction(), OUTSIDE_BETS["black"])
+    await settle_preload(table)
+    assert cog.renderer.skins == ["serie", "serie"]
+    worn["key"] = "ruleta_granate"  # se la pone en la mochila mientras mira el GIF
+    interaction = make_interaction()
+
+    await table._repeat(interaction)
+
+    assert (
+        "No va más"
+        in interaction.edit_original_response.await_args_list[0].kwargs["embed"].description
+    )
+    assert cog.renderer.skins[2] == "ruleta_granate", "la tirada sale con el tapete nuevo"

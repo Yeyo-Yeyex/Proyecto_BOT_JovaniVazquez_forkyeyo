@@ -195,7 +195,12 @@ python -m bot
     España (20 millones, una sola). Comprar uno te lo pone; en la mochila se
     elige cuál llevas o ninguno. No dan dinero ni XP: son para presumir.
   - Las compras de 100.000 Y$ o más se anuncian con un pregón en el canal.
-  - Surtido de serie: 232 artículos a la venta (195 objetos, 15
+  - Skins (pestaña 🎨 Skins): cambian el aspecto de una mesa del casino sin
+    tocar cómo se juega. De momento solo la ruleta las admite, con un tapete
+    granate (15.000 Y$). Se compran, se ganan con logros o se venden solo en
+    su temporada; se cambian en la mochila o con el botón 🎨 de la mesa. Las
+    reglas para añadir skins y abrir más juegos están en la Biblia.
+  - Surtido de serie: 233 artículos a la venta (196 objetos, 15
     potenciadores y 22 mascotas) que se meten solos en cada servidor la
     primera vez que se abre la tienda, repartidos en 14 pasillos por tema (La
     Moncloa, Ventanilla, Canarias, Typical Spanish, Fiestas y verbenas,
@@ -217,7 +222,8 @@ python -m bot
     usos. Usar no mueve dinero.
   - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
     enseña lo que tiene alguien; su dueño puede ponerse y quitarse los roles
-    que compró para siempre, elegir qué título luce y usar sus objetos.
+    que compró para siempre, elegir qué título luce, cambiar sus skins y usar sus
+    objetos.
 - **Mascotas** (`mascota [miembro]`): 28 especies con su personalidad, del
   gato que te tira la ficha de la mesa a Perro Sanxe (una en todo el
   servidor). 22 se adoptan en la tienda (perros, gatos y hurones con «tasa de
@@ -933,6 +939,7 @@ src/bot/
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
+│   ├── skins.py         # Skins de las mesas del casino: juegos que las admiten y catálogo
 │   ├── pets.py          # Reglas de las mascotas: vínculo, cuidados, momentos y cameos
 │   ├── pets_catalog.py  # Especies de mascota: personalidad, frases y trucos
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)

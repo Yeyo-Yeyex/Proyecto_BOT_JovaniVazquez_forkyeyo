@@ -875,25 +875,26 @@ class ShopRepository:
             connection.close()
         return _entry(row) if row else None
 
-    async def wear_title(
-        self, guild_id: int, user_id: int, catalog_key: str | None, title_keys: Collection[str]
+    async def wear_one(
+        self, guild_id: int, user_id: int, catalog_key: str | None, keys: Collection[str]
     ) -> None:
-        """Deja puesto solo el título `catalog_key` del miembro (ninguno con `None`).
+        """De los artículos `keys` del miembro, deja puesto solo `catalog_key`.
 
-        Los títulos son objetos y usan la columna `equipped` como los roles. Uno
-        a la vez: ponerse uno guarda los demás.
+        Para lo que se lleva de uno en uno: el título, o la skin de cada juego
+        (`keys` son entonces las skins de ese juego). Con `None`, ninguno. Usa la
+        columna `equipped`, como los roles.
 
         Args:
-            title_keys: Claves de serie de todos los títulos (`shop_catalog.TITLE_KEYS`).
+            keys: Claves de serie del grupo (`TITLE_KEYS`, las skins de un juego…).
         """
-        await self._run(self._wear_title_sync, guild_id, user_id, catalog_key, tuple(title_keys))
+        await self._run(self._wear_one_sync, guild_id, user_id, catalog_key, tuple(keys))
 
-    def _wear_title_sync(
-        self, guild_id: int, user_id: int, catalog_key: str | None, title_keys: tuple[str, ...]
+    def _wear_one_sync(
+        self, guild_id: int, user_id: int, catalog_key: str | None, keys: tuple[str, ...]
     ) -> None:
-        if not title_keys:
+        if not keys:
             return
-        marks = ", ".join("?" for _ in title_keys)
+        marks = ", ".join("?" for _ in keys)
         connection = self._connect()
         try:
             with connection:
@@ -903,41 +904,47 @@ class ShopRepository:
                     WHERE guild_id = ? AND user_id = ? AND status = 'active'
                         AND catalog_key IN ({marks})
                     """,
-                    (catalog_key, guild_id, user_id, *title_keys),
+                    (catalog_key, guild_id, user_id, *keys),
                 )
         finally:
             connection.close()
 
-    async def worn_titles(self, title_keys: Collection[str]) -> list[tuple[int, int, str, str]]:
-        """Título puesto de cada miembro: `(servidor, miembro, emoji, nombre)`.
+    async def worn_among(self, keys: Collection[str]) -> list[tuple[int, int, str, str, str]]:
+        """Lo que lleva puesto cada miembro de entre `keys`.
 
-        Si alguien tuviera dos marcados (no debería), gana el más reciente.
+        Returns:
+            `(servidor, miembro, clave de serie, emoji, nombre)` de cada artículo
+            puesto. Quien lleve dos del mismo grupo (no debería) sale dos veces:
+            el que llama se queda con el más reciente, que va detrás.
         """
-        return await self._run(self._worn_titles_sync, tuple(title_keys))
+        return await self._run(self._worn_among_sync, tuple(keys))
 
-    def _worn_titles_sync(self, title_keys: tuple[str, ...]) -> list[tuple[int, int, str, str]]:
-        if not title_keys:
+    def _worn_among_sync(self, keys: tuple[str, ...]) -> list[tuple[int, int, str, str, str]]:
+        if not keys:
             return []
-        marks = ", ".join("?" for _ in title_keys)
+        marks = ", ".join("?" for _ in keys)
         connection = self._connect()
         try:
             rows = connection.execute(
                 f"""
-                SELECT guild_id, user_id, emoji, name FROM shop_inventory
+                SELECT guild_id, user_id, catalog_key, emoji, name FROM shop_inventory
                 WHERE status = 'active' AND equipped = 1 AND catalog_key IN ({marks})
                 ORDER BY id
                 """,
-                title_keys,
+                keys,
             ).fetchall()
         finally:
             connection.close()
-        worn: dict[tuple[int, int], tuple[str, str]] = {}
-        for row in rows:
-            worn[(int(row["guild_id"]), int(row["user_id"]))] = (
+        return [
+            (
+                int(row["guild_id"]),
+                int(row["user_id"]),
+                str(row["catalog_key"]),
                 str(row["emoji"]),
                 str(row["name"]),
             )
-        return [(g, u, emoji, name) for (g, u), (emoji, name) in worn.items()]
+            for row in rows
+        ]
 
     async def active_boosts(self, now: float) -> list[tuple[int, int, float, float, int]]:
         """Potenciadores que aún no han acabado: `(servidor, miembro, inicio, fin, %)`."""

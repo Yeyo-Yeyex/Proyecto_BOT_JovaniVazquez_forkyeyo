@@ -419,6 +419,42 @@ async def press_wear_title(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def granate_in_backpack(client: BotClient) -> None:
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    item = await client.shop.item_by_key(GUILD_ID, "skin_ruleta_granate")
+    assert item is not None
+    await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+
+
+async def press_choose_skin(client: BotClient, owner: MagicMock) -> Click:
+    await granate_in_backpack(client)
+    tienda = client.get_cog("Tienda")
+    backpack = await tienda.backpack_view(owner.guild, owner, owner)
+    select = next(
+        c for c in backpack.walk_children()
+        if isinstance(c, discord.ui.Select) and c.placeholder == "🎨 Cambiar una skin"
+    )  # fmt: skip
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["ruleta:ruleta_granate"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["ruleta:ruleta_granate"]}
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_table_skin_button(client: BotClient, owner: MagicMock) -> Click:
+    await granate_in_backpack(client)
+    button = module_of(client, "Tienda").skin_button(client, "ruleta")
+    assert button is not None
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def press_casino_stats(client: BotClient, owner: MagicMock) -> Click:
     view = module_of(client, "Apuestas").StatsView(
         client.get_cog("Apuestas"), owner=owner, guild=owner.guild, member=owner
@@ -551,6 +587,8 @@ CASES: dict[str, Press] = {
     "pala: elegir curro": press_pala_hire,
     "tienda: comprar": press_checkout,
     "tienda: lucir un título": press_wear_title,
+    "tienda: elegir skin": press_choose_skin,
+    "mesa: botón 🎨": press_table_skin_button,
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
     "perfil: cambiar de sección": press_perfil_section,

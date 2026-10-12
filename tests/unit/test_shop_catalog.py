@@ -291,7 +291,11 @@ def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
     prizes = [
         e.price
         for e in CATALOG
-        if e.kind is Kind.TROPHY and e.use is None and e.stock is None and not e.title
+        if e.kind is Kind.TROPHY
+        and e.use is None
+        and e.stock is None
+        and not e.title
+        and not e.key.startswith("skin_")
     ]
     expected = mystery_expected(prizes)
     assert 0.5 * box.price < expected < box.price

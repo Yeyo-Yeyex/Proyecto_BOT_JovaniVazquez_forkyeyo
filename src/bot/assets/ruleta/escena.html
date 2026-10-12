@@ -11,6 +11,8 @@ La tirada ya está resuelta. Aquí solo se pinta. Funciones que llama Python:
 
 - loadFonts()           espera a las fuentes (canvas no las carga solo).
 - setup(meta)           dibuja una vez el fondo, el cuenco y la textura de la rueda.
+                        meta.skin trae los colores del tapete (bot/services/skins.py,
+                        juego "ruleta"); el fondo se repinta si cambia de skin.
 - renderFrames(states)  dibuja los fotogramas y devuelve, de cada uno, el
                         recuadro que ha cambiado (PNG en Chromium, píxeles
                         crudos en Node) y dónde va.
@@ -60,7 +62,17 @@ const bctx = big.getContext("2d");
 const octx = out.getContext("2d");
 
 let META = null, STEP = 360 / 38;
-let BG = null, ROT = null, GLOSS = null;
+let BG = null, BG_SKIN = null, ROT = null, GLOSS = null;
+// Los colores del tapete de serie: los mismos que GAMES["ruleta"] en skins.py.
+// Solo se usan si Python no manda meta.skin.
+const SKIN_DEFAULT = {
+  key: "serie",
+  felt: ["#2f9b62", "#1b7345", "#0b3f26"],
+  fiber: ["rgba(190,255,210,0.045)", "rgba(0,20,8,0.07)"],
+  trim: "rgba(240,199,90,0.22)",
+  ink: "#10190f",
+};
+const skin = () => (META && META.skin) || SKIN_DEFAULT;
 let HUD = new Map();
 
 const COLORS = {
@@ -160,7 +172,8 @@ function drawSnow(g, x, y, s, color) {
 
 function paintFelt(g) {
   const grad = g.createRadialGradient(CX, CY - 20, 30, CX, CY, 400);
-  grad.addColorStop(0, "#2f9b62"); grad.addColorStop(0.55, "#1b7345"); grad.addColorStop(1, "#0b3f26");
+  const felt = skin().felt;
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
   // Pelusa del fieltro y alguna fibra más larga.
   const r = rng(77);
@@ -171,11 +184,11 @@ function paintFelt(g) {
   g.lineWidth = 0.4;
   for (let i = 0; i < 500; i++) {
     const x = r() * W, y = r() * H, a = r() * TAU, l = 2 + r() * 4;
-    g.strokeStyle = r() < 0.5 ? "rgba(190,255,210,0.045)" : "rgba(0,20,8,0.07)";
+    g.strokeStyle = r() < 0.5 ? skin().fiber[0] : skin().fiber[1];
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
   }
   // Filete dorado del tapete, detrás del marcador.
-  g.save(); g.strokeStyle = "rgba(240,199,90,0.22)"; g.lineWidth = 1.2; roundRect(g, 5, 5, W - 10, H - 10, 14); g.stroke(); g.restore();
+  g.save(); g.strokeStyle = skin().trim; g.lineWidth = 1.2; roundRect(g, 5, 5, W - 10, H - 10, 14); g.stroke(); g.restore();
 }
 
 function paintTop() {
@@ -281,7 +294,7 @@ function paintBackground() {
   grad = g.createLinearGradient(0, 8, 0, 30);
   grad.addColorStop(0, "#fff1b8"); grad.addColorStop(1, "#f0b429");
   g.letterSpacing = "1px";
-  outlined(g, "RULETA", 16, 29, grad, "#10190f", 5);
+  outlined(g, "RULETA", 16, 29, grad, skin().ink, 5);
   g.letterSpacing = "0px";
   g.font = "700 7px Montserrat"; g.fillStyle = "rgba(255,226,170,0.72)";
   g.fillText("AMERICANA  ·  0 Y 00", 17, 41);
@@ -972,7 +985,10 @@ window.loadFonts = async () => {
 };
 window.setup = (meta) => {
   META = meta; SEED = meta.seed | 0; STEP = 360 / meta.pockets.length;
-  if (!BG) { BG = paintBackground(); ROT = paintRot(); GLOSS = paintGloss(); }
+  // El fondo lleva el tapete: se repinta si la skin no es la de la última vez.
+  const key = skin().key;
+  if (!BG || BG_SKIN !== key) { BG = paintBackground(); BG_SKIN = key; }
+  if (!ROT) { ROT = paintRot(); GLOSS = paintGloss(); }
   HUD = new Map(); DIRTY = PREV = PREV_HUD = PREV_SIG = null; HAVE_FRAME = false;
   return true;
 };

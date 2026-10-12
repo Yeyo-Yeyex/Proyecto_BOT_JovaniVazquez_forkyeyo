@@ -54,10 +54,12 @@ class FakeWheelRenderer:
 class FakeRouletteScene:
     """`RouletteScene` sin abrir Chromium: PNG y GIF de relleno y giro de 0 s."""
 
-    async def spin(self, outcome: object, *, history: object, seed: int) -> roulette_scene.Media:
+    async def spin(
+        self, outcome: object, *, history: object, seed: int, skin: object = None
+    ) -> roulette_scene.Media:
         return roulette_scene.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
 
-    async def board(self, history: object, wagers: object = ()) -> bytes:
+    async def board(self, history: object, wagers: object = (), *, skin: object = None) -> bytes:
         return b"PNG"
 
     async def close(self) -> None:

@@ -28,6 +28,12 @@ la bola que pasa por tu número antes de caer al lado, lo recuperado celebrado
 como premio y el marcador de números calientes y fríos, con sus botones
 🔥 Caliente y ❄️ Frío para apostar a pleno a lo que «toca».
 
+**Skins.** La mesa se pinta con el tapete que el jugador lleva puesto en la
+tienda (`shop.skin_params`, juego `ruleta` de `bot.services.skins`), y el pie
+de la mesa lo nombra. La precarga apunta con qué tapete se pintó: si el
+jugador lo cambia entre medias, se tira. La mesa no lleva el botón 🎨: sus 25
+botones ya llenan las cinco filas de Discord; el tapete se cambia en la mochila.
+
 Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes,
 insertar enlaces (embeds) y adjuntar archivos (el GIF de la rueda).
@@ -53,6 +59,8 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs import pets as mascotas
+from bot.cogs import shop as tienda
+from bot.services import skins
 from bot.services.achievements import StatDelta, casino_stats, hacienda_stats, roulette_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -89,6 +97,7 @@ from bot.services.roulette import (
     pretty,
     resolve,
 )
+from bot.services.roulette_scene import GAME as GAME_SKIN
 from bot.services.roulette_scene import Media, RouletteScene
 from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
 from bot.services.tax_report import bills as tax_bills
@@ -221,6 +230,7 @@ def table_embed(
     text: str | None = None,
     multi: bool = False,
     slip: Sequence[Wager] = (),
+    skin: str | None = None,
 ) -> discord.Embed:
     """Embed de la mesa en reposo: tras abrirla, tras una tirada o al poner fichas.
 
@@ -229,6 +239,7 @@ def table_embed(
             cambie la frase aleatoria al tocar la ficha después de una tirada.
         multi: Si la mesa está en modo varias apuestas.
         slip: Fichas puestas y aún no jugadas (modo varias apuestas).
+        skin: El tapete del dueño (`🟥 Tapete granate`), si no es el de serie.
     """
     if outcome is not None:
         description = text or result_text(outcome)
@@ -258,7 +269,8 @@ def table_embed(
     embed.add_field(name="Ficha", value=format_amount(stake))
     embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
     embed.set_image(url=f"attachment://{PNG_NAME}")
-    embed.set_footer(text=f"Mesa de {owner} · {history_line(history)}")
+    table = f"Mesa de {owner}" + (f" · {skin}" if skin else "")
+    embed.set_footer(text=f"{table} · {history_line(history)}")
     return embed
 
 
@@ -372,14 +384,17 @@ class SpinResult:
 class PreparedSpin:
     """Una tirada sorteada y dibujada antes del clic, sin cobrar (ver la cabecera).
 
-    Vale solo para las mismas fichas (`wagers`) y el mismo historial del
-    servidor (`history`, que sale en el marcador del dibujo).
+    Vale solo para las mismas fichas (`wagers`), el mismo historial del
+    servidor (`history`, que sale en el marcador del dibujo) y el mismo tapete
+    (`skin`).
     """
 
     wagers: tuple[Wager, ...]
     history: tuple[int, ...]
     outcome: RoundOutcome
     media: Media
+    #: Clave de la skin con la que se pintó: si el jugador la cambia, no vale.
+    skin: str = "serie"
 
 
 def _log_preload_failure(task: asyncio.Task[PreparedSpin]) -> None:
@@ -592,7 +607,9 @@ class RouletteTable(discord.ui.View):
             if delay:
                 await asyncio.sleep(delay)
             self._preload_drawing = True
-            return await self.cog.prepare(self.guild_id, wagers, history=history)
+            return await self.cog.prepare(
+                self.guild_id, wagers, history=history, user_id=self.owner.id
+            )
 
         task = asyncio.create_task(
             prepare(), name=f"ruleta-preload-{self.guild_id}-{self.owner.id}"
@@ -623,6 +640,8 @@ class RouletteTable(discord.ui.View):
             return None
         if prepared.history != tuple(self.cog.history(self.guild_id)):
             return None
+        if prepared.skin != self.cog.skin(self.guild_id, self.owner.id)["key"]:
+            return None
         return prepared
 
     # -- Juego ----------------------------------------------------------------------
@@ -645,6 +664,7 @@ class RouletteTable(discord.ui.View):
             text=self.last_text,
             multi=self.multi,
             slip=self.slip,
+            skin=skin.label if (skin := self.cog.worn_skin(self.guild_id, self.owner.id)) else None,
         )
 
     async def choose(self, interaction: discord.Interaction, bet: Bet) -> None:
@@ -988,7 +1008,10 @@ class Casino(commands.Cog):
             if on_paid is not None:
                 await on_paid()
             media = await self.renderer.spin(
-                outcome, history=self.history(guild_id), seed=secrets.randbits(32)
+                outcome,
+                history=self.history(guild_id),
+                seed=secrets.randbits(32),
+                skin=self.skin(guild_id, user_id),
             )
         return SpinResult(
             outcome=outcome,
@@ -999,7 +1022,12 @@ class Casino(commands.Cog):
         )
 
     async def prepare(
-        self, guild_id: int, wagers: Sequence[Wager], *, history: Sequence[int]
+        self,
+        guild_id: int,
+        wagers: Sequence[Wager],
+        *,
+        history: Sequence[int],
+        user_id: int | None = None,
     ) -> PreparedSpin:
         """Sortea y dibuja una tirada para `wagers` sin cobrar nada (la precarga).
 
@@ -1009,12 +1037,24 @@ class Casino(commands.Cog):
         Args:
             history: El historial del servidor con el que se jugará (sale en el
                 marcador); si al jugar es otro, la precarga no vale.
+            user_id: Quien jugará: se pinta con su tapete.
         """
         history = tuple(list(history)[:HOT_WINDOW])
         result: Draw = draw(self.wheel)
         outcome = resolve(result, wagers)
-        media = await self.renderer.spin(outcome, history=history, seed=secrets.randbits(32))
-        return PreparedSpin(tuple(wagers), history, outcome, media)
+        skin = self.skin(guild_id, user_id) if user_id is not None else skins.params(GAME_SKIN)
+        media = await self.renderer.spin(
+            outcome, history=history, seed=secrets.randbits(32), skin=skin
+        )
+        return PreparedSpin(tuple(wagers), history, outcome, media, skin=str(skin["key"]))
+
+    def worn_skin(self, guild_id: int, user_id: int) -> skins.Skin | None:
+        """La skin de ruleta que lleva este jugador, o `None` (el tapete de serie)."""
+        return tienda.skin_of(self.bot, guild_id, user_id, GAME_SKIN)
+
+    def skin(self, guild_id: int, user_id: int) -> dict[str, object]:
+        """Los colores del tapete de este jugador (la tienda dice qué skin lleva)."""
+        return tienda.skin_params(self.bot, guild_id, user_id, GAME_SKIN)
 
     def _casino_channel_error(self, channel: object) -> str | None:
         return casino_channel_error(self.casino_channel_ids, channel, "La ruleta")
@@ -1058,7 +1098,9 @@ class Casino(commands.Cog):
 
         table = RouletteTable(self, guild_id=guild.id, owner=user, stake=stake)
         if not bets:
-            png = await self.renderer.board(self.history(guild.id))
+            png = await self.renderer.board(
+                self.history(guild.id), skin=self.skin(guild.id, user.id)
+            )
             table.message = await send(
                 embed=await table.current_embed(balance),
                 file=discord.File(io.BytesIO(png), filename=PNG_NAME),

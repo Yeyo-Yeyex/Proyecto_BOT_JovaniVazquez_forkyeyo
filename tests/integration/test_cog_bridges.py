@@ -25,6 +25,7 @@ from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
+from bot.services.skins import SKIN_BY_KEY
 
 GUILD_ID = 1
 GUILD = GUILD_ID
@@ -831,6 +832,26 @@ async def test_perfil_fortunas_y_ranking_ven_el_titulo_con_el_bot_real(tmp_path:
         for cog_name in ("Perfil", "Patrimonio", "MessageStats"):
             module = importer(cog_name, client)
             assert module.tienda.title_of(client, GUILD_ID, OWNER_ID) == "☑️ Cuenta verificada"
+    finally:
+        await client.close()
+
+
+async def test_la_ruleta_pinta_con_la_skin_de_la_tienda_con_el_bot_real(tmp_path: Path) -> None:
+    """El casino carga antes que la tienda: su puente tiene que ver la skin puesta."""
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        item = await client.shop.item_by_key(GUILD_ID, "skin_ruleta_granate")
+        assert item is not None
+        await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+        casino = client.get_cog("Casino")
+        assert casino.skin(GUILD_ID, OWNER_ID)["key"] == "serie"
+        await tienda.wear_skin(GUILD_ID, OWNER_ID, "ruleta", SKIN_BY_KEY["ruleta_granate"])
+        assert casino.skin(GUILD_ID, OWNER_ID)["key"] == "ruleta_granate"
+        # Los logros piden las skins de regalo a la tienda del bot cargado.
+        shop_module = importer("Tienda", client)
+        assert await shop_module.grant_reward_skins(client, GUILD_ID, OWNER_ID, ["x"]) == []
     finally:
         await client.close()
 
