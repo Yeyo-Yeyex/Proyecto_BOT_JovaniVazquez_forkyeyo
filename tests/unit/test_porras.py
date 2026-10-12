@@ -577,8 +577,11 @@ async def test_una_porra_entera_de_principio_a_fin(tmp_path: Path) -> None:
     await cog.observe(GUILD, ANA, play(700, stake=200))
     # Se resuelve en segundo plano. Hasta 10 s: con toda la batería en paralelo
     # (y escenas de Node y Chromium arrancando a la vez) 2 s se quedaban cortos.
+    # Se espera al mensaje final: `resolve` marca RESOLVED antes de guardar y editar,
+    # y cancelar las tareas en ese hueco dejaba el mensaje con los botones.
     for _ in range(1000):
-        if porra_.status is Status.RESOLVED:
+        last_edit = table.message.edit.await_args
+        if last_edit is not None and last_edit.kwargs.get("view", ...) is None:
             break
         await asyncio.sleep(0.01)
     for task in list(cog._tasks):
