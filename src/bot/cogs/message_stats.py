@@ -15,7 +15,8 @@ comando `niveles` (cog `Admin`), que usa `start_import`, `activate` y
 antiguo en XP y, la primera vez que termina, enciende los niveles sola.
 
 El nivel de cada uno se consulta en la sección 📊 Nivel de `perfil`
-(`level_embed`); aquí queda `ranking`.
+(`level_embed`); aquí queda `ranking`, que pone junto a cada nombre el
+título que luce en la tienda (`shop.title_of`).
 """
 
 from __future__ import annotations
@@ -568,6 +569,8 @@ class MessageStats(commands.Cog):
             user_id, total_xp = entry
             async with name_semaphore:
                 display_name = await self._resolve_display_name(guild, user_id)
+            if (title := tienda.title_of(self.bot, guild.id, user_id)) is not None:
+                display_name = f"{display_name} · {title}"
             return position, display_name, total_xp
 
         resolved_entries = await asyncio.gather(

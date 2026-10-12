@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
@@ -874,6 +874,70 @@ class ShopRepository:
         finally:
             connection.close()
         return _entry(row) if row else None
+
+    async def wear_title(
+        self, guild_id: int, user_id: int, catalog_key: str | None, title_keys: Collection[str]
+    ) -> None:
+        """Deja puesto solo el título `catalog_key` del miembro (ninguno con `None`).
+
+        Los títulos son objetos y usan la columna `equipped` como los roles. Uno
+        a la vez: ponerse uno guarda los demás.
+
+        Args:
+            title_keys: Claves de serie de todos los títulos (`shop_catalog.TITLE_KEYS`).
+        """
+        await self._run(self._wear_title_sync, guild_id, user_id, catalog_key, tuple(title_keys))
+
+    def _wear_title_sync(
+        self, guild_id: int, user_id: int, catalog_key: str | None, title_keys: tuple[str, ...]
+    ) -> None:
+        if not title_keys:
+            return
+        marks = ", ".join("?" for _ in title_keys)
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    f"""
+                    UPDATE shop_inventory SET equipped = (catalog_key IS ?)
+                    WHERE guild_id = ? AND user_id = ? AND status = 'active'
+                        AND catalog_key IN ({marks})
+                    """,
+                    (catalog_key, guild_id, user_id, *title_keys),
+                )
+        finally:
+            connection.close()
+
+    async def worn_titles(self, title_keys: Collection[str]) -> list[tuple[int, int, str, str]]:
+        """Título puesto de cada miembro: `(servidor, miembro, emoji, nombre)`.
+
+        Si alguien tuviera dos marcados (no debería), gana el más reciente.
+        """
+        return await self._run(self._worn_titles_sync, tuple(title_keys))
+
+    def _worn_titles_sync(self, title_keys: tuple[str, ...]) -> list[tuple[int, int, str, str]]:
+        if not title_keys:
+            return []
+        marks = ", ".join("?" for _ in title_keys)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT guild_id, user_id, emoji, name FROM shop_inventory
+                WHERE status = 'active' AND equipped = 1 AND catalog_key IN ({marks})
+                ORDER BY id
+                """,
+                title_keys,
+            ).fetchall()
+        finally:
+            connection.close()
+        worn: dict[tuple[int, int], tuple[str, str]] = {}
+        for row in rows:
+            worn[(int(row["guild_id"]), int(row["user_id"]))] = (
+                str(row["emoji"]),
+                str(row["name"]),
+            )
+        return [(g, u, emoji, name) for (g, u), (emoji, name) in worn.items()]
 
     async def active_boosts(self, now: float) -> list[tuple[int, int, float, float, int]]:
         """Potenciadores que aún no han acabado: `(servidor, miembro, inicio, fin, %)`."""

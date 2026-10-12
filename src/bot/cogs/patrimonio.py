@@ -18,7 +18,8 @@ Consultas (no mueven dinero; ver `bot.services.net_worth`):
   la renta por cobrar), con su valor, su puesto y el Patrimonio que le
   tocaría pagar el lunes.
 - `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
-  de la riqueza del servidor (Gini y lo que tiene el más rico).
+  de la riqueza del servidor (Gini y lo que tiene el más rico) y el título
+  que luce cada uno (`shop.title_of`).
 
 Logros de las dos: `patrimonio_stats` (Economía y Hacienda).
 
@@ -38,6 +39,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import shop as tienda
 from bot.services.achievements import StatDelta, patrimonio_stats
 from bot.services.economy import (
     EconomyService,
@@ -202,6 +204,13 @@ class Patrimonio(commands.Cog):
             return f"<@{user_id}>"
         return discord.utils.escape_markdown(member.display_name)
 
+    def _titled(self, guild: discord.Guild, user_id: int) -> str:
+        """Nombre para `fortunas`, con el título que luce si tiene uno."""
+        name = self._name(guild, user_id)
+        if (title := tienda.title_of(self.bot, guild.id, user_id)) is not None:
+            return f"{name} · *{title}*"
+        return name
+
     async def net_worth(self, guild_id: int, user_id: int) -> tuple[NetWorth, int, int]:
         """Patrimonio de un miembro, su puesto en `fortunas` y cuántos tienen algo."""
         everyone = await self.fortunes(guild_id)
@@ -289,7 +298,7 @@ class Patrimonio(commands.Cog):
         totals = [w.total for w in everyone]
         medals = ("🥇", "🥈", "🥉")
         lines = [
-            f"{medals[i] if i < len(medals) else f'`{i + 1}.`'} {self._name(guild, w.user_id)} · "
+            f"{medals[i] if i < len(medals) else f'`{i + 1}.`'} {self._titled(guild, w.user_id)} · "
             f"**{format_amount(w.total)}**\n-# 💵 {format_amount(w.cash)} · 🛍️ "
             f"{format_amount(w.goods_value)}"
             + (f" · 🎟️ {format_amount(w.lottery)}" if w.lottery else "")

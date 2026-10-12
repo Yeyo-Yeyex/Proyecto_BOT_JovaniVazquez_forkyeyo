@@ -79,7 +79,7 @@ from bot.services.pets import (
 )
 from bot.services.pets_catalog import CATALOG_PREFIX, SPAWNING, SPECIES_BY_KEY, Species
 from bot.services.shop import Kind, ShopItem
-from bot.services.shop_catalog import CATALOG, food_of, use_of
+from bot.services.shop_catalog import CATALOG, food_of, is_title, use_of
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 
@@ -736,6 +736,7 @@ class Mascotas(commands.Cog):
             and item.stock is None
             and item.price <= GIFT_MAX_PRICE
             and use_of(item.catalog_key) is None
+            and not is_title(item.catalog_key)
         ]
         if not candidates:
             return None

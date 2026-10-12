@@ -57,6 +57,12 @@ y la libreta no se usan desde la mochila: con tenerlos, el cog de porras deja ve
 quién apuesta qué y montar porras más largas (`bot.services.porras`, mismas
 claves). No tocan el dinero de nadie.
 
+**Títulos.** Los artículos con `title` (hechos con `_title`) son objetos que
+se lucen: su dueño elige uno en la mochila y sale junto a su nombre en
+`perfil`, `fortunas` y `ranking` (`bot.cogs.shop.title_of`). Comprar uno te lo
+pone. Son la forma de que gastar se vea: los más caros son únicos o
+numerados y piden nivel. Uno de cada por persona. No dan dinero ni XP.
+
 **Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
 desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
 (`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
@@ -159,6 +165,8 @@ class CatalogEntry:
         use: Clave de `bot.services.shop_uses.USES` si se puede usar.
         food: Si se come: las mascotas lo aceptan en `mascota`.
         visible: Si se vende. Las mascotas que aparecen solas están ocultas.
+        title: Si es un título: su dueño lo luce junto a su nombre en
+            `perfil`, `fortunas` y `ranking` (uno a la vez, desde la mochila).
     """
 
     key: str
@@ -177,6 +185,7 @@ class CatalogEntry:
     use: str | None = None
     food: bool = False
     visible: bool = True
+    title: bool = False
 
     @property
     def usage(self) -> Use | None:
@@ -218,6 +227,35 @@ def _t(
         min_level=level,
         use=use,
         food=food,
+    )
+
+
+def _title(
+    key: str,
+    aisle: str,
+    emoji: str,
+    name: str,
+    price: int,
+    description: str,
+    *,
+    igic: str = "general",
+    stock: int | None = None,
+    level: int = 0,
+) -> CatalogEntry:
+    """Un título: un objeto que se luce junto al nombre. Uno de cada por persona."""
+    return CatalogEntry(
+        key=key,
+        kind=Kind.TROPHY,
+        aisle=aisle,
+        emoji=emoji,
+        name=name,
+        price=price,
+        description=description,
+        igic=igic,
+        stock=stock,
+        per_user=1,
+        min_level=level,
+        title=True,
     )
 
 
@@ -755,6 +793,66 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("seguro_rc_perro", "animales", "📋", "Seguro de responsabilidad civil canino", 1_500,
        "Lo pide la Ley 7/2023 para los perros. Cubre mordiscos y destrozos. Los seguros "
        "están exentos de IGIC (art. 10.1.16 de la Ley 20/1991).", igic="cero"),
+    # 🎖️ Títulos (se lucen junto al nombre) y caprichos caros, por pasillo de tema --------
+    _title("titulo_eso", "ventanilla", "🎓", "ESO aprobada", 2_000,
+       "Con el sello del instituto y una mancha de Tipp-Ex. Es una tasa académica, no una "
+       "venta: tipo cero de IGIC.", igic="cero"),
+    _title("master_express", "ventanilla", "🎓", "Máster convalidado", 20_000,
+       "Sin ir a clase, sin trabajo de fin de máster y con las notas puestas después. Como "
+       "los buenos. Tasa académica: tipo cero.", igic="cero"),
+    _title("doctorado", "ventanilla", "📜", "Doctorado cum laude", 75_000,
+       "Tesis de 300 páginas, 13 de ellas propias. El programa antiplagio dice que bien; "
+       "el tribunal no la leyó. Tasa académica: tipo cero.", igic="cero"),
+    _title("carne_partido", "moncloa", "🪪", "Carné del partido", 10_000,
+       "Antigüedad de 1982 y las cuotas sin pagar desde 2004. Abre puertas que no tienen "
+       "pomo."),
+    _title("aforamiento", "moncloa", "🛡️", "Aforamiento", 250_000,
+       "Solo te puede juzgar el Supremo, y el Supremo tiene mucho trabajo. Lo tienen unas "
+       "diez mil personas en España; ahora, una más.", level=25),
+    _title("puerta_giratoria", "moncloa", "🚪", "Sillón en el consejo", 1_500_000,
+       "La puerta giratoria: de la Moncloa al consejo de una eléctrica. Dos reuniones al "
+       "año y una dieta que no es de comer. Cinco sillones.", stock=5, level=35),
+    _title("medalla_canarias", "canarias", "🏅", "Medalla de Oro de Canarias", 500_000,
+       "La da el Gobierno de Canarias cada 30 de mayo. Esta te la llevas sin discurso, "
+       "pero con foto. Diez numeradas.", stock=10, level=30),
+    _title("condado_teide", "canarias", "🌋", "Condado del Teide", 2_500_000,
+       "Título nobiliario recién inventado, con el pico más alto de España incluido. El "
+       "volcán no se toca: es Parque Nacional. Uno solo.", stock=1, level=40),
+    _title("marquesado_mogan", "lujo", "🏰", "Marquesado de Mogán", 5_000_000,
+       "Con vistas al puerto de Puerto Rico, que es de Mogán. Quien tenga el yate ya sabe "
+       "dónde amarra. Uno solo.", stock=1, level=45),
+    _title("grandeza", "lujo", "👑", "Grandeza de España", 20_000_000,
+       "La dignidad más alta de la nobleza. Antes dejaba no quitarse el sombrero delante "
+       "del Rey; aquí, delante de Perro Sanxe. Una sola en todo el servidor.",
+       stock=1, level=50),
+    _title("palco_bernabeu", "espana", "🏟️", "Palco en el Bernabéu", 3_000_000,
+       "Donde se cierran los contratos de verdad: el fútbol es lo de menos. Tres asientos "
+       "numerados.", stock=3, level=40),
+    _title("llave_sanjuan", "boricua", "🔑", "Llave de la ciudad de San Juan", 300_000,
+       "Abre todas las puertas del Viejo San Juan. Bueno, ninguna, pero queda preciosa en "
+       "la pared. Jovani tiene dos.", level=25),
+    _title("residencia_hk", "hongkong", "🇭🇰", "Residencia permanente en Hong Kong", 150_000,
+       "Siete años viviendo allí o pagar esto. Robuso eligió vivir allí, el muy honrado.",
+       level=20),
+    _title("insignia_pena", "porra", "📛", "Insignia de oro de la peña", 40_000,
+       "Para quien lleva veinte años en el bar sin acertar una porra. La paga la peña: tú "
+       "solo pones el dinero."),
+    _title("verificado", "shitpost", "☑️", "Cuenta verificada", 8_000,
+       "En la red social del pajarito cuesta ocho euros al mes. Aquí, una vez y para "
+       "siempre. Verifica que has pagado, nada más."),
+    _t("porsche", "lujo", "🏎️", "Porsche 911 de segunda mano", 1_500_000,
+       "De un concejal de urbanismo que no sabe explicar cómo lo pagó. Más de 11 CV: IGIC "
+       "del 15 %.", igic="lujo", stock=5, level=35),
+    _t("sorolla", "lujo", "🖼️", "Sorolla (atribuido)", 800_000,
+       "Atribuido a Sorolla por un tasador que también es tu cuñado. Niños en la playa, o "
+       "eso parece. Tres en el mercado.", stock=3, level=30),
+    _t("moto_agua", "canarias", "🚤", "Moto de agua en Puerto Rico", 120_000,
+       "Para molestar a los bañistas de Amadores. Embarcación de recreo: IGIC del 15 %.",
+       igic="lujo", level=20),
+    _t("monteria", "espana", "🦌", "Montería en una finca de Toledo", 400_000,
+       "Con ministro invitado, cacería de jabalí y una foto que nunca debió salir en el "
+       "periódico.", level=30),
+
     # 🎫 Peña de la porra -----------------------------------------------------------------
     _t("prismaticos_uco", "porra", "🔭", "Prismáticos de la UCO", 8_000,
        "Para ver desde la barra quién apuesta qué. En las `porra`, el botón 🔭 te enseña "
@@ -849,6 +947,15 @@ def use_of(catalog_key: str | None) -> Use | None:
     """Cómo se usa un artículo según su clave de serie, o `None`."""
     entry = CATALOG_BY_KEY.get(catalog_key or "")
     return entry.usage if entry else None
+
+
+#: Claves de los artículos que son títulos.
+TITLE_KEYS: frozenset[str] = frozenset(entry.key for entry in CATALOG if entry.title)
+
+
+def is_title(catalog_key: str | None) -> bool:
+    """Si un artículo es un título que se luce junto al nombre."""
+    return (catalog_key or "") in TITLE_KEYS
 
 
 def food_of(catalog_key: str | None) -> bool:

@@ -4,7 +4,8 @@ Junta en un solo mensaje lo que antes eran cuatro comandos (`nivel`,
 `patrimonio`, `logros` y `mochila`) y añade el curro y las rachas. Un
 desplegable cambia de sección en el mismo mensaje:
 
-- 📋 **Resumen**: un renglón de cada sección.
+- 📋 **Resumen**: un renglón de cada sección, debajo del título que luce el
+  miembro si tiene uno (`shop.title_of`).
 - 📊 **Nivel**: nivel, XP y racha de días (`MessageStats.level_embed`).
 - 🏰 **Patrimonio**: activos y lo que cobraría el Patrimonio
   (`Patrimonio.patrimonio_embed`, que también apunta sus logros).
@@ -43,6 +44,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
+from bot.cogs import shop as tienda
 from bot.cogs.achievements import Achievements, progress_bar
 from bot.cogs.message_stats import MessageStats
 from bot.cogs.patrimonio import Patrimonio
@@ -327,6 +329,8 @@ class Perfil(commands.Cog):
         embed = discord.Embed(title=f"👤 Perfil de {_name(target)}", color=COLOR)
         embed.set_thumbnail(url=target.display_avatar.url)
         lines: list[str] = []
+        if (title := tienda.title_of(self.bot, guild.id, target.id)) is not None:
+            lines.append(f"### {title}")
 
         levels = find_cog(self.bot, MessageStats)
         if levels is not None:
