@@ -78,6 +78,9 @@ Modelo de datos:
 - `economy_porra_settled`: porras ya liquidadas, para no pagar dos veces.
 - `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra,
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
+- `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
+  cobrado de más antes de que la renta de las retenciones se reiniciara cada
+  lunes (`regularize_irpf`). Se hace una sola vez.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -311,6 +314,27 @@ class WealthRun:
 
 
 @dataclass(frozen=True, slots=True)
+class IrpfRecord:
+    """Un ingreso con retención, tal como se cobró, para volver a calcularla.
+
+    Attributes:
+        concept: Motivo del libro.
+        gross: Bruto sujeto en la escala general (`economy_tax_records`).
+        withheld: IRPF que se retuvo.
+        wage_gross: Bruto de la nómina en su escala, o `None` si no es nómina.
+        ss_worker: Cotización del trabajador de la nómina (0 si no es nómina).
+        country: País de la nómina (`"es"` o el de fuera).
+    """
+
+    concept: str
+    gross: int
+    withheld: int
+    wage_gross: int | None
+    ss_worker: int
+    country: str
+
+
+@dataclass(frozen=True, slots=True)
 class InterestRun:
     """Resultado de pagar los intereses de un día en un servidor.
 
@@ -529,6 +553,11 @@ class EconomyRepository:
                     guild_id INTEGER PRIMARY KEY,
                     hit_at INTEGER NOT NULL,
                     spins INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_regularizations (
+                    guild_id INTEGER PRIMARY KEY,
+                    done_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS economy_wealth_weeks (
@@ -2234,6 +2263,237 @@ class EconomyRepository:
             charges.sort(key=lambda c: (-c.tax, c.user_id))
             return WealthRun(charges=tuple(charges))
 
+    # -- Regularización del IRPF al reiniciar la renta cada lunes --------------------
+
+    async def regularize_irpf(
+        self,
+        guild_id: int,
+        *,
+        now: float,
+        day_of: Callable[[float], str],
+        monday_of: Callable[[str], tuple[str, float]],
+        week_end: Callable[[str], float],
+        rewithhold: Callable[[IrpfRecord, int, int], int],
+        day_tax: Callable[[int, int], int],
+        foreign_window_seconds: float,
+        declaration_window_seconds: float,
+    ) -> list[tuple[int, int]] | None:
+        """Devuelve, una sola vez por servidor, el IRPF retenido de más con la ventana vieja.
+
+        Antes cada retención proyectaba con la renta de los últimos 7 días; ahora,
+        con la del lunes en adelante. Se vuelve a calcular cada retención de la
+        historia con la renta de su semana y se devuelve la diferencia desde la
+        cuenta del Estado (`devolucion:irpf:semana`), todo en una transacción.
+        Las filas (`economy_tax_records`, `economy_payroll` y
+        `economy_gambling_days`) quedan con lo que se habría retenido, para que
+        `hacienda` cuadre. Nunca se cobra de más: si la regla nueva saliera
+        más alta, se deja lo que se retuvo.
+
+        Casino: lo retenido de un día se rehace con la renta de la semana hasta
+        ese día. Si la semana ya tiene declaración, esta ya devolvió lo que
+        pasaba de su cuota (`weekly_refund`): solo se devuelve lo que baja la
+        parte que se quedó el Estado, `min(antes, cuota) - min(ahora, cuota)`.
+        Si aún no la tiene, se devuelve toda la diferencia y la declaración saldrá
+        con lo nuevo.
+
+        Args:
+            day_of: Día ISO (hora canaria) de un instante.
+            monday_of: `(lunes ISO, lunes en epoch)` de la semana de un día ISO.
+            week_end: Fin (epoch) de una semana dado su lunes ISO.
+            rewithhold: Recibe `(ingreso, renta de la semana antes de él, bruto de
+                fuera de su ventana)` y devuelve la retención con la regla nueva.
+            day_tax: Retención de un día de casino, `(neto, otras rentas)`.
+            foreign_window_seconds: Ventana de lo cobrado fuera, que no cambia.
+            declaration_window_seconds: Ventana con la que la declaración mira
+                las otras rentas (`pending_declarations`).
+
+        Returns:
+            `(miembro, devuelto)` de más a menos, o `None` si ya se había hecho.
+        """
+        return await self._run(
+            self._regularize_irpf_sync,
+            guild_id,
+            now,
+            day_of,
+            monday_of,
+            week_end,
+            rewithhold,
+            day_tax,
+            foreign_window_seconds,
+            declaration_window_seconds,
+        )
+
+    def _regularize_irpf_sync(
+        self,
+        guild_id: int,
+        now: float,
+        day_of: Callable[[float], str],
+        monday_of: Callable[[str], tuple[str, float]],
+        week_end: Callable[[str], float],
+        rewithhold: Callable[[IrpfRecord, int, int], int],
+        day_tax: Callable[[int, int], int],
+        foreign_window_seconds: float,
+        declaration_window_seconds: float,
+    ) -> list[tuple[int, int]] | None:
+        with self._transaction() as connection:
+            done = connection.execute(
+                "SELECT 1 FROM economy_irpf_regularizations WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+            if done is not None:
+                return None
+            connection.execute(
+                "INSERT INTO economy_irpf_regularizations (guild_id, done_at) VALUES (?, ?)",
+                (guild_id, now),
+            )
+            records = connection.execute(
+                """
+                SELECT r.id, r.user_id, r.created_at, r.concept, r.gross, r.withheld,
+                       p.id AS payroll_id, p.gross AS wage_gross, p.ss_worker, p.country
+                FROM economy_tax_records r
+                LEFT JOIN economy_payroll p
+                    ON p.guild_id = r.guild_id AND p.user_id = r.user_id
+                   AND p.created_at = r.created_at AND p.concept = r.concept
+                WHERE r.guild_id = ? AND r.user_id > 0
+                ORDER BY r.created_at, r.id
+                """,
+                (guild_id,),
+            ).fetchall()
+            days = connection.execute(
+                """
+                SELECT user_id, day, net, withheld, updated_at FROM economy_gambling_days
+                WHERE guild_id = ? AND user_id > 0 ORDER BY day
+                """,
+                (guild_id,),
+            ).fetchall()
+            income: dict[int, list[tuple[float, int]]] = {}
+            for r in records:
+                income.setdefault(int(r["user_id"]), []).append(
+                    (float(r["created_at"]), int(r["gross"]))
+                )
+            gambling: dict[int, list[tuple[str, int]]] = {}
+            for d in days:
+                gambling.setdefault(int(d["user_id"]), []).append(
+                    (str(d["day"]), max(int(d["net"]), 0))
+                )
+
+            def income_between(user: int, after: float, until: float) -> int:
+                """Renta con retención de `user` en `(after, until]`."""
+                return sum(g for at, g in income.get(user, ()) if after < at <= until)
+
+            def gambling_before(user: int, monday: str, day: str) -> int:
+                """Días de casino en positivo de la semana anteriores a `day`."""
+                return sum(net for d, net in gambling.get(user, ()) if monday <= d < day)
+
+            owed: dict[int, int] = {}
+            seen: dict[int, int] = {}
+            for r in records:
+                user, at = int(r["user_id"]), float(r["created_at"])
+                day = day_of(at)
+                monday, start = monday_of(day)
+                # Lo cobrado antes en la semana, también en el mismo instante.
+                before = sum(g for t, g in income[user][: seen.get(user, 0)] if t >= start)
+                seen[user] = seen.get(user, 0) + 1
+                withheld = int(r["withheld"])
+                if withheld <= 0:
+                    continue
+                recent = before + gambling_before(user, monday, day)
+                country = str(r["country"] or "es")
+                recent_foreign = 0
+                if country != "es":
+                    (recent_foreign,) = connection.execute(
+                        """
+                        SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
+                        WHERE guild_id = ? AND user_id = ? AND country = ?
+                          AND created_at > ? AND created_at < ?
+                        """,
+                        (guild_id, user, country, at - foreign_window_seconds, at),
+                    ).fetchone()
+                record = IrpfRecord(
+                    concept=str(r["concept"]),
+                    gross=int(r["gross"]),
+                    withheld=withheld,
+                    wage_gross=None if r["wage_gross"] is None else int(r["wage_gross"]),
+                    ss_worker=int(r["ss_worker"] or 0),
+                    country=country,
+                )
+                new = min(withheld, max(0, rewithhold(record, recent, int(recent_foreign))))
+                if new == withheld:
+                    continue
+                connection.execute(
+                    "UPDATE economy_tax_records SET withheld = ? WHERE id = ?", (new, r["id"])
+                )
+                if r["payroll_id"] is not None:
+                    connection.execute(
+                        "UPDATE economy_payroll SET irpf = ?, net = net + ? WHERE id = ?",
+                        (new, withheld - new, r["payroll_id"]),
+                    )
+                owed[user] = owed.get(user, 0) + withheld - new
+
+            weeks: dict[tuple[int, str], list[tuple[str, int, int, int]]] = {}
+            for d in days:
+                user, day = int(d["user_id"]), str(d["day"])
+                net, withheld = int(d["net"]), int(d["withheld"])
+                monday, start = monday_of(day)
+                new = withheld
+                if withheld > 0:
+                    others = sum(
+                        g for at, g in income.get(user, ()) if start <= at <= d["updated_at"]
+                    ) + gambling_before(user, monday, day)
+                    new = min(withheld, max(0, day_tax(max(net, 0), others)))
+                weeks.setdefault((user, monday), []).append((day, net, withheld, new))
+            for (user, monday), rows in weeks.items():
+                old_total = sum(w for _, _, w, _ in rows)
+                new_total = sum(n for _, _, _, n in rows)
+                if new_total == old_total:
+                    continue
+                declared = connection.execute(
+                    """
+                    SELECT 1 FROM economy_declarations
+                    WHERE guild_id = ? AND user_id = ? AND week_start = ?
+                    """,
+                    (guild_id, user, monday),
+                ).fetchone()
+                refund = old_total - new_total
+                if declared is not None:
+                    end = week_end(monday)
+                    others = income_between(user, end - declaration_window_seconds, end)
+                    quota = day_tax(max(sum(n for _, n, _, _ in rows), 0), others)
+                    refund = min(old_total, quota) - min(new_total, quota)
+                left = refund
+                for day, _, withheld, new in rows:
+                    cut = min(left, withheld - new)
+                    if cut <= 0:
+                        continue
+                    connection.execute(
+                        """
+                        UPDATE economy_gambling_days SET withheld = withheld - ?
+                        WHERE guild_id = ? AND user_id = ? AND day = ?
+                        """,
+                        (cut, guild_id, user, day),
+                    )
+                    left -= cut
+                if refund > 0:
+                    owed[user] = owed.get(user, 0) + refund
+
+            state = self._state_balance_in(connection, guild_id)
+            paid = []
+            for user, amount in sorted(owed.items(), key=lambda item: (-item[1], item[0])):
+                amount = min(amount, state)
+                if amount <= 0:
+                    continue
+                state -= amount
+                self._apply_in_transaction(
+                    connection,
+                    guild_id,
+                    STATE_ACCOUNT_ID,
+                    (LedgerEntry(-amount, "devolucion:irpf:semana"),),
+                )
+                self._apply_in_transaction(
+                    connection, guild_id, user, (LedgerEntry(amount, "devolucion:irpf:semana"),)
+                )
+                paid.append((user, amount))
+            return paid
+
     # -- Intereses de la cuenta ---------------------------------------------------------
 
     @staticmethod
@@ -3358,6 +3618,7 @@ class EconomyRepository:
         now: float,
         payslip_for: Callable[[int, int, int], ForeignPayslip],
         window_seconds: float,
+        foreign_window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         """Paga una nómina cobrada fuera de España.
 
@@ -3370,6 +3631,9 @@ class EconomyRepository:
             payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta
                 sujeta en España de la ventana en la escala general)` y devuelve
                 la nómina.
+            window_seconds: Ventana de la renta española.
+            foreign_window_seconds: Ventana de lo cobrado en el otro país, que
+                tiene su propio año fiscal.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -3385,6 +3649,7 @@ class EconomyRepository:
             now,
             payslip_for,
             window_seconds,
+            foreign_window_seconds,
         )
 
     def _credit_foreign_sync(
@@ -3398,17 +3663,17 @@ class EconomyRepository:
         now: float,
         payslip_for: Callable[[int, int, int], ForeignPayslip],
         window_seconds: float,
+        foreign_window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         with self._transaction() as connection:
-            since = now - window_seconds
             (recent_foreign,) = connection.execute(
                 """
                 SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
                 WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = ?
                 """,
-                (guild_id, user_id, since, country),
+                (guild_id, user_id, now - foreign_window_seconds, country),
             ).fetchone()
-            recent_es = self._recent_taxable_in(connection, guild_id, user_id, since)
+            recent_es = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
             slip = payslip_for(gross, int(recent_foreign), recent_es)
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.mpf_worker:

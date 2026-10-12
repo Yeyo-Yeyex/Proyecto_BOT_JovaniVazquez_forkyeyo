@@ -36,6 +36,7 @@ from bot.repositories.economy import (
     InsufficientFundsError,
     InterestNotice,
     InterestRun,
+    IrpfRecord,
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
@@ -67,6 +68,7 @@ from bot.services.interest import (
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
+    BECKHAM_RATE,
     IGIC_GENERAL_RATE,
     LOTTERY_EXEMPT,
     MAX_PENDING_DECLARATIONS,
@@ -451,6 +453,59 @@ def _week_end(week_iso: str) -> float:
     return (start + timedelta(days=7)).timestamp()
 
 
+def monday_epoch(day: date) -> float:
+    """Lunes a las 00:00 (hora canaria) de la semana de `day`, en epoch."""
+    return datetime.combine(week_start(day), datetime.min.time(), TIMEZONE).timestamp()
+
+
+def _monday_of(day_iso: str) -> tuple[str, float]:
+    monday = week_start(date.fromisoformat(day_iso))
+    return monday.isoformat(), monday_epoch(monday)
+
+
+def rewithhold(record: IrpfRecord, recent: int, recent_foreign: int) -> int:
+    """Retención de un ingreso ya cobrado, con la renta de su semana (`recent`).
+
+    Usa la misma regla con la que se cobró, deducida de la fila:
+
+    - Sin nómina: `compute_withholding`, salvo los derechos de imagen de las
+      porras (`*:imagen`), que retienen un tipo fijo y no cambian.
+    - Nómina de fuera: `compute_hk_payslip`, con la exención que se aplicó
+      (bruto menos lo sujeto) y lo cobrado fuera en su propia ventana.
+    - Nómina sin cotización: autónomo (`compute_self_employed_payslip`).
+    - Nómina al tipo de la Ley Beckham: fijo, no cambia.
+    - El resto: `compute_payslip`.
+    """
+    if record.wage_gross is None:
+        if record.concept.endswith(":imagen"):
+            return record.withheld
+        return compute_withholding(record.gross, recent).tax
+    wage, recent_wage = record.wage_gross, fiscal_to_wage(recent)
+    if record.country != "es":
+        return compute_hk_payslip(
+            wage,
+            recent_hk=recent_foreign,
+            resident=True,
+            exempt_left=wage - fiscal_to_wage(record.gross),
+            recent_es=recent_wage,
+        ).irpf
+    if record.ss_worker == 0:
+        return compute_self_employed_payslip(wage, recent_wage).irpf
+    if record.withheld == min(round(wage * BECKHAM_RATE), wage - record.ss_worker):
+        return record.withheld
+    return compute_payslip(wage, recent_wage).irpf
+
+
+def fiscal_window(now: float) -> float:
+    """Segundos desde el lunes a las 00:00 (hora canaria) hasta `now`.
+
+    En el bot el año fiscal es la semana: la renta con la que se proyecta cada
+    retención se reinicia cada lunes, el día de la declaración, en vez de
+    arrastrar los últimos 7 días (decisión del proyecto).
+    """
+    return now - monday_epoch(local_day(now))
+
+
 @dataclass(frozen=True, slots=True)
 class DailyResult:
     """Resultado de intentar cobrar el IMV (la recompensa diaria).
@@ -543,7 +598,7 @@ class EconomyService:
             now=now,
             adjust_tax=adjust_tax,
             day_tax=gambling_day_tax,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
         )
 
     async def settle_bet(
@@ -669,7 +724,7 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
             cap=cap,
             draw_hit=draw_hit or random.SystemRandom().randint,
         )
@@ -708,7 +763,7 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
         )
 
     async def porra_bets(self, guild_id: int, porra_id: int) -> list[tuple[int, int, int]]:
@@ -767,7 +822,7 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
             image_withhold=lambda gross, _recent: image_rights_withholding(gross),
         )
 
@@ -812,16 +867,41 @@ class EconomyService:
         """
         if gross <= 0:
             raise ValueError("El ingreso debe ser positivo.")
+        now = self._clock()
         tax, balance = await self.repository.credit_income(
             guild_id,
             user_id,
             gross=gross,
             concept=concept,
-            now=self._clock(),
+            now=now,
             withhold=self._withhold,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
         )
         return IncomeResult(gross=gross, tax=tax, rate=tax / gross, balance=balance)
+
+    async def regularize_irpf(self, guild_id: int) -> list[tuple[int, int]] | None:
+        """Devuelve el IRPF cobrado de más antes de que la renta se reiniciara cada lunes.
+
+        Tratamiento fiscal: devolución de retenciones ingresadas de más (art. 103
+        LIRPF, devolución derivada de la normativa del tributo). Sale de la cuenta
+        del Estado. Se hace una sola vez por servidor; el cálculo está en
+        `EconomyRepository.regularize_irpf` y la regla de cada ingreso en
+        `rewithhold`.
+
+        Returns:
+            `(miembro, devuelto)` de más a menos, o `None` si ya estaba hecho.
+        """
+        return await self.repository.regularize_irpf(
+            guild_id,
+            now=self._clock(),
+            day_of=lambda at: local_day(at).isoformat(),
+            monday_of=_monday_of,
+            week_end=_week_end,
+            rewithhold=rewithhold,
+            day_tax=gambling_day_tax,
+            foreign_window_seconds=PROJECTION_WINDOW_SECONDS,
+            declaration_window_seconds=PROJECTION_WINDOW_SECONDS,
+        )
 
     def _renta_rules(self) -> dict[str, object]:
         return {
@@ -1253,7 +1333,7 @@ class EconomyService:
         Quien vuelve de trabajar fuera puede tributar por la Ley Beckham
         (`beckham=True`, art. 93 LIRPF): IRPF al 24 % en vez de la escala.
 
-        La retención proyecta toda la renta sujeta del miembro en la semana
+        La retención proyecta toda la renta sujeta del miembro desde el lunes
         (nóminas, premios, casino en positivo), no solo las nóminas: es la
         misma renta que ven los premios y el casino, pasada a la escala de
         nóminas con `fiscal_to_wage`.
@@ -1277,14 +1357,15 @@ class EconomyService:
         def payslip_for(amount: int, recent: int) -> Payslip:
             return rule(amount, fiscal_to_wage(recent))
 
+        now = self._clock()
         slip, balance = await self.repository.credit_salary(
             guild_id,
             user_id,
             gross=gross,
             concept=concept,
-            now=self._clock(),
+            now=now,
             payslip_for=payslip_for,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
         )
         return SalaryResult(payslip=slip, balance=balance)
 
@@ -1313,6 +1394,8 @@ class EconomyService:
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
 
+        now = self._clock()
+
         def payslip_for(amount: int, recent_hk: int, recent: int) -> ForeignPayslip:
             return compute_hk_payslip(
                 amount,
@@ -1329,9 +1412,10 @@ class EconomyService:
             concept=concept,
             country="hk",
             account_id=HK_ACCOUNT_ID,
-            now=self._clock(),
+            now=now,
             payslip_for=payslip_for,
-            window_seconds=PROJECTION_WINDOW_SECONDS,
+            window_seconds=fiscal_window(now),
+            foreign_window_seconds=PROJECTION_WINDOW_SECONDS,
         )
         return ForeignSalaryResult(payslip=slip, balance=balance)
 
