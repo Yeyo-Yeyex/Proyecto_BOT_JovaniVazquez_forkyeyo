@@ -554,6 +554,26 @@ async def press_todo(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_todo_page(client: BotClient, owner: MagicMock) -> Click:
+    async def click(interaction: MagicMock) -> None:
+        await client.get_cog("Lista").show_page(interaction, 1)
+
+    return click
+
+
+async def press_todo_priority(client: BotClient, owner: MagicMock) -> Click:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock(return_value=MagicMock(id=600, channel=MagicMock(id=20)))
+    picker = module_of(client, "Lista").PriorityPicker(
+        client.get_cog("Lista"), owner, channel, "probar los botones"
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await picker.choose(Priority.ALTA, interaction)
+
+    return click
+
+
 def perfil_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
     module = module_of(client, "Perfil")
     return module.PerfilView(
@@ -662,6 +682,8 @@ CASES: dict[str, Press] = {
     "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
     "lista: tachar": press_todo,
+    "lista: pasar página": press_todo_page,
+    "lista: elegir prioridad": press_todo_priority,
 }
 
 

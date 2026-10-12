@@ -10,11 +10,12 @@ import discord
 import pytest
 from interaction_fakes import fake_interaction
 
-from bot.cogs.todo import SELECT_ID, Lista, build_board
+from bot.cogs.todo import SELECT_ID, DoneSelect, Lista, PageButton, PriorityPicker, build_board
 from bot.repositories.todo import TodoRepository
 from bot.services.todo import (
     MAX_TASK_LENGTH,
     MAX_TASKS,
+    PAGE_SIZE,
     Priority,
     Task,
     TaskError,
@@ -37,9 +38,9 @@ def test_la_prioridad_se_lee_en_cualquier_sitio_y_sin_mayusculas() -> None:
     assert parse_task("arreglar prio: alta el purge") == ("arreglar el purge", Priority.ALTA)
 
 
-def test_sin_prioridad_es_media_y_alta_suelta_no_cuenta() -> None:
+def test_sin_prioridad_no_hay_ninguna_y_alta_suelta_no_cuenta() -> None:
     """«alta» sin «prioridad» delante es parte de la tarea (una mesa alta)."""
-    assert parse_task("comprar una mesa alta") == ("comprar una mesa alta", Priority.MEDIA)
+    assert parse_task("comprar una mesa alta") == ("comprar una mesa alta", None)
 
 
 def test_la_prioridad_del_desplegable_manda_sobre_el_texto() -> None:
@@ -121,7 +122,7 @@ def _guild() -> MagicMock:
     return guild
 
 
-def test_la_lista_llena_con_textos_largos_cabe_en_un_embed() -> None:
+def test_cada_pagina_de_la_lista_llena_con_textos_largos_cabe_en_un_embed() -> None:
     tasks = [
         Task(i, GUILD_ID, 2, "x" * MAX_TASK_LENGTH, Priority(i % 3), i) for i in range(MAX_TASKS)
     ]
@@ -132,9 +133,53 @@ def test_la_lista_llena_con_textos_largos_cabe_en_un_embed() -> None:
     assert len(embed) <= 6000
     assert view is not None
     select = view.children[0].item  # type: ignore[attr-defined]
-    assert select.custom_id == SELECT_ID
-    assert len(select.options) == MAX_TASKS
-    assert select.max_values == MAX_TASKS
+    assert select.custom_id == f"{SELECT_ID}:0"
+    assert len(select.options) == PAGE_SIZE
+    assert select.max_values == PAGE_SIZE
+
+
+def _arrows(view: discord.ui.View) -> list[tuple[str, bool]]:
+    return [
+        (item.item.custom_id, item.item.disabled)  # type: ignore[attr-defined]
+        for item in view.children
+        if isinstance(item, PageButton)
+    ]
+
+
+def test_la_lista_se_parte_en_paginas_de_25_con_flechas() -> None:
+    tasks = [_task(i, Priority.MEDIA, i) for i in range(1, PAGE_SIZE + 6)]
+
+    first, view = build_board(_guild(), tasks)
+    assert view is not None
+    assert len((first.description or "").splitlines()) == PAGE_SIZE
+    assert "Página 1/2" in (first.footer.text or "")
+    assert _arrows(view) == [("lista:pag:0", True), ("lista:pag:1", False)]
+
+    # Una página que ya no existe (se tacharon tareas) enseña la última.
+    last, view = build_board(_guild(), tasks, page=7)
+    assert view is not None
+    lines = (last.description or "").splitlines()
+    assert len(lines) == 5
+    assert lines[0].startswith(f"`{PAGE_SIZE + 1}.`")
+    assert view.children[0].item.custom_id == f"{SELECT_ID}:1"  # type: ignore[attr-defined]
+    assert _arrows(view) == [("lista:pag:0", False), ("lista:pag:1", True)]
+
+
+def test_una_sola_pagina_no_lleva_flechas() -> None:
+    embed, view = build_board(_guild(), [_task(1, Priority.MEDIA, 0)])
+    assert view is not None
+    assert _arrows(view) == []
+    assert "Página" not in (embed.footer.text or "")
+
+
+async def test_el_menu_de_las_listas_antiguas_sigue_valiendo() -> None:
+    """Las listas publicadas antes de las páginas llevan `lista:hecha` a secas."""
+    for custom_id, page in (("lista:hecha", 0), ("lista:hecha:3", 3)):
+        match = DoneSelect.__discord_ui_compiled_template__.fullmatch(custom_id)
+        assert match is not None
+        select = discord.ui.Select(custom_id=custom_id)
+        item = await DoneSelect.from_custom_id(MagicMock(), select, match)
+        assert item.page == page
 
 
 def test_la_lista_vacia_no_lleva_menu() -> None:
@@ -159,6 +204,7 @@ def _ctx(author: MagicMock, sent_id: int = 500) -> MagicMock:
     ctx = MagicMock()
     ctx.guild = _guild()
     ctx.author = author
+    author.guild = ctx.guild
     ctx.message.delete = AsyncMock()
     sent = SimpleNamespace(id=sent_id, channel=SimpleNamespace(id=20))
     ctx.channel.send = AsyncMock(return_value=sent)
@@ -256,3 +302,135 @@ async def test_un_admin_tacha_cualquiera_y_la_lista_se_queda_sin_menu(
 
     assert await repo.list_tasks(GUILD_ID) == []
     assert interaction.edit_original_response.await_args.kwargs["view"] is None
+
+
+async def test_tachar_vuelve_a_la_misma_pagina(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    tasks = [await repo.add_task(GUILD_ID, 2, f"t{i}", Priority.MEDIA) for i in range(30)]
+    interaction = _interaction(_member(2))
+
+    await cog.complete_from_menu(interaction, [tasks[-1].id], page=1)
+
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
+    assert "Página 2/2" in (embed.footer.text or "")
+
+
+async def test_las_flechas_cambian_de_pagina_en_el_mismo_mensaje(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    for i in range(30):
+        await repo.add_task(GUILD_ID, 2, f"t{i}", Priority.MEDIA)
+    events: list[str] = []
+    interaction = fake_interaction(_member(2), events=events)
+    interaction.guild = _guild()
+
+    await cog.show_page(interaction, 1)
+
+    assert events == ["response.defer", "edit_original_response"]
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
+    assert "Página 2/2" in (embed.footer.text or "")
+
+
+# -- Elegir prioridad -----------------------------------------------------------------
+
+
+def _channel() -> MagicMock:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock(return_value=SimpleNamespace(id=600, channel=SimpleNamespace(id=20)))
+    return channel
+
+
+def _author() -> MagicMock:
+    author = _member(2)
+    author.guild = _guild()
+    return author
+
+
+async def test_lista_texto_sin_prioridad_la_pregunta_y_no_apunta_aun(
+    repo: TodoRepository,
+) -> None:
+    cog = Lista(MagicMock(), repo)
+    ctx = _ctx(_member(2))
+    ctx.send = AsyncMock(return_value=MagicMock())
+
+    await cog.lista_text.callback(cog, ctx, tarea="regar las plantas")
+
+    assert await repo.list_tasks(GUILD_ID) == []
+    ctx.message.delete.assert_awaited_once()
+    picker = ctx.send.await_args.kwargs["view"]
+    assert isinstance(picker, PriorityPicker)
+    assert picker.message is ctx.send.return_value
+    labels = [button.label for button in picker.children]  # type: ignore[attr-defined]
+    assert labels == ["Alta", "Media", "Baja"]
+
+
+async def test_elegir_prioridad_apunta_publica_y_borra_la_pregunta(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    author = _author()
+    channel = _channel()
+    picker = PriorityPicker(cog, author, channel, "regar las plantas")
+    picker.message = MagicMock()
+    picker.message.delete = AsyncMock()
+
+    await picker.choose(Priority.BAJA, _interaction(author))
+
+    [task] = await repo.list_tasks(GUILD_ID)
+    assert (task.text, task.priority) == ("regar las plantas", Priority.BAJA)
+    channel.send.assert_awaited_once()
+    picker.message.delete.assert_awaited_once()
+    # El fin del plazo después del clic no la apunta otra vez.
+    await picker.on_timeout()
+    assert len(await repo.list_tasks(GUILD_ID)) == 1
+
+
+async def test_solo_quien_la_apunta_elige_la_prioridad(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    picker = PriorityPicker(cog, _author(), _channel(), "regar las plantas")
+    other = _interaction(_member(3))
+
+    await picker.choose(Priority.ALTA, other)
+
+    assert other.response.send_message.await_args.kwargs["ephemeral"] is True
+    assert await repo.list_tasks(GUILD_ID) == []
+    assert not picker.done
+
+
+async def test_sin_elegir_a_tiempo_se_apunta_como_media(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    author = _author()
+    prompt = _interaction(author)
+    await prompt.response.send_message("¿prioridad?")  # la pregunta privada de /lista
+    picker = PriorityPicker(cog, author, _channel(), "regar las plantas", prompt=prompt)
+
+    await picker.on_timeout()
+
+    [task] = await repo.list_tasks(GUILD_ID)
+    assert task.priority == Priority.MEDIA
+    assert prompt.edit_original_response.await_args.kwargs["view"] is None
+
+
+async def test_slash_sin_prioridad_la_pregunta_en_privado(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    interaction = _interaction(_member(2))
+
+    await cog.lista.callback(cog, interaction, tarea="regar las plantas", prioridad=None)
+
+    kwargs = interaction.response.send_message.await_args.kwargs
+    assert kwargs["ephemeral"] is True
+    assert isinstance(kwargs["view"], PriorityPicker)
+    assert await repo.list_tasks(GUILD_ID) == []
+
+
+async def test_slash_sin_tarea_acepta_antes_de_leer_la_lista(repo: TodoRepository) -> None:
+    """Responder tras leer la base de datos pasaba de los 3 s de Discord en el NAS."""
+    cog = Lista(MagicMock(), repo)
+    events: list[str] = []
+    interaction = fake_interaction(_member(2), events=events)
+    interaction.guild = _guild()
+    interaction.original_response = AsyncMock(
+        return_value=SimpleNamespace(id=700, channel=SimpleNamespace(id=20))
+    )
+
+    await cog.lista.callback(cog, interaction, tarea=None, prioridad=None)
+
+    assert events == ["response.defer", "edit_original_response"]
+    assert await repo.get_board(GUILD_ID) == (20, 700)

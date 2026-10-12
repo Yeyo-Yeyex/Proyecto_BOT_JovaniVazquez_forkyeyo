@@ -695,11 +695,11 @@ no sale en ningún mensaje del bot salvo en `informe`.
 Lista de tareas compartida del servidor, para no apuntar los pendientes en mensajes sueltos que se pierden en el chat.
 
 - `lista`: vuelve a publicar la lista en el canal donde se escribe.
-- `lista <tarea> [prioridad alta|media|baja]`: la apunta y vuelve a publicar la lista. Sin prioridad, es media. La prioridad se escribe con la palabra «prioridad» (o «prio») delante y en cualquier punto del texto: `.lista arreglar el purge prioridad alta`; «comprar una mesa alta» no cuenta como prioridad. Con `/lista`, la prioridad también se elige en un desplegable, que manda sobre la del texto.
-- La lista sale ordenada: 🔥 alta, 📌 media y 💤 baja (iconos distintos, no solo colores) y, dentro de cada prioridad, de la más antigua a la más nueva. Cada tarea muestra quién la apuntó.
+- `lista <tarea> [prioridad alta|media|baja]`: la apunta y vuelve a publicar la lista. Si no se dice la prioridad, el bot la pregunta con tres botones (🔥 Alta, 📌 Media, 💤 Baja): con `/lista`, en un mensaje que solo ve quien la apunta; con `.lista`, en un mensaje del canal que solo puede pulsar quien la apunta y que se borra al elegir. La tarea se apunta al elegir; sin respuesta en dos minutos, se apunta como media. La prioridad se escribe con la palabra «prioridad» (o «prio») delante y en cualquier punto del texto: `.lista arreglar el purge prioridad alta`; «comprar una mesa alta» no cuenta como prioridad. Con `/lista`, la prioridad también se elige en un desplegable, que manda sobre la del texto.
+- La lista sale ordenada: 🔥 alta, 📌 media y 💤 baja (iconos distintos, no solo colores) y, dentro de cada prioridad, de la más antigua a la más nueva. Cada tarea muestra quién la apuntó. Sale en páginas de 25 que se pasan con ◀ y ▶ en el mismo mensaje.
 - Solo hay una lista a la vista: al publicar otra, el bot borra el mensaje de la anterior. Con `.lista <tarea>` borra también el mensaje de la orden, porque la tarea ya queda en la lista; necesita **Gestionar mensajes** y, si no lo tiene, lo deja y sigue.
-- Las tareas se tachan con el menú ✅ de la lista (varias a la vez). Puede tachar una tarea quien la apuntó o un administrador; si se eligen ajenas, se tachan solo las propias y la lista lo dice. Al tachar, la tarea se borra y la lista se actualiza en el mismo mensaje. El menú sigue funcionando tras reiniciar el bot.
-- Límites: 25 tareas pendientes por servidor (lo que cabe en un menú de Discord) y 100 caracteres por tarea.
+- Las tareas se tachan con el menú ✅ de la lista (varias a la vez; el menú enseña las de la página que se ve). Puede tachar una tarea quien la apuntó o un administrador; si se eligen ajenas, se tachan solo las propias y la lista lo dice. Al tachar, la tarea se borra y la lista se actualiza en el mismo mensaje. El menú y las flechas siguen funcionando tras reiniciar el bot; la pregunta de prioridad no, y hay que volver a apuntar la tarea.
+- Límites: 100 tareas pendientes por servidor (cuatro páginas) y 100 caracteres por tarea.
 - Logros (📝 Lista): apuntar 1, 25 y 100 tareas, y tachar 1, 25 y 100.
 
 ## 6 septies. Beernight: `beernight`

@@ -11,11 +11,13 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum
 
-#: Tareas pendientes como mucho por servidor. Es el máximo de opciones de un
-#: menú de Discord, y así el menú para tachar siempre las enseña todas.
-MAX_TASKS = 25
+#: Tareas pendientes como mucho por servidor (cuatro páginas).
+MAX_TASKS = 100
+#: Tareas por página de la lista. Es el máximo de opciones de un menú de
+#: Discord, así el menú para tachar enseña todas las de la página.
+PAGE_SIZE = 25
 #: Largo máximo de una tarea. Una opción de menú admite 100 caracteres, y con
-#: 25 tareas el embed sigue lejos de su límite de 4096.
+#: 25 tareas por página el embed sigue lejos de su límite de 4096.
 MAX_TASK_LENGTH = 100
 
 
@@ -70,7 +72,7 @@ class TaskError(ValueError):
     """La tarea no se puede apuntar; el mensaje se enseña tal cual al usuario."""
 
 
-def parse_task(raw: str, priority: Priority | None = None) -> tuple[str, Priority]:
+def parse_task(raw: str, priority: Priority | None = None) -> tuple[str, Priority | None]:
     """Separa el texto de la tarea y su prioridad.
 
     Args:
@@ -80,6 +82,7 @@ def parse_task(raw: str, priority: Priority | None = None) -> tuple[str, Priorit
 
     Returns:
         `(texto, prioridad)` con el texto ya limpio de la marca de prioridad.
+        La prioridad es `None` si no se dijo ninguna: el cog la pregunta.
 
     Raises:
         TaskError: Si el texto queda vacío o es demasiado largo.
@@ -95,9 +98,7 @@ def parse_task(raw: str, priority: Priority | None = None) -> tuple[str, Priorit
     if len(text) > MAX_TASK_LENGTH:
         raise TaskError(f"Demasiado larga: como mucho {MAX_TASK_LENGTH} caracteres.")
     # Sin `or`: `Priority.ALTA` vale 0 y contaría como «no hay prioridad».
-    if priority is not None:
-        return text, priority
-    return text, found if found is not None else DEFAULT_PRIORITY
+    return text, priority if priority is not None else found
 
 
 def sort_tasks(tasks: list[Task]) -> list[Task]:
