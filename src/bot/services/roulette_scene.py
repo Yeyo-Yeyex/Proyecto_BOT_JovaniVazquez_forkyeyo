@@ -26,7 +26,7 @@ decidido y cobrado cuando se pinta):
   (`roulette.hot_cold`), como las pantallas de las mesas de casino.
 
 **Skins.** El tapete (fieltro, fibras, filete y contorno del título) sale de
-la skin de quien juega (`bot.services.skins`, juego `ruleta`), que llega en
+la skin de quien juega (`bot.services.skins`, juego `tapete`), que llega en
 `meta.skin`. La escena repinta el fondo solo cuando cambia de skin.
 
 La misma escena se pinta de tres maneras, de mejor a peor:
@@ -76,7 +76,7 @@ from bot.utils.gif import local_palette_gif
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "ruleta" / "escena.html"
 #: Clave del juego en `skins.GAMES`: la skin cambia el tapete.
-GAME = "ruleta"
+GAME = "tapete"
 #: Tamaño de la imagen, el mismo que la moneda y los dados.
 W, H = 640, 360
 
@@ -501,7 +501,7 @@ class RouletteScene:
         """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador.
 
         Args:
-            skin: Colores del tapete (`skins.params("ruleta", …)`); `None`, los de serie.
+            skin: Colores del tapete (`skins.params("tapete", …)`); `None`, los de serie.
         """
         meta = {**meta_state(), "seed": seed, "skin": skin or skins.params(GAME)}
         patches = await self.painter.render(meta, states)

@@ -29,6 +29,7 @@ y se reduce al copiarlo. Sin emojis: el Chromium del Docker no trae su fuente.
 </style>
 </head>
 <body>
+<script src="../tapete.js"></script>
 <script>
 "use strict";
 const S = 2;
@@ -45,7 +46,7 @@ const tmp = document.createElement("canvas");   // para pintar una cara con su l
 const tctx = tmp.getContext("2d");
 
 let META = null;
-let BG = null;
+let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 const FACES = {};
 // Tapete con escalera, historial y etiquetas: no cambia mientras vuela la
 // moneda, así que se pinta una vez por partida y estado (unos pocos por GIF).
@@ -163,8 +164,10 @@ function paintBackground() {
   const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
   const g = c.getContext("2d"); g.scale(S, S);
   let grad = g.createRadialGradient(230, 250, 30, 260, 210, 520);
-  grad.addColorStop(0, "#2a8a57"); grad.addColorStop(0.55, "#145a37"); grad.addColorStop(1, "#06281a");
+  const felt = Tapete.felt(META.skin, ["#2a8a57", "#145a37", "#06281a"]);
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  Tapete.pattern(g, 0, 0, W, H, META.skin, [400, 225, 0.62]);
   // La marca del tapete donde cae la moneda.
   g.save(); g.strokeStyle = "rgba(255,214,110,0.22)"; g.lineWidth = 1.5;
   g.beginPath(); g.ellipse(232, 268, 128, 128 * Math.sin(32 * Math.PI / 180), 0, 0, Math.PI * 2); g.stroke();
@@ -389,6 +392,7 @@ function hud(st) {
     g.font = "30px Luckiest"; g.lineWidth = 6; g.strokeStyle = "#06180f"; g.lineJoin = "round";
     g.strokeText("¿CARA O CRUZ?", 232, 120); g.fillStyle = "#fff1b8"; g.fillText("¿CARA O CRUZ?", 232, 120);
     g.font = "700 11px Montserrat"; g.fillStyle = "rgba(220,240,228,0.8)";
+    Tapete.outline(g, META.skin, "ELIGE LADO CON LOS BOTONES", 232, 146);
     g.fillText("ELIGE LADO CON LOS BOTONES", 232, 146);
     g.restore();
   }
@@ -477,7 +481,9 @@ window.loadFonts = async () => {
 };
 window.setup = (meta) => {
   META = meta; HUD = new Map(); PREV = PREV_HUD = null;
-  if (!BG) { BG = paintBackground(); FACES.cara = paintFace("cara"); FACES.cruz = paintFace("cruz"); }
+  const sk = meta?.skin?.key || "serie";
+  if (!BG) { FACES.cara = paintFace("cara"); FACES.cruz = paintFace("cruz"); }
+  if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }
   return true;
 };
 window.renderFrames = (states, first = 0) => states.map((st, i) => snapshot(paint(st, first + i)));

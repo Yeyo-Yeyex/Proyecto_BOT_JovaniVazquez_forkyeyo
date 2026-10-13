@@ -47,6 +47,7 @@ curva de papel en el pliegue. Se adivinan los palos, no el número.
 </style>
 </head>
 <body>
+<script src="../tapete.js"></script>
 <script>
 "use strict";
 const S = 2;
@@ -74,7 +75,7 @@ const octx = out.getContext("2d", { willReadFrequently: true });
 const cctx = crop.getContext("2d");
 
 let META = { rows: ROAD_ROWS, cols: ROAD_COLS };
-let BG = null;
+let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 let PREV = null;           // píxeles del fotograma anterior (Uint32Array)
 const SPRITES = new Map(); // cartas ya dibujadas (una vez por página)
 
@@ -316,8 +317,10 @@ function paintBackground() {
   const g = c.getContext("2d"); g.scale(S, S);
   // Tapete con degradado radial y una textura de fieltro.
   let grad = g.createRadialGradient(320, 190, 30, 320, 190, 470);
-  grad.addColorStop(0, "#238253"); grad.addColorStop(0.55, "#135a37"); grad.addColorStop(1, "#06281a");
+  const felt = Tapete.felt(META.skin, ["#238253", "#135a37", "#06281a"]);
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  Tapete.pattern(g, 0, 0, W, H, META.skin, [W / 2, 165, 0.8]);
   const r = rng(11);
   for (let k = 0; k < 2600; k++) {
     g.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.06)";
@@ -451,6 +454,7 @@ function drawHeader(h) {
   g.save(); g.font = "700 10px Montserrat"; g.textAlign = "right"; g.textBaseline = "middle"; spaced(g, 1.2);
   const text = h.hand ? `ZAPATO ${h.shoe} · MANO ${h.hand} · QUEDAN ${h.left}` : `ZAPATO ${h.shoe}`;
   g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 3 * S; g.fillStyle = "#f2e8c8";
+  Tapete.outline(g, META.skin, text, 620, 20);
   g.fillText(text, 620, 20);
   g.restore();
 }
@@ -675,8 +679,9 @@ window.loadFonts = async () => {
   return true;
 };
 window.setup = (meta) => {
-  META = { rows: meta?.rows || ROAD_ROWS, cols: meta?.cols || ROAD_COLS }; PREV = null;
-  if (!BG) BG = paintBackground();
+  META = { rows: meta?.rows || ROAD_ROWS, cols: meta?.cols || ROAD_COLS, skin: meta?.skin }; PREV = null;
+  const sk = meta?.skin?.key || "serie";
+  if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }
   return true;
 };
 window.renderFrames = (states, first = 0) => states.map((st) => { paint(st); return snapshot(!!st.full); });

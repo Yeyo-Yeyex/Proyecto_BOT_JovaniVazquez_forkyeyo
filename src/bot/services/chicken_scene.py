@@ -264,31 +264,48 @@ class ChickenScene:
             return None
         return await asyncio.to_thread(patch_png, patches[0])
 
-    async def start(self, difficulty: Difficulty, *, stake: int, seed: int) -> bytes:
-        """PNG antes de jugar: el pollo en la acera."""
-        meta = meta_state(difficulty, stake=stake, seed=seed)
+    async def start(
+        self,
+        difficulty: Difficulty,
+        *,
+        stake: int,
+        seed: int,
+        skin: dict[str, object] | None = None,
+    ) -> bytes:
+        """PNG antes de jugar: el pollo en la acera, con el tapete `skin`."""
+        meta = {**meta_state(difficulty, stake=stake, seed=seed), "skin": skin}
         png = await self._still(meta, frame_state(start_scene(difficulty, stake=stake, seed=seed)))
         if png is None:
             return await asyncio.to_thread(self.fallback.start, difficulty, stake=stake, seed=seed)
         return png
 
-    async def board(self, game: ChickenGame, *, seed: int, note: str = "") -> bytes:
-        """PNG del estado actual de la partida (o de cómo acabó)."""
-        meta = meta_state(game.difficulty, stake=game.stake, seed=seed)
+    async def board(
+        self, game: ChickenGame, *, seed: int, note: str = "", skin: dict[str, object] | None = None
+    ) -> bytes:
+        """PNG del estado actual de la partida (o de cómo acabó), con el tapete `skin`."""
+        meta = {**meta_state(game.difficulty, stake=game.stake, seed=seed), "skin": skin}
         state = frame_state(resting_scene(game, seed=seed, note=note), banner_for(game))
         png = await self._still(meta, state)
         if png is None:
             return await asyncio.to_thread(self.fallback.board, game, seed=seed, note=note)
         return png
 
-    async def hops(self, game: ChickenGame, *, start: int, seed: int, note: str = "") -> Media:
-        """GIF de los carriles cruzados desde `start` y PNG del final (ver `timeline`).
+    async def hops(
+        self,
+        game: ChickenGame,
+        *,
+        start: int,
+        seed: int,
+        note: str = "",
+        skin: dict[str, object] | None = None,
+    ) -> Media:
+        """GIF de los carriles cruzados desde `start` y PNG del final (ver `timeline`), con `skin`.
 
         Raises:
             ValueError: Si no hay ningún carril que enseñar.
         """
         steps = timeline(game, start=start, seed=seed)
-        meta = meta_state(game.difficulty, stake=game.stake, seed=seed)
+        meta = {**meta_state(game.difficulty, stake=game.stake, seed=seed), "skin": skin}
         states = [frame_state(scene) for scene, _ms in steps]
         states.append(frame_state(resting_scene(game, seed=seed, note=note), banner_for(game)))
         frames = await self._frames(meta, states)

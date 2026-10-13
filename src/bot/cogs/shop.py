@@ -2144,6 +2144,11 @@ def skin_params(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> di
     return skin_params_of(game, skin_of(bot, guild_id, user_id, game))
 
 
+def tapete(bot: commands.Bot, guild_id: int, user_id: int) -> dict[str, object]:
+    """El tapete de este miembro para cualquier mesa con fieltro (`skin_params` de `tapete`)."""
+    return skin_params(bot, guild_id, user_id, skins_registry.TAPETE)
+
+
 async def grant_reward_skins(
     bot: commands.Bot, guild_id: int, user_id: int, achievement_ids: list[str]
 ) -> list[Skin]:

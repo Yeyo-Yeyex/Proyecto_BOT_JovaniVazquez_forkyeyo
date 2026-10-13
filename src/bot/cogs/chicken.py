@@ -61,6 +61,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, chicken_stats
 from bot.services.chicken import (
@@ -570,11 +571,15 @@ class ChickenView(ui.View):
 
     # -- GIF por adelantado -------------------------------------------------------------
 
+    def skin(self) -> dict[str, object]:
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.tapete`)."""
+        return tienda.tapete(self.cog.bot, self.guild_id, self.owner.id)
+
     def _plan_key(self) -> tuple[Any, ...]:
-        """Lo que decide los GIF del próximo paso, salvo el botón que se pulse."""
+        """Lo que decide los GIF del próximo paso, salvo el botón que se pulse (y el tapete)."""
         game = self.game
         assert game is not None
-        return (id(game), game.crossed, self.auto, self.seed)
+        return (id(game), game.crossed, self.auto, self.seed, self.skin()["key"])
 
     def _predict(self, kind: str) -> tuple[ChickenGame, int]:
         """La partida tal como quedará si se pulsa `kind` (sobre una copia) y desde dónde."""
@@ -630,7 +635,11 @@ class ChickenView(ui.View):
                 try:
                     future, start = self._predict(kind)
                     media = await self.cog.renderer.hops(
-                        future, start=start, seed=self.seed, note=self._end_note(future)
+                        future,
+                        start=start,
+                        seed=self.seed,
+                        note=self._end_note(future),
+                        skin=self.skin(),
                     )
                 except Exception:
                     logger.warning("No se pudo pintar por adelantado el Pollo", exc_info=True)
@@ -768,7 +777,9 @@ class ChickenView(ui.View):
         async def paint() -> Media:
             media = await ready if ready is not None else None
             if media is None:
-                media = await self.cog.renderer.hops(game, start=start, seed=self.seed, note=note)
+                media = await self.cog.renderer.hops(
+                    game, start=start, seed=self.seed, note=note, skin=self.skin()
+                )
             return media
 
         media: Media
@@ -797,10 +808,12 @@ class ChickenView(ui.View):
         game = self.game
         if game is None:
             png = await self.cog.renderer.start(
-                self.difficulty, stake=self.stake, seed=self.seed or 1
+                self.difficulty, stake=self.stake, seed=self.seed or 1, skin=self.skin()
             )
         else:
-            png = await self.cog.renderer.board(game, seed=self.seed, note=self._end_note(game))
+            png = await self.cog.renderer.board(
+                game, seed=self.seed, note=self._end_note(game), skin=self.skin()
+            )
         self.rebuild()
         await edit(
             interaction,
@@ -1125,7 +1138,7 @@ class Chicken(commands.Cog, name="Pollo"):
             await send_error(error)
             return
         assert view.game is not None
-        png = await self.renderer.board(view.game, seed=view.seed)
+        png = await self.renderer.board(view.game, seed=view.seed, skin=view.skin())
         view.rebuild()
         view.message = await send(
             embed=view.embed(),

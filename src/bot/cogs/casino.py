@@ -29,7 +29,7 @@ como premio y el marcador de números calientes y fríos, con sus botones
 🔥 Caliente y ❄️ Frío para apostar a pleno a lo que «toca».
 
 **Skins.** La mesa se pinta con el tapete que el jugador lleva puesto en la
-tienda (`shop.skin_params`, juego `ruleta` de `bot.services.skins`), y el pie
+tienda (`shop.skin_params`, juego `tapete` de `bot.services.skins`), y el pie
 de la mesa lo nombra. La precarga apunta con qué tapete se pintó: si el
 jugador lo cambia entre medias, se tira. La mesa no lleva el botón 🎨: sus 25
 botones ya llenan las cinco filas de Discord; el tapete se cambia en la mochila.

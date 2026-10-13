@@ -58,6 +58,8 @@ from types import MappingProxyType
 
 #: Prefijo de la clave de artículo de una skin en el surtido de la tienda.
 CATALOG_PREFIX = "skin_"
+#: El juego de los tapetes: uno para todas las mesas con fieltro.
+TAPETE = "tapete"
 
 
 def _frozen(values: Mapping[str, object]) -> Mapping[str, object]:
@@ -166,7 +168,11 @@ class Skin:
 
 # fmt: off
 GAMES: dict[str, Game] = {g.key: g for g in (
-    Game("ruleta", "Ruleta", "🎡", "tapete", _frozen({
+    # El tapete es uno para todas las mesas con fieltro (ruleta, autobús, bacará,
+    # dados, moneda y pollo): se compra una vez y se ve en todas. Cada escena
+    # carga `assets/tapete.js`, que pinta `felt` y `pattern`; con la de serie,
+    # cada mesa usa su verde de siempre. Los de serie de aquí son los de la ruleta.
+    Game("tapete", "Mesas del casino", "🎰", "tapete", _frozen({
         # Degradado radial del fieltro, de la luz al borde.
         "felt": ("#2f9b62", "#1b7345", "#0b3f26"),
         # Las fibras largas del fieltro: una clara y una oscura.
@@ -175,6 +181,8 @@ GAMES: dict[str, Game] = {g.key: g for g in (
         "trim": "rgba(240,199,90,0.22)",
         # Contorno del título, sobre el fieltro.
         "ink": "#10190f",
+        # Dibujo encima del fieltro (`Tapete.PATTERNS` en `assets/tapete.js`); vacío, liso.
+        "pattern": "",
     })),
     # El gallo de serie es un giro colorado: pecho rojizo, esclavina naranja y
     # cola negra con reflejos verdes. Cada skin es un gallo entero.
@@ -197,14 +205,64 @@ GAMES: dict[str, Game] = {g.key: g for g in (
 )}
 
 SKINS: tuple[Skin, ...] = (
-    Skin("ruleta_granate", "ruleta", "🟥", "Tapete granate", (
+    # -- 🎰 Tapetes: uno para todas las mesas con fieltro. La clave del granate
+    # es de cuando solo lo tenía la ruleta y no se cambia.
+    Skin("ruleta_granate", "tapete", "🟥", "Tapete granate", (
         "El fieltro de los casinos de los ochenta, de cuando se fumaba dentro. No "
-        "cambia ni un número de la rueda: solo el color de la mesa."
+        "cambia ni una carta ni un número: solo el color de la mesa."
     ), _frozen({
         "felt": ("#a3243a", "#741628", "#3a0812"),
         "fiber": ("rgba(255,200,205,0.045)", "rgba(30,0,6,0.08)"),
         "ink": "#1c0508",
     }), price=15_000, aisle="lujo"),
+    Skin("tapete_oro", "tapete", "🪙", "Tapete de oro", (
+        "Fieltro de pan de oro con celosía art déco y chispas, como la sala privada de "
+        "Montecarlo. Hacienda pregunta de dónde ha salido; tú dices que de la moneda."
+    ), _frozen({
+        "felt": ("#ffe9a3", "#c99a35", "#5c3b07"),
+        "fiber": ("rgba(255,250,215,0.06)", "rgba(60,35,0,0.09)"),
+        "trim": "rgba(255,240,190,0.5)",
+        "ink": "#2a1a02",
+        "pattern": "oro",
+    }), price=100_000, aisle="lujo", min_level=10),
+    Skin("tapete_espana", "tapete", "🇪🇸", "Tapete rojigualda", (
+        "Rojo y gualda con el escudo bordado, las columnas y el PLVS VLTRA. Para "
+        "jugarse los ahorros con el himno de fondo, que no tiene letra."
+    ), _frozen({
+        "felt": ("#f1bf00", "#c21d24", "#7e0f13"),
+        "fiber": ("rgba(255,240,190,0.05)", "rgba(60,0,0,0.08)"),
+        "trim": "rgba(255,215,90,0.4)",
+        "ink": "#4a0608",
+        "pattern": "espana",
+    }), price=30_000, aisle="espana"),
+    Skin("tapete_israel", "tapete", "🇮🇱", "Tapete de Israel", (
+        "Blanco satinado, las dos franjas azules y la estrella de David bordada, con "
+        "un damasco de estrellas que solo se ve de cerca."
+    ), _frozen({
+        "felt": ("#ffffff", "#e6ebf3", "#9aa8bf"),
+        "fiber": ("rgba(255,255,255,0.06)", "rgba(0,20,70,0.07)"),
+        "trim": "rgba(0,56,184,0.45)",
+        "ink": "#001a5c",
+        "pattern": "israel",
+    }), price=30_000, aisle="lujo"),
+    Skin("tapete_canarias", "tapete", "🌋", "Tapete del Teide", (
+        "Azul atlántico con olas, el Teide nevado asomando por encima del mar de "
+        "nubes y la tricolor de las islas en el borde. Huele a gofio."
+    ), _frozen({
+        "felt": ("#1b8fd6", "#0a62a8", "#03294f"),
+        "fiber": ("rgba(200,235,255,0.05)", "rgba(0,10,30,0.08)"),
+        "ink": "#021a33",
+        "pattern": "canarias",
+    }), price=25_000, aisle="canarias"),
+    Skin("tapete_boricua", "tapete", "🇵🇷", "Tapete monoestrellado", (
+        "Las cinco franjas, el triángulo y la estrella de Puerto Rico. Jovani juega "
+        "aquí descalzo y con la bocina a todo volumen. ¡Wepa!"
+    ), _frozen({
+        "felt": ("#f2163f", "#c90a33", "#5e0418"),
+        "fiber": ("rgba(255,255,255,0.05)", "rgba(40,0,10,0.08)"),
+        "ink": "#06204f",
+        "pattern": "boricua",
+    }), price=25_000, aisle="boricua"),
     # -- 🐓 Gallos: tres gratis, el resto en la tienda, uno de logro y dos de temporada.
     Skin("gallo_blanco", "gallos", "🤍", "Gallo blanco", (
         "Leghorn de granja, blanco nuclear. Lo tiene todo el mundo y aun así impone."

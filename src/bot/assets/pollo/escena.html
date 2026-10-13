@@ -36,6 +36,7 @@ fuente.
 </style>
 </head>
 <body>
+<script src="../tapete.js"></script>
 <script>
 "use strict";
 const S = 2;
@@ -169,8 +170,10 @@ function paintBackground() {
   const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
   const g = c.getContext("2d"); g.scale(S, S);
   const grad = g.createRadialGradient(230, 230, 30, 260, 200, 520);
-  grad.addColorStop(0, "#2a8a57"); grad.addColorStop(0.55, "#145a37"); grad.addColorStop(1, "#06281a");
+  const felt = Tapete.felt(META.skin, ["#2a8a57", "#145a37", "#06281a"]);
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  Tapete.pattern(g, 0, 0, W, H, META.skin);
   goldText(g, "POLLO", 22, 46, 34);
   g.font = "700 9px Montserrat"; g.fillStyle = "rgba(220,240,228,0.75)"; g.textBaseline = "alphabetic";
   g.fillText(`${META.difficulty.toUpperCase()}  ·  ${META.road.toUpperCase()}`, 24, 61);

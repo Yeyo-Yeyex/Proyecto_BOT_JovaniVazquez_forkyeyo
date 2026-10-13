@@ -59,10 +59,10 @@ def test_cada_skin_tiene_su_articulo_en_la_tienda() -> None:
 
 
 def test_params_parte_de_los_de_serie() -> None:
-    serie = params("ruleta")
+    serie = params("tapete")
     assert serie["key"] == "serie"
-    assert serie["felt"] == GAMES["ruleta"].defaults["felt"]
-    granate = params("ruleta", GRANATE)
+    assert serie["felt"] == GAMES["tapete"].defaults["felt"]
+    granate = params("tapete", GRANATE)
     assert granate["felt"] != serie["felt"]
     assert granate["trim"] == serie["trim"], "lo que la skin no cambia sale de serie"
 
@@ -70,15 +70,15 @@ def test_params_parte_de_los_de_serie() -> None:
 def test_params_rechaza_skins_de_otro_juego_o_con_parametros_raros() -> None:
     wrong = Skin("x", "moneda", "🪙", "X", "", {}, price=1, aisle="lujo")
     with pytest.raises(ValueError, match="es de moneda"):
-        params("ruleta", wrong)
-    odd = Skin("y", "ruleta", "🟪", "Y", "", {"bola": "#fff"}, price=1, aisle="lujo")
+        params("tapete", wrong)
+    odd = Skin("y", "tapete", "🟪", "Y", "", {"bola": "#fff"}, price=1, aisle="lujo")
     with pytest.raises(ValueError, match="no tiene"):
-        params("ruleta", odd)
+        params("tapete", odd)
 
 
 def test_temporada_solo_en_sus_meses() -> None:
     carnaval = Skin(
-        "c", "ruleta", "🎭", "C", "", {}, price=1, aisle="lujo",
+        "c", "tapete", "🎭", "C", "", {}, price=1, aisle="lujo",
         season=Season("Carnaval", frozenset({2})),
     )  # fmt: skip
     assert in_season(carnaval, datetime(2026, 2, 14, tzinfo=TIMEZONE))
@@ -112,13 +112,13 @@ async def test_comprar_una_skin_te_la_pone(tmp_path: Path) -> None:
     guild = make_guild()
     member = make_member(guild)
     await pay_for(cog, guild, member, GRANATE.catalog_key)
-    assert cog.skin(GUILD, BUYER, "ruleta") == GRANATE
+    assert cog.skin(GUILD, BUYER, "tapete") == GRANATE
     bot = MagicMock()
     bot.get_cog.return_value = cog
-    assert shop_cog.skin_of(bot, GUILD, BUYER, "ruleta") == GRANATE
-    assert shop_cog.skin_params(bot, GUILD, BUYER, "ruleta")["key"] == "ruleta_granate"
+    assert shop_cog.skin_of(bot, GUILD, BUYER, "tapete") == GRANATE
+    assert shop_cog.skin_params(bot, GUILD, BUYER, "tapete")["key"] == "ruleta_granate"
     bot.get_cog.return_value = None
-    assert shop_cog.skin_params(bot, GUILD, BUYER, "ruleta")["key"] == "serie"
+    assert shop_cog.skin_params(bot, GUILD, BUYER, "tapete")["key"] == "serie"
 
 
 async def test_la_skin_sale_en_su_pestaña_y_en_la_mochila(tmp_path: Path) -> None:
@@ -143,16 +143,16 @@ async def test_cambiar_de_skin_desde_la_mochila(tmp_path: Path) -> None:
     await pay_for(cog, guild, member, GRANATE.catalog_key)
     backpack = await cog.backpack_view(guild, member, member)
     select = skin_select(backpack)
-    assert [o.value for o in select.options] == ["ruleta:", "ruleta:ruleta_granate"]
-    assert [o.value for o in select.options if o.default] == ["ruleta:ruleta_granate"]
+    assert [o.value for o in select.options] == ["tapete:", "tapete:ruleta_granate"]
+    assert [o.value for o in select.options if o.default] == ["tapete:ruleta_granate"]
 
     click = make_interaction(member)
-    await cog.choose_skin(click, "ruleta:", backpack=backpack)
-    assert cog.skin(GUILD, BUYER, "ruleta") is None
-    assert [o.value for o in skin_select(backpack).options if o.default] == ["ruleta:"]
+    await cog.choose_skin(click, "tapete:", backpack=backpack)
+    assert cog.skin(GUILD, BUYER, "tapete") is None
+    assert [o.value for o in skin_select(backpack).options if o.default] == ["tapete:"]
 
-    await cog.choose_skin(make_interaction(member), "ruleta:ruleta_granate", backpack=backpack)
-    assert cog.skin(GUILD, BUYER, "ruleta") == GRANATE
+    await cog.choose_skin(make_interaction(member), "tapete:ruleta_granate", backpack=backpack)
+    assert cog.skin(GUILD, BUYER, "tapete") == GRANATE
 
 
 async def test_no_te_puedes_poner_una_skin_que_no_tienes(tmp_path: Path) -> None:
@@ -161,8 +161,8 @@ async def test_no_te_puedes_poner_una_skin_que_no_tienes(tmp_path: Path) -> None
     member = make_member(guild)
     click = make_interaction(member)
     click.guild = guild
-    await cog.choose_skin(click, "ruleta:ruleta_granate")
-    assert cog.skin(GUILD, BUYER, "ruleta") is None
+    await cog.choose_skin(click, "tapete:ruleta_granate")
+    assert cog.skin(GUILD, BUYER, "tapete") is None
 
 
 async def test_las_skins_puestas_se_recuperan_al_arrancar(tmp_path: Path) -> None:
@@ -173,7 +173,7 @@ async def test_las_skins_puestas_se_recuperan_al_arrancar(tmp_path: Path) -> Non
     fresh = shop_cog.Tienda(MagicMock(), cog.economy, cog.repository, clock=clock)
     fresh._expire = MagicMock()  # sin bucle real en las pruebas
     await fresh.cog_load()
-    assert fresh.skin(GUILD, BUYER, "ruleta") == GRANATE
+    assert fresh.skin(GUILD, BUYER, "tapete") == GRANATE
 
 
 # -- El botón 🎨 de las mesas -----------------------------------------------------------
@@ -183,11 +183,11 @@ async def test_boton_de_la_mesa_solo_si_el_juego_tiene_skins(tmp_path: Path) -> 
     cog = await make_cog(tmp_path, Clock(), catalog=(GRANATE_ITEM,))
     bot = MagicMock()
     bot.get_cog.return_value = cog
-    button = shop_cog.skin_button(bot, "ruleta")
+    button = shop_cog.skin_button(bot, "tapete")
     assert isinstance(button, ui.Button) and str(button.emoji) == "🎨"
     assert shop_cog.skin_button(bot, "moneda") is None, "la moneda aún no admite skins"
     bot.get_cog.return_value = None
-    assert shop_cog.skin_button(bot, "ruleta") is None
+    assert shop_cog.skin_button(bot, "tapete") is None
 
 
 async def test_el_selector_de_la_mesa_cambia_la_skin(tmp_path: Path) -> None:
@@ -197,30 +197,30 @@ async def test_el_selector_de_la_mesa_cambia_la_skin(tmp_path: Path) -> None:
     member = make_member(guild)
 
     empty = make_interaction(member)
-    await cog.open_skin_picker(empty, "ruleta")
+    await cog.open_skin_picker(empty, "tapete")
     assert "No tienes ningún tapete" in empty.edit_original_response.await_args.kwargs["content"]
 
     await pay_for(cog, guild, member, GRANATE.catalog_key)
-    await cog.wear_skin(GUILD, BUYER, "ruleta", None)
+    await cog.wear_skin(GUILD, BUYER, "tapete", None)
     opening = make_interaction(member)
-    await cog.open_skin_picker(opening, "ruleta")
+    await cog.open_skin_picker(opening, "tapete")
     picker = opening.edit_original_response.await_args.kwargs["view"]
     assert isinstance(picker, shop_cog.SkinPicker)
-    picker.select._values = ["ruleta:ruleta_granate"]  # type: ignore[attr-defined]
+    picker.select._values = ["tapete:ruleta_granate"]  # type: ignore[attr-defined]
     choosing = make_interaction(member)
     await picker.select.callback(choosing)
-    assert cog.skin(GUILD, BUYER, "ruleta") == GRANATE
+    assert cog.skin(GUILD, BUYER, "tapete") == GRANATE
     assert "Tapete granate" in choosing.edit_original_response.await_args.kwargs["content"]
 
 
 # -- Temporada y logros ----------------------------------------------------------------
 
 CARNAVAL = Skin(
-    "ruleta_carnaval", "ruleta", "🎭", "Tapete de Carnaval", "", {"trim": "#ff0"},
+    "ruleta_carnaval", "tapete", "🎭", "Tapete de Carnaval", "", {"trim": "#ff0"},
     price=100, aisle="canarias", season=Season("Carnaval", frozenset({2})),
 )  # fmt: skip
 TROFEO = Skin(
-    "ruleta_trofeo", "ruleta", "🏆", "Tapete de campeón", "", {"trim": "#fd0"},
+    "ruleta_trofeo", "tapete", "🏆", "Tapete de campeón", "", {"trim": "#fd0"},
     price=100, aisle="lujo", achievement="shop_1",
 )  # fmt: skip
 
@@ -259,7 +259,7 @@ async def test_la_skin_de_temporada_solo_se_vende_en_su_temporada(
     march.now = datetime(2026, 2, 10, 18, tzinfo=TIMEZONE).timestamp()
     assert [i.catalog_key for i in view.shown] == [CARNAVAL.catalog_key]
     await pay_for(cog, guild, member, CARNAVAL.catalog_key)
-    assert cog.skin(GUILD, BUYER, "ruleta") == CARNAVAL
+    assert cog.skin(GUILD, BUYER, "tapete") == CARNAVAL
 
 
 async def test_la_skin_de_logro_llega_sola_y_no_se_vende(tmp_path: Path, fake_skins: None) -> None:

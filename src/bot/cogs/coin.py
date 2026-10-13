@@ -56,6 +56,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, coin_stats
 from bot.services.coin import (
@@ -404,12 +405,19 @@ class CoinView(ui.View):
 
     # -- GIF por adelantado -------------------------------------------------------------
 
+    def skin(self) -> dict[str, object]:
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.tapete`)."""
+        return tienda.tapete(self.cog.bot, self.guild_id, self.owner.id)
+
     def _plan_key(self) -> tuple[Any, ...]:
-        """Lo que decide el GIF de la próxima tirada, salvo el lado que se pida."""
-        game = self.game
+        """Lo que decide el GIF de la próxima tirada, salvo el lado que se pida.
+
+        El tapete va al final: si el dueño lo cambia, lo pintado ya no vale.
+        """
+        game, skin = self.game, self.skin()["key"]
         if game is not None and game.playing:
-            return (id(game), len(game.flips), game.upcoming, self.resting_side(), self._seed)
-        return (None, self.stake, self._opening, self.resting_side(), self._seed)
+            return (id(game), len(game.flips), game.upcoming, self.resting_side(), self._seed, skin)
+        return (None, self.stake, self._opening, self.resting_side(), self._seed, skin)
 
     def _predict(self, pick: Side) -> CoinGame:
         """La partida tal como quedará si se pide `pick` (sobre una copia)."""
@@ -470,7 +478,7 @@ class CoinView(ui.View):
             if self._plan_key() == key and not self.is_finished():
                 try:
                     media = await self.cog.renderer.toss(
-                        self._predict(pick), start=key[3], seed=key[4]
+                        self._predict(pick), start=key[3], seed=key[4], skin=self.skin()
                     )
                 except Exception:
                     logger.warning("No se pudo pintar por adelantado la moneda", exc_info=True)
@@ -600,7 +608,7 @@ class CoinView(ui.View):
         async def paint() -> Media:
             media = await ready if ready is not None else None
             if media is None:
-                media = await self.cog.renderer.toss(game, start=start, seed=seed)
+                media = await self.cog.renderer.toss(game, start=start, seed=seed, skin=self.skin())
             return media
 
         media: Media
@@ -723,7 +731,9 @@ class CoinView(ui.View):
 
     async def _board(self, interaction: discord.Interaction) -> None:
         """Pone el PNG de la mesa quieta (sin animación)."""
-        png = await self.cog.renderer.board(self.game, stake=self.stake, face=self.face)
+        png = await self.cog.renderer.board(
+            self.game, stake=self.stake, face=self.face, skin=self.skin()
+        )
         self.rebuild()
         await edit(
             interaction,
@@ -874,7 +884,7 @@ class Coin(commands.Cog, name="Moneda"):
         view = CoinView(self, guild_id=guild.id, owner=user, stake=stake)
         view.channel = channel
         view.balance = balance
-        png = await self.renderer.board(None, stake=stake, face=Side.CARA)
+        png = await self.renderer.board(None, stake=stake, face=Side.CARA, skin=view.skin())
         view.rebuild(busy=pick is not None)
         view.message = await send(
             embed=view.embed(), file=discord.File(io.BytesIO(png), filename=PNG_NAME), view=view
