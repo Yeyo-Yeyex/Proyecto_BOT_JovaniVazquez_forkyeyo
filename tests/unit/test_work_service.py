@@ -822,6 +822,50 @@ async def test_un_evento_del_reparto_mueve_la_valoracion(tmp_path: Path, dice: D
     assert status is not None and status.contract.rating == RATING_START - 4
 
 
+async def test_en_las_ramas_del_reparto_no_hay_valoracion_pero_si_tiempo(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "lluvia")
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "correos"
+    status.contract.rating = RATING_START + 7
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    base = JOB_BY_KEY["reparto"].position(6, "correos").base_pay
+    outcome = await work(service)
+    # Sin estrellas: ni cambian ni multiplican el sueldo; la lluvia sigue pagando.
+    assert outcome.rating == 0 and outcome.weather == "lluvia"
+    assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * RAIN_PAY)
+    await service.resolve_event(GUILD, USER, "sexto_sin_ascensor", 1)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.rating == RATING_START + 7
+    # En el tronco, en cambio, la nota mueve la valoración y el sueldo.
+    status.contract.level, status.contract.branch = 5, ""
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    trunk = await work(service, perfect=False)
+    assert trunk.rating != 0
+
+
+async def test_un_turno_del_jefe_de_unidad_de_correos_suma_los_envios_clasificados(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "correos"
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Jefe de unidad de reparto"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert work_stats(outcome).add["work_parcels"] == len(shift.game.rounds)
+
+
 # -- Funcionariado: oposición, plaza fija y trienios ---------------------------------------
 
 

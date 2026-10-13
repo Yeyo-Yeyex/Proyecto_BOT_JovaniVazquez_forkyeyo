@@ -399,6 +399,11 @@ PRODUCED_STATS = {
     "work_onion_with", "work_onion_without", "work_tv_crew", "work_tv_kicked", "work_gold_all",
     "work_gold_dessert", "work_foam_sold", "work_health_hidden",
     "work_caught_sanidad_alimentaria", "work_health_open",
+    # El reparto: el tronco y las ramas Correos e Imperio logístico
+    "work_top_reparto_correos", "work_top_reparto_logistica", "work_retired_reparto",
+    "work_parcels", "work_rural_route", "work_lost_parcel", "work_correos_board",
+    "work_correos_chair", "work_dark_store", "work_rider_law", "work_last_mile",
+    "work_labour_inspector", "work_rocket", "work_caught_junta_electoral",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

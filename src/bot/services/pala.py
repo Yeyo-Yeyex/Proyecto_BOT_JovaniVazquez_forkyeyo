@@ -887,7 +887,7 @@ class WorkService:
         gross = shift_pay(position.base_pay, score, kind, tenured=job.tenured(contract.level))
         if abroad:
             gross = round(gross * ABROAD_PAY)
-        if job.rating:
+        if job.rates(contract.branch):
             gross = round(gross * rating_pay(contract.rating))
         if shift.weather == "lluvia":
             gross = round(gross * RAIN_PAY)
@@ -982,7 +982,7 @@ class WorkService:
 
         # Valoración de la app: por debajo del mínimo, desconexión.
         blocked = False
-        if job.rating:
+        if job.rates(contract.branch):
             contract.rating = max(
                 RATING_MIN, min(RATING_MAX, contract.rating + rating_delta(score))
             )
@@ -1093,7 +1093,7 @@ class WorkService:
             bankrupt=bankrupt,
             missed_guards=missed,
             weather=shift.weather,
-            rating=contract.rating if job.rating else 0,
+            rating=contract.rating if job.rates(contract.branch) else 0,
             blocked=blocked,
             viral=viral,
             followers=contract.followers if job.viral else 0,
@@ -1362,7 +1362,7 @@ class WorkService:
             )
             if outcome.family:
                 change_family(contract, outcome.family, now)
-            if outcome.rating and job.rating:
+            if outcome.rating and job.rates(contract.branch):
                 contract.rating = max(RATING_MIN, min(RATING_MAX, contract.rating + outcome.rating))
             if outcome.followers and job.viral:
                 contract.followers = max(0, round(contract.followers * (1 + outcome.followers)))

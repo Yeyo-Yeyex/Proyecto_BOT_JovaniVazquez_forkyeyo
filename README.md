@@ -268,7 +268,7 @@ python -m bot
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
   funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
-  obra, la sanidad y la hostelería, que ya tienen la carrera larga: 5 puestos de
+  obra, la sanidad, la hostelería y el reparto, que ya tienen la carrera larga: 5 puestos de
   tronco y dos ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
@@ -277,7 +277,10 @@ python -m bot
   consejero de Sanidad) o 💉 Privada (hasta dueño de una aseguradora de salud); la
   hostelería va de friegaplatos a dueño del chiringuito y sigue por 🏨 Hotelera
   (hasta presidente de la patronal turística) o ⭐ Alta cocina (hasta gurú
-  gastronómico con franquicias en Dubái).
+  gastronómico con franquicias en Dubái); y el reparto va de rider en bici a
+  fundador de la app y sigue por 📮 Correos (hasta presidente de Correos, en
+  nómina) o 🚀 Imperio logístico (hasta multimillonario con cohete propio,
+  autónomo). La valoración de la app solo cuenta en el tronco.
   Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,

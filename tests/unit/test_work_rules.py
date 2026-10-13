@@ -506,6 +506,16 @@ def test_la_carrera_por_ramas() -> None:
     assert all(p.self_employed for p in hosteleria.branch("estrella").positions)
     assert not any(p.self_employed for p in hosteleria.branch("hotel").positions)
     assert hosteleria.branch("estrella").pension < hosteleria.branch("hotel").pension
+    reparto = JOB_BY_KEY["reparto"]
+    assert (reparto.trunk_top, reparto.top) == (5, 10) and reparto.forks(5)
+    assert reparto.position(10, "correos").title == "Presidente de Correos"
+    assert reparto.position(10, "logistica").title == "Multimillonario con cohete propio"
+    assert all(p.self_employed for p in reparto.branch("logistica").positions)
+    assert not any(p.self_employed for p in reparto.branch("correos").positions)
+    assert reparto.branch("logistica").pension < reparto.branch("correos").pension
+    # La valoración de la app solo cuenta en el tronco; el tiempo, en todo el oficio.
+    assert reparto.rates() and reparto.rates("") and not reparto.rates("correos")
+    assert reparto.weather and not JOB_BY_KEY["obra"].rates()
     # Un oficio sin ramas sigue igual.
     oficina = JOB_BY_KEY["oficina"]
     assert oficina.top == oficina.trunk_top == 5 and not oficina.forks(5)
@@ -603,6 +613,37 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert {"contrato_4h", "paella_chorizo", "no_camareros", "propina"} <= hotel & estrella
     assert "no_camareros" in tronco and "ola_calor" not in {
         e.key for e in events_for("hosteleria", 3, 100)
+    }
+    correos = {e.key for e in events_for("reparto", 10, 100, branch="correos")}
+    logistica = {e.key for e in events_for("reparto", 10, 100, branch="logistica")}
+    rider = {e.key for e in events_for("reparto", 5, 100)}
+    correos_only = {
+        "aviso_ausente",
+        "voto_por_correo",
+        "oficina_rural",
+        "certificada_hacienda",
+        "reyes_8_enero",
+        "enchufe_correos",
+        "comision_congreso",
+        "sello_conmemorativo",
+    }
+    logistica_only = {
+        "huelga_flota",
+        "inspeccion_falsos_autonomos",
+        "dron_piscina",
+        "almacen_40",
+        "aranceles_trump",
+        "cohete_explota",
+        "comprar_periodico",
+    }
+    assert correos_only <= correos and logistica_only <= logistica
+    assert not correos & logistica_only and not logistica & correos_only
+    assert not rider & (correos_only | logistica_only)
+    assert {"pedido_mojado", "propina_20", "paquete_shenzhen", "sexto_sin_ascensor"} <= (
+        correos & logistica
+    )
+    assert "black_friday" in rider and "black_friday" not in {
+        e.key for e in events_for("reparto", 3, 100)
     }
     # La obra pública y la sanidad pública comparten clave de rama, no eventos.
     assert not publica & {"modificado", "inauguracion", "aeropuerto", "muro"}

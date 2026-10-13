@@ -73,6 +73,7 @@ Reglas propias de algunos oficios (campos de `Job`):
 - **Valoración de la app** (reparto, `Job.rating`): de 1 a 5 estrellas, se
   mueve con la nota de cada turno (`rating_delta`) y multiplica el sueldo
   (`rating_pay`). Por debajo de `RATING_BLOCK`, la app te desconecta unas horas.
+  Solo cuenta en el tronco (`Job.rates`): en las ramas no hay valoración.
 - **Tarifa plana** (reparto): los falsos autónomos pagan una cuota reducida
   (`Position.fee`, art. 38 ter de la Ley 20/2007 del Trabajo Autónomo).
 - **Oposición** (funcionariado, `Job.study`): turnos de estudio que no pagan,
@@ -495,6 +496,10 @@ class Job:
     def branch(self, key: str) -> Branch | None:
         """La rama con esa clave, o `None` (también con `""`, el tronco)."""
         return next((b for b in self.branches if b.key == key), None)
+
+    def rates(self, branch: str = "") -> bool:
+        """Si te valora la app: solo en el tronco (rider o fundador), no en las ramas."""
+        return self.rating and self.branch(branch) is None
 
     def ladder(self, branch: str = "") -> tuple[Position, ...]:
         """Puestos en orden por esa rama: el tronco y, si la hay, la rama."""

@@ -509,7 +509,7 @@ def job_lines(status: Status) -> list[str]:
     lines = []
     if status.weather:
         lines.append(WEATHER_TEXT[status.weather])
-    if job.rating:
+    if job.rates(contract.branch):
         line = f"📱 Valoración en la app: {stars(contract.rating)}"
         if status.blocked:
             line += f" · 📵 **desconectado** hasta <t:{int(contract.blocked_until)}:t>"

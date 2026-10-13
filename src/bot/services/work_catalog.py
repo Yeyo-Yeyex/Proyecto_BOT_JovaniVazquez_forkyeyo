@@ -1052,6 +1052,8 @@ REPARTO = Job(
             days=3, content="pedidos:4", self_employed=True, fee=FLAT_RATE_FEE,
             training=Training("carnet_a2", "el carnet de moto (A2) y una moto de segunda mano",
                               8_000),
+            perk=Perk("Casco con bluetooth (para oír al cliente gritar «¿dónde estás?» en "
+                      "estéreo): +5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3, "Rider con contrato", 4_500, Mechanic.MEMORY, 40,
@@ -1059,6 +1061,8 @@ REPARTO = Job(
             days=4, content="entregas:4",
             training=Training("ley_rider", "el abogado laboralista que te gana la laboralidad "
                               "(Ley 12/2021, la «Ley Rider»)", 15_000),
+            perk=Perk("Chubasquero de verdad (no el del chino): cada turno cansa un 10 % "
+                      "menos.", battery=0.10),
         ),
         Position(
             4, "Jefe de flota", 7_500, Mechanic.SPOT, 60,
@@ -1066,12 +1070,139 @@ REPARTO = Job(
              _events(2)),
             days=5, content="flota",
             training=Training("flotas", "el curso de gestión de flotas", 20_000),
+            perk=Perk("El grupo de WhatsApp de la flota (donde nadie escribe pero todos lo "
+                      "leen): un fallo gratis por turno.", retry=True),
         ),
         Position(
-            5, "Fundador de app de reparto", 14_000, Mechanic.DIALOGUE, 60, (),
-            days=0, content="fundador", self_employed=True,
+            5, "Fundador de app de reparto", 14_000, Mechanic.DIALOGUE, 60,
+            (Task("smooth", "Sobrevive a 25 preguntas como fundador de la app", "smooth", 25),
+             _good(6), _events(3)),
+            days=4, content="fundador", self_employed=True,
             training=Training("semilla", "la ronda semilla (familia, amigos y algún incauto)",
                               60_000),
+            perk=Perk("Un abogado laboralista en nómina (del otro lado del pasillo): una "
+                      "respuesta mala tachada en los diálogos.", fifty=True),
+        ),
+    ),
+    branches=(
+        Branch(
+            "correos",
+            "Correos",
+            "📮",
+            "El aviso de «ausente» sin llamar al timbre, el paquete en tránsito desde 2019, "
+            "el voto por correo y una presidencia que siempre es para alguien de confianza "
+            "de Moncloa. En nómina (empresa pública). Cobra menos, se jubila mejor.",
+            (
+                Position(
+                    6, "Jefe de unidad de reparto", 14_500, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 envíos a su sitio", "sorted", 30),
+                     _good(5), _events(2)),
+                    days=5, content="paquetes",
+                    perk=Perk("Furgoneta de Correos con aire acondicionado (el de 1994, pero "
+                              "aire): cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Director de zona", 16_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Haz 15 rutas rurales perfectas", "perfect_rounds", 15),
+                     _good(6), _events(3)),
+                    days=5, content="ruta_rural:4",
+                    training=Training(
+                        "oposicion_correos",
+                        "la oposición de Correos (decenas de miles de aspirantes para unas "
+                        "pocas plazas, y tú con el temario de 2008)", 40_000,
+                    ),
+                    perk=Perk("Un sello de «Urgente» que abre cualquier puerta del almacén: "
+                              "+5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Director de operaciones", 17_500, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra 25 paquetes perdidos", "caught", 25),
+                     _good(6), _events(3)),
+                    days=6, content="perdido",
+                    perk=Perk("Un cartero veterano que sabe en qué estante de Zaragoza duerme "
+                              "cada carta: un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Director general de Correos", 19_500, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sobrevive a 30 consejos de administración", "smooth", 30),
+                     _good(6), _events(4)),
+                    days=6, content="direccion_correos",
+                    training=Training(
+                        "llamada_moncloa",
+                        "una llamada de Moncloa (el currículum es lo de menos, pero el "
+                        "carné, lo de más)", 50_000,
+                    ),
+                    perk=Perk("Despacho con vistas a Moncloa (y un café que no paga nadie): "
+                              "cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Presidente de Correos", 21_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="presidencia_correos",
+                    perk=Perk("Un sello conmemorativo con tu cara, que abre cualquier "
+                              "puerta: +10 % de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="expresidente de Correos con sello conmemorativo propio (y torcido)",
+        ),
+        Branch(
+            "logistica",
+            "Imperio logístico",
+            "🚀",
+            "Tiendas fantasma, falsos autónomos, drones y un cohete propio: del dueño de "
+            "dark stores al multimillonario con cohete. Autónomo. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6, "Dueño de dark stores", 16_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Prepara 15 pedidos de 10 minutos en orden",
+                          "perfect_rounds", 15), _good(5), _events(2)),
+                    days=5, content="dark_store:4", self_employed=True,
+                    perk=Perk("Persiana con mando a distancia (la tienda abre y cierra en un "
+                              "segundo): +5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    7, "Lobista contra la Ley Rider", 19_500, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sobrevive a 25 reuniones en el Ministerio de Trabajo",
+                          "smooth", 25), _good(6), _events(3)),
+                    days=5, content="ley_rider", self_employed=True,
+                    training=Training(
+                        "bufete_colaboradores",
+                        "el bufete que convierte riders en «colaboradores» (con una sola "
+                        "firma y sin que se enteren)", 55_000,
+                    ),
+                    perk=Perk("Un asesor que te susurra «eso no lo digas» antes de cada "
+                              "frase: un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    8, "Rey de la última milla", 24_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 pedidos a su reparto", "sorted", 30),
+                     _good(6), _events(3)),
+                    days=6, content="ultima_milla", self_employed=True,
+                    perk=Perk("Una flota de drones que reparten mientras duermes (los que no "
+                              "se caen): cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    9, "Magnate de la logística", 30_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Descubre a 25 inspectoras de Trabajo infiltradas",
+                          "caught", 25), _good(6), _events(4)),
+                    days=6, content="inspector_trabajo", self_employed=True,
+                    training=Training(
+                        "salida_bolsa",
+                        "la salida a bolsa (con campana, banquero y nota de prensa)", 75_000,
+                    ),
+                    perk=Perk("La campana de la bolsa, que suena sola cuando entras: +5 % de "
+                              "tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    10, "Multimillonario con cohete propio", 40_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="cohete", self_employed=True,
+                    perk=Perk("Un cohete privado con asiento para ti y otro para tu ego: "
+                              "+10 % de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="multimillonario jubilado que cobra en cohetes (y la pensión no da "
+                       "ni para la gasolina)",
         ),
     ),
 )  # fmt: skip
@@ -4206,6 +4337,474 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas del reparto (Correos e Imperio logístico) -----------------------
+
+MEMORY_PACKS.update(
+    {
+        "ruta_rural": MemoryPack(
+            "🏔️ Ruta rural {n}. Hoy el reparto pasa por estos sitios, en este orden:",
+            "Repite la ruta en el mismo orden, que aquí no hay GPS ni cobertura (ni asfalto).",
+            (
+                ("🏘️", "La aldea de tres vecinos y un gallo"),
+                ("🗼", "El faro, con un farero que lleva años sin salir"),
+                ("⛴️", "El barco a La Graciosa (si hay mar)"),
+                ("🐕", "La casa del perro que no muerde (muerde)"),
+                ("🍻", "El bar que hace de oficina de Correos"),
+                ("🐐", "El camino de cabras sin asfaltar"),
+                ("⛪", "La ermita con buzón y sin cura"),
+                ("🌋", "El pueblo de la lava, con un único buzón"),
+                ("🚜", "El tractor que corta la carretera"),
+                ("🏞️", "El caserío al que solo se llega a pie"),
+            ),
+        ),
+        "dark_store": MemoryPack(
+            "📱 Pedido de 10 minutos número {n}. En la dark store hay que recoger, en este orden:",
+            "Recógelo en el mismo orden, que el cliente tiene prisa y tu tienda, la persiana "
+            "bajada.",
+            (
+                ("🥛", "Leche del pasillo 3, el del fondo"),
+                ("🍫", "Chocolate «de emergencia»"),
+                ("🧻", "Papel higiénico, por si acaso"),
+                ("🥑", "Aguacate «listo para hoy» (nunca lo está)"),
+                ("🍺", "Pack de cervezas a las tres de la madrugada"),
+                ("🧊", "Hielo, que se derrite en diez minutos"),
+                ("🍕", "Pizza congelada de la nevera del fondo"),
+                ("🕯️", "Vela aromática, por romanticismo"),
+                ("🔋", "Pilas AA del cajón de debajo"),
+                ("🍦", "El último helado de pistacho"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "paquetes": SortPack(
+            "📦 Eres jefe de unidad de reparto. Manda cada envío a su sitio (a la velocidad "
+            "del Estado).",
+            "📮 Envío {n}/{total}:",
+            ("📬 Buzón", "🏢 «Ausente»: a la oficina", "🔁 Devolver al remitente",
+             "🗳️ Voto por correo: urgente"),
+            (
+                ("Una carta de la comunidad con la derrama del ascensor", 0),
+                ("Una postal de Benidorm con el sello despegándose", 0),
+                ("Un folleto del súper con el 3×2 en lentejas", 0),
+                ("Una carta del banco que empieza por «Estimado cliente»", 0),
+                ("Un paquete de 18 kilos con el cliente de vacaciones en Tailandia", 1),
+                ("Una certificada de Hacienda para un vecino que nunca abre la puerta", 1),
+                ("Una lavadora para un cuarto sin ascensor y con el timbre roto", 1),
+                ("Un burofax cuyo destinatario te ve venir desde la ventana", 1),
+                ("Una carta a «Calle Sin Nombre, s/n, Pueblo»", 2),
+                ("Un sobre sin sello, sin remitente y que huele a queso", 2),
+                ("Una felicitación navideña para un difunto, desde 1998", 2),
+                ("Un paquete cuyo destinatario pone «Dirección desconocida» y «fecha: ayer»", 2),
+                ("Un sobre de voto por correo, con 48 horas para las elecciones", 3),
+                ("Otro voto por correo, y la furgoneta sin gasolina", 3),
+                ("El voto de un residente en el extranjero, que lleva tres semanas en Zaragoza", 3),
+                ("Un sobre de la Junta Electoral con un voto dentro y un nervio fuera", 3),
+            ),
+        ),
+        "ultima_milla": SortPack(
+            "🚀 Eres el rey de la última milla. Manda cada pedido a su reparto (y a la nómina "
+            "más baja posible).",
+            "📲 Pedido {n}/{total}:",
+            ("🚐 Furgoneta subcontratada", "🚲 Rider «colaborador»", "🛸 Dron",
+             "📦 «Entregado» (sin entregar)"),
+            (
+                ("Una lavadora para un 5.º con ascensor, de un cliente sin prisa", 0),
+                ("Cuarenta cajas de agua para una despedida de soltero", 0),
+                ("Un sofá de tres plazas que no cabe por el portal", 0),
+                ("Una estantería en kit con 214 tornillos, uno de ellos suelto", 0),
+                ("Una hamburguesa y dos refrescos a 2,5 km, con un perro por el camino", 1),
+                ("Un sushi para dos, con el cliente en pijama y con hambre", 1),
+                ("Un café para la oficina, en plena reunión de las diez", 1),
+                ("Un helado de cucurucho en agosto, con el cliente mirando el reloj", 1),
+                ("Un paquete de 300 gramos a una azotea sin viento ni pájaros", 2),
+                ("Un botiquín a una playa vacía y con buena visibilidad", 2),
+                ("Unas llaves olvidadas para el vecino de enfrente (seis metros)", 2),
+                ("Un pendrive para una torre de oficinas, sin gaviotas a la vista", 2),
+                ("Un pedido con el cliente en el trabajo y el timbre sin cable", 3),
+                ("Un paquete que lleva tres días «en reparto» en el cajón de la furgoneta", 3),
+                ("Un pedido cuyo cliente ya puso la reclamación (pero antes lo marcamos)", 3),
+                ("Un pedido a un barrio donde no entran ni la furgoneta ni el dron", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: El paquete perdido de Correos: no se distingue por una palabra, sino por su historia.
+LOST_PARCELS: tuple[str, ...] = (
+    "Lleva en tránsito desde 2019 y tiene más sellos que un pasaporte diplomático",
+    "Ha pasado por Zaragoza nueve veces y siempre figura «en reparto»",
+    "En la etiqueta pone «Frágil», «Urgente» y «Déjalo donde quieras»",
+    "Su remitente, ya jubilado, preguntó por él en 2021 y le dieron un número de caso",
+    "Seguimiento: «Entregado en Jaén». El destinatario vive en Gran Canaria",
+    "Figura en tres almacenes a la vez, según el sistema",
+    "Lleva un sello de 1987 con la peseta tachada a boli",
+    "Lo han reclamado un cliente, dos abogados y un notario",
+    "Estado: «en tránsito». Ubicación: «desconocida». Destino: «el más allá»",
+    "El cartero jura que lo entregó, el vecino jura que no, y el buzón calla",
+)
+PARCELS_TRACKED: tuple[str, ...] = (
+    "Pedido de 600 g, entregado ayer con firma del cliente",
+    "Carta ordinaria con sello nuevo y dirección clara",
+    "Paquete de 2 kilos escaneado esta mañana en el centro logístico",
+    "Sobre acolchado con zapatillas, en reparto con su ruta asignada",
+    "Libro de segunda mano con etiqueta nítida y código de barras legible",
+    "Caja de 5 kilos camino de una oficina, con aviso de recogida",
+    "Envío internacional con la aduana despachada esta mañana",
+    "Certificada con acuse de recibo, firmada por el portero",
+    "Paquete de pilas que sale de la nave y llega a la hora",
+    "Sobre con un DNI nuevo, entregado en mano",
+    "Caja con un microondas, en el camión de las 14:00",
+    "Devolución de unos zapatos, ya de vuelta en el almacén de origen",
+    "Envío urgente de un día, con el cartero llamando al timbre",
+)
+
+#: Las inspectoras de Trabajo infiltradas entre tus riders y los riders de verdad.
+LABOUR_INSPECTORS: tuple[str, ...] = (
+    "Pregunta por el convenio, por la cotización y por el nombre de tu asesor",
+    "Lleva casco, chaleco y un sello oficial escondido en la mochila",
+    "Apunta en una libreta cuántas horas lleva de turno y quién se las paga",
+    "Hace fotos de la mochila, del casco y de la app sin pedir ningún pedido",
+    "No tiene prisa ni quiere propina, pero sí saber quién le paga la mutua",
+    "Pide el registro horario a un rider que «es colaborador»",
+    "Se sabe la Ley Rider de memoria y la recita entre pedido y pedido",
+    "Reparte con un bocadillo de la cantina de la Administración",
+    "Su pedido es de 4 €, pero guarda las llaves de un coche oficial",
+    "Le pregunta a tu abogado «y esto, ¿cómo lo cotizáis?» con una sonrisa que da miedo",
+)
+RIDERS_NORMAL: tuple[str, ...] = (
+    "Chaval de 19 años con una bici eléctrica comprada a plazos",
+    "Padre de familia que lleva ocho horas repartiendo sin comer",
+    "Estudiante de Informática con la mochila térmica del primo",
+    "Rider que habla con su madre por el manos libres",
+    "Recién llegado, perdido y con el GPS al revés",
+    "Moto en doble fila, intermitente roto y cara de prisa",
+    "Rider que escucha reguetón a todo volumen dentro del casco",
+    "Móvil agrietado y el 3 % de batería",
+    "Rider con dos apps abiertas y cara de pocos amigos",
+    "Se ha comido una patata del pedido y lo niega con la boca llena",
+    "Discute con otro rider por el último sitio del semáforo",
+    "Cuenta que hoy lleva 38 € en toda la tarde",
+    "Pregunta si hay propina «en esta app o en otro universo»",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "direccion_correos": DialoguePack(
+            "🏢 Consejo de Administración de Correos. Regla de oro: **si pierde dinero, es "
+            "«servicio público»; si lo gana, «gestión eficiente».**",
+            (
+                Dialogue(
+                    "El Gobierno te pregunta por las pérdidas de 250 millones del año.",
+                    "«Es el precio del servicio público universal: cada carta a la aldea es "
+                    "un acto de soberanía nacional.»",
+                    ("Reconocer que se ha gestionado fatal y pedir perdón.",
+                     "Pedir un rescate a Moncloa, otro a Bruselas y otro al Papa."),
+                ),
+                Dialogue(
+                    "Hay que cerrar 300 oficinas rurales que no son rentables.",
+                    "Las «reconvertimos» en puntos de servicio: una máquina de sellos en el "
+                    "bar del pueblo. Gestión eficiente.",
+                    ("Mantenerlas todas abiertas aunque no entre nadie, por humanidad.",
+                     "Mandar un helicóptero que lea las cartas en voz alta a los vecinos."),
+                ),
+                Dialogue(
+                    "El Banco de Correos tiene que dar beneficios.",
+                    "Lanzas «Correos Banco»: mismas colas, mismo sello, y ahora con "
+                    "comisión de mantenimiento por tener sello.",
+                    ("Cerrar el banco porque no lo usa nadie.",
+                     "Guardar el dinero en un buzón con candado."),
+                ),
+                Dialogue(
+                    "La SEPI te pide un plan de viabilidad para mañana.",
+                    "Entregas 400 páginas con un diagrama de flujo, una flecha a "
+                    "«digitalización» y otra a «contexto».",
+                    ("Entregar una hoja que diga «vender más sellos».",
+                     "Decirle que la SEPI se ocupe de la SEPI."),
+                ),
+                Dialogue(
+                    "Las grandes plataformas reparten con su propia flota y te quitan el negocio.",
+                    "Les ofreces una «alianza estratégica»: ellos reparten y tú pones el "
+                    "logo.",
+                    ("Denunciarlas por competencia desleal con un sello de 2 euros.",
+                     "Prohibir los paquetes de menos de dos kilos."),
+                ),
+                Dialogue(
+                    "Los sindicatos piden más plantilla porque los carteros reparten 300 "
+                    "cartas por cabeza.",
+                    "Anuncias un plan de empleo de 3.000 plazas «a convocar en 2031».",
+                    ("Contratar 3.000 carteros mañana por la mañana.",
+                     "Pasar el reparto a los jubilados del hogar del pensionista."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta por qué su carta de 2019 sigue en tránsito.",
+                    "«Está en tránsito estratégico: las cartas bien curadas mejoran con "
+                    "los años.»",
+                    ("Admitir que está en un contenedor de Zaragoza con otras 40.000.",
+                     "Pedirle que la mande otra vez, certificada y con otro sello."),
+                ),
+                Dialogue(
+                    "El PP pregunta en el Congreso por los coches oficiales de la directiva.",
+                    "Son «vehículos de última milla de la alta dirección»: eficiencia "
+                    "logística.",
+                    ("Decir que son de un sobrino.",
+                     "Aparcar uno en una rotonda y llamarlo instalación artística."),
+                ),
+                Dialogue(
+                    "Hay que justificar la inversión en digitalización.",
+                    "Anuncias un piloto de «dron rural» en una isla. Una. Con un dron "
+                    "prestado y presentación en Fitur.",
+                    ("Comprar 10.000 drones sin presupuesto.",
+                     "Contratar un cartero con alas de cartón."),
+                ),
+                Dialogue(
+                    "Tienes que viajar a Bruselas a presentar el plan y no hay presupuesto.",
+                    "Viaje institucional «en misión logística»: en business, con un "
+                    "paquete en la maleta como mercancía.",
+                    ("Ir en autobús, en la fila del fondo.",
+                     "Pedir prestado el Falcon y pedir perdón en el aire."),
+                ),
+            ),
+        ),
+        "presidencia_correos": DialoguePack(
+            "🏛️ Presidencia de Correos. Regla de oro: **lo tuyo es la lealtad, no la "
+            "contabilidad: contesta lo que le conviene a quien te puso.**",
+            (
+                Dialogue(
+                    "La comisión del Congreso te pregunta por las pérdidas de la empresa.",
+                    "Culpas a «la herencia recibida» de un presidente anterior que "
+                    "nombró tu propio partido.",
+                    ("Dar los números reales con pantallazos.",
+                     "Llorar en el estrado hasta que te pasen un pañuelo."),
+                ),
+                Dialogue(
+                    "La oposición dice que el voto por correo es «una amenaza»; el Gobierno, "
+                    "que «un modelo de seguridad».",
+                    "«Garantizamos el voto por correo al cien por cien, salvo el de quien "
+                    "lo mandó tarde, que será culpa suya.»",
+                    ("Admitir que se han perdido 3.000 sobres en Zaragoza.",
+                     "Proponer votar por palomas mensajeras."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta por el sello conmemorativo con tu cara.",
+                    "«Es un homenaje a la historia de Correos; si te sale torcido, vale "
+                    "más.»",
+                    ("Decir que no sabías nada y exigir que dimita el de marketing.",
+                     "Pegártelo en la frente."),
+                ),
+                Dialogue(
+                    "Un digital publica que tu cuñada cobra de Correos sin pisar la oficina.",
+                    "«Es la máquina del fango: se acusa de enchufe a quien llega por mérito "
+                    "(y por afinidad).»",
+                    ("Admitirlo, y que además cobra el doble que tú.",
+                     "Negar que tengas cuñada."),
+                ),
+                Dialogue(
+                    "Moncloa te pide resistir ante la presión de la oposición.",
+                    "Citas el «Manual de resistencia»: no dimitir, no explicar, no mirar "
+                    "atrás. Y no miras atrás, que Correos va marcha atrás.",
+                    ("Dimitir en rueda de prensa, con la voz temblorosa.",
+                     "Pedir el manual por correo certificado, con acuse de recibo."),
+                ),
+                Dialogue(
+                    "Los carteros convocan huelga por los sueldos.",
+                    "«Respetamos el derecho de huelga; los servicios mínimos serán del "
+                    "120 %.»",
+                    ("Subirles el sueldo un 20 % esta misma tarde.",
+                     "Mandar a tu cuñado a repartir con un sombrero de cartero."),
+                ),
+                Dialogue(
+                    "La oposición pregunta por el contrato de las furgonetas a la empresa del "
+                    "cuñado de un ministro.",
+                    "«Fue un concurso abierto; la empresa del cuñado era de las pocas que "
+                    "tenían furgonetas azules.»",
+                    ("Admitir que lo adjudicaste a dedo desde un ático.",
+                     "Pedir que te enseñen la furgoneta."),
+                ),
+                Dialogue(
+                    "Aparecen 4.000 cartas sin entregar en una nave abandonada de Zaragoza.",
+                    "«Es un archivo histórico de primer nivel»: lo inauguras con una "
+                    "placa y un vino de honor.",
+                    ("Entregarlas todas hoy, a tres cartas por hora.",
+                     "Quemar la nave y el acta."),
+                ),
+                Dialogue(
+                    "La comisión critica las dietas del consejo.",
+                    "«Son gastos de representación en misión logística», y a los "
+                    "comisionados los invitas a cenar.",
+                    ("Devolver el dinero y pedir que te lo cobren con recargo.",
+                     "Decir que es tu sobre de supervivencia."),
+                ),
+                Dialogue(
+                    "Te preguntan si renunciarías al sueldo mientras la empresa pierda dinero.",
+                    "«Mi sueldo es el 0,01 % del presupuesto; el problema es la "
+                    "competencia, la digitalización y el contexto.»",
+                    ("Decir que sí, y también al coche oficial.",
+                     "Prometerlo a cambio de un sello con una dedicatoria."),
+                ),
+            ),
+        ),
+        "ley_rider": DialoguePack(
+            "🏛️ Reunión en el Ministerio de Trabajo. Regla de oro: **tus riders no son "
+            "trabajadores: son «colaboradores» y «emprendedores de sí mismos».**",
+            (
+                Dialogue(
+                    "La vicepresidenta de Trabajo te pide que contrates a tus 12.000 riders.",
+                    "«Con todo respeto, ministra: nuestros riders son emprendedores, y los "
+                    "emprendedores no tienen jefe, tienen partners.» Y le regalas una "
+                    "mochila con su nombre.",
+                    ("«Vale, los contrato a todos.»",
+                     "«Es que la ley no habla de mochilas.»"),
+                ),
+                Dialogue(
+                    "En una tertulia, alguien te acusa de precarizar el empleo.",
+                    "«Precarizar es no ofrecer trabajo; nosotros ofrecemos flexibilidad, "
+                    "incluida la de elegir a qué hora llueve.»",
+                    ("Admitir que sí, que da asco, y llorar en directo.",
+                     "Cortar la conexión y decir que se oye mal."),
+                ),
+                Dialogue(
+                    "Tu algoritmo desconecta a un rider por rechazar tres pedidos y el "
+                    "sindicato va a juicio.",
+                    "«No ha sido desconectado: ha elegido descansar de forma permanente.»",
+                    ("Readmitirlo ya y pedirle perdón por escrito.",
+                     "Decir que el algoritmo tiene vida propia y que tú no mandas."),
+                ),
+                Dialogue(
+                    "Un juez dicta que tus riders son falsos autónomos.",
+                    "Recurres y, mientras tanto, lo llamas «sentencia de transición hacia "
+                    "el modelo de colaboración de nueva generación».",
+                    ("Acatar la sentencia el mismo día, con una nota de prensa.",
+                     "Cerrar la empresa y mudarte a Dubái (otro más)."),
+                ),
+                Dialogue(
+                    "La Inspección de Trabajo presenta 4.000 actas por falsos autónomos.",
+                    "Pagas las multas de golpe, que cuestan menos que un año de cuotas, y "
+                    "las llamas «inversión en diálogo social».",
+                    ("Contratar a los 4.000 y convertirte en una empresa seria.",
+                     "Romper las actas en un acto público, con fotógrafo."),
+                ),
+                Dialogue(
+                    "Bruselas aprueba una directiva que presume la laboralidad de los "
+                    "riders.",
+                    "«Es una directiva de mínimos; España la transpondrá con calma, y "
+                    "mientras tanto pasamos a un modelo de colaboradores asociados.»",
+                    ("Cumplirla antes de que acabe el plazo.",
+                     "Dar las gracias a Bruselas en cinco idiomas."),
+                ),
+                Dialogue(
+                    "Tu rival contrata a sus riders con contrato y presume de ello en la tele.",
+                    "«Es una operación de marketing que no sobrevivirá a su primer "
+                    "trimestre», y le mandas una cesta de bienvenida a la quiebra.",
+                    ("Copiarle y contratar a todos con contrato.",
+                     "Comprarle la empresa con un cheque sin fondos."),
+                ),
+                Dialogue(
+                    "Un rider te pregunta por qué se le paga por pedido y no por hora.",
+                    "«Porque es mucho más motivador cobrar por lo que haces y no por lo que "
+                    "tardas.»",
+                    ("«Porque nos sale más barato.»",
+                     "Darle un abrazo y una bonificación de dos euros."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta cuántos riders figuran en nómina.",
+                    "«Hoy somos cero en nómina y 12.000 en colaboración: el mayor equipo de "
+                    "España sin sueldo fijo.»",
+                    ("«Todos.»",
+                     "«Eso es secreto de Estado.»"),
+                ),
+                Dialogue(
+                    "Montas una campaña «Defiende tu flexibilidad» con riders de verdad.",
+                    "Les pagas el pedido de la rueda de prensa y les das un chaleco con el "
+                    "eslogan «Yo elijo».",
+                    ("Dejarles hablar libremente.",
+                     "Reunirlos en un sótano sin cobertura."),
+                ),
+            ),
+        ),
+        "cohete": DialoguePack(
+            "🚀 Entrevista en tu hangar. Regla de oro: **el cohete no es un capricho: es «el "
+            "futuro de la humanidad» (y se paga con dinero público).**",
+            (
+                Dialogue(
+                    "Un periodista pregunta por qué cobras 400.000 € por un viaje de once "
+                    "minutos.",
+                    "«No es turismo: es la democratización del espacio para quien ya tiene "
+                    "todo lo demás.»",
+                    ("«Porque me da la gana.»",
+                     "«Porque la gasolina cuesta lo que cuesta.»"),
+                ),
+                Dialogue(
+                    "Trump impone aranceles del 25 % a las piezas de tu cohete.",
+                    "Felicitas a Trump por su valiente defensa del producto nacional y "
+                    "fabricas la tuerca en Texas, en el garaje de un amigo.",
+                    ("Criticarle en directo y que te cancele el lanzamiento.",
+                     "Pagar el arancel y callarte, con la cabeza gacha."),
+                ),
+                Dialogue(
+                    "Musk tuitea que tu cohete «es un juguete».",
+                    "Contestas con cuatro palabras y un emoji de cohete: los dos subís en "
+                    "bolsa.",
+                    ("Responder con un hilo de cuarenta tuits llorando.",
+                     "Retarle a una carrera a la Luna, a pie."),
+                ),
+                Dialogue(
+                    "Los sindicatos piden convenio para los técnicos del cohete.",
+                    "«Convenio no: cultura de la excelencia, con mesa de pimpón y barritas "
+                    "de proteína gratis.»",
+                    ("Firmarlo y subirles el sueldo.",
+                     "Mandarlos en el primer cohete, sin billete de vuelta."),
+                ),
+                Dialogue(
+                    "Hacienda pregunta dónde tributa tu patrimonio.",
+                    "«En una fundación en Luxemburgo, una sociedad en Delaware y una "
+                    "gasolinera en la órbita baja, donde aún no hay Hacienda.»",
+                    ("Pagar todo en España con una sonrisa.",
+                     "Alegar que los impuestos los paga el cohete."),
+                ),
+                Dialogue(
+                    "Un cliente se queja: su paquete ha llegado antes a la Luna que a "
+                    "Lanzarote.",
+                    "«Es un servicio premium: a la Luna, dos días; a Lanzarote hay que "
+                    "esperar a que el ferry se alinee con Mercurio.»",
+                    ("Pedir disculpas y mandarle otro paquete.",
+                     "Mandar un cohete a Lanzarote a por el paquete."),
+                ),
+                Dialogue(
+                    "Los ecologistas dicen que tu cohete contamina como 10.000 coches.",
+                    "«Es la inversión más verde: vamos a salvar a la humanidad desde "
+                    "fuera de la Tierra.»",
+                    ("Reconocer que contamina y cerrarlo.",
+                     "Plantar un árbol dentro del cohete."),
+                ),
+                Dialogue(
+                    "El Gobierno te ofrece 200 millones de subvención por «innovación "
+                    "aeroespacial».",
+                    "La aceptas y la anuncias como «inversión privada con acompañamiento "
+                    "público».",
+                    ("Rechazarla por principios.",
+                     "Devolverla con un lazo y una nota de agradecimiento al contribuyente."),
+                ),
+                Dialogue(
+                    "Tus antiguos riders se manifiestan bajo el hangar.",
+                    "Les ofreces un viaje al espacio, a 400.000 €, «con un descuento de "
+                    "empleado del 2 %».",
+                    ("Bajar a hablar con ellos con una pancarta.",
+                     "Echarles el chorro de combustible del cohete."),
+                ),
+                Dialogue(
+                    "El lanzamiento se ha aplazado por sexta vez.",
+                    "«Estamos haciendo ajustes finos: 2030 será el año del cohete.»",
+                    ("Decir que no funciona y pedir perdón.",
+                     "Cambiar la fecha al 30 de febrero."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -6262,6 +6861,653 @@ EVENTS: tuple[Event, ...] = (
         ),
         jobs=("reparto",),
     ),
+    # -- Reparto: el tronco (rider, flota y fundador) ----------------------------------
+    Event(
+        "pedido_mojado",
+        "🌧️ El cliente te pone una estrella: «El pedido llegó mojado». Estaba diluviando "
+        "(tres gotas, pero con ganas).",
+        (
+            (
+                "Reclamar a la app",
+                Outcome(
+                    "Reclamas: «llovía». Te contesta un bot que te pide que reinicies el "
+                    "móvil y te desea un buen día.",
+                    performance=-3,
+                    stat="work_wet_claim",
+                ),
+            ),
+            (
+                "Pagarle el pedido",
+                Outcome(
+                    "Le pagas la hamburguesa de tu bolsillo. Cinco estrellas y una mochila "
+                    "más ligera, la tuya.",
+                    rating=3,
+                    performance=3,
+                    stat="work_wet_paid",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "propina_20",
+        "💶 Tres pisos sin ascensor, cuarenta minutos de espera y el cliente te da 20 "
+        "céntimos de propina. En monedas de uno.",
+        (
+            (
+                "Sonreír y aceptar",
+                Outcome(
+                    "Cuentas las monedas delante de él. Veinte. No hace falta cambio, "
+                    "dices, y la sonrisa te sale un poco torcida.",
+                    rating=2,
+                    stat="work_tip_cents",
+                ),
+            ),
+            (
+                "Devolvérselas",
+                Outcome(
+                    "«Quédate con ellas, para el próximo pedido.» El cliente te pone una "
+                    "estrella por ser «borde».",
+                    rating=-4,
+                    family=3,
+                    stat="work_tip_back",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "portal_sin_numero",
+        "🌙 Las tres de la madrugada. La dirección dice: «Calle del Pino, el portal sin "
+        "número, el de la puerta verde». Hay catorce puertas verdes.",
+        (
+            (
+                "Llamar al cliente",
+                Outcome(
+                    "Contesta dormido: «Es la quinta… no, la sexta…». Entregas a las 4:10 "
+                    "y te quedas con ganas de cenar.",
+                    battery=-8,
+                    rating=2,
+                    stat="work_green_door_call",
+                ),
+            ),
+            (
+                "Dejarlo en cualquiera",
+                Outcome(
+                    "Lo dejas en una puerta verde al azar. Mañana alguien tendrá un "
+                    "desayuno inesperado y tú, una estrella menos.",
+                    rating=-4,
+                    stat="work_green_door_any",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "patinete_sin_bateria",
+        "🛴 El patinete eléctrico se queda sin batería a mitad de pedido, a tres kilómetros "
+        "del cliente y cuesta arriba. «Y Víctor le dijo a Joel: móntate en mi motora.»",
+        (
+            (
+                "Empujarlo",
+                Outcome(
+                    "Subes la cuesta empujando y entregas con las rodillas en la boca. El "
+                    "cliente ni te mira: solo mira la hamburguesa.",
+                    battery=-20,
+                    rating=2,
+                    stat="work_scooter_push",
+                ),
+            ),
+            (
+                "Pedir otro por la app",
+                Outcome(
+                    "Pagas 4 € de desbloqueo por otro patinete (que tampoco tiene "
+                    "batería). Entregas tarde y con tres monedas menos.",
+                    performance=-5,
+                    rating=-2,
+                    stat="work_scooter_swap",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+    ),
+    Event(
+        "algoritmo_rechazo",
+        "🤖 El algoritmo te castiga por rechazar un pedido de 0,80 € a nueve kilómetros: te "
+        "baja la prioridad «por falta de compromiso con la comunidad».",
+        (
+            (
+                "Aceptar lo que me echen",
+                Outcome(
+                    "Aceptas los siguientes diez pedidos, todos a 1,10 € y con escaleras. "
+                    "El algoritmo te manda un emoji de pulgar.",
+                    pay=0.2,
+                    battery=-10,
+                ),
+            ),
+            (
+                "Hacer un hilo en redes",
+                Outcome(
+                    "Tu hilo se hace viral: 40 riders te dan la razón y la app te manda un "
+                    "correo de «tu feedback es muy importante para nosotros».",
+                    performance=-5,
+                    family=5,
+                    stat="work_algo_thread",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=2,
+    ),
+    Event(
+        "paquete_shenzhen",
+        "📦 Llevas un paquete de 1,99 € que viene de Shenzhen. Pesa 40 gramos y el envío te "
+        "lo pagan a 2,10 €. Se mueve sospechosamente.",
+        (
+            (
+                "Entregarlo",
+                Outcome(
+                    "Lo entregas. Dentro hay una funda de móvil que ya llega con la "
+                    "esquina rota, de serie.",
+                    pay=0.1,
+                ),
+            ),
+            (
+                "Abrirlo por curiosidad",
+                Outcome(
+                    "Dentro hay otro paquete. Dentro de ese, otro. Una muñeca rusa de "
+                    "1,99 € con un aviso de «sin devolución».",
+                    performance=-8,
+                    rating=-3,
+                    stat="work_shenzhen_open",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=2,
+    ),
+    Event(
+        "black_friday",
+        "🛍️ Black Friday: 4.000 pedidos de gente que compra por 5 € lo que ayer valía 5 €. "
+        "La flota no da abasto. «Víctor le dijo a Joel: móntate en mi furgoneta.»",
+        (
+            (
+                "Doblar turno",
+                Outcome(
+                    "Doblas el turno con la furgoneta de tu cuñado y entregas 200 "
+                    "paquetes. Llegas a casa a las cuatro, con la espalda en la mochila.",
+                    pay=0.6,
+                    battery=-25,
+                    family=-8,
+                    stat="work_black_friday_double",
+                ),
+            ),
+            (
+                "Ponerme malo",
+                Outcome(
+                    "Pillas una gripe diplomática de 48 horas. Tu jefe lo entiende, "
+                    "aunque solo con la cara.",
+                    performance=-10,
+                    family=5,
+                    stat="work_black_friday_sick",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=4,
+    ),
+    # -- Reparto: la rama Correos ---------------------------------------------------------
+    Event(
+        "aviso_ausente",
+        "📮 Tienes cuarenta avisos por entregar. Es muchísimo más rápido pegar el de "
+        "«ausente» sin llamar al timbre.",
+        (
+            (
+                "Pegar el aviso",
+                Outcome(
+                    "Pegas cuarenta avisos de «ausente» en veinte minutos. Los vecinos ya "
+                    "saben que el timbre de tu portal es de adorno.",
+                    pay=0.3,
+                    performance=5,
+                    stat="work_absent_notice",
+                ),
+            ),
+            (
+                "Llamar a cada timbre",
+                Outcome(
+                    "Llamas a cada timbre. Te abren 31, entregas 31 y llegas a la oficina "
+                    "a las nueve de la noche. Eres el cartero más amado y más tarde.",
+                    battery=-15,
+                    performance=-5,
+                    stat="work_ring_bell",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=6,
+        branches=("correos",),
+    ),
+    Event(
+        "voto_por_correo",
+        "🗳️ Faltan tres días para las elecciones y hay 800 sobres de voto por correo en el "
+        "almacén y dos furgonetas, una de ellas sin ruedas.",
+        (
+            (
+                "Priorizar los votos",
+                Outcome(
+                    "Los entregas todos en plazo. Mañana alguien hablará de pucherazo "
+                    "igualmente, pero esta vez con tus datos delante.",
+                    performance=10,
+                    battery=-15,
+                    stat="work_postal_vote_ontime",
+                ),
+            ),
+            (
+                "Mezclarlos con el buzoneo",
+                Outcome(
+                    "Repartes los votos con los folletos del súper. El 14 % llega el día "
+                    "después. Saldrás en una tertulia, a las tres de la tarde.",
+                    pay=0.3,
+                    risk=0.35,
+                    fine=1.5,
+                    caught_by="junta_electoral",
+                    stat="work_postal_vote_mixed",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=7,
+        branches=("correos",),
+    ),
+    Event(
+        "oficina_rural",
+        "🏚️ Desde arriba te piden cerrar la oficina rural de la aldea (tres vecinos y un "
+        "burro) porque «no es rentable».",
+        (
+            (
+                "Cerrarla",
+                Outcome(
+                    "La cierras con un cartel de «Gracias por su comprensión». El burro "
+                    "lo entiende mejor que el consejero.",
+                    pay=0.3,
+                    performance=8,
+                    family=-3,
+                    stat="work_rural_closed",
+                ),
+            ),
+            (
+                "Mantenerla abierta",
+                Outcome(
+                    "La mantienes: pierdes 400 € al mes y ganas el cariño de tres vecinos, "
+                    "un burro y la prensa local, que te hace una entrevista.",
+                    performance=-8,
+                    family=6,
+                    stat="work_rural_open",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=8,
+        branches=("correos",),
+    ),
+    Event(
+        "certificada_hacienda",
+        "📨 Tienes una carta certificada de Hacienda para un vecino moroso. Si no abre, "
+        "vence el plazo y le suben la multa.",
+        (
+            (
+                "Entregársela en mano",
+                Outcome(
+                    "Se la entregas en mano. El vecino te mira como si le hubieras dado "
+                    "la sentencia de muerte. Quizá es verdad.",
+                    performance=5,
+                    family=-3,
+                    stat="work_certified_hand",
+                ),
+            ),
+            (
+                "Dejar el aviso de ausente",
+                Outcome(
+                    "Dejas el aviso. Pasa el plazo y la multa se triplica. Te lo "
+                    "encuentras en el bar y te invita a una caña, sin saber nada.",
+                    pay=0.2,
+                    performance=-3,
+                    stat="work_certified_notice",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=6,
+        branches=("correos",),
+    ),
+    Event(
+        "reyes_8_enero",
+        "👑 El paquete de Reyes del niño de la calle del Pino llega el 8 de enero. Los Reyes "
+        "ya se han ido.",
+        (
+            (
+                "Culpar a los camellos",
+                Outcome(
+                    "«Los camellos salieron tarde por la nieve en Canarias.» (No ha "
+                    "nevado.) El niño te cree. Su madre, no.",
+                    performance=5,
+                    stat="work_kings_excuse",
+                ),
+            ),
+            (
+                "Escribir una carta de disculpa",
+                Outcome(
+                    "Escribes una carta firmada «Melchor, Gaspar y Baltasar, S. A.». El "
+                    "niño la enmarca. Correos te abre un expediente por falsificar la "
+                    "firma.",
+                    performance=-5,
+                    family=5,
+                    stat="work_kings_apology",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=7,
+        branches=("correos",),
+    ),
+    Event(
+        "enchufe_correos",
+        "🤝 Un compañero de partido, de los de Moncloa, te pide colocar a su cuñada como "
+        "jefa de sección. Tiene el título de peluquería.",
+        (
+            (
+                "Colocarla",
+                Outcome(
+                    "La colocas. Ya tiene despacho, coche oficial y un sello para firmar. "
+                    "Enhorabuena: tienes un amigo.",
+                    black=0.5,
+                    risk=0.25,
+                    caught_by="uco",
+                    stat="work_correos_enchufe",
+                ),
+            ),
+            (
+                "Negarte",
+                Outcome(
+                    "Te niegas. Al día siguiente tu puesto lo ocupa «una persona de la "
+                    "máxima confianza», y tú te quedas con la cartera.",
+                    performance=-12,
+                    family=5,
+                    stat="work_correos_refuse",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=9,
+        branches=("correos",),
+    ),
+    Event(
+        "comision_congreso",
+        "🏛️ Te citan en la comisión de investigación del Congreso por las pérdidas de "
+        "Correos: «¿Dónde está el dinero?».",
+        (
+            (
+                "Comparecer sin contestar",
+                Outcome(
+                    "Respondes a todo con «lo analizaremos con rigor». Duras cuatro horas "
+                    "sin decir nada y sales con ovación de los tuyos.",
+                    performance=10,
+                    stat="work_commission_dodge",
+                ),
+            ),
+            (
+                "Decir la verdad",
+                Outcome(
+                    "Dices que las pérdidas son porque «nadie manda cartas». Te aplauden "
+                    "los de la oposición y te desayunan los tuyos.",
+                    performance=-15,
+                    family=5,
+                    stat="work_commission_truth",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=10,
+        branches=("correos",),
+    ),
+    Event(
+        "sello_conmemorativo",
+        "🖼️ Correos quiere sacar un sello conmemorativo con tu cara por tu «labor al "
+        "frente». Tirada: 50.000 sellos.",
+        (
+            (
+                "Aceptar",
+                Outcome(
+                    "Aceptas. Tu cara se pega en 50.000 sobres, con saliva. Los "
+                    "coleccionistas pagan 3 € por los que salen torcidos.",
+                    pay=0.4,
+                    performance=5,
+                    stat="work_stamp_face",
+                ),
+            ),
+            (
+                "Rechazarlo con modestia",
+                Outcome(
+                    "Dices que no. Tres semanas después sale igual, «por error de "
+                    "imprenta». Y se agota en una tarde.",
+                    family=5,
+                    performance=-5,
+                    stat="work_stamp_refuse",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=10,
+        branches=("correos",),
+    ),
+    # -- Reparto: la rama Imperio logístico -----------------------------------------------
+    Event(
+        "huelga_flota",
+        "✊ Tus «colaboradores» convocan huelga contra la bajada de tarifas. Tú, el jefe, no "
+        "tienes nada contra la huelga. La ley, tampoco, pero tú sí.",
+        (
+            (
+                "Subir dos céntimos",
+                Outcome(
+                    "Les subes dos céntimos por pedido y lo anuncias como «histórico». "
+                    "Sale tu foto en el periódico y el chiste, en las redes.",
+                    performance=8,
+                    battery=-5,
+                    stat="work_logi_strike_cents",
+                ),
+            ),
+            (
+                "Contratar esquiroles",
+                Outcome(
+                    "Traes 200 «colaboradores» de otra ciudad. Ahora la huelga es contra "
+                    "ti, contra ellos y contra el mundo.",
+                    pay=0.4,
+                    performance=-5,
+                    stat="work_logi_scabs",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=6,
+        branches=("logistica",),
+    ),
+    Event(
+        "inspeccion_falsos_autonomos",
+        "🕵️ La Inspección de Trabajo avisa de una visita: tienes 3.000 «colaboradores» que "
+        "cumplen horario, usan tu app, tu mochila y tu camiseta.",
+        (
+            (
+                "Mantenerlos autónomos",
+                Outcome(
+                    "Los mantienes como colaboradores y ahorras un millón en cuotas. "
+                    "La inspectora toma notas con una sonrisa muy educada.",
+                    black=0.8,
+                    risk=0.35,
+                    caught_by="inspeccion",
+                    stat="work_logi_false_freelance",
+                ),
+            ),
+            (
+                "Contratarlos a todos",
+                Outcome(
+                    "Los contratas. Tu margen cae un 30 %, tu contable llora y la "
+                    "inspectora te sonríe por primera vez.",
+                    performance=8,
+                    family=4,
+                    stat="work_logi_hire",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=7,
+        branches=("logistica",),
+    ),
+    Event(
+        "dron_piscina",
+        "🛸 Tu dron de reparto, con una hamburguesa de 18 €, cae en la piscina del cliente. "
+        "Con el cliente dentro.",
+        (
+            (
+                "Reclamar el dron",
+                Outcome(
+                    "Reclamas el dron; el cliente reclama la hamburguesa, la piscina y "
+                    "un abogado. Los tres aparecen el lunes.",
+                    performance=-5,
+                    stat="work_drone_claim",
+                ),
+            ),
+            (
+                "Regalarle la hamburguesa",
+                Outcome(
+                    "Se la regalas y te hace una reseña: «Entrega de otro nivel, "
+                    "literalmente». Sale en el telediario.",
+                    performance=5,
+                    stat="work_drone_gift",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=8,
+        branches=("logistica",),
+    ),
+    Event(
+        "almacen_40",
+        "🌡️ El almacén está a 40 °C y los riders se desmayan entre palés. El aire "
+        "acondicionado cuesta 30.000 € y tu margen es de 0,03 € por pedido.",
+        (
+            (
+                "Comprar ventiladores",
+                Outcome(
+                    "Compras seis ventiladores del chino y los pones a ras de suelo. Los "
+                    "riders te lo agradecen y el almacén sigue a 39,5 °C.",
+                    performance=6,
+                    battery=-10,
+                ),
+            ),
+            (
+                "Vender agua a 3 €",
+                Outcome(
+                    "Vendes la botella de agua a 3 € en la máquina del almacén. Lo llamas "
+                    "«hidratación premium» y lo cobras con tarjeta.",
+                    pay=0.3,
+                    performance=-10,
+                    stat="work_hot_warehouse_water",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=7,
+        branches=("logistica",),
+    ),
+    Event(
+        "aranceles_trump",
+        "🇺🇸 Trump anuncia aranceles del 25 % a todo lo que llegue en barco, incluidas tus "
+        "mochilas térmicas.",
+        (
+            (
+                "Repercutirlos al cliente",
+                Outcome(
+                    "Los repercutes con un «recargo logístico». El cliente se queja de "
+                    "Trump y tú te ríes con la cuenta de resultados.",
+                    pay=0.4,
+                    performance=-3,
+                    stat="work_tariff_passed",
+                ),
+            ),
+            (
+                "Pagarlos tú",
+                Outcome(
+                    "Los pagas tú y lo llamas «patriotismo logístico». Nadie te cree y tu "
+                    "margen llora en un rincón.",
+                    performance=5,
+                    battery=-10,
+                    stat="work_tariff_paid",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=9,
+        branches=("logistica",),
+    ),
+    Event(
+        "cohete_explota",
+        "🚀 Tu cohete de pruebas explota en directo ante 40 millones de espectadores. En un "
+        "lateral se lee tu logo. «Y Víctor le dijo a Joel: móntate en mi cohete.»",
+        (
+            (
+                "«Éxito de aprendizaje»",
+                Outcome(
+                    "Lo llamas «desmontaje rápido no planificado». Tus acciones suben un "
+                    "3 % y Musk te manda un emoji.",
+                    performance=8,
+                    stat="work_rocket_spin",
+                ),
+            ),
+            (
+                "Pedir perdón en directo",
+                Outcome(
+                    "Pides perdón llorando. Un meme te mantiene tres días en tendencia y "
+                    "tu madre te llama preocupada.",
+                    performance=-8,
+                    family=5,
+                    stat="work_rocket_sorry",
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=10,
+        branches=("logistica",),
+    ),
+    Event(
+        "comprar_periodico",
+        "📰 Un periódico publica que explotas a tus riders. Su dueño acepta «un acuerdo de "
+        "publicidad institucional» a cambio de tratarte con cariño.",
+        (
+            (
+                "Comprar la publicidad",
+                Outcome(
+                    "Pagas 200.000 € de publicidad y a la semana sales como «el "
+                    "empresario que reinventó el reparto». Tu madre guarda el recorte.",
+                    black=0.5,
+                    risk=0.25,
+                    caught_by="uco",
+                    stat="work_press_bought",
+                ),
+            ),
+            (
+                "Dejar que publiquen",
+                Outcome(
+                    "Publican. Tu reputación cae, pero las ventas suben «porque se habla "
+                    "de nosotros».",
+                    performance=-8,
+                    pay=0.2,
+                ),
+            ),
+        ),
+        jobs=("reparto",),
+        min_level=8,
+        branches=("logistica",),
+    ),
     # -- Funcionariado ---------------------------------------------------------------------
     Event(
         "desayuno",
@@ -7148,6 +8394,11 @@ CAUGHT_TEXT: dict[str, str] = {
     "sanidad_alimentaria": (
         "🩺 **La Inspección de Sanidad cierra la cámara.** Los huevos tenían más historia que "
         "tu local: multa por no cumplir la cadena de frío y un acta con tu nombre."
+    ),
+    "junta_electoral": (
+        "🗳️ **La Junta Electoral Central te abre expediente.** Los votos por correo "
+        "viajaron con el buzoneo del súper y algunos llegaron después del recuento: multa, "
+        "y una mención especial en la tertulia de las tres."
     ),
 }
 #: Pillados que además dejan sin IMV unos días.

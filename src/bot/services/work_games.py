@@ -19,7 +19,8 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
-  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet). Acertar suma.
+  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet,
+  el paquete perdido). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -50,7 +51,10 @@ from bot.services.work_catalog import (
     GATECRASHERS,
     GUESTS_LEGIT,
     INSPECTOR_TELLS,
+    LABOUR_INSPECTORS,
+    LOST_PARCELS,
     MEMORY_PACKS,
+    PARCELS_TRACKED,
     POLICY_FINE,
     POLICY_TRAPS,
     PR_DANGER,
@@ -58,6 +62,7 @@ from bot.services.work_catalog import (
     RESTAURANTS,
     RIDER_SLACKING,
     RIDER_WORKING,
+    RIDERS_NORMAL,
     SLACKING,
     SORT_PACKS,
     TAX_CLEAN,
@@ -564,6 +569,36 @@ def _guide_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]
     return "⭐ Tu estrella está en juego. Descubre al inspector antes del postre.", built
 
 
+def _lost_parcel(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📦 Nave {n}/{total}. ¿Cuál es el paquete perdido?",
+        good=LOST_PARCELS,
+        bad=PARCELS_TRACKED,
+        label="Paquete",
+    )
+    return (
+        "🔍 Diriges las operaciones de Correos. Entre cuatro envíos normales hay uno perdido.",
+        built,
+    )
+
+
+def _labour_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🕵️ Turno {n}/{total}. ¿Quién es la inspectora de Trabajo infiltrada?",
+        good=LABOUR_INSPECTORS,
+        bad=RIDERS_NORMAL,
+        label="Rider",
+    )
+    return (
+        "🚀 Tu imperio es legal. Casi. Descubre a la inspectora antes de que pida el contrato.",
+        built,
+    )
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -577,6 +612,8 @@ _SPOT = {
     "letra_pequena": _fine_print,
     "colados": _gatecrashers,
     "inspector": _guide_inspector,
+    "perdido": _lost_parcel,
+    "inspector_trabajo": _labour_inspector,
 }
 
 
