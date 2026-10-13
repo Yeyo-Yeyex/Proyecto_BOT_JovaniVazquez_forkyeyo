@@ -852,6 +852,9 @@ no se anuncia nada.
 
 El aviso es como la página de un PR en GitHub, sin botones ni bromas:
 
+- El título lleva la versión que se acaba de desplegar («📜 Novedades del
+  bot · v5.22.0»). El historial de versiones está en `CHANGELOG.md` y cómo
+  se sube el número, en la sección «Versiones» de `Biblia.txt`.
 - Primero, la lista de cambios: título, enlace al PR y autor.
 - En modo detallado (el de serie), una ficha por PR con su descripción,
   autor y fecha. La descripción sale entera: si no cabe en un embed, sigue

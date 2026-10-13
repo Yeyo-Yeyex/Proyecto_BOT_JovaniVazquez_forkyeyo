@@ -48,6 +48,11 @@ Lo que más se olvida:
   informes de uso en `docs/metricas/` y pásalos por `docs/analisis_metricas.py`
   (botones lentos, fallos, retención, memoria del NAS). Si no hay uno reciente, pídeselo
   a la persona: lo saca un administrador con `/informe`. La telemetría no lleva logros.
+- **Versión:** todo cambio que entra en `main` sube `__version__` (`src/bot/__init__.py`)
+  y añade su entrada arriba en `CHANGELOG.md`. MAYOR si algo que la gente ya hacía deja
+  de funcionar igual (comando quitado o renombrado, datos perdidos), MENOR si hay algo
+  nuevo que hacer o ver, PARCHE para arreglos, equilibrio, velocidad y lo interno. En
+  la duda, el escalón más alto. Sección «Versiones» de `Biblia.txt`.
 - **Comprobar antes de entregar:** `ruff check src tests`, `ruff format --check src tests`
   y `python -m pytest -q`.
 

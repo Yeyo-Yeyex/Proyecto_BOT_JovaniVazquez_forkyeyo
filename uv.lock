@@ -237,7 +237,6 @@ wheels = [
 
 [[package]]
 name = "bot-jovani-vazquez"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "davey" },

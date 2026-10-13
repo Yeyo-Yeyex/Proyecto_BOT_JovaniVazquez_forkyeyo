@@ -1,6 +1,6 @@
 [project]
 name = "bot-jovani-vazquez"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Bot de Discord con arquitectura modular en Python."
 requires-python = ">=3.12"
 dependencies = [
@@ -51,6 +51,10 @@ select = ["E", "F", "I", "UP", "B"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+# La versión vive en `bot.__version__` (ver «Versiones» en Biblia.txt).
+version = { attr = "bot.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -11,7 +11,8 @@ Novedades: cada vez que el NAS despliega commits nuevos (de noche o por
 `reinicio`), deja en el buzón la lista de lo que entró en `main`: PR y
 commits subidos sin PR. Este cog pide a GitHub la
 descripción de cada uno (`bot.services.changelog`) y publica el aviso en cada
-servidor: la lista de cambios con su enlace y autor y, en modo detallado, una
+servidor: la versión que se ha desplegado (`bot.__version__`), la lista de
+cambios con su enlace y autor y, en modo detallado, una
 ficha por PR con su descripción, como en GitHub. Canal, detalle y si se
 publica o no se configuran con `cambios` (cog `Admin`); el canal
 puede ser un hilo. El aviso es
@@ -33,6 +34,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot import __version__
 from bot.repositories.news import NewsSettings
 from bot.services.changelog import (
     Fetch,
@@ -116,10 +118,10 @@ def _split(text: str, limit: int = DESCRIPTION_CHARS) -> list[str]:
 
 def news_summary(entries: list[NewsEntry]) -> list[discord.Embed]:
     """Primeros embeds del aviso: la lista entera de cambios desplegados."""
-    header = "Cambios incluidos en la versión que acaba de desplegarse:"
+    header = f"Cambios incluidos en la versión {__version__}, que acaba de desplegarse:"
     text = "\n".join([header, "", *(_summary_line(entry) for entry in entries)])
     embeds = [discord.Embed(description=chunk, color=NEWS_COLOR) for chunk in _split(text)]
-    embeds[0].title = NEWS_TITLE
+    embeds[0].title = f"{NEWS_TITLE} · v{__version__}"
     return embeds
 
 

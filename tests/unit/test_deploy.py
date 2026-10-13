@@ -13,6 +13,7 @@ import discord
 import pytest
 from interaction_fakes import fake_interaction
 
+from bot import __version__
 from bot.cogs.deploy import (
     CHARS_PER_MESSAGE,
     DEPLOYERS,
@@ -264,7 +265,9 @@ def test_el_resumen_lista_cada_cambio_con_su_pr_y_su_autor() -> None:
     (embeds,) = news_messages(entries, detailed=False)
 
     assert len(embeds) == 1
+    assert embeds[0].title == f"📜 Novedades del bot · v{__version__}"
     description = embeds[0].description or ""
+    assert f"versión {__version__}" in description
     assert "• Cambio 5 · [#5](https://github.com/godzilin/Proyecto_BOT_JovaniVazquez/pull/5)" in (
         description
     )

@@ -254,6 +254,21 @@ Cómo alimentar los logros (`bot.cogs.achievements`):
 - La documentación debe ser breve, precisa y mantenerse junto con el cambio que documenta. No aceptar archivos nuevos sin propósito documentado ni cambios de lógica no trivial sin explicación suficiente.
 - No añadir comentarios redundantes a líneas obvias: la exigencia es que cada archivo y comportamiento relevante sean comprensibles, no comentar cada instrucción mecánica.
 
+### Versiones
+
+El bot sigue versionado semántico (MAYOR.MENOR.PARCHE), juzgado desde quien usa el bot en Discord, no desde el código. La versión vive solo en `__version__` de `src/bot/__init__.py` (el `pyproject.toml` la lee de ahí) y cada número tiene su entrada en `CHANGELOG.md`.
+
+1. **Cada cambio que entra en `main` sube la versión una vez**, sea un PR, un commit directo o una rama fusionada a mano, y venga de quien venga. Un PR del fork que junta varios cambios sube una sola vez, con el escalón del más fuerte que traiga. Lo que se queda en una rama o en el fork no sube nada.
+2. **MAYOR (x.0.0): algo que la gente ya hacía deja de funcionar igual.** Quitar o renombrar un comando, cambiar el prefijo, quitar una funcionalidad (como la hora feliz) o juntar varios comandos en otro (como `perfil`), y cualquier pérdida o reinicio de datos de los miembros (saldos, niveles, logros, inventario) que no se compense. Si el cambio pide avisar al servidor de que ahora se hace de otra forma, es mayor.
+3. **MENOR (x.y.0): algo nuevo que se puede hacer o ver, sin romper lo anterior.** Un comando, juego, oficio, artículo de tienda, logros, una opción o botón nuevo, una mecánica nueva, un rediseño visible de una mesa o panel, un ajuste de administración nuevo y un cambio de regla que el usuario nota (como la semana fiscal de la Renta).
+4. **PARCHE (x.y.z): lo mismo, pero mejor.** Arreglos, velocidad, memoria, retoques de textos o de animación, ajustes de equilibrio (premios, probabilidades, precios, topes, aunque un rango se encoja), pequeños retoques de usabilidad en algo que ya existía y todo lo interno (pruebas, documentación, despliegue, instrucciones para agentes).
+5. **Si duda entre dos escalones, gana el más alto.** Un cambio que mezcla cosas sube por la más fuerte.
+6. Al subir MAYOR, MENOR y PARCHE vuelven a 0; al subir MENOR, PARCHE vuelve a 0.
+7. **Entrada en `CHANGELOG.md`**, arriba del todo: `### X.Y.Z · AAAA-MM-DD`, una viñeta con el título del cambio (el mismo del PR o del commit) y, si es mayor, otra que empiece por «Rompe:» y diga qué deja de funcionar. La primera versión de cada mayor abre su `## X.x`.
+8. **Si al fusionar choca la versión** (dos ramas subieron a la vez), se recalcula sobre la de `main` y se renumera la entrada; nunca dos entradas con el mismo número.
+
+`tests/unit/test_version.py` comprueba que `__version__` es válida, que coincide con la primera entrada de `CHANGELOG.md` y que el historial va de mayor a menor sin repetir números. El escalón elegido no lo puede comprobar una prueba: lo revisa quien fusiona.
+
 ## 5. Normas de rendimiento y concurrencia
 
 - No usar `time.sleep`, `requests` ni lecturas/escrituras de archivos bloqueantes dentro de una coroutine.
@@ -373,6 +388,7 @@ Una funcionalidad está lista cuando:
 7. Puede arrancar y cerrarse limpiamente en el entorno previsto.
 8. Si mueve dinero, cumple las reglas de "Dinero, impuestos y la Renta" (sección 4).
 9. Tiene logros asociados y los alimenta, según la sección "Logros" (sección 4).
+10. Sube la versión y añade su entrada a `CHANGELOG.md`, según la sección "Versiones" (sección 4).
 
 ## 11. Evolución de esta biblia
 
