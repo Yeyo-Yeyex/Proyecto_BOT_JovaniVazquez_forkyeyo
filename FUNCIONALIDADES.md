@@ -90,7 +90,7 @@ Al encender los niveles por primera vez, el recuento importado se convierte una 
 - `perfil [miembro]`, sección 📊 Nivel: el nivel, la experiencia, el progreso al siguiente nivel y la racha de días escribiendo (con su extra de XP) del miembro indicado o de quien abre el perfil. Antes era el comando `nivel`.
 - `/ranking [pagina]` y `.ranking [pagina]`: muestran los miembros con más experiencia del servidor, ordenados de forma estable y con paginación.
 - `/latencia` y `.latencia`: comprueban la latencia del bot.
-- `/ayuda` y `.ayuda`: listan todos los comandos en un solo embed, por categorías (General, Música, Niveles, Casino, Entradas, Imagen y sus cuatro tipos de efecto), solo por nombre, sin descripción ni argumentos y en orden alfabético dentro de cada categoría. La categoría Admin solo aparece si quien pide la ayuda es administrador.
+- `/ayuda` y `.ayuda`: abren un menú desplegable, como el de `perfil`. La portada resume las categorías (Perfil, Casino, Dinero, Tienda, Música, Comunidad, Imagen y General) y cada una tiene su página con los comandos en orden alfabético y lo que hace cada uno, sin argumentos. Los efectos de imagen van en la página de Imagen, por tipo y solo por nombre. La categoría Admin solo aparece si quien pide la ayuda es administrador. Con `/` la ayuda solo la ve quien la pide; con `.` es pública, pero el menú solo lo maneja quien la abrió.
 
 **Convención de nombres de comandos (norma del proyecto, ver Biblia):** cada comando tiene un único nombre corto de una palabra (máximo 8 caracteres), idéntico en `/` y en `.`. No hay alias, grupos ni subcomandos, para que el menú de `/` quede limpio. El prefijo de texto es `.` por defecto y se puede cambiar con `COMMAND_PREFIX`; los comandos `/` funcionan siempre, sea cual sea el prefijo. Para que Discord entregue mensajes a los comandos de texto, también debe habilitarse **Message Content Intent** en el portal de desarrolladores.
 
@@ -178,7 +178,7 @@ La respuesta es un PNG (`magik.png`). Los GIF animados se reducen a su primer fo
 
 ### 6.2. Efectos de Dank Memer
 
-Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.ayuda` los lista en subcategorías de Imagen según su tipo; `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
+Port de [imgen](https://github.com/DankMemer/imgen), el generador de imágenes de Dank Memer (licencia MIT). Cada uno de sus 108 efectos es un comando de texto con el nombre original (`.trigger`, `.slap`, `.changemymind`...). Esos nombres conservan la longitud de Dank Memer, aunque algunos superan las 8 letras, porque así los reconoce quien ya los usaba; `.ayuda` los lista por tipo en la página de Imagen; `.memes` muestra la misma lista y `.memes <efecto>` explica el uso de uno.
 
 Lectura de argumentos:
 

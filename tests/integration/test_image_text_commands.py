@@ -19,6 +19,7 @@ import pytest
 from PIL import Image
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.cogs.general import build_help_pages
 
 BOT_USER = {"id": "999", "username": "bot", "discriminator": "0", "avatar": None, "bot": True}
 
@@ -327,12 +328,13 @@ async def test_memes_lista_los_efectos_en_un_embed(harness: Harness) -> None:
 
 @pytest.mark.asyncio
 async def test_la_ayuda_lista_los_efectos_por_nombre(harness: Harness) -> None:
-    """`.ayuda` muestra `memes` y los efectos, todos solo por nombre."""
+    """`.ayuda` tiene página de Imagen con `memes` y los efectos, solo por nombre."""
     await harness.say(".ayuda", attach_image=False)
 
-    fields = harness.sent[0]["embeds"][0]["fields"]
-    text = "\n".join(field["value"] for field in fields)
+    assert "🎨 Imagen" in harness.sent[0]["embeds"][0]["description"]
+    page = next(p for p in build_help_pages(harness.bot) if p.title == "🎨 Imagen")
+    text = "\n".join(field.value for field in page.embed.fields)
     names = [name.strip("`") for name in text.replace("\n", " · ").split(" · ")]
-    assert "memes" in names
+    assert "memes" in (page.embed.description or "")
     assert "trigger" in names
     assert "changemymind" in names

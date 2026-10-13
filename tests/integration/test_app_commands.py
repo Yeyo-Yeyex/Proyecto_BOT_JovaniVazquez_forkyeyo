@@ -8,7 +8,7 @@ from pathlib import Path
 from discord import app_commands
 
 from bot.app import INITIAL_EXTENSIONS, BotClient, build_intents
-from bot.cogs.general import build_help_embed
+from bot.cogs.general import HelpPage, build_help_pages
 from bot.services.memes import EFFECTS
 
 # Máxima longitud de un nombre de comando: deben ser cortos y fáciles de teclear.
@@ -138,8 +138,8 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
     asyncio.run(load_cogs())
 
 
-def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path) -> None:
-    """La ayuda lista cada comando una vez, agrupada, y cabe en un embed."""
+def test_la_ayuda_real_va_por_menus_y_respeta_los_limites_de_discord(tmp_path: Path) -> None:
+    """La ayuda es un menú por categorías: cada comando una vez y todo cabe en Discord."""
 
     async def check_help() -> None:
         client = BotClient(
@@ -150,47 +150,46 @@ def test_la_ayuda_real_es_breve_y_respeta_los_limites_de_discord(tmp_path: Path)
             for extension in INITIAL_EXTENSIONS:
                 await client.load_extension(extension)
 
-            embed = build_help_embed(client)
-            admin_embed = build_help_embed(client, include_admin=True)
+            pages = build_help_pages(client)
+            admin_pages = build_help_pages(client, include_admin=True)
 
-            def listed(fields: list) -> list[str]:
-                values = " · ".join(field.value for field in fields)
-                return [name.strip("`") for name in values.split(" · ")]
+            def listed(page: HelpPage) -> list[str]:
+                lines = (page.embed.description or "").splitlines()
+                names = [line.split("`")[1] for line in lines]
+                for field in page.embed.fields:
+                    names += [name.strip("`") for name in field.value.split(" · ")]
+                return names
 
-            assert [field.name for field in embed.fields] == [
-                "⚙️ General (2)",
-                "👤 Perfil (1)",
-                "🎵 Música (9)",
-                "📊 Niveles (1)",
-                "🎰 Casino (24)",
-                "🛍️ Tienda (3)",
-                "🪏 Trabajo (1)",
-                "🎂 Cumpleaños (2)",
-                "📝 Lista (1)",
-                "🍻 Beernight (1)",
-                "🔔 Entradas (1)",
-                "🎨 Imagen (2)",
-                "🎨 Imagen · avatar (46)",
-                "🎨 Imagen · avatar + texto (10)",
-                "🎨 Imagen · texto (49)",
-                "🎨 Imagen · vídeo (3)",
-                "🗼 Diversión (2)",
+            assert [page.title for page in pages] == [
+                "📋 Inicio",
+                "👤 Perfil",
+                "🎰 Casino",
+                "🏦 Dinero",
+                "🛍️ Tienda",
+                "🎵 Música",
+                "🍻 Comunidad",
+                "🎨 Imagen",
+                "⚙️ General",
             ]
-            # Cada comando aparece una vez, solo por nombre y sin descripción.
+            # Cada comando aparece una vez, con su descripción (salvo los efectos).
             everyone = EXPECTED_COMMANDS | TEXT_ONLY_COMMANDS | set(EFFECTS)
-            assert sorted(listed(embed.fields)) == sorted(everyone)
-            assert "—" not in "".join(field.value for field in embed.fields)
-            # Dentro de cada categoría, en orden alfabético.
-            for field in embed.fields:
-                names = listed([field])
-                assert names == sorted(names)
-            # La categoría de administración solo se enseña a administradores.
-            assert admin_embed.fields[-1].name == f"🛡️ Admin ({len(ADMIN_COMMANDS)})"
-            assert set(listed([admin_embed.fields[-1]])) == ADMIN_COMMANDS
-            for result in (embed, admin_embed):
-                assert all(len(field.value) <= 1024 for field in result.fields)
-                assert len(result) <= 6000
-                assert len(result.fields) <= 25
+            names = [name for page in pages[1:] for name in listed(page)]
+            assert sorted(names) == sorted(everyone)
+            for page in pages[1:]:
+                for line in (page.embed.description or "").splitlines():
+                    assert " — " in line
+                    assert "Sin descripción" not in line
+            # La categoría de administración solo se enseña a administradores, al final.
+            assert admin_pages[-1].title == "🛡️ Admin"
+            assert set(listed(admin_pages[-1])) == ADMIN_COMMANDS
+            # Límites de Discord: 25 opciones en un menú, embeds de 6000 y campos de 1024.
+            assert len(admin_pages) <= 25
+            for page in admin_pages:
+                assert len(page.embed) <= 6000
+                assert len(page.embed.description or "") <= 4096
+                assert len(page.embed.fields) <= 25
+                assert all(len(field.value) <= 1024 for field in page.embed.fields)
+                assert len(page.summary) <= 100
         finally:
             await client.close()
 

@@ -8,6 +8,10 @@ criterio.
 
 ## 5.x
 
+### 5.23.0 · 2026-10-13
+
+- Ayuda: `ayuda` va por menús, con lo que hace cada comando
+
 ### 5.22.1 · 2026-10-13
 
 - Novedades: se anuncian los commits directos a main que se quedaron sin aviso desde el #99

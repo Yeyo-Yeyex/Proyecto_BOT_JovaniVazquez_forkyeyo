@@ -8,8 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord.ext import commands
+from interaction_fakes import fake_interaction
 
-from bot.cogs.general import General, build_help_embed
+from bot.cogs.general import ADMIN_CATEGORY, HOME, General, HelpView, build_help_pages
 
 
 def make_interaction() -> MagicMock:
@@ -69,19 +70,25 @@ async def test_ping_text_responde_con_la_misma_latencia_que_la_version_slash() -
 
 
 @pytest.mark.asyncio
-async def test_help_responde_con_un_embed_de_forma_efimera() -> None:
-    """`/ayuda` construye y envía el embed de ayuda de forma efímera."""
+async def test_help_responde_con_el_menu_de_forma_efimera() -> None:
+    """`/ayuda` envía la portada con el menú de categorías, solo para quien la pide."""
     real_bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     cog = General(real_bot)
     await real_bot.add_cog(cog)
     interaction = make_interaction()
+    interaction.user = SimpleNamespace(id=7)
+    interaction.original_response = AsyncMock()
 
     await cog.help_command.callback(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once()
     kwargs = interaction.response.send_message.call_args.kwargs
     assert kwargs["ephemeral"] is True
-    assert kwargs["embed"] is not None
+    assert kwargs["embed"].title == "📖 Comandos"
+    view = kwargs["view"]
+    assert isinstance(view, HelpView)
+    assert view.owner_id == 7
+    assert view.message is interaction.original_response.return_value
 
 
 @pytest.mark.asyncio
@@ -94,43 +101,36 @@ async def test_help_text_se_llama_igual_que_el_slash_y_sin_alias() -> None:
     cog = General(real_bot)
     await real_bot.add_cog(cog)
     ctx = make_context()
+    ctx.author = SimpleNamespace(id=7)
 
     await cog.help_command_text.callback(cog, ctx)
 
     ctx.send.assert_awaited_once()
-    assert ctx.send.await_args.kwargs["embed"] is not None
+    assert ctx.send.await_args.kwargs["embed"].title == "📖 Comandos"
+    assert isinstance(ctx.send.await_args.kwargs["view"], HelpView)
 
 
 async def make_bot_with_commands() -> commands.Bot:
-    """Bot real con un comando slash y su gemelo de texto, en cogs distintos."""
+    """Bot real con los comandos de `General` (slash y texto con el mismo nombre)."""
     bot = commands.Bot(command_prefix=".", intents=discord.Intents.none(), help_command=None)
     await bot.add_cog(General(bot))
     return bot
 
 
 @pytest.mark.asyncio
-async def test_build_help_embed_muestra_cada_comando_una_sola_vez_sin_prefijos() -> None:
-    """Como `/x` y `.x` son iguales, la ayuda lista cada nombre una sola vez."""
+async def test_build_help_pages_portada_y_una_pagina_por_categoria() -> None:
+    """La portada resume las categorías y cada página lista sus comandos con descripción."""
     bot = await make_bot_with_commands()
 
-    embed = build_help_embed(bot)
+    pages = build_help_pages(bot)
 
-    text = "\n".join(field.value for field in embed.fields)
-    assert text.count("`latencia`") == 1
-    assert text.count("`ayuda`") == 1
-    assert "/latencia" not in text
-    assert ".latencia" not in text
-
-
-@pytest.mark.asyncio
-async def test_build_help_embed_solo_nombres_ordenados_sin_descripcion() -> None:
-    """Cada categoría es una línea de nombres en orden alfabético, sin descripciones."""
-    bot = await make_bot_with_commands()
-
-    embed = build_help_embed(bot)
-
-    assert [field.name for field in embed.fields] == ["⚙️ General (2)"]
-    assert embed.fields[0].value == "`ayuda` · `latencia`"
+    assert [page.title for page in pages] == [HOME, "⚙️ General"]
+    assert "⚙️ General · 2 comandos" in pages[0].embed.description
+    general = pages[1].embed.description.splitlines()
+    assert general == [
+        "`ayuda` — Todos los comandos, por categorías.",
+        "`latencia` — Comprueba que el bot responde.",
+    ]
 
 
 class FakeAdminCog(commands.Cog, name="Admin"):
@@ -142,17 +142,17 @@ class FakeAdminCog(commands.Cog, name="Admin"):
 
 
 @pytest.mark.asyncio
-async def test_build_help_embed_solo_ensena_admin_a_administradores() -> None:
-    """La categoría Admin aparece con `include_admin=True` y al final."""
+async def test_build_help_pages_solo_ensena_admin_a_administradores() -> None:
+    """La página Admin aparece con `include_admin=True` y al final."""
     bot = await make_bot_with_commands()
     await bot.add_cog(FakeAdminCog())
 
-    normal = build_help_embed(bot)
-    admin = build_help_embed(bot, include_admin=True)
+    normal = build_help_pages(bot)
+    admin = build_help_pages(bot, include_admin=True)
 
-    assert all("Admin" not in field.name for field in normal.fields)
-    assert admin.fields[-1].name == "🛡️ Admin (1)"
-    assert admin.fields[-1].value == "`echar`"
+    assert all(page.title != ADMIN_CATEGORY for page in normal)
+    assert admin[-1].title == ADMIN_CATEGORY
+    assert admin[-1].embed.description == "`echar` — Comando de prueba."
 
 
 @pytest.mark.asyncio
@@ -162,14 +162,42 @@ async def test_help_de_un_administrador_incluye_la_categoria_admin() -> None:
     await bot.add_cog(FakeAdminCog())
     cog = bot.get_cog("General")
     interaction = make_interaction()
+    interaction.original_response = AsyncMock()
     admin = MagicMock(spec=discord.Member)
     admin.guild_permissions = discord.Permissions(administrator=True)
     interaction.user = admin
 
     await cog.help_command.callback(cog, interaction)
 
-    embed = interaction.response.send_message.call_args.kwargs["embed"]
-    assert embed.fields[-1].name.startswith("🛡️ Admin")
+    view = interaction.response.send_message.call_args.kwargs["view"]
+    assert list(view.pages)[-1] == ADMIN_CATEGORY
+
+
+@pytest.mark.asyncio
+async def test_el_menu_cambia_de_pagina_en_el_mismo_mensaje() -> None:
+    """Elegir una categoría edita el mensaje con su página y la marca en el menú."""
+    bot = await make_bot_with_commands()
+    view = HelpView(build_help_pages(bot), owner_id=7)
+    interaction = fake_interaction(SimpleNamespace(id=7))
+
+    await view.show(interaction, "⚙️ General")
+
+    kwargs = interaction.response.edit_message.await_args.kwargs
+    assert kwargs["embed"].title == "⚙️ General"
+    select = view.children[0]
+    assert [o.value for o in select.options if o.default] == ["⚙️ General"]
+
+
+@pytest.mark.asyncio
+async def test_el_menu_solo_lo_maneja_quien_lo_abrio() -> None:
+    """Otro miembro recibe un aviso privado y la página no cambia."""
+    bot = await make_bot_with_commands()
+    view = HelpView(build_help_pages(bot), owner_id=7)
+    interaction = fake_interaction(SimpleNamespace(id=8))
+
+    assert await view.interaction_check(interaction) is False
+    interaction.response.send_message.assert_awaited_once()
+    assert view.key == HOME
 
 
 def test_chunk_names_parte_los_nombres_sin_pasar_del_limite_de_un_campo() -> None:

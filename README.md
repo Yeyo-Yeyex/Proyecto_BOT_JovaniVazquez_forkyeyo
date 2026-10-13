@@ -67,24 +67,21 @@ python -m bot
 
   | Categoría | Comandos |
   |---|---|
-  | ⚙️ General | `ayuda` · `latencia` |
-  | 👤 Perfil | `perfil [miembro]` |
-  | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
-  | 📊 Niveles | `ranking [pagina]` |
-  | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
-  | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
-  | 🍻 Beernight | `beernight [sonido] [archivo]` |
+  | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
-  | 🪏 Trabajo | `pala` |
-  | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `bacara [cantidad] [lado]` · `gallos [cantidad] [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
-  | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
-  | 🗼 Diversión | `babel <texto \| @miembros #canales>` · `hongkong` |
+  | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
+  | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
+  | ⚙️ General | `ayuda` · `latencia` |
   | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
 
-  La ayuda cabe en un solo embed: categorías con los nombres en orden
-  alfabético, sin descripciones. La categoría Admin solo la ve quien es
-  administrador.
+  La ayuda es un menú desplegable, como el de `perfil`: una portada con las
+  categorías y una página por categoría con cada comando y lo que hace (la
+  descripción de su slash command). Los efectos de imagen van en bloque, por
+  tipo, en la página de Imagen. La categoría Admin solo la ve quien es
+  administrador, y el menú solo lo maneja quien lo abrió.
 - Los **comandos de administración** solo los pueden usar miembros con el
   permiso Administrador (se comprueba en cada uso, no solo ocultándolos del
   menú). Respetan la jerarquía de roles, dejan el motivo y el autor en el
