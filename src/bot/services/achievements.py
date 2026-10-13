@@ -9122,7 +9122,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("hosteleria", "work_one_star", [
         (1, "hos_una_estrella", "Una estrella y una queja de la sal",
          "Deja que el cliente ponga su reseña de una estrella.", C),
-        (10, "hos_una_estrella_10", "Estrella única, como los de Michelin pero al revés",
+        (10, "hos_una_estrella_10", "Una estrella, como la Guía pero al revés",
          "Recibe 10 reseñas de una estrella por no ceder.", R),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_free_dinner", [
@@ -9214,7 +9214,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Hazle un contrato de prácticas a un stagier.", E),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_guide_pampered", [
-        (1, "hos_guia_trufa", "Trufa de más para un jubilado",
+        (1, "hos_guia_trufa", "Trufa de más para un opositor",
          "Trata de gala a un cliente que creías el inspector de la Guía.", E),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_allergic_menu", [

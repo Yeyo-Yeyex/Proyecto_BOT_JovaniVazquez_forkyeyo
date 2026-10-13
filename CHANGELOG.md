@@ -8,6 +8,10 @@ criterio.
 
 ## 5.x
 
+### 5.24.0 · 2026-10-13
+
+- Pala: la hostelería llega a 10 puestos con ramas Hotelera y Alta cocina
+
 ### 5.23.0 · 2026-10-13
 
 - Ayuda: `ayuda` va por menús, con lo que hace cada comando
