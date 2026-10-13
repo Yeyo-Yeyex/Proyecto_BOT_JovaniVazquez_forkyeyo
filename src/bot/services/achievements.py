@@ -8418,8 +8418,267 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "moscosos", "Moscosos", "Gasta tus días de asuntos propios.", C),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_top_funcionariado", [
-        (1, "inspector_hacienda", "Inspector de Hacienda", "Llega a Inspector de Hacienda.", L),
+        (1, "inspector_hacienda", "De interino a lo más alto (con o sin padrón en Andorra)",
+         "Llega a lo más alto del funcionariado: consejero de Estado o asesor de fortunas "
+         "en Andorra.", L),
     ])  # fmt: skip
+
+    # 🗂️ Funcionariado: el tronco, la Alta Administración y la Puerta giratoria ---------------
+    a += _tiers("funcionariado", "work_top_funcionariado_alta", [
+        (1, "fun_alta_top", "Consejero de Estado (dictamen no vinculante)",
+         "Llega a consejero de Estado (rama 🏛️ Alta Administración).", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_top_funcionariado_giratoria", [
+        (1, "fun_giratoria_top", "Andorra, ahí te quedas (con el padrón vacío)",
+         "Llega a asesor de fortunas en Andorra (rama 💼 Puerta giratoria).", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_retired_funcionariado", [
+        (1, "fun_jubilado", "Jubilado con trienios (o sin ellos)",
+         "Jubílate de una rama del funcionariado.", L),
+        (2, "fun_emerito_andorra", "Emérito en Madrid y exiliado en Andorra",
+         "Jubílate de la Alta Administración y de la Puerta giratoria.", L, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_boe", [
+        (30, "fun_boe_30", "Sección II: la de los cuñados",
+         "Manda 30 disposiciones a su sección del BOE como subdirector general.", E),
+        (300, "fun_boe_300", "Ni una errata sin corregir (en el siguiente número)",
+         "Manda 300 disposiciones a su sección del BOE.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_circuit", [
+        (15, "fun_circuito_15", "Expediente con todos los sellos",
+         "Haz 15 circuitos de expediente perfectos como director general.", E),
+        (150, "fun_circuito_150", "Tres años después, firmado",
+         "Haz 150 circuitos de expediente perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_colada", [
+        (25, "fun_colada_25", "Letra pequeña con letra grande",
+         "Pilla 25 disposiciones coladas en una ley que no tiene nada que ver.", E),
+        (250, "fun_colada_250", "Lector oficial de disposiciones finales",
+         "Pilla 250 disposiciones coladas.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_undersecretaries", [
+        (30, "fun_lunes_30", "Lunes, 9:00, mesa grande",
+         "Acierta 30 respuestas en la Comisión de Subsecretarios.", E),
+        (300, "fun_lunes_300", "Se pactó el lunes (y nadie lo recuerda)",
+         "Acierta 300 respuestas en la Comisión de Subsecretarios.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_state_council", [
+        (25, "fun_dictamen_25", "Dictamen sin molestar a nadie",
+         "Acierta 25 respuestas en el pleno del Consejo de Estado.", L),
+        (250, "fun_dictamen_250", "No vinculante, pero muy bien encuadernado",
+         "Acierta 250 respuestas en el pleno del Consejo de Estado.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_wealth", [
+        (30, "fun_patrimonio_30", "Cada millón en su cajón",
+         "Manda 30 bienes a su escondite legal como asesor fiscal de grandes fortunas.", E),
+        (300, "fun_patrimonio_300", "Patrimonio exento de casi todo",
+         "Manda 300 bienes a su escondite legal.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_big_four", [
+        (30, "fun_big_four_30", "Murallas chinas de papel",
+         "Acierta 30 respuestas como socio de una Big Four.", E),
+        (300, "fun_big_four_300", "Todo legal hasta que lo diga un juez",
+         "Acierta 300 respuestas como socio de una Big Four.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_sandwich", [
+        (15, "fun_sandwich_15", "Doble irlandés con sándwich holandés",
+         "Traza 15 rutas del dinero perfectas como ingeniero fiscal.", E),
+        (150, "fun_sandwich_150", "Cuatro paraísos y ni un euro perdido",
+         "Traza 150 rutas del dinero perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_mariachis", [
+        (25, "fun_mariachis_25", "El único socio que lee el contrato",
+         "Encuentra a 25 inversores de verdad entre los mariachis de la SICAV.", E),
+        (250, "fun_mariachis_250", "Cien socios y un solo inversor",
+         "Encuentra a 250 inversores de verdad.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_andorra_desk", [
+        (25, "fun_andorra_25", "Residente en Andorra (con casa en Chamberí)",
+         "Acierta 25 respuestas como asesor de fortunas en Andorra.", L),
+        (250, "fun_andorra_250", "El avi Florenci estaría orgulloso",
+         "Acierta 250 respuestas como asesor de fortunas en Andorra.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("funcionariado", "work_dni_accept", [
+        (1, "fun_dni_una_cara", "Una cara me vale",
+         "Acepta la fotocopia del DNI por una sola cara.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_dni_two_sides", [
+        (1, "fun_dni_dos_caras", "Por las dos caras, que lo dice la ley",
+         "Exige la fotocopia del DNI por las dos caras.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_slot_found", [
+        (1, "fun_hueco", "Hueco entre dos cafés", "Hazle un hueco a un vecino sin cita.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_march", [
+        (1, "fun_marzo", "Cita para marzo (de 2027)",
+         "Manda a marzo a quien necesita la cita hoy.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_no_replacement_take", [
+        (1, "fun_sin_reposicion_si", "Dos puestos por el precio de uno",
+         "Quédate con los expedientes y la cafetera del compañero que se jubila.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_no_replacement_pile", [
+        (1, "fun_sin_reposicion_pila", "Pendiente de reposición desde 2009",
+         "Deja los expedientes del jubilado en la pila de nadie.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_course_done", [
+        (1, "fun_igualdad_entero", "Alumno aventajado de igualdad",
+         "Haz entero el curso obligatorio de igualdad.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_course_mute", [
+        (1, "fun_igualdad_silencio", "Vídeo en silencio, crucigrama en pantalla",
+         "Pon el curso de igualdad en silencio y haz el crucigrama.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_basket_taken", [
+        (1, "fun_cesta_si", "Jamón con tarjeta",
+         "Acepta la cesta de Navidad del proveedor, en octubre.", R, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_basket_returned", [
+        (1, "fun_cesta_no", "Cesta devuelta, acta en mano",
+         "Devuelve la cesta del proveedor con un acta de tres folios.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_famous_probe", [
+        (1, "fun_cantante_inspeccion", "Ni los cantantes se libran",
+         "Inspecciona a fondo la sociedad instrumental de un cantante.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_famous_ignored", [
+        (1, "fun_cantante_archivo", "Falta de indicios, sobra de camiseta",
+         "Archiva el expediente del cantante «por falta de indicios».", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_youtuber_padron", [
+        (1, "fun_youtuber_padron", "Dónde duerme de verdad el youtuber",
+         "Pídele el padrón al youtuber que dice vivir en Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_youtuber_like", [
+        (1, "fun_youtuber_like", "Un «me gusta» y a otra cosa",
+         "Dale un «me gusta» al youtuber que dice vivir en Andorra.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Alta Administración
+    a += _tiers("funcionariado", "work_boe_friday", [
+        (1, "fun_boe_viernes", "Viernes de agosto, 23:59 y 40 segundos",
+         "Publica en el BOE una disposición incómoda un viernes de agosto a las 23:59.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_boe_monday", [
+        (1, "fun_boe_lunes", "El lunes, con luz y taquígrafos",
+         "Espera al lunes para publicar la disposición incómoda.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_omnibus_all", [
+        (1, "fun_omnibus_todo", "Ómnibus con puente incluido",
+         "Mete de todo en el decreto ómnibus, hasta el nombre de un puente.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_omnibus_single", [
+        (1, "fun_omnibus_uno", "Un decreto, un tema (qué ingenuo)",
+         "Redacta un decreto con un solo tema.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_brother_in_law", [
+        (1, "fun_cunado_si", "Ingeniero de caminos de cabras",
+         "Nombra asesor al cuñado del ministro.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_brother_refused", [
+        (1, "fun_cunado_no", "Que oposite, como todos",
+         "Niégate a nombrar asesor al cuñado del ministro.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_car_bread", [
+        (1, "fun_pan_coche", "Barra de pan a 40 euros",
+         "Ve a por el pan en el coche oficial.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_walk_bread", [
+        (1, "fun_pan_andando", "Pan sin chófer",
+         "Ve a por el pan andando, como el resto de los mortales.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_council_archive", [
+        (1, "fun_informe_archivo", "Cajón de informes no preceptivos",
+         "Archiva el informe del Consejo de Estado que contradice al Gobierno.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_council_publish", [
+        (1, "fun_informe_publica", "Transparencia con efectos secundarios",
+         "Publica el informe del Consejo de Estado que contradice al Gobierno.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_golden_chair", [
+        (1, "fun_sillon_si", "Cuatro expresidentes y un sillón",
+         "Acepta el sillón vitalicio junto a los expresidentes.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_golden_refused", [
+        (1, "fun_sillon_no", "Ya se sentará otro",
+         "Rechaza el sillón vitalicio entre los expresidentes.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Puerta giratoria
+    a += _tiers("funcionariado", "work_old_pal_lunch", [
+        (1, "fun_compa_comida", "Comida en el reservado, expediente archivado",
+         "Invita a comer a tu antiguo compañero de Hacienda mientras inspecciona a tu cliente.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_old_pal_refused", [
+        (1, "fun_compa_no", "Cada uno en su trinchera",
+         "Dile a tu antiguo compañero de Hacienda que haga su trabajo.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_amnesty_in", [
+        (1, "fun_amnistia_si", "Un 3 % y a dormir",
+         "Acoge a tus clientes a la amnistía fiscal.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_amnesty_out", [
+        (1, "fun_amnistia_no", "Amnistía, no gracias (mis honorarios, sí)",
+         "No te acojas a la amnistía fiscal.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_papers_deny", [
+        (1, "fun_lista_homonimo", "Un homónimo con el mismo yate",
+         "Niega que tu cliente sea el de la lista de cuentas en paraísos fiscales.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_papers_regularize", [
+        (1, "fun_lista_regulariza", "Regularización a la carrera",
+         "Regulariza a toda prisa al cliente que sale en la lista.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_ytb_prop_flight", [
+        (1, "fun_youtuber_vuelo", "Tarjeta de embarque de atrezo",
+         "Móntale al youtuber un vuelo semanal a Andorra de pega.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_ytb_dropped", [
+        (1, "fun_youtuber_baja", "Cliente despedido antes de que lo despidan",
+         "Rescinde el contrato al youtuber que vive en Madrid.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_padron_answer", [
+        (1, "fun_padron_ochenta", "Ochenta folios y una foto con nieve",
+         "Contesta con ochenta folios a la carta de la Agencia Tributaria por el padrón.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_padron_ignore", [
+        (1, "fun_padron_cajon", "El cajón del «ya contestaré»",
+         "Ignora la carta de la Agencia Tributaria por el padrón de Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_foundation_made", [
+        (1, "fun_fundacion_si", "Fundación Amigos del Mus y los Caballos",
+         "Monta la fundación para que la herencia no pague Sucesiones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_foundation_refused", [
+        (1, "fun_fundacion_no", "Sucesiones con todas las letras",
+         "Aconseja que la herencia pague Sucesiones.", E),
+    ])  # fmt: skip
+
+    # Pillados
+    a += _tiers("funcionariado", "work_caught_tribunal_cuentas", [
+        (1, "fun_tribunal_cuentas", "Pan con reintegro del Tribunal de Cuentas",
+         "Que el Tribunal de Cuentas te reclame el viaje del coche oficial.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_caught_fiscalia", [
+        (1, "fun_fiscalia", "Investigado, pero con asesor",
+         "Que la Fiscalía Anticorrupción te cite como investigado.", E, True),
+    ])  # fmt: skip
+    a += [
+        combo("fun_honrado", "Funcionario de los que ya no quedan",
+              "Devuelve la cesta del proveedor, niégate a nombrar al cuñado del ministro y "
+              "aconseja que la herencia pague Sucesiones.", "funcionariado", L,
+              (("work_basket_returned", 1), ("work_brother_refused", 1),
+               ("work_foundation_refused", 1))),
+        combo("fun_sin_escrupulos", "Sin escrúpulos y con trienios",
+              "Acepta la cesta del proveedor, nombra asesor al cuñado del ministro y monta la "
+              "fundación para esquivar Sucesiones.", "funcionariado", L,
+              (("work_basket_taken", 1), ("work_brother_in_law", 1),
+               ("work_foundation_made", 1)),
+              secret=True),
+    ]  # fmt: skip
 
     # 🤳 Influencer ------------------------------------------------------------------------
     a += _tiers("influencer", "work_dances", [
@@ -12350,6 +12609,16 @@ _WORK_CONTENT_STATS = {
     "plato_tv": "work_tv_judge",
     "brigada": "work_brigade",
     "dubai": "work_dubai",
+    "boe": "work_boe",
+    "expediente": "work_circuit",
+    "colada": "work_colada",
+    "subsecretarios": "work_undersecretaries",
+    "consejo_estado": "work_state_council",
+    "patrimonio": "work_wealth",
+    "big_four": "work_big_four",
+    "sandwich": "work_sandwich",
+    "mariachis": "work_mariachis",
+    "andorra": "work_andorra_desk",
 }
 
 
@@ -12554,5 +12823,7 @@ MEMORY_CONTENT = frozenset(
         "retoques",
         "pulseras",
         "emplatado",
+        "expediente",
+        "sandwich",
     }
 )

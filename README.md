@@ -268,7 +268,7 @@ python -m bot
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
   funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
-  obra, la sanidad y la hostelería, que ya tienen la carrera larga: 5 puestos de
+  obra, la sanidad, la hostelería y el funcionariado, que ya tienen la carrera larga: 5 puestos de
   tronco y dos ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
@@ -277,7 +277,10 @@ python -m bot
   consejero de Sanidad) o 💉 Privada (hasta dueño de una aseguradora de salud); la
   hostelería va de friegaplatos a dueño del chiringuito y sigue por 🏨 Hotelera
   (hasta presidente de la patronal turística) o ⭐ Alta cocina (hasta gurú
-  gastronómico con franquicias en Dubái).
+  gastronómico con franquicias en Dubái); y el funcionariado va de interino a
+  inspector de Hacienda y sigue por 🏛️ Alta Administración (hasta consejero de
+  Estado, en nómina, con plaza fija y trienios) o 💼 Puerta giratoria (hasta
+  asesor de fortunas en Andorra, autónomo, sin plaza fija ni trienios).
   Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
@@ -318,8 +321,10 @@ python -m bot
   h, y los dos primeros puestos son falsos autónomos con tarifa plana. En el
   **funcionariado** hay que **estudiar la oposición** (turnos sin sueldo que
   suman temario, con preguntas de la Constitución y la Ley 39/2015 de
-  verdad), desde auxiliar tienes plaza fija (no te bajan nunca y la nota mueve
-  poco el sueldo) y cada 3 «años» un trienio (+5 %, hasta 8). El **influencer**
+  verdad; solo en el tronco, del interino al técnico), desde auxiliar tienes
+  plaza fija (no te bajan nunca y la nota mueve poco el sueldo) y cada 3 «años»
+  un trienio (+5 %, hasta 8); en la Puerta giratoria pides la excedencia
+  voluntaria y no tienes ni plaza fija ni trienios. El **influencer**
   cobra a golpes: casi siempre se queda corto y a veces se hace viral (hasta
   ×15), suma seguidores y sufre funas. **Carrera larga**, como en los Sims: al
   acabar el tronco se elige rama; cada puesto da una ventaja 🏅 para siempre

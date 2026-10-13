@@ -549,6 +549,7 @@ class WorkService:
             retired=retired,
         )
         wish = None if contract.wish_day == today else wish_for(user_id, today, job, contract.level)
+        earns = job.earns_triennia(contract.level, contract.branch)
         return Status(
             contract=contract,
             job=job,
@@ -562,7 +563,7 @@ class WorkService:
             now=now,
             phase=residence_phase(contract, now),
             weather=weather(now) if job.weather else "",
-            triennia=triennia(contract, now) if job.seniority else 0,
+            triennia=triennia(contract, now) if earns else 0,
             retired=retired,
             wish=wish,
             family=family_now(contract, now),
@@ -884,14 +885,17 @@ class WorkService:
         contract.last_shift_at = now
 
         # Dinero del turno.
-        gross = shift_pay(position.base_pay, score, kind, tenured=job.tenured(contract.level))
+        tenured = job.tenured(contract.level, contract.branch)
+        gross = shift_pay(position.base_pay, score, kind, tenured=tenured)
         if abroad:
             gross = round(gross * ABROAD_PAY)
         if job.rating:
             gross = round(gross * rating_pay(contract.rating))
         if shift.weather == "lluvia":
             gross = round(gross * RAIN_PAY)
-        years = triennia(contract, now) if job.seniority else 0
+        years = (
+            triennia(contract, now) if job.earns_triennia(contract.level, contract.branch) else 0
+        )
         gross = round(gross * (1 + TRIENNIUM_PAY * years))
         viral = viral_roll(self.rng) if job.viral else 0.0
         if viral:
@@ -975,7 +979,9 @@ class WorkService:
         )
         if wish is not None:
             delta += WISH_PERFORMANCE
-        performance = apply_performance(contract, delta, tenured=job.tenured(contract.level))
+        performance = apply_performance(
+            contract, delta, tenured=job.tenured(contract.level, contract.branch)
+        )
         if performance == "demoted":
             contract.position_since = now
             settle_branch(contract, job)

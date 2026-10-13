@@ -19,7 +19,8 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
-  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet). Acertar suma.
+  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet, la
+  disposición colada en una ley, el inversor de verdad entre los mariachis). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -40,6 +41,7 @@ from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Po
 from bot.services.work_catalog import (
     BUDGET_ITEMS,
     CODE_BUGS,
+    COLADAS,
     COLLAB_FINE,
     COLLAB_SHADY,
     DIALOGUE_PACKS,
@@ -50,6 +52,7 @@ from bot.services.work_catalog import (
     GATECRASHERS,
     GUESTS_LEGIT,
     INSPECTOR_TELLS,
+    LEYES_LIMPIAS,
     MEMORY_PACKS,
     POLICY_FINE,
     POLICY_TRAPS,
@@ -58,6 +61,8 @@ from bot.services.work_catalog import (
     RESTAURANTS,
     RIDER_SLACKING,
     RIDER_WORKING,
+    SICAV_MARIACHIS,
+    SICAV_REAL,
     SLACKING,
     SORT_PACKS,
     TAX_CLEAN,
@@ -564,6 +569,31 @@ def _guide_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]
     return "⭐ Tu estrella está en juego. Descubre al inspector antes del postre.", built
 
 
+def _colada(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🧐 Decreto {n}/{total}. ¿Qué disposición no pinta nada en su ley?",
+        good=COLADAS,
+        bad=LEYES_LIMPIAS,
+        label="Texto",
+    )
+    return "📚 Eres secretario general técnico. Nadie lee la letra pequeña, tú sí.", built
+
+
+def _mariachis(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🥂 SICAV {n}/{total}. Cuatro de los cinco socios son mariachis. ¿Quién invierte "
+        "de verdad?",
+        good=SICAV_REAL,
+        bad=SICAV_MARIACHIS,
+        label="Socio",
+    )
+    return "🎺 Consejero de una SICAV: para llegar a cien socios hace falta mucho mariachi.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -577,6 +607,8 @@ _SPOT = {
     "letra_pequena": _fine_print,
     "colados": _gatecrashers,
     "inspector": _guide_inspector,
+    "colada": _colada,
+    "mariachis": _mariachis,
 }
 
 

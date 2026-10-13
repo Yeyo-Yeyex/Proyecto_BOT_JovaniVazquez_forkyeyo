@@ -849,7 +849,8 @@ async def test_solo_se_estudia_si_hay_oposicion(tmp_path: Path, dice: Dice) -> N
     await service.hire(GUILD, USER, "obra")
     with pytest.raises(WorkError, match="opositar"):
         await service.start_shift(GUILD, USER, study=True)
-    await set_level(service, "funcionariado", JOB_BY_KEY["funcionariado"].top)
+    # Del inspector en adelante ya no se oposita.
+    await set_level(service, "funcionariado", JOB_BY_KEY["funcionariado"].trunk_top)
     with pytest.raises(WorkError, match="opositar"):
         await service.start_shift(GUILD, USER, study=True)
 
@@ -881,6 +882,65 @@ async def test_los_trienios_suben_el_sueldo(tmp_path: Path, dice: Dice) -> None:
     tenured = shift_pay(base, 100, ShiftKind.ORDINARY, tenured=True)
     assert tenured == round(base * 1.1)
     assert outcome.gross == round(tenured * (1 + 2 * TRIENNIUM_PAY))
+
+
+async def hire_in_branch(service: WorkService, branch: str) -> None:
+    """Un funcionario con 2 trienios cumplidos en el puesto 6 de la rama."""
+    await service.hire(GUILD, USER, "funcionariado")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, branch
+    status.contract.job_since = START - 2 * TRIENNIUM_DAYS * 86_400
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_un_turno_de_subdirector_general_suma_el_boe_y_cobra_trienios(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "alta")
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Subdirector general"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    base = JOB_BY_KEY["funcionariado"].position(6, "alta").base_pay
+    # Plaza fija (nota entre el 90 % y el 110 %) y trienios.
+    tenured = shift_pay(base, outcome.score, ShiftKind.ORDINARY, tenured=True)
+    assert outcome.triennia == 2
+    assert outcome.gross == round(tenured * (1 + 2 * TRIENNIUM_PAY))
+    assert work_stats(outcome).add["work_boe"] == len(shift.game.rounds)
+
+
+async def test_un_turno_de_asesor_de_grandes_fortunas_no_cobra_trienios_ni_tiene_plaza(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "giratoria")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.triennia == 0
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Asesor fiscal de grandes fortunas"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    base = JOB_BY_KEY["funcionariado"].position(6, "giratoria").base_pay
+    # Excedencia voluntaria: la nota mueve el sueldo del 70 al 130 % y no hay trienios.
+    assert outcome.triennia == 0
+    assert outcome.gross == shift_pay(base, outcome.score, ShiftKind.ORDINARY)
+    assert work_stats(outcome).add["work_wealth"] == len(shift.game.rounds)
+    assert "work_triennia_max" not in work_stats(outcome).peak
+
+
+async def test_en_la_puerta_giratoria_te_pueden_bajar_de_puesto(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "giratoria")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.performance = 10
+    status.contract.warned = True
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    outcome = await work(service, perfect=False)
+    # Sin plaza fija, la barra a cero no se queda en un aviso.
+    assert outcome.performance != "warned"
 
 
 # -- Influencer: viralidad y seguidores ----------------------------------------------------
