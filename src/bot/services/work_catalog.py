@@ -1061,7 +1061,7 @@ REPARTO = Job(
             days=4, content="entregas:4",
             training=Training("ley_rider", "el abogado laboralista que te gana la laboralidad "
                               "(Ley 12/2021, la «Ley Rider»)", 15_000),
-            perk=Perk("Chubasquero de verdad (no el del chino): cada turno cansa un 10 % "
+            perk=Perk("Chubasquero de verdad (no el del bazar): cada turno cansa un 10 % "
                       "menos.", battery=0.10),
         ),
         Position(
@@ -6786,7 +6786,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Salgo",
                 Outcome(
-                    "Sales con el chubasquero del chino. Cobras más y llegas empapado.",
+                    "Sales con el chubasquero del bazar. Cobras más y llegas empapado.",
                     pay=0.5,
                     battery=-15,
                     stat="work_storm",
@@ -7213,7 +7213,7 @@ EVENTS: tuple[Event, ...] = (
     Event(
         "enchufe_correos",
         "🤝 Un compañero de partido, de los de Moncloa, te pide colocar a su cuñada como "
-        "jefa de sección. Tiene el título de peluquería.",
+        "jefa de sección. Su currículum cabe en un pósit.",
         (
             (
                 "Colocarla",
@@ -7398,7 +7398,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Comprar ventiladores",
                 Outcome(
-                    "Compras seis ventiladores del chino y los pones a ras de suelo. Los "
+                    "Compras seis ventiladores del bazar y los pones a ras de suelo. Los "
                     "riders te lo agradecen y el almacén sigue a 39,5 °C.",
                     performance=6,
                     battery=-10,

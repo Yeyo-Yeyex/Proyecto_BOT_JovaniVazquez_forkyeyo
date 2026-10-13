@@ -8530,7 +8530,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Escribe una carta de disculpa firmada por los Reyes Magos.", E),
     ])  # fmt: skip
     a += _tiers("reparto", "work_correos_enchufe", [
-        (1, "rep_enchufe", "Cuñada con título de peluquería",
+        (1, "rep_enchufe", "Cuñada con currículum de pósit",
          "Coloca a la cuñada de un compañero de partido como jefa de sección.", E, True),
     ])  # fmt: skip
     a += _tiers("reparto", "work_correos_refuse", [

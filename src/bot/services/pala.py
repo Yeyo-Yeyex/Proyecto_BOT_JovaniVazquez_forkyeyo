@@ -230,7 +230,8 @@ class Status:
     @property
     def blocked(self) -> bool:
         """Si la app le tiene desconectado por mala valoración."""
-        return self.contract.blocked_until > self.now
+        # En una rama ya no hay app que te desconecte, aunque te pillara justo antes.
+        return self.job.rates(self.contract.branch) and self.contract.blocked_until > self.now
 
     @property
     def can_study(self) -> bool:
