@@ -14,9 +14,10 @@ quien actualiza y reinicia:
    canal de la petición y borra la nota y el resultado.
 
 Aparte, cada vez que despliega commits nuevos (de noche o por `reinicio`), el
-script deja `novedades.txt`: una línea por PR fusionado desde el despliegue
-anterior. El bot lo recoge y lo borra (`take_news`); qué lleva cada línea y
-cómo se completa con GitHub está en `bot.services.changelog`.
+script deja `novedades.txt`: una línea por PR fusionado o commit subido a
+`main` desde el despliegue anterior. El bot lo recoge y lo borra
+(`take_news`); qué lleva cada línea y cómo se completa con GitHub está en
+`bot.services.changelog`.
 
 La carpeta es `.despliegue/buzon`, montada en el contenedor por
 `docker-compose.yml`. Este módulo no depende de discord.py.

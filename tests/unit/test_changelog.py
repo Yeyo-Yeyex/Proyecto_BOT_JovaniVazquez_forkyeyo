@@ -38,6 +38,15 @@ def test_lee_titulos_y_agrupa_los_commits_de_un_mismo_pr() -> None:
     assert items[1].headline == "Mascotas; Más mascotas"
 
 
+def test_lee_los_commits_subidos_a_main_sin_pr() -> None:
+    sha = "c2db2a82451341977f40bac16c178953802b1c6a"
+
+    (item,) = parse_news([f"@{sha}\tgodzilin\tdirecto\tPachinko: Ráfaga ×5"])
+
+    assert item == NewsItem("Pachinko: Ráfaga ×5", sha=sha, author="godzilin")
+    assert item.commit_url == f"https://github.com/{GODZILIN}/commit/{sha}"
+
+
 def test_la_descripcion_pierde_la_firma_y_los_comentarios() -> None:
     body = (
         "<!-- plantilla -->\r\n## Qué cambia\r\nLos caballos corren.\r\n\r\n\r\n"

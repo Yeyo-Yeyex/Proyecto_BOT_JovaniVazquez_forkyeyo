@@ -51,14 +51,21 @@
 # último ya fallara) y deja `resultado.txt` en el buzón para que el bot avise
 # en el canal donde se pidió. Detalle del protocolo en bot/services/deploy.py.
 #
-# Novedades: entre el commit que había y el nuevo, cada `Merge pull request`
-# hecho en el propio main (los PR de godzilin, no los que traen dentro desde el
-# fork) aporta una línea con el título del PR. Si un título es el que GitHub inventa con el nombre de la rama
-# ("Claude/adoring tesla ybmnco"), se usan los asuntos de sus commits. Cada
-# línea son cuatro campos separados por tabuladores: `#número`, `dueño/rama`
-# de origen, `titulo` o `commit`, y el texto. Con el número y la rama, el bot
-# pide a GitHub la descripción del PR. El bot lee el archivo, lo publica y lo
-# borra (bot/services/deploy.py).
+# Novedades: entre el commit que había y el nuevo, todo lo que entra en main
+# aporta líneas, sea de quien sea. Se recorre la historia propia de main
+# (--first-parent), así que los PR que el fork fusionó en su main no salen
+# por separado: ya los resume el PR que los trae.
+#   - Cada `Merge pull request` aporta el título del PR. Si el título es el
+#     que GitHub inventa con el nombre de la rama ("Claude/adoring tesla
+#     ybmnco"), se usan los asuntos de sus commits.
+#   - Cada commit subido directamente a main aporta su asunto.
+#   - Cualquier otro merge (`Merge branch 'x'`) aporta los asuntos de los
+#     commits que trae y que no estaban ya desplegados.
+# Cada línea son cuatro campos separados por tabuladores. En los PR:
+# `#número`, `dueño/rama` de origen, `titulo` o `commit`, y el texto; con el
+# número y la rama, el bot pide a GitHub la descripción del PR. En los commits
+# sin PR: `@hash`, autor, `directo`, y el asunto. El bot lee el archivo, lo
+# publica y lo borra (bot/services/deploy.py).
 #
 # Variables opcionales: RAMA (main), ESPERA_ARRANQUE (90), DIAS_RECONSTRUIR (7),
 # REPO (el de godzilin), GIT_EN_DOCKER=1 para usar alpine/git aunque haya git.
@@ -272,32 +279,49 @@ volver_atras() {
     "${compose[@]}" up -d --force-recreate --no-build || echo "No he podido arrancar la imagen anterior; revisa el bot a mano."
 }
 
-# Escribe en la salida una línea por PR fusionado entre $1 y $2 (ver
-# "Novedades" arriba). Usa el `git` de main().
+# Escribe en la salida una línea por cambio que entra en main entre $1 y $2
+# (ver "Novedades" arriba). Usa el `git` de main().
 listar_novedades() {
-    local merge asunto numero dueno rama titulo auto pr
+    local commit padres asunto numero dueno rama titulo auto pr hijo
     local -a lineas=()
-    while IFS=$'\t' read -r merge asunto; do
-        [[ "$asunto" =~ ^Merge\ pull\ request\ \#([0-9]+)\ from\ ([^/]+)/(.+)$ ]] || continue
+    while IFS=$'\t' read -r commit padres asunto; do
+        if [[ "$padres" != *" "* ]]; then
+            # Commit subido directamente a main, sin PR.
+            lineas+=("$(linea_directa "$commit")")
+            continue
+        fi
+        if [[ ! "$asunto" =~ ^Merge\ pull\ request\ \#([0-9]+)\ from\ ([^/]+)/(.+)$ ]]; then
+            # Merge sin PR (una rama fusionada a mano): lo nuevo que trae, sin
+            # lo que main ya tenía desplegado.
+            while IFS= read -r hijo; do
+                [[ -n "$hijo" ]] && lineas+=("$(linea_directa "$hijo")")
+            done < <("${git[@]}" log --no-merges --reverse --format=%H "$commit^1..$commit^2" "^$1")
+            continue
+        fi
         numero="${BASH_REMATCH[1]}"
         dueno="${BASH_REMATCH[2]}"
         rama="${BASH_REMATCH[3]}"
         pr="#$numero"$'\t'"$dueno/$rama"
         # El título del PR es la primera línea no vacía del cuerpo del merge.
-        titulo="$("${git[@]}" log -1 --format=%b "$merge" | sed -n '/[^[:space:]]/{p;q;}')"
+        titulo="$("${git[@]}" log -1 --format=%b "$commit" | sed -n '/[^[:space:]]/{p;q;}')"
         auto="${rama//[-_]/ }"
         if [[ -z "$titulo" || "${titulo,,}" == "${auto,,}" ]]; then
             # Título de relleno: lo que cuentan sus commits, sin los merges.
             while IFS= read -r titulo; do
                 [[ -n "$titulo" ]] && lineas+=("$pr"$'\tcommit\t'"$titulo")
-            done < <("${git[@]}" log --no-merges --reverse --format=%s "$merge^1..$merge^2")
+            done < <("${git[@]}" log --no-merges --reverse --format=%s "$commit^1..$commit^2")
             continue
         fi
         lineas+=("$pr"$'\ttitulo\t'"$titulo")
-    # --first-parent: solo los merges hechos en main, no los PR del fork que traen dentro.
-    done < <("${git[@]}" log --first-parent --merges --reverse --format=$'%H\t%s' "$1..$2" 2>/dev/null)
+    # --first-parent: la historia propia de main, no la de las ramas que fusiona.
+    done < <("${git[@]}" log --first-parent --reverse --format=$'%H\t%P\t%s' "$1..$2" 2>/dev/null)
     ((${#lineas[@]})) && printf '%s\n' "${lineas[@]}"
     return 0
+}
+
+# Línea de novedades de un commit sin PR: `@hash`, autor, `directo` y asunto.
+linea_directa() {
+    "${git[@]}" log -1 --format=$'@%H\t%an\tdirecto\t%s' "$1"
 }
 
 # Añade las novedades de $1..$2 al buzón para que el bot las publique. Si el

@@ -272,6 +272,18 @@ def test_el_resumen_lista_cada_cambio_con_su_pr_y_su_autor() -> None:
     assert "• Sin PR conocido" in description
 
 
+def test_un_commit_sin_pr_sale_con_su_enlace_y_su_autor() -> None:
+    sha = "c2db2a82451341977f40bac16c178953802b1c6a"
+    item = NewsItem("Pachinko: Ráfaga ×5", sha=sha, author="godzilin")
+
+    (embeds,) = news_messages([NewsEntry(item)], detailed=True)
+
+    assert len(embeds) == 1, "sin PR no hay ficha, solo la línea de la lista"
+    assert f"• Pachinko: Ráfaga ×5 · [c2db2a8]({item.commit_url}) · godzilin" in (
+        embeds[0].description or ""
+    )
+
+
 def test_el_detallado_añade_una_ficha_por_pr_con_su_descripcion() -> None:
     entries = [_entry(5, "**Qué cambia.** Todo."), NewsEntry(NewsItem("Sin PR conocido"))]
 

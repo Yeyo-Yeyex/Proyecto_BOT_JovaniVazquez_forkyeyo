@@ -413,11 +413,38 @@ def test_solo_salen_los_pr_de_main_no_los_del_fork_que_traen(entorno):
     assert _novedades(entorno) == ["Caballos"]
 
 
-def test_sin_pr_nuevos_no_hay_novedades(entorno):
+def test_los_commits_directos_a_main_tambien_salen(entorno):
     _ejecutar(entorno)
-    _nuevo_commit(entorno["origin"], "v2 sin PR")
+    origin = entorno["origin"]
+    _fusionar_pr(origin, 7, "pollo", "Pollo: carriles más rápidos", "pollo")
+    sha = _nuevo_commit(origin, "Pachinko: la Ráfaga sin PR")
 
     _ejecutar(entorno)
+
+    assert _lineas_novedades(entorno) == [
+        "#7\tyeyo/pollo\ttitulo\tPollo: carriles más rápidos",
+        f"@{sha}\tt\tdirecto\tPachinko: la Ráfaga sin PR",
+    ]
+
+
+def test_un_merge_sin_pr_aporta_sus_commits_nuevos(entorno):
+    _ejecutar(entorno)
+    origin = entorno["origin"]
+    _git(origin, "checkout", "-q", "-b", "tapetes")
+    (origin / "tapetes.txt").write_text("tapetes")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "Tapetes por mesa")
+    _git(origin, "checkout", "-q", "main")
+    _git(origin, "merge", "-q", "--no-ff", "tapetes", "-m", "Merge branch 'tapetes'")
+
+    _ejecutar(entorno)
+
+    assert _novedades(entorno) == ["Tapetes por mesa"]
+
+
+def test_sin_cambios_nuevos_no_hay_novedades(entorno):
+    _ejecutar(entorno)
+    _ejecutar(entorno, DIAS_RECONSTRUIR="0")
 
     assert _novedades(entorno) is None
 

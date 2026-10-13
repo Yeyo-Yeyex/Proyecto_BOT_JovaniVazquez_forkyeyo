@@ -1,12 +1,14 @@
 """Novedades del bot: de la lista que deja el NAS a las notas de cada PR.
 
-`actualizar.sh` deja en el buzón una línea por cambio desplegado (ver
-`bot.services.deploy`). Cada línea lleva cuatro campos separados por
-tabuladores: `#número`, `dueño/rama` de origen del PR, `titulo` o `commit`, y
-el texto. Las de tipo `commit` salen de PR cuyo título es el que GitHub pone
-solo con el nombre de la rama: el texto es el asunto de cada commit. Una línea
-sin tabuladores es el formato anterior (solo el título) y se acepta igual: el
-despliegue que trae este código lo apunta todavía el script viejo.
+`actualizar.sh` deja en el buzón una línea por cambio desplegado en `main`,
+venga de un PR o de un commit subido directamente (ver `bot.services.deploy`).
+Cada línea lleva cuatro campos separados por tabuladores. Las de un PR:
+`#número`, `dueño/rama` de origen, `titulo` o `commit`, y el texto. Las de
+tipo `commit` salen de PR cuyo título es el que GitHub pone solo con el nombre
+de la rama: el texto es el asunto de cada commit. Las de un commit sin PR:
+`@hash`, autor, `directo` y el asunto. Una línea sin tabuladores es el formato
+anterior (solo el título) y se acepta igual: el despliegue que trae este
+código lo apunta todavía el script viejo.
 
 Con el número y la rama, `fetch_pulls` pide a la API pública de GitHub la
 descripción, el autor y el enlace de cada PR, como en la página del PR. Solo
@@ -34,10 +36,13 @@ logger = logging.getLogger(__name__)
 #: en CLAUDE.md).
 REPOS: tuple[str, ...] = ("godzilin/Proyecto_BOT_JovaniVazquez",)
 API_URL = "https://api.github.com/repos/{repo}/pulls/{number}"
+#: Página de un commit en el repositorio que se despliega.
+COMMIT_URL = "https://github.com/{repo}/commit/{sha}"
 #: Segundos que se espera a GitHub por petición.
 TIMEOUT_SECONDS = 10
 
 _LINE = re.compile(r"^#(?P<number>\d+)\t(?P<head>[^\t]+)\t(?P<kind>titulo|commit)\t(?P<text>.+)$")
+_DIRECT = re.compile(r"^@(?P<sha>[0-9a-f]{7,40})\t(?P<author>[^\t]+)\tdirecto\t(?P<text>.+)$")
 _HEADING = re.compile(r"^#{1,6}\s+(?P<text>.+?)\s*#*$", re.MULTILINE)
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 #: Líneas de firma que añade Claude Code al final de los PR; no aportan nada al aviso.
@@ -58,17 +63,26 @@ class NewsItem:
         number: Número del PR; `None` en el formato antiguo.
         head: Rama de origen como `dueño/rama`; `None` en el formato antiguo.
         commits: Asuntos de los commits cuando el PR no tiene título propio.
+        sha: Hash del commit si se subió a `main` sin PR; `None` en los PR.
+        author: Autor del commit sin PR, como lo firma git.
     """
 
     title: str | None
     number: int | None = None
     head: str | None = None
     commits: list[str] = field(default_factory=list)
+    sha: str | None = None
+    author: str | None = None
 
     @property
     def headline(self) -> str:
         """Lo que se enseña como título: el del PR o sus commits."""
         return self.title or "; ".join(self.commits)
+
+    @property
+    def commit_url(self) -> str | None:
+        """Enlace al commit en GitHub si es un commit sin PR."""
+        return COMMIT_URL.format(repo=REPOS[0], sha=self.sha) if self.sha else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +116,12 @@ def parse_news(lines: list[str]) -> list[NewsItem]:
     for raw in lines:
         line = raw.strip()
         if not line:
+            continue
+        direct = _DIRECT.match(line)
+        if direct is not None:
+            items.append(
+                NewsItem(direct["text"].strip(), sha=direct["sha"], author=direct["author"])
+            )
             continue
         match = _LINE.match(line)
         if match is None:

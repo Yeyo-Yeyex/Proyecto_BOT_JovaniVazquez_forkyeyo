@@ -843,8 +843,9 @@ pasa nada, falta la línea de `--solicitud` en el crontab.
 
 Cada vez que `actualizar.sh` despliega commits nuevos (de noche o con
 `reinicio`) y el bot nuevo pasa la comprobación de arranque, el script apunta
-en `.despliegue/buzon/novedades.txt` los PR fusionados desde el despliegue
-anterior, uno por línea, con su número y su rama de origen. El bot lo mira
+en `.despliegue/buzon/novedades.txt` todo lo que ha entrado en `main` desde
+el despliegue anterior, sea de quien sea: los PR fusionados (con su número y
+su rama de origen) y los commits subidos sin PR (con su hash y su autor). El bot lo mira
 cada 15 s, pide a GitHub la descripción de cada PR, lo publica como
 «📜 Novedades del bot» y lo borra. Si el bot nuevo se cae y se vuelve atrás,
 no se anuncia nada.
@@ -868,7 +869,10 @@ De dónde sale cada cambio:
   la imagen.
 - Si el título es el que GitHub pone solo con el nombre de la rama
   («Claude/adoring tesla ybmnco»), salen los asuntos de sus commits.
-- Los commits subidos directamente a `main`, sin PR, no salen.
+- Los commits subidos directamente a `main`, sin PR, salen cada uno con su
+  asunto, el enlace al commit y su autor.
+- Un merge hecho a mano en `main` (`Merge branch 'x'`) aporta los asuntos de
+  los commits que trae y que no estaban ya desplegados.
 - El bot busca cada PR en el repositorio de godzilin y comprueba que sale de
   la misma rama. Usa la API pública de GitHub sin token (60
   peticiones por hora); si no responde, el aviso sale solo con los títulos.

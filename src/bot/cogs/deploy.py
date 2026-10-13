@@ -8,7 +8,8 @@ el script termina, este cog publica el resultado en el canal donde se pidió,
 lo haga el bot viejo (si no hubo reinicio) o el nuevo.
 
 Novedades: cada vez que el NAS despliega commits nuevos (de noche o por
-`reinicio`), deja la lista de PR en el buzón. Este cog pide a GitHub la
+`reinicio`), deja en el buzón la lista de lo que entró en `main`: PR y
+commits subidos sin PR. Este cog pide a GitHub la
 descripción de cada uno (`bot.services.changelog`) y publica el aviso en cada
 servidor: la lista de cambios con su enlace y autor y, en modo detallado, una
 ficha por PR con su descripción, como en GitHub. Canal, detalle y si se
@@ -78,8 +79,17 @@ def _clip(text: str, limit: int) -> str:
 
 
 def _summary_line(entry: NewsEntry) -> str:
-    """Una línea de la lista, como «What's Changed» de GitHub: título, PR y autor."""
-    text = f"• {_clip(entry.item.headline, NEWS_LINE_CHARS)}"
+    """Una línea de la lista, como «What's Changed» de GitHub: título, PR y autor.
+
+    Un commit subido a `main` sin PR lleva el enlace al commit y su autor.
+    """
+    item = entry.item
+    text = f"• {_clip(item.headline, NEWS_LINE_CHARS)}"
+    if item.sha is not None:
+        text += f" · [{item.sha[:7]}]({item.commit_url})"
+        if item.author:
+            text += f" · {item.author}"
+        return text
     pull = entry.pull
     if pull is None:
         return text
