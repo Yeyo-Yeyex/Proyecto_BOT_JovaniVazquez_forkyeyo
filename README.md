@@ -268,13 +268,16 @@ python -m bot
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
   funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
-  obra y la sanidad, que ya tienen la carrera larga: 5 puestos de tronco y dos
-  ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
+  obra, la sanidad y la hostelería, que ya tienen la carrera larga: 5 puestos de
+  tronco y dos ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
   de fútbol) o 🚄 Obra pública (hasta presidente de una constructora del IBEX); la
   sanidad va de celador a médico adjunto y sigue por 🏛️ Sanidad pública (hasta
-  consejero de Sanidad) o 💉 Privada (hasta dueño de una aseguradora de salud).
+  consejero de Sanidad) o 💉 Privada (hasta dueño de una aseguradora de salud); la
+  hostelería va de friegaplatos a dueño del chiringuito y sigue por 🏨 Hotelera
+  (hasta presidente de la patronal turística) o ⭐ Alta cocina (hasta gurú
+  gastronómico con franquicias en Dubái).
   Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,

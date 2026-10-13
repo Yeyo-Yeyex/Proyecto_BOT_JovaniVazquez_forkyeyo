@@ -27,7 +27,9 @@ sin aviones, el AVE a ninguna parte). La sanidad, de la precariedad con bata
 (guardias, contratos de un día, camas en el pasillo) y, en sus ramas, de la
 gestión pública (listas de espera, mascarillas a precio de oro, hospitales
 inaugurados sin personal) y del negocio privado (letra pequeña, conciertos con
-la Comunidad, fondos de inversión). El reparto se ríe de las apps de reparto
+la Comunidad, fondos de inversión). La hostelería, de los contratos de cuatro horas
+que son diez, el turismo de pulsera y la patronal (hotel) y de la alta cocina de
+espumas, estrellas y Dubái. El reparto se ríe de las apps de reparto
 y de los falsos autónomos; el funcionariado, de la burocracia (con las
 preguntas del temario de verdad); el influencer, de la fama a golpes. Los
 personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
@@ -364,69 +366,171 @@ HOSTELERIA = Job(
     key="hosteleria",
     name="Hostelería",
     emoji="🍽️",
-    blurb="Precaria abajo, chiringuito propio arriba. Propinas en negro.",
+    blurb="Del friegaplatos al hotel o a la estrella. Propinas en negro y reseñas de una estrella.",
     rgb=(46, 204, 113),
     positions=(
         Position(
-            1,
-            "Friegaplatos",
-            1_700,
-            Mechanic.MEMORY,
-            30,
+            1, "Friegaplatos", 1_700, Mechanic.MEMORY, 30,
             (_good(3), Task("perfect", "Saca 6 tandas perfectas", "perfect_rounds", 6)),
-            days=2,
-            content="platos:3",
+            days=2, content="platos:3",
         ),
         Position(
-            2,
-            "Camarero",
-            2_500,
-            Mechanic.MEMORY,
-            30,
-            (_good(4), _extras(1)),
-            days=3,
-            content="comandas:3",
+            2, "Camarero", 2_500, Mechanic.MEMORY, 30, (_good(4), _extras(1)),
+            days=3, content="comandas:3",
             training=Training("manipulador", "el carnet de manipulador de alimentos", 4_000),
+            perk=Perk("Bandeja de tres pisos (y un pulso de cirujano): +5 % de tiempo en el "
+                      "minijuego.", extra_time=0.05),
         ),
         Position(
-            3,
-            "Jefe de rango",
-            4_000,
-            Mechanic.MEMORY,
-            40,
+            3, "Jefe de rango", 4_000, Mechanic.MEMORY, 40,
             (Task("perfect", "Saca 15 comandas perfectas", "perfect_rounds", 15), _good(5)),
-            days=4,
-            content="comandas:4",
+            days=4, content="comandas:4",
+            perk=Perk("Zapatillas antideslizantes (de las que usan en el hospital): cada turno "
+                      "cansa un 10 % menos.", battery=0.10),
         ),
         Position(
-            4,
-            "Jefe de cocina",
-            7_000,
-            Mechanic.MEMORY,
-            60,
-            (
-                Task("perfect", "Saca 20 comandas perfectas", "perfect_rounds", 20),
-                _good(6),
-                _events(2),
-            ),
-            days=5,
-            content="cocina:5",
+            4, "Jefe de cocina", 7_000, Mechanic.MEMORY, 60,
+            (Task("perfect", "Saca 20 comandas perfectas", "perfect_rounds", 20), _good(6),
+             _events(2)),
+            days=5, content="cocina:5",
             training=Training("alergenos", "el curso de alérgenos y APPCC", 12_000),
+            perk=Perk("El pinche que te avisa antes de que se queme: un fallo gratis por turno.",
+                      retry=True),
         ),
         Position(
-            5,
-            "Dueño del chiringuito",
-            13_000,
-            Mechanic.DIALOGUE,
-            60,
-            (),
-            days=0,
-            content="chiringuito",
-            self_employed=True,
+            5, "Dueño del chiringuito", 13_000, Mechanic.DIALOGUE, 60,
+            (Task("smooth", "Sobrevive a 25 clientes en el chiringuito", "smooth", 25),
+             _good(6), _events(3)),
+            days=4, content="chiringuito", self_employed=True,
             training=Training("apertura", "la licencia de apertura del chiringuito", 60_000),
+            perk=Perk("Tu cuñado en la barra, que te sopla: una respuesta mala tachada en los "
+                      "diálogos.", fifty=True),
         ),
     ),
-)
+    branches=(
+        Branch(
+            "hotel",
+            "Hotelera",
+            "🏨",
+            "Benidorm, pulseras del todo incluido, balconing y tasa turística: de director de "
+            "hotel a presidente de la patronal. En nómina. Cobra menos, se jubila mejor. "
+            "«Canarias tiene un límite», tu cuenta de resultados no.",
+            (
+                Position(
+                    6, "Director de hotel en primera línea", 14_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Reparte las pulseras de 15 huéspedes sin liarla",
+                          "perfect_rounds", 15), _good(5), _events(2)),
+                    days=5, content="pulseras:4",
+                    perk=Perk("Carrito de golf para ir de la recepción al buffet: cada turno "
+                              "cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Director regional de una cadena hotelera", 15_500, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 reseñas a su departamento", "sorted", 30),
+                     _good(6), _events(3)),
+                    days=5, content="quejas",
+                    training=Training(
+                        "master_hotelero",
+                        "el máster en Dirección Hotelera (en inglés, en Suiza y con tu "
+                        "madre pagando)", 40_000,
+                    ),
+                    perk=Perk("Tarjeta de socio de la cadena, con sala VIP en el aeropuerto: "
+                              "+5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Director de resorts en el Caribe", 17_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Pilla a 25 colados en el buffet", "caught", 25),
+                     _good(6), _events(3)),
+                    days=6, content="colados",
+                    perk=Perk("Un jefe de recepción que te cubre las espaldas (y los check-in): "
+                              "un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Consejero delegado de una cadena hotelera", 19_000, Mechanic.DIALOGUE,
+                    60,
+                    (Task("smooth", "Sobrevive a 30 juntas con los inversores", "smooth", 30),
+                     _good(6), _events(4)),
+                    days=6, content="cadena_hotelera",
+                    training=Training(
+                        "familia_fundadora",
+                        "la confianza de la familia fundadora (que te cuesta una cena de "
+                        "Nochebuena con el patriarca y un anillo de compromiso)", 50_000,
+                    ),
+                    perk=Perk("Helicóptero para llegar a la junta sin pisar la autovía: cada "
+                              "turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Presidente de la patronal turística", 21_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="patronal",
+                    perk=Perk("El Falcon del presidente, «en comisión de servicio»: +10 % de "
+                              "tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="expresidente de la patronal con suite vitalicia en primera línea",
+        ),
+        Branch(
+            "estrella",
+            "Alta cocina",
+            "⭐",
+            "Espumas, deconstrucciones y un menú degustación de 300 €: del restaurante propio "
+            "al gurú con franquicias en Dubái. Autónomo. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6, "Chef con restaurante propio", 15_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Emplata 15 platos tal como mandaba la carta",
+                          "perfect_rounds", 15), _good(5), _events(2)),
+                    days=5, content="emplatado:4", self_employed=True,
+                    perk=Perk("Pinzas de emplatar de titanio (y un pulso que no tiembla): +5 % "
+                              "de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    7, "Chef con estrella", 19_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Pilla a 25 inspectores de la Guía", "caught", 25),
+                     _good(6), _events(3)),
+                    days=5, content="inspector", self_employed=True,
+                    training=Training(
+                        "stage_tres_estrellas",
+                        "un stage gratis de seis meses en un tres estrellas (fregando "
+                        "cacerolas, pero con el apellido del chef en el CV)", 55_000,
+                    ),
+                    perk=Perk("Un sumiller que te susurra por el pinganillo: un fallo gratis "
+                              "por turno.", retry=True),
+                ),
+                Position(
+                    8, "Chef de la tele", 23_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Aguanta 25 galas del talent de cocina", "smooth", 25),
+                     _good(6), _events(3)),
+                    days=6, content="plato_tv", self_employed=True,
+                    perk=Perk("Maquilladora de plató (te quita las ojeras de las grabaciones): "
+                              "cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    9, "Dueño de un grupo de restaurantes", 28_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda a 30 cocineros a su partida", "sorted", 30),
+                     _good(6), _events(4)),
+                    days=6, content="brigada", self_employed=True,
+                    training=Training(
+                        "socio_inversor",
+                        "la entrada de un fondo y de un socio con dinero de procedencia "
+                        "«digamos, dudosa»", 70_000,
+                    ),
+                    perk=Perk("Un maître con cara de póquer que gestiona las crisis: +5 % de "
+                              "tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    10, "Gurú gastronómico con franquicias en Dubái", 34_000, Mechanic.DIALOGUE,
+                    60, (),
+                    days=0, content="dubai", self_employed=True,
+                    perk=Perk("Jet privado con cocina de inducción: +10 % de tiempo en el "
+                              "minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="gurú jubilado que cobra en pan de oro (y la pensión no da ni para el pan)",
+        ),
+    ),
+)  # fmt: skip
 
 POLITICA = Job(
     key="politica",
@@ -3670,6 +3774,438 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas de la hostelería (Hotelera y Alta cocina) ----------------------------
+
+MEMORY_PACKS.update(
+    {
+        "pulseras": MemoryPack(
+            "🛬 El vuelo de Mánchester ha aterrizado. El huésped {n} lo pide todo, en este orden:",
+            "Cúmplele las peticiones en el mismo orden, que luego te las reclama en inglés.",
+            (
+                ("🏖️", "Hamaca en primera fila"),
+                ("🧺", "Toalla en la tumbona a las 7 de la mañana"),
+                ("🟢", "Pulsera del todo incluido"),
+                ("🌊", "Cambio a una habitación con vistas al mar"),
+                ("🍺", "Cerveza a las diez de la mañana"),
+                ("🥞", "Desayuno hasta las dos de la tarde"),
+                ("🧊", "Aire acondicionado a 16 °C"),
+                ("🫖", "Té con leche (hirviendo)"),
+                ("🍊", "Zumo de naranja: ¿con pulpa? ¡Sin pulpa!"),
+                ("🍳", "Huevos fritos en el buffet"),
+            ),
+        ),
+        "emplatado": MemoryPack(
+            "🍽️ Plato {n} del menú degustación. Se emplata con pinzas, en este orden:",
+            "Emplata con las pinzas en el mismo orden, que si se mueve algo se hunde la estrella.",
+            (
+                ("🥔", "Aire de papa arrugada"),
+                ("🧪", "Esferificación de mojo"),
+                ("🌱", "Tierra de almogrote"),
+                ("☁️", "Espuma de gofio"),
+                ("🧊", "Gel de barraquito"),
+                ("🌸", "Flor comestible (sin sabor)"),
+                ("🪙", "Hoja de pan de oro"),
+                ("💧", "Una gota de aceite en el centro"),
+                ("🫧", "Humo de nogal bajo una campana"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "quejas": SortPack(
+            "📝 Eres director regional. Las reseñas llegan a tu mesa: cada una a su "
+            "departamento, y a las absurdas, un «lamentamos su experiencia».",
+            "⭐ Reseña {n}/{total}:",
+            ("🧹 Limpieza", "🍳 Buffet", "🛎️ Recepción", "🙄 «Lamentamos su experiencia»"),
+            (
+                ("Encontré un pelo en la ducha. No era mío. Ni de nadie que conozca", 0),
+                ("La toalla olía a humedad del siglo pasado", 0),
+                ("Las sábanas tenían una mancha con forma de Galicia", 0),
+                ("La habitación 214 no se limpió en cuatro días", 0),
+                ("Los huevos revueltos llevaban un par de días en el buffet", 1),
+                ("Se acabó el jamón a las 8:05 de la mañana", 1),
+                ("La máquina de zumo hacía un ruido de moto", 1),
+                ("La fuente de fruta estaba en la otra punta del comedor", 1),
+                ("Esperé 40 minutos para el check-in con las maletas en la mano", 2),
+                ("Me dieron una habitación con vistas a un muro y yo pedí el mar", 2),
+                ("Me cobraron dos veces la tasa turística", 2),
+                ("Me cambiaron de habitación a las dos de la madrugada sin avisar", 2),
+                ("Llovió el día que fui a la playa. Exijo la devolución", 3),
+                ("Nadie me avisó de que en la playa hay arena", 3),
+                ("El mar estaba demasiado mojado", 3),
+                ("Mi marido roncaba y no me dieron otro marido", 3),
+            ),
+        ),
+        "brigada": SortPack(
+            "🔪 Eres el dueño del grupo. Manda a cada uno de tu brigada a su partida (y que "
+            "nadie se entere de quién cobra qué).",
+            "🧑‍🍳 Cocinero {n}/{total}:",
+            ("🔥 Cuarto caliente", "🥗 Cuarto frío", "🍰 Pastelería", "🧽 Office"),
+            (
+                ("Hace una salsa que no se corta ni a cuchilladas", 0),
+                ("Controla el punto de la carne a ojo, con la plancha a 300 grados", 0),
+                ("Se pasa la vida entre fogones y le encanta el humo", 0),
+                ("Es el único que no se achicharra con la sartén en llamas", 0),
+                ("Hace ensaladas con pinzas y un pulso de cirujano", 1),
+                ("Se le dan de maravilla los ceviches y los carpaccios", 1),
+                ("Corta verdura en brunoise sin mirar", 1),
+                ("Monta los entrantes fríos y le tiene pánico al fuego", 1),
+                ("Pesa el azúcar al gramo y no se fía de nadie", 2),
+                ("Se levanta a las cuatro de la mañana a amasar", 2),
+                ("Hace merengues que se aguantan solos", 2),
+                ("Sueña con una tarta con forma de Falcon", 2),
+                ("Es el stagier danés que vino a aprender gratis", 3),
+                ("Se presentó para chef y le han dado un estropajo", 3),
+                ("El becario que dijo que sabía freír un huevo", 3),
+                ("El sobrino del socio, que no sabe ni encender una vitro", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: Colados del buffet del resort: el que no lleva pulsera del todo incluido.
+GATECRASHERS: tuple[str, ...] = (
+    "Lleva una pulsera dibujada con rotulador verde",
+    "Dice «soy de la 304», pero en tu hotel no hay habitación 304",
+    "Luce la pulsera del todo incluido… de la Feria de Abril de 2016",
+    "Repite por cuarta vez el plato de gambas y no tiene pulsera",
+    "Su pulsera es de papel de aluminio, pegada con celo",
+    "Entra por la cocina con una bandeja y una camisa de camarero (que no lo es)",
+    "Dice que es primo del director, y es lo único que dice",
+    "Cena en el buffet con la pulsera de la piscina de otro hotel",
+    "Se llena los bolsillos de bocadillos con la servilleta al cuello",
+)
+GUESTS_LEGIT: tuple[str, ...] = (
+    "Pulsera verde del todo incluido, bañador y un plato de huevos",
+    "Familia de cuatro con pulseras a juego y los niños con zumo",
+    "Pareja de jubilados con pulsera y su propio salero",
+    "Despedida de soltero con pulsera y resaca",
+    "Huésped con pulsera y la tarjeta de la habitación en la mano",
+    "Un señor con pulsera, chancletas y dos platos (con pulsera, no pasa nada)",
+    "Mujer con pulsera y un periódico de hace tres días",
+    "Matrimonio de Mánchester con pulsera y cerveza a las nueve de la mañana",
+    "Niño con pulsera y un plato de patatas fritas, y nada más",
+    "Huésped con pulsera dorada de suite y tostada con aguacate",
+    "Recién casados con pulsera y cara de no haber dormido",
+    "Abuela con pulsera que guarda una naranja en el bolso",
+)
+
+#: Los inspectores de la Guía tienen sus manías; los demás comensales, las suyas.
+INSPECTOR_TELLS: tuple[str, ...] = (
+    "Come solo, apunta en una libreta y pide el menú largo",
+    "Hace fotos de cada plato con una cámara de verdad, no con el móvil",
+    "Pregunta de dónde viene la sal y habla en voz baja",
+    "Pide agua del grifo, mira el mantel a contraluz y cuenta los cubiertos",
+    "Reserva a nombre de «Sr. Fernández» y paga siempre con tarjeta de empresa",
+    "Mastica cada bocado como si le dictaran sentencia",
+    "Va al baño tres veces y vuelve con la libreta más gorda",
+    "Se pasa la servilleta por la copa y la mira a contraluz",
+    "Pide una copa de vino y no la bebe: la huele y la apunta",
+)
+DINERS_NORMAL: tuple[str, ...] = (
+    "Pareja que se hace un selfie con la tarta",
+    "Grupo de ocho celebrando una comunión a gritos",
+    "Influencer que graba la carta con el móvil mientras pide",
+    "Un cuñado que dice que él lo haría mejor",
+    "Pareja de aniversario que se mira y no habla",
+    "Familia de turistas que pide ketchup para el solomillo",
+    "Un abuelo que pregunta si hay papas arrugadas",
+    "Ejecutivo que habla por teléfono a gritos",
+    "Dos amigos que se pelean por pagar la cuenta",
+    "Un niño que pide macarrones en un restaurante de tres tenedores",
+    "Señora que pide la salsa aparte, el pan aparte y el plato aparte",
+    "Pareja que pide «el vino más caro» y lo mezcla con cola",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "cadena_hotelera": DialoguePack(
+            "🏢 Junta con los inversores. Regla de oro: **lo que cuesta dinero es «inversión» "
+            "y lo que se ahorra, «eficiencia».**",
+            (
+                Dialogue(
+                    "Un inversor pregunta qué piensas hacer con los pisos turísticos de la "
+                    "competencia.",
+                    "Compramos cien y los llamamos «apartahotel boutique». Es inversión.",
+                    ("Pedir al Ayuntamiento que los cierre todos, menos los míos.",
+                     "Mandarles una paella con chorizo de bienvenida."),
+                ),
+                Dialogue(
+                    "Costas dice que el hotel de la playa está en dominio público.",
+                    "Inversión en seguridad jurídica: un bufete y veinte años de recursos.",
+                    ("Mover la playa dos metros, que sale más barato.",
+                     "Reconocer que se construyó en la arena en 1971."),
+                ),
+                Dialogue(
+                    "Las kellys piden dejar de limpiar veinte habitaciones por turno.",
+                    "Eficiencia: lo externalizamos y que su jefe sea una empresa que no "
+                    "contesta al teléfono.",
+                    ("Subirles el sueldo, que se lo han ganado.",
+                     "Proponer que los huéspedes se hagan la cama, como en el IKEA."),
+                ),
+                Dialogue(
+                    "Los accionistas quieren más margen este trimestre.",
+                    "Eficiencia: la toalla de la piscina pasa a ser «servicio premium».",
+                    ("Recordarles que el año pasado batimos récord.",
+                     "Proponer cerrar el buffet los lunes, que los lunes no come nadie."),
+                ),
+                Dialogue(
+                    "El Gobierno canario anuncia una ecotasa.",
+                    "La cobramos con una línea de «contribución sostenible» y un 8 % de "
+                    "gestión. Eficiencia verde.",
+                    ("Anunciar que el turista se irá a Marruecos mañana mismo.",
+                     "Pagarla nosotros, por la imagen."),
+                ),
+                Dialogue(
+                    "Una agencia online te pide el 22 % de comisión por reserva.",
+                    "Inversión en canal propio: «reserva en nuestra web y te regalamos un "
+                    "chupito de ron miel».",
+                    ("Subir un 22 % el precio y que pague el guiri.",
+                     "Hacer una web que solo funciona los martes."),
+                ),
+                Dialogue(
+                    "Sale en la prensa que el hotel tiene 300 reseñas falsas de cinco "
+                    "estrellas.",
+                    "«Una inversión en reputación digital que la competencia no entiende».",
+                    ("Comprar 3.000 más para diluirlas.",
+                     "Culpar a los bots de Putin."),
+                ),
+                Dialogue(
+                    "Un fondo quiere el 30 % de la cadena.",
+                    "Se lo vendemos y lo llamamos «inversión estratégica»: el que se va de "
+                    "vacaciones a Suiza eres tú.",
+                    ("Venderle el 130 %, por si cuela.",
+                     "Firmarlo en una servilleta del bar del hotel."),
+                ),
+                Dialogue(
+                    "Hay que cambiar los colchones de 1998 y el presupuesto no da.",
+                    "Les damos la vuelta: «plan de renovación integral, fase uno».",
+                    ("Comprarlos nuevos, que hay quejas.",
+                     "Poner camas de campaña y un cartel de «glamping»."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta cuánto cobran los camareros de temporada.",
+                    "«Lo justo para un sector con un enorme potencial de eficiencia».",
+                    ("Dar la cifra de verdad.",
+                     "«Es una vocación» y colgar el teléfono."),
+                ),
+            ),
+        ),
+        "patronal": DialoguePack(
+            "🏛️ Mesa con el Gobierno. Regla de oro: **siempre hay crisis… salvo en el "
+            "balance.**",
+            (
+                Dialogue(
+                    "El Gobierno propone subir la tasa turística.",
+                    "«El sector atraviesa un momento muy delicado» (récord de visitantes "
+                    "por cuarto año seguido).",
+                    ("Decir que vale, que total la paga el turista.",
+                     "Proponer que se cobre también a los peninsulares."),
+                ),
+                Dialogue(
+                    "El ministro quiere la foto del acuerdo antes de las elecciones.",
+                    "Foto sí, firma después: «estamos muy cerca, pero el sector sufre».",
+                    ("Firmar lo que sea con tal de salir en el telediario.",
+                     "Hacerte un selfie con él y subirlo con «#Turismo»."),
+                ),
+                Dialogue(
+                    "Los sindicatos piden subir el convenio un 12 %.",
+                    "«Con la crisis del sector, un 2 % y una mesa de seguimiento».",
+                    ("Aceptar el 12 %, que el año fue bueno.",
+                     "Ofrecerles una cesta de Navidad con turrón de Alicante."),
+                ),
+                Dialogue(
+                    "Una tertulia te pregunta por qué no encontráis camareros.",
+                    "«Es un problema de formación y de cultura del esfuerzo, no de "
+                    "salarios».",
+                    ("«Porque pagamos 900 euros por diez horas».",
+                     "«Porque los jóvenes prefieren ser influencers»."),
+                ),
+                Dialogue(
+                    "Hay manifestaciones contra el turismo masivo en tres islas.",
+                    "«Compartimos la preocupación» y pides más fondos para promoción "
+                    "turística en el extranjero.",
+                    ("Decir que quien protesta no sabe de dónde sale su sueldo.",
+                     "Colgar un cartel de «Welcome» que dice «Go home» por detrás."),
+                ),
+                Dialogue(
+                    "El Gobierno plantea limitar los pisos turísticos.",
+                    "«Bienvenida sea la regulación… para los pisos. Los hoteles somos "
+                    "otra cosa».",
+                    ("Decir que es el fin del turismo, de la paella y de España.",
+                     "Comprar diez edificios esa misma tarde y convertirlos."),
+                ),
+                Dialogue(
+                    "Te piden explicar por qué la habitación ha subido un 40 %.",
+                    "«La energía, la inflación y la crisis» (la crisis siempre va al final).",
+                    ("«Porque la gente lo paga».",
+                     "Cobrar la vista al mar en euros por mirada."),
+                ),
+                Dialogue(
+                    "Llegan los fondos Next Generation para modernizar hoteles.",
+                    "«El sector está en crisis: los necesitamos todos, y para ayer».",
+                    ("Renunciar a ellos por responsabilidad.",
+                     "Pedirlos para la piscina climatizada de tu chalet."),
+                ),
+                Dialogue(
+                    "Te preguntan si el presidente usará el Falcon para venir al congreso "
+                    "del sector.",
+                    "«Que venga como quiera, pero que traiga la subvención en la bodega».",
+                    ("«El Falcon es contaminante y una vergüenza».",
+                     "Pedir un Falcon para la patronal."),
+                ),
+                Dialogue(
+                    "Un informe dice que la hostelería gana mucho y paga poco.",
+                    "«Ese informe es de antes de la crisis» (de la que sea).",
+                    ("Reconocerlo y proponer una subida.",
+                     "Demostrar con un gráfico al revés que pagáis muchísimo."),
+                ),
+            ),
+        ),
+        "plato_tv": DialoguePack(
+            "📺 Gran final del talent de cocina. Regla de oro: **humilla con gracia: el "
+            "público quiere sangre, pero en cámara lenta.**",
+            (
+                Dialogue(
+                    "Un concursante te presenta un pollo crudo por dentro.",
+                    "«Este pollo aún tiene esperanzas de llegar a gallina». Pausa. Primer "
+                    "plano.",
+                    ("Explicarle con calma qué temperatura necesita.",
+                     "Tirarlo al suelo, que eso lo hizo otro y ya no hace gracia."),
+                ),
+                Dialogue(
+                    "Una concursante llora porque se le ha cortado la mayonesa.",
+                    "«Llora, que con la sal de las lágrimas a lo mejor la salvamos».",
+                    ("Abrazarla y decirle que no pasa nada.",
+                     "Pedir la siguiente sin mirarla."),
+                ),
+                Dialogue(
+                    "El productor te pide más mala leche: la audiencia baja.",
+                    "Pruebas el plato, dejas el tenedor muy despacio y miras a cámara "
+                    "cinco segundos sin decir nada.",
+                    ("Gritar a todo el mundo, cámaras incluidas.",
+                     "Decirle que tú eres cocinero, no actor."),
+                ),
+                Dialogue(
+                    "Un concursante presenta «la receta de su abuela» con lágrimas en los "
+                    "ojos.",
+                    "«Tu abuela se merecía un nieto que la hubiera escuchado mejor».",
+                    ("«Está buenísimo, enhorabuena a tu abuela».",
+                     "Preguntarle el nombre de la abuela para el titular."),
+                ),
+                Dialogue(
+                    "La marca patrocinadora quiere que nombres su aceite en cada plato.",
+                    "«Aceite de… la marca que paga este programa». Y guiñas a cámara.",
+                    ("Negarte en directo: «aquí no se hace publicidad».",
+                     "Echarle aceite hasta al flan."),
+                ),
+                Dialogue(
+                    "Un concursante ha deconstruido una tortilla de patatas.",
+                    "«La has deconstruido tanto que ya no la encuentra ni Puigdemont "
+                    "desde Waterloo».",
+                    ("Felicitarle por la técnica.",
+                     "Pedirle que te la construya otra vez, por favor."),
+                ),
+                Dialogue(
+                    "Te corrige un plato en directo un chef invitado.",
+                    "«Gracias, maestro. Cuando tengas programa propio lo comentamos».",
+                    ("Darle las gracias y aprender algo.",
+                     "Tirarle una espátula."),
+                ),
+                Dialogue(
+                    "El público vota salvar al concursante que peor cocina.",
+                    "«El pueblo ha hablado… y ha hablado con la boca llena de algo crudo».",
+                    ("Anular el voto «por irregularidades», como Maduro con las actas.",
+                     "Decir que la audiencia no sabe de cocina."),
+                ),
+                Dialogue(
+                    "Un niño del especial infantil te sirve un sándwich de crema de cacao.",
+                    "«Es lo mejor que he probado esta temporada». Y es verdad.",
+                    ("Destrozarlo como a los adultos.",
+                     "Decirle que eso no es cocina."),
+                ),
+            ),
+        ),
+        "dubai": DialoguePack(
+            "🏜️ Tu restaurante de Dubái. Regla de oro: **si no lleva pan de oro, todavía no "
+            "está terminado.**",
+            (
+                Dialogue(
+                    "Un jeque quiere algo «que no tenga nadie».",
+                    "Un huevo frito con pan de oro, servido por un camarero vestido de "
+                    "huevo frito.",
+                    ("Un huevo frito normal, que está riquísimo.",
+                     "Un lingote con una gota de vinagre."),
+                ),
+                Dialogue(
+                    "Un emir pide papas arrugadas como las de tu abuela.",
+                    "Papas arrugadas con mojo de azafrán y lámina de oro, a 400 euros "
+                    "la papa.",
+                    ("Unas papas arrugadas de verdad, con sal de Janubio.",
+                     "Decirle que eso no se pide en Dubái."),
+                ),
+                Dialogue(
+                    "Un millonario quiere comprar tu plato estrella como NFT.",
+                    "Se lo vendes en NFT y, de regalo, el plato de verdad con oro por "
+                    "encima para la foto.",
+                    ("Explicarle que un plato se come.",
+                     "Vendérselo partido en dos tokens, uno por mitad."),
+                ),
+                Dialogue(
+                    "Elon Musk tuitea que abrirá una cadena de espumas en Marte.",
+                    "Le contestas que la tuya ya lleva pan de oro y el cohete se paga "
+                    "aparte.",
+                    ("Desearle suerte y seguir cocinando.",
+                     "Pedirle trabajo en Marte."),
+                ),
+                Dialogue(
+                    "Un influencer pide el menú de 1.500 € «para hacer un unboxing».",
+                    "Se lo cobras… y le regalas una hoja de oro para que la abra en "
+                    "cámara.",
+                    ("Dárselo gratis a cambio de una story.",
+                     "Cobrarle también la luz del ring light."),
+                ),
+                Dialogue(
+                    "Un socio quiere franquiciar tu marca en un centro comercial.",
+                    "Sí, pero con mostrador de mármol, camareros de esmoquin y oro en las "
+                    "servilletas.",
+                    ("Aceptarlo tal cual: bandejas de plástico y cola.",
+                     "Negarte: «mi cocina no se vende»."),
+                ),
+                Dialogue(
+                    "Un crítico escribe que tu espuma «sabe a jabón».",
+                    "Le mandas una nueva «espuma de jabón con oro» y la pones en la carta "
+                    "a 90 €.",
+                    ("Reconocer el error y cambiar la receta.",
+                     "Pagarle para que la cambie."),
+                ),
+                Dialogue(
+                    "Te invitan a cocinar en la cumbre del clima de Dubái.",
+                    "Menú sostenible: verduras de kilómetro cero… con pan de oro de "
+                    "kilómetro seis mil.",
+                    ("Un menú vegano sencillo, sin florituras.",
+                     "Hamburguesas de avión, para que se sientan en casa."),
+                ),
+                Dialogue(
+                    "Hacienda española pregunta dónde tributa tu franquicia.",
+                    "«En Dubái, donde está mi pan de oro y mi domicilio fiscal (y mi "
+                    "jeque)».",
+                    ("Tributar en España, que es tu país.",
+                     "Decir que vives en un avión y que no tienes domicilio."),
+                ),
+                Dialogue(
+                    "El jeque prueba el plato y no dice nada.",
+                    "Le añades otra lámina de oro delante de él. Sonríe.",
+                    ("Preguntarle si le gusta.",
+                     "Retirarlo y pedir perdón en tres idiomas."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -3986,6 +4522,230 @@ EVENTS: tuple[Event, ...] = (
             ),
         ),
         jobs=("hosteleria",),
+    ),
+    # -- Hostelería: más marrones del tronco ---------------------------------------------
+    Event(
+        "contrato_4h",
+        "📑 Te ofrecen un contrato de cuatro horas. Trabajando, serán diez. «Es lo que hay».",
+        (
+            (
+                "Firmo y curro diez",
+                Outcome(
+                    "Firmas. Cuatro horas en la nómina y seis en un sobre. Inspección de "
+                    "Trabajo, de momento, está de bocadillo.",
+                    pay=0.3,
+                    black=0.7,
+                    risk=0.2,
+                    battery=-15,
+                    family=-5,
+                    stat="work_four_hours",
+                ),
+            ),
+            (
+                "Contrato de verdad",
+                Outcome(
+                    "Exiges el contrato de jornada completa. Te miran como si hubieras "
+                    "pedido caviar en el menú del día.",
+                    performance=-8,
+                    family=5,
+                    stat="work_full_contract",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+    ),
+    Event(
+        "paella_chorizo",
+        "🥘 A las once de la mañana, un guiri pide paella… con chorizo. «Like in London».",
+        (
+            (
+                "Se la hago",
+                Outcome(
+                    "Le haces la paella con chorizo. Lo publica en redes y media Valencia "
+                    "te manda amenazas con buena ortografía.",
+                    pay=0.4,
+                    performance=-5,
+                    stat="work_chorizo_paella",
+                ),
+            ),
+            (
+                "Ni hablar",
+                Outcome(
+                    "Le dices que la paella no se toca. Se va a un sitio con paella "
+                    "congelada y cinco estrellas.",
+                    performance=5,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+    ),
+    Event(
+        "terraza_metro",
+        "📏 La policía local aparece con un metro y mide la terraza: tienes tres mesas de más.",
+        (
+            (
+                "Mesas de más",
+                Outcome(
+                    "Dices que «son decorativas» y las dejas. El agente anota algo en la "
+                    "libreta y no es tu teléfono.",
+                    pay=0.6,
+                    risk=0.3,
+                    fine=1.0,
+                    caught_by="terraza",
+                    stat="work_extra_tables",
+                ),
+            ),
+            (
+                "Recoger mesas",
+                Outcome(
+                    "Recoges las tres mesas. El metro se va, pero los clientes se sientan "
+                    "en el suelo.",
+                    performance=-5,
+                    battery=-10,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=3,
+    ),
+    Event(
+        "resena_una",
+        "⭐ Un cliente amenaza: «Si no me haces descuento, os pongo una estrella en las reseñas».",
+        (
+            (
+                "Postre invitado",
+                Outcome(
+                    "Le invitas al postre. La reseña sale de cinco estrellas y habla de "
+                    "«un trato familiar» (el de una familia mafiosa).",
+                    performance=8,
+                    stat="work_review_bribe",
+                ),
+            ),
+            (
+                "Que la ponga",
+                Outcome(
+                    "«Pon lo que quieras». Pone una estrella, una queja de la sal y una foto "
+                    "de otro restaurante.",
+                    performance=-8,
+                    family=3,
+                    stat="work_one_star",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+    ),
+    Event(
+        "influencer_gratis",
+        "🤳 Una influencer quiere comer gratis: «Os doy visibilidad, que tengo doce mil "
+        "seguidores (nueve mil son bots)».",
+        (
+            (
+                "Come gratis",
+                Outcome(
+                    "Le pones el menú entero. Sube una story de dos segundos con el plato "
+                    "borroso y tu local sale como «un sitio».",
+                    performance=-5,
+                    stat="work_free_dinner",
+                ),
+            ),
+            (
+                "Pasa por caja",
+                Outcome(
+                    "Le pasas la cuenta. Te deja de seguir y 40 bots te dan un me gusta de "
+                    "consolación.",
+                    pay=0.3,
+                    performance=5,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+    ),
+    Event(
+        "crucero",
+        "🚢 Atraca un crucero con 4.000 pasajeros. Traen el desayuno, el almuerzo y la cena "
+        "pagados en el barco.",
+        (
+            (
+                "Menú para cruceristas",
+                Outcome(
+                    "Montas un menú a 4,99 €. Venden 4.000 cafés solos y el que paga la "
+                    "luz es tu bolsillo.",
+                    pay=0.5,
+                    battery=-15,
+                    stat="work_cruise_menu",
+                ),
+            ),
+            (
+                "Cierro y me voy",
+                Outcome(
+                    "Cierras el chiringuito y te vas a la playa. Cuatro mil personas pasan "
+                    "de largo, con su bolsa de plástico y su botella de agua del barco.",
+                    performance=-8,
+                    family=8,
+                    stat="work_cruise_closed",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=2,
+    ),
+    Event(
+        "ola_calor",
+        "🔥 Ola de calor: 48 °C dentro de la cocina. El extractor se ha rendido y los "
+        "cocineros también.",
+        (
+            (
+                "Cocino igual",
+                Outcome(
+                    "Cocinas con una toalla en la cabeza. Sirves 80 menús y pierdes dos "
+                    "kilos de agua. «Estoy destruido por fuera, pero por dentro estoy "
+                    "nuevo».",
+                    pay=0.5,
+                    battery=-25,
+                    stat="work_heatwave_cook",
+                ),
+            ),
+            (
+                "Cierro la cocina",
+                Outcome(
+                    "Cierras la cocina y abres solo bebidas frías. Todo el mundo está más "
+                    "contento menos tu jefe.",
+                    performance=-8,
+                    family=8,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=4,
+    ),
+    Event(
+        "no_camareros",
+        "🪧 Te llaman de una tertulia de radio para que cuentes que «no encuentras "
+        "camareros». En la puerta tienes un cartel: «Se busca camarero. 900 €, diez horas».",
+        (
+            (
+                "Subo el sueldo",
+                Outcome(
+                    "Subes el sueldo a 1.400 € y aparecen veinte currículums en una tarde. "
+                    "Casualidades de la vida.",
+                    performance=10,
+                    family=5,
+                    stat="work_waiters_paid",
+                ),
+            ),
+            (
+                "Mantengo el cartel",
+                Outcome(
+                    "Mantienes los 900 € y el cartel. Sigues sin camareros y te quejas "
+                    "en la tele de la juventud.",
+                    performance=-8,
+                    stat="work_no_waiters",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=5,
     ),
     # -- Política: corrupción ---------------------------------------------------------
     Event(
@@ -4656,6 +5416,484 @@ EVENTS: tuple[Event, ...] = (
         jobs=("sanidad",),
         min_level=9,
         branches=("privada",),
+    ),
+    # -- Hostelería: la rama Hotelera ----------------------------------------------------
+    Event(
+        "balconing",
+        "🩴 Dos huéspedes de la 405 quieren saltar del balcón a la piscina, que está tres "
+        "pisos más abajo. Es su primera noche.",
+        (
+            (
+                "Sellar los balcones",
+                Outcome(
+                    "Mandas soldar las barandillas. Los de la 405 se quejan: «¡Nos habéis "
+                    "quitado la mitad de las vistas!».",
+                    performance=10,
+                    battery=-10,
+                    stat="work_balconing_sealed",
+                ),
+            ),
+            (
+                "Cartel en cinco idiomas",
+                Outcome(
+                    "Pones un cartel en cinco idiomas. Lo leen del revés y siguen con el plan.",
+                    performance=-5,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=6,
+        branches=("hotel",),
+    ),
+    Event(
+        "overbooking",
+        "🛏️ Overbooking: has vendido 40 habitaciones de más y llegan tres autobuses a la vez.",
+        (
+            (
+                "Al hotel de enfrente",
+                Outcome(
+                    "Los mandas al hotel de enfrente, con un cheque de disculpa. Al día "
+                    "siguiente es tu competencia la que te manda un cheque.",
+                    pay=0.3,
+                    performance=8,
+                    stat="work_overbook_across",
+                ),
+            ),
+            (
+                "Al de dos estrellas",
+                Outcome(
+                    "Los mandas a un hotel de dos estrellas «de 5 estrellas, pero de la "
+                    "carretera». Cuatro reseñas hablan de una cucaracha con nombre propio.",
+                    performance=-10,
+                    stat="work_overbook_two_star",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=6,
+        branches=("hotel",),
+    ),
+    Event(
+        "tasa_turistica",
+        "💶 El Gobierno autonómico aprueba la tasa turística: dos euros por noche y persona.",
+        (
+            (
+                "Se la cobro al cliente",
+                Outcome(
+                    "La repercutes en la factura con un recargo de «gastos de gestión». "
+                    "Un cliente te dice que en Barcelona es peor, y no lo es.",
+                    pay=0.4,
+                    performance=-5,
+                    stat="work_tourist_tax_passed",
+                ),
+            ),
+            (
+                "La pago yo",
+                Outcome(
+                    "La pagas tú, a cambio de un titular: «El hotel que no cobra la tasa». "
+                    "El contable te manda un correo en mayúsculas.",
+                    performance=10,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=7,
+        branches=("hotel",),
+    ),
+    Event(
+        "costas",
+        "🏖️ La Ley de Costas manda demoler la terraza de tu hotel de primera línea: «está "
+        "en dominio público».",
+        (
+            (
+                "Demoler",
+                Outcome(
+                    "Demueles la terraza. La arena vuelve donde estaba y los clientes de "
+                    "pensión completa, también.",
+                    performance=-10,
+                    battery=-15,
+                    stat="work_costas_demolish",
+                ),
+            ),
+            (
+                "Recurrir veinte años",
+                Outcome(
+                    "Recurres. Veinte años de juzgados, tres abogados y una terraza "
+                    "inmortal. Costas, mientras tanto, te manda una carta de las suyas.",
+                    pay=0.5,
+                    risk=0.25,
+                    fine=1.2,
+                    caught_by="costas",
+                    stat="work_costas_appeal",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=8,
+        branches=("hotel",),
+    ),
+    Event(
+        "kellys",
+        "🧹 Las kellys piden dejar de limpiar veinte habitaciones por turno. «Con dignidad», "
+        "dicen.",
+        (
+            (
+                "Externalizar",
+                Outcome(
+                    "Externalizas el servicio a una empresa multiservicios. Limpian lo "
+                    "mismo, cobran menos y nadie sabe quién es su jefe.",
+                    pay=0.8,
+                    performance=-5,
+                    family=-5,
+                    stat="work_kellys_outsourced",
+                ),
+            ),
+            (
+                "Contratarlas",
+                Outcome(
+                    "Las contratas con el convenio. Los números se resienten, el hotel "
+                    "huele a limpio y en la plantilla hay buen ambiente.",
+                    performance=10,
+                    family=5,
+                    stat="work_kellys_hired",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=8,
+        branches=("hotel",),
+    ),
+    Event(
+        "falcon_huesped",
+        "✈️ El presidente del Gobierno quiere pasar agosto en tu hotel. Llega en el Falcon "
+        "y pide la suite presidencial «de cortesía».",
+        (
+            (
+                "Suite gratis",
+                Outcome(
+                    "Suite, pensión completa y spa, todo de cortesía. Sales en una foto "
+                    "con él (de espaldas, como siempre).",
+                    pay=0.5,
+                    performance=12,
+                    family=-5,
+                    stat="work_falcon_guest",
+                ),
+            ),
+            (
+                "Se lo cobro",
+                Outcome(
+                    "Se lo cobras como a cualquiera. La factura la paga «el partido» y "
+                    "al mes te piden «una revisión del modelo de colaboración».",
+                    performance=-10,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=9,
+        branches=("hotel",),
+    ),
+    Event(
+        "lobby_pisos",
+        "🏛️ El Ayuntamiento va a limitar los pisos turísticos. Un concejal te insinúa que "
+        "«se podría hablar», con un sobre de por medio.",
+        (
+            (
+                "Un sobre para el concejal",
+                Outcome(
+                    "Un sobre en una bolsa de paella. La norma se retrasa seis meses y "
+                    "la UCO te tiene en la agenda.",
+                    black=2.5,
+                    risk=0.3,
+                    caught_by="uco",
+                    stat="work_lobby_envelope",
+                ),
+            ),
+            (
+                "Alegaciones como todos",
+                Outcome(
+                    "Presentas alegaciones por la vía legal. Te las leen, te dan las "
+                    "gracias y no cambia nada.",
+                    performance=-8,
+                    stat="work_lobby_clean",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=9,
+        branches=("hotel",),
+    ),
+    Event(
+        "canarias_limite",
+        "📢 Una manifestación bajo el lema «Canarias tiene un límite» llega a la puerta de "
+        "tu hotel con pancartas y cacerolas.",
+        (
+            (
+                "Pancarta de apoyo",
+                Outcome(
+                    "Cuelgas una pancarta que dice «Canarias tiene un límite (de "
+                    "habitaciones: 1.200)». Los manifestantes no se ríen.",
+                    performance=-5,
+                    family=5,
+                    stat="work_limit_banner",
+                ),
+            ),
+            (
+                "Llamar a la policía",
+                Outcome(
+                    "Llamas a la policía. Salen en las noticias frente a tu lobby y tu "
+                    "reputación en las reseñas baja un punto.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=10,
+        branches=("hotel",),
+    ),
+    # -- Hostelería: la rama Alta cocina -----------------------------------------------------
+    Event(
+        "stagier",
+        "🧑‍🍳 Llega un stagier de fuera: quiere trabajar seis meses gratis «por la "
+        "experiencia». En el currículum pone «chef en ciernes».",
+        (
+            (
+                "Sin contrato, sin sueldo",
+                Outcome(
+                    "Seis meses sin sueldo ni contrato, pero con muchas ganas. Inspección "
+                    "de Trabajo tiene un olfato muy fino.",
+                    black=1.0,
+                    risk=0.25,
+                    caught_by="inspeccion",
+                    stat="work_stagier_free",
+                ),
+            ),
+            (
+                "Con contrato de prácticas",
+                Outcome(
+                    "Le haces contrato de prácticas, con sueldo. El stagier cree que es "
+                    "una broma y te lleva a casa un tupper de agradecimiento.",
+                    performance=-5,
+                    family=5,
+                    stat="work_stagier_paid",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=6,
+        branches=("estrella",),
+    ),
+    Event(
+        "inspector_guia",
+        "🔎 Sospechas que la mesa 4 es el inspector de la Guía. Pide el menú largo y lo "
+        "apunta todo en una libreta.",
+        (
+            (
+                "Todo el trato de gala",
+                Outcome(
+                    "Pones un cubierto de más, una trufa de más y una sonrisa de más. "
+                    "Al final era un opositor que repasaba el temario de Hacienda entre "
+                    "plato y plato.",
+                    performance=12,
+                    battery=-20,
+                    stat="work_guide_pampered",
+                ),
+            ),
+            (
+                "Como a cualquiera",
+                Outcome(
+                    "Le tratas igual que a los demás. Resulta que era el inspector y tu "
+                    "estrella tiembla como una gelatina.",
+                    performance=-8,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=7,
+        branches=("estrella",),
+    ),
+    Event(
+        "alergico",
+        "🤧 Un cliente es alérgico al gluten, la lactosa, los frutos secos, el marisco y «a "
+        "algunos ruidos». Reserva el menú degustación.",
+        (
+            (
+                "Menú a medida",
+                Outcome(
+                    "Le cocinas un menú a medida con aire, agua y pimienta. Dice que es "
+                    "lo mejor que ha comido y deja de propina un abrazo.",
+                    performance=8,
+                    battery=-15,
+                    stat="work_allergic_menu",
+                ),
+            ),
+            (
+                "A otro restaurante",
+                Outcome(
+                    "Le recomiendas un restaurante «más adecuado a sus necesidades». Es "
+                    "una farmacia de guardia.",
+                    performance=-5,
+                    family=3,
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=7,
+        branches=("estrella",),
+    ),
+    Event(
+        "tortilla",
+        "🥔 Un periodista te pregunta en directo: «La tortilla de patatas, ¿con cebolla o "
+        "sin cebolla?». Media España contiene la respiración.",
+        (
+            (
+                "Con cebolla",
+                Outcome(
+                    "«Con cebolla.» Tu móvil explota y tu abuela te manda un audio de "
+                    "once minutos. Eres tendencia dos horas.",
+                    performance=8,
+                    family=-5,
+                    stat="work_onion_with",
+                ),
+            ),
+            (
+                "Sin cebolla",
+                Outcome(
+                    "«Sin cebolla.» Sale un tertuliano a gritar «¡herejía!» y la "
+                    "polémica nacional te da otra estrella en visibilidad.",
+                    performance=8,
+                    family=-5,
+                    stat="work_onion_without",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=8,
+        branches=("estrella",),
+    ),
+    Event(
+        "presentador_gritos",
+        "📺 Un presentador famoso por gritar «¡esto es un desastre!» llega con cámaras a tu "
+        "restaurante: «Vengo a salvarte».",
+        (
+            (
+                "Que grabe",
+                Outcome(
+                    "Le dejas grabar. Grita tres veces, llora dos y al final la audiencia "
+                    "se come tu plato estrella por la tele.",
+                    pay=0.8,
+                    performance=-5,
+                    family=-5,
+                    stat="work_tv_crew",
+                ),
+            ),
+            (
+                "A la calle",
+                Outcome(
+                    "Le echas con una bandeja. Sale en las noticias: «El chef que echó "
+                    "a un presentador». Te llaman de tres cadenas.",
+                    performance=10,
+                    stat="work_tv_kicked",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=8,
+        branches=("estrella",),
+    ),
+    Event(
+        "jeque_oro",
+        "🏜️ Un jeque de visita quiere pan de oro en todo: el entrante, el principal, el "
+        "postre y el agua.",
+        (
+            (
+                "Oro en todo",
+                Outcome(
+                    "Pan de oro hasta en la ensalada. Pagó con una tarjeta negra que "
+                    "parecía un lingote.",
+                    pay=1.0,
+                    performance=-5,
+                    stat="work_gold_all",
+                ),
+            ),
+            (
+                "Solo en el postre",
+                Outcome(
+                    "Le pones oro en el postre y le explicas que lo demás es de sabor. "
+                    "El jeque te regala un reloj. Falso, pero con mucho brillo.",
+                    pay=0.4,
+                    performance=8,
+                    stat="work_gold_dessert",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=9,
+        branches=("estrella",),
+    ),
+    Event(
+        "espumas",
+        "💥 La máquina de espumas explota en pleno servicio y cubre la sala de espuma de "
+        "gofio hasta las lámparas.",
+        (
+            (
+                "Limpiar y seguir",
+                Outcome(
+                    "Limpias entre plato y plato. Los clientes dicen que el ambiente "
+                    "estaba «muy aireado».",
+                    performance=5,
+                    battery=-20,
+                ),
+            ),
+            (
+                "Venderlo como técnica",
+                Outcome(
+                    "Lo vendes como «la nueva técnica del baño de espuma». Cobras un "
+                    "suplemento y alguien lo pone en una guía.",
+                    pay=0.5,
+                    performance=5,
+                    stat="work_foam_sold",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=9,
+        branches=("estrella",),
+    ),
+    Event(
+        "inspeccion_sanidad",
+        "🩺 La Inspección de Sanidad llega sin avisar a la cocina del grupo: en la cámara "
+        "hay huevos de la semana pasada, y «de otra semana».",
+        (
+            (
+                "Esconder los huevos",
+                Outcome(
+                    "Metes los huevos en un armario y la inspectora abre el armario "
+                    "primero. Lleva años haciendo esto.",
+                    pay=0.6,
+                    risk=0.3,
+                    fine=1.5,
+                    caught_by="sanidad_alimentaria",
+                    stat="work_health_hidden",
+                ),
+            ),
+            (
+                "Cocina abierta",
+                Outcome(
+                    "Le abres todas las puertas y la invitas a probar la tarta. Sale "
+                    "con un informe impecable y un trozo para la oficina.",
+                    performance=10,
+                    battery=-10,
+                    stat="work_health_open",
+                ),
+            ),
+        ),
+        jobs=("hosteleria",),
+        min_level=10,
+        branches=("estrella",),
     ),
     # -- Oficina ------------------------------------------------------------------------
     Event(
@@ -5898,6 +7136,18 @@ CAUGHT_TEXT: dict[str, str] = {
     "abusivas": (
         "⚖️ **Un juzgado declara abusiva la cláusula.** El asegurado reclamó con abogado: "
         "la clínica paga lo que cobró de más y una multa por cláusulas abusivas."
+    ),
+    "terraza": (
+        "📏 **La policía local te multa por ocupación de vía pública.** Las tres mesas "
+        "«decorativas» eran muy reales: pagas la sanción y ya conoces al agente por su nombre."
+    ),
+    "costas": (
+        "🏖️ **Costas ejecuta la demolición subsidiaria.** Después de veinte años de recursos, "
+        "la terraza cae en una tarde y la factura de la excavadora te llega a ti."
+    ),
+    "sanidad_alimentaria": (
+        "🩺 **La Inspección de Sanidad cierra la cámara.** Los huevos tenían más historia que "
+        "tu local: multa por no cumplir la cadena de frío y un acta con tu nombre."
     ),
 }
 #: Pillados que además dejan sin IMV unos días.
