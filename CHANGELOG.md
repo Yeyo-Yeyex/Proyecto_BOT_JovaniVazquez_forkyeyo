@@ -10,7 +10,7 @@ criterio.
 
 ### 5.24.0 · 2026-10-13
 
-- Pala: la hostelería llega a 10 puestos con ramas Hotelera y Alta cocina
+- Pala: los ocho oficios llegan a 10 puestos con dos ramas cada uno
 
 ### 5.23.0 · 2026-10-13
 

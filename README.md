@@ -613,12 +613,12 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las ocho secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 2.213 logros en 41 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.133 logros en 48 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
   (una sección por juego); y además social, lista, beernight, niveles, loterías,
-  tienda, mascotas, banco, economía, trabajo, oficios, sanidad, oficina, reparto,
+  tienda, mascotas, banco, economía, trabajo, oficios, hostelería, sanidad, oficina, reparto,
   funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
   con una simulación, ver `docs/auditoria-logros.md`). 428 son secretos y
