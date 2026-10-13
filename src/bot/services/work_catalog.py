@@ -33,7 +33,8 @@ espumas, estrellas y Dubái. El reparto se ríe de las apps de reparto
 y de los falsos autónomos; el funcionariado, de la burocracia (con las
 preguntas del temario de verdad), de la alta administración (el BOE a las 23:59,
 el Consejo de Estado) y de la puerta giratoria hacia el asesoramiento fiscal; el
-influencer, de la fama a golpes. Los
+influencer, de la fama a golpes, de la tele pública (tertulias, audiencias, consejos
+por cuotas) y del exilio fiscal en Andorra (energéticas, veladas, cripto). Los
 personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
 Trump, Erdoğan…) salen como en el resto del bot, con las fuentes de ironía de
 la Biblia. No se nombra a ninguna persona que no sea figura pública ni a una
@@ -1392,7 +1393,8 @@ INFLUENCER = Job(
     key="influencer",
     name="Influencer",
     emoji="🤳",
-    blurb="Unos días no te ve ni tu madre y otros te haces viral. Funas incluidas.",
+    blurb="Unos días no te ve ni tu madre y otros te haces viral. Funas incluidas. Y arriba, "
+    "la tele pública o el directo desde Andorra.",
     rgb=(233, 30, 99),
     viral=True,
     positions=(
@@ -1406,12 +1408,16 @@ INFLUENCER = Job(
             (Task("best", "Acierta 20 métricas", "best", 20), _good(4)),
             days=3, content="metricas",
             training=Training("aro_luz", "el aro de luz y el curso de marca personal", 6_000),
+            perk=Perk("El aro de luz que te quita las ojeras (y media cara): +5 % de tiempo "
+                      "en el minijuego.", extra_time=0.05),
         ),
         Position(
             3, "Streamer", 4_800, Mechanic.DIALOGUE, 40,
             (Task("smooth", "Sobrevive a 25 momentos del directo", "smooth", 25), _good(5)),
             days=4, content="directo", self_employed=True,
             training=Training("setup", "el setup de streamer (silla gamer incluida)", 15_000),
+            perk=Perk("La silla gamer con lumbar, que te salva la espalda aunque no el "
+                      "directo: cada turno cansa un 10 % menos.", battery=0.10),
         ),
         Position(
             4, "Influencer con agencia", 9_000, Mechanic.SPOT, 60,
@@ -1420,12 +1426,140 @@ INFLUENCER = Job(
             days=5, content="colaboraciones", self_employed=True,
             training=Training("agencia", "el contrato con una agencia de representación (se "
                               "queda el 20 %)", 25_000),
+            perk=Perk("Un community manager que borra lo que no debes haber dicho: un fallo "
+                      "gratis por turno.", retry=True),
         ),
         Position(
-            5, "Celebrity de reality", 16_000, Mechanic.DIALOGUE, 60, (),
-            days=0, content="plato", self_employed=True,
+            5, "Celebrity de reality", 16_000, Mechanic.DIALOGUE, 60,
+            (Task("smooth", "Sal airoso de 25 preguntas en plató", "smooth", 25), _good(6),
+             _events(3)),
+            days=4, content="plato", self_employed=True,
             training=Training("reality", "el casting de un reality en una isla desierta",
                               70_000),
+            perk=Perk("El guionista del reality, que te sopla qué decir (y a quién): una "
+                      "respuesta mala tachada en los diálogos.", fifty=True),
+        ),
+    ),
+    branches=(
+        Branch(
+            "tele",
+            "Tele",
+            "📺",
+            "Tertulias de todo sin saber de nada, la guerra de las audiencias del access, "
+            "consejeros por cuota de partido y Eurovisión. En nómina de la cadena: cobra "
+            "menos, se jubila mejor.",
+            (
+                Position(
+                    6, "Tertuliano", 16_500, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Opina con aplomo de 30 temas que no dominas", "smooth", 30),
+                     _good(5), _events(2)),
+                    days=5, content="tertulia",
+                    perk=Perk("Un cartel con tu nombre y la palabra «analista» (nadie sabe de "
+                              "qué): cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Presentador de magacín", 17_500, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Cumple la escaleta 15 veces sin que se caiga el programa",
+                          "perfect_rounds", 15), _good(6), _events(3)),
+                    days=5, content="escaleta:4",
+                    training=Training(
+                        "exclusividad_cadena",
+                        "el contrato de exclusividad con la cadena (no puedes ni felicitar la "
+                        "Navidad en otra)", 45_000,
+                    ),
+                    perk=Perk("Un apuntador con la escaleta en cartulinas fosforitas: +5 % de "
+                              "tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Presentador de prime time", 19_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 invitados a su bloque del programa", "sorted", 30),
+                     _good(6), _events(3)),
+                    days=6, content="invitados",
+                    perk=Perk("Un pinganillo por el que el director te dice «alarga, alarga»: "
+                              "un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Director de cadena", 20_500, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra a 25 programas que hunden la audiencia",
+                          "caught", 25), _good(6), _events(4)),
+                    days=6, content="share",
+                    training=Training(
+                        "voto_consejo",
+                        "el voto del consejo de administración (repartido por cuotas, como "
+                        "las sillas)", 55_000,
+                    ),
+                    perk=Perk("Un despacho con vistas a la parrilla y un café que sabe a "
+                              "share: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Presidente de RTVE", 23_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="rtve",
+                    perk=Perk("Un sillón de presidente que gira solo hacia el partido que "
+                              "toque: +10 % de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="expresidente de RTVE con tertulia vitalicia y despacho en Prado del Rey",
+        ),
+        Branch(
+            "andorra",
+            "Andorra",
+            "🇦🇩",
+            "Exiliado fiscal con el directo encendido: subathon desde el Principado, bebida "
+            "energética, veladas de boxeo, cripto y, al final, un partido. Autónomo: cobra más, "
+            "se jubila peor.",
+            (
+                Position(
+                    6, "Streamer exiliado en Andorra", 18_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Atiende 15 subathons sin perderte una alerta",
+                          "perfect_rounds", 15), _good(5), _events(2)),
+                    days=5, content="subathon:4", self_employed=True,
+                    perk=Perk("Un monitor extra para el chat (el otro es para Hacienda): cada "
+                              "turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Dueño de una bebida energética", 22_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 ideas de negocio a su cajón", "sorted", 30),
+                     _good(6), _events(3)),
+                    days=5, content="marca", self_employed=True,
+                    training=Training(
+                        "marca_propia",
+                        "la marca propia (con su registro en la OEPM y una lata que sabe a "
+                        "jarabe)", 55_000,
+                    ),
+                    perk=Perk("Una nevera llena de tu propio producto (no la abre ni tu "
+                              "madre): +5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Organizador de veladas de boxeo", 27_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Vende 30 combates entre streamers", "smooth", 30),
+                     _good(6), _events(3)),
+                    days=6, content="velada", self_employed=True,
+                    perk=Perk("Un promotor que te cubre el ojo morado antes del directo: un "
+                              "fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Gurú cripto", 33_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Detecta a 25 proyectos que son un timo", "caught", 25),
+                     _good(6), _events(4)),
+                    days=6, content="rugpull", self_employed=True,
+                    training=Training(
+                        "whitepaper_ia",
+                        "el whitepaper (escrito por una IA en una tarde, con tres gráficos que "
+                        "suben)", 75_000,
+                    ),
+                    perk=Perk("Un grupo de Telegram con 40.000 «inversores» que dicen «to the "
+                              "moon»: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Fundador de un partido antisistema", 42_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="partido", self_employed=True,
+                    perk=Perk("Un escaño en Estrasburgo con inmunidad y todo: +10 % de tiempo "
+                              "en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="streamer jubilado en Andorra que vuelve a España para operarse",
         ),
     ),
 )  # fmt: skip
@@ -5459,6 +5593,497 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas del influencer (Tele y Andorra) -------------------------------------
+
+MEMORY_PACKS.update(
+    {
+        "escaleta": MemoryPack(
+            "📺 Magacín de hoy (edición {n}). El director te dicta la escaleta a gritos por el "
+            "pinganillo:",
+            "Cumple la escaleta en el mismo orden. Si te saltas un bloque, el programa se "
+            "alarga hasta la medianoche (y no hay presupuesto para eso).",
+            (
+                ("🍳", "La receta de la abuela"),
+                ("🔮", "El horóscopo"),
+                ("⛈️", "La conexión con el reportero bajo la lluvia"),
+                ("🚨", "Sucesos"),
+                ("📞", "El concurso de llamadas"),
+                ("🛋️", "La entrevista al famoso"),
+                ("🧴", "El publirreportaje (que parece una noticia)"),
+                ("💌", "El consultorio sentimental"),
+                ("🐶", "El perrito viral"),
+                ("🚗", "El tráfico y el tiempo"),
+            ),
+        ),
+        "subathon": MemoryPack(
+            "🔴 Subathon de 24 horas, hora {n}. Las alertas saltan en este orden y tú sonríes a "
+            "todas:",
+            "Reacciona a cada alerta en el mismo orden (y que no se note que llevas veinte "
+            "horas despierto).",
+            (
+                ("💸", "La donación de 5 €"),
+                ("💎", "Los bits"),
+                ("🎁", "La suscripción regalada"),
+                ("🚀", "El raid"),
+                ("🤖", "El TTS que lee lo que no debe"),
+                ("🏆", "Un seguidor nuevo"),
+                ("🔥", "La donación troll"),
+                ("👑", "El suscriptor de 36 meses"),
+                ("📢", "El aviso del moderador"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "invitados": SortPack(
+            "🎬 Eres presentador de prime time: cada invitado a su bloque, que el programa "
+            "dura cuatro horas y la gente tiene que llegar al final.",
+            "🎟️ Invitado {n}/{total}:",
+            (
+                "🛋️ Sofá",
+                "🎤 Actuación",
+                "🧨 Polémica",
+                "📞 Conexión en directo",
+            ),
+            (
+                ("Una actriz que promociona una serie que nadie ha visto, con anécdota de "
+                 "rodaje ensayada", 0),
+                ("Un escritor con su libro en la mano (lo ha escrito su nieto)", 0),
+                ("Una chef que trae una tarta y bromea con que «no se ha quemado»", 0),
+                ("El exfutbolista que cuenta por vigésima vez cómo fue aquel gol del 98", 0),
+                ("Un cantante que viene a hacer playback de su nuevo sencillo", 1),
+                ("Un mago que saca un conejo (el mismo desde 2008)", 1),
+                ("Un coro de niños que canta villancicos en abril", 1),
+                ("Un humorista con seis minutos sobre su suegra", 1),
+                ("La ex del concursante, con un sobre cerrado y un abogado", 2),
+                ("Un concejal que defiende lo indefendible y se acalora al minuto", 2),
+                ("El primo del famoso, que «lo sabe todo y va a contarlo»", 2),
+                ("Dos tertulianos que ya se han insultado en tres programas distintos", 2),
+                ("Un reportero bajo la lluvia, delante de una puerta cerrada", 3),
+                ("Una corresponsal en un pueblo donde «no pasa nada, pero pasa mucho»", 3),
+                ("Un enviado especial a un aeropuerto con 400 vuelos retrasados", 3),
+                ("Un reportero a las puertas de un juzgado, esperando a que salga alguien", 3),
+            ),
+        ),
+        "marca": SortPack(
+            "🥤 Eres dueño de una bebida energética: cada idea, a su cajón (y que ninguna "
+            "acabe en el cajón de «Demanda»).",
+            "💡 Idea {n}/{total}:",
+            (
+                "🥤 Sabor nuevo",
+                "👕 Merch",
+                "🤝 Colaboración",
+                "⚖️ Demanda",
+            ),
+            (
+                ("Edición limitada «Fresa tóxica»", 0),
+                ("Un sabor «Lunes por la mañana»: ácido y con 300 mg de cafeína", 0),
+                ("Una mezcla de sandía, wasabi y «ganas de vivir»", 0),
+                ("La versión sin azúcar con un nombre en inglés que nadie sabe pronunciar", 0),
+                ("Una sudadera con el logo de la lata, a 80 € y una sola talla", 1),
+                ("Una gorra con la lata bordada que no se puede lavar", 1),
+                ("Una lata de coleccionista que no se puede abrir", 1),
+                ("Unos calcetines con el logo (porque los fans los piden)", 1),
+                ("Un youtuber que cobra 50.000 € por beberse una lata en directo", 2),
+                ("Un futbolista que sale en el anuncio sosteniendo la lata al revés", 2),
+                ("Un cantante con su «edición firmada» (la ha firmado su manager)", 2),
+                ("Un festival que pone la lata en cada barra, junto a la cerveza", 2),
+                ("Una madre que denuncia que la lata ponía «energía» y su hijo no durmió en "
+                 "tres días", 3),
+                ("Una marca de latas que se parece sospechosamente a la tuya", 3),
+                ("Consumo, que pide quitar «sin efectos secundarios» del anuncio", 3),
+                ("Un proveedor que dice que le debes tres contenedores de jarabe", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: Director de cadena: programas que hunden la audiencia (el distinto de la parrilla).
+SHARE_SINKS: tuple[str, ...] = (
+    "Documental de tres horas sobre el pegamento, el sábado en prime time · 2,1 %",
+    "Debate de nueve invitados sobre el IVA de la carne, a la hora de la cena · 3,4 %",
+    "Reposición del especial de Navidad, emitida en agosto · 2,8 %",
+    "Concurso de preguntas… en latín · 1,9 %",
+    "El telediario de ayer, repetido «por si alguien se lo perdió» · 3,0 %",
+    "Una película muda de 1927 con una hora de créditos, a las 22:00 · 2,6 %",
+    "Manualidades con papel de periódico, a las diez menos veinte de la noche · 3,2 %",
+    "Un debate electoral emitido a la vez que el partido de la selección",
+    "Programa de cocina sin cocina: solo se habla de recetas y se comenta el olor · 2,2 %",
+    "Un reality con los guionistas de la cadena encerrados en una casa · 3,1 %",
+    "Telenovela de 400 capítulos que empieza por el 212 · 3,5 %",
+    "La gala de aniversario de la cadena, con discursos de los directivos, de 22:00 a 03:00",
+)
+#: Programas que funcionan (o que flojean con motivo).
+SHARE_HITS: tuple[str, ...] = (
+    "Final de un talent show con la familia del concursante en primera fila · 17,8 %",
+    "Partido de la selección, con prórroga · 33,0 %",
+    "Las Campanadas, con un vestido que dará que hablar · 24,5 %",
+    "El informativo de las nueve, con la lluvia de fondo · 14,1 %",
+    "Cocina para parejas que se pelean por la sal · 12,6 %",
+    "Serie diaria sobre un pueblo en el que todos son primos · 15,3 %",
+    "Un concurso en el que se acierta una pregunta por programa · 13,9 %",
+    "Programa de reformas donde todo acaba bien en cuarenta minutos · 11,7 %",
+    "Gala de Eurovisión, con sus votos y sus vetos · 22,4 %",
+    "Programa de testimonios: la vecina cuenta lo que vio por la mirilla · 12,8 %",
+    "Un talent show de cantantes que acaba en lágrimas y abrazos · 16,4 %",
+    "El tiempo, que tiene su audiencia fiel · 10,2 %",
+    "Documental de naturaleza con narrador de voz grave · 9,8 %",
+    "Cámara oculta a famosos en un aeropuerto · 11,4 %",
+    "Programa de madrugada, a las 03:00 · 6,5 % (el mejor de su franja)",
+)
+
+#: Gurú cripto: proyectos que van a ser un rug pull.
+RUG_TIMOS: tuple[str, ...] = (
+    "Equipo anónimo, el 95 % de los tokens en la cartera del dueño y una web de plantilla gratuita",
+    "Promete un 4.000 % de rentabilidad diaria «garantizada» y un sorteo de un deportivo",
+    "Un whitepaper de tres páginas, dos erratas y el logo de un perro con gafas",
+    "La liquidez está bloqueada siete minutos «por seguridad»",
+    "El fundador sale en las fotos con una careta, un reloj de lujo y un coche alquilado",
+    "Lo audita la cuñada del fundador, con firma en un Word",
+    "El token solo se puede comprar; la opción de vender se activará «próximamente»",
+    "Lo anuncian diez influencers que no saben lo que es y usan la misma frase",
+    "Para sacar tu dinero hay que invitar a cinco amigos y pagar una «tasa de desbloqueo»",
+    "Su hoja de ruta: 1) lanzar el token, 2) luna, 3) fundar una isla",
+    "En su Telegram borran cualquier pregunta que contenga la palabra «auditoría»",
+    "Un token con nombre de ministro, promesas de ministro y sede en una isla sin extradición",
+)
+#: Proyectos serios (o aburridos, que en cripto viene a ser lo mismo).
+RUG_SERIOS: tuple[str, ...] = (
+    "Equipo con nombres y apellidos, y una oficina que existe y tiene la luz pagada",
+    "Una cripto con diez años, miles de nodos y una comunidad que discute sobre su propia comisión",
+    "Tres auditorías públicas y un informe que dice «hay cuatro riesgos medios»",
+    "Ofrece un 3 % anual con la letra pequeña a la vista: «puedes perder el capital»",
+    "Los desarrolladores publican cada semana el código, incluidos los errores",
+    "Plataforma regulada, con licencia de la autoridad financiera y una web aburridísima",
+    "El fundador cobra un sueldo normal y solo vende acciones con aviso previo",
+    "Un token respaldado por reservas con informe mensual de un tercero",
+    "Tiene un foro donde los usuarios critican cada decisión y el equipo contesta",
+    "Una red que tarda un año más en lanzarse porque «aún no está lista»",
+    "Una comunidad pequeña que crece despacio y una hoja de ruta con fechas cumplidas",
+    "Código abierto, revisado por universidades, sin influencers ni sorteos",
+    "Cripto de una cooperativa agrícola que se compra para pagar la cosecha, no para ir a la luna",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "tertulia": DialoguePack(
+            "🎙️ Tertulia de las ocho, de las nueve y de las diez. Regla de oro: **opina de todo, "
+            "sabe de nada y no rectifiques nunca.**",
+            (
+                Dialogue(
+                    "El moderador te pregunta por la geopolítica del Sahel. No has abierto un "
+                    "mapa en tu vida.",
+                    "«Es un asunto complejísimo y, como siempre digo, hay que mirar a quién "
+                    "beneficia. Y en el Sahel, créame, beneficia siempre a los mismos.»",
+                    ("«Perdone, no sé exactamente dónde está el Sahel.»",
+                     "«Prefiero no opinar de lo que no he estudiado.»"),
+                ),
+                Dialogue(
+                    "La doctora de la mesa cita un estudio que te contradice.",
+                    "«Los estudios están muy bien, pero yo tengo algo que no tiene ningún "
+                    "estudio: experiencia de la vida.»",
+                    ("«Tiene usted toda la razón; me retiro de la tertulia.»",
+                     "Saco el móvil y busco el estudio en directo.",
+                     "Le subo el volumen del micro, por si acaso."),
+                ),
+                Dialogue(
+                    "Te enseñan un dato que demuestra que te equivocaste hace cinco minutos.",
+                    "«Eso depende de cómo se mire el dato, y yo lo miro desde un ángulo que no "
+                    "ha mirado nadie.»",
+                    ("«Me equivoqué. Rectifico y pido perdón a la audiencia.»",
+                     "Pido un receso y me escondo en el baño hasta la publicidad."),
+                ),
+                Dialogue(
+                    "Te presentan como «experto en economía». Eres licenciado en Filología "
+                    "Hispánica.",
+                    "«Los economistas llevan veinte años equivocándose; hace falta una mirada "
+                    "humanista, y esa soy yo.»",
+                    ("«Soy filólogo, para qué voy a mentir.»",
+                     "Cambio de tema y recito un soneto de Quevedo."),
+                ),
+                Dialogue(
+                    "Otro tertuliano te interrumpe y habla a la vez que tú.",
+                    "«Sofía, cállate: déjame terminar», y subes el tono sin haber empezado.",
+                    ("Cedo la palabra con elegancia y espero mi turno.",
+                     "Me callo y pongo cara de póker durante diez minutos.",
+                     "Le ofrezco una infusión."),
+                ),
+                Dialogue(
+                    "Sacan un tuit tuyo de hace dos años que dice justo lo contrario.",
+                    "«Eso es una cita sacada de contexto. Además era ironía. Y además entonces "
+                    "era otro momento.»",
+                    ("«Sí, era yo, y estaba equivocado.»",
+                     "Borro el tuit en directo, delante de todos."),
+                ),
+                Dialogue(
+                    "El presentador pregunta: «¿Hay que subir o bajar los impuestos?».",
+                    "«Si los baja mi partido, es responsabilidad fiscal; si los baja el otro, "
+                    "es una irresponsabilidad. Y a la inversa.»",
+                    ("«Hay que subirlos a los ricos y bajarlos a los pobres, con un estudio de "
+                     "trescientas páginas.»",
+                     "«Eso lo dirá Hacienda, que para eso cobra.»"),
+                ),
+                Dialogue(
+                    "Llevas treinta segundos sin argumentos y quedan veinte minutos de tertulia.",
+                    "Repites «lo que está pasando en este país» con una pausa dramática y una "
+                    "mirada a cámara.",
+                    ("Pides que pongan publicidad.",
+                     "Confiesas que has venido por el catering.",
+                     "Te quedas mirando el techo del plató."),
+                ),
+                Dialogue(
+                    "Te preguntan por una noticia que ha salido hace una hora y no has leído.",
+                    "«Ya lo avisé hace meses; lo que pasa es que nadie me hace caso.»",
+                    ("«Acabo de enterarme, ¿alguien me lo resume?»",
+                     "Finjo que se corta la conexión y me desconecto."),
+                ),
+                Dialogue(
+                    "Una oyente llama para decir que te equivocas en todo.",
+                    "«Agradezco la llamada: tenemos oyentes muy apasionados, y eso es "
+                    "pluralidad.» Y cambias de tema.",
+                    ("«Quizá tenga razón; ¿qué es lo que he dicho mal?»",
+                     "Cuelgo y apago el micro para siempre."),
+                ),
+            ),
+        ),
+        "rtve": DialoguePack(
+            "📡 Presidencia de RTVE, consejo por cuotas de partido. Regla de oro: **todos los "
+            "partidos quieren su silla, y tú las repartes de forma que todos acaben igual de "
+            "molestos.**",
+            (
+                Dialogue(
+                    "El Gobierno quiere que el telediario abra con sus logros; la oposición, con "
+                    "los escándalos.",
+                    "Abres con el tiempo (una calima gordísima) y metes ambos temas después, "
+                    "con la misma duración, cronometrada.",
+                    ("Abres con el Gobierno, por agradecimiento.",
+                     "Abres con la oposición, por quedar bien.",
+                     "Abres con tu dimisión."),
+                ),
+                Dialogue(
+                    "Hay que nombrar al director de informativos.",
+                    "A alguien «de perfil técnico e independiente», con carné de partido hasta "
+                    "hace nueve años.",
+                    ("Convocas un concurso público con un tribunal de periodistas.",
+                     "Lo echas a suertes con un dado."),
+                ),
+                Dialogue(
+                    "Los presentadores de los dos programas del access se pelean por la "
+                    "audiencia y coinciden el viernes.",
+                    "Declaras que «la competencia es sana», programas a los dos el mismo día y "
+                    "llamas a la prensa para anunciar la «guerra de audiencias».",
+                    ("Los juntas en un programa conjunto para que se perdonen.",
+                     "Cancelas los dos para evitar problemas.",
+                     "Los dejas arreglarse entre ellos en el parking."),
+                ),
+                Dialogue(
+                    "Hay un boicot a Eurovisión por la participación de un país en guerra. Te "
+                    "llaman todos los partidos.",
+                    "Emites un comunicado equilibrado: «RTVE lamenta la situación y estudiará "
+                    "su participación» (y la estudia hasta que acabe el festival).",
+                    ("Retiras a España y devuelves el dinero.",
+                     "Mandas a la cantante con un cartel político.",
+                     "Mandas una cabra con pandereta."),
+                ),
+                Dialogue(
+                    "Todo el mundo habla del vestido de las Campanadas y nadie de las cuentas.",
+                    "Dejas que el vestido sea el tema: si hablan del vestido, no hablan del "
+                    "presupuesto.",
+                    ("Pides que vayan de chándal para evitar polémicas.",
+                     "Cancelas las Campanadas, por si acaso."),
+                ),
+                Dialogue(
+                    "La comisión de control del Congreso te cita para explicar el gasto.",
+                    "Llevas un informe de seiscientas páginas con anexos que concluye que no "
+                    "hay nada que explicar.",
+                    ("Llevas la verdad, con las cifras.",
+                     "No vas, ni mandas a nadie."),
+                ),
+                Dialogue(
+                    "Los sindicatos piden estabilizar a seiscientos interinos.",
+                    "Prometes estabilizarlos en tres fases, dos de las cuales dependen de la "
+                    "siguiente legislatura.",
+                    ("Los estabilizas a todos mañana.",
+                     "Dices que la plantilla ya está muy estable (de pie, con el abrigo "
+                     "puesto)."),
+                ),
+                Dialogue(
+                    "Te recortan cien millones y la plantilla no da más.",
+                    "Anuncias una «transformación digital sin precedentes» y contratas a una "
+                    "consultora para explicar el recorte.",
+                    ("Cierras un canal en directo.",
+                     "Pones publicidad en el telediario, entre la sequía y los incendios.",
+                     "Pides un préstamo a tu cuñado."),
+                ),
+                Dialogue(
+                    "Un programa del partido que te colocó tiene un share ridículo.",
+                    "Lo trasladas a la madrugada y lo declaras «servicio público de calidad».",
+                    ("Lo cancelas, que es lo que pide el share.",
+                     "Obligas a los empleados a verlo."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta si hay presiones políticas en RTVE.",
+                    "«Aquí hay pluralidad: cada partido presiona a su manera, y por eso "
+                    "estamos equilibrados.»",
+                    ("«Sí, todos los días.»",
+                     "«No, ninguna», con la voz temblando."),
+                ),
+            ),
+        ),
+        "velada": DialoguePack(
+            "🥊 Velada de boxeo entre streamers. Regla de oro: **el combate es lo de menos: lo "
+            "que vende es el cara a cara.**",
+            (
+                Dialogue(
+                    "Uno de los dos peleadores admite que no sabe boxear.",
+                    "«Mejor: así el cara a cara tiene más rabia. Que lo diga mañana en el "
+                    "directo, con voz de víctima.»",
+                    ("Cancelas la pelea con una disculpa a los fans.",
+                     "Le pagas tres años de clases de boxeo."),
+                ),
+                Dialogue(
+                    "Hay que llenar un recinto de doce mil personas.",
+                    "Organizas un cara a cara con empujón en la rueda de prensa y dejas que el "
+                    "vídeo haga el resto.",
+                    ("Bajas las entradas a tres euros.",
+                     "Haces un cartel con la técnica de los golpes.",
+                     "Esperas a que la gente se anime sola."),
+                ),
+                Dialogue(
+                    "Un boxeador se baja del combate el día antes.",
+                    "Lo vendes como «el rival ha huido» y fichas a un primo youtuber para "
+                    "sustituirlo.",
+                    ("Cancelas el evento y devuelves cincuenta mil entradas.",
+                     "Pides al otro que pelee contra un saco."),
+                ),
+                Dialogue(
+                    "En el pesaje, uno se pasa cuatro kilos.",
+                    "Lo conviertes en espectáculo: «ha pesado lo que ha pesado», y que lo "
+                    "discutan en directo.",
+                    ("Aplazas el combate hasta que adelgace.",
+                     "Le haces pesar la camiseta aparte."),
+                ),
+                Dialogue(
+                    "Un patrocinador exige que el evento sea «deportivo y de valores».",
+                    "Dices que es un «evento de valores» y metes en el segundo bloque un cara "
+                    "a cara con insultos personales.",
+                    ("Cambias el cartel por una exhibición de yoga.",
+                     "Pides a los boxeadores que se den un abrazo."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta si es seguro que dos aficionados peleen a puñetazos.",
+                    "«Cada uno firma un papel, hay un médico al lado y dos ambulancias… para "
+                    "la foto.»",
+                    ("«No es asunto mío: yo solo vendo entradas.»",
+                     "«La seguridad ya la pondrá Dios.»"),
+                ),
+                Dialogue(
+                    "Hay que decidir el orden del cartel.",
+                    "El cara a cara va antes del combate y se repite después con los mismos "
+                    "insultos, por rentabilidad.",
+                    ("El combate primero, y luego un debate técnico sobre la pelea.",
+                     "Un cara a cara a escondidas, sin cámaras."),
+                ),
+                Dialogue(
+                    "Un streamer se niega a hacer el cara a cara.",
+                    "Le pagas más por hacerlo y le escribes el guion de los insultos.",
+                    ("Respetas su decisión: quiere centrarse en el combate.",
+                     "Haces el cara a cara con un muñeco que se le parece."),
+                ),
+                Dialogue(
+                    "El combate dura 40 segundos.",
+                    "Cobras igual y anuncias «la revancha» para dentro de tres meses, con otro "
+                    "cara a cara.",
+                    ("Devuelves la mitad del dinero.",
+                     "Pides que se repita gratis ahora mismo, sin público."),
+                ),
+                Dialogue(
+                    "La plataforma de pago te pide la audiencia real.",
+                    "Declaras «dos millones de espectadores simultáneos» (la mitad, con la "
+                    "ventana abierta).",
+                    ("Das la cifra real con decimales.",
+                     "Dices que se ha perdido el contador."),
+                ),
+            ),
+        ),
+        "partido": DialoguePack(
+            "🏛️ Fundador de un partido antisistema, con escaño en Estrasburgo. Regla de oro: "
+            "**contra el sistema en el directo, con el sueldo del sistema en el banco.**",
+            (
+                Dialogue(
+                    "Un periodista te pregunta cuánto cobras como eurodiputado.",
+                    "«Lo cobro para que no lo cobre otro peor. Y lo reinvierto en el pueblo: "
+                    "en mis directos.»",
+                    ("«Es una cifra muy alta y no la merezco.»",
+                     "«Lo dono todo y vivo de cartas de amor.»"),
+                ),
+                Dialogue(
+                    "Te recuerdan que criticas a la casta… y vas en coche oficial con chófer.",
+                    "«El chófer es un trabajador del pueblo y el coche es eléctrico: es el "
+                    "compromiso del partido.»",
+                    ("«Tienes razón: me bajo del coche y voy en bici.»",
+                     "«El coche es de un amigo.»"),
+                ),
+                Dialogue(
+                    "Un bulo que difundiste resulta ser falso.",
+                    "«Yo solo pregunté: ¿y si fuera verdad? El debate ya está abierto.»",
+                    ("Pido perdón y lo borro.",
+                     "Digo que lo escribió mi gato."),
+                ),
+                Dialogue(
+                    "Te piden una propuesta concreta.",
+                    "«Acabar con la fiesta»: tiene lema, logo, camiseta y ninguna cifra.",
+                    ("Presentas un programa de 400 páginas con costes.",
+                     "Dices que la propuesta es no tener propuestas, pero con rigor."),
+                ),
+                Dialogue(
+                    "Das un mitin por directo y solo hay 14 personas en la sala.",
+                    "Dices «somos 80.000 en directo» y pones de fondo una multitud generada.",
+                    ("Das la cifra real.",
+                     "Cancelas el mitin y vuelves a casa en silencio."),
+                ),
+                Dialogue(
+                    "Justicia pide levantarte la inmunidad.",
+                    "Lo conviertes en «persecución del sistema» y vendes la camiseta «Yo "
+                    "también soy perseguido».",
+                    ("Renuncias a la inmunidad en el acto.",
+                     "Te escondes en el maletero de un coche camino de Waterloo."),
+                ),
+                Dialogue(
+                    "Otro partido antisistema, que te odia, te propone pactar.",
+                    "Pactas «solo para echar al sistema» y los traicionas en la segunda "
+                    "votación.",
+                    ("Les dices que ellos son más sistema que tú y se rompe el pacto.",
+                     "Les propones unirse en un solo partido con el tuyo al mando."),
+                ),
+                Dialogue(
+                    "Un votante te pregunta por qué cobras dietas.",
+                    "«Son dietas de resistencia: el pueblo se alimenta con gasolina y yo, con "
+                    "menú del día.»",
+                    ("«No sé, vienen en la nómina.»",
+                     "«Para pagar el chiringuito donde estoy ahora.»"),
+                ),
+                Dialogue(
+                    "Un rival te llama populista en televisión.",
+                    "Le contestas con un meme y treinta segundos de directo en los que el "
+                    "insultado eres tú.",
+                    ("Le propones un debate con datos.",
+                     "Te ríes con mucho gusto y le das la razón."),
+                ),
+                Dialogue(
+                    "Un tertuliano te pide que condenes la violencia en tus mítines.",
+                    "Condenas «toda violencia, venga de donde venga, sobre todo si viene de "
+                    "donde me conviene».",
+                    ("Pides perdón a todos los asistentes y suspendes el mitin.",
+                     "Dices que nunca ha habido violencia, aunque se vea en el vídeo."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -8963,6 +9588,581 @@ EVENTS: tuple[Event, ...] = (
         ),
         jobs=("influencer",),
     ),
+    # -- Influencer: el tronco (más marrones) -----------------------------------------------
+    Event(
+        "sorteo_falso",
+        "🎁 Tu cuenta lleva una semana planchada. Un colega te susurra: «Sortea un móvil: para "
+        "participar hay que seguirte, compartir y etiquetar a tres amigos». El móvil no existe.",
+        (
+            (
+                "Sorteo (de un mango)",
+                Outcome(
+                    "Sorteas un mango. «Everybody want mango, American people want mango.» "
+                    "Medio millón de etiquetas, cero móviles y un ganador que resulta ser tu "
+                    "primo.",
+                    followers=0.3,
+                    black=0.2,
+                    risk=0.2,
+                    caught_by="ordenacion_juego",
+                    stat="work_giveaway_fake",
+                ),
+            ),
+            (
+                "Sorteo de verdad",
+                Outcome(
+                    "Compras el móvil, llamas a un notario y sorteas. Lo gana una señora de "
+                    "Albacete que te manda un bizcocho. Ganas 40 seguidores y un bizcocho.",
+                    followers=0.03,
+                    battery=-5,
+                    family=5,
+                    stat="work_giveaway_real",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=2,
+    ),
+    Event(
+        "reto_viral",
+        "🛒 Te retan a bajar una cuesta en un carrito del súper, grabado en vertical, «para el "
+        "algoritmo». Hay una cuesta, un carrito y un vecino que ha sacado la silla a mirar.",
+        (
+            (
+                "Me tiro",
+                Outcome(
+                    "Bajas la cuesta gritando «¡Yo soy yo… y así me tienes que soportar!». "
+                    "Tres millones de visitas y una escayola con firmas.",
+                    followers=0.3,
+                    battery=-20,
+                    family=-5,
+                    stat="work_challenge_done",
+                ),
+            ),
+            (
+                "Con un doble",
+                Outcome(
+                    "Lo hace un doble de riesgo con tu peluca. Queda perfecto y el vídeo "
+                    "arrasa, hasta que alguien se fija en que el doble tiene bigote.",
+                    followers=0.1,
+                    performance=-5,
+                    stat="work_challenge_stunt",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+    ),
+    Event(
+        "haul_ropa",
+        "📦 Te llegan 40 prendas de una web de ropa a 2 euros. Hay que hacer el haul: se "
+        "destiñen en la caja, huelen a plástico y la talla M le va bien a tu sobrino de seis.",
+        (
+            (
+                "Haul sincero",
+                Outcome(
+                    "Lo enseñas todo, con la camiseta abriéndose por la mitad en directo. "
+                    "Pierdes la publi, pero el vídeo se llama «Esto es un robo» y lo ve medio "
+                    "país.",
+                    followers=0.15,
+                    stat="work_haul_honest",
+                ),
+            ),
+            (
+                "Haul con filtros",
+                Outcome(
+                    "Con tres filtros y la luz justa todo parece de diseñador. Un seguidor "
+                    "pregunta por qué la cremallera está en la manga. Tú: «Es tendencia».",
+                    pay=0.2,
+                    followers=-0.05,
+                    stat="work_haul_filters",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=2,
+    ),
+    Event(
+        "marca_en_producto",
+        "🧴 Una marca te propone pagarte «en producto»: 300 botes de champú y una factura "
+        "de «visibilidad». En tu baño ya no cabe ni el espejo.",
+        (
+            (
+                "Acepto el champú",
+                Outcome(
+                    "Aceptas. El piso huele a manzana durante un mes y pagas la hipoteca con "
+                    "«visibilidad». Tu casero no acepta el champú.",
+                    followers=0.05,
+                    family=-5,
+                    stat="work_paid_in_kind",
+                ),
+            ),
+            (
+                "Quiero euros",
+                Outcome(
+                    "«El champú no paga el alquiler.» La marca se lo piensa y te paga un "
+                    "tercio en euros, y de regalo, un bote.",
+                    pay=0.3,
+                    stat="work_paid_in_cash",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=2,
+    ),
+    Event(
+        "politico_baile",
+        "🗳️ Un candidato en campaña te propone un vídeo juntos bailando, «para conectar con "
+        "los jóvenes». Sabe tres pasos y los baila con la cara de quien los ha ensayado en "
+        "el coche oficial.",
+        (
+            (
+                "Bailo con él",
+                Outcome(
+                    "Bailáis y cobras en B «para no mezclar». El vídeo tiene dos millones de "
+                    "visitas y el candidato, tres votos nuevos (los de tu familia).",
+                    followers=0.2,
+                    black=0.4,
+                    risk=0.15,
+                    caught_by="campana",
+                    stat="work_politician_dance",
+                ),
+            ),
+            (
+                "Paso de política",
+                Outcome(
+                    "«Yo no hago política.» Tu abuela te lo agradece y el candidato te "
+                    "bloquea, por lo que más de un partido ya te tiene fichado.",
+                    followers=-0.03,
+                    family=5,
+                    stat="work_politician_refused",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=3,
+    ),
+    Event(
+        "chiste_viejo",
+        "🧨 Alguien ha desenterrado un chiste tuyo de hace diez años. Entonces tenía poca gracia "
+        "y hoy tiene 400.000 retuits y un hashtag con tu nombre.",
+        (
+            (
+                "Pido perdón",
+                Outcome(
+                    "Otra vez la sudadera gris y los ojos rojos de cebolla. Nadie te cree, "
+                    "pero te dejan en paz el fin de semana.",
+                    followers=-0.1,
+                    performance=-5,
+                    stat="work_old_joke_apology",
+                ),
+            ),
+            (
+                "Lo reivindico",
+                Outcome(
+                    "«Era humor, y ahora todo es un delito.» Mitad te cancela, mitad te "
+                    "idolatra y un partido te ofrece ir en listas.",
+                    followers=0.15,
+                    performance=-10,
+                    stat="work_old_joke_defended",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=4,
+    ),
+    # -- Influencer: Tele ---------------------------------------------------------------------
+    Event(
+        "tertulia_virologia",
+        "🦠 A las ocho te piden opinar de virología. A las nueve, de fútbol. A las diez, de "
+        "la guerra. Eres licenciado en Turismo y el productor te pasa un café con cara de "
+        "«tú puedes».",
+        (
+            (
+                "Opino de todo",
+                Outcome(
+                    "Opinas de la vacuna, del fuera de juego y de Ucrania con la misma voz "
+                    "grave. Te llaman «el analista» y tu madre pone la tele más alta.",
+                    followers=0.15,
+                    performance=5,
+                    battery=-10,
+                    stat="work_opine_all",
+                ),
+            ),
+            (
+                "Digo que no soy experto",
+                Outcome(
+                    "«No soy experto.» El productor te mira como si hubieras blasfemado y al "
+                    "día siguiente la silla es de otro, más joven y más seguro de sí mismo.",
+                    followers=-0.05,
+                    performance=-15,
+                    family=5,
+                    stat="work_not_expert",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=6,
+        branches=("tele",),
+    ),
+    Event(
+        "autobombo_telediario",
+        "📰 Informativos te ofrece cuatro minutos en el telediario de la propia cadena sobre tu "
+        "programa. «Es información, no publicidad», dice el director, sin que se le mueva "
+        "una ceja.",
+        (
+            (
+                "Que salga",
+                Outcome(
+                    "Cuatro minutos antes de la sequía. La audiencia sube, el defensor del "
+                    "espectador baja a la oficina y tú cobras un plus «por imagen».",
+                    followers=0.25,
+                    black=0.4,
+                    risk=0.15,
+                    caught_by="consumo",
+                    stat="work_selfpromo",
+                ),
+            ),
+            (
+                "Esto es autobombo",
+                Outcome(
+                    "«Esto es autobombo.» El director anota algo: «Con lo bien que se portaba "
+                    "el anterior». Esa semana sales en el telediario, pero como oyente.",
+                    followers=-0.05,
+                    performance=-10,
+                    stat="work_selfpromo_no",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=7,
+        branches=("tele",),
+    ),
+    Event(
+        "exclusiva_famoso",
+        "📸 Un famoso te vende por 20.000 € la exclusiva de su separación. Esa misma tarde, "
+        "su ex llama a la cadena con voz de abogado y el tono de quien ya ha redactado la "
+        "demanda.",
+        (
+            (
+                "Compro la exclusiva",
+                Outcome(
+                    "Pagas, emites y el programa bate récord de audiencia. Dos semanas "
+                    "después, la ex te demanda por intromisión en el honor. «Yo soy yo… y así "
+                    "me tienes que soportar.»",
+                    followers=0.3,
+                    battery=-10,
+                    family=-5,
+                    fine=0.6,
+                    risk=0.25,
+                    caught_by="honor",
+                    stat="work_exclusive_bought",
+                ),
+            ),
+            (
+                "No la compro",
+                Outcome(
+                    "La compra la otra cadena y bate récord con la historia. En tu comité "
+                    "alguien murmura «esto con el anterior no pasaba». Tú duermes bien.",
+                    performance=-15,
+                    family=5,
+                    stat="work_exclusive_refused",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=8,
+        branches=("tele",),
+    ),
+    Event(
+        "consejero_cuota",
+        "🪑 Un consejero de la cadena, sentado ahí por cuota de su partido, te pide que saques "
+        "en tu programa «a los suyos». «Es una cuestión de pluralidad», dice, y se ajusta la "
+        "corbata del color del partido.",
+        (
+            (
+                "Pluralidad",
+                Outcome(
+                    "Sacas a tres de los suyos en el sofá y a uno del otro partido, a las "
+                    "tres de la madrugada. Pluralidad total, y te renuevan el contrato.",
+                    pay=0.2,
+                    performance=15,
+                    stat="work_quota_obeyed",
+                ),
+            ),
+            (
+                "Aquí no se cuela nadie",
+                Outcome(
+                    "«Aquí no se cuela nadie.» Dos semanas después tu programa está a las "
+                    "tres de la madrugada, entre la teletienda y la carta de ajuste.",
+                    followers=-0.1,
+                    performance=-20,
+                    stat="work_quota_refused",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=8,
+        branches=("tele",),
+    ),
+    Event(
+        "campanadas_vestido",
+        "🔔 Te toca dar las Campanadas. Tu estilista te trae un vestido «atrevido» (de esos "
+        "que no dejan tragar las uvas) y el director, un traje gris «por si acaso».",
+        (
+            (
+                "El vestido polémico",
+                Outcome(
+                    "Doce uvas, un escote y diez millones de espectadores. Al día siguiente "
+                    "no se habla de otra cosa, y tu abuela te llama para decirte que «ya "
+                    "está bien».",
+                    followers=0.4,
+                    performance=-5,
+                    family=-5,
+                    stat="work_dress_bold",
+                ),
+            ),
+            (
+                "El traje gris",
+                Outcome(
+                    "Un traje discreto, las uvas en orden y cero polémica. Nadie habla de ti. "
+                    "Nadie recuerda quién dio las Campanadas, ni tú.",
+                    followers=-0.1,
+                    performance=5,
+                    stat="work_dress_safe",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=9,
+        branches=("tele",),
+    ),
+    Event(
+        "eurovision_boicot",
+        "🎤 Eurovisión se acerca y un grupo de países habla de boicot. La cadena tiene que "
+        "decidir si va o no, y tú vas a decidirlo sin mirar quién queda penúltimo.",
+        (
+            (
+                "Vamos, con bailarines",
+                Outcome(
+                    "Vamos. Una balada sobre la paz con bailarines en bañador y una "
+                    "bandera gigante. España queda penúltima, como siempre; la audiencia, "
+                    "primera.",
+                    followers=0.1,
+                    performance=10,
+                    stat="work_eurovision_go",
+                ),
+            ),
+            (
+                "Boicot",
+                Outcome(
+                    "Anuncias el boicot en el telediario. Tres días de portadas, una carta "
+                    "de protesta del festival y un cartel de «cobarde» en la prensa de "
+                    "enfrente.",
+                    followers=0.2,
+                    performance=-10,
+                    family=5,
+                    stat="work_eurovision_boycott",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=10,
+        branches=("tele",),
+    ),
+    # -- Influencer: Andorra --------------------------------------------------------------------
+    Event(
+        "carta_residencia",
+        "📨 Llega una carta de Hacienda: «Acredite su residencia en Andorra». Dudan de que "
+        "vivas allí desde que subiste un story con un cocido madrileño de fondo.",
+        (
+            (
+                "Recibos y fotos con nieve",
+                Outcome(
+                    "Contestas con el recibo de la luz de un piso vacío y una foto con "
+                    "nieve de hace seis años. Hacienda lo mira en silencio, que es lo peor.",
+                    followers=0.05,
+                    fine=0.8,
+                    risk=0.3,
+                    caught_by="hacienda",
+                    stat="work_residence_papers",
+                ),
+            ),
+            (
+                "Regularizo",
+                Outcome(
+                    "Reconoces que vives en España y regularizas. Duele, pero duermes "
+                    "tranquilo (y con la persiana subida).",
+                    performance=-5,
+                    family=5,
+                    battery=-5,
+                    stat="work_residence_regularized",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=6,
+        branches=("andorra",),
+    ),
+    Event(
+        "directo_gran_via",
+        "📹 En pleno directo pasa un autobús al fondo, con el rótulo de «Gran Vía». El chat "
+        "ruge: «¿No vivías en Andorra?».",
+        (
+            (
+                "Es un fondo virtual",
+                Outcome(
+                    "«Es un fondo virtual de una aplicación.» El chat te llama mentiroso "
+                    "con emojis y bate récord de espectadores. Hacienda también tiene la "
+                    "grabación.",
+                    followers=0.2,
+                    fine=0.6,
+                    risk=0.25,
+                    caught_by="hacienda",
+                    stat="work_gran_via_fake",
+                ),
+            ),
+            (
+                "Vengo de visita",
+                Outcome(
+                    "«Vengo a ver a mi madre, tres días.» El chat no te cree, tu madre sí, "
+                    "y alguien ya ha pillado el recibo de la luz del piso de Andorra.",
+                    followers=-0.1,
+                    family=5,
+                    stat="work_gran_via_visit",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=7,
+        branches=("andorra",),
+    ),
+    Event(
+        "energetica_taquicardia",
+        "⚡ Un cliente cuenta en redes que tu bebida energética le dio una taquicardia. "
+        "Lleva 800.000 visualizaciones y el vídeo se titula «Casi me muero por 1,99 €».",
+        (
+            (
+                "Letra pequeña en grande",
+                Outcome(
+                    "Pones «no apto para menores, embarazadas, ni para nadie con corazón» "
+                    "en letras gigantes. Las ventas suben: ahora es una bebida «peligrosa».",
+                    pay=0.2,
+                    followers=0.1,
+                    stat="work_energy_warning",
+                ),
+            ),
+            (
+                "Lo niego todo",
+                Outcome(
+                    "«Es sabor frambuesa, no taquicardia.» Cuatro días después, Consumo "
+                    "abre un expediente por el etiquetado. El cliente ya es influencer.",
+                    followers=-0.05,
+                    fine=0.8,
+                    risk=0.3,
+                    caught_by="etiquetado",
+                    stat="work_energy_denied",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=7,
+        branches=("andorra",),
+    ),
+    Event(
+        "velada_caida",
+        "🥊 En tu velada de boxeo, tu streamer estrella se cae solo en el primer asalto, "
+        "antes de que nadie le toque. Hay 12.000 personas en el recinto y 400.000 en directo.",
+        (
+            (
+                "Fue un golpe invisible",
+                Outcome(
+                    "Dices que ha sido «un golpe invisible, de técnica oriental». El vídeo "
+                    "de la caída tiene más visitas que el resto del cartel.",
+                    followers=0.25,
+                    battery=-10,
+                    stat="work_invisible_punch",
+                ),
+            ),
+            (
+                "Devuelvo las entradas",
+                Outcome(
+                    "Devuelves las entradas y organizas una revancha gratis. Pierdes la "
+                    "mitad de la caja y ganas aplausos, que no pagan el alquiler del recinto.",
+                    performance=10,
+                    family=5,
+                    stat="work_boxing_refund",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=8,
+        branches=("andorra",),
+    ),
+    Event(
+        "rug_pull_propio",
+        "🪙 Tu propia moneda lleva un año sin valer nada. Un fondo ofrece comprarla y tú "
+        "tienes el 90 % de los tokens. En el chat de Telegram, 40.000 «inversores» "
+        "escriben «hold».",
+        (
+            (
+                "Vendo y desaparezco",
+                Outcome(
+                    "Vendes todo en diez minutos y subes un story en una playa. La CNMV "
+                    "no tarda en preguntar. Tus 40.000 inversores, tampoco.",
+                    black=1.0,
+                    risk=0.3,
+                    caught_by="cnmv",
+                    followers=-0.5,
+                    stat="work_rugpull_own",
+                ),
+            ),
+            (
+                "Doy la cara",
+                Outcome(
+                    "Das la cara en un directo de tres horas y un «hold» heroico. Pierdes "
+                    "dinero y ganas respeto, que no se cobra pero luce en el currículum.",
+                    followers=-0.05,
+                    performance=10,
+                    family=-5,
+                    stat="work_rugpull_faced",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=9,
+        branches=("andorra",),
+    ),
+    Event(
+        "mitin_directo",
+        "🎙️ Estás dando un mitin por directo: 6.000 personas en el chat y 14 en la sala (tu "
+        "cuñado, su perro y doce becarios). Hay un bulo que dispara los números.",
+        (
+            (
+                "Con el bulo",
+                Outcome(
+                    "Lanzas el bulo. «¡Se acabó la fiesta!», gritas, y al acabar organizas "
+                    "una fiesta con 400 personas. La inmunidad te protege, tu cuñado graba.",
+                    followers=0.4,
+                    fine=0.7,
+                    risk=0.25,
+                    caught_by="suplicatorio",
+                    stat="work_rally_hoax",
+                ),
+            ),
+            (
+                "Sin bulos",
+                Outcome(
+                    "Hablas de cifras y de leyes. A los diez minutos quedan 7 personas en "
+                    "el chat: tu madre, su amiga y cinco bots rusos que se aburren.",
+                    followers=-0.1,
+                    performance=-10,
+                    stat="work_rally_clean",
+                ),
+            ),
+        ),
+        jobs=("influencer",),
+        min_level=10,
+        branches=("andorra",),
+    ),
     # -- Política: Moncloa --------------------------------------------------------------
     Event(
         "mocion",
@@ -9625,6 +10825,35 @@ CAUGHT_TEXT: dict[str, str] = {
     "sanidad_alimentaria": (
         "🩺 **La Inspección de Sanidad cierra la cámara.** Los huevos tenían más historia que "
         "tu local: multa por no cumplir la cadena de frío y un acta con tu nombre."
+    ),
+    "ordenacion_juego": (
+        "🎲 **La Dirección General de Ordenación del Juego te abre expediente.** Un sorteo sin "
+        "premio, sin bases y sin notario es una rifa ilegal con filtro: devuelves lo cobrado "
+        "con un 20 % de recargo."
+    ),
+    "campana": (
+        "🗳️ **La Junta Electoral y el Tribunal de Cuentas cruzan los gastos de campaña.** "
+        "El baile «espontáneo» con el candidato nunca se declaró: devuelves lo cobrado con un "
+        "20 % de recargo."
+    ),
+    "honor": (
+        "⚖️ **Un juzgado condena a la cadena por intromisión en el derecho al honor.** La "
+        "exclusiva costó 20.000 euros y la sentencia, algunos más: pagas la indemnización y "
+        "el famoso se compra un cuadro."
+    ),
+    "etiquetado": (
+        "🥤 **Consumo y la AESAN inspeccionan tu bebida energética.** La cafeína no estaba "
+        "donde la ley manda que esté y «sabor frambuesa» no es una advertencia: multa por "
+        "etiquetado engañoso."
+    ),
+    "cnmv": (
+        "🪙 **La CNMV te abre diligencias por tu moneda.** Un token sin folleto, con el 90 % en "
+        "tu cartera y una playa en el story: devuelves lo vendido con un 20 % de recargo."
+    ),
+    "suplicatorio": (
+        "🏛️ **El Parlamento Europeo estudia tu suplicatorio.** Tras seis meses de papeleo "
+        "bilingüe te levantan la inmunidad solo para la multa: pagas, conservas el escaño y "
+        "tu camiseta «Yo también soy perseguido» se agota."
     ),
     "junta_electoral": (
         "🗳️ **La Junta Electoral Central te abre expediente.** Los votos por correo "

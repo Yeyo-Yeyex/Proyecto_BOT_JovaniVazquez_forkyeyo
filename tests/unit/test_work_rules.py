@@ -523,6 +523,15 @@ def test_la_carrera_por_ramas() -> None:
     assert all(p.self_employed for p in funcionariado.branch("giratoria").positions)
     assert not any(p.self_employed for p in funcionariado.branch("alta").positions)
     assert funcionariado.branch("giratoria").pension < funcionariado.branch("alta").pension
+    influencer = JOB_BY_KEY["influencer"]
+    assert (influencer.trunk_top, influencer.top) == (5, 10) and influencer.forks(5)
+    assert influencer.position(10, "tele").title == "Presidente de RTVE"
+    assert influencer.position(10, "andorra").title == "Fundador de un partido antisistema"
+    assert all(p.self_employed for p in influencer.branch("andorra").positions)
+    assert not any(p.self_employed for p in influencer.branch("tele").positions)
+    assert influencer.branch("andorra").pension < influencer.branch("tele").pension
+    # La viralidad y los seguidores valen en todo el oficio, ramas incluidas.
+    assert influencer.viral
     # Un oficio sin ramas sigue igual.
     oficina = JOB_BY_KEY["oficina"]
     assert oficina.top == oficina.trunk_top == 5 and not oficina.forks(5)
@@ -700,6 +709,37 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert {"famoso_sociedad", "youtuber_padron"} <= inspector
     assert not {"famoso_sociedad", "youtuber_padron"} & (alta | giratoria)
     assert "famoso_sociedad" not in {e.key for e in events_for("funcionariado", 4, 100)}
+    tele = {e.key for e in events_for("influencer", 10, 100, branch="tele")}
+    andorra = {e.key for e in events_for("influencer", 10, 100, branch="andorra")}
+    celebrity = {e.key for e in events_for("influencer", 5, 100)}
+    tele_only = {
+        "tertulia_virologia",
+        "autobombo_telediario",
+        "exclusiva_famoso",
+        "consejero_cuota",
+        "campanadas_vestido",
+        "eurovision_boicot",
+    }
+    andorra_only = {
+        "carta_residencia",
+        "directo_gran_via",
+        "energetica_taquicardia",
+        "velada_caida",
+        "rug_pull_propio",
+        "mitin_directo",
+    }
+    assert tele_only <= tele and andorra_only <= andorra
+    assert not tele & andorra_only and not andorra & tele_only
+    assert not celebrity & (tele_only | andorra_only)
+    # Los del tronco siguen en las dos ramas; los de más nivel esperan a su puesto.
+    trunk_events = {"sorteo_falso", "reto_viral", "haul_ropa", "marca_en_producto", "funa"}
+    assert trunk_events <= celebrity and trunk_events <= tele & andorra
+    assert {"politico_baile", "chiste_viejo"} <= celebrity
+    assert "chiste_viejo" not in {e.key for e in events_for("influencer", 3, 100)}
+    assert "politico_baile" not in {e.key for e in events_for("influencer", 2, 100)}
+    assert "tertulia_virologia" not in {
+        e.key for e in events_for("influencer", 5, 100, branch="tele")
+    }
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:

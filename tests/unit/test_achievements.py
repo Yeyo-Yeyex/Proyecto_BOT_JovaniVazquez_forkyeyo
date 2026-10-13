@@ -410,6 +410,12 @@ PRODUCED_STATS = {
     "work_undersecretaries", "work_state_council", "work_wealth", "work_big_four",
     "work_sandwich", "work_mariachis", "work_andorra_desk", "work_caught_tribunal_cuentas",
     "work_caught_fiscalia",
+    # El influencer: las ramas Tele y Andorra
+    "work_top_influencer_tele", "work_top_influencer_andorra", "work_retired_influencer",
+    "work_tertulia", "work_escaleta", "work_guests", "work_share", "work_rtve",
+    "work_subathon", "work_brand", "work_boxing", "work_rug_spotted", "work_party",
+    "work_caught_ordenacion_juego", "work_caught_campana", "work_caught_honor",
+    "work_caught_etiquetado", "work_caught_cnmv", "work_caught_suplicatorio",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

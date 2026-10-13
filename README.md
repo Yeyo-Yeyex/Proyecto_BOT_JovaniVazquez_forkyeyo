@@ -268,7 +268,7 @@ python -m bot
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
   funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
-  obra, la sanidad, la hostelería, el reparto y el funcionariado, que ya tienen la carrera larga: 5 puestos de
+  obra, la sanidad, la hostelería, el reparto, el funcionariado y el influencer, que ya tienen la carrera larga: 5 puestos de
   tronco y dos ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
@@ -281,10 +281,13 @@ python -m bot
   fundador de la app y sigue por 📮 Correos (hasta presidente de Correos, en
   nómina) o 🚀 Imperio logístico (hasta multimillonario con cohete propio,
   autónomo; la valoración de la app solo cuenta en el tronco);
-  y el funcionariado va de interino a
+  el funcionariado va de interino a
   inspector de Hacienda y sigue por 🏛️ Alta Administración (hasta consejero de
   Estado, en nómina, con plaza fija y trienios) o 💼 Puerta giratoria (hasta
-  asesor de fortunas en Andorra, autónomo, sin plaza fija ni trienios).
+  asesor de fortunas en Andorra, autónomo, sin plaza fija ni trienios); y el
+  influencer va de tiktoker de barrio a celebrity de reality y sigue por 📺 Tele
+  (hasta presidente de RTVE, en nómina de la cadena) o 🇦🇩 Andorra (hasta fundador
+  de un partido antisistema, autónomo).
   Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
@@ -330,7 +333,9 @@ python -m bot
   un trienio (+5 %, hasta 8); en la Puerta giratoria pides la excedencia
   voluntaria y no tienes ni plaza fija ni trienios. El **influencer**
   cobra a golpes: casi siempre se queda corto y a veces se hace viral (hasta
-  ×15), suma seguidores y sufre funas. **Carrera larga**, como en los Sims: al
+  ×15), suma seguidores y sufre funas, y eso en todo el oficio, también en la
+  tele (tertulias, audiencias, consejos por cuotas) y en Andorra (bebidas
+  energéticas, veladas de boxeo, cripto y un partido). **Carrera larga**, como en los Sims: al
   acabar el tronco se elige rama; cada puesto da una ventaja 🏅 para siempre
   (más tiempo, un fallo gratis, menos cansancio…); en lo más alto de una rama
   te puedes **jubilar** y seguir por la otra, con una **pensión** diaria que se

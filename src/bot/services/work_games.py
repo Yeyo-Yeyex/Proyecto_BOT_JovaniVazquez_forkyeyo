@@ -21,7 +21,8 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
   partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet,
   el paquete perdido, la disposición colada en una ley, el inversor de verdad
-  entre los mariachis). Acertar suma.
+  entre los mariachis, el programa que hunde la audiencia, el proyecto cripto que es un
+  timo). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -66,6 +67,10 @@ from bot.services.work_catalog import (
     RIDER_SLACKING,
     RIDER_WORKING,
     RIDERS_NORMAL,
+    RUG_SERIOS,
+    RUG_TIMOS,
+    SHARE_HITS,
+    SHARE_SINKS,
     SICAV_MARIACHIS,
     SICAV_REAL,
     SLACKING,
@@ -629,6 +634,31 @@ def _mariachis(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
     return "🎺 Consejero de una SICAV: para llegar a cien socios hace falta mucho mariachi.", built
 
 
+def _share(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📺 Parrilla {n}/{total}. ¿Qué programa está hundiendo la audiencia?",
+        good=SHARE_SINKS,
+        bad=SHARE_HITS,
+        label="Programa",
+    )
+    return "📊 Diriges la cadena. Entre cinco programas hay uno que se come el share.", built
+
+
+def _rugpull(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🪙 Proyecto {n}/{total}. ¿Cuál es el rug pull (el que se llevará el dinero y "
+        "desaparecerá)?",
+        good=RUG_TIMOS,
+        bad=RUG_SERIOS,
+        label="Proyecto",
+    )
+    return "🚀 Eres gurú cripto: recomienda lo que quieras, pero distingue el timo.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -646,6 +676,8 @@ _SPOT = {
     "inspector_trabajo": _labour_inspector,
     "colada": _colada,
     "mariachis": _mariachis,
+    "share": _share,
+    "rugpull": _rugpull,
 }
 
 

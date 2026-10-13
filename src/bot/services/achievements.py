@@ -9017,8 +9017,275 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "colab", "Colab", "Haz un vídeo con otro influencer.", C),
     ])  # fmt: skip
     a += _tiers("influencer", "work_top_influencer", [
-        (1, "celebrity", "Celebrity", "Llega a celebrity de reality.", L),
+        (1, "celebrity", "De tiktoker de barrio a lo más alto (con share o sin impuestos)",
+         "Llega a lo más alto del influencer: presidente de RTVE o fundador de un partido "
+         "antisistema.", L),
     ])  # fmt: skip
+
+    # 🤳 Influencer: el tronco, la Tele y Andorra --------------------------------------------
+    a += _tiers("influencer", "work_top_influencer_tele", [
+        (1, "inf_tele_top", "Presidente de RTVE (por cuota, claro)",
+         "Llega a presidente de RTVE (rama 📺 Tele).", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_top_influencer_andorra", [
+        (1, "inf_andorra_top", "Escaño en Estrasburgo, empadronado en Andorra",
+         "Llega a fundador de un partido antisistema (rama 🇦🇩 Andorra).", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_retired_influencer", [
+        (1, "inf_jubilado", "Jubilado con tertulia vitalicia (o con criptos)",
+         "Jubílate de una rama del influencer.", L),
+        (2, "inf_pension_y_piso", "Pensión de la tele y piso en Andorra (vacío)",
+         "Jubílate de la Tele y de Andorra.", L, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_tertulia", [
+        (30, "inf_tertulia_30", "Opinión sin fundamento, pero con aplomo",
+         "Acierta 30 respuestas como tertuliano.", E),
+        (300, "inf_tertulia_300", "Opina de todo, sabe de nada, no rectifica nunca",
+         "Acierta 300 respuestas como tertuliano.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_escaleta", [
+        (15, "inf_escaleta_15", "Escaleta sin huecos (ni tiempo)",
+         "Cumple 15 escaletas perfectas como presentador de magacín.", E),
+        (150, "inf_escaleta_150", "La receta, el horóscopo y la lluvia, otra vez",
+         "Cumple 150 escaletas perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_guests", [
+        (30, "inf_invitados_30", "Cada famoso en su sofá",
+         "Manda 30 invitados a su bloque como presentador de prime time.", E),
+        (300, "inf_invitados_300", "Cuatro horas de programa y nadie se ha ido a casa",
+         "Manda 300 invitados a su bloque.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_share", [
+        (25, "inf_share_25", "Share con lupa",
+         "Encuentra 25 programas que hunden la audiencia como director de cadena.", E),
+        (250, "inf_share_250", "El consejo te quiere (hasta el próximo trimestre)",
+         "Encuentra 250 programas que hunden la audiencia.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rtve", [
+        (25, "inf_rtve_25", "Todos los partidos, igual de molestos",
+         "Acierta 25 respuestas como presidente de RTVE.", L),
+        (250, "inf_rtve_250", "Presidente por consenso (de nadie)",
+         "Acierta 250 respuestas como presidente de RTVE.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_subathon", [
+        (15, "inf_subathon_15", "Veinticuatro horas y ni una alerta perdida",
+         "Atiende 15 subathons perfectos como streamer exiliado.", E),
+        (150, "inf_subathon_150", "El TTS ya te conoce por tu nombre",
+         "Atiende 150 subathons perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_brand", [
+        (30, "inf_marca_30", "Cada idea en su lata",
+         "Manda 30 ideas a su cajón como dueño de una bebida energética.", E),
+        (300, "inf_marca_300", "Tres contenedores de jarabe y ninguna demanda (aún)",
+         "Manda 300 ideas a su cajón.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_boxing", [
+        (30, "inf_velada_30", "Cara a cara de cartel",
+         "Acierta 30 respuestas como organizador de veladas de boxeo.", E),
+        (300, "inf_velada_300", "El combate es lo de menos",
+         "Acierta 300 respuestas como organizador de veladas.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rug_spotted", [
+        (25, "inf_rugpull_25", "Olfato anti-timo",
+         "Encuentra 25 proyectos que eran un rug pull como gurú cripto.", E),
+        (250, "inf_rugpull_250", "Ni una sola vez a la luna",
+         "Encuentra 250 proyectos que eran un rug pull.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_party", [
+        (25, "inf_partido_25", "Contra la casta (con dietas)",
+         "Acierta 25 respuestas como fundador de un partido antisistema.", E),
+        (250, "inf_partido_250", "Se acabó la fiesta (la tuya, no)",
+         "Acierta 250 respuestas como fundador de un partido.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("influencer", "work_giveaway_fake", [
+        (1, "inf_sorteo_mango", "Everybody want mango (nadie lo recibió)",
+         "Haz un sorteo falso de un móvil que no existe.", R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_giveaway_real", [
+        (1, "inf_sorteo_notario", "Un bizcocho de Albacete",
+         "Haz un sorteo de verdad, con notario.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_challenge_done", [
+        (1, "inf_reto_carrito", "Yo soy yo… y esto es un carrito",
+         "Baja la cuesta en un carrito del súper por un reto viral.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_challenge_stunt", [
+        (1, "inf_reto_doble", "El doble tenía bigote",
+         "Manda a un doble a hacer el reto viral.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_haul_honest", [
+        (1, "inf_haul_sincero", "Esto es un robo, en 4K",
+         "Haz un haul sincero de la ropa de 2 euros.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_haul_filters", [
+        (1, "inf_haul_filtros", "La cremallera en la manga es tendencia",
+         "Haz el haul con tres filtros.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_paid_in_kind", [
+        (1, "inf_champu", "Hipoteca pagada en visibilidad",
+         "Acepta que una marca te pague en champú.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_paid_in_cash", [
+        (1, "inf_euros_no_champu", "El champú no paga el alquiler",
+         "Exige que una marca te pague en euros.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_politician_dance", [
+        (1, "inf_baile_candidato", "Tres pasos y tres votos",
+         "Baila con un candidato en plena campaña.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_politician_refused", [
+        (1, "inf_paso_politica", "Yo no hago política (todavía)",
+         "Rechaza bailar con el candidato.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_old_joke_apology", [
+        (1, "inf_chiste_perdon", "Sudadera gris, tercera temporada",
+         "Pide perdón por un chiste de hace diez años.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_old_joke_defended", [
+        (1, "inf_chiste_reivindico", "Era humor (hace diez años y también hoy)",
+         "Reivindica tu chiste de hace diez años.", R, True),
+    ])  # fmt: skip
+
+    # Eventos de la rama Tele
+    a += _tiers("influencer", "work_opine_all", [
+        (1, "inf_tertulia_opino", "De virología a las ocho y de fútbol a las nueve",
+         "Opina de todo con aplomo en la tertulia.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_not_expert", [
+        (1, "inf_no_experto", "«No soy experto» (y te quitan la silla)",
+         "Di en plena tertulia que no eres experto.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_selfpromo", [
+        (1, "inf_autobombo", "Cuatro minutos antes de la sequía",
+         "Sal en el telediario de tu cadena promocionando tu programa.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_selfpromo_no", [
+        (1, "inf_autobombo_no", "Esto es autobombo, señor director",
+         "Rechaza el autobombo en el telediario.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_exclusive_bought", [
+        (1, "inf_exclusiva_si", "Exclusiva a 20.000 y demanda de regalo",
+         "Compra la exclusiva de la separación de un famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_exclusive_refused", [
+        (1, "inf_exclusiva_no", "Que la compre la competencia",
+         "Rechaza comprar la exclusiva de un famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_quota_obeyed", [
+        (1, "inf_cuota_si", "Pluralidad a las tres de la madrugada",
+         "Saca en tu programa a los invitados del consejero.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_quota_refused", [
+        (1, "inf_cuota_no", "Aquí no se cuela nadie (ni tú, después de las tres)",
+         "Niégate a sacar a los invitados del consejero.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_dress_bold", [
+        (1, "inf_vestido", "Doce uvas y un escote",
+         "Da las Campanadas con el vestido polémico.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_dress_safe", [
+        (1, "inf_traje_gris", "Nadie recuerda quién dio las Campanadas",
+         "Da las Campanadas con el traje gris.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_eurovision_go", [
+        (1, "inf_eurovision_vamos", "Penúltimos, como manda la tradición",
+         "Lleva a España a Eurovisión pese al boicot.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_eurovision_boycott", [
+        (1, "inf_eurovision_boicot", "Boicot en el telediario",
+         "Anuncia el boicot a Eurovisión.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Andorra
+    a += _tiers("influencer", "work_residence_papers", [
+        (1, "inf_recibos_nieve", "Recibo de la luz de un piso vacío",
+         "Contesta a Hacienda con recibos y una foto con nieve de hace seis años.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_residence_regularized", [
+        (1, "inf_regularizo", "Duele, pero con la persiana subida",
+         "Regulariza tu residencia cuando Hacienda duda de Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_gran_via_fake", [
+        (1, "inf_gran_via_croma", "Es un fondo virtual (y es la Gran Vía)",
+         "Di que la Gran Vía de tu directo es un fondo virtual.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_gran_via_visit", [
+        (1, "inf_gran_via_visita", "Vengo a ver a mi madre, tres días",
+         "Di que estás en Madrid solo de visita.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_energy_warning", [
+        (1, "inf_energetica_aviso", "Apto para nadie con corazón",
+         "Pon una advertencia gigante en tu bebida energética.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_energy_denied", [
+        (1, "inf_energetica_niego", "Sabor frambuesa, no taquicardia",
+         "Niega que tu bebida energética dé taquicardias.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_invisible_punch", [
+        (1, "inf_golpe_invisible", "Técnica oriental, golpe invisible",
+         "Di que a tu boxeador lo ha tumbado un golpe invisible.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_boxing_refund", [
+        (1, "inf_velada_reembolso", "Revancha gratis y la caja a la mitad",
+         "Devuelve las entradas de tu velada de boxeo.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rugpull_own", [
+        (1, "inf_rugpull_propio", "Una playa en el story y 40.000 «hold»",
+         "Vende toda tu moneda y desaparece (rug pull).", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rugpull_faced", [
+        (1, "inf_rugpull_cara", "Un «hold» heroico",
+         "Da la cara en directo cuando tu moneda se desploma.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rally_hoax", [
+        (1, "inf_mitin_bulo", "Se acabó la fiesta (y empezó la mía)",
+         "Da un mitin por directo con un bulo.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rally_clean", [
+        (1, "inf_mitin_limpio", "Siete personas y cinco bots",
+         "Da un mitin por directo sin bulos.", E),
+    ])  # fmt: skip
+
+    # Pillados
+    a += _tiers("influencer", "work_caught_ordenacion_juego", [
+        (1, "inf_pillado_juego", "Rifa ilegal con filtro de belleza",
+         "Que Ordenación del Juego te pille el sorteo falso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_campana", [
+        (1, "inf_pillado_campana", "Baile espontáneo, gasto de campaña",
+         "Que te pillen por el baile con el candidato.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_honor", [
+        (1, "inf_pillado_honor", "Intromisión en el honor (y en tu cartera)",
+         "Que te condenen por la exclusiva del famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_etiquetado", [
+        (1, "inf_pillado_etiquetado", "Sabe a frambuesa, avisa de nada",
+         "Que Consumo te pille el etiquetado de la bebida energética.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_cnmv", [
+        (1, "inf_pillado_cnmv", "La CNMV pregunta por tu playa",
+         "Que la CNMV te pille el rug pull de tu moneda.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_suplicatorio", [
+        (1, "inf_pillado_suplicatorio", "Inmunidad con asterisco",
+         "Que el Parlamento Europeo te levante la inmunidad por un bulo.", E, True),
+    ])  # fmt: skip
+    a += [
+        combo("inf_honrado", "Influencer de los que ya no quedan",
+              "Haz un sorteo de verdad, un haul sincero y pide perdón por el chiste de hace "
+              "diez años.", "influencer", L,
+              (("work_giveaway_real", 1), ("work_haul_honest", 1),
+               ("work_old_joke_apology", 1))),
+        combo("inf_sin_escrupulos", "Sin escrúpulos y con seguidores",
+              "Haz un sorteo falso, un haul con filtros y reivindica el chiste de hace diez "
+              "años.", "influencer", L,
+              (("work_giveaway_fake", 1), ("work_haul_filters", 1),
+               ("work_old_joke_defended", 1)),
+              secret=True),
+    ]  # fmt: skip
 
     # 🪏 Carrera larga: deseo del día, ramas, jubilación y pensión --------------------------
     a += _tiers("work", "work_wishes", [
@@ -12888,6 +13155,16 @@ _WORK_CONTENT_STATS = {
     "sandwich": "work_sandwich",
     "mariachis": "work_mariachis",
     "andorra": "work_andorra_desk",
+    "tertulia": "work_tertulia",
+    "escaleta": "work_escaleta",
+    "invitados": "work_guests",
+    "share": "work_share",
+    "rtve": "work_rtve",
+    "subathon": "work_subathon",
+    "marca": "work_brand",
+    "velada": "work_boxing",
+    "rugpull": "work_rug_spotted",
+    "partido": "work_party",
 }
 
 
@@ -13096,5 +13373,7 @@ MEMORY_CONTENT = frozenset(
         "dark_store",
         "expediente",
         "sandwich",
+        "escaleta",
+        "subathon",
     }
 )

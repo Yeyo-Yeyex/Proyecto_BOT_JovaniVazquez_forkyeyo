@@ -1025,6 +1025,29 @@ async def test_la_funa_quita_seguidores_y_cambiar_de_curro_no(tmp_path: Path, di
     assert status is not None and status.contract.followers == 700
 
 
+async def test_un_turno_de_tertuliano_suma_su_contenido_y_sigue_moviendo_los_seguidores(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "viral_roll", lambda rng: MEGAVIRAL)
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "influencer")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "tele"
+    status.contract.followers = 1_000
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Tertuliano"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    gained = follower_gain(outcome.score, 6, MEGAVIRAL)
+    assert outcome.viral == MEGAVIRAL and outcome.followers_gained == gained
+    assert outcome.followers == 1_000 + gained
+    stats = work_stats(outcome)
+    assert stats.add["work_tertulia"] == len(shift.game.rounds)
+    assert stats.add["work_viral"] == 1
+
+
 # -- Carrera larga: ramas, ventajas, jubilación, pensión y deseo del día ----------------------
 
 POLITICA = JOB_BY_KEY["politica"]
