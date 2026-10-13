@@ -95,7 +95,6 @@ from bot.services.economy import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
-from bot.services.skins import TAPETE
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.interactions import ack, notify
 from bot.utils.responder import ContextResponder
@@ -374,6 +373,9 @@ class TableView(discord.ui.View):
         self._add("Repetir", "🔁", discord.ButtonStyle.secondary, table.repeat, 1)
         self._add("Doblar", "⏫", discord.ButtonStyle.secondary, table.double, 1)
         self._add("¡Cartas!", "🃏", discord.ButtonStyle.success, table.mark_ready, 1)
+        # El 🎨: el tapete de cada uno, que se ve en las mesas que abra.
+        if (paint := tienda.skin_button(table.cog.bot, GAME, row=1)) is not None:
+            self.add_item(paint)
         if disabled:
             for item in self.children:
                 if isinstance(item, discord.ui.Button):
@@ -1133,8 +1135,8 @@ class Bacara(commands.Cog, name="Bacará"):
         table = None
         try:
             state = self.shoe_for(channel_id)
-            skin = tienda.tapete(self.bot, guild_id, opener_id)
-            worn = tienda.skin_of(self.bot, guild_id, opener_id, TAPETE)
+            skin = tienda.skin_params(self.bot, guild_id, opener_id, GAME)
+            worn = tienda.skin_of(self.bot, guild_id, opener_id, GAME)
             png = await self.renderer.board(state.results, state.header(), state.last, skin=skin)
             table = Table(
                 self,

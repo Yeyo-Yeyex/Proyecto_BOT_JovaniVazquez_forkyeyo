@@ -194,7 +194,7 @@ class BusView(ui.View):
         self.seed = 0
         #: Animaciones que se dibujan por adelantado, por mano (1-5) de `deck`.
         self._reveals: dict[int, asyncio.Task[Reveal]] = {}
-        #: El tapete del dueño (`tienda.tapete`): se mira al barajar y vale toda la partida.
+        #: El tapete del dueño (`tienda.skin_params`): se mira al barajar y vale toda la partida.
         self.skin: dict[str, object] = {}
         self.new_deck()
 
@@ -203,7 +203,7 @@ class BusView(ui.View):
     def new_deck(self) -> None:
         """Sortea las cartas de la próxima partida y empieza a dibujar su primera mano."""
         self.cancel_reveals()
-        self.skin = tienda.tapete(self.cog.bot, self.guild_id, self.owner.id)
+        self.skin = tienda.skin_params(self.cog.bot, self.guild_id, self.owner.id, GAME)
         self.deck = deal(self.cog.rng)
         self.seed = self.cog.rng.randrange(1, 2**31)
         self.prepare(1)
@@ -397,6 +397,10 @@ class BusView(ui.View):
             self._button("×2", "x2", self._double, row=1, disabled=busy)
             self._button("💰 All-in", "allin", self._all_in, row=1, disabled=busy)
         self._button("📋 Tabla", "table", self._paytable, row=1)
+        # El 🎨: elegir o comprar el tapete de esta mesa (no cambia la jugada).
+        if (paint := tienda.skin_button(self.cog.bot, GAME, row=1)) is not None:
+            paint.disabled = busy
+            self.add_item(paint)
 
     def _pick_callback(self, pick: Pick) -> Callable[[discord.Interaction], Awaitable[None]]:
         async def callback(interaction: discord.Interaction) -> None:
@@ -857,7 +861,8 @@ class Bus(commands.Cog, name="Autobús"):
 
         # La mesa vacía va antes que la mesa: al crearla empieza a dibujarse la
         # primera mano, y el navegador dibuja de uno en uno.
-        png = await self.renderer.board(Board(), skin=tienda.tapete(self.bot, guild.id, user.id))
+        skin = tienda.skin_params(self.bot, guild.id, user.id, GAME)
+        png = await self.renderer.board(Board(), skin=skin)
         view = BusView(self, guild_id=guild.id, owner=user, stake=stake)
         view.channel = channel
         view.balance = balance

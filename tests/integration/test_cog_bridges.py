@@ -917,7 +917,7 @@ async def test_la_ruleta_pinta_con_la_skin_de_la_tienda_con_el_bot_real(tmp_path
         await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
         casino = client.get_cog("Casino")
         assert casino.skin(GUILD_ID, OWNER_ID)["key"] == "serie"
-        await tienda.wear_skin(GUILD_ID, OWNER_ID, "tapete", SKIN_BY_KEY["ruleta_granate"])
+        await tienda.wear_skin(GUILD_ID, OWNER_ID, "ruleta", SKIN_BY_KEY["ruleta_granate"])
         assert casino.skin(GUILD_ID, OWNER_ID)["key"] == "ruleta_granate"
         # Los logros piden las skins de regalo a la tienda del bot cargado.
         shop_module = importer("Tienda", client)

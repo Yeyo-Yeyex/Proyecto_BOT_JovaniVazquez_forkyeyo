@@ -199,10 +199,11 @@ python -m bot
   - Las compras de 100.000 Y$ o más se anuncian con un pregón en el canal.
   - Skins (pestaña 🎨 Skins): cambian el aspecto de una mesa del casino sin
     tocar cómo se juega. Los tapetes valen para todas las mesas con fieltro
-    (ruleta, autobús, bacará, dados, moneda y pollo): granate, de oro, rojigualda,
-    de Israel, del Teide y monoestrellado. Los gallos tienen las suyas. Se
-    compran, se ganan con logros o se venden solo en su temporada; se cambian
-    en la mochila o con el botón 🎨 de la mesa. Las
+    (ruleta, autobús, bacará, dados, moneda y pollo) y cada mesa lleva el suyo:
+    granate, de oro, rojigualda, de Israel, del Teide y monoestrellado. Los
+    gallos tienen las suyas. Se compran (también desde el 🎨 de la mesa), se
+    ganan con logros o se venden solo en su temporada; se cambian en la
+    mochila o con el botón 🎨 de la mesa. Las
     reglas para añadir skins y abrir más juegos están en la Biblia.
   - Surtido de serie: 265 artículos a la venta (228 objetos, 15
     potenciadores y 22 mascotas) que se meten solos en cada servidor la
