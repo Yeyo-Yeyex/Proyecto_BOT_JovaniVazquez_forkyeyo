@@ -284,8 +284,8 @@ python -m bot
   La familia ❤️ es el freno al que encadena turnos: cada turno cuesta, se
   recupera sola por horas y, según su tramo (de 🏡 en casa feliz a 💔 en
   crisis), la batería recarga más rápido o más lento y la barra sube más o
-  menos. Se sube con los regalos del pasillo 🏠 Detalles para la familia (el
-  botón 🎁 del panel lleva allí) y se gasta pidiendo favores: el tupper de tu
+  menos. Se sube con los regalos del pasillo 🏠 Detalles para la familia, que
+  el desplegable ❤️ del panel da si los tienes o compra y da en el acto si no, y se gasta pidiendo favores: el tupper de tu
   madre, que te cubra el saliente, la excusa para librarte de un marrón o un
   Bizum de mamá que se devuelve con la mitad de cada turno.
   Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,

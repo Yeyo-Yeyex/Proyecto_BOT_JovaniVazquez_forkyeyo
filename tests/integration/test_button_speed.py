@@ -531,6 +531,29 @@ async def press_pala_gift_shop(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pala_buy_gift(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._buy_gift(interaction, "flores_mama")
+
+    return click
+
+
+async def press_pala_pay_gift(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+    await client.economy.grant(GUILD_ID, owner.id, amount=10_000, reason="prueba")
+    interaction = fake_interaction(owner)
+    interaction.guild = MagicMock(spec=discord.Guild)
+    interaction.guild.id = GUILD_ID
+    await panel._buy_gift(interaction, "flores_mama")
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._pay_gift(interaction)
+
+    return click
+
+
 async def press_pala_dodge(client: BotClient, owner: MagicMock) -> Click:
     panel = await obra_panel(client, owner)
     panel.pending_event = module_of(client, "Trabajo").EVENT_BY_KEY["quedarse"]
@@ -768,6 +791,8 @@ CASES: dict[str, Press] = {
     "pala: pedir un favor a la familia": press_pala_favor,
     "pala: dar un regalo": press_pala_gift,
     "pala: ir a los regalos de la tienda": press_pala_gift_shop,
+    "pala: caja de un regalo": press_pala_buy_gift,
+    "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
     "tienda: lucir un título": press_wear_title,
