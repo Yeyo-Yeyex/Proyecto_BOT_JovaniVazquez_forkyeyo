@@ -19,7 +19,7 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
-  partida con sobrecoste, la cláusula de letra pequeña). Acertar suma.
+  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -46,6 +46,10 @@ from bot.services.work_catalog import (
     DIG_DANGERS,
     DIG_HINTS,
     DIG_MARKS,
+    DINERS_NORMAL,
+    GATECRASHERS,
+    GUESTS_LEGIT,
+    INSPECTOR_TELLS,
     MEMORY_PACKS,
     POLICY_FINE,
     POLICY_TRAPS,
@@ -536,6 +540,30 @@ def _fine_print(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
     return "🔍 Eres médico de mutua. Antes de autorizar, encuentra la letra pequeña.", built
 
 
+def _gatecrashers(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🟢 Buffet {n}/{total}. ¿Quién se ha colado sin pulsera del todo incluido?",
+        good=GATECRASHERS,
+        bad=GUESTS_LEGIT,
+        label="Huésped",
+    )
+    return "🔍 Diriges un resort. Antes de cobrar el buffet, pilla al colado.", built
+
+
+def _guide_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🔎 Sala {n}/{total}. ¿Quién es el inspector de la Guía?",
+        good=INSPECTOR_TELLS,
+        bad=DINERS_NORMAL,
+        label="Mesa",
+    )
+    return "⭐ Tu estrella está en juego. Descubre al inspector antes del postre.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -547,6 +575,8 @@ _SPOT = {
     "inspeccion": _audits,
     "colaboraciones": _collabs,
     "letra_pequena": _fine_print,
+    "colados": _gatecrashers,
+    "inspector": _guide_inspector,
 }
 
 

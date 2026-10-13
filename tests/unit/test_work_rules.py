@@ -499,10 +499,17 @@ def test_la_carrera_por_ramas() -> None:
     assert not any(p.self_employed for p in sanidad.branch("publica").positions)
     # Las guardias siguen en las ramas: en sanidad se rinde con ellas hasta arriba.
     assert sanidad.has_guards(10)
-    # Un oficio sin ramas sigue igual.
     hosteleria = JOB_BY_KEY["hosteleria"]
-    assert hosteleria.top == hosteleria.trunk_top == 5 and not hosteleria.forks(5)
-    assert hosteleria.ladders == (("", hosteleria.positions),)
+    assert (hosteleria.trunk_top, hosteleria.top) == (5, 10) and hosteleria.forks(5)
+    assert hosteleria.position(10, "hotel").title == "Presidente de la patronal turística"
+    assert hosteleria.position(10, "estrella").title == "Gurú gastronómico con franquicias en Dubái"
+    assert all(p.self_employed for p in hosteleria.branch("estrella").positions)
+    assert not any(p.self_employed for p in hosteleria.branch("hotel").positions)
+    assert hosteleria.branch("estrella").pension < hosteleria.branch("hotel").pension
+    # Un oficio sin ramas sigue igual.
+    oficina = JOB_BY_KEY["oficina"]
+    assert oficina.top == oficina.trunk_top == 5 and not oficina.forks(5)
+    assert oficina.ladders == (("", oficina.positions),)
 
 
 def test_las_ventajas_son_las_de_los_puestos_por_los_que_has_pasado() -> None:
@@ -567,6 +574,36 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert not publica & privada - {e.key for e in events_for("sanidad", 5, 100)}
     assert {"cancun", "contrato_dia", "cama_guardias"} <= publica & privada
     assert "giratoria_salud" not in {e.key for e in events_for("sanidad", 9, 100, branch="publica")}
+    hotel = {e.key for e in events_for("hosteleria", 10, 100, branch="hotel")}
+    estrella = {e.key for e in events_for("hosteleria", 10, 100, branch="estrella")}
+    tronco = {e.key for e in events_for("hosteleria", 5, 100)}
+    hotel_only = {
+        "balconing",
+        "overbooking",
+        "tasa_turistica",
+        "costas",
+        "kellys",
+        "falcon_huesped",
+        "lobby_pisos",
+        "canarias_limite",
+    }
+    estrella_only = {
+        "stagier",
+        "inspector_guia",
+        "alergico",
+        "tortilla",
+        "presentador_gritos",
+        "jeque_oro",
+        "espumas",
+        "inspeccion_sanidad",
+    }
+    assert hotel_only <= hotel and estrella_only <= estrella
+    assert not hotel & estrella_only and not estrella & hotel_only
+    assert not tronco & (hotel_only | estrella_only)
+    assert {"contrato_4h", "paella_chorizo", "no_camareros", "propina"} <= hotel & estrella
+    assert "no_camareros" in tronco and "ola_calor" not in {
+        e.key for e in events_for("hosteleria", 3, 100)
+    }
     # La obra pública y la sanidad pública comparten clave de rama, no eventos.
     assert not publica & {"modificado", "inauguracion", "aeropuerto", "muro"}
 

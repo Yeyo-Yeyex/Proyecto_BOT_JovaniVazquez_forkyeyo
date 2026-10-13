@@ -532,6 +532,26 @@ async def test_en_la_rama_publica_la_guardia_cuadra_quirofanos_y_cuenta_la_noche
     assert work_stats(outcome).add["work_guard_nye"] == 1
 
 
+async def test_en_la_rama_hotelera_las_pulseras_cuentan_en_los_logros(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "hosteleria")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    # Nivel y rama a la vez: un puesto de rama sin rama se baja al tronco.
+    status.contract.level, status.contract.branch = 6, "hotel"
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Director de hotel en primera línea"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    add = work_stats(outcome).add
+    assert add["work_wristbands"] == len(shift.game.rounds)
+
+
 # -- Oficina: teletrabajo, stock options --------------------------------------------
 
 

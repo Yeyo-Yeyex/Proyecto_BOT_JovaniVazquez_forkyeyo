@@ -262,6 +262,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
     Category("jobs", "👷 Oficios"),
+    Category("hosteleria", "🍽️ Hostelería"),
     Category("sanidad", "🏥 Sanidad"),
     Category("oficina", "💻 Oficina"),
     Category("reparto", "🛵 Reparto"),
@@ -5797,20 +5798,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "constructor", "Constructor de aeropuertos sin aviones",
          "Llega a presidente de una constructora del IBEX (rama 🚄 Obra pública).", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_perfect_orders", [
+    a += _tiers("hosteleria", "work_perfect_orders", [
         (100, "una_cana", "Ponme una caña", "Saca 100 comandas perfectas.", E),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_tip", [
+    a += _tiers("hosteleria", "work_tip", [
         (1, "propina", "Propina de guiri", "Guárdate una propina en el bolsillo.", C),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_dine_dash", [
+    a += _tiers("hosteleria", "work_dine_dash", [
         (1, "sinpa", "Ni un sinpa", "Persigue a una mesa que se iba sin pagar.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_happy_clients", [
+    a += _tiers("hosteleria", "work_happy_clients", [
         (30, "cliente_razon", "El cliente siempre tiene razón", "Atiende bien 30 marrones.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_top_hosteleria", [
-        (1, "chiringuito", "Chiringuito propio", "Llega a dueño del chiringuito.", E),
+    a += _tiers("hosteleria", "work_top_hosteleria", [
+        (1, "chiringuito", "Del estropajo a lo más alto",
+         "Llega a lo más alto de la hostelería: presidente de la patronal o gurú de Dubái.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_perfect_votes", [
         (1, "voto_1", "Primer botonazo", "Vota una vez lo que diga el partido.", C),
@@ -5882,10 +5884,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_overruns", [
         (100, "overruns_100", "Tribunal de Cuentas", "Encuentra 100 sobrecostes.", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_perfect_orders", [
+    a += _tiers("hosteleria", "work_perfect_orders", [
         (500, "orders_500", "Camarero de la Estrella Michelin", "Saca 500 comandas perfectas.", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_happy_clients", [
+    a += _tiers("hosteleria", "work_happy_clients", [
         (150, "clients_150", "El cliente siempre tiene razón (no)",
          "Atiende bien 150 marrones.", E),
     ])  # fmt: skip
@@ -5916,10 +5918,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_caught_uco", [
         (5, "uco_5", "Cliente habitual de la UCO", "Que te pille la UCO 5 veces.", L, True),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_tip", [
+    a += _tiers("hosteleria", "work_tip", [
         (50, "propinas_50", "Bote de propinas", "Guárdate 50 propinas en el bolsillo.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_dine_dash", [
+    a += _tiers("hosteleria", "work_dine_dash", [
         (10, "sinpa_10", "Velocista de terraza", "Persigue a 10 mesas que se iban sin pagar.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_posters", [
@@ -6797,11 +6799,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (500, "work_night_500", "Turno de noche perpetuo",
          "Ficha 500 veces entre las 0:00 y las 6:00.", M),
     ])  # fmt: skip
-    a += more("jobs", "work_tip", [
+    a += more("hosteleria", "work_tip", [
         (500, "tip_500", "Propina sin declarar",
          "Guárdate 500 propinas en el bolsillo.", E),
     ])  # fmt: skip
-    a += more("jobs", "work_happy_clients", [
+    a += more("hosteleria", "work_happy_clients", [
         (1_000, "happy_1k", "Trato de cinco estrellas",
          "Atiende bien 1.000 marrones.", L),
     ])  # fmt: skip
@@ -9013,6 +9015,261 @@ def _build_catalog() -> tuple[Achievement, ...]:
               "Compra las mascarillas del Rolls, deniega una prueba por la letra pequeña y "
               "firma con la aseguradora.", "sanidad", L,
               (("work_masks", 1), ("work_claim_denied", 1), ("work_revolving_health", 1)),
+              secret=True),
+    ]  # fmt: skip
+
+    # 🍽️ Hostelería: el tronco, las ramas Hotelera y Alta cocina -------------------------
+    a += _tiers("hosteleria", "work_top_hosteleria_hotel", [
+        (1, "hos_patronal_top", "Presidente de la patronal (y del puro)",
+         "Llega a presidente de la patronal turística (rama 🏨 Hotelera).", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_top_hosteleria_estrella", [
+        (1, "hos_guru_dubai", "Gurú de las espumas con franquicia en Dubái",
+         "Llega a gurú gastronómico con franquicias en Dubái (rama ⭐ Alta cocina).", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_retired_hosteleria", [
+        (1, "hos_jubilado", "Jubilado con el delantal enmarcado",
+         "Jubílate de una rama de la hostelería.", L),
+        (2, "hos_suite_y_oro", "De la suite vitalicia al pan de oro",
+         "Jubílate de la rama Hotelera y de la de Alta cocina.", L, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_wristbands", [
+        (15, "hos_pulseras_15", "Pulsera verde fosforito",
+         "Cumple las peticiones de 15 huéspedes del vuelo de Mánchester sin equivocarte.", E),
+        (150, "hos_pulseras_150", "Todo incluido, hasta tu paciencia",
+         "Cumple las peticiones de 150 huéspedes sin equivocarte.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_complaints", [
+        (30, "hos_quejas_30", "Lamentamos su experiencia",
+         "Manda 30 reseñas a su departamento como director regional.", E),
+        (300, "hos_quejas_300", "Libro de reclamaciones encuadernado en piel",
+         "Manda 300 reseñas a su departamento.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gatecrashers", [
+        (25, "hos_colados_25", "Control de pulseras",
+         "Pilla a 25 colados en el buffet de tu resort.", E),
+        (250, "hos_colados_250", "Ni una gamba sin pulsera",
+         "Pilla a 250 colados en el buffet.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_hotel_chain", [
+        (30, "hos_cadena_30", "Todo es inversión",
+         "Acierta 30 respuestas ante los inversores de tu cadena.", E),
+        (300, "hos_cadena_300", "La eficiencia soy yo",
+         "Acierta 300 respuestas ante los inversores.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_employers", [
+        (20, "hos_patronal_20", "Siempre hay crisis (menos en el balance)",
+         "Acierta 20 respuestas en la mesa con el Gobierno como presidente de la patronal.", L),
+        (200, "hos_patronal_200", "Mesa de diálogo con vistas al mar",
+         "Acierta 200 respuestas en la mesa con el Gobierno.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_plating", [
+        (15, "hos_emplatado_15", "Pinzas de titanio",
+         "Emplata 15 platos tal como mandaba la carta.", E),
+        (150, "hos_emplatado_150", "Aire de papa arrugada (de verdad)",
+         "Emplata 150 platos perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_guide_inspector", [
+        (25, "hos_inspector_25", "Olfato de Guía", "Pilla a 25 inspectores de la Guía.", E),
+        (250, "hos_inspector_250", "Libreta contra libreta", "Pilla a 250 inspectores.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_judge", [
+        (25, "hos_tv_25", "Humillar con gracia",
+         "Acierta 25 respuestas en el talent de cocina como chef de la tele.", E),
+        (250, "hos_tv_250", "Cuarto de hora de fama (y de gritos)",
+         "Acierta 250 respuestas en el talent.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_brigade", [
+        (30, "hos_brigada_30", "Cada cual a su partida",
+         "Manda a 30 cocineros a su partida como dueño de un grupo.", E),
+        (300, "hos_brigada_300", "El stagier sigue en el Office",
+         "Manda a 300 cocineros a su partida.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_dubai", [
+        (20, "hos_dubai_20", "Pan de oro hasta en el agua",
+         "Acierta 20 respuestas en tu restaurante de Dubái.", L),
+        (200, "hos_dubai_200", "Franquicia en Marte (pendiente)",
+         "Acierta 200 respuestas en tu restaurante de Dubái.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("hosteleria", "work_four_hours", [
+        (1, "hos_cuatro_horas", "Cuatro horas en la nómina, seis en un sobre",
+         "Firma un contrato de cuatro horas y trabaja diez.", C),
+        (10, "hos_cuatro_horas_10", "Jornada de diez horas, nómina de cuatro",
+         "Firma diez veces un contrato de cuatro horas que son diez.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_full_contract", [
+        (1, "hos_contrato_completo", "Jornada completa, qué atrevimiento",
+         "Exige un contrato de verdad en lugar del de cuatro horas.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_chorizo_paella", [
+        (1, "hos_paella_chorizo", "Paella con chorizo, a las once",
+         "Cocina una paella con chorizo para un guiri a media mañana.", R, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_extra_tables", [
+        (1, "hos_mesas", "Mesas decorativas",
+         "Deja las tres mesas de más cuando la policía local mide la terraza.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_terraza", [
+        (1, "hos_terraza_pilla", "Conoces al agente por su nombre",
+         "Que la policía local te multe por la terraza.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_review_bribe", [
+        (1, "hos_postre_resena", "Postre a cambio de cinco estrellas",
+         "Invita al postre al cliente que amenaza con una reseña de una estrella.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_one_star", [
+        (1, "hos_una_estrella", "Una estrella y una queja de la sal",
+         "Deja que el cliente ponga su reseña de una estrella.", C),
+        (10, "hos_una_estrella_10", "Estrella única, como los de Michelin pero al revés",
+         "Recibe 10 reseñas de una estrella por no ceder.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_free_dinner", [
+        (1, "hos_cena_influencer", "Nueve mil bots te aplauden",
+         "Invita a cenar a una influencer a cambio de visibilidad.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_cruise_menu", [
+        (1, "hos_crucero_menu", "Menú de 4,99 € para 4.000 cruceristas",
+         "Monta un menú para el crucero que atraca en tu puerto.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_cruise_closed", [
+        (1, "hos_crucero_cierro", "Cerrado por crucero",
+         "Cierra el chiringuito y vete a la playa cuando llegan 4.000 cruceristas.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_heatwave_cook", [
+        (1, "hos_calor_cocina", "48 °C y a cocinar",
+         "Cocina con 48 °C dentro de la cocina.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_waiters_paid", [
+        (1, "hos_camareros_pagados", "Aparecen camareros con 1.400 €",
+         "Sube el sueldo y los camareros aparecen como por arte de magia.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_no_waiters", [
+        (1, "hos_no_camareros", "No encuentro camareros (pagando 900 €)",
+         "Mantén el cartel de los 900 € y sigue sin camareros.", R),
+    ])  # fmt: skip
+
+    # Eventos de la rama Hotelera
+    a += _tiers("hosteleria", "work_balconing_sealed", [
+        (1, "hos_balconing", "Balcones soldados",
+         "Suelda los balcones para frenar el balconing.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_overbook_across", [
+        (1, "hos_overbooking_enfrente", "Cheque para el hotel de enfrente",
+         "Manda el overbooking al hotel de enfrente.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_overbook_two_star", [
+        (1, "hos_overbooking_dos", "Cucaracha con nombre propio",
+         "Manda el overbooking a un hotel de dos estrellas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tourist_tax_passed", [
+        (1, "hos_tasa", "Gastos de gestión de la tasa turística",
+         "Repercute la tasa turística al cliente con recargo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_costas_demolish", [
+        (1, "hos_costas_demoler", "La arena vuelve a su sitio",
+         "Demuele la terraza que manda tirar la Ley de Costas.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_costas_appeal", [
+        (1, "hos_costas_recurso", "Terraza inmortal",
+         "Recurre veinte años la demolición de tu terraza.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_costas", [
+        (1, "hos_costas_pilla", "Excavadora de Costas",
+         "Que Costas ejecute la demolición y te pase la factura.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_kellys_outsourced", [
+        (1, "hos_kellys_externas", "Multiservicios (sin servicios)",
+         "Externaliza a las kellys a una empresa multiservicios.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_kellys_hired", [
+        (1, "hos_kellys_dignas", "Convenio para las kellys",
+         "Contrata a las kellys con el convenio.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_falcon_guest", [
+        (1, "hos_falcon_huesped", "Huésped del Falcon",
+         "Regala la suite presidencial al presidente que llega en el Falcon.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_lobby_envelope", [
+        (1, "hos_lobby_sobre", "Sobre en una bolsa de paella",
+         "Dale un sobre al concejal para frenar la norma de pisos turísticos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_lobby_clean", [
+        (1, "hos_lobby_alegaciones", "Alegaciones que nadie lee",
+         "Presenta alegaciones contra la norma de pisos turísticos.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_limit_banner", [
+        (1, "hos_canarias_limite", "Canarias tiene un límite (de 1.200 habitaciones)",
+         "Cuelga una pancarta de apoyo en tu hotel cuando llega la manifestación.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Alta cocina
+    a += _tiers("hosteleria", "work_stagier_free", [
+        (1, "hos_stagier_gratis", "Stagier por la cara",
+         "Ten a un stagier seis meses sin contrato ni sueldo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_stagier_paid", [
+        (1, "hos_stagier_pagado", "Prácticas con sueldo (qué locura)",
+         "Hazle un contrato de prácticas a un stagier.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_guide_pampered", [
+        (1, "hos_guia_trufa", "Trufa de más para un jubilado",
+         "Trata de gala a un cliente que creías el inspector de la Guía.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_allergic_menu", [
+        (1, "hos_alergico", "Menú de aire, agua y pimienta",
+         "Cocina un menú a medida para el cliente alérgico a todo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_onion_with", [
+        (1, "hos_cebolla_con", "Con cebolla, y tu abuela lo sabe",
+         "Defiende la tortilla con cebolla en directo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_onion_without", [
+        (1, "hos_cebolla_sin", "Sin cebolla: herejía nacional",
+         "Defiende la tortilla sin cebolla en directo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_crew", [
+        (1, "hos_tele_grita", "Plató con gritos",
+         "Deja que el presentador gritón grabe en tu restaurante.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_kicked", [
+        (1, "hos_tele_calle", "Presentador a la calle",
+         "Echa del restaurante al presentador gritón y a sus cámaras.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gold_all", [
+        (1, "hos_oro_todo", "Ensalada de pan de oro",
+         "Pon pan de oro en todo a un jeque, hasta en el agua.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gold_dessert", [
+        (1, "hos_oro_postre", "Reloj de jeque (falso)",
+         "Limita el oro al postre y gana un reloj que brilla más que marca.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_foam_sold", [
+        (1, "hos_espuma_tecnica", "El baño de espuma como técnica",
+         "Vende como técnica nueva la explosión de la máquina de espumas.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_health_hidden", [
+        (1, "hos_huevos", "Huevos de otra semana",
+         "Esconde los huevos caducados de la Inspección de Sanidad.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_sanidad_alimentaria", [
+        (1, "hos_sanidad_pilla", "Cámara de frío cerrada",
+         "Que la Inspección de Sanidad te cierre la cámara.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_health_open", [
+        (1, "hos_cocina_abierta", "Cocina abierta, informe impecable",
+         "Abre todas las puertas a la Inspección de Sanidad.", E),
+    ])  # fmt: skip
+    a += [
+        combo("hos_honrado", "Hostelero de los de antes",
+              "Exige un contrato de verdad, contrata a las kellys con el convenio y paga a "
+              "un stagier.", "hosteleria", L,
+              (("work_full_contract", 1), ("work_kellys_hired", 1), ("work_stagier_paid", 1))),
+        combo("hos_sin_escrupulos", "Sin escrúpulos y con delantal",
+              "Firma un contrato de cuatro horas que son diez, pasa un sobre al concejal y "
+              "ten a un stagier gratis.", "hosteleria", L,
+              (("work_four_hours", 1), ("work_lobby_envelope", 1), ("work_stagier_free", 1)),
               secret=True),
     ]  # fmt: skip
 
@@ -12083,6 +12340,16 @@ _WORK_CONTENT_STATS = {
     "clinica": "work_clinic",
     "conciertos": "work_health_deals",
     "aseguradora": "work_insurer",
+    "pulseras": "work_wristbands",
+    "quejas": "work_complaints",
+    "colados": "work_gatecrashers",
+    "cadena_hotelera": "work_hotel_chain",
+    "patronal": "work_employers",
+    "emplatado": "work_plating",
+    "inspector": "work_guide_inspector",
+    "plato_tv": "work_tv_judge",
+    "brigada": "work_brigade",
+    "dubai": "work_dubai",
 }
 
 
@@ -12285,5 +12552,7 @@ MEMORY_CONTENT = frozenset(
         "concesiones",
         "quirofano",
         "retoques",
+        "pulseras",
+        "emplatado",
     }
 )
