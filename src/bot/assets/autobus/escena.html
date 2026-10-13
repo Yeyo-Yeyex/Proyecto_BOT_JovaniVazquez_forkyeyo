@@ -528,7 +528,8 @@ window.loadFonts = async () => {
   await document.fonts.ready;
   return true;
 };
-window.setup = (meta) => {
+window.setup = async (meta) => {
+  await Tapete.ready(meta?.skin);
   META = meta; PREV = null;
   const sk = meta?.skin?.key || "serie";
   if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }

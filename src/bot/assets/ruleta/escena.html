@@ -986,7 +986,8 @@ window.loadFonts = async () => {
   await document.fonts.ready;
   return true;
 };
-window.setup = (meta) => {
+window.setup = async (meta) => {
+  await Tapete.ready(meta?.skin);
   META = meta; SEED = meta.seed | 0; STEP = 360 / meta.pockets.length;
   // El fondo lleva el tapete: se repinta si la skin no es la de la última vez.
   const key = skin().key;

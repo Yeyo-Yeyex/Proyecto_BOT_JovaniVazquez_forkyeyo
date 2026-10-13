@@ -422,6 +422,7 @@ SHOP_TRACKED_KEYS = frozenset(
         "skin_tapete_israel",
         "skin_tapete_canarias",
         "skin_tapete_boricua",
+        "skin_tapete_propio",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -5223,6 +5224,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_skin_swaps", [
         (10, "skin_swap_10", "Interiorista de casino", "Cambia de skin 10 veces.", C),
     ])  # fmt: skip
+    a += _tiers("shop", "shop_skin_panel", [
+        (1, "skin_panel", "Probador de El Corte Inglés",
+         "Abre `pieles` para mirarte las skins.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_skin_image_uploads", [
+        (1, "skin_image_1", "Autorretrato en el fieltro", "Sube una imagen a tu tapete propio.", C),
+        (10, "skin_image_10", "Más cambios de look que Yolanda",
+         "Cambia la imagen de tu tapete propio 10 veces.", R),
+        (50, "skin_image_50", "Comisario de tu propio Prado",
+         "Sube 50 imágenes a tu tapete propio.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_skin_image_admin", [
+        (1, "skin_image_admin", "Ministerio de Información y Turismo",
+         "Como admin, cambia o quita la imagen del tapete de otro.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_skin_image_censored", [
+        (1, "skin_image_censored", "Cortado por el NO-DO",
+         "Que un admin te quite la imagen del tapete. Atado y bien atado.", R, True),
+    ])  # fmt: skip
     a += _tiers("shop", "shop_title_off", [
         (1, "title_off", "Llámame de tú", "Quítate el título y quédate sin ninguno.", C, True),
     ])  # fmt: skip
@@ -5279,6 +5299,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el tapete del Teide.", R, False),
         ("skin_tapete_boricua", "buy_tapete_boricua", "¡Wepa en la mesa!",
          "Compra el tapete monoestrellado.", R, False),
+        ("skin_tapete_propio", "buy_tapete_propio", "Mi careto en el casino",
+         "Compra el tapete propio. Ni Sánchez tiene un tapete con su cara.", E, False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
@@ -11850,6 +11872,25 @@ def shop_skin_stats(*, swapped: bool) -> StatDelta:
         swapped: Si ha cambiado de verdad (elegir la que ya llevaba no cuenta).
     """
     return StatDelta(add={"shop_skin_swaps": 1} if swapped else {})
+
+
+def shop_skin_image_stats(*, own: bool) -> StatDelta:
+    """Estadísticas de quien sube o quita la imagen de una skin propia (`pieles`).
+
+    Args:
+        own: Si es la suya. Si no, es un admin tocando la de otro.
+    """
+    return StatDelta(add={"shop_skin_image_uploads" if own else "shop_skin_image_admin": 1})
+
+
+def shop_skin_censored_stats() -> StatDelta:
+    """Estadísticas de quien se queda sin imagen porque se la quita un admin."""
+    return StatDelta(add={"shop_skin_image_censored": 1})
+
+
+def shop_skin_panel_stats() -> StatDelta:
+    """Estadísticas de quien abre `pieles`."""
+    return StatDelta(add={"shop_skin_panel": 1})
 
 
 def shop_hit_stats(*, use: str) -> StatDelta:

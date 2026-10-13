@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
 const vm = require("vm");
-const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
+const { createCanvas, GlobalFonts, Image } = require("@napi-rs/canvas");
 
 const scenePath = path.resolve(process.argv[2]);
 const html = fs.readFileSync(scenePath, "utf8");
@@ -33,6 +33,8 @@ for (const [, family, url] of html.matchAll(/@font-face\s*{[^}]*font-family:\s*"
 }
 
 globalThis.window = globalThis;
+// `new Image()` para la imagen propia del tapete (tapete.js la carga de un data URL).
+globalThis.Image = Image;
 globalThis.document = {
   createElement(tag) {
     if (tag !== "canvas") throw new Error(`La escena pide un <${tag}>: sin navegador solo hay canvas`);

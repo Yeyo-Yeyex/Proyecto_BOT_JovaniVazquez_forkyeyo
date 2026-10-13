@@ -660,7 +660,8 @@ window.loadFonts = async () => {
   await document.fonts.ready;
   return true;
 };
-window.setup = (meta) => {
+window.setup = async (meta) => {
+  await Tapete.ready(meta?.skin);
   META = meta; PANELS = new Map();
   BG = paintBackground(); ROAD = paintRoad();
   return true;

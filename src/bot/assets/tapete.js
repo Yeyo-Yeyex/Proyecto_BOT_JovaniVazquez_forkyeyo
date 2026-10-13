@@ -13,6 +13,12 @@
 //   Tapete.pattern(g, 0, 0, W, H, META.skin);
 // Si el escudo o la estrella de una bandera taparían algo de la mesa, la escena
 // dice dónde va: Tapete.pattern(g, 0, 0, W, H, META.skin, [x, y, escala]).
+//
+// Imagen propia (dibujo "imagen", el Tapete propio): la imagen que sube cada
+// dueño llega en meta.skin.image como data URL. Cargar una imagen es asíncrono
+// en Chromium y en Node, así que el setup de cada escena empieza con
+//   await Tapete.ready(meta?.skin);
+// y luego pinta como siempre. Sin imagen, ready no hace nada.
 // Y un texto claro que va sobre el tapete se lee con Tapete.outline (solo
 // contornea si la skin lleva dibujo: la mesa de serie no cambia).
 //
@@ -385,6 +391,32 @@ window.Tapete = (() => {
     g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(sw * 3, 0, Math.max(1, sw * 0.25), h);
   }
 
+  // -- Imagen propia ---------------------------------------------------------------------------
+  // La imagen del dueño a sangre, recortada para cubrir el tapete (como background-size: cover)
+  // y un poco oscurecida para que se lean las fichas y los textos de la mesa encima.
+
+  // Las últimas imágenes cargadas, por data URL. Pocas: cada dibujo usa una y en
+  // una mesa compartida solo cambia al cambiar quien la abre.
+  const IMAGES = new Map();
+  const MAX_IMAGES = 4;
+
+  function imagen(g, w, h, _emblem, skin) {
+    const img = IMAGES.get(skin.image);
+    const k = Math.max(w / img.width, h / img.height);
+    const iw = img.width * k, ih = img.height * k;
+    g.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih);
+    g.fillStyle = "rgba(0,0,0,0.18)"; g.fillRect(0, 0, w, h);
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("No se pudo leer la imagen del tapete"));
+      img.src = src;
+    });
+  }
+
   // -- Puerto Rico -----------------------------------------------------------------------------
   // Las cinco franjas, el triángulo azul y la estrella blanca: la monoestrellada.
 
@@ -406,7 +438,12 @@ window.Tapete = (() => {
     g.restore();
   }
 
-  const PATTERNS = { oro, israel, espana, canarias, boricua };
+  const PATTERNS = { oro, israel, espana, canarias, boricua, imagen };
+  // Si la skin trae un dibujo que se puede pintar: el de imagen, solo con su imagen ya cargada.
+  const painter = (skin) => {
+    const paint = skin && PATTERNS[skin.pattern];
+    return paint === imagen && !IMAGES.has(skin.image) ? null : paint;
+  };
 
   return {
     // Los colores del degradado del fieltro: los de la skin, o los de la escena si es la de serie.
@@ -416,18 +453,26 @@ window.Tapete = (() => {
     // El dibujo de la skin sobre el rectángulo del tapete (nada si no lleva).
     // `emblem`: [x, y, escala] del escudo o la estrella, en píxeles del rectángulo.
     pattern(g, x, y, w, h, skin, emblem) {
-      const paint = skin && PATTERNS[skin.pattern];
+      const paint = painter(skin);
       if (!paint) return;
       g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.translate(x, y);
-      paint(g, w, h, emblem);
+      paint(g, w, h, emblem, skin);
       feltFinish(g, w, h, 21);
       g.restore();
     },
     // Contorno oscuro bajo un texto claro, para que se lea sobre una bandera.
     outline(g, skin, text, x, y, width = 3) {
-      if (!(skin && PATTERNS[skin.pattern])) return;
+      if (!painter(skin)) return;
       g.save(); g.lineJoin = "round"; g.lineWidth = width; g.strokeStyle = "rgba(0,0,0,0.7)";
       g.shadowColor = "transparent"; g.strokeText(text, x, y); g.restore();
+    },
+    // Carga la imagen propia de la skin, si trae, antes de pintar (ver arriba).
+    async ready(skin) {
+      const src = skin && skin.image;
+      if (!src || IMAGES.has(src)) return;
+      const img = await loadImage(src);
+      if (IMAGES.size >= MAX_IMAGES) IMAGES.delete(IMAGES.keys().next().value);
+      IMAGES.set(src, img);
     },
     PATTERNS: Object.keys(PATTERNS),
   };

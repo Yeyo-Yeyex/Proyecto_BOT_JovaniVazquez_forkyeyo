@@ -52,6 +52,13 @@ escena lea `meta.skin` en vez de esos colores, que el cog pida la skin con
 `shop.skin_of` y la pase al dibujo, y que la skin entre en la clave de lo que
 se pinta antes del clic. Ver la Biblia, «Tienda», y la ruleta como ejemplo.
 
+**Imágenes propias.** Una skin `custom` (el 🖼️ Tapete propio) no trae su
+dibujo: cada dueño sube el suyo con `pieles` y lo guarda la tienda, una imagen
+por persona y skin. `params` la mete en `image` y su resumen en `key`. Hasta
+que la sube, la skin es fieltro liso. La imagen la pueden cambiar o quitar su
+dueño y los administradores. Más adelante habrá otras (el dorso de las cartas):
+basta con otra skin `custom` en su juego y que su escena pinte `image`.
+
 Los gallos son el otro caso: cada skin es un gallo entero y en un duelo se
 ven las dos, la de cada dueño (la escena recibe una por esquina). Los gallos
 de la casa usan los mismos parámetros (`bot.services.gallos.HOUSE`).
@@ -63,6 +70,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
+
+from bot.services.skin_images import SkinImage
 
 #: Prefijo de la clave de artículo de una skin en el surtido de la tienda.
 CATALOG_PREFIX = "skin_"
@@ -147,6 +156,9 @@ class Skin:
         season: Temporada en la que se vende, si es de temporada.
         free: La tiene todo el mundo sin pagar: no se vende y la tienda la
             regala (ver la docstring del módulo).
+        custom: El dibujo lo pone su dueño: cada uno sube su imagen
+            (`bot.services.skin_images`) y llega a la escena en el parámetro
+            `image` (ver «Imágenes propias» en la docstring del módulo).
     """
 
     key: str
@@ -163,6 +175,7 @@ class Skin:
     achievement: str | None = None
     season: Season | None = None
     free: bool = False
+    custom: bool = False
 
     @property
     def catalog_key(self) -> str:
@@ -195,6 +208,8 @@ FELT: Mapping[str, object] = _frozen({
     "ink": "#10190f",
     # Dibujo encima del fieltro (`Tapete.PATTERNS` en `assets/tapete.js`); vacío, liso.
     "pattern": "",
+    # La imagen del dueño en data URL, para el dibujo `imagen` (`Skin.custom`); vacío, ninguna.
+    "image": "",
 })
 
 GAMES: dict[str, Game] = {g.key: g for g in (
@@ -286,6 +301,14 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#06204f",
         "pattern": "boricua",
     }), price=25_000, aisle="boricua"),
+    Skin("tapete_propio", "tapete", "🖼️", "Tapete propio", (
+        "Un tapete con la imagen que tú subas con `pieles`: tu cara, tu perro o el "
+        "Falcon. Hasta que la subas, fieltro liso. Una por persona; si Bruselas la "
+        "ve indecente, los admins la quitan."
+    ), _frozen({
+        "fiber": ("rgba(255,255,255,0.03)", "rgba(0,0,0,0.05)"),
+        "pattern": "imagen",
+    }), price=100_000, aisle="lujo", min_level=10, custom=True),
     # -- 🐓 Gallos: tres gratis, el resto en la tienda, uno de logro y dos de temporada.
     Skin("gallo_blanco", "gallos", "🤍", "Gallo blanco", (
         "Leghorn de granja, blanco nuclear. Lo tiene todo el mundo y aun así impone."
@@ -417,11 +440,19 @@ def skin_of_item(catalog_key: str | None) -> Skin | None:
     return SKIN_BY_CATALOG_KEY.get(catalog_key or "")
 
 
-def params(game: str, skin: Skin | None = None) -> dict[str, object]:
+def params(
+    game: str, skin: Skin | None = None, image: SkinImage | None = None
+) -> dict[str, object]:
     """Parámetros de la escena de `game` con `skin` encima de los de serie.
 
     Lleva también `key` (la de la skin, o `serie`): la escena la usa para saber
     si tiene que repintar lo que guarda de una partida a otra.
+
+    Args:
+        image: La imagen del dueño, si la skin es de las propias (`Skin.custom`).
+            Va en `image` y su resumen entra en `key` (`tapete_propio:3fa9…`):
+            así, al cambiar de imagen, la escena repinta el fondo y lo pintado
+            antes del clic deja de valer.
 
     Raises:
         KeyError: Si el juego no admite skins.
@@ -438,7 +469,15 @@ def params(game: str, skin: Skin | None = None) -> dict[str, object]:
             raise ValueError(f"La skin {skin.key} trae parámetros que {game} no tiene: {unknown}")
         out.update(skin.params)
     out["key"] = skin.key if skin is not None else "serie"
+    if skin is not None and skin.custom and image is not None:
+        out["image"] = image.data_url
+        out["key"] = f"{skin.key}:{image.digest}"
     return out
+
+
+def custom_skins() -> tuple[Skin, ...]:
+    """Las skins con imagen propia, en el orden del registro (`pieles` las enseña así)."""
+    return tuple(s for s in SKINS if s.custom)
 
 
 def in_season(skin: Skin, when: datetime) -> bool:

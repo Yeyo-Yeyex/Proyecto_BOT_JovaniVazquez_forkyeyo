@@ -926,6 +926,45 @@ async def test_la_ruleta_pinta_con_la_skin_de_la_tienda_con_el_bot_real(tmp_path
         await client.close()
 
 
+async def test_la_imagen_de_pieles_llega_a_las_mesas_y_a_los_logros_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`pieles` carga después de la tienda y los juegos antes: todos ven la misma imagen."""
+    import io
+
+    from PIL import Image
+
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        await tienda.stock_up(GUILD_ID)
+        item = await client.shop.item_by_key(GUILD_ID, "skin_tapete_propio")
+        assert item is not None
+        await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+        await tienda.wear_skin(GUILD_ID, OWNER_ID, "ruleta", SKIN_BY_KEY["tapete_propio"])
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        buffer = io.BytesIO()
+        Image.new("RGB", (64, 36), "purple").save(buffer, format="PNG")
+        upload = MagicMock(spec=discord.Attachment)
+        upload.size = len(buffer.getvalue())
+        upload.read = AsyncMock(return_value=buffer.getvalue())
+
+        text = await client.get_cog("Pieles").upload(GUILD_ID, owner, owner, upload, None)
+
+        assert "🖼️" in text
+        skin = client.get_cog("Casino").skin(GUILD_ID, OWNER_ID)
+        assert str(skin["key"]).startswith("tapete_propio:")
+        assert str(skin["image"]).startswith("data:image/jpeg;base64,")
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["shop_skin_image_uploads"] == 1
+        assert "skin_image_1" in profile.unlocked
+    finally:
+        await client.close()
+
+
 async def test_los_gallos_apuntan_logros_y_jugadas_y_reciben_sus_skins_con_el_bot_real(
     tmp_path: Path,
 ) -> None:

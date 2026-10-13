@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageChops
 from test_node_scene import needs_node
 
-from bot.services import skins
+from bot.services import skin_images, skins
 from bot.services.coin import Side
 from bot.services.coin_scene import CoinScene
 
@@ -23,6 +23,13 @@ def test_cada_mesa_con_fieltro_carga_el_tapete_y_lo_pinta() -> None:
         html = (ASSETS / game / "escena.html").read_text(encoding="utf-8")
         assert '<script src="../tapete.js"></script>' in html, game
         assert "Tapete.pattern(" in html, game
+
+
+def test_cada_mesa_espera_a_la_imagen_propia_antes_de_pintar() -> None:
+    """La imagen se carga de forma asíncrona: sin esperarla, saldría el fieltro liso."""
+    for game in FELT_SCENES:
+        html = (ASSETS / game / "escena.html").read_text(encoding="utf-8")
+        assert "window.setup = async (meta) => {\n  await Tapete.ready(meta?.skin);" in html, game
 
 
 def test_cada_dibujo_de_las_skins_existe_en_el_tapete() -> None:
@@ -62,3 +69,31 @@ def test_los_tapetes_valen_para_todas_las_mesas(key: str) -> None:
     skin = skins.SKIN_BY_KEY[key]
     assert skin.game == skins.TAPETE
     assert len(skins.params(skins.TAPETE, skin)["felt"]) == 3
+
+
+@needs_node
+async def test_la_imagen_propia_se_pinta_y_cambiarla_repinta_la_mesa() -> None:
+    scene = CoinScene(executable_path="/no/existe/chromium")
+    propio = skins.SKIN_BY_KEY["tapete_propio"]
+
+    def picture(color: str) -> skin_images.SkinImage:
+        buffer = io.BytesIO()
+        Image.new("RGB", (320, 180), color).save(buffer, format="PNG")
+        return skin_images.prepare(buffer.getvalue())
+
+    async def board(image: skin_images.SkinImage | None) -> Image.Image:
+        skin = skins.params(skins.TAPETE, propio, image)
+        png = await scene.board(None, stake=100, face=Side.CARA, skin=skin)
+        return Image.open(io.BytesIO(png)).convert("RGB")
+
+    try:
+        bare = await board(None)
+        red = await board(picture("red"))
+        blue = await board(picture("blue"))
+    finally:
+        await scene.close()
+    # Sin imagen, fieltro liso; con imagen, se ve, y otra imagen repinta el fondo.
+    corner = (40, 330)
+    assert bare.getpixel(corner)[1] > bare.getpixel(corner)[0]
+    assert red.getpixel(corner)[0] > red.getpixel(corner)[2]
+    assert blue.getpixel(corner)[2] > blue.getpixel(corner)[0]

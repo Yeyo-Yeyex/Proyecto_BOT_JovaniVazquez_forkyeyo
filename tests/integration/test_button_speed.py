@@ -631,6 +631,53 @@ async def press_table_skin_button(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def pieles_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """El panel de `pieles` del dueño, con el tapete propio y una imagen ya puesta."""
+    import io
+
+    from PIL import Image
+
+    from bot.services.skin_images import prepare
+    from bot.services.skins import SKIN_BY_KEY
+
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    item = await client.shop.item_by_key(GUILD_ID, "skin_tapete_propio")
+    assert item is not None
+    await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 36), "purple").save(buffer, format="PNG")
+    skin = SKIN_BY_KEY["tapete_propio"]
+    await tienda.set_skin_image(GUILD_ID, OWNER_ID, skin, prepare(buffer.getvalue()), set_by=1)
+    panel = await client.get_cog("Pieles").open_panel(owner.guild, owner, owner)
+    buttons = {c.label: c for c in panel.walk_children() if isinstance(c, discord.ui.Button)}
+    return panel, buttons, buffer.getvalue()
+
+
+async def press_pieles_remove(client: BotClient, owner: MagicMock) -> Click:
+    _panel, buttons, _png = await pieles_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await buttons["🗑️ Quitar imagen"].callback(interaction)
+
+    return click
+
+
+async def press_pieles_upload(client: BotClient, owner: MagicMock) -> Click:
+    panel, _buttons, png = await pieles_panel(client, owner)
+    module = module_of(client, "Pieles")
+    form = module.ImageForm(panel, module.custom_skins()[0])
+    upload = MagicMock(spec=discord.Attachment)
+    upload.size = len(png)
+    upload.read = AsyncMock(return_value=png)
+    form.upload._values = [upload]  # lo que rellena Discord al enviar
+
+    async def click(interaction: MagicMock) -> None:
+        await form.on_submit(interaction)
+
+    return click
+
+
 async def press_casino_stats(client: BotClient, owner: MagicMock) -> Click:
     view = module_of(client, "Apuestas").StatsView(
         client.get_cog("Apuestas"), owner=owner, guild=owner.guild, member=owner
@@ -798,6 +845,8 @@ CASES: dict[str, Press] = {
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,
+    "pieles: subir imagen": press_pieles_upload,
+    "pieles: quitar imagen": press_pieles_remove,
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
     "perfil: cambiar de sección": press_perfil_section,

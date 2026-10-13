@@ -74,7 +74,7 @@ python -m bot
   | 🎂 Cumpleaños | `cumple [dd/mm] [miembro]` · `cumples` |
   | 📝 Lista | `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🍻 Beernight | `beernight [sonido] [archivo]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `tienda` |
+  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
   | 🪏 Trabajo | `pala` |
   | 🎰 Casino | `apuestas [miembro]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `imv` · `hacienda [miembro]` · `renta` · `ruleta [cantidad] [apuesta]` · `blackjack [cantidad]` (atajo `.bj`) · `cohete [cantidad] [auto]` · `minas [cantidad] [minas]` · `pollo [cantidad] [dificultad] [autocobro]` · `moneda [cantidad] [lado]` · `guagua [cantidad]` · `dados [cantidad] [apuesta]` · `pachinko [cantidad]` · `caballo [cantidad] [caballos] [tipo]` · `bacara [cantidad] [lado]` · `gallos [cantidad] [miembro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `loteria` · `saldo [miembro]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🔔 Entradas | `entrada [archivo] [volumen] [borrar]` |
@@ -200,12 +200,22 @@ python -m bot
   - Skins (pestaña 🎨 Skins): cambian el aspecto de una mesa del casino sin
     tocar cómo se juega. Los tapetes valen para todas las mesas con fieltro
     (ruleta, autobús, bacará, dados, moneda y pollo) y cada mesa lleva el suyo:
-    granate, de oro, rojigualda, de Israel, del Teide y monoestrellado. Los
+    granate, de oro, rojigualda, de Israel, del Teide, monoestrellado y el
+    🖼️ Tapete propio (100.000 Y$, nivel 10), que lleva la imagen que subas tú. Los
     gallos tienen las suyas. Se compran (también desde el 🎨 de la mesa), se
     ganan con logros o se venden solo en su temporada; se cambian en la
-    mochila o con el botón 🎨 de la mesa. Las
+    mochila, con el botón 🎨 de la mesa o en `pieles`. Las
     reglas para añadir skins y abrir más juegos están en la Biblia.
-  - Surtido de serie: 265 artículos a la venta (228 objetos, 15
+- **Pieles** (`pieles [miembro] [imagen]`): un panel privado con todas tus
+  skins, las de ahora y las que vengan: qué lleva cada mesa, un menú para
+  cambiarla y, para el 🖼️ Tapete propio, la imagen que lleva con 🖼️ Subir
+  imagen (un formulario con archivo) y 🗑️ Quitar imagen. Con `imagen` (o
+  `.pieles` con la imagen adjunta) se sube sin abrir el panel. PNG, JPG, WebP
+  o GIF de hasta 10 MB; el bot la reduce a 960 px, le quita los metadatos (el
+  GPS de la foto, por ejemplo) y la guarda en JPEG. Se ve en la mesa desde la
+  siguiente jugada, sin revisión previa; los administradores pueden abrir las
+  pieles de otro con `miembro` para cambiarle o quitarle la imagen.
+  - Surtido de serie: 266 artículos a la venta (229 objetos, 15
     potenciadores y 22 mascotas) que se meten solos en cada servidor la
     primera vez que se abre la tienda, repartidos en 15 pasillos por tema (La
     Moncloa, Ventanilla, Canarias, Typical Spanish, Fiestas y verbenas,
@@ -945,6 +955,7 @@ src/bot/
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
+│   ├── pieles.py        # pieles: panel de skins e imágenes del tapete propio
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
@@ -984,6 +995,7 @@ src/bot/
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
 │   ├── skins.py         # Skins de las mesas del casino: juegos que las admiten y catálogo
+│   ├── skin_images.py   # Imágenes propias de las skins: comprobar y limpiar lo que se sube
 │   ├── pets.py          # Reglas de las mascotas: vínculo, cuidados, momentos y cameos
 │   ├── pets_catalog.py  # Especies de mascota: personalidad, frases y trucos
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)

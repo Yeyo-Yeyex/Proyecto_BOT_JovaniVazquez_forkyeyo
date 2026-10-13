@@ -13,13 +13,18 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
 - `shop_seeded`: qué artículos del surtido de serie
   (`bot.services.shop_catalog`) se han metido ya en cada servidor, para no
   volver a meter lo que un administrador haya retirado.
+- `shop_skin_worn`: la skin que lleva cada miembro en cada mesa.
+- `shop_skin_images`: la imagen que ha subido cada miembro para sus skins
+  propias (`Skin.custom`, una por persona y skin), ya limpia y en JPEG
+  (`bot.services.skin_images`), con quién la subió (el dueño o un admin).
 
 El dinero no se toca aquí: la venta se apunta con `reserve`, que corre dentro
 de la transacción de `EconomyRepository.purchase`, así que el cobro, el IGIC,
 la unidad vendida y la factura se guardan juntos o no se guarda nada.
 
-Solo se guardan IDs, nombres de artículos y marcas de tiempo. Todo se borra
-cuando el bot sale del servidor.
+Solo se guardan IDs, nombres de artículos, marcas de tiempo y las imágenes de
+las skins propias (que su dueño o un admin pueden borrar cuando quieran). Todo
+se borra cuando el bot sale del servidor.
 """
 
 from __future__ import annotations
@@ -315,6 +320,19 @@ class ShopRepository:
                 if "catalog_key" not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN catalog_key TEXT")
             _create_skin_worn(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shop_skin_images (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    skin TEXT NOT NULL,
+                    image BLOB NOT NULL,
+                    set_by INTEGER NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, skin)
+                )
+                """
+            )
             connection.commit()
             _allow_pets(connection)
         finally:
@@ -958,6 +976,67 @@ class ShopRepository:
             connection.close()
         return [(int(r[0]), int(r[1]), str(r[2]), str(r[3])) for r in rows]
 
+    async def set_skin_image(
+        self, guild_id: int, user_id: int, skin: str, image: bytes, *, set_by: int, now: float
+    ) -> None:
+        """Guarda la imagen de la skin propia `skin` de un miembro (sustituye la que hubiera).
+
+        Args:
+            skin: Clave de la skin (`tapete_propio`), no la del artículo.
+            set_by: Quién la sube: el dueño o un administrador.
+        """
+        await self._run(self._set_skin_image_sync, guild_id, user_id, skin, image, set_by, now)
+
+    def _set_skin_image_sync(
+        self, guild_id: int, user_id: int, skin: str, image: bytes, set_by: int, now: float
+    ) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO shop_skin_images
+                        (guild_id, user_id, skin, image, set_by, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (guild_id, user_id, skin) DO UPDATE SET
+                        image = excluded.image, set_by = excluded.set_by,
+                        updated_at = excluded.updated_at
+                    """,
+                    (guild_id, user_id, skin, image, set_by, now),
+                )
+        finally:
+            connection.close()
+
+    async def delete_skin_image(self, guild_id: int, user_id: int, skin: str) -> bool:
+        """Borra la imagen de la skin propia `skin` de un miembro; `False` si no tenía."""
+        return await self._run(self._delete_skin_image_sync, guild_id, user_id, skin)
+
+    def _delete_skin_image_sync(self, guild_id: int, user_id: int, skin: str) -> bool:
+        connection = self._connect()
+        try:
+            with connection:
+                cursor = connection.execute(
+                    "DELETE FROM shop_skin_images WHERE guild_id = ? AND user_id = ? AND skin = ?",
+                    (guild_id, user_id, skin),
+                )
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
+
+    async def skin_images(self) -> list[tuple[int, int, str, bytes]]:
+        """Todas las imágenes de skins propias: `(servidor, miembro, skin, JPEG)`."""
+        return await self._run(self._skin_images_sync)
+
+    def _skin_images_sync(self) -> list[tuple[int, int, str, bytes]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT guild_id, user_id, skin, image FROM shop_skin_images"
+            ).fetchall()
+        finally:
+            connection.close()
+        return [(int(r[0]), int(r[1]), str(r[2]), bytes(r[3])) for r in rows]
+
     async def worn_among(self, keys: Collection[str]) -> list[tuple[int, int, str, str, str]]:
         """Lo que lleva puesto cada miembro de entre `keys`.
 
@@ -1266,6 +1345,7 @@ class ShopRepository:
                     "shop_inventory",
                     "shop_seeded",
                     "shop_skin_worn",
+                    "shop_skin_images",
                 ):
                     # `table` sale de una tupla fija, nunca de entrada del usuario.
                     connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

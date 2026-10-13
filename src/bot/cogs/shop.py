@@ -127,6 +127,7 @@ from bot.services.shop_uses import (
     pick_mystery,
     resolve,
 )
+from bot.services.skin_images import SkinImage
 from bot.services.skins import (
     GAMES,
     SKIN_BY_KEY,
@@ -1155,6 +1156,10 @@ class Tienda(commands.Cog):
         #: Sin entrada, la de serie. En memoria para no leer la base de datos al
         #: pintar cada tirada.
         self.skins: dict[tuple[int, int, str], str] = {}
+        #: Imagen de cada skin propia por `(servidor, miembro, skin)` (`Skin.custom`).
+        #: En memoria por lo mismo; solo la tienen quienes compraron una y la
+        #: subieron, y cada una pesa decenas de KB (`skin_images.MAX_SIDE`).
+        self.skin_images: dict[tuple[int, int, str], SkinImage] = {}
 
     async def cog_load(self) -> None:
         """Carga potenciadores, títulos y skins puestos, y arranca la caducidad."""
@@ -1168,6 +1173,8 @@ class Tienda(commands.Cog):
         for guild_id, user_id, game, key in await self.repository.worn_skins():
             if (skin := skin_of_item(key)) is not None and fits(skin, game):
                 self.skins[(guild_id, user_id, game)] = skin.key
+        for guild_id, user_id, skin_key, data in await self.repository.skin_images():
+            self.skin_images[(guild_id, user_id, skin_key)] = SkinImage.of(data)
         self._expire.start()
 
     async def cog_unload(self) -> None:
@@ -1253,6 +1260,38 @@ class Tienda(commands.Cog):
         """La skin que lleva un miembro en `game`, o `None` (la de serie)."""
         key = self.skins.get((guild_id, user_id, game))
         return SKIN_BY_KEY.get(key) if key else None
+
+    def scene_params(self, guild_id: int, user_id: int, game: str) -> dict[str, object]:
+        """Lo que pinta la escena de `game` para este miembro (con su imagen, si es propia)."""
+        skin = self.skin(guild_id, user_id, game)
+        image = self.skin_image(guild_id, user_id, skin.key) if skin and skin.custom else None
+        return skin_params_of(game, skin, image)
+
+    # -- Imágenes propias (`Skin.custom`; las sube `pieles`) -------------------------
+
+    def skin_image(self, guild_id: int, user_id: int, skin_key: str) -> SkinImage | None:
+        """La imagen que ha subido un miembro para su skin propia `skin_key`, o `None`."""
+        return self.skin_images.get((guild_id, user_id, skin_key))
+
+    async def owns_skin(self, guild_id: int, user_id: int, skin: Skin) -> bool:
+        """Si la skin está en la mochila del miembro."""
+        entries = await self.repository.inventory(guild_id, user_id, self.clock())
+        return any(e.catalog_key == skin.catalog_key for e in entries)
+
+    async def set_skin_image(
+        self, guild_id: int, user_id: int, skin: Skin, image: SkinImage, *, set_by: int
+    ) -> None:
+        """Guarda la imagen de la skin propia de un miembro; se ve desde la próxima jugada."""
+        await self.repository.set_skin_image(
+            guild_id, user_id, skin.key, image.data, set_by=set_by, now=self.clock()
+        )
+        self.skin_images[(guild_id, user_id, skin.key)] = image
+
+    async def remove_skin_image(self, guild_id: int, user_id: int, skin: Skin) -> bool:
+        """Borra la imagen de la skin propia de un miembro; `False` si no tenía."""
+        removed = await self.repository.delete_skin_image(guild_id, user_id, skin.key)
+        self.skin_images.pop((guild_id, user_id, skin.key), None)
+        return removed
 
     def wear_on_purchase(
         self, guild_id: int, user_id: int, skin: Skin, game: str | None
@@ -2152,6 +2191,8 @@ class Tienda(commands.Cog):
             del self.titles[key]
         for skin_key in [k for k in self.skins if k[0] == guild.id]:
             del self.skins[skin_key]
+        for image_key in [k for k in self.skin_images if k[0] == guild.id]:
+            del self.skin_images[image_key]
 
     # -- Comandos --------------------------------------------------------------------
 
@@ -2236,10 +2277,13 @@ def skin_of(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> Skin |
 def skin_params(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> dict[str, object]:
     """Lo que la escena de `game` tiene que pintar para este miembro.
 
-    Los parámetros de serie con los de su skin encima (`skins.params`). Si la
-    tienda no está cargada, los de serie: el juego nunca se queda sin dibujo.
+    Los parámetros de serie con los de su skin encima (`skins.params`), y su
+    imagen si la skin es propia. Si la tienda no está cargada, los de serie: el
+    juego nunca se queda sin dibujo.
     """
-    return skin_params_of(game, skin_of(bot, guild_id, user_id, game))
+    if (cog := find_cog(bot, Tienda)) is not None:
+        return cog.scene_params(guild_id, user_id, game)
+    return skin_params_of(game, None)
 
 
 async def grant_reward_skins(
