@@ -1205,7 +1205,7 @@ async def test_un_regalo_que_ya_no_tienes_no_cuenta(tmp_path: Path) -> None:
     async def gone() -> bool:
         return False
 
-    with pytest.raises(WorkError, match="ya no está"):
+    with pytest.raises(WorkError, match="no está en tu mochila"):
         await service.give_gift(GUILD, USER, "flores_mama", gone)
     status = await service.status(GUILD, USER)
     assert status is not None and status.contract.family_used == {}

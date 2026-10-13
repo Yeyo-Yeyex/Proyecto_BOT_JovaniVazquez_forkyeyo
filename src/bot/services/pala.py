@@ -1618,7 +1618,7 @@ class WorkService:
                     f"{gift.emoji} Tu familia todavía está con el último. Otro <t:{int(ready)}:R>."
                 )
             if not await consume():
-                raise WorkError("Ese regalo ya no está en tu mochila.")
+                raise WorkError("Ese regalo no está en tu mochila: cómpralo en 🎁 Regalos.")
             change_family(contract, gift.family, now)
             contract.family_used[gift.key] = now
             await self.repository.save_contract(guild_id, user_id, contract)

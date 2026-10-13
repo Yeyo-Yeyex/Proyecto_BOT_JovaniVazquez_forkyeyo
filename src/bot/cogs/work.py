@@ -365,7 +365,11 @@ def wait_text(ready: float, now: float) -> str:
 def family_options(
     contract: Contract, gifts: frozenset[str], now: float
 ) -> list[discord.SelectOption]:
-    """Opciones del desplegable de la familia: los regalos que tienes y los favores."""
+    """Opciones del desplegable de la familia: los regalos y los favores.
+
+    Los regalos que tienes se dan (`g:`); los que no, se compran (`b:`), que abre
+    la caja de la tienda.
+    """
     options = [
         discord.SelectOption(
             label=f"Dar: {gift.name} · +{gift.family} ❤️",
@@ -374,8 +378,14 @@ def family_options(
             description="Regalo de tu mochila · "
             + wait_text(family_ready_at(contract, gift.key, gift.cooldown), now),
         )
-        for gift in GIFTS
         if gift.key in gifts
+        else discord.SelectOption(
+            label=f"Comprar: {gift.name} · +{gift.family} ❤️",
+            value=f"b:{gift.key}",
+            emoji=gift.emoji,
+            description="Abre la caja de la tienda",
+        )
+        for gift in GIFTS
     ]
     options.extend(
         discord.SelectOption(
@@ -927,6 +937,8 @@ class PalaPanel(ui.LayoutView):
             kind, _, key = select.values[0].partition(":")
             if kind == "g":
                 await self._give_gift(interaction, key)
+            elif kind == "b":
+                await self._buy_gift(interaction, key)
             else:
                 await self._favor(interaction, key)
 
@@ -1206,6 +1218,17 @@ class PalaPanel(ui.LayoutView):
         """Atajo al pasillo de la familia de la tienda, en privado."""
         await ack(interaction, new_message=True)
         if not await tienda.open_aisle(self.cog.bot, interaction, GIFT_AISLE):
+            await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+
+    async def _buy_gift(self, interaction: discord.Interaction, key: str) -> None:
+        """Atajo a la caja de un regalo, en privado."""
+        await ack(interaction, new_message=True)
+        if key in await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id):
+            # Lo compró después de pintar el panel: se repinta con el regalo para dar.
+            await edit(interaction, content="Ya lo tienes en la mochila: dáselo desde el panel ❤️.")
+            await self.refresh()
+            return
+        if not await tienda.open_checkout_key(self.cog.bot, interaction, key):
             await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
 
     async def _give_gift(self, interaction: discord.Interaction, key: str) -> None:

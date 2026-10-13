@@ -845,6 +845,23 @@ async def test_la_pala_da_los_regalos_de_la_mochila_con_el_bot_real(tmp_path: Pa
         await client.close()
 
 
+async def test_la_pala_abre_la_caja_de_un_regalo_con_el_bot_real(tmp_path: Path) -> None:
+    """Elegir un regalo que no tienes en el desplegable abre la caja de la tienda."""
+    client = await load_bot(tmp_path)
+    try:
+        work = importer("Trabajo", client)
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        interaction = fake_interaction(owner)
+        interaction.guild = MagicMock(spec=discord.Guild)
+        interaction.guild.id = GUILD_ID
+        assert await work.tienda.open_checkout_key(client, interaction, "flores_mama")
+        view = interaction.edit_original_response.await_args.kwargs["view"]
+        assert type(view).__name__ == "Checkout" and view.item.catalog_key == "flores_mama"
+    finally:
+        await client.close()
+
+
 async def test_perfil_fortunas_y_ranking_ven_el_titulo_con_el_bot_real(tmp_path: Path) -> None:
     """Los tres cogs cargan antes que la tienda: su puente tiene que ver el título puesto."""
     client = await load_bot(tmp_path)
