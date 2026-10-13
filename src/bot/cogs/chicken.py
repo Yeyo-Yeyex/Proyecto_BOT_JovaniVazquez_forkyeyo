@@ -433,6 +433,10 @@ class ChickenView(ui.View):
         self._button("½", "half", self._halve, row=0, disabled=busy)
         self._button("×2", "x2", self._double, row=0, disabled=busy)
         self._button("💰 All-in", "allin", self._all_in, row=1 if self.auto else 0, disabled=busy)
+        # El 🎨: elegir o comprar el tapete de esta mesa (no cambia la jugada).
+        if (paint := tienda.skin_button(self.cog.bot, GAME, row=1)) is not None:
+            paint.disabled = busy
+            self.add_item(paint)
         self.add_item(self._difficulty_select(disabled=busy))
         self.add_item(self._auto_select(disabled=busy))
 
@@ -572,8 +576,8 @@ class ChickenView(ui.View):
     # -- GIF por adelantado -------------------------------------------------------------
 
     def skin(self) -> dict[str, object]:
-        """El tapete que lleva ahora el dueño de la mesa (`tienda.tapete`)."""
-        return tienda.tapete(self.cog.bot, self.guild_id, self.owner.id)
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.skin_params`)."""
+        return tienda.skin_params(self.cog.bot, self.guild_id, self.owner.id, GAME)
 
     def _plan_key(self) -> tuple[Any, ...]:
         """Lo que decide los GIF del próximo paso, salvo el botón que se pulse (y el tapete)."""

@@ -37,6 +37,14 @@ elegida en la mochila o con el botón 🎨 de la mesa (`bot.cogs.shop`). En las
 mesas individuales se ve la de su dueño; en las compartidas (bacará, crash,
 caballos), la de quien abre la mesa, y el mensaje lo dice (`Game.shared`).
 
+**Tapetes.** Las mesas con fieltro (ruleta, autobús, bacará, dados, moneda y
+pollo) son un juego cada una, del grupo `TAPETE` (`Game.group`). Una skin del
+grupo se compra una vez y se lleva en las mesas que quieras, cada una con la
+suya; una skin con la clave de una mesa (`moneda`) es un tapete solo de esa
+mesa (`fits`). Lo puesto va por mesa en `shop_skin_worn`. En el 🎨 de la mesa
+salen también los tapetes que se venden y no tienes: se compran desde ahí y se
+ponen en esa mesa.
+
 **Añadir una skin** a un juego que ya las admite: una fila en `SKINS` con los
 parámetros que cambia. **Añadir un juego**: una fila en `GAMES` con sus
 parámetros de serie (los colores que hoy están escritos en su escena), que la
@@ -58,7 +66,7 @@ from types import MappingProxyType
 
 #: Prefijo de la clave de artículo de una skin en el surtido de la tienda.
 CATALOG_PREFIX = "skin_"
-#: El juego de los tapetes: uno para todas las mesas con fieltro.
+#: El grupo de los tapetes: sus skins valen en todas las mesas con fieltro.
 TAPETE = "tapete"
 
 
@@ -79,6 +87,10 @@ class Game:
             de aquí, y la escena no lee nada que no esté en este diccionario.
         shared: Si la mesa es de todo el canal: entonces se ve la skin de
             quien la abre.
+        group: Grupo cuyas skins también valen aquí (las mesas con fieltro,
+            `TAPETE`): se compran una vez y se llevan en cada mesa por separado.
+        wearable: Si es una mesa donde se lleva una skin. El grupo `TAPETE` no lo
+            es: solo agrupa las skins que valen en todas sus mesas.
     """
 
     key: str
@@ -87,6 +99,8 @@ class Game:
     thing: str
     defaults: Mapping[str, object] = field(default_factory=dict)
     shared: bool = False
+    group: str | None = None
+    wearable: bool = True
 
     @property
     def label(self) -> str:
@@ -167,23 +181,32 @@ class Skin:
 
 
 # fmt: off
+#: Lo que entiende el tapete de una mesa con fieltro. Cada escena carga
+#: `assets/tapete.js`, que pinta `felt` y `pattern`; con la de serie, cada mesa usa
+#: su verde de siempre. Los de serie de aquí son los de la ruleta.
+FELT: Mapping[str, object] = _frozen({
+    # Degradado radial del fieltro, de la luz al borde.
+    "felt": ("#2f9b62", "#1b7345", "#0b3f26"),
+    # Las fibras largas del fieltro: una clara y una oscura.
+    "fiber": ("rgba(190,255,210,0.045)", "rgba(0,20,8,0.07)"),
+    # Filete del borde del tapete.
+    "trim": "rgba(240,199,90,0.22)",
+    # Contorno del título, sobre el fieltro.
+    "ink": "#10190f",
+    # Dibujo encima del fieltro (`Tapete.PATTERNS` en `assets/tapete.js`); vacío, liso.
+    "pattern": "",
+})
+
 GAMES: dict[str, Game] = {g.key: g for g in (
-    # El tapete es uno para todas las mesas con fieltro (ruleta, autobús, bacará,
-    # dados, moneda y pollo): se compra una vez y se ve en todas. Cada escena
-    # carga `assets/tapete.js`, que pinta `felt` y `pattern`; con la de serie,
-    # cada mesa usa su verde de siempre. Los de serie de aquí son los de la ruleta.
-    Game("tapete", "Mesas del casino", "🎰", "tapete", _frozen({
-        # Degradado radial del fieltro, de la luz al borde.
-        "felt": ("#2f9b62", "#1b7345", "#0b3f26"),
-        # Las fibras largas del fieltro: una clara y una oscura.
-        "fiber": ("rgba(190,255,210,0.045)", "rgba(0,20,8,0.07)"),
-        # Filete del borde del tapete.
-        "trim": "rgba(240,199,90,0.22)",
-        # Contorno del título, sobre el fieltro.
-        "ink": "#10190f",
-        # Dibujo encima del fieltro (`Tapete.PATTERNS` en `assets/tapete.js`); vacío, liso.
-        "pattern": "",
-    })),
+    # Las skins de `tapete` valen en todas las mesas con fieltro; cada mesa lleva
+    # la suya. Una skin con la clave de una mesa (`moneda`) solo vale en esa.
+    Game(TAPETE, "Mesas con fieltro", "🎰", "tapete", FELT, wearable=False),
+    Game("ruleta", "Ruleta", "🎡", "tapete", FELT, group=TAPETE),
+    Game("autobus", "Autobús", "🚌", "tapete", FELT, group=TAPETE),
+    Game("bacara", "Bacará", "🍸", "tapete", FELT, shared=True, group=TAPETE),
+    Game("dados", "Dados", "🎲", "tapete", FELT, group=TAPETE),
+    Game("moneda", "Cara o cruz", "🪙", "tapete", FELT, group=TAPETE),
+    Game("pollo", "Pollo", "🐔", "tapete", FELT, group=TAPETE),
     # El gallo de serie es un giro colorado: pecho rojizo, esclavina naranja y
     # cola negra con reflejos verdes. Cada skin es un gallo entero.
     Game("gallos", "Gallos", "🐓", "gallo", _frozen({
@@ -224,7 +247,7 @@ SKINS: tuple[Skin, ...] = (
         "trim": "rgba(255,240,190,0.5)",
         "ink": "#2a1a02",
         "pattern": "oro",
-    }), price=100_000, aisle="lujo", min_level=10),
+    }), price=250_000, aisle="lujo", min_level=10),
     Skin("tapete_espana", "tapete", "🇪🇸", "Tapete rojigualda", (
         "Rojo y gualda con el escudo bordado, las columnas y el PLVS VLTRA. Para "
         "jugarse los ahorros con el himno de fondo, que no tiene letra."
@@ -244,7 +267,7 @@ SKINS: tuple[Skin, ...] = (
         "trim": "rgba(0,56,184,0.45)",
         "ink": "#001a5c",
         "pattern": "israel",
-    }), price=30_000, aisle="lujo"),
+    }), price=400_000, aisle="lujo", min_level=15),
     Skin("tapete_canarias", "tapete", "🌋", "Tapete del Teide", (
         "Azul atlántico con olas, el Teide nevado asomando por encima del mar de "
         "nubes y la tricolor de las islas en el borde. Huele a gofio."
@@ -369,9 +392,24 @@ SKIN_BY_KEY: dict[str, Skin] = {s.key: s for s in SKINS}
 SKIN_BY_CATALOG_KEY: dict[str, Skin] = {s.catalog_key: s for s in SKINS}
 
 
+def fits(skin: Skin, game: str) -> bool:
+    """Si `skin` se puede llevar en `game`: es suya o de su grupo (un tapete)."""
+    return skin.game == game or (game in GAMES and skin.game == GAMES[game].group)
+
+
 def skins_of(game: str, skins: tuple[Skin, ...] = SKINS) -> tuple[Skin, ...]:
-    """Las skins de un juego, en el orden del registro."""
-    return tuple(s for s in skins if s.game == game)
+    """Las skins que se pueden llevar en un juego (o las de un grupo), en orden."""
+    return tuple(s for s in skins if fits(s, game))
+
+
+def wearable_games(skin: Skin) -> tuple[Game, ...]:
+    """Las mesas donde se puede llevar `skin` (todas las de fieltro, si es un tapete)."""
+    return tuple(g for g in GAMES.values() if g.wearable and fits(skin, g.key))
+
+
+def where(skin: Skin) -> str:
+    """Dónde vale, para la tienda: `🎡 Ruleta` o `🎰 Mesas con fieltro`."""
+    return GAMES[skin.game].label
 
 
 def skin_of_item(catalog_key: str | None) -> Skin | None:
@@ -393,7 +431,7 @@ def params(game: str, skin: Skin | None = None) -> dict[str, object]:
     base = GAMES[game]
     out = dict(base.defaults)
     if skin is not None:
-        if skin.game != game:
+        if not fits(skin, game):
             raise ValueError(f"La skin {skin.key} es de {skin.game}, no de {game}")
         unknown = set(skin.params) - set(base.defaults)
         if unknown:

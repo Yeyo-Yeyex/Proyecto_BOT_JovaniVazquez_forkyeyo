@@ -57,7 +57,7 @@ import logging
 import random
 import time
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -107,7 +107,6 @@ from bot.services.shop_catalog import (
     AISLES,
     CATALOG,
     HOUSE_AISLE,
-    SKIN_KEYS,
     TITLE_KEYS,
     CatalogEntry,
     aisle_of,
@@ -132,10 +131,12 @@ from bot.services.skins import (
     GAMES,
     SKIN_BY_KEY,
     Skin,
+    fits,
     free_skins,
     in_season,
     rewards_for,
     skin_of_item,
+    wearable_games,
 )
 from bot.services.skins import params as skin_params_of
 from bot.services.skins import skins_of as game_skins
@@ -412,18 +413,24 @@ def trophy_lines(entries: list[InventoryEntry]) -> list[str]:
     return lines
 
 
-def skin_lines(entries: list[InventoryEntry]) -> list[str]:
-    """Las skins de la mochila, por juego, con la que lleva puesta cada uno."""
+def skin_lines(entries: list[InventoryEntry], worn: Mapping[str, str] | None = None) -> list[str]:
+    """Las skins de la mochila por grupo y, con `worn` (mesa → clave), lo que lleva cada mesa.
+
+    Un tapete vale en todas las mesas con fieltro y cada una lleva el suyo.
+    """
+    owned = [skin for e in entries if (skin := skin_of_item(e.catalog_key)) is not None]
     lines = []
-    for game in GAMES.values():
-        mine = [e for e in entries if (k := skin_of_item(e.catalog_key)) and k.game == game.key]
-        if not mine:
-            continue
-        worn = max((e.id for e in mine if e.equipped), default=None)
-        names = [f"**{e.emoji} {e.name}**" + (" *(puesta)*" if e.id == worn else "") for e in mine]
-        if worn is None:
-            names.append("*de serie (puesta)*")
-        lines.append(f"{game.label}: " + " · ".join(names))
+    for group in GAMES.values():
+        mine = [s for s in owned if s.game == group.key]
+        if mine:
+            lines.append(f"{group.label}: " + " · ".join(f"**{s.label}**" for s in mine))
+    if owned and worn is not None:
+        on = [
+            f"{g.emoji} {SKIN_BY_KEY[worn[g.key]].name if g.key in worn else 'de serie'}"
+            for g in GAMES.values()
+            if g.wearable and any(fits(s, g.key) for s in owned)
+        ]
+        lines.append("-# Puestas: " + " · ".join(on))
     return lines
 
 
@@ -705,6 +712,8 @@ class Checkout(ui.LayoutView):
         self.price = price
         self.balance = balance
         self.note = note
+        #: Si se abrió desde el 🎨 de una mesa, la mesa donde se pone la skin al pagar.
+        self.skin_game: str | None = None
         self.result: str | None = None
         self.failed = False
         self.done = False
@@ -782,8 +791,13 @@ class Checkout(ui.LayoutView):
 # -- Mochila --------------------------------------------------------------------------
 
 
-def backpack_text(entries: list[InventoryEntry], now: float) -> str:
-    """Lo que hay en una mochila, por tipos, en texto (mochila y `perfil`)."""
+def backpack_text(
+    entries: list[InventoryEntry], now: float, worn: Mapping[str, str] | None = None
+) -> str:
+    """Lo que hay en una mochila, por tipos, en texto (mochila y `perfil`).
+
+    `worn`: la skin que lleva cada mesa (`Tienda.worn_skins`).
+    """
     sections = []
     for kind in Kind:
         mine = [
@@ -802,7 +816,7 @@ def backpack_text(entries: list[InventoryEntry], now: float) -> str:
     usable = [e for e in entries if _usable(e)]
     if usable:
         sections.append("### 🫳 Para usar\n" + "\n".join(trophy_lines(usable)))
-    if skins := skin_lines(entries):
+    if skins := skin_lines(entries, worn):
         sections.append("### 🎨 Skins\n" + "\n".join(skins))
     if not sections:
         sections.append("Vacía. Date una vuelta por la `tienda`, que hay cositas.")
@@ -810,46 +824,51 @@ def backpack_text(entries: list[InventoryEntry], now: float) -> str:
 
 
 def skin_options(
-    entries: list[InventoryEntry], game: str | None = None
+    entries: list[InventoryEntry], worn: Mapping[str, str], game: str
 ) -> list[discord.SelectOption]:
-    """Opciones para elegir skin: por juego, la de serie y las que tiene.
+    """Opciones del selector 🎨 de una mesa: la de serie y las suyas que valen aquí.
 
-    El valor es `juego:clave` (`ruleta:` para la de serie). Con `game`, solo
-    las de ese juego (el botón 🎨 de una mesa).
+    El valor es `juego:clave` (`ruleta:` para la de serie); `worn` es lo que
+    lleva cada mesa (`Tienda.worn_skins`).
     """
-    options: list[discord.SelectOption] = []
+    g = GAMES[game]
+    mine = [s for e in entries if (s := skin_of_item(e.catalog_key)) and fits(s, game)]
+    options = [
+        discord.SelectOption(
+            label=f"{g.thing.capitalize()} de serie"[:100],
+            value=f"{game}:",
+            emoji=_select_emoji(g.emoji),
+            default=game not in worn,
+        )
+    ]
+    options += [
+        discord.SelectOption(
+            label=s.name[:100],
+            value=f"{game}:{s.key}",
+            emoji=_select_emoji(s.emoji),
+            default=worn.get(game) == s.key,
+        )
+        for s in {s.key: s for s in mine}.values()
+    ]
+    return options[:25]
+
+
+def skin_game_options(
+    entries: list[InventoryEntry], worn: Mapping[str, str]
+) -> list[discord.SelectOption]:
+    """Opciones de la mochila: una por mesa donde tiene alguna skin (abre su selector)."""
+    owned = [s for e in entries if (s := skin_of_item(e.catalog_key)) is not None]
+    options = []
     for g in GAMES.values():
-        if game is not None and g.key != game:
+        if not g.wearable or not any(fits(s, g.key) for s in owned):
             continue
-        mine = [e for e in entries if (k := skin_of_item(e.catalog_key)) and k.game == g.key]
-        if not mine:
-            continue
-        worn = max((e.id for e in mine if e.equipped), default=None)
+        now = SKIN_BY_KEY[worn[g.key]].name if g.key in worn else f"{g.thing} de serie"
         options.append(
             discord.SelectOption(
-                label=f"{g.name}: de serie"[:100],
-                value=f"{g.key}:",
-                emoji=_select_emoji(g.emoji),
-                default=worn is None,
+                label=f"{g.name}: {now}"[:100], value=g.key, emoji=_select_emoji(g.emoji)
             )
         )
-        for e in mine:
-            skin = skin_of_item(e.catalog_key)
-            assert skin is not None  # filtrado arriba
-            options.append(
-                discord.SelectOption(
-                    label=f"{g.name}: {e.name}"[:100],
-                    value=f"{g.key}:{skin.key}",
-                    emoji=_select_emoji(e.emoji),
-                    default=e.id == worn,
-                )
-            )
-    # Un desplegable admite 25 opciones y una sola marcada por defecto.
-    options = options[:25]
-    marked = [o for o in options if o.default]
-    for extra in marked[1:]:
-        extra.default = False
-    return options
+    return options[:25]
 
 
 class Backpack(ui.LayoutView):
@@ -879,7 +898,8 @@ class Backpack(ui.LayoutView):
         container = ui.Container(accent_colour=COLOR)
         container.add_item(ui.TextDisplay(f"# 🎒 Mochila de {_name(self.member)}"))
         container.add_item(ui.Separator())
-        container.add_item(ui.TextDisplay(backpack_text(self.entries, now)))
+        worn = self.cog.worn_skins(self.guild.id, self.member.id)
+        container.add_item(ui.TextDisplay(backpack_text(self.entries, now, worn)))
         self.add_item(container)
         usable = [e for e in self.entries if _usable(e)]
 
@@ -962,11 +982,13 @@ class Backpack(ui.LayoutView):
             title_row.add_item(title_select)
             self.add_item(title_row)
 
-        if self.viewer.id == self.member.id and (options := skin_options(self.entries)):
-            skin_select: ui.Select = ui.Select(placeholder="🎨 Cambiar una skin", options=options)
+        if self.viewer.id == self.member.id and (options := skin_game_options(self.entries, worn)):
+            skin_select: ui.Select = ui.Select(
+                placeholder="🎨 Cambiar la skin de una mesa", options=options
+            )
 
             async def skin_callback(interaction: discord.Interaction) -> None:
-                await self.cog.choose_skin(interaction, skin_select.values[0], backpack=self)
+                await self.cog.open_skin_picker(interaction, skin_select.values[0])
 
             skin_select.callback = skin_callback  # type: ignore[method-assign]
             skin_row: ui.ActionRow = ui.ActionRow()
@@ -1047,16 +1069,26 @@ class UseTextForm(ui.Modal):
 
 
 class SkinPicker(ui.View):
-    """Selector privado de skin que abre el botón 🎨 de una mesa."""
+    """Selector privado de skin de una mesa (botón 🎨 o mochila).
 
-    def __init__(self, cog: Tienda, options: list[discord.SelectOption], game: object) -> None:
+    Las opciones `buy:<artículo>` son las que se venden y aún no tiene: abren la
+    caja, y al pagar se la pone en esta mesa.
+    """
+
+    def __init__(self, cog: Tienda, options: list[discord.SelectOption], game: str) -> None:
         super().__init__(timeout=VIEW_TIMEOUT)
         self.cog = cog
         select: ui.Select = ui.Select(placeholder="🎨 Elige", options=options)
 
         async def callback(interaction: discord.Interaction) -> None:
             self.stop()
-            await self.cog.choose_skin(interaction, select.values[0])
+            value = select.values[0]
+            if value.startswith("buy:"):
+                await self.cog.open_checkout(
+                    interaction, int(value.removeprefix("buy:")), skin_game=game
+                )
+                return
+            await self.cog.choose_skin(interaction, value)
 
         select.callback = callback  # type: ignore[method-assign]
         self.select = select
@@ -1133,9 +1165,9 @@ class Tienda(commands.Cog):
             self.boosts[(guild_id, user_id)].append((start, end, pct))
         for guild_id, user_id, _key, emoji, name in await self.repository.worn_among(TITLE_KEYS):
             self.titles[(guild_id, user_id)] = f"{emoji} {name}"
-        for guild_id, user_id, key, _emoji, _name in await self.repository.worn_among(SKIN_KEYS):
-            if (skin := skin_of_item(key)) is not None:
-                self.skins[(guild_id, user_id, skin.game)] = skin.key
+        for guild_id, user_id, game, key in await self.repository.worn_skins():
+            if (skin := skin_of_item(key)) is not None and fits(skin, game):
+                self.skins[(guild_id, user_id, game)] = skin.key
         self._expire.start()
 
     async def cog_unload(self) -> None:
@@ -1222,10 +1254,30 @@ class Tienda(commands.Cog):
         key = self.skins.get((guild_id, user_id, game))
         return SKIN_BY_KEY.get(key) if key else None
 
+    def wear_on_purchase(
+        self, guild_id: int, user_id: int, skin: Skin, game: str | None
+    ) -> list[str]:
+        """Dónde se pone una skin al comprarla.
+
+        En la mesa desde la que se compra (`game`); si no, en su juego, o, si es
+        un tapete, en las mesas con fieltro que llevaban el de serie.
+        """
+        if game is not None and fits(skin, game):
+            return [game]
+        if GAMES[skin.game].wearable:
+            return [skin.game]
+        worn = self.worn_skins(guild_id, user_id)
+        return [g.key for g in wearable_games(skin) if g.key not in worn]
+
+    def worn_skins(self, guild_id: int, user_id: int) -> dict[str, str]:
+        """Lo que lleva un miembro en cada mesa: juego → clave de la skin (sin las de serie)."""
+        return {
+            g: k for (gid, uid, g), k in self.skins.items() if (gid, uid) == (guild_id, user_id)
+        }
+
     async def wear_skin(self, guild_id: int, user_id: int, game: str, skin: Skin | None) -> None:
-        """Le pone a un miembro la skin `skin` en `game` (la de serie con `None`)."""
-        keys = [s.catalog_key for s in game_skins(game)]
-        await self.repository.wear_one(guild_id, user_id, skin.catalog_key if skin else None, keys)
+        """Le pone a un miembro la skin `skin` en la mesa `game` (la de serie con `None`)."""
+        await self.repository.wear_skin(guild_id, user_id, game, skin.catalog_key if skin else None)
         if skin is None:
             self.skins.pop((guild_id, user_id, game), None)
         else:
@@ -1303,12 +1355,12 @@ class Tienda(commands.Cog):
         member = interaction.user
         guild = interaction.guild
         game, _sep, key = value.partition(":")
-        if guild is None or game not in GAMES:
+        skin = SKIN_BY_KEY.get(key) if key else None
+        if guild is None or game not in GAMES or (skin is not None and not fits(skin, game)):
             await notify(interaction, "Esa skin ya no existe.")
             return
         # Comprobar la mochila y guardarlo van a la base de datos: se acepta antes.
         await ack(interaction)
-        skin = SKIN_BY_KEY.get(key) if key else None
         if skin is not None:
             owned = await self.repository.inventory(guild.id, member.id, self.clock())
             if not any(e.catalog_key == skin.catalog_key for e in owned):
@@ -1343,20 +1395,56 @@ class Tienda(commands.Cog):
         member = interaction.user
         await self.claim_reward_skins(guild.id, member.id)
         await self.grant_free_skins(guild.id, member.id, game)
-        entries = await self.repository.inventory(guild.id, member.id, self.clock())
-        options = skin_options(entries, game)
+        now = self.clock()
+        entries = await self.repository.inventory(guild.id, member.id, now)
+        options = skin_options(entries, self.worn_skins(guild.id, member.id), game)
+        options += await self._skin_offers(guild.id, entries, game, now, 25 - len(options))
         g = GAMES[game]
-        if not options:
+        if len(options) == 1:
             await edit(
                 interaction,
                 content=(
-                    f"🎨 No tienes ningún {g.thing} para {g.label}. Mira la pestaña "
+                    f"🎨 No hay ningún {g.thing} para {g.label} ahora mismo. Mira la pestaña "
                     "🎨 Skins de la `tienda`."
                 ),
             )
             return
-        picker = SkinPicker(self, options, g)
-        await edit(interaction, content=f"🎨 ¿Qué {g.thing} quieres en {g.label}?", view=picker)
+        picker = SkinPicker(self, options, game)
+        await edit(
+            interaction,
+            content=f"🎨 ¿Qué {g.thing} quieres en {g.label}? Los 🛒 se compran aquí mismo.",
+            view=picker,
+        )
+
+    async def _skin_offers(
+        self, guild_id: int, entries: list[InventoryEntry], game: str, now: float, room: int
+    ) -> list[discord.SelectOption]:
+        """Las skins de `game` que se venden ahora y no tiene, como opciones `buy:<artículo>`."""
+        if room <= 0:
+            return []
+        await self.stock_up(guild_id)
+        owned = {e.catalog_key for e in entries}
+        offers = []
+        for skin in game_skins(game):
+            if (
+                not skin.for_sale
+                or skin.catalog_key in owned
+                or not in_season(skin, local_now(now))
+            ):
+                continue
+            item = await self.repository.item_by_key(guild_id, skin.catalog_key)
+            if item is None or not item.visible:
+                continue
+            level = f" · nivel {skin.min_level}" if skin.min_level else ""
+            offers.append(
+                discord.SelectOption(
+                    label=f"🛒 {skin.name} · {format_amount(quote(item, now).total)}"[:100],
+                    value=f"buy:{item.id}",
+                    emoji=_select_emoji(skin.emoji),
+                    description=f"Comprar y ponerlo en {GAMES[game].name}{level}"[:100],
+                )
+            )
+        return offers[:room]
 
     # -- Comprobaciones --------------------------------------------------------------
 
@@ -1425,7 +1513,7 @@ class Tienda(commands.Cog):
         entries = await self.repository.inventory(guild.id, member.id, self.clock())
         embed = discord.Embed(
             title=f"🎒 Mochila de {_name(member)}",
-            description=backpack_text(entries, self.clock()),
+            description=backpack_text(entries, self.clock(), self.worn_skins(guild.id, member.id)),
             color=COLOR,
         )
         embed.set_footer(text="Para usar objetos o ponerte roles, abre la mochila.")
@@ -1720,8 +1808,13 @@ class Tienda(commands.Cog):
 
     # -- Caja ------------------------------------------------------------------------
 
-    async def open_checkout(self, interaction: discord.Interaction, item_id: int) -> None:
-        """Abre la caja de un artículo para quien ha pulsado Comprar."""
+    async def open_checkout(
+        self, interaction: discord.Interaction, item_id: int, *, skin_game: str | None = None
+    ) -> None:
+        """Abre la caja de un artículo para quien ha pulsado Comprar.
+
+        `skin_game`: la mesa desde cuyo 🎨 se compra una skin, para ponérsela ahí.
+        """
         guild = interaction.guild
         buyer = interaction.user
         if guild is None or not isinstance(buyer, discord.Member):
@@ -1744,6 +1837,7 @@ class Tienda(commands.Cog):
             return
         balance = await self.economy.balance(guild.id, buyer.id)
         view = Checkout(self, guild, buyer, item, quote(item, now), balance=balance, note=note)
+        view.skin_game = skin_game
         await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
 
     async def _precheck(
@@ -1913,6 +2007,10 @@ class Tienda(commands.Cog):
                 got += (
                     f" Ya la llevas puesta en {game.label}; la cambias en la mochila o con "
                     "el botón 🎨 de la mesa."
+                    if game.wearable
+                    else f" Vale en todas las {game.name.lower()}: te la pongo en la mesa desde "
+                    "la que la compras o en las que llevaban el de serie, y cada mesa la "
+                    "cambias con su botón 🎨 o en la mochila."
                 )
         lines = [
             "### ✅ ¡Wepa! Es tuyo",
@@ -1949,8 +2047,8 @@ class Tienda(commands.Cog):
         title = is_title(item.catalog_key)
         skin = skin_of_item(item.catalog_key)
         if skin is not None:
-            # Comprar una skin te la pone en su juego.
-            await self.wear_skin(view.guild.id, view.buyer.id, skin.game, skin)
+            for game in self.wear_on_purchase(view.guild.id, view.buyer.id, skin, view.skin_game):
+                await self.wear_skin(view.guild.id, view.buyer.id, game, skin)
         if title:
             # Comprar un título te lo pone, antes de anunciarlo.
             await self.wear_title(view.guild.id, view.buyer.id, item.catalog_key)
@@ -2142,11 +2240,6 @@ def skin_params(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> di
     tienda no está cargada, los de serie: el juego nunca se queda sin dibujo.
     """
     return skin_params_of(game, skin_of(bot, guild_id, user_id, game))
-
-
-def tapete(bot: commands.Bot, guild_id: int, user_id: int) -> dict[str, object]:
-    """El tapete de este miembro para cualquier mesa con fieltro (`skin_params` de `tapete`)."""
-    return skin_params(bot, guild_id, user_id, skins_registry.TAPETE)
 
 
 async def grant_reward_skins(

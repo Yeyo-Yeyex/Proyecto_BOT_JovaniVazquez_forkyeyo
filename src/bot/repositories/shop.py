@@ -314,6 +314,7 @@ class ShopRepository:
                 columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
                 if "catalog_key" not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN catalog_key TEXT")
+            _create_skin_worn(connection)
             connection.commit()
             _allow_pets(connection)
         finally:
@@ -909,6 +910,54 @@ class ShopRepository:
         finally:
             connection.close()
 
+    async def wear_skin(
+        self, guild_id: int, user_id: int, game: str, catalog_key: str | None
+    ) -> None:
+        """Pone la skin `catalog_key` en la mesa `game` (con `None`, la de serie).
+
+        Va por mesa y no en `equipped`: un tapete se lleva en varias mesas a la vez.
+        """
+        await self._run(self._wear_skin_sync, guild_id, user_id, game, catalog_key)
+
+    def _wear_skin_sync(
+        self, guild_id: int, user_id: int, game: str, catalog_key: str | None
+    ) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                if catalog_key is None:
+                    connection.execute(
+                        "DELETE FROM shop_skin_worn WHERE guild_id = ? AND user_id = ? "
+                        "AND game = ?",
+                        (guild_id, user_id, game),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO shop_skin_worn (guild_id, user_id, game, catalog_key)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT (guild_id, user_id, game)
+                        DO UPDATE SET catalog_key = excluded.catalog_key
+                        """,
+                        (guild_id, user_id, game, catalog_key),
+                    )
+        finally:
+            connection.close()
+
+    async def worn_skins(self) -> list[tuple[int, int, str, str]]:
+        """La skin que lleva cada miembro en cada mesa: `(servidor, miembro, juego, clave)`."""
+        return await self._run(self._worn_skins_sync)
+
+    def _worn_skins_sync(self) -> list[tuple[int, int, str, str]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT guild_id, user_id, game, catalog_key FROM shop_skin_worn"
+            ).fetchall()
+        finally:
+            connection.close()
+        return [(int(r[0]), int(r[1]), str(r[2]), str(r[3])) for r in rows]
+
     async def worn_among(self, keys: Collection[str]) -> list[tuple[int, int, str, str, str]]:
         """Lo que lleva puesto cada miembro de entre `keys`.
 
@@ -1211,8 +1260,51 @@ class ShopRepository:
         connection = self._connect()
         try:
             with connection:
-                for table in ("shop_items", "shop_purchases", "shop_inventory", "shop_seeded"):
+                for table in (
+                    "shop_items",
+                    "shop_purchases",
+                    "shop_inventory",
+                    "shop_seeded",
+                    "shop_skin_worn",
+                ):
                     # `table` sale de una tupla fija, nunca de entrada del usuario.
                     connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
         finally:
             connection.close()
+
+
+def _create_skin_worn(connection: sqlite3.Connection) -> None:
+    """Crea la tabla de skins puestas por mesa y, la primera vez, trae las de `equipped`.
+
+    Antes cada skin se llevaba en un solo juego y se marcaba con `equipped`. Al
+    pasar a una por mesa, la skin puesta de entonces sigue puesta en su juego: los
+    gallos en `gallos` y el tapete granate, que era de la ruleta, en `ruleta`.
+    """
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shop_skin_worn'"
+    ).fetchone()
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS shop_skin_worn (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            game TEXT NOT NULL,
+            catalog_key TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, game)
+        )
+        """
+    )
+    if exists:
+        return
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO shop_skin_worn (guild_id, user_id, game, catalog_key)
+        SELECT guild_id, user_id,
+            CASE WHEN substr(catalog_key, 1, 11) = 'skin_gallo_' THEN 'gallos' ELSE 'ruleta' END,
+            catalog_key
+        FROM shop_inventory
+        WHERE status = 'active' AND equipped = 1
+            AND (substr(catalog_key, 1, 11) = 'skin_gallo_' OR catalog_key = 'skin_ruleta_granate')
+        ORDER BY id
+        """
+    )

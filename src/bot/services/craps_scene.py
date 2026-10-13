@@ -94,7 +94,7 @@ class CrapsScene:
         """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador.
 
         Args:
-            skin: El tapete del jugador (`skins.params("tapete", …)`); `None`, el de serie.
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
         """
         meta = {**meta_state(), "skin": skin}
         patches = await self.painter.render(meta, states)

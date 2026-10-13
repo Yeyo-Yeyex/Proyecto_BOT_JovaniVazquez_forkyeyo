@@ -134,7 +134,7 @@ class BacaraScene:
             header: El rótulo con esta mano ya contada.
             burned: Cartas quemadas, si es la primera del zapato.
             seed: Semilla de las chispas y el temblor del apretón.
-            skin: El tapete del jugador (`skins.params("tapete", …)`); `None`, el de serie.
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
         """
         states = coup_states(coup, before, header, burned=burned, seed=seed)
         patches = await self._frames({**meta_state(), "skin": skin}, states)

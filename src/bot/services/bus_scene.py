@@ -142,7 +142,7 @@ class BusScene:
             cards: Las cartas de la partida (al menos `hand`).
             hand: La mano que se va a jugar.
             seed: Semilla de las chispas y el temblor (misma semilla, mismo GIF).
-            skin: El tapete del jugador (`skins.params("tapete", …)`); `None`, el de serie.
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
         """
         common, win, lose = reveal_states(cards, hand, seed=seed)
         states = common + win + lose
