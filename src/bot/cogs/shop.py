@@ -1938,8 +1938,13 @@ class Tienda(commands.Cog):
         interaction: discord.Interaction,
         view: Checkout,
         paid: tuple[ShopItem, Sale, int],
+        *,
+        announce: bool = True,
     ) -> None:
-        """Aviso público, aviso de la Renta y logros, después de enseñar la factura."""
+        """Aviso público, aviso de la Renta y logros, después de enseñar la factura.
+
+        `announce=False` se salta el aviso público (compras desde otro panel).
+        """
         item, sale, balance = paid
         title = is_title(item.catalog_key)
         skin = skin_of_item(item.catalog_key)
@@ -1954,20 +1959,21 @@ class Tienda(commands.Cog):
             lines = ANNOUNCE_USABLE
         else:
             lines = ANNOUNCE_LINES[item.kind]
-        line = self.rng.choice(lines).format(
-            who=f"**{_name(view.buyer)}**", item=f"{item.emoji} **{item.name}**"
-        )
-        extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
-        big = view.price.total >= BIG_PURCHASE
-        header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if big else ""
-        try:
-            await interaction.followup.send(
-                f"{header}🛍️ {line}{extra}\n-# Pagó {format_amount(view.price.total)}, de los que "
-                f"{format_amount(view.price.tax)} son IGIC para {TAX_COLLECTOR}.",
-                allowed_mentions=discord.AllowedMentions.none(),
+        if announce:
+            line = self.rng.choice(lines).format(
+                who=f"**{_name(view.buyer)}**", item=f"{item.emoji} **{item.name}**"
             )
-        except discord.HTTPException:
-            logger.debug("No se pudo anunciar una compra", exc_info=True)
+            extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
+            big = view.price.total >= BIG_PURCHASE
+            header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if big else ""
+            try:
+                await interaction.followup.send(
+                    f"{header}🛍️ {line}{extra}\n-# Pagó {format_amount(view.price.total)}, "
+                    f"de los que {format_amount(view.price.tax)} son IGIC para {TAX_COLLECTOR}.",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.HTTPException:
+                logger.debug("No se pudo anunciar una compra", exc_info=True)
         # Comprar gasta dinero: gancho de la Renta (ver Biblia.txt, sección 4).
         await renta.remind(self.bot, interaction)
         if item.kind is Kind.PET:
@@ -2190,23 +2196,45 @@ async def open_aisle(bot: commands.Bot, interaction: discord.Interaction, aisle:
     return True
 
 
-async def open_checkout_key(
+async def prepare_checkout(
     bot: commands.Bot, interaction: discord.Interaction, catalog_key: str
-) -> bool:
-    """Abre la caja del artículo de serie `catalog_key` en un mensaje privado.
+) -> Checkout | None:
+    """Caja del artículo de serie `catalog_key`, sin enseñarla, para pagarla desde otro panel.
 
-    Es el atajo de `pala` para comprar un regalo desde el desplegable de la
-    familia. `False` si la tienda no está cargada o no lo vende (y no se toca la
-    respuesta).
+    `pala` la usa para comprar y dar un regalo sin salir del panel. Si no se puede
+    comprar (nivel, existencias), la caja viene con `failed` y el motivo en
+    `result`. `None` si la tienda no está cargada o no lo vende.
     """
-    if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
-        return False
-    await cog.stock_up(interaction.guild.id)
-    item = await cog.repository.item_by_key(interaction.guild.id, catalog_key)
-    if item is None:
-        return False
-    await cog.open_checkout(interaction, item.id)
-    return True
+    cog = find_cog(bot, Tienda)
+    guild, buyer = interaction.guild, interaction.user
+    if cog is None or guild is None or not isinstance(buyer, discord.Member):
+        return None
+    await cog.stock_up(guild.id)
+    item = await cog.repository.item_by_key(guild.id, catalog_key)
+    if item is None or not item.visible:
+        return None
+    now = cog.clock()
+    error, note = await cog._precheck(guild, buyer, item, now)
+    balance = await cog.economy.balance(guild.id, buyer.id)
+    view = Checkout(cog, guild, buyer, item, quote(item, now), balance=balance, note=note)
+    view.stop()  # no se enseña: solo guarda el precio y el comprador
+    if error is not None:
+        view.failed, view.result = True, f"❌ {error}"
+    return view
+
+
+async def pay_checkout(
+    view: Checkout, interaction: discord.Interaction
+) -> tuple[ShopItem, Sale, int] | None:
+    """Cobra una caja de `prepare_checkout`; `None` y el motivo en `view.result` si no."""
+    return await view.cog.complete_purchase(view, interaction)
+
+
+async def after_checkout(
+    view: Checkout, interaction: discord.Interaction, paid: tuple[ShopItem, Sale, int]
+) -> None:
+    """Renta y logros de una compra de `pay_checkout`, sin anunciarla en el canal."""
+    await view.cog.after_purchase(interaction, view, paid, announce=False)
 
 
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:

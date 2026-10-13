@@ -132,6 +132,7 @@ from bot.services.work_catalog import (
     EVENT_BY_KEY,
     FAVOR_BY_KEY,
     FAVORS,
+    GIFT_BY_KEY,
     GIFTS,
     JOB_BY_KEY,
     JOBS,
@@ -367,8 +368,8 @@ def family_options(
 ) -> list[discord.SelectOption]:
     """Opciones del desplegable de la familia: los regalos y los favores.
 
-    Los regalos que tienes se dan (`g:`); los que no, se compran (`b:`), que abre
-    la caja de la tienda.
+    Los regalos que tienes se dan (`g:`); los que no, se compran y se dan en el
+    acto (`b:`), con la caja de la tienda dentro del panel.
     """
     options = [
         discord.SelectOption(
@@ -380,10 +381,11 @@ def family_options(
         )
         if gift.key in gifts
         else discord.SelectOption(
-            label=f"Comprar: {gift.name} · +{gift.family} ❤️",
+            label=f"Comprar y dar: {gift.name} · +{gift.family} ❤️",
             value=f"b:{gift.key}",
             emoji=gift.emoji,
-            description="Abre la caja de la tienda",
+            description="De la tienda, sin salir de aquí · "
+            + wait_text(family_ready_at(contract, gift.key, gift.cooldown), now),
         )
         for gift in GIFTS
     ]
@@ -805,6 +807,8 @@ class PalaPanel(ui.LayoutView):
         self.pension: Pension | None = None
         #: Regalos para la familia que tiene en la mochila (claves de la tienda).
         self.gifts: frozenset[str] = frozenset()
+        #: Caja de la tienda del regalo que está a punto de comprar y dar.
+        self.checkout: tienda.Checkout | None = None
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -1221,15 +1225,76 @@ class PalaPanel(ui.LayoutView):
             await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
 
     async def _buy_gift(self, interaction: discord.Interaction, key: str) -> None:
-        """Atajo a la caja de un regalo, en privado."""
-        await ack(interaction, new_message=True)
+        """Caja de un regalo que no tiene, en el propio panel: compra y lo da en el acto."""
+        await ack(interaction)
         if key in await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id):
-            # Lo compró después de pintar el panel: se repinta con el regalo para dar.
-            await edit(interaction, content="Ya lo tienes en la mochila: dáselo desde el panel ❤️.")
-            await self.refresh()
+            # Lo compró después de pintar el panel: se da sin cobrar otra vez.
+            await self._give_gift(interaction, key)
             return
-        if not await tienda.open_checkout_key(self.cog.bot, interaction, key):
-            await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+        gift = GIFT_BY_KEY[key]
+        status = await self.service.status(self.guild_id, self.owner.id)
+        if status is None:
+            await self.refresh(interaction)
+            return
+        ready = family_ready_at(status.contract, key, gift.cooldown)
+        if ready > status.now:
+            # Se mira antes de cobrar: comprarlo para no poder darlo es tirar el dinero.
+            await notify(
+                interaction,
+                f"{gift.emoji} Tu familia todavía está con el último. Otro <t:{int(ready)}:R>.",
+            )
+            return
+        checkout = await tienda.prepare_checkout(self.cog.bot, interaction, key)
+        if checkout is None:
+            await notify(interaction, "La tienda está cerrada ahora mismo, mi amor.")
+            return
+        self.checkout = checkout
+        price = checkout.price
+        lines = [f"## {gift.emoji} {gift.name} · +{gift.family} ❤️", tienda.ticket_preview(price)]
+        lines.append(tienda.igic_line(price))
+        missing = price.total - checkout.balance
+        if checkout.failed:
+            lines.append(checkout.result or "")
+        elif missing > 0:
+            lines.append(
+                f"😬 Tienes {format_amount(checkout.balance)}: te faltan "
+                f"**{format_amount(missing)}**."
+            )
+        else:
+            lines.append(
+                f"{CURRENCY_EMOJI} Tienes {format_amount(checkout.balance)} → te quedan "
+                f"**{format_amount(checkout.balance - price.total)}**"
+            )
+        row: ui.ActionRow = ui.ActionRow()
+        row.add_item(
+            self._button(
+                f"💳 Comprar y dar · {format_amount(price.total)}",
+                self._pay_gift,
+                style=discord.ButtonStyle.success,
+                disabled=checkout.failed or missing > 0,
+            )
+        )
+        row.add_item(self._button("Cancelar", self._home))
+        self._frame("\n".join(lines), COLOR_IDLE, [row])
+        await self._edit(interaction)
+
+    async def _pay_gift(self, interaction: discord.Interaction) -> None:
+        # Se suelta antes de esperar a nada: un segundo clic no cobra dos veces.
+        checkout, self.checkout = self.checkout, None
+        await ack(interaction)
+        if checkout is None:
+            return
+        paid = await tienda.pay_checkout(checkout, interaction)
+        if paid is None:
+            self.notes.append(checkout.result or "")
+            await self.refresh(interaction)
+            return
+        self.notes.append(
+            f"💳 Pagas {format_amount(checkout.price.total)} "
+            f"({format_amount(checkout.price.tax)} de IGIC)."
+        )
+        await self._give_gift(interaction, checkout.item.catalog_key or "")
+        await tienda.after_checkout(checkout, interaction, paid)
 
     async def _give_gift(self, interaction: discord.Interaction, key: str) -> None:
         await ack(interaction)
@@ -1241,6 +1306,7 @@ class PalaPanel(ui.LayoutView):
             gift, family = await self.service.give_gift(self.guild_id, self.owner.id, key, consume)
         except WorkError as error:
             await notify(interaction, str(error))
+            await self.refresh(interaction)
             return
         note = f"{gift.emoji} Le das {gift.name.lower()} a tu familia: ❤️ {round(family)}/100."
         if pet := await mascotas.cameo(

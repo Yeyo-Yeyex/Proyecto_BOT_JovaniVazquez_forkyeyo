@@ -845,19 +845,46 @@ async def test_la_pala_da_los_regalos_de_la_mochila_con_el_bot_real(tmp_path: Pa
         await client.close()
 
 
-async def test_la_pala_abre_la_caja_de_un_regalo_con_el_bot_real(tmp_path: Path) -> None:
-    """Elegir un regalo que no tienes en el desplegable abre la caja de la tienda."""
+async def test_la_pala_compra_y_da_un_regalo_en_el_panel_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Un regalo que no tienes se compra y se da desde el desplegable, sin salir del panel."""
     client = await load_bot(tmp_path)
     try:
-        work = importer("Trabajo", client)
+        cog = client.get_cog("Trabajo")
         owner = MagicMock(spec=discord.Member)
         owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
-        interaction = fake_interaction(owner)
-        interaction.guild = MagicMock(spec=discord.Guild)
-        interaction.guild.id = GUILD_ID
-        assert await work.tienda.open_checkout_key(client, interaction, "flores_mama")
-        view = interaction.edit_original_response.await_args.kwargs["view"]
-        assert type(view).__name__ == "Checkout" and view.item.catalog_key == "flores_mama"
+        ctx = MagicMock()
+        ctx.guild = MagicMock(id=GUILD)
+        ctx.author = owner
+        ctx.channel = None
+        ctx.send = AsyncMock(return_value=MagicMock())
+        await cog.pala_text.callback(cog, ctx)
+        (panel,) = cog.panels
+
+        def interaction() -> MagicMock:
+            fake = fake_interaction(owner)
+            fake.guild = MagicMock(spec=discord.Guild)
+            fake.guild.id = GUILD_ID
+            fake.message = MagicMock()
+            fake.message.edit = AsyncMock()
+            return fake
+
+        await panel._hire(interaction(), "obra")
+        money = await client.economy.grant(GUILD_ID, OWNER_ID, amount=10_000, reason="prueba")
+        await panel._buy_gift(interaction(), "flores_mama")
+        assert panel.checkout is not None
+        await panel._pay_gift(interaction())
+
+        status = await cog.service.status(GUILD_ID, OWNER_ID)
+        assert "flores_mama" in status.contract.family_used  # dado
+        after = await client.economy.balance(GUILD_ID, OWNER_ID)
+        assert after < money  # cobrado (los logros de la compra devuelven algún premio)
+        assert "flores_mama" not in await importer("Trabajo", client).tienda.owned_keys(
+            client, GUILD_ID, OWNER_ID
+        )
+        await panel._pay_gift(interaction())  # el segundo clic no cobra otra vez
+        assert await client.economy.balance(GUILD_ID, OWNER_ID) == after
     finally:
         await client.close()
 
