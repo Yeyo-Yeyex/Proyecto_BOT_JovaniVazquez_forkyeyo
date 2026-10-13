@@ -19,7 +19,7 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
-  partida con sobrecoste). Acertar suma.
+  partida con sobrecoste, la cláusula de letra pequeña). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -47,6 +47,8 @@ from bot.services.work_catalog import (
     DIG_HINTS,
     DIG_MARKS,
     MEMORY_PACKS,
+    POLICY_FINE,
+    POLICY_TRAPS,
     PR_DANGER,
     PR_SAFE,
     RESTAURANTS,
@@ -522,6 +524,18 @@ def _collabs(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
     return "📩 Tu agencia te pasa propuestas. Una te puede costar la reputación.", built
 
 
+def _fine_print(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📄 Póliza {n}/{total}. ¿Qué cláusula deja tirado al asegurado?",
+        good=POLICY_TRAPS,
+        bad=POLICY_FINE,
+        label="Cláusula",
+    )
+    return "🔍 Eres médico de mutua. Antes de autorizar, encuentra la letra pequeña.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -532,6 +546,7 @@ _SPOT = {
     "flota": _fleet,
     "inspeccion": _audits,
     "colaboraciones": _collabs,
+    "letra_pequena": _fine_print,
 }
 
 

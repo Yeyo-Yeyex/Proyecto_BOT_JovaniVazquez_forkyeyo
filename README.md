@@ -257,12 +257,15 @@ python -m bot
   **Gestionar apodos** para el DNI falso).
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
-  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política y la
-  obra, que ya tienen la carrera larga: 5 puestos de tronco y dos ramas de 5
-  más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
+  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
+  obra y la sanidad, que ya tienen la carrera larga: 5 puestos de tronco y dos
+  ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
-  de fútbol) o 🚄 Obra pública (hasta presidente de una constructora del IBEX). Cada turno es un minijuego de decidir rápido, de
+  de fútbol) o 🚄 Obra pública (hasta presidente de una constructora del IBEX); la
+  sanidad va de celador a médico adjunto y sigue por 🏛️ Sanidad pública (hasta
+  consejero de Sanidad) o 💉 Privada (hasta dueño de una aseguradora de salud).
+  Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
   mandar cada papel a su negociado, elegir el pedido que más paga por
@@ -291,7 +294,7 @@ python -m bot
   (incentivo al empleo del RD 789/2022), pero nunca baja del 20 %. Eventos con
   dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). En
   sanidad se rinde con **guardias** (turno doble que paga 1,6 veces y te deja
-  saliente 12 h; el residente tiene guardias mínimas). En oficina se puede
+  saliente 12 h; el residente tiene guardias mínimas), también en sus ramas. En oficina se puede
   **teletrabajar** (cansa menos, rinde menos y te escriben a las once), el CTO
   cobra parte en **stock options** (exit o quiebra) y desde programador senior
   te puedes **ir a Hong Kong**: sueldo doble, MPF y salaries tax, exención del

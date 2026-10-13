@@ -491,6 +491,14 @@ def test_la_carrera_por_ramas() -> None:
     assert obra.position(10, "ladrillo").title == "Presidente de un club de fútbol"
     assert obra.position(10, "publica").title == "Presidente de una constructora del IBEX"
     assert [branch for branch, _ladder in obra.ladders] == ["ladrillo", "publica"]
+    sanidad = JOB_BY_KEY["sanidad"]
+    assert (sanidad.trunk_top, sanidad.top) == (5, 10) and sanidad.forks(5)
+    assert sanidad.position(10, "publica").title == "Consejero de Sanidad"
+    assert sanidad.position(10, "privada").title == "Dueño de una aseguradora de salud"
+    assert all(p.self_employed for p in sanidad.branch("privada").positions)
+    assert not any(p.self_employed for p in sanidad.branch("publica").positions)
+    # Las guardias siguen en las ramas: en sanidad se rinde con ellas hasta arriba.
+    assert sanidad.has_guards(10)
     # Un oficio sin ramas sigue igual.
     hosteleria = JOB_BY_KEY["hosteleria"]
     assert hosteleria.top == hosteleria.trunk_top == 5 and not hosteleria.forks(5)
@@ -552,6 +560,15 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert not ladrillo & {"modificado", "inauguracion", "aeropuerto", "muro"}
     assert {"jubilado", "sin_factura"} <= ladrillo & publica
     assert "sin_factura" not in {e.key for e in events_for("obra", 4, 100)}
+    publica = {e.key for e in events_for("sanidad", 10, 100, branch="publica")}
+    privada = {e.key for e in events_for("sanidad", 10, 100, branch="privada")}
+    assert {"pasillo", "derivar_privada", "mascarillas", "hospital_vacio"} <= publica
+    assert {"poliza_denegada", "canje", "turquia", "ohio", "fondo_salud"} <= privada
+    assert not publica & privada - {e.key for e in events_for("sanidad", 5, 100)}
+    assert {"cancun", "contrato_dia", "cama_guardias"} <= publica & privada
+    assert "giratoria_salud" not in {e.key for e in events_for("sanidad", 9, 100, branch="publica")}
+    # La obra pública y la sanidad pública comparten clave de rama, no eventos.
+    assert not publica & {"modificado", "inauguracion", "aeropuerto", "muro"}
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:
