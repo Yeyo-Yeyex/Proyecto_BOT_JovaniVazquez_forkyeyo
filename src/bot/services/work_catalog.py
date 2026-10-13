@@ -23,7 +23,11 @@ La política es una sátira del PSOE, el partido del Gobierno, y de sus
 tópicos (sobres, enchufes, comisiones, puertas giratorias, el Falcon, la
 máquina del fango). La obra se ríe del ladrillo (recalificaciones, la
 burbuja, los pisos turísticos) y de la obra pública (modificados, aeropuertos
-sin aviones, el AVE a ninguna parte). El reparto se ríe de las apps de reparto
+sin aviones, el AVE a ninguna parte). La sanidad, de la precariedad con bata
+(guardias, contratos de un día, camas en el pasillo) y, en sus ramas, de la
+gestión pública (listas de espera, mascarillas a precio de oro, hospitales
+inaugurados sin personal) y del negocio privado (letra pequeña, conciertos con
+la Comunidad, fondos de inversión). El reparto se ríe de las apps de reparto
 y de los falsos autónomos; el funcionariado, de la burocracia (con las
 preguntas del temario de verdad); el influencer, de la fama a golpes. Los
 personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
@@ -710,7 +714,7 @@ SANIDAD = Job(
     key="sanidad",
     name="Sanidad",
     emoji="🏥",
-    blurb="Aquí no se rinde trabajando lo normal: se rinde haciendo guardias.",
+    blurb="Del celador a la Consejería o a la aseguradora. Aquí se rinde haciendo guardias.",
     rgb=(26, 188, 156),
     guards_from=2,
     ordinary_cap=5,
@@ -726,12 +730,16 @@ SANIDAD = Job(
             (_good(3), _guards(2)),
             days=3, content="ronda:3",
             training=Training("tcae", "el título de TCAE (FP de grado medio)", 6_000),
+            perk=Perk("Zuecos de goma: +5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3, "Enfermero", 4_800, Mechanic.SPOT, 40,
             (Task("caught", "Acierta 20 triajes", "caught", 20), _guards(4)),
             days=4, content="triaje",
             training=Training("enfermeria", "el grado en Enfermería", 20_000),
+            perk=Perk(
+                "Café de la máquina del control: cada turno cansa un 10 % menos.", battery=0.10
+            ),
         ),
         Position(
             4, "Médico residente (MIR)", 8_000, Mechanic.DIALOGUE, 60,
@@ -739,11 +747,143 @@ SANIDAD = Job(
              _events(2)),
             days=5, content="mir",
             training=Training("mir", "la academia del MIR (y aprobar el examen)", 30_000),
+            perk=Perk("El Harrison, subrayado entero: un fallo gratis por turno.", retry=True),
         ),
         Position(
-            5, "Médico adjunto", 14_000, Mechanic.DIALOGUE, 60, (),
-            days=0, content="consulta",
+            5, "Médico adjunto", 14_000, Mechanic.DIALOGUE, 60,
+            (Task("smooth", "Pasa 25 consultas sin una sola reclamación", "smooth", 25),
+             _guards(6), _events(3)),
+            days=4, content="consulta",
             training=Training("ope", "la plaza de adjunto (oposición, OPE)", 60_000),
+            perk=Perk(
+                "El residente te sopla: una respuesta mala tachada en los diálogos.", fifty=True
+            ),
+        ),
+    ),
+    branches=(
+        Branch(
+            "publica",
+            "Sanidad pública",
+            "🏛️",
+            "Del jefe de sección a la Consejería: listas de espera, camas en el pasillo y "
+            "hospitales inaugurados sin personal. En nómina. Cobra menos, se jubila mejor.",
+            (
+                Position(
+                    6, "Jefe de sección", 15_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Cuadra 15 partes de quirófano sin tachones",
+                          "perfect_rounds", 15), _guards(6), _events(2)),
+                    days=5, content="quirofano:4",
+                    perk=Perk(
+                        "Despacho con ventana (al patio de luces): cada turno cansa un 5 % "
+                        "menos.", battery=0.05,
+                    ),
+                ),
+                Position(
+                    7, "Jefe de servicio", 16_500, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 pacientes a su sitio", "sorted", 30),
+                     _guards(6), _events(3)),
+                    days=5, content="derivaciones",
+                    training=Training(
+                        "jefatura",
+                        "la jefatura de servicio por concurso de méritos (y un café con el "
+                        "gerente)", 45_000,
+                    ),
+                    perk=Perk(
+                        "Secretaria que te guarda la agenda: +5 % de tiempo en el minijuego.",
+                        extra_time=0.05,
+                    ),
+                ),
+                Position(
+                    8, "Director médico", 18_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Apaga 25 incendios en la junta técnico-asistencial",
+                          "smooth", 25), _good(6), _events(3)),
+                    days=6, content="direccion",
+                    perk=Perk("Un jefe de guardia que no te llama: un fallo gratis por turno.",
+                              retry=True),
+                ),
+                Position(
+                    9, "Gerente del hospital", 20_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sobrevive a 30 reuniones con la Consejería", "smooth", 30),
+                     _good(6), _events(4)),
+                    days=6, content="gerencia",
+                    training=Training(
+                        "gerencia",
+                        "el nombramiento de gerente (libre designación, del partido que toque)",
+                        55_000,
+                    ),
+                    perk=Perk("Plaza de garaje en el hospital: cada turno cansa un 5 % menos.",
+                              battery=0.05),
+                ),
+                Position(
+                    10, "Consejero de Sanidad", 22_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="consejeria",
+                    perk=Perk("Coche oficial con sirena (de adorno): +10 % de tiempo.",
+                              extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="exconsejero de Sanidad con sillón en una aseguradora",
+        ),
+        Branch(
+            "privada",
+            "Privada",
+            "💉",
+            "Mutuas, retoques y conciertos con la Comunidad: la salud como modelo de negocio. "
+            "Autónomo. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6, "Médico de mutua", 15_500, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra 25 cláusulas de letra pequeña", "caught", 25),
+                     _good(5), _events(2)),
+                    days=5, content="letra_pequena", self_employed=True,
+                    perk=Perk(
+                        "Consultas de diez minutos (el doble que en la pública): cada turno "
+                        "cansa un 5 % menos.", battery=0.05,
+                    ),
+                ),
+                Position(
+                    7, "Cirujano estético", 19_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Haz 15 retoques tal como los pidió el cliente",
+                          "perfect_rounds", 15), _good(6), _events(3)),
+                    days=5, content="retoques:4", self_employed=True,
+                    training=Training(
+                        "estetica",
+                        "el máster en Medicina Estética (un fin de semana en Marbella)",
+                        50_000,
+                    ),
+                    perk=Perk("Luz de quirófano favorecedora: +5 % de tiempo en el minijuego.",
+                              extra_time=0.05),
+                ),
+                Position(
+                    8, "Director de una clínica privada", 23_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Atiende a 25 clientes VIP sin perder ninguno", "smooth",
+                          25), _good(6), _events(3)),
+                    days=6, content="clinica", self_employed=True,
+                    perk=Perk("Recepcionista que lo filtra todo: un fallo gratis por turno.",
+                              retry=True),
+                ),
+                Position(
+                    9, "Consejero delegado de un grupo hospitalario", 28_000, Mechanic.DIALOGUE,
+                    60,
+                    (Task("smooth", "Cierra 30 conciertos con la Comunidad", "smooth", 30),
+                     _good(6), _events(4)),
+                    days=6, content="conciertos", self_employed=True,
+                    training=Training(
+                        "fondo_salud",
+                        "la entrada de un fondo de inversión en el accionariado", 75_000,
+                    ),
+                    perk=Perk("Helipuerto en la azotea: cada turno cansa un 5 % menos.",
+                              battery=0.05),
+                ),
+                Position(
+                    10, "Dueño de una aseguradora de salud", 35_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="aseguradora", self_employed=True,
+                    perk=Perk("Póliza de oro para ti (sin carencias): +10 % de tiempo.",
+                              extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="dueño jubilado de aseguradora, con su propia póliza denegada",
         ),
     ),
 )  # fmt: skip
@@ -3048,6 +3188,488 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas de la sanidad (Pública y Privada) ------------------------------
+
+MEMORY_PACKS.update(
+    {
+        "quirofano": MemoryPack(
+            "🗓️ Parte de quirófano del lunes {n}. El orden de las intervenciones:",
+            "Programa las operaciones en el mismo orden (y que no se cuele el sobrino del "
+            "gerente).",
+            (
+                ("🦴", "Prótesis de cadera"),
+                ("🫀", "Bypass coronario"),
+                ("🧠", "Hernia discal"),
+                ("👁️", "Cataratas"),
+                ("🦵", "Menisco del concejal"),
+                ("🩻", "Apendicitis"),
+                ("🫁", "Biopsia de pulmón"),
+                ("🧽", "Contar las gasas"),
+                ("🧤", "Cambio de guantes"),
+            ),
+        ),
+        "retoques": MemoryPack(
+            "💋 El cliente {n} lo quiere todo, en este orden (y en efectivo):",
+            "Haz los retoques en el mismo orden, que luego sale sin filtro en las fotos.",
+            (
+                ("💉", "Bótox"),
+                ("👄", "Relleno de labios"),
+                ("👃", "Rinoplastia"),
+                ("🧑‍🦲", "Injerto capilar (mejor que el de Turquía)"),
+                ("🦷", "Carillas de blanco nuclear"),
+                ("🍑", "Aumento de glúteos"),
+                ("👀", "Párpados"),
+                ("🪒", "Láser"),
+                ("😐", "Lifting (sin expresión)"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "derivaciones": SortPack(
+            "🗂️ Eres jefe de servicio. Cada paciente va a su sitio: quirófano ya, lista de "
+            "espera, concierto con la privada o de vuelta a su médico de cabecera.",
+            "🧑‍⚕️ Paciente {n}/{total}:",
+            ("🔪 Quirófano ya", "⏳ Lista de espera", "🤝 A la privada", "🏠 A su médico"),
+            (
+                ("Apendicitis con fiebre y la tripa como una tabla", 0),
+                ("Fractura de cadera de una señora de 85 años", 0),
+                ("Hernia estrangulada desde esta mañana", 0),
+                ("Embarazo ectópico con dolor fuerte", 0),
+                ("Juanete que le molesta «desde la boda de su hija»", 1),
+                ("Cataratas que aún le dejan ver el telediario", 1),
+                ("Rodilla de pádel del concejal (sin prisa, aunque él diga que sí)", 1),
+                ("Varices de toda la vida, sin dolor", 1),
+                ("Prótesis de rodilla con dos años de espera (y elecciones en mayo)", 2),
+                ("Operación de hombro que la Consejería quiere sacar de la lista ya", 2),
+                ("Doscientas cataratas para bajar la lista antes del telediario", 2),
+                ("Resonancia que en la pública tarda nueve meses", 2),
+                ("Catarro derivado a Cirugía «por si acaso»", 3),
+                ("Viene a por la receta de las pastillas de la tensión", 3),
+                ("Pide un justificante para el gimnasio", 3),
+                ("Dolor de espalda de la mudanza, sin nada más", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: Pólizas de la mutua: la cláusula que deja tirado al asegurado y las que son normales.
+POLICY_TRAPS: tuple[str, ...] = (
+    "Excluye cualquier enfermedad que empiece por vocal",
+    "No cubre accidentes en días laborables ni en festivos",
+    "Carencia de 18 meses para las urgencias",
+    "Las prótesis solo se cubren si son de segunda mano",
+    "No cubre lesiones jugando al pádel (el 90 % de los asegurados)",
+    "La ambulancia se cubre si la empuja el asegurado",
+    "Excluye las enfermedades preexistentes, incluida la de haber nacido",
+    "Copago del 100 % en todo lo que no sea una tirita",
+    "Los partos solo se cubren los martes y si son de gemelos",
+    "Habitación individual, compartida con otros tres pacientes",
+)
+POLICY_FINE: tuple[str, ...] = (
+    "Consultas de medicina general sin copago",
+    "Urgencias 24 horas en los centros concertados",
+    "Análisis de sangre con volante del especialista",
+    "Hospitalización en habitación individual",
+    "Pediatría para los hijos del titular",
+    "Revisión ginecológica una vez al año",
+    "Diez sesiones de fisioterapia al año",
+    "Limpieza dental anual incluida",
+    "Segunda opinión médica por videollamada",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "direccion": DialoguePack(
+            "🏥 Junta técnico-asistencial. Regla de oro: **nunca digas «no hay dinero»; di "
+            "«estamos priorizando».**",
+            (
+                Dialogue(
+                    "Los cirujanos amenazan con dimitir en bloque por las peonadas.",
+                    "Te sientas con ellos y pagas las tardes como se pactó.",
+                    ("Que dimitan, ya vendrán los de la privada.",
+                     "Les pones un reloj de fichar dentro del quirófano."),
+                ),
+                Dialogue(
+                    "Urgencias tiene 40 pacientes en el pasillo.",
+                    "Abres la planta que lleva cerrada «por obras» desde 2019.",
+                    ("Mueves las camillas al parking, que hay más sitio.",
+                     "Comunicado de prensa: «situación puntual»."),
+                ),
+                Dialogue(
+                    "El jefe de Traumatología quiere un robot quirúrgico de 2 millones.",
+                    "Pides un estudio de coste y de uso antes de firmar.",
+                    ("Lo compras: queda muy bien en la foto.", "Le regalas un destornillador."),
+                ),
+                Dialogue(
+                    "La supervisora te avisa: no hay sustitutos para agosto.",
+                    "Abres la bolsa de empleo y haces contratos de verano completos.",
+                    ("Contratos de un día, renovables cada mañana.",
+                     "Cerráis el hospital en agosto, como los bares."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta por la lista de espera.",
+                    "Das la cifra real y el plan para bajarla.",
+                    ("«No es una lista: es una cola de esperanza».",
+                     "Le dices que la culpa es de Perro Sanxe."),
+                ),
+                Dialogue(
+                    "El sindicato pide descanso después de las guardias de 24 horas.",
+                    "Lo garantizas por escrito: lo dice la ley.",
+                    ("Les regalas un cojín cervical.",
+                     "Que duerman en la cama de guardias, de dos en dos."),
+                ),
+                Dialogue(
+                    "Un presentador famoso quiere saltarse la lista de espera.",
+                    "Entra por la lista, como todo el mundo.",
+                    ("Le abres un quirófano el domingo.", "Le pides un selfie a cambio."),
+                ),
+                Dialogue(
+                    "Se cae el sistema informático a las nueve de la mañana.",
+                    "Activas el plan de contingencia: papel y bolígrafo.",
+                    ("Reinicias el servidor a patadas.", "Mandas a todo el mundo a casa."),
+                ),
+                Dialogue(
+                    "Una consultora te ofrece «optimizar» el hospital por 3 millones.",
+                    "Pides que expliquen qué van a hacer antes de pagar un euro.",
+                    ("Firmas: el PowerPoint tenía unas gráficas preciosas.",
+                     "Le encargas también la cafetería."),
+                ),
+                Dialogue(
+                    "La Consejería te pide recortar un 10 % «sin tocar la calidad».",
+                    "Les mandas por escrito qué se recorta y qué se pierde con ello.",
+                    ("Recortas el papel higiénico.",
+                     "Apagas la luz del pasillo, que total ya hay pacientes."),
+                ),
+            ),
+        ),
+        "gerencia": DialoguePack(
+            "📊 Reunión con la Consejería. Regla de oro: **todo es «un reto» y nada es «un "
+            "problema».**",
+            (
+                Dialogue(
+                    "El consejero quiere inaugurar el ala nueva antes de las elecciones. No "
+                    "hay personal.",
+                    "Propones abrirla por fases, a medida que haya plantilla.",
+                    ("Cinta, tijeras y la luz apagada al día siguiente.",
+                     "Contratas figurantes con bata para la foto."),
+                ),
+                Dialogue(
+                    "Te piden explicar por qué el hospital tiene déficit.",
+                    "Enseñas qué está infradotado y cuánto cuesta arreglarlo.",
+                    ("La culpa es de los pacientes, por ponerse malos.",
+                     "Escondes las facturas en un cajón, como en 2008."),
+                ),
+                Dialogue(
+                    "Hay que comprar mascarillas urgentes y te llama un intermediario.",
+                    "Compras por el procedimiento de emergencia, con todo por escrito.",
+                    ("Compras al amigo de un asesor de un ministro, el del Rolls.",
+                     "Pagas por adelantado a una empresa de colchones."),
+                ),
+                Dialogue(
+                    "El hospital sale el último en un ranking.",
+                    "Miras qué mide el ranking y mejoras lo que sí importa.",
+                    ("Compras el ranking.", "Dices que el ranking lo ha hecho el Kremlin."),
+                ),
+                Dialogue(
+                    "Los médicos se van a Francia y a Portugal porque pagan el doble.",
+                    "Pides a la Consejería un plan de retención: sueldos y plazas fijas.",
+                    ("Les cantas «¡Azul, azul, como el mar azul!» para que vuelvan.",
+                     "Fichas médicos por TikTok."),
+                ),
+                Dialogue(
+                    "La cafetería sube el café a 2,50 €.",
+                    "Renegocias la concesión: el personal no puede pagar eso.",
+                    ("«¡Quiero café!» y te lo pagas con las dietas.", "Prohíbes el café."),
+                ),
+                Dialogue(
+                    "Un fondo de inversión quiere gestionar el hospital «con eficiencia "
+                    "privada».",
+                    "Le pides los números de los otros hospitales que gestiona.",
+                    ("Le das las llaves y te vas de vacaciones.",
+                     "Le vendes también el tanatorio."),
+                ),
+                Dialogue(
+                    "Hay goteras en el quirófano 3.",
+                    "Lo cierras y pides la obra urgente.",
+                    ("Pones un cubo y a operar.", "Dices que es humedad ambiental, muy sana."),
+                ),
+                Dialogue(
+                    "En el Parlamento autonómico te preguntan por las camas en el pasillo.",
+                    "Reconoces el problema y das plazos.",
+                    ("«Es el vecino el que elige la cama», como diría Rajoy.",
+                     "Las camas en el pasillo dan ambiente."),
+                ),
+                Dialogue(
+                    "El consejero te pide que la memoria anual quede «bonita».",
+                    "La haces exacta y bien explicada.",
+                    ("Gráficas con el eje empezando en 99.",
+                     "La presentas en un NO-DO con música de fanfarria."),
+                ),
+            ),
+        ),
+        "consejeria": DialoguePack(
+            "🏛️ Pleno del Parlamento autonómico. Regla de oro: **la culpa siempre es del "
+            "Gobierno central (o del anterior).**",
+            (
+                Dialogue(
+                    "La oposición te pregunta por la lista de espera.",
+                    "Es herencia del Gobierno anterior y, aun así, la estamos bajando.",
+                    ("Es culpa mía: dimito.", "¿Qué lista?"),
+                ),
+                Dialogue(
+                    "Llega una pandemia nueva.",
+                    "Un comité de expertos de verdad y datos públicos cada día.",
+                    ("Un comité de expertos que no existe, como en 2020.",
+                     "Recomiendas gárgaras de gofio."),
+                ),
+                Dialogue(
+                    "Te piden explicar el contrato de mascarillas a precio de oro.",
+                    "Publicas el expediente entero en el portal de transparencia.",
+                    ("«Fue una urgencia y no me acuerdo».",
+                     "Dices que las trajo Puigdemont en el maletero."),
+                ),
+                Dialogue(
+                    "Toca repartir los fondos Next Generation.",
+                    "Presentas proyectos concretos: centros de salud y equipos.",
+                    ("Pides el dinero para una rotonda con estatua.",
+                     "Te lo gastas en consultoras."),
+                ),
+                Dialogue(
+                    "Ayuso dice que en Madrid se opera más y mejor.",
+                    "Comparas los datos públicos, comunidad por comunidad.",
+                    ("Le contestas con una frase sobre la fruta.",
+                     "Le pides que te preste quirófanos."),
+                ),
+                Dialogue(
+                    "Los médicos de familia convocan huelga: ven 60 pacientes al día.",
+                    "Negocias cupos máximos y más plazas de residente.",
+                    ("Les recomiendas consultas de un minuto.", "Contratas a Doctor Google."),
+                ),
+                Dialogue(
+                    "Un periodista te pregunta si te has vacunado.",
+                    "Sí, y enseñas el certificado.",
+                    ("Como Bolsonaro: «yo no me vacuno».",
+                     "Le pinchas a él para demostrarlo."),
+                ),
+                Dialogue(
+                    "Trump dice que la sanidad de EE. UU. es «the best, believe me».",
+                    "Explicas lo que cuesta allí una ambulancia.",
+                    ("Le das la razón y copias su modelo.",
+                     "Le mandas la factura de tu última guardia."),
+                ),
+                Dialogue(
+                    "Te preguntan si vas a fichar por una aseguradora al dejar el cargo.",
+                    "Respetarás el periodo de incompatibilidad, como manda la ley.",
+                    ("Ya tengo el despacho elegido.",
+                     "¿Puerta giratoria? Es una puerta automática."),
+                ),
+                Dialogue(
+                    "Hay que nombrar al nuevo gerente del hospital.",
+                    "Concurso de méritos y una comparecencia pública.",
+                    ("Nombras al cuñado del alcalde.",
+                     "A dedo, pero con un dedo muy profesional."),
+                ),
+            ),
+        ),
+        "clinica": DialoguePack(
+            "💳 Recepción de la clínica. Regla de oro: **el paciente es «cliente», y el cliente "
+            "siempre trae tarjeta.**",
+            (
+                Dialogue(
+                    "Un futbolista quiere entrar por detrás para que no le vean.",
+                    "Garaje privado, ascensor directo y confidencialidad.",
+                    ("Le haces una foto para las redes.",
+                     "Le cobras aparte la puerta de atrás."),
+                ),
+                Dialogue(
+                    "Un cliente pregunta por qué la resonancia cuesta 400 €.",
+                    "Le das el presupuesto detallado y le explicas qué incluye.",
+                    ("Porque la hacemos con más cariño.",
+                     "Porque la máquina es alemana y tiene sentimientos."),
+                ),
+                Dialogue(
+                    "Una influencer quiere un chequeo «gratis a cambio de visibilidad».",
+                    "Le ofreces la tarifa normal o un acuerdo por escrito.",
+                    ("Se lo haces todo gratis por diez stories.",
+                     "Le cobras por cada seguidor."),
+                ),
+                Dialogue(
+                    "Un cliente VIP se queja de que el café de la sala de espera es de "
+                    "máquina.",
+                    "Barista y cruasán: esto es la privada.",
+                    ("«¿Con pulpa? ¡Sin pulpa!» y le das un zumo de bote.",
+                     "Que vaya a la pública, que allí ni café."),
+                ),
+                Dialogue(
+                    "Un paciente de la mutua pide una prueba que su póliza no cubre.",
+                    "Le explicas qué cubre y le das presupuesto del resto.",
+                    ("Se la haces y que pague la mutua sin enterarse.",
+                     "Le dices que lo suyo no existe."),
+                ),
+                Dialogue(
+                    "Un médico quiere trabajar por la mañana en la pública y por la tarde aquí.",
+                    "Si tiene la compatibilidad en regla, adelante.",
+                    ("Que deje la pública, que aquí no hay listas.",
+                     "Que se traiga a sus pacientes de la pública."),
+                ),
+                Dialogue(
+                    "Un turista de EE. UU. no se cree lo barata que es la consulta.",
+                    "Le atiendes con la tarifa de siempre.",
+                    ("Le cobras la tarifa de Ohio.",
+                     "Le dices que en España todo es gratis menos la luz."),
+                ),
+                Dialogue(
+                    "Reseña de una estrella: «tardaron 7 minutos en atenderme».",
+                    "Contestas con amabilidad y revisas qué pasó.",
+                    ("Contestas: «en la pública tardan 7 meses».",
+                     "Compras cien reseñas de cinco estrellas."),
+                ),
+                Dialogue(
+                    "Un jeque quiere la planta entera para él y su séquito.",
+                    "Le reservas la suite y mantienes las camas para el resto.",
+                    ("Echas a todos los pacientes.", "Le alquilas la UCI como trastero."),
+                ),
+                Dialogue(
+                    "Llega un cliente con un diagnóstico que le ha hecho un chatbot.",
+                    "Le exploras y luego comparas con lo que dice la máquina.",
+                    ("Le das la razón al chatbot.", "Le cobras la consulta al chatbot."),
+                ),
+            ),
+        ),
+        "conciertos": DialoguePack(
+            "🤝 Despacho de la Consejería. Regla de oro: **la pública no da abasto y tú tienes "
+            "quirófanos libres (qué casualidad).**",
+            (
+                Dialogue(
+                    "La Comunidad quiere derivarte 5.000 cataratas.",
+                    "Precio cerrado por proceso y resultados auditados.",
+                    ("Las operas a toda prisa, que se paga por ojo.",
+                     "Operas el mismo ojo dos veces."),
+                ),
+                Dialogue(
+                    "Te ofrecen gestionar un hospital nuevo durante 30 años.",
+                    "Contrato con indicadores de calidad y penalizaciones claras.",
+                    ("Firmas con una cláusula: si pierdes dinero, paga la Comunidad.",
+                     "Le pones tu nombre al hospital."),
+                ),
+                Dialogue(
+                    "Un fondo de Luxemburgo quiere el 40 % del grupo.",
+                    "Pides garantías de que no recortará plantilla.",
+                    ("Vendes y fusionas Pediatría con la cafetería.", "Le vendes el 140 %."),
+                ),
+                Dialogue(
+                    "La oposición dice que «estáis privatizando la sanidad».",
+                    "Publicas cuánto cobráis por proceso y cuánto costaría en la pública.",
+                    ("Les invitas a una revisión gratis en la suite.",
+                     "Dices que es colaboración público-privada, como los sobres."),
+                ),
+                Dialogue(
+                    "Hay que renovar el concierto de diálisis.",
+                    "Mantienes precio y calidad: esos pacientes no pueden esperar.",
+                    ("Subes el precio un 30 %: ¿adónde van a ir?",
+                     "Ofreces diálisis a domicilio por Temu."),
+                ),
+                Dialogue(
+                    "Un consejero deja el cargo y quiere trabajar con vosotros.",
+                    "Esperas a que acabe su periodo de incompatibilidad.",
+                    ("Le das un despacho al día siguiente.",
+                     "Le pagas «asesorías» desde antes de dejarlo."),
+                ),
+                Dialogue(
+                    "Los médicos piden más sueldo.",
+                    "Revisas las tablas salariales: si se van, no hay hospital.",
+                    ("Les ofreces una gorra con el logo.",
+                     "Contratas médicos por horas, como los riders."),
+                ),
+                Dialogue(
+                    "Un auditor pregunta por las facturas a la Comunidad.",
+                    "Le das acceso a todo.",
+                    ("Le invitas a un congreso en Cancún.", "Le facturas también la auditoría."),
+                ),
+                Dialogue(
+                    "Milei te propone llevar tu modelo a Argentina.",
+                    "Estudias el mercado con calma.",
+                    ("Llevas una motosierra a la reunión.", "Le facturas en dólar blue."),
+                ),
+                Dialogue(
+                    "Te piden publicar las listas de espera de la privada.",
+                    "Las publicas, igual que la pública.",
+                    ("En la privada no hay listas: hay «agendas premium».",
+                     "«Lista de espera» te suena a comunismo."),
+                ),
+            ),
+        ),
+        "aseguradora": DialoguePack(
+            "📈 Junta de accionistas. Regla de oro: **lo que se cobra es «prima»; lo que se "
+            "paga es «siniestralidad».**",
+            (
+                Dialogue(
+                    "Los accionistas preguntan por qué el beneficio ha subido un 40 %.",
+                    "Más asegurados por las listas de la pública y una buena gestión.",
+                    ("Porque denegamos el 40 % de los partes.",
+                     "Porque cobramos también a los difuntos."),
+                ),
+                Dialogue(
+                    "Un asegurado de 80 años quiere renovar.",
+                    "Le renuevas: lleva treinta años pagando.",
+                    ("Le subes la prima un 300 % «por la edad».",
+                     "Le ofreces un seguro de decesos en su lugar."),
+                ),
+                Dialogue(
+                    "El regulador revisa tus cláusulas.",
+                    "Simplificas la póliza y la publicas en lenguaje claro.",
+                    ("Las imprimes en cuerpo 3 para que no se lean.",
+                     "Las escribes en latín, como las recetas de antes."),
+                ),
+                Dialogue(
+                    "Trump te propone entrar en el mercado de EE. UU.",
+                    "Estudias la regulación y los riesgos antes de entrar.",
+                    ("Entras cobrando 40.000 dólares por una ambulancia.",
+                     "Le regalas un seguro dental a cambio de quitar los aranceles."),
+                ),
+                Dialogue(
+                    "Hacienda revisa cómo vendes la exención de los seguros de empresa.",
+                    "Cumples la norma y se la explicas bien a tus clientes.",
+                    ("Le ofreces a Perro Sanxe una póliza gratis.",
+                     "Te llevas la sede a Andorra."),
+                ),
+                Dialogue(
+                    "Una periodista pregunta por los partes denegados.",
+                    "Das los datos y el procedimiento de reclamación.",
+                    ("«Solo denegamos lo que habría que pagar».",
+                     "«No me consta, no me consta, no me consta»."),
+                ),
+                Dialogue(
+                    "La competencia lanza pólizas a 9,99 €.",
+                    "Compites con servicio y con buen cuadro médico.",
+                    ("Lanzas una a 9,98 € que no cubre nada.",
+                     "Copias su anuncio con un perro más bonito."),
+                ),
+                Dialogue(
+                    "Los médicos del cuadro no quieren seguir cobrando 12 € por consulta.",
+                    "Subes las tarifas: sin médicos no hay seguro.",
+                    ("Les pagas en vales de gasolina.",
+                     "Les dices que «antes se trabajaba por vocación»."),
+                ),
+                Dialogue(
+                    "Llega una ola de gripe y se disparan las consultas.",
+                    "Refuerzas el cuadro médico y la teleconsulta.",
+                    ("Subes las primas a mitad de año.", "Cierras por vacaciones hasta marzo."),
+                ),
+                Dialogue(
+                    "Erdoğan te invita a abrir clínicas de injerto capilar en Estambul.",
+                    "Le das las gracias y sigues centrado en tu mercado.",
+                    ("Aceptas y pones su cara en el logo.",
+                     "Te haces un injerto en directo en la reunión."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -3641,6 +4263,399 @@ EVENTS: tuple[Event, ...] = (
             ("No puedo", Outcome("Dices que no. La supervisora toma nota.", performance=-5)),
         ),
         jobs=("sanidad",),
+    ),
+    # -- Sanidad: más marrones del tronco ------------------------------------------------
+    Event(
+        "contrato_dia",
+        "📞 Son las siete de la mañana y te ofrecen un contrato de un día. El undécimo este mes.",
+        (
+            (
+                "Lo cojo",
+                Outcome(
+                    "Lo coges. Te firman el contrato, el finiquito y el siguiente contrato en "
+                    "la misma hoja.",
+                    pay=0.5,
+                    battery=-10,
+                    family=-5,
+                    stat="work_one_day_contract",
+                ),
+            ),
+            (
+                "Paso",
+                Outcome("Pasas. Te bajan en la bolsa de empleo hasta 2031.", performance=-5),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=2,
+    ),
+    Event(
+        "selfie_quirofano",
+        "🤳 Un compañero quiere grabar un baile en el quirófano para las redes.",
+        (
+            (
+                "Bailo",
+                Outcome(
+                    "Bailáis con las mascarillas puestas. Dos millones de visitas y una "
+                    "reunión con la supervisora.",
+                    performance=-5,
+                    family=5,
+                    stat="work_or_dance",
+                ),
+            ),
+            (
+                "Ni de broma",
+                Outcome(
+                    "Le recuerdas que el paciente sigue dormido. Graba él solo.", performance=5
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=3,
+    ),
+    Event(
+        "cama_guardias",
+        "🛏️ La cama de la sala de guardias huele a 1987 y cruje como un barco.",
+        (
+            (
+                "Dormir igual",
+                Outcome(
+                    "Duermes dos horas con la bata de almohada. Hueles a 1987.",
+                    battery=15,
+                    stat="work_guard_bed",
+                ),
+            ),
+            (
+                "Silla del control",
+                Outcome(
+                    "Cabeceas en la silla del control. Te despierta el timbre de la 214.",
+                    battery=-5,
+                    performance=5,
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=2,
+    ),
+    # -- Sanidad: la pública -------------------------------------------------------------
+    Event(
+        "pasillo",
+        "🛏️ Urgencias, colapsada: hay camas en el pasillo hasta la máquina de café.",
+        (
+            (
+                "Abrir la planta cerrada",
+                Outcome(
+                    "Abres la planta cerrada «por obras» desde 2019. Las obras eran una "
+                    "cinta de plástico.",
+                    performance=15,
+                    battery=-15,
+                    stat="work_ward_opened",
+                ),
+            ),
+            (
+                "«Situación puntual»",
+                Outcome(
+                    "Sale tu comunicado: «situación puntual». Es la duodécima puntual del año.",
+                    performance=5,
+                    stat="work_hallway_beds",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=6,
+        branches=("publica",),
+    ),
+    Event(
+        "derivar_privada",
+        "📋 La Consejería te pide derivar 500 operaciones a la privada «para bajar la lista».",
+        (
+            (
+                "Derivar",
+                Outcome(
+                    "Las derivas. La lista baja, el gasto sube y tus quirófanos siguen "
+                    "cerrados por la tarde.",
+                    pay=0.5,
+                    performance=10,
+                    stat="work_referred_private",
+                ),
+            ),
+            (
+                "Abrir por la tarde",
+                Outcome(
+                    "Abres tus quirófanos por la tarde. La lista baja y en casa ya no te ven "
+                    "el pelo.",
+                    performance=15,
+                    battery=-15,
+                    family=-5,
+                    stat="work_afternoon_ops",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=7,
+        branches=("publica",),
+    ),
+    Event(
+        "mascarillas",
+        "😷 Un «empresario» que ayer vendía colchones te ofrece mascarillas a precio de oro, "
+        "con comisión para el que lo presenta.",
+        (
+            (
+                "Comprar",
+                Outcome(
+                    "Compras. Las mascarillas llegan tarde y el intermediario se compra un "
+                    "Rolls. Te toca un sobre.",
+                    black=2.0,
+                    risk=0.3,
+                    caught_by="uco",
+                    stat="work_masks",
+                ),
+            ),
+            (
+                "Concurso público",
+                Outcome(
+                    "Concurso público con tres ofertas. Llegan una semana más tarde y a la "
+                    "cuarta parte de precio.",
+                    performance=-5,
+                    stat="work_masks_refused",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=8,
+        branches=("publica",),
+    ),
+    Event(
+        "hospital_vacio",
+        "✂️ Toca inaugurar el hospital nuevo antes de las elecciones. Faltan el personal, el "
+        "material y la mitad de los ascensores.",
+        (
+            (
+                "Cortar la cinta",
+                Outcome(
+                    "Cinta, tijeras y foto en la entrada. Al día siguiente lo cerráis «para "
+                    "ajustes».",
+                    pay=0.4,
+                    performance=10,
+                    stat="work_empty_hospital",
+                ),
+            ),
+            (
+                "Cuando haya personal",
+                Outcome(
+                    "Esperas a tener plantilla. El consejero inaugura otro hospital vacío en "
+                    "la isla de al lado.",
+                    performance=-10,
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=9,
+        branches=("publica",),
+    ),
+    Event(
+        "giratoria_salud",
+        "💼 Una aseguradora te ofrece un sillón en su consejo… para cuando dejes la "
+        "Consejería. Que firmes ya, por si acaso.",
+        (
+            (
+                "Firmo el precontrato",
+                Outcome(
+                    "Firmas con el cargo todavía caliente. Te mandan una cesta de Navidad del "
+                    "tamaño de un coche.",
+                    black=1.5,
+                    risk=0.2,
+                    caught_by="incompatibilidades",
+                    stat="work_revolving_health",
+                ),
+            ),
+            (
+                "Ni hablar",
+                Outcome(
+                    "Les dices que hay periodo de incompatibilidad. Te miran como si "
+                    "hablaras en latín.",
+                    performance=-5,
+                    stat="work_revolving_refused",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=10,
+        branches=("publica",),
+    ),
+    # -- Sanidad: la privada -------------------------------------------------------------
+    Event(
+        "poliza_denegada",
+        "📄 Un asegurado de 30 años necesita una prueba cara. La póliza tiene una cláusula "
+        "en letra de cuerpo 4.",
+        (
+            (
+                "Denegar por la cláusula",
+                Outcome(
+                    "Se la deniegas por la cláusula 47.3.b. La aseguradora te manda un jamón.",
+                    pay=0.6,
+                    performance=10,
+                    risk=0.2,
+                    fine=1.0,
+                    caught_by="abusivas",
+                    stat="work_claim_denied",
+                ),
+            ),
+            (
+                "Cubrirla",
+                Outcome(
+                    "La autorizas. El paciente se cura y la aseguradora te manda una circular.",
+                    performance=-10,
+                    family=5,
+                    stat="work_claim_paid",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=6,
+        branches=("privada",),
+    ),
+    Event(
+        "canje",
+        "🤳 Una influencer quiere un retoque gratis «a cambio de visibilidad».",
+        (
+            (
+                "Canje por stories",
+                Outcome(
+                    "Diez stories con tu clínica de fondo. Te llegan doscientos mensajes "
+                    "pidiendo lo mismo gratis.",
+                    performance=10,
+                    stat="work_canje",
+                ),
+            ),
+            (
+                "Con factura",
+                Outcome(
+                    "Le pasas la tarifa. Te deja de seguir y te pone una estrella en las reseñas.",
+                    pay=0.5,
+                    performance=-5,
+                    stat="work_canje_refused",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=7,
+        branches=("privada",),
+    ),
+    Event(
+        "turquia",
+        "🧑‍🦲 Medio pueblo vuelve de Estambul con un injerto capilar torcido y te piden "
+        "arreglarlo.",
+        (
+            (
+                "Arreglarlos",
+                Outcome(
+                    "Arreglas doce cabezas a precio de urgencia. Erdoğan, sin saberlo, es tu "
+                    "mejor comercial.",
+                    pay=0.8,
+                    battery=-10,
+                    stat="work_turkey_fix",
+                ),
+            ),
+            (
+                "Que reclamen allí",
+                Outcome(
+                    "Les das el teléfono de la clínica de Estambul. Contesta un contestador en "
+                    "turco.",
+                    family=5,
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=7,
+        branches=("privada",),
+    ),
+    Event(
+        "ohio",
+        "🇺🇸 Un turista de EE. UU. ve tu factura y se echa a llorar: «En Ohio esto me costaría "
+        "40.000 dólares».",
+        (
+            (
+                "Tarifa de Ohio",
+                Outcome(
+                    "Le cobras «la tarifa internacional». Te da las gracias y 25 % de propina.",
+                    pay=0.8,
+                    risk=0.2,
+                    fine=1.0,
+                    caught_by="abusivas",
+                    stat="work_ohio_rate",
+                ),
+            ),
+            (
+                "Tarifa normal",
+                Outcome(
+                    "Le cobras lo normal. Te abraza y dice que se muda a Canarias.",
+                    family=5,
+                    stat="work_fair_rate",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=8,
+        branches=("privada",),
+    ),
+    Event(
+        "concierto_sobre",
+        "🤝 Un alto cargo de la Comunidad te insinúa que el concierto se renueva antes «con "
+        "un detalle».",
+        (
+            (
+                "Un detalle",
+                Outcome(
+                    "Un detalle en un sobre y el concierto renovado por diez años. La UCO "
+                    "también tiene agenda.",
+                    black=2.5,
+                    risk=0.3,
+                    caught_by="uco",
+                    stat="work_concert_envelope",
+                ),
+            ),
+            (
+                "Por concurso",
+                Outcome(
+                    "Te presentas al concurso como todo el mundo. Lo ganas por los pelos y "
+                    "sin sobre.",
+                    performance=-10,
+                    stat="work_concert_clean",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=9,
+        branches=("privada",),
+    ),
+    Event(
+        "fondo_salud",
+        "🦅 Un fondo de inversión quiere comprar tu grupo hospitalario y «optimizar» la plantilla.",
+        (
+            (
+                "Vender al fondo",
+                Outcome(
+                    "Vendes. Al mes, una enfermera atiende tres plantas y el fondo reparte "
+                    "dividendos.",
+                    pay=1.0,
+                    performance=-5,
+                    family=-5,
+                    stat="work_health_fund_sale",
+                ),
+            ),
+            (
+                "La plantilla primero",
+                Outcome(
+                    "Le dices que tu plantilla no se toca. El fondo compra al de enfrente.",
+                    performance=-5,
+                    family=5,
+                    stat="work_staff_first",
+                ),
+            ),
+        ),
+        jobs=("sanidad",),
+        min_level=9,
+        branches=("privada",),
     ),
     # -- Oficina ------------------------------------------------------------------------
     Event(
@@ -4874,6 +5889,15 @@ CAUGHT_TEXT: dict[str, str] = {
     "olaf": (
         "🇪🇺 **La OLAF (Oficina Europea de Lucha contra el Fraude) abre una investigación.** "
         "Tras tres años de papeleo bilingüe, devuelves lo cobrado con un 20 % de recargo."
+    ),
+    "incompatibilidades": (
+        "🏛️ **La Oficina de Conflictos de Intereses te abre expediente.** El precontrato con "
+        "la aseguradora se firmó con el cargo aún caliente: devuelves lo cobrado con un 20 % "
+        "de recargo."
+    ),
+    "abusivas": (
+        "⚖️ **Un juzgado declara abusiva la cláusula.** El asegurado reclamó con abogado: "
+        "la clínica paga lo que cobró de más y una multa por cláusulas abusivas."
     ),
 }
 #: Pillados que además dejan sin IMV unos días.

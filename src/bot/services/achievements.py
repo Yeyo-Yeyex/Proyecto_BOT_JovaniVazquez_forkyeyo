@@ -5962,7 +5962,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (3, "cambio_turno", "Comodín de la supervisora", "Acepta 3 cambios de turno.", R),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_top_sanidad", [
-        (1, "adjunto", "Médico adjunto", "Llega a médico adjunto.", L),
+        (1, "adjunto", "Del celador a lo más alto",
+         "Llega a lo más alto de la sanidad: consejero o dueño de aseguradora.", L),
     ])  # fmt: skip
 
     a += _tiers("sanidad", "work_stretcher", [
@@ -8771,6 +8772,203 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "muro", "Muro pagado por México (en teoría)",
          "Cobra por adelantado el muro de Trump.", E, True),
     ])  # fmt: skip
+
+    # 🏥 Sanidad: las ramas Sanidad pública y Privada -------------------------------------
+    a += _tiers("sanidad", "work_top_sanidad_publica", [
+        (1, "san_consejero", "Consejero con mascarilla de oro",
+         "Llega a consejero de Sanidad (rama 🏛️ Sanidad pública).", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_top_sanidad_privada", [
+        (1, "san_aseguradora", "La salud es un negocio (el tuyo)",
+         "Llega a dueño de una aseguradora de salud (rama 💉 Privada).", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_retired_sanidad", [
+        (1, "san_jubilado", "Jubilado con el fonendo al cuello",
+         "Jubílate de una rama de la sanidad.", L),
+        (2, "san_marea_y_poliza", "De la marea blanca a la póliza de oro",
+         "Jubílate de la Sanidad pública y de la Privada.", L, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_surgeries", [
+        (15, "san_quirofano_15", "Parte de quirófano sin tachones",
+         "Cuadra 15 partes de quirófano como jefe de sección.", E),
+        (150, "san_quirofano_150", "Quirófano a las ocho en punto (de verdad)",
+         "Cuadra 150 partes de quirófano.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_referrals", [
+        (30, "san_derivaciones_30", "Derivador oficial",
+         "Manda 30 pacientes a su sitio como jefe de servicio.", E),
+        (300, "san_derivaciones_300", "Cada paciente en su cajón",
+         "Manda 300 pacientes a su sitio.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_medical_director", [
+        (25, "san_direccion_25", "Bombero con bata",
+         "Apaga 25 incendios como director médico.", E),
+        (250, "san_direccion_250", "Estamos priorizando",
+         "Apaga 250 incendios como director médico.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_hospital_manager", [
+        (30, "san_gerencia_30", "Todo es un reto",
+         "Acierta 30 respuestas con la Consejería como gerente.", E),
+        (300, "san_gerencia_300", "Gerente a prueba de goteras",
+         "Acierta 300 respuestas como gerente del hospital.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_health_minister", [
+        (20, "san_consejeria_20", "La culpa es del anterior",
+         "Acierta 20 respuestas en el pleno como consejero de Sanidad.", L),
+        (200, "san_consejeria_200", "Herencia recibida",
+         "Acierta 200 respuestas en el pleno como consejero de Sanidad.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_fine_print", [
+        (25, "san_letra_25", "Lupa de mutua", "Encuentra 25 cláusulas de letra pequeña.", E),
+        (250, "san_letra_250", "Cuerpo 4", "Encuentra 250 cláusulas de letra pequeña.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_touchups", [
+        (15, "san_retoques_15", "Bisturí con filtro",
+         "Haz 15 retoques tal como los pidió el cliente.", E),
+        (150, "san_retoques_150", "Cara de cera, cuenta de oro", "Haz 150 retoques perfectos.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_clinic", [
+        (25, "san_clinica_25", "El cliente siempre trae tarjeta",
+         "Atiende a 25 clientes VIP en tu clínica.", E),
+        (250, "san_clinica_250", "Barista en la sala de espera",
+         "Atiende a 250 clientes VIP en tu clínica.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_health_deals", [
+        (30, "san_conciertos_30", "Colaboración público-privada",
+         "Cierra 30 conciertos con la Comunidad.", E),
+        (300, "san_conciertos_300", "Quirófanos libres (qué casualidad)",
+         "Cierra 300 conciertos con la Comunidad.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_insurer", [
+        (20, "san_poliza_20", "Prima, no siniestro",
+         "Acierta 20 respuestas en la junta de accionistas de tu aseguradora.", L),
+        (200, "san_poliza_200", "No me consta, no me consta",
+         "Acierta 200 respuestas en la junta de accionistas.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_one_day_contract", [
+        (1, "san_contrato_dia", "Contrato de un día (renovable)",
+         "Acepta un contrato de un día.", C),
+        (10, "san_contrato_dia_10", "Once contratos al mes", "Acepta 10 contratos de un día.", R),
+        (50, "san_contrato_dia_50", "Precariedad con bata", "Acepta 50 contratos de un día.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_or_dance", [
+        (1, "san_baile", "Coreografía con mascarilla", "Graba un baile en el quirófano.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_guard_bed", [
+        (1, "san_cama_1987", "La cama de 1987", "Duerme en la cama de la sala de guardias.", C),
+        (25, "san_cama_25", "Hueles a guardia", "Duerme 25 veces en la cama de guardias.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_guard_nye", [
+        (1, "san_uvas", "Las uvas en el control de enfermería", "Haz una guardia en Nochevieja.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_ward_opened", [
+        (1, "san_planta", "La planta cerrada «por obras»",
+         "Abre la planta cerrada para vaciar el pasillo de Urgencias.", E),
+        (10, "san_planta_10", "Las obras eran una cinta de plástico",
+         "Abre la planta cerrada 10 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_hallway_beds", [
+        (1, "san_puntual", "Situación puntual",
+         "Llama «situación puntual» al colapso de Urgencias.", E, True),
+        (10, "san_puntual_10", "Puntual todo el año",
+         "Saca 10 comunicados de «situación puntual».", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_referred_private", [
+        (1, "san_derivar", "Derivado a la privada", "Deriva 500 operaciones a la privada.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_afternoon_ops", [
+        (1, "san_tardes", "Quirófanos por la tarde",
+         "Abre tus quirófanos por la tarde para bajar la lista.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_masks", [
+        (1, "san_mascarillas", "Mascarillas a precio de oro",
+         "Compra mascarillas al intermediario del Rolls.", E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_masks_refused", [
+        (1, "san_mascarillas_no", "Tres ofertas y una semana",
+         "Compra las mascarillas por concurso público.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_empty_hospital", [
+        (1, "san_hospital_vacio", "Inaugurado y cerrado «para ajustes»",
+         "Inaugura un hospital sin personal antes de las elecciones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_revolving_health", [
+        (1, "san_giratoria", "Puerta giratoria con fonendo",
+         "Firma con una aseguradora antes de dejar la Consejería.", L, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_revolving_refused", [
+        (1, "san_incompatible", "Periodo de incompatibilidad",
+         "Rechaza el sillón de la aseguradora.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_caught_incompatibilidades", [
+        (1, "san_conflicto", "Conflicto de intereses",
+         "Que te pille la Oficina de Conflictos de Intereses.", L, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_claim_denied", [
+        (1, "san_clausula", "Cláusula 47.3.b", "Deniega una prueba por la letra pequeña.",
+         E, True),
+        (10, "san_clausula_10", "El jamón de la aseguradora",
+         "Deniega 10 pruebas por la letra pequeña.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_claim_paid", [
+        (1, "san_cubierta", "Antes paciente que cliente",
+         "Cubre la prueba aunque la póliza no quiera.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_caught_abusivas", [
+        (1, "san_abusiva", "Cláusula abusiva", "Que un juzgado te anule una cláusula.", E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_canje", [
+        (1, "san_canje", "Pagado en visibilidad",
+         "Haz un retoque gratis a cambio de stories.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_canje_refused", [
+        (1, "san_con_factura", "La visibilidad no paga el alquiler",
+         "Cóbrale el retoque a la influencer.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_turkey_fix", [
+        (1, "san_turquia", "Arreglos de Estambul",
+         "Arregla los injertos capilares de medio pueblo.", E),
+        (10, "san_turquia_10", "Erdoğan, tu mejor comercial",
+         "Arregla injertos de Turquía 10 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_ohio_rate", [
+        (1, "san_ohio", "Tarifa de Ohio",
+         "Cóbrale a un turista de EE. UU. la «tarifa internacional».", E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_fair_rate", [
+        (1, "san_se_muda", "Se muda a Canarias",
+         "Cóbrale lo normal a un turista de EE. UU.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_concert_envelope", [
+        (1, "san_sobre", "Concierto con sobre", "Renueva el concierto «con un detalle».",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_concert_clean", [
+        (1, "san_concurso", "Ganado sin sobre", "Gana el concierto por concurso.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_health_fund_sale", [
+        (1, "san_fondo", "Vendido al fondo, con plantilla incluida",
+         "Vende tu grupo hospitalario a un fondo de inversión.", E),
+    ])  # fmt: skip
+    a += _tiers("sanidad", "work_staff_first", [
+        (1, "san_plantilla", "Mi plantilla no se toca",
+         "Rechaza al fondo para proteger a la plantilla.", E),
+    ])  # fmt: skip
+    a += [
+        combo("san_hipocrates", "Juramento hipocrático de verdad",
+              "Cubre la prueba, compra las mascarillas por concurso y rechaza el sillón de "
+              "la aseguradora.", "sanidad", L,
+              (("work_claim_paid", 1), ("work_masks_refused", 1),
+               ("work_revolving_refused", 1))),
+        combo("san_sin_escrupulos", "Sin escrúpulos y con bata",
+              "Compra las mascarillas del Rolls, deniega una prueba por la letra pequeña y "
+              "firma con la aseguradora.", "sanidad", L,
+              (("work_masks", 1), ("work_claim_denied", 1), ("work_revolving_health", 1)),
+              secret=True),
+    ]  # fmt: skip
 
     # 👷 Los ocho oficios ------------------------------------------------------------------
     a += _tiers("jobs", "work_jobs_tried", [
@@ -11810,6 +12008,16 @@ _WORK_CONTENT_STATS = {
     "concesiones": "work_concessions",
     "fomento": "work_ministry_deals",
     "internacional": "work_abroad_deals",
+    "quirofano": "work_surgeries",
+    "derivaciones": "work_referrals",
+    "direccion": "work_medical_director",
+    "gerencia": "work_hospital_manager",
+    "consejeria": "work_health_minister",
+    "letra_pequena": "work_fine_print",
+    "retoques": "work_touchups",
+    "clinica": "work_clinic",
+    "conciertos": "work_health_deals",
+    "aseguradora": "work_insurer",
 }
 
 
@@ -11898,6 +12106,8 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_guards"] = 1
         if outcome.battery_before < 0:
             add["work_zombie_guard"] = 1
+        if outcome.holiday == "Nochevieja":
+            add["work_guard_nye"] = 1
     if outcome.missed_guards:
         add["work_missed_guards"] = 1
     if outcome.remote:
@@ -12008,5 +12218,7 @@ MEMORY_CONTENT = frozenset(
         "plenos",
         "pisos",
         "concesiones",
+        "quirofano",
+        "retoques",
     }
 )

@@ -377,6 +377,12 @@ PRODUCED_STATS = {
     "work_top_obra_ladrillo", "work_top_obra_publica", "work_retired_obra", "work_flats",
     "work_land", "work_bank", "work_mayor", "work_box", "work_tenders", "work_concessions",
     "work_ministry_deals", "work_abroad_deals", "work_caught_sepblac",
+    # Las ramas de la sanidad: Sanidad pública y Privada
+    "work_top_sanidad_publica", "work_top_sanidad_privada", "work_retired_sanidad",
+    "work_surgeries", "work_referrals", "work_medical_director", "work_hospital_manager",
+    "work_health_minister", "work_fine_print", "work_touchups", "work_clinic",
+    "work_health_deals", "work_insurer", "work_guard_nye", "work_caught_incompatibilidades",
+    "work_caught_abusivas",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

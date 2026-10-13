@@ -507,6 +507,31 @@ async def test_al_mir_le_baja_la_barra_si_no_hizo_las_guardias(tmp_path: Path, d
     assert status.contract.performance == max(0, before - 25 - 2 * 20)
 
 
+async def test_en_la_rama_publica_la_guardia_cuadra_quirofanos_y_cuenta_la_nochevieja(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from datetime import datetime
+
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "sanidad")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    # Nivel y rama a la vez: un puesto de rama sin rama se baja al tronco.
+    status.contract.level, status.contract.branch = 6, "publica"
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER, guard=True)
+    assert shift.position.title == "Jefe de sección"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    add = work_stats(outcome).add
+    assert add["work_surgeries"] == len(shift.game.rounds)
+    assert add["work_guards"] == 1 and "work_guard_nye" not in add
+    outcome.now = datetime(2026, 12, 31, 22, tzinfo=TIMEZONE).timestamp()
+    assert work_stats(outcome).add["work_guard_nye"] == 1
+
+
 # -- Oficina: teletrabajo, stock options --------------------------------------------
 
 
