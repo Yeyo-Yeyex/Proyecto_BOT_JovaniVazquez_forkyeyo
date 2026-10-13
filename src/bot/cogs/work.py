@@ -448,7 +448,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         lines.append(
             f"⚽ **Ley Beckham** hasta <t:{int(contract.beckham_until)}:d>: IRPF al 24 % fijo."
         )
-    if job.options_level == contract.level:
+    if job.has_options(contract.level, contract.branch) or contract.options:
         lines.append(
             f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
         )
@@ -509,13 +509,14 @@ def job_lines(status: Status) -> list[str]:
     lines = []
     if status.weather:
         lines.append(WEATHER_TEXT[status.weather])
-    if job.rating:
+    if job.rates(contract.branch):
         line = f"📱 Valoración en la app: {stars(contract.rating)}"
         if status.blocked:
             line += f" · 📵 **desconectado** hasta <t:{int(contract.blocked_until)}:t>"
         lines.append(line + " · por debajo de 3,5 la app te desconecta")
-    if job.seniority:
-        tenure = " · 🔒 plaza fija: no te baja nadie" if job.tenured(contract.level) else ""
+    if job.earns_triennia(contract.level, contract.branch):
+        tenured = job.tenured(contract.level, contract.branch)
+        tenure = " · 🔒 plaza fija: no te baja nadie" if tenured else ""
         bonus = round(TRIENNIUM_PAY * status.triennia * 100)
         lines.append(f"📅 Trienios: {status.triennia} (+{bonus} % de sueldo){tenure}")
     if status.can_study:

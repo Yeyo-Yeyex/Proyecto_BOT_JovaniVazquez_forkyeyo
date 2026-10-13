@@ -611,6 +611,66 @@ async def test_si_la_startup_quiebra_las_opciones_se_pierden(tmp_path: Path, dic
     assert outcome.bankrupt and outcome.options_total == 0
 
 
+async def set_branch(service: WorkService, level: int, branch: str) -> None:
+    await service.hire(GUILD, USER, "oficina")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = level, branch
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_en_la_unicornio_se_cobra_en_opciones_en_todos_los_puestos(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await set_branch(service, 8, "unicornio")
+    outcome = await work(service)
+    assert outcome.options_added == round(outcome.gross * 0.3)
+    assert outcome.payslip is not None
+    assert outcome.payslip.gross == outcome.gross - outcome.options_added
+    assert outcome.options_total == outcome.options_added > 0
+
+
+async def test_en_la_consultora_no_se_acumulan_opciones_nuevas(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_branch(service, 8, "consultora")
+    outcome = await work(service)
+    assert outcome.options_added == 0 and outcome.options_total == 0
+
+
+async def test_las_opciones_que_ya_tienes_dan_exit_o_quiebran_aunque_ascendieras_a_la_consultora(
+    tmp_path: Path, dice: Dice
+) -> None:
+    for chance in (pala.EXIT_CHANCE, pala.BANKRUPT_CHANCE):
+        service = await make(tmp_path / str(chance))
+        await set_branch(service, 7, "consultora")
+        status = await service.status(GUILD, USER)
+        assert status is not None
+        status.contract.options = 3_000_000
+        await service.repository.save_contract(GUILD, USER, status.contract)
+        dice.hits = {chance}
+        outcome = await work(service)
+        assert outcome.options_added == 0 and outcome.options_total == 0
+        if chance == pala.EXIT_CHANCE:
+            assert outcome.exit_payout >= 3_000_000 * 2 and not outcome.bankrupt
+        else:
+            assert outcome.bankrupt and outcome.exit_payout == 0
+
+
+async def test_un_turno_de_jefe_de_proyecto_suma_las_horas_imputadas(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await set_branch(service, 6, "consultora")
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Jefe de proyecto"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert work_stats(outcome).add["work_hours_billed"] == len(shift.game.rounds)
+
+
 # -- Oficina: Hong Kong -------------------------------------------------------------
 
 
@@ -822,6 +882,50 @@ async def test_un_evento_del_reparto_mueve_la_valoracion(tmp_path: Path, dice: D
     assert status is not None and status.contract.rating == RATING_START - 4
 
 
+async def test_en_las_ramas_del_reparto_no_hay_valoracion_pero_si_tiempo(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "weather", lambda now: "lluvia")
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "correos"
+    status.contract.rating = RATING_START + 7
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    base = JOB_BY_KEY["reparto"].position(6, "correos").base_pay
+    outcome = await work(service)
+    # Sin estrellas: ni cambian ni multiplican el sueldo; la lluvia sigue pagando.
+    assert outcome.rating == 0 and outcome.weather == "lluvia"
+    assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * RAIN_PAY)
+    await service.resolve_event(GUILD, USER, "sexto_sin_ascensor", 1)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.rating == RATING_START + 7
+    # En el tronco, en cambio, la nota mueve la valoración y el sueldo.
+    status.contract.level, status.contract.branch = 5, ""
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    trunk = await work(service, perfect=False)
+    assert trunk.rating != 0
+
+
+async def test_un_turno_del_jefe_de_unidad_de_correos_suma_los_envios_clasificados(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "reparto")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "correos"
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Jefe de unidad de reparto"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert work_stats(outcome).add["work_parcels"] == len(shift.game.rounds)
+
+
 # -- Funcionariado: oposición, plaza fija y trienios ---------------------------------------
 
 
@@ -849,7 +953,8 @@ async def test_solo_se_estudia_si_hay_oposicion(tmp_path: Path, dice: Dice) -> N
     await service.hire(GUILD, USER, "obra")
     with pytest.raises(WorkError, match="opositar"):
         await service.start_shift(GUILD, USER, study=True)
-    await set_level(service, "funcionariado", JOB_BY_KEY["funcionariado"].top)
+    # Del inspector en adelante ya no se oposita.
+    await set_level(service, "funcionariado", JOB_BY_KEY["funcionariado"].trunk_top)
     with pytest.raises(WorkError, match="opositar"):
         await service.start_shift(GUILD, USER, study=True)
 
@@ -881,6 +986,65 @@ async def test_los_trienios_suben_el_sueldo(tmp_path: Path, dice: Dice) -> None:
     tenured = shift_pay(base, 100, ShiftKind.ORDINARY, tenured=True)
     assert tenured == round(base * 1.1)
     assert outcome.gross == round(tenured * (1 + 2 * TRIENNIUM_PAY))
+
+
+async def hire_in_branch(service: WorkService, branch: str) -> None:
+    """Un funcionario con 2 trienios cumplidos en el puesto 6 de la rama."""
+    await service.hire(GUILD, USER, "funcionariado")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, branch
+    status.contract.job_since = START - 2 * TRIENNIUM_DAYS * 86_400
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_un_turno_de_subdirector_general_suma_el_boe_y_cobra_trienios(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "alta")
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Subdirector general"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    base = JOB_BY_KEY["funcionariado"].position(6, "alta").base_pay
+    # Plaza fija (nota entre el 90 % y el 110 %) y trienios.
+    tenured = shift_pay(base, outcome.score, ShiftKind.ORDINARY, tenured=True)
+    assert outcome.triennia == 2
+    assert outcome.gross == round(tenured * (1 + 2 * TRIENNIUM_PAY))
+    assert work_stats(outcome).add["work_boe"] == len(shift.game.rounds)
+
+
+async def test_un_turno_de_asesor_de_grandes_fortunas_no_cobra_trienios_ni_tiene_plaza(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "giratoria")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.triennia == 0
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Asesor fiscal de grandes fortunas"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    base = JOB_BY_KEY["funcionariado"].position(6, "giratoria").base_pay
+    # Excedencia voluntaria: la nota mueve el sueldo del 70 al 130 % y no hay trienios.
+    assert outcome.triennia == 0
+    assert outcome.gross == shift_pay(base, outcome.score, ShiftKind.ORDINARY)
+    assert work_stats(outcome).add["work_wealth"] == len(shift.game.rounds)
+    assert "work_triennia_max" not in work_stats(outcome).peak
+
+
+async def test_en_la_puerta_giratoria_te_pueden_bajar_de_puesto(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await hire_in_branch(service, "giratoria")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.performance = 10
+    status.contract.warned = True
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    outcome = await work(service, perfect=False)
+    # Sin plaza fija, la barra a cero no se queda en un aviso.
+    assert outcome.performance != "warned"
 
 
 # -- Influencer: viralidad y seguidores ----------------------------------------------------
@@ -919,6 +1083,29 @@ async def test_la_funa_quita_seguidores_y_cambiar_de_curro_no(tmp_path: Path, di
     await service.hire(GUILD, USER, "influencer")
     status = await service.status(GUILD, USER)
     assert status is not None and status.contract.followers == 700
+
+
+async def test_un_turno_de_tertuliano_suma_su_contenido_y_sigue_moviendo_los_seguidores(
+    tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pala, "viral_roll", lambda rng: MEGAVIRAL)
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "influencer")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = 6, "tele"
+    status.contract.followers = 1_000
+    await service.repository.save_contract(GUILD, USER, status.contract)
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Tertuliano"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    gained = follower_gain(outcome.score, 6, MEGAVIRAL)
+    assert outcome.viral == MEGAVIRAL and outcome.followers_gained == gained
+    assert outcome.followers == 1_000 + gained
+    stats = work_stats(outcome)
+    assert stats.add["work_tertulia"] == len(shift.game.rounds)
+    assert stats.add["work_viral"] == 1
 
 
 # -- Carrera larga: ramas, ventajas, jubilación, pensión y deseo del día ----------------------

@@ -63,11 +63,16 @@ from bot.services.work import (
     wish_streak,
 )
 from bot.services.work_catalog import (
+    APP_BIEN,
+    APP_FALLOS,
+    CAUGHT_TEXT,
     DIALOGUE_PACKS,
     EVENTS,
     JOB_BY_KEY,
     JOBS,
     MEMORY_PACKS,
+    RUNWAY_QUEMA,
+    RUNWAY_RAZONABLE,
     SORT_PACKS,
     events_for,
 )
@@ -138,6 +143,21 @@ def test_los_dialogos_tienen_rondas_de_sobra() -> None:
         assert len(pack.items) >= 6
         for item in pack.items:
             assert len(item.bad) in (2, 3)
+
+
+def test_el_contenido_de_las_ramas_de_la_oficina_cumple_su_diseno() -> None:
+    for key in ("comite", "socio_director", "pitch", "red_social"):
+        items = DIALOGUE_PACKS[key].items
+        assert len(items) >= 9, key
+        # La buena no es siempre la más larga: en un tercio, alguna mala la supera.
+        longer = sum(1 for d in items if max(len(b) for b in d.bad) > len(d.good))
+        assert longer * 3 >= len(items), key
+    for key in ("horas", "pivotar"):
+        assert 12 <= len(SORT_PACKS[key].items) <= 16, key
+    for key in ("licitacion", "rondas"):
+        assert 8 <= len(MEMORY_PACKS[key].items) <= 10, key
+    assert len(APP_FALLOS) >= 9 and len(APP_BIEN) >= 12
+    assert len(RUNWAY_QUEMA) >= 9 and len(RUNWAY_RAZONABLE) >= 12
 
 
 def test_la_corrupcion_solo_sale_en_politica() -> None:
@@ -506,10 +526,66 @@ def test_la_carrera_por_ramas() -> None:
     assert all(p.self_employed for p in hosteleria.branch("estrella").positions)
     assert not any(p.self_employed for p in hosteleria.branch("hotel").positions)
     assert hosteleria.branch("estrella").pension < hosteleria.branch("hotel").pension
-    # Un oficio sin ramas sigue igual.
+    reparto = JOB_BY_KEY["reparto"]
+    assert (reparto.trunk_top, reparto.top) == (5, 10) and reparto.forks(5)
+    assert reparto.position(10, "correos").title == "Presidente de Correos"
+    assert reparto.position(10, "logistica").title == "Multimillonario con cohete propio"
+    assert all(p.self_employed for p in reparto.branch("logistica").positions)
+    assert not any(p.self_employed for p in reparto.branch("correos").positions)
+    assert reparto.branch("logistica").pension < reparto.branch("correos").pension
+    # La valoración de la app solo cuenta en el tronco; el tiempo, en todo el oficio.
+    assert reparto.rates() and reparto.rates("") and not reparto.rates("correos")
+    assert reparto.weather and not JOB_BY_KEY["obra"].rates()
+    funcionariado = JOB_BY_KEY["funcionariado"]
+    assert (funcionariado.trunk_top, funcionariado.top) == (5, 10) and funcionariado.forks(5)
+    assert funcionariado.position(10, "alta").title == "Consejero de Estado"
+    assert funcionariado.position(10, "giratoria").title == "Asesor de fortunas en Andorra"
+    assert all(p.self_employed for p in funcionariado.branch("giratoria").positions)
+    assert not any(p.self_employed for p in funcionariado.branch("alta").positions)
+    assert funcionariado.branch("giratoria").pension < funcionariado.branch("alta").pension
+    influencer = JOB_BY_KEY["influencer"]
+    assert (influencer.trunk_top, influencer.top) == (5, 10) and influencer.forks(5)
+    assert influencer.position(10, "tele").title == "Presidente de RTVE"
+    assert influencer.position(10, "andorra").title == "Fundador de un partido antisistema"
+    assert all(p.self_employed for p in influencer.branch("andorra").positions)
+    assert not any(p.self_employed for p in influencer.branch("tele").positions)
+    assert influencer.branch("andorra").pension < influencer.branch("tele").pension
+    # La viralidad y los seguidores valen en todo el oficio, ramas incluidas.
+    assert influencer.viral
     oficina = JOB_BY_KEY["oficina"]
-    assert oficina.top == oficina.trunk_top == 5 and not oficina.forks(5)
-    assert oficina.ladders == (("", oficina.positions),)
+    assert (oficina.trunk_top, oficina.top) == (5, 10) and oficina.forks(5)
+    assert oficina.position(10, "consultora").title == "Socio director"
+    assert oficina.position(10, "unicornio").title == "Tecnomillonario con red social propia"
+    assert all(p.self_employed for p in oficina.branch("unicornio").positions)
+    assert not any(p.self_employed for p in oficina.branch("consultora").positions)
+    assert oficina.branch("unicornio").pension < oficina.branch("consultora").pension
+    # El teletrabajo y Hong Kong valen en todo el oficio, ramas incluidas.
+    assert oficina.remote and oficina.can_go_abroad(10)
+    # Las opciones se cobran en el CTO y en toda la rama Unicornio, y en ningún otro sitio.
+    assert oficina.has_options(5) and oficina.has_options(8, "unicornio")
+    assert not oficina.has_options(4) and not oficina.has_options(8, "consultora")
+    assert not JOB_BY_KEY["obra"].has_options(5, "")
+    # Ningún oficio se queda sin ramas.
+    assert all(job.top == 10 and len(job.branches) == 2 for job in JOBS)
+
+
+def test_se_oposita_en_el_tronco_y_la_plaza_y_los_trienios_son_de_quien_sigue_de_funcionario() -> (
+    None
+):
+    job = JOB_BY_KEY["funcionariado"]
+    # Del interino al A2 se estudia; del inspector en adelante, no.
+    assert [job.can_study(level) for level in range(1, 6)] == [True] * 4 + [False]
+    assert not job.can_study(5) and not JOB_BY_KEY["obra"].can_study(1)
+    # En la Alta Administración sigues siendo funcionario: plaza fija y trienios.
+    for level in range(6, 11):
+        assert job.tenured(level, "alta") and job.earns_triennia(level, "alta")
+        assert not job.tenured(level, "giratoria")
+        assert not job.earns_triennia(level, "giratoria")
+    # El tronco no cambia: plaza desde el auxiliar, trienios desde el interino.
+    assert [job.tenured(level) for level in range(1, 6)] == [False] + [True] * 4
+    assert all(job.earns_triennia(level) for level in range(1, 6))
+    # Sin plaza fija ni trienios en los oficios que no los tienen.
+    assert not JOB_BY_KEY["obra"].tenured(5) and not JOB_BY_KEY["obra"].earns_triennia(5)
 
 
 def test_las_ventajas_son_las_de_los_puestos_por_los_que_has_pasado() -> None:
@@ -604,8 +680,138 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     assert "no_camareros" in tronco and "ola_calor" not in {
         e.key for e in events_for("hosteleria", 3, 100)
     }
+    correos = {e.key for e in events_for("reparto", 10, 100, branch="correos")}
+    logistica = {e.key for e in events_for("reparto", 10, 100, branch="logistica")}
+    rider = {e.key for e in events_for("reparto", 5, 100)}
+    correos_only = {
+        "aviso_ausente",
+        "voto_por_correo",
+        "oficina_rural",
+        "certificada_hacienda",
+        "reyes_8_enero",
+        "enchufe_correos",
+        "comision_congreso",
+        "sello_conmemorativo",
+    }
+    logistica_only = {
+        "huelga_flota",
+        "inspeccion_falsos_autonomos",
+        "dron_piscina",
+        "almacen_40",
+        "aranceles_trump",
+        "cohete_explota",
+        "comprar_periodico",
+    }
+    assert correos_only <= correos and logistica_only <= logistica
+    assert not correos & logistica_only and not logistica & correos_only
+    assert not rider & (correos_only | logistica_only)
+    assert {"pedido_mojado", "propina_20", "paquete_shenzhen", "sexto_sin_ascensor"} <= (
+        correos & logistica
+    )
+    assert "black_friday" in rider and "black_friday" not in {
+        e.key for e in events_for("reparto", 3, 100)
+    }
     # La obra pública y la sanidad pública comparten clave de rama, no eventos.
     assert not publica & {"modificado", "inauguracion", "aeropuerto", "muro"}
+    alta = {e.key for e in events_for("funcionariado", 10, 100, branch="alta")}
+    giratoria = {e.key for e in events_for("funcionariado", 10, 100, branch="giratoria")}
+    inspector = {e.key for e in events_for("funcionariado", 5, 100)}
+    alta_only = {
+        "boe_viernes",
+        "omnibus_dg",
+        "cunado_asesor",
+        "coche_pan",
+        "informe_consejo",
+        "jubilacion_dorada",
+    }
+    giratoria_only = {
+        "compa_hacienda",
+        "amnistia_fiscal",
+        "lista_papeles",
+        "youtuber_madrid",
+        "carta_padron",
+        "fundacion_sucesiones",
+    }
+    assert alta_only <= alta and giratoria_only <= giratoria
+    assert not alta & giratoria_only and not giratoria & alta_only
+    assert not inspector & (alta_only | giratoria_only)
+    # Los del tronco siguen en las dos ramas; los del inspector, solo en el tronco.
+    assert {"fotocopia_dni", "cita_marzo", "curso_igualdad", "desayuno"} <= alta & giratoria
+    assert {"famoso_sociedad", "youtuber_padron"} <= inspector
+    assert not {"famoso_sociedad", "youtuber_padron"} & (alta | giratoria)
+    assert "famoso_sociedad" not in {e.key for e in events_for("funcionariado", 4, 100)}
+    tele = {e.key for e in events_for("influencer", 10, 100, branch="tele")}
+    andorra = {e.key for e in events_for("influencer", 10, 100, branch="andorra")}
+    celebrity = {e.key for e in events_for("influencer", 5, 100)}
+    tele_only = {
+        "tertulia_virologia",
+        "autobombo_telediario",
+        "exclusiva_famoso",
+        "consejero_cuota",
+        "campanadas_vestido",
+        "eurovision_boicot",
+    }
+    andorra_only = {
+        "carta_residencia",
+        "directo_gran_via",
+        "energetica_taquicardia",
+        "velada_caida",
+        "rug_pull_propio",
+        "mitin_directo",
+    }
+    assert tele_only <= tele and andorra_only <= andorra
+    assert not tele & andorra_only and not andorra & tele_only
+    assert not celebrity & (tele_only | andorra_only)
+    # Los del tronco siguen en las dos ramas; los de más nivel esperan a su puesto.
+    trunk_events = {"sorteo_falso", "reto_viral", "haul_ropa", "marca_en_producto", "funa"}
+    assert trunk_events <= celebrity and trunk_events <= tele & andorra
+    assert {"politico_baile", "chiste_viejo"} <= celebrity
+    assert "chiste_viejo" not in {e.key for e in events_for("influencer", 3, 100)}
+    assert "politico_baile" not in {e.key for e in events_for("influencer", 2, 100)}
+    assert "tertulia_virologia" not in {
+        e.key for e in events_for("influencer", 5, 100, branch="tele")
+    }
+    consultora = {e.key for e in events_for("oficina", 10, 100, branch="consultora")}
+    unicornio = {e.key for e in events_for("oficina", 10, 100, branch="unicornio")}
+    cto = {e.key for e in events_for("oficina", 5, 100)}
+    consultora_only = {
+        "horas_ministerio",
+        "cita_sepe",
+        "junior_senior",
+        "pliego_medida",
+        "exministro_asesor",
+        "informe_informe",
+    }
+    unicornio_only = {
+        "despidos_zoom",
+        "valoracion_inflada",
+        "sobrino_cto",
+        "fiesta_ibiza",
+        "comprar_red",
+        "sede_delaware",
+    }
+    assert consultora_only <= consultora and unicornio_only <= unicornio
+    assert not consultora & unicornio_only and not unicornio & consultora_only
+    assert not cto & (consultora_only | unicornio_only)
+    # Los del tronco siguen en las dos ramas; los de más nivel esperan a su puesto.
+    office_trunk = {"cambio_viernes", "postit_clave", "ia_bug", "hackathon", "alineamiento"}
+    assert office_trunk <= cto and office_trunk <= consultora & unicornio
+    assert "prueba_tecnica" in cto and "prueba_tecnica" not in {
+        e.key for e in events_for("oficina", 3, 100)
+    }
+    assert "alineamiento" not in {e.key for e in events_for("oficina", 2, 100)}
+    assert "horas_ministerio" not in {e.key for e in events_for("oficina", 5, 100, branch="")}
+    assert "informe_informe" not in {
+        e.key for e in events_for("oficina", 9, 100, branch="consultora")
+    }
+    # Todo riesgo lleva dinero en negro o multa, y todos los pillados tienen su texto.
+    for event in EVENTS:
+        if "oficina" not in event.jobs:
+            continue
+        for _label, outcome in event.options:
+            if outcome.risk:
+                assert outcome.black or outcome.fine, event.key
+                assert outcome.caught_by in CAUGHT_TEXT, event.key
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:

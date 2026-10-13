@@ -19,7 +19,10 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   esconde una tubería o un cable y cuál es roca). Cada palada ofrece varios
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
-  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet). Acertar suma.
+  partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet,
+  el paquete perdido, la disposición colada en una ley, el inversor de verdad
+  entre los mariachis, el programa que hunde la audiencia, el proyecto cripto que es un
+  timo, el fallo que tumba la app pública, el gasto que quema la caja). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -38,8 +41,11 @@ from dataclasses import dataclass, field
 
 from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Position
 from bot.services.work_catalog import (
+    APP_BIEN,
+    APP_FALLOS,
     BUDGET_ITEMS,
     CODE_BUGS,
+    COLADAS,
     COLLAB_FINE,
     COLLAB_SHADY,
     DIALOGUE_PACKS,
@@ -50,7 +56,11 @@ from bot.services.work_catalog import (
     GATECRASHERS,
     GUESTS_LEGIT,
     INSPECTOR_TELLS,
+    LABOUR_INSPECTORS,
+    LEYES_LIMPIAS,
+    LOST_PARCELS,
     MEMORY_PACKS,
+    PARCELS_TRACKED,
     POLICY_FINE,
     POLICY_TRAPS,
     PR_DANGER,
@@ -58,6 +68,15 @@ from bot.services.work_catalog import (
     RESTAURANTS,
     RIDER_SLACKING,
     RIDER_WORKING,
+    RIDERS_NORMAL,
+    RUG_SERIOS,
+    RUG_TIMOS,
+    RUNWAY_QUEMA,
+    RUNWAY_RAZONABLE,
+    SHARE_HITS,
+    SHARE_SINKS,
+    SICAV_MARIACHIS,
+    SICAV_REAL,
     SLACKING,
     SORT_PACKS,
     TAX_CLEAN,
@@ -564,6 +583,114 @@ def _guide_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]
     return "⭐ Tu estrella está en juego. Descubre al inspector antes del postre.", built
 
 
+def _lost_parcel(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📦 Nave {n}/{total}. ¿Cuál es el paquete perdido?",
+        good=LOST_PARCELS,
+        bad=PARCELS_TRACKED,
+        label="Paquete",
+    )
+    return (
+        "🔍 Diriges las operaciones de Correos. Entre cuatro envíos normales hay uno perdido.",
+        built,
+    )
+
+
+def _labour_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🕵️ Turno {n}/{total}. ¿Quién es la inspectora de Trabajo infiltrada?",
+        good=LABOUR_INSPECTORS,
+        bad=RIDERS_NORMAL,
+        label="Rider",
+    )
+    return (
+        "🚀 Tu imperio es legal. Casi. Descubre a la inspectora antes de que pida el contrato.",
+        built,
+    )
+
+
+def _colada(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🧐 Decreto {n}/{total}. ¿Qué disposición no pinta nada en su ley?",
+        good=COLADAS,
+        bad=LEYES_LIMPIAS,
+        label="Texto",
+    )
+    return "📚 Eres secretario general técnico. Nadie lee la letra pequeña, tú sí.", built
+
+
+def _mariachis(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🥂 SICAV {n}/{total}. Cuatro de los cinco socios son mariachis. ¿Quién invierte "
+        "de verdad?",
+        good=SICAV_REAL,
+        bad=SICAV_MARIACHIS,
+        label="Socio",
+    )
+    return "🎺 Consejero de una SICAV: para llegar a cien socios hace falta mucho mariachi.", built
+
+
+def _share(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📺 Parrilla {n}/{total}. ¿Qué programa está hundiendo la audiencia?",
+        good=SHARE_SINKS,
+        bad=SHARE_HITS,
+        label="Programa",
+    )
+    return "📊 Diriges la cadena. Entre cinco programas hay uno que se come el share.", built
+
+
+def _rugpull(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🪙 Proyecto {n}/{total}. ¿Cuál es el rug pull (el que se llevará el dinero y "
+        "desaparecerá)?",
+        good=RUG_TIMOS,
+        bad=RUG_SERIOS,
+        label="Proyecto",
+    )
+    return "🚀 Eres gurú cripto: recomienda lo que quieras, pero distingue el timo.", built
+
+
+def _public_app(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📲 Revisión {n}/{total}. ¿Qué fallo es el que tumba la app pública?",
+        good=APP_FALLOS,
+        bad=APP_BIEN,
+        label="Pantalla",
+    )
+    return (
+        "🏛️ Diriges la transformación digital del Ministerio. La app sale el lunes: entre "
+        "cinco pantallas hay una que la tumba.",
+        built,
+    )
+
+
+def _runway(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🔥 Gasto {n}/{total}. ¿Cuál quema la caja sin vender ni fabricar nada?",
+        good=RUNWAY_QUEMA,
+        bad=RUNWAY_RAZONABLE,
+        label="Gasto",
+    )
+    return "🦄 Te quedan seis meses de caja. Entre cinco gastos hay uno que la quema.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -577,6 +704,14 @@ _SPOT = {
     "letra_pequena": _fine_print,
     "colados": _gatecrashers,
     "inspector": _guide_inspector,
+    "perdido": _lost_parcel,
+    "inspector_trabajo": _labour_inspector,
+    "colada": _colada,
+    "mariachis": _mariachis,
+    "share": _share,
+    "rugpull": _rugpull,
+    "app_publica": _public_app,
+    "runway": _runway,
 }
 
 

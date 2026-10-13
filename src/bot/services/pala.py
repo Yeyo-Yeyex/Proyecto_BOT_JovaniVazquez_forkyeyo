@@ -230,7 +230,8 @@ class Status:
     @property
     def blocked(self) -> bool:
         """Si la app le tiene desconectado por mala valoración."""
-        return self.contract.blocked_until > self.now
+        # En una rama ya no hay app que te desconecte, aunque te pillara justo antes.
+        return self.job.rates(self.contract.branch) and self.contract.blocked_until > self.now
 
     @property
     def can_study(self) -> bool:
@@ -549,6 +550,7 @@ class WorkService:
             retired=retired,
         )
         wish = None if contract.wish_day == today else wish_for(user_id, today, job, contract.level)
+        earns = job.earns_triennia(contract.level, contract.branch)
         return Status(
             contract=contract,
             job=job,
@@ -562,7 +564,7 @@ class WorkService:
             now=now,
             phase=residence_phase(contract, now),
             weather=weather(now) if job.weather else "",
-            triennia=triennia(contract, now) if job.seniority else 0,
+            triennia=triennia(contract, now) if earns else 0,
             retired=retired,
             wish=wish,
             family=family_now(contract, now),
@@ -884,14 +886,17 @@ class WorkService:
         contract.last_shift_at = now
 
         # Dinero del turno.
-        gross = shift_pay(position.base_pay, score, kind, tenured=job.tenured(contract.level))
+        tenured = job.tenured(contract.level, contract.branch)
+        gross = shift_pay(position.base_pay, score, kind, tenured=tenured)
         if abroad:
             gross = round(gross * ABROAD_PAY)
-        if job.rating:
+        if job.rates(contract.branch):
             gross = round(gross * rating_pay(contract.rating))
         if shift.weather == "lluvia":
             gross = round(gross * RAIN_PAY)
-        years = triennia(contract, now) if job.seniority else 0
+        years = (
+            triennia(contract, now) if job.earns_triennia(contract.level, contract.branch) else 0
+        )
         gross = round(gross * (1 + TRIENNIUM_PAY * years))
         viral = viral_roll(self.rng) if job.viral else 0.0
         if viral:
@@ -913,7 +918,7 @@ class WorkService:
                 fine, balance = await self._caught(guild_id, user_id, gross, "inspeccion")
         else:
             cash = gross
-            if job.options_level == contract.level:
+            if job.has_options(contract.level, contract.branch):
                 options_added = round(gross * OPTIONS_SHARE)
                 cash = gross - options_added
                 contract.options += options_added
@@ -925,8 +930,8 @@ class WorkService:
             else:
                 payslip = slip
 
-        # Stock options: exit o quiebra.
-        if contract.options and job.options_level == contract.level:
+        # Stock options: exit o quiebra (las que ya tienes siguen vivas en cualquier puesto).
+        if contract.options:
             if roll(self.rng, EXIT_CHANCE):
                 low, high = EXIT_MULTIPLIER
                 exit_payout = round(contract.options * self.rng.uniform(low, high))
@@ -975,14 +980,16 @@ class WorkService:
         )
         if wish is not None:
             delta += WISH_PERFORMANCE
-        performance = apply_performance(contract, delta, tenured=job.tenured(contract.level))
+        performance = apply_performance(
+            contract, delta, tenured=job.tenured(contract.level, contract.branch)
+        )
         if performance == "demoted":
             contract.position_since = now
             settle_branch(contract, job)
 
         # Valoración de la app: por debajo del mínimo, desconexión.
         blocked = False
-        if job.rating:
+        if job.rates(contract.branch):
             contract.rating = max(
                 RATING_MIN, min(RATING_MAX, contract.rating + rating_delta(score))
             )
@@ -1093,7 +1100,7 @@ class WorkService:
             bankrupt=bankrupt,
             missed_guards=missed,
             weather=shift.weather,
-            rating=contract.rating if job.rating else 0,
+            rating=contract.rating if job.rates(contract.branch) else 0,
             blocked=blocked,
             viral=viral,
             followers=contract.followers if job.viral else 0,
@@ -1362,7 +1369,7 @@ class WorkService:
             )
             if outcome.family:
                 change_family(contract, outcome.family, now)
-            if outcome.rating and job.rating:
+            if outcome.rating and job.rates(contract.branch):
                 contract.rating = max(RATING_MIN, min(RATING_MAX, contract.rating + outcome.rating))
             if outcome.followers and job.viral:
                 contract.followers = max(0, round(contract.followers * (1 + outcome.followers)))

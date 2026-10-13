@@ -73,14 +73,18 @@ Reglas propias de algunos oficios (campos de `Job`):
 - **Valoración de la app** (reparto, `Job.rating`): de 1 a 5 estrellas, se
   mueve con la nota de cada turno (`rating_delta`) y multiplica el sueldo
   (`rating_pay`). Por debajo de `RATING_BLOCK`, la app te desconecta unas horas.
+  Solo cuenta en el tronco (`Job.rates`): en las ramas no hay valoración.
 - **Tarifa plana** (reparto): los falsos autónomos pagan una cuota reducida
   (`Position.fee`, art. 38 ter de la Ley 20/2007 del Trabajo Autónomo).
 - **Oposición** (funcionariado, `Job.study`): turnos de estudio que no pagan,
-  cansan y suman temario (`ShiftKind.STUDY`). Hay que estudiar para ascender.
+  cansan y suman temario (`ShiftKind.STUDY`). Hay que estudiar para ascender
+  por el tronco; las ramas no se oposita (`Job.can_study`).
 - **Plaza fija** (funcionariado, `Job.tenure_from`): desde ese puesto no te
   bajan nunca y la nota mueve poco el sueldo (`TENURE_PAY_SPREAD`); a cambio,
   **trienios** (`Job.seniority`): cada `TRIENNIUM_DAYS` días en el oficio, un
-  `TRIENNIUM_PAY` más de sueldo, con tope (`MAX_TRIENNIA`).
+  `TRIENNIUM_PAY` más de sueldo, con tope (`MAX_TRIENNIA`). Ni la plaza ni los
+  trienios valen en una rama de autónomos (`Job.tenured`, `Job.earns_triennia`):
+  es la excedencia voluntaria (art. 89.2 del EBEP).
 - **Viralidad** (influencer, `Job.viral`): el sueldo de cada turno se
   multiplica por una tirada (`viral_roll`) que casi siempre se queda corta y a
   veces revienta. Los seguidores (`Contract.followers`) suben con los turnos
@@ -477,6 +481,8 @@ class Job:
     abroad_from: int | None = None
     #: Puesto que cobra parte del sueldo en stock options (`None` = ninguno).
     options_level: int | None = None
+    #: Rama donde se sigue cobrando en opciones, además del puesto `options_level`.
+    options_branch: str = ""
     #: Si cada hora hace un tiempo que cambia el turno (lluvia, calima).
     weather: bool = False
     #: Si hay valoración de la app (estrellas que multiplican el sueldo).
@@ -495,6 +501,16 @@ class Job:
     def branch(self, key: str) -> Branch | None:
         """La rama con esa clave, o `None` (también con `""`, el tronco)."""
         return next((b for b in self.branches if b.key == key), None)
+
+    def has_options(self, level: int, branch: str = "") -> bool:
+        """Si en ese puesto de esa rama se cobra parte del sueldo en stock options."""
+        return level == self.options_level or (
+            bool(self.options_branch) and branch == self.options_branch
+        )
+
+    def rates(self, branch: str = "") -> bool:
+        """Si te valora la app: solo en el tronco (rider o fundador), no en las ramas."""
+        return self.rating and self.branch(branch) is None
 
     def ladder(self, branch: str = "") -> tuple[Position, ...]:
         """Puestos en orden por esa rama: el tronco y, si la hay, la rama."""
@@ -552,12 +568,35 @@ class Job:
         return self.abroad_from is not None and level >= self.abroad_from
 
     def can_study(self, level: int) -> bool:
-        """Si en ese puesto se estudia la oposición (en el último ya no hay a qué opositar)."""
-        return self.study is not None and level < self.top
+        """Si en ese puesto se estudia la oposición.
 
-    def tenured(self, level: int) -> bool:
-        """Si en ese puesto hay plaza fija."""
-        return self.tenure_from is not None and level >= self.tenure_from
+        Solo se oposita en el tronco: pasado el último puesto del tronco (en el
+        funcionariado, el inspector) se asciende por libre designación o por
+        dinero, no por temario.
+        """
+        return self.study is not None and level < self.trunk_top
+
+    def tenured(self, level: int, branch: str = "") -> bool:
+        """Si en ese puesto hay plaza fija.
+
+        No la hay en una rama de puestos de autónomo (la puerta giratoria): quien
+        pide la excedencia voluntaria deja de ser funcionario en activo y pierde
+        la plaza fija.
+        """
+        return (
+            self.tenure_from is not None
+            and level >= self.tenure_from
+            and not self.position(level, branch).self_employed
+        )
+
+    def earns_triennia(self, level: int, branch: str = "") -> bool:
+        """Si en ese puesto corren trienios.
+
+        En la excedencia voluntaria por interés particular no se computa
+        antigüedad (art. 89.2 del EBEP, Real Decreto Legislativo 5/2015), así que
+        en una rama de autónomos no se cobran.
+        """
+        return self.seniority and not self.position(level, branch).self_employed
 
     def required_guards(self, level: int) -> int:
         """Guardias mínimas por semana en ese puesto."""
