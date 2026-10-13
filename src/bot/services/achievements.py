@@ -9224,7 +9224,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Niega que tu bebida energética dé taquicardias.", E),
     ])  # fmt: skip
     a += _tiers("influencer", "work_invisible_punch", [
-        (1, "inf_golpe_invisible", "Técnica oriental, golpe invisible",
+        (1, "inf_golpe_invisible", "Golpe invisible (solo lo vio el VAR)",
          "Di que a tu boxeador lo ha tumbado un golpe invisible.", E, True),
     ])  # fmt: skip
     a += _tiers("influencer", "work_boxing_refund", [

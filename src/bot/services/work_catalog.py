@@ -10075,7 +10075,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Fue un golpe invisible",
                 Outcome(
-                    "Dices que ha sido «un golpe invisible, de técnica oriental». El vídeo "
+                    "Dices que ha sido «un golpe invisible, de los que solo ve el VAR». El vídeo "
                     "de la caída tiene más visitas que el resto del cartel.",
                     followers=0.25,
                     battery=-10,
