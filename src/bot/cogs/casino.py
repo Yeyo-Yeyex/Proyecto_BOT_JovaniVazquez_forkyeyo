@@ -446,11 +446,15 @@ EditFn = Callable[..., Awaitable[Any]]
 
 
 class NumberBetModal(discord.ui.Modal, title="🎯 Apuesta a números"):
-    """Formulario para las apuestas interiores (plenos, caballos, cuadros…)."""
+    """Formulario para las apuestas interiores (plenos, caballos, cuadros…) y las columnas.
+
+    Las columnas no tienen botón (dejan sitio al 🎨 del tapete): se escriben
+    `c1`, `c2` o `c3`. Acepta cualquier apuesta que entienda `parse_bet`.
+    """
 
     numbers: discord.ui.TextInput = discord.ui.TextInput(
-        label="Números",
-        placeholder="17 · 0-00 · 17-20 · 13-14-15 · 17-18-20-21",
+        label="Números o columna (c1, c2, c3)",
+        placeholder="17 · 0-00 · 17-20 · 13-14-15 · 17-18-20-21 · c1 (1ª columna)",
         max_length=40,
     )
 
@@ -543,11 +547,11 @@ class RouletteTable(discord.ui.View):
         self._bet_button("dozen1", "1-12", 1, gray)
         self._bet_button("dozen2", "13-24", 1, gray)
         self._bet_button("dozen3", "25-36", 1, gray)
-        self._bet_button("col1", "1ª col", 2, gray)
-        self._bet_button("col2", "2ª col", 2, gray)
-        self._bet_button("col3", "3ª col", 2, gray)
+        # Las columnas van en 🎯 Números (`c1`…`c3`): su sitio es para el 🎨.
         self._bet_button("0", "🟢 0", 2, green)
         self._bet_button("00", "🟢 00", 2, green)
+        if (paint := tienda.skin_button(self.cog.bot, GAME, row=2)) is not None:
+            self.add_item(paint)
         self._add("½", 3, self._halve, custom_id="half")
         self._add("×2", 3, self._double_stake, custom_id="x2")
         self._add("💰 All-in", 3, self._all_in, custom_id="allin")

@@ -1207,7 +1207,7 @@ async def test_el_autobus_apunta_sus_logros_y_su_jugada_con_el_bot_real(tmp_path
 async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_la_partida(
     tmp_path: Path,
 ) -> None:
-    """El 🎨 sale en moneda, dados y pollo también a mitad de partida, con la tienda real."""
+    """El 🎨 sale en moneda, dados y pollo también a mitad de partida, y en la ruleta."""
     import random
 
     from bot.services.chicken import DIFFICULTY_BY_KEY, ChickenGame
@@ -1255,5 +1255,14 @@ async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_l
         chicken.game = ChickenGame(stake=100, difficulty=DIFFICULTY_BY_KEY["facil"], hit_lane=5)
         chicken.rebuild()
         assert has_paint(chicken), "pollo cruzando"
+
+        # La ruleta tiene las 25 casillas llenas: el 🎨 va donde estaban las columnas.
+        roulette = importer("Casino", client).RouletteTable(
+            client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=100
+        )
+        assert has_paint(roulette)
+        assert len(roulette.children) <= 25
+        labels = [getattr(item, "label", "") for item in roulette.children]
+        assert not any("col" in (label or "") for label in labels)
     finally:
         await client.close()

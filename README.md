@@ -335,9 +335,9 @@ python -m bot
   apuesta cobra, gira (GIF de ~4 s) y paga. En cada tirada caen de 1 a 5
   ⚡ rayos sobre números al azar, con multiplicadores de ×50 a ×500: un
   pleno con rayo cobra eso y uno sin rayo, 29 a 1. Botones: rojo/negro, par/impar,
-  1-18/19-36, docenas, columnas, 0 y 00; 🎯 **Números** abre un formulario
-  para plenos, caballos, transversales, cuadros, seisenas y la línea
-  0-00-1-2-3. Con ½, ×2 y 💰 All-in se cambia la ficha; 🔁 Repetir y
+  1-18/19-36, docenas, 0 y 00; 🎯 **Números** abre un formulario
+  para plenos, caballos, transversales, cuadros, seisenas, la línea
+  0-00-1-2-3 y las columnas (`c1`, `c2`, `c3`); 🎨 cambia el tapete. Con ½, ×2 y 💰 All-in se cambia la ficha; 🔁 Repetir y
   ⏫ Doblar repiten la última tirada. 🔥 **Caliente** y ❄️ **Frío** apuestan
   a pleno al número que más ha salido en el servidor o al que más tarda.
   🧩 **Varias** cambia al modo de varias apuestas: cada botón pone una
