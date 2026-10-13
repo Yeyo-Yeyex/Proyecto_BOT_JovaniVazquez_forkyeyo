@@ -2190,6 +2190,25 @@ async def open_aisle(bot: commands.Bot, interaction: discord.Interaction, aisle:
     return True
 
 
+async def open_checkout_key(
+    bot: commands.Bot, interaction: discord.Interaction, catalog_key: str
+) -> bool:
+    """Abre la caja del artículo de serie `catalog_key` en un mensaje privado.
+
+    Es el atajo de `pala` para comprar un regalo desde el desplegable de la
+    familia. `False` si la tienda no está cargada o no lo vende (y no se toca la
+    respuesta).
+    """
+    if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
+        return False
+    await cog.stock_up(interaction.guild.id)
+    item = await cog.repository.item_by_key(interaction.guild.id, catalog_key)
+    if item is None:
+        return False
+    await cog.open_checkout(interaction, item.id)
+    return True
+
+
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:
     """Claves de serie de lo que tiene un miembro; vacío si la tienda no está cargada.
 

@@ -678,7 +678,7 @@ async def test_el_panel_explica_la_familia_y_ofrece_regalos_y_favores(tmp_path: 
     values = {o.value for o in family.options}
     assert {"f:tupper", "f:bizum"} <= values
     assert "f:excusa" not in values  # la excusa va en los marrones
-    assert not any(v.startswith("g:") for v in values)  # sin regalos en la mochila
+    assert "b:flores_mama" in values and "g:flores_mama" not in values  # se compra
     check_limits(panel)
 
 
