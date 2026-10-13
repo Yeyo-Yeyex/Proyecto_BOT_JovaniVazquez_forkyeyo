@@ -1202,3 +1202,67 @@ async def test_el_autobus_apunta_sus_logros_y_su_jugada_con_el_bot_real(tmp_path
         assert report.by_game["autobus"].plays == 1
     finally:
         await client.close()
+
+
+async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_la_partida(
+    tmp_path: Path,
+) -> None:
+    """El 🎨 sale en moneda, dados y pollo también a mitad de partida, y en la ruleta."""
+    import random
+
+    from bot.services.chicken import DIFFICULTY_BY_KEY, ChickenGame
+    from bot.services.coin import CoinGame
+    from bot.services.craps import Bet, Status
+
+    client = await load_bot(tmp_path)
+    owner = MagicMock(id=OWNER_ID)
+
+    def has_paint(view: discord.ui.View) -> bool:
+        return any(
+            isinstance(item, discord.ui.Button) and str(item.emoji) == "🎨"
+            for item in view.children
+        )
+
+    try:
+        coin = importer("Moneda", client).CoinView(
+            client.get_cog("Moneda"), guild_id=GUILD_ID, owner=owner, stake=100
+        )
+        coin.rebuild()
+        assert has_paint(coin), "moneda sin partida"
+        coin.game = CoinGame.new(100, random.Random(1))
+        coin.rebuild()
+        assert has_paint(coin), "moneda a mitad de partida"
+
+        dice = importer("Dados", client).CrapsView(
+            client.get_cog("Dados"), guild_id=GUILD_ID, owner=owner, stake=100, bet=Bet.PASS
+        )
+        dice.rebuild()
+        assert has_paint(dice), "dados sin punto"
+        dice.game = MagicMock(status=Status.POINT, point=6, odds_room=0, stake=100, bet=Bet.PASS)
+        dice.rebuild()
+        assert has_paint(dice), "dados con el punto puesto"
+
+        chicken = importer("Pollo", client).ChickenView(
+            client.get_cog("Pollo"),
+            guild_id=GUILD_ID,
+            owner=owner,
+            stake=100,
+            difficulty=DIFFICULTY_BY_KEY["facil"],
+            auto=None,
+        )
+        chicken.rebuild()
+        assert has_paint(chicken), "pollo sin partida"
+        chicken.game = ChickenGame(stake=100, difficulty=DIFFICULTY_BY_KEY["facil"], hit_lane=5)
+        chicken.rebuild()
+        assert has_paint(chicken), "pollo cruzando"
+
+        # La ruleta tiene las 25 casillas llenas: el 🎨 va donde estaban las columnas.
+        roulette = importer("Casino", client).RouletteTable(
+            client.get_cog("Casino"), guild_id=GUILD_ID, owner=owner, stake=100
+        )
+        assert has_paint(roulette)
+        assert len(roulette.children) <= 25
+        labels = [getattr(item, "label", "") for item in roulette.children]
+        assert not any("col" in (label or "") for label in labels)
+    finally:
+        await client.close()
