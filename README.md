@@ -520,6 +520,8 @@ python -m bot
   encadenan premios en un **RUSH** y el 7 es el **SUPER RUSH**. El reach
   (dos iguales y el centro frenando) es espectáculo y no cambia nada.
   Botones: 🎯 Lanzar, 🔁 Ráfaga ×5, ▶️ Auto, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios.
+  🔁 Ráfaga ×5 juega cinco tandas y, sin turbo, suelta sus 50 bolas en una sola
+  animación (en turbo, solo la imagen final).
   ▶️ Auto encadena tandas con su animación hasta 25, y para sola con un atari,
   sin saldo o al perder 10 veces la apuesta; mientras corre, el botón es ⏹️ Parar.
   La tanda siguiente se sortea y se dibuja mientras miras la anterior, sin mover

@@ -51,6 +51,7 @@ from bot.services.autoplay import AUTOPLAY_MAX, AUTOPLAY_MIN_GAP, StopReason
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.pachinko import (
+    BALLS,
     BOARDS,
     CLASSIC,
     MIN_STAKE,
@@ -335,16 +336,44 @@ async def test_otro_miembro_no_puede_jugar_en_tu_maquina(tmp_path: Path) -> None
     assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
 
 
-async def test_la_rafaga_juega_cinco_tandas_con_una_sola_edicion(tmp_path: Path) -> None:
+async def test_la_rafaga_en_turbo_juega_cinco_tandas_con_una_sola_edicion(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     view = make_view(cog, stake=10)
+    view.turbo = True
     interaction = make_interaction()
 
     await view._burst(interaction)
 
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 10 * BURST_VOLLEYS
     interaction.edit_original_response.assert_awaited_once()
+    assert attachment_names(interaction.edit_original_response.await_args) == [PNG_NAME]
     assert view.session_volleys == BURST_VOLLEYS
+    assert cog.renderer.rendered == []
+
+
+async def test_la_rafaga_sin_turbo_anima_las_bolas_de_las_cinco_tandas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [SMALL, RUSH])
+    view = make_view(cog, stake=10)
+    interaction = make_interaction()
+
+    await view._burst(interaction)
+
+    assert view.session_volleys == 2  # el rush para la Ráfaga
+    (together,) = cog.renderer.rendered
+    assert together.balls == SMALL.balls + RUSH.balls
+    assert together.draws == SMALL.draws + RUSH.draws
+    gif, png = interaction.edit_original_response.await_args_list
+    assert attachment_names(gif) == [GIF_NAME]
+    assert attachment_names(png) == [PNG_NAME]
+    assert "2 tandas" in view.last_text
+
+
+async def test_la_rafaga_sin_turbo_dibuja_cinco_veces_mas_bolas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = make_view(cog, stake=10)
+    await view._burst(make_interaction())
+    (together,) = cog.renderer.rendered
+    assert len(together.balls) == BALLS * BURST_VOLLEYS
 
 
 async def test_la_rafaga_para_con_un_atari_y_lo_anuncia(tmp_path: Path) -> None:
@@ -410,9 +439,10 @@ async def test_si_el_movimiento_falla_no_se_mueve_dinero(
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
 
 
-async def test_la_rafaga_dibuja_el_ultimo_con_su_movimiento(tmp_path: Path) -> None:
+async def test_la_rafaga_en_turbo_dibuja_el_ultimo_con_su_movimiento(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     view = make_view(cog, stake=10)
+    view.turbo = True
     await view._burst(make_interaction())
     assert len(cog.renderer.motions) == 1
     assert isinstance(cog.renderer.motions[0], VolleyMotion)
@@ -460,12 +490,25 @@ async def test_al_azar_cada_tanda_cae_en_un_tablero(tmp_path: Path) -> None:
     picks = iter([0, 3, 1, 2, 0])
     cog.machine._randbelow = lambda n: next(picks)  # type: ignore[attr-defined]
     view = PachinkoView(cog, guild_id=GUILD_ID, owner=make_user(), stake=10, board_key=RANDOM_BOARD)
+    view.turbo = True
     assert view.board is None
 
     await view._burst(make_interaction())
 
     assert cog.machine.boards == ["sakura", "oni", "clasica", "dragon", "sakura"]
     assert "Al azar" in (await view.current_embed()).title
+
+
+async def test_la_rafaga_animada_al_azar_juega_las_cinco_en_un_tablero(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    picks = iter([3])
+    cog.machine._randbelow = lambda n: next(picks)  # type: ignore[attr-defined]
+    view = PachinkoView(cog, guild_id=GUILD_ID, owner=make_user(), stake=10, board_key=RANDOM_BOARD)
+
+    await view._burst(make_interaction())
+
+    assert cog.machine.boards == ["oni"] * BURST_VOLLEYS
+    assert cog.renderer.rendered[0].board is ONI
 
 
 def test_el_texto_dice_que_tablero_ha_tocado_al_azar() -> None:

@@ -8,7 +8,9 @@ dinero, en `EconomyService.settle_bet`. Este cog solo une las piezas y pinta.
 Botones:
 
 - 🎯 **Lanzar**: cobra la tanda, lanza las 10 bolas y paga lo que devuelvan.
-- 🔁 **Ráfaga ×5**: cinco tandas seguidas con un solo resumen y una sola imagen.
+- 🔁 **Ráfaga ×5**: cinco tandas seguidas con un solo resumen. Sin turbo, las 50
+  bolas caen juntas en una sola animación, en un mismo tablero; en turbo, solo
+  la imagen final.
 - ▶️ **Auto**: tandas normales encadenadas, cada una con su animación y su imagen
   final, como si el dueño pulsara 🎯 Lanzar una y otra vez. Mientras corre, el
   botón es ⏹️ **Parar** y es lo único que se puede pulsar (Parar solo marca un
@@ -42,10 +44,11 @@ momento). Solo hay una por máquina. Al pulsar 🎯 Lanzar o en el siguiente pas
 del Auto, si la precarga sigue valiendo (mismo tablero elegido, o 🎲, y mismo
 turbo) se cobra con `settle_bet` con su `volley` y se enseña sin dibujar; si aún
 no ha acabado, se espera a ella en vez de sortear otra; si ya no vale (o
-falló, y entonces se registra), se tira y se juega como antes. La Ráfaga no
-dibuja y no usa ni gasta la precarga. Cambiar la apuesta no la invalida: ni el
-sorteo ni ninguna imagen dependen de ella. Cambiar de tablero o de turbo la
-cancela; cerrar la máquina (`on_timeout`) o descargar el cog también.
+falló, y entonces se registra), se tira y se juega como antes. La Ráfaga
+dibuja aparte (sus tandas juntas) y no usa ni gasta la precarga. Cambiar la
+apuesta no la invalida: ni el sorteo ni ninguna imagen dependen de ella.
+Cambiar de tablero o de turbo la cancela; cerrar la máquina (`on_timeout`) o
+descargar el cog también.
 
 **El dinero no se mueve hasta el clic**, y por eso es justo: sortear antes o en
 el clic da la misma probabilidad (el sorteo no mira la apuesta ni al jugador),
@@ -126,6 +129,7 @@ from bot.services.pachinko import (
     expected_return,
     find_board,
     hold_bar,
+    merge_volleys,
     payout,
     paytable_lines,
 )
@@ -783,22 +787,29 @@ class PachinkoView(discord.ui.View):
             won=self.last_won,
         )
 
-    async def _play_one(self, *, turbo: bool, render: bool = True) -> PachinkoPlay:
+    async def _play_one(
+        self, *, turbo: bool, render: bool = True, board: Board | None = None
+    ) -> PachinkoPlay:
         """Una tanda con la apuesta actual.
 
         Con animación (`render`) usa la tanda precargada si la hay y vale; la
-        Ráfaga, que no dibuja, siempre sortea la suya y no gasta la precarga.
+        Ráfaga, que dibuja aparte, siempre sortea la suya y no gasta la precarga.
+
+        Args:
+            board: Tablero obligado (la Ráfaga con animación juega las cinco en
+                el mismo); si no, el elegido o uno al azar con 🎲.
 
         Raises:
             InsufficientFundsError, BalanceLimitError: Como `Pachinko.play`.
         """
         prepared = await self._take_preload(turbo=turbo) if render else None
-        board = None if prepared else self.board or self.cog.machine.random_board()
+        if prepared is None:
+            board = board or self.board or self.cog.machine.random_board()
         play = await self.cog.play(
             self.guild_id,
             self.owner.id,
             stake=self.stake,
-            board=board,
+            board=None if prepared else board,
             turbo=turbo,
             render=render,
             session_volleys=self.session_volleys + 1,
@@ -935,7 +946,15 @@ class PachinkoView(discord.ui.View):
         )
 
     async def _burst(self, interaction: discord.Interaction) -> None:
-        """Cinco tandas seguidas sin animación y un solo resumen.
+        """Cinco tandas seguidas y un solo resumen.
+
+        Sin turbo, las bolas de todas las tandas caen juntas en una sola
+        animación (cinco veces más bolas que 🎯 Lanzar) y la pantalla juega las
+        tiradas de todas; por eso las cinco van al mismo tablero (con 🎲, uno
+        sorteado para toda la Ráfaga). Cada tanda se cobra y cuenta para los
+        logros suelta, como siempre: juntarlas solo cambia el dibujo
+        (`merge_volleys`). En turbo, solo la imagen final de la última, y con 🎲
+        cada tanda en un tablero.
 
         Para antes si se acaba el dinero o sale un atari (para que se vea).
         """
@@ -948,9 +967,11 @@ class PachinkoView(discord.ui.View):
         try:
             await ack(interaction)
             self._last_interaction = interaction
+            animated = not self.turbo
+            board = (self.board or self.cog.machine.random_board()) if animated else None
             for _ in range(BURST_VOLLEYS):
                 try:
-                    plays.append(await self._play_one(turbo=True, render=False))
+                    plays.append(await self._play_one(turbo=True, render=False, board=board))
                 except InsufficientFundsError:
                     stopped = "Parado: no te llega para otra tanda."
                     break
@@ -966,7 +987,27 @@ class PachinkoView(discord.ui.View):
                 )
                 return
             last = plays[-1]
-            png = await asyncio.to_thread(self.cog.renderer.still_png, last.volley, last.motion)
+            if animated:
+                together = merge_volleys([p.volley for p in plays])
+                # El movimiento de las tandas juntas es otro (chocan entre todas): se
+                # calcula al dibujar, en el mismo hilo. ~1,3 s de CPU con 50 bolas.
+                media = await asyncio.to_thread(self.cog.renderer.render, together)
+                self._set_enabled(False)
+                await interaction.edit_original_response(
+                    embed=launching_embed(
+                        owner=self.owner.display_name,
+                        stake=sum(p.stake for p in plays),
+                        held=len(together.draws),
+                        board=together.board,
+                    ),
+                    attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                    view=self,
+                )
+                self._start_preload()
+                await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+                png = media.png
+            else:
+                png = await asyncio.to_thread(self.cog.renderer.still_png, last.volley, last.motion)
             text = burst_text(plays, stopped)
             if note := tax_note(plays):
                 text += f"\n{note}"

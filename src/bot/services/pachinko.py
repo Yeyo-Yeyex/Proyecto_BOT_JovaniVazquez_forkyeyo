@@ -253,7 +253,8 @@ class Volley:
 
     Attributes:
         board: Tablero en el que se ha jugado.
-        balls: Las `BALLS` bolas, en el orden en que se lanzan.
+        balls: Las `BALLS` bolas, en el orden en que se lanzan (más si es
+            una Ráfaga junta con `merge_volleys`, que solo se dibuja).
         draws: Tiradas del sorteo, en orden (las de la reserva).
         wasted: Bolas que entraron en START con la reserva llena.
     """
@@ -371,6 +372,29 @@ def build_volley(board: Board, balls: Sequence[Ball], draw: Callable[[], Draw]) 
     held = min(starts, MAX_HOLD)
     draws = tuple(draw() for _ in range(held))
     return Volley(board=board, balls=tuple(balls), draws=draws, wasted=starts - held)
+
+
+def merge_volleys(volleys: Sequence[Volley]) -> Volley:
+    """Junta varias tandas del mismo tablero en una sola, solo para dibujarlas.
+
+    Es lo que enseña la 🔁 Ráfaga con animación: todas sus bolas caen en un
+    mismo GIF y la pantalla juega las tiradas de todas, en orden. No sirve para
+    pagar (`payout` cuenta `BALLS` bolas por tanda): cada tanda se cobra suelta.
+
+    Raises:
+        ValueError: Si no hay tandas o no son todas del mismo tablero.
+    """
+    if not volleys:
+        raise ValueError("No hay tandas que juntar.")
+    board = volleys[0].board
+    if any(volley.board != board for volley in volleys):
+        raise ValueError("Solo se juntan tandas del mismo tablero.")
+    return Volley(
+        board=board,
+        balls=tuple(ball for volley in volleys for ball in volley.balls),
+        draws=tuple(draw for volley in volleys for draw in volley.draws),
+        wasted=sum(volley.wasted for volley in volleys),
+    )
 
 
 class PachinkoMachine:

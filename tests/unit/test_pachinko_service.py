@@ -32,6 +32,7 @@ from bot.services.pachinko import (
     hold_bar,
     jackpots_per_atari,
     lottery_return,
+    merge_volleys,
     payout,
     paytable_lines,
     pocket_probability,
@@ -311,3 +312,21 @@ def test_la_tabla_de_premios_explica_su_tablero(board: Board) -> None:
     assert board.name in text and board.risk in text
     assert "ATARI" in text and "RUSH" in text and "REACH" in text and "START" in text
     assert f"+{board.fever_balls} bolas" in text
+
+
+def test_juntar_tandas_suma_bolas_tiradas_y_perdidas() -> None:
+    machine = PachinkoMachine(random.Random(5).randrange, random.Random(6).randrange)
+    volleys = [machine.launch(CLASSIC) for _ in range(5)]
+    together = merge_volleys(volleys)
+    assert len(together.balls) == 5 * BALLS
+    assert together.draws == tuple(d for v in volleys for d in v.draws)
+    assert together.wasted == sum(v.wasted for v in volleys)
+    assert together.total_balls == sum(v.total_balls for v in volleys)
+
+
+def test_no_se_juntan_tandas_de_tableros_distintos_ni_ninguna() -> None:
+    machine = PachinkoMachine(random.Random(5).randrange, random.Random(6).randrange)
+    with pytest.raises(ValueError):
+        merge_volleys([machine.launch(CLASSIC), machine.launch(ONI)])
+    with pytest.raises(ValueError):
+        merge_volleys([])
