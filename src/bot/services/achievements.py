@@ -417,6 +417,11 @@ SHOP_TRACKED_KEYS = frozenset(
         "grandeza",
         "palco_bernabeu",
         "porsche",
+        "skin_tapete_oro",
+        "skin_tapete_espana",
+        "skin_tapete_israel",
+        "skin_tapete_canarias",
+        "skin_tapete_boricua",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -5212,6 +5217,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("shop", "shop_skins", [
         (1, "skin_1", "Mesa a mi gusto", "Compra una skin para una mesa del casino.", C),
+        (3, "skin_3", "Decorador de interiores", "Compra 3 skins para el casino.", R),
+        (6, "skin_6", "Escaparatista de Las Vegas", "Compra 6 skins para el casino.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_skin_swaps", [
         (10, "skin_swap_10", "Interiorista de casino", "Cambia de skin 10 veces.", C),
@@ -5262,11 +5269,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el Marquesado de Mogán.", L, False),
         ("grandeza", "buy_grandeza", "Grande entre los grandes",
          "Compra la Grandeza de España.", M, False),
+        ("skin_tapete_oro", "buy_tapete_oro", "Rey Midas del casino",
+         "Compra el tapete de oro. Hacienda ya está tomando nota.", E, False),
+        ("skin_tapete_espana", "buy_tapete_espana", "Con el escudo bien puesto",
+         "Compra el tapete rojigualda.", R, False),
+        ("skin_tapete_israel", "buy_tapete_israel", "Shalom, crupier",
+         "Compra el tapete de Israel.", R, False),
+        ("skin_tapete_canarias", "buy_tapete_canarias", "Apostando a la sombra del Teide",
+         "Compra el tapete del Teide.", R, False),
+        ("skin_tapete_boricua", "buy_tapete_boricua", "¡Wepa en la mesa!",
+         "Compra el tapete monoestrellado.", R, False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
             rarity=rarity, conditions=((f"shop_key_{key}", 1),), secret=secret,
         ))  # fmt: skip
+    a.append(Achievement(
+        id="tapetes_banderas", name="Asamblea General de la ONU",
+        description="Ten los cuatro tapetes de bandera: rojigualda, Israel, Teide y boricua.",
+        category="shop", rarity=E,
+        conditions=tuple((f"shop_key_skin_tapete_{k}", 1)
+                         for k in ("espana", "israel", "canarias", "boricua")),
+    ))  # fmt: skip
 
     # 🐾 Mascotas ------------------------------------------------------------------------
     a.append(Achievement(

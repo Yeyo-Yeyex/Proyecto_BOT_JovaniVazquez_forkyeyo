@@ -613,8 +613,8 @@ async def press_choose_skin(client: BotClient, owner: MagicMock) -> Click:
     )  # fmt: skip
 
     async def click(interaction: MagicMock) -> None:
-        select._values = ["ruleta:ruleta_granate"]  # lo que Discord rellena al elegir
-        interaction.data = {"values": ["ruleta:ruleta_granate"]}
+        select._values = ["tapete:ruleta_granate"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["tapete:ruleta_granate"]}
         await select.callback(interaction)
 
     return click
@@ -622,7 +622,7 @@ async def press_choose_skin(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_table_skin_button(client: BotClient, owner: MagicMock) -> Click:
     await granate_in_backpack(client)
-    button = module_of(client, "Tienda").skin_button(client, "ruleta")
+    button = module_of(client, "Tienda").skin_button(client, "tapete")
     assert button is not None
 
     async def click(interaction: MagicMock) -> None:

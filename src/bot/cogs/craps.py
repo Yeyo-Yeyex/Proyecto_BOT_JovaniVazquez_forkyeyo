@@ -58,6 +58,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, craps_stats
 from bot.services.craps import (
@@ -445,7 +446,7 @@ class CrapsView(ui.View):
         try:
             if forced:
                 # Los dados de la imagen tienen que ser los de la tirada que decidió.
-                png = await self.cog.renderer.board(self.table(), self.rest)
+                png = await self.cog.renderer.board(self.table(), self.rest, skin=self.skin())
                 kwargs["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]
             if self._last_interaction is not None:
                 await self._last_interaction.edit_original_response(**kwargs)
@@ -479,14 +480,21 @@ class CrapsView(ui.View):
 
     # -- GIF por adelantado -------------------------------------------------------------
 
+    def skin(self) -> dict[str, object]:
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.tapete`)."""
+        return tienda.tapete(self.cog.bot, self.guild_id, self.owner.id)
+
     def _plan_key(self) -> tuple[Any, ...]:
-        """Lo que decide el GIF de la próxima tirada, salvo el botón que se pulse."""
+        """Lo que decide el GIF de la próxima tirada, salvo el botón que se pulse.
+
+        Lleva el tapete: si el dueño lo cambia, lo pintado ya no vale.
+        """
         game = self.game
         if game is not None and game.playing:
             match = (id(game), len(game.rolls), game.odds)
         else:
             match = (None, self.stake, self.hand.seven_out)
-        return (*match, len(self.history), self._dice, self._seed)
+        return (*match, len(self.history), self._dice, self.skin()["key"], self._seed)
 
     def _predict(self, bet: Bet | None) -> Table:
         """La mesa tal como quedará si se pulsa `bet` (sobre copias)."""
@@ -545,7 +553,9 @@ class CrapsView(ui.View):
             media: Media | None = None
             if self._plan_key() == key and not self.is_finished():
                 try:
-                    media = await self.cog.renderer.throw(self._predict(choice), seed=key[-1])
+                    media = await self.cog.renderer.throw(
+                        self._predict(choice), seed=key[-1], skin=self.skin()
+                    )
                 except Exception:
                     logger.warning("No se pudieron pintar por adelantado los dados", exc_info=True)
             if not futures[choice].done():
@@ -678,7 +688,7 @@ class CrapsView(ui.View):
         async def paint() -> Media:
             media = await ready if ready is not None else None
             if media is None:
-                media = await self.cog.renderer.throw(self.table(), seed=seed)
+                media = await self.cog.renderer.throw(self.table(), seed=seed, skin=self.skin())
             return media
 
         media: Media
@@ -828,7 +838,7 @@ class CrapsView(ui.View):
 
     async def _board(self, interaction: discord.Interaction) -> None:
         """Pone el PNG de la mesa quieta (sin animación)."""
-        png = await self.cog.renderer.board(self.table(), self.rest)
+        png = await self.cog.renderer.board(self.table(), self.rest, skin=self.skin())
         self.rebuild()
         await edit(
             interaction,
@@ -980,7 +990,7 @@ class Craps(commands.Cog, name="Dados"):
         view = CrapsView(self, guild_id=guild.id, owner=user, stake=stake, bet=bet or Bet.PASS)
         view.channel = channel
         view.balance = balance
-        png = await self.renderer.board(view.table(), view.rest)
+        png = await self.renderer.board(view.table(), view.rest, skin=view.skin())
         view.rebuild(busy=bet is not None)
         view.message = await send(
             embed=view.embed(), file=discord.File(io.BytesIO(png), filename=PNG_NAME), view=view

@@ -95,17 +95,27 @@ class CoinScene:
             patches = await self.browser.render(meta, states)
         return patches
 
-    async def board(self, game: CoinGame | None, *, stake: int, face: Side | Outcome) -> bytes:
-        """PNG de la mesa quieta: al abrir, al cobrar y al repintar."""
-        patches = await self._frames(meta_state(stake), [board_state(game, face=face)])
+    async def board(
+        self,
+        game: CoinGame | None,
+        *,
+        stake: int,
+        face: Side | Outcome,
+        skin: dict[str, object] | None = None,
+    ) -> bytes:
+        """PNG de la mesa quieta: al abrir, al cobrar y al repintar, con el tapete `skin`."""
+        meta = {**meta_state(stake), "skin": skin}
+        patches = await self._frames(meta, [board_state(game, face=face)])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, game, stake=stake, face=face)
         return patch_png(patches[0])
 
-    async def toss(self, game: CoinGame, *, start: Side, seed: int) -> Media:
-        """GIF del último lanzamiento de `game` y PNG del final."""
+    async def toss(
+        self, game: CoinGame, *, start: Side, seed: int, skin: dict[str, object] | None = None
+    ) -> Media:
+        """GIF del último lanzamiento de `game` y PNG del final, con el tapete `skin`."""
         states = toss_states(game, start=start, seed=seed)
-        patches = await self._frames(meta_state(game.stake), states)
+        patches = await self._frames({**meta_state(game.stake), "skin": skin}, states)
         if patches is None:
             return await asyncio.to_thread(self.fallback.toss, game, start=start, seed=seed)
         return await asyncio.to_thread(lambda: encode(assemble(patches)))
