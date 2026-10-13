@@ -341,11 +341,15 @@ class CoinView(ui.View):
                 row=0,
                 disabled=busy,
             )
+            self._paint(busy=busy)
             return
         self._button("½", "half", self._halve, row=1, disabled=busy)
         self._button("×2", "x2", self._double, row=1, disabled=busy)
         self._button("💰 All-in", "allin", self._all_in, row=1, disabled=busy)
-        # El 🎨: elegir o comprar el tapete de esta mesa (no cambia la jugada).
+        self._paint(busy=busy)
+
+    def _paint(self, *, busy: bool) -> None:
+        """El 🎨: elegir o comprar el tapete de esta mesa, también a mitad de partida."""
         if (paint := tienda.skin_button(self.cog.bot, GAME, row=1)) is not None:
             paint.disabled = busy
             self.add_item(paint)
