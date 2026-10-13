@@ -327,12 +327,13 @@ linea_directa() {
 # Añade las novedades de $1..$2 al buzón para que el bot las publique. Si el
 # bot aún no había publicado las anteriores, se juntan.
 apuntar_novedades() {
-    local lista archivo="$BUZON/novedades.txt" repesca="$BUZON/../repesca_88_90"
+    local lista archivo="$BUZON/novedades.txt" repesca="$BUZON/../repesca_directos"
     lista="$(listar_novedades "$1" "$2")"
-    # shortcut: una sola vez, los PR #88-#90 de godzilin que tapó el formato
-    # anterior del aviso; borrar este bloque cuando ya se hayan publicado.
+    # shortcut: una sola vez, los commits directos a main desde el PR #99 que
+    # el script anterior no apuntaba (el despliegue que trajo el arreglo aún
+    # corrió con el viejo); borrar este bloque cuando ya se hayan publicado.
     if [[ ! -e "$repesca" ]]; then
-        lista="$(listar_novedades da749ef3215574abf2429e3cbd2e53c8ee1ece31 19b98620f548f8ed48adbd15ed4b1b7660e63b2b)"$'\n'"$lista"
+        lista="$(listar_novedades e0332497d1932a72b291a7609f97db181b35527c "$1")"$'\n'"$lista"
         # Sin líneas vacías ni repetidas si el último despliegue ya los incluía.
         lista="$(awk -F'\t' 'NF && !visto[$1 FS $4]++' <<<"$lista")"
         touch "$repesca"

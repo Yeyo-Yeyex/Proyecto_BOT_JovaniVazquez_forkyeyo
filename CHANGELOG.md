@@ -8,6 +8,10 @@ criterio.
 
 ## 5.x
 
+### 5.22.1 · 2026-10-13
+
+- Novedades: se anuncian los commits directos a main que se quedaron sin aviso desde el #99
+
 ### 5.22.0 · 2026-10-13
 
 - Versiones: el bot tiene número de versión y el aviso de novedades lo dice
