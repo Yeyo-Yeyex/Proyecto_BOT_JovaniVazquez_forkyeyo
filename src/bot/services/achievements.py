@@ -262,6 +262,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("economy", "🏛️ Economía y Hacienda"),
     Category("work", "🪏 Trabajo"),
     Category("jobs", "👷 Oficios"),
+    Category("hosteleria", "🍽️ Hostelería"),
     Category("sanidad", "🏥 Sanidad"),
     Category("oficina", "💻 Oficina"),
     Category("reparto", "🛵 Reparto"),
@@ -5797,20 +5798,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "constructor", "Constructor de aeropuertos sin aviones",
          "Llega a presidente de una constructora del IBEX (rama 🚄 Obra pública).", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_perfect_orders", [
+    a += _tiers("hosteleria", "work_perfect_orders", [
         (100, "una_cana", "Ponme una caña", "Saca 100 comandas perfectas.", E),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_tip", [
+    a += _tiers("hosteleria", "work_tip", [
         (1, "propina", "Propina de guiri", "Guárdate una propina en el bolsillo.", C),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_dine_dash", [
+    a += _tiers("hosteleria", "work_dine_dash", [
         (1, "sinpa", "Ni un sinpa", "Persigue a una mesa que se iba sin pagar.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_happy_clients", [
+    a += _tiers("hosteleria", "work_happy_clients", [
         (30, "cliente_razon", "El cliente siempre tiene razón", "Atiende bien 30 marrones.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_top_hosteleria", [
-        (1, "chiringuito", "Chiringuito propio", "Llega a dueño del chiringuito.", E),
+    a += _tiers("hosteleria", "work_top_hosteleria", [
+        (1, "chiringuito", "Del estropajo a lo más alto",
+         "Llega a lo más alto de la hostelería: presidente de la patronal o gurú de Dubái.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_perfect_votes", [
         (1, "voto_1", "Primer botonazo", "Vota una vez lo que diga el partido.", C),
@@ -5882,10 +5884,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_overruns", [
         (100, "overruns_100", "Tribunal de Cuentas", "Encuentra 100 sobrecostes.", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_perfect_orders", [
+    a += _tiers("hosteleria", "work_perfect_orders", [
         (500, "orders_500", "Camarero de la Estrella Michelin", "Saca 500 comandas perfectas.", L),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_happy_clients", [
+    a += _tiers("hosteleria", "work_happy_clients", [
         (150, "clients_150", "El cliente siempre tiene razón (no)",
          "Atiende bien 150 marrones.", E),
     ])  # fmt: skip
@@ -5916,10 +5918,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_caught_uco", [
         (5, "uco_5", "Cliente habitual de la UCO", "Que te pille la UCO 5 veces.", L, True),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_tip", [
+    a += _tiers("hosteleria", "work_tip", [
         (50, "propinas_50", "Bote de propinas", "Guárdate 50 propinas en el bolsillo.", R),
     ])  # fmt: skip
-    a += _tiers("jobs", "work_dine_dash", [
+    a += _tiers("hosteleria", "work_dine_dash", [
         (10, "sinpa_10", "Velocista de terraza", "Persigue a 10 mesas que se iban sin pagar.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_posters", [
@@ -6113,7 +6115,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que tu startup quiebre con tus opciones dentro.", R, True),
     ])  # fmt: skip
     a += _tiers("oficina", "work_top_oficina", [
-        (1, "cto", "CTO (hasta que llegue Elon)", "Llega a CTO de startup.", L),
+        (1, "cto", "Del café del becario al despacho con vistas",
+         "Llega a lo más alto de la oficina: socio director de la consultora o tecnomillonario "
+         "con red social propia.", L),
     ])  # fmt: skip
 
     a += _tiers("oficina", "work_coffee_orders", [
@@ -6797,11 +6801,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (500, "work_night_500", "Turno de noche perpetuo",
          "Ficha 500 veces entre las 0:00 y las 6:00.", M),
     ])  # fmt: skip
-    a += more("jobs", "work_tip", [
+    a += more("hosteleria", "work_tip", [
         (500, "tip_500", "Propina sin declarar",
          "Guárdate 500 propinas en el bolsillo.", E),
     ])  # fmt: skip
-    a += more("jobs", "work_happy_clients", [
+    a += more("hosteleria", "work_happy_clients", [
         (1_000, "happy_1k", "Trato de cinco estrellas",
          "Atiende bien 1.000 marrones.", L),
     ])  # fmt: skip
@@ -8348,12 +8352,271 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "un_hielo", "Un hielo, por favor", "Lleva un cubito de hielo a domicilio.", R, True),
     ])  # fmt: skip
     a += _tiers("reparto", "work_top_reparto", [
-        (1, "fundador_app", "Unicornio del reparto", "Llega a fundador de la app de reparto.", L),
+        (1, "fundador_app", "De la bici a lo más alto (con sello o con cohete)",
+         "Llega a lo más alto del reparto: presidente de Correos o multimillonario con "
+         "cohete.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_orders", [
         (1_000, "pedidos_1k", "Algoritmo con patas", "Elige bien 1.000 pedidos.", E),
     ])  # fmt: skip
 
+    # 🛵 Reparto: el tronco, las ramas Correos e Imperio logístico -------------------------
+    a += _tiers("reparto", "work_top_reparto_correos", [
+        (1, "rep_correos_top", "Presidente de Correos (por designación divina)",
+         "Llega a presidente de Correos (rama 📮 Correos).", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_top_reparto_logistica", [
+        (1, "rep_cohete_top", "Cohete propio y ni un sindicato",
+         "Llega a multimillonario con cohete propio (rama 🚀 Imperio logístico).", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_retired_reparto", [
+        (1, "rep_jubilado", "Jubilado con la mochila en el armario",
+         "Jubílate de una rama del reparto.", L),
+        (2, "rep_sello_y_cohete", "Del sello torcido al cohete sin gasolina",
+         "Jubílate de Correos y del Imperio logístico.", L, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_parcels", [
+        (30, "rep_paquetes_30", "Cada carta a su buzón",
+         "Manda 30 envíos a su sitio como jefe de unidad de reparto.", E),
+        (300, "rep_paquetes_300", "Ni un voto en el buzón equivocado",
+         "Manda 300 envíos a su sitio.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rural_route", [
+        (15, "rep_rural_15", "Cartero de la aldea de tres vecinos y un gallo",
+         "Haz 15 rutas rurales perfectas.", E),
+        (150, "rep_rural_150", "Hasta el faro, sin cobertura",
+         "Haz 150 rutas rurales perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_lost_parcel", [
+        (25, "rep_perdidos_25", "Objetos perdidos con membrete",
+         "Encuentra 25 paquetes perdidos entre los normales.", E),
+        (250, "rep_perdidos_250", "El rey de las cartas de 2019",
+         "Encuentra 250 paquetes perdidos.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_correos_board", [
+        (30, "rep_consejo_30", "Pérdidas millonarias, orgullo nacional",
+         "Acierta 30 respuestas en el consejo de Correos como director general.", E),
+        (300, "rep_consejo_300", "Servicio público, gestión eficiente",
+         "Acierta 300 respuestas en el consejo de Correos.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_correos_chair", [
+        (25, "rep_presidencia_25", "Lealtad antes que contabilidad",
+         "Acierta 25 respuestas como presidente de Correos.", L),
+        (250, "rep_presidencia_250", "Resistir, sellar y no mirar atrás",
+         "Acierta 250 respuestas como presidente de Correos.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_dark_store", [
+        (15, "rep_dark_15", "Pedido en diez minutos (con la persiana bajada)",
+         "Prepara 15 pedidos de diez minutos en orden como dueño de dark stores.", E),
+        (150, "rep_dark_150", "Ni el helado de pistacho se derrite",
+         "Prepara 150 pedidos de diez minutos en orden.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rider_law", [
+        (25, "rep_ley_rider_25", "Emprendedor de sí mismo (y de los demás)",
+         "Acierta 25 respuestas en el Ministerio de Trabajo como lobista.", E),
+        (250, "rep_ley_rider_250", "Sentencia de transición hacia la nada",
+         "Acierta 250 respuestas en el Ministerio de Trabajo.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_last_mile", [
+        (30, "rep_milla_30", "Última milla, primera factura",
+         "Manda 30 pedidos a su reparto como rey de la última milla.", E),
+        (300, "rep_milla_300", "Entregado (sin entregar)",
+         "Manda 300 pedidos a su reparto.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_labour_inspector", [
+        (25, "rep_inspectora_25", "Olfato de empresario con algo que ocultar",
+         "Descubre a 25 inspectoras de Trabajo infiltradas entre tus riders.", E),
+        (250, "rep_inspectora_250", "Ni una inspectora sin descubrir",
+         "Descubre a 250 inspectoras de Trabajo.", L),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rocket", [
+        (25, "rep_cohete_25", "Futuro de la humanidad, con dinero público",
+         "Acierta 25 respuestas en la entrevista del hangar.", L),
+        (250, "rep_cohete_250", "Antes a la Luna que a Lanzarote",
+         "Acierta 250 respuestas en la entrevista del hangar.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("reparto", "work_wet_claim", [
+        (1, "rep_mojado_reclama", "Reclamación a un bot",
+         "Reclama a la app una estrella por «pedido mojado».", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_wet_paid", [
+        (1, "rep_mojado_paga", "Hamburguesa a tu cuenta",
+         "Págale al cliente el pedido que llegó mojado.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_tip_cents", [
+        (1, "rep_20_centimos", "Veinte céntimos y una sonrisa",
+         "Acepta una propina de 20 céntimos en monedas de uno.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_tip_back", [
+        (1, "rep_propina_devuelta", "Para el próximo pedido",
+         "Devuélvele al cliente sus 20 céntimos de propina.", R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_green_door_call", [
+        (1, "rep_puerta_verde", "Catorce puertas verdes",
+         "Llama al cliente para encontrar su puerta verde a las tres de la madrugada.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_green_door_any", [
+        (1, "rep_puerta_azar", "Desayuno inesperado",
+         "Deja el pedido en una puerta verde al azar.", R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_scooter_push", [
+        (1, "rep_patinete_empujar", "Cuesta arriba con el patinete",
+         "Empuja un patinete sin batería hasta el cliente.", C),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_scooter_swap", [
+        (1, "rep_patinete_otro", "Desbloqueo de 4 € (y sin batería)",
+         "Cambia por la app a otro patinete que tampoco tiene batería.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_algo_thread", [
+        (1, "rep_algoritmo_hilo", "Tu feedback es muy importante",
+         "Haz un hilo viral contra el algoritmo de la app.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_shenzhen_open", [
+        (1, "rep_muneca_rusa", "Muñeca rusa de 1,99 €",
+         "Abre por curiosidad un paquete de Shenzhen.", R, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_black_friday_double", [
+        (1, "rep_black_friday", "Black Friday, espalda negra",
+         "Dobla el turno el Black Friday.", R),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_black_friday_sick", [
+        (1, "rep_gripe_diplomatica", "Gripe diplomática",
+         "Ponte malo el Black Friday.", R),
+    ])  # fmt: skip
+
+    # Eventos de la rama Correos
+    a += _tiers("reparto", "work_absent_notice", [
+        (1, "rep_ausente", "Ausente, sin llamar al timbre",
+         "Pega el aviso de «ausente» sin llamar al timbre.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_ring_bell", [
+        (1, "rep_timbre", "Cartero de vocación",
+         "Llama a cada timbre en lugar de pegar el aviso de «ausente».", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_postal_vote_ontime", [
+        (1, "rep_voto_plazo", "Todos los votos, a tiempo",
+         "Entrega los votos por correo antes de las elecciones.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_postal_vote_mixed", [
+        (1, "rep_voto_buzoneo", "Voto con folleto del súper",
+         "Mezcla los votos por correo con el buzoneo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_caught_junta_electoral", [
+        (1, "rep_junta_electoral", "Mención especial en la tertulia de las tres",
+         "Que la Junta Electoral te abra expediente por los votos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rural_closed", [
+        (1, "rep_rural_cierre", "Gracias por su comprensión",
+         "Cierra la oficina rural de la aldea de los tres vecinos y un burro.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rural_open", [
+        (1, "rep_rural_abierta", "El burro y tú",
+         "Mantén abierta la oficina rural pese a las pérdidas.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_certified_hand", [
+        (1, "rep_certificada_mano", "Sentencia en mano",
+         "Entrégale en mano la certificada de Hacienda a un vecino moroso.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_certified_notice", [
+        (1, "rep_certificada_aviso", "Aviso de ausente (y multa triple)",
+         "Deja el aviso de ausente en la certificada de Hacienda.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_kings_excuse", [
+        (1, "rep_reyes_camellos", "Los camellos salieron tarde",
+         "Culpa a los camellos del paquete de Reyes que llega el 8 de enero.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_kings_apology", [
+        (1, "rep_reyes_carta", "Melchor, Gaspar, Baltasar y S. A.",
+         "Escribe una carta de disculpa firmada por los Reyes Magos.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_correos_enchufe", [
+        (1, "rep_enchufe", "Cuñada con currículum de pósit",
+         "Coloca a la cuñada de un compañero de partido como jefa de sección.", E, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_correos_refuse", [
+        (1, "rep_enchufe_no", "Cartera para el que se niega",
+         "Niégate a colocar a la cuñada de un compañero de partido.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_commission_dodge", [
+        (1, "rep_comision_esquiva", "Lo analizaremos con rigor",
+         "Esquiva cuatro horas la comisión de investigación del Congreso.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_commission_truth", [
+        (1, "rep_comision_verdad", "La verdad: nadie manda cartas",
+         "Di la verdad en la comisión de investigación del Congreso.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_stamp_face", [
+        (1, "rep_sello_cara", "Tu cara, con saliva",
+         "Acepta el sello conmemorativo con tu cara.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_stamp_refuse", [
+        (1, "rep_sello_torcido", "Error de imprenta (muy oportuno)",
+         "Rechaza el sello con tu cara y que salga igual.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Imperio logístico
+    a += _tiers("reparto", "work_logi_strike_cents", [
+        (1, "rep_huelga_centimos", "Dos céntimos históricos",
+         "Sube dos céntimos por pedido a tus riders en huelga.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_logi_scabs", [
+        (1, "rep_esquiroles", "200 colaboradores de otra ciudad",
+         "Contrata esquiroles contra la huelga de tus riders.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_logi_false_freelance", [
+        (1, "rep_falsos_autonomos", "Colaborador con camiseta y horario",
+         "Mantén a 3.000 falsos autónomos ante la Inspección de Trabajo.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_logi_hire", [
+        (1, "rep_contrato_todos", "Contrato para todos (qué atrevimiento)",
+         "Contrata a tus 3.000 colaboradores.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_drone_claim", [
+        (1, "rep_dron_reclama", "Dron, hamburguesa y abogado",
+         "Reclama el dron que cayó en la piscina del cliente.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_drone_gift", [
+        (1, "rep_dron_regalo", "Entrega de otro nivel (literalmente)",
+         "Regálale la hamburguesa al cliente cuyo dron cayó en su piscina.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_hot_warehouse_water", [
+        (1, "rep_agua_premium", "Hidratación premium",
+         "Vende la botella de agua a 3 € en un almacén a 40 °C.", E, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_tariff_passed", [
+        (1, "rep_arancel_cliente", "Recargo logístico",
+         "Repercute al cliente los aranceles de Trump.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_tariff_paid", [
+        (1, "rep_arancel_patriota", "Patriotismo logístico",
+         "Paga tú los aranceles de Trump.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rocket_spin", [
+        (1, "rep_cohete_exito", "Desmontaje rápido no planificado",
+         "Vende como éxito de aprendizaje la explosión de tu cohete en directo.", E),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_rocket_sorry", [
+        (1, "rep_cohete_perdon", "Meme de tres días",
+         "Pide perdón llorando tras explotar tu cohete en directo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("reparto", "work_press_bought", [
+        (1, "rep_periodico", "El empresario que reinventó el reparto",
+         "Compra publicidad en un periódico para que hable bien de ti.", E, True),
+    ])  # fmt: skip
+    a += [
+        combo("rep_honrado", "Rider de los que ya no quedan",
+              "Paga al cliente el pedido mojado, entrega los votos por correo a tiempo y "
+              "contrata a tus 3.000 colaboradores.", "reparto", L,
+              (("work_wet_paid", 1), ("work_postal_vote_ontime", 1), ("work_logi_hire", 1))),
+        combo("rep_sin_escrupulos", "Sin escrúpulos y con mochila",
+              "Coloca a la cuñada del compañero de partido, mezcla el voto con el buzoneo y "
+              "compra el periódico.", "reparto", L,
+              (("work_correos_enchufe", 1), ("work_postal_vote_mixed", 1),
+               ("work_press_bought", 1)),
+              secret=True),
+    ]  # fmt: skip
     # 🗂️ Funcionariado ----------------------------------------------------------------------
     a += _tiers("funcionariado", "work_study", [
         (1, "codos", "Hincar codos", "Estudia la oposición por primera vez.", C),
@@ -8416,8 +8679,267 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "moscosos", "Moscosos", "Gasta tus días de asuntos propios.", C),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_top_funcionariado", [
-        (1, "inspector_hacienda", "Inspector de Hacienda", "Llega a Inspector de Hacienda.", L),
+        (1, "inspector_hacienda", "De interino a lo más alto (con o sin padrón en Andorra)",
+         "Llega a lo más alto del funcionariado: consejero de Estado o asesor de fortunas "
+         "en Andorra.", L),
     ])  # fmt: skip
+
+    # 🗂️ Funcionariado: el tronco, la Alta Administración y la Puerta giratoria ---------------
+    a += _tiers("funcionariado", "work_top_funcionariado_alta", [
+        (1, "fun_alta_top", "Consejero de Estado (dictamen no vinculante)",
+         "Llega a consejero de Estado (rama 🏛️ Alta Administración).", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_top_funcionariado_giratoria", [
+        (1, "fun_giratoria_top", "Andorra, ahí te quedas (con el padrón vacío)",
+         "Llega a asesor de fortunas en Andorra (rama 💼 Puerta giratoria).", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_retired_funcionariado", [
+        (1, "fun_jubilado", "Jubilado con trienios (o sin ellos)",
+         "Jubílate de una rama del funcionariado.", L),
+        (2, "fun_emerito_andorra", "Emérito en Madrid y exiliado en Andorra",
+         "Jubílate de la Alta Administración y de la Puerta giratoria.", L, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_boe", [
+        (30, "fun_boe_30", "Sección II: la de los cuñados",
+         "Manda 30 disposiciones a su sección del BOE como subdirector general.", E),
+        (300, "fun_boe_300", "Ni una errata sin corregir (en el siguiente número)",
+         "Manda 300 disposiciones a su sección del BOE.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_circuit", [
+        (15, "fun_circuito_15", "Expediente con todos los sellos",
+         "Haz 15 circuitos de expediente perfectos como director general.", E),
+        (150, "fun_circuito_150", "Tres años después, firmado",
+         "Haz 150 circuitos de expediente perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_colada", [
+        (25, "fun_colada_25", "Letra pequeña con letra grande",
+         "Pilla 25 disposiciones coladas en una ley que no tiene nada que ver.", E),
+        (250, "fun_colada_250", "Lector oficial de disposiciones finales",
+         "Pilla 250 disposiciones coladas.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_undersecretaries", [
+        (30, "fun_lunes_30", "Lunes, 9:00, mesa grande",
+         "Acierta 30 respuestas en la Comisión de Subsecretarios.", E),
+        (300, "fun_lunes_300", "Se pactó el lunes (y nadie lo recuerda)",
+         "Acierta 300 respuestas en la Comisión de Subsecretarios.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_state_council", [
+        (25, "fun_dictamen_25", "Dictamen sin molestar a nadie",
+         "Acierta 25 respuestas en el pleno del Consejo de Estado.", L),
+        (250, "fun_dictamen_250", "No vinculante, pero muy bien encuadernado",
+         "Acierta 250 respuestas en el pleno del Consejo de Estado.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_wealth", [
+        (30, "fun_patrimonio_30", "Cada millón en su cajón",
+         "Manda 30 bienes a su escondite legal como asesor fiscal de grandes fortunas.", E),
+        (300, "fun_patrimonio_300", "Patrimonio exento de casi todo",
+         "Manda 300 bienes a su escondite legal.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_big_four", [
+        (30, "fun_big_four_30", "Murallas chinas de papel",
+         "Acierta 30 respuestas como socio de una Big Four.", E),
+        (300, "fun_big_four_300", "Todo legal hasta que lo diga un juez",
+         "Acierta 300 respuestas como socio de una Big Four.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_sandwich", [
+        (15, "fun_sandwich_15", "Doble irlandés con sándwich holandés",
+         "Traza 15 rutas del dinero perfectas como ingeniero fiscal.", E),
+        (150, "fun_sandwich_150", "Cuatro paraísos y ni un euro perdido",
+         "Traza 150 rutas del dinero perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_mariachis", [
+        (25, "fun_mariachis_25", "El único socio que lee el contrato",
+         "Encuentra a 25 inversores de verdad entre los mariachis de la SICAV.", E),
+        (250, "fun_mariachis_250", "Cien socios y un solo inversor",
+         "Encuentra a 250 inversores de verdad.", L),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_andorra_desk", [
+        (25, "fun_andorra_25", "Residente en Andorra (con casa en Chamberí)",
+         "Acierta 25 respuestas como asesor de fortunas en Andorra.", L),
+        (250, "fun_andorra_250", "El avi Florenci estaría orgulloso",
+         "Acierta 250 respuestas como asesor de fortunas en Andorra.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("funcionariado", "work_dni_accept", [
+        (1, "fun_dni_una_cara", "Una cara me vale",
+         "Acepta la fotocopia del DNI por una sola cara.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_dni_two_sides", [
+        (1, "fun_dni_dos_caras", "Por las dos caras, que lo dice la ley",
+         "Exige la fotocopia del DNI por las dos caras.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_slot_found", [
+        (1, "fun_hueco", "Hueco entre dos cafés", "Hazle un hueco a un vecino sin cita.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_march", [
+        (1, "fun_marzo", "Cita para marzo (de 2027)",
+         "Manda a marzo a quien necesita la cita hoy.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_no_replacement_take", [
+        (1, "fun_sin_reposicion_si", "Dos puestos por el precio de uno",
+         "Quédate con los expedientes y la cafetera del compañero que se jubila.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_no_replacement_pile", [
+        (1, "fun_sin_reposicion_pila", "Pendiente de reposición desde 2009",
+         "Deja los expedientes del jubilado en la pila de nadie.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_course_done", [
+        (1, "fun_igualdad_entero", "Alumno aventajado de igualdad",
+         "Haz entero el curso obligatorio de igualdad.", C),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_course_mute", [
+        (1, "fun_igualdad_silencio", "Vídeo en silencio, crucigrama en pantalla",
+         "Pon el curso de igualdad en silencio y haz el crucigrama.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_basket_taken", [
+        (1, "fun_cesta_si", "Jamón con tarjeta",
+         "Acepta la cesta de Navidad del proveedor, en octubre.", R, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_basket_returned", [
+        (1, "fun_cesta_no", "Cesta devuelta, acta en mano",
+         "Devuelve la cesta del proveedor con un acta de tres folios.", R),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_famous_probe", [
+        (1, "fun_cantante_inspeccion", "Ni los cantantes se libran",
+         "Inspecciona a fondo la sociedad instrumental de un cantante.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_famous_ignored", [
+        (1, "fun_cantante_archivo", "Falta de indicios, sobra de camiseta",
+         "Archiva el expediente del cantante «por falta de indicios».", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_youtuber_padron", [
+        (1, "fun_youtuber_padron", "Dónde duerme de verdad el youtuber",
+         "Pídele el padrón al youtuber que dice vivir en Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_youtuber_like", [
+        (1, "fun_youtuber_like", "Un «me gusta» y a otra cosa",
+         "Dale un «me gusta» al youtuber que dice vivir en Andorra.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Alta Administración
+    a += _tiers("funcionariado", "work_boe_friday", [
+        (1, "fun_boe_viernes", "Viernes de agosto, 23:59 y 40 segundos",
+         "Publica en el BOE una disposición incómoda un viernes de agosto a las 23:59.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_boe_monday", [
+        (1, "fun_boe_lunes", "El lunes, con luz y taquígrafos",
+         "Espera al lunes para publicar la disposición incómoda.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_omnibus_all", [
+        (1, "fun_omnibus_todo", "Ómnibus con puente incluido",
+         "Mete de todo en el decreto ómnibus, hasta el nombre de un puente.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_omnibus_single", [
+        (1, "fun_omnibus_uno", "Un decreto, un tema (qué ingenuo)",
+         "Redacta un decreto con un solo tema.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_brother_in_law", [
+        (1, "fun_cunado_si", "Ingeniero de caminos de cabras",
+         "Nombra asesor al cuñado del ministro.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_brother_refused", [
+        (1, "fun_cunado_no", "Que oposite, como todos",
+         "Niégate a nombrar asesor al cuñado del ministro.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_car_bread", [
+        (1, "fun_pan_coche", "Barra de pan a 40 euros",
+         "Ve a por el pan en el coche oficial.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_walk_bread", [
+        (1, "fun_pan_andando", "Pan sin chófer",
+         "Ve a por el pan andando, como el resto de los mortales.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_council_archive", [
+        (1, "fun_informe_archivo", "Cajón de informes no preceptivos",
+         "Archiva el informe del Consejo de Estado que contradice al Gobierno.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_council_publish", [
+        (1, "fun_informe_publica", "Transparencia con efectos secundarios",
+         "Publica el informe del Consejo de Estado que contradice al Gobierno.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_golden_chair", [
+        (1, "fun_sillon_si", "Cuatro expresidentes y un sillón",
+         "Acepta el sillón vitalicio junto a los expresidentes.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_golden_refused", [
+        (1, "fun_sillon_no", "Ya se sentará otro",
+         "Rechaza el sillón vitalicio entre los expresidentes.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Puerta giratoria
+    a += _tiers("funcionariado", "work_old_pal_lunch", [
+        (1, "fun_compa_comida", "Comida en el reservado, expediente archivado",
+         "Invita a comer a tu antiguo compañero de Hacienda mientras inspecciona a tu cliente.",
+         E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_old_pal_refused", [
+        (1, "fun_compa_no", "Cada uno en su trinchera",
+         "Dile a tu antiguo compañero de Hacienda que haga su trabajo.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_amnesty_in", [
+        (1, "fun_amnistia_si", "Un 3 % y a dormir",
+         "Acoge a tus clientes a la amnistía fiscal.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_amnesty_out", [
+        (1, "fun_amnistia_no", "Amnistía, no gracias (mis honorarios, sí)",
+         "No te acojas a la amnistía fiscal.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_papers_deny", [
+        (1, "fun_lista_homonimo", "Un homónimo con el mismo yate",
+         "Niega que tu cliente sea el de la lista de cuentas en paraísos fiscales.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_papers_regularize", [
+        (1, "fun_lista_regulariza", "Regularización a la carrera",
+         "Regulariza a toda prisa al cliente que sale en la lista.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_ytb_prop_flight", [
+        (1, "fun_youtuber_vuelo", "Tarjeta de embarque de atrezo",
+         "Móntale al youtuber un vuelo semanal a Andorra de pega.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_ytb_dropped", [
+        (1, "fun_youtuber_baja", "Cliente despedido antes de que lo despidan",
+         "Rescinde el contrato al youtuber que vive en Madrid.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_padron_answer", [
+        (1, "fun_padron_ochenta", "Ochenta folios y una foto con nieve",
+         "Contesta con ochenta folios a la carta de la Agencia Tributaria por el padrón.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_padron_ignore", [
+        (1, "fun_padron_cajon", "El cajón del «ya contestaré»",
+         "Ignora la carta de la Agencia Tributaria por el padrón de Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_foundation_made", [
+        (1, "fun_fundacion_si", "Fundación Amigos del Mus y los Caballos",
+         "Monta la fundación para que la herencia no pague Sucesiones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_foundation_refused", [
+        (1, "fun_fundacion_no", "Sucesiones con todas las letras",
+         "Aconseja que la herencia pague Sucesiones.", E),
+    ])  # fmt: skip
+
+    # Pillados
+    a += _tiers("funcionariado", "work_caught_tribunal_cuentas", [
+        (1, "fun_tribunal_cuentas", "Pan con reintegro del Tribunal de Cuentas",
+         "Que el Tribunal de Cuentas te reclame el viaje del coche oficial.", E),
+    ])  # fmt: skip
+    a += _tiers("funcionariado", "work_caught_fiscalia", [
+        (1, "fun_fiscalia", "Investigado, pero con asesor",
+         "Que la Fiscalía Anticorrupción te cite como investigado.", E, True),
+    ])  # fmt: skip
+    a += [
+        combo("fun_honrado", "Funcionario de los que ya no quedan",
+              "Devuelve la cesta del proveedor, niégate a nombrar al cuñado del ministro y "
+              "aconseja que la herencia pague Sucesiones.", "funcionariado", L,
+              (("work_basket_returned", 1), ("work_brother_refused", 1),
+               ("work_foundation_refused", 1))),
+        combo("fun_sin_escrupulos", "Sin escrúpulos y con trienios",
+              "Acepta la cesta del proveedor, nombra asesor al cuñado del ministro y monta la "
+              "fundación para esquivar Sucesiones.", "funcionariado", L,
+              (("work_basket_taken", 1), ("work_brother_in_law", 1),
+               ("work_foundation_made", 1)),
+              secret=True),
+    ]  # fmt: skip
 
     # 🤳 Influencer ------------------------------------------------------------------------
     a += _tiers("influencer", "work_dances", [
@@ -8497,8 +9019,519 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "colab", "Colab", "Haz un vídeo con otro influencer.", C),
     ])  # fmt: skip
     a += _tiers("influencer", "work_top_influencer", [
-        (1, "celebrity", "Celebrity", "Llega a celebrity de reality.", L),
+        (1, "celebrity", "De tiktoker de barrio a lo más alto (con share o sin impuestos)",
+         "Llega a lo más alto del influencer: presidente de RTVE o fundador de un partido "
+         "antisistema.", L),
     ])  # fmt: skip
+
+    # 🤳 Influencer: el tronco, la Tele y Andorra --------------------------------------------
+    a += _tiers("influencer", "work_top_influencer_tele", [
+        (1, "inf_tele_top", "Presidente de RTVE (por cuota, claro)",
+         "Llega a presidente de RTVE (rama 📺 Tele).", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_top_influencer_andorra", [
+        (1, "inf_andorra_top", "Escaño en Estrasburgo, empadronado en Andorra",
+         "Llega a fundador de un partido antisistema (rama 🇦🇩 Andorra).", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_retired_influencer", [
+        (1, "inf_jubilado", "Jubilado con tertulia vitalicia (o con criptos)",
+         "Jubílate de una rama del influencer.", L),
+        (2, "inf_pension_y_piso", "Pensión de la tele y piso en Andorra (vacío)",
+         "Jubílate de la Tele y de Andorra.", L, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_tertulia", [
+        (30, "inf_tertulia_30", "Opinión sin fundamento, pero con aplomo",
+         "Acierta 30 respuestas como tertuliano.", E),
+        (300, "inf_tertulia_300", "Opina de todo, sabe de nada, no rectifica nunca",
+         "Acierta 300 respuestas como tertuliano.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_escaleta", [
+        (15, "inf_escaleta_15", "Escaleta sin huecos (ni tiempo)",
+         "Cumple 15 escaletas perfectas como presentador de magacín.", E),
+        (150, "inf_escaleta_150", "La receta, el horóscopo y la lluvia, otra vez",
+         "Cumple 150 escaletas perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_guests", [
+        (30, "inf_invitados_30", "Cada famoso en su sofá",
+         "Manda 30 invitados a su bloque como presentador de prime time.", E),
+        (300, "inf_invitados_300", "Cuatro horas de programa y nadie se ha ido a casa",
+         "Manda 300 invitados a su bloque.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_share", [
+        (25, "inf_share_25", "Share con lupa",
+         "Encuentra 25 programas que hunden la audiencia como director de cadena.", E),
+        (250, "inf_share_250", "El consejo te quiere (hasta el próximo trimestre)",
+         "Encuentra 250 programas que hunden la audiencia.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rtve", [
+        (25, "inf_rtve_25", "Todos los partidos, igual de molestos",
+         "Acierta 25 respuestas como presidente de RTVE.", L),
+        (250, "inf_rtve_250", "Presidente por consenso (de nadie)",
+         "Acierta 250 respuestas como presidente de RTVE.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_subathon", [
+        (15, "inf_subathon_15", "Veinticuatro horas y ni una alerta perdida",
+         "Atiende 15 subathons perfectos como streamer exiliado.", E),
+        (150, "inf_subathon_150", "El TTS ya te conoce por tu nombre",
+         "Atiende 150 subathons perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_brand", [
+        (30, "inf_marca_30", "Cada idea en su lata",
+         "Manda 30 ideas a su cajón como dueño de una bebida energética.", E),
+        (300, "inf_marca_300", "Tres contenedores de jarabe y ninguna demanda (aún)",
+         "Manda 300 ideas a su cajón.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_boxing", [
+        (30, "inf_velada_30", "Cara a cara de cartel",
+         "Acierta 30 respuestas como organizador de veladas de boxeo.", E),
+        (300, "inf_velada_300", "El combate es lo de menos",
+         "Acierta 300 respuestas como organizador de veladas.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rug_spotted", [
+        (25, "inf_rugpull_25", "Olfato anti-timo",
+         "Encuentra 25 proyectos que eran un rug pull como gurú cripto.", E),
+        (250, "inf_rugpull_250", "Ni una sola vez a la luna",
+         "Encuentra 250 proyectos que eran un rug pull.", L),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_party", [
+        (25, "inf_partido_25", "Contra la casta (con dietas)",
+         "Acierta 25 respuestas como fundador de un partido antisistema.", E),
+        (250, "inf_partido_250", "Se acabó la fiesta (la tuya, no)",
+         "Acierta 250 respuestas como fundador de un partido.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("influencer", "work_giveaway_fake", [
+        (1, "inf_sorteo_mango", "Everybody want mango (nadie lo recibió)",
+         "Haz un sorteo falso de un móvil que no existe.", R, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_giveaway_real", [
+        (1, "inf_sorteo_notario", "Un bizcocho de Albacete",
+         "Haz un sorteo de verdad, con notario.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_challenge_done", [
+        (1, "inf_reto_carrito", "Yo soy yo… y esto es un carrito",
+         "Baja la cuesta en un carrito del súper por un reto viral.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_challenge_stunt", [
+        (1, "inf_reto_doble", "El doble tenía bigote",
+         "Manda a un doble a hacer el reto viral.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_haul_honest", [
+        (1, "inf_haul_sincero", "Esto es un robo, en 4K",
+         "Haz un haul sincero de la ropa de 2 euros.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_haul_filters", [
+        (1, "inf_haul_filtros", "La cremallera en la manga es tendencia",
+         "Haz el haul con tres filtros.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_paid_in_kind", [
+        (1, "inf_champu", "Hipoteca pagada en visibilidad",
+         "Acepta que una marca te pague en champú.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_paid_in_cash", [
+        (1, "inf_euros_no_champu", "El champú no paga el alquiler",
+         "Exige que una marca te pague en euros.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_politician_dance", [
+        (1, "inf_baile_candidato", "Tres pasos y tres votos",
+         "Baila con un candidato en plena campaña.", R),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_politician_refused", [
+        (1, "inf_paso_politica", "Yo no hago política (todavía)",
+         "Rechaza bailar con el candidato.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_old_joke_apology", [
+        (1, "inf_chiste_perdon", "Sudadera gris, tercera temporada",
+         "Pide perdón por un chiste de hace diez años.", C),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_old_joke_defended", [
+        (1, "inf_chiste_reivindico", "Era humor (hace diez años y también hoy)",
+         "Reivindica tu chiste de hace diez años.", R, True),
+    ])  # fmt: skip
+
+    # Eventos de la rama Tele
+    a += _tiers("influencer", "work_opine_all", [
+        (1, "inf_tertulia_opino", "De virología a las ocho y de fútbol a las nueve",
+         "Opina de todo con aplomo en la tertulia.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_not_expert", [
+        (1, "inf_no_experto", "«No soy experto» (y te quitan la silla)",
+         "Di en plena tertulia que no eres experto.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_selfpromo", [
+        (1, "inf_autobombo", "Cuatro minutos antes de la sequía",
+         "Sal en el telediario de tu cadena promocionando tu programa.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_selfpromo_no", [
+        (1, "inf_autobombo_no", "Esto es autobombo, señor director",
+         "Rechaza el autobombo en el telediario.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_exclusive_bought", [
+        (1, "inf_exclusiva_si", "Exclusiva a 20.000 y demanda de regalo",
+         "Compra la exclusiva de la separación de un famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_exclusive_refused", [
+        (1, "inf_exclusiva_no", "Que la compre la competencia",
+         "Rechaza comprar la exclusiva de un famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_quota_obeyed", [
+        (1, "inf_cuota_si", "Pluralidad a las tres de la madrugada",
+         "Saca en tu programa a los invitados del consejero.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_quota_refused", [
+        (1, "inf_cuota_no", "Aquí no se cuela nadie (ni tú, después de las tres)",
+         "Niégate a sacar a los invitados del consejero.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_dress_bold", [
+        (1, "inf_vestido", "Doce uvas y un escote",
+         "Da las Campanadas con el vestido polémico.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_dress_safe", [
+        (1, "inf_traje_gris", "Nadie recuerda quién dio las Campanadas",
+         "Da las Campanadas con el traje gris.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_eurovision_go", [
+        (1, "inf_eurovision_vamos", "Penúltimos, como manda la tradición",
+         "Lleva a España a Eurovisión pese al boicot.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_eurovision_boycott", [
+        (1, "inf_eurovision_boicot", "Boicot en el telediario",
+         "Anuncia el boicot a Eurovisión.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Andorra
+    a += _tiers("influencer", "work_residence_papers", [
+        (1, "inf_recibos_nieve", "Recibo de la luz de un piso vacío",
+         "Contesta a Hacienda con recibos y una foto con nieve de hace seis años.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_residence_regularized", [
+        (1, "inf_regularizo", "Duele, pero con la persiana subida",
+         "Regulariza tu residencia cuando Hacienda duda de Andorra.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_gran_via_fake", [
+        (1, "inf_gran_via_croma", "Es un fondo virtual (y es la Gran Vía)",
+         "Di que la Gran Vía de tu directo es un fondo virtual.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_gran_via_visit", [
+        (1, "inf_gran_via_visita", "Vengo a ver a mi madre, tres días",
+         "Di que estás en Madrid solo de visita.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_energy_warning", [
+        (1, "inf_energetica_aviso", "Apto para nadie con corazón",
+         "Pon una advertencia gigante en tu bebida energética.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_energy_denied", [
+        (1, "inf_energetica_niego", "Sabor frambuesa, no taquicardia",
+         "Niega que tu bebida energética dé taquicardias.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_invisible_punch", [
+        (1, "inf_golpe_invisible", "Golpe invisible (solo lo vio el VAR)",
+         "Di que a tu boxeador lo ha tumbado un golpe invisible.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_boxing_refund", [
+        (1, "inf_velada_reembolso", "Revancha gratis y la caja a la mitad",
+         "Devuelve las entradas de tu velada de boxeo.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rugpull_own", [
+        (1, "inf_rugpull_propio", "Una playa en el story y 40.000 «hold»",
+         "Vende toda tu moneda y desaparece (rug pull).", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rugpull_faced", [
+        (1, "inf_rugpull_cara", "Un «hold» heroico",
+         "Da la cara en directo cuando tu moneda se desploma.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rally_hoax", [
+        (1, "inf_mitin_bulo", "Se acabó la fiesta (y empezó la mía)",
+         "Da un mitin por directo con un bulo.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_rally_clean", [
+        (1, "inf_mitin_limpio", "Siete personas y cinco bots",
+         "Da un mitin por directo sin bulos.", E),
+    ])  # fmt: skip
+
+    # Pillados
+    a += _tiers("influencer", "work_caught_ordenacion_juego", [
+        (1, "inf_pillado_juego", "Rifa ilegal con filtro de belleza",
+         "Que Ordenación del Juego te pille el sorteo falso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_campana", [
+        (1, "inf_pillado_campana", "Baile espontáneo, gasto de campaña",
+         "Que te pillen por el baile con el candidato.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_honor", [
+        (1, "inf_pillado_honor", "Intromisión en el honor (y en tu cartera)",
+         "Que te condenen por la exclusiva del famoso.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_etiquetado", [
+        (1, "inf_pillado_etiquetado", "Sabe a frambuesa, avisa de nada",
+         "Que Consumo te pille el etiquetado de la bebida energética.", E),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_cnmv", [
+        (1, "inf_pillado_cnmv", "La CNMV pregunta por tu playa",
+         "Que la CNMV te pille el rug pull de tu moneda.", E, True),
+    ])  # fmt: skip
+    a += _tiers("influencer", "work_caught_suplicatorio", [
+        (1, "inf_pillado_suplicatorio", "Inmunidad con asterisco",
+         "Que el Parlamento Europeo te levante la inmunidad por un bulo.", E, True),
+    ])  # fmt: skip
+    a += [
+        combo("inf_honrado", "Influencer de los que ya no quedan",
+              "Haz un sorteo de verdad, un haul sincero y pide perdón por el chiste de hace "
+              "diez años.", "influencer", L,
+              (("work_giveaway_real", 1), ("work_haul_honest", 1),
+               ("work_old_joke_apology", 1))),
+        combo("inf_sin_escrupulos", "Sin escrúpulos y con seguidores",
+              "Haz un sorteo falso, un haul con filtros y reivindica el chiste de hace diez "
+              "años.", "influencer", L,
+              (("work_giveaway_fake", 1), ("work_haul_filters", 1),
+               ("work_old_joke_defended", 1)),
+              secret=True),
+    ]  # fmt: skip
+
+    # 💻 Oficina: el tronco, la Consultora y el Unicornio --------------------------------------
+    a += _tiers("oficina", "work_top_oficina_consultora", [
+        (1, "ofi_consultora_top", "Socio director (y el Ministerio, cliente de por vida)",
+         "Llega a socio director (rama 🏢 Consultora).", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_top_oficina_unicornio", [
+        (1, "ofi_unicornio_top", "Tecnomillonario con megáfono propio",
+         "Llega a tecnomillonario con red social propia (rama 🦄 Unicornio).", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_retired_oficina", [
+        (1, "ofi_jubilado", "Jubilado con memorias por horas (o con charlas sobre el fracaso)",
+         "Jubílate de una rama de la oficina.", L),
+        (2, "ofi_pension_y_charla", "Pensión de socio y charla sobre el fracaso",
+         "Jubílate de la Consultora y del Unicornio.", L, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_options_max", [
+        (10_000_000, "ofi_papel_10m", "Millonario de Excel",
+         "Acumula 10.000.000 Y$ en stock options.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("oficina", "work_hours_billed", [
+        (30, "ofi_horas_30", "Cada hora al cliente que toca (y a veces al que no)",
+         "Imputa 30 horas al cliente correcto como jefe de proyecto.", E),
+        (300, "ofi_horas_300", "Hora imputada, hora cobrada, hora que no existió",
+         "Imputa 300 horas al cliente correcto.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_tender_files", [
+        (15, "ofi_licitacion_15", "Pliego, mesa, baja temeraria y recurso (en ese orden)",
+         "Cierra 15 licitaciones perfectas como gerente de cuentas públicas.", E),
+        (150, "ofi_licitacion_150", "El interventor ya ni mira",
+         "Cierra 150 licitaciones perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_public_app_bugs", [
+        (25, "ofi_app_25", "Cl@ve te manda el PIN (a otro móvil)",
+         "Encuentra 25 fallos que tumban la app pública.", E),
+        (250, "ofi_app_250", "Funciona perfectamente (en el entorno de pruebas)",
+         "Encuentra 250 fallos que tumban la app pública.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_partner_committee", [
+        (25, "ofi_socios_25", "Se factura la hora, no el resultado",
+         "Acierta 25 respuestas en el comité de socios.", E),
+        (250, "ofi_socios_250", "Tu cuenta de explotación es un acto de fe",
+         "Acierta 250 respuestas en el comité de socios.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_managing_partner", [
+        (25, "ofi_director_25", "Gane quien gane, tú sigues de cliente",
+         "Acierta 25 respuestas como socio director.", L),
+        (250, "ofi_director_250", "Los gobiernos pasan, el informe permanece",
+         "Acierta 250 respuestas como socio director.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_pitch_founder", [
+        (30, "ofi_pitch_30", "Una curva hacia arriba y cara de póker",
+         "Acierta 30 respuestas en pitches a inversores como fundador.", E),
+        (300, "ofi_pitch_300", "Sin competencia, sin ingresos y sin vergüenza",
+         "Acierta 300 respuestas en pitches a inversores.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_pivots", [
+        (30, "ofi_pivot_30", "Pivotar hasta marearse",
+         "Manda 30 ideas a su moda del momento como CEO tras la serie A.", E),
+        (300, "ofi_pivot_300", "Esto era un buscador de recetas con IA, ahora es cripto",
+         "Manda 300 ideas a su moda del momento.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_runway_burn", [
+        (25, "ofi_runway_25", "El futbolín de oro no se paga solo",
+         "Encuentra 25 gastos que queman la caja como CEO de un unicornio.", E),
+        (250, "ofi_runway_250", "Seis meses de caja y un ático de 400 metros",
+         "Encuentra 250 gastos que queman la caja.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_funding_rounds", [
+        (15, "ofi_rondas_15", "De la semilla a la serie B (y al hoyo)",
+         "Repasa 15 historiales de rondas perfectos como business angel.", E),
+        (150, "ofi_rondas_150", "Has visto más down rounds que Wall Street",
+         "Repasa 150 historiales de rondas perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_social_network", [
+        (25, "ofi_red_25", "Lo que dices tú es libertad de expresión",
+         "Acierta 25 respuestas como tecnomillonario con red social propia.", L),
+        (250, "ofi_red_250", "Moderación: tú y tu megáfono",
+         "Acierta 250 respuestas como tecnomillonario.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("oficina", "work_small_change_done", [
+        (1, "ofi_cambio_hecho", "Pequeñísimo cambio, viernes de 19:00 a 23:00",
+         "Haz el «pequeño cambio» del cliente un viernes por la tarde.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_small_change_quoted", [
+        (1, "ofi_cambio_presupuesto", "«Pequeño cambio», entre comillas y con IVA",
+         "Presupuesta tres semanas por un «pequeño cambio».", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_postit_told", [
+        (1, "ofi_postit_aviso", "Un bizcocho por avisar",
+         "Avisa a un compañero de que su contraseña está en un pósit.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_postit_noted", [
+        (1, "ofi_postit_apunto", "Admin123!! y a vender",
+         "Apúntate la contraseña del pósit «por si acaso».", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ai_blame_owned", [
+        (1, "ofi_ia_mio", "He sido yo (con ayuda de la IA)",
+         "Asume el bug que escribió la IA.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ai_blamed", [
+        (1, "ofi_ia_culpa", "Culpa de la IA, que no se defiende",
+         "Échale la culpa del bug a la IA.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_hackathon_went", [
+        (1, "ofi_hackathon_si", "Una pegatina por veinticuatro horas",
+         "Aguanta un hackathon «voluntario» de 24 horas.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_hackathon_skipped", [
+        (1, "ofi_hackathon_no", "Voluntario… desde mi sofá",
+         "Pasa del hackathon «voluntario».", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_free_test_used", [
+        (1, "ofi_prueba_robo", "Prueba técnica de ocho horas (y el código, para producción)",
+         "Reutiliza el código de una prueba técnica sin pagar.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_free_test_paid", [
+        (1, "ofi_prueba_pago", "Una prueba técnica con factura",
+         "Defiende que se pague la prueba técnica.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_alignment_active", [
+        (1, "ofi_alinea_si", "Alineado, alienado y con tres tareas",
+         "Participa en una reunión de «alineamiento» de dos horas.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_alignment_camera_off", [
+        (1, "ofi_alinea_no", "Cámara apagada, trabajo encendido",
+         "Pasa la reunión de «alineamiento» con la cámara apagada.", C),
+    ])  # fmt: skip
+
+    # Eventos de la rama Consultora
+    a += _tiers("oficina", "work_ministry_hours_billed", [
+        (1, "ofi_horas_fantasma", "1.200 horas facturadas, 400 trabajadas",
+         "Factura al Ministerio horas que nadie ha trabajado.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ministry_hours_honest", [
+        (1, "ofi_horas_honradas", "Facturar lo trabajado: el escándalo",
+         "Factura al Ministerio solo las horas trabajadas.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_sepe_server_blamed", [
+        (1, "ofi_sepe_servidor", "Es el servidor… de la versión anterior",
+         "Échale la culpa del fallo de la app del SEPE al servidor del cliente.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_sepe_budget_asked", [
+        (1, "ofi_sepe_presupuesto", "Arreglar lo recién roto, por tres millones",
+         "Pide más presupuesto para arreglar la app que se cayó.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_junior_as_senior", [
+        (1, "ofi_junior_senior", "Dos décadas de experiencia (contando el colegio)",
+         "Vende a un junior como senior.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_junior_honest", [
+        (1, "ofi_junior_junior", "Honradez sin comisión",
+         "Factura a un junior como junior.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_tailored_tender", [
+        (1, "ofi_pliego_medida", "Una cláusula con tu nombre y apellidos",
+         "Redacta un pliego a medida de tu empresa.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_open_tender", [
+        (1, "ofi_pliego_abierto", "Gana Valladolid",
+         "Redacta un pliego abierto y pierde la licitación.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ex_minister_hired", [
+        (1, "ofi_exministro_si", "Consejero independiente (de todo, menos del partido)",
+         "Ficha a un exministro de «asesor».", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ex_minister_waited", [
+        (1, "ofi_exministro_no", "Dos años de espera, un lunes de competencia",
+         "Pídele al exministro que espere los dos años de la ley.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_report_on_report", [
+        (1, "ofi_informe_informe", "El informe del informe: 600.000 euros de Bruselas",
+         "Cobra a fondos europeos un informe sobre tu propio informe.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_report_on_report_refused", [
+        (1, "ofi_informe_no", "Otro informe no hace falta (hasta que lo cobre otro)",
+         "Rechaza el informe sobre el informe.", R),
+    ])  # fmt: skip
+
+    # Eventos de la rama Unicornio
+    a += _tiers("oficina", "work_layoff_call", [
+        (1, "ofi_despido_llamada", "Tres minutos y a la sala de espera",
+         "Despide al 30 % del equipo por videollamada.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_layoff_face", [
+        (1, "ofi_despido_persona", "Despidos uno a uno y 300 notas de queja",
+         "Despide al equipo en persona.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_inflated_valuation", [
+        (1, "ofi_valoracion_900", "900 millones sobre un Excel y un cuñado",
+         "Acepta una valoración inflada de 900 millones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_realistic_valuation", [
+        (1, "ofi_valoracion_real", "Valoración real: 12 millones y el fondo cuelga",
+         "Pide una valoración realista al fondo.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_nephew_cto", [
+        (1, "ofi_sobrino_cto", "CTO por herencia (y con monopatín)",
+         "Acepta al sobrino del inversor como CTO.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_nephew_refused", [
+        (1, "ofi_sobrino_no", "Sin sobrino, sin cheque",
+         "Rechaza cinco millones por no contratar al sobrino.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ibiza_party", [
+        (1, "ofi_ibiza", "Ibiza, barra libre y team building con piscina",
+         "Celebra la fiesta de la empresa en Ibiza.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ibiza_skipped", [
+        (1, "ofi_pizza", "Pizza, un «viva» y a casa",
+         "Celebra la fiesta de la empresa con pizza en la oficina.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_buy_network", [
+        (1, "ofi_comprar_red", "Una red social por un tuit de madrugada",
+         "Compra una red social por un tuit.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_delete_tweet", [
+        (1, "ofi_tuit_borrado", "Tuit borrado, meme eterno",
+         "Borra el tuit de comprar la red social.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_delaware", [
+        (1, "ofi_delaware", "Un buzón compartido con 4.000 empresas y una planta",
+         "Muda la sede de tu startup a Delaware.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_stay_in_spain", [
+        (1, "ofi_cotizar", "El único fundador que cotiza",
+         "Mantén la sede de tu startup en España.", R),
+    ])  # fmt: skip
+
+    a += [
+        combo("ofi_honrado", "Oficinista de los que ya no quedan",
+              "Factura solo las horas trabajadas, pide una valoración real y defiende que se "
+              "pague la prueba técnica.", "oficina", L,
+              (("work_ministry_hours_honest", 1), ("work_realistic_valuation", 1),
+               ("work_free_test_paid", 1))),
+        combo("ofi_sin_escrupulos", "Sin escrúpulos y con corbata",
+              "Factura horas fantasma, acepta una valoración inflada y reutiliza el código de "
+              "la prueba técnica.", "oficina", L,
+              (("work_ministry_hours_billed", 1), ("work_inflated_valuation", 1),
+               ("work_free_test_used", 1)),
+              secret=True),
+    ]  # fmt: skip
 
     # 🪏 Carrera larga: deseo del día, ramas, jubilación y pensión --------------------------
     a += _tiers("work", "work_wishes", [
@@ -9016,6 +10049,282 @@ def _build_catalog() -> tuple[Achievement, ...]:
               secret=True),
     ]  # fmt: skip
 
+    # 🍽️ Hostelería: el tronco, las ramas Hotelera y Alta cocina -------------------------
+    a += _tiers("hosteleria", "work_top_hosteleria_hotel", [
+        (1, "hos_patronal_top", "Presidente de la patronal (y del puro)",
+         "Llega a presidente de la patronal turística (rama 🏨 Hotelera).", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_top_hosteleria_estrella", [
+        (1, "hos_guru_dubai", "Gurú de las espumas con franquicia en Dubái",
+         "Llega a gurú gastronómico con franquicias en Dubái (rama ⭐ Alta cocina).", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_retired_hosteleria", [
+        (1, "hos_jubilado", "Jubilado con el delantal enmarcado",
+         "Jubílate de una rama de la hostelería.", L),
+        (2, "hos_suite_y_oro", "De la suite vitalicia al pan de oro",
+         "Jubílate de la rama Hotelera y de la de Alta cocina.", L, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_wristbands", [
+        (15, "hos_pulseras_15", "Pulsera verde fosforito",
+         "Cumple las peticiones de 15 huéspedes del vuelo de Mánchester sin equivocarte.", E),
+        (150, "hos_pulseras_150", "Todo incluido, hasta tu paciencia",
+         "Cumple las peticiones de 150 huéspedes sin equivocarte.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_complaints", [
+        (30, "hos_quejas_30", "Lamentamos su experiencia",
+         "Manda 30 reseñas a su departamento como director regional.", E),
+        (300, "hos_quejas_300", "Libro de reclamaciones encuadernado en piel",
+         "Manda 300 reseñas a su departamento.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gatecrashers", [
+        (25, "hos_colados_25", "Control de pulseras",
+         "Pilla a 25 colados en el buffet de tu resort.", E),
+        (250, "hos_colados_250", "Ni una gamba sin pulsera",
+         "Pilla a 250 colados en el buffet.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_hotel_chain", [
+        (30, "hos_cadena_30", "Todo es inversión",
+         "Acierta 30 respuestas ante los inversores de tu cadena.", E),
+        (300, "hos_cadena_300", "La eficiencia soy yo",
+         "Acierta 300 respuestas ante los inversores.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_employers", [
+        (20, "hos_patronal_20", "Siempre hay crisis (menos en el balance)",
+         "Acierta 20 respuestas en la mesa con el Gobierno como presidente de la patronal.", L),
+        (200, "hos_patronal_200", "Mesa de diálogo con vistas al mar",
+         "Acierta 200 respuestas en la mesa con el Gobierno.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_plating", [
+        (15, "hos_emplatado_15", "Pinzas de titanio",
+         "Emplata 15 platos tal como mandaba la carta.", E),
+        (150, "hos_emplatado_150", "Aire de papa arrugada (de verdad)",
+         "Emplata 150 platos perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_guide_inspector", [
+        (25, "hos_inspector_25", "Olfato de Guía", "Pilla a 25 inspectores de la Guía.", E),
+        (250, "hos_inspector_250", "Libreta contra libreta", "Pilla a 250 inspectores.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_judge", [
+        (25, "hos_tv_25", "Humillar con gracia",
+         "Acierta 25 respuestas en el talent de cocina como chef de la tele.", E),
+        (250, "hos_tv_250", "Cuarto de hora de fama (y de gritos)",
+         "Acierta 250 respuestas en el talent.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_brigade", [
+        (30, "hos_brigada_30", "Cada cual a su partida",
+         "Manda a 30 cocineros a su partida como dueño de un grupo.", E),
+        (300, "hos_brigada_300", "El stagier sigue en el Office",
+         "Manda a 300 cocineros a su partida.", L),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_dubai", [
+        (20, "hos_dubai_20", "Pan de oro hasta en el agua",
+         "Acierta 20 respuestas en tu restaurante de Dubái.", L),
+        (200, "hos_dubai_200", "Franquicia en Marte (pendiente)",
+         "Acierta 200 respuestas en tu restaurante de Dubái.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("hosteleria", "work_four_hours", [
+        (1, "hos_cuatro_horas", "Cuatro horas en la nómina, seis en un sobre",
+         "Firma un contrato de cuatro horas y trabaja diez.", C),
+        (10, "hos_cuatro_horas_10", "Jornada de diez horas, nómina de cuatro",
+         "Firma diez veces un contrato de cuatro horas que son diez.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_full_contract", [
+        (1, "hos_contrato_completo", "Jornada completa, qué atrevimiento",
+         "Exige un contrato de verdad en lugar del de cuatro horas.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_chorizo_paella", [
+        (1, "hos_paella_chorizo", "Paella con chorizo, a las once",
+         "Cocina una paella con chorizo para un guiri a media mañana.", R, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_extra_tables", [
+        (1, "hos_mesas", "Mesas decorativas",
+         "Deja las tres mesas de más cuando la policía local mide la terraza.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_terraza", [
+        (1, "hos_terraza_pilla", "Conoces al agente por su nombre",
+         "Que la policía local te multe por la terraza.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_review_bribe", [
+        (1, "hos_postre_resena", "Postre a cambio de cinco estrellas",
+         "Invita al postre al cliente que amenaza con una reseña de una estrella.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_one_star", [
+        (1, "hos_una_estrella", "Una estrella y una queja de la sal",
+         "Deja que el cliente ponga su reseña de una estrella.", C),
+        (10, "hos_una_estrella_10", "Una estrella, como la Guía pero al revés",
+         "Recibe 10 reseñas de una estrella por no ceder.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_free_dinner", [
+        (1, "hos_cena_influencer", "Nueve mil bots te aplauden",
+         "Invita a cenar a una influencer a cambio de visibilidad.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_cruise_menu", [
+        (1, "hos_crucero_menu", "Menú de 4,99 € para 4.000 cruceristas",
+         "Monta un menú para el crucero que atraca en tu puerto.", C),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_cruise_closed", [
+        (1, "hos_crucero_cierro", "Cerrado por crucero",
+         "Cierra el chiringuito y vete a la playa cuando llegan 4.000 cruceristas.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_heatwave_cook", [
+        (1, "hos_calor_cocina", "48 °C y a cocinar",
+         "Cocina con 48 °C dentro de la cocina.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_waiters_paid", [
+        (1, "hos_camareros_pagados", "Aparecen camareros con 1.400 €",
+         "Sube el sueldo y los camareros aparecen como por arte de magia.", R),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_no_waiters", [
+        (1, "hos_no_camareros", "No encuentro camareros (pagando 900 €)",
+         "Mantén el cartel de los 900 € y sigue sin camareros.", R),
+    ])  # fmt: skip
+
+    # Eventos de la rama Hotelera
+    a += _tiers("hosteleria", "work_balconing_sealed", [
+        (1, "hos_balconing", "Balcones soldados",
+         "Suelda los balcones para frenar el balconing.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_overbook_across", [
+        (1, "hos_overbooking_enfrente", "Cheque para el hotel de enfrente",
+         "Manda el overbooking al hotel de enfrente.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_overbook_two_star", [
+        (1, "hos_overbooking_dos", "Cucaracha con nombre propio",
+         "Manda el overbooking a un hotel de dos estrellas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tourist_tax_passed", [
+        (1, "hos_tasa", "Gastos de gestión de la tasa turística",
+         "Repercute la tasa turística al cliente con recargo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_costas_demolish", [
+        (1, "hos_costas_demoler", "La arena vuelve a su sitio",
+         "Demuele la terraza que manda tirar la Ley de Costas.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_costas_appeal", [
+        (1, "hos_costas_recurso", "Terraza inmortal",
+         "Recurre veinte años la demolición de tu terraza.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_costas", [
+        (1, "hos_costas_pilla", "Excavadora de Costas",
+         "Que Costas ejecute la demolición y te pase la factura.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_kellys_outsourced", [
+        (1, "hos_kellys_externas", "Multiservicios (sin servicios)",
+         "Externaliza a las kellys a una empresa multiservicios.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_kellys_hired", [
+        (1, "hos_kellys_dignas", "Convenio para las kellys",
+         "Contrata a las kellys con el convenio.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_falcon_guest", [
+        (1, "hos_falcon_huesped", "Huésped del Falcon",
+         "Regala la suite presidencial al presidente que llega en el Falcon.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_lobby_envelope", [
+        (1, "hos_lobby_sobre", "Sobre en una bolsa de paella",
+         "Dale un sobre al concejal para frenar la norma de pisos turísticos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_lobby_clean", [
+        (1, "hos_lobby_alegaciones", "Alegaciones que nadie lee",
+         "Presenta alegaciones contra la norma de pisos turísticos.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_limit_banner", [
+        (1, "hos_canarias_limite", "Canarias tiene un límite (de 1.200 habitaciones)",
+         "Cuelga una pancarta de apoyo en tu hotel cuando llega la manifestación.", E),
+    ])  # fmt: skip
+
+    # Eventos de la rama Alta cocina
+    a += _tiers("hosteleria", "work_stagier_free", [
+        (1, "hos_stagier_gratis", "Stagier por la cara",
+         "Ten a un stagier seis meses sin contrato ni sueldo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_stagier_paid", [
+        (1, "hos_stagier_pagado", "Prácticas con sueldo (qué locura)",
+         "Hazle un contrato de prácticas a un stagier.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_guide_pampered", [
+        (1, "hos_guia_trufa", "Trufa de más para un opositor",
+         "Trata de gala a un cliente que creías el inspector de la Guía.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_allergic_menu", [
+        (1, "hos_alergico", "Menú de aire, agua y pimienta",
+         "Cocina un menú a medida para el cliente alérgico a todo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_onion_with", [
+        (1, "hos_cebolla_con", "Con cebolla, y tu abuela lo sabe",
+         "Defiende la tortilla con cebolla en directo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_onion_without", [
+        (1, "hos_cebolla_sin", "Sin cebolla: herejía nacional",
+         "Defiende la tortilla sin cebolla en directo.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_crew", [
+        (1, "hos_tele_grita", "Plató con gritos",
+         "Deja que el presentador gritón grabe en tu restaurante.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_tv_kicked", [
+        (1, "hos_tele_calle", "Presentador a la calle",
+         "Echa del restaurante al presentador gritón y a sus cámaras.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gold_all", [
+        (1, "hos_oro_todo", "Ensalada de pan de oro",
+         "Pon pan de oro en todo a un jeque, hasta en el agua.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_gold_dessert", [
+        (1, "hos_oro_postre", "Reloj de jeque (falso)",
+         "Limita el oro al postre y gana un reloj que brilla más que marca.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_foam_sold", [
+        (1, "hos_espuma_tecnica", "El baño de espuma como técnica",
+         "Vende como técnica nueva la explosión de la máquina de espumas.", E),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_health_hidden", [
+        (1, "hos_huevos", "Huevos de otra semana",
+         "Esconde los huevos caducados de la Inspección de Sanidad.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_caught_sanidad_alimentaria", [
+        (1, "hos_sanidad_pilla", "Cámara de frío cerrada",
+         "Que la Inspección de Sanidad te cierre la cámara.", E, True),
+    ])  # fmt: skip
+    a += _tiers("hosteleria", "work_health_open", [
+        (1, "hos_cocina_abierta", "Cocina abierta, informe impecable",
+         "Abre todas las puertas a la Inspección de Sanidad.", E),
+    ])  # fmt: skip
+    a += [
+        combo("hos_honrado", "Hostelero de los de antes",
+              "Exige un contrato de verdad, contrata a las kellys con el convenio y paga a "
+              "un stagier.", "hosteleria", L,
+              (("work_full_contract", 1), ("work_kellys_hired", 1), ("work_stagier_paid", 1))),
+        combo("hos_sin_escrupulos", "Sin escrúpulos y con delantal",
+              "Firma un contrato de cuatro horas que son diez, pasa un sobre al concejal y "
+              "ten a un stagier gratis.", "hosteleria", L,
+              (("work_four_hours", 1), ("work_lobby_envelope", 1), ("work_stagier_free", 1)),
+              secret=True),
+    ]  # fmt: skip
+
+    # 💻 Oficina: pillados (van después de los escalones que ya existen de cada pillado)
+    a += _tiers("oficina", "work_caught_tribunal_cuentas", [
+        (3, "ofi_pillado_tribunal", "Cliente de oro del Tribunal de Cuentas",
+         "Que el Tribunal de Cuentas te reclame el reintegro 3 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_cnmv", [
+        (3, "ofi_pillado_cnmv", "La CNMV ya te saluda por tu nombre",
+         "Que la CNMV te abra diligencias 3 veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_hacienda", [
+        (3, "ofi_pillado_hacienda", "Domicilio fiscal: un buzón (y Hacienda)",
+         "Que Hacienda te regularice 3 veces por vivir «fuera».", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_incompatibilidades", [
+        (3, "ofi_pillado_conflicto", "Puerta giratoria con tres cerrojos",
+         "Que la Oficina de Conflictos de Intereses te pille 3 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_olaf", [
+        (3, "ofi_pillado_olaf", "Bruselas, Bruselas, Bruselas",
+         "Que la OLAF te pille 3 veces.", L, True),
+    ])  # fmt: skip
     # 👷 Los ocho oficios ------------------------------------------------------------------
     a += _tiers("jobs", "work_jobs_tried", [
         (8, "ocho_oficios", "Vida laboral de ocho páginas", "Trabaja en los 8 oficios.", E),
@@ -12083,6 +13392,56 @@ _WORK_CONTENT_STATS = {
     "clinica": "work_clinic",
     "conciertos": "work_health_deals",
     "aseguradora": "work_insurer",
+    "pulseras": "work_wristbands",
+    "quejas": "work_complaints",
+    "colados": "work_gatecrashers",
+    "cadena_hotelera": "work_hotel_chain",
+    "patronal": "work_employers",
+    "emplatado": "work_plating",
+    "inspector": "work_guide_inspector",
+    "plato_tv": "work_tv_judge",
+    "brigada": "work_brigade",
+    "dubai": "work_dubai",
+    "paquetes": "work_parcels",
+    "ruta_rural": "work_rural_route",
+    "perdido": "work_lost_parcel",
+    "direccion_correos": "work_correos_board",
+    "presidencia_correos": "work_correos_chair",
+    "dark_store": "work_dark_store",
+    "ley_rider": "work_rider_law",
+    "ultima_milla": "work_last_mile",
+    "inspector_trabajo": "work_labour_inspector",
+    "cohete": "work_rocket",
+    "boe": "work_boe",
+    "expediente": "work_circuit",
+    "colada": "work_colada",
+    "subsecretarios": "work_undersecretaries",
+    "consejo_estado": "work_state_council",
+    "patrimonio": "work_wealth",
+    "big_four": "work_big_four",
+    "sandwich": "work_sandwich",
+    "mariachis": "work_mariachis",
+    "andorra": "work_andorra_desk",
+    "tertulia": "work_tertulia",
+    "escaleta": "work_escaleta",
+    "invitados": "work_guests",
+    "share": "work_share",
+    "rtve": "work_rtve",
+    "subathon": "work_subathon",
+    "marca": "work_brand",
+    "velada": "work_boxing",
+    "rugpull": "work_rug_spotted",
+    "partido": "work_party",
+    "horas": "work_hours_billed",
+    "licitacion": "work_tender_files",
+    "app_publica": "work_public_app_bugs",
+    "comite": "work_partner_committee",
+    "socio_director": "work_managing_partner",
+    "pitch": "work_pitch_founder",
+    "pivotar": "work_pivots",
+    "runway": "work_runway_burn",
+    "rondas": "work_funding_rounds",
+    "red_social": "work_social_network",
 }
 
 
@@ -12285,5 +13644,15 @@ MEMORY_CONTENT = frozenset(
         "concesiones",
         "quirofano",
         "retoques",
+        "pulseras",
+        "emplatado",
+        "ruta_rural",
+        "dark_store",
+        "expediente",
+        "sandwich",
+        "escaleta",
+        "subathon",
+        "licitacion",
+        "rondas",
     }
 )
