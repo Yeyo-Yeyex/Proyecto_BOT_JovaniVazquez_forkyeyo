@@ -657,14 +657,14 @@ class RecordingRenderer:
         self.calls: list[tuple[list[tuple[Side, Outcome]], Status, Side, int]] = []
         self.gate: asyncio.Event | None = None
 
-    async def toss(self, game: CoinGame, *, start: Side, seed: int) -> Media:
+    async def toss(self, game: CoinGame, *, start: Side, seed: int, skin: object = None) -> Media:
         if self.gate is not None:
             await self.gate.wait()
         flips = [(flip.pick, flip.outcome) for flip in game.flips]
         self.calls.append((flips, game.status, start, seed))
         return Media(gif=f"GIF{len(self.calls)}".encode(), png=b"png", seconds=0.0)
 
-    async def board(self, game: object, *, stake: int, face: object) -> bytes:
+    async def board(self, game: object, *, stake: int, face: object, skin: object = None) -> bytes:
         return b"png"
 
     async def close(self) -> None:

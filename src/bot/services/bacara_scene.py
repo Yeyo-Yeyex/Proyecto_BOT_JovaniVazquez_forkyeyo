@@ -101,12 +101,17 @@ class BacaraScene:
         return patches
 
     async def board(
-        self, results: Sequence[Result], header: Header, coup: Coup | None = None
+        self,
+        results: Sequence[Result],
+        header: Header,
+        coup: Coup | None = None,
+        *,
+        skin: dict[str, object] | None = None,
     ) -> bytes:
-        """PNG de la mesa quieta: vacía al abrir o con la última mano mientras se apuesta."""
+        """PNG de la mesa quieta: vacía al abrir o con la última mano, con el tapete `skin`."""
         state = board_state(results, header, coup)
         state["full"] = True
-        patches = await self._frames(meta_state(), [state])
+        patches = await self._frames({**meta_state(), "skin": skin}, [state])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, results, header, coup)
         return patch_png(patches[0])
@@ -119,6 +124,7 @@ class BacaraScene:
         *,
         burned: int = 0,
         seed: int = 0,
+        skin: dict[str, object] | None = None,
     ) -> Media:
         """El GIF de una mano y el PNG de cómo queda la mesa.
 
@@ -128,9 +134,10 @@ class BacaraScene:
             header: El rótulo con esta mano ya contada.
             burned: Cartas quemadas, si es la primera del zapato.
             seed: Semilla de las chispas y el temblor del apretón.
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
         """
         states = coup_states(coup, before, header, burned=burned, seed=seed)
-        patches = await self._frames(meta_state(), states)
+        patches = await self._frames({**meta_state(), "skin": skin}, states)
         if patches is None:
             return await asyncio.to_thread(self.fallback.coup, coup, before, header)
         return await asyncio.to_thread(lambda: encode(assemble(patches), durations(states)))

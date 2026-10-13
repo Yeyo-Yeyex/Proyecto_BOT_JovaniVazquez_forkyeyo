@@ -333,16 +333,22 @@ class RecordingRenderer:
         self.calls: list[tuple[int, Status, int]] = []
         self.gate: asyncio.Event | None = None
 
-    async def hops(self, game: ChickenGame, *, start: int, seed: int, note: str = "") -> Media:
+    async def hops(
+        self, game: ChickenGame, *, start: int, seed: int, note: str = "", skin: object = None
+    ) -> Media:
         if self.gate is not None:
             await self.gate.wait()
         self.calls.append((game.crossed, game.status, start))
         return Media(gif=f"GIF{len(self.calls)}".encode(), png=b"png", seconds=0.0)
 
-    async def board(self, game: ChickenGame, *, seed: int, note: str = "") -> bytes:
+    async def board(
+        self, game: ChickenGame, *, seed: int, note: str = "", skin: object = None
+    ) -> bytes:
         return b"png"
 
-    async def start(self, difficulty: object, *, stake: int, seed: int) -> bytes:
+    async def start(
+        self, difficulty: object, *, stake: int, seed: int, skin: object = None
+    ) -> bytes:
         return b"png"
 
     async def close(self) -> None:

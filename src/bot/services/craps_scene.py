@@ -88,24 +88,35 @@ class CrapsScene:
         await self.painter.close()
         await self.browser.close()
 
-    async def _frames(self, states: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador."""
-        patches = await self.painter.render(meta_state(), states)
+    async def _frames(
+        self, states: list[dict[str, Any]], skin: dict[str, object] | None = None
+    ) -> list[dict[str, Any]] | None:
+        """Recuadros de cada fotograma (ver `assemble`); `None` si no hay Node ni navegador.
+
+        Args:
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
+        """
+        meta = {**meta_state(), "skin": skin}
+        patches = await self.painter.render(meta, states)
         if patches is None:
-            patches = await self.browser.render(meta_state(), states)
+            patches = await self.browser.render(meta, states)
         return patches
 
-    async def board(self, table: Table, rest: tuple[DieRest, DieRest]) -> bytes:
-        """PNG de la mesa quieta: al abrir, al poner Odds y al repintar."""
-        patches = await self._frames([board_state(table, rest)])
+    async def board(
+        self, table: Table, rest: tuple[DieRest, DieRest], *, skin: dict[str, object] | None = None
+    ) -> bytes:
+        """PNG de la mesa quieta: al abrir, al poner Odds y al repintar, con el tapete `skin`."""
+        patches = await self._frames([board_state(table, rest)], skin)
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, table, rest)
         return patch_png(patches[0])
 
-    async def throw(self, table: Table, *, seed: int) -> Media:
-        """GIF de la última tirada de `table.game` y PNG del final."""
+    async def throw(
+        self, table: Table, *, seed: int, skin: dict[str, object] | None = None
+    ) -> Media:
+        """GIF de la última tirada de `table.game` y PNG del final, con el tapete `skin`."""
         states, rest = throw_states(table, seed=seed)
-        patches = await self._frames(states)
+        patches = await self._frames(states, skin)
         if patches is None:
             return await asyncio.to_thread(self.fallback.throw, table, seed=seed)
         return await asyncio.to_thread(lambda: encode(assemble(patches), rest))

@@ -68,6 +68,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import baccarat_stats, casino_stats
 from bot.services.bacara import (
@@ -372,6 +373,9 @@ class TableView(discord.ui.View):
         self._add("Repetir", "🔁", discord.ButtonStyle.secondary, table.repeat, 1)
         self._add("Doblar", "⏫", discord.ButtonStyle.secondary, table.double, 1)
         self._add("¡Cartas!", "🃏", discord.ButtonStyle.success, table.mark_ready, 1)
+        # El 🎨: el tapete de cada uno, que se ve en las mesas que abra.
+        if (paint := tienda.skin_button(table.cog.bot, GAME, row=1)) is not None:
+            self.add_item(paint)
         if disabled:
             for item in self.children:
                 if isinstance(item, discord.ui.Button):
@@ -409,8 +413,14 @@ class Table:
         channel: discord.abc.Messageable,
         state: ShoeState,
         png: bytes,
+        skin: dict[str, object] | None = None,
+        skin_label: str | None = None,
     ) -> None:
         self.cog = cog
+        #: El tapete de quien abre la mesa (es compartida): vale hasta que se cierra.
+        self.skin = skin
+        #: Su nombre para el pie (`🟥 Tapete granate`), si no es el de serie.
+        self.skin_label = skin_label
         self.guild_id = guild_id
         self.channel = channel
         self.state = state
@@ -513,6 +523,7 @@ class Table:
             text=(
                 f"Jugador 1:1 · Empate 8:1 · Banca 0,95:1 (mín. {BANKER_MIN_STAKE} Y$) · "
                 "🔁 Repetir pone lo de la mano anterior y reparte si estás solo"
+                + (f" · Tapete: {self.skin_label}" if self.skin_label else "")
             )
         )
         return embed
@@ -786,6 +797,7 @@ class Table:
             state.header(coup),
             burned=burned,
             seed=self.cog.rng.getrandbits(32),
+            skin=self.skin,
         )
         return coup, media
 
@@ -838,6 +850,7 @@ class Table:
                 state.header(coup),
                 burned=burned,
                 seed=self.cog.rng.getrandbits(32),
+                skin=self.skin,
             )
         state.commit(coup)
         # La mano siguiente se pinta ya, mientras se ve el GIF de esta: así quien
@@ -1103,9 +1116,11 @@ class Bacara(commands.Cog, name="Bacará"):
         return state
 
     async def ensure_table(
-        self, guild_id: int, channel: discord.abc.Messageable
+        self, guild_id: int, channel: discord.abc.Messageable, opener_id: int = 0
     ) -> tuple[Table | None, bool]:
         """La mesa del canal: la que hay o una nueva que se publica ya.
+
+        Una mesa nueva lleva el tapete de quien la abre (`opener_id`).
 
         Returns:
             La mesa (`None` si otra se está abriendo) y si es nueva.
@@ -1120,8 +1135,18 @@ class Bacara(commands.Cog, name="Bacará"):
         table = None
         try:
             state = self.shoe_for(channel_id)
-            png = await self.renderer.board(state.results, state.header(), state.last)
-            table = Table(self, guild_id=guild_id, channel=channel, state=state, png=png)
+            skin = tienda.skin_params(self.bot, guild_id, opener_id, GAME)
+            worn = tienda.skin_of(self.bot, guild_id, opener_id, GAME)
+            png = await self.renderer.board(state.results, state.header(), state.last, skin=skin)
+            table = Table(
+                self,
+                guild_id=guild_id,
+                channel=channel,
+                state=state,
+                png=png,
+                skin=skin,
+                skin_label=worn.label if worn else None,
+            )
             table.open_round()
             table.message = await channel.send(
                 embed=table.open_embed(),
@@ -1185,7 +1210,7 @@ class Bacara(commands.Cog, name="Bacará"):
                 await send_error(insufficient_text(balance, stake))
                 return
             self.set_ficha(guild.id, user.id, stake)
-        table, new = await self.ensure_table(guild.id, channel)
+        table, new = await self.ensure_table(guild.id, channel, user.id)
         if table is None:
             await send_error("Se está abriendo la mesa en este canal; un segundo.")
             return

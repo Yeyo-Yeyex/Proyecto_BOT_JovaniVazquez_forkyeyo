@@ -126,24 +126,27 @@ class BusScene:
             patches = await self.browser.render(meta, states)
         return patches
 
-    async def board(self, board: Board) -> bytes:
-        """PNG de la mesa quieta: al abrir, al elegir, al cobrar y al repintar."""
-        patches = await self._frames(meta_state(), [board_state(board)])
+    async def board(self, board: Board, *, skin: dict[str, object] | None = None) -> bytes:
+        """PNG de la mesa quieta (al abrir, elegir, cobrar y repintar) con el tapete `skin`."""
+        patches = await self._frames({**meta_state(), "skin": skin}, [board_state(board)])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, board)
         return patch_png(patches[0])
 
-    async def reveal(self, cards: Sequence[Card], hand: int, *, seed: int) -> Reveal:
+    async def reveal(
+        self, cards: Sequence[Card], hand: int, *, seed: int, skin: dict[str, object] | None = None
+    ) -> Reveal:
         """Los GIF de la mano `hand` (1-5) si acierta y si falla, con su PNG final.
 
         Args:
             cards: Las cartas de la partida (al menos `hand`).
             hand: La mano que se va a jugar.
             seed: Semilla de las chispas y el temblor (misma semilla, mismo GIF).
+            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
         """
         common, win, lose = reveal_states(cards, hand, seed=seed)
         states = common + win + lose
-        patches = await self._frames(meta_state(), states)
+        patches = await self._frames({**meta_state(), "skin": skin}, states)
         if patches is None:
             return await asyncio.to_thread(self.fallback.reveal, cards, hand, seed=seed)
         return await asyncio.to_thread(build_reveal, patches, states, len(common), len(win))

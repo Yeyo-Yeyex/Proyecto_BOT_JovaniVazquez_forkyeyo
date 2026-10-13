@@ -49,8 +49,12 @@ globalThis.exportFrame = (canvas) => ({
   rgba: canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data,
 });
 
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-vm.runInThisContext(scripts.join("\n"), { filename: scenePath });
+// Cada <script> por separado y en orden, como el navegador: los de `src` (el
+// tapete común, ../tapete.js) se leen del disco.
+for (const [, src, code] of html.matchAll(/<script(?:\s+src="([^"]+)")?>([\s\S]*?)<\/script>/g)) {
+  const file = src ? path.resolve(path.dirname(scenePath), src) : scenePath;
+  vm.runInThisContext(src ? fs.readFileSync(file, "utf8") : code, { filename: file });
+}
 
 function send(header, buffers = []) {
   process.stdout.write(JSON.stringify(header) + "\n");

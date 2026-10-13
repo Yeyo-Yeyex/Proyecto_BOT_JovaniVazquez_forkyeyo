@@ -36,6 +36,7 @@ reduce al copiarlo. Sin emojis: el Chromium del Docker no trae su fuente.
 </style>
 </head>
 <body>
+<script src="../tapete.js"></script>
 <script>
 "use strict";
 const S = 2;
@@ -49,7 +50,7 @@ const bctx = big.getContext("2d");
 const octx = out.getContext("2d");
 
 let META = null;
-let BG = null;
+let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 const FACES = new Map();           // "valor:luz" → textura de la cara con esa luz
 let HUD = new Map();
 
@@ -77,8 +78,10 @@ function paintFelt() {
   const g = c.getContext("2d");
   const tx = x => (x + T.half) * k, ty = y => (T.far - y) * k;
   let grad = g.createRadialGradient(tw / 2, ty(150), 40 * k, tw / 2, ty(140), 330 * k);
-  grad.addColorStop(0, "#2c9a60"); grad.addColorStop(0.6, "#1b7546"); grad.addColorStop(1, "#0d4a2b");
+  const felt = Tapete.felt(META.skin, ["#2c9a60", "#1b7546", "#0d4a2b"]);
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.6, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, tw, th);
+  Tapete.pattern(g, 0, 0, tw, th, META.skin);
   // Pelusa del fieltro.
   const r = rng(11);
   for (let i = 0; i < 26000; i++) {
@@ -536,7 +539,8 @@ window.loadFonts = async () => {
   return true;
 };
 window.setup = (meta) => {
-  if (!BG) { META = meta; BG = paintBackground(); }
+  const sk = meta?.skin?.key || "serie";
+  if (!BG || BG_SKIN !== sk) { META = meta; BG = paintBackground(); BG_SKIN = sk; }
   HUD = new Map(); PREV = PREV_HUD = PREV_STILL = PREV_STILL_BOX = null;
   return true;
 };

@@ -40,6 +40,7 @@ el Chromium del Docker no trae su fuente; los palos son trazados de canvas.
 </style>
 </head>
 <body>
+<script src="../tapete.js"></script>
 <script>
 "use strict";
 const S = 2;
@@ -57,7 +58,7 @@ const octx = out.getContext("2d", { willReadFrequently: true });
 const cctx = crop.getContext("2d");
 
 let META = null;
-let BG = null;
+let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 let PREV = null;           // píxeles del fotograma anterior (Uint32Array)
 const SPRITES = new Map(); // cartas ya dibujadas (una vez por página)
 
@@ -174,8 +175,10 @@ function paintBackground() {
   const g = c.getContext("2d"); g.scale(S, S);
   // Tapete.
   let grad = g.createRadialGradient(320, 230, 30, 320, 220, 460);
-  grad.addColorStop(0, "#238253"); grad.addColorStop(0.55, "#135a37"); grad.addColorStop(1, "#06281a");
+  const felt = Tapete.felt(META.skin, ["#238253", "#135a37", "#06281a"]);
+  grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  Tapete.pattern(g, 0, 0, W, H, META.skin, [W / 2, 195, 0.85]);
   const r = rng(7);
   // Cielo y ciudad.
   grad = g.createLinearGradient(0, 0, 0, ROAD_TOP);
@@ -527,7 +530,8 @@ window.loadFonts = async () => {
 };
 window.setup = (meta) => {
   META = meta; PREV = null;
-  if (!BG) BG = paintBackground();
+  const sk = meta?.skin?.key || "serie";
+  if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }
   return true;
 };
 window.renderFrames = (states, first = 0) => states.map((st) => { paint(st); return snapshot(!!st.full); });

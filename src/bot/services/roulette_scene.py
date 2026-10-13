@@ -26,7 +26,7 @@ decidido y cobrado cuando se pinta):
   (`roulette.hot_cold`), como las pantallas de las mesas de casino.
 
 **Skins.** El tapete (fieltro, fibras, filete y contorno del título) sale de
-la skin de quien juega (`bot.services.skins`, juego `ruleta`), que llega en
+la skin de quien juega (`bot.services.skins`, juego `ruleta`, un tapete), que llega en
 `meta.skin`. La escena repinta el fondo solo cuando cambia de skin.
 
 La misma escena se pinta de tres maneras, de mejor a peor:
