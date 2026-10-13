@@ -267,9 +267,8 @@ python -m bot
   **Gestionar apodos** para el DNI falso).
 - **Trabajo** (`pala`): coges la pala y curras. Ocho oficios (🦺 obra, 🍽️
   hostelería, 🌹 política en el PSOE, 🏥 sanidad, 💻 oficina, 🛵 reparto, 🗂️
-  funcionariado e 🤳 influencer) con 5 puestos cada uno, salvo la política, la
-  obra, la sanidad, la hostelería, el reparto, el funcionariado y el influencer, que ya tienen la carrera larga: 5 puestos de
-  tronco y dos ramas de 5 más. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
+  funcionariado e 🤳 influencer) con la carrera larga: los ocho tienen 5 puestos de
+  tronco y dos ramas de 5 más (10 en total), también la oficina. La política va de pegacarteles a portavoz y sigue por 🏛️ Moncloa (hasta
   consejero de una eléctrica) o 🇪🇺 Bruselas (hasta comisario europeo); la obra
   va de peón a constructor y sigue por 🏖️ Ladrillo (hasta presidente de un club
   de fútbol) o 🚄 Obra pública (hasta presidente de una constructora del IBEX); la
@@ -287,7 +286,11 @@ python -m bot
   asesor de fortunas en Andorra, autónomo, sin plaza fija ni trienios); y el
   influencer va de tiktoker de barrio a celebrity de reality y sigue por 📺 Tele
   (hasta presidente de RTVE, en nómina de la cadena) o 🇦🇩 Andorra (hasta fundador
-  de un partido antisistema, autónomo).
+  de un partido antisistema, autónomo); y la oficina va de becario a CTO de
+  startup y sigue por 🏢 Consultora (hasta socio director, en nómina de la firma:
+  horas facturadas al Ministerio, licitaciones y la app pública que no funciona) o
+  🦄 Unicornio (hasta tecnomillonario con red social propia, autónomo y con el 30 %
+  del sueldo en stock options).
   Cada turno es un minijuego de decidir rápido, de
   30 a 60 s según el puesto (cavar leyendo el plano, pillar al que se escaquea,
   memorizar comandas o votaciones, esquivar preguntas en rueda de prensa,
@@ -319,7 +322,8 @@ python -m bot
   sanidad se rinde con **guardias** (turno doble que paga 1,6 veces y te deja
   saliente 12 h; el residente tiene guardias mínimas), también en sus ramas. En oficina se puede
   **teletrabajar** (cansa menos, rinde menos y te escriben a las once), el CTO
-  cobra parte en **stock options** (exit o quiebra) y desde programador senior
+  y toda la rama Unicornio cobran parte en **stock options** (exit o quiebra: las
+  que ya tienes siguen vivas aunque cambies de puesto) y desde programador senior
   te puedes **ir a Hong Kong**: sueldo doble, MPF y salaries tax, exención del
   art. 7.p LIRPF mientras sigues siendo residente, sin IMV, y Ley Beckham si
   vuelves tras 5 «años» fuera. En el **reparto** cada hora hace un tiempo

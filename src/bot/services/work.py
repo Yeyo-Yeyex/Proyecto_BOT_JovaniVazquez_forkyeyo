@@ -481,6 +481,8 @@ class Job:
     abroad_from: int | None = None
     #: Puesto que cobra parte del sueldo en stock options (`None` = ninguno).
     options_level: int | None = None
+    #: Rama donde se sigue cobrando en opciones, además del puesto `options_level`.
+    options_branch: str = ""
     #: Si cada hora hace un tiempo que cambia el turno (lluvia, calima).
     weather: bool = False
     #: Si hay valoración de la app (estrellas que multiplican el sueldo).
@@ -499,6 +501,12 @@ class Job:
     def branch(self, key: str) -> Branch | None:
         """La rama con esa clave, o `None` (también con `""`, el tronco)."""
         return next((b for b in self.branches if b.key == key), None)
+
+    def has_options(self, level: int, branch: str = "") -> bool:
+        """Si en ese puesto de esa rama se cobra parte del sueldo en stock options."""
+        return level == self.options_level or (
+            bool(self.options_branch) and branch == self.options_branch
+        )
 
     def rates(self, branch: str = "") -> bool:
         """Si te valora la app: solo en el tronco (rider o fundador), no en las ramas."""

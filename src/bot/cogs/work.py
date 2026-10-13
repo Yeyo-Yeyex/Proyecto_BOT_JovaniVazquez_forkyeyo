@@ -448,7 +448,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         lines.append(
             f"⚽ **Ley Beckham** hasta <t:{int(contract.beckham_until)}:d>: IRPF al 24 % fijo."
         )
-    if job.options_level == contract.level:
+    if job.has_options(contract.level, contract.branch) or contract.options:
         lines.append(
             f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
         )

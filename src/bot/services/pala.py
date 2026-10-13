@@ -918,7 +918,7 @@ class WorkService:
                 fine, balance = await self._caught(guild_id, user_id, gross, "inspeccion")
         else:
             cash = gross
-            if job.options_level == contract.level:
+            if job.has_options(contract.level, contract.branch):
                 options_added = round(gross * OPTIONS_SHARE)
                 cash = gross - options_added
                 contract.options += options_added
@@ -930,8 +930,8 @@ class WorkService:
             else:
                 payslip = slip
 
-        # Stock options: exit o quiebra.
-        if contract.options and job.options_level == contract.level:
+        # Stock options: exit o quiebra (las que ya tienes siguen vivas en cualquier puesto).
+        if contract.options:
             if roll(self.rng, EXIT_CHANCE):
                 low, high = EXIT_MULTIPLIER
                 exit_payout = round(contract.options * self.rng.uniform(low, high))

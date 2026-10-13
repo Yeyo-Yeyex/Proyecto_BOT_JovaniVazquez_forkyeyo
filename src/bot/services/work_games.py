@@ -22,7 +22,7 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet,
   el paquete perdido, la disposición colada en una ley, el inversor de verdad
   entre los mariachis, el programa que hunde la audiencia, el proyecto cripto que es un
-  timo). Acertar suma.
+  timo, el fallo que tumba la app pública, el gasto que quema la caja). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 
 from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Position
 from bot.services.work_catalog import (
+    APP_BIEN,
+    APP_FALLOS,
     BUDGET_ITEMS,
     CODE_BUGS,
     COLADAS,
@@ -69,6 +71,8 @@ from bot.services.work_catalog import (
     RIDERS_NORMAL,
     RUG_SERIOS,
     RUG_TIMOS,
+    RUNWAY_QUEMA,
+    RUNWAY_RAZONABLE,
     SHARE_HITS,
     SHARE_SINKS,
     SICAV_MARIACHIS,
@@ -659,6 +663,34 @@ def _rugpull(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
     return "🚀 Eres gurú cripto: recomienda lo que quieras, pero distingue el timo.", built
 
 
+def _public_app(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="📲 Revisión {n}/{total}. ¿Qué fallo es el que tumba la app pública?",
+        good=APP_FALLOS,
+        bad=APP_BIEN,
+        label="Pantalla",
+    )
+    return (
+        "🏛️ Diriges la transformación digital del Ministerio. La app sale el lunes: entre "
+        "cinco pantallas hay una que la tumba.",
+        built,
+    )
+
+
+def _runway(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🔥 Gasto {n}/{total}. ¿Cuál quema la caja sin vender ni fabricar nada?",
+        good=RUNWAY_QUEMA,
+        bad=RUNWAY_RAZONABLE,
+        label="Gasto",
+    )
+    return "🦄 Te quedan seis meses de caja. Entre cinco gastos hay uno que la quema.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -678,6 +710,8 @@ _SPOT = {
     "mariachis": _mariachis,
     "share": _share,
     "rugpull": _rugpull,
+    "app_publica": _public_app,
+    "runway": _runway,
 }
 
 

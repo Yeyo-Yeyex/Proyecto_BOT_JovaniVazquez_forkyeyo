@@ -6115,7 +6115,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que tu startup quiebre con tus opciones dentro.", R, True),
     ])  # fmt: skip
     a += _tiers("oficina", "work_top_oficina", [
-        (1, "cto", "CTO (hasta que llegue Elon)", "Llega a CTO de startup.", L),
+        (1, "cto", "Del café del becario al despacho con vistas",
+         "Llega a lo más alto de la oficina: socio director de la consultora o tecnomillonario "
+         "con red social propia.", L),
     ])  # fmt: skip
 
     a += _tiers("oficina", "work_coffee_orders", [
@@ -9287,6 +9289,250 @@ def _build_catalog() -> tuple[Achievement, ...]:
               secret=True),
     ]  # fmt: skip
 
+    # 💻 Oficina: el tronco, la Consultora y el Unicornio --------------------------------------
+    a += _tiers("oficina", "work_top_oficina_consultora", [
+        (1, "ofi_consultora_top", "Socio director (y el Ministerio, cliente de por vida)",
+         "Llega a socio director (rama 🏢 Consultora).", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_top_oficina_unicornio", [
+        (1, "ofi_unicornio_top", "Tecnomillonario con megáfono propio",
+         "Llega a tecnomillonario con red social propia (rama 🦄 Unicornio).", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_retired_oficina", [
+        (1, "ofi_jubilado", "Jubilado con memorias por horas (o con charlas sobre el fracaso)",
+         "Jubílate de una rama de la oficina.", L),
+        (2, "ofi_pension_y_charla", "Pensión de socio y charla sobre el fracaso",
+         "Jubílate de la Consultora y del Unicornio.", L, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_options_max", [
+        (10_000_000, "ofi_papel_10m", "Millonario de Excel",
+         "Acumula 10.000.000 Y$ en stock options.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("oficina", "work_hours_billed", [
+        (30, "ofi_horas_30", "Cada hora al cliente que toca (y a veces al que no)",
+         "Imputa 30 horas al cliente correcto como jefe de proyecto.", E),
+        (300, "ofi_horas_300", "Hora imputada, hora cobrada, hora que no existió",
+         "Imputa 300 horas al cliente correcto.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_tender_files", [
+        (15, "ofi_licitacion_15", "Pliego, mesa, baja temeraria y recurso (en ese orden)",
+         "Cierra 15 licitaciones perfectas como gerente de cuentas públicas.", E),
+        (150, "ofi_licitacion_150", "El interventor ya ni mira",
+         "Cierra 150 licitaciones perfectas.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_public_app_bugs", [
+        (25, "ofi_app_25", "Cl@ve te manda el PIN (a otro móvil)",
+         "Encuentra 25 fallos que tumban la app pública.", E),
+        (250, "ofi_app_250", "Funciona perfectamente (en el entorno de pruebas)",
+         "Encuentra 250 fallos que tumban la app pública.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_partner_committee", [
+        (25, "ofi_socios_25", "Se factura la hora, no el resultado",
+         "Acierta 25 respuestas en el comité de socios.", E),
+        (250, "ofi_socios_250", "Tu cuenta de explotación es un acto de fe",
+         "Acierta 250 respuestas en el comité de socios.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_managing_partner", [
+        (25, "ofi_director_25", "Gane quien gane, tú sigues de cliente",
+         "Acierta 25 respuestas como socio director.", L),
+        (250, "ofi_director_250", "Los gobiernos pasan, el informe permanece",
+         "Acierta 250 respuestas como socio director.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_pitch_founder", [
+        (30, "ofi_pitch_30", "Una curva hacia arriba y cara de póker",
+         "Acierta 30 respuestas en pitches a inversores como fundador.", E),
+        (300, "ofi_pitch_300", "Sin competencia, sin ingresos y sin vergüenza",
+         "Acierta 300 respuestas en pitches a inversores.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_pivots", [
+        (30, "ofi_pivot_30", "Pivotar hasta marearse",
+         "Manda 30 ideas a su moda del momento como CEO tras la serie A.", E),
+        (300, "ofi_pivot_300", "Esto era un buscador de recetas con IA, ahora es cripto",
+         "Manda 300 ideas a su moda del momento.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_runway_burn", [
+        (25, "ofi_runway_25", "El futbolín de oro no se paga solo",
+         "Encuentra 25 gastos que queman la caja como CEO de un unicornio.", E),
+        (250, "ofi_runway_250", "Seis meses de caja y un ático de 400 metros",
+         "Encuentra 250 gastos que queman la caja.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_funding_rounds", [
+        (15, "ofi_rondas_15", "De la semilla a la serie B (y al hoyo)",
+         "Repasa 15 historiales de rondas perfectos como business angel.", E),
+        (150, "ofi_rondas_150", "Has visto más down rounds que Wall Street",
+         "Repasa 150 historiales de rondas perfectos.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_social_network", [
+        (25, "ofi_red_25", "Lo que dices tú es libertad de expresión",
+         "Acierta 25 respuestas como tecnomillonario con red social propia.", L),
+        (250, "ofi_red_250", "Moderación: tú y tu megáfono",
+         "Acierta 250 respuestas como tecnomillonario.", L),
+    ])  # fmt: skip
+
+    # Eventos del tronco
+    a += _tiers("oficina", "work_small_change_done", [
+        (1, "ofi_cambio_hecho", "Pequeñísimo cambio, viernes de 19:00 a 23:00",
+         "Haz el «pequeño cambio» del cliente un viernes por la tarde.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_small_change_quoted", [
+        (1, "ofi_cambio_presupuesto", "«Pequeño cambio», entre comillas y con IVA",
+         "Presupuesta tres semanas por un «pequeño cambio».", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_postit_told", [
+        (1, "ofi_postit_aviso", "Un bizcocho por avisar",
+         "Avisa a un compañero de que su contraseña está en un pósit.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_postit_noted", [
+        (1, "ofi_postit_apunto", "Admin123!! y a vender",
+         "Apúntate la contraseña del pósit «por si acaso».", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ai_blame_owned", [
+        (1, "ofi_ia_mio", "He sido yo (con ayuda de la IA)",
+         "Asume el bug que escribió la IA.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ai_blamed", [
+        (1, "ofi_ia_culpa", "Culpa de la IA, que no se defiende",
+         "Échale la culpa del bug a la IA.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_hackathon_went", [
+        (1, "ofi_hackathon_si", "Una pegatina por veinticuatro horas",
+         "Aguanta un hackathon «voluntario» de 24 horas.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_hackathon_skipped", [
+        (1, "ofi_hackathon_no", "Voluntario… desde mi sofá",
+         "Pasa del hackathon «voluntario».", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_free_test_used", [
+        (1, "ofi_prueba_robo", "Prueba técnica de ocho horas (y el código, para producción)",
+         "Reutiliza el código de una prueba técnica sin pagar.", R, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_free_test_paid", [
+        (1, "ofi_prueba_pago", "Una prueba técnica con factura",
+         "Defiende que se pague la prueba técnica.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_alignment_active", [
+        (1, "ofi_alinea_si", "Alineado, alienado y con tres tareas",
+         "Participa en una reunión de «alineamiento» de dos horas.", C),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_alignment_camera_off", [
+        (1, "ofi_alinea_no", "Cámara apagada, trabajo encendido",
+         "Pasa la reunión de «alineamiento» con la cámara apagada.", C),
+    ])  # fmt: skip
+
+    # Eventos de la rama Consultora
+    a += _tiers("oficina", "work_ministry_hours_billed", [
+        (1, "ofi_horas_fantasma", "1.200 horas facturadas, 400 trabajadas",
+         "Factura al Ministerio horas que nadie ha trabajado.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ministry_hours_honest", [
+        (1, "ofi_horas_honradas", "Facturar lo trabajado: el escándalo",
+         "Factura al Ministerio solo las horas trabajadas.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_sepe_server_blamed", [
+        (1, "ofi_sepe_servidor", "Es el servidor… de la versión anterior",
+         "Échale la culpa del fallo de la app del SEPE al servidor del cliente.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_sepe_budget_asked", [
+        (1, "ofi_sepe_presupuesto", "Arreglar lo recién roto, por tres millones",
+         "Pide más presupuesto para arreglar la app que se cayó.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_junior_as_senior", [
+        (1, "ofi_junior_senior", "Dos décadas de experiencia (contando el colegio)",
+         "Vende a un junior como senior.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_junior_honest", [
+        (1, "ofi_junior_junior", "Honradez sin comisión",
+         "Factura a un junior como junior.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_tailored_tender", [
+        (1, "ofi_pliego_medida", "Una cláusula con tu nombre y apellidos",
+         "Redacta un pliego a medida de tu empresa.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_open_tender", [
+        (1, "ofi_pliego_abierto", "Gana Valladolid",
+         "Redacta un pliego abierto y pierde la licitación.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ex_minister_hired", [
+        (1, "ofi_exministro_si", "Consejero independiente (de todo, menos del partido)",
+         "Ficha a un exministro de «asesor».", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ex_minister_waited", [
+        (1, "ofi_exministro_no", "Dos años de espera, un lunes de competencia",
+         "Pídele al exministro que espere los dos años de la ley.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_report_on_report", [
+        (1, "ofi_informe_informe", "El informe del informe: 600.000 euros de Bruselas",
+         "Cobra a fondos europeos un informe sobre tu propio informe.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_report_on_report_refused", [
+        (1, "ofi_informe_no", "Otro informe no hace falta (hasta que lo cobre otro)",
+         "Rechaza el informe sobre el informe.", R),
+    ])  # fmt: skip
+
+    # Eventos de la rama Unicornio
+    a += _tiers("oficina", "work_layoff_call", [
+        (1, "ofi_despido_llamada", "Tres minutos y a la sala de espera",
+         "Despide al 30 % del equipo por videollamada.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_layoff_face", [
+        (1, "ofi_despido_persona", "Despidos uno a uno y 300 notas de queja",
+         "Despide al equipo en persona.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_inflated_valuation", [
+        (1, "ofi_valoracion_900", "900 millones sobre un Excel y un cuñado",
+         "Acepta una valoración inflada de 900 millones.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_realistic_valuation", [
+        (1, "ofi_valoracion_real", "Valoración real: 12 millones y el fondo cuelga",
+         "Pide una valoración realista al fondo.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_nephew_cto", [
+        (1, "ofi_sobrino_cto", "CTO por herencia (y con monopatín)",
+         "Acepta al sobrino del inversor como CTO.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_nephew_refused", [
+        (1, "ofi_sobrino_no", "Sin sobrino, sin cheque",
+         "Rechaza cinco millones por no contratar al sobrino.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ibiza_party", [
+        (1, "ofi_ibiza", "Ibiza, barra libre y team building con piscina",
+         "Celebra la fiesta de la empresa en Ibiza.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_ibiza_skipped", [
+        (1, "ofi_pizza", "Pizza, un «viva» y a casa",
+         "Celebra la fiesta de la empresa con pizza en la oficina.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_buy_network", [
+        (1, "ofi_comprar_red", "Una red social por un tuit de madrugada",
+         "Compra una red social por un tuit.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_delete_tweet", [
+        (1, "ofi_tuit_borrado", "Tuit borrado, meme eterno",
+         "Borra el tuit de comprar la red social.", R),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_delaware", [
+        (1, "ofi_delaware", "Un buzón compartido con 4.000 empresas y una planta",
+         "Muda la sede de tu startup a Delaware.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_stay_in_spain", [
+        (1, "ofi_cotizar", "El único fundador que cotiza",
+         "Mantén la sede de tu startup en España.", R),
+    ])  # fmt: skip
+
+    a += [
+        combo("ofi_honrado", "Oficinista de los que ya no quedan",
+              "Factura solo las horas trabajadas, pide una valoración real y defiende que se "
+              "pague la prueba técnica.", "oficina", L,
+              (("work_ministry_hours_honest", 1), ("work_realistic_valuation", 1),
+               ("work_free_test_paid", 1))),
+        combo("ofi_sin_escrupulos", "Sin escrúpulos y con corbata",
+              "Factura horas fantasma, acepta una valoración inflada y reutiliza el código de "
+              "la prueba técnica.", "oficina", L,
+              (("work_ministry_hours_billed", 1), ("work_inflated_valuation", 1),
+               ("work_free_test_used", 1)),
+              secret=True),
+    ]  # fmt: skip
+
     # 🪏 Carrera larga: deseo del día, ramas, jubilación y pensión --------------------------
     a += _tiers("work", "work_wishes", [
         (1, "deseo_1", "Pide un deseo", "Cumple tu primer deseo del día.", C),
@@ -10058,6 +10304,27 @@ def _build_catalog() -> tuple[Achievement, ...]:
               secret=True),
     ]  # fmt: skip
 
+    # 💻 Oficina: pillados (van después de los escalones que ya existen de cada pillado)
+    a += _tiers("oficina", "work_caught_tribunal_cuentas", [
+        (3, "ofi_pillado_tribunal", "Cliente de oro del Tribunal de Cuentas",
+         "Que el Tribunal de Cuentas te reclame el reintegro 3 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_cnmv", [
+        (3, "ofi_pillado_cnmv", "La CNMV ya te saluda por tu nombre",
+         "Que la CNMV te abra diligencias 3 veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_hacienda", [
+        (3, "ofi_pillado_hacienda", "Domicilio fiscal: un buzón (y Hacienda)",
+         "Que Hacienda te regularice 3 veces por vivir «fuera».", E),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_incompatibilidades", [
+        (3, "ofi_pillado_conflicto", "Puerta giratoria con tres cerrojos",
+         "Que la Oficina de Conflictos de Intereses te pille 3 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("oficina", "work_caught_olaf", [
+        (3, "ofi_pillado_olaf", "Bruselas, Bruselas, Bruselas",
+         "Que la OLAF te pille 3 veces.", L, True),
+    ])  # fmt: skip
     # 👷 Los ocho oficios ------------------------------------------------------------------
     a += _tiers("jobs", "work_jobs_tried", [
         (8, "ocho_oficios", "Vida laboral de ocho páginas", "Trabaja en los 8 oficios.", E),
@@ -13165,6 +13432,16 @@ _WORK_CONTENT_STATS = {
     "velada": "work_boxing",
     "rugpull": "work_rug_spotted",
     "partido": "work_party",
+    "horas": "work_hours_billed",
+    "licitacion": "work_tender_files",
+    "app_publica": "work_public_app_bugs",
+    "comite": "work_partner_committee",
+    "socio_director": "work_managing_partner",
+    "pitch": "work_pitch_founder",
+    "pivotar": "work_pivots",
+    "runway": "work_runway_burn",
+    "rondas": "work_funding_rounds",
+    "red_social": "work_social_network",
 }
 
 
@@ -13375,5 +13652,7 @@ MEMORY_CONTENT = frozenset(
         "sandwich",
         "escaleta",
         "subathon",
+        "licitacion",
+        "rondas",
     }
 )

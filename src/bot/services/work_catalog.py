@@ -34,7 +34,11 @@ y de los falsos autónomos; el funcionariado, de la burocracia (con las
 preguntas del temario de verdad), de la alta administración (el BOE a las 23:59,
 el Consejo de Estado) y de la puerta giratoria hacia el asesoramiento fiscal; el
 influencer, de la fama a golpes, de la tele pública (tertulias, audiencias, consejos
-por cuotas) y del exilio fiscal en Andorra (energéticas, veladas, cripto). Los
+por cuotas) y del exilio fiscal en Andorra (energéticas, veladas, cripto). La
+oficina, de la tecnología con corbata (viernes de despliegue, hackatones
+«voluntarios»), de las consultoras que facturan horas al Ministerio (licitaciones
+a medida, la app pública que se cae) y de los unicornios (pitch, pivotar, quemar
+la caja, comprar una red social). Los
 personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
 Trump, Erdoğan…) salen como en el resto del bot, con las fuentes de ironía de
 la Biblia. No se nombra a ninguna persona que no sea figura pública ni a una
@@ -999,11 +1003,13 @@ OFICINA = Job(
     key="oficina",
     name="Oficina (tecnología)",
     emoji="💻",
-    blurb="Del café del becario a CTO con stock options. Teletrabajo y Hong Kong.",
+    blurb="Del café del becario a CTO con stock options. Y arriba, la consultora del Ministerio "
+    "o el unicornio con red social propia. Teletrabajo y Hong Kong.",
     rgb=(52, 152, 219),
     remote=True,
     abroad_from=3,
     options_level=5,
+    options_branch="unicornio",
     positions=(
         Position(
             1, "Becario", 1_700, Mechanic.MEMORY, 30,
@@ -1015,22 +1021,155 @@ OFICINA = Job(
             (Task("caught", "Encuentra 15 bugs", "caught", 15), _good(4)),
             days=3, content="bugs",
             training=Training("bootcamp", "el bootcamp de programación", 10_000),
+            perk=Perk("Los auriculares con cancelación de ruido, que te aíslan hasta del "
+                      "«tienes un momento»: +5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3, "Programador senior", 5_000, Mechanic.SPOT, 40,
             (Task("caught", "Para 20 cambios que rompían producción", "caught", 20), _good(5)),
             days=4, content="revisiones",
+            perk=Perk("El teclado mecánico y la silla buena (la de 600 euros que te pagas tú): "
+                      "cada turno cansa un 10 % menos.", battery=0.10),
         ),
         Position(
             4, "Tech lead", 9_500, Mechanic.DIALOGUE, 60,
             (Task("smooth", "Acorta 20 reuniones", "smooth", 20), _good(5), _events(2)),
             days=5, content="reuniones",
             training=Training("scrum", "la certificación de Scrum Master", 12_000),
+            perk=Perk("El `git revert`, tu botón de «aquí no ha pasado nada»: un fallo gratis "
+                      "por turno.", retry=True),
         ),
         Position(
-            5, "CTO de startup", 18_000, Mechanic.DIALOGUE, 60, (),
-            days=0, content="inversores",
+            5, "CTO de startup", 18_000, Mechanic.DIALOGUE, 60,
+            (Task("smooth", "Convence a 25 inversores", "smooth", 25), _good(6), _events(3)),
+            days=4, content="inversores",
             training=Training("mba", "el MBA de una escuela de negocios", 80_000),
+            perk=Perk("Un ingeniero que te sopla por el chat qué decir (y qué no) a los "
+                      "inversores: una respuesta mala tachada en los diálogos.", fifty=True),
+        ),
+    ),
+    branches=(
+        Branch(
+            "consultora",
+            "Consultora",
+            "🏢",
+            "Horas facturadas al Ministerio, un PowerPoint de 80 diapositivas, la app pública "
+            "que no funciona y Cl@ve a las 23:59. En nómina de la firma: cobra menos, se jubila "
+            "mejor.",
+            (
+                Position(
+                    6, "Jefe de proyecto", 18_500, Mechanic.SORT, 60,
+                    (Task("sorted", "Imputa 30 horas al cliente que toca", "sorted", 30),
+                     _good(5), _events(2)),
+                    days=5, content="horas",
+                    perk=Perk("Un Excel de imputación de horas con una pestaña oculta que solo "
+                              "abres tú: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Gerente de cuentas públicas", 19_500, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Cierra 15 licitaciones sin que salte la alarma",
+                          "perfect_rounds", 15), _good(6), _events(3)),
+                    days=5, content="licitacion:4",
+                    training=Training(
+                        "pmp",
+                        "la certificación de gestión de proyectos (y un PowerPoint de 80 "
+                        "diapositivas, que ya es más de lo que cabe en la certificación)",
+                        45_000,
+                    ),
+                    perk=Perk("Una plantilla de pliego que ya trae el nombre de tu empresa "
+                              "escrito: +5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Director de transformación digital", 20_500, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra 25 fallos que tumban la app pública", "caught", 25),
+                     _good(6), _events(3)),
+                    days=6, content="app_publica",
+                    perk=Perk("Un «comité de seguimiento» que se reúne cuando algo falla y "
+                              "decide que no ha fallado: un fallo gratis por turno.",
+                              retry=True),
+                ),
+                Position(
+                    9, "Socio", 22_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sal airoso de 25 comités de socios", "smooth", 25),
+                     _good(6), _events(4)),
+                    days=6, content="comite",
+                    training=Training(
+                        "cuota_socio",
+                        "la cuota de entrada como socio (se paga en cómodos plazos… de por "
+                        "vida)", 55_000,
+                    ),
+                    perk=Perk("Un despacho con una mesa de caoba y un cuadro que no entiendes: "
+                              "cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Socio director", 24_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="socio_director",
+                    perk=Perk("Un coche con chófer y una agenda con el móvil del ministro: "
+                              "+10 % de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="socio jubilado que factura sus memorias por horas",
+        ),
+        Branch(
+            "unicornio",
+            "Unicornio",
+            "🦄",
+            "Pitch a inversores, pivotar con cada moda, quemar la caja con un futbolín de oro "
+            "y, al final, comprar una red social. Autónomo, con opciones en papel: cobra más, "
+            "se jubila peor.",
+            (
+                Position(
+                    6, "Fundador de una startup", 20_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Vende humo a 30 inversores", "smooth", 30),
+                     _good(5), _events(2)),
+                    days=5, content="pitch", self_employed=True,
+                    perk=Perk("Una camiseta con el logo y un sofá-puf en la oficina: cada turno "
+                              "cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "CEO tras la serie A", 24_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Pivota 30 ideas a la moda del momento", "sorted", 30),
+                     _good(6), _events(3)),
+                    days=5, content="pivotar", self_employed=True,
+                    training=Training(
+                        "serie_a",
+                        "la ronda serie A (con un fondo que no ha leído el plan de negocio)",
+                        60_000,
+                    ),
+                    perk=Perk("Un «asesor de estrategia» que dice «pivota» cada vez que dudas: "
+                              "+5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "CEO de un unicornio", 30_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra 25 gastos que queman la caja", "caught", 25),
+                     _good(6), _events(3)),
+                    days=6, content="runway", self_employed=True,
+                    perk=Perk("Un director financiero que dice «es una inversión» por ti: un "
+                              "fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Business angel", 36_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Repasa 15 historiales de rondas sin equivocarte",
+                          "perfect_rounds", 15), _good(6), _events(4)),
+                    days=6, content="rondas:4", self_employed=True,
+                    training=Training(
+                        "family_office",
+                        "el family office (con un gestor que te dice «sí, claro» a todo)",
+                        80_000,
+                    ),
+                    perk=Perk("Una lista de startups ya enterradas para contárselas a los "
+                              "jóvenes: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Tecnomillonario con red social propia", 45_000, Mechanic.DIALOGUE, 60,
+                    (), days=0, content="red_social", self_employed=True,
+                    perk=Perk("Un megáfono que llega a todo el mundo, tengas razón o no: +10 % "
+                              "de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="tecnomillonario jubilado que da charlas sobre el fracaso",
         ),
     ),
 )  # fmt: skip
@@ -6084,6 +6223,533 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas de la oficina (Consultora y Unicornio) -------------------------------
+
+MEMORY_PACKS.update(
+    {
+        "licitacion": MemoryPack(
+            "🏛️ Licitación {n} del Ministerio. El expediente sigue los pasos de siempre, que "
+            "son los de todos los años:",
+            "Repite los pasos de la licitación en el mismo orden (un paso fuera de sitio y el "
+            "interventor se pone a mirar).",
+            (
+                ("📜", "El pliego hecho a medida"),
+                ("🪑", "La mesa de contratación"),
+                ("📉", "La baja temeraria"),
+                ("🔧", "El modificado"),
+                ("⚖️", "El recurso del perdedor"),
+                ("📬", "La publicación en la plataforma (el viernes a las 23:59)"),
+                ("🤝", "La adjudicación al único licitador"),
+                ("🧾", "La factura de «imprevistos»"),
+                ("⏳", "La ampliación del plazo"),
+                ("✂️", "La inauguración con cinta y fotógrafo"),
+            ),
+        ),
+        "rondas": MemoryPack(
+            "👼 Historial de la startup {n}. Tú pusiste el primer cheque; estas son sus rondas, "
+            "en orden, con sus desgracias:",
+            "Repite las rondas en el mismo orden (y no te acuerdes de lo que invertiste).",
+            (
+                ("🌱", "Presemilla (tu cuñado y un fondo de amigos)"),
+                ("🌿", "Ronda semilla"),
+                ("🚀", "Serie A, con foto de equipo en el sofá"),
+                ("🩹", "Ronda puente «para llegar a la B»"),
+                ("📉", "Down round: vale la mitad que hace un año"),
+                ("🏦", "Serie B, con un fondo soberano que no abre el correo"),
+                ("✂️", "Despidos «para ser más eficientes»"),
+                ("🔔", "Salida a bolsa… del vestíbulo del edificio"),
+                ("💥", "Exit (para los fundadores; los demás se quedan con el sofá)"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "horas": SortPack(
+            "⏱️ Eres jefe de proyecto: cada hora se imputa al cliente que toque (o a quien "
+            "mejor pague, que viene a ser lo mismo).",
+            "🕐 Hora {n}/{total}:",
+            (
+                "🏛️ Ministerio",
+                "🏦 Banco",
+                "🍽️ Comida de trabajo",
+                "📚 Formación",
+            ),
+            (
+                ("Redactar el informe sobre el informe del subdirector general", 0),
+                ("Llamada para decidir si el botón de la app pública va en azul o en «azul "
+                 "institucional»", 0),
+                ("Diapositiva 63 de 80: «Arquitectura de la solución» (un cuadrado con flechas)",
+                 0),
+                ("Comité de seguimiento de un proyecto que lleva en seguimiento cuatro años", 0),
+                ("Auditoría de riesgos para una sucursal que cerraron en marzo", 1),
+                ("Presentación de resultados con tres gráficos de barras y un semáforo", 1),
+                ("Informe de cumplimiento normativo (de lo que no cumplen)", 1),
+                ("Reunión con el director de zona sobre las comisiones de la cuenta «gratis»",
+                 1),
+                ("Menú del día con el cliente: tres platos, café y copa «de cortesía»", 2),
+                ("Cena con el director general en un restaurante con estrella", 2),
+                ("Café con el jefe de compras «para ir cerrando» (cerráis a las seis)", 2),
+                ("Comida de seguimiento que se alarga hasta la hora de la merienda", 2),
+                ("Curso de metodologías ágiles de 40 horas, en cascada", 3),
+                ("Webinar sobre liderazgo disruptivo con un coach que no ha liderado nada", 3),
+                ("Taller de gestión del cambio con post-its de colores", 3),
+                ("Certificación interna en «cultura de la excelencia»", 3),
+            ),
+        ),
+        "pivotar": SortPack(
+            "🔄 Eres CEO tras la serie A: el inversor quiere que tu idea siga la moda del "
+            "momento. Cada idea, a su moda.",
+            "💡 Idea {n}/{total}:",
+            (
+                "🤖 IA",
+                "🪙 Cripto",
+                "🥽 Metaverso",
+                "🚕 El Uber de…",
+            ),
+            (
+                ("Un buscador de recetas… «con IA» (que sigue buscando recetas)", 0),
+                ("Una app para fichar el turno que «aprende de tu cara de sueño»", 0),
+                ("Un chat que contesta a tu suegra por ti", 0),
+                ("Un horóscopo escrito por IA, idéntico al de siempre pero más caro", 0),
+                ("Un token para pagar el café, con una comisión mayor que el café", 1),
+                ("Una DAO de vecinos para decidir el color del portal", 1),
+                ("La tostada de aguacate, descentralizada y con su propia cadena de bloques", 1),
+                ("Un NFT de la factura de la luz (que sube de valor, ya hay que decirlo)", 1),
+                ("Un gimnasio virtual con avatares sin piernas", 2),
+                ("La junta de la comunidad de vecinos, en 3D y con gafas", 2),
+                ("Una oficina virtual donde se hace lo mismo que antes, pero con casco", 2),
+                ("Un concesionario donde pruebas el coche sin salir de casa… ni verlo", 2),
+                ("El Uber de los fontaneros (llega, mira la tubería y se va, pero con puntuación)",
+                 3),
+                ("El Uber de las abuelas que cuidan niños, con tarifa dinámica", 3),
+                ("El Uber de las plazas de garaje, que ya tiene un pleito con tu comunidad", 3),
+                ("El Uber de las escaleras: sube y baja cosas, y te lo cobra por planta", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: Director de transformación digital: fallos que tumban la app pública (el distinto).
+APP_FALLOS: tuple[str, ...] = (
+    "El certificado de seguridad caducó ayer y el navegador enseña un candado rojo enorme",
+    "Cl@ve pide el PIN por SMS y el SMS no llega nunca (ni a las 23:59 del último día)",
+    "El formulario solo funciona con un navegador de 2003 y con los plugins de entonces",
+    "La cita previa da hora para el 31 de febrero",
+    "Al pulsar «Enviar» sale «Error desconocido», sin más, y se vacía el formulario",
+    "La página exige adjuntar un PDF de menos de 1 KB, y un DNI no cabe ni comprimido",
+    "El servidor está en el sótano de una consejería y la llave la tiene alguien de baja",
+    "Todos los usuarios ven el expediente de otro ciudadano (siempre el de la misma señora)",
+    "El captcha pide identificar semáforos en una foto en la que no hay ninguno",
+    "El sistema se cae cada día a las 23:59, que es cuando termina el plazo",
+    "La base de datos guarda la ñ como «Ã±» y a España la llama «EspaÃ±a»",
+    "El botón «Pagar» solo se activa cuando ya has pagado",
+)
+#: Cosas normales de una app pública (que funcionan o que molestan sin tumbar nada).
+APP_BIEN: tuple[str, ...] = (
+    "La página carga en dos segundos y pide aceptar las cookies, como todas",
+    "Cl@ve manda el PIN por SMS y llega en cinco segundos",
+    "El formulario guarda el borrador cada minuto y te deja seguir mañana",
+    "La cita previa da hora para la semana que viene y manda un recordatorio",
+    "El certificado de seguridad se renovó con un mes de margen",
+    "Al pulsar «Enviar» sale un justificante con número de registro y fecha",
+    "El mantenimiento del domingo a las 4:00 se avisó con una semana de antelación",
+    "El buscador de trámites encuentra el trámite a la primera (un milagro menor)",
+    "Hay una versión en lenguaje claro con las mismas instrucciones, pero sin latines",
+    "Se pueden subir PDF de hasta 10 MB sin que la página proteste",
+    "La app del móvil abre en la misma pantalla que la web, aunque con otro menú",
+    "El chat de ayuda lo contesta una persona real, en horario de oficina",
+    "El pago con tarjeta pasa a la primera y envía el recibo por correo",
+    "La web pide el DNI en un campo con ayuda, para que no te confundas con la letra",
+)
+
+#: CEO de un unicornio: gastos que queman la caja (el distinto).
+RUNWAY_QUEMA: tuple[str, ...] = (
+    "Un futbolín de oro macizo en la sala de descanso (ya nadie sabe jugar)",
+    "Una oficina en un ático de 400 m² para doce personas",
+    "La fiesta de la empresa en Ibiza, con avión privado, por el «engagement»",
+    "Un chef privado que cocina cada día para un equipo de dos personas",
+    "Una consultora de naming que cobra 80.000 € por quitarle una letra al logo",
+    "Un anuncio en la final de la liga americana para una app con 300 usuarios",
+    "Una sala de reuniones con cascada interior y sonido de selva",
+    "Un cartel de neón gigante en la fachada que gasta lo mismo que un bloque de pisos",
+    "Un reloj de lujo de regalo de Navidad para cada cliente (y para cada cuñado)",
+    "Un retiro de «alineamiento» del equipo directivo en una isla del Índico",
+    "Una flota de patinetes dorados para ir de la sala 1 a la sala 2",
+    "Un helicóptero para el trayecto de doce minutos hasta el aeropuerto",
+)
+#: Gastos razonables de una empresa que quiere durar.
+RUNWAY_RAZONABLE: tuple[str, ...] = (
+    "Los servidores en la nube, que pagan lo que gastan los usuarios",
+    "El sueldo de los ingenieros que escriben el producto",
+    "Un abogado que revisa el contrato con los clientes antes de firmarlo",
+    "La gestoría que hace las nóminas y los impuestos a tiempo",
+    "Un coworking con una mesa para cada uno y wifi que va",
+    "El seguro de responsabilidad civil que nadie quiere pero todos necesitan",
+    "El café de la oficina, que es barato y sube la moral",
+    "Las licencias del programa que usa todo el equipo",
+    "Una auditoría de seguridad antes de lanzar la nueva versión",
+    "Un portátil nuevo para el ingeniero cuyo ordenador se apaga solo",
+    "Publicidad en buscadores con 500 € al mes y medición de resultados",
+    "Una persona de atención al cliente, porque los clientes escriben",
+    "El dominio de la web y los correos corporativos",
+    "Una hora de formación en seguridad para todo el equipo, una vez al año",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "comite": DialoguePack(
+            "🤝 Comité de socios de la consultora. Regla de oro: **se factura la hora, no el "
+            "resultado.**",
+            (
+                Dialogue(
+                    "El bonus de fin de año: los beneficios suben un 12 % y los sueldos de los "
+                    "juniors, un 0 %.",
+                    "Lo repartís por horas facturadas, que casualmente son las vuestras; a los "
+                    "juniors, una cesta con un jamón de plástico.",
+                    ("Propones repartirlo con los juniors que han hecho el trabajo, que además "
+                     "llevan semanas sin dormir bien y ya hablan de sindicarse.",
+                     "Lo donas a una ONG y lo cuentas en tu red profesional."),
+                ),
+                Dialogue(
+                    "Propuesta para el Ministerio: piden una app que funcione. Tu equipo calcula "
+                    "dos meses; el presupuesto dice veinte.",
+                    "Presentas veinte meses: ocho de «análisis», seis de «transformación» y seis "
+                    "de «sostenibilidad». Que funcione ya se verá.",
+                    ("Les dices que se hace en dos meses y les cobras dos meses.",
+                     "Rechazas el contrato por vergüenza torera."),
+                ),
+                Dialogue(
+                    "Un becario lleva 80 horas esta semana y pide, tímidamente, que se las "
+                    "paguen.",
+                    "Le das las gracias por su «compromiso» y un certificado de horas… que "
+                    "facturas al cliente a 140 € la hora.",
+                    ("Le pagas las 80 horas de tu bolsillo, al precio de socio.",
+                     "Le mandas a casa una semana, con gastos pagados, y le pides perdón en "
+                     "persona ante todo el comité y delante de su madre."),
+                ),
+                Dialogue(
+                    "El cliente se queja: el informe ha llegado con tres semanas de retraso.",
+                    "Le facturas las tres semanas de retraso como «horas de revisión adicional "
+                    "de calidad».",
+                    ("Reconoces el retraso y le devuelves la factura.",
+                     "Dices que el informe lo escribió una IA y que reclame a la IA."),
+                ),
+                Dialogue(
+                    "Otro socio te pide que firmes un informe de 400 páginas que no has leído.",
+                    "Firmas sin leer, a cambio de que él firme el tuyo: así os leéis "
+                    "mutuamente la fe.",
+                    ("Lees las 400 páginas y señalas tres errores de bulto, delante de todos y "
+                     "con rotulador rojo.",
+                     "Dices que no firmas nada sin pasarlo por el comité de ética de la casa… "
+                     "que no existe."),
+                ),
+                Dialogue(
+                    "La competencia ofrece el mismo servicio por la mitad de precio.",
+                    "Subes tu tarifa un 30 % y lo llamas «posicionamiento premium»: los clientes "
+                    "de verdad quieren que cueste.",
+                    ("Bajas el precio a la mitad y lo recuperas «en volumen».",
+                     "Pides a la competencia que te haga un descuento a ti.",
+                     "Subcontratas a la competencia y te quedas con el margen, sin decírselo."),
+                ),
+                Dialogue(
+                    "Un junior propone una solución sencilla que lo arreglaría todo en una "
+                    "tarde.",
+                    "Le das las gracias, lo conviertes en un proyecto de tres fases y lo cobras "
+                    "como «metodología propia».",
+                    ("Aplicas la solución del junior y cobras una tarde.",
+                     "Lo ascienden a socio y te jubilas tú."),
+                ),
+                Dialogue(
+                    "El cliente pregunta cuánto durará el proyecto.",
+                    "«Depende del alcance», y sonríes: el alcance, por suerte, siempre se "
+                    "amplía.",
+                    ("«Seis meses, y entregamos en seis meses.»",
+                     "Le dices la verdad: dos semanas y un programador con un café, y se lo "
+                     "dices tú mismo en la reunión de apertura."),
+                ),
+                Dialogue(
+                    "La cena de socios en un restaurante con estrella: la cuenta son 2.400 "
+                    "euros.",
+                    "La imputas al proyecto del Ministerio como «reunión de trabajo con "
+                    "stakeholders».",
+                    ("Cada uno paga lo suyo, con calculadora.",
+                     "La pagas tú con tu tarjeta y te quedas sin postre."),
+                ),
+                Dialogue(
+                    "El comité de ética (cinco minutos, un café) pregunta si hay algún conflicto "
+                    "de intereses.",
+                    "«Ninguno que no hayamos gestionado debidamente», y pasáis al siguiente "
+                    "punto: el catering.",
+                    ("Confiesas que tu cuñado es subdirector del Ministerio y que le habéis "
+                     "dado el contrato de la app, con un descuento.",
+                     "Contestas «todos» y señalas el techo."),
+                ),
+            ),
+        ),
+        "socio_director": DialoguePack(
+            "🏛️ Despacho del socio director, con vistas al Ministerio. Regla de oro: **que el "
+            "Gobierno de turno siga siendo cliente, gane quien gane.**",
+            (
+                Dialogue(
+                    "Cambia el Gobierno y el nuevo ministro revisa los contratos del anterior.",
+                    "Le invitas a comer y le explicas que tu equipo lleva «años preparando "
+                    "justo su programa».",
+                    ("Defiendes el contrato del anterior ante el ministro y le acusas de "
+                     "partidista, con una carpeta de recortes de periódico.",
+                     "Rescindes el contrato tú mismo, por si acaso."),
+                ),
+                Dialogue(
+                    "Un exministro, recién salido del cargo, quiere entrar de «asesor» en la "
+                    "firma, con despacho propio. Hace tres meses firmaba contratos contigo.",
+                    "Lo fichas de «consejero independiente», sin funciones, con sueldo y con "
+                    "tarjeta de visita en relieve.",
+                    ("Le dices que la ley de incompatibilidades pide dos años de espera y que "
+                     "le avisarás cuando pasen, con un calendario y todo.",
+                     "Le ofreces un puesto de becario para que aprenda cómo es el mundo real."),
+                ),
+                Dialogue(
+                    "El Tribunal de Cuentas pide aclarar un informe de 600 páginas que la firma "
+                    "entregó al Gobierno.",
+                    "Entregas un segundo informe, de 900 páginas, que explica el primero. "
+                    "Cuando acabas de leerlo, nadie recuerda la pregunta.",
+                    ("Admites que hay una errata en la página 312 y la corriges.",
+                     "Dices que se lo comió el perro."),
+                ),
+                Dialogue(
+                    "Fondos Next Generation: hay 140 millones para «digitalizar» un pueblo de "
+                    "800 habitantes.",
+                    "Presentas el proyecto «aldea inteligente»: sensores en los cuatro bancos "
+                    "del pueblo y una app (la bajarán nueve).",
+                    ("Propones arreglar el camino y el centro de salud, que es lo que pide el "
+                     "pueblo desde hace treinta años, y lo presentas con firmas de los vecinos.",
+                     "Devuelves el dinero a Bruselas con una carta de disculpa."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta si es cierto que la firma redacta las leyes que "
+                    "luego evalúa.",
+                    "«Asesoramos técnicamente; la decisión política corresponde siempre a los "
+                    "representantes.» Justo lo que decías antes de redactarlas.",
+                    ("Respondes que sí y sacas la lista de las leyes, con su precio.",
+                     "Te echas a llorar delante de la cámara."),
+                ),
+                Dialogue(
+                    "La oposición pide una comisión de investigación sobre tu contrato con el "
+                    "Gobierno.",
+                    "Contratas como «asesor de comunicación» al portavoz de la oposición, y la "
+                    "comisión se disuelve sola, por falta de ganas.",
+                    ("Te presentas voluntario a declarar, con toda la documentación.",
+                     "Te vas de vacaciones a Waterloo y no dejas ni dirección."),
+                ),
+                Dialogue(
+                    "El Ministerio quiere rebajar el precio del contrato un 10 %.",
+                    "Aceptas el 10 % y amplías el alcance un 25 %: «una mejora del servicio».",
+                    ("Aceptas la rebaja sin condiciones, con una sonrisa y una disculpa por el "
+                     "precio anterior.",
+                     "Rechazas la rebaja y dices que, en realidad, el Ministerio te debe "
+                     "dinero, y que lo has soñado."),
+                ),
+                Dialogue(
+                    "Un socio joven propone hacer el informe anual «de verdad, con datos».",
+                    "Le felicitas por la iniciativa y le encargas el «análisis de viabilidad "
+                    "del análisis de datos». Lo cerráis en 2031.",
+                    ("Le dejas hacerlo con datos reales y descubres lo que dicen: que el "
+                     "Ministerio no necesita tu firma.",
+                     "Le despides por insolencia."),
+                ),
+                Dialogue(
+                    "El Consejo de Ministros te llama a las tres de la madrugada: hay que "
+                    "entregar un informe «ya».",
+                    "Contestas que sí, que está casi, y lo escribes con una IA mientras te "
+                    "sirven el café.",
+                    ("Pides que lo dejen para la mañana, que a estas horas no se trabaja bien, "
+                     "y que te llamen con cita previa.",
+                     "No coges el teléfono y lo apagas para siempre."),
+                ),
+                Dialogue(
+                    "Se acerca tu jubilación y te piden que elijas heredero para la "
+                    "presidencia.",
+                    "Eliges al más fiel: el que firma lo que le pones delante y se acuerda de "
+                    "tu cumpleaños.",
+                    ("Eliges al más brillante, que además te cae mal.",
+                     "Disuelves la firma y repartes el dinero entre los empleados.",
+                     "Lo echas a suertes con una urna y un notario."),
+                ),
+            ),
+        ),
+        "pitch": DialoguePack(
+            "🚀 Ronda con inversores. Regla de oro: **no vendes un producto, vendes una visión "
+            "(y un PowerPoint con una curva hacia arriba).**",
+            (
+                Dialogue(
+                    "«¿Cuántos usuarios tenéis hoy?» Tenéis once, y cuatro son de tu familia.",
+                    "«Tenemos una comunidad *fundadora* y un crecimiento del 400 % mes a mes.» "
+                    "(De dos a once.)",
+                    ("«Once, y cuatro son de mi familia.»",
+                     "«Los que no tenemos aún los tendremos en cuanto lancemos, y los que hemos "
+                     "tenido los hemos perdido, ya verá.»"),
+                ),
+                Dialogue(
+                    "Preguntan por la competencia. Hay diecisiete empresas iguales que la tuya.",
+                    "«No tenemos competencia: estamos creando una categoría.»",
+                    ("Les enseñas la tabla con las diecisiete empresas y explicas por qué la "
+                     "tuya es peor, pero más barata.",
+                     "«Nuestro mayor competidor es la siesta.»"),
+                ),
+                Dialogue(
+                    "Preguntan por los ingresos: cero euros.",
+                    "«Estamos en fase de pre-monetización, optimizando para el crecimiento.»",
+                    ("«Cero. Pero el año que viene también.»",
+                     "Les dices que el dinero es una construcción social."),
+                ),
+                Dialogue(
+                    "El inversor duda de que el equipo sepa ejecutar.",
+                    "Sacas un «advisory board» con cinco nombres ilustres. Ninguno sabe que "
+                    "está en él.",
+                    ("Admites que el equipo son dos personas y una impresora.",
+                     "Dices que, si no confía en vosotros, no hay trato, y te levantas "
+                     "indignado dejando la carpeta en la mesa."),
+                ),
+                Dialogue(
+                    "Preguntan por el tamaño del mercado.",
+                    "«Si capturamos solo el 1 % de un mercado de 50.000 millones…», y el "
+                    "inversor asiente, que suena a 500.",
+                    ("Les das un estudio real, con una cifra pequeña que sí podrías cumplir.",
+                     "«Del tamaño de una piscina, pero muy bien aprovechada.»"),
+                ),
+                Dialogue(
+                    "Preguntan qué valoración pides.",
+                    "Pides 20 millones y dejas caer que «hay otros dos fondos interesados» (los "
+                    "dos son tu primo y el primo de tu primo).",
+                    ("Pides lo que vale de verdad: 200.000 euros.",
+                     "Dices que es información confidencial."),
+                ),
+                Dialogue(
+                    "El proyector se apaga en mitad del pitch.",
+                    "«Para quien no vea la diapositiva: es una curva que sube.» Y sigues sin "
+                    "parpadear.",
+                    ("Te bloqueas cinco minutos, pides que te saquen de la sala y preguntas si "
+                     "hay un médico.",
+                     "Les enseñas el portátil boca abajo."),
+                ),
+                Dialogue(
+                    "Preguntan cuándo serás rentable.",
+                    "«Estamos poniendo las bases; la rentabilidad llega con la escala.» El "
+                    "«cuándo» no se dice nunca.",
+                    ("«En dieciocho meses, si nada falla… y siempre falla algo.»",
+                     "«Cuando lleguemos a la luna.»"),
+                ),
+                Dialogue(
+                    "Te piden que expliques la empresa en una frase.",
+                    "«Somos la plataforma de X, pero con IA y para la generación Z.»",
+                    ("Les explicas el algoritmo con fórmulas en la pizarra, durante veinte "
+                     "minutos y de espaldas.",
+                     "«Una app.»"),
+                ),
+                Dialogue(
+                    "Un inversor ofrece 2 millones a cambio del 80 % de la empresa.",
+                    "Contraofertas el 10 % por 2 millones y dices «o me voy a otro fondo» (no "
+                    "hay otro fondo), con la sonrisa de quien tiene tres.",
+                    ("Aceptas encantado el 80 % y le ofreces también tu silla.",
+                     "Le preguntas amablemente si puede ser el 79 %."),
+                ),
+            ),
+        ),
+        "red_social": DialoguePack(
+            "📢 La plaza pública es tuya. Regla de oro: **lo que tú dices es libertad de "
+            "expresión; lo que dicen los demás, ya se verá.**",
+            (
+                Dialogue(
+                    "Has comprado la red social por 44.000 millones sin leer las cuentas. El "
+                    "consejo quiere saber por qué.",
+                    "«Por la libertad de expresión», con un tuit de un pájaro y una carcajada. "
+                    "Las cuentas, ya las leeremos.",
+                    ("Enseñas un análisis financiero de cincuenta páginas que justifica la "
+                     "compra, con anexos y un gráfico de tarta.",
+                     "Confiesas que fue sin querer."),
+                ),
+                Dialogue(
+                    "Vendes la marca de verificación a 8 euros al mes.",
+                    "La cobras: ahora cualquier bulo con tarjeta de crédito tiene credibilidad, "
+                    "¡y ingresos!",
+                    ("La regalas a los periodistas y a los médicos que demuestren quiénes son, y "
+                     "a los demás les das las gracias por esperar.",
+                     "La cobras a 8 euros y devuelves el dinero a quien no la use."),
+                ),
+                Dialogue(
+                    "Trump vuelve a la red tras años de veto. ¿Qué haces?",
+                    "Lo readmites tras una encuesta (la gana por goleada, votan 600 bots): «la "
+                    "voluntad del pueblo».",
+                    ("Lo dejas vetado para siempre, por pura coherencia, y publicas una carta "
+                     "abierta que lo explica en doce partes.",
+                     "Lo readmites, pero solo con tres palabras por tuit."),
+                ),
+                Dialogue(
+                    "Musk, tu rival (con su propia red), te reta a un combate en una jaula.",
+                    "Aceptas y fijas la fecha «para cuando los dos estemos libres» (nunca), y "
+                    "vendes las entradas igual.",
+                    ("Aceptas y entrenas seis meses, con dieta y todo, para pelear de verdad.",
+                     "Le denuncias por competencia desleal en un juzgado de Delaware."),
+                ),
+                Dialogue(
+                    "Un periodista escribe que eres «una copia de Musk con peor peluquero».",
+                    "Lo pones como tendencia número uno en tu red y lo invitas a un debate… "
+                    "moderado por ti.",
+                    ("Lo niegas indignado y le enseñas tus diferencias con Musk en una "
+                     "diapositiva de nueve apartados.",
+                     "Le das la razón y subes un meme sobre ti mismo."),
+                ),
+                Dialogue(
+                    "Un empleado critica tu gestión en la propia red.",
+                    "Lo despides por «violar los términos de uso» y defiendes tu decisión como "
+                    "libertad de expresión (la tuya).",
+                    ("Le das las gracias por el feedback, abres un canal interno de "
+                     "sugerencias y le invitas a un café con Recursos Humanos para hablarlo.",
+                     "Le subes el sueldo, que tiene razón."),
+                ),
+                Dialogue(
+                    "La red se llena de bulos y los anunciantes se van.",
+                    "Declaras que moderar es censura y que los anunciantes son «enemigos del "
+                    "pueblo»: pierdes ingresos, pero ganas un millón de seguidores que no "
+                    "compran nada.",
+                    ("Contratas moderadores y publicas las normas con total transparencia.",
+                     "Cierras la red un mes «por reformas»."),
+                ),
+                Dialogue(
+                    "Una ley europea te exige borrar los contenidos ilegales en 24 horas.",
+                    "Respondes con un hilo de cuarenta tuits contra Bruselas y sus cookies. El "
+                    "contenido sigue, la multa llega en tres años y se recurre.",
+                    ("Cumples en 24 horas y encima pides perdón.",
+                     "Cierras en Europa «por principios» y te mudas a una isla."),
+                ),
+                Dialogue(
+                    "Tu tuit de las 4 de la madrugada acaba de hundir la bolsa de una empresa.",
+                    "Lo dejas y subes otro: «era ironía». El mercado cree lo que más le "
+                    "conviene.",
+                    ("Lo borras y pides perdón al mercado con una rueda de prensa.",
+                     "Lo borras y dices que fue tu gato."),
+                ),
+                Dialogue(
+                    "Los anunciantes piden garantías: ¿qué les prometes?",
+                    "A ellos, un entorno seguro para las marcas; a tus usuarios, libertad "
+                    "total. Las dos cosas a la vez, en dos tuits distintos.",
+                    ("Les dices que se vayan, que con tus seguidores te sobra, y que a las "
+                     "marcas ya les contestarás.",
+                     "Les prometes cualquier cosa y luego te olvidas."),
+                ),
+                Dialogue(
+                    "Un senador de Estados Unidos te cita a declarar sobre la moderación.",
+                    "Vas con gafas oscuras, contestas «no recuerdo» doce veces y al salir "
+                    "publicas un hilo: «lo que no te cuentan de la comisión».",
+                    ("No vas y mandas a tu abogado con un bigote postizo.",
+                     "Vas y cuentas la verdad con detalle, incluido lo del algoritmo."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -10753,6 +11419,544 @@ EVENTS: tuple[Event, ...] = (
         min_level=8,
         branches=("publica",),
     ),
+    # -- Oficina: el tronco (más marrones) --------------------------------------------------
+    Event(
+        "cambio_viernes",
+        "🕖 Viernes, 19:00. El cliente escribe: «Es un pequeñísimo cambio, ¿lo tenéis para el "
+        "lunes?». El pequeñísimo cambio es rehacer el módulo de pagos.",
+        (
+            (
+                "Lo hago ahora",
+                Outcome(
+                    "Te quedas hasta las once. El cambio era pequeño: solo afectaba a todo. El "
+                    "lunes, el cliente: «Gracias. ¿Y lo del botón azul?».",
+                    pay=0.5,
+                    battery=-20,
+                    family=-10,
+                    performance=10,
+                    stat="work_small_change_done",
+                ),
+            ),
+            (
+                "Lo presupuesto",
+                Outcome(
+                    "Mandas un presupuesto de tres semanas con «pequeño cambio» entre comillas. "
+                    "De repente, al cliente deja de parecerle urgente.",
+                    performance=5,
+                    stat="work_small_change_quoted",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=2,
+    ),
+    Event(
+        "postit_clave",
+        "🟨 Pasas junto al monitor de un compañero y ves la contraseña de producción en un "
+        "pósit: «Admin123!!». Al lado, otro pósit: «No tocar».",
+        (
+            (
+                "Se lo digo",
+                Outcome(
+                    "Se lo cuentas. Cambia la contraseña por «Admin124!!» y te da las gracias "
+                    "con un bizcocho.",
+                    performance=5,
+                    stat="work_postit_told",
+                ),
+            ),
+            (
+                "Me la apunto",
+                Outcome(
+                    "Te la apuntas «por si algún día hace falta» y vendes un acceso de "
+                    "«pruebas» a un conocido, en un sobre.",
+                    black=0.3,
+                    risk=0.2,
+                    stat="work_postit_noted",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+    ),
+    Event(
+        "ia_bug",
+        "🤖 La IA que tu empresa os obliga a usar escribe el 80 % del código. Producción se cae "
+        "y el jefe pregunta quién ha escrito esa función. En el commit pone tu nombre.",
+        (
+            (
+                "Asumo el bug",
+                Outcome(
+                    "Dices «he sido yo». Mientras, la IA ya propone arreglarlo con otro error "
+                    "nuevo, más elegante.",
+                    performance=-5,
+                    battery=-10,
+                    stat="work_ai_blame_owned",
+                ),
+            ),
+            (
+                "Fue la IA",
+                Outcome(
+                    "«Ha sido la IA.» El jefe: «¿Y quién le dio permiso?». Tú. Tú se lo diste "
+                    "con el botón de «aceptar todo».",
+                    performance=-10,
+                    stat="work_ai_blamed",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=3,
+    ),
+    Event(
+        "hackathon",
+        "🏆 Hackathon «voluntario» el sábado, de 9:00 a 9:00. Hay pizza, una pegatina y un "
+        "premio de 200 euros para el mejor equipo (el del director, seguro).",
+        (
+            (
+                "Voy",
+                Outcome(
+                    "Programas 24 horas seguidas y ganas el segundo premio: una pegatina. «Estoy "
+                    "destruido, pero por fuera… por dentro estoy nuevo.» Mentira: por dentro "
+                    "también.",
+                    battery=-25,
+                    family=-10,
+                    performance=10,
+                    stat="work_hackathon_went",
+                ),
+            ),
+            (
+                "Me quedo en casa",
+                Outcome(
+                    "Te quedas en casa. El lunes todos hablan de la pizza; tú, de tu sábado. "
+                    "Nadie te pregunta.",
+                    family=8,
+                    performance=-5,
+                    stat="work_hackathon_skipped",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=2,
+    ),
+    Event(
+        "prueba_tecnica",
+        "🧪 Te toca corregir la prueba técnica de un candidato: ocho horas, sin cobrar, «para "
+        "ver cómo trabaja». El candidato ha entregado un módulo que casualmente necesitabais.",
+        (
+            (
+                "Reutilizo el código",
+                Outcome(
+                    "Lo metes en producción «como inspiración». El candidato recibe un «gracias "
+                    "por su tiempo» y tú, un aplauso en la reunión del lunes.",
+                    pay=0.2,
+                    performance=10,
+                    stat="work_free_test_used",
+                ),
+            ),
+            (
+                "Que se pague",
+                Outcome(
+                    "Propones pagar la prueba. Recursos Humanos te mira como si hablaras en "
+                    "arameo. El candidato te escribe: «gracias». Y se acabó.",
+                    performance=-10,
+                    stat="work_free_test_paid",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=4,
+    ),
+    Event(
+        "alineamiento",
+        "🗓️ Reunión de «alineamiento» de dos horas, dieciséis invitados y una agenda con un único "
+        "punto: «Alinearnos». Hazme café… ¡quiero café!",
+        (
+            (
+                "Participo",
+                Outcome(
+                    "Preguntas, tomas notas y propones un siguiente paso. Sales con tres "
+                    "acciones asignadas, todas a ti.",
+                    battery=-10,
+                    performance=10,
+                    stat="work_alignment_active",
+                ),
+            ),
+            (
+                "Cámara apagada",
+                Outcome(
+                    "Cámara apagada, micrófono en silencio y, mientras, avanzas trabajo de "
+                    "verdad. Al final alguien: «¿Tú qué opinas?». Tú: «Estoy de acuerdo con lo "
+                    "anterior».",
+                    performance=-5,
+                    stat="work_alignment_camera_off",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=3,
+    ),
+    # -- Oficina: Consultora ----------------------------------------------------------------
+    Event(
+        "horas_ministerio",
+        "🧾 El Ministerio pide el informe de horas. Hay 1.200 horas facturadas y 400 "
+        "trabajadas. Tu socio, bajito: «Que cuadre».",
+        (
+            (
+                "Facturo las 1.200",
+                Outcome(
+                    "Facturas las 1.200: las trabajadas, las de la comida y las de un entierro "
+                    "al que fue el cliente. Cobras tu parte en un sobre.",
+                    black=0.6,
+                    risk=0.2,
+                    caught_by="tribunal_cuentas",
+                    stat="work_ministry_hours_billed",
+                ),
+            ),
+            (
+                "Facturo las 400",
+                Outcome(
+                    "Facturas las 400 de verdad. A las ocho de la mañana, el socio te llama a su "
+                    "despacho: «¿Esto es una broma?».",
+                    performance=-10,
+                    stat="work_ministry_hours_honest",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=6,
+        branches=("consultora",),
+    ),
+    Event(
+        "cita_sepe",
+        "📲 La app de citas previas del SEPE sale al aire y se cae el primer día: 400.000 "
+        "personas intentan pedir cita y la web dice «Servicio en mantenimiento». Es tu app.",
+        (
+            (
+                "Culpo al servidor",
+                Outcome(
+                    "«Es un problema de infraestructura del cliente.» El cliente: «Pero si la "
+                    "infraestructura la hicisteis vosotros». Tú: «De la versión anterior».",
+                    performance=-5,
+                    stat="work_sepe_server_blamed",
+                ),
+            ),
+            (
+                "Pido más presupuesto",
+                Outcome(
+                    "Presentas un plan «de mejora»: otros tres millones para arreglar lo que "
+                    "acabas de entregar. Te lo aprueban; el cliente no tiene alternativa.",
+                    pay=0.3,
+                    battery=-10,
+                    stat="work_sepe_budget_asked",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=7,
+        branches=("consultora",),
+    ),
+    Event(
+        "junior_senior",
+        "🧑‍💼 El cliente paga por «consultor senior». Tu equipo disponible: un junior de 22 años "
+        "con la corbata de su padre.",
+        (
+            (
+                "Lo vendo como senior",
+                Outcome(
+                    "En el currículum pone «dos décadas de experiencia» (contando las del "
+                    "colegio). El cliente paga tarifa de senior y recibe trabajo de junior.",
+                    pay=0.4,
+                    performance=5,
+                    stat="work_junior_as_senior",
+                ),
+            ),
+            (
+                "Lo facturo como junior",
+                Outcome(
+                    "Facturas lo justo. El socio: «Eres una vergüenza para esta casa». El "
+                    "cliente renueva por honradez y tú, sin comisión.",
+                    performance=-10,
+                    stat="work_junior_honest",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=6,
+        branches=("consultora",),
+    ),
+    Event(
+        "pliego_medida",
+        "📜 Un cliente público te pide «orientar» el pliego de una licitación: «Solo detalles "
+        "técnicos, como pedir 14 años de experiencia en una tecnología que tiene 12».",
+        (
+            (
+                "Redacto el pliego",
+                Outcome(
+                    "Redactas un pliego con una cláusula que solo cumple tu empresa. Un sobre "
+                    "por cabeza y «ni una palabra de esto».",
+                    black=0.6,
+                    risk=0.2,
+                    caught_by="uco",
+                    stat="work_tailored_tender",
+                ),
+            ),
+            (
+                "Pliego abierto",
+                Outcome(
+                    "Lo haces abierto a todo el mundo. Gana una empresa de Valladolid con un "
+                    "40 % menos de presupuesto y tu socio no te habla en una semana.",
+                    performance=-10,
+                    stat="work_open_tender",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=8,
+        branches=("consultora",),
+    ),
+    Event(
+        "exministro_asesor",
+        "🎩 Un exministro, recién salido del cargo, quiere entrar de «asesor externo» en la "
+        "firma, con despacho propio y sueldo. Hace tres meses firmaba contratos contigo.",
+        (
+            (
+                "Lo ficho",
+                Outcome(
+                    "Lo fichas de «asesor estratégico». Su primer consejo: «Ficha a mi cuñado». "
+                    "El segundo: «No dejes nada por escrito».",
+                    black=0.7,
+                    risk=0.2,
+                    caught_by="incompatibilidades",
+                    stat="work_ex_minister_hired",
+                ),
+            ),
+            (
+                "Dos años de espera",
+                Outcome(
+                    "Le explicas que la ley pide dos años. Se ríe. El lunes ficha por la "
+                    "competencia, con un despacho mayor.",
+                    performance=-10,
+                    stat="work_ex_minister_waited",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=9,
+        branches=("consultora",),
+    ),
+    Event(
+        "informe_informe",
+        "🇪🇺 El Gobierno te encarga un informe sobre el informe del año pasado, con cargo a los "
+        "fondos europeos: «Que sea más largo y con gráficos de colores».",
+        (
+            (
+                "Lo hago",
+                Outcome(
+                    "Copias el original, le añades un capítulo de «metodología» y tres gráficos "
+                    "de tarta. Bruselas paga 600.000 euros por un copiar y pegar.",
+                    black=0.7,
+                    risk=0.2,
+                    caught_by="olaf",
+                    stat="work_report_on_report",
+                ),
+            ),
+            (
+                "No hace falta",
+                Outcome(
+                    "Dices que el original ya servía. El Ministerio le pasa el encargo a otra "
+                    "consultora, que cobra el doble por el mismo copiar y pegar.",
+                    performance=-15,
+                    stat="work_report_on_report_refused",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=10,
+        branches=("consultora",),
+    ),
+    # -- Oficina: Unicornio ---------------------------------------------------------------
+    Event(
+        "despidos_zoom",
+        "📹 Hay que despedir al 30 % del equipo. Tu abogado: «Mejor una videollamada de tres "
+        "minutos, que es más eficiente».",
+        (
+            (
+                "Videollamada de tres minutos",
+                Outcome(
+                    "Abres la llamada, anuncias los despidos en el minuto uno y te despides con "
+                    "«mucha suerte en el futuro». A algunos aún les suena la sala de espera.",
+                    pay=0.3,
+                    performance=5,
+                    family=-5,
+                    stat="work_layoff_call",
+                ),
+            ),
+            (
+                "En persona",
+                Outcome(
+                    "Lo haces uno a uno, en persona. Acabas agotado, con 300 correos de "
+                    "agradecimiento y 300 notas de queja de tu inversor.",
+                    battery=-20,
+                    family=-5,
+                    performance=-5,
+                    stat="work_layoff_face",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=6,
+        branches=("unicornio",),
+    ),
+    Event(
+        "valoracion_inflada",
+        "📈 El fondo propone valorar tu startup en 900 millones. Tienes 14 empleados, un "
+        "producto y un cliente (tu cuñado). El asesor: «Tú ve diciendo que sí».",
+        (
+            (
+                "Acepto la valoración",
+                Outcome(
+                    "Aceptas 900 millones. Tu startup ya «vale» más que un banco y menos que tu "
+                    "cuñado, que sigue siendo el cliente. Cobras tu parte en un sobre.",
+                    black=0.7,
+                    risk=0.2,
+                    caught_by="cnmv",
+                    stat="work_inflated_valuation",
+                ),
+            ),
+            (
+                "Valoración real",
+                Outcome(
+                    "Pides 12 millones, que es lo que vale. El fondo cuelga: «No entiende cómo "
+                    "funciona esto». El del fondo de al lado levanta la mano: «Yo sí».",
+                    performance=-10,
+                    stat="work_realistic_valuation",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=7,
+        branches=("unicornio",),
+    ),
+    Event(
+        "sobrino_cto",
+        "👨‍👦 Un inversor pone cinco millones con una condición: que su sobrino, de 19 años y "
+        "«mucho potencial», sea tu CTO.",
+        (
+            (
+                "Acepto",
+                Outcome(
+                    "El sobrino llega con dos portátiles, un monopatín y la idea de «reescribir "
+                    "todo en un lenguaje nuevo». Tú lo vas revirtiendo cada noche.",
+                    pay=0.3,
+                    battery=-10,
+                    stat="work_nephew_cto",
+                ),
+            ),
+            (
+                "Rechazo el dinero",
+                Outcome(
+                    "Dices que no. El inversor pone el dinero en tu competidor, y el sobrino, "
+                    "de CTO. Rompe todo en tres meses y lo despiden. Tú no sonríes, pero casi.",
+                    performance=-10,
+                    stat="work_nephew_refused",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=8,
+        branches=("unicornio",),
+    ),
+    Event(
+        "fiesta_ibiza",
+        "🏝️ Tu equipo quiere hacer la fiesta de la empresa en Ibiza, con DJ, barra libre y "
+        "«sesión de team building». El presupuesto: lo que queda de la caja.",
+        (
+            (
+                "Ibiza",
+                Outcome(
+                    "Ibiza. El DJ es el cuñado del CEO, la barra libre dura hasta las seis y el "
+                    "team building acaba con un ingeniero en la piscina. ¡Jota Uve! ¡Pre!",
+                    battery=-20,
+                    family=-5,
+                    performance=10,
+                    stat="work_ibiza_party",
+                ),
+            ),
+            (
+                "Pizza en la oficina",
+                Outcome(
+                    "Pizza en la oficina: cuatro porciones por cabeza, un «viva» y a las diez en "
+                    "casa. El equipo agradece la sobriedad… en las reseñas de la empresa.",
+                    performance=-5,
+                    family=5,
+                    stat="work_ibiza_skipped",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=8,
+        branches=("unicornio",),
+    ),
+    Event(
+        "comprar_red",
+        "🐦 A las tres de la madrugada, un tuit tuyo: «¿Y si compro la red social?». Tu "
+        "equipo legal te escribe cinco minutos después: «Por favor, no».",
+        (
+            (
+                "La compro",
+                Outcome(
+                    "Compras la red social por un tuit y, al día siguiente, descubres que hay "
+                    "que pagarla de verdad. Despides a media plantilla y la rebautizas con una "
+                    "letra.",
+                    pay=0.5,
+                    battery=-15,
+                    family=-5,
+                    performance=10,
+                    stat="work_buy_network",
+                ),
+            ),
+            (
+                "Borro el tuit",
+                Outcome(
+                    "Borras el tuit. Ya hay 40.000 capturas y un meme: «El hombre que casi "
+                    "compra».",
+                    family=5,
+                    stat="work_delete_tweet",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=9,
+        branches=("unicornio",),
+    ),
+    Event(
+        "sede_delaware",
+        "🏛️ Tu asesor fiscal: «Muda la sede de la startup a Delaware: es más barato, hay menos "
+        "papeleo y los fundadores seguís viviendo en Madrid».",
+        (
+            (
+                "Sede en Delaware",
+                Outcome(
+                    "Mudas la sede a un buzón de Delaware. El buzón comparte oficina con 4.000 "
+                    "empresas más y una planta.",
+                    black=0.6,
+                    risk=0.2,
+                    caught_by="hacienda",
+                    stat="work_delaware",
+                ),
+            ),
+            (
+                "Me quedo en España",
+                Outcome(
+                    "Te quedas, pagas aquí y presumes de ser «el único fundador que cotiza». "
+                    "Tus inversores te preguntan si estás bien.",
+                    performance=-5,
+                    stat="work_stay_in_spain",
+                ),
+            ),
+        ),
+        jobs=("oficina",),
+        min_level=7,
+        branches=("unicornio",),
+    ),
 )
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
@@ -10801,9 +12005,10 @@ CAUGHT_TEXT: dict[str, str] = {
         "no era compatible: devuelves lo cobrado con un 20 % de recargo."
     ),
     "tribunal_cuentas": (
-        "🧾 **El Tribunal de Cuentas te reclama el viaje.** El pan costó cuarenta euros de "
-        "gasolina, un chófer en doble fila y una foto en el periódico: pagas el reintegro y "
-        "el chófer cobra horas extra."
+        "🧾 **El Tribunal de Cuentas te reclama el reintegro.** Un viaje a por pan que costó "
+        "cuarenta euros de gasolina, o mil doscientas horas facturadas de las que nadie "
+        "trabajó cuatrocientas: las cuentas no cuadran, pagas el reintegro y el chófer cobra "
+        "horas extra."
     ),
     "fiscalia": (
         "⚖️ **La Fiscalía Anticorrupción te cita como investigado.** El «homónimo» y la "
@@ -10847,8 +12052,9 @@ CAUGHT_TEXT: dict[str, str] = {
         "etiquetado engañoso."
     ),
     "cnmv": (
-        "🪙 **La CNMV te abre diligencias por tu moneda.** Un token sin folleto, con el 90 % en "
-        "tu cartera y una playa en el story: devuelves lo vendido con un 20 % de recargo."
+        "🪙 **La CNMV te abre diligencias.** Un token sin folleto con el 90 % en tu cartera, o "
+        "una startup «valorada» en 900 millones sobre un Excel y un cuñado: devuelves lo "
+        "cobrado con un 20 % de recargo."
     ),
     "suplicatorio": (
         "🏛️ **El Parlamento Europeo estudia tu suplicatorio.** Tras seis meses de papeleo "

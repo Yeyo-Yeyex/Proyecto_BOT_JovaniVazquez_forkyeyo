@@ -611,6 +611,66 @@ async def test_si_la_startup_quiebra_las_opciones_se_pierden(tmp_path: Path, dic
     assert outcome.bankrupt and outcome.options_total == 0
 
 
+async def set_branch(service: WorkService, level: int, branch: str) -> None:
+    await service.hire(GUILD, USER, "oficina")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    status.contract.level, status.contract.branch = level, branch
+    await service.repository.save_contract(GUILD, USER, status.contract)
+
+
+async def test_en_la_unicornio_se_cobra_en_opciones_en_todos_los_puestos(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await set_branch(service, 8, "unicornio")
+    outcome = await work(service)
+    assert outcome.options_added == round(outcome.gross * 0.3)
+    assert outcome.payslip is not None
+    assert outcome.payslip.gross == outcome.gross - outcome.options_added
+    assert outcome.options_total == outcome.options_added > 0
+
+
+async def test_en_la_consultora_no_se_acumulan_opciones_nuevas(tmp_path: Path, dice: Dice) -> None:
+    service = await make(tmp_path)
+    await set_branch(service, 8, "consultora")
+    outcome = await work(service)
+    assert outcome.options_added == 0 and outcome.options_total == 0
+
+
+async def test_las_opciones_que_ya_tienes_dan_exit_o_quiebran_aunque_ascendieras_a_la_consultora(
+    tmp_path: Path, dice: Dice
+) -> None:
+    for chance in (pala.EXIT_CHANCE, pala.BANKRUPT_CHANCE):
+        service = await make(tmp_path / str(chance))
+        await set_branch(service, 7, "consultora")
+        status = await service.status(GUILD, USER)
+        assert status is not None
+        status.contract.options = 3_000_000
+        await service.repository.save_contract(GUILD, USER, status.contract)
+        dice.hits = {chance}
+        outcome = await work(service)
+        assert outcome.options_added == 0 and outcome.options_total == 0
+        if chance == pala.EXIT_CHANCE:
+            assert outcome.exit_payout >= 3_000_000 * 2 and not outcome.bankrupt
+        else:
+            assert outcome.bankrupt and outcome.exit_payout == 0
+
+
+async def test_un_turno_de_jefe_de_proyecto_suma_las_horas_imputadas(
+    tmp_path: Path, dice: Dice
+) -> None:
+    from bot.services.achievements import work_stats
+
+    service = await make(tmp_path)
+    await set_branch(service, 6, "consultora")
+    shift = await service.start_shift(GUILD, USER)
+    assert shift.position.title == "Jefe de proyecto"
+    play(shift.game)
+    outcome = await service.finish_shift(GUILD, USER, shift)
+    assert work_stats(outcome).add["work_hours_billed"] == len(shift.game.rounds)
+
+
 # -- Oficina: Hong Kong -------------------------------------------------------------
 
 
