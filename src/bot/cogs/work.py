@@ -514,8 +514,9 @@ def job_lines(status: Status) -> list[str]:
         if status.blocked:
             line += f" · 📵 **desconectado** hasta <t:{int(contract.blocked_until)}:t>"
         lines.append(line + " · por debajo de 3,5 la app te desconecta")
-    if job.seniority:
-        tenure = " · 🔒 plaza fija: no te baja nadie" if job.tenured(contract.level) else ""
+    if job.earns_triennia(contract.level, contract.branch):
+        tenured = job.tenured(contract.level, contract.branch)
+        tenure = " · 🔒 plaza fija: no te baja nadie" if tenured else ""
         bonus = round(TRIENNIUM_PAY * status.triennia * 100)
         lines.append(f"📅 Trienios: {status.triennia} (+{bonus} % de sueldo){tenure}")
     if status.can_study:

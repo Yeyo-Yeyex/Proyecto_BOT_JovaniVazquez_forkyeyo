@@ -404,6 +404,12 @@ PRODUCED_STATS = {
     "work_parcels", "work_rural_route", "work_lost_parcel", "work_correos_board",
     "work_correos_chair", "work_dark_store", "work_rider_law", "work_last_mile",
     "work_labour_inspector", "work_rocket", "work_caught_junta_electoral",
+    # El funcionariado: las ramas Alta Administración y Puerta giratoria
+    "work_top_funcionariado_alta", "work_top_funcionariado_giratoria",
+    "work_retired_funcionariado", "work_boe", "work_circuit", "work_colada",
+    "work_undersecretaries", "work_state_council", "work_wealth", "work_big_four",
+    "work_sandwich", "work_mariachis", "work_andorra_desk", "work_caught_tribunal_cuentas",
+    "work_caught_fiscalia",
     # cogs/fun.py: `hongkong`
     "hk_clock", "hk_clock_tomorrow", "hk_clock_sleeping", "hk_clock_lunch", "hk_clock_tour",
     "hk_clock_new_year",

@@ -20,7 +20,8 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
   sitios: cavar en el seguro suma, en la roca no suma y romper algo resta.
 - **Detectar**: una lista con una trampa (el obrero que se escaquea, la
   partida con sobrecoste, la cláusula de letra pequeña, el colado del buffet,
-  el paquete perdido). Acertar suma.
+  el paquete perdido, la disposición colada en una ley, el inversor de verdad
+  entre los mariachis). Acertar suma.
 - **Memoria**: se enseña una secuencia (una comanda, una votación) y, al
   ocultarla, hay que repetirla en orden. Cada elemento acertado suma; un fallo
   acaba la ronda.
@@ -41,6 +42,7 @@ from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Po
 from bot.services.work_catalog import (
     BUDGET_ITEMS,
     CODE_BUGS,
+    COLADAS,
     COLLAB_FINE,
     COLLAB_SHADY,
     DIALOGUE_PACKS,
@@ -52,6 +54,7 @@ from bot.services.work_catalog import (
     GUESTS_LEGIT,
     INSPECTOR_TELLS,
     LABOUR_INSPECTORS,
+    LEYES_LIMPIAS,
     LOST_PARCELS,
     MEMORY_PACKS,
     PARCELS_TRACKED,
@@ -63,6 +66,8 @@ from bot.services.work_catalog import (
     RIDER_SLACKING,
     RIDER_WORKING,
     RIDERS_NORMAL,
+    SICAV_MARIACHIS,
+    SICAV_REAL,
     SLACKING,
     SORT_PACKS,
     TAX_CLEAN,
@@ -599,6 +604,31 @@ def _labour_inspector(rng: random.Random, rounds: int) -> tuple[str, list[Round]
     )
 
 
+def _colada(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🧐 Decreto {n}/{total}. ¿Qué disposición no pinta nada en su ley?",
+        good=COLADAS,
+        bad=LEYES_LIMPIAS,
+        label="Texto",
+    )
+    return "📚 Eres secretario general técnico. Nadie lee la letra pequeña, tú sí.", built
+
+
+def _mariachis(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:
+    built = _odd_one(
+        rng,
+        rounds,
+        ask="🥂 SICAV {n}/{total}. Cuatro de los cinco socios son mariachis. ¿Quién invierte "
+        "de verdad?",
+        good=SICAV_REAL,
+        bad=SICAV_MARIACHIS,
+        label="Socio",
+    )
+    return "🎺 Consejero de una SICAV: para llegar a cien socios hace falta mucho mariachi.", built
+
+
 #: Contenidos de detectar y su generador.
 _SPOT = {
     "vagos": _slackers,
@@ -614,6 +644,8 @@ _SPOT = {
     "inspector": _guide_inspector,
     "perdido": _lost_parcel,
     "inspector_trabajo": _labour_inspector,
+    "colada": _colada,
+    "mariachis": _mariachis,
 }
 
 

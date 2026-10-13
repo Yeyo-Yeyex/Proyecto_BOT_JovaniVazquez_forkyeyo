@@ -516,10 +516,36 @@ def test_la_carrera_por_ramas() -> None:
     # La valoración de la app solo cuenta en el tronco; el tiempo, en todo el oficio.
     assert reparto.rates() and reparto.rates("") and not reparto.rates("correos")
     assert reparto.weather and not JOB_BY_KEY["obra"].rates()
+    funcionariado = JOB_BY_KEY["funcionariado"]
+    assert (funcionariado.trunk_top, funcionariado.top) == (5, 10) and funcionariado.forks(5)
+    assert funcionariado.position(10, "alta").title == "Consejero de Estado"
+    assert funcionariado.position(10, "giratoria").title == "Asesor de fortunas en Andorra"
+    assert all(p.self_employed for p in funcionariado.branch("giratoria").positions)
+    assert not any(p.self_employed for p in funcionariado.branch("alta").positions)
+    assert funcionariado.branch("giratoria").pension < funcionariado.branch("alta").pension
     # Un oficio sin ramas sigue igual.
     oficina = JOB_BY_KEY["oficina"]
     assert oficina.top == oficina.trunk_top == 5 and not oficina.forks(5)
     assert oficina.ladders == (("", oficina.positions),)
+
+
+def test_se_oposita_en_el_tronco_y_la_plaza_y_los_trienios_son_de_quien_sigue_de_funcionario() -> (
+    None
+):
+    job = JOB_BY_KEY["funcionariado"]
+    # Del interino al A2 se estudia; del inspector en adelante, no.
+    assert [job.can_study(level) for level in range(1, 6)] == [True] * 4 + [False]
+    assert not job.can_study(5) and not JOB_BY_KEY["obra"].can_study(1)
+    # En la Alta Administración sigues siendo funcionario: plaza fija y trienios.
+    for level in range(6, 11):
+        assert job.tenured(level, "alta") and job.earns_triennia(level, "alta")
+        assert not job.tenured(level, "giratoria")
+        assert not job.earns_triennia(level, "giratoria")
+    # El tronco no cambia: plaza desde el auxiliar, trienios desde el interino.
+    assert [job.tenured(level) for level in range(1, 6)] == [False] + [True] * 4
+    assert all(job.earns_triennia(level) for level in range(1, 6))
+    # Sin plaza fija ni trienios en los oficios que no los tienen.
+    assert not JOB_BY_KEY["obra"].tenured(5) and not JOB_BY_KEY["obra"].earns_triennia(5)
 
 
 def test_las_ventajas_son_las_de_los_puestos_por_los_que_has_pasado() -> None:
@@ -647,6 +673,33 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
     }
     # La obra pública y la sanidad pública comparten clave de rama, no eventos.
     assert not publica & {"modificado", "inauguracion", "aeropuerto", "muro"}
+    alta = {e.key for e in events_for("funcionariado", 10, 100, branch="alta")}
+    giratoria = {e.key for e in events_for("funcionariado", 10, 100, branch="giratoria")}
+    inspector = {e.key for e in events_for("funcionariado", 5, 100)}
+    alta_only = {
+        "boe_viernes",
+        "omnibus_dg",
+        "cunado_asesor",
+        "coche_pan",
+        "informe_consejo",
+        "jubilacion_dorada",
+    }
+    giratoria_only = {
+        "compa_hacienda",
+        "amnistia_fiscal",
+        "lista_papeles",
+        "youtuber_madrid",
+        "carta_padron",
+        "fundacion_sucesiones",
+    }
+    assert alta_only <= alta and giratoria_only <= giratoria
+    assert not alta & giratoria_only and not giratoria & alta_only
+    assert not inspector & (alta_only | giratoria_only)
+    # Los del tronco siguen en las dos ramas; los del inspector, solo en el tronco.
+    assert {"fotocopia_dni", "cita_marzo", "curso_igualdad", "desayuno"} <= alta & giratoria
+    assert {"famoso_sociedad", "youtuber_padron"} <= inspector
+    assert not {"famoso_sociedad", "youtuber_padron"} & (alta | giratoria)
+    assert "famoso_sociedad" not in {e.key for e in events_for("funcionariado", 4, 100)}
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:

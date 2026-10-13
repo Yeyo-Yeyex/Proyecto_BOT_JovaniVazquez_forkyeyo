@@ -31,7 +31,9 @@ la Comunidad, fondos de inversión). La hostelería, de los contratos de cuatro 
 que son diez, el turismo de pulsera y la patronal (hotel) y de la alta cocina de
 espumas, estrellas y Dubái. El reparto se ríe de las apps de reparto
 y de los falsos autónomos; el funcionariado, de la burocracia (con las
-preguntas del temario de verdad); el influencer, de la fama a golpes. Los
+preguntas del temario de verdad), de la alta administración (el BOE a las 23:59,
+el Consejo de Estado) y de la puerta giratoria hacia el asesoramiento fiscal; el
+influencer, de la fama a golpes. Los
 personajes del juego son genéricos; las figuras públicas (Feijóo, Puigdemont,
 Trump, Erdoğan…) salen como en el resto del bot, con las fuentes de ironía de
 la Biblia. No se nombra a ninguna persona que no sea figura pública ni a una
@@ -1211,7 +1213,8 @@ FUNCIONARIADO = Job(
     key="funcionariado",
     name="Funcionariado",
     emoji="🗂️",
-    blurb="Oposita, saca la plaza y que no te mueva nadie. Trienios y desayuno sagrado.",
+    blurb="Oposita, saca la plaza y que no te mueva nadie. Trienios y desayuno sagrado. "
+    "Y arriba, el BOE a las 23:59 o la puerta giratoria.",
     rgb=(149, 165, 166),
     study="temario",
     tenure_from=2,
@@ -1228,6 +1231,8 @@ FUNCIONARIADO = Job(
             days=3, content="registro",
             training=Training("ope_c2", "las tasas y la academia de la oposición de auxiliar "
                               "(C2)", 6_000),
+            perk=Perk("El sello de caucho propio, que nadie te toca y nunca se queda sin tinta: "
+                      "+5 % de tiempo en el minijuego.", extra_time=0.05),
         ),
         Position(
             3, "Administrativo (C1)", 4_400, Mechanic.MEMORY, 40,
@@ -1235,6 +1240,8 @@ FUNCIONARIADO = Job(
                               "perfect_rounds", 15), _good(4)),
             days=4, content="sellos:4",
             training=Training("ope_c1", "la promoción interna a administrativo (C1)", 15_000),
+            perk=Perk("La silla ergonómica que pediste en 2009 (acaba de llegar): cada turno "
+                      "cansa un 10 % menos.", battery=0.10),
         ),
         Position(
             4, "Técnico de gestión (A2)", 7_500, Mechanic.DIALOGUE, 60,
@@ -1242,12 +1249,141 @@ FUNCIONARIADO = Job(
              _events(2)),
             days=5, content="ciudadano",
             training=Training("ope_a2", "la oposición de técnico de gestión (A2)", 30_000),
+            perk=Perk("El compañero que se sabe el procedimiento de memoria y te lo susurra: un "
+                      "fallo gratis por turno.", retry=True),
         ),
         Position(
-            5, "Inspector de Hacienda (A1)", 14_000, Mechanic.SPOT, 60, (),
-            days=0, content="inspeccion",
+            5, "Inspector de Hacienda (A1)", 14_000, Mechanic.SPOT, 60,
+            (Task("caught", "Destapa 25 declaraciones con trampa", "caught", 25), _good(6),
+             _events(3)),
+            days=4, content="inspeccion",
             training=Training("ope_a1", "la oposición a Inspector de Hacienda (cinco años de "
                               "academia)", 60_000),
+            perk=Perk("La base de datos que lo cruza todo (y no te deja ni fingir que no te "
+                      "has dado cuenta): una respuesta mala tachada en los diálogos.",
+                      fifty=True),
+        ),
+    ),
+    branches=(
+        Branch(
+            "alta",
+            "Alta Administración",
+            "🏛️",
+            "El BOE a las 23:59 de un viernes de agosto, decretos ómnibus, libre designación y "
+            "el Consejo de Estado como cementerio de elefantes. Sigues siendo funcionario: "
+            "nómina, plaza fija y trienios. Cobra menos, se jubila mejor.",
+            (
+                Position(
+                    6, "Subdirector general", 14_500, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 disposiciones a su sección del BOE", "sorted", 30),
+                     _good(5), _events(2)),
+                    days=5, content="boe",
+                    perk=Perk("Plaza de garaje en el ministerio (con tu nombre pintado): cada "
+                              "turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    7, "Director general", 16_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Tramita 15 expedientes sin saltarte ningún trámite",
+                          "perfect_rounds", 15), _good(6), _events(3)),
+                    days=5, content="expediente:4",
+                    training=Training(
+                        "libre_designacion",
+                        "el nombramiento por libre designación (y el carné del partido que "
+                        "toque este año)", 40_000,
+                    ),
+                    perk=Perk("Un jefe de gabinete que sabe en qué cajón está cada firma: +5 % "
+                              "de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    8, "Secretario general técnico", 17_500, Mechanic.SPOT, 60,
+                    (Task("caught", "Pilla 25 disposiciones adicionales coladas", "caught", 25),
+                     _good(6), _events(3)),
+                    days=6, content="colada",
+                    perk=Perk("El letrado que se lee hasta la última página (el único): un "
+                              "fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    9, "Subsecretario", 19_500, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sobrevive a 30 lunes en la Comisión de Subsecretarios",
+                          "smooth", 30), _good(6), _events(4)),
+                    days=6, content="subsecretarios",
+                    training=Training(
+                        "cuerpo_elite",
+                        "pertenecer a un cuerpo de élite y comer, cada martes, con el ministro",
+                        50_000,
+                    ),
+                    perk=Perk("Chófer que conoce todos los atajos de la Castellana: cada turno "
+                              "cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    10, "Consejero de Estado", 21_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="consejo_estado",
+                    perk=Perk("Despacho con vistas y sin plazo para dictaminar: +10 % de tiempo "
+                              "en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=5_000,
+            retired_as="consejero de Estado emérito con despacho, chófer y un dictamen sin leer",
+        ),
+        Branch(
+            "giratoria",
+            "Puerta giratoria",
+            "💼",
+            "El inspector que ahora enseña a no pagar: asesor de fortunas, socio de una Big "
+            "Four, ingeniero fiscal y Andorra. Excedencia voluntaria y autónomo: sin plaza "
+            "fija ni trienios. Cobra más, se jubila peor.",
+            (
+                Position(
+                    6, "Asesor fiscal de grandes fortunas", 17_000, Mechanic.SORT, 60,
+                    (Task("sorted", "Manda 30 bienes a su escondite legal", "sorted", 30),
+                     _good(5), _events(2)),
+                    days=5, content="patrimonio", self_employed=True,
+                    perk=Perk("Una agenda con el móvil del gerente de cada banco andorrano: un "
+                              "fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    7, "Socio de una Big Four", 21_000, Mechanic.DIALOGUE, 60,
+                    (Task("smooth", "Sobrevive a 30 reuniones con clientes a los que también "
+                          "auditas", "smooth", 30), _good(6), _events(3)),
+                    days=6, content="big_four", self_employed=True,
+                    training=Training(
+                        "excedencia_voluntaria",
+                        "la excedencia voluntaria y un despacho con vistas a la Castellana (el "
+                        "alquiler lo paga el cliente)", 55_000,
+                    ),
+                    perk=Perk("Un becario que prepara las reuniones a las cuatro de la "
+                              "madrugada: cada turno cansa un 5 % menos.", battery=0.05),
+                ),
+                Position(
+                    8, "Ingeniero fiscal de multinacionales", 26_000, Mechanic.MEMORY, 60,
+                    (Task("perfect", "Traza 15 rutas del dinero sin perder un euro por el "
+                          "camino", "perfect_rounds", 15), _good(6), _events(3)),
+                    days=6, content="sandwich:4", self_employed=True,
+                    perk=Perk("Un mapa del mundo con los paraísos fiscales marcados en "
+                              "fosforito: +5 % de tiempo en el minijuego.", extra_time=0.05),
+                ),
+                Position(
+                    9, "Consejero de una SICAV", 31_000, Mechanic.SPOT, 60,
+                    (Task("caught", "Encuentra a 25 inversores de verdad entre los mariachis",
+                          "caught", 25), _good(6), _events(4)),
+                    days=6, content="mariachis", self_employed=True,
+                    training=Training(
+                        "capital_sicav",
+                        "el capital mínimo de la SICAV y cien mariachis que firmen donde les "
+                        "digas", 75_000,
+                    ),
+                    perk=Perk("Un gestor que se acuerda de los nombres de los cien socios (los "
+                              "falsos también): un fallo gratis por turno.", retry=True),
+                ),
+                Position(
+                    10, "Asesor de fortunas en Andorra", 38_000, Mechanic.DIALOGUE, 60, (),
+                    days=0, content="andorra", self_employed=True,
+                    perk=Perk("Un piso en Andorra con luz, agua y el padrón al día (y vacío): "
+                              "+10 % de tiempo en el minijuego.", extra_time=0.10),
+                ),
+            ),
+            pension=2_500,
+            retired_as="exinspector jubilado en Andorra que ya no sabe dónde tributa",
         ),
     ),
 )  # fmt: skip
@@ -4805,6 +4941,524 @@ DIALOGUE_PACKS.update(
     }
 )  # fmt: skip
 
+# -- Contenido: las ramas del funcionariado (Alta Administración y Puerta giratoria) -----------
+
+MEMORY_PACKS.update(
+    {
+        "expediente": MemoryPack(
+            "📁 El expediente {n} tiene que pasar por todos los despachos, uno por uno:",
+            "Recorre el circuito en el mismo orden. Si te saltas un trámite, el expediente "
+            "vuelve a empezar (y ya tiene dos años).",
+            (
+                ("📥", "Registro"),
+                ("🧮", "Intervención"),
+                ("⚖️", "Abogacía del Estado"),
+                ("🏛️", "Consejo de Estado"),
+                ("💶", "Hacienda"),
+                ("✍️", "La firma del ministro"),
+                ("📰", "El BOE"),
+                ("🗄️", "Secretaría General Técnica"),
+                ("🚬", "El pasillo, esperando el visto bueno"),
+            ),
+        ),
+        "sandwich": MemoryPack(
+            "🧾 La multinacional factura {n} mil millones en España. Hay que sacar el dinero "
+            "por esta ruta:",
+            "Pasa el dinero por los mismos países en el mismo orden, que cada escala le quita "
+            "un impuesto.",
+            (
+                ("🇮🇪", "Irlanda"),
+                ("🇳🇱", "Países Bajos"),
+                ("🇧🇲", "Bermudas"),
+                ("🇱🇺", "Luxemburgo"),
+                ("🇺🇸", "Delaware"),
+                ("🇨🇾", "Chipre"),
+                ("🇲🇹", "Malta"),
+                ("🇵🇦", "Panamá"),
+                ("🇬🇮", "Gibraltar"),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+SORT_PACKS.update(
+    {
+        "boe": SortPack(
+            "📰 Eres subdirector general: que el BOE salga bien (o que salga) depende de ti. "
+            "Cada disposición, a su sección.",
+            "📜 Disposición {n}/{total}:",
+            (
+                "📜 I. Disposiciones generales",
+                "👤 II. Autoridades y personal",
+                "📄 III. Otras disposiciones",
+                "📢 V. Anuncios",
+            ),
+            (
+                ("Un real decreto-ley de medidas urgentes con seis temas que no se conocen", 0),
+                ("La ley de presupuestos: 1.200 páginas y una enmienda que nadie ha visto", 0),
+                ("Un real decreto que regula cómo se regulan los reales decretos", 0),
+                ("La ley que declara «de interés general» un domingo de cada mes", 0),
+                ("El nombramiento de tu cuñado como asesor, con rango de director general", 1),
+                ("El cese, «a petición propia», de un director general que no lo había pedido", 1),
+                ("La convocatoria de oposiciones a 12 plazas de ordenanza y 30.000 aspirantes", 1),
+                ("El nombramiento de un subsecretario, con foto de la toma de posesión", 1),
+                ("Una subvención de 3 millones a una fundación del partido «de interés»", 2),
+                ("Un convenio con una universidad para estudiar el propio ministerio", 2),
+                ("Una resolución que da publicidad al acuerdo de otra resolución anterior", 2),
+                ("La medalla al mérito civil para un exministro que acaba de dimitir", 2),
+                ("La licitación de 4 millones para reformar el despacho del director general", 3),
+                ("El edicto que notifica una multa de tráfico a alguien al que nadie encuentra", 3),
+                ("El anuncio de subasta de un edificio que el Estado no sabía que tenía", 3),
+                ("La convocatoria de la junta de una sociedad estatal, a las 8:00 del 24 de "
+                 "diciembre", 3),
+            ),
+        ),
+        "patrimonio": SortPack(
+            "💼 Eres asesor fiscal de grandes fortunas: cada bien de la fortuna, a su "
+            "escondite legal (que ilegal sería de pobres).",
+            "💰 Bien {n}/{total}:",
+            (
+                "🏦 SICAV",
+                "🇦🇩 Andorra",
+                "🎨 Arte (exento de Patrimonio)",
+                "🏛️ Fundación",
+            ),
+            (
+                ("Una cartera de bolsa de 40 millones que solo tributa al 1 %", 0),
+                ("Unas acciones que cobran dividendos y no quieren que se note", 0),
+                ("Un fondo de inversión con cien socios, de los cuales conoces a dos", 0),
+                ("Una cartera tan grande que necesita un gestor con corbata y sin escrúpulos", 0),
+                ("La residencia fiscal del cliente, que vive en un hotel de Madrid", 1),
+                ("Una cuenta con un millón en efectivo y un recibo de la luz de un piso vacío", 1),
+                ("El futbolista que quiere cobrar el 10 % en vez del 47 %", 1),
+                ("Un empadronamiento de una casa en la que solo hay una nevera", 1),
+                ("Un cuadro de un pintor que nadie conocía hace una semana", 2),
+                ("Una escultura que parece un montón de chatarra y vale 2 millones", 2),
+                ("Una colección de vinos que nadie piensa beber", 2),
+                ("Un Picasso colgado de la pared del baño (por si viene Hacienda)", 2),
+                ("La herencia de un abuelo que no quiere pagar Sucesiones", 3),
+                ("Un palacete que quiere ser «fundación cultural» y casa familiar", 3),
+                ("El yate familiar, convertido en «aula flotante de ciencias del mar»", 3),
+                ("El coto de caza que ahora es «centro de estudios cinegéticos»", 3),
+            ),
+        ),
+    }
+)  # fmt: skip
+
+#: Disposiciones coladas en una ley que no tiene nada que ver (el colado de `colada`).
+COLADAS: tuple[str, ...] = (
+    "Ley de pesca de bajura, disposición adicional séptima: se indulta a un exalcalde "
+    "condenado por prevaricación",
+    "Norma de etiquetado de yogures, disposición final tercera: los aforados seguirán siendo "
+    "aforados, y los que no, también",
+    "Decreto de ayudas al olivar, art. 14: el Gobierno podrá subir las dietas de los altos "
+    "cargos «por circunstancias»",
+    "Ley del deporte escolar, disposición adicional cuarta: la sociedad estatal de suelo "
+    "cederá un solar al partido que gobierne",
+    "Reglamento de ascensores, art. 3: el modificado de una obra pública podrá ser del 300 %",
+    "Ley de protección de las abejas, disposición transitoria segunda: la puerta giratoria "
+    "no será incompatibilidad durante el verano",
+    "Decreto de turismo rural, disposición final primera: el Estado asume la deuda de una "
+    "autopista de peaje",
+    "Ley de bienestar animal, disposición adicional décima: los ministros tendrán tres años "
+    "más para presentar la declaración de bienes",
+    "Norma de envases reutilizables, art. 22: la fundación del presidente queda exenta de "
+    "todo, con efectos retroactivos",
+    "Ley de eficiencia energética de edificios, disposición adicional quinta: las cenas de "
+    "partido tributan al 4 % de IVA",
+    "Orden del calendario de caza, disposición derogatoria única: queda derogado el artículo "
+    "de la ley anticorrupción que molestaba",
+)
+#: Disposiciones de verdad: cada una encaja con la ley en la que está.
+LEYES_LIMPIAS: tuple[str, ...] = (
+    "Ley de pesca de bajura, art. 5: los barcos de menos de doce metros faenarán con "
+    "licencia de la cofradía",
+    "Ley de pesca de bajura, disposición transitoria primera: las licencias vigentes lo "
+    "seguirán siendo hasta su vencimiento",
+    "Norma de etiquetado de yogures, art. 8: la fecha de caducidad se imprimirá en la tapa, "
+    "en letra legible",
+    "Norma de etiquetado de yogures, disposición adicional segunda: el Gobierno publicará una "
+    "guía en seis meses",
+    "Decreto de ayudas al olivar, art. 3: cada hectárea tendrá derecho a una ayuda de 90 euros",
+    "Decreto de ayudas al olivar, disposición final primera: entrará en vigor al día siguiente "
+    "de su publicación",
+    "Ley del deporte escolar, art. 9: todos los colegios ofrecerán dos horas de educación física",
+    "Ley del deporte escolar, disposición final segunda: las comunidades podrán desarrollar "
+    "esta ley",
+    "Reglamento de ascensores, art. 11: se revisarán cada dos años por una empresa autorizada",
+    "Reglamento de ascensores, disposición adicional primera: los ascensores sin certificado "
+    "se precintarán",
+    "Ley de protección de las abejas, art. 6: se prohíben los pesticidas en la época de floración",
+    "Decreto de turismo rural, art. 2: una casa rural podrá alojar hasta quince personas",
+    "Ley de bienestar animal, art. 19: los criadores llevarán un registro de cada camada",
+    "Norma de envases reutilizables, disposición adicional tercera: los bares ofrecerán agua "
+    "del grifo",
+    "Ley de eficiencia energética de edificios, art. 7: las calderas se revisarán cada cuatro años",
+    "Orden del calendario de caza, art. 1: la veda comenzará el primer domingo de febrero",
+    "Ley de transparencia, art. 4: los altos cargos publicarán su agenda de reuniones",
+    "Ley de incompatibilidades, disposición adicional primera: la puerta giratoria requerirá "
+    "informe previo",
+    "Ley de indultos, art. 2: el indulto se concederá por real decreto, previa deliberación "
+    "del Consejo de Ministros",
+)
+
+#: Los inversores de verdad de la SICAV (los demás socios son mariachis).
+SICAV_REAL: tuple[str, ...] = (
+    "Pregunta cada semana por la rentabilidad y se lee el informe del gestor",
+    "Ha puesto 8 millones de su bolsillo y los ha visto salir de su cuenta",
+    "Discute la comisión de gestión con el gerente, y la gana",
+    "Cobra los dividendos y sabe cuánto son, al céntimo",
+    "Sabe cómo se llama la sociedad en la que invierte, y cómo se llama su gestor",
+    "Viene a la junta con la carpeta subrayada y una calculadora",
+    "Compara la cartera con el índice de bolsa y no le gusta lo que ve",
+    "Pide que las cuentas le lleguen a casa, y su casa existe",
+    "Quiere vender si baja un 5 % y lo dice en voz alta",
+    "Firma con su propia letra, después de leerse el contrato entero",
+)
+#: Los mariachis: testaferros que hacen falta para llegar a los cien socios.
+SICAV_MARIACHIS: tuple[str, ...] = (
+    "Jubilada de Albacete que cree que ha firmado para el viaje del Imserso",
+    "El chófer del dueño, que firma donde le dicen sin preguntar",
+    "Estudiante que ha cobrado 50 euros por «hacer un favor a un amigo»",
+    "Un señor cuyo único patrimonio conocido es una Vespa",
+    "La cuñada del gestor, que está en cuarenta sociedades y ninguna le suena",
+    "El portero del edificio del despacho, con el DNI en la mano",
+    "Un jardinero con 12 millones a su nombre y una bicicleta prestada",
+    "El yerno del socio fundador, que acaba de heredar un cargo",
+    "Un primo del pueblo que cree que SICAV es una marca de cerveza",
+    "Una señora que ha firmado un papel en el bar de la esquina, con un chupito de por medio",
+    "El becario del despacho, que figura como accionista y como camarero de la fiesta",
+    "Un empleado de la lavandería que vota en la junta por videollamada desde el turno",
+    "Un jubilado al que han prometido una cesta de Navidad por firmar",
+)
+
+DIALOGUE_PACKS.update(
+    {
+        "subsecretarios": DialoguePack(
+            "🗓️ Comisión General de Secretarios de Estado y Subsecretarios, lunes a las 9:00. "
+            "Regla de oro: **todo se pacta el lunes para que el martes parezca que nadie ha "
+            "mandado nada.**",
+            (
+                Dialogue(
+                    "Un ministerio trae al Consejo de Ministros un decreto del que Hacienda no "
+                    "sabe nada.",
+                    "Se aprueba «sin perjuicio de lo que opine Hacienda», que lo leerá en el "
+                    "BOE y tendrá tiempo de quejarse en privado.",
+                    ("Pedir que lo hable con Hacienda antes y que vuelva dentro de seis meses.",
+                     "Votarlo en contra, por si acaso."),
+                ),
+                Dialogue(
+                    "Un subsecretario rival propone que todas las competencias pasen a su "
+                    "ministerio.",
+                    "Aplaudes su «visión de Estado» y propones una comisión de estudio que no "
+                    "se reúna jamás.",
+                    ("Decirle que no, delante de todos.",
+                     "Proponer que se pasen también las tuyas, a ver si cuela."),
+                ),
+                Dialogue(
+                    "El orden del día se filtra a la prensa antes de empezar.",
+                    "Culpas a «la dinámica comunicativa» y filtras tú el acta de la semana que "
+                    "viene, para equilibrar.",
+                    ("Abrir una investigación interna con nombres y apellidos.",
+                     "Desmentirlo con un comunicado de cuatro páginas."),
+                ),
+                Dialogue(
+                    "Hay que elegir qué se lleva al Consejo de Ministros del martes: lo bueno o "
+                    "lo polémico.",
+                    "Lo polémico, escondido en un decreto con otros doce temas que nadie quiere "
+                    "leer.",
+                    ("Solo lo bueno, que es lo honesto.",
+                     "Echarlo a cara o cruz con una moneda."),
+                ),
+                Dialogue(
+                    "El secretario de Estado de Presupuestos pregunta quién paga todo esto.",
+                    "«Se financiará con cargo a los créditos existentes»: ya lo pagará el "
+                    "siguiente Gobierno.",
+                    ("Decirle la cifra de verdad.",
+                     "«A mí no me mire, soy de la Comisión»."),
+                ),
+                Dialogue(
+                    "Un asesor te avisa de un error en el borrador que el ministro ya ha "
+                    "firmado.",
+                    "Lo conviertes en «errata menor subsanable» y lo corriges por real decreto "
+                    "el mes que viene.",
+                    ("Parar el Consejo de Ministros para corregirlo.",
+                     "Tirar el borrador a la papelera y fingir que nunca existió."),
+                ),
+                Dialogue(
+                    "El ministro pregunta qué ha decidido la Comisión sobre su ley favorita.",
+                    "«Se ha tomado en consideración con enorme interés»: nadie ha dicho nada y "
+                    "nadie la ha tocado.",
+                    ("«Que es una ley mala, ministro».",
+                     "Leerle el acta, que dura cuatro horas."),
+                ),
+                Dialogue(
+                    "Moncloa llama: hay un decreto que tiene que salir esta semana sí o sí.",
+                    "Se aprueba por vía de urgencia, sin leerlo, con un acta que diga que "
+                    "se leyó.",
+                    ("Pedir los informes preceptivos, que tardan tres meses.",
+                     "Plantarte con una pancarta de «Esto es ilegal»."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta por qué las reuniones son los lunes y a puerta "
+                    "cerrada.",
+                    "«Porque los lunes son el día de las ideas». Y la puerta, por la corriente.",
+                    ("«Porque aquí se decide todo antes de que se entere el Consejo de "
+                     "Ministros».",
+                     "Invitarle a la próxima, con tortilla incluida."),
+                ),
+                Dialogue(
+                    "Dos subsecretarios empatan por una competencia.",
+                    "La competencia se parte en dos: la mitad que no importa para él y la que "
+                    "importa para ti.",
+                    ("Echarlo a suertes.",
+                     "Pedir al ministro que decida, que para eso cobra."),
+                ),
+                Dialogue(
+                    "A las 9:30 piden café y no queda ni uno en la sala.",
+                    "Mandas al jefe de gabinete: «Hazme café… ¡Quiero café!». Y que lo traiga "
+                    "en vaso de papel con el escudo.",
+                    ("Ir tú a por él, con humildad.",
+                     "Suspender la Comisión hasta que llegue el catering."),
+                ),
+            ),
+        ),
+        "consejo_estado": DialoguePack(
+            "🏛️ Pleno del Consejo de Estado, en la calle Mayor. Regla de oro: **dictamina sin "
+            "molestar a nadie: el dictamen no es vinculante, y por eso nadie lo lee.**",
+            (
+                Dialogue(
+                    "El Gobierno pide un dictamen sobre un decreto que ya ha aprobado.",
+                    "Dictaminas favorablemente «con las observaciones que se estimen "
+                    "oportunas» (ninguna).",
+                    ("Decir que llega tarde y que es ilegal.",
+                     "Dictaminar en contra, con tres votos particulares y un poema."),
+                ),
+                Dialogue(
+                    "Un expresidente del Gobierno, consejero nato, llega tarde y pregunta de "
+                    "qué va el asunto.",
+                    "Le resumes el expediente en dos frases que no comprometan a nadie y le "
+                    "das la razón al final.",
+                    ("Contarle los 400 folios.",
+                     "Decirle que se siente y se calle."),
+                ),
+                Dialogue(
+                    "Hay que dictaminar sobre la reforma de un estatuto autonómico.",
+                    "«Procede, en los términos expuestos, siempre que no se modifique nada de "
+                    "lo que se modifica».",
+                    ("Decir que es inconstitucional y salir a gritarlo a la calle.",
+                     "Pedir un año más para estudiarlo en un balneario."),
+                ),
+                Dialogue(
+                    "La prensa pregunta si el dictamen vincula al Gobierno.",
+                    "«Es una consulta de enorme valor jurídico» (traducción: haced lo que "
+                    "queráis).",
+                    ("«Sí, y por eso lo ignoran siempre».",
+                     "«Es un secreto de Estado»."),
+                ),
+                Dialogue(
+                    "El presidente del Consejo te pide un voto particular que no dé problemas "
+                    "al Gobierno.",
+                    "Redactas un voto particular de 30 páginas sobre una coma. Todos felices.",
+                    ("Votar según tu conciencia, aunque dé problemas.",
+                     "No votar y quedarte en la cafetería."),
+                ),
+                Dialogue(
+                    "Un consejero propone dictaminar contra el Gobierno por una vez en la "
+                    "vida.",
+                    "Se aplaude su valentía y se aprueba aplazarlo «para mayor profundidad de "
+                    "estudio».",
+                    ("Apoyarle y votar en contra del Gobierno.",
+                     "Reírte en su cara en pleno."),
+                ),
+                Dialogue(
+                    "Llega a consulta un tratado internacional que nadie ha leído.",
+                    "Dictaminas que «no contradice la Constitución», sin precisar de cuál.",
+                    ("Leerlo entero.",
+                     "Pedir a un becario que lo lea y que dictamine él."),
+                ),
+                Dialogue(
+                    "El Consejo cumple años y te piden un discurso de homenaje a la propia "
+                    "institución.",
+                    "Hablas veinte minutos de la «imprescindible función consultiva» sin que "
+                    "se oiga ni una vez la palabra «inútil».",
+                    ("Reconocer que casi nadie les hace caso.",
+                     "Pedir una subida de sueldo en mitad del discurso."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta cuánto cuesta el Consejo de Estado al año.",
+                    "«Es una inversión en seguridad jurídica», sin cifras y con una sonrisa.",
+                    ("Decirle la cifra, con los coches oficiales incluidos.",
+                     "«Pregunte en Hacienda»."),
+                ),
+                Dialogue(
+                    "El Gobierno ignora tu dictamen y hace justo lo contrario.",
+                    "Te alegras: «Prueba de que nuestra independencia es total». Y archivas la "
+                    "copia con cariño.",
+                    ("Dimitir del Consejo, indignado.",
+                     "Mandar una carta de protesta de 40 folios."),
+                ),
+            ),
+        ),
+        "big_four": DialoguePack(
+            "🏢 Tu despacho con vistas a la Castellana. Regla de oro: **todo es legal hasta "
+            "que un juez diga lo contrario (y eso tarda diez años).**",
+            (
+                Dialogue(
+                    "Un cliente quiere pagar menos Impuesto de Sociedades.",
+                    "Le montas una estructura «de eficiencia fiscal» con diez filiales: legal "
+                    "hasta que un juez diga otra cosa.",
+                    ("Decirle que pague lo que toca, que para eso hay ley.",
+                     "Quemar el balance y fingir pérdidas en una hoguera."),
+                ),
+                Dialogue(
+                    "Auditas a una empresa a la que también asesoras. Te preguntan por el "
+                    "conflicto de intereses.",
+                    "«Tenemos murallas chinas entre departamentos»: son de papel, pero muy "
+                    "altas.",
+                    ("Renunciar a una de las dos y perder la mitad de los honorarios.",
+                     "Reconocer que es evidente."),
+                ),
+                Dialogue(
+                    "Una cotizada tiene un agujero de 400 millones.",
+                    "Lo cuentas como «partida extraordinaria de carácter no recurrente» y "
+                    "firmas la auditoría limpia.",
+                    ("Avisar al supervisor.",
+                     "Llamar al periódico y darles el balance."),
+                ),
+                Dialogue(
+                    "Hacienda pide los papeles de trabajo de un cliente.",
+                    "Los entregas completos… en 40.000 folios impresos a doble cara, sin "
+                    "índice.",
+                    ("Negarte y esconderte en el baño.",
+                     "Dárselos en un pen drive con la contraseña «1234»."),
+                ),
+                Dialogue(
+                    "Un cliente exige que su nombre no aparezca en el informe.",
+                    "Le llamas «el Cliente» durante 300 páginas y la factura va a una sociedad "
+                    "de Panamá.",
+                    ("Poner su nombre en la portada, con letras grandes.",
+                     "Quitarle del informe y también de la factura."),
+                ),
+                Dialogue(
+                    "Un exministro quiere entrar como socio senior.",
+                    "Le abres la puerta giratoria de la sede con alfombra roja y plaza de "
+                    "garaje.",
+                    ("Preguntar por el periodo de incompatibilidad.",
+                     "Decirle que ya hay demasiados exministros y que espere a que salga uno."),
+                ),
+                Dialogue(
+                    "Un fondo pide una valoración altísima de su empresa antes de venderla.",
+                    "Pones un múltiplo «razonable» y una nota al pie de 200 palabras que nadie "
+                    "leerá.",
+                    ("Valorarla por lo que vale, que no es lo que quiere.",
+                     "Valorarla en un millón y pedir el 1 % de comisión."),
+                ),
+                Dialogue(
+                    "El socio director pide un 20 % más de ingresos este año.",
+                    "Vendes a cada cliente «una revisión» de lo que ya hiciste, con nombre en "
+                    "inglés.",
+                    ("Bajar precios por humildad.",
+                     "Despedir a los becarios, que trabajan gratis."),
+                ),
+                Dialogue(
+                    "Un periodista pregunta por una quiebra que auditasteis.",
+                    "«Cumplimos escrupulosamente las normas vigentes en el momento de la "
+                    "firma». Vale para todas.",
+                    ("Reconocer que visteis el problema y no lo dijisteis.",
+                     "Negar que esa empresa haya existido nunca."),
+                ),
+                Dialogue(
+                    "Llega la campaña de la Renta y todos tus clientes quieren pagar menos.",
+                    "A cada uno su plan: seguros, SICAV, fundaciones y un «convenio con "
+                    "Andorra» de regalo.",
+                    ("Decirles que paguen lo que sale, que es un deber ciudadano.",
+                     "Recomendarles esconder el dinero bajo el colchón."),
+                ),
+            ),
+        ),
+        "andorra": DialoguePack(
+            "🏔️ Tu despacho en Escaldes. Regla de oro: **tu cliente vive en Andorra: los "
+            "papeles lo dicen, y los vecinos de Chamberí no se enteran.**",
+            (
+                Dialogue(
+                    "Un youtuber con cinco millones de seguidores quiere tributar en Andorra "
+                    "sin dejar Madrid.",
+                    "Alquilas un piso a su nombre, con padrón, factura de la luz y un cepillo "
+                    "de dientes de atrezo.",
+                    ("Decirle que, si vive en Madrid, tributa en Madrid.",
+                     "Aconsejarle que se mude de verdad, con la perra y todo."),
+                ),
+                Dialogue(
+                    "Hacienda pregunta por qué la casa del padrón está vacía.",
+                    "«Es un cliente muy minimalista»: y adjuntas una factura del agua de hace "
+                    "dos años.",
+                    ("Confesar que no ha pisado el piso en tres años.",
+                     "Cambiar el domicilio al de tu cuñada en Soria."),
+                ),
+                Dialogue(
+                    "Un cliente quiere explicar 20 millones en Andorra sin que Hacienda "
+                    "pregunte.",
+                    "«Es la herencia del avi Florenci»: toda familia con ahorros en el "
+                    "extranjero tiene un abuelo con mucha visión.",
+                    ("Decir que salen de un negocio de cerveza artesanal.",
+                     "Decir que no sabe de dónde han salido."),
+                ),
+                Dialogue(
+                    "El banco andorrano te pide justificar el origen de los fondos.",
+                    "Entregas una carta con membrete bonito: «fondos de origen lícito», con "
+                    "firma ilegible.",
+                    ("Contar la verdad entera al departamento de cumplimiento.",
+                     "Cambiar de banco cada semana."),
+                ),
+                Dialogue(
+                    "Llega una carta de la Agencia Tributaria: «Acredite su residencia».",
+                    "La contestas con un certificado de residencia, catorce recibos de la "
+                    "compañía telefónica del Principado y una foto en la nieve (de 2019).",
+                    ("Ignorarla: si no la abres, no existe.",
+                     "Contestar que vive en la Luna y que no cotiza."),
+                ),
+                Dialogue(
+                    "Un futbolista de primera quiere pagar un 10 % en vez de un 47 %.",
+                    "Domicilias sus derechos de imagen en una sociedad del Principado, «por "
+                    "razones estrictamente deportivas».",
+                    ("Recomendarle que declare todo en España.",
+                     "Venderle una parcela en la Luna."),
+                ),
+                Dialogue(
+                    "Un cliente pregunta cuántos días puede pasar en España sin ser residente.",
+                    "183, repartidos con mucho tino y con fotos en la nieve para demostrar "
+                    "dónde estaba cada uno.",
+                    ("Todos los que quiera, que la ley es de buen rollo.",
+                     "Ninguno: que se compre una cabaña y viva en el bosque."),
+                ),
+                Dialogue(
+                    "Un tertuliano te acusa en directo de ayudar a defraudar.",
+                    "«Solo aconsejo conforme a la legislación vigente en el Principado». Y "
+                    "mandas la factura por la entrevista.",
+                    ("Pedir disculpas en directo.",
+                     "Esconderte detrás del atril."),
+                ),
+                Dialogue(
+                    "Un influencer que dice vivir en Andorra sale en directo con la Gran Vía "
+                    "de fondo.",
+                    "Le recomiendas un fondo desenfocado, una nota «grabado en 2019» y un "
+                    "croma de montaña.",
+                    ("Pedirle que borre el directo y ya está.",
+                     "Cambiar de asesor, a ver si cuela."),
+                ),
+                Dialogue(
+                    "Un cliente aparece con un millón en efectivo en una bolsa de deporte.",
+                    "Se la guardas en una caja de seguridad hasta que sea «fruto de la venta "
+                    "de unos cuadros».",
+                    ("Aceptar la bolsa y darle un recibo en una servilleta.",
+                     "Llamar a la policía, que es lo suyo."),
+                ),
+            ),
+        ),
+    }
+)  # fmt: skip
+
 # -- Eventos ---------------------------------------------------------------------------
 
 
@@ -7623,6 +8277,573 @@ EVENTS: tuple[Event, ...] = (
         jobs=("funcionariado",),
         min_level=2,
     ),
+    Event(
+        "fotocopia_dni",
+        "📄 Un ciudadano trae la fotocopia de su DNI… por una sola cara. El impreso pide las "
+        "dos, y él lleva dos horas en la cola.",
+        (
+            (
+                "Se la acepto",
+                Outcome(
+                    "La aceptas con una sonrisa. En tres semanas te la devolverán requerida "
+                    "«por defecto de forma» y la culpa será de otro compañero.",
+                    performance=-5,
+                    family=3,
+                    stat="work_dni_accept",
+                ),
+            ),
+            (
+                "Por las dos caras",
+                Outcome(
+                    "«Por las dos caras, que lo dice la ley». Se va a fotocopiar y vuelve con "
+                    "el DNI otra vez por una cara. Y con ganas de hablar con tu jefe.",
+                    performance=5,
+                    battery=-5,
+                    stat="work_dni_two_sides",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "cita_marzo",
+        "📅 Un vecino pide cita previa. La primera libre es en marzo. Estamos en octubre y "
+        "necesita el certificado para hoy.",
+        (
+            (
+                "Le hago un hueco",
+                Outcome(
+                    "Le haces un hueco entre dos cafés. La cola se entera y quiere el mismo "
+                    "trato. Se arma el cuarto Waterloo del día.",
+                    performance=5,
+                    battery=-10,
+                    stat="work_slot_found",
+                ),
+            ),
+            (
+                "«Para marzo»",
+                Outcome(
+                    "«La cita es para marzo». Se va a la oficina de al lado y le dan cita para "
+                    "mañana. Desde entonces vigilas esa oficina con recelo.",
+                    family=5,
+                    stat="work_march",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "sin_reposicion",
+        "👋 Tu compañero de al lado se jubila y no hay reposición: sus expedientes (y su "
+        "cafetera) pasan a ser tuyos. Se despide: «Hazme café… ¡Quiero café!».",
+        (
+            (
+                "Me quedo con todo",
+                Outcome(
+                    "Te quedas con los expedientes, la cafetera y una pila de cartas "
+                    "dirigidas a «Don Anselmo». Tu jefe lo llama «sinergias».",
+                    performance=10,
+                    battery=-15,
+                    stat="work_no_replacement_take",
+                ),
+            ),
+            (
+                "A la pila de nadie",
+                Outcome(
+                    "Los dejas en la pila de «pendientes de reposición». Es la más alta de "
+                    "la oficina y lleva desde 2009 creciendo.",
+                    performance=-5,
+                    family=5,
+                    stat="work_no_replacement_pile",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=2,
+    ),
+    Event(
+        "curso_igualdad",
+        "🎓 Curso obligatorio de igualdad: doce horas de vídeo, y hay que firmar que lo has visto.",
+        (
+            (
+                "Lo hago entero",
+                Outcome(
+                    "Lo ves entero, con apuntes. Descubres que tu jefe va por el módulo 1 "
+                    "desde 2019.",
+                    performance=5,
+                    battery=-10,
+                    stat="work_course_done",
+                ),
+            ),
+            (
+                "Vídeo en silencio",
+                Outcome(
+                    "Lo dejas en silencio en una pestaña mientras haces el crucigrama en "
+                    "otra. Apruebas con un 9,8. El crucigrama, con un 10.",
+                    battery=5,
+                    stat="work_course_mute",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+    ),
+    Event(
+        "cesta_navidad",
+        "🧺 Un proveedor te deja en la mesa una cesta de Navidad con jamón, cava y una "
+        "tarjeta: «Para lo que necesite el expediente». Estamos en octubre.",
+        (
+            (
+                "La acepto",
+                Outcome(
+                    "Te quedas la cesta (y la tarjeta). El jamón estaba buenísimo; el "
+                    "expediente, mejor aún.",
+                    black=0.4,
+                    risk=0.15,
+                    caught_by="uco",
+                    stat="work_basket_taken",
+                ),
+            ),
+            (
+                "La devuelvo",
+                Outcome(
+                    "La devuelves con un acta de tres folios. El proveedor ya no te saluda. "
+                    "Tu cuñado, tampoco, por el jamón.",
+                    performance=-5,
+                    stat="work_basket_returned",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=2,
+    ),
+    Event(
+        "famoso_sociedad",
+        "🎤 Te cae en la mesa el expediente de un cantante de éxito: factura sus conciertos "
+        "por una sociedad instrumental con sede en un buzón y un único empleado, su guitarra.",
+        (
+            (
+                "Inspección a fondo",
+                Outcome(
+                    "Abres expediente. Su abogado te manda una carta de 90 páginas y dos "
+                    "entradas para el palco. Tú, las dos entradas, a Hacienda.",
+                    performance=10,
+                    battery=-10,
+                    family=-3,
+                    stat="work_famous_probe",
+                ),
+            ),
+            (
+                "«Falta de indicios»",
+                Outcome(
+                    "Lo archivas «por falta de indicios». Esa tarde recibes una camiseta "
+                    "firmada. Dentro de la camiseta, un sobre.",
+                    black=0.5,
+                    risk=0.15,
+                    caught_by="uco",
+                    stat="work_famous_ignored",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=5,
+        branches=("",),
+    ),
+    Event(
+        "youtuber_padron",
+        "🏔️ Un youtuber de cinco millones de seguidores jura en directo que vive en Andorra. "
+        "Detrás de él, la Puerta de Alcalá.",
+        (
+            (
+                "Le pido el padrón",
+                Outcome(
+                    "Le pides el padrón, el recibo de la luz y el cepillo de dientes. Tarda "
+                    "tres semanas y sube un vídeo de disculpas con música triste.",
+                    performance=10,
+                    battery=-10,
+                    stat="work_youtuber_padron",
+                ),
+            ),
+            (
+                "Un «me gusta»",
+                Outcome(
+                    "Le das un «me gusta» desde la cuenta oficial. Te llega un código de "
+                    "descuento para unas gafas de sol.",
+                    performance=-5,
+                    family=3,
+                    stat="work_youtuber_like",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=5,
+        branches=("",),
+    ),
+    # -- Funcionariado: la Alta Administración ---------------------------------------------
+    Event(
+        "boe_viernes",
+        "📰 Viernes de agosto, 23:58. Hay que publicar en el BOE una disposición que no "
+        "gusta a nadie. A las 23:59, ni la lee el Tribunal Supremo.",
+        (
+            (
+                "Publicar a las 23:59",
+                Outcome(
+                    "Se publica a las 23:59 y 40 segundos. El lunes los telediarios hablan "
+                    "de un perro que sabe esquiar.",
+                    performance=10,
+                    battery=-10,
+                    stat="work_boe_friday",
+                ),
+            ),
+            (
+                "Esperar al lunes",
+                Outcome(
+                    "Esperas al lunes, con luz del día y con la prensa. Tu ministro te mira "
+                    "como se mira a un topo.",
+                    performance=-10,
+                    family=5,
+                    stat="work_boe_monday",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=6,
+        branches=("alta",),
+    ),
+    Event(
+        "omnibus_dg",
+        "📚 Hay que aprobar un decreto ómnibus: en el mismo texto, las pensiones, el IVA del "
+        "aceite, una condonación de deuda y el nombre de un puente.",
+        (
+            (
+                "Meter de todo",
+                Outcome(
+                    "Metes de todo, hasta el nombre del puente. Nadie lo lee y todos lo "
+                    "votan. Hay una enmienda que no se sabe de quién es.",
+                    pay=0.3,
+                    performance=10,
+                    stat="work_omnibus_all",
+                ),
+            ),
+            (
+                "Un decreto, un tema",
+                Outcome(
+                    "Un decreto, un tema, como en la facultad. El Consejo de Ministros lo "
+                    "aprueba pero no vuelve a contar contigo.",
+                    performance=-5,
+                    stat="work_omnibus_single",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=7,
+        branches=("alta",),
+    ),
+    Event(
+        "cunado_asesor",
+        "👨‍👩‍👦 El ministro te pide que nombres a su cuñado «asesor del gabinete». Es ingeniero de "
+        "caminos… de caminos de cabras.",
+        (
+            (
+                "Lo nombro",
+                Outcome(
+                    "Lo nombras. Cobra 4.000 al mes por asesorar al gabinete en lo suyo. Tú "
+                    "recibes una cesta con tu nombre.",
+                    black=0.5,
+                    risk=0.15,
+                    caught_by="uco",
+                    stat="work_brother_in_law",
+                ),
+            ),
+            (
+                "Que oposite",
+                Outcome(
+                    "«Que oposite, como todo el mundo». Se ofende y se presenta a la "
+                    "oposición… a ser tu jefe.",
+                    performance=-5,
+                    stat="work_brother_refused",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=6,
+        branches=("alta",),
+    ),
+    Event(
+        "coche_pan",
+        "🚗 Son las 8:00, el coche oficial te espera en la puerta con el chófer y tú vas a "
+        "por el pan.",
+        (
+            (
+                "En el coche oficial",
+                Outcome(
+                    "Vas a por el pan en el coche oficial, con el chófer en doble fila. El "
+                    "pan estaba buenísimo; el viaje, regular.",
+                    performance=5,
+                    fine=0.6,
+                    risk=0.2,
+                    caught_by="tribunal_cuentas",
+                    stat="work_car_bread",
+                ),
+            ),
+            (
+                "Andando",
+                Outcome(
+                    "Vas andando, 800 metros, con tu cartera de cuero. Dos directores "
+                    "generales te adelantan en coche oficial y te saludan por la ventanilla.",
+                    battery=5,
+                    performance=-5,
+                    stat="work_walk_bread",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=8,
+        branches=("alta",),
+    ),
+    Event(
+        "informe_consejo",
+        "📄 El Consejo de Estado emite un informe que dice, en 80 folios, justo lo contrario "
+        "de lo que quiere el Gobierno. Y alguien lo ha filtrado a un periódico.",
+        (
+            (
+                "Archivarlo",
+                Outcome(
+                    "Lo archivas en el cajón de «informes no preceptivos» (todos). El "
+                    "periodista llama a las diez y a las once ya no.",
+                    performance=10,
+                    stat="work_council_archive",
+                ),
+            ),
+            (
+                "Publicarlo",
+                Outcome(
+                    "Lo publicas íntegro. El Gobierno te cesa por «pérdida de confianza» "
+                    "y, por la tarde, te nombra director de otra cosa.",
+                    performance=-10,
+                    family=5,
+                    stat="work_council_publish",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=9,
+        branches=("alta",),
+    ),
+    Event(
+        "jubilacion_dorada",
+        "🏛️ El Consejo te ofrece un sillón vitalicio junto a los expresidentes del Gobierno: "
+        "sueldo, despacho, coche y un dictamen al año (sin plazo).",
+        (
+            (
+                "Aceptar el sillón",
+                Outcome(
+                    "Te sientas entre cuatro expresidentes que no se hablan. Os une el cargo "
+                    "y el cochazo.",
+                    black=0.8,
+                    risk=0.2,
+                    caught_by="incompatibilidades",
+                    stat="work_golden_chair",
+                ),
+            ),
+            (
+                "Rechazarlo",
+                Outcome(
+                    "Dices que prefieres seguir trabajando. Ya se sentará otro (hay lista "
+                    "de espera y mucho quórum).",
+                    performance=5,
+                    stat="work_golden_refused",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=10,
+        branches=("alta",),
+    ),
+    # -- Funcionariado: la Puerta giratoria ------------------------------------------------
+    Event(
+        "compa_hacienda",
+        "☎️ Te llama tu antiguo compañero de Hacienda: tiene abierta una inspección a tu "
+        "cliente. «Por los viejos tiempos», dice.",
+        (
+            (
+                "Una comida en el reservado",
+                Outcome(
+                    "Comida en un reservado con vistas al Retiro. Hablas de todo menos de "
+                    "trabajo y el expediente aparece archivado «por prescripción».",
+                    black=0.6,
+                    risk=0.2,
+                    caught_by="uco",
+                    stat="work_old_pal_lunch",
+                ),
+            ),
+            (
+                "Que haga su trabajo",
+                Outcome(
+                    "«Haz tu trabajo, que yo ya hice el mío». Tu cliente cambia de despacho "
+                    "esa misma semana.",
+                    performance=-10,
+                    stat="work_old_pal_refused",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=6,
+        branches=("giratoria",),
+    ),
+    Event(
+        "amnistia_fiscal",
+        "🎁 El Gobierno anuncia una amnistía fiscal: quien regularice paga un 3 % y no "
+        "pregunta nadie. Tus clientes con dinero fuera te miran fijamente.",
+        (
+            (
+                "Acogerse",
+                Outcome(
+                    "Se acogen todos, con un 3 % y un suspiro. Cobras una comisión por "
+                    "regularizar lo que tú mismo les habías escondido.",
+                    pay=0.5,
+                    performance=5,
+                    stat="work_amnesty_in",
+                ),
+            ),
+            (
+                "No acogerse",
+                Outcome(
+                    "«Yo, de amnistías, ni una». Tus clientes siguen con el dinero fuera y "
+                    "tú, con tu honor. Y con los honorarios sin cobrar.",
+                    performance=-5,
+                    family=3,
+                    stat="work_amnesty_out",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=7,
+        branches=("giratoria",),
+    ),
+    Event(
+        "lista_papeles",
+        "📂 Se filtra una lista de titulares de cuentas en paraísos fiscales (la de Falciani "
+        "de la semana, los papeles de Panamá del mes). Tu mejor cliente sale en la página 4.",
+        (
+            (
+                "Negarlo todo",
+                Outcome(
+                    "«Es un homónimo»: con la misma sociedad, el mismo yate y la misma cuenta. "
+                    "Cuela en la tertulia; en el juzgado, ya veremos.",
+                    pay=0.3,
+                    fine=0.5,
+                    risk=0.25,
+                    caught_by="fiscalia",
+                    stat="work_papers_deny",
+                ),
+            ),
+            (
+                "Regularizar a la carrera",
+                Outcome(
+                    "Regularizas a toda prisa, con recargo y lágrimas. El cliente te factura "
+                    "la humillación.",
+                    performance=5,
+                    battery=-15,
+                    stat="work_papers_regularize",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=8,
+        branches=("giratoria",),
+    ),
+    Event(
+        "youtuber_madrid",
+        "📹 El youtuber que te contrató para mudarse a Andorra sale en directo… desde su "
+        "salón de Madrid, con los coches de la Castellana de fondo.",
+        (
+            (
+                "Un vuelo de atrezo",
+                Outcome(
+                    "Le montas un vuelo semanal de ida y vuelta a Andorra, con tarjeta de "
+                    "embarque y todo. En clase turista, para que sea creíble.",
+                    pay=0.4,
+                    stat="work_ytb_prop_flight",
+                ),
+            ),
+            (
+                "Rescindir el contrato",
+                Outcome(
+                    "Le rescindes el contrato antes de que Hacienda llame por él. Pierdes un "
+                    "cliente, pero ganas una noche de sueño.",
+                    performance=-5,
+                    family=5,
+                    stat="work_ytb_dropped",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=7,
+        branches=("giratoria",),
+    ),
+    Event(
+        "carta_padron",
+        "📨 Llega una carta de la Agencia Tributaria: preguntan por qué el padrón andorrano "
+        "de tu cliente tiene una casa vacía y catorce recibos de Madrid.",
+        (
+            (
+                "Ochenta folios",
+                Outcome(
+                    "Contestas con ochenta folios, certificados y una foto con nieve. "
+                    "Tardarán un año en leerlos y para entonces todos serán felices.",
+                    performance=5,
+                    battery=-15,
+                    stat="work_padron_answer",
+                ),
+            ),
+            (
+                "El cajón del «ya contestaré»",
+                Outcome(
+                    "La metes en el cajón de «ya contestaré». Al cajón, no al buzón: el "
+                    "plazo corre igual.",
+                    fine=0.8,
+                    risk=0.3,
+                    caught_by="hacienda",
+                    stat="work_padron_ignore",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=9,
+        branches=("giratoria",),
+    ),
+    Event(
+        "fundacion_sucesiones",
+        "🏰 Un cliente de 82 años no quiere que su herencia pague Sucesiones. «Móntame una "
+        "fundación», dice, con el palacete bajo el brazo.",
+        (
+            (
+                "Montar la fundación",
+                Outcome(
+                    "Creas la Fundación Amigos del Mus y los Caballos, con sede en el "
+                    "palacete. Él, presidente vitalicio; su nieto, patrono.",
+                    pay=0.5,
+                    fine=0.8,
+                    risk=0.15,
+                    caught_by="fiscalia",
+                    stat="work_foundation_made",
+                ),
+            ),
+            (
+                "Que pague Sucesiones",
+                Outcome(
+                    "«Que pague lo que toca.» Se queja, firma, y tres meses después te "
+                    "despide… de la herencia.",
+                    performance=-10,
+                    family=5,
+                    stat="work_foundation_refused",
+                ),
+            ),
+        ),
+        jobs=("funcionariado",),
+        min_level=10,
+        branches=("giratoria",),
+    ),
     # -- Influencer -----------------------------------------------------------------------
     Event(
         "funa",
@@ -8375,9 +9596,19 @@ CAUGHT_TEXT: dict[str, str] = {
         "Tras tres años de papeleo bilingüe, devuelves lo cobrado con un 20 % de recargo."
     ),
     "incompatibilidades": (
-        "🏛️ **La Oficina de Conflictos de Intereses te abre expediente.** El precontrato con "
-        "la aseguradora se firmó con el cargo aún caliente: devuelves lo cobrado con un 20 % "
-        "de recargo."
+        "🏛️ **La Oficina de Conflictos de Intereses te abre expediente.** Lo que firmaste con "
+        "el cargo aún caliente (un precontrato, un sillón vitalicio, una cesta con tarjeta) "
+        "no era compatible: devuelves lo cobrado con un 20 % de recargo."
+    ),
+    "tribunal_cuentas": (
+        "🧾 **El Tribunal de Cuentas te reclama el viaje.** El pan costó cuarenta euros de "
+        "gasolina, un chófer en doble fila y una foto en el periódico: pagas el reintegro y "
+        "el chófer cobra horas extra."
+    ),
+    "fiscalia": (
+        "⚖️ **La Fiscalía Anticorrupción te cita como investigado.** El «homónimo» y la "
+        "fundación no han convencido a nadie: pagas la sanción y tu cliente se busca otro "
+        "asesor."
     ),
     "abusivas": (
         "⚖️ **Un juzgado declara abusiva la cláusula.** El asegurado reclamó con abogado: "
