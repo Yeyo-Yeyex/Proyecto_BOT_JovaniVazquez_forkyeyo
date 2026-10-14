@@ -410,14 +410,17 @@ class BlackjackTable(discord.ui.View):
     async def on_timeout(self) -> None:
         """Cierra la mesa; si quedaba una mano a medias, se planta y se paga."""
         self.cog.tables.discard(self)
-        if self.game is not None and not self.game.settled:
+        # Una mano ya pagada se ve tal cual: solo hay que apagar los botones, sin
+        # volver a subir la mesa (~1 s).
+        unsettled = self.game is not None and not self.game.settled
+        if unsettled:
             await self.force_settle()
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
         try:
             embed = await self.current_embed()
-            png = await self.cog.render(self.game) if self.game else None
+            png = await self.cog.render(self.game) if self.game and unsettled else None
             kwargs: dict[str, Any] = {"embed": embed, "view": self}
             if png is not None:
                 kwargs["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]

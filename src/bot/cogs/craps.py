@@ -861,10 +861,13 @@ class CrapsView(ui.View):
 
     async def _restake(self, interaction: discord.Interaction, stake: int) -> None:
         """Cambia la apuesta y repinta la mesa con la ficha nueva."""
+        changed = max(1, stake) != self.stake
         self.stake = max(1, stake)
         self.note = None
         self._last_interaction = interaction
-        if self.game is None:
+        # Sin cambio de apuesta (mitad de 1, doblar sin saldo) la mesa se ve igual:
+        # no se vuelve a subir, que cuesta ~1 s.
+        if self.game is None and changed:
             await self._board(interaction)
             return
         self.rebuild()

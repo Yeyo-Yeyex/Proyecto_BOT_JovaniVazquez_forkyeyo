@@ -258,6 +258,8 @@ class HousePanel(ui.View):
         self.rival = RIVAL_BY_KEY[DEFAULT_RIVAL]
         self.record = RoosterRecord(name="")
         self.balance = 0
+        #: Qué presentación se ve ahora (rival, nombre, apuesta); `None` si otra imagen.
+        self._poster: tuple[object, str, int] | None = None
         self.channel: object = None
         self.message: discord.Message | None = None
         self.result: str | None = None
@@ -410,6 +412,13 @@ class HousePanel(ui.View):
 
     async def repaint(self, interaction: discord.Interaction) -> None:
         """Repinta la presentación, el texto y los botones."""
+        key = (self.rival, self.record.name, self.stake)
+        if key == self._poster:
+            # Ya se ve esta misma presentación: subirla otra vez cuesta ~1 s y no cambia nada.
+            self.rebuild()
+            self._last_interaction = interaction
+            await edit(interaction, embed=self.embed(), view=self)
+            return
         png = await self.poster()
         self.rebuild()
         self._last_interaction = interaction
@@ -419,6 +428,7 @@ class HousePanel(ui.View):
             attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
             view=self,
         )
+        self._poster = key
 
     # -- Botones ----------------------------------------------------------------------
 
@@ -563,6 +573,7 @@ class HousePanel(ui.View):
         _, media = await asyncio.gather(
             show_waiting(), self.cog.renderer.fight(meta, game.fight, names, seed=game.seed)
         )
+        self._poster = None
         await edit(
             interaction,
             embed=self.embed(image=GIF_NAME, text=waiting),
