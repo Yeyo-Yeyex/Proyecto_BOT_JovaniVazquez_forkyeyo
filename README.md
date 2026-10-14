@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `timba [ciega]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -493,7 +493,9 @@ python -m bot
   GIF dibujado con canvas en Node con Skia, sin navegador (si no hay Node, en
   Chromium y, si tampoco, con Pillow); las cartas se sortean antes de jugar y
   la animación de la mano siguiente se dibuja mientras piensas.
-- **Póker** (`/poker`, `.poker [cantidad]`): Casino Hold'em, el Texas Hold'em
+- **Póker** (`/poker [modo] [cantidad]`, `.poker banca 500`, `.poker timba 50`):
+  un solo comando con dos modos; sin modo, el bot pregunta con dos botones.
+  ♠️ **Contra la banca**: Casino Hold'em, el Texas Hold'em
   contra la banca, en una mesa por canal para hasta 6 jugadores. Te sientas con
   tu ante, ves tus dos cartas y el flop y eliges ✅ Ir (el doble del ante) o
   🏳️ Retirarte. La banca juega con pareja de cuatros o mejor; si no juega, el
@@ -505,7 +507,7 @@ python -m bot
   experiencia (abre las mesas de ante alto y da tapetes), tres retos al día
   con premio y racha de días que lo sube. GIF del reparto y del final pintados
   con canvas en Node (si no hay Node, en Chromium y, si tampoco, con Pillow).
-- **Timba** (`/timba`, `.timba [ciega]`): Texas Hold'em sin límite entre
+- **Timba** (`/poker timba [ciega]`, `.poker timba`): Texas Hold'em sin límite entre
   miembros, de dos a seis en una mesa por canal; las ciegas las pone quien la
   abre (por defecto 10/20). Cada uno ve sus cartas en privado con 🂠 Mis cartas y
   habla por turnos de 30 s con botones (pasar, igualar, subir al mínimo, medio
@@ -1012,7 +1014,7 @@ src/bot/
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
 │   ├── poker.py         # poker: mesa por canal, ir o retirarse, 💎 Bote y club
-│   ├── timba.py         # timba: Texas Hold'em entre miembros, turnos y botes
+│   ├── timba.py         # poker modo timba: Texas Hold'em entre miembros, turnos y botes
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio

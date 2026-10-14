@@ -385,3 +385,60 @@ async def test_al_apagar_decidiendo_quien_no_decidio_se_retira_y_se_paga(tmp_pat
     assert await balance(cog) == STARTING_BALANCE + 100 + 100 * CALL_FACTOR
     assert await balance(cog, LEO) == STARTING_BALANCE - 100
     assert table.phase is Phase.CLOSED
+
+
+# -- Un solo comando, dos modos --------------------------------------------------------
+
+
+def test_los_modos_se_reconocen_en_texto() -> None:
+    assert cog_module.parse_mode("Timba") == cog_module.TIMBA
+    assert cog_module.parse_mode("banca") == cog_module.BANCA
+    assert cog_module.parse_mode("500") is None
+
+
+async def test_sin_modo_pregunta_con_un_boton_por_modo(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    interaction = make_interaction(ANA)
+    await cog.poker.callback(cog, interaction, None, "300")
+    kwargs = interaction.response.send_message.await_args.kwargs
+    picker = kwargs["view"]
+    assert kwargs["ephemeral"] is True
+    labels = [b.label for b in picker.children if isinstance(b, discord.ui.Button)]
+    assert labels == ["Contra la banca (Casino Hold'em)", "Timba entre jugadores (Texas Hold'em)"]
+    assert picker.amount == "300"
+
+
+async def test_elegir_banca_en_la_pregunta_abre_la_mesa_y_te_sienta(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    channel = make_channel()
+    picker = cog_module.ModePicker(cog, make_user(ANA), "200", channel=channel)
+    click = make_interaction(ANA)
+    click.guild = MagicMock(id=GUILD_ID)
+    await picker.choose(cog_module.BANCA, click)
+    table = cog.tables[channel.id]
+    assert ANA in table.seats and table.seats[ANA].ante == 200
+    assert "Sentado" in click.edit_original_response.await_args.kwargs["content"]
+
+
+async def test_solo_quien_pregunto_elige_el_modo(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    picker = cog_module.ModePicker(cog, make_user(ANA), None, channel=make_channel())
+    intruder = make_interaction(LEO, "Leo")
+    await picker.choose(cog_module.BANCA, intruder)
+    assert "no es tuya" in intruder.response.send_message.await_args.args[0]
+    assert not picker.done
+
+
+async def test_la_timba_sin_su_cog_avisa(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    errors = AsyncMock()
+    await cog.play_mode(
+        cog_module.TIMBA,
+        guild=MagicMock(id=GUILD_ID),
+        channel=make_channel(),
+        user=make_user(ANA),
+        amount_text=None,
+        confirm=AsyncMock(),
+        send_error=errors,
+    )
+    assert "no está disponible" in errors.await_args.args[0]

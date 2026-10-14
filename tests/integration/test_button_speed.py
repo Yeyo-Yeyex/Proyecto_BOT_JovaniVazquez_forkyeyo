@@ -381,6 +381,23 @@ async def press_poker_club(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_poker_mode(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Póker")
+    module = module_of(client, "Póker")
+    cog.start = MagicMock()
+    cog.renderer = MagicMock()
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 9
+    channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+    picker = module.ModePicker(cog, owner, "100", channel=channel)
+
+    async def click(interaction: MagicMock) -> None:
+        await picker.choose(module.BANCA, interaction)
+
+    return click
+
+
 async def press_timba_sit(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Timba")
     module = module_of(client, "Timba")
@@ -893,6 +910,7 @@ CASES: dict[str, Press] = {
     "póker: ir": press_poker_call,
     "póker: bote": press_poker_bonus,
     "póker: club": press_poker_club,
+    "póker: elegir modo": press_poker_mode,
     "timba: sentarse": press_timba_sit,
     "dados: pase": press_dice_pass,
     "dados: tirar": press_dice_roll,
