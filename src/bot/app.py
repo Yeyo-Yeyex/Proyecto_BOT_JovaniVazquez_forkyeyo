@@ -20,6 +20,7 @@ from bot.repositories.beernight_sounds import BeernightSoundStore
 from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
+from bot.repositories.enraya import EnrayaRepository
 from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.gallos import GallosRepository
 from bot.repositories.hold_win import HoldWinRepository
@@ -69,6 +70,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.horses",
     "bot.cogs.bacara",
     "bot.cogs.gallos",
+    "bot.cogs.enraya",
     "bot.cogs.lottery",
     "bot.cogs.renta",
     "bot.cogs.apuestas",
@@ -153,6 +155,8 @@ class BotClient(commands.Bot):
         self.horses = HorseRepository(database_path)
         # Ficha del gallo de cada miembro para `gallos`; el dinero pasa por `economy`.
         self.gallos = GallosRepository(database_path)
+        # Ficha y retos del día de `4enraya`; el dinero de duelos y retos pasa por `economy`.
+        self.enraya = EnrayaRepository(database_path)
         # Rango, racha y retos del club del `poker`; el dinero pasa por `economy`.
         self.poker = PokerRepository(database_path)
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
@@ -200,6 +204,7 @@ class BotClient(commands.Bot):
         await self.slots_repository.initialize()
         await self.horses.initialize()
         await self.gallos.initialize()
+        await self.enraya.initialize()
         await self.poker.initialize()
         await self.porras.initialize()
         await self.work.repository.initialize()

@@ -36,6 +36,7 @@ from bot.services.achievements import (
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
+    ENRAYA_BEAT_PREFIX,
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
@@ -90,6 +91,7 @@ from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
+from bot.services.enraya import LEVELS as ENRAYA_LEVELS
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
@@ -301,6 +303,20 @@ PRODUCED_STATS = {
     "gallos_hispanidad", "gallos_canarias", "gallos_july4", "gallos_china_day",
     "gallos_europe_day", "gallos_africa_day", "gallos_night", "gallos_dawn",
     "gallos_nochevieja", "gallos_friday13",
+    # cogs/enraya.py (`enraya_stats`, `enraya_bet_stats` y los retos)
+    "enraya_games", "enraya_wins", "enraya_losses", "enraya_draws", "enraya_resigns",
+    "enraya_timeouts", "enraya_opp_timeouts", "enraya_beat_imposible_second",
+    "enraya_lose_facil", "enraya_draw_imposible", "enraya_win_h", "enraya_win_v",
+    "enraya_win_d", "enraya_double", "enraya_five", "enraya_quick_win", "enraya_quick_loss",
+    "enraya_full_board", "enraya_last_piece_win", "enraya_blocks", "enraya_missed",
+    "enraya_missed_loss", "enraya_streak_max", "enraya_days_max", "enraya_duels",
+    "enraya_duel_wins", "enraya_friendlies", "enraya_casino_duels", "enraya_duel_big",
+    "enraya_win_max", "enraya_crowd_max", "enraya_bets", "enraya_bets_won",
+    "enraya_bet_odds_max", "enraya_bet_refund", "enraya_challenges", "enraya_rejects",
+    "enraya_rejected", "enraya_rake", "enraya_retos", "enraya_retos_full", "enraya_stake_42",
+    "enraya_april4", "enraya_nochevieja", "enraya_canarias", "enraya_night",
+    "enraya_friday13",
+    *(f"{ENRAYA_BEAT_PREFIX}{lv.key}" for lv in ENRAYA_LEVELS),
     *(f"{GALLOS_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
     *(f"{GALLOS_SKIN_PREFIX}{k}" for k in ("serie", *GALLOS_FREE_SKINS)),
     # cogs/coin.py (`coin_stats`)

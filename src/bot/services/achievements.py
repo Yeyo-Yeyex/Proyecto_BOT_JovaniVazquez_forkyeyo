@@ -80,6 +80,10 @@ from bot.services.craps import Bet as CrapsBet
 from bot.services.craps import CrapsGame, Hand
 from bot.services.craps import Status as CrapsStatus
 from bot.services.crash import Seat as CrashSeat
+from bot.services.enraya import LEVELS as ENRAYA_LEVELS
+from bot.services.enraya import Ending as EnrayaEnding
+from bot.services.enraya import GameEvent as EnrayaEvent
+from bot.services.enraya import PlayerRecord as EnrayaRecord
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
 from bot.services.gallos import Corner as GallosCorner
 from bot.services.gallos import Fight as GallosFight
@@ -263,6 +267,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("horses", "🏇 Caballos", group=_CG),
     Category("baccarat", "🍸 Bacará", group=_CG),
     Category("gallos", "🐓 Gallos", group=_CG),
+    Category("enraya", "🔴 4 en raya", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
@@ -374,6 +379,7 @@ PERFIL_SECTIONS = (
     "rachas",
     "objetos",
     "gallo",
+    "enraya",
 )
 #: Apuestas exactas con logro secreto propio (`casino_bet_<cifra>`), en cualquier juego.
 SECRET_STAKES = (1, 23, 33, 44, 47, 69, 87, 176, 600, 777, 1975, 1978)
@@ -584,6 +590,8 @@ GALLOS_STORY = (
     "sufre, solo tu cartera. Y lo que ganes, Perro Sanxe lo mira con lupa: tributa "
     "como cualquier juego del casino."
 )
+#: Niveles de Jovani ganados en el 4 en raya: un contador por nivel (`enraya_beat_facil`).
+ENRAYA_BEAT_PREFIX = "enraya_beat_"
 #: Rivales de la casa ganados: un contador por rival (`gallos_beat_falcon`).
 GALLOS_BEAT_PREFIX = "gallos_beat_"
 #: Skins con las que ha peleado: un contador por skin (`gallos_skin_serie`).
@@ -4683,6 +4691,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
         ),
     ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_seventeen_games",
+        name="Diecisiete apellidos y cuatro en raya",
+        description="Juega a los diecisiete juegos del casino, un 4 en raya con apuesta incluido.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
+            ("enraya_casino_duels", 1),
+        ),
+    ))  # fmt: skip
 
     a += _tiers("pachinko", "pachinko_volleys", [
         (50_000, "pachi_50k", "Pachinko de por vida", "Lanza 50.000 tandas en el pachinko.", M),
@@ -8738,6 +8761,263 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ):
         a += _tiers("gallos", stat, [(1, achievement_id, name, description, C, secret)])
+
+    # 🔴 4 en raya ------------------------------------------------------------------------
+    a += _tiers("enraya", "enraya_games", [
+        (1, "enraya_1", "Primera ficha", "Juega tu primera partida de 4 en raya.", C),
+        (10, "enraya_10", "Cliente del bar de las fichas", "Juega 10 partidas de 4 en raya.", C),
+        (100, "enraya_100", "Tablero de toda la vida", "Juega 100 partidas de 4 en raya.", R),
+        (1_000, "enraya_1k", "Más partidas que leyes en el BOE",
+         "Juega 1.000 partidas de 4 en raya.", E),
+        (5_000, "enraya_5k", "Federación Internacional de Fichas",
+         "Juega 5.000 partidas. Ya te invitan a Davos.", L),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_wins", [
+        (1, "enraya_win_1", "Cuatro en raya", "Gana tu primera partida.", C),
+        (25, "enraya_win_25", "Mayoría absoluta en el tablero",
+         "Gana 25 partidas de 4 en raya.", C),
+        (100, "enraya_win_100", "Rodillo de fichas", "Gana 100 partidas de 4 en raya.", R),
+        (500, "enraya_win_500", "Fichas atadas y bien atadas",
+         "Gana 500 partidas de 4 en raya.", E),
+        (2_500, "enraya_win_2500", "Mandato a la venezolana",
+         "Gana 2.500 partidas. Las actas, ni las enseñas.", L),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_losses", [
+        (1, "enraya_loss_1", "Ficha perdida", "Pierde una partida de 4 en raya.", C),
+        (10, "enraya_loss_10", "Oposición constructiva", "Pierde 10 partidas de 4 en raya.", C),
+        (100, "enraya_loss_100", "Manual de derrota", "Pierde 100 partidas de 4 en raya.", R),
+        (1_000, "enraya_loss_1k", "Sé fuerte, ficha",
+         "Pierde 1.000 partidas de 4 en raya. Hacemos lo que podemos.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_draws", [
+        (1, "enraya_tablas", "Bloqueo institucional", "Acaba una partida en tablas.", C),
+        (10, "enraya_tablas_10", "Repetición electoral",
+         "Acaba 10 partidas en tablas. Como 2019, pero con fichas.", R),
+    ])  # fmt: skip
+    for key, achievement_id, name, description, rarity in (
+        ("facil", "enraya_resaca", "Contra un Jovani de resaca",
+         "Gánale a Jovani con resaca. Venía de la beernight, tampoco te vengas arriba.", C),
+        ("normal", "enraya_domingo", "Café sin pulpa", "Gánale a Jovani de domingo.", C),
+        ("dificil", "enraya_concentrado", "Le has pillado pensando",
+         "Gánale a Jovani concentrado.", R),
+        ("imposible", "enraya_cafe_pr", "El café de Puerto Rico no era para tanto",
+         "Gánale a Jovani con café de Puerto Rico, el nivel Imposible.", E),
+    ):  # fmt: skip
+        a += _tiers("enraya", f"{ENRAYA_BEAT_PREFIX}{key}", [
+            (1, achievement_id, name, description, rarity),
+        ])  # fmt: skip
+    a += _tiers("enraya", f"{ENRAYA_BEAT_PREFIX}imposible", [
+        (10, "enraya_cafe_pr_10", "Le has cogido el truco a la máquina",
+         "Gánale 10 veces a Jovani en Imposible.", L),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="enraya_gira",
+            name="Jovani en todas sus versiones",
+            description="Gánale a Jovani en los cuatro niveles.",
+            category="enraya",
+            rarity=E,
+            conditions=tuple((f"{ENRAYA_BEAT_PREFIX}{lv.key}", 1) for lv in ENRAYA_LEVELS),
+        )
+    )
+    a += _tiers("enraya", "enraya_beat_imposible_second", [
+        (1, "enraya_contra_pronostico", "Remontada en Moncloa",
+         "Gánale a Jovani en Imposible saliendo él. Ni el CIS lo tenía.", L),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_lose_facil", [
+        (1, "enraya_borracho", "Derrotado por la resaca",
+         "Pierde contra Jovani con resaca. Él ni se acuerda de la partida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_draw_imposible", [
+        (1, "enraya_gran_coalicion", "Gran coalición de fichas",
+         "Saca tablas a Jovani en Imposible.", R, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_win_h", [
+        (1, "enraya_horizontal", "Línea de Metro", "Gana con una raya en horizontal.", C),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_win_v", [
+        (1, "enraya_vertical", "Torre de fichas", "Gana con una raya en vertical.", C),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_win_d", [
+        (1, "enraya_diagonal", "Por la diagonal, como el AVE",
+         "Gana con una raya en diagonal.", C),
+        (50, "enraya_diagonal_50", "Geometría variable del tablero",
+         "Gana 50 partidas con una diagonal. Como los pactos de Sánchez.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="enraya_rosa_vientos",
+            name="Rosa de los vientos",
+            description="Gana en horizontal, en vertical y en diagonal.",
+            category="enraya",
+            rarity=C,
+            conditions=(("enraya_win_h", 1), ("enraya_win_v", 1), ("enraya_win_d", 1)),
+        )
+    )
+    a += _tiers("enraya", "enraya_double", [
+        (1, "enraya_doble", "Doble raya", "Haz dos rayas a la vez con una sola ficha.", R, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_five", [
+        (1, "enraya_cinco", "Cinco en raya, por si acaso",
+         "Gana poniendo la ficha que junta cinco en raya.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_quick_win", [
+        (1, "enraya_relampago", "Raya por decreto ley",
+         "Gana soltando solo cuatro fichas.", C),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_quick_loss", [
+        (1, "enraya_pastor", "Te la han colado en cuatro",
+         "Pierde con el rival soltando solo cuatro fichas.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_full_board", [
+        (1, "enraya_lleno", "Lleno hasta la bandera",
+         "Juega una partida que llene las 42 casillas.", C),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_last_piece_win", [
+        (1, "enraya_ultima", "La respuesta es 42",
+         "Gana con la última ficha del tablero, la 42.", R, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_blocks", [
+        (10, "enraya_tapon", "Tapón pegado a la botella", "Tapa 10 rayas del rival.", C),
+        (100, "enraya_cordon", "Cordón sanitario en el tablero", "Tapa 100 rayas del rival.", R),
+        (1_000, "enraya_cupula", "Cúpula de Hierro del tablero", "Tapa 1.000 rayas del rival.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_missed", [
+        (1, "enraya_no_la_vi", "¿Dónde estaba la raya?",
+         "Ten cuatro en raya a tiro y suelta la ficha en otra columna.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_missed_loss", [
+        (1, "enraya_lo_tenias", "Lo tenías y lo sabes",
+         "Pierde una partida en la que tuviste raya hecha y no la viste.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_resigns", [
+        (1, "enraya_dimision", "Dimisión de las fichas", "Ríndete en una partida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_timeouts", [
+        (1, "enraya_siesta", "Siesta en el escaño",
+         "Pierde un duelo por dormirte en tu turno.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_opp_timeouts", [
+        (1, "enraya_incomparecencia", "Victoria por incomparecencia",
+         "Gana un duelo porque el rival se duerme.", C),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_streak_max", [
+        (3, "enraya_racha_3", "Tripartito de victorias", "Gana 3 partidas seguidas.", C),
+        (5, "enraya_racha_5", "Quinquenio dorado", "Gana 5 partidas seguidas.", C),
+        (10, "enraya_racha_10", "Década prodigiosa", "Gana 10 partidas seguidas.", R),
+        (20, "enraya_racha_20", "Presidencia vitalicia del tablero",
+         "Gana 20 partidas seguidas.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_days_max", [
+        (7, "enraya_dias_7", "Semana de fichas", "Juega al 4 en raya 7 días seguidos.", R),
+        (30, "enraya_dias_30", "Un mes sin soltar la ficha", "Juega 30 días seguidos.", E),
+        (100, "enraya_dias_100", "Fichas hasta en sueños", "Juega 100 días seguidos.", L),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_duels", [
+        (1, "enraya_duelo_1", "Cara a cara", "Juega un duelo de 4 en raya contra alguien.", C),
+        (10, "enraya_duelo_10", "Debate a cuatro", "Juega 10 duelos de 4 en raya.", C),
+        (100, "enraya_duelo_100", "Clásico del tablero", "Juega 100 duelos de 4 en raya.", R),
+        (500, "enraya_duelo_500", "Rivalidad de legislatura", "Juega 500 duelos.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_duel_wins", [
+        (1, "enraya_duelo_gana", "Le has cantado las fichas", "Gana un duelo de 4 en raya.", C),
+        (25, "enraya_duelo_gana_25", "Terror de las fichas", "Gana 25 duelos.", R),
+        (250, "enraya_duelo_gana_250", "El que manda en el tablero", "Gana 250 duelos.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_friendlies", [
+        (1, "enraya_amistoso", "Partidillo entre colegas", "Juega un duelo amistoso.", C),
+        (50, "enraya_amistoso_50", "Pachanga de los jueves", "Juega 50 duelos amistosos.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_duel_big", [
+        (1, "enraya_alto_standing", "Fichas de alto standing",
+         "Juega un duelo de 10.000 Y$ o más por cabeza.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_win_max", [
+        (10_000, "enraya_bolsa", "Bolsa de las fichas", "Gana 10.000 Y$ en un duelo.", R),
+        (100_000, "enraya_final", "Final del mundial de fichas",
+         "Gana 100.000 Y$ en un duelo.", E),
+        (1_000_000, "enraya_millon", "El millón en cuatro fichas",
+         "Gana 1.000.000 Y$ en un duelo. Hacienda ya está de camino.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("enraya", "enraya_crowd_max", [
+        (1_000, "enraya_publico", "Con público en la grada",
+         "Que el público apueste 1.000 Y$ en uno de tus duelos de 4 en raya.", C),
+        (10_000, "enraya_lleno_grada", "Ambiente de final",
+         "Que el público apueste 10.000 Y$ en uno de tus duelos de 4 en raya.", R),
+        (100_000, "enraya_prime_time", "Prime time en La 1",
+         "Que el público apueste 100.000 Y$ en uno de tus duelos de 4 en raya.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("enraya", "enraya_bets", [
+        (1, "enraya_grada_1", "Desde la grada del tablero", "Apuesta en el duelo de otros.", C),
+        (10, "enraya_grada_10", "Abonado al tablero", "Apuesta en 10 duelos de otros.", C),
+        (100, "enraya_grada_100", "Tertuliano de fichas", "Apuesta en 100 duelos de otros.", R),
+        (1_000, "enraya_grada_1k", "Palco de honor de las fichas",
+         "Apuesta en 1.000 duelos de otros.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_bets_won", [
+        (1, "enraya_ojo", "Ojo de tertuliano", "Acierta una apuesta de grada en el 4 en raya.", C),
+        (50, "enraya_tertuliano", "Tertuliano que acierta (raro)",
+         "Acierta 50 apuestas de grada en el 4 en raya.", R),
+        (500, "enraya_oraculo", "Oráculo del tablero", "Acierta 500 apuestas de grada.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_bet_odds_max", [
+        (300, "enraya_contra_todos", "Contra el pronóstico del CIS",
+         "Acierta una apuesta de grada del 4 en raya que pagaba ×3 o más.", C),
+        (1_000, "enraya_tezanos", "Mejor que Tezanos",
+         "Acierta una apuesta de grada del 4 en raya que pagaba ×10 o más.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_bet_refund", [
+        (1, "enraya_grada_desierta", "Grada desierta",
+         "Apuesta en un duelo de 4 en raya y que te devuelvan lo tuyo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_challenges", [
+        (1, "enraya_reto", "¿Echamos un 4 en raya?", "Reta a alguien a un 4 en raya.", C),
+        (50, "enraya_retador", "Retador profesional", "Reta a 50 personas al 4 en raya.", R),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_rejects", [
+        (1, "enraya_no_juego", "Hoy no juego", "Rechaza un reto de 4 en raya.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_rejected", [
+        (1, "enraya_plantado", "Plantado en el tablero",
+         "Que alguien rechace tu reto de 4 en raya.", C, True),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_rake", [
+        (1_000, "enraya_comision", "La casa también juega",
+         "Deja 1.000 Y$ de comisión en duelos y apuestas de grada del 4 en raya.", C),
+        (100_000, "enraya_mecenas", "Mecenas del tablero",
+         "Deja 100.000 Y$ de comisión en el 4 en raya.", E, True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("enraya", "enraya_retos", [
+        (1, "enraya_reto_1", "Reto cumplido", "Cumple un reto del día del 4 en raya.", C),
+        (10, "enraya_reto_10", "Funcionario de los retos",
+         "Cumple 10 retos del día del 4 en raya.", R),
+        (100, "enraya_reto_100", "Plan quinquenal de retos", "Cumple 100 retos del día.", E),
+        (500, "enraya_reto_500", "Agenda 2030 de las fichas", "Cumple 500 retos del día.", L),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_retos_full", [
+        (1, "enraya_pleno", "Pleno del día", "Cumple los tres retos de un día.", C),
+        (7, "enraya_pleno_7", "Semana redonda",
+         "Cumple los tres retos del día en 7 días distintos.", R),
+        (30, "enraya_pleno_30", "Mes de mayoría absoluta",
+         "Cumple los tres retos del día en 30 días distintos.", E),
+    ])  # fmt: skip
+    a += _tiers("enraya", "enraya_stake_42", [
+        (1, "enraya_42", "42 casillas, 42 Y$",
+         "Juégate exactamente 42 Y$ en un duelo de 4 en raya.", C, True),
+    ])  # fmt: skip
+    for stat, achievement_id, name, description, secret in (
+        ("enraya_april4", "enraya_cuatro_del_cuatro", "El 4 del 4",
+         "Juega al 4 en raya un 4 de abril.", False),
+        ("enraya_nochevieja", "enraya_uvas", "Doce uvas, cuatro fichas",
+         "Juega al 4 en raya en Nochevieja.", False),
+        ("enraya_canarias", "enraya_dia_canarias", "Fichas con gofio",
+         "Juega al 4 en raya un 30 de mayo, Día de Canarias.", False),
+        ("enraya_night", "enraya_insomnio", "Insomnio en raya",
+         "Juega al 4 en raya entre las 2 y las 6 de la madrugada.", True),
+        ("enraya_friday13", "enraya_viernes13", "Ficha negra",
+         "Pierde una partida de 4 en raya un viernes 13.", True),
+    ):  # fmt: skip
+        a += _tiers("enraya", stat, [(1, achievement_id, name, description, C, secret)])
 
     # 🛵 Reparto ------------------------------------------------------------------------
     a += _tiers("reparto", "work_orders", [
@@ -13376,6 +13656,119 @@ def gallos_bet_stats(
         delta.add["gallos_rake"] = rake
     if 2 <= when.hour < 6:
         delta.add["gallos_night"] = 1
+    return delta
+
+
+def enraya_stats(
+    event: EnrayaEvent,
+    record: EnrayaRecord,
+    *,
+    when: datetime,
+    jovani_first: bool = False,
+    net: int = 0,
+    crowd_pool: int = 0,
+    rake: int = 0,
+    rival_slept: bool = False,
+    retos: int = 0,
+    retos_full: bool = False,
+) -> StatDelta:
+    """Contadores de una partida de 4 en raya para uno de los jugadores (sin lo común del casino).
+
+    Args:
+        event: La partida, vista por este jugador.
+        record: Su ficha tras la partida.
+        when: Hora local.
+        jovani_first: Contra Jovani, si salió él.
+        net: En un duelo con apuesta, ganado menos apostado.
+        crowd_pool: Lo que apostó el público en el duelo.
+        rake: Comisión de la casa que se ha dejado.
+        rival_slept: Si ganó porque el rival se durmió.
+        retos: Retos del día que cumplió con esta partida.
+        retos_full: Si con ella completó los tres de hoy.
+    """
+    board = event.board
+    won, lost = event.won, event.lost
+    ending = event.ending
+    delta = StatDelta(
+        add={"enraya_games": 1},
+        peak={"enraya_streak_max": record.best_streak, "enraya_days_max": record.day_streak},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("enraya_wins", won)
+    bump("enraya_losses", lost)
+    bump("enraya_draws", ending is EnrayaEnding.DRAW)
+    bump("enraya_resigns", ending is EnrayaEnding.RESIGN)
+    bump("enraya_timeouts", ending is EnrayaEnding.TIMEOUT)
+    bump("enraya_opp_timeouts", rival_slept)
+    level = event.level
+    if level is not None:
+        bump(f"{ENRAYA_BEAT_PREFIX}{level.key}", won)
+        bump("enraya_beat_imposible_second", won and level.key == "imposible" and jovani_first)
+        bump("enraya_lose_facil", ending is EnrayaEnding.LOSS and level.key == "facil")
+        bump("enraya_draw_imposible", ending is EnrayaEnding.DRAW and level.key == "imposible")
+    if won:
+        directions = event.directions
+        bump("enraya_win_h", "h" in directions)
+        bump("enraya_win_v", "v" in directions)
+        bump("enraya_win_d", event.diagonal)
+        bump("enraya_double", len(board.winning_lines) >= 2)
+        bump("enraya_five", any(len(line.cells) >= 5 for line in board.winning_lines))
+        bump("enraya_quick_win", event.my_moves <= 4)
+        bump("enraya_last_piece_win", board.full)
+    bump("enraya_quick_loss", ending is EnrayaEnding.LOSS and board.count(event.disc.other) <= 4)
+    bump("enraya_full_board", board.full)
+    bump("enraya_blocks", amount=event.blocks)
+    bump("enraya_missed", amount=event.missed)
+    bump("enraya_missed_loss", lost and event.missed > 0)
+    if event.duel:
+        bump("enraya_duels")
+        bump("enraya_duel_wins", won)
+        bump("enraya_friendlies", not event.stake)
+        bump("enraya_casino_duels", event.stake > 0)
+        bump("enraya_duel_big", event.stake >= 10_000)
+        bump("enraya_stake_42", event.stake == 42)
+        if crowd_pool:
+            delta.peak["enraya_crowd_max"] = crowd_pool
+        if net > 0:
+            delta.peak["enraya_win_max"] = net
+    bump("enraya_rake", amount=rake)
+    bump("enraya_retos", amount=retos)
+    bump("enraya_retos_full", retos_full)
+    bump("enraya_april4", when.month == 4 and when.day == 4)
+    bump("enraya_nochevieja", when.month == 12 and when.day == 31)
+    bump("enraya_canarias", when.month == 5 and when.day == 30)
+    bump("enraya_night", 2 <= when.hour < 6)
+    bump("enraya_friday13", lost and when.weekday() == 4 and when.day == 13)
+    return delta
+
+
+def enraya_bet_stats(
+    *, won: bool, refunded: bool, odds_cents: int, rake: int, when: datetime
+) -> StatDelta:
+    """Contadores de una apuesta de grada en un duelo de 4 en raya (sin lo común del casino).
+
+    Args:
+        won: Si acertó.
+        refunded: Si se devolvió (tablas o nadie apostó por el otro color).
+        odds_cents: Cuota cobrada, en centésimas (0 si no cobró).
+        rake: Comisión de la casa que se ha dejado.
+        when: Hora local.
+    """
+    delta = StatDelta(add={"enraya_bets": 1})
+    if refunded:
+        delta.add["enraya_bet_refund"] = 1
+    elif won:
+        delta.add["enraya_bets_won"] = 1
+        delta.peak["enraya_bet_odds_max"] = odds_cents
+    if rake:
+        delta.add["enraya_rake"] = rake
+    if 2 <= when.hour < 6:
+        delta.add["enraya_night"] = 1
     return delta
 
 

@@ -25,6 +25,7 @@ from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
+from bot.services.enraya import Board, Disc
 from bot.services.skins import SKIN_BY_KEY
 
 GUILD_ID = 1
@@ -44,6 +45,7 @@ GAMES = (
     "Caballos",
     "Bacará",
     "Gallos",
+    "Enraya",
     "Porras",
     "Loteria",
 )
@@ -73,6 +75,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
+    await client.enraya.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
     await client.slots_repository.initialize()
@@ -1014,6 +1017,125 @@ async def test_los_gallos_apuntan_logros_y_jugadas_y_reciben_sus_skins_con_el_bo
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.by_game["gallos"].plays == 1
+    finally:
+        await client.close()
+
+
+RIVAL_ID = 11
+#: Las rojas (que salen) ganan en horizontal con su cuarta ficha.
+ENRAYA_WIN = [0, 0, 1, 1, 2, 2, 3]
+
+
+def enraya_member(user_id: int, name: str) -> MagicMock:
+    member = MagicMock(spec=discord.Member)
+    member.id = user_id
+    member.display_name = name
+    member.mention = f"<@{user_id}>"
+    member.bot = False
+    return member
+
+
+def enraya_cog_with_fake_drawing(client: BotClient):  # noqa: ANN201
+    """El 4 en raya del bot real con dibujo falso, sin esperas y sin pintar por adelantado."""
+    module = importer("Enraya", client)
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog = client.get_cog("Enraya")
+    cog.ahead = False
+    cog.renderer = MagicMock()
+    cog.renderer.still = AsyncMock(return_value=b"PNG")
+    cog.renderer.animate = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    cog.renderer.close = AsyncMock()
+    return cog
+
+
+def enraya_interaction(member: MagicMock) -> MagicMock:
+    interaction = fake_interaction()
+    interaction.user = member
+    interaction.guild = None
+    return interaction
+
+
+async def test_un_duelo_de_4_en_raya_apunta_logros_y_jugadas_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El 4 en raya carga antes que los logros y `apuestas`: sus puentes tienen que verlos."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = enraya_cog_with_fake_drawing(client)
+        owner = enraya_member(OWNER_ID, "Diego")
+        rival = enraya_member(RIVAL_ID, "Ana")
+        duel = await cog._enraya_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            rival=rival,
+            send=AsyncMock(return_value=MagicMock(edit=AsyncMock())),
+            send_error=AsyncMock(),
+        )
+        assert duel is not None
+        await duel.accept(enraya_interaction(rival))
+        for column in ENRAYA_WIN:
+            member = duel.member(duel.board.turn)
+            await duel.drop(enraya_interaction(member), column)
+        assert duel.board.winner is not None
+
+        winner, loser = duel.member(duel.board.winner), duel.member(duel.board.winner.other)
+        for member in (winner, loser):
+            profile = await client.achievements.profile(GUILD_ID, member.id)
+            assert profile.stats["enraya_games"] == 1
+            assert profile.stats["enraya_duels"] == 1
+            assert profile.stats["enraya_casino_duels"] == 1
+            assert "enraya_1" in profile.unlocked
+            report = await client.casino_stats.report(
+                GUILD_ID, member.id, since=None, today=date(2026, 10, 6)
+            )
+            assert report.by_game["enraya"].plays == 1
+        won = await client.achievements.profile(GUILD_ID, winner.id)
+        lost = await client.achievements.profile(GUILD_ID, loser.id)
+        assert won.stats["enraya_wins"] == 1 and "enraya_win_1" in won.unlocked
+        assert lost.stats["enraya_losses"] == 1 and "enraya_wins" not in lost.stats
+        assert won.stats["enraya_win_h"] == 1
+    finally:
+        await client.close()
+
+
+async def test_una_partida_contra_jovani_apunta_logros_y_la_ficha_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Sin dinero de por medio: los logros y la ficha cuentan igual, `apuestas` no."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = enraya_cog_with_fake_drawing(client)
+        owner = enraya_member(OWNER_ID, "Diego")
+        await cog._enraya_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text=None,
+            rival=None,
+            send=AsyncMock(return_value=MagicMock(edit=AsyncMock())),
+            send_error=AsyncMock(),
+        )
+        (panel,) = cog.panels
+        panel.board = Board()
+        for column in ENRAYA_WIN[:-1]:
+            panel.board = panel.board.play(column)
+        panel.rebuild()
+        interaction = enraya_interaction(owner)
+
+        button = next(i for i in panel.children if i.custom_id == "enraya:col3")
+        await button.callback(interaction)
+
+        assert panel.over and panel.board.winner is Disc.RED
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["enraya_games"] == 1 and profile.stats["enraya_wins"] == 1
+        assert "enraya_1" in profile.unlocked and "enraya_win_1" in profile.unlocked
+        assert (await client.enraya.get(GUILD_ID, OWNER_ID)).wins == 1
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert "enraya" not in report.by_game
     finally:
         await client.close()
 

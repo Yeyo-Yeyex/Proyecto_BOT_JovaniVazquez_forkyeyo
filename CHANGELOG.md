@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.2.0 · 2026-10-14
+
+- 4 en raya: `4enraya`, contra Jovani con retos del día o en duelo con apuesta y grada
+
 ### 6.1.2 · 2026-10-14
 
 - Timba: la mesa de cada botón de quien habla (pasar o igualar, retirarse, cada subida y todo) se pinta mientras corre su turno, y la primera de cada mano durante la espera entre manos
