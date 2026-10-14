@@ -15,6 +15,7 @@ import discord
 from discord.ext import commands
 
 from bot.repositories.achievements import AchievementRepository
+from bot.repositories.backgammon import BackgammonRepository
 from bot.repositories.beernight import BeernightRepository
 from bot.repositories.beernight_sounds import BeernightSoundStore
 from bot.repositories.birthdays import BirthdayRepository
@@ -72,6 +73,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.bacara",
     "bot.cogs.gallos",
     "bot.cogs.enraya",
+    "bot.cogs.backgammon",
     "bot.cogs.lottery",
     "bot.cogs.renta",
     "bot.cogs.apuestas",
@@ -158,6 +160,8 @@ class BotClient(commands.Bot):
         self.gallos = GallosRepository(database_path)
         # Ficha y retos del día de `4enraya`; el dinero de duelos y retos pasa por `economy`.
         self.enraya = EnrayaRepository(database_path)
+        # Ficha y retos del día de `backgammon`; el dinero de duelos y retos pasa por `economy`.
+        self.backgammon = BackgammonRepository(database_path)
         # Rango, racha y retos del club del `poker`; el dinero pasa por `economy`.
         self.poker = PokerRepository(database_path)
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
@@ -206,6 +210,7 @@ class BotClient(commands.Bot):
         await self.horses.initialize()
         await self.gallos.initialize()
         await self.enraya.initialize()
+        await self.backgammon.initialize()
         await self.poker.initialize()
         await self.porras.initialize()
         await self.work.repository.initialize()

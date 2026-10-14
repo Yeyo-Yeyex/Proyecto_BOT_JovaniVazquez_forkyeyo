@@ -116,6 +116,7 @@ from bot.services.gallos import DUEL_CUT, POOL_CUT, PoolBet, duel_prize, format_
 from bot.services.levels import TIMEZONE
 from bot.services.pets import Event, Moment, bet_moment
 from bot.services.poker_club import streak_multiplier_pct
+from bot.utils.ahead import Ahead
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -251,85 +252,6 @@ def short_name(name: str) -> str:
 # -- Dibujos por adelantado -----------------------------------------------------------------
 
 
-class Ahead:
-    """Lo que una mesa pinta por adelantado para un turno: un dibujo por botón.
-
-    Los dibujos van de uno en uno, en el orden pedido, y nunca se cortan a
-    medias (`NodeScene` no lo admite): cada uno comprueba antes de empezar si
-    el turno sigue siendo el mismo (`key`). Al pulsar, `take` da el dibujo si ya
-    está o si se está pintando justo ese; si no, quien llama lo pinta en el
-    momento.
-    """
-
-    def __init__(self, enabled: bool) -> None:
-        self.enabled = enabled
-        self.key: Hashable | None = None
-        self.futures: dict[Hashable, asyncio.Future[Any]] = {}
-        self.current: Hashable | None = None
-        self.task: asyncio.Task[None] | None = None
-
-    def plan(
-        self,
-        key: Hashable,
-        order: list[Hashable],
-        paint: Callable[[Hashable], Awaitable[Any]],
-    ) -> None:
-        """Empieza a pintar `order` para el turno `key`, si no lo está ya."""
-        if not self.enabled or key == self.key:
-            return
-        loop = asyncio.get_running_loop()
-        self.key = key
-        self.futures = {item: loop.create_future() for item in order}
-        previous = self.task
-        self.task = asyncio.create_task(
-            self._run(key, order, self.futures, paint, previous), name=f"{GAME}-adelanto"
-        )
-
-    async def _run(
-        self,
-        key: Hashable,
-        order: list[Hashable],
-        futures: dict[Hashable, asyncio.Future[Any]],
-        paint: Callable[[Hashable], Awaitable[Any]],
-        previous: asyncio.Task[None] | None,
-    ) -> None:
-        # Un plan detrás de otro: así un plan viejo nunca hace esperar dos dibujos.
-        if previous is not None:
-            await asyncio.gather(previous, return_exceptions=True)
-        try:
-            for item in order:
-                result = None
-                if self.key == key:
-                    self.current = item
-                    try:
-                        result = await paint(item)
-                    except Exception:
-                        logger.warning(
-                            "No se pudo pintar por adelantado el 4 en raya", exc_info=True
-                        )
-                    finally:
-                        self.current = None
-                if not futures[item].done():
-                    futures[item].set_result(result)
-        finally:
-            for future in futures.values():
-                if not future.done():
-                    future.set_result(None)
-
-    async def take(self, key: Hashable, item: Hashable) -> Any:
-        """El dibujo de `item` si vale para `key` y está (o se está pintando); si no, `None`."""
-        if self.key != key or item not in self.futures:
-            return None
-        future = self.futures[item]
-        if future.done() or self.current == item:
-            return await asyncio.shield(future)
-        return None
-
-    def drop(self) -> None:
-        """El turno ha cambiado: lo que quede por pintar ya no sirve."""
-        self.key = None
-
-
 @dataclass(frozen=True, slots=True)
 class Played:
     """Una jugada resuelta y pintada: el tablero tras ella, el GIF y lo que dice Jovani."""
@@ -405,7 +327,7 @@ class SoloTable(ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
-        self.ahead = Ahead(cog.ahead)
+        self.ahead = Ahead(cog.ahead, name="el 4 en raya")
 
     @property
     def player(self) -> Disc:
@@ -1096,7 +1018,7 @@ class Duel:
         self.started_at = 0.0
         self.seed = cog.rng.randrange(1, 2**31)
         self.timer: asyncio.Task[None] | None = None
-        self.ahead = Ahead(cog.ahead)
+        self.ahead = Ahead(cog.ahead, name="el 4 en raya")
         self._lock = asyncio.Lock()
         self._busy = False
         self.note: str | None = None

@@ -15,10 +15,12 @@ from bot.services.coin import Side
 from bot.services.coin_scene import CoinScene
 
 ASSETS = Path(skins.__file__).resolve().parent.parent / "assets"
-FELT_SCENES = ("ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "poker")
+#: Cada mesa con fieltro: las del grupo `tapete` de las skins (una nueva entra sola).
+FELT_SCENES = tuple(g.key for g in skins.GAMES.values() if g.group == skins.TAPETE)
 
 
 def test_cada_mesa_con_fieltro_carga_el_tapete_y_lo_pinta() -> None:
+    assert {"ruleta", "dados", "backgammon"} <= set(FELT_SCENES)
     for game in FELT_SCENES:
         html = (ASSETS / game / "escena.html").read_text(encoding="utf-8")
         assert '<script src="../tapete.js"></script>' in html, game

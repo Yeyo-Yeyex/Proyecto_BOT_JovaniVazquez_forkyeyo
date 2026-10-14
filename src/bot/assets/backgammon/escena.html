@@ -1,0 +1,958 @@
+<!doctype html>
+<!--
+Escena del backgammon, dibujada con canvas. La pinta Node con Skia
+(assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/backgammon_scene.py).
+
+No decide nada: Python le pasa, en cada fotograma, la posición, los dados (con su
+sitio, giro y altura), el cubo, las fichas que vuelan, las casillas resaltadas,
+las cuentas de pips, el turno y el cartel (bot/services/backgammon_render.py:
+meta_state, board_state y las animaciones). Aquí solo se pinta. Funciones que
+llama Python:
+
+- loadFonts()           espera a las fuentes (canvas no las carga solo).
+- setup(meta)           los jugadores, el título, la semilla, la skin del
+                        tapete y la geometría; pinta la mesa una sola vez.
+- renderFrames(states)  dibuja los fotogramas y devuelve, de cada uno, el
+                        recuadro que ha cambiado y dónde va ({x, y, u}).
+- slotAt(geom, ...)     dónde va cada ficha (lo comprueban las pruebas contra Python).
+
+Orden de capas: mesa y tablero (una vez: madera con veta, tapete, puntos, barra,
+bandeja) -> números del marco -> tarjetas de los jugadores -> casillas
+resaltadas -> montones de la barra, los puntos y la bandeja -> cubo -> dados y
+sombras -> fichas en el aire -> confeti -> cartel. Cuando solo se mueven los
+dados o las fichas que vuelan, se devuelve únicamente el recuadro que cubren
+(antes y ahora); si cambia cualquier otra cosa, el fotograma va entero. Todo se
+dibuja al doble de tamaño (S = 2) y se reduce al copiarlo. Sin emojis: el
+Chromium del Docker no trae su fuente. El azar sale solo de la semilla de la partida.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script src="../tapete.js"></script>
+<script>
+"use strict";
+const S = 2;
+const W = 800, H = 572;
+const TEX = 0x51ed;                  // semilla de las texturas (madera, fieltro, bandeja): las mismas en todas las partidas
+const PAD = 3;                       // margen extra al reducir un recuadro (ver `snapshot`)
+
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const mid = document.createElement("canvas");
+const out = document.createElement("canvas");
+const bctx = big.getContext("2d");
+const mctx = mid.getContext("2d");
+const octx = out.getContext("2d");
+
+let META = null, G = null, SKIN = null;   // la partida, su geometría y la skin
+let BASE = null, BASE_KEY = null;          // la mesa pintada (se reutiliza si no cambia)
+let SPRITES = null;                        // fichas, sombras y dados (no dependen de la partida)
+let CUBES = new Map();                     // caras del cubo, por valor
+let NAMES = null, TITLE = null;            // nombres, título y subtítulo ya ajustados
+let CONF = [];                             // piezas de confeti (salen de la semilla)
+let PREV_KEY = null, PREV_ITEMS = null;
+
+const CHECKER = {
+  1: { face: ["#ffffff", "#fcf6e4", "#ebdfc0", "#c7b68c"], wall: ["#bdaa80", "#7a6844"],
+       rim: ["rgba(255,255,255,0.95)", "rgba(110,88,50,0.6)"], groove: "rgba(120,96,56,0.5)", gleam: "rgba(255,255,255,0.8)",
+       inlay: "rgba(214,172,84,0.75)", spec: 0.85, sheen: ["rgba(255,196,220,0.20)", "rgba(165,215,255,0.22)"] },
+  2: { face: ["#62626e", "#30303a", "#131318", "#050507"], wall: ["#202027", "#050507"],
+       rim: ["rgba(215,215,240,0.6)", "rgba(0,0,0,0.85)"], groove: "rgba(0,0,0,0.75)", gleam: "rgba(205,205,230,0.24)",
+       inlay: "rgba(222,176,84,0.7)", spec: 0.5, sheen: ["rgba(130,150,255,0.14)", "rgba(255,120,150,0.12)"] },
+};
+const GLOW = { 1: "255,230,170", 2: "255,140,96" };
+const KIND = {
+  win:  { a: "#ffd24a", b: "#ff9d1c", text: ["#fff6c2", "#ffd24a", "#f09a12"], rgb: "255,196,60" },
+  lose: { a: "#c58a96", b: "#7f8596", text: ["#f3dde1", "#c9a1aa", "#8b8fa0"], rgb: "190,120,134" },
+  draw: { a: "#6aaeff", b: "#3a6be0", text: ["#e3f1ff", "#8cc2ff", "#4a86ee"], rgb: "90,160,255" },
+  time: { a: "#b58cff", b: "#7a4fe0", text: ["#f1e6ff", "#c3a2ff", "#8f63ee"], rgb: "160,120,255" },
+};
+const CONFETTI = {
+  0: ["#ffd24a", "#fff6c2", "#ff7a5c", "#ffffff"],
+  1: ["#fffaf0", "#f4e2b0", "#ffd24a", "#ffffff"],
+  2: ["#ff5a6e", "#ffb0b8", "#ffd24a", "#ffffff"],
+};
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function circle(g, x, y, r) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); }
+function fitText(g, text, maxW, font, size, min = 9) {
+  for (let s = size; s >= min; s--) { g.font = font(s); if (g.measureText(text).width <= maxW) return s; }
+  g.font = font(min); return min;
+}
+function ellipsize(g, text, maxW) {
+  if (g.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && g.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t.trimEnd() + "…";
+}
+function halo(g, x, y, w, h, r, rgb, spread, alpha) {
+  // Resplandor de un rectángulo redondeado con trazos cada vez más anchos y más tenues.
+  // No usa shadowBlur: así sale igual pintado entero que en un recuadro.
+  g.save(); g.lineWidth = 2;
+  for (let i = spread; i >= 1; i--) {
+    g.strokeStyle = `rgba(${rgb},${(alpha * Math.pow(1 - i / (spread + 1), 2.2)).toFixed(4)})`;
+    roundRect(g, x - i, y - i, w + 2 * i, h + 2 * i, r + i); g.stroke();
+  }
+  g.restore();
+}
+function linear(g, x0, y0, x1, y1, stops) {
+  const gr = g.createLinearGradient(x0, y0, x1, y1);
+  stops.forEach(([o, c]) => gr.addColorStop(o, c));
+  return gr;
+}
+function radial(g, x0, y0, r0, x1, y1, r1, stops) {
+  const gr = g.createRadialGradient(x0, y0, r0, x1, y1, r1);
+  stops.forEach(([o, c]) => gr.addColorStop(o, c));
+  return gr;
+}
+
+// -- Dónde va cada cosa (lo mismo que backgammon_render.py: point_x, stack_xy, bar_xy, off_xy) ----
+
+function pointX(i, geom = G) {
+  const column = i < 12 ? 11 - i : i - 12;
+  return (column < 6 ? geom.left : geom.right) + (column % 6 + 0.5) * geom.pw;
+}
+function stackXY(i, k, n, geom = G) {
+  const step = n <= 5 ? geom.step : 4 * geom.step / (n - 1);
+  return i < 12 ? [pointX(i, geom), geom.bottom - geom.r - k * step] : [pointX(i, geom), geom.top + geom.r + k * step];
+}
+function barXY(side, k, n, geom = G) {
+  const step = n <= 4 ? geom.step : geom.bar_span / (n - 1), off = geom.bar_inner + k * step;
+  return [geom.bar_x, side === 1 ? geom.mid + off : geom.mid - off];
+}
+function offXY(side, k, geom = G) {
+  const [, h, pace] = geom.slab, y0 = geom.tray[1], y1 = geom.tray[3];
+  return side === 1 ? [geom.tray_x, y1 - 5 - h / 2 - k * pace] : [geom.tray_x, y0 + 5 + h / 2 + k * pace];
+}
+
+// -- Madera ----------------------------------------------------------------------------------
+
+function woodGrain(g, x, y, w, h, vertical, seed, dark, light) {
+  // Veta: hilos largos y algo ondulados a lo largo de la pieza, claros y oscuros.
+  const r = rng(seed), len = vertical ? h : w, span = vertical ? w : h;
+  const n = Math.round(span * 2.2 + 30);
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.lineCap = "round";
+  for (let i = 0; i < n; i++) {
+    const off = r() * span, a0 = (r() - 0.35) * len * 0.5, a1 = len * (0.45 + r() * 0.8), wob = (r() - 0.5) * span * 0.12;
+    g.strokeStyle = r() < 0.62 ? `rgba(30,10,2,${dark * (0.25 + r() * 0.75)})` : `rgba(255,216,162,${light * (0.4 + r())})`;
+    g.lineWidth = 0.3 + r() * 0.8;
+    g.beginPath();
+    if (vertical) {
+      g.moveTo(x + off, y + a0);
+      g.bezierCurveTo(x + off + wob, y + a0 + a1 * 0.33, x + off - wob, y + a0 + a1 * 0.66, x + off + wob * 0.4, y + a0 + a1);
+    } else {
+      g.moveTo(x + a0, y + off);
+      g.bezierCurveTo(x + a0 + a1 * 0.33, y + off + wob, x + a0 + a1 * 0.66, y + off - wob, x + a0 + a1, y + off + wob * 0.4);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+function woodPiece(g, poly, box, colors, vertical, seed, dark = 0.2, light = 0.07) {
+  // Una pieza del marco: forma `poly` (inglete), degradado de fuera a dentro y veta.
+  const [x, y, w, h] = box;
+  g.save(); g.beginPath();
+  poly.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+  g.closePath(); g.clip();
+  g.fillStyle = vertical ? linear(g, x, 0, x + w, 0, colors) : linear(g, 0, y, 0, y + h, colors);
+  g.fillRect(x, y, w, h);
+  woodGrain(g, x, y, w, h, vertical, seed, dark, light);
+  g.restore();
+}
+function brass(g, x, y, w, h, r) {
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.55)"; g.shadowBlur = 4 * S; g.shadowOffsetY = 2 * S;
+  g.fillStyle = linear(g, x, y, x + w, y + h, [[0, "#f6df8e"], [0.45, "#caa040"], [1, "#7c5812"]]);
+  roundRect(g, x, y, w, h, r); g.fill();
+  g.restore();
+  g.strokeStyle = "rgba(255,246,200,0.75)"; g.lineWidth = 0.9; roundRect(g, x + 0.6, y + 0.6, w - 1.2, h - 1.2, r); g.stroke();
+  g.strokeStyle = "rgba(70,40,4,0.6)"; g.lineWidth = 0.7; roundRect(g, x + 2.2, y + 2.2, w - 4.4, h - 4.4, Math.max(1, r - 1.5)); g.stroke();
+}
+function screw(g, x, y, r = 2.1) {
+  g.fillStyle = radial(g, x - r * 0.3, y - r * 0.4, 0.2, x, y, r, [[0, "#fff4c4"], [0.6, "#b98b2c"], [1, "#5a3c06"]]);
+  circle(g, x, y, r); g.fill();
+  g.strokeStyle = "rgba(40,24,2,0.85)"; g.lineWidth = 0.7;
+  g.beginPath(); g.moveTo(x - r * 0.7, y - r * 0.3); g.lineTo(x + r * 0.7, y + r * 0.3); g.stroke();
+}
+
+// -- La mesa y el tablero (una vez por skin y título) -------------------------------------------
+
+function paintTable(g) {
+  // Mesa de nogal oscuro, con una lámpara colgando encima del tablero.
+  g.fillStyle = linear(g, 0, 0, 0, H, [[0, "#2c1c12"], [0.5, "#241610"], [1, "#150c08"]]);
+  g.fillRect(0, 0, W, H);
+  woodGrain(g, 0, 0, W, H, false, TEX ^ 0x7ab1e, 0.10, 0.03);
+  const pool = radial(g, W / 2, 300, 40, W / 2, 300, 560, [[0, "rgba(255,200,130,0.34)"], [0.45, "rgba(255,170,90,0.12)"], [1, "rgba(255,160,80,0)"]]);
+  g.fillStyle = pool; g.fillRect(0, 0, W, H);
+}
+
+function paintWoodFrame(g) {
+  const [fx0, fy0, fx1, fy1] = G.frame, [ix0, iy0] = [G.felt[0], G.felt[1]], [ix1, iy1] = [G.tray[2], G.tray[3]];
+  const seed = TEX;
+  // Sombra del tablero sobre la mesa.
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.75)"; g.shadowBlur = 26 * S; g.shadowOffsetY = 10 * S;
+  g.fillStyle = "#3b2314"; roundRect(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 14); g.fill();
+  g.restore();
+  // Las cuatro piezas del marco, con inglete en las esquinas y la veta a lo largo.
+  g.save(); roundRect(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 14); g.clip();
+  const topB = [fx0, fy0, fx1 - fx0, iy0 - fy0], botB = [fx0, iy1, fx1 - fx0, fy1 - iy1];
+  const leftB = [fx0, fy0, ix0 - fx0, fy1 - fy0], rightB = [ix1, fy0, fx1 - ix1, fy1 - fy0];
+  woodPiece(g, [[fx0, fy0], [fx1, fy0], [ix1, iy0], [ix0, iy0]], topB, [[0, "#a46c42"], [1, "#74451f"]], false, seed ^ 11);
+  woodPiece(g, [[fx0, fy1], [fx1, fy1], [ix1, iy1], [ix0, iy1]], botB, [[0, "#4c2b15"], [1, "#6c3e1f"]], false, seed ^ 22);
+  woodPiece(g, [[fx0, fy0], [ix0, iy0], [ix0, iy1], [fx0, fy1]], leftB, [[0, "#905b36"], [1, "#6b3e20"]], true, seed ^ 33);
+  woodPiece(g, [[fx1, fy0], [ix1, iy0], [ix1, iy1], [fx1, fy1]], rightB, [[0, "#5e361c"], [1, "#774726"]], true, seed ^ 44);
+  // Inglete: una línea oscura con su filo de luz.
+  for (const [ax, ay, bx, by] of [[fx0, fy0, ix0, iy0], [fx1, fy0, ix1, iy0], [fx0, fy1, ix0, iy1], [fx1, fy1, ix1, iy1]]) {
+    g.strokeStyle = "rgba(20,8,2,0.6)"; g.lineWidth = 1; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+    g.strokeStyle = "rgba(255,220,170,0.14)"; g.lineWidth = 0.8; g.beginPath(); g.moveTo(ax + 0.9, ay); g.lineTo(bx + 0.9, by); g.stroke();
+  }
+  // Biselado del borde de fuera: luz arriba a la izquierda, sombra abajo a la derecha.
+  const bevel = linear(g, fx0, fy0, fx1, fy1, [[0, "rgba(255,226,184,0.75)"], [0.3, "rgba(255,226,184,0.12)"], [0.62, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.7)"]]);
+  g.strokeStyle = bevel; g.lineWidth = 3; roundRect(g, fx0 + 1.5, fy0 + 1.5, fx1 - fx0 - 3, fy1 - fy0 - 3, 13); g.stroke();
+  g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 1; roundRect(g, fx0 + 3.8, fy0 + 3.8, fx1 - fx0 - 7.6, fy1 - fy0 - 7.6, 11); g.stroke();
+  g.restore();
+}
+
+function paintInnerLip(g) {
+  // El filo de dentro del marco, donde se hunde el tapete.
+  const [ix0, iy0] = [G.felt[0], G.felt[1]], [ix1, iy1] = [G.tray[2], G.tray[3]];
+  g.strokeStyle = "rgba(10,4,0,0.85)"; g.lineWidth = 1.6; g.strokeRect(ix0 - 0.8, iy0 - 0.8, ix1 - ix0 + 1.6, iy1 - iy0 + 1.6);
+  g.strokeStyle = "rgba(255,214,160,0.28)"; g.lineWidth = 0.9; g.strokeRect(ix0 - 2, iy0 - 2, ix1 - ix0 + 4, iy1 - iy0 + 4);
+}
+
+function paintFelt(g) {
+  const [x0, y0, x1, y1] = G.felt, w = x1 - x0, h = y1 - y0;
+  const felt = Tapete.felt(META.skin, ["#2d8456", "#17583a", "#082a1b"]);
+  g.fillStyle = radial(g, G.bar_x, G.mid, 30, G.bar_x, G.mid, 420, [[0, felt[0]], [0.55, felt[1]], [1, felt[2]]]);
+  g.fillRect(x0, y0, w, h);
+  Tapete.pattern(g, x0, y0, w, h, META.skin);
+  // Pelusa del fieltro.
+  const r = rng(TEX ^ 0xfe17);
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.055)";
+    g.fillRect(x0 + r() * w, y0 + r() * h, 1.3, 1.3);
+  }
+  // El tapete está hundido en el marco: sombra en sus cuatro bordes.
+  const edge = (xa, ya, xb, yb, rx, ry, rw, rh) => {
+    g.fillStyle = linear(g, xa, ya, xb, yb, [[0, "rgba(0,0,0,0.55)"], [1, "rgba(0,0,0,0)"]]); g.fillRect(rx, ry, rw, rh);
+  };
+  edge(x0, y0, x0, y0 + 11, x0, y0, w, 11);
+  edge(x0, y1, x0, y1 - 11, x0, y1 - 11, w, 11);
+  edge(x0, y0, x0 + 9, y0, x0, y0, 9, h);
+}
+
+function triangle(g, i) {
+  const cx = pointX(i), top = i >= 12, len = G.length, hw = G.pw * 0.45;
+  const base = top ? G.top : G.bottom, tip = top ? G.top + len : G.bottom - len, dir = top ? 1 : -1;
+  g.beginPath();
+  g.moveTo(cx - hw, base);
+  g.lineTo(cx - 1.8, tip - dir * 0.6);
+  g.quadraticCurveTo(cx, tip + dir * 1.6, cx + 1.8, tip - dir * 0.6);
+  g.lineTo(cx + hw, base);
+  g.closePath();
+  return { base, tip, cx, hw };
+}
+function paintPoints(g) {
+  for (let i = 0; i < 24; i++) {
+    const column = i < 12 ? 11 - i : i - 12;
+    const dark = (column % 2 === 0) === (i < 12);
+    const { base, tip, cx, hw } = triangle(g, i);
+    const grad = linear(g, 0, base, 0, tip, dark
+      ? [[0, "#a02c40"], [0.55, "#7a1b2d"], [1, "#4a0e1a"]]
+      : [[0, "#f2e4b8"], [0.55, "#d9c58f"], [1, "#b09860"]]);
+    g.save();
+    g.shadowColor = "rgba(0,0,0,0.35)"; g.shadowBlur = 3 * S; g.shadowOffsetX = 1 * S; g.shadowOffsetY = 1 * S;
+    g.fillStyle = grad; g.fill();
+    g.restore();
+    // Luz por la izquierda y filo fino.
+    g.save(); triangle(g, i); g.clip();
+    g.fillStyle = linear(g, cx - hw, 0, cx + hw, 0, [[0, "rgba(255,255,255,0.20)"], [0.5, "rgba(255,255,255,0)"], [1, "rgba(0,0,0,0.20)"]]);
+    g.fillRect(cx - hw, Math.min(base, tip), hw * 2, G.length);
+    g.restore();
+    triangle(g, i);
+    g.strokeStyle = dark ? "rgba(20,0,6,0.7)" : "rgba(60,40,10,0.6)"; g.lineWidth = 0.9; g.stroke();
+  }
+}
+
+function paintBar(g) {
+  const [bx0, bx1] = G.bar, y0 = G.felt[1], y1 = G.felt[3], w = bx1 - bx0, seed = TEX;
+  const strip = (x, width, colors, sd) => {
+    g.save();
+    g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 8 * S; g.shadowOffsetX = 3 * S; g.shadowOffsetY = 0;
+    g.fillStyle = "#4a2a14"; g.fillRect(x, y0, width, y1 - y0);
+    g.restore();
+    g.fillStyle = linear(g, x, 0, x + width, 0, colors); g.fillRect(x, y0, width, y1 - y0);
+    woodGrain(g, x, y0, width, y1 - y0, true, sd, 0.2, 0.07);
+    g.fillStyle = linear(g, x, 0, x + width, 0, [[0, "rgba(255,226,184,0.5)"], [0.06, "rgba(255,226,184,0)"], [0.94, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.55)"]]);
+    g.fillRect(x, y0, width, y1 - y0);
+  };
+  strip(bx0, w, [[0, "#7a4b28"], [0.5, "#653a1c"], [1, "#4f2d14"]], seed ^ 55);
+  const [wx0, wx1] = G.wall;
+  strip(wx0, wx1 - wx0, [[0, "#744622"], [0.5, "#613719"], [1, "#4c2b13"]], seed ^ 66);
+  // El hueco de la bisagra en medio de la barra.
+  const cx = G.bar_x;
+  g.fillStyle = "rgba(10,3,0,0.65)"; g.fillRect(cx - 0.8, y0, 1.6, y1 - y0);
+  g.fillStyle = "rgba(255,214,160,0.16)"; g.fillRect(cx + 0.8, y0, 0.8, y1 - y0);
+}
+
+function paintTray(g) {
+  const [x0, y0, x1, y1] = G.tray, w = x1 - x0, h = y1 - y0;
+  g.fillStyle = linear(g, x0, 0, x1, 0, [[0, "#3a0f1b"], [0.5, "#4e1827"], [1, "#35101a"]]);
+  g.fillRect(x0, y0, w, h);
+  const r = rng(TEX ^ 0x7a1);
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = r() < 0.5 ? "rgba(255,190,200,0.05)" : "rgba(0,0,0,0.12)";
+    g.fillRect(x0 + r() * w, y0 + r() * h, 1.2, 1.2);
+  }
+  // Forro acolchado: rombos con una luz y una sombra, y un botón en cada cruce.
+  g.save(); g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+  const q = 20;
+  for (const [dy, color] of [[1, "rgba(0,0,0,0.30)"], [0, "rgba(255,170,190,0.10)"]]) {
+    g.strokeStyle = color; g.lineWidth = 1; g.beginPath();
+    for (let k = -h; k < w + h; k += q) { g.moveTo(x0 + k, y0 + dy); g.lineTo(x0 + k + h, y0 + h + dy); g.moveTo(x0 + k + h, y0 + dy); g.lineTo(x0 + k, y0 + h + dy); }
+    g.stroke();
+  }
+  g.fillStyle = "rgba(255,190,205,0.16)";
+  for (let j = 0; j * q < h + q; j++) for (let i = 0; i * q * 2 < w + q * 2; i++) { circle(g, x0 + i * q * 2 + (j % 2 ? q : 0), y0 + j * q, 1.1); g.fill(); }
+  g.restore();
+  // Forro hundido: sombra en la pared de la izquierda, arriba y abajo.
+  g.fillStyle = linear(g, x0, 0, x0 + 12, 0, [[0, "rgba(0,0,0,0.6)"], [1, "rgba(0,0,0,0)"]]); g.fillRect(x0, y0, 12, h);
+  g.fillStyle = linear(g, 0, y0, 0, y0 + 10, [[0, "rgba(0,0,0,0.55)"], [1, "rgba(0,0,0,0)"]]); g.fillRect(x0, y0, w, 10);
+  g.fillStyle = linear(g, 0, y1, 0, y1 - 10, [[0, "rgba(0,0,0,0.55)"], [1, "rgba(0,0,0,0)"]]); g.fillRect(x0, y1 - 10, w, 10);
+  // Listón de madera que parte la bandeja en dos: negras arriba y blancas abajo.
+  const cy = G.mid;
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 4 * S; g.shadowOffsetY = 2 * S;
+  g.fillStyle = "#6d4121"; g.fillRect(x0, cy - 4, w, 8);
+  g.restore();
+  g.fillStyle = linear(g, 0, cy - 4, 0, cy + 4, [[0, "#9c6a40"], [0.5, "#744523"], [1, "#5a3519"]]); g.fillRect(x0, cy - 4, w, 8);
+  woodGrain(g, x0, cy - 4, w, 8, false, TEX ^ 77, 0.2, 0.08);
+  g.fillStyle = "rgba(255,226,184,0.4)"; g.fillRect(x0, cy - 4, w, 0.9);
+}
+
+function paintHardware(g) {
+  // Bisagras de latón arriba y abajo de la barra y remaches en las esquinas.
+  const [fx0, fy0, fx1, fy1] = G.frame;
+  for (const y of [fy0 + 2.5, fy1 - 19.5]) {
+    brass(g, G.bar_x - 19, y, 38, 17, 3);
+    screw(g, G.bar_x - 11, y + 8.5); screw(g, G.bar_x + 11, y + 8.5);
+    g.fillStyle = "rgba(60,36,2,0.7)"; g.fillRect(G.bar_x - 0.7, y + 1.5, 1.4, 14);
+  }
+  for (const [x, y] of [[fx0 + 7, fy0 + 7], [fx1 - 7, fy0 + 7], [fx0 + 7, fy1 - 7], [fx1 - 7, fy1 - 7]]) screw(g, x, y, 2.8);
+}
+
+function paintLight(g) {
+  // Lámpara cálida sobre el tablero y viñeta en las esquinas.
+  g.save(); g.globalCompositeOperation = "lighter";
+  g.fillStyle = radial(g, W / 2, 190, 20, W / 2, 230, 470, [[0, "rgba(255,226,170,0.20)"], [0.5, "rgba(255,190,110,0.06)"], [1, "rgba(255,180,100,0)"]]);
+  g.fillRect(0, 0, W, H);
+  g.restore();
+  g.fillStyle = radial(g, W / 2, H / 2 + 20, 250, W / 2, H / 2 + 20, 560, [[0, "rgba(6,2,0,0)"], [1, "rgba(6,2,0,0.62)"]]);
+  g.fillRect(0, 0, W, H);
+}
+
+function drawTitle(g) {
+  // El título y el subtítulo van con el fotograma y no con la mesa, para que la mesa
+  // pintada valga para todas las partidas con la misma skin.
+  const t = TITLE;
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  if (t.title) {
+    g.font = `${t.size}px Luckiest`;
+    g.strokeStyle = "rgba(0,0,0,0.28)"; g.lineWidth = 9; g.strokeText(t.title, W / 2, 30);
+    g.strokeStyle = "rgba(0,0,0,0.38)"; g.lineWidth = 7.5; g.strokeText(t.title, W / 2, 28.5);
+    g.strokeStyle = "#2a1208"; g.lineWidth = 6; g.strokeText(t.title, W / 2, 26);
+    g.fillStyle = linear(g, 0, 26 - t.size / 2, 0, 26 + t.size / 2, [[0, "#fff6c4"], [0.5, "#ffd24a"], [1, "#e88a12"]]);
+    g.fillText(t.title, W / 2, 26);
+  }
+  if (t.sub) {
+    g.font = `700 ${t.subSize}px Montserrat`;
+    g.fillStyle = "rgba(0,0,0,0.6)"; g.fillText(t.sub, W / 2 + 1, 52);
+    g.fillStyle = "#ecd9b4"; g.fillText(t.sub, W / 2, 51);
+  }
+}
+function fitTitle() {
+  const [cx, , cw] = G.cards, avail = W - 2 * (cx + cw) - 16, title = String(META.title || ""), sub = String(META.subtitle || "");
+  bctx.setTransform(S, 0, 0, S, 0, 0);
+  return {
+    title, sub,
+    size: title ? fitText(bctx, title, avail, (s) => `${s}px Luckiest`, 30, 16) : 0,
+    subSize: sub ? fitText(bctx, sub, avail, (s) => `700 ${s}px Montserrat`, 12, 8) : 0,
+  };
+}
+
+function paintBase() {
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  paintTable(g);
+  paintWoodFrame(g);
+  paintTray(g);
+  paintFelt(g);
+  paintPoints(g);
+  paintBar(g);
+  paintInnerLip(g);
+  paintHardware(g);
+  paintLight(g);
+  return c;
+}
+
+// -- Fichas, dados y cubo (sprites: se pintan una vez) --------------------------------------------
+
+function makeChecker(side) {
+  const r = G.r, size = Math.ceil((r * 2 + 10) * S), h = size / S / 2, t = CHECKER[side];
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  // Canto: el grosor de la ficha, un poco más abajo que la cara.
+  g.fillStyle = linear(g, 0, h - r, 0, h + r + 2, [[0, t.wall[0]], [1, t.wall[1]]]);
+  circle(g, h, h + 1.6, r); g.fill();
+  const fy = h - 0.8, fr = r - 0.4;
+  g.save(); g.translate(h, fy);
+  g.fillStyle = radial(g, -fr * 0.3, -fr * 0.4, fr * 0.04, 0, 0, fr, [[0, t.face[0]], [0.4, t.face[1]], [0.8, t.face[2]], [1, t.face[3]]]);
+  circle(g, 0, 0, fr); g.fill();
+  // Bisel del borde, en relieve.
+  g.strokeStyle = linear(g, -fr, -fr, fr, fr, [[0, t.rim[0]], [0.5, "rgba(255,255,255,0)"], [1, t.rim[1]]]);
+  g.lineWidth = 1.5; circle(g, 0, 0, fr - 0.8); g.stroke();
+  // Anillos concéntricos grabados: una ranura oscura y el filo de luz al lado.
+  for (const k of [0.8, 0.56]) {
+    g.strokeStyle = t.groove; g.lineWidth = 1; circle(g, 0, 0, fr * k); g.stroke();
+    g.strokeStyle = t.gleam; g.lineWidth = 0.8; circle(g, 0.55, 0.65, fr * k); g.stroke();
+  }
+  // Un filete dorado incrustado.
+  g.strokeStyle = t.inlay; g.lineWidth = 1.5; circle(g, 0, 0, fr * 0.68); g.stroke();
+  // Centro hundido.
+  g.fillStyle = linear(g, -fr * 0.4, -fr * 0.4, fr * 0.4, fr * 0.4, [[0, "rgba(0,0,0,0.16)"], [1, "rgba(255,255,255,0.22)"]]);
+  circle(g, 0, 0, fr * 0.4); g.fill();
+  // Reflejo nacarado.
+  g.save(); circle(g, 0, 0, fr); g.clip();
+  g.fillStyle = linear(g, -fr, -fr, fr, fr, [[0, t.sheen[0]], [0.5, "rgba(255,255,255,0)"], [1, t.sheen[1]]]);
+  g.fillRect(-fr, -fr, fr * 2, fr * 2);
+  g.restore();
+  // Brillo: media luna arriba a la izquierda y un punto de luz.
+  g.save(); g.rotate(-Math.PI / 4);
+  g.fillStyle = linear(g, 0, -fr * 0.95, 0, -fr * 0.5, [[0, `rgba(255,255,255,${t.spec})`], [1, "rgba(255,255,255,0)"]]);
+  g.beginPath(); g.ellipse(0, -fr * 0.72, fr * 0.42, fr * 0.2, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+  g.fillStyle = `rgba(255,255,255,${t.spec * 0.9})`; circle(g, -fr * 0.5, -fr * 0.55, fr * 0.06); g.fill();
+  g.restore();
+  // Filo oscuro del contorno.
+  g.strokeStyle = side === 1 ? "rgba(70,52,24,0.55)" : "rgba(0,0,0,0.8)"; g.lineWidth = 0.8;
+  circle(g, h, fy, fr); g.stroke();
+  return { c, half: h };
+}
+
+function makeShadow(r) {
+  const size = Math.ceil((r * 2 + 16) * S), h = size / S / 2;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  g.fillStyle = radial(g, h, h, r * 0.55, h, h, r + 6, [[0, "rgba(0,0,0,0.5)"], [1, "rgba(0,0,0,0)"]]);
+  circle(g, h, h, r + 6); g.fill();
+  return { c, half: h };
+}
+
+const PIPS = {
+  1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]],
+  4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+  6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
+};
+function makeDie(side, value) {
+  const d = G.die, size = Math.ceil((d + 10) * S), h = size / S / 2, dark = side === 2;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  const x = h - d / 2, y = h - d / 2, rad = 7;
+  // Canto inferior para dar grosor.
+  g.fillStyle = dark ? "#030304" : "#a89870"; roundRect(g, x, y + 1.8, d, d, rad); g.fill();
+  g.fillStyle = dark
+    ? linear(g, x, y, x + d, y + d, [[0, "#4a4a56"], [0.5, "#1e1e25"], [1, "#0a0a0e"]])
+    : linear(g, x, y, x + d, y + d, [[0, "#fffdf4"], [0.55, "#f0e5c6"], [1, "#cfbf94"]]);
+  roundRect(g, x, y, d, d, rad); g.fill();
+  // Aristas redondeadas: luz arriba y a la izquierda, sombra abajo y a la derecha.
+  g.strokeStyle = linear(g, x, y, x + d, y + d, [[0, dark ? "rgba(220,220,245,0.55)" : "rgba(255,255,255,0.95)"], [0.5, "rgba(255,255,255,0)"], [1, dark ? "rgba(0,0,0,0.85)" : "rgba(110,88,50,0.55)"]]);
+  g.lineWidth = 1.6; roundRect(g, x + 1, y + 1, d - 2, d - 2, rad - 1); g.stroke();
+  // Puntos hundidos: agujero oscuro con el filo de luz abajo a la derecha.
+  const pr = d * 0.085, sp = d * 0.27;
+  for (const [dx, dy] of PIPS[value]) {
+    const px = h + dx * sp, py = h + dy * sp;
+    g.fillStyle = dark ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.85)"; circle(g, px + 0.5, py + 0.7, pr + 0.4); g.fill();
+    g.fillStyle = dark
+      ? radial(g, px - pr * 0.3, py - pr * 0.3, 0.2, px, py, pr, [[0, "#fff8dc"], [0.7, "#e2cd92"], [1, "#a8905a"]])
+      : radial(g, px + pr * 0.25, py + pr * 0.3, 0.2, px, py, pr, [[0, "#6b5030"], [0.6, "#2c1c0e"], [1, "#110802"]]);
+    circle(g, px, py, pr); g.fill();
+    if (dark) { g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 0.6; circle(g, px, py, pr); g.stroke(); }
+  }
+  return { c, half: h };
+}
+
+function makeDieShadow() {
+  // Sombra suave de un dado: el cuadrado redondeado desenfocado.
+  const d = G.die, size = Math.ceil((d + 30) * S), h = size / S / 2;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  g.shadowColor = "rgba(0,0,0,0.7)"; g.shadowBlur = 7 * S; g.shadowOffsetX = size;
+  roundRect(g, h - d / 2 - size / S, h - d / 2, d, d, 7); g.fillStyle = "#000"; g.fill();
+  return { c, half: h };
+}
+
+function makeCube(value) {
+  const d = G.cube, size = Math.ceil((d + 12) * S), h = size / S / 2;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  const x = h - d / 2, y = h - d / 2 - 1, rad = 7;
+  g.fillStyle = "#8f7d50"; roundRect(g, x, y + 3.2, d, d, rad); g.fill();
+  g.fillStyle = "#6e5d38"; roundRect(g, x + 0.5, y + 4.4, d - 1, d - 1, rad); g.fill();
+  g.fillStyle = linear(g, x, y, x + d, y + d, [[0, "#fffdf2"], [0.5, "#f1e6c6"], [1, "#d6c79a"]]);
+  roundRect(g, x, y, d, d, rad); g.fill();
+  g.strokeStyle = linear(g, x, y, x + d, y + d, [[0, "rgba(255,255,255,1)"], [0.5, "rgba(255,255,255,0)"], [1, "rgba(120,96,52,0.6)"]]);
+  g.lineWidth = 1.8; roundRect(g, x + 1, y + 1, d - 2, d - 2, rad - 1); g.stroke();
+  // Cara hundida en relieve, como el cubo de verdad.
+  g.strokeStyle = "rgba(120,96,52,0.35)"; g.lineWidth = 1; roundRect(g, x + 4.2, y + 4.2, d - 8.4, d - 8.4, 4); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = 0.8; roundRect(g, x + 4.9, y + 4.9, d - 8.4, d - 8.4, 4); g.stroke();
+  const text = String(value), size2 = text.length > 1 ? 17 : 24;
+  g.font = `${size2}px Luckiest`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillStyle = "rgba(255,255,255,0.9)"; g.fillText(text, h + 0.8, y + d / 2 + 1.6);
+  g.fillStyle = linear(g, 0, y + d / 2 - size2 / 2, 0, y + d / 2 + size2 / 2, [[0, "#9a1c34"], [1, "#5c0c1c"]]);
+  g.fillText(text, h, y + d / 2 + 0.8);
+  return { c, half: h };
+}
+
+// Todo lo que va en un recuadro y no es un sprite (trazos, sombras con desenfoque) saldría con
+// algún nivel de diferencia según cómo cortase el recuadro la forma, y el fotograma pegado no
+// sería igual que el entero. Por eso las fichas de canto, los números de los montones y el
+// cubo son sprites: en cada recuadro solo se copian píxeles ya pintados.
+function makeSlab(side) {
+  const [w, h] = G.slab, cw = w + 6, ch = h + 7;
+  const c = document.createElement("canvas"); c.width = cw * S; c.height = ch * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  const x = 3, y = 2;
+  g.fillStyle = "rgba(0,0,0,0.42)"; roundRect(g, x + 1, y + 2, w, h, 3.5); g.fill();
+  g.fillStyle = side === 1 ? linear(g, 0, y, 0, y + h, [[0, "#fffdf2"], [0.5, "#eadfbf"], [1, "#b9a77c"]])
+                           : linear(g, 0, y, 0, y + h, [[0, "#5a5a66"], [0.4, "#26262d"], [1, "#050507"]]);
+  roundRect(g, x, y, w, h, 3.5); g.fill();
+  g.strokeStyle = side === 1 ? "rgba(90,66,30,0.6)" : "rgba(0,0,0,0.9)"; g.lineWidth = 0.7; roundRect(g, x, y, w, h, 3.5); g.stroke();
+  g.fillStyle = side === 1 ? "rgba(255,255,255,0.9)" : "rgba(210,210,235,0.35)"; g.fillRect(x + 4, y + 0.9, w - 8, 0.9);
+  return { c, w: cw, h: ch, dx: x + w / 2, dy: y + h / 2 };
+}
+function makeCountLabel(n, side) {
+  const cw = 40, ch = 30;
+  const c = document.createElement("canvas"); c.width = cw * S; c.height = ch * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  g.font = "700 17px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  g.strokeStyle = side === 1 ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.85)"; g.lineWidth = 3.4; g.strokeText(String(n), cw / 2, ch / 2 + 0.5);
+  g.fillStyle = side === 1 ? "#5a3a10" : "#f6e6b4"; g.fillText(String(n), cw / 2, ch / 2 + 0.5);
+  return { c, w: cw, h: ch, dx: cw / 2, dy: ch / 2 };
+}
+function makeCubeExtras() {
+  const d = G.cube, size = Math.ceil((d + 16) * S), h = size / S / 2;
+  const sh = document.createElement("canvas"); sh.width = sh.height = size;
+  let g = sh.getContext("2d"); g.scale(S, S);
+  g.fillStyle = "#000"; roundRect(g, h - d / 2, h - d / 2, d, d, 8); g.fill();
+  const gl = document.createElement("canvas"); gl.width = gl.height = 96 * S;
+  g = gl.getContext("2d"); g.scale(S, S);
+  g.fillStyle = radial(g, 48, 48, 8, 48, 48, 46, [[0, "rgba(255,214,110,1)"], [0.55, "rgba(255,200,90,0.45)"], [1, "rgba(255,190,70,0)"]]);
+  circle(g, 48, 48, 46); g.fill();
+  return { shadow: { c: sh, half: h }, glow: { c: gl, half: 48 } };
+}
+
+function buildSprites() {
+  if (SPRITES) return;
+  SPRITES = {
+    checker: { 1: makeChecker(1), 2: makeChecker(2) }, shadow: makeShadow(G.r), die: {}, dieShadow: makeDieShadow(),
+    slab: { 1: makeSlab(1), 2: makeSlab(2) }, labels: new Map(), cube: makeCubeExtras(),
+  };
+  for (const side of [1, 2]) for (let v = 1; v <= 6; v++) SPRITES.die[side * 10 + v] = makeDie(side, v);
+}
+function labelSprite(n, side) {
+  const key = n * 10 + side;
+  let s = SPRITES.labels.get(key);
+  if (!s) { s = makeCountLabel(n, side); SPRITES.labels.set(key, s); }
+  return s;
+}
+function blitAt(g, s, x, y) {
+  g.drawImage(s.c, x - s.dx, y - s.dy, s.w, s.h);
+}
+function cubeSprite(v) {
+  let s = CUBES.get(v);
+  if (!s) { s = makeCube(v); CUBES.set(v, s); }
+  return s;
+}
+
+function blit(g, s, x, y, scale = 1, alpha = 1) {
+  const w = s.half * 2 * scale;
+  if (alpha !== 1) g.globalAlpha = alpha;
+  g.drawImage(s.c, x - w / 2, y - w / 2, w, w);
+  if (alpha !== 1) g.globalAlpha = 1;
+}
+
+// -- Lo que cambia en cada fotograma -------------------------------------------------------------
+
+function drawNumbers(g, labels, top) {
+  // Los números de los puntos, grabados en el marco: arriba los 12..23 y abajo los 0..11.
+  g.font = "700 11px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle";
+  const [, fy0, , fy1] = G.frame;
+  for (let i = top ? 12 : 0; i < (top ? 24 : 12); i++) {
+    const n = labels === 1 ? i + 1 : 24 - i, x = pointX(i), y = i < 12 ? fy1 - 11 : fy0 + 11, text = String(n);
+    g.fillStyle = "rgba(20,8,2,0.85)"; g.fillText(text, x + 0.7, y + 0.9);
+    g.fillStyle = "rgba(244,218,168,0.92)"; g.fillText(text, x, y);
+  }
+}
+
+// Lo de arriba (título, tarjetas con su resplandor, números) y los números de abajo se pintan
+// en dos tiras que solo cambian con el turno, los pips o los números: cada recuadro copia
+// de ellas, así sale igual pintado entero que a trozos.
+const HEAD_H = 96;
+let HEAD = null, FOOT = null, HEAD_KEY = null;
+function foot0() { return G.felt[3]; }
+function ensureStrips(st) {
+  const key = `${st.turn}|${st.pips[0]}|${st.pips[1]}|${st.labels}`;
+  if (key === HEAD_KEY) return;
+  HEAD_KEY = key;
+  if (!HEAD) {
+    HEAD = document.createElement("canvas"); HEAD.width = W * S; HEAD.height = HEAD_H * S;
+    FOOT = document.createElement("canvas"); FOOT.width = W * S; FOOT.height = (H - foot0()) * S;
+  }
+  let g = HEAD.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, HEAD.width, HEAD.height); g.scale(S, S);
+  drawTitle(g); drawCard(g, 1, st); drawCard(g, 2, st); drawNumbers(g, st.labels, true);
+  g = FOOT.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, FOOT.width, FOOT.height); g.scale(S, S); g.translate(0, -foot0());
+  drawNumbers(g, st.labels, false);
+}
+function blitStrip(g, strip, top, box) {
+  const y0 = Math.max(box[1], top), y1 = Math.min(box[3], top + strip.height / S);
+  if (y1 <= y0) return;
+  g.drawImage(strip, box[0] * S, (y0 - top) * S, (box[2] - box[0]) * S, (y1 - y0) * S, box[0], y0, box[2] - box[0], y1 - y0);
+}
+
+function drawCard(g, side, st) {
+  const [cx, cy, cw, ch] = G.cards, x = side === 1 ? cx : W - cx - cw, y = cy, active = st.turn === side;
+  const p = META[side === 1 ? "white" : "black"], glow = GLOW[side];
+  g.save();
+  if (active) {
+    halo(g, x, y, cw, ch, 14, glow, 20, 0.55);
+    g.fillStyle = `rgba(${glow},0.25)`; roundRect(g, x, y, cw, ch, 14); g.fill();
+  }
+  g.fillStyle = linear(g, 0, y, 0, y + ch, active ? [[0, `rgba(${glow},0.34)`], [1, "rgba(24,14,8,0.92)"]] : [[0, "rgba(255,236,200,0.12)"], [1, "rgba(18,10,6,0.82)"]]);
+  roundRect(g, x, y, cw, ch, 14); g.fill();
+  g.lineWidth = active ? 2.4 : 1.1; g.strokeStyle = active ? `rgba(${glow},0.95)` : "rgba(226,196,150,0.3)";
+  roundRect(g, x, y, cw, ch, 14); g.stroke();
+  g.fillStyle = linear(g, 0, y, 0, y + ch * 0.5, [[0, "rgba(255,255,255,0.13)"], [1, "rgba(255,255,255,0)"]]);
+  roundRect(g, x + 2, y + 2, cw - 4, ch * 0.5, 12); g.fill();
+  // La ficha de su color.
+  blit(g, SPRITES.shadow, x + 31, y + 33, 0.8, 0.8);
+  blit(g, SPRITES.checker[side], x + 30, y + 29, 0.84, active ? 1 : 0.7);
+  // Nombre y línea de debajo.
+  g.textAlign = "left"; g.textBaseline = "middle";
+  const n = NAMES[side];
+  g.font = n.font; g.fillStyle = active ? "#ffffff" : "rgba(255,244,222,0.82)"; g.fillText(n.name, x + 56, y + 22);
+  g.font = "700 10.5px Montserrat"; g.fillStyle = active ? "rgba(255,240,214,0.82)" : "rgba(226,206,168,0.55)";
+  g.fillText(n.tag, x + 56, y + 40);
+  // Los pips, con su rótulo.
+  const px = x + 206;
+  g.strokeStyle = "rgba(226,196,150,0.25)"; g.lineWidth = 1; g.beginPath(); g.moveTo(x + 172, y + 11); g.lineTo(x + 172, y + ch - 11); g.stroke();
+  g.textAlign = "center";
+  g.font = "700 8.5px Montserrat"; g.fillStyle = "rgba(226,196,150,0.7)"; g.fillText("PIPS", px, y + 15);
+  g.font = "21px Luckiest"; const pips = String(st.pips[side - 1]);
+  g.fillStyle = "rgba(0,0,0,0.55)"; g.fillText(pips, px + 0.8, y + 37.8);
+  g.fillStyle = linear(g, 0, y + 27, 0, y + 47, [[0, "#fff1b8"], [1, "#f0b030"]]); g.fillText(pips, px, y + 37);
+  if (active) {
+    // La etiqueta «TURNO» cuelga del borde de arriba.
+    const lw = 66, lh = 16, lx = x + cw / 2 - lw / 2, ly = y - 8;
+    halo(g, lx, ly, lw, lh, 8, glow, 7, 0.6);
+    g.fillStyle = `rgb(${glow})`; roundRect(g, lx, ly, lw, lh, 8); g.fill();
+    g.fillStyle = "rgba(255,255,255,0.3)"; roundRect(g, lx + 2, ly + 1.5, lw - 4, 6, 3); g.fill();
+    g.fillStyle = "#2a0e06"; g.font = "700 10px Montserrat"; g.textAlign = "center"; g.fillText("TURNO", x + cw / 2, ly + 8.5);
+  }
+  g.restore();
+}
+
+function drawMarks(g, marks) {
+  for (const m of marks) {
+    g.save();
+    if (m < 24) {
+      triangle(g, m);
+      g.shadowColor = "rgba(255,214,110,0.95)"; g.shadowBlur = 9 * S;
+      g.fillStyle = "rgba(255,214,110,0.20)"; g.fill();
+      g.strokeStyle = "rgba(255,230,150,0.9)"; g.lineWidth = 1.6; g.stroke();
+    } else if (m === 24) {
+      const [bx0, bx1] = G.bar;
+      g.shadowColor = "rgba(255,214,110,0.9)"; g.shadowBlur = 9 * S;
+      g.fillStyle = "rgba(255,214,110,0.20)"; g.fillRect(bx0, G.felt[1], bx1 - bx0, G.felt[3] - G.felt[1]);
+      g.strokeStyle = "rgba(255,230,150,0.9)"; g.lineWidth = 1.6; g.strokeRect(bx0 + 1, G.felt[1] + 1, bx1 - bx0 - 2, G.felt[3] - G.felt[1] - 2);
+    } else {
+      const [tx0, ty0, tx1, ty1] = G.tray;
+      g.shadowColor = "rgba(255,214,110,0.9)"; g.shadowBlur = 9 * S;
+      g.fillStyle = "rgba(255,214,110,0.16)"; g.fillRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
+      g.strokeStyle = "rgba(255,230,150,0.9)"; g.lineWidth = 1.6; g.strokeRect(tx0 + 1, ty0 + 1, tx1 - tx0 - 2, ty1 - ty0 - 2);
+    }
+    g.restore();
+  }
+}
+
+function drawChecker(g, x, y, side) {
+  blit(g, SPRITES.shadow, x + 1.2, y + 3, 1, 0.8);
+  blit(g, SPRITES.checker[side], x, y);
+}
+function countLabel(g, x, y, n, side) {
+  blitAt(g, labelSprite(n, side), x, y);
+}
+
+function drawStacks(g, st) {
+  for (let i = 0; i < 24; i++) {
+    const v = st.points[i];
+    if (!v) continue;
+    const side = v > 0 ? 1 : 2, n = Math.abs(v);
+    for (let k = 0; k < n; k++) { const [x, y] = stackXY(i, k, n); drawChecker(g, x, y, side); }
+    if (n > 5) { const [x, y] = stackXY(i, n - 1, n); countLabel(g, x, y, n, side); }
+  }
+  for (const side of [1, 2]) {
+    const n = st.bar[side - 1];
+    for (let k = 0; k < n; k++) { const [x, y] = barXY(side, k, n); drawChecker(g, x, y, side); }
+    if (n > 3) { const [x, y] = barXY(side, n - 1, n); countLabel(g, x, y, n, side); }
+    // Fichas sacadas: de canto en la bandeja.
+    for (let k = 0; k < st.off[side - 1]; k++) { const [x, y] = offXY(side, k); blitAt(g, SPRITES.slab[side], x, y); }
+  }
+}
+
+function drawCube(g, c) {
+  const s = cubeSprite(c.v), lift = c.lift || 0, sc = (c.scale || 1) * (1 + 0.18 * lift);
+  const x = c.x, y = c.y - lift * 11, sx = Math.max(0.06, Math.abs(Math.cos(c.flip || 0)));
+  const glow = SPRITES.cube.glow, shadow = SPRITES.cube.shadow;
+  if (c.glow > 0) {
+    // Halo dorado del cubo ofrecido, dos veces: uno ancho y otro pegado.
+    g.save(); g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.75 * c.glow; g.drawImage(glow.c, c.x - glow.half * 0.95, c.y - glow.half * 0.95, glow.half * 1.9, glow.half * 1.9);
+    g.globalAlpha = 0.5 * c.glow; g.drawImage(glow.c, c.x - glow.half * 0.6, c.y - glow.half * 0.6, glow.half * 1.2, glow.half * 1.2);
+    g.restore();
+  }
+  g.save(); g.globalAlpha = 0.4 - 0.15 * lift; g.translate(c.x + lift * 7, c.y + 4 + lift * 12); g.scale(sc * sx, sc);
+  g.drawImage(shadow.c, -shadow.half, -shadow.half, shadow.half * 2, shadow.half * 2);
+  g.restore();
+  g.save(); g.translate(x, y); g.scale(sc * sx, sc);
+  g.drawImage(s.c, -s.half, -s.half, s.half * 2, s.half * 2);
+  g.restore();
+}
+
+function drawDie(g, d) {
+  const z = d.z || 0, sc = 1 + 0.45 * z, alpha = d.used ? 0.4 : 1, sprite = SPRITES.die[d.side * 10 + d.v];
+  g.save(); g.globalAlpha = alpha * (0.55 - 0.25 * z);
+  g.translate(d.x + 2 + z * 14, d.y + 3 + z * 20); g.rotate(d.rot); g.scale((d.sx || 1) * (1 + 0.2 * z), 1 + 0.2 * z);
+  g.drawImage(SPRITES.dieShadow.c, -SPRITES.dieShadow.half, -SPRITES.dieShadow.half, SPRITES.dieShadow.half * 2, SPRITES.dieShadow.half * 2);
+  g.restore();
+  g.save(); g.globalAlpha = alpha;
+  g.translate(d.x, d.y - z * 6); g.rotate(d.rot); g.scale((d.sx || 1) * sc, sc);
+  g.drawImage(sprite.c, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2);
+  g.restore();
+}
+
+function drawFlying(g, f) {
+  const h = f.h || 0, sc = 1 + h / 180;
+  blit(g, SPRITES.shadow, f.x + 1.5 + h * 0.3, f.y + 3.5 + h * 0.45, 1 + h / 120, clamp(0.85 - h / 110, 0.25, 0.85));
+  blit(g, SPRITES.checker[f.side], f.x, f.y - h, sc);
+}
+
+// -- Final: confeti y cartel -------------------------------------------------------------------------
+
+function makeConfetti() {
+  const rand = rng(META.seed ^ 0xc0ffee), list = [], [fx0, fy0, fx1] = G.frame;
+  for (let i = 0; i < 90; i++) {
+    const side = i % 2, k = rand();
+    list.push({
+      sx: (side ? fx1 - 40 : fx0 + 40) + (rand() - 0.5) * 50, sy: fy0 + rand() * 16,
+      vx: (side ? -1 : 1) * (70 + rand() * 250) + (rand() - 0.5) * 80, vy: -(120 + rand() * 300),
+      rot: rand() * 6.28, spin: (rand() - 0.5) * 16, sway: rand() * 6.28, swayK: 3 + rand() * 4,
+      w: 6 + rand() * 6, h: 10 + rand() * 8, round: rand() < 0.22,
+      kind: k < 0.45 ? 0 : k < 0.7 ? 1 : k < 0.88 ? 2 : 3,
+    });
+  }
+  return list;
+}
+function drawConfetti(g, conf) {
+  const palette = CONFETTI[conf.side] || CONFETTI[0], tau = conf.t * 2.4;
+  const fade = conf.t > 0.8 ? clamp((1 - conf.t) / 0.2, 0, 1) : 1;
+  g.save(); g.globalAlpha = fade;
+  for (const p of CONF) {
+    const x = p.sx + p.vx * tau * (1 - 0.18 * tau) + Math.sin(tau * p.swayK + p.sway) * 9;
+    const y = p.sy + p.vy * tau + 0.5 * 430 * tau * tau;
+    if (y > H + 20 || x < -20 || x > W + 20) continue;
+    const a = p.rot + p.spin * tau, flat = Math.cos(tau * p.swayK * 1.7 + p.sway);
+    g.save(); g.translate(x, y); g.rotate(a); g.scale(1, 0.25 + 0.75 * Math.abs(flat));
+    g.fillStyle = palette[p.kind];
+    if (p.round) { circle(g, 0, 0, p.w * 0.5); g.fill(); } else g.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    g.restore();
+  }
+  g.restore();
+}
+
+function drawBanner(g, b) {
+  const kd = KIND[b.kind] || KIND.win, a = clamp(b.a, 0, 1), sc = 0.9 + 0.1 * a;
+  const w = 460, h = 96, cx = W / 2, cy = b.y || G.banner_y;
+  g.save(); g.globalAlpha = a; g.translate(cx, cy); g.scale(sc, sc);
+  g.shadowColor = `rgba(${kd.rgb},0.6)`; g.shadowBlur = 28 * S;
+  g.fillStyle = linear(g, 0, -h / 2, 0, h / 2, [[0, "rgba(40,24,14,0.96)"], [1, "rgba(14,8,4,0.97)"]]);
+  roundRect(g, -w / 2, -h / 2, w, h, 20); g.fill();
+  g.shadowColor = "transparent"; g.shadowBlur = 0;
+  g.strokeStyle = linear(g, -w / 2, 0, w / 2, 0, [[0, kd.b], [0.5, kd.a], [1, kd.b]]); g.lineWidth = 3;
+  roundRect(g, -w / 2, -h / 2, w, h, 20); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,0.14)"; g.lineWidth = 1; roundRect(g, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10, 16); g.stroke();
+  g.fillStyle = linear(g, 0, -h / 2, 0, 0, [[0, "rgba(255,255,255,0.16)"], [1, "rgba(255,255,255,0)"]]);
+  roundRect(g, -w / 2 + 4, -h / 2 + 4, w - 8, h / 2 - 4, 16); g.fill();
+  g.fillStyle = kd.a;
+  for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(sx * (w / 2 - 20), -7); g.lineTo(sx * (w / 2 - 13), 0); g.lineTo(sx * (w / 2 - 20), 7); g.lineTo(sx * (w / 2 - 27), 0); g.closePath(); g.fill(); }
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  const title = String(b.title || ""), sub = String(b.sub || ""), ty = sub ? -13 : 0;
+  const size = fitText(g, title, w - 90, (s) => `${s}px Luckiest`, 38, 18);
+  g.font = `${size}px Luckiest`;
+  g.strokeStyle = "rgba(10,6,30,0.95)"; g.lineWidth = 7; g.strokeText(title, 0, ty);
+  g.fillStyle = linear(g, 0, ty - size / 2, 0, ty + size / 2, [[0, kd.text[0]], [0.5, kd.text[1]], [1, kd.text[2]]]);
+  g.fillText(title, 0, ty);
+  if (sub) {
+    fitText(g, sub, w - 70, (s) => `700 ${s}px Montserrat`, 13, 9);
+    g.fillStyle = "rgba(0,0,0,0.55)"; g.fillText(sub, 1, 29);
+    g.fillStyle = "#e6eaff"; g.fillText(sub, 0, 28);
+  }
+  g.restore();
+}
+
+// -- Cada fotograma -------------------------------------------------------------------------------------
+//
+// Casi siempre solo se mueven los dados, el cubo o la ficha que vuela. Entonces se repinta
+// (con un recorte) y se devuelve solo la franja que cubren ahora y en el fotograma
+// anterior. Si cambia cualquier otra cosa, el fotograma va entero.
+
+function flyBox(f) {
+  const m = G.r * 1.5 + 10, h = f.h || 0;
+  return [f.x - m, f.y - h - m, f.x + m + h * 0.5, f.y + m + 6 + h * 0.5];
+}
+function dieBox(d) {
+  const m = G.die * 0.75 * (1 + 0.45 * (d.z || 0)) + 10, z = d.z || 0;
+  return [d.x - m, d.y - m - 6 * z, d.x + m + 14 * z + 6, d.y + m + 20 * z + 6];
+}
+function cubeBox(c) {
+  // Con su halo, su sombra y lo que se levanta y crece al girar.
+  return [c.x - 58, c.y - 66, c.x + 62, c.y + 66];
+}
+function itemsOf(st) {
+  // Lo suelto (cada dado, cada ficha en el aire, el cubo) con su estado y su recuadro.
+  const items = new Map();
+  (st.dice || []).forEach((d, i) => items.set(`d${i}`, [JSON.stringify(d), dieBox(d)]));
+  (st.flying || []).forEach((f, i) => items.set(`f${i}`, [JSON.stringify(f), flyBox(f)]));
+  items.set("c", [JSON.stringify(st.cube), cubeBox(st.cube)]);
+  return items;
+}
+function changedBoxes(before, now) {
+  // Los recuadros de lo suelto que ha cambiado: donde estaba y donde está.
+  const boxes = [];
+  for (const [key, [json, box]] of now) {
+    const old = before.get(key);
+    if (!old || old[0] !== json) { boxes.push(box); if (old) boxes.push(old[1]); }
+  }
+  for (const [key, [, box]] of before) if (!now.has(key)) boxes.push(box);
+  return boxes;
+}
+function union(boxes) {
+  if (!boxes.length) return null;
+  return boxes.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
+}
+
+function paintScene(st, box) {
+  const g = bctx;
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.save();
+  g.beginPath(); g.rect(box[0], box[1], box[2] - box[0], box[3] - box[1]); g.clip();
+  g.drawImage(BASE, box[0] * S, box[1] * S, (box[2] - box[0]) * S, (box[3] - box[1]) * S, box[0], box[1], box[2] - box[0], box[3] - box[1]);
+  ensureStrips(st);
+  blitStrip(g, HEAD, 0, box); blitStrip(g, FOOT, foot0(), box);
+  drawMarks(g, st.marks);
+  drawStacks(g, st);
+  drawCube(g, st.cube);
+  for (const d of st.dice) drawDie(g, d);
+  for (const f of st.flying || []) drawFlying(g, f);
+  if (st.confetti) drawConfetti(g, st.confetti);
+  const b = st.banner;
+  if (b && b.a > 0) {
+    if (b.kind !== "win") {
+      g.fillStyle = `rgba(4,2,0,${0.42 * clamp(b.a, 0, 1)})`;
+      const [fx0, fy0, fx1, fy1] = G.frame; roundRect(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 14); g.fill();
+    }
+    drawBanner(g, b);
+  }
+  g.restore();
+}
+
+function snapshot(st) {
+  const key = JSON.stringify({ ...st, dice: null, flying: null, cube: null });
+  const items = itemsOf(st);
+  let region;
+  if (key === PREV_KEY && PREV_ITEMS !== null) {
+    region = union(changedBoxes(PREV_ITEMS, items)) || [0, 0, 1, 1];     // solo se movió algo suelto
+  } else region = [0, 0, W, H];
+  PREV_KEY = key; PREV_ITEMS = items;
+  const x0 = clamp(Math.floor(region[0]), 0, W - 1), y0 = clamp(Math.floor(region[1]), 0, H - 1);
+  const x1 = clamp(Math.ceil(region[2]), x0 + 1, W), y1 = clamp(Math.ceil(region[3]), y0 + 1, H);
+  // Se pinta con un margen y se recorta: el filtro al reducir mira los píxeles de
+  // alrededor, y así el recuadro sale igual que el mismo trozo del fotograma entero.
+  const px0 = Math.max(0, x0 - PAD), py0 = Math.max(0, y0 - PAD), px1 = Math.min(W, x1 + PAD), py1 = Math.min(H, y1 + PAD);
+  paintScene(st, [px0, py0, px1, py1]);
+  mid.width = px1 - px0; mid.height = py1 - py0;
+  mctx.imageSmoothingEnabled = true; mctx.imageSmoothingQuality = "high";
+  mctx.drawImage(big, px0 * S, py0 * S, (px1 - px0) * S, (py1 - py0) * S, 0, 0, px1 - px0, py1 - py0);
+  const w = x1 - x0, h = y1 - y0;
+  out.width = w; out.height = h;
+  octx.drawImage(mid, x0 - px0, y0 - py0, w, h, 0, 0, w, h);
+  return { x: x0, y: y0, u: window.exportFrame(out) };
+}
+
+// En Chromium cada recuadro va como data URL de PNG; el pintor de Node
+// (assets/escena_node.cjs) pone su exportFrame, que devuelve los píxeles tal cual.
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("30px Luckiest"), document.fonts.load("700 12px Montserrat")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => {
+  await Tapete.ready(meta?.skin);
+  META = meta; G = meta.geom; SKIN = meta.skin || null;
+  buildSprites();
+  const key = JSON.stringify([SKIN && [SKIN.key, SKIN.pattern, SKIN.felt], G.w]);
+  if (!BASE || BASE_KEY !== key) { BASE = paintBase(); BASE_KEY = key; }
+  // Los nombres, ajustados a la tarjeta una vez.
+  NAMES = {};
+  bctx.setTransform(S, 0, 0, S, 0, 0);
+  for (const side of [1, 2]) {
+    const p = meta[side === 1 ? "white" : "black"], max = 112;
+    const size = fitText(bctx, p.name, max, (s) => `700 ${s}px Montserrat`, 15, 11);
+    const name = ellipsize(bctx, p.name, max);
+    bctx.font = "700 10.5px Montserrat";
+    NAMES[side] = { font: `700 ${size}px Montserrat`, name, tag: ellipsize(bctx, p.tag || "", max) };
+  }
+  TITLE = fitTitle();
+  CONF = makeConfetti();
+  HEAD_KEY = null;
+  PREV_KEY = null; PREV_ITEMS = null;
+  return true;
+};
+// El primer fotograma de cada tanda sale entero porque `setup` borra PREV_KEY.
+window.renderFrames = (states) => states.map((st) => snapshot(st));
+// Para las pruebas: dónde pone la escena cada ficha (la misma cuenta que Python).
+window.slotAt = (geom, kind, args) => {
+  const fn = { point: pointX, stack: stackXY, bar: barXY, off: offXY }[kind];
+  return fn(...args, geom);
+};
+</script>
+</body>
+</html>

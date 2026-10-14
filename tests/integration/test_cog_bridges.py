@@ -46,6 +46,7 @@ GAMES = (
     "Bacará",
     "Gallos",
     "Enraya",
+    "Backgammon",
     "Porras",
     "Loteria",
 )
@@ -76,6 +77,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.horses.initialize()
     await client.gallos.initialize()
     await client.enraya.initialize()
+    await client.backgammon.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
     await client.slots_repository.initialize()
@@ -1138,6 +1140,113 @@ async def test_una_partida_contra_jovani_apunta_logros_y_la_ficha_con_el_bot_rea
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert "enraya" not in report.by_game
+    finally:
+        await client.close()
+
+
+def backgammon_cog_with_fake_drawing(client: BotClient):  # noqa: ANN201
+    """El backgammon del bot real con dibujo falso, sin esperas y sin pintar por adelantado."""
+    module = importer("Backgammon", client)
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog = client.get_cog("Backgammon")
+    cog.ahead = False
+    cog.renderer = MagicMock()
+    cog.renderer.still = AsyncMock(return_value=b"PNG")
+    cog.renderer.animate = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    cog.renderer.close = AsyncMock()
+    return cog, module
+
+
+async def test_un_duelo_de_backgammon_apunta_logros_y_jugadas_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El backgammon carga antes que los logros y `apuestas`: sus puentes tienen que verlos."""
+    client = await load_bot(tmp_path)
+    try:
+        cog, module = backgammon_cog_with_fake_drawing(client)
+        owner = enraya_member(OWNER_ID, "Diego")
+        rival = enraya_member(RIVAL_ID, "Ana")
+        duel = await cog._backgammon_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            rival=rival,
+            send=AsyncMock(return_value=MagicMock(edit=AsyncMock())),
+            send_error=AsyncMock(),
+        )
+        assert duel is not None
+        duel.swap, duel.opening = False, (6, 1)
+        await duel.accept(enraya_interaction(rival))
+        # Las negras doblan y las blancas pasan: gana quien dobló.
+        hand = duel.hand
+        while not hand.done:
+            step = hand.legal()[0]
+            interaction = enraya_interaction(owner)
+            interaction.data = {"values": [f"{step.source}:{step.target}"]}
+            await duel.step(interaction, step.die)
+        await duel.confirm(enraya_interaction(owner))
+        await duel.double(enraya_interaction(rival))
+        await duel.drop(enraya_interaction(owner))
+        assert duel.phase is module.Phase.DONE
+
+        for member in (owner, rival):
+            profile = await client.achievements.profile(GUILD_ID, member.id)
+            assert profile.stats["backgammon_games"] == 1
+            assert profile.stats["backgammon_casino_duels"] == 1
+            assert "bg_1" in profile.unlocked
+            report = await client.casino_stats.report(
+                GUILD_ID, member.id, since=None, today=date(2026, 10, 6)
+            )
+            assert report.by_game["backgammon"].plays == 1
+        won = await client.achievements.profile(GUILD_ID, RIVAL_ID)
+        lost = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert won.stats["backgammon_opp_drops"] == 1 and "bg_le_asustas" in won.unlocked
+        assert won.stats["backgammon_doubles_offered"] == 1
+        assert lost.stats["backgammon_drops"] == 1 and "backgammon_wins" not in lost.stats
+        assert (await client.backgammon.get(GUILD_ID, RIVAL_ID)).wins == 1
+    finally:
+        await client.close()
+
+
+async def test_una_partida_de_backgammon_contra_jovani_apunta_logros_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Sin dinero de por medio: los logros y la ficha cuentan igual, `apuestas` no."""
+    client = await load_bot(tmp_path)
+    try:
+        cog, module = backgammon_cog_with_fake_drawing(client)
+        owner = enraya_member(OWNER_ID, "Diego")
+        await cog._backgammon_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text=None,
+            rival=None,
+            send=AsyncMock(return_value=MagicMock(edit=AsyncMock())),
+            send_error=AsyncMock(),
+        )
+        (panel,) = cog.panels
+        points = [0] * 24
+        points[0], points[20] = 1, -14
+        start = module.Position(tuple(points), (0, 0), (14, 1))
+        panel.phase, panel.position, panel.origin = "play", start, start
+        panel.hand = module.Hand(start, module.Side.WHITE, (1, 2))
+        panel.hand.play(panel.hand.legal()[0])
+        panel.rebuild()
+
+        button = next(i for i in panel.children if i.custom_id == "backgammon:confirm")
+        await button.callback(enraya_interaction(owner))
+
+        assert panel.phase == "over"
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["backgammon_games"] == 1 and profile.stats["backgammon_wins"] == 1
+        assert "bg_1" in profile.unlocked and "bg_win_1" in profile.unlocked
+        assert (await client.backgammon.get(GUILD_ID, OWNER_ID)).wins == 1
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert "backgammon" not in report.by_game
     finally:
         await client.close()
 
