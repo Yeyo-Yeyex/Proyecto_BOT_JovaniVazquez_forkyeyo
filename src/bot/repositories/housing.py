@@ -57,6 +57,18 @@ class HousingError(ValueError):
     """Una operación de `pisos` que no se puede hacer; el mensaje es para el miembro."""
 
 
+class PriceChanged(HousingError):
+    """El precio ha cambiado desde que se enseñó la caja: no se cobra nada.
+
+    Attributes:
+        amount: Lo que costaría (o se cobraría) ahora.
+    """
+
+    def __init__(self, amount: int) -> None:
+        super().__init__("El precio ha cambiado mientras mirabas la caja.")
+        self.amount = amount
+
+
 @dataclass(frozen=True, slots=True)
 class Holding:
     """Las participaciones de un miembro en un inmueble.
@@ -511,12 +523,25 @@ class HousingRepository:
     # -- Lo que mueve dinero (corre dentro de `EconomyRepository.housing`) ------------
 
     def buy(
-        self, guild_id: int, user_id: int, key: str, shares: int, day: date, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        shares: int,
+        day: date,
+        now: float,
+        *,
+        expected: int | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[Purchase, HousingMove]]:
         """Compra participaciones de un inmueble al índice de hoy.
 
+        Args:
+            expected: Lo que decía la caja (precio, ITP y notaría). Si alguien ha
+                movido el índice del barrio entretanto, no se cobra.
+
         Raises (dentro de la transacción):
             HousingError: Si no quedan tantas libres o el número no vale.
+            PriceChanged: Si el total ya no es `expected`.
         """
         listing = _listing(key)
 
@@ -531,6 +556,8 @@ class HousingRepository:
                 raise HousingError(f"Solo quedan {free} participaciones libres.")
             index = market.index(listing.barrio)
             quote = rules.purchase_quote(listing, shares, index)
+            if expected is not None and quote.total != expected:
+                raise PriceChanged(quote.total)
             first = not any(user_id in h for h in market.holdings.values())
             held = market.holdings.get(key, {}).get(user_id)
             connection.execute(
@@ -572,12 +599,25 @@ class HousingRepository:
         return run
 
     def sell(
-        self, guild_id: int, user_id: int, key: str, shares: int, day: date, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        shares: int,
+        day: date,
+        now: float,
+        *,
+        expected: int | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[Sale, HousingMove]]:
         """Vende participaciones al mercado al índice de hoy.
 
+        Args:
+            expected: Lo que decía la caja que cobraría. Si ha cambiado (el índice,
+                las deudas del piso), no se vende.
+
         Raises (dentro de la transacción):
             HousingError: Si no tiene tantas.
+            PriceChanged: Si lo que cobraría ya no es `expected`.
         """
         listing = _listing(key)
 
@@ -594,6 +634,8 @@ class HousingRepository:
                 listing, shares, held.shares, held.cost, index=index,
                 arrears=lease.arrears, arrears_ibi=lease.arrears_ibi,
             )  # fmt: skip
+            if expected is not None and quote.received != expected:
+                raise PriceChanged(quote.received)
             left = held.shares - shares
             if left:
                 connection.execute(
@@ -840,6 +882,7 @@ __all__ = [
     "Market",
     "MemberDay",
     "News",
+    "PriceChanged",
     "Purchase",
     "Sale",
     "assets_in",

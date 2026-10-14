@@ -53,6 +53,7 @@ from bot.repositories.housing import (
     HousingError,
     HousingRepository,
     Market,
+    PriceChanged,
     Purchase,
     Sale,
 )
@@ -184,7 +185,9 @@ class SharesModal(ui.Modal):
         self.selling = selling
         self.most = most
         self.amount: ui.TextInput = ui.TextInput(
-            label=f"Participaciones (1 a {most}; 100 es el inmueble entero)",
+            # Discord corta la etiqueta en 45 caracteres: la explicación va en el ejemplo.
+            label=f"Participaciones (1 a {most})",
+            placeholder="100 participaciones son el inmueble entero",
             default=str(most),
             min_length=1,
             max_length=3,
@@ -647,8 +650,24 @@ class Panel(ui.View):
         self.screen, self.pending, self.done = CAJA, (selling, shares), None
         await self.show(interaction)
 
+    def _expected(self) -> int:
+        """Lo que dice la caja que se ve ahora: el total de la compra o lo que se cobra."""
+        listing = LISTING_BY_KEY[self.listing]
+        index = self.market.index(listing.barrio)
+        selling, shares = self.pending or (False, 1)
+        if not selling:
+            return rules.purchase_quote(listing, shares, index).total
+        held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+        lease = self.market.leases.get(self.listing, rules.Lease())
+        owned = held.shares if held else shares
+        return rules.sale_quote(
+            listing, min(shares, owned), owned, held.cost if held else 0, index=index,
+            arrears=lease.arrears, arrears_ibi=lease.arrears_ibi,
+        ).received  # fmt: skip
+
     async def _pay(self, interaction: discord.Interaction) -> None:
-        if self.pending is None:
+        # Un segundo clic en Pagar (o uno que llega tarde) no vuelve a cobrar.
+        if self.pending is None or self.done is not None:
             await ack(interaction)
             return
         await ack(interaction)
@@ -659,13 +678,14 @@ class Panel(ui.View):
         self.cog.working.add(slot)
         selling, shares = self.pending
         try:
+            expected = self._expected()
             if selling:
                 trade = await self.cog.service.sell(
-                    self.guild.id, self.owner.id, self.listing, shares
+                    self.guild.id, self.owner.id, self.listing, shares, expected=expected
                 )
             else:
                 trade = await self.cog.service.buy(
-                    self.guild.id, self.owner.id, self.listing, shares
+                    self.guild.id, self.owner.id, self.listing, shares, expected=expected
                 )
         except InsufficientFundsError as error:
             await notify(
@@ -674,10 +694,20 @@ class Panel(ui.View):
                 "(todavía no hay hipotecas).",
             )
             return
+        except PriceChanged as error:
+            self.cog.working.discard(slot)
+            await self.show(interaction)
+            await notify(
+                interaction,
+                "El precio ha cambiado mientras mirabas (alguien ha comprado o vendido en el "
+                f"barrio): ahora son {format_amount(error.amount)}. No se ha cobrado nada; "
+                "mira la caja y vuelve a pulsar.",
+            )
+            return
         except HousingError as error:
             await notify(interaction, str(error))
             return
-        except (OSError, sqlite3.Error):
+        except (OSError, sqlite3.Error, ValueError):
             logger.exception("No se pudo cerrar una operación de pisos")
             await notify(interaction, "Se ha caído el notario. Prueba otra vez en un momento.")
             return
@@ -764,7 +794,12 @@ class Pisos(commands.Cog):
     @tasks.loop(minutes=10)
     async def _nightly(self) -> None:
         for guild in self.bot.guilds:
-            await self.close_guild(guild.id)
+            try:
+                await self.close_guild(guild.id)
+            except Exception:
+                # Un servidor roto no para la tarea: si saliera la excepción, `tasks.loop`
+                # se pararía para siempre y nadie cobraría más alquileres.
+                logger.exception("Fallo inesperado cerrando los días de pisos en %s", guild.id)
 
     @_nightly.before_loop
     async def _before_nightly(self) -> None:
@@ -865,9 +900,22 @@ class Pisos(commands.Cog):
         if guild is None or member is None:
             await responder.send_error("Los pisos solo se compran dentro de un servidor.")
             return
+        # Un panel vivo por persona: cada uno pinta pantallas por adelantado, y abrir
+        # veinte seguidos dejaría sin hilos al resto del bot. El viejo se queda quieto.
+        for old in [p for p in self.panels if p.owner.id == member.id and p.guild.id == guild.id]:
+            old.stop()
+            self.panels.discard(old)
         panel = Panel(self, guild=guild, owner=member)
         self.panels.add(panel)
-        await panel.show(None, send=send)
+        try:
+            await panel.show(None, send=send)
+        except (OSError, sqlite3.Error, discord.HTTPException):
+            self.panels.discard(panel)
+            logger.exception("No se pudo abrir el panel de pisos en %s", guild.id)
+            await responder.send_error(
+                "La inmobiliaria está cerrada ahora mismo. Prueba en un rato."
+            )
+            return
         logros.note_for(self.bot, responder, housing_panel_stats(screen="abrir"))
 
     @app_commands.command(name="pisos", description="El mercado inmobiliario de Canarias.")
@@ -890,6 +938,12 @@ class Pisos(commands.Cog):
     async def pisos_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.pisos`)."""
         await self._open(ContextResponder(ctx), ctx.send)
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Borra los pisos del servidor cuando el bot deja de pertenecer a él."""
+        await self.repository.delete_guild_data(guild.id)
+        logger.info("Se eliminaron los pisos del servidor %s", guild.id)
 
 
 # -- Funciones puente ---------------------------------------------------------------

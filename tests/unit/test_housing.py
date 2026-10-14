@@ -454,3 +454,70 @@ def format_total(amount: int) -> str:
     from bot.services.economy import format_amount
 
     return format_amount(amount)
+
+
+async def test_quien_lo_tiene_todo_en_ladrillo_paga_el_patrimonio_con_un_embargo(
+    tmp_path: Path,
+) -> None:
+    """Sin efectivo el lunes, el Patrimonio se embarga de lo que cobre por sus pisos."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    edificio = LISTING_BY_KEY["vegueta_edificio"]
+    total = rules.purchase_quote(edificio, 100).total
+    await give(economy, ANA, total - STARTING_BALANCE)  # se queda a cero tras comprar
+    await service.buy(GUILD, ANA, edificio.key, 100)
+    assert await economy.balance(GUILD, ANA) == 0
+    await economy.charge_wealth_tax(GUILD)  # activación
+    clock.now = at(19, hour=1).timestamp()
+
+    _, run = await economy.charge_wealth_tax(
+        GUILD, assets=lambda connection: assets_in(connection, GUILD)
+    )
+
+    (charge,) = run.charges
+    assert charge.tax == 0 and charge.debt == wealth_tax(charge.balance) > 0
+    assert await economy.tax_debt(GUILD, ANA) == charge.debt
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', "
+            "rent = 90000, until = '2027-01-01'"
+        )
+    state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    clock.now = at(20).timestamp()
+    await service.close_days(GUILD)
+
+    owed = await economy.tax_debt(GUILD, ANA)
+    embargoed = charge.debt - owed
+    assert embargoed > 0
+    assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
+    breakdown = await economy.tax_breakdown(GUILD)
+    assert breakdown[ANA]["patrimonio"] == embargoed
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state >= embargoed
+
+
+async def test_si_el_precio_cambia_mientras_miras_no_se_cobra(tmp_path: Path) -> None:
+    from bot.repositories.housing import PriceChanged
+
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    seen = rules.purchase_quote(BAJO, 10).total
+    await service.buy(GUILD, BEA, "schamann_piso2", 100)  # sube el índice del barrio
+    with pytest.raises(PriceChanged) as error:
+        await service.buy(GUILD, ANA, BAJO.key, 10, expected=seen)
+    assert error.value.amount > seen
+    assert (await service.market(GUILD)).shares_of(BAJO.key) == {}
+    trade = await service.buy(GUILD, ANA, BAJO.key, 10, expected=error.value.amount)
+    assert trade.deal.quote.total == error.value.amount
+    with pytest.raises(PriceChanged):
+        await service.sell(GUILD, ANA, BAJO.key, 10, expected=1)
+    assert (await service.market(GUILD)).shares_of(BAJO.key) == {ANA: 10}
+
+
+async def test_al_salir_del_servidor_se_borran_sus_pisos(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 10)
+    await service.repository.delete_guild_data(GUILD)
+    market = await service.market(GUILD)
+    assert market.holdings == {} and market.leases == {} and market.indexes == {}

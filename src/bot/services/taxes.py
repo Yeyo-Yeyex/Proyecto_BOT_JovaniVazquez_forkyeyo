@@ -207,7 +207,8 @@ def format_rate(rate: float) -> str:
 #
 # El ejercicio dura una semana, como la renta del casino: cada lunes se cobra la
 # cuota anual completa sobre lo que se tiene en ese momento. Se paga con el
-# efectivo: si no llega, Hacienda se cobra lo que hay.
+# efectivo; lo que no llega queda como deuda y se embarga de lo que cobre por sus
+# pisos (`EconomyRepository._collect_tax_debt_in`, art. 169 de la Ley 58/2003).
 
 #: Mínimo exento real, en euros.
 WEALTH_MINIMUM_EUR = 700_000.0

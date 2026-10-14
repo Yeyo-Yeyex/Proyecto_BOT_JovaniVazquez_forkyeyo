@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -208,12 +209,16 @@ async def test_cada_noche_se_cierran_los_dias_sin_romper_nada(tmp_path: Path) ->
     cog, _scene, clock = await make(tmp_path)
     await cog.economy.repository.apply(GUILD, 10, [LedgerEntry(5_000_000, "prueba")])
     await cog.service.buy(GUILD, 10, "taco_bajo", 100)
+    clock.now += 86_400
+
+    first = await cog.close_guild(GUILD)
+    again = await cog.close_guild(GUILD)
     clock.now += 2 * 86_400
+    later = await cog.close_guild(GUILD)
 
-    runs = await cog.close_guild(GUILD)
-
-    assert len(runs) == 2
-    assert await cog.close_guild(GUILD) == []
+    # La primera vez solo se cierra ayer; luego, todos los días que falten.
+    assert [r.day.day for r in first] == [14] and again == []
+    assert [r.day.day for r in later] == [15, 16]
     assert (await cog.service.market(GUILD)).leases["taco_bajo"].arrears >= 0
 
 
@@ -222,3 +227,103 @@ async def test_la_funcion_puente_del_patrimonio_no_rompe_sin_el_cog() -> None:
 
     bot = SimpleNamespace(get_cog=lambda _name: None)
     assert await pisos.fiscal_of(bot, GUILD, 10) == 0  # type: ignore[arg-type]
+
+
+async def test_un_segundo_clic_en_pagar_no_vuelve_a_cobrar(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await panel.refresh()
+    panel.listing, panel.screen, panel.pending = "taco_trastero", CAJA, (False, 10)
+
+    await panel._pay(clicked(ana, []))
+    balance = await cog.economy.balance(GUILD, ana.id)
+    await panel._pay(clicked(ana, []))
+
+    assert await cog.economy.balance(GUILD, ana.id) == balance
+    assert (await cog.service.market(GUILD)).shares_of("taco_trastero") == {ana.id: 10}
+
+
+async def test_si_otro_compra_en_el_barrio_la_caja_se_actualiza_y_no_cobra(
+    tmp_path: Path,
+) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    for user in (ana, bea):
+        await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(5_000_000, "prueba")])
+    panel = await open_panel(cog, ana, guild_with(ana, bea))
+    await panel.refresh()
+    panel.listing, panel.screen, panel.pending = "taco_trastero", CAJA, (False, 10)
+    await cog.service.buy(GUILD, bea.id, "taco_bajo", 100)  # mueve el índice de Taco
+    before = await cog.economy.balance(GUILD, ana.id)
+    pay = clicked(ana, [])
+
+    await panel._pay(pay)
+
+    assert panel.done is None
+    assert "ha cambiado" in pay.followup.send.await_args.args[0]
+    assert await cog.economy.balance(GUILD, ana.id) == before
+    await panel._pay(clicked(ana, []))  # con la caja ya actualizada, sí
+    assert panel.done is not None
+
+
+async def test_un_fallo_en_un_servidor_no_para_la_tarea_de_cada_noche(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    broken = AsyncMock(side_effect=[RuntimeError("roto"), []])
+    cog.close_guild = broken  # type: ignore[method-assign]
+    cog.bot.guilds = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+    await cog._nightly.coro(cog)
+    assert broken.await_count == 2
+
+
+async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Path) -> None:
+    """Etiquetas, opciones y filas: Discord rechaza el mensaje entero si una se pasa."""
+    from bot.services.housing_catalog import LISTINGS
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10**9, "prueba")])
+    for listing in LISTINGS[:30]:
+        await cog.service.buy(GUILD, ana.id, listing.key, 60)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_leases SET status = 'impago', tenant = 'familia'")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await panel.refresh()
+    for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
+                            (CAJA, (False, 10)), (CAJA, (True, 10))):  # fmt: skip
+        panel.screen, panel.pending, panel.done = screen, pending, None
+        panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
+        panel.rebuild()
+        rows: dict[int, int] = {}
+        for item in panel.children:
+            rows[item.row or 0] = rows.get(item.row or 0, 0) + (
+                5 if isinstance(item, discord.ui.Select) else 1
+            )
+            if isinstance(item, discord.ui.Button):
+                assert len(item.label or "") <= 80
+                assert len(item.custom_id or "") <= 100
+            if isinstance(item, discord.ui.Select):
+                assert 1 <= len(item.options) <= 25
+                assert len(item.placeholder or "") <= 150
+                for option in item.options:
+                    assert len(option.label) <= 100
+                    assert len(option.description or "") <= 100
+        assert len(panel.children) <= 25 and max(rows) <= 4
+        assert all(width <= 5 for width in rows.values()), (screen, rows)
+    for selling, most in ((False, 100), (True, 60)):
+        modal = SharesModal(panel, selling=selling, most=most)
+        assert len(modal.title) <= 45
+        assert len(modal.amount.label) <= 45
+        assert len(modal.amount.placeholder or "") <= 100
+
+
+async def test_abrir_otro_panel_para_el_anterior_del_mismo_miembro(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    guild = guild_with(ana, bea)
+    first = await open_panel(cog, ana, guild)
+    other = await open_panel(cog, bea, guild)
+    second = await open_panel(cog, ana, guild)
+    assert first.is_finished() and first not in cog.panels
+    assert second in cog.panels and other in cog.panels

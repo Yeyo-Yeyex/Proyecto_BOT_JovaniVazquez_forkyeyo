@@ -156,13 +156,26 @@ def _sign(kind: TaxKind) -> str:
     return "−" if kind.group is Group.REFUND else ""
 
 
+#: Impuestos que salen en la línea corta de cada miembro (los que más ha pagado).
+COMPACT_KINDS = 5
+
+
 def compact_line(bill: TaxBill) -> str:
-    """`IRPF nóm. 1.200 · SS empresa 3.000 · IGIC 70`: solo lo que no es cero."""
+    """`IRPF nóm. 1.200 · SS empresa 3.000 · IGIC 70`: los que más ha pagado.
+
+    Solo lo que no es cero y como mucho `COMPACT_KINDS`, de más a menos, para que
+    la lista de `hacienda` quepa en un embed aunque todos paguen de todo.
+    """
+    kinds = sorted(
+        (k for k in TAX_KINDS if bill.amounts.get(k.key) and k.group is not Group.FOREIGN),
+        key=lambda k: -abs(bill.amounts[k.key]),
+    )
     parts = [
         f"{kind.short} {_sign(kind)}{format_amount(bill.amounts[kind.key]).removesuffix(' Y$')}"
-        for kind in TAX_KINDS
-        if bill.amounts.get(kind.key) and kind.group is not Group.FOREIGN
+        for kind in kinds[:COMPACT_KINDS]
     ]
+    if len(kinds) > COMPACT_KINDS:
+        parts.append(f"y {len(kinds) - COMPACT_KINDS} más")
     return " · ".join(parts) if parts else "Nada todavía"
 
 

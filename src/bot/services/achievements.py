@@ -5299,7 +5299,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gasta 100.000 Y$ en pisos, impuestos incluidos.", C),
         (1_000_000, "pisos_spent_1m", "Los ahorros de toda una vida",
          "Gasta 1.000.000 Y$ en pisos.", R),
-        (10_000_000, "pisos_spent_10m", "Pelotazo inmobiliario",
+        (10_000_000, "pisos_spent_10m", "Ladrillazo de los 2000",
          "Gasta 10.000.000 Y$ en pisos.", E),
         (50_000_000, "pisos_spent_50m", "La burbuja de 2007", "Gasta 50.000.000 Y$ en pisos.", L),
         (150_000_000, "pisos_spent_150m", "Comprar Canarias",
@@ -5416,7 +5416,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         story=PISOS_RENT_STORY,
     ))  # fmt: skip
     a += _tiers("pisos", "pisos_rent", [
-        (100_000, "pisos_rent_100k", "Vivir de las rentas", "Cobra 100.000 Y$ de alquileres.", R),
+        (100_000, "pisos_rent_100k", "Del alquiler se vive (el casero)",
+         "Cobra 100.000 Y$ de alquileres.", R),
         (1_000_000, "pisos_rent_1m", "El alquiler me paga el barraquito",
          "Cobra 1.000.000 Y$ de alquileres.", E),
         (10_000_000, "pisos_rent_10m", "Rentista de Puerto de Mogán",

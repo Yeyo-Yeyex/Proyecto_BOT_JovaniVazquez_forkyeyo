@@ -57,6 +57,7 @@ EXPECTED_COMMANDS = {
     "bizum",
     "vender",
     "rastro",
+    "pisos",
     "blackjack",
     "cumple",
     "cumples",

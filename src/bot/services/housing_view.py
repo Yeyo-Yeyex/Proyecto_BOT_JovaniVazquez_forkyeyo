@@ -103,15 +103,20 @@ def listing_status(market: Market, key: str, user_id: int) -> tuple[str, str]:
     return "Vendido", "ajeno"
 
 
-def news_line(item: News, names: dict[int, str]) -> str:
-    """Una noticia en una línea."""
+def news_line(item: News, names: dict[int, str], *, titled: bool = True) -> str:
+    """Una noticia en una línea.
+
+    Args:
+        titled: Si empieza por el inmueble (en la cartera sí; en su propia ficha, no).
+    """
     tenant = TENANT_BY_KEY.get(item.tenant or "")
     text = NEWS_TEXT.get(item.kind, item.kind).format(
         who=_name(names, item.user_id) if item.user_id else "Alguien",
         tenant=tenant.name if tenant else "El inquilino",
         amount=format_amount(item.amount),
     )
-    return f"{item.day.strftime('%d/%m')} · {LISTING_BY_KEY[item.listing].title}: {text}"
+    where = f"{LISTING_BY_KEY[item.listing].title}: " if titled else ""
+    return f"{item.day.strftime('%d/%m')} · {where}{text}"
 
 
 def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
@@ -248,7 +253,14 @@ def listing_state(
         ],
         "payback": f"{full / max(net, 1) / 30:.1f}".replace(".", ",") + " meses",
         "lease_status": lease.status if lease else "",
-        "tenant": tenant.name if tenant else "",
+        # Un edificio entero no se alquila a una sola persona: son ocho viviendas.
+        "tenant": (
+            f"Ocho inquilinos (uno, {tenant.name[0].lower()}{tenant.name[1:]})"
+            if tenant and listing.kind == "edificio"
+            else tenant.name
+            if tenant
+            else ""
+        ),
         "tenant_key": tenant.key if tenant else "",
         "tenant_line": tenant.line if tenant else "",
         "contract_rent": format_amount(lease.rent) + "/mes" if lease and lease.rent else "",
@@ -258,7 +270,7 @@ def listing_state(
         else "",
         "arrears": format_amount(lease.arrears) if lease and lease.arrears else "",
         "mine": None,
-        "news": [news_line(n, names) for n in news[:4]],
+        "news": [news_line(n, names, titled=False) for n in news[:4]],
         "footer": "1 día del bot = 1 mes del contrato · ITP 6,5 % al comprar",
     }
     if holding is not None:

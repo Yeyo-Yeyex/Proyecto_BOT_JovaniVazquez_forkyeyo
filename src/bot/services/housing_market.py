@@ -79,26 +79,42 @@ class HousingService:
         """Lo que un miembro ha cobrado y pagado por sus inmuebles en los últimos 7 días."""
         return await self.repository.income(guild_id, user_id, self.today() - timedelta(days=7))
 
-    async def buy(self, guild_id: int, user_id: int, key: str, shares: int) -> Trade:
+    async def buy(
+        self, guild_id: int, user_id: int, key: str, shares: int, *, expected: int | None = None
+    ) -> Trade:
         """Compra participaciones (ver `EconomyService.housing` para los impuestos).
+
+        Args:
+            expected: El total que enseñó la caja; si ha cambiado, no se compra.
 
         Raises:
             HousingError: Si no se puede (quedan menos libres, número no válido).
+            PriceChanged: Si el total ya no es `expected`.
             InsufficientFundsError: Si no le llega. No se mueve nada.
         """
         now = self._clock()
-        run = self.repository.buy(guild_id, user_id, key, shares, local_day(now), now)
+        run = self.repository.buy(
+            guild_id, user_id, key, shares, local_day(now), now, expected=expected
+        )
         purchase, balances = await self.economy.housing(guild_id, run)
         return Trade(purchase, balances[user_id])
 
-    async def sell(self, guild_id: int, user_id: int, key: str, shares: int) -> Trade:
+    async def sell(
+        self, guild_id: int, user_id: int, key: str, shares: int, *, expected: int | None = None
+    ) -> Trade:
         """Vende participaciones al mercado.
+
+        Args:
+            expected: Lo que la caja dijo que cobraría; si ha cambiado, no se vende.
 
         Raises:
             HousingError: Si no tiene tantas.
+            PriceChanged: Si lo que cobraría ya no es `expected`.
         """
         now = self._clock()
-        run = self.repository.sell(guild_id, user_id, key, shares, local_day(now), now)
+        run = self.repository.sell(
+            guild_id, user_id, key, shares, local_day(now), now, expected=expected
+        )
         sale, balances = await self.economy.housing(guild_id, run)
         return Trade(sale, balances[user_id])
 

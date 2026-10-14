@@ -70,7 +70,7 @@ class HousingScene:
         if not states:
             return []
         meta = {"w": W, "h": H}
-        patches = await self.painter.render(meta, states)
+        patches = await self.painter.render(meta, states, gif=False)
         if patches is None:
             patches = await self.browser.render(meta, states)
         if patches is None:
