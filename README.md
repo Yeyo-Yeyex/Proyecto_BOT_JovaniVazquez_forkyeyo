@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -196,7 +196,7 @@ python -m bot
   - Las compras de 100.000 Y$ o más se anuncian con un pregón en el canal.
   - Skins (pestaña 🎨 Skins): cambian el aspecto de una mesa del casino sin
     tocar cómo se juega. Los tapetes valen para todas las mesas con fieltro
-    (ruleta, autobús, bacará, dados, moneda y pollo) y cada mesa lleva el suyo:
+    (ruleta, autobús, bacará, dados, moneda, pollo y póker) y cada mesa lleva el suyo:
     granate, de oro, rojigualda, de Israel, del Teide, monoestrellado y el
     🖼️ Tapete propio (100.000 Y$, nivel 10), que lleva la imagen que subas tú. Los
     gallos tienen las suyas. Se compran (también desde el 🎨 de la mesa), se
@@ -493,6 +493,17 @@ python -m bot
   GIF dibujado con canvas en Node con Skia, sin navegador (si no hay Node, en
   Chromium y, si tampoco, con Pillow); las cartas se sortean antes de jugar y
   la animación de la mano siguiente se dibuja mientras piensas.
+- **Póker** (`/poker`, `.poker [cantidad]`): Casino Hold'em, el Texas Hold'em
+  contra la banca con una sola decisión. Pones el ante, ves tus dos cartas y el
+  flop y eliges ✅ Ir (el doble del ante) o 🏳️ Retirarte (pierdes el ante). Si
+  vas, la banca juega con pareja de cuatros o mejor; si no juega, el ante cobra
+  según la tabla (escalera real 100 a 1, escalera de color 20, póker 10, full 3,
+  color 2 y el resto 1 a 1) y la de ir se devuelve. Si juega y le ganas, la de
+  ir paga 1 a 1. La casa se queda un 2,16 % del ante con la mejor estrategia.
+  Al retirarte te dice qué habría pasado yendo. El reparto y el final son GIF
+  dibujados con canvas en Node (si no hay Node, en Chromium y, si tampoco, con
+  Pillow); las nueve cartas se sortean al repartir, así que los dos finales se
+  dibujan mientras miras el flop. Lleva el tapete de las mesas con fieltro.
 - **Dados** (`/dados`, `.dados [cantidad] [apuesta]`): craps de casino. Eliges
   ✅ Pase o 🚫 No pase y tiras la salida: con Pase, el 7 y el 11 ganan y el 2,
   el 3 y el 12 pierden; con No pase, al revés, y el 12 empata. Cualquier otro
@@ -613,7 +624,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las ocho secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.133 logros en 48 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.197 logros en 49 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -621,7 +632,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, hostelería, sanidad, oficina, reparto,
   funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 428 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 594 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -991,6 +1002,7 @@ src/bot/
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
+│   ├── poker.py         # poker: Casino Hold'em con ir o retirarse y precarga de los GIF
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
@@ -1043,6 +1055,9 @@ src/bot/
 │   ├── bus.py           # Autobús: cartas, probabilidades exactas y pagos al 99 %
 │   ├── bus_render.py    # Autobús: lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── bus_scene.py     # Autobús con canvas en Node o Chromium (assets/autobus/escena.html)
+│   ├── poker.py         # Póker: valor de las manos, la banca que juega y la tabla del ante
+│   ├── poker_render.py  # Póker: lo que se ve en cada fotograma y dibujo con Pillow
+│   ├── poker_scene.py   # Póker con canvas en Node o Chromium (assets/poker/escena.html)
 │   ├── craps.py         # Dados: salida, punto, Odds a la probabilidad exacta y la mano
 │   ├── craps_render.py  # Física de la tirada, cámara, dados en 3D y dibujo con Pillow
 │   ├── craps_scene.py   # Dados con canvas en Node o Chromium (assets/dados/escena.html)
@@ -1076,6 +1091,7 @@ src/bot/
     ├── despedidas.txt  # Frases de despedida, editables sin tocar código
     ├── caballos/       # escena.html: canvas y HTML/CSS de las carreras de caballos
     ├── bacara/         # escena.html: canvas de la mesa de bacará
+    ├── poker/          # escena.html: canvas de la mesa de póker
     ├── gallos/         # escena.html: canvas del reñidero y los gallos
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)

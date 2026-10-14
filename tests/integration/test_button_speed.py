@@ -325,6 +325,39 @@ async def press_bus_cash_out(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def poker_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Mesa del póker con dibujo falso y sin esperas."""
+    cog = client.get_cog("Póker")
+    module = module_of(client, "Póker")
+    module.REVEAL_MARGIN_SECONDS = 0
+    media = module.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
+    cog.renderer = MagicMock()
+    cog.renderer.deal = AsyncMock(return_value=media)
+    cog.renderer.showdown = AsyncMock(return_value=module.Showdown(call=media, fold=media))
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    return module.PokerView(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+
+
+async def press_poker_deal(client: BotClient, owner: MagicMock) -> Click:
+    view = poker_view(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._deal_click(interaction)
+
+    return click
+
+
+async def press_poker_call(client: BotClient, owner: MagicMock) -> Click:
+    view = poker_view(client, owner)
+    # El ante ya cobrado antes de medir.
+    await view.deal_hand(AsyncMock())
+
+    async def click(interaction: MagicMock) -> None:
+        await view._call(interaction)
+
+    return click
+
+
 def dice_view(client: BotClient, owner: MagicMock, *rolls: tuple[int, int]):  # noqa: ANN201
     """Mesa de los dados con dibujo falso, sin esperas y con el azar de guion."""
     cog = client.get_cog("Dados")
@@ -819,6 +852,8 @@ CASES: dict[str, Press] = {
     "gallos: aceptar un duelo": press_gallos_accept,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
+    "póker: repartir": press_poker_deal,
+    "póker: ir": press_poker_call,
     "dados: pase": press_dice_pass,
     "dados: tirar": press_dice_roll,
     "dados: odds": press_dice_odds,

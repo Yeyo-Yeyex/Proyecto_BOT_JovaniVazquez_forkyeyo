@@ -50,6 +50,7 @@ from bot.services.achievements import (
     PET_SPAWN_KINDS_STAT,
     PET_SPECIES_PREFIX,
     PET_SPECIES_STAT,
+    POKER_MADE_PREFIX,
     PORRA_GAME_PREFIX,
     PORRA_GAMES,
     PORRA_PROP_PREFIX,
@@ -96,6 +97,7 @@ from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko_motion import motion_for
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.poker import Rank as PokerRank
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
@@ -316,6 +318,15 @@ PRODUCED_STATS = {
     "bus_cash_666", "bus_cash_69", "bus_min_stake", "bus_night", "bus_rush", "bus_canarias",
     "bus_friday13",
     *(f"{BUS_WIN_PREFIX}{pick.key}" for pick in BusPick),
+    # cogs/poker.py (`poker_stats`)
+    "poker_games", "poker_calls", "poker_folds", "poker_wins", "poker_no_qualify",
+    "poker_ties", "poker_losses", "poker_air_call_wins", "poker_bluff", "poker_wheel_win",
+    "poker_72_win", "poker_tie_board", "poker_bad_beat", "poker_dealer_monster",
+    "poker_kicker", "poker_aces", "poker_aces_lost", "poker_flop_monster", "poker_min_stake",
+    "poker_win_max", "poker_cash_666", "poker_cash_69", "poker_fold_would_win",
+    "poker_fold_saved", "poker_fold_monster", "poker_night", "poker_reyes", "poker_inocentes",
+    "poker_friday13",
+    *(f"{POKER_MADE_PREFIX}{rank.key}" for rank in PokerRank if rank is not PokerRank.HIGH_CARD),
     # cogs/craps.py (`craps_stats`)
     "dice_games", "dice_rolls", "dice_pass_games", "dice_dont_games", "dice_naturals",
     "dice_craps_rolls", "dice_elevens", "dice_points_set", "dice_points_made", "dice_hard",
