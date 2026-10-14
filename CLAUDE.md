@@ -46,8 +46,10 @@ Lo que más se olvida:
   siempre su trabajo antes de fusionar. Sección «Agentes y subagentes» de `Biblia.txt`.
 - **Decidir con datos:** antes de optimizar, quitar o rehacer algo, mira si hay
   informes de uso en `docs/metricas/` y pásalos por `docs/analisis_metricas.py`
-  (botones lentos, fallos, retención, memoria del NAS). Si no hay uno reciente, pídeselo
-  a la persona: lo saca un administrador con `/informe`. La telemetría no lleva logros.
+  (botones lentos, fallos, retención, memoria del NAS, bloqueos del bucle). El bot deja
+  cada día el informe en `informes/` del NAS (README, «Telemetría interna»); si la
+  persona la comparte por SMB, léelo de ahí. Si no hay uno reciente, pídeselo: lo saca
+  un administrador con `/informe`. La telemetría no lleva logros.
 - **Versión:** todo cambio que entra en `main` sube `__version__` (`src/bot/__init__.py`)
   y añade su entrada arriba en `CHANGELOG.md`. MAYOR si algo que la gente ya hacía deja
   de funcionar igual (comando quitado o renombrado, datos perdidos), MENOR si hay algo
@@ -133,12 +135,20 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   Node, usar un lienzo como origen de `drawImage` lo copia entero cada vez.
 - **Los procesos de Node son de todos los juegos** (`node_scene._Pool`). Cada
   uno carga la escena que le pidan en su propio contexto `vm` (hasta 3; suelta
-  la más vieja). Hay uno siempre abierto desde que arranca el bot (`warm`), se
-  abre otro de reserva cuando un dibujo se queda con todos los libres, hasta 4,
-  y los de más se cierran tras 10 minutos sin uso. Cada dibujo se reparte entre
-  los libres a partes iguales con los que ya están en marcha: quien juega solo
-  pinta con 4. Frente a 2 procesos fijos por juego, el dibujo bajó un 40-55 %
+  la más vieja). Hay uno siempre abierto desde que arranca el bot (`warm`); en
+  cuanto empieza un dibujo se abren los que faltan hasta 4, y los de más se
+  cierran tras 10 minutos sin uso. Todos colaboran en cada dibujo: empieza con
+  los libres (a partes iguales con los dibujos en marcha) y cada proceso que se
+  abre o se queda libre a mitad se une y se lleva la mitad final del tramo con
+  más trabajo pendiente (`_steal`). Cada tramo empieza con `setup` y un
+  fotograma entero, así que una escena no puede guardar estado entre
+  fotogramas salvo que lo recree con los de antes (`warmup`, el polvo de los
+  caballos). Frente a 2 procesos fijos por juego, el dibujo bajó un 40-55 %
   (gallos, 2,4 a 1,1 s; bacará, 1,1 a 0,5 s; moneda, 0,40 a 0,24 s).
+- **El GIF se monta mientras Node pinta.** Los fotogramas llegan en RGBA crudo,
+  se abren y se montan en un hilo (no en el bucle de eventos) y cada uno empieza
+  a codificarse ya (`gif.precode`): `local_palette_gif` solo espera lo que falte.
+  `render` devuelve los fotogramas enteros.
 - **En el navegador, lo caro es el PNG.** `toDataURL` comprime en un solo hilo
   (`toBlob` no ayuda sin GPU) y cada fotograma viaja en base64 a Python. Hay
   que devolver solo el recuadro que cambia y no marcar `full` sin necesidad: un
@@ -240,9 +250,11 @@ memoria, no tiempo. En cambio, la carrera de caballos (130 fotogramas enteros)
 bajó de 5,6 a 3,6 s: cuanto más PNG mandaba Chromium, más se gana. Antes de
 prometer velocidad, medir qué tramo pesa.
 
-Escenas que no siguen `setup`/`renderFrames` o que guardan estado entre
-fotogramas (el polvo de los caballos) usan `NodeScene.sequence`: varias llamadas
-en orden y en un solo proceso. Cualquier función de la escena puede devolver
+Escenas que no siguen `setup`/`renderFrames` usan `NodeScene.sequence`: varias
+llamadas en orden y en un solo proceso (el podio de los caballos, a la vez que la
+carrera). Una escena que arrastra estado de un fotograma al siguiente no usa
+`sequence`: lo hace repetible por fotograma y lo recrea con `warmup` (los caballos,
+`DUST_FRAMES`), con una prueba que compare repartida contra de un tirón. Cualquier función de la escena puede devolver
 imágenes de `exportFrame`. Lo que sea HTML con CSS (la parrilla y el boleto de
 los caballos, capturas de pantalla) se queda en Chromium.
 
@@ -268,7 +280,7 @@ Lo que no compensó, para no repetirlo:
 Al tocar las dependencias de Node: versiones publicadas hace al menos dos
 semanas, fijadas en `package.json` con su `package-lock.json`. Aquí `docker
 build` no tiene red; se comprueba al menos que el `node` de `node:22-slim` y el
-`node_modules` pintan la escena dentro de `python:3.12-slim` con el usuario `bot`.
+`node_modules` pintan la escena dentro de `python:3.13-slim` con el usuario `bot`.
 
 ## Dos repositorios
 

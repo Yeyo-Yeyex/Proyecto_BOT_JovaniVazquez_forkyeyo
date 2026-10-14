@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.2.4 · 2026-10-14
+
+- Juegos: GIF más rápidos con los 4 pintores a la vez y Python 3.13
+
 ### 6.2.3 · 2026-10-14
 
 - Interno: los pintores de Node ya no pasan de 4 aunque se pidan varios a la vez
