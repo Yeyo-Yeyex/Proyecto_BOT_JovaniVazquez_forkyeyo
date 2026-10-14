@@ -827,6 +827,9 @@ class ShopRepository:
         if user_id is not None:
             where += " AND i.user_id = ?"
             args = (*args, user_id)
+        else:
+            # Lo que está en un puesto del Rastro lo guarda una cuenta con id negativo.
+            where += " AND i.user_id > 0"
         connection = self._connect()
         try:
             rows = connection.execute(
@@ -1351,6 +1354,37 @@ class ShopRepository:
                     connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
         finally:
             connection.close()
+
+
+def move_entry_in(
+    connection: sqlite3.Connection, guild_id: int, entry_id: int, from_user: int, to_user: int
+) -> InventoryEntry | None:
+    """Pasa un objeto de la mochila de `from_user` a la de `to_user` (el Rastro).
+
+    Corre dentro de una transacción ya abierta (la de `EconomyRepository.market`).
+    El objeto llega sin poner (`equipped = 0`) y, si quien lo suelta lo llevaba
+    como skin en alguna mesa, se le quita. Las ventas de la tienda
+    (`shop_purchases`) se quedan como están: son de quien lo compró.
+
+    Returns:
+        El objeto ya movido, o `None` si `from_user` no lo tenía en vigor.
+    """
+    cursor = connection.execute(
+        """
+        UPDATE shop_inventory SET user_id = ?, equipped = 0
+        WHERE id = ? AND guild_id = ? AND user_id = ? AND status = 'active'
+        """,
+        (to_user, entry_id, guild_id, from_user),
+    )
+    if cursor.rowcount != 1:
+        return None
+    row = connection.execute("SELECT * FROM shop_inventory WHERE id = ?", (entry_id,)).fetchone()
+    if row["catalog_key"]:
+        connection.execute(
+            "DELETE FROM shop_skin_worn WHERE guild_id = ? AND user_id = ? AND catalog_key = ?",
+            (guild_id, from_user, row["catalog_key"]),
+        )
+    return _entry(row)
 
 
 def _create_skin_worn(connection: sqlite3.Connection) -> None:

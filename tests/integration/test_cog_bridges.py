@@ -914,6 +914,51 @@ async def test_perfil_fortunas_y_ranking_ven_el_titulo_con_el_bot_real(tmp_path:
         await client.close()
 
 
+async def test_vender_en_el_rastro_quita_el_titulo_y_apunta_logros_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El Rastro carga después de la tienda y antes de los logros: los dos puentes valen."""
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        rastro = client.get_cog("Rastro")
+        module = importer("Rastro", client)
+        assert module.logros._cog(client) is client.get_cog("Achievements")
+        await tienda.stock_up(GUILD_ID)
+        item = await client.shop.item_by_key(GUILD_ID, "verificado")
+        assert item is not None
+        entry, _dupe = await client.shop.grant(GUILD_ID, OWNER_ID, item, 0.0)
+        await tienda.wear_title(GUILD_ID, OWNER_ID, "verificado")
+        await client.economy.repository.apply(GUILD, 20, [LedgerEntry(100_000, "test")])
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        seller = MagicMock(spec=discord.Member)
+        seller.id, seller.bot, seller.display_name = OWNER_ID, False, "Diego"
+        buyer = MagicMock(spec=discord.Member)
+        buyer.id, buyer.bot, buyer.display_name, buyer.mention = 20, False, "Ana", "<@20>"
+        guild.get_member = MagicMock(side_effect={OWNER_ID: seller, 20: buyer}.get)
+        client.get_guild = MagicMock(return_value=guild)  # type: ignore[method-assign]
+        entries = await client.shop.inventory(GUILD_ID, OWNER_ID, rastro.clock())
+        view = module.OfferView(
+            rastro, GUILD_ID, seller, buyer, next(e for e in entries if e.id == entry.id), 500
+        )
+        interaction = fake_interaction(buyer)
+        interaction.client = client
+        interaction.guild = guild
+        interaction.channel = None
+
+        await view.accept.callback(interaction)
+
+        assert tienda.title(GUILD_ID, OWNER_ID) is None
+        mine = await client.achievements.profile(GUILD, OWNER_ID)
+        theirs = await client.achievements.profile(GUILD, 20)
+        assert mine.stats["market_sold"] == 1
+        assert theirs.stats["market_bought"] == 1
+        assert "rastro_itp_1" in theirs.unlocked
+    finally:
+        await client.close()
+
+
 async def test_la_ruleta_pinta_con_la_skin_de_la_tienda_con_el_bot_real(tmp_path: Path) -> None:
     """El casino carga antes que la tienda: su puente tiene que ver la skin puesta."""
     client = await load_bot(tmp_path)

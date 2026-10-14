@@ -183,6 +183,13 @@ PRODUCED_STATS = {
     "pet_goat_odd", "pet_night", "pet_san_anton", "pet_christmas", "pet_halloween",
     "pet_canarias", "pet_cameos", "pet_cameo_bust", "pet_cameo_big", "pet_cameo_night",
     "pet_renamed", "pet_named_sanxe", "pet_named_beast", "pet_switches",
+    # cogs/rastro.py: ventas, compras, pujas y puestos del Rastro
+    "market_sold", "market_sold_y", "market_bids_on_mine_max", "market_gain_tax",
+    "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
+    "market_bought", "market_spent", "market_bought_max", "market_itp",
+    "market_gift_received", "market_auction_won", "market_serial_bought",
+    "market_title_bought", "market_tapete_bought", "market_listings", "market_withdrawn",
+    "market_expired", "market_bids", "market_bid_max", "market_outbid",
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
     "bizum_broke", "bizum_received_count", "bizum_received",
