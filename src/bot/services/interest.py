@@ -13,8 +13,9 @@ Reglas (lógica pura, sin Discord ni base de datos):
   que no cuenta: solo el que está quieto de verdad.
 - **Tipo, por tramos** (`INTEREST_TIERS`), como la letra pequeña de las cuentas
   de bienvenida: el 2,5 % diario solo hasta 4.000 Y$, el 1,25 % de ahí a 20.000
-  y el 0,4 % hasta 70.000. Por encima no se paga nada: el tramo remunerado
-  acaba justo donde empieza el Patrimonio. Como mucho, `INTEREST_DAILY_MAX`
+  y el 0,4 % hasta 70.000. Por encima no se paga nada: para el dinero que pase de
+  ahí están los `pisos` (el tramo remunerado no llega al mínimo del Patrimonio,
+  7.000.000 Y$, como pide la Biblia). Como mucho, `INTEREST_DAILY_MAX`
   (500 Y$) brutos al día, un tercio del IMV máximo. Norma del proyecto: nada que
   dependa del saldo crece sin tope (Biblia, "Equilibrio").
 - **Impuestos:** rendimiento del capital mobiliario (art. 25.2 LIRPF). Cada
@@ -58,7 +59,19 @@ ROUNDING_RATE = 0.25
 #: Motivos del libro que no son algo que haya hecho el miembro: los cobros y
 #: cargos automáticos. Sirven para saber si alguien "no ha hecho nada" un día.
 AUTOMATIC_REASONS = frozenset(
-    {"intereses", "irpf:intereses", "irpf:ahorro", "patrimonio", "bienvenida"}
+    {
+        "intereses",
+        "irpf:intereses",
+        "irpf:ahorro",
+        "patrimonio",
+        "bienvenida",
+        # Las rentas y los gastos de `pisos` llegan solos cada noche.
+        "pisos:renta",
+        "irpf:pisos:renta",
+        "pisos:ibi",
+        "pisos:comunidad",
+        "embargo:patrimonio",
+    }
 )
 #: Sufijos de los movimientos del casino (`{juego}:apuesta`, `{juego}:premio`…).
 _CASINO_SUFFIXES = (":apuesta", ":premio", ":bote", ":aporte")

@@ -270,7 +270,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
         value=(
             "IRPF con retención en premios, niveles, cumpleaños y saludos · IRPF del "
             "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
-            f"de {format_amount(WEALTH_MINIMUM)} · IGIC en las compras de la `tienda` "
+            f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
+            "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
             f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
             " · Los `bizum` entre miembros, exentos de Donaciones"
             f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
@@ -1453,6 +1454,18 @@ class EconomyService:
     ) -> dict[int, dict[str, int]]:
         """Impuestos pagados por cada miembro, por tipo (ver `EconomyRepository.tax_breakdown`)."""
         return await self.repository.tax_breakdown(guild_id, since=since)
+
+    async def tax_debt(self, guild_id: int, user_id: int) -> int:
+        """Patrimonio que un miembro aún debe y se le embargará de lo que cobre por sus pisos."""
+        return await self.repository.tax_debt(guild_id, user_id)
+
+    async def housing_rent_totals(self, guild_id: int) -> dict[int, int]:
+        """Toda la renta de `pisos` que ha cobrado cada miembro, antes del IRPF."""
+        return await self.repository.reason_totals(guild_id, "pisos:renta")
+
+    async def housing_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
+        """Lo que cada miembro ha pagado por sus pisos (ver `EconomyRepository`)."""
+        return await self.repository.housing_tax_breakdown(guild_id)
 
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""

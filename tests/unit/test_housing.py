@@ -398,3 +398,59 @@ async def test_el_patrimonio_cuenta_los_inmuebles(tmp_path: Path) -> None:
     assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [
         (ANA, worth, min(cash, wealth_tax(worth)))
     ]
+
+
+def test_todas_las_cifras_son_enteras() -> None:
+    """Los Y$ son enteros: un `round(x, -3)` de un float devuelve un float."""
+    for listing in LISTINGS:
+        for index in (1.0, 1.137):
+            assert type(rules.price(listing, index)) is int
+            assert type(rules.share_price(listing, index)) is int
+            assert type(rules.reference_rent(listing, index)) is int
+            for level in RENT_LEVELS.values():
+                assert type(rules.asking_rent(listing, level, index)) is int
+
+
+async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> None:
+    import discord
+
+    from bot.services.achievements import housing_tax_stats
+    from bot.services.tax_report import add_housing_fields, housing_lines
+
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await economy.pay_income(GUILD, ANA, gross=300_000, concept="nivel:30")
+    buy = await service.buy(GUILD, ANA, BAJO.key, 100)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01'"
+        )
+    clock.now = at(15).timestamp()
+    await service.close_days(GUILD)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_index SET value = 2.0")
+    sale = await service.sell(GUILD, ANA, BAJO.key, 100)
+
+    taxes = (await economy.housing_tax_breakdown(GUILD))[ANA]
+
+    assert taxes["itp"] == buy.deal.quote.itp
+    assert taxes["ibi"] == rules.monthly_costs(BAJO).ibi
+    assert taxes["alquiler"] > 0
+    assert taxes["ganancia"] == sale.deal.quote.gain_tax
+    assert len(housing_lines(taxes)) == 4
+    embed = discord.Embed()
+    add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
+    assert format_total(sum(taxes.values())) in embed.fields[0].name
+    assert "Ana" in embed.fields[1].value
+    rent = (await economy.housing_rent_totals(GUILD))[ANA]
+    delta = housing_tax_stats(taxes=taxes, rent=rent)
+    assert delta.peak["pisos_tax_total"] == sum(taxes.values())
+    assert delta.peak["pisos_tax_ganancia"] == taxes["ganancia"]
+
+
+def format_total(amount: int) -> str:
+    from bot.services.economy import format_amount
+
+    return format_amount(amount)

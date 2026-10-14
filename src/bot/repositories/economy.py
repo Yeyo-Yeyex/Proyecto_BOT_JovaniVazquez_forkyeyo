@@ -91,6 +91,9 @@ Modelo de datos:
   el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
   `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
   (concepto `pisos:renta`).
+- `economy_tax_debts` y `economy_debt_payments`: el Patrimonio que no llegó a pagarse
+  en efectivo (quien lo tiene todo en ladrillo) y lo que se ha ido embargando de lo
+  que cobra por sus pisos. `hacienda` cuenta los embargos como Patrimonio.
 - `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
   cobrado de más antes de que la renta de las retenciones se reiniciara cada
   lunes (`regularize_irpf`). Se hace una sola vez.
@@ -332,11 +335,15 @@ class WealthCharge:
 
     Attributes:
         balance: Su patrimonio ese lunes (efectivo más inmuebles), la base.
+        tax: Lo que pagó ese lunes con su efectivo.
+        debt: Lo que no le llegó: queda como deuda con Hacienda y se embarga de lo
+            que cobre por sus pisos.
     """
 
     user_id: int
     balance: int
     tax: int
+    debt: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -907,6 +914,21 @@ class EconomyRepository:
                     kind TEXT NOT NULL CHECK (kind IN ('itp', 'ibi', 'plusvalia')),
                     base INTEGER NOT NULL CHECK (base >= 0),
                     tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_tax_debts (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount >= 0),
+                    PRIMARY KEY (guild_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_debt_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
                     created_at REAL NOT NULL
                 );
 
@@ -2432,6 +2454,9 @@ class EconomyRepository:
             SELECT user_id, 'patrimonio', tax, created_at
             FROM economy_wealth_tax WHERE guild_id = :guild
             UNION ALL
+            SELECT user_id, 'patrimonio', amount, created_at
+            FROM economy_debt_payments WHERE guild_id = :guild
+            UNION ALL
             SELECT user_id, 'loteria', tax, created_at
             FROM economy_lottery_tax WHERE guild_id = :guild
             UNION ALL
@@ -2465,6 +2490,56 @@ class EconomyRepository:
                 GROUP BY user_id, kind
                 """,
                 {"guild": guild_id, "since": since},
+            ).fetchall()
+        finally:
+            connection.close()
+        out: dict[int, dict[str, int]] = {}
+        for user_id, kind, total in rows:
+            if total:
+                out.setdefault(int(user_id), {})[str(kind)] = int(total)
+        return out
+
+    async def reason_totals(self, guild_id: int, reason: str) -> dict[int, int]:
+        """Suma del libro por miembro para un motivo (p. ej. la renta de los `pisos`)."""
+        return await self._run(self._reason_totals_sync, guild_id, reason)
+
+    def _reason_totals_sync(self, guild_id: int, reason: str) -> dict[int, int]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT user_id, SUM(delta) FROM economy_ledger "
+                "WHERE guild_id = ? AND user_id > 0 AND reason = ? GROUP BY user_id",
+                (guild_id, reason),
+            ).fetchall()
+        finally:
+            connection.close()
+        return {int(user_id): int(total) for user_id, total in rows}
+
+    async def housing_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
+        """Todo lo que cada miembro ha pagado por sus `pisos`, desde siempre.
+
+        Solo lee. Claves: `itp` (al comprar), `ibi`, `alquiler` (IRPF de las rentas) y
+        `ganancia` (IRPF de lo ganado al vender). Es lo mismo que cuenta
+        `tax_breakdown`, separado del resto para el bloque 🏠 de `hacienda`.
+        """
+        return await self._run(self._housing_tax_breakdown_sync, guild_id)
+
+    def _housing_tax_breakdown_sync(self, guild_id: int) -> dict[int, dict[str, int]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT user_id, CASE kind WHEN 'plusvalia' THEN 'ganancia' ELSE kind END,
+                       SUM(tax)
+                FROM economy_housing_tax WHERE guild_id = :guild AND user_id > 0
+                GROUP BY user_id, kind
+                UNION ALL
+                SELECT user_id, 'alquiler', SUM(withheld)
+                FROM economy_tax_records
+                WHERE guild_id = :guild AND user_id > 0 AND concept = :rent
+                GROUP BY user_id
+                """,
+                {"guild": guild_id, "rent": HOUSING_RENT_CONCEPT},
             ).fetchall()
         finally:
             connection.close()
@@ -2524,6 +2599,9 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_housing_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, amount AS withheld, created_at AS at FROM economy_debt_payments
                 WHERE guild_id = :guild
             """
             total, recent = connection.execute(
@@ -2618,25 +2696,41 @@ class EconomyRepository:
             cash = {int(row["user_id"]): int(row["balance"]) for row in wallets}
             extra = assets(connection) if assets is not None else {}
             charges = []
-            for user_id, balance in cash.items():
+            for user_id in sorted(set(cash) | {m for m, v in extra.items() if m > 0 and v > 0}):
+                balance = cash.get(user_id, 0)
                 worth = balance + max(0, extra.get(user_id, 0))
-                tax = min(balance, max(0, tax_for(worth)))
-                if not tax:
+                due = max(0, tax_for(worth))
+                tax = min(balance, due)
+                # Lo que no llega en efectivo se embarga de lo que cobre por sus pisos
+                # (art. 169 de la Ley 58/2003): tenerlo todo en ladrillo no libra del impuesto.
+                debt = due - tax
+                if not due:
                     continue
-                self._apply_in_transaction(
-                    connection, guild_id, user_id, (LedgerEntry(-tax, "patrimonio"),)
-                )
-                self._credit_state_in(connection, guild_id, tax, "patrimonio")
-                connection.execute(
-                    """
-                    INSERT INTO economy_wealth_tax
-                        (guild_id, user_id, week_start, balance, tax, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (guild_id, user_id, week, worth, tax, now),
-                )
-                charges.append(WealthCharge(user_id, worth, tax))
-            charges.sort(key=lambda c: (-c.tax, c.user_id))
+                if tax:
+                    self._apply_in_transaction(
+                        connection, guild_id, user_id, (LedgerEntry(-tax, "patrimonio"),)
+                    )
+                    self._credit_state_in(connection, guild_id, tax, "patrimonio")
+                    connection.execute(
+                        """
+                        INSERT INTO economy_wealth_tax
+                            (guild_id, user_id, week_start, balance, tax, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, user_id, week, worth, tax, now),
+                    )
+                if debt:
+                    connection.execute(
+                        """
+                        INSERT INTO economy_tax_debts (guild_id, user_id, amount)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT (guild_id, user_id)
+                            DO UPDATE SET amount = amount + excluded.amount
+                        """,
+                        (guild_id, user_id, debt),
+                    )
+                charges.append(WealthCharge(user_id, worth, tax, debt))
+            charges.sort(key=lambda c: (-(c.tax + c.debt), c.user_id))
             return WealthRun(charges=tuple(charges))
 
     # -- Regularización del IRPF al reiniciar la renta cada lunes --------------------
@@ -3647,6 +3741,12 @@ class EconomyRepository:
         with self._transaction() as connection:
             result, move = prepare(connection)
             balances: dict[int, int] = {}
+            touched = (
+                {r.user_id for r in move.rents}
+                | {m for m, _e in move.entries}
+                | {t.user_id for t in move.taxes}
+            )
+            before = {m: self._ensure_wallet(connection, guild_id, m) for m in touched}
             for rent in move.rents:
                 if rent.gross <= 0:
                     continue
@@ -3693,7 +3793,63 @@ class EconomyRepository:
                     """,
                     (guild_id, item.user_id, item.kind, max(0, item.base), item.tax, now),
                 )
+            for member in sorted(touched):
+                gained = balances.get(member, before[member]) - before[member]
+                if gained > 0 and (paid := self._collect_tax_debt_in(
+                    connection, guild_id, member, gained, now
+                )):  # fmt: skip
+                    balances[member] = balances.get(member, before[member]) - paid
             return result, balances
+
+    def _collect_tax_debt_in(
+        self, connection: sqlite3.Connection, guild_id: int, user_id: int, most: int, now: float
+    ) -> int:
+        """Embarga de lo que acaba de cobrar un miembro su deuda del Patrimonio.
+
+        Embargo de créditos y rentas (art. 169 de la Ley 58/2003): lo que cobra por sus
+        pisos paga primero lo que debe del Patrimonio que no le llegó en efectivo. Va al
+        Estado y `hacienda` lo cuenta como Patrimonio.
+
+        Returns:
+            Lo embargado (0 si no debe nada).
+        """
+        row = connection.execute(
+            "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        ).fetchone()
+        owed = int(row["amount"]) if row else 0
+        paid = min(owed, most)
+        if paid <= 0:
+            return 0
+        self._apply_in_transaction(
+            connection, guild_id, user_id, (LedgerEntry(-paid, "embargo:patrimonio"),)
+        )
+        self._credit_state_in(connection, guild_id, paid, "embargo:patrimonio")
+        connection.execute(
+            "UPDATE economy_tax_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
+            (paid, guild_id, user_id),
+        )
+        connection.execute(
+            "INSERT INTO economy_debt_payments (guild_id, user_id, amount, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (guild_id, user_id, paid, now),
+        )
+        return paid
+
+    async def tax_debt(self, guild_id: int, user_id: int) -> int:
+        """Lo que un miembro debe todavía a Hacienda del Patrimonio (0 si nada)."""
+        return await self._run(self._tax_debt_sync, guild_id, user_id)
+
+    def _tax_debt_sync(self, guild_id: int, user_id: int) -> int:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(row["amount"]) if row else 0
 
     # -- Loterías ----------------------------------------------------------------------
 
@@ -4404,6 +4560,8 @@ class EconomyRepository:
                 "economy_gaming_tax",
                 "economy_market_tax",
                 "economy_housing_tax",
+                "economy_tax_debts",
+                "economy_debt_payments",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

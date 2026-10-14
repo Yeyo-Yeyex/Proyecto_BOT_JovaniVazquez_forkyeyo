@@ -127,12 +127,12 @@ def base_price(listing: Listing) -> int:
     barrio = BARRIO_BY_KEY[listing.barrio]
     kind = KINDS[listing.kind]
     euros = _m2(listing) * barrio.price_m2 * kind.price_factor
-    return round(_euros(euros), -3)
+    return int(round(_euros(euros), -3))
 
 
 def price(listing: Listing, index: float = 1.0) -> int:
     """Lo que vale hoy el inmueble entero, con el índice de su barrio."""
-    return round(base_price(listing) * index, -3)
+    return int(round(base_price(listing) * index, -3))
 
 
 def share_price(listing: Listing, index: float = 1.0) -> int:
@@ -145,12 +145,12 @@ def reference_rent(listing: Listing, index: float = 1.0) -> int:
     barrio = BARRIO_BY_KEY[listing.barrio]
     kind = KINDS[listing.kind]
     euros = _m2(listing) * barrio.rent_m2 * kind.rent_factor * index
-    return round(_euros(euros), -1)
+    return int(round(_euros(euros), -1))
 
 
 def asking_rent(listing: Listing, level: RentLevel, index: float = 1.0) -> int:
     """Lo que pide el dueño al mes con su nivel de renta."""
-    return round(reference_rent(listing, index) * level.factor, -1)
+    return int(round(reference_rent(listing, index) * level.factor, -1))
 
 
 def cadastral_value(listing: Listing) -> int:

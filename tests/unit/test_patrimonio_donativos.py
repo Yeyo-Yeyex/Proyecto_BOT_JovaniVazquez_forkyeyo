@@ -143,9 +143,7 @@ async def test_la_primera_semana_solo_activa_y_la_siguiente_cobra(tmp_path: Path
     again = await service.charge_wealth_tax(GUILD)
 
     assert week == date(2026, 10, 5)
-    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [
-        (RICH, BIG, wealth_tax(BIG))
-    ]
+    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [(RICH, BIG, wealth_tax(BIG))]
     assert again[1].done_before
     assert await service.balance(GUILD, RICH) == BIG - wealth_tax(BIG)
     assert ledger_sum(tmp_path, RICH) == await service.balance(GUILD, RICH)

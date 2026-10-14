@@ -477,6 +477,23 @@ class HousingRepository:
             connection.close()
         return MemberDay(int(rent), int(ibi), int(costs))
 
+    async def member_values(self, guild_id: int) -> tuple[dict[int, int], dict[int, int]]:
+        """`(valor de mercado, valor fiscal)` de los inmuebles de cada miembro."""
+        return await self._run(self._member_values_sync, guild_id)
+
+    def _member_values_sync(self, guild_id: int) -> tuple[dict[int, int], dict[int, int]]:
+        connection = self._connect()
+        try:
+            market = _market_in(connection, guild_id)
+            fiscal = assets_in(connection, guild_id)
+        finally:
+            connection.close()
+        values: dict[int, int] = {}
+        for members in market.holdings.values():
+            for member, holding in members.items():
+                values[member] = values.get(member, 0) + market.value(holding)
+        return values, fiscal
+
     async def last_day(self, guild_id: int) -> date | None:
         """Último día cerrado en el servidor, o `None` si nunca se cerró ninguno."""
         return await self._run(self._last_day_sync, guild_id)

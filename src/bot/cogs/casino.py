@@ -57,7 +57,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import apuestas, renta
+from bot.cogs import apuestas, pisos, renta
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.services import skins
@@ -99,7 +99,13 @@ from bot.services.roulette import (
 )
 from bot.services.roulette_scene import GAME as GAME_SKIN
 from bot.services.roulette_scene import Media, RouletteScene
-from bot.services.tax_report import add_bill_fields, member_bill_embed, server_bill
+from bot.services.tax_report import (
+    add_bill_fields,
+    add_housing_fields,
+    housing_lines,
+    member_bill_embed,
+    server_bill,
+)
 from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
 from bot.utils.interactions import ack, edit, notify
@@ -1244,13 +1250,15 @@ class Casino(commands.Cog):
             return
         balance = await self.economy.balance(responder.guild.id, who.id)
         description = f"{CURRENCY_EMOJI} **{who.display_name}** tiene **{format_amount(balance)}**"
-        # El Patrimonio se cobra el lunes sobre el saldo de ese momento: avisarlo
-        # aquí es lo que empuja a gastar antes.
-        if wealth := wealth_tax(balance):
+        # El Patrimonio se cobra el lunes sobre el saldo y los pisos de ese momento:
+        # avisarlo aquí es lo que empuja a gastar antes.
+        homes = await pisos.fiscal_of(self.bot, responder.guild.id, who.id)
+        if wealth := wealth_tax(balance + homes):
             description += (
                 f"\n-# 🐶 Si el lunes sigue ahí, {TAX_COLLECTOR} se lleva "
                 f"{format_amount(wealth)} de Patrimonio (lo que pase de "
-                f"{format_amount(WEALTH_MINIMUM)})."
+                f"{format_amount(WEALTH_MINIMUM)} entre efectivo y pisos; lo que no tengas "
+                "en efectivo, de tus alquileres)."
             )
         # La cuenta remunerada: enseñar lo de ayer y lo que va saliendo hoy es lo que
         # hace que se note y que dé pena fundírselo todo.
@@ -1401,6 +1409,8 @@ class Casino(commands.Cog):
             explained = [(f.name, f.value) for f in embed.fields]
             embed.clear_fields()
             add_bill_fields(embed, all_bills, server, names)
+            housing = await self.economy.housing_tax_breakdown(guild.id)
+            add_housing_fields(embed, housing, {m: self._display_name(guild, m) for m in housing})
             for name, value in explained:
                 embed.add_field(name=name, value=value, inline=False)
         else:
@@ -1413,6 +1423,14 @@ class Casino(commands.Cog):
                 user_id=member.id,
                 year=now.year,
             )
+            homes = (await self.economy.housing_tax_breakdown(guild.id)).get(member.id, {})
+            if lines := housing_lines(homes):
+                embed.add_field(
+                    name=f"🏠 Por sus pisos · {format_amount(sum(homes.values()))}",
+                    value="\n".join(lines)
+                    + "\n-# Ya está dentro de los directos e indirectos de arriba.",
+                    inline=False,
+                )
         await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         author = getattr(responder, "member", None)
         if author is not None and not author.bot:

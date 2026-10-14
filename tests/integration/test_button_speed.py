@@ -68,6 +68,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.achievements.initialize()
     await client.welcome.initialize()
     await client.shop.initialize()
+    await client.housing.initialize()
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
@@ -863,6 +864,54 @@ async def press_rastro_withdraw(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def pisos_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    cog = client.get_cog("Pisos")
+    painter = MagicMock()
+    painter.paint = AsyncMock(side_effect=lambda states: [b"PNG"] * len(states))
+    painter.close = AsyncMock()
+    cog.painter.scene = painter
+    return module_of(client, "Pisos").Panel(cog, guild=owner.guild, owner=owner)
+
+
+async def press_pisos_barrio(client: BotClient, owner: MagicMock) -> Click:
+    panel = pisos_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["schamann"]}
+        await panel._pick_barrio(interaction)
+
+    return click
+
+
+async def press_pisos_pay(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(1_000_000, "test")])
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.pending = "taco_trastero", "caja", (False, 10)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._pay(interaction)
+
+    return click
+
+
+async def press_pisos_level(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(1_000_000, "test")])
+    cog = client.get_cog("Pisos")
+    await cog.service.buy(GUILD_ID, OWNER_ID, "taco_trastero", 100)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_trastero", "ficha"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["mercado"]}
+        await panel._pick_level(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1124,6 +1173,9 @@ CASES: dict[str, Press] = {
     "rastro: aceptar una oferta": press_rastro_accept,
     "rastro: pujar": press_rastro_bid,
     "rastro: retirar un puesto": press_rastro_withdraw,
+    "pisos: elegir barrio": press_pisos_barrio,
+    "pisos: pagar en la caja": press_pisos_pay,
+    "pisos: cambiar la renta": press_pisos_level,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,

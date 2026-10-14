@@ -105,6 +105,8 @@ from bot.services.horses import Going as HorseGoing
 from bot.services.horses import Pick as HorsePick
 from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
+from bot.services.housing_catalog import BARRIO_BY_KEY
+from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
     INTEREST_TIERS,
@@ -278,6 +280,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
     Category("rastro", "🧺 Rastro"),
+    Category("pisos", "🏠 Pisos"),
     Category("pets", "🐾 Mascotas"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
@@ -505,6 +508,17 @@ FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
 #: Lo mismo en la ventana de 7 días que usa la retención (`compute_withholding`).
 FIRST_TAX_WEEKLY = FIRST_TAX_YEARLY * 7 // 365
 
+#: `pisos`: un contador por barrio, tipo de inmueble, imprevisto y renta pedida
+#: (`housing_*_stats`). Los recuentos de barrios y tipos salen en `with_derived`.
+PISOS_BARRIO_PREFIX = "pisos_barrio_"
+PISOS_KIND_PREFIX = "pisos_kind_"
+PISOS_EVENT_PREFIX = "pisos_ev_"
+PISOS_LEVEL_PREFIX = "pisos_level_"
+PISOS_BARRIOS_STAT = "pisos_barrios"
+PISOS_KINDS_STAT = "pisos_kinds"
+#: Saldo por debajo del cual comprar te deja «todo en ladrillo».
+PISOS_BROKE_BELOW = 1_000
+
 
 #: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
 CHICKEN_VEHICLE_KINDS = ("car", "van", "truck", "bus", "moto", "taxi")
@@ -614,6 +628,34 @@ RASTRO_GAIN_STORY = (
     "ganancia patrimonial: tributa en la base del ahorro. Como aquí no hay declaración "
     "anual, Hacienda se queda el 19 % de lo que has ganado en el momento. Gil y Gil lo "
     "hacía con solares; tú, con coleccionables. Mismo espíritu, menos Marbella."
+)
+
+#: Discurso de la primera renta de `pisos` (`pisos_rent_1`).
+PISOS_RENT_STORY = (
+    "🔑 **Ya eres casero, mi amor.** Lo que te paga el inquilino es rendimiento del "
+    "capital inmobiliario: ingresos menos gastos (comunidad, seguro, IBI, reparaciones y "
+    "la amortización del 3 % de lo construido) y, encima, la ley te perdona la mitad por "
+    "alquilar vivienda (art. 23.2 LIRPF). Entre particulares no hay retención, pero aquí "
+    "no hay declaración anual: Perro Sanxe se lo cobra al momento, con toda tu renta de "
+    "la semana. Y el inquilino paga el 60 % de su sueldo, pero eso no sale en tu nómina."
+)
+
+#: Discurso de la primera retención del alquiler (`pisos_taxrent_1`).
+PISOS_TAX_RENT_STORY = (
+    "🐶 **Perro Sanxe también es tu inquilino.** Si alquilas a un particular, en la vida "
+    "real nadie te retiene nada: lo declaras en la renta del año. Pero el bot no tiene "
+    "declaración anual, así que Hacienda se cobra a cuenta cada mes, mirando toda tu renta "
+    "de la semana (nóminas, premios, casino y alquileres juntos). Ojo: solo tributa la "
+    "mitad del rendimiento neto, que alquilar vivienda tiene reducción (art. 23.2 LIRPF)."
+)
+
+#: Discurso del primer IBI de `pisos` (`pisos_ibi_1`).
+PISOS_IBI_STORY = (
+    "🏘️ **El IBI no perdona.** El Impuesto sobre Bienes Inmuebles se paga por tener el "
+    "piso, esté alquilado o vacío, sobre el valor catastral (más o menos la mitad del de "
+    "mercado). Cada ayuntamiento pone su tipo entre el 0,4 % y el 1,1 %. Aquí no hay "
+    "ayuntamientos, así que va directo a Perro Sanxe. Si el piso está vacío y no llega "
+    "la renta, la deuda se queda en el piso y se cobra al venderlo."
 )
 
 #: Discurso del primer logro de los gallos (`gallos_1`).
@@ -5238,6 +5280,273 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Puja 1.000.000 Y$ de una vez en el Rastro.", E, True),
     ], unit="money")  # fmt: skip
 
+    # 🏠 Pisos (cogs/pisos.py: housing_*_stats) -------------------------------------------
+    a += _tiers("pisos", "pisos_opened", [
+        (1, "pisos_open_1", "Mirando pisos a las dos de la mañana",
+         "Abre el mercado de `pisos`.", C),
+        (100, "pisos_open_100", "Adicto al portal inmobiliario",
+         "Abre `pisos` 100 veces. Tu algoritmo ya solo te enseña áticos.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_bought", [
+        (1, "pisos_buy_1", "Primer ladrillo",
+         "Compra tu primera participación de un inmueble.", C),
+        (10, "pisos_buy_10", "Pequeño inversor", "Compra participaciones 10 veces.", R),
+        (50, "pisos_buy_50", "Fondo de inversión de barrio", "Compra 50 veces.", E),
+        (200, "pisos_buy_200", "Blackstone de Canarias", "Compra 200 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_spent", [
+        (100_000, "pisos_spent_100k", "La entrada del zulo",
+         "Gasta 100.000 Y$ en pisos, impuestos incluidos.", C),
+        (1_000_000, "pisos_spent_1m", "Los ahorros de toda una vida",
+         "Gasta 1.000.000 Y$ en pisos.", R),
+        (10_000_000, "pisos_spent_10m", "Pelotazo inmobiliario",
+         "Gasta 10.000.000 Y$ en pisos.", E),
+        (50_000_000, "pisos_spent_50m", "La burbuja de 2007", "Gasta 50.000.000 Y$ en pisos.", L),
+        (150_000_000, "pisos_spent_150m", "Comprar Canarias",
+         "Gasta 150.000.000 Y$ en pisos.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_itp", [
+        (1, "pisos_itp_1", "Modelo 600, versión ladrillo",
+         "Paga el ITP de un inmueble: el 6,5 % en Canarias.", C),
+        (100_000, "pisos_itp_100k", "Contribuyente de la piedra",
+         "Paga 100.000 Y$ de ITP comprando pisos.", R),
+        (1_000_000, "pisos_itp_1m", "Mecenas de la Agencia Tributaria Canaria",
+         "Paga 1.000.000 Y$ de ITP comprando pisos.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_buy_max", [
+        (10_000_000, "pisos_cash_10m", "Al contado, como el oligarca de Adeje",
+         "Paga 10.000.000 Y$ en una sola compra.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_one_share", [
+        (1, "pisos_tile_1", "Copropietario de un azulejo",
+         "Compra una sola participación: el 1 % de un piso. Ya puedes decir que tienes casa.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_buy", [
+        (1, "pisos_whole_1", "Casero de pleno derecho", "Ten un inmueble entero, el 100 %.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_max", [
+        (3, "pisos_whole_3", "Pequeño tenedor", "Ten 3 inmuebles enteros a la vez.", E),
+        (5, "pisos_whole_5", "Gran tenedor en zona tensionada",
+         "Ten 5 inmuebles enteros a la vez. La Ley 12/2023 ya te mira raro.", L),
+        (10, "pisos_whole_10", "Fondo buitre",
+         "Ten 10 inmuebles enteros a la vez: gran tenedor en toda España (art. 3.k de la "
+         "Ley 12/2023).", M),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_holdings_max", [
+        (10, "pisos_spread_10", "Diversificar, que dice el del banco",
+         "Ten participaciones en 10 inmuebles a la vez.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_BARRIOS_STAT, [
+        (5, "pisos_barrios_5", "Inmobiliaria de barrio", "Compra en 5 barrios distintos.", R),
+        (10, "pisos_barrios_10", "Agencia con escaparate en Triana",
+         "Compra en 10 barrios distintos.", E),
+        (20, "pisos_barrios_20", "Dueño de Canarias", "Compra en los 20 barrios.", M),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_islands_max", [
+        (2, "pisos_islands_2", "Inversor interinsular",
+         "Ten pisos en Gran Canaria y en Tenerife a la vez. El pleito insular, resuelto con "
+         "ladrillo.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_KINDS_STAT, [
+        (9, "pisos_kinds_9", "Catálogo completo",
+         "Compra de todos los tipos: trastero, garaje, estudio, bajo, pisos, ático, chalet y "
+         "edificio.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_KIND_PREFIX}trastero", [
+        (1, "pisos_trastero_1", "Trastero apto para vivir",
+         "Compra un trastero. Sin ventana, sin cédula y sin vergüenza.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_KIND_PREFIX}chalet", [
+        (1, "pisos_chalet_1", "Chalet con vistas a la Caldera de Bandama",
+         "Compra participaciones de un chalet.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_KIND_PREFIX}edificio", [
+        (1, "pisos_edificio_1", "Que no se entere el sindicato de inquilinas",
+         "Compra participaciones de un edificio entero.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_night", [
+        (1, "pisos_night_1", "Compra de madrugada, como los fondos",
+         "Compra un piso entre las 0:00 y las 6:00.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_canarias_day", [
+        (1, "pisos_canarias_1", "Canarias tiene un límite (y tú lo has comprado)",
+         "Compra un piso el 30 de mayo, Día de Canarias.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_broke", [
+        (1, "pisos_broke_1", "Todo en ladrillo",
+         "Quédate con menos de 1.000 Y$ después de comprar. Rico en piedra, pobre en pan.", C,
+         True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_sold", [
+        (1, "pisos_sold_1", "Vendido a un fondo", "Vende participaciones al mercado.", C),
+        (10, "pisos_sold_10", "Especulador", "Vende 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_sold_whole", [
+        (1, "pisos_sold_whole_1", "Lo vendo entero, con inquilino incluido",
+         "Vende un inmueble entero de una vez.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_flip", [
+        (1, "pisos_flip_1", "Pelotazo exprés",
+         "Compra y vende el mismo inmueble el mismo día.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_loss", [
+        (1, "pisos_loss_1", "El ladrillo nunca baja, decían",
+         "Vende participaciones por menos de lo que te costaron.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_gain_max", [
+        (100_000, "pisos_gain_100k", "Plusvalía de manual",
+         "Gana 100.000 Y$ de una vez vendiendo un piso.", R),
+        (1_000_000, "pisos_gain_1m", "Pelotazo de la costa",
+         "Gana 1.000.000 Y$ de una vez vendiendo un piso.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_arrears_paid", [
+        (1, "pisos_arrears_1", "La deuda va con el piso",
+         "Vende un piso con deudas de comunidad o IBI: se descuentan del precio (art. 9 LPH).",
+         C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_rent_1",
+        name="Rentista",
+        description="Cobra tu primera renta de un alquiler.",
+        category="pisos",
+        rarity=C,
+        conditions=(("pisos_rent", 1),),
+        unit="money",
+        story=PISOS_RENT_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_rent", [
+        (100_000, "pisos_rent_100k", "Vivir de las rentas", "Cobra 100.000 Y$ de alquileres.", R),
+        (1_000_000, "pisos_rent_1m", "El alquiler me paga el barraquito",
+         "Cobra 1.000.000 Y$ de alquileres.", E),
+        (10_000_000, "pisos_rent_10m", "Rentista de Puerto de Mogán",
+         "Cobra 10.000.000 Y$ de alquileres.", L),
+        (50_000_000, "pisos_rent_50m", "SOCIMI unipersonal",
+         "Cobra 50.000.000 Y$ de alquileres.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_rent_days", [
+        (7, "pisos_rentd_7", "Siete mensualidades",
+         "Cobra alquiler 7 días (7 meses del juego).", R),
+        (30, "pisos_rentd_30", "Dos años y medio de contrato", "Cobra alquiler 30 días.", E),
+        (100, "pisos_rentd_100", "Casero vitalicio", "Cobra alquiler 100 días.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_ibi_1",
+        name="Recibo del IBI",
+        description="Paga el IBI de un piso.",
+        category="pisos",
+        rarity=C,
+        conditions=(("pisos_ibi", 1),),
+        unit="money",
+        story=PISOS_IBI_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_ibi", [
+        (100_000, "pisos_ibi_100k", "El Ayuntamiento te quiere", "Paga 100.000 Y$ de IBI.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}firma", [
+        (1, "pisos_sign_1", "Firmado ante la inmobiliaria", "Alquila un piso a un inquilino.", C),
+        (10, "pisos_sign_10", "Casero en serie", "Firma 10 contratos de alquiler.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}renueva", [
+        (1, "pisos_renew_1", "Prórroga tácita",
+         "Que un inquilino renueve el contrato (art. 10 LAU).", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}se_va", [
+        (1, "pisos_leave_1", "Se va el inquilino",
+         "Que un inquilino se vaya. Vuelve a anunciarlo, con fotos nuevas.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}impago", [
+        (1, "pisos_default_1", "Este mes no puedo", "Que un inquilino deje de pagar.", C),
+        (5, "pisos_default_5", "Casero gafado", "Que te dejen de pagar 5 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}paga", [
+        (1, "pisos_payback_1", "Milagro en el portal",
+         "Que un inquilino que no pagaba se ponga al día él solo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}okupa", [
+        (1, "pisos_squat_1", "Okupas en el bajo",
+         "Que te okupen un piso vacío. Haberlo alquilado, que eso también es política de "
+         "vivienda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_evictions", [
+        (1, "pisos_evict_1", "Burofax y demanda", "Pide un desahucio en el juzgado.", C),
+        (5, "pisos_evict_5", "Cliente fijo del juzgado de primera instancia",
+         "Pide 5 desahucios.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}desahucio", [
+        (1, "pisos_evicted_1", "Lanzamiento judicial",
+         "Que el juzgado ejecute un desahucio y recuperes el piso.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}derrama", [
+        (1, "pisos_levy_1", "Derrama del ascensor",
+         "Que la comunidad apruebe una derrama. Tú votaste que no.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}ite", [
+        (1, "pisos_ite_1", "La ITE no perdona",
+         "Que toque pagar la Inspección Técnica del Edificio.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}averia", [
+        (10, "pisos_repair_10", "Tengo al fontanero en favoritos",
+         "Paga 10 averías de tus pisos.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}vecino", [
+        (1, "pisos_neighbour_1", "El vecino del 3.º",
+         "Que el vecino del 3.º ponga una queja. Siempre es el del 3.º.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_LEVEL_PREFIX}social", [
+        (1, "pisos_social_1", "Casero con corazón",
+         "Pide una renta asequible, por debajo de la de referencia.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_LEVEL_PREFIX}nomadas", [
+        (1, "pisos_nomad_1", "Nómadas digitales bienvenidos (los canarios, no)",
+         "Pide la renta para nómadas digitales.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_tax_total", [
+        (100_000, "pisos_tax_100k", "El ladrillo también tributa",
+         "Paga 100.000 Y$ de impuestos por tus pisos (ITP, IBI e IRPF).", R),
+        (1_000_000, "pisos_tax_1m", "Perro Sanxe vive en tu ático",
+         "Paga 1.000.000 Y$ de impuestos por tus pisos.", E),
+        (10_000_000, "pisos_tax_10m", "Socio capitalista de Hacienda",
+         "Paga 10.000.000 Y$ de impuestos por tus pisos.", L),
+    ], unit="money")  # fmt: skip
+    a.append(Achievement(
+        id="pisos_taxrent_1",
+        name="Sanxe también cobra el alquiler",
+        description="Que te retengan IRPF de una renta de alquiler.",
+        category="pisos",
+        rarity=C,
+        conditions=(("pisos_tax_alquiler", 1),),
+        unit="money",
+        story=PISOS_TAX_RENT_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_tax_alquiler", [
+        (100_000, "pisos_taxrent_100k", "Rentista con retención",
+         "Paga 100.000 Y$ de IRPF por tus alquileres.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_tax_ganancia", [
+        (1, "pisos_taxgain_1", "Plusvalía con vistas al mar",
+         "Paga IRPF por lo que has ganado vendiendo un piso.", C),
+        (100_000, "pisos_taxgain_100k", "Especulación declarada",
+         "Paga 100.000 Y$ de IRPF por lo ganado vendiendo pisos.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_tax_over_rent", [
+        (1, "pisos_taxover_1", "Trabajo para Sanxe y encima pongo el piso",
+         "Que lo que has pagado de impuestos por tus pisos supere todo lo que te han "
+         "pagado de alquiler.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_squatters_evicted", [
+        (1, "pisos_squatters_1", "Desokupación con burofax",
+         "Pide el desahucio de unos okupas. Ni empresa de desokupación ni nada: juzgado y "
+         "a esperar.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_exit", [
+        (1, "pisos_exit_1", "Vuelvo a casa de mis padres",
+         "Vende todo lo que tenías en pisos y quédate sin ni una participación.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_level_changes", [
+        (10, "pisos_levels_10", "Reajuste de precios", "Cambia la renta que pides 10 veces.", R),
+    ])  # fmt: skip
+
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
         (10_000, "rich_10k", "Clase media, especie en extinción", "Ten 10.000 Y$ a la vez.", C),
@@ -5284,13 +5593,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000_000, "tax_1m", "Mecenas del Estado", "Paga 1.000.000 Y$ de IRPF.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "wealth_tax_paid", [
-        (1, "wealth_1", "Grande de España", "Paga el Impuesto sobre el Patrimonio.", R),
-        (10_000, "wealth_10k", "Fortuna amenazada", "Paga 10.000 Y$ de Patrimonio.", E),
+        (1, "wealth_1", "Grande de España", "Paga el Impuesto sobre el Patrimonio.", E),
+        (10_000, "wealth_10k", "Fortuna amenazada", "Paga 10.000 Y$ de Patrimonio.", L),
         (100_000, "wealth_100k", "Perro Sanxe te pone velas",
          "Paga 100.000 Y$ de Patrimonio.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "wealth_tax_weeks", [
         (10, "wealth_10w", "Rico de toda la vida", "Paga Patrimonio 10 semanas.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "wealth_embargo", [
+        (1, "wealth_embargo_1", "Embargado como un futbolista",
+         "No tener efectivo para el Patrimonio y que Hacienda te embargue los alquileres. "
+         "Todo en ladrillo, nada en la cuenta.", E, True),
     ])  # fmt: skip
     # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
     a += _tiers("bizum", "interest_earned", [
@@ -11670,7 +11984,8 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     `shop_aisles`, los pasillos del colmado en los que ha comprado;
     `perfil_sections`, las secciones distintas de `perfil` que ha mirado, y
     `horse_backed_kinds` y `horse_backed_max`, los caballos distintos por los
-    que ha apostado y los boletos al que más.
+    que ha apostado y los boletos al que más; `pisos_barrios` y `pisos_kinds`, los
+    barrios y los tipos de inmueble distintos en los que ha comprado.
     """
     full = dict(stats)
     full[MESSAGES_TOTAL_STAT] = full.get("messages", 0) + full.get("messages_imported", 0)
@@ -11713,6 +12028,12 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[HORSE_BACKED_KINDS_STAT] = len(backed)
     full[HORSE_BACKED_MAX_STAT] = max(backed, default=0)
+    full[PISOS_BARRIOS_STAT] = sum(
+        1 for key in BARRIO_BY_KEY if stats.get(f"{PISOS_BARRIO_PREFIX}{key}", 0) > 0
+    )
+    full[PISOS_KINDS_STAT] = sum(
+        1 for key in HOUSING_KINDS if stats.get(f"{PISOS_KIND_PREFIX}{key}", 0) > 0
+    )
     return full
 
 
@@ -14968,6 +15289,155 @@ def market_bid_stats(*, amount: int, when: datetime) -> StatDelta:
 def market_outbid_stats() -> StatDelta:
     """Estadísticas de quien es superado en una subasta."""
     return StatDelta(add={"market_outbid": 1})
+
+
+def housing_panel_stats(
+    *, screen: str, level: str | None = None, squatters: bool = False
+) -> StatDelta:
+    """Estadísticas de usar el panel de `pisos`.
+
+    Args:
+        screen: `abrir` (el comando), `renta` (cambiar la renta que se pide),
+            `desahucio` (pedirlo) o una pantalla (no cuenta nada).
+        level: La renta elegida, con `renta`.
+        squatters: Si el desahucio es de okupas.
+    """
+    add: dict[str, int] = {}
+    if screen == "abrir":
+        add["pisos_opened"] = 1
+    elif screen == "renta":
+        add["pisos_level_changes"] = 1
+        if level:
+            add[f"{PISOS_LEVEL_PREFIX}{level}"] = 1
+    elif screen == "desahucio":
+        add["pisos_evictions"] = 1
+        if squatters:
+            add["pisos_squatters_evicted"] = 1
+    return StatDelta(add=add)
+
+
+def housing_purchase_stats(
+    *,
+    kind: str,
+    barrio: str,
+    total: int,
+    itp: int,
+    shares: int,
+    shares_now: int,
+    holdings: int,
+    whole: int,
+    islands: int,
+    balance_after: int,
+    when: datetime,
+) -> StatDelta:
+    """Estadísticas de una compra en `pisos`.
+
+    Args:
+        kind: Tipo de inmueble.
+        barrio: Clave del barrio.
+        total: Todo lo pagado (precio, ITP y notaría).
+        itp: ITP pagado.
+        shares: Participaciones compradas.
+        shares_now: Las que tiene ahora en ese inmueble.
+        holdings: Inmuebles en los que tiene algo.
+        whole: Inmuebles que tiene enteros.
+        islands: Islas en las que tiene algo.
+        balance_after: Saldo tras pagar.
+    """
+    add = {
+        "pisos_bought": 1,
+        "pisos_spent": total,
+        "pisos_itp": itp,
+        f"{PISOS_KIND_PREFIX}{kind}": 1,
+        f"{PISOS_BARRIO_PREFIX}{barrio}": 1,
+    }
+    for stat, hit in (
+        ("pisos_one_share", shares == 1),
+        ("pisos_whole_buy", shares_now == 100),
+        ("pisos_night", 0 <= when.hour < 6),
+        ("pisos_canarias_day", (when.month, when.day) == (5, 30)),
+        ("pisos_broke", balance_after < PISOS_BROKE_BELOW),
+    ):
+        if hit:
+            add[stat] = 1
+    return StatDelta(
+        add=add,
+        peak={
+            "pisos_buy_max": total,
+            "pisos_holdings_max": holdings,
+            "pisos_whole_max": whole,
+            "pisos_islands_max": islands,
+        },
+    )
+
+
+def housing_sale_stats(
+    *,
+    shares: int,
+    received: int,
+    gain: int,
+    arrears: int,
+    held_days: int,
+    holdings_left: int,
+) -> StatDelta:
+    """Estadísticas de una venta en `pisos`.
+
+    Args:
+        shares: Participaciones vendidas.
+        received: Lo que cobró.
+        gain: Ganancia patrimonial (negativa si perdió).
+        arrears: Deudas del piso que se le descontaron.
+        held_days: Días desde que compró.
+        holdings_left: Inmuebles en los que le queda algo.
+    """
+    add = {"pisos_sold": 1, "pisos_sold_y": received}
+    for stat, hit in (
+        ("pisos_exit", holdings_left == 0),
+        ("pisos_sold_whole", shares == 100),
+        ("pisos_flip", held_days == 0),
+        ("pisos_loss", gain < 0),
+        ("pisos_arrears_paid", arrears > 0),
+    ):
+        if hit:
+            add[stat] = 1
+    return StatDelta(add=add, peak={"pisos_gain_max": max(0, gain)})
+
+
+def housing_tax_stats(*, taxes: dict[str, int], rent: int) -> StatDelta:
+    """Estadísticas de lo que lleva pagado un miembro por sus pisos (máximos, no sumas).
+
+    Args:
+        taxes: Su desglose de `EconomyService.housing_tax_breakdown` (desde siempre).
+        rent: Toda la renta que ha cobrado (su estadística `pisos_rent`).
+    """
+    total = sum(taxes.values())
+    peak = {
+        "pisos_tax_total": total,
+        "pisos_tax_alquiler": taxes.get("alquiler", 0),
+        "pisos_tax_ganancia": taxes.get("ganancia", 0),
+    }
+    add = {"pisos_tax_over_rent": 1} if rent > 0 and total > rent else {}
+    return StatDelta(add=add, peak={k: v for k, v in peak.items() if v > 0})
+
+
+def housing_day_stats(*, rent: int, ibi: int, events: tuple[str, ...]) -> StatDelta:
+    """Estadísticas de un día cerrado de los pisos de un miembro.
+
+    Args:
+        rent: Renta cobrada (antes del IRPF).
+        ibi: IBI pagado.
+        events: Lo que ha pasado en sus inmuebles (`housing.Event.key`).
+    """
+    add: dict[str, int] = {}
+    if rent > 0:
+        add["pisos_rent"] = rent
+        add["pisos_rent_days"] = 1
+    if ibi > 0:
+        add["pisos_ibi"] = ibi
+    for kind in events:
+        stat = f"{PISOS_EVENT_PREFIX}{kind}"
+        add[stat] = add.get(stat, 0) + 1
+    return StatDelta(add=add)
 
 
 def market_sale_stats(

@@ -39,6 +39,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.achievements.initialize()
     await client.welcome.initialize()
     await client.shop.initialize()
+    await client.housing.initialize()
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
