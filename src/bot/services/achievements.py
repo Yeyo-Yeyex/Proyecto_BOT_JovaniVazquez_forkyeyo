@@ -8776,7 +8776,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "enraya_win_1", "Cuatro en raya", "Gana tu primera partida.", C),
         (25, "enraya_win_25", "Mayoría absoluta en el tablero",
          "Gana 25 partidas de 4 en raya.", C),
-        (100, "enraya_win_100", "Rodillo parlamentario", "Gana 100 partidas de 4 en raya.", R),
+        (100, "enraya_win_100", "Rodillo de fichas", "Gana 100 partidas de 4 en raya.", R),
         (500, "enraya_win_500", "Fichas atadas y bien atadas",
          "Gana 500 partidas de 4 en raya.", E),
         (2_500, "enraya_win_2500", "Mandato a la venezolana",
@@ -8829,19 +8829,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde contra Jovani con resaca. Él ni se acuerda de la partida.", C, True),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_draw_imposible", [
-        (1, "enraya_gran_coalicion", "Gran coalición",
+        (1, "enraya_gran_coalicion", "Gran coalición de fichas",
          "Saca tablas a Jovani en Imposible.", R, True),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_win_h", [
         (1, "enraya_horizontal", "Línea de Metro", "Gana con una raya en horizontal.", C),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_win_v", [
-        (1, "enraya_vertical", "Torre de Babel", "Gana con una raya en vertical.", C),
+        (1, "enraya_vertical", "Torre de fichas", "Gana con una raya en vertical.", C),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_win_d", [
         (1, "enraya_diagonal", "Por la diagonal, como el AVE",
          "Gana con una raya en diagonal.", C),
-        (50, "enraya_diagonal_50", "Geometría variable",
+        (50, "enraya_diagonal_50", "Geometría variable del tablero",
          "Gana 50 partidas con una diagonal. Como los pactos de Sánchez.", R),
     ])  # fmt: skip
     a.append(
@@ -8955,13 +8955,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apuesta en 1.000 duelos de otros.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_bets_won", [
-        (1, "enraya_ojo", "Ojo clínico", "Acierta una apuesta de grada en el 4 en raya.", C),
+        (1, "enraya_ojo", "Ojo de tertuliano", "Acierta una apuesta de grada en el 4 en raya.", C),
         (50, "enraya_tertuliano", "Tertuliano que acierta (raro)",
          "Acierta 50 apuestas de grada en el 4 en raya.", R),
         (500, "enraya_oraculo", "Oráculo del tablero", "Acierta 500 apuestas de grada.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_bet_odds_max", [
-        (300, "enraya_contra_todos", "Contra todo pronóstico",
+        (300, "enraya_contra_todos", "Contra el pronóstico del CIS",
          "Acierta una apuesta de grada del 4 en raya que pagaba ×3 o más.", C),
         (1_000, "enraya_tezanos", "Mejor que Tezanos",
          "Acierta una apuesta de grada del 4 en raya que pagaba ×10 o más.", R),

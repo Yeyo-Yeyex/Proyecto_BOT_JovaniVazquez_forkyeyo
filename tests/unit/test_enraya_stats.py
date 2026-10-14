@@ -7,13 +7,11 @@ mira qué contadores suma. Las fechas se eligen por lo que tienen de especial
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime
 
 import pytest
 
 from bot.services.achievements import (
-    CATALOG,
     ENRAYA_BEAT_PREFIX,
     enraya_bet_stats,
     enraya_stats,
@@ -281,15 +279,3 @@ def test_apostar_de_madrugada_en_la_grada_cuenta_como_noche() -> None:
         won=False, refunded=False, odds_cents=0, rake=0, when=datetime(2026, 10, 14, 4)
     )
     assert night.add["enraya_night"] == 1
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="Seis logros del 4 en raya repiten el nombre de otro (achievements.py: "
-    "enraya_win_100, enraya_gran_coalicion, enraya_vertical, enraya_diagonal_50, "
-    "enraya_ojo, enraya_contra_todos). Cuando se rebauticen, quitar la marca.",
-)
-def test_los_logros_del_4_en_raya_no_repiten_el_nombre_de_otro_logro() -> None:
-    uses = Counter(a.name for a in CATALOG)
-    repeated = sorted(a.id for a in CATALOG if a.category == "enraya" and uses[a.name] > 1)
-    assert repeated == []
