@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 import sys
 import threading
 import time
@@ -12,15 +13,18 @@ from unittest.mock import MagicMock
 import discord
 import pytest
 
+from bot.cogs import telemetry as telemetry_cog
 from bot.cogs.telemetry import (
     LONG_MESSAGE,
     SHORT_MESSAGE,
     LoopWatchdog,
+    Telemetry,
     _timed_upload,
     blocking_site,
     item_name,
     message_types,
     read_system_usage,
+    save_report,
 )
 from bot.services import telemetry as telemetry_service
 from bot.services.telemetry import upload_name
@@ -156,3 +160,19 @@ def test_el_sitio_del_bloqueo_es_la_funcion_del_bot_mas_interna() -> None:
     exec(compile(code, "/app/bot/services/coin_scene.py", "exec"), space)  # noqa: S102
     assert blocking_site(space["board"]()) == "bot/services/coin_scene.py:board"
     assert blocking_site(sys._getframe()).startswith("test_telemetry_cog.py:")
+
+
+def test_el_informe_diario_se_guarda_entero_y_se_quedan_los_ultimos(tmp_path) -> None:  # noqa: ANN001
+    for day in range(1, 6):
+        save_report(tmp_path, f"informe-2026-10-0{day}.json", f'{{"dia": {day}}}', keep=3)
+        os.utime(tmp_path / f"informe-2026-10-0{day}.json", (day, day))
+    names = sorted(path.name for path in tmp_path.iterdir())
+    assert names == [f"informe-2026-10-0{day}.json" for day in (3, 4, 5)]
+    assert (tmp_path / "informe-2026-10-05.json").read_text(encoding="utf-8") == '{"dia": 5}'
+
+
+async def test_sin_la_carpeta_de_informes_no_se_guarda_nada(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    cog = Telemetry(MagicMock(), MagicMock())
+    monkeypatch.setattr(telemetry_cog, "REPORTS_DIR", tmp_path / "no-existe")
+    await cog.export_loop.coro(cog)
+    cog.telemetry.report.assert_not_called()

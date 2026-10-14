@@ -29,6 +29,8 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   webhooks).
 - `lag`: cada vez que el bucle de eventos se para más de `LAG_CULPRIT_MS`, dónde
   estaba parado (la función del bot, `LoopWatchdog`) y cuánto.
+- Al arrancar y una vez al día, el informe de `informe` se deja en `REPORTS_DIR`
+  (`informes/`, montada desde el NAS) para leerlo por la red.
 - Cada minuto, una muestra del sistema: memoria del contenedor (lo que vigila el
   `mem_limit` de `docker-compose.yml`), memoria del proceso, retraso del bucle
   de eventos, latencia con Discord y procesos de Chromium y Node abiertos.
@@ -47,6 +49,7 @@ import asyncio
 import contextlib
 import functools
 import io
+import json
 import logging
 import math
 import os
@@ -77,6 +80,12 @@ LAG_PROBE_SECONDS = 0.5
 LAG_CULPRIT_MS = 250
 #: Cada cuánto mira el vigía (`LoopWatchdog`) si el bucle sigue parado.
 LAG_WATCH_SECONDS = 0.05
+#: Carpeta donde se deja cada día el informe, montada desde el NAS
+#: (`docker-compose.yml`) para leerlo por la red; si no existe, no se guarda.
+REPORTS_DIR = Path("informes")
+#: Días que abarca el informe diario y cuántos informes se guardan.
+DAILY_REPORT_DAYS = 30
+KEPT_REPORTS = 14
 #: Mensajes de este tamaño o menos son «cortos»; de más de `LONG_MESSAGE`, «largos».
 SHORT_MESSAGE = 20
 LONG_MESSAGE = 200
@@ -402,6 +411,30 @@ class LoopWatchdog:
                     self.culprit = blocking_site(frame)
 
 
+def report_inputs(bot: commands.Bot, guild: discord.Guild) -> tuple[list[str], dict[int, str]]:
+    """Los comandos y los nombres de canal con los que se arma el informe de `guild`."""
+    channel_names = {channel.id: channel.name for channel in guild.channels}
+    channel_names.update({thread.id: thread.name for thread in guild.threads})
+    # Los efectos de imagen son más de cien comandos de texto: si se listaran,
+    # `comandos_sin_uso` sería casi entero de efectos.
+    names = [c.name for c in bot.commands if "help_group" not in c.extras]
+    return names, channel_names
+
+
+def save_report(folder: Path, name: str, data: str, *, keep: int = KEPT_REPORTS) -> None:
+    """Escribe el informe `name` en `folder` y borra los más viejos, dejando `keep`.
+
+    Se escribe aparte y se renombra: quien lo lea por la red nunca ve uno a medias.
+    """
+    path = folder / name
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(data, encoding="utf-8")
+    temporary.replace(path)
+    reports = sorted(folder.glob("informe*.json"), key=lambda p: p.stat().st_mtime)
+    for old in reports[:-keep]:
+        old.unlink(missing_ok=True)
+
+
 class LogCounter(logging.Handler):
     """Cuenta los avisos y errores del log por plantilla, sin sus argumentos.
 
@@ -447,6 +480,7 @@ class Telemetry(commands.Cog):
         telemetry_service.upload_observers.add(self._on_upload)
         self.flush_loop.start()
         self.prune_loop.start()
+        self.export_loop.start()
         self._watchdog = LoopWatchdog(threading.get_ident())
         self._watchdog.start()
         self._lag_task = asyncio.create_task(self._probe_lag(), name="telemetria-retraso")
@@ -455,6 +489,7 @@ class Telemetry(commands.Cog):
         """Para los volcados, suelta los enganches y guarda lo pendiente."""
         self.flush_loop.cancel()
         self.prune_loop.cancel()
+        self.export_loop.cancel()
         if self._lag_task is not None:
             self._lag_task.cancel()
         if self._watchdog is not None:
@@ -511,6 +546,38 @@ class Telemetry(commands.Cog):
 
     @prune_loop.before_loop
     async def _before_prune(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=24)
+    async def export_loop(self) -> None:
+        """Al arrancar y una vez al día: deja el informe en `REPORTS_DIR`.
+
+        Es el mismo de `informe` (`DAILY_REPORT_DAYS` días), para que un agente lo
+        lea desde la carpeta compartida del NAS sin pedirlo. Sin la carpeta (fuera
+        de Docker o sin montarla) no hace nada.
+        """
+        if not await asyncio.to_thread(REPORTS_DIR.is_dir):
+            return
+        guilds = self.bot.guilds
+        for guild in guilds:
+            names, channel_names = report_inputs(self.bot, guild)
+            report = await self.telemetry.report(
+                guild_id=guild.id,
+                days=DAILY_REPORT_DAYS,
+                commands=names,
+                channel_names=channel_names,
+            )
+            prefix = "informe" if len(guilds) == 1 else f"informe-{guild.id}"
+            data = json.dumps(report, ensure_ascii=False, separators=(",", ":"))
+            try:
+                await asyncio.to_thread(
+                    save_report, REPORTS_DIR, f"{prefix}-{report['hasta']}.json", data
+                )
+            except OSError:
+                logger.warning("No se pudo guardar el informe diario", exc_info=True)
+
+    @export_loop.before_loop
+    async def _before_export(self) -> None:
         await self.bot.wait_until_ready()
 
     def _count_voice(self) -> None:

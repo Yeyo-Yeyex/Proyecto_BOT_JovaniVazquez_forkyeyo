@@ -37,6 +37,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs.deploy import can_post, news_channel, resolve_target
+from bot.cogs.telemetry import report_inputs
 from bot.repositories.news import NewsSettings
 from bot.repositories.welcome import WelcomeSettings
 from bot.services.levels import MAX_XP_COOLDOWN_SECONDS, MIN_XP_COOLDOWN_SECONDS
@@ -1075,11 +1076,7 @@ class Admin(commands.Cog):
             await responder.send_error("La telemetría no está disponible ahora mismo.")
             return
         await responder.start_progress("📊 Preparando el informe…", ephemeral=True)
-        channel_names = {channel.id: channel.name for channel in guild.channels}
-        channel_names.update({thread.id: thread.name for thread in guild.threads})
-        # Los efectos de imagen son más de cien comandos de texto: si se listaran,
-        # `comandos_sin_uso` sería casi entero de efectos.
-        names = [c.name for c in self.bot.commands if "help_group" not in c.extras]
+        names, channel_names = report_inputs(self.bot, guild)
         report = await telemetry.report(
             guild_id=guild.id, days=days, commands=names, channel_names=channel_names
         )
