@@ -11,9 +11,9 @@ criterio.
 ### 6.0.0 · 2026-10-14
 
 - Póker: mesa del canal para seis, 💎 Bote progresivo y el club (rango, retos y racha)
-- Timba: `timba`, Texas Hold'em sin límite entre miembros
+- Póker: `poker` con dos modos, contra la banca y la timba entre miembros (Texas Hold'em sin límite)
 - Interno: póker, comprobación rápida de la ventaja de la casa
-- Rompe: `poker` ya no abre una mesa propia: es la mesa del canal y se juega sentándose con 🪑; el ante máximo depende del rango del club (10.000 Y$ al empezar).
+- Rompe: `poker` pide el modo (o lo pregunta con botones) y ya no abre una mesa propia: contra la banca es la mesa del canal y se juega sentándose con 🪑; el ante máximo depende del rango del club (10.000 Y$ al empezar).
 
 ## 5.x
 

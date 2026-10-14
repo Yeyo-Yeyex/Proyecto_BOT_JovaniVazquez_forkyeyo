@@ -1339,6 +1339,41 @@ async def test_la_timba_apunta_logros_y_jugadas_de_los_dos_con_el_bot_real(
         await client.close()
 
 
+async def test_poker_en_modo_timba_llega_al_cog_de_la_timba_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`/poker timba` busca el cog `Timba` con `find_cog`: con el bot real tiene que encontrarlo."""
+    client = await load_bot(tmp_path)
+    try:
+        timba = client.get_cog("Timba")
+        timba.start = MagicMock()
+        timba.renderer = MagicMock()
+        timba.renderer.timba = AsyncMock(return_value=b"PNG")
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 8
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        confirm, errors = AsyncMock(), AsyncMock()
+        await client.get_cog("Póker").play_mode(
+            "timba",
+            guild=MagicMock(id=GUILD_ID),
+            channel=channel,
+            user=owner,
+            amount_text="50",
+            confirm=confirm,
+            send_error=errors,
+        )
+        errors.assert_not_awaited()
+        table = timba.tables[8]
+        assert table.big_blind == 50 and [c.user.id for c in table.chairs] == [OWNER_ID]
+    finally:
+        await client.close()
+
+
 async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_la_partida(
     tmp_path: Path,
 ) -> None:

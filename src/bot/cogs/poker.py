@@ -1,9 +1,16 @@
-"""Póker (Casino Hold'em): `poker`, una mesa por canal contra la banca, con bote y club.
+"""Póker: `poker`, el único comando de los dos pókers del casino, y la mesa contra la banca.
 
-`/poker` o `.poker` abre la mesa del canal (o la baja al final si ya estaba
-abierta más arriba); con una cantidad (`.poker 500`) además fija tu ante y te
-sienta. Hasta `MAX_SEATS` jugadores juegan la misma mano contra la misma banca:
-cada uno con sus dos cartas y las mismas cinco comunitarias. Reglas y pagos en
+`/poker [modo] [cantidad]` tiene dos modos: ♠️ **contra la banca** (Casino
+Hold'em, esta mesa) y ♣️ **timba** entre jugadores (Texas Hold'em, el cog
+`bot.cogs.timba`, sin comando propio para no gastar otro slash command). Sin
+modo, el bot pregunta con un botón por modo (`ModePicker`), como `/lista` con la
+prioridad. `.poker banca 500`, `.poker timba 50` o `.poker` hacen lo mismo con
+texto.
+
+**Contra la banca.** Abre la mesa del canal (o la baja al final si ya estaba
+abierta más arriba); con una cantidad además fija tu ante y te sienta. Hasta
+`MAX_SEATS` jugadores juegan la misma mano contra la misma banca: cada uno con
+sus dos cartas y las mismas cinco comunitarias. Reglas y pagos en
 `bot.services.poker`.
 
 **Una mano** pasa por cuatro momentos en el mismo mensaje:
@@ -62,6 +69,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -72,6 +80,7 @@ from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
+from bot.cogs.timba import Timba
 from bot.repositories.poker import HandRecord, PokerRepository
 from bot.services.achievements import casino_stats, poker_club_stats, poker_stats
 from bot.services.economy import (
@@ -118,6 +127,7 @@ from bot.services.poker_club import (
 from bot.services.poker_render import Media, SeatView
 from bot.services.poker_scene import PokerScene
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder
 
@@ -393,6 +403,118 @@ class DecideView(discord.ui.View):
         _button(self, "Retirarse", "🏳️", discord.ButtonStyle.danger, table.fold_click, 0, "fold")
         _button(self, "Club", "🏆", grey, table.club_panel, 0, "club")
         _button(self, "Tabla", "📋", grey, table.paytable, 0, "table")
+
+
+#: Los dos modos de `poker`: clave → (texto del botón y de la opción, emoji).
+BANCA, TIMBA = "banca", "timba"
+MODES: dict[str, tuple[str, str]] = {
+    BANCA: ("♠️ Contra la banca (Casino Hold'em)", "♠️"),
+    TIMBA: ("♣️ Timba entre jugadores (Texas Hold'em)", "♣️"),
+}
+#: Palabras que valen para cada modo en `.poker`.
+MODE_ALIASES: dict[str, str] = {
+    "banca": BANCA, "casino": BANCA, "holdem": BANCA, "hold'em": BANCA,
+    "timba": TIMBA, "jugadores": TIMBA, "texas": TIMBA, "colegas": TIMBA,
+}  # fmt: skip
+#: Sin elegir modo en este tiempo, la pregunta caduca.
+PICK_TIMEOUT = 60
+
+
+def parse_mode(text: str | None) -> str | None:
+    """El modo que dice `text` (`banca` o `timba`), o `None` si no es un modo."""
+    if text is None:
+        return None
+    return MODE_ALIASES.get(text.strip().lower())
+
+
+class ModePicker(discord.ui.View):
+    """Un botón por modo, para `poker` sin modo. Solo los pulsa quien lo pidió.
+
+    Args:
+        amount: La cantidad que traía el comando, si traía (ante o ciega).
+        prompt: La interacción de `/poker` cuya respuesta privada es esta pregunta,
+            o `None` con `.poker`, que guarda su mensaje en `message`.
+        channel: El canal del comando de texto (con `/poker`, el de la interacción).
+    """
+
+    def __init__(
+        self,
+        cog: Poker,
+        author: discord.abc.User,
+        amount: str | None,
+        *,
+        prompt: discord.Interaction | None = None,
+        channel: object = None,
+    ) -> None:
+        super().__init__(timeout=PICK_TIMEOUT)
+        self.cog, self.author, self.amount = cog, author, amount
+        self.prompt = prompt
+        self.channel = channel if channel is not None else getattr(prompt, "channel", None)
+        self.message: discord.Message | None = None
+        self.done = False
+        for key, (label, emoji) in MODES.items():
+            button: discord.ui.Button = discord.ui.Button(
+                label=label.split(" ", 1)[1],
+                emoji=emoji,
+                style=discord.ButtonStyle.primary if key == BANCA else discord.ButtonStyle.success,
+                custom_id=f"{GAME}:modo:{key}",
+            )
+            button.callback = partial(self.choose, key)  # type: ignore[method-assign]
+            self.add_item(button)
+
+    def question(self) -> str:
+        """El texto de la pregunta."""
+        return (
+            f"🃏 {self.author.mention}, ¿a qué póker juegas?\n"
+            "-# ♠️ **Contra la banca**: hasta seis contra la misma banca, con 💎 Bote y club. "
+            "♣️ **Timba**: Texas Hold'em entre vosotros, con ciegas y botes."
+        )
+
+    async def choose(self, mode: str, interaction: discord.Interaction) -> None:
+        """Clic en un modo: abre su mesa y cambia la pregunta por la respuesta."""
+        if interaction.user.id != self.author.id:
+            await interaction.response.send_message(
+                "Esa pregunta no es tuya: pide la tuya con `/poker`.", ephemeral=True
+            )
+            return
+        if self.done:
+            return
+        self.done = True
+        self.stop()
+        # Abrir la mesa dibuja y escribe: se acepta el clic antes.
+        await ack(interaction)
+
+        async def answer(text: str) -> None:
+            await edit(interaction, content=text, view=None, allowed_mentions=NO_MENTIONS)
+
+        async def confirm(text: str) -> None:
+            await answer(text or f"{MODES[mode][1]} Mesa abierta: abajo del todo.")
+
+        await self.cog.play_mode(
+            mode,
+            guild=interaction.guild,
+            channel=self.channel,
+            user=interaction.user,
+            amount_text=self.amount,
+            confirm=confirm,
+            send_error=answer,
+            interaction=interaction,
+        )
+        await renta.remind(self.cog.bot, interaction)
+
+    async def on_timeout(self) -> None:
+        """Sin elegir: la pregunta dice que ha caducado."""
+        if self.done:
+            return
+        self.done = True
+        text = "⌛ Sin elegir modo. Pide otra vez `poker` cuando quieras."
+        try:
+            if self.message is not None:
+                await self.message.edit(content=text, view=None)
+            elif self.prompt is not None:
+                await self.prompt.edit_original_response(content=text, view=None)
+        except discord.HTTPException:
+            logger.debug("No se pudo cerrar la pregunta del póker", exc_info=True)
 
 
 # -- Mesa -----------------------------------------------------------------------------------------
@@ -1411,30 +1533,87 @@ class Poker(commands.Cog, name="Póker"):
             "cuando quieras."
         )
 
+    async def play_mode(
+        self,
+        mode: str,
+        *,
+        guild: discord.Guild | None,
+        channel: object,
+        user: discord.abc.User,
+        amount_text: str | None,
+        confirm: Callable[[str], Awaitable[None]],
+        send_error: Callable[[str], Awaitable[None]],
+        interaction: discord.Interaction | None = None,
+    ) -> None:
+        """Juega al modo elegido: `banca` (esta mesa) o `timba` (la del cog `Timba`).
+
+        En la timba, `amount_text` es la ciega grande de una mesa nueva. La timba se
+        busca con `find_cog`: si no está cargada, se avisa.
+        """
+        if mode == TIMBA:
+            timba = find_cog(self.bot, Timba)
+            if timba is None:
+                await send_error("La timba no está disponible ahora mismo.")
+                return
+            await timba.open_and_sit(
+                guild=guild,
+                channel=channel,
+                user=user,
+                blind_text=amount_text,
+                confirm=confirm,
+                send_error=send_error,
+                interaction=interaction,
+            )
+            return
+        await self._poker_impl(
+            guild=guild,
+            channel=channel,
+            user=user,
+            amount_text=amount_text,
+            confirm=confirm,
+            send_error=send_error,
+            interaction=interaction,
+        )
+
     @app_commands.command(
         name="poker",
-        description="Póker Casino Hold'em contra la banca: abre la mesa del canal o siéntate.",
+        description="Póker: contra la banca o timba entre jugadores. Abre la mesa del canal.",
     )
-    @app_commands.describe(cantidad="Tu ante: 500, 2k, mitad… (si lo pones, te sienta)")
+    @app_commands.describe(
+        modo="Contra la banca (Casino Hold'em) o timba entre jugadores. Si no, te lo pregunta.",
+        cantidad="Contra la banca: tu ante (te sienta). En la timba: la ciega grande.",
+    )
+    @app_commands.choices(
+        modo=[app_commands.Choice(name=label, value=key) for key, (label, _) in MODES.items()]
+    )
     @app_commands.guild_only()
-    async def poker(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
-        """Abre la mesa del canal, la baja al final o te sienta en ella.
+    async def poker(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str] | None = None,
+        cantidad: str | None = None,
+    ) -> None:
+        """Abre la mesa de póker del modo elegido en el canal (o la baja) y te sienta.
 
-        Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado. Cobra el
-        ante al sentarse y paga al final de la mano.
+        Sin `modo`, contesta en privado con un botón por modo (`ModePicker`), como
+        `/lista` con la prioridad. Solo en los canales de `CASINO_CHANNEL_IDS` si
+        está configurado.
         """
+        if modo is None:
+            picker = ModePicker(self, interaction.user, cantidad, prompt=interaction)
+            await interaction.response.send_message(picker.question(), view=picker, ephemeral=True)
+            return
         # Abrir la mesa dibuja la imagen y publica el mensaje: puede pasar de 3 s.
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         async def confirm(text: str) -> None:
-            await interaction.followup.send(
-                text or "♠️ Mesa abierta: abajo del todo.", ephemeral=True
-            )
+            await interaction.followup.send(text or "Mesa abierta: abajo del todo.", ephemeral=True)
 
         async def send_error(text: str) -> None:
             await interaction.followup.send(text, ephemeral=True)
 
-        await self._poker_impl(
+        await self.play_mode(
+            modo.value,
             guild=interaction.guild,
             channel=interaction.channel,
             user=interaction.user,
@@ -1447,23 +1626,38 @@ class Poker(commands.Cog, name="Póker"):
 
     @commands.command(name="poker")
     @commands.guild_only()
-    async def poker_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.poker` abre o baja la mesa; `.poker 500` te sienta con 500."""
+    async def poker_text(
+        self, ctx: commands.Context, primero: str | None = None, segundo: str | None = None
+    ) -> None:
+        """Versión de texto: `.poker`, `.poker banca 500`, `.poker timba 50` o `.poker 500`.
+
+        Sin modo, pregunta con los botones en un mensaje que solo puede pulsar quien
+        lo pidió.
+        """
+        mode = parse_mode(primero)
+        amount = segundo if mode is not None else primero
+        if mode is None:
+            picker = ModePicker(self, ctx.author, amount, channel=ctx.channel)
+            picker.message = await ctx.send(
+                picker.question(), view=picker, allowed_mentions=NO_MENTIONS
+            )
+            return
 
         async def confirm(text: str) -> None:
             if not text:
                 return
             # Sin mensajes privados en comandos de texto: una reacción basta.
             try:
-                await ctx.message.add_reaction("♠️")
+                await ctx.message.add_reaction(MODES[mode][1])
             except discord.HTTPException:
                 await ctx.send(text, allowed_mentions=NO_MENTIONS)
 
-        await self._poker_impl(
+        await self.play_mode(
+            mode,
             guild=ctx.guild,
             channel=ctx.channel,
             user=ctx.author,
-            amount_text=cantidad,
+            amount_text=amount,
             confirm=confirm,
             send_error=ContextResponder(ctx).send_error,
         )

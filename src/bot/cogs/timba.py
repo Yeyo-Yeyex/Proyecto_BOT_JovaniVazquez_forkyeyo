@@ -1,9 +1,10 @@
-"""Timba: `timba`, Texas Hold'em sin límite entre jugadores, una mesa por canal.
+"""Timba: Texas Hold'em sin límite entre jugadores, una mesa por canal (`poker` modo timba).
 
-`/timba` o `.timba` abre la mesa del canal (o la baja al final si ya estaba más
-arriba) y te sienta; `/timba 50` la abre con ciega grande de 50 (la pequeña es
-la mitad). Se juega de dos a `MAX_SEATS`; los asientos se quedan de una mano a
-otra hasta que pulsas 🚪 Levantarse. Reglas en `bot.services.timba`.
+No tiene comando propio: `/poker timba` o `.poker timba` (o `poker` y el botón
+♣️ Timba) abre la mesa del canal (o la baja al final si ya estaba más arriba) y
+te sienta, con `open_and_sit`; `/poker timba 50` la abre con ciega grande de 50
+(la pequeña es la mitad). Se juega de dos a `MAX_SEATS`; los asientos se quedan
+de una mano a otra hasta que pulsas 🚪 Levantarse. Reglas en `bot.services.timba`.
 
 **Una mano.** Con dos o más sentados, a los `START_SECONDS` empieza: se ponen las
 ciegas, cada uno ve sus cartas en privado con 🂠 Mis cartas y habla por turnos
@@ -29,7 +30,7 @@ de cada asiento. Las cartas solo se enseñan en el enfrentamiento.
 
 Si `CASINO_CHANNEL_IDS` está configurado, solo se juega en esos canales.
 Permisos del bot en el canal: enviar mensajes, insertar enlaces, adjuntar
-archivos y añadir reacciones (para confirmar `.timba`).
+archivos y añadir reacciones (para confirmar `.poker timba`).
 """
 
 from __future__ import annotations
@@ -47,7 +48,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
@@ -83,7 +83,6 @@ from bot.services.timba import (
     TimbaHand,
 )
 from bot.utils.interactions import ack, notify
-from bot.utils.responder import ContextResponder
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -973,7 +972,8 @@ class Table:
         embed = self.lobby_embed()
         embed.title = "♣️ Timba · mesa cerrada"
         embed.description = (
-            "\n".join(self.last_lines) + "\n\nNo hay timba sin gente. `timba` la vuelve a abrir."
+            "\n".join(self.last_lines)
+            + "\n\nNo hay timba sin gente. `poker timba` la vuelve a abrir."
         ).strip()
         await self.edit(embed=embed, view=None)
 
@@ -1102,7 +1102,7 @@ class Timba(commands.Cog, name="Timba"):
         channel_id = getattr(table.channel, "id", 0)
         table.task = asyncio.create_task(table.run(), name=f"timba-{channel_id}")
 
-    async def _timba_impl(
+    async def open_and_sit(
         self,
         *,
         guild: discord.Guild | None,
@@ -1113,7 +1113,11 @@ class Timba(commands.Cog, name="Timba"):
         send_error: Callable[[str], Awaitable[None]],
         interaction: discord.Interaction | None = None,
     ) -> None:
-        """Lógica de `/timba` y `.timba`: abre (o baja) la mesa y te sienta."""
+        """`poker` en modo timba: abre (o baja) la mesa del canal y te sienta.
+
+        Lo llama `bot.cogs.poker` (`/poker timba`), que es el único comando: la
+        timba no tiene comando propio, para no gastar otro slash command.
+        """
         if guild is None or not isinstance(channel, discord.abc.Messageable):
             await send_error("La timba solo se juega dentro de un servidor.")
             return
@@ -1153,57 +1157,6 @@ class Timba(commands.Cog, name="Timba"):
         if table.phase is Phase.LOBBY:
             table.edit_soon()
         await confirm(text)
-
-    @app_commands.command(
-        name="timba",
-        description="Timba: Texas Hold'em entre miembros. Abre la mesa del canal y siéntate.",
-    )
-    @app_commands.describe(ciega="Ciega grande de una mesa nueva: 20, 100, 1k… (por defecto 20)")
-    @app_commands.guild_only()
-    async def timba(self, interaction: discord.Interaction, ciega: str | None = None) -> None:
-        """Abre la timba del canal (o la baja al final) y te sienta.
-
-        Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado. Lo que te
-        juegas se aparta al empezar cada mano y se paga al acabarla.
-        """
-        # Abrir la mesa dibuja la imagen y publica el mensaje: puede pasar de 3 s.
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        async def confirm(text: str) -> None:
-            await interaction.followup.send(text or "♣️ Timba abierta.", ephemeral=True)
-
-        async def send_error(text: str) -> None:
-            await interaction.followup.send(text, ephemeral=True)
-
-        await self._timba_impl(
-            guild=interaction.guild,
-            channel=interaction.channel,
-            user=interaction.user,
-            blind_text=ciega,
-            confirm=confirm,
-            send_error=send_error,
-            interaction=interaction,
-        )
-
-    @commands.command(name="timba")
-    @commands.guild_only()
-    async def timba_text(self, ctx: commands.Context, ciega: str | None = None) -> None:
-        """Versión de texto: `.timba` o `.timba 100` (ciega grande de una mesa nueva)."""
-
-        async def confirm(text: str) -> None:
-            try:
-                await ctx.message.add_reaction("♣️")
-            except discord.HTTPException:
-                await ctx.send(text, allowed_mentions=NO_MENTIONS)
-
-        await self._timba_impl(
-            guild=ctx.guild,
-            channel=ctx.channel,
-            user=ctx.author,
-            blind_text=ciega,
-            confirm=confirm,
-            send_error=ContextResponder(ctx).send_error,
-        )
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
