@@ -11,6 +11,7 @@ criterio.
 ### 5.26.0 · 2026-10-14
 
 - Póker: mesa del canal para seis, 💎 Bote progresivo y el club (rango, retos y racha)
+- Timba: `timba`, Texas Hold'em sin límite entre miembros
 - Interno: póker, comprobación rápida de la ventaja de la casa
 
 ### 5.25.0 · 2026-10-14

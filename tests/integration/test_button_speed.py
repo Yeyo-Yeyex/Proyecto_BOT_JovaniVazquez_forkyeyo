@@ -381,6 +381,20 @@ async def press_poker_club(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_timba_sit(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Timba")
+    module = module_of(client, "Timba")
+    cog.renderer = MagicMock()
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 6
+    table = module.Table(cog, guild_id=GUILD_ID, channel=channel, big_blind=20, png=b"PNG")
+
+    async def click(interaction: MagicMock) -> None:
+        await table.sit_click(interaction)
+
+    return click
+
+
 def dice_view(client: BotClient, owner: MagicMock, *rolls: tuple[int, int]):  # noqa: ANN201
     """Mesa de los dados con dibujo falso, sin esperas y con el azar de guion."""
     cog = client.get_cog("Dados")
@@ -879,6 +893,7 @@ CASES: dict[str, Press] = {
     "póker: ir": press_poker_call,
     "póker: bote": press_poker_bonus,
     "póker: club": press_poker_club,
+    "timba: sentarse": press_timba_sit,
     "dados: pase": press_dice_pass,
     "dados: tirar": press_dice_roll,
     "dados: odds": press_dice_odds,

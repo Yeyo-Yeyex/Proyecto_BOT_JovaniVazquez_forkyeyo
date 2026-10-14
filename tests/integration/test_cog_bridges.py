@@ -1291,6 +1291,54 @@ async def test_el_poker_apunta_sus_logros_su_jugada_y_su_club_con_el_bot_real(
         await client.close()
 
 
+async def test_la_timba_apunta_logros_y_jugadas_de_los_dos_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """La timba carga antes que los logros: sus manos llegan a `logros` y a `apuestas`."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Timba")
+        cog.start = MagicMock()
+        cog.renderer = MagicMock()
+        cog.renderer.timba = AsyncMock(return_value=b"PNG")
+        players = []
+        for user_id, name in ((OWNER_ID, "Diego"), (OWNER_ID + 1, "Ana")):
+            user = MagicMock(spec=discord.Member)
+            user.id = user_id
+            user.display_name = name
+            user.mention = f"<@{user_id}>"
+            user.bot = False
+            players.append(user)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 6
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        table, _ = await cog.ensure_table(GUILD_ID, channel, OWNER_ID, 20)
+
+        async def fold_first(_seconds: float) -> None:
+            hand = table.hand
+            if hand is not None and hand.current is not None:
+                interaction = fake_interaction()
+                interaction.user = next(p for p in players if p.id == hand.current.user_id)
+                interaction.guild = None
+                await table.fold_click(interaction)
+
+        cog.sleep = fold_first
+        for user in players:
+            await table.sit(user)
+        await table.play_hand()
+
+        for user in players:
+            profile = await client.achievements.profile(GUILD_ID, user.id)
+            assert profile.stats["timba_hands"] == 1
+            assert "timba_1" in profile.unlocked
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["timba"].plays == 1
+    finally:
+        await client.close()
+
+
 async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_la_partida(
     tmp_path: Path,
 ) -> None:

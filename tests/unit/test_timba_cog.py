@@ -1,0 +1,282 @@
+"""Pruebas de bot.cogs.timba: la mesa del canal, sentarse, los turnos, el dinero y la comisión.
+
+Se usa la economía real sobre un SQLite temporal, un dibujo falso y un reloj falso
+cuyo `sleep` ejecuta, en cada espera de la mesa, el siguiente clic del guion
+(`FakeClock.script`): así se juegan los turnos sin esperar. Sin guion, cada turno
+se agota (el jugador se duerme). El bucle no se arranca solo: cada prueba llama a
+`play_hand()`.
+"""
+
+from __future__ import annotations
+
+import random
+import sqlite3
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import discord
+import pytest
+from interaction_fakes import fake_interaction
+
+from bot.cogs import timba as cog_module
+from bot.cogs.timba import MAX_TIMEOUTS, Phase, Table, Timba
+from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
+from bot.services.blackjack import Card
+from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.timba import TimbaHand
+
+GUILD_ID = 1
+ANA, LEO = 10, 11
+START = 1_800_000_000.0
+RANKS = {"A": 1, "T": 10, "J": 11, "Q": 12, "K": 13, **{str(n): n for n in range(2, 10)}}
+SUITS = {"s": 0, "h": 1, "d": 2, "c": 3}
+
+
+def cards(text: str) -> tuple[Card, ...]:
+    return tuple(Card(RANKS[c[0]], SUITS[c[1]]) for c in text.split())
+
+
+class FakeClock:
+    """Reloj que avanza al dormir y, en cada siesta, juega el siguiente clic del guion."""
+
+    def __init__(self) -> None:
+        self.now = START
+        self.script: list[Callable[[], Awaitable[None]]] = []
+
+    def wall(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        if self.script:
+            await self.script.pop(0)()
+        self.now += seconds
+
+
+class FakeRenderer:
+    async def board(self, **kwargs: Any) -> bytes:
+        return b"PNG"
+
+    async def timba(self, meta: dict[str, Any], state: dict[str, Any]) -> bytes:
+        return b"TIMBA"
+
+    async def close(self) -> None:
+        pass
+
+
+def make_user(user_id: int, name: str) -> MagicMock:
+    user = MagicMock(spec=discord.Member)
+    user.id = user_id
+    user.display_name = name
+    user.mention = f"<@{user_id}>"
+    user.bot = False
+    return user
+
+
+USERS = {ANA: make_user(ANA, "Ana"), LEO: make_user(LEO, "Leo")}
+
+
+def click(user_id: int) -> MagicMock:
+    interaction = fake_interaction(USERS[user_id])
+    interaction.guild = None
+    return interaction
+
+
+def make_channel() -> MagicMock:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 777
+    message = MagicMock()
+    message.edit = AsyncMock()
+    message.delete = AsyncMock()
+    channel.send = AsyncMock(return_value=message)
+    return channel
+
+
+async def make_table(tmp_path: Path) -> tuple[Timba, Table, FakeClock]:
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    clock = FakeClock()
+    cog = Timba(
+        MagicMock(),
+        economy=EconomyService(repository),
+        renderer=FakeRenderer(),  # type: ignore[arg-type]
+        rng=random.Random(5),
+        wall_clock=clock.wall,
+        sleep=clock.sleep,
+    )
+    cog.start = MagicMock()  # type: ignore[method-assign]
+    table, new = await cog.ensure_table(GUILD_ID, make_channel(), ANA, 20)
+    assert table is not None and new
+    await table.sit(USERS[ANA])
+    await table.sit(USERS[LEO])
+    return cog, table, clock
+
+
+async def balance(cog: Timba, user_id: int) -> int:
+    return await cog.economy.balance(GUILD_ID, user_id)
+
+
+def state(tmp_path: Path) -> int:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        row = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (GUILD_ID, STATE_ACCOUNT_ID),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def act(table: Table, user_id: int, how: str, amount: int = 0) -> Callable[[], Awaitable[None]]:
+    """Un clic del guion: `call`, `fold` o `raise` (a `amount`)."""
+
+    async def run() -> None:
+        interaction = click(user_id)
+        if how == "call":
+            await table.call_click(interaction)
+        elif how == "fold":
+            await table.fold_click(interaction)
+        else:
+            await table.raise_callback(amount)(interaction)
+
+    return run
+
+
+@pytest.fixture
+def rigged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ana con ases y Leo con siete-dos contra una mesa seca."""
+    real = TimbaHand.deal
+
+    def deal(*args: Any, **kwargs: Any) -> TimbaHand:
+        hand = real(*args, **kwargs)
+        holes = {ANA: cards("Ah As"), LEO: cards("7d 2c")}
+        for player in hand.players:
+            player.hole = holes[player.user_id]  # type: ignore[assignment]
+        hand.board = cards("Kd 9c 6h 3s Jc")
+        return hand
+
+    monkeypatch.setattr(cog_module.TimbaHand, "deal", deal)
+
+
+# -- Sentarse --------------------------------------------------------------------------
+
+
+async def test_abrir_sienta_y_pide_dinero_para_la_ciega(tmp_path: Path) -> None:
+    cog, table, _ = await make_table(tmp_path)
+    assert [c.user.id for c in table.chairs] == [ANA, LEO]
+    assert await balance(cog, ANA) == STARTING_BALANCE, "sentarse no cobra"
+    poor = make_user(99, "Pobre")
+    await cog.economy.place_bet(GUILD_ID, 99, game="test", stake=STARTING_BALANCE - 10)
+    with pytest.raises(cog_module.TimbaError, match="hacen falta"):
+        await table.sit(poor)
+
+
+async def test_no_se_sienta_dos_veces(tmp_path: Path) -> None:
+    _, table, _ = await make_table(tmp_path)
+    with pytest.raises(cog_module.TimbaError, match="Ya estás"):
+        await table.sit(USERS[ANA])
+
+
+# -- Una mano --------------------------------------------------------------------------
+
+
+async def test_retirarse_antes_del_flop_le_da_las_ciegas_al_otro_sin_comision(
+    tmp_path: Path,
+) -> None:
+    cog, table, clock = await make_table(tmp_path)
+    # A dos, el botón (Ana) pone la pequeña y habla primero.
+    clock.script = [act(table, ANA, "fold")]
+    await table.play_hand()
+    assert await balance(cog, ANA) == STARTING_BALANCE - 10
+    assert await balance(cog, LEO) == STARTING_BALANCE + 10
+    assert state(tmp_path) == 0
+    assert table.phase is Phase.LOBBY and table.hands == 1
+    assert "Ana** se retira" in (table.lobby_embed().description or "")
+
+
+async def test_enfrentamiento_gana_la_mejor_mano_y_la_comision_va_al_estado(
+    tmp_path: Path, rigged: None
+) -> None:
+    cog, table, clock = await make_table(tmp_path)
+    clock.script = [act(table, ANA, "raise", 100), act(table, LEO, "call")]
+    # Después del flop habla Leo (la grande): pasan los dos hasta el final.
+    clock.script += [act(table, LEO, "call"), act(table, ANA, "call")] * 3
+    await table.play_hand()
+    hand = table.hand
+    assert hand is not None and hand.result is not None and hand.result.showdown
+    rake = hand.result.rake
+    assert rake > 0
+    assert await balance(cog, ANA) == STARTING_BALANCE + 100 - rake
+    assert await balance(cog, LEO) == STARTING_BALANCE - 100
+    assert state(tmp_path) >= rake, "la comisión va al Estado (más el IRPF del juego)"
+    total = await balance(cog, ANA) + await balance(cog, LEO) + state(tmp_path)
+    assert total == 2 * STARTING_BALANCE, "la mano no crea ni destruye dinero"
+    text = table.lobby_embed().description or ""
+    assert "pareja de ases" in text and "comisión (IAJ)" in text
+
+
+async def test_quien_se_duerme_se_retira_y_a_las_dos_se_levanta(tmp_path: Path) -> None:
+    _, table, _ = await make_table(tmp_path)
+    for _ in range(2 * MAX_TIMEOUTS):
+        if len(table.chairs) < 2:
+            break
+        await table.play_hand()
+    assert len(table.chairs) < 2
+    assert "se ha dormido" in (table.lobby_embed().description or "")
+
+
+async def test_no_es_tu_turno_y_tus_cartas_en_privado(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+    seen: dict[str, Any] = {}
+
+    async def peek() -> None:
+        wrong = click(LEO)
+        await table.call_click(wrong)
+        seen["wrong"] = wrong.response.send_message.await_args.args[0]
+        mine = click(ANA)
+        await table.my_cards(mine)
+        seen["cards"] = mine.response.send_message.await_args.args[0]
+        await act(table, ANA, "fold")()
+
+    clock.script = [peek]
+    await table.play_hand()
+    assert "No es tu turno" in seen["wrong"]
+    assert seen["cards"].startswith("🂠 Tus cartas:")
+
+
+async def test_levantarse_a_mitad_de_mano_se_retira_y_se_va(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+
+    async def leave() -> None:
+        await table.leave_click(click(ANA))
+
+    clock.script = [leave]
+    await table.play_hand()
+    assert [c.user.id for c in table.chairs] == [LEO]
+
+
+async def test_al_apagar_a_mitad_de_mano_se_devuelve_todo(tmp_path: Path) -> None:
+    cog, table, clock = await make_table(tmp_path)
+
+    async def stop() -> None:
+        await table.shutdown()
+
+    clock.script = [stop]
+    await table.play_hand()
+    assert await balance(cog, ANA) == STARTING_BALANCE
+    assert await balance(cog, LEO) == STARTING_BALANCE
+
+
+async def test_las_placas_del_final_dicen_lo_que_gana_o_pierde_cada_uno(
+    tmp_path: Path, rigged: None
+) -> None:
+    """Antes salía lo apartado menos cero (+980 al que perdía 20): ya pagado, no vale."""
+    _, table, clock = await make_table(tmp_path)
+    clock.script = [act(table, ANA, "call")] + [
+        act(table, LEO, "call"),
+        act(table, ANA, "call"),
+    ] * 4
+    await table.play_hand()
+    views = {v.name: v for v in table.seat_views(reveal=True)}
+    assert views["Leo"].badge == ("lose", "-20 Y$")
+    kind, text = views["Ana"].badge  # type: ignore[misc]
+    assert kind == "win" and text.startswith("+") and views["Ana"].reveal

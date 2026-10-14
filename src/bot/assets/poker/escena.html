@@ -9,7 +9,10 @@ cada asiento, la banca y el cartel (bot/services/poker_render.py, `board_state`,
 `deal_states` y `showdown_states`). Aquí solo se pinta. Funciones que llama Python:
 
 - loadFonts()                espera a las fuentes (canvas no las carga solo).
-- setup(meta)                {pays, bonus: [[jugada, pago]…], skin}: las dos tablas y el tapete.
+- setup(meta)                {pays, bonus: [[jugada, pago]…], skin, mode, blinds}: las dos
+                             tablas y el tapete. Con mode "timba" (póker entre jugadores) no
+                             hay banca ni tablas: el bote va en el centro y las ciegas bajo
+                             el título.
 - renderFrames(states, first) dibuja los fotogramas y devuelve, de cada uno, el
                              recuadro que ha cambiado (PNG en Chromium, píxeles
                              crudos en Node) y dónde va.
@@ -21,7 +24,8 @@ Un estado es:
   cards[]    en orden de dibujo (la última encima): card {rank, suit, label, red},
              x, y (centro), rot, scale, flip (0 dorso, 1 cara), lift, glow, dim.
   seats[]    {x, name, bonus, pill {text | null, pop, win}, ante, call (0-1: la
-             ficha), fold, badge {kind, text, a, bonus} | null}: un asiento.
+             ficha), fold, badge {kind, text, a, bonus} | null, turn, button}: un
+             asiento (turn: le toca hablar; button: lleva el botón del crupier).
   dealer     {text | null, pop, win}: la pastilla de la banca.
   qualify    "si" | "no" | null: si la banca juega (se ilumina el aviso).
   banner     {kind, title, sub, a} | null     pot  texto con lo que lleva el bote.
@@ -70,7 +74,7 @@ const bctx = big.getContext("2d");
 const octx = out.getContext("2d", { willReadFrequently: true });
 const cctx = crop.getContext("2d");
 
-let META = { pays: [], bonus: [] };
+let META = { pays: [], bonus: [], mode: "casino", blinds: "" };
 let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 let PREV = null;           // píxeles del fotograma anterior (Uint32Array)
 const SPRITES = new Map(); // cartas ya dibujadas (una vez por página)
@@ -320,9 +324,11 @@ function paintBackground() {
   g.strokeStyle = "rgba(255,214,110,0.18)"; g.lineWidth = 1.2; g.stroke(); g.restore();
   // Título.
   g.save(); g.font = "24px Luckiest"; spaced(g, 2); g.textAlign = "left"; g.textBaseline = "alphabetic";
-  g.lineJoin = "round"; g.lineWidth = 5; g.strokeStyle = "rgba(20,10,0,0.6)"; g.strokeText("CASINO HOLD'EM", 18, 32);
+  g.lineJoin = "round"; g.lineWidth = 5; g.strokeStyle = "rgba(20,10,0,0.6)";
+  g.strokeText(META.mode === "timba" ? "TEXAS HOLD'EM" : "CASINO HOLD'EM", 18, 32);
   const tg = g.createLinearGradient(0, 10, 0, 34); tg.addColorStop(0, "#fff1a8"); tg.addColorStop(1, "#e0a41c");
-  g.fillStyle = tg; g.fillText("CASINO HOLD'EM", 18, 32); g.restore();
+  g.fillStyle = tg; g.fillText(META.mode === "timba" ? "TEXAS HOLD'EM" : "CASINO HOLD'EM", 18, 32); g.restore();
+  if (META.mode === "timba") return paintTimba(g, c);
   g.save(); g.font = "18px Luckiest"; spaced(g, 1.5); g.textAlign = "right"; g.textBaseline = "middle";
   g.lineJoin = "round"; g.lineWidth = 3; g.strokeStyle = "rgba(0,0,0,0.45)";
   const bx = DEALER_SLOTS[0][0] - CARD_W / 2 - 14, by = DEALER_SLOTS[0][1] + 1;
@@ -336,6 +342,20 @@ function paintBackground() {
   g.save(); roundRect(g, 3, 3, W - 6, H - 6, 12); g.strokeStyle = "rgba(255,214,110,0.3)"; g.lineWidth = 1; g.stroke(); g.restore();
   g.save(); g.font = "700 7.5px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "rgba(255,214,110,0.3)";
   spaced(g, 3); g.fillText("CASINO DEL ESTADO  ·  TEXAS HOLD'EM CONTRA LA BANCA", W / 2, H - 7.5); g.restore();
+  return c;
+}
+
+// El fondo de la timba: sin banca ni tablas; las ciegas bajo el título y el rótulo.
+function paintTimba(g, c) {
+  for (const [x, y] of BOARD_SLOTS) slotOutline(g, x, y);
+  paintDeck(g);
+  if (META.blinds) {
+    g.save(); g.font = "700 10px Montserrat"; spaced(g, 1.5); g.textAlign = "left"; g.textBaseline = "middle";
+    g.fillStyle = "rgba(255,230,160,0.85)"; g.fillText(META.blinds, 20, 50); g.restore();
+  }
+  g.save(); roundRect(g, 3, 3, W - 6, H - 6, 12); g.strokeStyle = "rgba(255,214,110,0.3)"; g.lineWidth = 1; g.stroke(); g.restore();
+  g.save(); g.font = "700 7.5px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "rgba(255,214,110,0.3)";
+  spaced(g, 3); g.fillText("CASINO DEL ESTADO  ·  TEXAS HOLD'EM SIN LÍMITE", W / 2, H - 7.5); g.restore();
   return c;
 }
 
@@ -359,6 +379,7 @@ function paintTable(g, x0, title, rows) {
 // -- Lo que cambia: aviso de la banca, pastillas y fichas --------------------------------------
 
 function drawQualify(state) {
+  if (META.mode === "timba") return;
   const g = bctx;
   const text = state === "si" ? "LA BANCA JUEGA" : state === "no" ? "LA BANCA NO JUEGA" : "LA BANCA JUEGA CON PAREJA DE 4 O MÁS";
   g.save(); g.font = "700 9.5px Montserrat"; spaced(g, 1.4);
@@ -417,6 +438,20 @@ function chip(g, [x, y], sc) {
 // Un asiento por detrás de sus cartas: nombre (con un rombo si juega el bote), huecos y fichas.
 function drawSeatBack(seat) {
   const g = bctx, x = seat.x;
+  if (seat.turn) {                                 // le toca: un halo dorado tras su sitio
+    g.save(); g.shadowColor = "rgba(255,214,90,0.95)"; g.shadowBlur = 16 * S;
+    roundRect(g, x - 58, SEAT_NAME_Y - 12, 116, SEAT_PILL_Y - SEAT_NAME_Y + 26, 14);
+    g.fillStyle = "rgba(255,214,90,0.16)"; g.fill(); g.shadowBlur = 0;
+    g.strokeStyle = "rgba(255,214,90,0.9)"; g.lineWidth = 1.6; g.stroke(); g.restore();
+  }
+  if (seat.button) {                               // el botón del crupier
+    g.save(); g.translate(x + 48, SEAT_NAME_Y - 2);
+    g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 4 * S;
+    g.beginPath(); g.arc(0, 0, 8, 0, Math.PI * 2); g.fillStyle = "#f4f1e8"; g.fill(); g.shadowBlur = 0;
+    g.strokeStyle = "#7a5206"; g.lineWidth = 1; g.stroke();
+    g.font = "10px Luckiest"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "#1a1c22";
+    g.fillText("D", 0, 1); g.restore();
+  }
   g.save(); g.font = "700 10.5px Montserrat"; spaced(g, 0.8); g.textAlign = "center"; g.textBaseline = "middle";
   g.lineJoin = "round"; g.lineWidth = 3; g.strokeStyle = "rgba(0,0,0,0.55)";
   g.strokeText(seat.name, x, SEAT_NAME_Y); g.fillStyle = "#e9f1ff"; g.fillText(seat.name, x, SEAT_NAME_Y);
@@ -475,6 +510,17 @@ function drawSeatFront(seat) {
 function drawPot(text) {
   if (!text) return;
   const g = bctx;
+  if (META.mode === "timba") {                     // el bote, grande, sobre las comunitarias
+    g.save(); g.font = "20px Luckiest"; spaced(g, 1.5);
+    const label = "BOTE " + text, w = g.measureText(label).width + 34, h = 30;
+    roundRect(g, W / 2 - w / 2, QUALIFY_Y - h / 2, w, h, h / 2);
+    g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 8 * S;
+    g.fillStyle = "rgba(6,30,18,0.82)"; g.fill(); g.shadowBlur = 0;
+    g.strokeStyle = "rgba(255,214,110,0.8)"; g.lineWidth = 1.4; g.stroke();
+    g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = GOLD; g.fillText(label, W / 2, QUALIFY_Y + 1.5);
+    g.restore();
+    return;
+  }
   g.save(); g.font = "14px Luckiest"; spaced(g, 1); g.textAlign = "right"; g.textBaseline = "middle";
   g.lineJoin = "round"; g.lineWidth = 3.5; g.strokeStyle = "rgba(0,20,40,0.7)";
   const x = BONUS_X + TABLE_W - 4, y = TABLES_Y + 8;
@@ -619,8 +665,9 @@ window.loadFonts = async () => {
 };
 window.setup = async (meta) => {
   await Tapete.ready(meta?.skin);
-  META = { pays: meta?.pays || [], bonus: meta?.bonus || [], skin: meta?.skin }; PREV = null;
-  const sk = meta?.skin?.key || "serie";
+  META = { pays: meta?.pays || [], bonus: meta?.bonus || [], skin: meta?.skin,
+    mode: meta?.mode || "casino", blinds: meta?.blinds || "" }; PREV = null;
+  const sk = (meta?.skin?.key || "serie") + "|" + META.mode + "|" + META.blinds;
   if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }
   return true;
 };

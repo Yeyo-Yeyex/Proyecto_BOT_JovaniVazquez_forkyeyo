@@ -886,6 +886,46 @@ class EconomyService:
             window_seconds=fiscal_window(now),
         )
 
+    async def settle_timba(
+        self,
+        guild_id: int,
+        *,
+        game: str,
+        payouts: dict[int, int],
+        rakes: dict[int, int],
+    ) -> dict[int, BetSettlement]:
+        """Paga una mano de la timba (póker entre jugadores) a todos los que la jugaron.
+
+        Tratamiento fiscal: juego. Lo que cada uno se jugaba se cobró con
+        `place_bet` al empezar la mano; aquí se le devuelve lo que no gastó más lo
+        que gana, que es ganancia patrimonial de la base general (art. 33.1
+        LIRPF) y entra en la retención diaria del casino y en la renta semanal.
+        La comisión de la casa (el *rake*) va entera al Estado como Impuesto sobre
+        Actividades de Juego (inspirado en el art. 48 de la Ley 13/2011, como el
+        de las porras): en la vida real es el ingreso del operador, que paga el
+        impuesto sobre él; aquí el operador no existe. El dinero pasa de unos
+        miembros a otros y al Estado: la mano no crea ni destruye nada.
+
+        Args:
+            game: Motivo corto para el libro (`"timba"`).
+            payouts: Lo que se devuelve a cada uno (0 si lo perdió todo).
+            rakes: La comisión que sale de lo que gana cada ganador.
+
+        Raises:
+            BalanceLimitError: Si un saldo superaría el máximo.
+        """
+        now = self._clock()
+        return await self.repository.settle_timba(
+            guild_id,
+            game=game,
+            payouts=payouts,
+            rakes=rakes,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+            window_seconds=fiscal_window(now),
+        )
+
     async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
         """Último jackpot de la tragaperras del servidor."""
         return await self.repository.last_jackpot(guild_id)

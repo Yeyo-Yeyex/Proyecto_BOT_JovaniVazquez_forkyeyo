@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `timba [ciega]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -505,6 +505,14 @@ python -m bot
   experiencia (abre las mesas de ante alto y da tapetes), tres retos al día
   con premio y racha de días que lo sube. GIF del reparto y del final pintados
   con canvas en Node (si no hay Node, en Chromium y, si tampoco, con Pillow).
+- **Timba** (`/timba`, `.timba [ciega]`): Texas Hold'em sin límite entre
+  miembros, de dos a seis en una mesa por canal; las ciegas las pone quien la
+  abre (por defecto 10/20). Cada uno ve sus cartas en privado con 🂠 Mis cartas y
+  habla por turnos de 30 s con botones (pasar, igualar, subir al mínimo, medio
+  bote, bote, todo o una cantidad, y retirarse). Botes secundarios, ficha suelta
+  para el primero tras el botón y comisión del 5 % (tope de 3 ciegas) de cada
+  bote que llega al flop, que va al Estado como IAJ. En cada mano te juegas tu
+  saldo hasta 100 ciegas; lo que no gastas vuelve.
 - **Dados** (`/dados`, `.dados [cantidad] [apuesta]`): craps de casino. Eliges
   ✅ Pase o 🚫 No pase y tiras la salida: con Pase, el 7 y el 11 ganan y el 2,
   el 3 y el 12 pierden; con No pase, al revés, y el 12 empata. Cualquier otro
@@ -625,7 +633,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las ocho secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.232 logros en 49 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.288 logros en 50 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -633,7 +641,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, hostelería, sanidad, oficina, reparto,
   funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 595 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 603 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -1004,6 +1012,7 @@ src/bot/
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
 │   ├── poker.py         # poker: mesa por canal, ir o retirarse, 💎 Bote y club
+│   ├── timba.py         # timba: Texas Hold'em entre miembros, turnos y botes
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
@@ -1060,6 +1069,7 @@ src/bot/
 │   ├── poker_render.py  # Póker: lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── poker_scene.py   # Póker con canvas en Node o Chromium (assets/poker/escena.html)
 │   ├── poker_club.py    # Póker: rango, retos del día y racha del club
+│   ├── timba.py         # Timba: ciegas, apuestas sin límite, botes secundarios y comisión
 │   ├── craps.py         # Dados: salida, punto, Odds a la probabilidad exacta y la mano
 │   ├── craps_render.py  # Física de la tirada, cámara, dados en 3D y dibujo con Pillow
 │   ├── craps_scene.py   # Dados con canvas en Node o Chromium (assets/dados/escena.html)

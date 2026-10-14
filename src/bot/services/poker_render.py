@@ -657,10 +657,21 @@ def _centered(
 
 
 @cache
-def _background() -> Image.Image:
-    """Tapete, huecos de la banca y la mesa, y las dos tablas."""
+def _background(mode: str = "casino", blinds: str = "") -> Image.Image:
+    """Tapete, huecos de la banca y la mesa, y las dos tablas (en la timba, solo la mesa)."""
     img = Image.new("RGB", (W * S, H * S), FELT)
     d = ImageDraw.Draw(img)
+    if mode == "timba":
+        _centered(d, (110, 24), "TEXAS HOLD'EM", _font(20, title=True), GOLD)
+        d.text((20 * S, 50 * S), blinds, font=_font(9), fill=GOLD, anchor="lm")
+        for x, y in BOARD_SLOTS:
+            d.rounded_rectangle(
+                ((x - 32) * S, (y - 45) * S, (x + 32) * S, (y + 45) * S),
+                6 * S,
+                outline=(60, 140, 100),
+                width=S,
+            )
+        return img
     _centered(d, (110, 24), "CASINO HOLD'EM", _font(20, title=True), GOLD)
     _centered(d, (300, DEALER_SLOTS[0][1]), "BANCA", _font(12), (255, 150, 150))
     _centered(d, (W / 2, QUALIFY_Y), "LA BANCA JUEGA CON PAREJA DE 4 O MÁS", _font(9), GOLD)
@@ -721,11 +732,13 @@ def _pill_box(d: ImageDraw.ImageDraw, xy: tuple[float, float], pill: dict[str, A
 
 def paint(meta: dict[str, Any], state: dict[str, Any]) -> Image.Image:
     """Un fotograma con Pillow, a 820×500 (más sencillo que el de Node)."""
-    img = _background().copy()
+    timba = meta.get("mode") == "timba"
+    img = _background(meta.get("mode", "casino"), meta.get("blinds", "")).copy()
     for card in state["cards"]:
         _paint_card(img, card)
     d = ImageDraw.Draw(img)
-    _centered(d, (110, 46), f"BOTE {state['pot']}", _font(10), GOLD)
+    pot_xy = (W / 2, QUALIFY_Y) if timba else (110, 46)
+    _centered(d, pot_xy, f"BOTE {state['pot']}", _font(12 if timba else 10), GOLD)
     _pill_box(d, DEALER_PILL, state["dealer"])
     for seat in state["seats"]:
         x = seat["x"]
@@ -767,8 +780,95 @@ def _still(state: dict[str, Any]) -> Media:
     return Media(gif=None, png=_png(paint(meta_state(), state)), seconds=0.0)
 
 
+# -- La timba: póker entre jugadores ------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TimbaSeat:
+    """Lo que la mesa de la timba enseña de un jugador.
+
+    Attributes:
+        name: Su nombre (se limpia con `seat_name`).
+        stack: Lo que le queda por apostar en la mano.
+        cards: Sus dos cartas.
+        reveal: Si se ven (en el enfrentamiento); si no, boca abajo.
+        folded: Si se ha retirado (cartas apagadas).
+        bet: Lo que lleva puesto en la ronda (se ve su ficha).
+        turn: Si le toca hablar.
+        button: Si lleva el botón del crupier.
+        badge: `(kind, texto)` de su placa: la última acción o el resultado.
+        hand: Lo que lleva, para la pastilla, si se enseña.
+        won: Si gana algo (brillan sus cartas).
+    """
+
+    name: str
+    stack: int
+    cards: tuple[Card, Card]
+    reveal: bool = False
+    folded: bool = False
+    bet: int = 0
+    turn: bool = False
+    button: bool = False
+    badge: tuple[str, str] | None = None
+    hand: str | None = None
+    won: bool = False
+
+
+def timba_meta(blinds: str) -> dict[str, Any]:
+    """Lo fijo de la escena en la timba: sin tablas de pago y con las ciegas."""
+    return {**meta_state(), "mode": "timba", "blinds": blinds}
+
+
+def timba_state(board: Sequence[Card], seats: Sequence[TimbaSeat], *, pot: int) -> dict[str, Any]:
+    """La mesa de la timba quieta: las comunitarias que se ven, los asientos y el bote."""
+    n = len(seats)
+    if n > MAX_SEATS:
+        raise ValueError("Asientos fuera de la mesa.")
+    cards = [_card_state(card, BOARD_SLOTS[i]) for i, card in enumerate(board[:5])]
+    views = []
+    for i, seat in enumerate(seats):
+        x = seat_x(i, n)
+        for card, dx in zip(seat.cards, (-SEAT_CARD_DX, SEAT_CARD_DX), strict=True):
+            cards.append(
+                _card_state(
+                    card,
+                    (x + dx, SEAT_Y),
+                    scale=SEAT_SCALE,
+                    flip=1.0 if seat.reveal else 0.0,
+                    dim=0.6 if seat.folded else 0.0,
+                    glow=1.0 if seat.won else 0.0,
+                )
+            )
+        pill = seat.hand if seat.reveal and seat.hand else format_amount(seat.stack)
+        badge = None
+        if seat.badge is not None:
+            kind, text = seat.badge
+            badge = {"kind": kind, "text": text, "a": 1.0, "bonus": False}
+        views.append(
+            {
+                "x": round(x, 2),
+                "name": seat_name(seat.name),
+                "bonus": False,
+                "pill": _pill(pill, win=seat.won),
+                "ante": 1.0 if seat.bet else 0.0,
+                "call": 0.0,
+                "fold": seat.folded,
+                "badge": badge,
+                "turn": seat.turn,
+                "button": seat.button,
+            }
+        )
+    state = _state(cards, views, pot=pot, ms=FINAL_FRAME_MS)
+    state["full"] = True
+    return state
+
+
 class PokerRenderer:
     """Dibujo de reserva con Pillow: la mesa quieta y el final de cada animación, sin GIF."""
+
+    def timba(self, meta: dict[str, Any], state: dict[str, Any]) -> bytes:
+        """PNG de la mesa de la timba."""
+        return _png(paint(meta, state))
 
     def board(self, pot: int = 0) -> bytes:
         """PNG de la mesa vacía."""

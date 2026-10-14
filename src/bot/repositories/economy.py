@@ -79,7 +79,8 @@ Modelo de datos:
 - `economy_porra_bets`: cada apuesta a una porra (quién, a qué opción y cuánto).
   Es la verdad del dinero de cada porra: el reparto se calcula con estas filas.
 - `economy_porra_settled`: porras ya liquidadas, para no pagar dos veces.
-- `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra,
+- `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra
+  (y, con `porra_id = 0`, la comisión de cada bote de la `timba`),
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
 - `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
   cobrado de más antes de que la renta de las retenciones se reiniciara cada
@@ -1398,6 +1399,84 @@ class EconomyRepository:
                 spins_since=spins,
                 drought=drought,
             )
+
+    # -- Timba: póker entre jugadores ------------------------------------------------------
+
+    async def settle_timba(
+        self,
+        guild_id: int,
+        *,
+        game: str,
+        payouts: dict[int, int],
+        rakes: dict[int, int],
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> dict[int, BetSettlement]:
+        """Paga una mano de la timba a todos los que la jugaron, en una sola transacción.
+
+        Lo que cada uno se jugaba ya se cobró al empezar (`place_bet`); aquí se le
+        devuelve lo que no gastó más lo que gana (`payouts`, 0 si lo perdió todo)
+        y se le ajusta el IRPF del día. La comisión (`rakes`, por ganador) va al
+        Estado como Impuesto sobre Actividades de Juego y se apunta en
+        `economy_gaming_tax` con `porra_id = 0`.
+
+        Raises:
+            BalanceLimitError: Si un saldo superaría el máximo. No se mueve nada.
+        """
+        return await self._run(
+            self._settle_timba_sync,
+            guild_id,
+            game,
+            dict(payouts),
+            dict(rakes),
+            day,
+            now,
+            day_tax,
+            window_seconds,
+        )
+
+    def _settle_timba_sync(
+        self,
+        guild_id: int,
+        game: str,
+        payouts: dict[int, int],
+        rakes: dict[int, int],
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> dict[int, BetSettlement]:
+        if any(v < 0 for v in (*payouts.values(), *rakes.values())):
+            raise ValueError("Pago de timba inválido.")
+        with self._transaction() as connection:
+            results: dict[int, BetSettlement] = {}
+            for user_id in sorted(payouts):
+                amount = payouts[user_id]
+                entries = (LedgerEntry(amount, f"{game}:premio"),) if amount else ()
+                results[user_id] = self._settle_gamble_in(
+                    connection,
+                    guild_id,
+                    user_id,
+                    entries,
+                    day=day,
+                    now=now,
+                    adjust_tax=True,
+                    day_tax=day_tax,
+                    window_seconds=window_seconds,
+                )
+            total = sum(rakes.values())
+            if total:
+                self._credit_state_in(connection, guild_id, total, f"iaj:{game}")
+                connection.executemany(
+                    """
+                    INSERT INTO economy_gaming_tax (guild_id, user_id, porra_id, tax, created_at)
+                    VALUES (?, ?, 0, ?, ?)
+                    """,
+                    [(guild_id, uid, tax, now) for uid, tax in sorted(rakes.items()) if tax],
+                )
+            return results
 
     # -- Póker: el 💎 Bote progresivo ---------------------------------------------------
 
