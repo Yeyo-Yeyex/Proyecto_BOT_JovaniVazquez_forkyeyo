@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.2.3 · 2026-10-14
+
+- Interno: los pintores de Node ya no pasan de 4 aunque se pidan varios a la vez
+
 ### 6.2.2 · 2026-10-14
 
 - Juegos: los GIF se dibujan y se montan bastante más rápido (los gallos y el bacará, en menos de la mitad de tiempo) y el primero tras un rato ya no arranca en frío

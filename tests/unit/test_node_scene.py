@@ -270,9 +270,30 @@ async def test_los_procesos_de_mas_se_cierran_y_queda_el_minimo() -> None:
     try:
         taken = await pool.acquire(MAX_WORKERS)
         await pool._spawn()
+        await asyncio.gather(*pool._background)
         await pool.release(taken)
         assert len(pool.workers) > MIN_WORKERS
-        await asyncio.sleep(0.5)
+        # Con la máquina cargada el cierre puede tardar alguna vuelta más.
+        for _ in range(50):
+            if len(pool.workers) == MIN_WORKERS:
+                break
+            await asyncio.sleep(0.1)
         assert len(pool.workers) == MIN_WORKERS
+    finally:
+        await node_scene.shutdown()
+
+
+@needs_node
+@module_loop
+async def test_pedir_reservas_seguidas_no_pasa_del_tope_de_procesos() -> None:
+    """El hueco de una reserva cuenta desde que se pide, no desde que arranca."""
+    node = own_node()
+    pool = node_scene._pool(node)
+    try:
+        for _ in range(MAX_WORKERS + 2):
+            pool._ensure_spare()
+        await asyncio.gather(*pool._background)
+        assert len(pool.workers) == MAX_WORKERS
+        assert pool.starting == 0
     finally:
         await node_scene.shutdown()

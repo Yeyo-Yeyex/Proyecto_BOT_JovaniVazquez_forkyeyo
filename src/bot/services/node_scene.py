@@ -166,11 +166,15 @@ class _Pool:
         return [worker for worker in self.workers if worker.alive and not worker.busy]
 
     async def _spawn(self) -> _Process:
-        node = self.node or shutil.which("node")
-        if node is None:
-            raise NodeSceneError("No hay `node` en el PATH")
         self.starting += 1
+        return await self._start()
+
+    async def _start(self) -> _Process:
+        """Arranca un proceso cuyo hueco ya está apuntado en `starting`."""
         try:
+            node = self.node or shutil.which("node")
+            if node is None:
+                raise NodeSceneError("No hay `node` en el PATH")
             worker = await _Process.start(node)
         finally:
             self.starting -= 1
@@ -179,7 +183,7 @@ class _Pool:
 
     async def _spare(self) -> None:
         try:
-            await self._spawn()
+            await self._start()
         except Exception:
             # El siguiente dibujo lo intenta otra vez y, si falla, pasa a su plan B.
             logger.debug("No se ha podido abrir el proceso de Node de reserva", exc_info=True)
@@ -191,6 +195,9 @@ class _Pool:
         """Abre otro proceso si no queda ninguno libre (hasta `MAX_WORKERS`)."""
         if self._idle() or len(self.workers) + self.starting >= MAX_WORKERS:
             return
+        # El hueco se apunta ya y no al arrancar la tarea: si no, otro dibujo
+        # podría abrir uno más entretanto y pasar de `MAX_WORKERS`.
+        self.starting += 1
         self._in_background(self._spare())
 
     def _in_background(self, coroutine: Awaitable[None]) -> None:
