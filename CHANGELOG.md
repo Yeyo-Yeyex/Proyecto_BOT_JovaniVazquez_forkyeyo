@@ -8,6 +8,10 @@ criterio.
 
 ## 5.x
 
+### 5.25.0 · 2026-10-14
+
+- Póker: `poker`, Casino Hold'em contra la banca
+
 ### 5.24.0 · 2026-10-13
 
 - Pala: los ocho oficios llegan a 10 puestos con dos ramas cada uno

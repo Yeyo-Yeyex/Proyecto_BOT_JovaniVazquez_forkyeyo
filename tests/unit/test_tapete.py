@@ -15,7 +15,7 @@ from bot.services.coin import Side
 from bot.services.coin_scene import CoinScene
 
 ASSETS = Path(skins.__file__).resolve().parent.parent / "assets"
-FELT_SCENES = ("ruleta", "autobus", "bacara", "dados", "moneda", "pollo")
+FELT_SCENES = ("ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "poker")
 
 
 def test_cada_mesa_con_fieltro_carga_el_tapete_y_lo_pinta() -> None:

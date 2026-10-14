@@ -39,6 +39,7 @@ EXPECTED_COMMANDS = {
     "pollo",
     "moneda",
     "guagua",
+    "poker",
     "dados",
     "pachinko",
     "loteria",

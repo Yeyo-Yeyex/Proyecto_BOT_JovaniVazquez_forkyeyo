@@ -57,6 +57,7 @@ from bot.services import (  # noqa: E402
     hold_win,
     mines,
     pachinko,
+    poker,
     roulette,
     slots,
 )
@@ -82,6 +83,7 @@ from bot.services.achievements import (  # noqa: E402
     horses_stats,
     mines_stats,
     pachinko_stats,
+    poker_stats,
     roulette_stats,
     slots_bonus_stats,
     slots_double_stats,
@@ -124,6 +126,7 @@ RITMO_CASINO = {
     "chicken": 60,
     "coin": 60,
     "bus": 60,
+    "poker": 40,
     "dice": 50,
     "pachinko": 60,
     "horses": 30,
@@ -434,6 +437,23 @@ def _jugar_autobus(j: Jugador) -> StatDelta:
     return _con_casino(bus_stats(game, when=NOON), stake=APUESTA, net=game.net)
 
 
+def _jugar_poker(j: Jugador) -> StatDelta:
+    """Una mano de un jugador normal: va casi siempre, como la estrategia óptima (~82 %).
+
+    Con algo ligado en el flop o un as o un rey en la mano va siempre; con nada,
+    va la mitad de las veces.
+    """
+    hand = poker.PokerHand.new(APUESTA, j.rng)
+    cards = hand.cards
+    made = cards.flop_value.rank is not poker.Rank.HIGH_CARD
+    high = any(c.rank in (1, 13) for c in cards.player)
+    if made or high or j.rng.random() < 0.5:
+        hand.call()
+    else:
+        hand.fold()
+    return _con_casino(poker_stats(hand, when=NOON), stake=hand.staked, net=hand.net)
+
+
 #: Apuesta de salida de un jugador normal de dados: casi siempre Pase.
 _APUESTAS_DADOS = ((craps.Bet.PASS, 85), (craps.Bet.DONT, 15))
 #: Cuántas Odds pone con el punto puesto: ninguna, una ficha o al tope.
@@ -643,6 +663,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "chicken": _jugar_pollo,
     "coin": _jugar_moneda,
     "bus": _jugar_autobus,
+    "poker": _jugar_poker,
     "dice": _jugar_dados,
     "crash": _jugar_crash,
     "roulette": _jugar_ruleta,
