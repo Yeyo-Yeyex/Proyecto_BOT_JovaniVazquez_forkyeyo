@@ -166,7 +166,9 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   el GIF actual, y al pulsar solo queda subirlo (`CoinView.prepare`). En la
   moneda, del clic al GIF pasó de ~1,1 s de dibujo a 0; en los dados, de ~0,9 s
   a 0 (`CrapsView.prepare`). La ruleta ya precargaba la jugada más probable
-  (repetir la última apuesta) y con Node el giro bajó de 1,8 a 1,1 s. Los dibujos por adelantado no se cancelan a medias:
+  (repetir la última apuesta) y con Node el giro bajó de 1,8 a 1,1 s. La timba pinta
+  durante cada turno la mesa de cada botón y la de dormirse, y durante la espera
+  entre manos reparte y pinta la siguiente (`Table.prepare_turn`, `Table.plan_deal`). Los dibujos por adelantado no se cancelan a medias:
   van de uno en uno y cada uno comprueba antes de empezar si sigue valiendo. Si
   aun así se corta uno, `NodeScene` mata sus procesos y los arranca de nuevo en
   el siguiente dibujo (~0,35 s), porque quedarían píxeles sin leer en la tubería.

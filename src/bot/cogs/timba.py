@@ -121,6 +121,14 @@ QUIPS = (
 )
 
 
+#: Una imagen de la mesa por adelantado: `id` de la mano real y sus acciones hasta entonces.
+PaintKey = tuple[int, tuple[Event, ...]]
+
+
+def paint_key(hand: TimbaHand) -> PaintKey:
+    return (id(hand), tuple(hand.events))
+
+
 class Phase(Enum):
     """En qué está la mesa."""
 
@@ -226,6 +234,25 @@ class RaiseModal(discord.ui.Modal, title="🔢 ¿A cuánto subes?"):
         await self.table.play(interaction, Act.RAISE, target)
 
 
+def raise_targets(hand: TimbaHand) -> list[tuple[str, str, int]]:
+    """Las subidas con botón propio (mínimo, ½ bote y bote): sin repetir ni llegar a todo."""
+    opts = hand.options()
+    targets: list[tuple[str, str, int]] = []
+    if not opts.can_raise:
+        return targets
+    half = hand.current_bet + (hand.pot + opts.to_call) // 2
+    full = hand.current_bet + hand.pot + opts.to_call
+    for name, emoji, value in (
+        ("Subir a", "⬆️", opts.min_raise),
+        ("½ bote:", "🌗", half),
+        ("Bote:", "💰", full),
+    ):
+        value = max(opts.min_raise, min(value, opts.max_raise))
+        if value < opts.max_raise and all(value != t for *_, t in targets):
+            targets.append((name, emoji, value))
+    return targets
+
+
 class TableView(discord.ui.View):
     """Botones de la mesa: entre manos, sentarse y levantarse; en una mano, lo que puede hacer
     quien habla."""
@@ -242,21 +269,8 @@ class TableView(discord.ui.View):
                 label, emoji = "Pasar", "✅"
             success = discord.ButtonStyle.success
             _button(self, label, emoji, success, table.call_click, 0, "call")
-            pot = hand.pot
-            targets: list[tuple[str, str, int]] = []
-            if opts.can_raise:
-                half = hand.current_bet + (pot + opts.to_call) // 2
-                full = hand.current_bet + pot + opts.to_call
-                for name, emoji_, value in (
-                    ("Subir a", "⬆️", opts.min_raise),
-                    ("½ bote:", "🌗", half),
-                    ("Bote:", "💰", full),
-                ):
-                    value = max(opts.min_raise, min(value, opts.max_raise))
-                    if value < opts.max_raise and all(value != t for *_, t in targets):
-                        targets.append((name, emoji_, value))
             primary = discord.ButtonStyle.primary
-            for name, emoji_, value in targets:
+            for name, emoji_, value in raise_targets(hand):
                 _button(
                     self,
                     f"{name} {format_amount(value)}",
@@ -319,8 +333,13 @@ class Table:
         self.small_blind = max(1, big_blind // 2)
         self.skin = skin
         self.png = png
-        #: Lo que habrá pasado si quien habla se duerme y la imagen que se pinta para eso.
-        self.ahead: tuple[list[Event], asyncio.Task[bytes | None]] | None = None
+        #: Imágenes pintadas por adelantado, por (mano, sus acciones): la mano real
+        #: (que la mantiene viva, para que su `id` no se repita) y el PNG.
+        self.painted: dict[PaintKey, tuple[TimbaHand, asyncio.Future[bytes | None]]] = {}
+        self._painting: asyncio.Task[None] | None = None
+        #: La próxima mano, repartida (sin enseñarla) y pintada durante la espera.
+        self.next_deal: TimbaHand | None = None
+        self._dealing: asyncio.Task[None] | None = None
         self.message: discord.Message | None = None
         self.phase = Phase.LOBBY
         self.chairs: list[Chair] = []
@@ -378,8 +397,10 @@ class Table:
         assert hand is not None
         last: dict[int, Event] = {e.user_id: e for e in hand.events}
         result = hand.result
+        # Por id: la mano repartida por adelantado aún no es la de `playing`.
+        users = {c.user.id: c.user for c in (*self.playing, *self.chairs)}
         views = []
-        for i, (chair, player) in enumerate(zip(self.playing, hand.players, strict=True)):
+        for i, player in enumerate(hand.players):
             badge = badge_for(last[player.user_id]) if player.user_id in last else None
             won = False
             hand_label = None
@@ -399,7 +420,7 @@ class Table:
                     hand_label = result.values[player.user_id].rank.label.upper()
             views.append(
                 TimbaSeat(
-                    name=chair.user.display_name,
+                    name=users[player.user_id].display_name,
                     stack=player.stack,
                     cards=player.hole,
                     reveal=show,
@@ -424,31 +445,134 @@ class Table:
     async def render(self, *, reveal: bool = False) -> None:
         """Pinta la mesa de la mano en curso (o su final, con `reveal`).
 
-        Si quien hablaba se durmió, la imagen ya se pintó mientras se le esperaba.
+        Si ya se pintó por adelantado (`prepare_turn`, `plan_deal`), se usa esa.
         """
         hand = self.hand
         assert hand is not None
-        ahead, self.ahead = self.ahead, None
-        if ahead is not None and ahead[0] == hand.events:
-            if (png := await ahead[1]) is not None:
-                self.png = png
-                return
+        entry = self.painted.pop(paint_key(hand), None)
+        self.painted.clear()  # las demás eran de lo que no pasó
+        if entry is not None and (png := await entry[1]) is not None:
+            self.png = png
+            return
         self.png = await self.paint(hand, reveal=reveal)
 
-    def paint_ahead(self) -> None:
-        """Empieza a pintar la mesa tal y como quedará si quien habla se duerme."""
-        assert self.hand is not None
-        ahead = copy.deepcopy(self.hand)
-        ahead.timeout()
+    # -- Pintar por adelantado ---------------------------------------------------------
 
-        async def paint() -> bytes | None:
+    def _queue(self, jobs: list[tuple[TimbaHand, TimbaHand, Callable[[], bool]]]) -> None:
+        """Pinta en segundo plano, de una en una, cada `(mano real, cómo quedará, sigue valiendo)`.
+
+        La imagen queda en `painted` para que `render` la coja si la mano real
+        acaba así. Nunca se cortan a medias (`NodeScene` tendría que reiniciarse):
+        antes de empezar cada una se mira si aún puede hacer falta y, si no, se salta.
+        """
+        loop = asyncio.get_running_loop()
+        work: list[tuple[TimbaHand, Callable[[], bool], asyncio.Future[bytes | None]]] = []
+        for real, ahead, needed in jobs:
+            key = (id(real), tuple(ahead.events))
+            if key in self.painted:
+                continue
+            future: asyncio.Future[bytes | None] = loop.create_future()
+            self.painted[key] = (real, future)
+            work.append((ahead, needed, future))
+        if work:
+            self._painting = asyncio.create_task(self._paint_queue(work, self._painting))
+
+    async def _paint_queue(
+        self,
+        work: list[tuple[TimbaHand, Callable[[], bool], asyncio.Future[bytes | None]]],
+        previous: asyncio.Task[None] | None,
+    ) -> None:
+        # Una cola detrás de otra: el pintor solo pinta una cosa a la vez.
+        if previous is not None:
+            await asyncio.gather(previous, return_exceptions=True)
+        for ahead, needed, future in work:
+            png = None
+            if self.phase is not Phase.CLOSED and needed():
+                try:
+                    png = await self.paint(ahead, reveal=ahead.finished)
+                except Exception:
+                    logger.warning("No se pudo pintar la timba por adelantado", exc_info=True)
+            if not future.done():
+                future.set_result(png)
+
+    def _leaving(self, user_id: int) -> bool:
+        return any(c.user.id == user_id and c.leaving for c in self.playing)
+
+    def prepare_turn(self) -> None:
+        """Pinta la mesa tal y como quedará con cada botón de quien habla y si se duerme.
+
+        La de dormirse va primero (es la que seguro hace falta si se acaba el
+        tiempo); luego pasar o igualar, retirarse y cada subida con botón. La 🔢
+        Cantidad no se puede saber.
+        """
+        hand = self.hand
+        assert hand is not None and hand.current is not None
+        user_id = hand.current.user_id
+        base = tuple(hand.events)
+        opts = hand.options()
+        moves: list[tuple[Act, int] | None] = [None, (Act.CALL, 0), (Act.FOLD, 0)]
+        moves += [(Act.RAISE, value) for *_, value in raise_targets(hand)]
+        if opts.can_raise:
+            moves.append((Act.RAISE, opts.max_raise))
+        jobs: list[tuple[TimbaHand, TimbaHand, Callable[[], bool]]] = []
+        for move in moves:
+            ahead = copy.deepcopy(hand)
             try:
-                return await self.paint(ahead, reveal=ahead.finished)
-            except Exception:
-                logger.debug("No se pudo pintar la timba por adelantado", exc_info=True)
-                return None
+                if move is None:
+                    ahead.timeout()
+                else:
+                    ahead.act(user_id, *move)
+                # Como el bucle: quien se levanta se retira sin que se pinte su turno.
+                while (nxt := ahead.current) is not None and self._leaving(nxt.user_id):
+                    ahead.act(nxt.user_id, Act.FOLD)
+            except TimbaError:
+                continue
+            after = tuple(ahead.events)
 
-        self.ahead = (ahead.events, asyncio.create_task(paint()))
+            def needed(after: tuple[Event, ...] = after) -> bool:
+                return self.hand is hand and tuple(hand.events) in (base, after)
+
+            jobs.append((hand, ahead, needed))
+        self._queue(jobs)
+
+    def deal_hand(self, stacks: list[tuple[int, int]]) -> TimbaHand:
+        """Reparte una mano a `(user_id, lo que se juega)` con el botón que toca."""
+        return TimbaHand.deal(
+            stacks,
+            button=self.button % len(stacks),
+            small_blind=self.small_blind,
+            big_blind=self.big_blind,
+            rng=self.cog.rng,
+        )
+
+    def plan_deal(self) -> None:
+        """Durante la espera entre manos, reparte ya la próxima (sin enseñarla) y la pinta.
+
+        Se vuelve a hacer cada vez que se sienta o se levanta alguien. Si al empezar
+        cambia quién juega o lo que se juega cada uno, se reparte de nuevo.
+        """
+        if self.phase is not Phase.LOBBY or self.next_hand_at is None or len(self.chairs) < 2:
+            return
+        self._dealing = asyncio.create_task(self._plan_deal(self.hands))
+
+    async def _plan_deal(self, hands: int) -> None:
+        try:
+            stacks: list[tuple[int, int]] = []
+            for chair in list(self.chairs):
+                balance = await self.cog.economy.balance(self.guild_id, chair.user.id)
+                if balance >= self.big_blind:
+                    stacks.append((chair.user.id, min(balance, self.max_buy)))
+            if len(stacks) < 2 or self.phase is not Phase.LOBBY or self.hands != hands:
+                return
+            hand = self.deal_hand(stacks)
+            self.next_deal = hand
+
+            def needed() -> bool:
+                return self.next_deal is hand or self.hand is hand
+
+            self._queue([(hand, hand, needed)])
+        except Exception:
+            logger.warning("No se pudo repartir la timba por adelantado", exc_info=True)
 
     def log_lines(self) -> list[str]:
         hand = self.hand
@@ -586,6 +710,7 @@ class Table:
             )
             self.seated.set()
             self._check_ready()
+            self.plan_deal()
         playing = " Entras en la mano siguiente." if self.phase is Phase.PLAYING else ""
         return (
             f"🪑 Sentado. En cada mano te juegas tu saldo hasta {format_amount(self.max_buy)}; "
@@ -620,6 +745,7 @@ class Table:
         else:
             self.chairs.remove(chair)
             self._check_ready()
+            self.plan_deal()
             text = "🚪 Te levantas de la timba."
         await interaction.response.send_message(text, ephemeral=True)
         if self.phase is Phase.LOBBY:
@@ -781,6 +907,7 @@ class Table:
                     continue
                 self.next_hand_at = self.cog.wall_clock() + START_SECONDS
                 self.edit_soon()
+                self.plan_deal()
                 await self.nap(START_SECONDS, wake=self.go)
                 if len(self.chairs) >= 2:
                     await self.play_hand()
@@ -840,13 +967,16 @@ class Table:
             return
         self.hands += 1
         self.playing = playing
-        self.hand = TimbaHand.deal(
-            [(c.user.id, c.stack) for c in playing],
-            button=self.button % len(playing),
-            small_blind=self.small_blind,
-            big_blind=self.big_blind,
-            rng=self.cog.rng,
-        )
+        stacks = [(c.user.id, c.stack) for c in playing]
+        planned, self.next_deal = self.next_deal, None
+        if (
+            planned is not None
+            and [(p.user_id, p.stack + p.total) for p in planned.players] == stacks
+            and planned.button == self.button % len(playing)
+        ):
+            self.hand = planned  # repartida y pintada durante la espera
+        else:
+            self.hand = self.deal_hand(stacks)
         self.button += 1
         self.phase = Phase.PLAYING
         hand = self.hand
@@ -860,7 +990,7 @@ class Table:
             self.acted.clear()
             self.turn_deadline = self.cog.wall_clock() + TURN_SECONDS
             await self.publish()
-            self.paint_ahead()
+            self.prepare_turn()
             # Hasta el plazo que se enseña: pintar y subir la mesa ya ha gastado parte.
             await self.nap(max(0.0, self.turn_deadline - self.cog.wall_clock()), wake=self.acted)
             if self.phase is Phase.CLOSED:

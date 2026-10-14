@@ -319,31 +319,70 @@ async def test_listo_de_todos_empieza_la_mano_ya(tmp_path: Path) -> None:
     assert not any(c.ready for c in table.chairs) and not table.go.is_set()
 
 
-async def test_la_mesa_del_que_se_duerme_se_pinta_mientras_se_le_espera(tmp_path: Path) -> None:
-    cog, table, clock = await make_table(tmp_path)
-    painted: list[float] = []
+# -- Pintar por adelantado -------------------------------------------------------------
 
-    async def timba(meta: dict[str, Any], state: dict[str, Any]) -> bytes:
-        painted.append(clock.now)
-        return b"TIMBA"
 
-    cog.renderer.timba = timba  # type: ignore[method-assign]
-    # Ana (botón, pequeña) se duerme y se retira: la mano acaba sin pintar nada después.
+def late_paints(table: Table) -> list[int]:
+    """Apunta las imágenes que se pintan al momento (la mano real), no por adelantado."""
+    late: list[int] = []
+    paint = table.paint
+
+    async def spy(hand: TimbaHand, *, reveal: bool = False) -> bytes:
+        if hand is table.hand:
+            late.append(len(hand.events))
+        return await paint(hand, reveal=reveal)
+
+    table.paint = spy  # type: ignore[method-assign]
+    return late
+
+
+async def test_la_mesa_del_que_se_duerme_ya_esta_pintada(tmp_path: Path) -> None:
+    _, table, _ = await make_table(tmp_path)
+    late = late_paints(table)
+    await table.play_hand()  # Ana se duerme y se retira
+    assert table.hands == 1
+    assert len(late) == 1, "solo la primera imagen (el reparto no se planeó)"
+
+
+async def test_cada_boton_ya_esta_pintado(tmp_path: Path, rigged: None) -> None:
+    _, table, clock = await make_table(tmp_path)
+    late = late_paints(table)
+    clock.script = [act(table, ANA, "raise", 40), act(table, LEO, "call")]
+    clock.script += [act(table, LEO, "call"), act(table, ANA, "call")] * 3
     await table.play_hand()
-    assert table.hands == 1 and table.ahead is None
-    assert painted == [START, START], "el final se pintó durante el turno"
+    hand = table.hand
+    assert hand is not None and hand.result is not None and hand.result.showdown
+    assert len(late) == 1, "subir al mínimo, igualar y pasar estaban pintados"
 
 
-async def test_si_hace_otra_cosa_se_pinta_de_nuevo(tmp_path: Path) -> None:
-    cog, table, clock = await make_table(tmp_path)
-    painted: list[float] = []
-
-    async def timba(meta: dict[str, Any], state: dict[str, Any]) -> bytes:
-        painted.append(clock.now)
-        return b"TIMBA"
-
-    cog.renderer.timba = timba  # type: ignore[method-assign]
-    clock.script = [act(table, ANA, "call"), act(table, LEO, "fold")]
+async def test_una_cantidad_a_mano_se_pinta_al_momento(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+    late = late_paints(table)
+    clock.script = [act(table, ANA, "raise", 77), act(table, LEO, "fold")]
     await table.play_hand()
-    # Turno de Ana y de Leo, cada uno con su adelantada, y el final: Leo no pasó, se retiró.
-    assert len(painted) == 5
+    assert len(late) == 2, "77 no tiene botón: solo esa se pinta tarde"
+
+
+async def test_la_proxima_mano_se_reparte_y_pinta_durante_la_espera(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+    late = late_paints(table)
+    table.next_hand_at = clock.now + cog_module.START_SECONDS
+    table.plan_deal()
+    assert table._dealing is not None
+    await table._dealing
+    planned = table.next_deal
+    assert planned is not None
+    await table.play_hand()
+    assert table.hand is planned and late == []
+
+
+async def test_si_cambia_lo_que_se_juega_se_reparte_de_nuevo(tmp_path: Path) -> None:
+    cog, table, clock = await make_table(tmp_path)
+    table.next_hand_at = clock.now + cog_module.START_SECONDS
+    table.plan_deal()
+    assert table._dealing is not None
+    await table._dealing
+    planned = table.next_deal
+    await cog.economy.place_bet(GUILD_ID, ANA, game="test", stake=STARTING_BALANCE - 500)
+    await table.play_hand()
+    assert table.hand is not planned and table.next_deal is None
