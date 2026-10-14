@@ -8,6 +8,11 @@ criterio.
 
 ## 6.x
 
+### 6.3.1 · 2026-10-14
+
+- Botones: se acabó «Esta interacción ha fallado» al pulsar rápido o en botones viejos, y contestan antes tras un rato sin uso
+- Pollo: dos clics seguidos en 🔁 Jugar ya no cobran dos partidas
+
 ### 6.3.0 · 2026-10-14
 
 - Backgammon: `backgammon`, contra Jovani o en duelo con cubo de doblar

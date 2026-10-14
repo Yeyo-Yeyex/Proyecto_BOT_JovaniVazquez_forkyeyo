@@ -912,6 +912,10 @@ class ChickenView(ui.View):
         # Cobrar la apuesta va a la base de datos: se acepta el clic antes.
         await ack(interaction)
         async with self._lock:
+            # Dos clics seguidos pasan los dos la comprobación de arriba: el segundo
+            # no puede cobrar otra partida encima de la que acaba de empezar.
+            if self.game is not None and self.game.playing:
+                return
             error = await self.start()
         if error is not None:
             await notify(interaction, error)

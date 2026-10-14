@@ -172,7 +172,9 @@ class SectionSelect(discord.ui.Select):
             )
             for key, emoji, label, text in SECTIONS
         ]
-        super().__init__(placeholder="Elige una sección", options=options, row=0)
+        super().__init__(
+            placeholder="Elige una sección", options=options, row=0, custom_id="perfil:seccion"
+        )
         self.perfil = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -212,16 +214,23 @@ class PerfilView(discord.ui.View):
         self.clear_items()
         self.add_item(SectionSelect(self))
         if self.key == "logros":
-            self._button("🏆 Ver por categorías y ranking", self._open_logros)
+            self._button("🏆 Ver por categorías y ranking", self._open_logros, "perfil:logros")
         elif self.key == "objetos":
             mine = self.target.id == self.owner.id
-            self._button("🎒 Abrir la mochila" + ("" if mine else " (solo mirar)"), self._backpack)
+            self._button(
+                "🎒 Abrir la mochila" + ("" if mine else " (solo mirar)"),
+                self._backpack,
+                "perfil:mochila",
+            )
 
     def _button(
-        self, label: str, callback: Callable[[discord.Interaction], Awaitable[None]]
+        self,
+        label: str,
+        callback: Callable[[discord.Interaction], Awaitable[None]],
+        custom_id: str,
     ) -> None:
         button: discord.ui.Button = discord.ui.Button(
-            label=label, style=discord.ButtonStyle.primary, row=1
+            label=label, style=discord.ButtonStyle.primary, row=1, custom_id=custom_id
         )
         button.callback = callback  # type: ignore[method-assign]
         self.add_item(button)

@@ -346,6 +346,7 @@ class BetPanel(discord.ui.View):
                 for kind in BetKind
             ],
             row=0,
+            custom_id="caballos:tipo",
         )
         kind_select.callback = self._on_kind  # type: ignore[method-assign]
         self.add_item(kind_select)
@@ -354,6 +355,7 @@ class BetPanel(discord.ui.View):
                 placeholder=f"{slot + 1}º" if self.kind.picks > 1 else "Caballo",
                 options=[self._horse_option(i, slot) for i in range(race.card.size)],
                 row=slot + 1,
+                custom_id=f"caballos:caballo:{slot}",
             )
             select.callback = self._slot_callback(slot)  # type: ignore[method-assign]
             self.add_item(select)
@@ -363,11 +365,16 @@ class BetPanel(discord.ui.View):
             style=discord.ButtonStyle.success,
             disabled=self.pick() is None,
             row=4,
+            custom_id="caballos:apostar",
         )
         confirm.callback = self._on_confirm  # type: ignore[method-assign]
         self.add_item(confirm)
         amount: discord.ui.Button = discord.ui.Button(
-            label="Cantidad", emoji="🪙", style=discord.ButtonStyle.secondary, row=4
+            label="Cantidad",
+            emoji="🪙",
+            style=discord.ButtonStyle.secondary,
+            row=4,
+            custom_id="caballos:cantidad",
         )
         amount.callback = self._on_amount  # type: ignore[method-assign]
         self.add_item(amount)

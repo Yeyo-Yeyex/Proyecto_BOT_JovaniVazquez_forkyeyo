@@ -140,7 +140,7 @@ from bot.services.work_catalog import (
 )
 from bot.services.work_games import GRACE_SECONDS
 from bot.services.work_tools import TOOL_KEYS
-from bot.utils.interactions import ack, edit, notify
+from bot.utils.interactions import ack, claim_custom_ids, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -818,10 +818,18 @@ class PalaPanel(ui.LayoutView):
         label: str,
         callback: Callable[[discord.Interaction], Awaitable[None]],
         *,
+        custom_id: str | None = None,
         style: discord.ButtonStyle = discord.ButtonStyle.secondary,
         disabled: bool = False,
     ) -> ui.Button:
-        button: ui.Button = ui.Button(label=label[:80], style=style, disabled=disabled)
+        # Sin `custom_id`, el nombre del método (`_clock_in` -> `pala-panel:clock-in`);
+        # los callbacks de cierre (`_choose`, `_dodge`...) lo pasan. No empieza por
+        # `pala:`, que es del minijuego.
+        if custom_id is None:
+            custom_id = f"pala-panel:{callback.__name__.strip('_').replace('_', '-')}"
+        button: ui.Button = ui.Button(
+            label=label[:80], style=style, disabled=disabled, custom_id=custom_id
+        )
         button.callback = callback  # type: ignore[method-assign]
         return button
 
@@ -901,6 +909,7 @@ class PalaPanel(ui.LayoutView):
         select: ui.Select = ui.Select(
             placeholder="💼 Cambiar de curro" if current else "💼 Elige tu curro",
             options=options,
+            custom_id="pala-panel:curro",
         )
 
         async def callback(interaction: discord.Interaction) -> None:
@@ -923,7 +932,9 @@ class PalaPanel(ui.LayoutView):
             for coffee in COFFEES
         ]
         select: ui.Select = ui.Select(
-            placeholder=f"☕ Máquina de café ({coffees_today}/{MAX_COFFEES} hoy)", options=options
+            placeholder=f"☕ Máquina de café ({coffees_today}/{MAX_COFFEES} hoy)",
+            options=options,
+            custom_id="pala-panel:cafe",
         )
 
         async def callback(interaction: discord.Interaction) -> None:
@@ -936,6 +947,7 @@ class PalaPanel(ui.LayoutView):
         select: ui.Select = ui.Select(
             placeholder="❤️ Familia: dar un regalo o pedir un favor",
             options=family_options(status.contract, self.gifts, status.now),
+            custom_id="pala-panel:familia",
         )
 
         async def callback(interaction: discord.Interaction) -> None:
@@ -1089,7 +1101,10 @@ class PalaPanel(ui.LayoutView):
             for index, (label, _outcome) in enumerate(event.options):
                 row.add_item(
                     self._button(
-                        label, self._choose(event.key, index), style=discord.ButtonStyle.primary
+                        label,
+                        self._choose(event.key, index),
+                        custom_id=f"pala-panel:elegir:{event.key}:{index}",
+                        style=discord.ButtonStyle.primary,
                     )
                 )
             if event.key in EVENT_KEYS:
@@ -1098,6 +1113,7 @@ class PalaPanel(ui.LayoutView):
                     self._button(
                         f"{excuse.emoji} Me llama mi madre (−{excuse.cost} ❤️)",
                         self._dodge(event.key),
+                        custom_id=f"pala-panel:excusa:{event.key}",
                     )
                 )
         else:
@@ -1411,6 +1427,7 @@ class PalaPanel(ui.LayoutView):
                     self._button(
                         f"{branch.emoji} {branch.name}",
                         self._accept_branch(branch.key),
+                        custom_id=f"pala-panel:rama:{branch.key}",
                         style=discord.ButtonStyle.success,
                     )
                 )
@@ -1848,6 +1865,7 @@ class Work(commands.Cog, name="Trabajo"):
         #: Temporizadores de turnos en marcha, para cancelarlos al descargar.
         self.timers: set[asyncio.Task[None]] = set()
         self._tokens = random.SystemRandom()
+        claim_custom_ids(GAME_ID_PREFIX)
 
     def new_token(self) -> int:
         """Número de panel para los `custom_id` del minijuego.

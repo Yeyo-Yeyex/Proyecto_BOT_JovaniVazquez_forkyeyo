@@ -8,9 +8,12 @@ entorno directamente: recibe una configuración ya validada
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
+import aiohttp
 import discord
 from discord.ext import commands
 
@@ -44,6 +47,13 @@ from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
 
 logger = logging.getLogger(__name__)
+
+#: Segundos que una conexión HTTP con Discord se queda abierta sin uso. aiohttp la
+#: cierra a los 15 s y el clic siguiente paga otra vez el saludo TCP y TLS (dos
+#: viajes más, ~240 ms desde el NAS). Discord la aguanta al menos 250 s parada.
+KEEPALIVE_SECONDS = 90
+#: Cada cuánto se toca la API para que la conexión no llegue nunca a cerrarse.
+KEEP_WARM_SECONDS = 60
 
 # Cogs que se cargan al arrancar. Añadir aquí el nuevo módulo cuando se
 # incorpore una funcionalidad nueva agrupada por dominio.
@@ -178,6 +188,7 @@ class BotClient(commands.Bot):
         # mensajes. Cuenta en memoria y la vuelca cada minuto el cog `Telemetry`.
         self.telemetry_repository = TelemetryRepository(database_path)
         self.telemetry = TelemetryService(self.telemetry_repository)
+        self._keep_warm_task: asyncio.Task[None] | None = None
         super().__init__(
             command_prefix=command_prefix,
             intents=build_intents(),
@@ -185,6 +196,19 @@ class BotClient(commands.Bot):
             # español ni pensado para slash commands; se desactiva.
             help_command=None,
         )
+
+    async def login(self, token: str) -> None:
+        """Inicia sesión con una conexión HTTP que no se cierra a los 15 s parada."""
+        self.http.connector = aiohttp.TCPConnector(limit=0, keepalive_timeout=KEEPALIVE_SECONDS)
+        await super().login(token)
+
+    async def _keep_warm(self) -> None:
+        """Toca la API cada minuto: el primer clic tras un rato sin uso no abre conexión."""
+        route = discord.http.Route("GET", "/gateway")
+        while True:
+            await asyncio.sleep(KEEP_WARM_SECONDS)
+            with contextlib.suppress(discord.HTTPException, OSError):
+                await self.http.request(route)
 
     async def setup_hook(self) -> None:
         """Carga las extensiones y sincroniza los comandos de aplicación.
@@ -226,9 +250,12 @@ class BotClient(commands.Bot):
 
         synced = await self.tree.sync()
         logger.info("Comandos de aplicación sincronizados: %d", len(synced))
+        self._keep_warm_task = asyncio.create_task(self._keep_warm(), name="http-caliente")
 
     async def close(self) -> None:
         """Cierra la conexión, descarga los cogs y luego los procesos de Node."""
+        if self._keep_warm_task is not None:
+            self._keep_warm_task.cancel()
         await super().close()
         await node_scene.shutdown()
 

@@ -243,6 +243,7 @@ class PriorityPicker(discord.ui.View):
             )
             return
         if self.done:
+            await ack(interaction)
             return
         self.done = True
         self.stop()
