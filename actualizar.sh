@@ -107,11 +107,11 @@ main() {
     # cron arranca con un PATH mínimo; los NAS suelen tener docker en /usr/local/bin.
     export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-    # El buzón lo monta el contenedor, cuyo usuario (uid 1000) tiene que poder
-    # escribir y borrar en él. Se crea antes de arrancar el bot: si lo crease
+    # El buzón y la carpeta de informes los monta el contenedor, cuyo usuario
+    # (uid 1000) tiene que poder escribir y borrar en ellos. Se crea antes de arrancar el bot: si lo crease
     # Docker, sería de root y el bot no podría dejar notas.
-    mkdir -p "$estado" "$BUZON"
-    chmod 777 "$BUZON" 2>/dev/null || true
+    mkdir -p "$estado" "$BUZON" "$dir/informes"
+    chmod 777 "$BUZON" "$dir/informes" 2>/dev/null || true
 
     # Modo cron de cada minuto: sin nota, nada que hacer (ni siquiera el log).
     if [[ "$MODO_SOLICITUD" == 1 && ! -f "$BUZON/solicitud.json" ]]; then

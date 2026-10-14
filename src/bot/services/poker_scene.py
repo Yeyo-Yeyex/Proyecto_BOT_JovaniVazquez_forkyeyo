@@ -104,14 +104,14 @@ class PokerScene:
         patches = await self._frames({**meta_state(), "skin": skin}, [state])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, pot)
-        return patch_png(patches[0])
+        return await asyncio.to_thread(patch_png, patches[0])
 
     async def timba(self, meta: dict[str, Any], state: dict[str, Any]) -> bytes:
         """PNG de la mesa de la timba (`poker_render.timba_meta` y `timba_state`)."""
         patches = await self._frames({**meta}, [state])
         if patches is None:
             return await asyncio.to_thread(self.fallback.timba, meta, state)
-        return patch_png(patches[0])
+        return await asyncio.to_thread(patch_png, patches[0])
 
     async def deal(
         self,

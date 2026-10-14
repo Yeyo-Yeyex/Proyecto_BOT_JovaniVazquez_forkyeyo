@@ -237,26 +237,41 @@ async def test_dos_escenas_comparten_proceso_sin_pisarse_las_globales() -> None:
 
 @needs_node
 @module_loop
-async def test_el_grupo_crece_con_uno_de_reserva_y_reparte_entre_dibujos() -> None:
+async def test_un_dibujo_abre_los_que_faltan_y_se_reparte_con_otro() -> None:
     node = own_node()
     await node_scene.warm(node)
     pool = node_scene._pool(node)
     try:
         assert len(pool.workers) == MIN_WORKERS
-        first = await pool.acquire(MAX_WORKERS)
-        assert len(first) == MIN_WORKERS
-        # Se ha quedado sin libres: se abre otro de reserva para el siguiente dibujo.
-        second = await pool.acquire(MAX_WORKERS)
-        assert len(second) == 1
-        # Con dos dibujos en marcha, el tercero se lleva la parte que le toca.
-        while len(pool.workers) + pool.starting < MAX_WORKERS:
-            await pool._spawn()
-        third = await pool.acquire(MAX_WORKERS)
-        assert len(third) == MAX_WORKERS // 3
-        for workers in (first, second, third):
-            await pool.release(workers)
-        assert pool.drawing == 0
-        assert len(pool.workers) <= MAX_WORKERS
+        first = node_scene._Draw(MAX_WORKERS, more=lambda: True)
+        assert len(await pool.start(first)) == MIN_WORKERS
+        # Al empezar se abren los que le faltan, que se le unen según arrancan.
+        assert len(pool.workers) + pool.starting == MAX_WORKERS
+        await asyncio.gather(*pool._background)
+        joined = [await pool.recruit(first) for _ in range(MAX_WORKERS - MIN_WORKERS)]
+        assert all(joined) and len(first.workers) == MAX_WORKERS
+        # Un segundo dibujo espera a uno libre y luego se reparten a medias.
+        second = node_scene._Draw(MAX_WORKERS, more=lambda: True)
+        starting = asyncio.create_task(pool.start(second))
+        await asyncio.sleep(0)
+        assert not starting.done()
+        await pool.give_back(first, joined[0])
+        assert len(await starting) == 1
+        await pool.give_back(first, joined[1])
+        assert await pool.recruit(second) is not None
+        assert len(second.workers) == MAX_WORKERS // 2
+        await pool.give_back(first, joined[2])
+        assert await pool.recruit(first) is not None
+        assert len(first.workers) == MAX_WORKERS // 2
+        # Con su mitad, no se lleva más aunque quede uno libre.
+        await pool.give_back(second, next(iter(second.workers)))
+        waiting = asyncio.create_task(pool.recruit(first))
+        await asyncio.sleep(0.05)
+        assert not waiting.done()
+        await pool.finish(first)
+        assert await waiting is None
+        await pool.finish(second)
+        assert pool.drawing == 0 and len(pool._idle()) == MAX_WORKERS
     finally:
         await node_scene.shutdown()
 
@@ -268,10 +283,10 @@ async def test_los_procesos_de_mas_se_cierran_y_queda_el_minimo() -> None:
     pool = node_scene._pool(node, idle_seconds=0.2)
     await pool.warm()
     try:
-        taken = await pool.acquire(MAX_WORKERS)
-        await pool._spawn()
+        draw = node_scene._Draw(MAX_WORKERS)
+        await pool.start(draw)
         await asyncio.gather(*pool._background)
-        await pool.release(taken)
+        await pool.finish(draw)
         assert len(pool.workers) > MIN_WORKERS
         # Con la máquina cargada el cierre puede tardar alguna vuelta más.
         for _ in range(50):
@@ -285,15 +300,63 @@ async def test_los_procesos_de_mas_se_cierran_y_queda_el_minimo() -> None:
 
 @needs_node
 @module_loop
-async def test_pedir_reservas_seguidas_no_pasa_del_tope_de_procesos() -> None:
-    """El hueco de una reserva cuenta desde que se pide, no desde que arranca."""
+async def test_abrir_procesos_seguidos_no_pasa_del_tope() -> None:
+    """El hueco de un proceso cuenta desde que se pide, no desde que arranca."""
     node = own_node()
     pool = node_scene._pool(node)
     try:
-        for _ in range(MAX_WORKERS + 2):
-            pool._ensure_spare()
+        pool.draws = [node_scene._Draw(MAX_WORKERS), node_scene._Draw(MAX_WORKERS)]
+        for _ in range(3):
+            pool._grow()
         await asyncio.gather(*pool._background)
         assert len(pool.workers) == MAX_WORKERS
         assert pool.starting == 0
+        pool.draws = []
     finally:
+        await node_scene.shutdown()
+
+
+def test_robar_se_lleva_la_mitad_final_del_tramo_con_mas_trabajo() -> None:
+    spans = [node_scene._Span(10, 12), node_scene._Span(20, 40)]
+    stolen = node_scene._steal(spans)
+    assert stolen is not None and (stolen.pos, stolen.end) == (30, 40)
+    assert (spans[1].pos, spans[1].end) == (20, 30) and spans[-1] is stolen
+    # Con menos de dos tandas mínimas pendientes no compensa otro `setup`.
+    assert node_scene._steal([node_scene._Span(0, 2 * node_scene.MIN_STEAL - 1)]) is None
+
+
+@needs_node
+@module_loop
+async def test_los_que_se_unen_a_mitad_pintan_lo_mismo_que_uno_solo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Con un solo proceso abierto, los que arrancan durante el dibujo se llevan parte.
+
+    El resultado es el mismo, píxel a píxel, que pintarlo todo con un proceso.
+    """
+    node = own_node()
+    await node_scene.warm(node)
+    scene = NodeScene(SCENE, name="prueba", node=node)
+    steals: list[int] = []
+    steal = node_scene._steal
+
+    def counted(spans: list[node_scene._Span]) -> node_scene._Span | None:
+        stolen = steal(spans)
+        if stolen is not None:
+            steals.append(stolen.pos)
+        return stolen
+
+    monkeypatch.setattr(node_scene, "_steal", counted)
+    try:
+        game = lost_game()
+        meta = meta_state(game.stake)
+        states = toss_states(game, start=Side.CARA, seed=5) * 3
+        shared = await scene.render(meta, states)
+        assert shared is not None and steals, "Nadie se ha unido al dibujo"
+        alone = await scene.render(meta, states, procs=1)
+        assert alone is not None
+        for a, b in zip(shared, alone, strict=True):
+            assert a["image"].tobytes() == b["image"].tobytes()
+    finally:
+        await scene.close()
         await node_scene.shutdown()

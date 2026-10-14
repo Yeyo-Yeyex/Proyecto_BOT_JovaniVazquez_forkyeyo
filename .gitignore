@@ -29,6 +29,9 @@ dist/
 # Estado y log de actualizar.sh en el NAS
 .despliegue/
 
+# Informes de uso diarios que deja el bot (docker-compose.yml)
+informes/
+
 # Dependencias de Node de las escenas (package.json)
 node_modules/
 

@@ -951,8 +951,10 @@ La cola de música está en memoria y se pierde al reiniciar el contenedor.
 El bot cuenta cuánto se usa cada cosa para poder decidir mejoras con datos: comandos
 y botones (con lo que tardan en contestar y si se quedaron sin respuesta), mensajes
 por canal, reacciones, minutos de voz, altas y bajas, avisos del log, lo que tarda
-cada dibujo y, cada minuto, la memoria del contenedor, el retraso del bucle de
-eventos y los procesos de Chromium y Node. Nunca guarda el texto de un mensaje.
+cada dibujo y cada subida de archivos a Discord, dónde se para el bucle de eventos
+cuando se queda bloqueado más de 250 ms y, cada minuto, la memoria del contenedor,
+el retraso del bucle y los procesos de Chromium y Node. Nunca guarda el texto de un
+mensaje.
 
 Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
 `telemetry_*` del mismo archivo). Las horas sueltas se pliegan en días a los 90 días
@@ -967,7 +969,11 @@ guarda en `docs/metricas/` del fork y se resume con:
 python docs/analisis_metricas.py docs/metricas/informe-AAAA-MM-DD.json
 ```
 
-No hay nada que configurar ni pasos a mano en el NAS.
+Además, al arrancar y una vez al día el bot deja ese mismo informe (30 días) en la
+carpeta `informes/`, junto a `docker-compose.yml`, y guarda los 14 últimos. La crea
+`actualizar.sh` con permisos para el contenedor. Para que un agente lo lea sin
+pedirlo, comparte esa carpeta por SMB desde el panel del NAS (solo lectura basta).
+Sin la carpeta montada, el bot no guarda nada.
 
 ## Pruebas y calidad
 

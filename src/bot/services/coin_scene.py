@@ -108,7 +108,7 @@ class CoinScene:
         patches = await self._frames(meta, [board_state(game, face=face)])
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, game, stake=stake, face=face)
-        return patch_png(patches[0])
+        return await asyncio.to_thread(patch_png, patches[0])
 
     async def toss(
         self, game: CoinGame, *, start: Side, seed: int, skin: dict[str, object] | None = None

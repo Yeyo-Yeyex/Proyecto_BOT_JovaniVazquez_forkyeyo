@@ -12,18 +12,23 @@ puede pintar cualquier escena, que carga la primera vez que se la piden.
 
 - Siempre hay `MIN_WORKERS` abierto (desde que arranca el bot, `warm`): ningún
   dibujo empieza en frío.
-- Si un dibujo se queda con todos los libres, se abre otro de reserva para el
-  siguiente, hasta `MAX_WORKERS` (los hilos del NAS). Los de más se cierran
-  tras `IDLE_SECONDS` sin usarse.
-- Cada dibujo se reparte entre los procesos libres, a partes iguales con los
-  dibujos que ya están en marcha: quien juega solo pinta con 4 y, con tres
-  jugando a la vez, cada uno tiene el suyo. Cada proceso pinta un tramo
-  seguido de estados tras su propio `setup(meta)` y su primer fotograma sale
-  entero, el mismo contrato que `BrowserScene.render`.
+- En cuanto un dibujo empieza, se abren los que le faltan hasta `MAX_WORKERS`
+  (los hilos del NAS). Los de más se cierran tras `IDLE_SECONDS` sin usarse.
+- Todos colaboran en cada dibujo (`NodeScene.render`): empieza con los libres,
+  a partes iguales con los dibujos que ya están en marcha, y cada proceso que
+  se abre o se queda libre a mitad se une y se lleva la mitad de lo que le
+  queda al que más trabajo tiene pendiente. Cada tramo empieza con su propio
+  `setup(meta)` y su primer fotograma sale entero, el mismo contrato que
+  `BrowserScene.render`. Una escena que arrastra estado de un fotograma al
+  siguiente (el polvo de los caballos) lo recrea con los fotogramas de antes
+  (`warmup`).
+- Los fotogramas se montan en un hilo según llegan y cada uno empieza a
+  codificarse para el GIF (`bot.utils.gif.precode`) mientras Node pinta los
+  siguientes. El bucle de eventos solo lee las tuberías.
 
 `NodeScene.render` devuelve `None` si no hay Node, para que quien dibuja pase a
-su plan B. Los recuadros que devuelve llevan la imagen ya abierta (`image`) en
-vez del PNG (`u`); `assemble` los monta igual.
+su plan B. Devuelve cada fotograma entero, ya abierto (`image`) en vez del PNG
+(`u`); `assemble` los monta igual.
 
 Hace falta `node` en el PATH y el paquete `@napi-rs/canvas` (`package.json` de
 la raíz; en Docker, en `NODE_PATH`).
@@ -35,17 +40,21 @@ import asyncio
 import io
 import json
 import logging
+import queue
 import shutil
 import time
 import weakref
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
 from PIL import Image
 
-from bot.services.browser_scene import BATCH, IDLE_SECONDS, Patch, png_bytes
+from bot.services.browser_scene import IDLE_SECONDS, Patch, png_bytes
 from bot.services.telemetry import report_render
+from bot.utils.gif import QUANTIZE_THREADS, precode
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +67,11 @@ MAX_WORKERS = 4
 MIN_WORKERS = 1
 #: Lo que puede tardar Node en arrancar.
 START_TIMEOUT = 15.0
+#: Fotogramas por petición: cuanto menos, antes puede otro proceso llevarse el resto.
+BATCH = 6
+#: Fotogramas que se lleva como poco quien se une a un dibujo: cada tramo nuevo
+#: cuesta un `setup` y un fotograma entero.
+MIN_STEAL = 4
 
 
 def patch_png(patch: Patch) -> bytes:
@@ -67,6 +81,13 @@ def patch_png(patch: Patch) -> bytes:
     buffer = io.BytesIO()
     patch["image"].save(buffer, format="PNG", compress_level=6)
     return buffer.getvalue()
+
+
+def _open(patch: Patch) -> Image.Image:
+    """La imagen de un recuadro de Node en RGBA crudo (`raw`)."""
+    w, h = patch["size"]
+    # El fondo de las escenas es opaco: el alfa sobra.
+    return Image.frombuffer("RGBA", (w, h), patch["raw"], "raw", "RGBA", 0, 1).convert("RGB")
 
 
 class NodeSceneError(RuntimeError):
@@ -114,8 +135,14 @@ class _Process:
             raise NodeSceneError(f"Node se ha cerrado: {error or 'sin mensaje'}")
         return json.loads(line)
 
-    async def call(self, request: dict[str, Any]) -> tuple[dict[str, Any], list[Patch]]:
-        """Manda una petición y lee su respuesta (y los píxeles, si los hay)."""
+    async def call(
+        self, request: dict[str, Any], *, decode: bool = True
+    ) -> tuple[dict[str, Any], list[Patch]]:
+        """Manda una petición y lee su respuesta (y los píxeles, si los hay).
+
+        Con `decode=False` los recuadros llevan los píxeles crudos (`raw` y
+        `size`) para abrirlos fuera del bucle de eventos (`_open`).
+        """
         assert self.proc.stdin is not None and self.proc.stdout is not None
         self.proc.stdin.write(json.dumps(request).encode() + b"\n")
         await self.proc.stdin.drain()
@@ -125,9 +152,8 @@ class _Process:
         patches: list[Patch] = []
         for x, y, w, h in header.get("frames", []):
             raw = await self.proc.stdout.readexactly(w * h * 4)
-            # El fondo de las escenas es opaco: el alfa sobra.
-            image = Image.frombuffer("RGBA", (w, h), raw, "raw", "RGBA", 0, 1).convert("RGB")
-            patches.append({"x": x, "y": y, "image": image})
+            patch: Patch = {"x": x, "y": y, "size": (w, h), "raw": raw}
+            patches.append({"x": x, "y": y, "image": _open(patch)} if decode else patch)
         return header, patches
 
     def kill(self) -> None:
@@ -138,6 +164,19 @@ class _Process:
     async def close(self) -> None:
         self.kill()
         await self.proc.wait()
+
+
+@dataclass(eq=False)
+class _Draw:
+    """Un dibujo en marcha: cuántos procesos le sirven y cuáles tiene.
+
+    `more` dice si aún le queda trabajo que repartir con otro proceso.
+    """
+
+    want: int
+    more: Callable[[], bool] = lambda: False
+    workers: set[_Process] = field(default_factory=set)
+    done: bool = False
 
 
 class _Pool:
@@ -154,7 +193,7 @@ class _Pool:
         self.workers: list[_Process] = []
         self.starting = 0
         #: Dibujos en marcha, para repartir los procesos libres a partes iguales.
-        self.drawing = 0
+        self.draws: list[_Draw] = []
         #: Escenas que lo usan; sin ninguna (y sin `warm`) se cierra.
         self.users: set[int] = set()
         self.kept = False
@@ -162,8 +201,17 @@ class _Pool:
         self._reaper: asyncio.TimerHandle | None = None
         self._background: set[asyncio.Task[None]] = set()
 
+    @property
+    def drawing(self) -> int:
+        """Dibujos en marcha."""
+        return len(self.draws)
+
     def _idle(self) -> list[_Process]:
         return [worker for worker in self.workers if worker.alive and not worker.busy]
+
+    def _share(self, draw: _Draw) -> int:
+        """Los procesos que le tocan a `draw`: a partes iguales con los demás dibujos."""
+        return max(1, min(draw.want, MAX_WORKERS // max(1, len(self.draws))))
 
     async def _spawn(self) -> _Process:
         self.starting += 1
@@ -191,14 +239,16 @@ class _Pool:
         async with self._changed:
             self._changed.notify_all()
 
-    def _ensure_spare(self) -> None:
-        """Abre otro proceso si no queda ninguno libre (hasta `MAX_WORKERS`)."""
-        if self._idle() or len(self.workers) + self.starting >= MAX_WORKERS:
-            return
-        # El hueco se apunta ya y no al arrancar la tarea: si no, otro dibujo
-        # podría abrir uno más entretanto y pasar de `MAX_WORKERS`.
-        self.starting += 1
-        self._in_background(self._spare())
+    def _grow(self) -> None:
+        """Abre los procesos que piden los dibujos en marcha (hasta `MAX_WORKERS`).
+
+        El hueco se apunta ya y no al arrancar la tarea: si no, otro dibujo
+        podría abrir uno más entretanto y pasar de `MAX_WORKERS`.
+        """
+        wanted = min(MAX_WORKERS, sum(draw.want for draw in self.draws))
+        while len(self.workers) + self.starting < wanted:
+            self.starting += 1
+            self._in_background(self._spare())
 
     def _in_background(self, coroutine: Awaitable[None]) -> None:
         task = asyncio.ensure_future(coroutine)
@@ -212,36 +262,78 @@ class _Pool:
         while len(self.workers) < MIN_WORKERS:
             await self._spawn()
 
-    async def acquire(self, wanted: int) -> list[_Process]:
-        """Hasta `wanted` procesos libres (al menos uno), esperando si no queda ninguno."""
+    async def start(self, draw: _Draw) -> list[_Process]:
+        """Apunta `draw` y le da los libres que le tocan (al menos uno, esperando si hace falta).
+
+        Abre en segundo plano los que faltan para que se le unan a mitad (`recruit`).
+        """
         async with self._changed:
-            while True:
-                self.workers = [worker for worker in self.workers if worker.alive]
-                idle = self._idle()
-                if idle:
-                    break
-                if len(self.workers) + self.starting < MAX_WORKERS:
-                    idle = [await self._spawn()]
-                    break
-                await self._changed.wait()
-            share = max(1, MAX_WORKERS // (self.drawing + 1))
-            taken = idle[: max(1, min(wanted, share))]
+            self.draws.append(draw)
+            try:
+                while True:
+                    self.workers = [worker for worker in self.workers if worker.alive]
+                    idle = self._idle()
+                    if idle:
+                        break
+                    if len(self.workers) + self.starting < MAX_WORKERS:
+                        idle = [await self._spawn()]
+                        break
+                    await self._changed.wait()
+            except BaseException:
+                self.draws.remove(draw)
+                self._changed.notify_all()
+                raise
+            taken = idle[: self._share(draw)]
             for worker in taken:
                 worker.busy = True
-            self.drawing += 1
-            self._ensure_spare()
+            draw.workers.update(taken)
+            self._grow()
             return taken
 
-    async def release(self, workers: list[_Process]) -> None:
-        """Devuelve los procesos de un dibujo terminado (los que sigan vivos) al grupo."""
+    async def recruit(self, draw: _Draw) -> _Process | None:
+        """Otro proceso para `draw` en cuanto quede uno libre; `None` cuando `draw` acaba."""
         async with self._changed:
-            now = time.monotonic()
-            for worker in workers:
-                worker.busy = False
-                worker.last_used = now
-            self.drawing -= 1
+            while not draw.done:
+                idle = self._idle()
+                if idle and len(draw.workers) < self._share(draw) and draw.more():
+                    worker = idle[0]
+                    worker.busy = True
+                    draw.workers.add(worker)
+                    return worker
+                await self._changed.wait()
+            return None
+
+    async def give_back(self, draw: _Draw, worker: _Process) -> None:
+        """Devuelve al grupo un proceso que ya no tiene nada que pintar en `draw`."""
+        async with self._changed:
+            draw.workers.discard(worker)
+            worker.busy = False
+            worker.last_used = time.monotonic()
             self._changed.notify_all()
         self._schedule_reap()
+
+    async def finish(self, draw: _Draw) -> None:
+        """Da `draw` por terminado y devuelve los procesos que le queden."""
+        async with self._changed:
+            draw.done = True
+            if draw in self.draws:
+                self.draws.remove(draw)
+            now = time.monotonic()
+            for worker in draw.workers:
+                worker.busy = False
+                worker.last_used = now
+            draw.workers.clear()
+            self._changed.notify_all()
+        self._schedule_reap()
+
+    def drop(self, draw: _Draw) -> None:
+        """Mata los procesos de `draw`, que pueden haber quedado con píxeles sin leer."""
+        for worker in draw.workers:
+            worker.kill()
+            if worker in self.workers:
+                self.workers.remove(worker)
+            self._in_background(worker.close())
+        draw.workers.clear()
 
     def _schedule_reap(self) -> None:
         if self._reaper is not None:
@@ -261,14 +353,6 @@ class _Pool:
                 self._in_background(worker.close())
         if len(self.workers) > MIN_WORKERS:
             self._schedule_reap()
-
-    def discard(self, workers: list[_Process]) -> None:
-        """Mata procesos que pueden haber quedado con píxeles sin leer en la tubería."""
-        for worker in workers:
-            worker.kill()
-            if worker in self.workers:
-                self.workers.remove(worker)
-            self._in_background(worker.close())
 
     async def close(self) -> None:
         if self._reaper is not None:
@@ -311,6 +395,73 @@ async def shutdown() -> None:
         await pool.close()
 
 
+@dataclass(eq=False)
+class _Span:
+    """Un tramo seguido de fotogramas: `pos` es el primero aún sin pedir a Node."""
+
+    pos: int
+    end: int
+
+
+def _steal(spans: list[_Span]) -> _Span | None:
+    """La mitad final del tramo con más trabajo pendiente, si merece un proceso más."""
+    if not spans:
+        return None
+    victim = max(spans, key=lambda span: span.end - span.pos)
+    left = victim.end - victim.pos
+    if left < 2 * MIN_STEAL:
+        return None
+    stolen = _Span(victim.pos + left // 2, victim.end)
+    victim.end = stolen.pos
+    spans.append(stolen)
+    return stolen
+
+
+class _Assembler:
+    """Monta en un hilo los fotogramas enteros según llegan de los procesos, en orden.
+
+    Cada fotograma empieza a codificarse para el GIF en cuanto se monta
+    (`precode`), si `gif` lo pide: un dibujo de un solo fotograma es una imagen
+    quieta y no lo necesita.
+    """
+
+    def __init__(self, count: int, *, gif: bool) -> None:
+        self.count = count
+        self.gif = gif
+        self._queue: queue.SimpleQueue[tuple[int, Patch] | None] = queue.SimpleQueue()
+
+    def add(self, index: int, patch: Patch) -> None:
+        self._queue.put((index, patch))
+
+    def close(self) -> None:
+        self._queue.put(None)
+
+    def run(self) -> list[Image.Image]:
+        pool = ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) if self.gif else None
+        try:
+            frames: list[Image.Image] = []
+            waiting: dict[int, Patch] = {}
+            while (item := self._queue.get()) is not None:
+                waiting[item[0]] = item[1]
+                while len(frames) in waiting:
+                    patch = waiting.pop(len(frames))
+                    image = _open(patch)
+                    before = frames[-1] if frames else None
+                    # Un recuadro que no es entero va encima del fotograma anterior.
+                    if before is not None and image.size != before.size:
+                        frame = before.copy()
+                        frame.paste(image, (patch["x"], patch["y"]))
+                        image = frame
+                    if pool is not None:
+                        precode(before, image, pool)
+                    frames.append(image)
+            return frames
+        finally:
+            # Lo que queda por codificar sigue en sus hilos; el GIF lo espera.
+            if pool is not None:
+                pool.shutdown(wait=False)
+
+
 class NodeScene:
     """Una escena pintada por los procesos de Node compartidos; `None` en `render` si no hay Node.
 
@@ -340,6 +491,12 @@ class NodeScene:
     def _request(self, call: str, args: list[Any] | None = None, **extra: Any) -> dict[str, Any]:
         return {"scene": str(self.scene), "call": call, "args": args or [], **extra}
 
+    def _use_pool(self) -> _Pool:
+        if self._pool is None:
+            self._pool = _pool(self.node, self.idle_seconds)
+            self._pool.users.add(id(self))
+        return self._pool
+
     async def close(self) -> None:
         """Deja de usar los procesos; si nadie más los usa (ni `warm`), se cierran."""
         pool, self._pool = self._pool, None
@@ -355,93 +512,159 @@ class NodeScene:
     async def evaluate(self, expression: str) -> Any:
         """Evalúa `expression` en la escena (para las pruebas); `None` si no hay Node."""
 
-        async def work(workers: list[_Process]) -> Any:
-            header, _ = await workers[0].call(self._request(expression, eval=True))
+        async def work(worker: _Process) -> Any:
+            header, _ = await worker.call(self._request(expression, eval=True))
             return header.get("value")
 
-        return await self._run(1, work)
+        return await self._run(work)
 
     async def render(
-        self, meta: dict[str, Any], states: list[dict[str, Any]], *, procs: int = MAX_WORKERS
+        self,
+        meta: dict[str, Any],
+        states: list[dict[str, Any]],
+        *,
+        procs: int = MAX_WORKERS,
+        warmup: int = 0,
     ) -> list[Patch] | None:
-        """Recuadros de cada fotograma (ver `browser_scene.assemble`); `None` si no hay Node.
+        """Cada fotograma entero (`image`, ver `browser_scene.assemble`); `None` si no hay Node.
 
-        Cada proceso que toca pinta un tramo seguido de estados tras su propio
-        `setup(meta)`, y su primer fotograma sale entero. `procs` limita cuántos
-        procesos usa como mucho.
+        El dibujo se reparte entre los procesos (`procs` como mucho), que se
+        unen según quedan libres (ver el módulo). Cada tramo empieza con
+        `setup(meta)` y `renderFrames(estados, primero)`; con `warmup`, esa
+        primera llamada recibe además los `warmup` estados de antes del tramo,
+        para que la escena recree lo que arrastra de un fotograma a otro.
         """
+        if self.disabled:
+            return None
+        if not states:
+            return []
+        pool = self._use_pool()
+        spans: list[_Span] = []
+        draw = _Draw(
+            max(1, min(procs, len(states))),
+            more=lambda: any(span.end - span.pos >= 2 * MIN_STEAL for span in spans),
+        )
+        try:
+            first = await pool.start(draw)
+        except Exception:
+            logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            self.disabled = True
+            return None
+        start = time.perf_counter()
+        assembler = _Assembler(len(states), gif=len(states) > 1)
+        assembling = asyncio.ensure_future(asyncio.to_thread(assembler.run))
+        tasks: list[asyncio.Task[None]] = []
 
-        async def one(worker: _Process, offset: int, chunk: list[dict[str, Any]]) -> list[Patch]:
-            await worker.call(self._request("setup", [meta]))
-            patches: list[Patch] = []
-            for start in range(0, len(chunk), BATCH):
-                _, part = await worker.call(
-                    self._request("renderFrames", [chunk[start : start + BATCH], offset + start])
-                )
-                patches += part
-            return patches
+        async def paint(worker: _Process, span: _Span | None) -> None:
+            fresh = False
+            if span is None:
+                # Quien se une a mitad carga la escena antes de llevarse trabajo: si
+                # no, lo que se lleva esperaría a que la cargue en vez de pintarse ya.
+                await worker.call(self._request("setup", [meta]))
+                fresh = True
+                span = _steal(spans)
+            while span is not None:
+                if not fresh:
+                    await worker.call(self._request("setup", [meta]))
+                fresh = False
+                prior = states[max(0, span.pos - warmup) : span.pos]
+                while span.pos < span.end:
+                    begin = span.pos
+                    # Se apunta antes de pedirlo: lo que queda es lo que se puede llevar otro.
+                    span.pos = min(begin + BATCH, span.end)
+                    args: list[Any] = [states[begin : span.pos], begin]
+                    if prior:
+                        args.append(prior)
+                        prior = []
+                    request = self._request("renderFrames", args)
+                    _, patches = await worker.call(request, decode=False)
+                    for offset, patch in enumerate(patches):
+                        assembler.add(begin + offset, patch)
+                span = _steal(spans)
+            await pool.give_back(draw, worker)
 
-        async def work(workers: list[_Process]) -> list[Patch]:
-            size = -(-len(states) // len(workers))
-            chunks = [(i, states[i : i + size]) for i in range(0, len(states), size)]
-            parts = await asyncio.gather(
-                *(
-                    one(worker, offset, chunk)
-                    for worker, (offset, chunk) in zip(workers, chunks, strict=False)
-                )
-            )
-            return [patch for part in parts for patch in part]
+        async def recruit() -> None:
+            while (worker := await pool.recruit(draw)) is not None:
+                tasks.append(asyncio.create_task(paint(worker, None)))
 
-        return await self._run(max(1, min(procs, len(states))), work)
+        size = -(-len(states) // len(first))
+        for worker, begin in zip(first, range(0, len(states), size), strict=False):
+            spans.append(_Span(begin, min(begin + size, len(states))))
+            tasks.append(asyncio.create_task(paint(worker, spans[-1])))
+        recruiter = asyncio.create_task(recruit())
+        try:
+            while running := [task for task in tasks if not task.done()]:
+                await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+                for task in tasks:
+                    if task.done():
+                        task.result()
+            recruiter.cancel()
+            await pool.finish(draw)
+            assembler.close()
+            frames = await assembling
+            if len(frames) != len(states):
+                raise NodeSceneError(f"Faltan fotogramas: {len(frames)} de {len(states)}")
+        except BaseException as error:
+            # Cortado o fallido a mitad de una petición, un proceso puede tener
+            # píxeles sin leer en la tubería y la siguiente leería basura. Se
+            # matan (el grupo abre otros, ~0,2 s); si solo se ha cortado, la
+            # escena no se apaga.
+            recruiter.cancel()
+            for task in tasks:
+                task.cancel()
+            assembler.close()
+            pool.drop(draw)
+            await asyncio.shield(pool.finish(draw))
+            if not isinstance(error, Exception):
+                raise
+            logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            self.disabled = True
+            return None
+        report_render(self.name, (time.perf_counter() - start) * 1000)
+        return [{"x": 0, "y": 0, "image": frame} for frame in frames]
 
     async def sequence(self, calls: list[tuple[str, list[Any]]]) -> list[list[Patch]] | None:
         """Hace `calls` (función de la escena y argumentos) en orden en un solo proceso.
 
-        Para las escenas que no siguen `setup`/`renderFrames` o que guardan estado
-        de un fotograma al siguiente (el polvo de los caballos), y no se pueden
-        repartir entre procesos. Devuelve, por llamada, las imágenes que devolvió
-        (vacío si no devolvió ninguna); `None` si no hay Node.
+        Para las escenas que no siguen `setup`/`renderFrames`. Devuelve, por
+        llamada, las imágenes que devolvió (vacío si no devolvió ninguna);
+        `None` si no hay Node.
         """
 
-        async def work(workers: list[_Process]) -> list[list[Patch]]:
+        async def work(worker: _Process) -> list[list[Patch]]:
             results = []
             for function, args in calls:
-                _, patches = await workers[0].call(self._request(function, args))
+                _, patches = await worker.call(self._request(function, args))
                 results.append(patches)
             return results
 
-        return await self._run(1, work)
+        return await self._run(work)
 
-    async def _run(self, wanted: int, work: Callable[[list[_Process]], Awaitable[T]]) -> T | None:
+    async def _run(self, work: Callable[[_Process], Awaitable[T]]) -> T | None:
+        """Hace `work` con un proceso del grupo; `None` (y plan B) si Node falla."""
         if self.disabled:
             return None
-        if self._pool is None:
-            self._pool = _pool(self.node, self.idle_seconds)
-            self._pool.users.add(id(self))
-        pool = self._pool
+        pool = self._use_pool()
+        draw = _Draw(1)
         try:
-            workers = await pool.acquire(wanted)
+            workers = await pool.start(draw)
         except Exception:
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
             self.disabled = True
             return None
-        # Se mide con los procesos ya en la mano: lo que tarda pintar, no la cola.
+        # Se mide con el proceso ya en la mano: lo que tarda pintar, no la cola.
         start = time.perf_counter()
         try:
-            result = await work(workers)
-        except asyncio.CancelledError:
-            # Cortado a mitad de una petición, el proceso puede tener píxeles sin
-            # leer en la tubería y la siguiente leería basura. Se matan (el
-            # grupo abre otros, ~0,2 s) y la escena no se apaga.
-            pool.discard(workers)
-            await asyncio.shield(pool.release([]))
-            raise
-        except Exception:
+            result = await work(workers[0])
+        except BaseException as error:
+            # Igual que en `render`: un proceso cortado a medias no se reutiliza.
+            pool.drop(draw)
+            await asyncio.shield(pool.finish(draw))
+            if not isinstance(error, Exception):
+                raise
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
             self.disabled = True
-            pool.discard(workers)
-            await pool.release([])
             return None
-        await pool.release(workers)
+        await pool.finish(draw)
         report_render(self.name, (time.perf_counter() - start) * 1000)
         return result

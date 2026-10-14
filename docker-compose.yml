@@ -19,6 +19,10 @@ services:
       # Buzón con actualizar.sh para el comando `reinicio` (ver
       # src/bot/services/deploy.py). Lo crea el script con permisos de escritura.
       - ./.despliegue/buzon:/app/.despliegue/buzon
+      # Informe de uso diario (bot/cogs/telemetry.py, `export_loop`). Se puede
+      # compartir por SMB para que un agente lo lea sin pedirlo. Lo crea
+      # actualizar.sh con permisos de escritura.
+      - ./informes:/app/informes
     # Los límites evitan que un fallo acapare el NAS. La memoria se la llevan el
     # Chromium de la parrilla y el boleto de los caballos (ver
     # bot/services/horses_scene.py): unos 170 MB, que se cierra tras 10 min sin
