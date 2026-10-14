@@ -513,6 +513,29 @@ def section_upload(report: Report, top: int) -> list[str]:
     return _section("Subidas a Discord", body)
 
 
+def section_lag(report: Report, top: int) -> list[str]:
+    """Dónde se para el bucle de eventos más de 250 ms: lo que retrasa todos los botones."""
+    rows = sorted(
+        _entries(report, "lag"),
+        key=lambda e: (-_num(e.get("eventos")) * _num(e.get("ms_medio")), str(e.get("nombre"))),
+    )
+    body: list[str] = []
+    if rows:
+        body = _table(
+            ["Dónde", "Veces", "ms medio", "ms máx"],
+            [
+                (
+                    e.get("nombre"),
+                    int(_num(e.get("eventos"))),
+                    "-" if e.get("ms_medio") is None else f"{e['ms_medio']:.0f}",
+                    f"{_num(e.get('ms_max')):.0f}",
+                )
+                for e in rows[:top]
+            ],
+        )
+    return _section("Bloqueos del bucle", body)
+
+
 def section_log(report: Report, top: int) -> list[str]:
     """Avisos y errores registrados por el bot, de más a menos frecuentes."""
     rows = sorted(
@@ -614,6 +637,7 @@ def build_text(
     for section in (
         section_render,
         section_upload,
+        section_lag,
         section_log,
         section_casino,
         section_economy,

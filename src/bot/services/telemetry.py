@@ -25,6 +25,9 @@ son los acordados:
 - `render`: dibujos de imágenes o GIF (con su duración en `ms`).
 - `upload`: mensajes con archivos subidos a Discord (lo que tarda la subida, en
   `ms`), por nombre del primer archivo y tamaño (`moneda.gif · 250 KB-1 MB`).
+- `lag`: bloqueos del bucle de eventos de más de 250 ms (con su duración en
+  `ms`), por la función del bot que lo tenía parado
+  (`bot/services/coin_scene.py:board`).
 
 Privacidad: el único dato por persona es el `user_id` en `UserKey`, que se
 borra a los 90 días y nunca sale en el informe (se seudonimiza como u1, u2...).

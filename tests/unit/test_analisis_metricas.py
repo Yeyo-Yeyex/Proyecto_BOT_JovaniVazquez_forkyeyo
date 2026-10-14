@@ -75,6 +75,7 @@ def _report() -> dict:
             _entry("voice", "#sala", 90, users=2),
             _entry("render", "coin", 12, ms=1200.0, ms_max=2500),
             _entry("upload", "moneda.gif · 250 KB-1 MB", 9, ms=800.0, ms_max=2100),
+            _entry("lag", "bot/services/coin_scene.py:board", 2, ms=400.0, ms_max=600),
             _entry("log", "WARNING:bot.cogs.x", 7),
         ],
         "por_dia": per_day,
@@ -186,6 +187,7 @@ def test_secciones_salen_en_el_orden_pedido():
         "## Sistema",
         "## Dibujos",
         "## Subidas a Discord",
+        "## Bloqueos del bucle",
         "## Log",
         "## Casino",
         "## Economía",
@@ -309,6 +311,9 @@ def test_dibujos_y_log_salen_ordenados():
     assert "WARNING:bot.cogs.x | 7" in _text(am.section_log(_report(), 10))
     assert "| moneda.gif · 250 KB-1 MB | 9 | 0 | 800 | 2100 |" in _text(
         am.section_upload(_report(), 10)
+    )
+    assert "| bot/services/coin_scene.py:board | 2 | 400 | 600 |" in _text(
+        am.section_lag(_report(), 10)
     )
 
 

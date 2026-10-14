@@ -109,7 +109,7 @@ class CrapsScene:
         patches = await self._frames([board_state(table, rest)], skin)
         if patches is None:
             return await asyncio.to_thread(self.fallback.board, table, rest)
-        return patch_png(patches[0])
+        return await asyncio.to_thread(patch_png, patches[0])
 
     async def throw(
         self, table: Table, *, seed: int, skin: dict[str, object] | None = None

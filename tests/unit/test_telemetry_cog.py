@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import sys
+import threading
+import time
 from unittest.mock import MagicMock
 
 import discord
@@ -12,7 +15,9 @@ import pytest
 from bot.cogs.telemetry import (
     LONG_MESSAGE,
     SHORT_MESSAGE,
+    LoopWatchdog,
     _timed_upload,
+    blocking_site,
     item_name,
     message_types,
     read_system_usage,
@@ -125,3 +130,29 @@ def test_las_subidas_con_archivos_se_miden_y_las_demas_no() -> None:
         ("moneda.gif · 250 KB-1 MB", True),
     ]
     assert all(ms >= 0 for _, ms, _ in seen)
+
+
+def _parado(segundos: float) -> None:
+    time.sleep(segundos)
+
+
+def test_el_vigia_apunta_donde_estaba_parado_el_bucle() -> None:
+    watchdog = LoopWatchdog(threading.get_ident())
+    watchdog.start()
+    try:
+        watchdog.arm(time.perf_counter())
+        _parado(0.5)
+        assert watchdog.disarm() == "test_telemetry_cog.py:_parado"
+        # Sin pasar de LAG_CULPRIT_MS no apunta nada.
+        watchdog.arm(time.perf_counter())
+        assert watchdog.disarm() is None
+    finally:
+        watchdog.stop()
+
+
+def test_el_sitio_del_bloqueo_es_la_funcion_del_bot_mas_interna() -> None:
+    space: dict = {}
+    code = "import sys\ndef board():\n    return sys._getframe()\n"
+    exec(compile(code, "/app/bot/services/coin_scene.py", "exec"), space)  # noqa: S102
+    assert blocking_site(space["board"]()) == "bot/services/coin_scene.py:board"
+    assert blocking_site(sys._getframe()).startswith("test_telemetry_cog.py:")

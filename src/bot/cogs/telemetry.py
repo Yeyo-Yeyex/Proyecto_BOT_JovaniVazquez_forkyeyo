@@ -27,6 +27,8 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   del archivo y tamaño. Se envuelve donde discord.py hace las peticiones con
   archivos (`HTTPClient.request` y, para las interacciones, el adaptador de
   webhooks).
+- `lag`: cada vez que el bucle de eventos se para más de `LAG_CULPRIT_MS`, dónde
+  estaba parado (la función del bot, `LoopWatchdog`) y cuánto.
 - Cada minuto, una muestra del sistema: memoria del contenedor (lo que vigila el
   `mem_limit` de `docker-compose.yml`), memoria del proceso, retraso del bucle
   de eventos, latencia con Discord y procesos de Chromium y Node abiertos.
@@ -49,6 +51,7 @@ import logging
 import math
 import os
 import re
+import sys
 import threading
 import time
 from collections.abc import Awaitable, Callable
@@ -70,6 +73,10 @@ logger = logging.getLogger(__name__)
 FLUSH_SECONDS = 60
 #: Cada cuánto se mira si el bucle de eventos va con retraso.
 LAG_PROBE_SECONDS = 0.5
+#: Retraso del bucle a partir del cual se apunta qué lo tenía parado (tipo `lag`).
+LAG_CULPRIT_MS = 250
+#: Cada cuánto mira el vigía (`LoopWatchdog`) si el bucle sigue parado.
+LAG_WATCH_SECONDS = 0.05
 #: Mensajes de este tamaño o menos son «cortos»; de más de `LONG_MESSAGE`, «largos».
 SHORT_MESSAGE = 20
 LONG_MESSAGE = 200
@@ -332,6 +339,69 @@ def read_system_usage() -> tuple[float | None, float, int, int]:
     return memory_mb, rss_mb, chromium, node
 
 
+def blocking_site(frame: Any) -> str:
+    """Dónde está parado un hilo: la función del bot más interna de su pila.
+
+    `bot/services/coin_scene.py:board`. Si no hay ninguna del bot, la más
+    interna sin más (`selectors.py:select` quiere decir que el bucle esperaba
+    y lo que faltaba era CPU).
+    """
+    innermost = frame
+    while frame is not None:
+        parts = Path(frame.f_code.co_filename).parts
+        if "bot" in parts:
+            start = len(parts) - 1 - parts[::-1].index("bot")
+            return f"{'/'.join(parts[start:])}:{frame.f_code.co_name}"
+        frame = frame.f_back
+    return f"{Path(innermost.f_code.co_filename).name}:{innermost.f_code.co_name}"
+
+
+class LoopWatchdog:
+    """Vigila desde otro hilo si el bucle de eventos se queda parado y apunta dónde.
+
+    `_probe_lag` le dice cuándo tendría que despertar (`arm`). Si pasan
+    `LAG_CULPRIT_MS` de esa hora y no ha despertado, el bucle está ocupado en
+    otra cosa: se lee la pila de su hilo (`blocking_site`). Si el bloqueo es
+    código en C que no suelta el GIL, el vigía no despierta hasta que acaba y
+    puede apuntar lo que vino justo después.
+
+    Args:
+        loop_thread: El `threading.get_ident()` del hilo del bucle.
+    """
+
+    def __init__(self, loop_thread: int) -> None:
+        self.loop_thread = loop_thread
+        self.due = math.inf
+        self.culprit: str | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="telemetria-vigia", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def arm(self, due: float) -> None:
+        """El bucle tendría que despertar a la hora `due` (`time.perf_counter`)."""
+        self.due = math.inf
+        self.culprit = None
+        self.due = due
+
+    def disarm(self) -> str | None:
+        """Ha despertado: dónde estaba parado, si ha llegado a pasar de `LAG_CULPRIT_MS`."""
+        self.due = math.inf
+        return self.culprit
+
+    def _run(self) -> None:
+        while not self._stop.wait(LAG_WATCH_SECONDS):
+            late = time.perf_counter() - self.due
+            if self.culprit is None and late * 1000 > LAG_CULPRIT_MS:
+                frame = sys._current_frames().get(self.loop_thread)
+                if frame is not None:
+                    self.culprit = blocking_site(frame)
+
+
 class LogCounter(logging.Handler):
     """Cuenta los avisos y errores del log por plantilla, sin sus argumentos.
 
@@ -366,6 +436,7 @@ class Telemetry(commands.Cog):
         self._log_counter: LogCounter | None = None
         self._lag_task: asyncio.Task[None] | None = None
         self._max_lag_ms = 0.0
+        self._watchdog: LoopWatchdog | None = None
 
     async def cog_load(self) -> None:
         """Engancha discord.py, el log y las escenas, y arranca los volcados."""
@@ -376,6 +447,8 @@ class Telemetry(commands.Cog):
         telemetry_service.upload_observers.add(self._on_upload)
         self.flush_loop.start()
         self.prune_loop.start()
+        self._watchdog = LoopWatchdog(threading.get_ident())
+        self._watchdog.start()
         self._lag_task = asyncio.create_task(self._probe_lag(), name="telemetria-retraso")
 
     async def cog_unload(self) -> None:
@@ -384,6 +457,8 @@ class Telemetry(commands.Cog):
         self.prune_loop.cancel()
         if self._lag_task is not None:
             self._lag_task.cancel()
+        if self._watchdog is not None:
+            self._watchdog.stop()
         telemetry_service.render_observers.discard(self._on_render)
         telemetry_service.upload_observers.discard(self._on_upload)
         if self._log_counter is not None:
@@ -403,14 +478,20 @@ class Telemetry(commands.Cog):
 
         Si algo bloquea el bucle de eventos (un cálculo o una lectura de disco sin
         `to_thread`), todos los botones contestan tarde a la vez. Se guarda el peor
-        retraso de cada minuto.
+        retraso de cada minuto y, si pasa de `LAG_CULPRIT_MS`, qué lo tenía parado
+        (tipo `lag`, con el nombre de `blocking_site`).
         """
         await self.bot.wait_until_ready()
         while True:
             start = time.perf_counter()
+            if self._watchdog is not None:
+                self._watchdog.arm(start + LAG_PROBE_SECONDS)
             await asyncio.sleep(LAG_PROBE_SECONDS)
             lag = (time.perf_counter() - start - LAG_PROBE_SECONDS) * 1000
             self._max_lag_ms = max(self._max_lag_ms, lag)
+            culprit = self._watchdog.disarm() if self._watchdog is not None else None
+            if culprit is not None and lag >= LAG_CULPRIT_MS:
+                self.telemetry.count("lag", culprit, guild_id=None, ms=lag)
 
     @tasks.loop(seconds=FLUSH_SECONDS)
     async def flush_loop(self) -> None:
