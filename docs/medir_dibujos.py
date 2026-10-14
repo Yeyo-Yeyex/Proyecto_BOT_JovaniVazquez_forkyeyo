@@ -64,8 +64,11 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_coin_scene import lost_game
     from test_horses_cog import fixed_result
     from test_horses_scene import card_of
+    from test_housing_scene import NAMES, samples
+    from test_housing_scene import market as housing_market
     from test_roulette_scene_browser import HISTORY, outcome
 
+    from bot.services import housing_view
     from bot.services.bacara_scene import BacaraScene
     from bot.services.backgammon_scene import BackgammonScene
     from bot.services.bus_scene import BusScene
@@ -73,6 +76,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.coin_scene import CoinScene
     from bot.services.craps_scene import CrapsScene
     from bot.services.horses_scene import SceneRenderer
+    from bot.services.housing_catalog import BARRIOS
+    from bot.services.housing_scene import HousingScene
     from bot.services.roulette_scene import RouletteScene
 
     no = "/no/existe/chromium"
@@ -103,6 +108,18 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
         "backgammon": (
             lambda: BackgammonScene(executable_path=no),
             lambda s: s.animate(BG_META, *typical_turn()),
+        ),
+        # El panel de `pisos`: una ficha (un clic) y los 20 barrios que se pintan por
+        # adelantado al abrir el mapa.
+        "pisos": (
+            lambda: HousingScene(executable_path=no),
+            lambda s: s.still(samples()["ficha_schamann_bajo"]),
+        ),
+        "pisos_20": (
+            lambda: HousingScene(executable_path=no),
+            lambda s: s.paint(
+                [housing_view.barrio_state(housing_market(), b.key, 10, NAMES) for b in BARRIOS]
+            ),
         ),
     }
 
