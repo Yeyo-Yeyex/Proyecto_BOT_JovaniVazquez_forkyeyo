@@ -179,6 +179,51 @@ async def test_bautizar_al_gallo_lo_guarda(tmp_path: Path) -> None:
     assert "Espolón de Oro" in panel.description()
 
 
+async def repaint(panel: HousePanel) -> dict:
+    """Repinta el panel con un clic nuevo y devuelve lo que se mandó a Discord."""
+    interaction = fake_interaction(make_user(OWNER_ID))
+    await panel.repaint(interaction)
+    return interaction.response.edit_message.await_args.kwargs
+
+
+async def test_repintar_la_misma_presentacion_no_vuelve_a_subir_la_imagen(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    assert "attachments" in await repaint(panel)
+    cog.renderer.still.reset_mock()
+    kwargs = await repaint(panel)
+    assert "attachments" not in kwargs
+    assert kwargs["view"] is panel
+    cog.renderer.still.assert_not_awaited()
+
+
+async def test_repintar_con_otro_rival_nombre_o_apuesta_sube_la_imagen(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    await repaint(panel)
+    cambios = (
+        ("rival", RIVAL_BY_KEY["marte"]),
+        ("record", gallos_cog.RoosterRecord(name="Espolón de Oro")),
+        ("stake", panel.stake + 1),
+    )
+    for attribute, value in cambios:
+        setattr(panel, attribute, value)
+        cog.renderer.still.reset_mock()
+        kwargs = await repaint(panel)
+        assert len(kwargs["attachments"]) == 1, attribute
+        cog.renderer.still.assert_awaited_once()
+
+
+async def test_tras_una_pelea_el_siguiente_repintado_vuelve_a_subir_la_imagen(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    await repaint(panel)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert "attachments" in await repaint(panel)
+
+
 # -- Duelos ------------------------------------------------------------------------------
 
 

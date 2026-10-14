@@ -657,6 +657,28 @@ async def test_la_apuesta_se_cambia_con_medio_doble_y_all_in(tmp_path: Path) -> 
     assert ledger(tmp_path) == []
 
 
+async def test_si_la_apuesta_no_cambia_la_mesa_no_se_vuelve_a_subir(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view, _ = await open_table(cog, amount="1")
+    cog.renderer.board.reset_mock()
+    interaction = await press(view, "_halve")  # la mitad de 1 sigue siendo 1
+    assert view.stake == 1
+    cog.renderer.board.assert_not_awaited()
+    kwargs = interaction.edit_original_response.await_args.kwargs
+    assert "attachments" not in kwargs and kwargs["view"] is view
+
+
+async def test_si_la_apuesta_cambia_la_mesa_se_pinta_y_se_sube(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view, _ = await open_table(cog, amount="200")
+    cog.renderer.board.reset_mock()
+    interaction = await press(view, "_halve")
+    assert view.stake == 100
+    cog.renderer.board.assert_awaited_once()
+    kwargs = interaction.edit_original_response.await_args.kwargs
+    assert len(kwargs["attachments"]) == 1
+
+
 async def test_la_apuesta_no_se_cambia_con_el_punto_puesto(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, SIX)
     view, _ = await open_table(cog, amount="100")

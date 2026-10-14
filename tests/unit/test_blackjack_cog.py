@@ -235,6 +235,40 @@ async def test_mesa_caducada_planta_y_paga_la_mano(tmp_path: Path) -> None:
     message.edit.assert_awaited()
 
 
+async def test_mesa_caducada_con_la_mano_ya_pagada_solo_apaga_los_botones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog = await make_cog(tmp_path, c(10), c(10), c(10), c(7))
+    table, _, _, message = await open_table(cog)
+    await table.force_settle()
+    assert table.game.settled
+    render = AsyncMock(return_value=b"PNG")
+    monkeypatch.setattr(cog, "render", render)
+    message.edit.reset_mock()
+
+    await table.on_timeout()
+
+    render.assert_not_awaited()
+    kwargs = message.edit.await_args.kwargs
+    assert "attachments" not in kwargs
+    assert all(b.disabled for b in table.children if isinstance(b, discord.ui.Button))
+
+
+async def test_mesa_caducada_con_la_mano_a_medias_la_planta_y_sube_la_mesa(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, c(10), c(10), c(10), c(7))
+    table, _, _, message = await open_table(cog)
+    assert not table.game.settled
+    message.edit.reset_mock()
+
+    await table.on_timeout()
+
+    assert table.game.settled
+    (png,) = message.edit.await_args.kwargs["attachments"]
+    assert png.filename == PNG_NAME
+
+
 async def test_apagar_el_bot_paga_las_manos_abiertas(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, c(10), c(10), c(10), c(7))
     table, *_ = await open_table(cog)
