@@ -87,6 +87,10 @@ Modelo de datos:
   hasta devolverla entera a quien es superado.
 - `economy_market_tax`: el ITP (de quien compra) y el IRPF de la plusvalía (de
   quien vende) de cada venta del Rastro, para que `hacienda` los cuente.
+- `economy_housing_tax`: el ITP de cada compra de `pisos`, el IBI de cada mes y
+  el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
+  `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
+  (concepto `pisos:renta`).
 - `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
   cobrado de más antes de que la renta de las retenciones se reiniciara cada
   lunes (`regularize_irpf`). Se hace una sola vez.
@@ -145,6 +149,9 @@ POKER_POT_ACCOUNT_ID = -500
 #: `user_id` del depósito del Rastro: la puja más alta de cada subasta espera aquí.
 #: La mochila usa el mismo id para los objetos que están en un puesto.
 MARKET_ACCOUNT_ID = -600
+
+#: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
+HOUSING_RENT_CONCEPT = "pisos:renta"
 
 
 class InsufficientFundsError(Exception):
@@ -321,7 +328,11 @@ class LotteryPayout:
 
 @dataclass(frozen=True, slots=True)
 class WealthCharge:
-    """Lo que pagó un miembro de Impuesto sobre el Patrimonio en una semana."""
+    """Lo que pagó un miembro de Impuesto sobre el Patrimonio en una semana.
+
+    Attributes:
+        balance: Su patrimonio ese lunes (efectivo más inmuebles), la base.
+    """
 
     user_id: int
     balance: int
@@ -505,6 +516,58 @@ class MarketMove:
     hold: tuple[int, int] | None = None
     refunds: tuple[tuple[int, int], ...] = ()
     payment: MarketPayment | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HousingTax:
+    """Un impuesto de `pisos` a nombre de un miembro: sale de su monedero al Estado.
+
+    Attributes:
+        user_id: Quien paga.
+        kind: `itp`, `ibi` o `plusvalia`.
+        base: Base imponible.
+        tax: Cuota; positiva.
+    """
+
+    user_id: int
+    kind: str
+    base: int
+    tax: int
+
+
+@dataclass(frozen=True, slots=True)
+class HousingRent:
+    """La renta de un mes que cobra un copropietario, con su IRPF.
+
+    Attributes:
+        user_id: Quien cobra.
+        gross: Lo que entra en el monedero antes del IRPF.
+        taxable: Rendimiento neto reducido (`housing.taxable_rent`): sobre esto
+            se aplica el tipo de retención.
+        fiscal: `taxable` pasado a la escala de la retención
+            (`housing.rent_to_fiscal`): es lo que se apunta como renta sujeta.
+    """
+
+    user_id: int
+    gross: int
+    taxable: int
+    fiscal: int
+
+
+@dataclass(frozen=True, slots=True)
+class HousingMove:
+    """Todo el dinero de una operación de `pisos`, en este orden.
+
+    Attributes:
+        rents: Rentas que se cobran, cada una con su retención.
+        entries: `(miembro, movimiento)` sin impuesto: el precio, la notaría, la
+            agencia, la comunidad. Lo que sale desaparece y lo que entra se crea.
+        taxes: Impuestos que pagan los miembros y van al Estado.
+    """
+
+    rents: tuple[HousingRent, ...] = ()
+    entries: tuple[tuple[int, LedgerEntry], ...] = ()
+    taxes: tuple[HousingTax, ...] = ()
 
 
 class EconomyRepository:
@@ -832,6 +895,16 @@ class EconomyRepository:
                     guild_id INTEGER NOT NULL,
                     user_id INTEGER NOT NULL,
                     kind TEXT NOT NULL CHECK (kind IN ('itp', 'plusvalia')),
+                    base INTEGER NOT NULL CHECK (base >= 0),
+                    tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_housing_tax (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL CHECK (kind IN ('itp', 'ibi', 'plusvalia')),
                     base INTEGER NOT NULL CHECK (base >= 0),
                     tax INTEGER NOT NULL CHECK (tax > 0),
                     created_at REAL NOT NULL
@@ -2330,7 +2403,9 @@ class EconomyRepository:
             SELECT user_id, 'irpf_otros', -irpf, created_at
             FROM economy_payroll WHERE guild_id = :guild
             UNION ALL
-            SELECT user_id, 'irpf_otros', withheld, created_at
+            SELECT user_id,
+                   CASE WHEN concept = 'pisos:renta' THEN 'irpf_alquiler' ELSE 'irpf_otros' END,
+                   withheld, created_at
             FROM economy_tax_records WHERE guild_id = :guild
             UNION ALL
             SELECT user_id, 'irpf_casino', withheld, updated_at
@@ -2368,6 +2443,12 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id, 'irpf_ahorro', tax, created_at
             FROM economy_market_tax WHERE guild_id = :guild AND kind = 'plusvalia'
+            UNION ALL
+            SELECT user_id,
+                   CASE kind WHEN 'itp' THEN 'itp_pisos' WHEN 'ibi' THEN 'ibi'
+                        ELSE 'irpf_ahorro' END,
+                   tax, created_at
+            FROM economy_housing_tax WHERE guild_id = :guild
             UNION ALL
             SELECT user_id, 'multas', amount, created_at
             FROM economy_sanctions WHERE guild_id = :guild
@@ -2441,6 +2522,9 @@ class EconomyRepository:
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_market_tax
                 WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_housing_tax
+                WHERE guild_id = :guild
             """
             total, recent = connection.execute(
                 f"""
@@ -2481,21 +2565,31 @@ class EconomyRepository:
         week: str,
         now: float,
         tax_for: Callable[[int], int],
+        assets: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
     ) -> WealthRun:
         """Cobra el Patrimonio de `week` a todos los miembros del servidor, una vez.
 
         Todo va en una transacción: o pagan todos o nadie, y la semana queda
         marcada. Lo cobrado va a la cuenta del Estado. Las cuentas especiales
-        (Estado y ONGs, con `user_id` <= 0) no pagan.
+        (Estado y ONGs, con `user_id` <= 0) no pagan. La base es el saldo más lo
+        que devuelva `assets`; se paga con el saldo y, si no llega, se cobra lo
+        que haya.
 
         Args:
             week: Lunes ISO de la semana que se cierra.
-            tax_for: Cuota en Y$ para un saldo (regla en `bot.services.taxes`).
+            tax_for: Cuota en Y$ para un patrimonio (regla en `bot.services.taxes`).
+            assets: Lee, en la misma transacción, el valor fiscal de lo que tiene
+                cada miembro además del efectivo (los inmuebles de `pisos`).
         """
-        return await self._run(self._charge_wealth_sync, guild_id, week, now, tax_for)
+        return await self._run(self._charge_wealth_sync, guild_id, week, now, tax_for, assets)
 
     def _charge_wealth_sync(
-        self, guild_id: int, week: str, now: float, tax_for: Callable[[int], int]
+        self,
+        guild_id: int,
+        week: str,
+        now: float,
+        tax_for: Callable[[int], int],
+        assets: Callable[[sqlite3.Connection], dict[int, int]] | None,
     ) -> WealthRun:
         with self._transaction() as connection:
             done = connection.execute(
@@ -2521,10 +2615,12 @@ class EconomyRepository:
                 """,
                 (guild_id,),
             ).fetchall()
+            cash = {int(row["user_id"]): int(row["balance"]) for row in wallets}
+            extra = assets(connection) if assets is not None else {}
             charges = []
-            for row in wallets:
-                user_id, balance = int(row["user_id"]), int(row["balance"])
-                tax = min(balance, max(0, tax_for(balance)))
+            for user_id, balance in cash.items():
+                worth = balance + max(0, extra.get(user_id, 0))
+                tax = min(balance, max(0, tax_for(worth)))
                 if not tax:
                     continue
                 self._apply_in_transaction(
@@ -2537,9 +2633,9 @@ class EconomyRepository:
                         (guild_id, user_id, week_start, balance, tax, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (guild_id, user_id, week, balance, tax, now),
+                    (guild_id, user_id, week, worth, tax, now),
                 )
-                charges.append(WealthCharge(user_id, balance, tax))
+                charges.append(WealthCharge(user_id, worth, tax))
             charges.sort(key=lambda c: (-c.tax, c.user_id))
             return WealthRun(charges=tuple(charges))
 
@@ -3501,6 +3597,104 @@ class EconomyRepository:
                         balances[member] = self._ensure_wallet(connection, guild_id, member)
             return result, balances
 
+    # -- Pisos ------------------------------------------------------------------------
+
+    async def housing(
+        self,
+        guild_id: int,
+        *,
+        now: float,
+        window_seconds: float,
+        rate_for: Callable[[int, int], float],
+        prepare: Callable[[sqlite3.Connection], tuple[T, HousingMove]],
+    ) -> tuple[T, dict[int, int]]:
+        """Mueve el dinero de una operación de `pisos` (compra, venta o un día de rentas).
+
+        `prepare` lo pone `bot.repositories.housing` y corre dentro de la misma
+        transacción, antes que el dinero: comprueba y guarda quién tiene qué y dice
+        qué dinero se mueve. Si lanza, o si a alguien no le llega, no se guarda nada
+        (tampoco lo de `prepare`).
+
+        En orden: se cobran las rentas (cada una con su retención, que va al Estado
+        y a `economy_tax_records` con su base en la escala fiscal), se aplican los
+        movimientos sin impuesto y se cobran los impuestos (al Estado y a
+        `economy_housing_tax`).
+
+        Args:
+            window_seconds: Ventana de la renta sujeta que mira la retención
+                (`economy.fiscal_window`).
+            rate_for: Recibe `(renta fiscal de este cobro, renta sujeta de la
+                ventana)` y devuelve el tipo de retención (regla en
+                `bot.services.taxes`).
+
+        Returns:
+            `(lo que devuelva prepare, saldo final de cada miembro tocado)`.
+
+        Raises:
+            InsufficientFundsError: Si a quien compra no le llega.
+            BalanceLimitError: Si a alguien no le cabe lo que cobra.
+        """
+        return await self._run(self._housing_sync, guild_id, now, window_seconds, rate_for, prepare)
+
+    def _housing_sync(
+        self,
+        guild_id: int,
+        now: float,
+        window_seconds: float,
+        rate_for: Callable[[int, int], float],
+        prepare: Callable[[sqlite3.Connection], tuple[T, HousingMove]],
+    ) -> tuple[T, dict[int, int]]:
+        with self._transaction() as connection:
+            result, move = prepare(connection)
+            balances: dict[int, int] = {}
+            for rent in move.rents:
+                if rent.gross <= 0:
+                    continue
+                recent = self._recent_taxable_in(
+                    connection, guild_id, rent.user_id, now - window_seconds
+                )
+                rate = rate_for(rent.fiscal, recent) if rent.fiscal > 0 else 0.0
+                tax = max(0, min(rent.gross, round(rent.taxable * rate)))
+                entries = [LedgerEntry(rent.gross, HOUSING_RENT_CONCEPT)]
+                if tax:
+                    entries.append(LedgerEntry(-tax, f"irpf:{HOUSING_RENT_CONCEPT}"))
+                balances[rent.user_id] = self._apply_in_transaction(
+                    connection, guild_id, rent.user_id, entries
+                )
+                if tax:
+                    self._credit_state_in(connection, guild_id, tax, f"irpf:{HOUSING_RENT_CONCEPT}")
+                if rent.fiscal > 0 or tax:
+                    connection.execute(
+                        """
+                        INSERT INTO economy_tax_records
+                            (guild_id, user_id, created_at, concept, gross, withheld)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, rent.user_id, now, HOUSING_RENT_CONCEPT, rent.fiscal, tax),
+                    )
+            for member, entry in move.entries:
+                if entry.delta:
+                    balances[member] = self._apply_in_transaction(
+                        connection, guild_id, member, (entry,)
+                    )
+            for item in move.taxes:
+                if item.tax <= 0:
+                    continue
+                reason = f"pisos:{item.kind}"
+                balances[item.user_id] = self._apply_in_transaction(
+                    connection, guild_id, item.user_id, (LedgerEntry(-item.tax, reason),)
+                )
+                self._credit_state_in(connection, guild_id, item.tax, reason)
+                connection.execute(
+                    """
+                    INSERT INTO economy_housing_tax
+                        (guild_id, user_id, kind, base, tax, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, item.user_id, item.kind, max(0, item.base), item.tax, now),
+                )
+            return result, balances
+
     # -- Loterías ----------------------------------------------------------------------
 
     async def state_balance(self, guild_id: int) -> int:
@@ -4209,6 +4403,7 @@ class EconomyRepository:
                 "economy_porra_settled",
                 "economy_gaming_tax",
                 "economy_market_tax",
+                "economy_housing_tax",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

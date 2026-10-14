@@ -188,28 +188,33 @@ def format_rate(rate: float) -> str:
 
 # -- Impuesto sobre el Patrimonio -------------------------------------------------------
 #
-# Grava lo que se tiene, no lo que se gana: castiga el dinero quieto y por eso
-# empuja a gastarlo. Canarias no tiene tarifa propia ni bonificación general,
-# así que se aplica la escala estatal del art. 30 de la Ley 19/1991 con el
-# mínimo exento de 700.000 € (art. 28 de la Ley 19/1991 y art. 29 del Decreto
-# Legislativo 1/2009 de Canarias).
+# Grava lo que se tiene, no lo que se gana. Canarias no tiene tarifa propia ni
+# bonificación general, así que se aplica la escala estatal del art. 30 de la Ley
+# 19/1991 con el mínimo exento de 700.000 € (art. 28 de la Ley 19/1991 y art. 29
+# del Decreto Legislativo 1/2009 de Canarias).
 #
-# Escala del juego: el mínimo exento real (700.000 €) equivale a 70.000 Y$, y
-# todos los tramos se escalan con el mismo factor (`WEALTH_SCALE`, 1 Y$ = 10 €
-# en este impuesto). Los tipos son los reales. Es otra escala que la del IRPF
-# (10 Y$ = 1 €) a propósito: con la del IRPF el mínimo serían 7 millones y no lo
-# pagaría nadie.
+# Escala: la general, 10 Y$ = 1 € (`YAPDOLLARS_PER_EURO`), así que el mínimo exento
+# son 7.000.000 Y$. Hasta que llegaron los `pisos` el impuesto usaba 1 Y$ = 10 €
+# (mínimo de 70.000 Y$) porque nadie podía juntar 7 millones; con inmuebles a
+# precio real, esa escala valoraba un piso como si costara cien veces más y se
+# comía su renta (y ponía un techo al ahorro que hacía imposible comprar lo más
+# caro de la tienda). Los tipos son los reales.
 #
-# El ejercicio dura una semana, como la renta del casino: cada lunes se cobra
-# la cuota anual completa sobre el saldo de ese momento. No se aplica el límite
-# conjunto con el IRPF del art. 31 de la Ley 19/1991.
+# La base es el patrimonio neto: el efectivo más los inmuebles a su valor fiscal
+# (`housing.fiscal_value`, art. 10 de la Ley 19/1991). Simplificación: los bienes
+# de la tienda no cuentan (serían el art. 18; el ajuar doméstico está exento por
+# el art. 4.Cuatro) y no se aplica el límite conjunto con el IRPF del art. 31.
+#
+# El ejercicio dura una semana, como la renta del casino: cada lunes se cobra la
+# cuota anual completa sobre lo que se tiene en ese momento. Se paga con el
+# efectivo: si no llega, Hacienda se cobra lo que hay.
 
-#: Mínimo exento en yapdollars.
-WEALTH_MINIMUM = 70_000
 #: Mínimo exento real, en euros.
 WEALTH_MINIMUM_EUR = 700_000.0
-#: Yapdollars por euro en este impuesto.
-WEALTH_SCALE = WEALTH_MINIMUM / WEALTH_MINIMUM_EUR
+#: Yapdollars por euro en este impuesto: la escala general.
+WEALTH_SCALE = YAPDOLLARS_PER_EURO
+#: Mínimo exento en yapdollars.
+WEALTH_MINIMUM = round(WEALTH_MINIMUM_EUR * WEALTH_SCALE)
 
 #: Escala estatal, art. 30 de la Ley 19/1991: (desde €, tipo marginal).
 WEALTH_BRACKETS: tuple[tuple[float, float], ...] = (
@@ -224,13 +229,16 @@ WEALTH_BRACKETS: tuple[tuple[float, float], ...] = (
 )
 
 
-def wealth_tax(balance: int) -> int:
-    """Cuota semanal del Impuesto sobre el Patrimonio para un saldo, en Y$.
+def wealth_tax(net_worth: int) -> int:
+    """Cuota semanal del Impuesto sobre el Patrimonio para un patrimonio, en Y$.
 
     La base liquidable es lo que pasa del mínimo exento; se pasa a euros con
     `WEALTH_SCALE`, se le aplica la escala real y se vuelve a yapdollars.
+
+    Args:
+        net_worth: Efectivo más inmuebles a su valor fiscal.
     """
-    base = balance - WEALTH_MINIMUM
+    base = net_worth - WEALTH_MINIMUM
     if base <= 0:
         return 0
     return round(apply_scale(base / WEALTH_SCALE, WEALTH_BRACKETS) * WEALTH_SCALE)
