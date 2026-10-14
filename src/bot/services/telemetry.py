@@ -23,6 +23,8 @@ son los acordados:
 - `member`: entradas y salidas de miembros.
 - `log`: avisos y errores registrados por el bot.
 - `render`: dibujos de imágenes o GIF (con su duración en `ms`).
+- `upload`: mensajes con archivos subidos a Discord (lo que tarda la subida, en
+  `ms`), por nombre del primer archivo y tamaño (`moneda.gif · 250 KB-1 MB`).
 
 Privacidad: el único dato por persona es el `user_id` en `UserKey`, que se
 borra a los 90 días y nunca sale en el informe (se seudonimiza como u1, u2...).
@@ -33,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -226,6 +229,26 @@ def report_render(scene: str, ms: float) -> None:
     """Avisa de que la escena `scene` ha pintado en `ms` milisegundos."""
     for observer in tuple(render_observers):
         observer(scene, ms)
+
+
+#: Quien quiera saber lo que tarda cada subida de archivos a Discord se apunta aquí
+#: (el cog `Telemetry`, que también engancha discord.py para avisar con `report_upload`).
+upload_observers: set[Callable[[str, float, bool], None]] = set()
+
+#: Tramos de tamaño de una subida: hasta cuántos bytes y cómo se llama.
+UPLOAD_SIZES = ((250_000, "<250 KB"), (1_000_000, "250 KB-1 MB"), (3_000_000, "1-3 MB"))
+
+
+def upload_name(filename: str, size: int) -> str:
+    """Nombre de una subida: el archivo sin cifras (nunca un id) y su tramo de tamaño."""
+    label = next((name for limit, name in UPLOAD_SIZES if size < limit), ">3 MB")
+    return f"{re.sub(r'[0-9]+', '#', filename)} · {label}"
+
+
+def report_upload(name: str, ms: float, *, error: bool = False) -> None:
+    """Avisa de que la subida `name` (ver `upload_name`) ha tardado `ms` milisegundos."""
+    for observer in tuple(upload_observers):
+        observer(name, ms, error)
 
 
 def local_moment(at: float) -> tuple[str, int]:

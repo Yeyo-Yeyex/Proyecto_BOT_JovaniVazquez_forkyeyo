@@ -1,19 +1,24 @@
-"""Piezas sueltas del cog de telemetría: clases de mensaje, nombres de botón y sistema."""
+"""Piezas sueltas del cog de telemetría: clases de mensaje, nombres de botón, subidas y sistema."""
 
 from __future__ import annotations
 
 import asyncio
+import io
 from unittest.mock import MagicMock
 
 import discord
+import pytest
 
 from bot.cogs.telemetry import (
     LONG_MESSAGE,
     SHORT_MESSAGE,
+    _timed_upload,
     item_name,
     message_types,
     read_system_usage,
 )
+from bot.services import telemetry as telemetry_service
+from bot.services.telemetry import upload_name
 
 
 def message(content: str, **kwargs: object) -> MagicMock:
@@ -76,3 +81,47 @@ def test_read_system_usage_devuelve_cifras_validas() -> None:
     assert memory_mb is None or memory_mb > 0
     assert rss_mb >= 0
     assert chromium >= 0 and node >= 0
+
+
+def test_upload_name_quita_las_cifras_y_pone_el_tramo_de_tamano() -> None:
+    assert upload_name("moneda.gif", 249_999) == "moneda.gif · <250 KB"
+    assert upload_name("moneda.gif", 250_000) == "moneda.gif · 250 KB-1 MB"
+    assert upload_name("gallos.gif", 2_500_000) == "gallos.gif · 1-3 MB"
+    assert upload_name("premiado-123456789.png", 5_000_000) == "premiado-#.png · >3 MB"
+
+
+def test_las_subidas_con_archivos_se_miden_y_las_demas_no() -> None:
+    seen: list[tuple[str, float, bool]] = []
+    calls: list[object] = []
+
+    async def original(self: object, route: object, **kwargs: object) -> str:
+        calls.append(route)
+        if kwargs.get("fail"):
+            raise discord.DiscordException("caída")
+        return "ok"
+
+    request = _timed_upload(original)
+
+    def observer(name: str, ms: float, error: bool) -> None:
+        seen.append((name, ms, error))
+
+    async def scenario() -> None:
+        assert await request(None, "sin archivos", files=None) == "ok"
+        gif = discord.File(io.BytesIO(b"x" * 300_000), filename="moneda.gif")
+        assert await request(None, "con archivo", files=[gif]) == "ok"
+        # Medir no mueve el punto de lectura: discord.py sube el archivo entero.
+        assert gif.fp.tell() == 0
+        with pytest.raises(discord.DiscordException):
+            await request(None, "falla", files=[gif], fail=True)
+
+    telemetry_service.upload_observers.add(observer)
+    try:
+        asyncio.run(scenario())
+    finally:
+        telemetry_service.upload_observers.discard(observer)
+    assert calls == ["sin archivos", "con archivo", "falla"]
+    assert [(name, error) for name, _, error in seen] == [
+        ("moneda.gif · 250 KB-1 MB", False),
+        ("moneda.gif · 250 KB-1 MB", True),
+    ]
+    assert all(ms >= 0 for _, ms, _ in seen)

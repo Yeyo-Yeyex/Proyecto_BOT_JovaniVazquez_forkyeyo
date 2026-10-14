@@ -119,6 +119,22 @@ def test_paleta_local_se_ve_igual_si_caben_los_colores() -> None:
     assert timeline(decoded(gif)) == expected(frames, durations)
 
 
+def test_paleta_local_funde_los_fotogramas_quietos_sin_perder_tiempo() -> None:
+    """Un fotograma igual al anterior no se escribe: su tiempo pasa al anterior."""
+    base = moving_square(3)
+    frames = [base[0], base[0], base[1], base[1], base[1], base[2]]
+    durations = [40, 40, 40, 40, 40, 900]
+    gif = local_palette_gif(frames, durations)
+    assert Image.open(io.BytesIO(gif)).n_frames == 3
+    assert timeline(decoded(gif)) == expected(frames, durations)
+
+
+def test_paleta_local_todo_quieto_es_un_fotograma() -> None:
+    frames = moving_square(1) * 4
+    gif = local_palette_gif(frames, [50, 50, 50, 850])
+    assert timeline(decoded(gif)) == expected(frames, [50, 50, 50, 850])
+
+
 def test_paleta_local_rechaza_ninguno() -> None:
     with pytest.raises(ValueError):
         local_palette_gif([], 50)

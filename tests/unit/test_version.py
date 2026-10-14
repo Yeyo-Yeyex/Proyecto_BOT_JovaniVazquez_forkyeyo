@@ -18,7 +18,9 @@ _ENTRY = re.compile(r"^### (\d+)\.(\d+)\.(\d+) · \d{4}-\d{2}-\d{2}$", re.MULTIL
 
 
 def _versions() -> list[tuple[int, int, int]]:
-    return [tuple(map(int, match)) for match in _ENTRY.findall(CHANGELOG.read_text())]
+    return [
+        tuple(map(int, match)) for match in _ENTRY.findall(CHANGELOG.read_text(encoding="utf-8"))
+    ]
 
 
 def test_la_version_es_mayor_menor_parche() -> None:

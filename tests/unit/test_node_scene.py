@@ -17,12 +17,13 @@ import pytest_asyncio
 from coin_fakes import Scripted
 from PIL import Image, ImageChops, ImageStat
 
-from bot.services import browser_scene
+from bot.services import browser_scene, node_scene
 from bot.services.browser_scene import BrowserScene
 from bot.services.coin import CoinGame, Outcome, Side
 from bot.services.coin_render import H, W, meta_state, toss_states
 from bot.services.coin_scene import SCENE, CoinScene
-from bot.services.node_scene import RUNNER, NodeScene
+from bot.services.craps_scene import SCENE as DICE
+from bot.services.node_scene import MAX_WORKERS, MIN_WORKERS, RUNNER, NodeScene
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
 LOCAL_CHROMIUM = Path("/opt/pw-browsers/chromium")
@@ -204,3 +205,95 @@ async def test_una_serie_de_llamadas_devuelve_las_imagenes_de_cada_una() -> None
     assert setup == [] and len(frames) == 4
     assert frames[0]["image"].size == (W, H)
     await scene.close()
+
+
+def own_node() -> str:
+    """El `node` del PATH con su ruta: un grupo de procesos aparte del de `painter`."""
+    node = shutil.which("node")
+    assert node is not None
+    return node
+
+
+@needs_node
+@module_loop
+async def test_dos_escenas_comparten_proceso_sin_pisarse_las_globales() -> None:
+    node = own_node()
+    coin = NodeScene(SCENE, name="moneda", node=node)
+    dice = NodeScene(DICE, name="dados", node=node)
+    await coin.evaluate("window.marca = 1")
+    assert await dice.evaluate("typeof marca") == "undefined"
+    assert await coin.evaluate("marca") == 1
+    game = lost_game()
+    states = toss_states(game, start=Side.CARA, seed=5)
+    patches = await coin.render(meta_state(game.stake), states)
+    assert patches is not None and len(patches) == len(states)
+    pool = node_scene._pool(node)
+    assert MIN_WORKERS <= len(pool.workers) <= MAX_WORKERS
+    await coin.close()
+    assert pool.workers, "Con los dados aún abiertos, los procesos siguen"
+    await dice.close()
+    assert not pool.workers and node not in node_scene._pools.get(asyncio.get_running_loop(), {})
+
+
+@needs_node
+@module_loop
+async def test_el_grupo_crece_con_uno_de_reserva_y_reparte_entre_dibujos() -> None:
+    node = own_node()
+    await node_scene.warm(node)
+    pool = node_scene._pool(node)
+    try:
+        assert len(pool.workers) == MIN_WORKERS
+        first = await pool.acquire(MAX_WORKERS)
+        assert len(first) == MIN_WORKERS
+        # Se ha quedado sin libres: se abre otro de reserva para el siguiente dibujo.
+        second = await pool.acquire(MAX_WORKERS)
+        assert len(second) == 1
+        # Con dos dibujos en marcha, el tercero se lleva la parte que le toca.
+        while len(pool.workers) + pool.starting < MAX_WORKERS:
+            await pool._spawn()
+        third = await pool.acquire(MAX_WORKERS)
+        assert len(third) == MAX_WORKERS // 3
+        for workers in (first, second, third):
+            await pool.release(workers)
+        assert pool.drawing == 0
+        assert len(pool.workers) <= MAX_WORKERS
+    finally:
+        await node_scene.shutdown()
+
+
+@needs_node
+@module_loop
+async def test_los_procesos_de_mas_se_cierran_y_queda_el_minimo() -> None:
+    node = own_node()
+    pool = node_scene._pool(node, idle_seconds=0.2)
+    await pool.warm()
+    try:
+        taken = await pool.acquire(MAX_WORKERS)
+        await pool._spawn()
+        await asyncio.gather(*pool._background)
+        await pool.release(taken)
+        assert len(pool.workers) > MIN_WORKERS
+        # Con la máquina cargada el cierre puede tardar alguna vuelta más.
+        for _ in range(50):
+            if len(pool.workers) == MIN_WORKERS:
+                break
+            await asyncio.sleep(0.1)
+        assert len(pool.workers) == MIN_WORKERS
+    finally:
+        await node_scene.shutdown()
+
+
+@needs_node
+@module_loop
+async def test_pedir_reservas_seguidas_no_pasa_del_tope_de_procesos() -> None:
+    """El hueco de una reserva cuenta desde que se pide, no desde que arranca."""
+    node = own_node()
+    pool = node_scene._pool(node)
+    try:
+        for _ in range(MAX_WORKERS + 2):
+            pool._ensure_spare()
+        await asyncio.gather(*pool._background)
+        assert len(pool.workers) == MAX_WORKERS
+        assert pool.starting == 0
+    finally:
+        await node_scene.shutdown()

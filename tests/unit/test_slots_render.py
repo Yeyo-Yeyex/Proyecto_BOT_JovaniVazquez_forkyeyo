@@ -10,6 +10,7 @@ from PIL import Image, ImageChops, ImageSequence
 
 from bot.services.slots import BIG_WIN, EPIC_WIN, MEGA_WIN, REEL_STRIPS, WinTier, spin_at
 from bot.services.slots_render import (
+    FINAL_FRAME_MS,
     FLASH_FRAMES,
     FLASHES,
     FRAME_MS,
@@ -115,7 +116,10 @@ def test_sin_premio_no_hay_cuenta_y_la_animacion_no_cambia(renderer: SlotsRender
     expected = STOP_FRAMES[2] + 1 + FLASHES * FLASH_FRAMES * 2 + 1
     assert plain.gif == explicit.gif
     assert plain.png == explicit.png
-    assert Image.open(io.BytesIO(plain.gif)).n_frames == expected
+    # Los fotogramas quietos se funden con el anterior: cuenta el tiempo, no cuántos hay.
+    gif = Image.open(io.BytesIO(plain.gif))
+    total = sum(frame.info["duration"] for frame in ImageSequence.Iterator(gif))
+    assert total == FRAME_MS * (expected - 1) + FINAL_FRAME_MS
     assert plain.seconds == pytest.approx(FRAME_MS * (expected - 1) / 1000)
 
 

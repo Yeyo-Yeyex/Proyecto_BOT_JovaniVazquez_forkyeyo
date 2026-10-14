@@ -131,19 +131,32 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   lo mismo salvo algún borde de letra. Lo que queda es el raster de Skia, igual
   en los dos: para bajar más hay que pintar menos, no cambiar de motor. En
   Node, usar un lienzo como origen de `drawImage` lo copia entero cada vez.
+- **Los procesos de Node son de todos los juegos** (`node_scene._Pool`). Cada
+  uno carga la escena que le pidan en su propio contexto `vm` (hasta 3; suelta
+  la más vieja). Hay uno siempre abierto desde que arranca el bot (`warm`), se
+  abre otro de reserva cuando un dibujo se queda con todos los libres, hasta 4,
+  y los de más se cierran tras 10 minutos sin uso. Cada dibujo se reparte entre
+  los libres a partes iguales con los que ya están en marcha: quien juega solo
+  pinta con 4. Frente a 2 procesos fijos por juego, el dibujo bajó un 40-55 %
+  (gallos, 2,4 a 1,1 s; bacará, 1,1 a 0,5 s; moneda, 0,40 a 0,24 s).
 - **En el navegador, lo caro es el PNG.** `toDataURL` comprime en un solo hilo
   (`toBlob` no ayuda sin GPU) y cada fotograma viaja en base64 a Python. Hay
   que devolver solo el recuadro que cambia y no marcar `full` sin necesidad: un
   marcador que cambia en cada fotograma obliga a mandarlos enteros. WebP sin
   pérdida pesa menos pero tarda más en comprimirse.
 - **En Python, lo que no depende del orden va en varios hilos.** Pillow suelta el
-  GIL al cuantizar y al descomprimir: `local_palette_gif` calcula las paletas
-  con `QUANTIZE_THREADS` (4) y `browser_scene.assemble` descomprime los PNG igual.
+  GIL al cuantizar, al comprimir y al descomprimir: `bot.utils.gif` codifica
+  cada fotograma (paleta y LZW) en `QUANTIZE_THREADS` (4) hilos y escribe el GIF
+  a mano, y `browser_scene.assemble` descomprime los PNG igual. Pasarle la lista
+  a `Image.save` era 2-3 veces más lento: comprime en un hilo y vuelve a comparar
+  cada fotograma entero con el anterior.
   Lo que sí depende del fotograma anterior (comparar, pegar recuadros) va en orden.
   Los pools se crean dentro de la función, que ya corre en `asyncio.to_thread`.
 - **Trabajar solo sobre lo que cambia.** Cuantizar la caja que cambia y no el
   fotograma entero: sin tramado, el resultado es idéntico. Antes de tocar
-  `bot.utils.gif` se comprueba que el GIF sale con los mismos bytes.
+  `bot.utils.gif` se comprueba con GIF de juegos de verdad que se ve igual píxel
+  a píxel, con las mismas duraciones, al abrirlo con Pillow y con Chromium
+  (`ImageDecoder`, que es lo que usa Discord de escritorio).
 - **Menos fotogramas donde no se notan.** Una fase rápida (la bola en la pista) va
   a 20 fps sin que se vea; la cámara lenta se hace con fotogramas más largos, no
   con más fotogramas.
@@ -152,9 +165,9 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   `pyproject.toml` (lo vigila `tests/unit/test_packaging.py`). Si una escena no
   llega, el juego se dibuja con Pillow sin dar error: así estuvieron la moneda,
   los dados y la ruleta. Lo mismo con la memoria: cada Chromium abierto suma
-  ~170 MB (el autobús, ~370 con sus dos pestañas) y cada juego en Node ~180 MB
-  con sus dos procesos (moneda, dados, ruleta) contra el `mem_limit` de
-  `docker-compose.yml`; un juego nuevo con dibujo se suma a la cuenta de ahí.
+  ~170 MB (el autobús, ~370 con sus dos pestañas) y cada proceso de Node ~80 MB
+  más ~50 MB por escena cargada contra el `mem_limit` de `docker-compose.yml`;
+  un juego nuevo con dibujo se suma a la cuenta de ahí.
   Si Node falla en el NAS, el juego vuelve a Chromium sin avisar a nadie: el log
   dice «El pintor de … no está disponible».
 - **Tapar la espera.** Si el dibujo tarda más de un segundo, la jugada se enseña
@@ -170,8 +183,8 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   durante cada turno la mesa de cada botón y la de dormirse, y durante la espera
   entre manos reparte y pinta la siguiente (`Table.prepare_turn`, `Table.plan_deal`). Los dibujos por adelantado no se cancelan a medias:
   van de uno en uno y cada uno comprueba antes de empezar si sigue valiendo. Si
-  aun así se corta uno, `NodeScene` mata sus procesos y los arranca de nuevo en
-  el siguiente dibujo (~0,35 s), porque quedarían píxeles sin leer en la tubería.
+  aun así se corta uno, `NodeScene` mata los procesos de ese dibujo y el grupo
+  abre otros (~0,2 s), porque quedarían píxeles sin leer en la tubería.
 
 ## Acelerar un juego: receta de la moneda
 
@@ -185,6 +198,9 @@ el GIF. Por orden de ganancia:
    el momento de la primera edición con un `.gif`. Pulsar varias veces con pausas
    realistas (0,3 s y 1,5 s). Un cuelgue tampoco se ve sin esto: un clic sin
    respuesta suele ser que no cambia nada en pantalla, no que el bot se pare.
+   En el NAS, lo que tarda subir cada archivo a Discord sale en el informe
+   (tipo `upload`, sección «Subidas a Discord» de `docs/analisis_metricas.py`):
+   con el GIF ya pintado antes del clic, es lo único que queda por esperar.
 2. **Pintar antes del clic** («Rendimiento en el NAS»). Es la que convierte ~1 s de
    espera en 0. Hace falta que el resultado se pueda sortear antes sin enseñarlo y
    pocos botones distintos (en la moneda, dos GIF por tirada; en los dados, uno
