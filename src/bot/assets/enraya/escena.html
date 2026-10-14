@@ -428,7 +428,8 @@ function winGlow(g, win) {
 
 function drawBanner(g, b) {
   const kd = KIND[b.kind] || KIND.win, a = clamp(b.a, 0, 1), sc = 0.9 + 0.1 * a;
-  const w = 460, h = 96, cx = W / 2, cy = 248;
+  // `y` lo pone Python: con raya, el cartel se aparta de ella (arriba o abajo).
+  const w = 460, h = 96, cx = W / 2, cy = b.y || 248;
   g.save(); g.globalAlpha = a; g.translate(cx, cy); g.scale(sc, sc);
   g.shadowColor = `rgba(${kd.rgb},0.6)`; g.shadowBlur = 28 * S;
   const bg = g.createLinearGradient(0, -h / 2, 0, h / 2);

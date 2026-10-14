@@ -28,7 +28,7 @@ from PIL import Image
 
 from bot.services import browser_scene
 from bot.services.browser_scene import BrowserScene
-from bot.services.enraya_render import H, W, EnrayaRenderer, Media, encode
+from bot.services.enraya_render import EnrayaRenderer, H, Media, W, encode
 from bot.services.node_scene import NodeScene, patch_png
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "enraya" / "escena.html"

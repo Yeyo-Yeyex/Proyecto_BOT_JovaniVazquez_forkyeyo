@@ -20,14 +20,16 @@ misma para la escena y para Pillow.
 - `win`: `{"cells", "disc", "t"}` con las casillas de la raya y el avance de su
   brillo (0 a 1), o `None`.
 - `confetti`: `{"t", "disc"}`, avance del confeti (la semilla es la de `meta`), o `None`.
-- `banner`: `{"title", "sub", "kind", "a"}` (`kind`: `win`, `lose`, `draw` o
-  `time`; `a`, opacidad), o `None`.
+- `banner`: `{"title", "sub", "kind", "a", "y"}` (`kind`: `win`, `lose`, `draw` o
+  `time`; `a`, opacidad; `y`, altura de su centro, que con raya se aparta de
+  ella: `banner_y`), o `None`.
 """
 
 from __future__ import annotations
 
 import io
 import math
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -78,13 +80,23 @@ class Player:
     tag: str = ""
 
 
+def canvas_text(text: str) -> str:
+    """El texto sin emojis ni símbolos raros: las fuentes de la escena no los tienen."""
+    kept = "".join(
+        ch
+        for ch in unicodedata.normalize("NFC", text)
+        if ord(ch) <= 0xFFFF and unicodedata.category(ch) not in ("So", "Cs", "Co", "Mn", "Cf")
+    )
+    return " ".join(kept.split()) or "?"
+
+
 def meta_state(
     red: Player, yellow: Player, *, title: str, subtitle: str, seed: int
 ) -> dict[str, Any]:
-    """Lo fijo de la partida, tal como lo lee la escena."""
+    """Lo fijo de la partida, tal como lo lee la escena (nombres sin emojis)."""
     return {
-        "red": {"name": red.name, "tag": red.tag},
-        "yellow": {"name": yellow.name, "tag": yellow.tag},
+        "red": {"name": canvas_text(red.name), "tag": canvas_text(red.tag)},
+        "yellow": {"name": canvas_text(yellow.name), "tag": canvas_text(yellow.tag)},
         "title": title,
         "subtitle": subtitle,
         "seed": seed,
@@ -103,6 +115,22 @@ def banner(title: str, sub: str = "", *, kind: str = "win", a: float = 1.0) -> d
     """Un cartel para el final (`kind`: `win`, `lose`, `draw` o `time`)."""
     assert kind in ("win", "lose", "draw", "time"), kind
     return {"title": title, "sub": sub, "kind": kind, "a": round(a, 3)}
+
+
+#: Alturas del cartel: en medio, sobre las dos filas de arriba o sobre las dos de abajo.
+BANNER_MIDDLE = 248
+BANNER_TOP = GEOMETRY["y"] + CELL
+BANNER_BOTTOM = GEOMETRY["y"] + (ROWS - 1) * CELL
+
+
+def banner_y(board: Board) -> int:
+    """Dónde va el cartel: en medio o, si hay raya, donde tape menos fichas de ella."""
+    cells = board.winning_cells()
+    if not cells:
+        return BANNER_MIDDLE
+    top = sum(1 for _c, r in cells if r >= ROWS - 2)
+    bottom = sum(1 for _c, r in cells if r < 2)
+    return BANNER_TOP if top <= bottom else BANNER_BOTTOM
 
 
 def board_state(
@@ -135,6 +163,8 @@ def board_state(
     confetti = None
     if confetti_t is not None and board.winner is not None:
         confetti = {"t": round(confetti_t, 3), "disc": board.winner.value}
+    if end is not None:
+        end = {**end, "y": banner_y(board)}
     return {
         "grid": _grid(board),
         "falling": falling,
@@ -192,8 +222,10 @@ def win_steps(board: Board, *, end: dict[str, Any]) -> list[tuple[dict, int]]:
         t = (frame + 1) / WIN_FRAMES
         shown = {**end, "a": round(min(1.0, max(0.0, (t - 0.25) / 0.45)), 3)}
         steps.append(
-            (board_state(board, win_t=t, confetti_t=t, end=shown if shown["a"] > 0 else None),
-             WIN_FRAME_MS)
+            (
+                board_state(board, win_t=t, confetti_t=t, end=shown if shown["a"] > 0 else None),
+                WIN_FRAME_MS,
+            )
         )
     return steps
 
@@ -300,7 +332,9 @@ class EnrayaRenderer:
             if state["turn"] == disc:
                 draw.ellipse((x - 34, 160 - 34, x + 34, 160 + 34), outline=(255, 255, 255), width=3)
             draw.ellipse((x - 26, 160 - 26, x + 26, 160 + 26), fill=light)
-            draw.text((x, 210), meta[key]["name"][:14], font=text, fill=(255, 255, 255), anchor="mm")
+            draw.text(
+                (x, 210), meta[key]["name"][:14], font=text, fill=(255, 255, 255), anchor="mm"
+            )
             draw.text((x, 230), meta[key]["tag"][:16], font=text, fill=(170, 180, 220), anchor="mm")
         if state["falling"] is not None:
             fall = state["falling"]
@@ -342,10 +376,13 @@ class EnrayaRenderer:
                 draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(255, 255, 255), width=5)
         if state["banner"] is not None and state["banner"]["a"] >= 0.5:
             end = state["banner"]
-            draw.rounded_rectangle((W / 2 - 230, 200, W / 2 + 230, 290), 16, fill=(10, 12, 30))
+            y = end.get("y", BANNER_MIDDLE)
+            draw.rounded_rectangle(
+                (W / 2 - 230, y - 48, W / 2 + 230, y + 48), 16, fill=(10, 12, 30)
+            )
             big = self._font(TITLE_FONT, 34)
-            draw.text((W / 2, 236), end["title"], font=big, fill=(255, 226, 120), anchor="mm")
-            draw.text((W / 2, 270), end["sub"], font=text, fill=(230, 230, 240), anchor="mm")
+            draw.text((W / 2, y - 12), end["title"], font=big, fill=(255, 226, 120), anchor="mm")
+            draw.text((W / 2, y + 22), end["sub"], font=text, fill=(230, 230, 240), anchor="mm")
         return image
 
     def still(self, meta: dict[str, Any], state: dict[str, Any]) -> bytes:

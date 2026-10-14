@@ -46,6 +46,7 @@ from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs.achievements import Achievements, progress_bar
+from bot.cogs.enraya import Enraya
 from bot.cogs.gallos import Gallos
 from bot.cogs.message_stats import MessageStats
 from bot.cogs.patrimonio import Patrimonio
@@ -82,6 +83,7 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("rachas", "🔥", "Rachas", "Tus mejores rachas de todo"),
     ("objetos", "🎒", "Objetos", "Lo que llevas en la mochila"),
     ("gallo", "🐓", "Gallo", "Tu gallo de pelea y su historial"),
+    ("enraya", "🔴", "4 en raya", "Tu ficha, tu racha y los retos de hoy"),
 )
 SECTION_KEYS = tuple(key for key, *_ in SECTIONS)
 assert SECTION_KEYS == PERFIL_SECTIONS, "el logro «Expediente completo» cuenta estas secciones"
@@ -315,6 +317,11 @@ class Perfil(commands.Cog):
             if gallos is None:
                 return missing_embed("🐓 Gallo")
             return await gallos.gallo_embed(guild.id, target)
+        if key == "enraya":
+            enraya = find_cog(self.bot, Enraya)
+            if enraya is None:
+                return missing_embed("🔴 4 en raya")
+            return await enraya.enraya_embed(guild.id, target)
         return await self.summary(view)
 
     async def _stats(self, guild_id: int, user_id: int) -> dict[str, int]:

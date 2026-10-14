@@ -337,7 +337,9 @@ class _Search:
     @staticmethod
     def _evaluate(mine: int, mask: int) -> int:
         theirs = mine ^ mask
-        score = 4 * (_popcount(_winning_spots(mine, mask)) - _popcount(_winning_spots(theirs, mask)))
+        score = 4 * (
+            _popcount(_winning_spots(mine, mask)) - _popcount(_winning_spots(theirs, mask))
+        )
         return score + _popcount(mine & _CENTER) - _popcount(theirs & _CENTER)
 
     def negamax(self, mine: int, mask: int, depth: int, alpha: int, beta: int) -> int:
