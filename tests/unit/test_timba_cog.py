@@ -280,3 +280,40 @@ async def test_las_placas_del_final_dicen_lo_que_gana_o_pierde_cada_uno(
     assert views["Leo"].badge == ("lose", "-20 Y$")
     kind, text = views["Ana"].badge  # type: ignore[misc]
     assert kind == "win" and text.startswith("+") and views["Ana"].reveal
+
+
+async def test_el_turno_se_agota_en_el_plazo_que_se_ve(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+    publish = table.publish
+
+    async def slow_publish() -> None:
+        await publish()
+        clock.now += 5  # pintar y subir la mesa tarda
+
+    naps: list[float] = []
+    sleep = clock.sleep
+
+    async def spy(seconds: float) -> None:
+        naps.append(seconds)
+        await sleep(seconds)
+
+    table.publish = slow_publish  # type: ignore[method-assign]
+    table.cog.sleep = spy
+    await table.play_hand()
+    assert naps[0] == cog_module.TURN_SECONDS - 5
+
+
+# -- Listo -----------------------------------------------------------------------------
+
+
+async def test_listo_de_todos_empieza_la_mano_ya(tmp_path: Path) -> None:
+    _, table, _ = await make_table(tmp_path)
+    await table.mark_ready(click(ANA))
+    assert not table.go.is_set()
+    assert "✅ Ana" in (table.lobby_embed().description or "")
+    await table.mark_ready(click(LEO))
+    assert table.go.is_set()
+    await table.sit(make_user(12, "Eva"))
+    assert not table.go.is_set(), "quien llega no está listo"
+    await table.play_hand()
+    assert not any(c.ready for c in table.chairs) and not table.go.is_set()

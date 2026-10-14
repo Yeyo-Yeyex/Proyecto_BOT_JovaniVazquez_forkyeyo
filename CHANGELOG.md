@@ -8,6 +8,11 @@ criterio.
 
 ## 6.x
 
+### 6.1.0 · 2026-10-14
+
+- Timba: botón ✅ Listo entre manos (si lo pulsan todos, empieza ya) y dos minutos de espera si no
+- Timba: el turno se agota cuando marca el reloj de la mesa, no unos segundos después
+
 ### 6.0.1 · 2026-10-14
 
 - Interno: reglas para que Claude navegue el código con el grafo de graphify
