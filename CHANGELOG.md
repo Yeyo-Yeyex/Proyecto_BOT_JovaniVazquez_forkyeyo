@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.4.1 · 2026-10-14
+
+- Timba: al empezar la mano ya no se quedan los botones de entre manos y nadie se retira sin poder jugar
+
 ### 6.4.0 · 2026-10-14
 - Rastro: `vender` y `rastro`, segunda mano entre miembros con subastas e ITP
 
