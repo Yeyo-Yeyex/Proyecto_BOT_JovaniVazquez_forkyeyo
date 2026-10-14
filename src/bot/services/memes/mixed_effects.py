@@ -237,7 +237,9 @@ def tweet(request: MemeRequest) -> Image.Image:
         draw_text(base, (x, y), word, body_font, color)
         x += text_size(word, body_font)[0]
 
-    stamp = datetime.now().strftime("%-I:%M %p - %d %b %Y")
+    now = datetime.now()
+    # La hora sin cero delante a mano: Windows no entiende `%-I`.
+    stamp = f"{now.hour % 12 or 12}:{now:%M %p - %d %b %Y}"
     draw_text(base, (160, 45), wrap(name_font, _name(request), 1150), name_font)
     draw_text(base, (160, 95), wrap(small_font, f"@{_handle(request)}", 1150), small_font, "grey")
     draw_text(base, (40, 570), stamp, small_font, "grey")
