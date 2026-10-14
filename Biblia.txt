@@ -19,7 +19,7 @@ Principios obligatorios:
 
 ## 2. Tecnologías y convenciones
 
-- **Lenguaje:** Python 3.12 o superior, salvo que el entorno de despliegue requiera una versión distinta.
+- **Lenguaje:** Python 3.12 o superior, salvo que el entorno de despliegue requiera una versión distinta. La imagen del NAS usa 3.13 y el entorno local debe usar la misma.
 - **Librería de Discord:** `discord.py` 2.x. Usar sus comandos de aplicación (slash commands) como interfaz principal.
 - **Gestión de dependencias:** mantener las dependencias directas y sus versiones en `pyproject.toml`; usar un lockfile si el gestor elegido lo genera.
 - **Estilo:** seguir PEP 8, usar anotaciones de tipos en interfaces y funciones públicas, y preferir nombres descriptivos en inglés en el código.
@@ -280,6 +280,7 @@ El bot sigue versionado semántico (MAYOR.MENOR.PARCHE), juzgado desde quien usa
 - Evitar consultas redundantes a Discord: aprovechar los datos de la interacción y las cachés de la librería cuando sean suficientes.
 - Nada de trabajo lento antes de contestar a una interacción (ver «Cogs y comandos»). Los clics que llegan en ráfaga contra un mismo candado se aceptan fuera de él: dentro, cada uno espera al anterior y los últimos pasan de los 3 segundos de Discord.
 - El NAS tiene 4 hilos: el trabajo de imagen que no depende del orden va en paralelo (pestañas de `BrowserScene.render`, procesos de Node compartidos de `NodeScene`, que colaboran todos en cada dibujo, cada fotograma de `bot.utils.gif`, que empieza a codificarse mientras Node pinta, PNG de `browser_scene.assemble`). Nada de comprimir o abrir imágenes en el bucle de eventos: va en `asyncio.to_thread`; el informe apunta dónde se para el bucle (sección «Bloqueos del bucle»). Detalle en «Rendimiento en el NAS» de CLAUDE.md.
+- Un juego nuevo con animación sigue «Juego nuevo con dibujo» de CLAUDE.md: escena de canvas pintada con `NodeScene.render` (sin repartir a mano), azar repetible por fotograma (nunca `Math.random`), el estado que pasa de un fotograma a otro recreado con `warmup`, los fotogramas tal cual a `local_palette_gif`, imágenes quietas con `asyncio.to_thread`, pintar antes del clic cuando se pueda y ninguna subida de una imagen que ya se ve. Se mide antes y después con `docs/medir_dibujos.py` a 4 hilos.
 - Los GIF animados se escriben con `bot.utils.gif` (`shared_palette_gif` si los fotogramas comparten paleta, `local_palette_gif` si van a color completo), nunca con `save(save_all=True)` a pelo: la optimización por defecto de Pillow recorre los píxeles en Python y en el pachinko se comía ~750 ms de los ~870 de una tanda. Los efectos de imagen de los miembros (`services/memes`) son la excepción, porque sus fotogramas vienen de fuera.
 - Un panel con estado por usuario (como el de `pala`) admite una sola acción en curso: el cog guarda quién está en una (`working`) y rechaza la segunda, porque dos botones de dos paneles pueden llegar a la vez y cobrar dos veces.
 
@@ -316,6 +317,7 @@ El bot sigue versionado semántico (MAYOR.MENOR.PARCHE), juzgado desde quien usa
   2. Desconfiar de los caminos que fallan en silencio: las funciones puente «no lanzan y no hacen nada si el cog no está cargado», así que un fallo ahí no deja rastro en el log. Comprobar con una aserción que la llamada llega al cog y que el dato se guarda (por ejemplo, `profile.stats`), no solo que no hay excepciones.
   3. Si el síntoma es que falta todo (cero estadísticas, ningún aviso) y no solo una parte, sospechar antes del enlace entre componentes que de la lógica del juego.
   4. Una hipótesis se da por buena cuando una prueba la reproduce y el arreglo la hace pasar, no antes.
+- Un dibujo de Node lleva una prueba que compara el dibujo repartido entre procesos con el de un solo proceso, byte a byte, y comprueba que se ha repartido de verdad. Un cambio en el camino de dibujo (`node_scene`, `bot.utils.gif`, `assemble`) se da por bueno cuando el GIF y el PNG finales de cada juego salen con los mismos bytes que antes.
 - Mantener los ejemplos y la documentación coherentes con el comportamiento implementado.
 - Las pruebas usan las constantes del código (`WAGE_YAPDOLLARS_PER_EURO`, `IMV_WORK_EXEMPT`, `SELF_EMPLOYED_FEE`…), no cifras copiadas, para que recalibrar la economía no rompa decenas de pruebas por un número. Si una prueba necesita saldo, lo da con margen.
 - El azar se fuerza en la prueba (sustituyendo `random` o pasando la tirada), no se confía en que dos probabilidades distintas den resultados distintos: dos constantes con el mismo valor hacen que la prueba acierte por casualidad.
