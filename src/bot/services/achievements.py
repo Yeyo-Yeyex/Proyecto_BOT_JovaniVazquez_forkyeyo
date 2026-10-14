@@ -12,7 +12,8 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `bus_stats`, `craps_stats`,
+`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `bus_stats`, `poker_stats`,
+`craps_stats`,
 `pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
 `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
@@ -113,6 +114,10 @@ from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.pachinko_motion import VolleyMotion as PachinkoMotion
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.poker import Outcome as PokerOutcome
+from bot.services.poker import PokerHand
+from bot.services.poker import Rank as PokerRank
+from bot.services.poker import evaluate as poker_evaluate
 from bot.services.porras import MIN_BET as PORRA_MIN_BET
 from bot.services.porras import PROPOSITIONS as PORRA_PROPOSITIONS
 from bot.services.porras import allowed_games as porra_allowed_games
@@ -248,6 +253,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
+    Category("poker", "♠️ Póker", group=_CG),
     Category("dice", "🎲 Dados", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
@@ -485,6 +491,13 @@ BUS_LONGSHOT = Fraction(2, 13)
 BUS_SURE = Fraction(11, 13)
 #: Desde este multiplicador en juego, perder es perder a lo grande (×20).
 BUS_LOST_BIG = 20
+
+#: Prefijo de las manos ligadas al ir en el póker (`poker_made_flush`…), por `Rank.key`.
+POKER_MADE_PREFIX = "poker_made_"
+#: Manos de «Me sé todas las manos» del póker: de la pareja a la escalera de color.
+POKER_COLLECTION = tuple(
+    r for r in PokerRank if PokerRank.PAIR.order <= r.order <= PokerRank.STRAIGHT_FLUSH.order
+)
 
 #: Tipos de boleto de las carreras (`horses.BetKind`), uno por condición de «Quiniela completa».
 HORSE_BET_KINDS = tuple(kind.key for kind in HorseBetKind)
@@ -3630,6 +3643,181 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde una partida al autobús un viernes 13.", C, True),
     ])  # fmt: skip
 
+    # ♠️ Póker ----------------------------------------------------------------------------
+    a += _tiers("poker", "poker_games", [
+        (1, "poker_1", "Cartas sobre la mesa", "Juega tu primera mano de póker.", C),
+        (100, "poker_100", "Timba de los jueves", "Juega 100 manos de póker.", C),
+        (1_000, "poker_1k", "Tahúr del Casino del Estado", "Juega 1.000 manos de póker.", E),
+        (10_000, "poker_10k", "World Series of Moncloa", "Juega 10.000 manos de póker.", M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_calls", [
+        (100, "pokeri_100", "Voy, que diría Rajoy", "Ve 100 veces al final.", C),
+        (1_000, "pokeri_1k", "Manual de resistencia en la timba", "Ve 1.000 veces al final.", E),
+        (10_000, "pokeri_10k", "Ni una cuestión de confianza",
+         "Ve 10.000 veces al final. No dimites ni aunque te lo pida el CIS.", M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_folds", [
+        (1, "pokerr_1", "Me piro, vampiro", "Retírate de una mano de póker.", C),
+        (50, "pokerr_50", "Puigdemont en el maletero", "Retírate 50 veces.", C),
+        (500, "pokerr_500", "Dimisión en diferido",
+         "Retírate 500 veces. Como el finiquito de Bárcenas.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_wins", [
+        (10, "pokerw_10", "Le ganas a la banca", "Gana 10 manos a la banca enseñando cartas.", C),
+        (100, "pokerw_100", "Moción de censura ganada", "Gana 100 manos a la banca.", R),
+        (1_000, "pokerw_1k", "Mayoría absoluta en el tapete", "Gana 1.000 manos a la banca.", L),
+        (5_000, "pokerw_5k", "Más mano que Felipe en el 82", "Gana 5.000 manos a la banca.", M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_no_qualify", [
+        (10, "pokernq_10", "La banca no se presenta",
+         "Que la banca no juegue 10 veces cuando vas.", C),
+        (100, "pokernq_100", "Incomparecencia en el debate",
+         "Que la banca no juegue 100 veces cuando vas. Se le cayó el atril.", R),
+        (1_000, "pokernq_1k", "La banca está en Waterloo",
+         "Que la banca no juegue 1.000 veces cuando vas.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_losses", [
+        (1, "pokerp_1", "La banca siempre gana", "Pierde tu primera mano de póker al final.", C),
+        (10, "pokerp_10", "La banca rescatada por ti", "Pierde 10 manos al final.", C),
+        (100, "pokerp_100", "Sobre de Bárcenas, pero al revés", "Pierde 100 manos al final.", R),
+        (1_000, "pokerp_1k", "Sé fuerte, Luis", "Pierde 1.000 manos al final.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_ties", [
+        (1, "pokert_1", "Empate técnico del CIS", "Empata una mano con la banca.", C),
+        (10, "pokert_10", "Gran coalición", "Empata 10 manos con la banca.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_straight", [
+        (100, "poker_escaleras", "Escalera de incendios de Génova",
+         "Liga 100 escaleras yendo al final.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_flush", [
+        (1, "poker_color", "Todo del mismo color, como el CGPJ",
+         "Liga un color yendo al final.", C),
+        (50, "poker_color_50", "Monocolor", "Liga 50 colores yendo al final.", E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_full_house", [
+        (1, "poker_full", "Full house, full Falcon", "Liga un full yendo al final.", C),
+        (50, "poker_full_50", "Casa llena, como el Congreso en los Presupuestos",
+         "Liga 50 fulls yendo al final.", E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_quads", [
+        (1, "poker_poker", "¡Póker!", "Liga un póker (cuatro iguales) yendo al final.", R),
+        (10, "poker_poker_10", "Cuatro iguales, como los ministros portavoces",
+         "Liga 10 pókers yendo al final.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_straight_flush", [
+        (1, "poker_escalera_color", "Escalera de color del pantano inaugurado",
+         "Liga una escalera de color yendo al final.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_made_royal_flush", [
+        (1, "poker_real", "Escalera real, por la gracia de Dios",
+         "Liga una escalera real: el ante paga 100 a 1.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="poker_todas",
+        name="Me sé todas las manos",
+        description="Liga yendo al final todas las jugadas, de la pareja a la escalera de color.",
+        category="poker",
+        rarity=L,
+        conditions=tuple((f"{POKER_MADE_PREFIX}{r.key}", 1) for r in POKER_COLLECTION),
+    ))  # fmt: skip
+    a += _tiers("poker", "poker_win_max", [
+        (10_000, "poker_rich", "Bote de la timba de Moncloa",
+         "Gana 10.000 Y$ en una mano de póker.", E),
+        (100_000, "poker_richer", "El farol de los fondos europeos",
+         "Gana 100.000 Y$ en una mano de póker. Bruselas pide justificantes.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("poker", "poker_fold_would_win", [
+        (1, "poker_cobarde", "Te retiraste y ganabas",
+         "Retírate de una mano que habrías ganado.", C, True),
+        (100, "poker_cobarde_100", "Miedo escénico, como a una investidura fallida",
+         "Retírate 100 veces de manos que habrías ganado.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_fold_monster", [
+        (1, "poker_tiraste_full", "Tiraste un full a la papelera",
+         "Retírate de una mano que acababa en full o mejor.", L, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_fold_saved", [
+        (10, "poker_bien_retirado", "Retirada a tiempo",
+         "Retírate de 10 manos que habrías perdido.", C),
+        (100, "poker_bien_retirado_100", "Olfato de Tezanos",
+         "Retírate de 100 manos que habrías perdido.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_bad_beat", [
+        (1, "poker_bad_beat", "Bad beat del procés",
+         "Pierde yendo al final con color o mejor.", R, True),
+        (10, "poker_bad_beat_10", "Gafe como un ministro en Bruselas",
+         "Pierde 10 veces yendo al final con color o mejor.", E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_dealer_monster", [
+        (1, "poker_banca_poker", "La banca tenía póker",
+         "Pierde contra un póker o mejor de la banca.", R, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_kicker", [
+        (1, "poker_kicker", "Por el kicker, como unas primarias",
+         "Pierde contra la misma jugada que la tuya, por una carta.", C),
+        (50, "poker_kicker_50", "Siempre por una carta",
+         "Pierde 50 manos contra la misma jugada que la tuya.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_wheel_win", [
+        (1, "poker_rueda", "La rueda, como el plasma de Rajoy",
+         "Gana con la escalera del as al cinco.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_aces", [
+        (1, "poker_ases", "Ases en la manga del Falcon", "Recibe una pareja de ases.", R),
+        (25, "poker_ases_25", "Pocket rockets de Kim Jong-un", "Recibe 25 parejas de ases.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_aces_lost", [
+        (1, "poker_ases_rotos", "Ases rotos, como las promesas electorales",
+         "Pierde yendo al final con una pareja de ases en la mano.", E, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_72_win", [
+        (1, "poker_72", "Con un 7 y un 2, como Milei con la motosierra",
+         "Gana con un 7 y un 2 de distinto palo, la peor mano de salida.", R, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_bluff", [
+        (1, "poker_farol", "Farol de investidura",
+         "Ve al final con carta alta y que la banca no juegue.", C),
+        (25, "poker_farol_25", "Faroles como los del Falcon",
+         "Cobra 25 veces yendo con carta alta porque la banca no juega.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_air_call_wins", [
+        (10, "poker_fe", "Fe ciega en el turn", "Gana 10 manos yendo con nada en el flop.", C),
+        (100, "poker_fe_100", "Hay que tener fe, como en los Presupuestos",
+         "Gana 100 manos yendo con nada en el flop.", E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_flop_monster", [
+        (1, "poker_flop_full", "Ligado en el flop, atado y bien atado",
+         "Ten full o mejor ya con el flop.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_tie_board", [
+        (1, "poker_tablas", "Las cinco de la mesa",
+         "Empata porque los dos jugáis las cinco cartas comunitarias.", C, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_min_stake", [
+        (1, "poker_1y", "Ciega pequeñísima", "Juega al póker con un ante de 1 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_cash_666", [
+        (1, "poker_666", "La mano del diablo", "Cobra exactamente 666 Y$ al póker.", C, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_cash_69", [
+        (1, "poker_69", "Sesenta y nueve, carta arriba y carta abajo",
+         "Cobra exactamente 69 Y$ al póker.", C, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_night", [
+        (1, "poker_madrugada", "Timba clandestina", "Juega al póker de madrugada (de 2 a 6).", C),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_reyes", [
+        (1, "poker_reyes", "Tres Reyes Magos, un trío", "Juega al póker el 6 de enero.", C),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_inocentes", [
+        (1, "poker_inocentes", "La inocentada de la banca",
+         "Juega al póker el 28 de diciembre.", C),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_friday13", [
+        (1, "poker_viernes13", "Mano gafada", "Pierde al póker un viernes 13.", C, True),
+    ])  # fmt: skip
+
     # 🎲 Dados ----------------------------------------------------------------------------
     a += _tiers("dice", "dice_games", [
         (1, "dados_1", "Alea iacta est", "Juega tu primera partida de dados.", C),
@@ -4231,6 +4419,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
             ("gallos_fights", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_fifteen_games",
+        name="Quince apellidos y cara de póker",
+        description="Juega a los quince juegos del casino, la timba de póker incluida.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1), ("poker_games", 1),
         ),
     ))  # fmt: skip
 
@@ -12604,6 +12806,76 @@ def bus_stats(game: BusGame, *, when: datetime) -> StatDelta:
     bump("bus_night", 2 <= when.hour < 6)
     bump("bus_rush", when.weekday() < 5 and 7 <= when.hour < 9)
     bump("bus_canarias", when.month == 5 and when.day == 30)
+    return delta
+
+
+def poker_stats(hand: PokerHand, *, when: datetime) -> StatDelta:
+    """Contadores de una mano de póker decidida (sin lo común del casino).
+
+    Las jugadas ligadas (`poker_made_*`) solo cuentan si fue al final: quien se
+    retira no ve el turn ni el river. Al retirarse cuenta lo que habría pasado.
+
+    Args:
+        hand: La mano decidida.
+        when: Hora local.
+    """
+    delta = StatDelta(add={"poker_games": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    cards = hand.cards
+    player, dealer = cards.player_value, cards.dealer_value
+    outcome = hand.would_have
+    pocket = sorted(c.rank for c in cards.player)
+    friday13 = when.weekday() == 4 and when.day == 13
+    bump("poker_aces", pocket == [1, 1])
+    bump("poker_flop_monster", cards.flop_value.rank.order >= PokerRank.FULL_HOUSE.order)
+    bump("poker_min_stake", hand.ante == 1)
+    if hand.called:
+        won = outcome in (PokerOutcome.WIN, PokerOutcome.NO_QUALIFY)
+        bump("poker_calls")
+        bump(f"{POKER_MADE_PREFIX}{player.rank.key}", player.rank is not PokerRank.HIGH_CARD)
+        bump("poker_wins", outcome is PokerOutcome.WIN)
+        bump("poker_no_qualify", outcome is PokerOutcome.NO_QUALIFY)
+        bump("poker_ties", outcome is PokerOutcome.TIE)
+        bump("poker_air_call_wins", won and cards.flop_value.rank is PokerRank.HIGH_CARD)
+        bump(
+            "poker_bluff",
+            outcome is PokerOutcome.NO_QUALIFY and player.rank is PokerRank.HIGH_CARD,
+        )
+        bump(
+            "poker_wheel_win",
+            won and player.rank is PokerRank.STRAIGHT and player.tiebreak[0] == 5,
+        )
+        offsuit = cards.player[0].suit != cards.player[1].suit
+        bump("poker_72_win", won and pocket == [2, 7] and offsuit)
+        bump(
+            "poker_tie_board",
+            outcome is PokerOutcome.TIE and player == poker_evaluate(cards.board),
+        )
+        if outcome is PokerOutcome.LOSE:
+            bump("poker_losses")
+            bump("poker_bad_beat", player.rank.order >= PokerRank.FLUSH.order)
+            bump("poker_dealer_monster", dealer.rank.order >= PokerRank.QUADS.order)
+            bump("poker_kicker", player.rank is dealer.rank)
+            bump("poker_aces_lost", pocket == [1, 1])
+            bump("poker_friday13", friday13)
+        if hand.net > 0:
+            delta.peak["poker_win_max"] = hand.net
+        bump("poker_cash_666", hand.payout == 666)
+        bump("poker_cash_69", hand.payout == 69)
+    else:
+        bump("poker_folds")
+        bump("poker_fold_would_win", outcome in (PokerOutcome.WIN, PokerOutcome.NO_QUALIFY))
+        bump("poker_fold_saved", outcome is PokerOutcome.LOSE)
+        bump("poker_fold_monster", player.rank.order >= PokerRank.FULL_HOUSE.order)
+        bump("poker_friday13", friday13)
+    bump("poker_night", 2 <= when.hour < 6)
+    bump("poker_reyes", when.month == 1 and when.day == 6)
+    bump("poker_inocentes", when.month == 12 and when.day == 28)
     return delta
 
 
