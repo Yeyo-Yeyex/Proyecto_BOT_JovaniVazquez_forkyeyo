@@ -439,7 +439,377 @@ window.Tapete = (() => {
     g.restore();
   }
 
-  const PATTERNS = { oro, israel, espana, canarias, boricua, imagen };
+  // Un texto en negrita centrado, de alto `size` (para los carteles y sellos).
+  function label(g, text, x, y, size, color, font = "Montserrat") {
+    g.font = `700 ${size}px ${font}`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = color; g.fillText(text, x, y);
+  }
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+
+  // -- Prove me wrong --------------------------------------------------------------------------
+  // Azul de campus americano, estrellas arriba, barras abajo y el cartel del debate en medio.
+
+  function kirk(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    const d = Math.hypot(w, h);
+    g.fillStyle = radial(g, w * 0.45, h * 0.4, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#2c4c8c"], [0.5, "#17306a"], [1, "#060f26"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // Barras rojas y blancas por abajo, como el faldón de la mesa del debate.
+    const band = h * 0.16, sh = band / 7;
+    for (let i = 0; i < 7; i++) {
+      g.fillStyle = i % 2 ? "#f2f2f2" : "#b22234";
+      g.fillRect(0, h - band + i * sh, w, sh + 0.5);
+    }
+    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(0, h - band, w, Math.max(1, h * 0.004));
+    // Una fila de estrellas arriba.
+    const n = Math.max(8, Math.round(w / (h * 0.09)));
+    for (let i = 0; i < n; i++) {
+      starPath(g, (i + 0.5) * w / n, h * 0.07, h * 0.024, 0.4); g.fillStyle = "rgba(255,255,255,0.75)"; g.fill();
+    }
+    // El cartel, un poco torcido, con su sombra.
+    const cw = h * 0.6 * es, ch = h * 0.27 * es;
+    g.save(); g.translate(ex, ey); g.rotate(-0.06);
+    g.shadowColor = "rgba(0,0,20,0.5)"; g.shadowBlur = h * 0.02; g.shadowOffsetY = h * 0.008;
+    roundRect(g, -cw / 2, -ch / 2, cw, ch, ch * 0.08);
+    g.fillStyle = linear(g, 0, -ch / 2, 0, ch / 2, [[0, "#ffffff"], [1, "#e6e8ee"]]); g.fill();
+    g.shadowColor = "transparent";
+    g.lineWidth = ch * 0.06; g.strokeStyle = "#b22234"; g.stroke();
+    label(g, "PROVE ME", 0, -ch * 0.17, ch * 0.3, "#0b1f4f");
+    label(g, "WRONG", 0, ch * 0.2, ch * 0.34, "#b22234");
+    g.restore();
+  }
+
+  // -- El puño y la rosa -----------------------------------------------------------------------
+  // Rojo de Ferraz con un damasco de rosas y el puño que la sujeta en medio.
+
+  // Una rosa vista de frente: pétalos en espiral, de fuera adentro.
+  function rose(g, x, y, r, petal, line) {
+    g.save(); g.translate(x, y);
+    for (let k = 0; k < 3; k++) {
+      const rr = r * (1 - k * 0.3), n = 5 - k;
+      for (let i = 0; i < n; i++) {
+        const a = i * TAU / n + k * 0.6;
+        g.beginPath(); g.ellipse(Math.cos(a) * rr * 0.45, Math.sin(a) * rr * 0.45, rr * 0.55, rr * 0.42, a, 0, TAU);
+        g.fillStyle = petal; g.fill();
+        if (line) { g.lineWidth = r * 0.06; g.strokeStyle = line; g.stroke(); }
+      }
+    }
+    g.beginPath(); g.arc(0, 0, r * 0.16, 0, TAU); g.fillStyle = line || petal; g.fill();
+    g.restore();
+  }
+  function psoe(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    const d = Math.hypot(w, h);
+    g.fillStyle = radial(g, w * 0.45, h * 0.4, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#f0333a"], [0.5, "#cc0f1c"], [1, "#5e050b"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // Damasco de rosas pequeñas al tresbolillo.
+    const s = Math.min(w, h) / 5.5;
+    for (let j = 0; j * s * 0.86 < h + s; j++) {
+      for (let i = -1; i * s < w + s; i++) {
+        rose(g, i * s + (j % 2 ? s / 2 : 0), j * s * 0.86, s * 0.13, "rgba(255,255,255,0.06)");
+      }
+    }
+    // El puño en alto agarrando el tallo, con la rosa encima (100 de alto, centrado).
+    const k = h * 0.0045 * es;
+    g.save(); g.translate(ex, ey); g.scale(k, k);
+    g.shadowColor = "rgba(40,0,0,0.45)"; g.shadowBlur = 5; g.shadowOffsetY = 1.5;
+    g.fillStyle = "#ffffff"; g.strokeStyle = "#ffffff"; g.lineCap = "round";
+    // Tallo y hojas.
+    g.lineWidth = 3; g.beginPath(); g.moveTo(0, 2); g.quadraticCurveTo(-3, -16, 3, -30); g.stroke();
+    for (const [x, y, a] of [[-2, -12, -2.4], [0, -22, -0.5]]) {
+      g.beginPath(); g.ellipse(x + Math.cos(a) * 6, y + Math.sin(a) * 6, 7, 3, a, 0, TAU); g.fill();
+    }
+    rose(g, 4, -40, 17, "#ffffff", "#cc0f1c");
+    // Antebrazo, puño (cuatro nudillos de frente) y el pulgar cruzado.
+    g.beginPath(); g.moveTo(-10, 24); g.lineTo(-12, 50); g.lineTo(12, 50); g.lineTo(10, 24); g.closePath(); g.fill();
+    roundRect(g, -15, 0, 30, 27, 8); g.fill();
+    g.shadowColor = "transparent";
+    g.strokeStyle = "#cc0f1c"; g.lineWidth = 1.1;
+    for (const x of [-7.5, 0, 7.5]) { g.beginPath(); g.moveTo(x, 1); g.lineTo(x, 10); g.stroke(); }
+    g.beginPath(); g.moveTo(-15, 11); g.lineTo(15, 11); g.stroke();
+    roundRect(g, -13, 12.5, 22, 6, 3); g.fillStyle = "#ffffff"; g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(-9, 27); g.lineTo(9, 27); g.stroke();
+    g.restore();
+  }
+
+  // -- NO-DO -----------------------------------------------------------------------------------
+  // Película vieja en blanco y negro: grano, rayas, perforaciones y la cortinilla del noticiario.
+
+  function nodo(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    const d = Math.hypot(w, h), u = Math.min(w, h);
+    g.fillStyle = radial(g, w * 0.5, h * 0.45, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#d8ceb6"], [0.5, "#9d927a"], [1, "#2e2a22"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // La cuenta atrás de la cola de la película, muy tenue.
+    g.strokeStyle = "rgba(30,25,15,0.18)"; g.lineWidth = u / 200;
+    for (const r of [0.36, 0.3]) { g.beginPath(); g.arc(ex, ey, h * r * es, 0, TAU); g.stroke(); }
+    g.beginPath(); g.moveTo(ex - w, ey); g.lineTo(ex + w, ey); g.moveTo(ex, ey - h); g.lineTo(ex, ey + h); g.stroke();
+    // Grano y rayas.
+    const r = rng(36);
+    for (let i = 0; i < w * h / 40; i++) {
+      g.fillStyle = r() < 0.5 ? "rgba(255,250,235,0.08)" : "rgba(0,0,0,0.09)";
+      g.fillRect(r() * w, r() * h, 1 + r(), 1 + r());
+    }
+    for (let i = 0; i < 9; i++) {
+      const x = r() * w;
+      g.strokeStyle = r() < 0.6 ? "rgba(255,250,235,0.18)" : "rgba(0,0,0,0.22)"; g.lineWidth = 0.5 + r();
+      g.beginPath(); g.moveTo(x, r() * h * 0.3); g.lineTo(x + (r() - 0.5) * 6, h * (0.6 + r() * 0.4)); g.stroke();
+    }
+    // Perforaciones a los lados.
+    const sw = Math.max(8, w * 0.035), hole = sw * 0.5;
+    for (const x0 of [0, w - sw]) {
+      g.fillStyle = "#120f0a"; g.fillRect(x0, 0, sw, h);
+      for (let y = hole * 0.6; y < h; y += hole * 1.8) {
+        roundRect(g, x0 + (sw - hole) / 2, y, hole, hole * 1.1, hole * 0.2); g.fillStyle = "#cfc5ad"; g.fill();
+      }
+    }
+    // La cortinilla: NO-DO en su recuadro de doble filete.
+    const bw = h * 0.62 * es, bh = h * 0.3 * es;
+    g.save(); g.translate(ex, ey);
+    roundRect(g, -bw / 2, -bh / 2, bw, bh, bh * 0.08); g.fillStyle = "rgba(20,17,12,0.82)"; g.fill();
+    g.strokeStyle = "rgba(235,225,200,0.85)"; g.lineWidth = bh * 0.03; g.stroke();
+    roundRect(g, -bw / 2 + bh * 0.07, -bh / 2 + bh * 0.07, bw - bh * 0.14, bh * 0.86, bh * 0.05);
+    g.lineWidth = bh * 0.012; g.stroke();
+    label(g, "NO-DO", 0, -bh * 0.06, bh * 0.46, "#ece3cc");
+    label(g, "NOTICIARIOS Y DOCUMENTALES", 0, bh * 0.3, bh * 0.085, "#c9bea3");
+    g.restore();
+  }
+
+  // -- Diamantes -------------------------------------------------------------------------------
+  // Terciopelo negro azulado con brillantes tallados, una celosía de plata y destellos.
+
+  // Un brillante de perfil, de `s` de radio: corona con la tabla arriba y pabellón en punta.
+  function gem(g, x, y, s, rot) {
+    g.save(); g.translate(x, y); g.rotate(rot);
+    const T = -0.42 * s, t = 0.55 * s, P = 0.95 * s;
+    const facets = [
+      [[-s, 0], [-t, T], [-t * 0.3, 0], "#e9f6ff"], [[-t * 0.3, 0], [-t, T], [t, T], "#ffffff"],
+      [[-t * 0.3, 0], [t, T], [t * 0.3, 0], "#cfeaff"], [[t * 0.3, 0], [t, T], [s, 0], "#9fd2f5"],
+      [[-s, 0], [-t * 0.3, 0], [0, P], "#bfe2fa"], [[-t * 0.3, 0], [t * 0.3, 0], [0, P], "#7fbde8"],
+      [[t * 0.3, 0], [s, 0], [0, P], "#5c9fd0"],
+    ];
+    for (const [a, b, c, color] of facets) {
+      g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c); g.closePath();
+      g.fillStyle = color; g.fill();
+    }
+    g.beginPath(); g.moveTo(-s, 0); g.lineTo(-t, T); g.lineTo(t, T); g.lineTo(s, 0); g.lineTo(0, P); g.closePath();
+    g.strokeStyle = "rgba(20,50,90,0.55)"; g.lineWidth = Math.max(0.5, s * 0.05); g.stroke();
+    g.restore();
+    sparkle(g, x - s * 0.25, y - s * 0.3, s * 0.45, "rgba(255,255,255,0.9)");
+  }
+  function diamantes(g, w, h) {
+    const d = Math.hypot(w, h), u = Math.min(w, h);
+    g.fillStyle = radial(g, w * 0.45, h * 0.4, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#26365a"], [0.5, "#111a30"], [1, "#03050b"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // Celosía de plata.
+    const s = u / 4.5;
+    g.lineWidth = Math.max(0.6, u / 600); g.strokeStyle = "rgba(200,220,245,0.12)"; g.beginPath();
+    for (let k = -h; k < w + h; k += s) { g.moveTo(k, 0); g.lineTo(k + h, h); g.moveTo(k + h, 0); g.lineTo(k, h); }
+    g.stroke();
+    // Un brillante en cada cruce (algo movido) y polvo de destellos.
+    const r = rng(77);
+    for (let j = 0; j * s / 2 < h + s; j++) {
+      for (let i = -1; i * s < w + s; i++) {
+        const x = i * s + (j % 2 ? s / 2 : 0) + (r() - 0.5) * s * 0.1, y = j * s / 2 + (r() - 0.5) * s * 0.1;
+        gem(g, x, y, s * (0.11 + r() * 0.05), (r() - 0.5) * 0.5);
+      }
+    }
+    for (let i = 0; i < w * h / 2500; i++) {
+      sparkle(g, r() * w, r() * h, u * (0.004 + r() * 0.01), `rgba(220,240,255,${0.2 + r() * 0.5})`);
+    }
+    // Doble filete de plata.
+    g.strokeStyle = "rgba(225,235,250,0.55)"; g.lineWidth = u / 240;
+    g.strokeRect(u * 0.025, u * 0.025, w - u * 0.05, h - u * 0.05);
+    g.strokeStyle = "rgba(120,140,170,0.45)"; g.lineWidth = u / 400;
+    g.strokeRect(u * 0.037, u * 0.037, w - u * 0.074, h - u * 0.074);
+  }
+
+  // -- Los archivos ----------------------------------------------------------------------------
+  // Un expediente mecanografiado, casi todo tachado en negro, con el sello de CLASSIFIED.
+
+  function epstein(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    g.fillStyle = linear(g, 0, 0, w * 0.3, h, [[0, "#e6d4a4"], [0.6, "#c9b077"], [1, "#7d6436"]]);
+    g.fillRect(0, 0, w, h);
+    const r = rng(1953), lh = h / 22, m = w * 0.07;
+    // La raya de la cabecera, sin texto: ahí van los títulos de cada mesa.
+    g.fillStyle = "rgba(40,35,25,0.5)"; g.fillRect(m, lh * 2.1, w - 2 * m, Math.max(1, lh * 0.06));
+    // Renglones: palabras grises y, encima, los tachones.
+    for (let y = lh * 3; y < h - lh; y += lh) {
+      let x = m;
+      const end = w - m - (r() < 0.15 ? r() * w * 0.4 : 0);
+      while (x < end) {
+        const word = lh * (0.6 + r() * 2.2);
+        g.fillStyle = "rgba(45,40,30,0.25)"; g.fillRect(x, y - lh * 0.15, Math.min(word, end - x), lh * 0.3);
+        x += word + lh * 0.35;
+      }
+      if (r() < 0.4) {
+        const bx = m + r() * (w - 2 * m) * 0.6, bw = (w - 2 * m) * (0.1 + r() * 0.35);
+        g.fillStyle = "rgba(12,12,12,0.85)"; g.fillRect(bx, y - lh * 0.32, Math.min(bw, w - m - bx), lh * 0.64);
+      }
+    }
+    // Un cerco de café.
+    g.strokeStyle = "rgba(110,70,30,0.22)"; g.lineWidth = lh * 0.25;
+    g.beginPath(); g.arc(w * 0.82, h * 0.78, lh * 2.2, 0.3, TAU - 0.6); g.stroke();
+    // El sello.
+    const sw = h * 0.62 * es, sh = h * 0.17 * es;
+    g.save(); g.translate(ex, ey); g.rotate(-0.18);
+    g.strokeStyle = "rgba(190,20,25,0.7)"; g.lineWidth = sh * 0.08;
+    roundRect(g, -sw / 2, -sh / 2, sw, sh, sh * 0.12); g.stroke();
+    label(g, "CLASSIFIED", 0, sh * 0.03, sh * 0.62, "rgba(190,20,25,0.7)");
+    g.restore();
+  }
+
+  // -- El Falcon -------------------------------------------------------------------------------
+  // Cielo con nubes y el Falcon presidencial dejando su estela camino de un mitin.
+
+  function falcon(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    g.fillStyle = linear(g, 0, 0, 0, h, [[0, "#0d4a96"], [0.55, "#3b8fdc"], [1, "#9fd0f5"]]);
+    g.fillRect(0, 0, w, h);
+    // Nubes: bolitas blancas que se juntan en cúmulos.
+    const r = rng(900);
+    for (let c = 0; c < 9; c++) {
+      const cx = r() * w, cy = h * (0.5 + r() * 0.5), cr = h * (0.05 + r() * 0.06);
+      for (let i = 0; i < 14; i++) {
+        g.beginPath(); g.arc(cx + (r() - 0.5) * cr * 3, cy + (r() - 0.5) * cr * 0.8, cr * (0.5 + r() * 0.6), 0, TAU);
+        g.fillStyle = "rgba(255,255,255,0.10)"; g.fill();
+      }
+    }
+    // El avión, de `k` por unidad (30 de largo), un poco morro arriba.
+    const k = h * 0.019 * es, rot = -0.12;
+    // Las estelas, desde el borde hasta los motores.
+    g.save(); g.translate(ex, ey); g.rotate(rot);
+    for (const dy of [-1.6, 1.6]) {
+      g.strokeStyle = linear(g, -w, 0, -13 * k, 0, [[0, "rgba(255,255,255,0)"], [1, "rgba(255,255,255,0.75)"]]);
+      g.lineWidth = k * 0.9; g.lineCap = "round";
+      g.beginPath(); g.moveTo(-w * 1.2, dy * k); g.lineTo(-13 * k, dy * k * 0.4); g.stroke();
+    }
+    g.scale(k, k);
+    g.shadowColor = "rgba(0,20,60,0.4)"; g.shadowBlur = 4; g.shadowOffsetY = 2;
+    const metal = linear(g, 0, -2, 0, 2, [[0, "#ffffff"], [0.6, "#e4e9ef"], [1, "#a8b3c0"]]);
+    // Alas en flecha (la de detrás, más oscura) y los estabilizadores en T.
+    g.fillStyle = "#b7c1cc";
+    g.beginPath(); g.moveTo(1, -1); g.lineTo(-5, -10); g.lineTo(-7.5, -10); g.lineTo(-4, -1); g.closePath(); g.fill();
+    g.fillStyle = metal;
+    g.beginPath(); g.moveTo(2, 0.8); g.lineTo(-6, 12); g.lineTo(-9, 12); g.lineTo(-4, 0.8); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(-11, -1.5); g.lineTo(-14, -7); g.lineTo(-15.5, -7); g.lineTo(-14.5, -1.5); g.closePath(); g.fill();
+    // Fuselaje y motores de cola.
+    g.beginPath(); g.moveTo(15, 0); g.quadraticCurveTo(14, -2, 9, -2); g.lineTo(-13, -1.6); g.lineTo(-15, -0.6);
+    g.lineTo(-15, 0.8); g.lineTo(-13, 1.6); g.lineTo(9, 2); g.quadraticCurveTo(14, 2, 15, 0); g.closePath(); g.fill();
+    g.shadowColor = "transparent";
+    g.fillStyle = "#c9d1da"; roundRect(g, -12.5, -3.2, 5, 1.8, 0.9); g.fill();
+    // Ventanillas, cabina y la franja rojigualda.
+    g.fillStyle = "#1b2a3d";
+    for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(7 - i * 2.2, -0.7, 0.42, 0, TAU); g.fill(); }
+    g.beginPath(); g.moveTo(13.8, -0.9); g.quadraticCurveTo(12.6, -1.8, 11.2, -1.6); g.lineTo(11.4, -0.6); g.closePath(); g.fill();
+    g.fillStyle = ES_RED; g.fillRect(-12, 0.5, 21, 0.45);
+    g.fillStyle = ES_GOLD; g.fillRect(-12, 0.95, 21, 0.3);
+    g.restore();
+  }
+
+  // -- Hacienda --------------------------------------------------------------------------------
+  // El Modelo 100 de la Renta: casillas, renglones y el sello de A INGRESAR.
+
+  function hacienda(g, w, h) {
+    g.fillStyle = linear(g, 0, 0, w * 0.3, h, [[0, "#d3dee7"], [0.6, "#a7bacb"], [1, "#5d7489"]]);
+    g.fillRect(0, 0, w, h);
+    const lh = h / 16, m = w * 0.06, r = rng(100);
+    // La franja de la cabecera, sin texto: ahí van los títulos de cada mesa.
+    g.fillStyle = "#1d4f7c"; g.fillRect(0, 0, w, lh * 1.5);
+    g.textBaseline = "middle";
+    // Dos columnas de casillas: el renglón, el número y la caja con su importe.
+    const col = (w - 3 * m) / 2;
+    for (let c = 0; c < 2; c++) {
+      const x0 = m + c * (col + m);
+      for (let y = lh * 2.4; y < h - lh * 0.8; y += lh) {
+        g.fillStyle = "rgba(29,79,124,0.06)"; g.fillRect(x0, y - lh * 0.42, col, lh * 0.84);
+        g.fillStyle = "rgba(60,80,100,0.2)"; g.fillRect(x0 + lh * 0.2, y - lh * 0.08, col * (0.25 + r() * 0.25), lh * 0.16);
+        const bx = x0 + col * 0.58, bw = col * 0.42;
+        g.fillStyle = "rgba(255,255,255,0.45)"; g.fillRect(bx, y - lh * 0.34, bw, lh * 0.68);
+        g.strokeStyle = "rgba(29,79,124,0.3)"; g.lineWidth = Math.max(0.6, lh * 0.03); g.strokeRect(bx, y - lh * 0.34, bw, lh * 0.68);
+        g.font = `700 ${lh * 0.32}px Montserrat`; g.textAlign = "left"; g.fillStyle = "rgba(29,79,124,0.45)";
+        g.fillText(String(Math.floor(r() * 900 + 10)).padStart(4, "0"), bx + lh * 0.1, y);
+        g.textAlign = "right"; g.fillStyle = "rgba(30,30,30,0.35)";
+        g.fillText(`${Math.floor(r() * 99999).toLocaleString("es-ES")},${String(Math.floor(r() * 100)).padStart(2, "0")}`, bx + bw - lh * 0.12, y);
+      }
+    }
+    // El sello redondo, abajo a la derecha.
+    const R = h * 0.13;
+    g.save(); g.translate(w - m - R, h - lh - R * 0.9); g.rotate(-0.25);
+    g.strokeStyle = "rgba(200,30,30,0.6)"; g.lineWidth = R * 0.08;
+    g.beginPath(); g.arc(0, 0, R, 0, TAU); g.stroke();
+    g.lineWidth = R * 0.03; g.beginPath(); g.arc(0, 0, R * 0.82, 0, TAU); g.stroke();
+    label(g, "A INGRESAR", 0, 0, R * 0.3, "rgba(200,30,30,0.6)");
+    g.restore();
+  }
+
+  // -- Corea del Norte -------------------------------------------------------------------------
+  // La bandera de Pyongyang: azul, filetes blancos, el rojo y la estrella en su círculo.
+
+  function corea(g, w, h, [ex, ey, es] = [Math.min(h * 0.5, w * 0.3), h / 2, 1]) {
+    g.fillStyle = linear(g, 0, 0, 0, h, [
+      [0, "#0b5cb8"], [0.2, "#024fa2"], [0.2, "#ffffff"], [0.235, "#eef1f5"], [0.235, "#f03a42"],
+      [0.5, "#ed1c27"], [0.765, "#c8101b"], [0.765, "#ffffff"], [0.8, "#eef1f5"], [0.8, "#024fa2"], [1, "#013a78"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    const R = h * 0.21 * es;
+    g.save(); g.shadowColor = "rgba(60,0,0,0.35)"; g.shadowBlur = h * 0.015; g.shadowOffsetY = h * 0.004;
+    g.beginPath(); g.arc(ex, ey, R, 0, TAU); g.fillStyle = "#ffffff"; g.fill();
+    g.shadowColor = "transparent";
+    starPath(g, ex, ey, R * 0.95, 0.382); g.fillStyle = "#ed1c27"; g.fill();
+    g.restore();
+  }
+
+  // -- El Gordo --------------------------------------------------------------------------------
+  // Verde de la sala del sorteo con las bolas de madera del bombo, oro y espumillón.
+
+  function gordo(g, w, h) {
+    const d = Math.hypot(w, h), u = Math.min(w, h);
+    g.fillStyle = radial(g, w * 0.45, h * 0.4, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#2f8a4c"], [0.5, "#17602f"], [1, "#062712"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // Bolas del bombo, con su número de cinco cifras.
+    const r = rng(2212), s = u / 4;
+    for (let j = 0; j * s * 0.8 < h + s; j++) {
+      for (let i = -1; i * s < w + s; i++) {
+        const x = i * s + (j % 2 ? s / 2 : 0) + (r() - 0.5) * s * 0.3, y = j * s * 0.8 + (r() - 0.5) * s * 0.3;
+        const br = s * (0.13 + r() * 0.04), gold = r() < 0.15;
+        g.beginPath(); g.arc(x, y, br, 0, TAU);
+        g.fillStyle = radial(g, x - br * 0.35, y - br * 0.35, 0, x, y, br, gold
+          ? [[0, "#fff4b8"], [0.5, "#e8b923"], [1, "#8a5c00"]]
+          : [[0, "#f6e2bd"], [0.55, "#d7b07a"], [1, "#8a6236"]]);
+        g.fill();
+        g.save(); g.translate(x, y); g.rotate((r() - 0.5) * 0.8);
+        label(g, String(Math.floor(r() * 100000)).padStart(5, "0"), 0, 0, br * 0.48, "rgba(50,25,5,0.85)");
+        g.restore();
+      }
+    }
+    // Espumillón dorado arriba y abajo.
+    for (const y0 of [h * 0.035, h * 0.965]) {
+      for (let i = 0; i < w / 2.5; i++) {
+        const x = r() * w, a = r() * TAU, l = u * (0.015 + r() * 0.025);
+        g.strokeStyle = `rgba(255,${200 + Math.floor(r() * 55)},${60 + Math.floor(r() * 80)},${0.5 + r() * 0.4})`;
+        g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(x, y0); g.lineTo(x + Math.cos(a) * l, y0 + Math.sin(a) * l); g.stroke();
+      }
+    }
+    for (let i = 0; i < w * h / 3000; i++) {
+      sparkle(g, r() * w, r() * h, u * (0.005 + r() * 0.008), `rgba(255,240,180,${0.3 + r() * 0.4})`);
+    }
+  }
+
+  const PATTERNS = {
+    oro, israel, espana, canarias, boricua, imagen,
+    kirk, psoe, nodo, diamantes, epstein, falcon, hacienda, corea, gordo,
+  };
   // Si la skin trae un dibujo que se puede pintar: el de imagen, solo con su imagen ya cargada.
   const painter = (skin) => {
     const paint = skin && PATTERNS[skin.pattern];

@@ -447,6 +447,15 @@ SHOP_TRACKED_KEYS = frozenset(
         "skin_tapete_canarias",
         "skin_tapete_boricua",
         "skin_tapete_propio",
+        "skin_tapete_psoe",
+        "skin_tapete_falcon",
+        "skin_tapete_franco",
+        "skin_tapete_hacienda",
+        "skin_tapete_kirk",
+        "skin_tapete_epstein",
+        "skin_tapete_corea",
+        "skin_tapete_diamantes",
+        "skin_tapete_gordo",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -5960,6 +5969,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el tapete monoestrellado.", R, False),
         ("skin_tapete_propio", "buy_tapete_propio", "Mi careto en el casino",
          "Compra el tapete propio. Ni Sánchez tiene un tapete con su cara.", E, False),
+        ("skin_tapete_psoe", "buy_tapete_psoe", "Militante de base",
+         "Compra el tapete del puño y la rosa. Ya puedes pedir un ministerio.", R, False),
+        ("skin_tapete_falcon", "buy_tapete_falcon", "Tarjeta de embarque presidencial",
+         "Compra el tapete del Falcon. El vuelo a Benidorm, a cuenta del erario.", R, False),
+        ("skin_tapete_franco", "buy_tapete_franco", "Noticiario de las nueve",
+         "Compra el tapete del NO-DO. Franco, por cierto, sigue muerto.", R, False),
+        ("skin_tapete_hacienda", "buy_tapete_hacienda", "Borrador de la Renta",
+         "Compra el tapete del Modelo 100. Montoro te manda un abrazo.", R, False),
+        ("skin_tapete_kirk", "buy_tapete_kirk", "Prove me wrong",
+         "Compra el tapete del cartel de Charlie Kirk.", R, False),
+        ("skin_tapete_epstein", "buy_tapete_epstein", "Desclasificado",
+         "Compra el tapete de los archivos Epstein. Tu nombre sale tachado.", R, False),
+        ("skin_tapete_corea", "buy_tapete_corea", "Querido Líder del tapete",
+         "Compra el tapete de Pyongyang. Ganas siempre: lo dice la tele estatal.", R, False),
+        ("skin_tapete_diamantes", "buy_tapete_diamantes", "Los diamantes son para siempre",
+         "Compra el tapete de diamantes. Las deudas también.", L, False),
+        ("skin_tapete_gordo", "buy_tapete_gordo", "Salud, que es lo importante",
+         "Compra el tapete del Gordo en Navidad.", R, False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
@@ -5971,6 +5998,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         category="shop", rarity=E,
         conditions=tuple((f"shop_key_skin_tapete_{k}", 1)
                          for k in ("espana", "israel", "canarias", "boricua")),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="tapetes_equidistancia", name="Equidistancia de casino",
+        description=(
+            "Ten los tapetes del puño y la rosa, del NO-DO, del Prove Me Wrong y del Líder "
+            "Supremo. Ni de izquierdas ni de derechas: de la banca."
+        ),
+        category="shop", rarity=E,
+        conditions=tuple((f"shop_key_skin_tapete_{k}", 1)
+                         for k in ("psoe", "franco", "kirk", "corea")),
     ))  # fmt: skip
 
     # 🐾 Mascotas ------------------------------------------------------------------------

@@ -286,7 +286,7 @@ SKINS: tuple[Skin, ...] = (
         "trim": "rgba(0,56,184,0.45)",
         "ink": "#001a5c",
         "pattern": "israel",
-    }), price=400_000, aisle="lujo", min_level=15),
+    }), price=271_000, aisle="lujo", min_level=15),
     # Los del club del póker: se ganan subiendo de rango (`poker_rango_7` y `_10`).
     Skin("tapete_tahur", "tapete", "🏛️", "Tapete del Tahúr de Moncloa", (
         "Azul Consejo de Ministros con filete dorado, como la sala donde se reparten "
@@ -325,6 +325,96 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#06204f",
         "pattern": "boricua",
     }), price=25_000, aisle="boricua"),
+    Skin("tapete_psoe", "tapete", "🌹", "Tapete del puño y la rosa", (
+        "Rojo Ferraz con damasco de rosas y el puño en medio. Aguanta lo que le "
+        "echen: encuestas, la UCO y tres prórrogas de presupuestos."
+    ), _frozen({
+        "felt": ("#f0333a", "#cc0f1c", "#5e050b"),
+        "fiber": ("rgba(255,210,210,0.05)", "rgba(40,0,0,0.08)"),
+        "trim": "rgba(255,255,255,0.35)",
+        "ink": "#3a0306",
+        "pattern": "psoe",
+    }), price=35_000, aisle="moncloa"),
+    Skin("tapete_falcon", "tapete", "✈️", "Tapete del Falcon", (
+        "Cielo azul, nubes y el Falcon presidencial dejando estela camino de un "
+        "mitin en Benidorm. El queroseno lo pagas tú, como siempre."
+    ), _frozen({
+        "felt": ("#9fd0f5", "#3b8fdc", "#0d4a96"),
+        "fiber": ("rgba(255,255,255,0.05)", "rgba(0,20,60,0.07)"),
+        "trim": "rgba(255,255,255,0.4)",
+        "ink": "#06264f",
+        "pattern": "falcon",
+    }), price=45_000, aisle="moncloa"),
+    Skin("tapete_franco", "tapete", "🎞️", "Tapete del NO-DO", (
+        "Blanco y negro de película vieja, con grano, rayas y la cortinilla del "
+        "NO-DO antes de cada mano. Última hora: Franco sigue muerto."
+    ), _frozen({
+        "felt": ("#d8ceb6", "#9d927a", "#2e2a22"),
+        "fiber": ("rgba(255,250,235,0.05)", "rgba(0,0,0,0.09)"),
+        "trim": "rgba(235,225,200,0.4)",
+        "ink": "#14110b",
+        "pattern": "nodo",
+    }), price=20_000, aisle="espana"),
+    Skin("tapete_hacienda", "tapete", "📎", "Tapete del Modelo 100", (
+        "La declaración de la Renta hecha tapete: casillas, renglones y el sello de "
+        "A INGRESAR. Hacienda somos todos, pero unos más que otros."
+    ), _frozen({
+        "felt": ("#d3dee7", "#a7bacb", "#5d7489"),
+        "fiber": ("rgba(255,255,255,0.05)", "rgba(0,30,60,0.06)"),
+        "trim": "rgba(29,79,124,0.45)",
+        "ink": "#0d2a44",
+        "pattern": "hacienda",
+    }), price=18_000, aisle="ventanilla"),
+    Skin("tapete_kirk", "tapete", "🎤", "Tapete Prove Me Wrong", (
+        "Azul de campus americano, barras y estrellas y el cartel de Charlie Kirk "
+        "en el centro. Siéntate enfrente y debate con la banca: siempre gana."
+    ), _frozen({
+        "felt": ("#2c4c8c", "#17306a", "#060f26"),
+        "fiber": ("rgba(210,225,255,0.05)", "rgba(0,8,30,0.08)"),
+        "trim": "rgba(255,255,255,0.4)",
+        "ink": "#030a1f",
+        "pattern": "kirk",
+    }), price=40_000, aisle="shitpost"),
+    Skin("tapete_epstein", "tapete", "🗂️", "Tapete de los archivos Epstein", (
+        "Un expediente del FBI casi todo tachado en negro, con el sello de "
+        "CLASSIFIED. La lista de clientes está debajo de las fichas: no levantes ninguna."
+    ), _frozen({
+        "felt": ("#e6d4a4", "#c9b077", "#7d6436"),
+        "fiber": ("rgba(255,255,255,0.05)", "rgba(60,40,0,0.06)"),
+        "trim": "rgba(60,50,30,0.4)",
+        "ink": "#1a160c",
+        "pattern": "epstein",
+    }), price=50_000, aisle="shitpost"),
+    Skin("tapete_corea", "tapete", "🚀", "Tapete del Líder Supremo", (
+        "La bandera de Pyongyang con su estrella roja. Cada vez que pierdes, Kim "
+        "lanza un misil al mar de Japón para celebrarlo."
+    ), _frozen({
+        "felt": ("#f03a42", "#ed1c27", "#024fa2"),
+        "fiber": ("rgba(255,220,220,0.05)", "rgba(30,0,0,0.08)"),
+        "trim": "rgba(255,255,255,0.4)",
+        "ink": "#2a0306",
+        "pattern": "corea",
+    }), price=30_000, aisle="shitpost"),
+    Skin("tapete_diamantes", "tapete", "💎", "Tapete de diamantes", (
+        "Terciopelo negro con brillantes tallados en cada cruce de la celosía de "
+        "plata. Para quien ya tiene el de oro y le parece de pobres."
+    ), _frozen({
+        "felt": ("#26365a", "#111a30", "#03050b"),
+        "fiber": ("rgba(220,235,255,0.05)", "rgba(0,0,10,0.1)"),
+        "trim": "rgba(225,235,250,0.55)",
+        "ink": "#000000",
+        "pattern": "diamantes",
+    }), price=750_000, aisle="lujo", min_level=20),
+    Skin("tapete_gordo", "tapete", "🎄", "Tapete del Gordo", (
+        "Verde de la sala del sorteo, bolas del bombo y espumillón. Solo en "
+        "diciembre y enero; el 22, los niños de San Ildefonso cantan tu ruina."
+    ), _frozen({
+        "felt": ("#2f8a4c", "#17602f", "#062712"),
+        "fiber": ("rgba(220,255,225,0.05)", "rgba(0,20,8,0.08)"),
+        "trim": "rgba(255,214,110,0.5)",
+        "ink": "#041a0b",
+        "pattern": "gordo",
+    }), price=22_000, aisle="cotillon", season=Season("Navidad", frozenset({12, 1}))),
     Skin("tapete_propio", "tapete", "🖼️", "Tapete propio", (
         "Un tapete con la imagen que tú subas con `pieles`: tu cara, tu perro o el "
         "Falcon. Hasta que la subas, fieltro liso. Una por persona; si Bruselas la "
