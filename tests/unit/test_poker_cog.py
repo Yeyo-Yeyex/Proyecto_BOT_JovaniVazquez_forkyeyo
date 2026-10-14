@@ -1,301 +1,444 @@
-"""Pruebas de bot.cogs.poker: la mesa del Casino Hold'em con botones, precarga y dinero.
+"""Pruebas de bot.cogs.poker: la mesa del canal, sentarse, decidir, el 💎 Bote, el club y el dinero.
 
-Se usa la economía real sobre un SQLite temporal y un dibujante falso (las
-imágenes tienen sus propias pruebas) con el margen del GIF a cero. Las cartas se
-fuerzan poniendo `view.cards` antes de repartir: la mano usa las ya sorteadas.
+Se usa la economía real y el club real sobre un SQLite temporal, un reloj falso y
+un dibujo falso. Las cartas se fijan sustituyendo `deal_table` del cog. El bucle no
+se arranca solo (`cog.start` es un doble): cada prueba llama a `deal()` y
+`finish()`.
 """
 
 from __future__ import annotations
 
-import asyncio
+import dataclasses
 import random
+import sqlite3
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
-from discord import ui
 from interaction_fakes import fake_interaction
 
-from bot.cogs import poker as poker_cog
-from bot.cogs.poker import COLOR_IDLE, Poker, PokerView
-from bot.repositories import sqlite as sqlite_module
+from bot.cogs import poker as cog_module
+from bot.cogs.poker import Phase, Poker, Table
 from bot.repositories.economy import EconomyRepository
+from bot.repositories.poker import PokerRepository
+from bot.services import poker_club
 from bot.services.blackjack import Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.poker import CALL_FACTOR, Deal, Outcome
-from bot.services.poker_render import Media, Showdown
+from bot.services.poker import BONUS_SHARE, BONUS_STAKE, CALL_FACTOR, MAX_SEATS, POT_SEED, TableDeal
+from bot.services.poker_render import Media
 
 GUILD_ID = 1
-OWNER_ID = 10
-# Palos de blackjack.SUITS: 0 ♠, 1 ♥, 2 ♦, 3 ♣.
-SPADE, HEART, DIAMOND, CLUB = range(4)
-#: Tablero seco: K♦ 9♣ 6♥ 3♠ 2♣.
-DRY = (Card(13, DIAMOND), Card(9, CLUB), Card(6, HEART), Card(3, SPADE), Card(2, CLUB))
-#: Trío de reyes contra trío de nueves: gana el jugador (ante 1 a 1, ir 1 a 1).
-WINNING = Deal(
-    player=(Card(13, HEART), Card(13, SPADE)), dealer=(Card(9, DIAMOND), Card(9, SPADE)), board=DRY
-)
-#: Pareja de ochos contra trío de reyes: gana la banca.
-LOSING = Deal(
-    player=(Card(8, HEART), Card(8, SPADE)), dealer=(Card(13, CLUB), Card(13, SPADE)), board=DRY
-)
+CHANNEL_ID = 777
+ANA, LEO = 10, 11
+START = 1_800_000_000.0
+RANKS = {"A": 1, "T": 10, "J": 11, "Q": 12, "K": 13, **{str(n): n for n in range(2, 10)}}
+SUITS = {"s": 0, "h": 1, "d": 2, "c": 3}
 
 
-@pytest.fixture(autouse=True)
-def no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(poker_cog, "REVEAL_MARGIN_SECONDS", 0)
+def cards(text: str) -> tuple[Card, ...]:
+    return tuple(Card(RANKS[c[0]], SUITS[c[1]]) for c in text.split())
 
 
-def make_user(user_id: int = OWNER_ID) -> MagicMock:
+def table_deal(*seats: str, dealer: str = "9d 4s", board: str = "Kd 9c 6h 3s 2c") -> TableDeal:
+    return TableDeal(
+        dealer=cards(dealer),  # type: ignore[arg-type]
+        board=cards(board),  # type: ignore[arg-type]
+        seats=tuple(cards(s) for s in seats),  # type: ignore[misc]
+    )
+
+
+#: Ana con trío de reyes y Leo con nada contra la pareja de nueves de la banca.
+TWO = table_deal("Kh Ks", "7h 8s")
+
+
+class FakeClock:
+    """Reloj que solo avanza cuando el bucle "duerme"."""
+
+    def __init__(self) -> None:
+        self.now = START
+
+    def wall(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class FakeRenderer:
+    def __init__(self) -> None:
+        self.dealt: list[list[Any]] = []
+        self.called: list[list[bool]] = []
+
+    async def board(self, **kwargs: Any) -> bytes:
+        return b"PNG"
+
+    async def deal(self, table: TableDeal, views: list[Any], **kwargs: Any) -> Media:
+        self.dealt.append(views)
+        return Media(gif=b"DEAL", png=b"DEALPNG", seconds=1.0)
+
+    async def showdown(
+        self, table: TableDeal, views: list[Any], called: list[bool], **kwargs: Any
+    ) -> Media:
+        self.called.append(list(called))
+        return Media(gif=b"SHOW", png=b"SHOWPNG", seconds=1.0)
+
+    async def close(self) -> None:
+        pass
+
+
+def make_user(user_id: int, name: str = "Ana") -> MagicMock:
     user = MagicMock(spec=discord.Member)
     user.id = user_id
-    user.display_name = "Diego" if user_id == OWNER_ID else "Intruso"
+    user.display_name = name
     user.mention = f"<@{user_id}>"
     user.bot = False
     return user
 
 
-def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
-    return fake_interaction(make_user(user_id))
+def make_channel() -> MagicMock:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = CHANNEL_ID
+    message = MagicMock()
+    message.edit = AsyncMock()
+    message.delete = AsyncMock()
+    channel.send = AsyncMock(return_value=message)
+    channel.test_message = message
+    return channel
 
 
-def fake_renderer() -> MagicMock:
-    renderer = MagicMock()
-    renderer.deal = AsyncMock(return_value=Media(gif=b"DEAL", png=b"dealpng", seconds=0.0))
-    renderer.showdown = AsyncMock(
-        return_value=Showdown(
-            call=Media(gif=b"CALL", png=b"callpng", seconds=0.0),
-            fold=Media(gif=b"FOLD", png=b"foldpng", seconds=0.0),
-        )
-    )
-    renderer.board = AsyncMock(return_value=b"png")
-    renderer.close = AsyncMock()
-    return renderer
-
-
-async def make_cog(tmp_path: Path) -> Poker:
-    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
-    await repository.initialize()
-    return Poker(
-        MagicMock(),
-        economy=EconomyService(repository),
-        rng=random.Random(1),
-        renderer=fake_renderer(),
-    )
-
-
-async def open_table(
-    cog: Poker, *, amount: str = "100", cards: Deal = WINNING
-) -> tuple[PokerView, AsyncMock]:
-    send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
-    errors = AsyncMock()
-    await cog._poker_impl(
-        guild=MagicMock(id=GUILD_ID),
-        channel=None,
-        user=make_user(),
-        amount_text=amount,
-        send=send,
-        send_error=errors,
-    )
-    errors.assert_not_awaited()
-    (view,) = cog.views
-    view.cards = cards
-    await asyncio.sleep(0)  # deja correr la precarga del reparto
-    return view, send
-
-
-def labels(view: PokerView) -> list[str]:
-    return [item.label or "" for item in view.children if isinstance(item, ui.Button)]
-
-
-async def balance(cog: Poker) -> int:
-    return await cog.economy.balance(GUILD_ID, OWNER_ID)
-
-
-def ledger(tmp_path: Path) -> list[tuple[str, int]]:
-    """Movimientos del dueño (motivo, importe), en orden y sin el saldo de bienvenida."""
-    connection = sqlite_module.connect(tmp_path / "bot.db")
-    try:
-        rows = connection.execute(
-            "SELECT reason, delta FROM economy_ledger WHERE guild_id = ? AND user_id = ? "
-            "ORDER BY id",
-            (GUILD_ID, OWNER_ID),
-        ).fetchall()
-    finally:
-        connection.close()
-    return [(row[0], row[1]) for row in rows if row[0] != "bienvenida"]
-
-
-async def deal(view: PokerView) -> MagicMock:
-    interaction = make_interaction()
-    await view._deal_click(interaction)
+def make_interaction(user_id: int, name: str = "Ana") -> MagicMock:
+    interaction = fake_interaction(make_user(user_id, name))
+    interaction.guild = None
     return interaction
 
 
-# -- Abrir y repartir -------------------------------------------------------------------
-
-
-async def test_abrir_la_mesa_no_cobra_y_ya_dibuja_el_reparto(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, send = await open_table(cog, amount="250")
-    assert await balance(cog) == STARTING_BALANCE
-    assert ledger(tmp_path) == []
-    assert labels(view) == ["🃏 Repartir · 250 Y$", "½", "×2", "💰 All-in", "📋 Tabla"]
-    assert "¿Una mano contra la banca?" in (send.await_args.kwargs["embed"].description or "")
-    cog.renderer.deal.assert_awaited_once()
-
-
-async def test_sin_saldo_no_se_abre_la_mesa(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    errors = AsyncMock()
-    await cog._poker_impl(
-        guild=MagicMock(id=GUILD_ID),
-        channel=None,
-        user=make_user(),
-        amount_text=str(STARTING_BALANCE + 1),
-        send=AsyncMock(),
-        send_error=errors,
+async def make_cog(tmp_path: Path) -> tuple[Poker, FakeClock]:
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    club = PokerRepository(tmp_path / "bot.db")
+    await club.initialize()
+    clock = FakeClock()
+    cog = Poker(
+        MagicMock(),
+        economy=EconomyService(repository),
+        club=club,
+        renderer=FakeRenderer(),  # type: ignore[arg-type]
+        rng=random.Random(7),
+        wall_clock=clock.wall,
+        sleep=clock.sleep,
     )
-    errors.assert_awaited_once()
-    assert not cog.views
+    cog.start = MagicMock()  # type: ignore[method-assign]
+    return cog, clock
 
 
-async def test_repartir_cobra_el_ante_y_ofrece_ir_o_retirarse(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    interaction = await deal(view)
+async def open_table(cog: Poker, channel: MagicMock | None = None) -> Table:
+    table, new = await cog.ensure_table(GUILD_ID, channel or make_channel(), ANA)
+    assert table is not None and new
+    return table
+
+
+async def balance(cog: Poker, user_id: int = ANA) -> int:
+    return await cog.economy.balance(GUILD_ID, user_id)
+
+
+def ledger(tmp_path: Path, user_id: int = ANA) -> list[tuple[str, int]]:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        rows = connection.execute(
+            "SELECT reason, delta FROM economy_ledger WHERE guild_id = ? AND user_id = ? "
+            "ORDER BY id",
+            (GUILD_ID, user_id),
+        ).fetchall()
+    return [(r[0], r[1]) for r in rows if r[0] != "bienvenida"]
+
+
+@pytest.fixture(autouse=True)
+def fixed_cards(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cog_module, "deal_table", lambda rng, n: TWO)
+
+
+async def play(table: Table, *decisions: tuple[int, bool]) -> None:
+    """Reparte, decide y acaba la mano."""
+    await table.deal()
+    for user_id, called in decisions:
+        await table.decide(make_interaction(user_id), called)
+    await table.finish()
+
+
+# -- Abrir y sentarse ------------------------------------------------------------------
+
+
+async def test_abrir_la_mesa_no_cobra_y_enseña_el_bote(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    assert await balance(cog) == STARTING_BALANCE
+    assert table.pot == POT_SEED
+    labels = [b.label for b in table.view.children if isinstance(b, discord.ui.Button)]
+    assert labels[:6] == ["Sentarse", "¡Cartas!", "Ante", "Bote", "Club", "Tabla"]
+    assert f"Bote común: {POT_SEED:,}".replace(",", ".") in (table.open_embed().description or "")
+
+
+async def test_sentarse_cobra_el_ante_y_no_dos_veces(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    interaction = make_interaction(ANA)
+    await table.sit_click(interaction)
     assert ledger(tmp_path) == [("poker:apuesta", -100)]
-    assert view.hand is not None and view.hand.deciding
-    assert labels(view) == ["✅ Ir · 200 Y$", "🏳️ Retirarse", "📋 Tabla"]
-    gif_call, png_call = interaction.edit_original_response.await_args_list
-    assert gif_call.kwargs["attachments"][0].fp.read() == b"DEAL"
-    assert gif_call.kwargs["embed"].color == COLOR_IDLE
-    text = png_call.kwargs["embed"].description or ""
-    assert "Llevas trío de reyes" in text
-    assert "Tus cartas: **K♥** **K♠**" in text
-    # Los dos finales ya se dibujan mientras se mira el flop.
-    await asyncio.sleep(0)
-    assert cog.renderer.showdown.await_args.args[0] == WINNING
-
-
-# -- Decidir ----------------------------------------------------------------------------
-
-
-async def test_ir_y_ganar_paga_el_ante_y_la_de_ir(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    await deal(view)
-    interaction = make_interaction()
-    await view._call(interaction)
-    hand = view.hand
-    assert hand is not None and hand.outcome is Outcome.WIN
-    won = 2 * 100 + 2 * CALL_FACTOR * 100
-    assert ledger(tmp_path) == [
-        ("poker:apuesta", -100),
-        ("poker:apuesta", -CALL_FACTOR * 100),
-        ("poker:premio", won),
-    ]
-    assert await balance(cog) == STARTING_BALANCE + hand.net
-    gif_call, png_call = interaction.edit_original_response.await_args_list
-    assert gif_call.kwargs["attachments"][0].fp.read() == b"CALL"
-    assert "gana a" in (png_call.kwargs["embed"].description or "")
-    # Mano terminada: cartas nuevas y su reparto ya se dibuja.
-    assert view.cards != WINNING
-    assert labels(view)[0] == "🃏 Repartir · 100 Y$"
-
-
-async def test_ir_y_perder_lo_pierde_todo(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog, cards=LOSING)
-    await deal(view)
-    await view._call(make_interaction())
-    assert view.hand is not None and view.hand.outcome is Outcome.LOSE
-    assert await balance(cog) == STARTING_BALANCE - 100 * (1 + CALL_FACTOR)
-
-
-async def test_retirarse_pierde_el_ante_y_dice_lo_que_habria_pasado(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    await deal(view)
-    interaction = make_interaction()
-    await view._fold(interaction)
+    assert table.deadline is not None and table.first_seat.is_set()
+    again = make_interaction(ANA)
+    await table.sit_click(again)
+    assert "Ya estás sentado" in again.response.send_message.await_args.args[0]
     assert ledger(tmp_path) == [("poker:apuesta", -100)]
-    gif_call, png_call = interaction.edit_original_response.await_args_list
-    assert gif_call.kwargs["attachments"][0].fp.read() == b"FOLD"
-    text = png_call.kwargs["embed"].description or ""
-    assert "-100 Y$" in text
-    assert "🔮 Yendo habrías ganado 300 Y$." in text
+
+
+async def test_la_mesa_se_llena_con_seis(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    for i in range(MAX_SEATS):
+        await table.sit(make_user(100 + i))
+    with pytest.raises(cog_module.PokerError, match="llena"):
+        await table.sit(make_user(999))
+
+
+async def test_un_ante_por_encima_del_rango_no_deja_sentarse(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    cog.set_ante(GUILD_ID, ANA, poker_club.RANKS[0].max_ante + 1)  # type: ignore[operator]
+    with pytest.raises(cog_module.PokerError, match="ante máximo"):
+        await table.sit(make_user(ANA))
+    assert ledger(tmp_path) == []
+
+
+async def test_todos_listos_reparte_ya(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.sit(make_user(LEO, "Leo"))
+    await table.mark_ready(make_interaction(ANA))
+    assert not table.go.is_set()
+    await table.mark_ready(make_interaction(LEO, "Leo"))
+    assert table.go.is_set()
+
+
+# -- Una mano --------------------------------------------------------------------------
+
+
+async def test_una_mano_a_dos_paga_a_quien_va_y_gana_y_cobra_el_ante_al_que_se_retira(
+    tmp_path: Path,
+) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.sit(make_user(LEO, "Leo"))
+    await table.deal()
+    assert table.phase is Phase.DECIDING
+    assert "¿Vas o te retiras?" in (table.decide_embed().title or "")
+    await table.decide(make_interaction(ANA), True)
+    await table.decide(make_interaction(LEO, "Leo"), False)
+    assert table.decided.is_set()
+    await table.finish()
+    assert cog.renderer.called == [[True, False]]  # type: ignore[attr-defined]
+    # Trío contra la pareja de la banca: el ante y la de ir pagan 1 a 1.
+    assert await balance(cog) == STARTING_BALANCE + 100 + 100 * CALL_FACTOR
+    assert await balance(cog, LEO) == STARTING_BALANCE - 100
+    text = table.open_embed().description or ""
+    assert "✅ **Ana**" in text and "🏳️ **Leo**" in text and "bien retirado" in text
+    assert table.phase is Phase.OPEN and not table.seats
+    ana = await cog.club.player(GUILD_ID, ANA)
+    assert ana.xp == 2 and ana.streak == 1
+
+
+async def test_quien_no_decide_a_tiempo_se_retira(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.deal()
+    await table.finish()
+    assert cog.renderer.called == [[False]]  # type: ignore[attr-defined]
+    assert await balance(cog) == STARTING_BALANCE - 100
 
 
 async def test_si_no_llega_para_ir_solo_puede_retirarse(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog, amount=str(STARTING_BALANCE // 2))
-    await deal(view)
-    interaction = make_interaction()
-    await view._call(interaction)
-    assert view.hand is not None and view.hand.deciding
-    interaction.followup.send.assert_awaited_once()
+    cog, _ = await make_cog(tmp_path)
+    cog.set_ante(GUILD_ID, ANA, STARTING_BALANCE // 2)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.deal()
+    interaction = make_interaction(ANA)
+    await table.decide(interaction, True)
+    seat = table.seats[ANA]
+    assert seat.called is None
     assert "Solo puedes retirarte" in interaction.followup.send.await_args.args[0]
-    await view._fold(make_interaction())
-    assert view.hand.outcome is Outcome.FOLD
 
 
-async def test_all_in_deja_sitio_para_ir(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    await view._all_in(make_interaction())
-    assert view.stake == STARTING_BALANCE // (1 + CALL_FACTOR)
+async def test_quien_no_esta_sentado_no_decide(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.deal()
+    intruder = make_interaction(LEO, "Leo")
+    await table.decide(intruder, True)
+    assert "No estás en esta mano" in intruder.response.send_message.await_args.args[0]
 
 
-# -- Mesa -------------------------------------------------------------------------------
+# -- El 💎 Bote ------------------------------------------------------------------------
 
 
-async def test_un_intruso_no_juega_pero_puede_ver_la_tabla(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    intruder = make_interaction(user_id=99)
-    intruder.data = {"custom_id": "poker:deal"}
-    assert not await view.interaction_check(intruder)
-    peek = make_interaction(user_id=99)
-    peek.data = {"custom_id": "poker:table"}
-    assert await view.interaction_check(peek)
-    await view._paytable(peek)
-    embed = peek.response.send_message.await_args.kwargs["embed"]
-    assert "**Escalera real** · 100 a 1" in (embed.description or "")
+async def test_el_bote_se_recuerda_se_cobra_al_sentarse_y_alimenta_el_bote_comun(
+    tmp_path: Path,
+) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.toggle_bonus(make_interaction(ANA))
+    assert (await cog.club.player(GUILD_ID, ANA)).bonus
+    await table.sit(make_user(ANA))
+    assert ledger(tmp_path) == [("poker:apuesta", -(100 + BONUS_STAKE))]
+    await play(table, (ANA, True))
+    assert await cog.economy.poker_pot(GUILD_ID, seed=POT_SEED) == POT_SEED + BONUS_SHARE
 
 
-async def test_al_caducar_con_la_mano_a_medias_se_retira(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    await deal(view)
-    await view.on_timeout()
-    assert view.hand is not None and view.hand.outcome is Outcome.FOLD
-    assert await balance(cog) == STARTING_BALANCE - 100
-    assert not cog.views
+async def test_una_escalera_real_con_bote_se_lleva_el_bote_y_se_anuncia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    royal = table_deal("Ah Kh", board="Qh Jh Th 3s 2c")
+    monkeypatch.setattr(cog_module, "deal_table", lambda rng, n: royal)
+    cog, _ = await make_cog(tmp_path)
+    channel = make_channel()
+    table = await open_table(cog, channel)
+    await cog.club.set_bonus(GUILD_ID, ANA, True)
+    await table.sit(make_user(ANA))
+    await play(table, (ANA, True))
+    seat = table.last_round.seats[0]  # type: ignore[union-attr]
+    assert seat.pot_won == POT_SEED + BONUS_SHARE
+    assert await cog.economy.poker_pot(GUILD_ID, seed=POT_SEED) == POT_SEED
+    shouts = [c.args[0] for c in channel.send.await_args_list if c.args]
+    assert any("del bote del póker" in s for s in shouts)
 
 
-async def test_al_apagar_se_retira_y_cierra_el_pintor(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    view, _ = await open_table(cog)
-    await deal(view)
-    await cog.cog_unload()
-    assert view.hand is not None and view.hand.outcome is Outcome.FOLD
-    cog.renderer.close.assert_awaited_once()
+# -- El club ---------------------------------------------------------------------------
 
 
-async def test_un_full_cobrado_se_anuncia_en_el_canal(tmp_path: Path) -> None:
-    cog = await make_cog(tmp_path)
-    full = Deal(
-        player=(Card(13, HEART), Card(13, SPADE)),
-        dealer=(Card(9, DIAMOND), Card(4, SPADE)),
-        board=(Card(13, DIAMOND), Card(9, CLUB), Card(9, HEART), Card(3, SPADE), Card(2, CLUB)),
+async def test_cumplir_un_reto_lo_paga_con_irpf_y_lo_dice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    easy = dataclasses.replace(poker_club.CHALLENGE_BY_KEY["manos_15"], goal=1)
+    monkeypatch.setattr(cog_module, "daily_challenges", lambda *a: (easy,))
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await play(table, (ANA, False))
+    assert ("poker:reto:manos_15", easy.reward) in ledger(tmp_path)
+    text = table.open_embed().description or ""
+    assert "cumple el reto «Juega 1 manos»" in text
+    # El mismo reto no se vuelve a cobrar en el día.
+    await table.sit(make_user(ANA))
+    await play(table, (ANA, False))
+    paid = [r for r in ledger(tmp_path) if r[0].startswith("poker:reto")]
+    assert len(paid) == 1
+
+
+async def test_subir_de_rango_se_anuncia(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    second = poker_club.RANKS[1]
+    await cog.club.record_hand(
+        GUILD_ID, ANA, day=cog_module.datetime.fromtimestamp(START, cog_module.TIMEZONE).date(),
+        xp=second.xp - 1, counts=True, progress={}, goals={},
+    )  # fmt: skip
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await play(table, (ANA, False))
+    assert f"sube a {second.emoji} **{second.name}**" in (table.open_embed().description or "")
+
+
+async def test_el_panel_del_club_enseña_rango_racha_y_retos(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    interaction = make_interaction(ANA)
+    await table.club_panel(interaction)
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
+    text = embed.description or ""
+    assert poker_club.RANKS[0].name in text
+    assert "Retos de hoy" in text and "Racha" in text
+
+
+# -- Cierre ----------------------------------------------------------------------------
+
+
+async def test_al_apagar_con_las_apuestas_abiertas_se_devuelve_todo(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await cog.club.set_bonus(GUILD_ID, ANA, True)
+    await table.sit(make_user(ANA))
+    await table.shutdown()
+    assert await balance(cog) == STARTING_BALANCE
+
+
+async def test_al_apagar_decidiendo_quien_no_decidio_se_retira_y_se_paga(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    table = await open_table(cog)
+    await table.sit(make_user(ANA))
+    await table.sit(make_user(LEO, "Leo"))
+    await table.deal()
+    await table.decide(make_interaction(ANA), True)
+    await table.shutdown()
+    assert await balance(cog) == STARTING_BALANCE + 100 + 100 * CALL_FACTOR
+    assert await balance(cog, LEO) == STARTING_BALANCE - 100
+    assert table.phase is Phase.CLOSED
+
+
+# -- Un solo comando, dos modos --------------------------------------------------------
+
+
+def test_los_modos_se_reconocen_en_texto() -> None:
+    assert cog_module.parse_mode("Timba") == cog_module.TIMBA
+    assert cog_module.parse_mode("banca") == cog_module.BANCA
+    assert cog_module.parse_mode("500") is None
+
+
+async def test_sin_modo_pregunta_con_un_boton_por_modo(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    interaction = make_interaction(ANA)
+    await cog.poker.callback(cog, interaction, None, "300")
+    kwargs = interaction.response.send_message.await_args.kwargs
+    picker = kwargs["view"]
+    assert kwargs["ephemeral"] is True
+    labels = [b.label for b in picker.children if isinstance(b, discord.ui.Button)]
+    assert labels == ["Contra la banca (Casino Hold'em)", "Timba entre jugadores (Texas Hold'em)"]
+    assert picker.amount == "300"
+
+
+async def test_elegir_banca_en_la_pregunta_abre_la_mesa_y_te_sienta(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    channel = make_channel()
+    picker = cog_module.ModePicker(cog, make_user(ANA), "200", channel=channel)
+    click = make_interaction(ANA)
+    click.guild = MagicMock(id=GUILD_ID)
+    await picker.choose(cog_module.BANCA, click)
+    table = cog.tables[channel.id]
+    assert ANA in table.seats and table.seats[ANA].ante == 200
+    assert "Sentado" in click.edit_original_response.await_args.kwargs["content"]
+
+
+async def test_solo_quien_pregunto_elige_el_modo(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    picker = cog_module.ModePicker(cog, make_user(ANA), None, channel=make_channel())
+    intruder = make_interaction(LEO, "Leo")
+    await picker.choose(cog_module.BANCA, intruder)
+    assert "no es tuya" in intruder.response.send_message.await_args.args[0]
+    assert not picker.done
+
+
+async def test_la_timba_sin_su_cog_avisa(tmp_path: Path) -> None:
+    cog, _ = await make_cog(tmp_path)
+    errors = AsyncMock()
+    await cog.play_mode(
+        cog_module.TIMBA,
+        guild=MagicMock(id=GUILD_ID),
+        channel=make_channel(),
+        user=make_user(ANA),
+        amount_text=None,
+        confirm=AsyncMock(),
+        send_error=errors,
     )
-    view, _ = await open_table(cog, cards=full)
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.send = AsyncMock()
-    view.channel = channel
-    await deal(view)
-    await view._call(make_interaction())
-    channel.send.assert_awaited_once()
-    assert "full de reyes y nueves" in channel.send.await_args.args[0]
+    assert "no está disponible" in errors.await_args.args[0]

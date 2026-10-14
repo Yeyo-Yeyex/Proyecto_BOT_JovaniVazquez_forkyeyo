@@ -21,13 +21,21 @@ from bot.services.poker import (
     PokerError,
     PokerHand,
     Rank,
+    TableDeal,
     deal,
     evaluate,
     payout,
     qualifies,
     showdown,
 )
-from bot.services.poker_render import H, PokerRenderer, W, deal_states, showdown_states
+from bot.services.poker_render import (
+    H,
+    PokerRenderer,
+    SeatView,
+    W,
+    deal_states,
+    showdown_states,
+)
 
 RANKS = {"A": 1, "T": 10, "J": 11, "Q": 12, "K": 13, **{str(n): n for n in range(2, 10)}}
 SUITS = {"s": 0, "h": 1, "d": 2, "c": 3}
@@ -209,17 +217,37 @@ def test_las_fechas_del_poker() -> None:
 # -- Dibujo ----------------------------------------------------------------------------
 
 
-def test_el_reparto_acaba_en_la_mesa_de_decidir_con_lo_que_lleva() -> None:
-    hand = table("Kh Ks", "9d 4s", DRY)
-    states = deal_states(hand, seed=1)
-    assert states[-1]["player"]["text"] == "TRÍO"  # KK con el Kd del flop
+def table_deal() -> TableDeal:
+    return TableDeal(
+        dealer=cards("9d 4s"),  # type: ignore[arg-type]
+        board=cards(DRY),  # type: ignore[arg-type]
+        seats=(cards("Kh Ks"), cards("7h 8s")),  # type: ignore[arg-type]
+    )
 
 
-def test_los_dos_finales_cambian_el_cartel() -> None:
-    hand = table("Kh Ks", "9d 4s", DRY)
-    call = showdown_states(hand, called=True, seed=1)[-1]["banner"]
-    fold = showdown_states(hand, called=False, seed=1)[-1]["banner"]
-    assert call["title"] != fold["title"]
+VIEWS = [SeatView("Diego 🌴", 100, bonus=True), SeatView("🔥", 500)]
+
+
+def test_el_reparto_acaba_en_la_mesa_de_decidir_con_lo_que_lleva_cada_asiento() -> None:
+    states = deal_states(table_deal(), VIEWS, pot=1234, seed=1)
+    final = states[-1]
+    assert [s["pill"]["text"] for s in final["seats"]] == ["TRÍO", "CARTA ALTA"]
+    assert [s["name"] for s in final["seats"]] == ["Diego", "JUGADOR"], "sin emojis en el lienzo"
+    assert final["pot"] == "1.234 Y$"
+    assert states[0]["full"] and len({len(s["cards"]) for s in states}) > 1
+
+
+def test_el_final_pone_a_cada_uno_su_resultado_y_apaga_al_que_se_retira() -> None:
+    final = showdown_states(table_deal(), VIEWS, [True, False], seed=1)[-1]
+    first, second = final["seats"]
+    assert first["badge"]["kind"] == "win" and first["badge"]["text"].startswith("+")
+    assert second["badge"] == {"kind": "fold", "text": "RETIRADO", "a": 1.0, "bonus": False}
+    assert second["fold"] and first["call"] == 1.0
+
+
+def test_la_mesa_no_admite_asientos_de_mas_ni_de_menos() -> None:
+    with pytest.raises(ValueError):
+        deal_states(table_deal(), [], seed=1)
 
 
 def test_pillow_pinta_la_mesa_a_su_tamano() -> None:
@@ -227,6 +255,7 @@ def test_pillow_pinta_la_mesa_a_su_tamano() -> None:
 
     from PIL import Image
 
-    media = PokerRenderer().showdown(table("Kh Ks", "9d 4s", DRY))
-    for png in (media.call.png, media.fold.png):
-        assert Image.open(BytesIO(png)).size == (W, H)
+    renderer = PokerRenderer()
+    media = renderer.showdown(table_deal(), VIEWS, [True, True], pot=10)
+    assert Image.open(BytesIO(media.png)).size == (W, H)
+    assert Image.open(BytesIO(renderer.board(5))).size == (W, H)

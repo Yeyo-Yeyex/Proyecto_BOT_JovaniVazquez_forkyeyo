@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 
 from bot.repositories.economy import (
     HK_ACCOUNT_ID,
+    POKER_POT_ACCOUNT_ID,
     PORRA_ACCOUNT_ID,
     SHOP_ACCOUNT_ID,
     SLOTS_POT_ACCOUNT_ID,
@@ -87,6 +88,7 @@ SYSTEM_ACCOUNTS: dict[int, str] = {
     SHOP_ACCOUNT_ID: "tienda",
     HK_ACCOUNT_ID: "hong_kong",
     PORRA_ACCOUNT_ID: "porras",
+    POKER_POT_ACCOUNT_ID: "bote_poker",
 }
 
 

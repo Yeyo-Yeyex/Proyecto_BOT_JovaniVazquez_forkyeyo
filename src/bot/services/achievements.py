@@ -13,7 +13,7 @@ Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
 `crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `bus_stats`, `poker_stats`,
-`craps_stats`,
+`poker_club_stats`, `timba_stats`, `craps_stats`,
 `pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
 `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
@@ -114,6 +114,7 @@ from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.pachinko_motion import VolleyMotion as PachinkoMotion
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.poker import MAX_SEATS as POKER_MAX_SEATS
 from bot.services.poker import Outcome as PokerOutcome
 from bot.services.poker import PokerHand
 from bot.services.poker import Rank as PokerRank
@@ -132,6 +133,8 @@ from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
+from bot.services.timba import Act as TimbaAct
+from bot.services.timba import TimbaHand
 from bot.services.work import (
     FAMILY_TIERS,
     FLOP_BELOW,
@@ -254,6 +257,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
     Category("poker", "♠️ Póker", group=_CG),
+    Category("timba", "♣️ Timba", group=_CG),
     Category("dice", "🎲 Dados", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
@@ -3818,6 +3822,236 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "poker_viernes13", "Mano gafada", "Pierde al póker un viernes 13.", C, True),
     ])  # fmt: skip
 
+    # ♠️ Póker: la mesa del canal, el 💎 Bote y el club (rango, retos y racha).
+    a += _tiers("poker", "poker_rank", [
+        (2, "poker_rango_2", "Mirón con carné",
+         "Llega a Mirón del Casino del Estado en el club.", C),
+        (3, "poker_rango_3", "Aprendiz de tahúr", "Llega al nivel 3 del club del póker.", C),
+        (4, "poker_rango_4", "Fiera del bar del pueblo", "Llega al nivel 4 del club del póker.", R),
+        (5, "poker_rango_5", "Socio de la timba de los jueves",
+         "Llega al nivel 5 del club del póker.", E),
+        (6, "poker_rango_6", "Tiburón de Torrelodones", "Llega al nivel 6 del club del póker.", E),
+        (7, "poker_rango_7", "Tahúr de Moncloa",
+         "Llega al nivel 7 del club del póker. Te regalan su tapete.", L),
+        (8, "poker_rango_8", "Farolero del Falcon", "Llega al nivel 8 del club del póker.", L),
+        (9, "poker_rango_9", "Leyenda de Benidorm", "Llega al nivel 9 del club del póker.", M),
+        (10, "poker_rango_10", "Dios del tapete",
+         "Llega al nivel 10 del club del póker. Ni el Nobel de Obama se ganó tan pronto.", M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_streak", [
+        (3, "poker_racha_3", "Tres días de timba", "Juega al póker tres días seguidos.", C),
+        (7, "poker_racha_7", "Semana fantástica del Corte Inglés",
+         "Juega al póker siete días seguidos.", R),
+        (30, "poker_racha_30", "Mes de timba, como un mes de Agosto en Moncloa",
+         "Juega al póker 30 días seguidos.", E),
+        (100, "poker_racha_100", "Cien días de timba sin dimitir",
+         "Juega al póker 100 días seguidos. Ni los cien días de un Gobierno.", L),
+        (365, "poker_racha_365", "Legislatura entera en la timba",
+         "Juega al póker un año seguido sin faltar un día.", M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_retos", [
+        (1, "poker_reto_1", "Reto cumplido, como una promesa electoral (no)",
+         "Cumple tu primer reto del día del póker.", C),
+        (50, "poker_reto_50", "Agenda 2030 del póker", "Cumple 50 retos del día.", R),
+        (300, "poker_reto_300", "Plan Quinquenal cumplido", "Cumple 300 retos del día.", L),
+        (1_000, "poker_reto_1k", "Más objetivos que la Agenda 2030", "Cumple 1.000 retos del día.",
+         M),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_retos_full", [
+        (1, "poker_dia_completo", "Pleno al quince del día",
+         "Cumple los tres retos del póker en un mismo día.", C),
+        (30, "poker_dia_completo_30", "Funcionario modelo de la timba",
+         "Cumple los tres retos del día 30 veces.", E),
+        (100, "poker_dia_completo_100", "Medalla al mérito timbero",
+         "Cumple los tres retos del día 100 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_bonus_bets", [
+        (1, "poker_bote_1", "Un diamante es para siempre", "Juega el 💎 Bote del póker.", C),
+        (100, "poker_bote_100", "Inversor de criptodiamantes", "Juega el 💎 Bote 100 veces.", C),
+        (1_000, "poker_bote_1k", "Fondo de inversión del bote", "Juega el 💎 Bote 1.000 veces.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_bonus_wins", [
+        (1, "poker_bote_cobra", "El diamante brilla", "Cobra la apuesta del 💎 Bote.", C),
+        (50, "poker_bote_cobra_50", "Joyero de la Gran Vía", "Cobra el 💎 Bote 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_pot_sf", [
+        (1, "poker_bote_diezmo", "El diezmo del bote",
+         "Llévate el 10 % del 💎 Bote con una escalera de color.", L),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_pot_royal", [
+        (1, "poker_bote_entero", "Te llevas el bote, como Bárcenas",
+         "Llévate el 💎 Bote entero con una escalera real.", M, True),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_pot_max", [
+        (50_000, "poker_bote_gordo", "Fondos Next Generation del póker",
+         "Llévate 50.000 Y$ o más del 💎 Bote de una vez.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("poker", "poker_table_hands", [
+        (1, "poker_mesa_1", "Mesa compartida, como un Consejo de Ministros",
+         "Juega una mano de póker con más gente en la mesa.", C),
+        (100, "poker_mesa_100", "Tertulia de casino", "Juega 100 manos con más gente en la mesa.",
+         R),
+        (1_000, "poker_mesa_1k", "Peña de la timba", "Juega 1.000 manos con más gente en la mesa.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_table_full", [
+        (1, "poker_mesa_llena", "Pleno en el hemiciclo",
+         "Juega una mano con la mesa llena: seis jugadores.", R),
+    ])  # fmt: skip
+    a += _tiers("poker", "poker_lone_win", [
+        (1, "poker_unico", "El único que gana, como el PNV en cada pacto",
+         "Sé el único que le gana a la banca en una mesa de tres o más.", C),
+        (25, "poker_unico_25", "Diputado bisagra",
+         "Sé el único ganador de la mesa 25 veces.", R),
+    ])  # fmt: skip
+
+    # ♣️ Timba: Texas Hold'em entre jugadores -------------------------------------------
+    a += _tiers("timba", "timba_hands", [
+        (1, "timba_1", "Silla en la timba", "Juega tu primera mano de timba.", C),
+        (100, "timba_100", "Habitual de la trastienda", "Juega 100 manos de timba.", C),
+        (1_000, "timba_1k", "Timbero de carné", "Juega 1.000 manos de timba.", E),
+        (10_000, "timba_10k", "Leyenda de la partida ilegal del Raval",
+         "Juega 10.000 manos de timba.", L),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_pots_won", [
+        (10, "timbab_10", "Primeros botes", "Gana 10 botes en la timba.", C),
+        (100, "timbab_100", "Recaudador de la timba", "Gana 100 botes en la timba.", R),
+        (1_000, "timbab_1k", "Agencia Tributaria de los colegas", "Gana 1.000 botes.", E),
+        (5_000, "timbab_5k", "El que siempre gana, como Hacienda", "Gana 5.000 botes.", L),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_showdowns_won", [
+        (10, "timbas_10", "Cartas boca arriba", "Gana 10 botes enseñando cartas.", C),
+        (100, "timbas_100", "Transparencia institucional (de verdad)",
+         "Gana 100 botes enseñando cartas.", R),
+        (1_000, "timbas_1k", "Portal de transparencia", "Gana 1.000 botes enseñando cartas.", L),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_steals", [
+        (10, "timbar_10", "Farol en la trastienda",
+         "Gana 10 botes sin enseñar después de subir.", C),
+        (100, "timbar_100", "Manual de resistencia del farol",
+         "Gana 100 botes sin enseñar después de subir.", R),
+        (1_000, "timbar_1k", "La máquina del fango de los faroles",
+         "Gana 1.000 botes sin enseñar.", E),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_raises", [
+        (100, "timbasub_100", "Sube, que es gratis", "Sube 100 veces en la timba.", C),
+        (1_000, "timbasub_1k", "Subida del IPC", "Sube 1.000 veces en la timba.", R),
+        (10_000, "timbasub_10k", "Inflación argentina", "Sube 10.000 veces. Milei lo aprueba.", L),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_allins", [
+        (1, "timba_allin", "¡Todo dentro!", "Ve con todo en una mano de timba.", C),
+        (50, "timba_allin_50", "Rescate a la banca, pero al revés", "Ve con todo 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_allin_wins", [
+        (1, "timba_allin_gana", "Doblado", "Gana un bote yendo con todo.", C),
+        (25, "timba_allin_gana_25", "Resurrección de Lázaro", "Gana 25 botes yendo con todo.", R),
+        (100, "timba_allin_gana_100", "El Ave Fénix de Galapagar",
+         "Gana 100 botes yendo con todo.", E),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_busted", [
+        (1, "timba_tieso", "Tieso", "Pierde todo lo que te jugabas en una mano.", C),
+        (25, "timba_tieso_25", "Preconcurso de acreedores",
+         "Pierde todo lo que te jugabas 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_knockouts", [
+        (1, "timba_elimina", "Moción de censura en la timba",
+         "Déjale tieso a alguien en la timba.", C),
+        (50, "timba_elimina_50", "Purga de Stalin", "Deja tiesos a 50 jugadores.", R),
+        (500, "timba_elimina_500", "Terminator de la timba", "Deja tiesos a 500 jugadores.", E),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_pot_max", [
+        (10_000, "timba_bote_10k", "Bote de narcolancha",
+         "Gana un bote de 10.000 Y$ o más en la timba.", E),
+        (100_000, "timba_bote_100k", "Bote de los ERE", "Gana un bote de 100.000 Y$ o más.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("timba", "timba_splits", [
+        (1, "timba_parte", "A partes iguales, como un Gobierno de coalición",
+         "Reparte un bote en la timba.", C),
+        (25, "timba_parte_25", "Pacto de legislatura", "Reparte 25 botes.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_side_pots", [
+        (1, "timba_secundario", "Bote secundario, premio de consolación",
+         "Gana un bote secundario sin ganar el principal.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_heads_up_wins", [
+        (50, "timba_mano_a_mano", "Cara a cara, como un debate electoral",
+         "Gana 50 manos de timba jugando dos.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_full_table", [
+        (1, "timba_mesa_llena", "Hemiciclo completo", "Juega una mano de timba con seis.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_straight", [
+        (1, "timba_escalera", "Escalera mecánica", "Gana un bote enseñando escalera.", C),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_flush", [
+        (1, "timba_color", "De un solo color, como el Constitucional",
+         "Gana un bote enseñando color.", C),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_full_house", [
+        (1, "timba_full", "Casa llena en la trastienda", "Gana un bote enseñando full.", C),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_quads", [
+        (1, "timba_poker", "Póker en la timba", "Gana un bote enseñando póker.", E),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_straight_flush", [
+        (1, "timba_escalera_color", "Escalera de color de la Transición",
+         "Gana un bote enseñando escalera de color.", L),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_won_royal_flush", [
+        (1, "timba_real", "Escalera real en la trastienda",
+         "Gana un bote enseñando escalera real.", M),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_bad_beat", [
+        (1, "timba_bad_beat", "Bad beat de la España vaciada",
+         "Pierde un bote enseñando full o mejor.", R, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_cooler", [
+        (1, "timba_cooler", "Cooler, como Puigdemont en Waterloo",
+         "Pierde un bote enseñando póker o mejor.", E, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_aces", [
+        (1, "timba_ases", "Ases en la manga", "Recibe una pareja de ases en la timba.", R),
+        (25, "timba_ases_25", "El crupier te quiere", "Recibe 25 parejas de ases.", E),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_aces_cracked", [
+        (1, "timba_ases_rotos", "Ases rotos, como los presupuestos prorrogados",
+         "Pierde un bote enseñando pareja de ases en la mano.", R, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_72_win", [
+        (1, "timba_72", "El 7-2 de la motosierra",
+         "Gana un bote con un 7 y un 2 de distinto palo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_preflop_folds", [
+        (100, "timba_paciencia", "Paciencia de opositor", "Retírate 100 veces antes del flop.", C),
+        (1_000, "timba_paciencia_1k", "Plaza fija en el banquillo",
+         "Retírate 1.000 veces antes del flop.", R),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_timeouts", [
+        (1, "timba_dormido", "Se durmió en el escaño",
+         "Deja que se te acabe el tiempo para hablar.", C, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_rake", [
+        (1_000, "timba_iaj_1k", "Contribuyente de la timba",
+         "Paga 1.000 Y$ de comisión al Estado ganando botes.", R),
+        (100_000, "timba_iaj_100k", "Gran contribuyente de la timba",
+         "Paga 100.000 Y$ de comisión al Estado ganando botes.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("timba", "timba_night", [
+        (1, "timba_madrugada", "Timba clandestina de madrugada",
+         "Juega a la timba de madrugada (de 2 a 6).", C),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_friday13", [
+        (1, "timba_viernes13", "Timba gafada", "Pierde un bote un viernes 13.", C, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_micro", [
+        (1, "timba_centimos", "Timba de céntimos",
+         "Juega a la timba con ciegas de 1 y 2.", C, True),
+    ])  # fmt: skip
+    a += _tiers("timba", "timba_pot_666", [
+        (1, "timba_666", "El bote del diablo", "Gana un bote de exactamente 666 Y$.", C, True),
+    ])  # fmt: skip
+
     # 🎲 Dados ----------------------------------------------------------------------------
     a += _tiers("dice", "dice_games", [
         (1, "dados_1", "Alea iacta est", "Juega tu primera partida de dados.", C),
@@ -4433,6 +4667,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
             ("gallos_fights", 1), ("poker_games", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_sixteen_games",
+        name="Dieciséis apellidos y una timba",
+        description="Juega a los dieciséis juegos del casino, la timba entre colegas incluida.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
         ),
     ))  # fmt: skip
 
@@ -12876,6 +13124,136 @@ def poker_stats(hand: PokerHand, *, when: datetime) -> StatDelta:
     bump("poker_night", 2 <= when.hour < 6)
     bump("poker_reyes", when.month == 1 and when.day == 6)
     bump("poker_inocentes", when.month == 12 and when.day == 28)
+    return delta
+
+
+def poker_club_stats(
+    *,
+    bonus: bool,
+    bonus_paid: int,
+    pot_won: int,
+    rank: PokerRank,
+    players: int,
+    lone_win: bool,
+    retos: int,
+    retos_full: bool,
+    level: int,
+    streak: int,
+) -> StatDelta:
+    """Contadores de la mesa compartida, el 💎 Bote y el club para una mano de un asiento.
+
+    Args:
+        bonus: Si jugó el 💎 Bote.
+        bonus_paid: Lo que cobró la parte fija del bote.
+        pot_won: Lo que se llevó del bote común.
+        rank: Su mejor jugada de siete cartas.
+        players: Cuántos jugaban la mano en la mesa.
+        lone_win: Si fue el único que le ganó a la banca en una mesa de tres o más.
+        retos: Retos del día cumplidos con esta mano.
+        retos_full: Si con esta mano completó los tres retos del día.
+        level: Su nivel del club tras la mano (0 si no se apuntó).
+        streak: Su racha de días tras la mano.
+    """
+    delta = StatDelta()
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("poker_bonus_bets", bonus)
+    bump("poker_bonus_wins", bonus and bool(bonus_paid or pot_won))
+    bump("poker_pot_sf", bool(pot_won) and rank is PokerRank.STRAIGHT_FLUSH)
+    bump("poker_pot_royal", bool(pot_won) and rank is PokerRank.ROYAL_FLUSH)
+    bump("poker_table_hands", players > 1)
+    bump("poker_table_full", players >= POKER_MAX_SEATS)
+    bump("poker_lone_win", lone_win)
+    bump("poker_retos", amount=retos)
+    bump("poker_retos_full", retos_full)
+    if pot_won:
+        delta.peak["poker_pot_max"] = pot_won
+    if level:
+        delta.peak["poker_rank"] = level
+    if streak:
+        delta.peak["poker_streak"] = streak
+    return delta
+
+
+def timba_stats(
+    hand: TimbaHand,
+    user_id: int,
+    *,
+    stack: int,
+    rake: int,
+    busted: tuple[int, ...],
+    timeouts: int,
+    when: datetime,
+) -> StatDelta:
+    """Contadores de una mano de timba para uno de sus jugadores (sin lo común del casino).
+
+    Args:
+        hand: La mano acabada.
+        user_id: El jugador.
+        stack: Lo que se jugaba al empezar.
+        rake: La comisión que salió de lo que ganó.
+        busted: Quiénes perdieron todo lo que se jugaban en la mano.
+        timeouts: Cuántas veces se le acabó el tiempo en la mano.
+        when: Hora local.
+    """
+    result = hand.result
+    assert result is not None
+    player = hand.players[hand.index_of(user_id)]
+    delta = StatDelta(add={"timba_hands": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    mine = [e for e in hand.events if e.user_id == user_id]
+    won = result.won.get(user_id, 0)
+    gained = won > 0 and won + rake > player.total
+    pots_won = [p for p in result.pots if user_id in p.winners and len(p.eligible) > 1]
+    raised = any(e.act is TimbaAct.RAISE for e in mine)
+    all_in = any(e.all_in for e in mine) or player.all_in
+    pocket = sorted(c.rank for c in player.hole)
+    value = result.values.get(user_id)
+    bump("timba_raises", amount=sum(e.act is TimbaAct.RAISE for e in mine))
+    bump("timba_allins", all_in)
+    bump("timba_aces", pocket == [1, 1])
+    bump("timba_full_table", len(hand.players) >= 6)
+    bump("timba_timeouts", amount=timeouts)
+    bump("timba_micro", hand.big_blind <= 2)
+    bump("timba_night", 2 <= when.hour < 6)
+    bump(
+        "timba_preflop_folds",
+        player.folded and all(e.street.value == 0 for e in mine if e.act is TimbaAct.FOLD),
+    )
+    if gained:
+        bump("timba_pots_won")
+        bump("timba_showdowns_won", result.showdown)
+        bump("timba_steals", not result.showdown and raised)
+        bump("timba_allin_wins", all_in)
+        bump("timba_heads_up_wins", len(hand.players) == 2)
+        bump("timba_splits", any(len(p.winners) > 1 for p in pots_won))
+        bump(
+            "timba_side_pots",
+            len(result.pots) > 1 and user_id not in result.pots[0].winners and bool(pots_won),
+        )
+        bump("timba_knockouts", amount=sum(1 for uid in busted if uid != user_id))
+        bump("timba_72_win", pocket == [2, 7] and player.hole[0].suit != player.hole[1].suit)
+        bump("timba_pot_666", won == 666)
+        delta.peak["timba_pot_max"] = won
+        if result.showdown and value is not None:
+            bump(f"timba_won_{value.rank.key}", value.rank.order >= PokerRank.STRAIGHT.order)
+    elif result.showdown and value is not None and not player.folded:
+        bump("timba_bad_beat", value.rank.order >= PokerRank.FULL_HOUSE.order)
+        bump("timba_cooler", value.rank.order >= PokerRank.QUADS.order)
+        bump("timba_aces_cracked", pocket == [1, 1])
+    bump("timba_busted", user_id in busted)
+    bump("timba_rake", amount=rake)
+    friday13 = when.weekday() == 4 and when.day == 13
+    bump("timba_friday13", not gained and player.total > 0 and friday13)
     return delta
 
 
