@@ -280,3 +280,70 @@ async def test_las_placas_del_final_dicen_lo_que_gana_o_pierde_cada_uno(
     assert views["Leo"].badge == ("lose", "-20 Y$")
     kind, text = views["Ana"].badge  # type: ignore[misc]
     assert kind == "win" and text.startswith("+") and views["Ana"].reveal
+
+
+async def test_el_turno_se_agota_en_el_plazo_que_se_ve(tmp_path: Path) -> None:
+    _, table, clock = await make_table(tmp_path)
+    publish = table.publish
+
+    async def slow_publish() -> None:
+        await publish()
+        clock.now += 5  # pintar y subir la mesa tarda
+
+    naps: list[float] = []
+    sleep = clock.sleep
+
+    async def spy(seconds: float) -> None:
+        naps.append(seconds)
+        await sleep(seconds)
+
+    table.publish = slow_publish  # type: ignore[method-assign]
+    table.cog.sleep = spy
+    await table.play_hand()
+    assert naps[0] == cog_module.TURN_SECONDS - 5
+
+
+# -- Listo -----------------------------------------------------------------------------
+
+
+async def test_listo_de_todos_empieza_la_mano_ya(tmp_path: Path) -> None:
+    _, table, _ = await make_table(tmp_path)
+    await table.mark_ready(click(ANA))
+    assert not table.go.is_set()
+    assert "✅ Ana" in (table.lobby_embed().description or "")
+    await table.mark_ready(click(LEO))
+    assert table.go.is_set()
+    await table.sit(make_user(12, "Eva"))
+    assert not table.go.is_set(), "quien llega no está listo"
+    await table.play_hand()
+    assert not any(c.ready for c in table.chairs) and not table.go.is_set()
+
+
+async def test_la_mesa_del_que_se_duerme_se_pinta_mientras_se_le_espera(tmp_path: Path) -> None:
+    cog, table, clock = await make_table(tmp_path)
+    painted: list[float] = []
+
+    async def timba(meta: dict[str, Any], state: dict[str, Any]) -> bytes:
+        painted.append(clock.now)
+        return b"TIMBA"
+
+    cog.renderer.timba = timba  # type: ignore[method-assign]
+    # Ana (botón, pequeña) se duerme y se retira: la mano acaba sin pintar nada después.
+    await table.play_hand()
+    assert table.hands == 1 and table.ahead is None
+    assert painted == [START, START], "el final se pintó durante el turno"
+
+
+async def test_si_hace_otra_cosa_se_pinta_de_nuevo(tmp_path: Path) -> None:
+    cog, table, clock = await make_table(tmp_path)
+    painted: list[float] = []
+
+    async def timba(meta: dict[str, Any], state: dict[str, Any]) -> bytes:
+        painted.append(clock.now)
+        return b"TIMBA"
+
+    cog.renderer.timba = timba  # type: ignore[method-assign]
+    clock.script = [act(table, ANA, "call"), act(table, LEO, "fold")]
+    await table.play_hand()
+    # Turno de Ana y de Leo, cada uno con su adelantada, y el final: Leo no pasó, se retiró.
+    assert len(painted) == 5

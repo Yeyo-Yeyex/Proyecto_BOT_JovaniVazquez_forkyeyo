@@ -6,7 +6,8 @@ te sienta, con `open_and_sit`; `/poker timba 50` la abre con ciega grande de 50
 (la pequeña es la mitad). Se juega de dos a `MAX_SEATS`; los asientos se quedan
 de una mano a otra hasta que pulsas 🚪 Levantarse. Reglas en `bot.services.timba`.
 
-**Una mano.** Con dos o más sentados, a los `START_SECONDS` empieza: se ponen las
+**Una mano.** Con dos o más sentados, empieza cuando todos pulsan ✅ Listo o, si
+no, a los `START_SECONDS`: se ponen las
 ciegas, cada uno ve sus cartas en privado con 🂠 Mis cartas y habla por turnos
 (`TURN_SECONDS` cada uno): ✅ Pasar o 📞 Igualar, ⬆️ Subir (mínimo, medio bote,
 bote, todo o 🔢 una cantidad) y 🏳️ Retirarse. Los botones solo valen para quien
@@ -36,6 +37,7 @@ archivos y añadir reacciones (para confirmar `.poker timba`).
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import logging
 import math
@@ -90,8 +92,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_BIG_BLIND = 20
-#: Pausa antes de cada mano, para que se siente quien quiera.
-START_SECONDS = 10
+#: Pausa antes de cada mano, para que se siente quien quiera (✅ Listo la corta).
+START_SECONDS = 2 * 60
 #: Tiempo para hablar; quien se duerme pasa si puede y, si no, se retira.
 TURN_SECONDS = 30
 #: A las tantas seguidas dormido, se le levanta de la mesa.
@@ -134,6 +136,7 @@ class Chair:
     Attributes:
         interaction: Su última interacción, para el aviso de la Renta.
         leaving: Si ha pulsado 🚪 Levantarse: se va al acabar la mano.
+        ready: Si ha pulsado ✅ Listo para la mano siguiente.
         timeouts: Veces seguidas que se ha dormido.
         stack: Lo que se juega en la mano en curso (0 si no la juega).
     """
@@ -141,6 +144,7 @@ class Chair:
     user: discord.abc.User
     interaction: discord.Interaction | None = None
     leaving: bool = False
+    ready: bool = False
     timeouts: int = 0
     stack: int = 0
     hand_timeouts: int = 0
@@ -279,6 +283,9 @@ class TableView(discord.ui.View):
                 disabled=not opts.can_raise,
             )  # fmt: skip
             _button(self, "Mis cartas", "🂠", grey, table.my_cards, 1, "cards")
+        else:
+            success = discord.ButtonStyle.success
+            _button(self, "Listo", "✅", success, table.mark_ready, 2, "ready")
         _button(self, "Sentarse", "🪑", discord.ButtonStyle.primary, table.sit_click, 2, "sit")
         _button(self, "Levantarse", "🚪", grey, table.leave_click, 2, "leave")
         _button(self, "Reglas", "📋", grey, table.rules, 2, "rules")
@@ -312,6 +319,8 @@ class Table:
         self.small_blind = max(1, big_blind // 2)
         self.skin = skin
         self.png = png
+        #: Lo que habrá pasado si quien habla se duerme y la imagen que se pinta para eso.
+        self.ahead: tuple[list[Event], asyncio.Task[bytes | None]] | None = None
         self.message: discord.Message | None = None
         self.phase = Phase.LOBBY
         self.chairs: list[Chair] = []
@@ -328,6 +337,8 @@ class Table:
         self._dirty = False
         self.seated = asyncio.Event()
         self.acted = asyncio.Event()
+        #: Todos los sentados están listos: la mano empieza sin esperar.
+        self.go = asyncio.Event()
         self.stopping = False
         self.sleeping = False
         self.opened_at = cog.wall_clock()
@@ -361,9 +372,9 @@ class Table:
 
     # -- Vista -----------------------------------------------------------------------------
 
-    def seat_views(self, *, reveal: bool = False) -> list[TimbaSeat]:
-        """Los asientos de la mano en curso tal y como los pinta la mesa."""
-        hand = self.hand
+    def seat_views(self, hand: TimbaHand | None = None, *, reveal: bool = False) -> list[TimbaSeat]:
+        """Los asientos de la mano en curso (o de `hand`) tal y como los pinta la mesa."""
+        hand = hand or self.hand
         assert hand is not None
         last: dict[int, Event] = {e.user_id: e for e in hand.events}
         result = hand.result
@@ -403,13 +414,41 @@ class Table:
             )
         return views
 
+    async def paint(self, hand: TimbaHand, *, reveal: bool = False) -> bytes:
+        """PNG de la mesa de `hand` (su final, con `reveal`)."""
+        views = self.seat_views(hand, reveal=reveal)
+        state = timba_state(hand.visible_board, views, pot=hand.pot)
+        meta = {**timba_meta(self.blinds_text()), "skin": self.skin}
+        return await self.cog.renderer.timba(meta, state)
+
     async def render(self, *, reveal: bool = False) -> None:
-        """Pinta la mesa de la mano en curso (o su final, con `reveal`)."""
+        """Pinta la mesa de la mano en curso (o su final, con `reveal`).
+
+        Si quien hablaba se durmió, la imagen ya se pintó mientras se le esperaba.
+        """
         hand = self.hand
         assert hand is not None
-        state = timba_state(hand.visible_board, self.seat_views(reveal=reveal), pot=hand.pot)
-        meta = {**timba_meta(self.blinds_text()), "skin": self.skin}
-        self.png = await self.cog.renderer.timba(meta, state)
+        ahead, self.ahead = self.ahead, None
+        if ahead is not None and ahead[0] == hand.events:
+            if (png := await ahead[1]) is not None:
+                self.png = png
+                return
+        self.png = await self.paint(hand, reveal=reveal)
+
+    def paint_ahead(self) -> None:
+        """Empieza a pintar la mesa tal y como quedará si quien habla se duerme."""
+        assert self.hand is not None
+        ahead = copy.deepcopy(self.hand)
+        ahead.timeout()
+
+        async def paint() -> bytes | None:
+            try:
+                return await self.paint(ahead, reveal=ahead.finished)
+            except Exception:
+                logger.debug("No se pudo pintar la timba por adelantado", exc_info=True)
+                return None
+
+        self.ahead = (ahead.events, asyncio.create_task(paint()))
 
     def log_lines(self) -> list[str]:
         hand = self.hand
@@ -461,12 +500,15 @@ class Table:
             lines.append("")
         if self.chairs:
             seated = ", ".join(
-                f"{short_name(c.user.display_name)}{' 🚪' if c.leaving else ''}"
+                f"{'✅ ' if c.ready else ''}{short_name(c.user.display_name)}"
+                f"{' 🚪' if c.leaving else ''}"
                 for c in self.chairs
             )
             lines.append(f"🪑 **Sentados ({len(self.chairs)}/{MAX_SEATS}):** {seated}")
         if len(self.chairs) >= 2 and self.next_hand_at is not None:
+            ready = sum(c.ready for c in self.chairs)
             lines.append(f"### 🃏 Próxima mano <t:{math.ceil(self.next_hand_at)}:R>")
+            lines.append(f"✅ Listos {ready}/{len(self.chairs)}: si estáis todos, empieza ya.")
         else:
             closes = math.ceil(self.opened_at + IDLE_SECONDS)
             lines.append(
@@ -543,6 +585,7 @@ class Table:
                 Chair(user=user, interaction=interaction, joined_at=self.cog.wall_clock())
             )
             self.seated.set()
+            self._check_ready()
         playing = " Entras en la mano siguiente." if self.phase is Phase.PLAYING else ""
         return (
             f"🪑 Sentado. En cada mano te juegas tu saldo hasta {format_amount(self.max_buy)}; "
@@ -576,10 +619,34 @@ class Table:
                     self.acted.set()
         else:
             self.chairs.remove(chair)
+            self._check_ready()
             text = "🚪 Te levantas de la timba."
         await interaction.response.send_message(text, ephemeral=True)
         if self.phase is Phase.LOBBY:
             self.edit_soon()
+
+    def _check_ready(self) -> None:
+        """Suelta la mano si hay dos o más sentados y todos están listos."""
+        if len(self.chairs) >= 2 and all(c.ready for c in self.chairs):
+            self.go.set()
+        else:
+            self.go.clear()
+
+    async def mark_ready(self, interaction: discord.Interaction) -> None:
+        """✅ Listo: si lo están todos los sentados, la mano empieza ya. Solo memoria."""
+        chair = self.chair(interaction.user.id)
+        if chair is None:
+            await interaction.response.send_message(
+                "Primero siéntate con 🪑 Sentarse.", ephemeral=True
+            )
+            return
+        if self.phase is not Phase.LOBBY:
+            await interaction.response.send_message("Ya hay una mano en juego.", ephemeral=True)
+            return
+        chair.ready = True
+        self._check_ready()
+        await interaction.response.defer()
+        self.edit_soon()
 
     async def rules(self, interaction: discord.Interaction) -> None:
         """📋 Las reglas, en privado (solo memoria)."""
@@ -714,7 +781,7 @@ class Table:
                     continue
                 self.next_hand_at = self.cog.wall_clock() + START_SECONDS
                 self.edit_soon()
-                await self.nap(START_SECONDS)
+                await self.nap(START_SECONDS, wake=self.go)
                 if len(self.chairs) >= 2:
                     await self.play_hand()
         except asyncio.CancelledError:
@@ -764,6 +831,9 @@ class Table:
     async def play_hand(self) -> None:
         """Una mano entera: apartar, repartir, turnos, pagar, enseñar y apuntar."""
         self.last_lines = []
+        for chair in self.chairs:
+            chair.ready = False
+        self.go.clear()
         playing = await self._reserve()
         if len(playing) < 2:
             await self._refund(playing)
@@ -790,7 +860,9 @@ class Table:
             self.acted.clear()
             self.turn_deadline = self.cog.wall_clock() + TURN_SECONDS
             await self.publish()
-            await self.nap(TURN_SECONDS, wake=self.acted)
+            self.paint_ahead()
+            # Hasta el plazo que se enseña: pintar y subir la mesa ya ha gastado parte.
+            await self.nap(max(0.0, self.turn_deadline - self.cog.wall_clock()), wake=self.acted)
             if self.phase is Phase.CLOSED:
                 return  # se ha cerrado a mitad de mano: `shutdown` ya lo devolvió todo
             if hand.finished or hand.current is not current:
