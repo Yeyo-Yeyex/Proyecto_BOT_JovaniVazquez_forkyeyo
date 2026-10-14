@@ -40,6 +40,7 @@ from bot.repositories.economy import (
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
+    PokerSettlement,
     PorraBetReceipt,
     PorraCapError,
     PorraClosedError,
@@ -125,6 +126,7 @@ __all__ = [
     "PorraClosedError",
     "PorraPayment",
     "PorraSideError",
+    "PokerSettlement",
     "SlotsSettlement",
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
@@ -830,6 +832,59 @@ class EconomyService:
     async def slots_pot(self, guild_id: int, *, seed: int) -> int:
         """Bote común de la tragaperras del servidor (lo siembra si es nuevo)."""
         return await self.repository.slots_pot(guild_id, seed=seed)
+
+    async def poker_pot(self, guild_id: int, *, seed: int) -> int:
+        """El 💎 Bote progresivo del póker del servidor (lo siembra si es nuevo)."""
+        return await self.repository.poker_pot(guild_id, seed=seed)
+
+    async def pay_poker(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        game: str,
+        payout: int,
+        share: int = 0,
+        pot_permille: int = 0,
+        seed: int = 0,
+    ) -> PokerSettlement:
+        """Paga una mano de póker cobrada con `place_bet` y mueve el 💎 Bote.
+
+        Tratamiento fiscal: juego, como `pay_winnings`. La mano, la parte fija del
+        bote y lo que se lleve del bote común son premios de juego, ganancia
+        patrimonial de la base general (art. 33.1 LIRPF), y entran en la retención
+        diaria del casino y en la declaración semanal. El bote progresivo no es
+        lotería: el gravamen especial del 20 % (disposición adicional 33ª LIRPF)
+        no se aplica, igual que al jackpot de la tragaperras.
+
+        La parte de la apuesta del bote que pasa al bote común (`share`) no es un
+        impuesto: es dinero de la apuesta que la casa no se queda.
+
+        Args:
+            game: Motivo corto para el libro (`"poker"`).
+            payout: Lo que devuelven la mano y la parte fija del bote, apuestas
+                incluidas; 0 si no cobra nada.
+            share: Parte de la apuesta del bote que va al bote común.
+            pot_permille: Tanto por mil del bote que se lleva (1000, entero).
+            seed: Lo que pone la casa en un bote nuevo o recién vaciado.
+
+        Raises:
+            BalanceLimitError: Si el saldo superaría el máximo.
+        """
+        now = self._clock()
+        return await self.repository.settle_poker(
+            guild_id,
+            user_id,
+            game=game,
+            payout=payout,
+            share=share,
+            pot_permille=pot_permille,
+            seed=seed,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+            window_seconds=fiscal_window(now),
+        )
 
     async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
         """Último jackpot de la tragaperras del servidor."""

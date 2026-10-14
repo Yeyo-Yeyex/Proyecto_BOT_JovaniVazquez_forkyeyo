@@ -28,6 +28,7 @@ from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
+from bot.repositories.poker import PokerRepository
 from bot.repositories.porras import PorraRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.slots import SlotsRepository
@@ -151,6 +152,8 @@ class BotClient(commands.Bot):
         self.horses = HorseRepository(database_path)
         # Ficha del gallo de cada miembro para `gallos`; el dinero pasa por `economy`.
         self.gallos = GallosRepository(database_path)
+        # Rango, racha y retos del club del `poker`; el dinero pasa por `economy`.
+        self.poker = PokerRepository(database_path)
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
         self.porras = PorraRepository(database_path)
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
@@ -196,6 +199,7 @@ class BotClient(commands.Bot):
         await self.slots_repository.initialize()
         await self.horses.initialize()
         await self.gallos.initialize()
+        await self.poker.initialize()
         await self.porras.initialize()
         await self.work.repository.initialize()
         await self.beernight.initialize()

@@ -412,3 +412,107 @@ def paytable() -> list[tuple[str, str]]:
     rows = [(rank.label, f"{pays} a 1") for rank, pays in ANTE_PAYS.items()]
     rows.append(("Escalera o menos", "1 a 1"))
     return rows
+
+
+# -- Mesa compartida -------------------------------------------------------------------
+
+#: Asientos de la mesa del canal.
+MAX_SEATS = 6
+
+
+@dataclass(frozen=True, slots=True)
+class TableDeal:
+    """Las cartas de una mano de la mesa compartida: la banca, la mesa y cada asiento.
+
+    Todos juegan contra la misma banca con las mismas cinco comunitarias; cada
+    asiento tiene sus dos cartas. Salen de una sola baraja, sin repetir.
+
+    Attributes:
+        dealer: Las dos de la banca.
+        board: Las cinco comunitarias.
+        seats: Las dos de cada asiento, en orden de asiento.
+    """
+
+    dealer: tuple[Card, Card]
+    board: tuple[Card, Card, Card, Card, Card]
+    seats: tuple[tuple[Card, Card], ...]
+
+    def seat(self, index: int) -> Deal:
+        """La mano del asiento `index` contra la banca, con las reglas de una mano suelta."""
+        return Deal(player=self.seats[index], dealer=self.dealer, board=self.board)
+
+    @property
+    def flop(self) -> tuple[Card, ...]:
+        """Las tres comunitarias que se ven al decidir."""
+        return self.board[:3]
+
+
+def deal_table(rng: random.Random, seats: int = MAX_SEATS) -> TableDeal:
+    """Baraja y reparte la banca, la mesa y `seats` asientos de una sola baraja.
+
+    Se reparte siempre para todos los asientos posibles y cada jugador se queda
+    las de su sitio: cuántos se sienten no cambia las cartas de nadie.
+
+    Raises:
+        ValueError: Con menos de un asiento o más de `MAX_SEATS`.
+    """
+    if not 1 <= seats <= MAX_SEATS:
+        raise ValueError("Asientos fuera de la mesa.")
+    cards = rng.sample(full_deck(), 7 + 2 * seats)
+    return TableDeal(
+        dealer=(cards[0], cards[1]),
+        board=(cards[2], cards[3], cards[4], cards[5], cards[6]),
+        seats=tuple((cards[7 + 2 * i], cards[8 + 2 * i]) for i in range(seats)),
+    )
+
+
+# -- Bote progresivo -------------------------------------------------------------------
+
+#: La apuesta del bote: fija, la misma para todos, como en los casinos.
+BONUS_STAKE = 20
+#: Lo que pasa de cada apuesta del bote al bote común del servidor (el 40 %).
+BONUS_SHARE = 8
+#: Lo que pone la casa en un bote nuevo o recién vaciado.
+POT_SEED = 5_000
+#: Lo que devuelve la apuesta del bote con estas jugadas (veces lo apostado, apuesta incluida).
+BONUS_FIXED: dict[Rank, int] = {Rank.QUADS: 50, Rank.FULL_HOUSE: 6, Rank.FLUSH: 4}
+#: Tanto por mil del bote común que se lleva cada jugada.
+BONUS_POT: dict[Rank, int] = {Rank.ROYAL_FLUSH: 1000, Rank.STRAIGHT_FLUSH: 100}
+
+
+@dataclass(frozen=True, slots=True)
+class Bonus:
+    """Lo que cobra la apuesta del bote con una jugada.
+
+    Attributes:
+        fixed: Lo que paga la casa, apuesta incluida (0 si no cobra).
+        pot_permille: Tanto por mil del bote común que se lleva (0, 100 o 1000).
+    """
+
+    fixed: int
+    pot_permille: int
+
+    @property
+    def won(self) -> bool:
+        """Si cobra algo."""
+        return bool(self.fixed or self.pot_permille)
+
+
+def bonus(rank: Rank, stake: int = BONUS_STAKE) -> Bonus:
+    """Lo que cobra la apuesta del bote con la mejor jugada de siete cartas del jugador.
+
+    Se resuelve con las siete cartas aunque el jugador se retire: es una apuesta
+    aparte contra la casa y el bote, no contra la banca. Escalera real, el bote
+    entero; escalera de color, el 10 %; póker, 50 veces; full, 6; color, 4.
+    Devuelve de media un 76 % (36 % los pagos fijos y 40 % lo que va al bote):
+    ver `docs/rtp_poker.py`.
+    """
+    return Bonus(fixed=BONUS_FIXED.get(rank, 0) * stake, pot_permille=BONUS_POT.get(rank, 0))
+
+
+def bonus_table() -> list[tuple[str, str]]:
+    """La tabla del bote para la ayuda: (jugada, lo que se lleva)."""
+    rows = [(rank.label, "el bote entero" if p == 1000 else f"el {p // 10} % del bote")
+            for rank, p in BONUS_POT.items()]  # fmt: skip
+    rows += [(rank.label, f"{times} veces lo apostado") for rank, times in BONUS_FIXED.items()]
+    return rows

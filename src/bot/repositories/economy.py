@@ -36,6 +36,9 @@ Modelo de datos:
   servidor. `hit_at` es la cifra oculta del bote a la que cae solo, sorteada
   entre la semilla y el tope cada vez que se vacía; `spins`, las tiradas
   pagadas desde el último bote.
+- `economy_wallets` con `user_id = POKER_POT_ACCOUNT_ID`: el 💎 Bote progresivo
+  del póker. Crece con una parte de cada apuesta del bote; la escalera real se
+  lo lleva entero (y la casa lo vuelve a sembrar) y la escalera de color, el 10 %.
 - `economy_wallets` con `user_id = SHOP_ACCOUNT_ID`: la caja de la tienda, que
   se queda con la base imponible de lo que se vende.
 - `economy_consumption_tax`: el IGIC de cada compra de la tienda (y, con signo
@@ -130,6 +133,9 @@ HK_ACCOUNT_ID = -300
 #: se resuelva, así no desaparece del libro mientras tanto.
 PORRA_ACCOUNT_ID = -400
 
+#: `user_id` del 💎 Bote progresivo del póker, aparte del de la tragaperras.
+POKER_POT_ACCOUNT_ID = -500
+
 
 class InsufficientFundsError(Exception):
     """El movimiento dejaría el saldo en negativo.
@@ -211,6 +217,21 @@ class BetSettlement:
     tax_delta: int = 0
     day_net: int = 0
     day_withheld: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class PokerSettlement:
+    """Resultado de pagar una mano de póker.
+
+    Attributes:
+        bet: Saldo e IRPF del jugador, como en cualquier apuesta.
+        pot_won: Lo que se ha llevado del 💎 Bote (0 si nada).
+        pot: El bote tras la mano (ya resembrado si se vació).
+    """
+
+    bet: BetSettlement
+    pot_won: int
+    pot: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -1169,22 +1190,29 @@ class EconomyRepository:
 
     # -- Tragaperras -----------------------------------------------------------------
 
-    def _pot_in(self, connection: sqlite3.Connection, guild_id: int, seed: int) -> int:
-        """Saldo del bote; lo crea con `seed` la primera vez."""
+    def _pot_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        seed: int,
+        account: int = SLOTS_POT_ACCOUNT_ID,
+        reason: str = "bote:semilla",
+    ) -> int:
+        """Saldo de un bote (el de la tragaperras salvo otro `account`); lo crea con `seed`."""
         row = connection.execute(
             "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
-            (guild_id, SLOTS_POT_ACCOUNT_ID),
+            (guild_id, account),
         ).fetchone()
         if row is not None:
             return int(row["balance"])
         connection.execute(
             "INSERT INTO economy_wallets (guild_id, user_id, balance) VALUES (?, ?, 0)",
-            (guild_id, SLOTS_POT_ACCOUNT_ID),
+            (guild_id, account),
         )
         if not seed:
             return 0
         return self._apply_in_transaction(
-            connection, guild_id, SLOTS_POT_ACCOUNT_ID, (LedgerEntry(seed, "bote:semilla"),)
+            connection, guild_id, account, (LedgerEntry(seed, reason),)
         )
 
     async def slots_pot(self, guild_id: int, *, seed: int) -> int:
@@ -1370,6 +1398,108 @@ class EconomyRepository:
                 spins_since=spins,
                 drought=drought,
             )
+
+    # -- Póker: el 💎 Bote progresivo ---------------------------------------------------
+
+    async def poker_pot(self, guild_id: int, *, seed: int) -> int:
+        """El 💎 Bote del póker; lo siembra con `seed` si no existía."""
+        return await self._run(self._poker_pot_sync, guild_id, seed)
+
+    def _poker_pot_sync(self, guild_id: int, seed: int) -> int:
+        with self._transaction() as connection:
+            return self._pot_in(connection, guild_id, seed, POKER_POT_ACCOUNT_ID, "poker:semilla")
+
+    async def settle_poker(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        game: str,
+        payout: int,
+        share: int,
+        pot_permille: int,
+        seed: int,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> PokerSettlement:
+        """Paga una mano de póker ya cobrada y mueve el 💎 Bote, todo en una transacción.
+
+        Las apuestas (ante, ir y la del bote) ya se cobraron con `place_bet`. Aquí
+        se paga `payout` (lo que devuelven la mano y la parte fija del bote), pasa
+        `share` de la apuesta del bote al bote común y, si la jugada se lleva una
+        parte del bote (`pot_permille`, tanto por mil), se le paga también. Todo
+        entra en el neto de juego del día y en su IRPF. Si se lleva el bote entero,
+        la casa lo vuelve a sembrar con `seed`.
+
+        Raises:
+            BalanceLimitError: Si el saldo superaría el máximo. No se mueve nada.
+        """
+        return await self._run(
+            self._settle_poker_sync,
+            guild_id,
+            user_id,
+            game,
+            payout,
+            share,
+            pot_permille,
+            seed,
+            day,
+            now,
+            day_tax,
+            window_seconds,
+        )
+
+    def _settle_poker_sync(
+        self,
+        guild_id: int,
+        user_id: int,
+        game: str,
+        payout: int,
+        share: int,
+        pot_permille: int,
+        seed: int,
+        day: str,
+        now: float,
+        day_tax: Callable[[int, int], int],
+        window_seconds: float,
+    ) -> PokerSettlement:
+        if payout < 0 or share < 0 or not 0 <= pot_permille <= 1000:
+            raise ValueError("Pago de póker inválido.")
+        with self._transaction() as connection:
+            pot = self._pot_in(connection, guild_id, seed, POKER_POT_ACCOUNT_ID, "poker:semilla")
+            # La aportación de esta mano entra antes de cobrar: el que se lleva el
+            # bote se lleva también lo suyo, como en la tragaperras.
+            won = (pot + share) * pot_permille // 1000
+            entries = []
+            if payout:
+                entries.append(LedgerEntry(payout, f"{game}:premio"))
+            if won:
+                entries.append(LedgerEntry(won, f"{game}:bote"))
+            bet = self._settle_gamble_in(
+                connection,
+                guild_id,
+                user_id,
+                entries,
+                day=day,
+                now=now,
+                adjust_tax=True,
+                day_tax=day_tax,
+                window_seconds=window_seconds,
+            )
+            pot_moves = []
+            if share:
+                pot_moves.append(LedgerEntry(share, f"{game}:aporte"))
+            if won:
+                pot_moves.append(LedgerEntry(-won, f"{game}:bote"))
+            if pot_permille == 1000 and seed:
+                pot_moves.append(LedgerEntry(seed, "poker:semilla"))
+            if pot_moves:
+                pot = self._apply_in_transaction(
+                    connection, guild_id, POKER_POT_ACCOUNT_ID, pot_moves
+                )
+            return PokerSettlement(bet=bet, pot_won=won, pot=pot)
 
     @staticmethod
     def _mystery_in(

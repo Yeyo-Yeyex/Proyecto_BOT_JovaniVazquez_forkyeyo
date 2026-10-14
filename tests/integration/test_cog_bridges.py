@@ -73,6 +73,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
+    await client.poker.initialize()
     await client.porras.initialize()
     await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
