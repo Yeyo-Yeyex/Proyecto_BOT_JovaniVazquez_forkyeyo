@@ -499,7 +499,8 @@ python -m bot
   vas, la banca juega con pareja de cuatros o mejor; si no juega, el ante cobra
   según la tabla (escalera real 100 a 1, escalera de color 20, póker 10, full 3,
   color 2 y el resto 1 a 1) y la de ir se devuelve. Si juega y le ganas, la de
-  ir paga 1 a 1. La casa se queda un 2,16 % del ante con la mejor estrategia.
+  ir paga 1 a 1. La casa se queda un 2,16 % del ante con la mejor estrategia
+  (`docs/rtp_poker.py` lo comprueba en segundos).
   Al retirarte te dice qué habría pasado yendo. El reparto y el final son GIF
   dibujados con canvas en Node (si no hay Node, en Chromium y, si tampoco, con
   Pillow); las nueve cartas se sortean al repartir, así que los dos finales se

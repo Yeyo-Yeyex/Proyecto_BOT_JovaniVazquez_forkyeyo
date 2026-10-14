@@ -27,7 +27,9 @@ escalera o menos 1 a 1.
 Ventaja de la casa: 2,16 % del ante con la estrategia óptima (ir con casi todo:
 se va en un 82 % de las manos), la cifra que se publica para estas reglas y esta
 tabla. Es más que el 1 % de los juegos de cobrar a tiempo porque aquí hay una
-decisión de verdad: retirarse con lo que no toca le gana algo a ir siempre.
+decisión de verdad: retirarse con lo que no toca le gana algo a ir siempre (ir
+siempre cuesta un 8 %). `docs/rtp_poker.py` lo comprueba con estas reglas: con
+una estrategia aprendida, algo peor que la óptima, sale un 2,6 % ± 0,2 %.
 
 **Una baraja sin reponer.** Las nueve cartas de la mano (dos del jugador, dos de
 la banca y cinco comunitarias) salen de una baraja de 52 barajada (`deal`). Se
