@@ -70,7 +70,7 @@ python -m bot
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
   | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
+  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -354,6 +354,16 @@ python -m bot
   (0,50 €). Los máximos de Bizum (10.000 Y$ por operación y 20.000 Y$ al día)
   no se aplican: el bot avisa de que te has pasado y te da el logro
   *A espaldas de Sánchez*. El resultado es público y menciona a quien recibe.
+- **Rastro** (`vender`, `rastro`): segunda mano entre miembros. Con
+  `vender <objeto> <precio> <comprador>` le haces una oferta (o se lo regalas
+  con precio 0); sin comprador, lo pones en un puesto con precio de salida y,
+  si lo quieren varios, se subasta: cada puja sube al menos un 5 % y da una
+  hora más. `rastro` enseña los puestos con su botón 🔨 Pujar. Solo se venden
+  coleccionables y tapetes, y quien compra tiene que cumplir el nivel mínimo y
+  el límite por persona del artículo. Quien compra paga el 5,5 % de ITP sobre
+  el mayor entre el precio y el valor de la tienda (vender a 1 Y$ no lo baja;
+  la parte regalada está exenta, como el Bizum) y quien vende con ganancia
+  paga el 19 % de la plusvalía.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
@@ -1011,6 +1021,7 @@ src/bot/
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
+│   ├── rastro.py        # vender y rastro: ofertas, puestos y subastas de segunda mano
 │   ├── pieles.py        # pieles: panel de skins e imágenes del tapete propio
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
@@ -1054,6 +1065,7 @@ src/bot/
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
+│   ├── rastro.py        # Reglas del Rastro: qué se vende, ITP, plusvalía y pujas
 │   ├── skins.py         # Skins de las mesas del casino: juegos que las admiten y catálogo
 │   ├── skin_images.py   # Imágenes propias de las skins: comprobar y limpiar lo que se sube
 │   ├── pets.py          # Reglas de las mascotas: vínculo, cuidados, momentos y cameos

@@ -277,6 +277,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
+    Category("rastro", "🧺 Rastro"),
     Category("pets", "🐾 Mascotas"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
@@ -586,6 +587,24 @@ BIZUM_LIMIT_STORY = (
     f"1.000 € por operación ({_thousands(BIZUM_MAX_OPERATION)} Y$) ni de 2.000 € al día; "
     "el banco te lo para en seco. Aquí te ha colado porque Perro Sanxe estaba mirando "
     "despegar el Falcon. Si alguien pregunta, era para el cumple de tu prima."
+)
+
+#: Discurso del primer ITP del Rastro (`rastro_itp_1`).
+RASTRO_ITP_STORY = (
+    "📄 **Modelo 600, mi amor.** Comprar de segunda mano a otro particular no lleva "
+    "IGIC: lleva el Impuesto sobre Transmisiones Patrimoniales, que en Canarias es el "
+    "5,5 % para los bienes muebles. Y ojo, que se calcula sobre lo que vale de verdad, "
+    "no sobre lo que pagaste: Hacienda tiene sus tablas, como con los coches usados. "
+    "Comprar a 1 Y$ el Marquesado de tu colega no te libra. Perro Sanxe lo ve todo, "
+    "hasta lo que pasa en Cascorro un domingo."
+)
+
+#: Discurso de la primera plusvalía del Rastro (`rastro_gain_1`).
+RASTRO_GAIN_STORY = (
+    "📈 **Pelotazo detectado.** Has vendido por más de lo que te costó, y eso es una "
+    "ganancia patrimonial: tributa en la base del ahorro. Como aquí no hay declaración "
+    "anual, Hacienda se queda el 19 % de lo que has ganado en el momento. Gil y Gil lo "
+    "hacía con solares; tú, con coleccionables. Mismo espíritu, menos Marbella."
 )
 
 #: Discurso del primer logro de los gallos (`gallos_1`).
@@ -5071,6 +5090,145 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "bizum_pitufeo_25", "Pitufo profesional",
          "Manda 25 Bizums de justo 10.000 Y$.", E, True),
     ])  # fmt: skip
+    # 🧺 Rastro ---------------------------------------------------------------------------
+    a += _tiers("rastro", "market_sold", [
+        (1, "rastro_sold_1", "Domingo en Cascorro", "Vende algo en el Rastro.", C),
+        (10, "rastro_sold_10", "Comerciante de Ribera de Curtidores", "Vende 10 cosas.", R),
+        (50, "rastro_sold_50", "El rey del regateo", "Vende 50 cosas.", E),
+        (200, "rastro_sold_200", "Amancio Ortega de segunda mano", "Vende 200 cosas.", L),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_bought", [
+        (1, "rastro_bought_1", "Lo compré en el Rastro", "Compra algo de segunda mano.", C),
+        (10, "rastro_bought_10", "Cazador de gangas", "Compra 10 cosas de segunda mano.", R),
+        (50, "rastro_bought_50", "Coleccionista de Wallapop",
+         "Compra 50 cosas de segunda mano.", E),
+        (200, "rastro_bought_200", "Diógenes con presupuesto",
+         "Compra 200 cosas de segunda mano. El trastero de Galapagar se queda pequeño.", L),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_sold_y", [
+        (10_000, "rastro_soldy_10k", "¿Último precio?",
+         "Cobra 10.000 Y$ vendiendo en el Rastro.", C),
+        (100_000, "rastro_soldy_100k", "Negocio redondo",
+         "Cobra 100.000 Y$ vendiendo en el Rastro.", R),
+        (1_000_000, "rastro_soldy_1m", "Pelotazo marbellí",
+         "Cobra 1.000.000 Y$ vendiendo en el Rastro.", E),
+        (10_000_000, "rastro_soldy_10m", "Gil y Gil vende Marbella",
+         "Cobra 10.000.000 Y$ vendiendo en el Rastro.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("rastro", "market_spent", [
+        (100_000, "rastro_spent_100k", "Se me fue la mano",
+         "Gasta 100.000 Y$ en el Rastro, ITP incluido.", R),
+        (1_000_000, "rastro_spent_1m", "Florentino ficha en el Rastro",
+         "Gasta 1.000.000 Y$ en el Rastro, ITP incluido.", E),
+    ], unit="money")  # fmt: skip
+    a.append(Achievement(
+        id="rastro_itp_1",
+        name="Modelo 600",
+        description="Paga ITP por primera vez comprando de segunda mano.",
+        category="rastro",
+        rarity=C,
+        conditions=(("market_itp", 1),),
+        story=RASTRO_ITP_STORY,
+    ))  # fmt: skip
+    a += _tiers("rastro", "market_itp", [
+        (10_000, "rastro_itp_10k", "Contribuyente de segunda mano", "Paga 10.000 Y$ de ITP.", R),
+        (100_000, "rastro_itp_100k", "Transmisión patrimonial a lo grande",
+         "Paga 100.000 Y$ de ITP.", E),
+    ], unit="money")  # fmt: skip
+    a.append(Achievement(
+        id="rastro_gain_1",
+        name="Ganancia patrimonial",
+        description="Vende algo por más de lo que te costó y paga la plusvalía.",
+        category="rastro",
+        rarity=C,
+        conditions=(("market_gain_tax", 1),),
+        story=RASTRO_GAIN_STORY,
+    ))  # fmt: skip
+    a += _tiers("rastro", "market_gain_tax", [
+        (50_000, "rastro_gain_50k", "Especulador de Marbella",
+         "Paga 50.000 Y$ de IRPF por plusvalías del Rastro.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("rastro", "market_loss", [
+        (1, "rastro_loss_1", "Vender a pérdidas, como Renfe",
+         "Vende algo por menos de lo que te costó.", C, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_gifts_given", [
+        (1, "rastro_gift_1", "Te lo regalo, que no se entere Hacienda",
+         "Regala algo con una venta directa a 0 Y$. Se entera igual: el ITP lo paga el otro.",
+         C),
+        (10, "rastro_gift_10", "Rey Mago fuera de temporada", "Regala 10 cosas.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_gift_received", [
+        (1, "rastro_giftr_1", "Regalo envenenado",
+         "Recibe algo regalado y paga su ITP. Gratis, lo que se dice gratis, no era.", C,
+         True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_listings", [
+        (1, "rastro_list_1", "Manta en el suelo", "Pon algo en un puesto del Rastro.", C),
+        (25, "rastro_list_25", "Puesto fijo en el Rastro", "Pon 25 cosas en el Rastro.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_bids", [
+        (1, "rastro_bid_1", "A la una…", "Puja en una subasta del Rastro.", C),
+        (25, "rastro_bid_25", "A las dos…", "Puja 25 veces.", R),
+        (100, "rastro_bid_100", "Pujador compulsivo", "Puja 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_auction_won", [
+        (1, "rastro_won_1", "¡Adjudicado!", "Gana una subasta del Rastro.", C),
+        (10, "rastro_won_10", "Martillo de Sotheby's", "Gana 10 subastas.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_outbid", [
+        (1, "rastro_outbid_1", "Me lo han quitado de las manos",
+         "Que alguien te supere en una subasta.", C),
+        (25, "rastro_outbid_25", "Siempre segundo, como Feijóo en la investidura",
+         "Que te superen 25 veces en una subasta.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_bids_on_mine_max", [
+        (5, "rastro_war_5", "Subasta reñida", "Recibe 5 pujas en un mismo puesto.", R),
+        (15, "rastro_war_15", "Subasta de la Moncloa",
+         "Recibe 15 pujas en un mismo puesto. Más pujas que ministerios.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_bought_max", [
+        (100_000, "rastro_max_100k", "Capricho de ministro",
+         "Paga 100.000 Y$ por una sola cosa de segunda mano.", R),
+        (1_000_000, "rastro_max_1m", "El cuadro de Bárcenas",
+         "Paga 1.000.000 Y$ por una sola cosa de segunda mano.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("rastro", "market_serial_bought", [
+        (1, "rastro_serial_1", "Numerado y de segunda mano",
+         "Compra en el Rastro una unidad de edición limitada.", C),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_title_bought", [
+        (1, "rastro_title_1", "Título nobiliario de saldo",
+         "Compra un título de segunda mano. La sangre azul ya no es lo que era.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_tapete_bought", [
+        (1, "rastro_tapete_1", "Tapete con historia",
+         "Compra un tapete de segunda mano. Aún tiene la marca del vaso.", C),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_expired", [
+        (1, "rastro_expired_1", "Ni regalado", "Que un puesto tuyo cierre sin una sola puja.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_sunday", [
+        (1, "rastro_sunday_1", "Domingo de Rastro",
+         "Compra, vende o puja en domingo, como manda el Ayuntamiento de Madrid.", C),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_withdrawn", [
+        (1, "rastro_withdraw_1", "Me lo pienso", "Retira un puesto antes de que nadie puje.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_sold_one", [
+        (1, "rastro_one_1", "A precio de amigo… de Koldo", "Vende algo por 1 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_666", [
+        (1, "rastro_666", "El precio de la bestia", "Compra o vende algo por 666 Y$ exactos.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_bid_max", [
+        (1_000_000, "rastro_bidmax_1m", "Puja de jeque",
+         "Puja 1.000.000 Y$ de una vez en el Rastro.", E, True),
+    ], unit="money")  # fmt: skip
+
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
         (10_000, "rich_10k", "Clase media, especie en extinción", "Ten 10.000 Y$ a la vez.", C),
@@ -14740,6 +14898,106 @@ def bizum_received_stats(*, amount: int, balance_after: int) -> StatDelta:
         add={"bizum_received_count": 1, "bizum_received": amount},
         peak={"balance_max": balance_after},
     )
+
+
+# -- Rastro ----------------------------------------------------------------------------
+
+
+def _sunday(when: datetime) -> dict[str, int]:
+    """El Rastro de verdad es los domingos: cualquier jugada ese día cuenta."""
+    return {"market_sunday": 1} if when.weekday() == 6 else {}
+
+
+def market_listing_stats(*, when: datetime) -> StatDelta:
+    """Estadísticas de quien pone algo en un puesto del Rastro."""
+    return StatDelta(add={"market_listings": 1, **_sunday(when)})
+
+
+def market_withdraw_stats() -> StatDelta:
+    """Estadísticas de quien retira un puesto sin pujas."""
+    return StatDelta(add={"market_withdrawn": 1})
+
+
+def market_expired_stats() -> StatDelta:
+    """Estadísticas de quien ve cerrar su puesto sin una sola puja."""
+    return StatDelta(add={"market_expired": 1})
+
+
+def market_bid_stats(*, amount: int, when: datetime) -> StatDelta:
+    """Estadísticas de quien puja."""
+    return StatDelta(add={"market_bids": 1, **_sunday(when)}, peak={"market_bid_max": amount})
+
+
+def market_outbid_stats() -> StatDelta:
+    """Estadísticas de quien es superado en una subasta."""
+    return StatDelta(add={"market_outbid": 1})
+
+
+def market_sale_stats(
+    *, price: int, cost: int, gain_tax: int, bids: int, when: datetime
+) -> StatDelta:
+    """Estadísticas de quien vende en el Rastro (venta directa o subasta).
+
+    Args:
+        price: Precio cobrado.
+        cost: Lo que le costó.
+        gain_tax: IRPF de la plusvalía.
+        bids: Pujas que recibió el puesto (0 en una venta directa).
+    """
+    delta = StatDelta(
+        add={"market_sold": 1, "market_sold_y": price, **_sunday(when)},
+        peak={"market_bids_on_mine_max": bids},
+    )
+    for stat, hit in (
+        ("market_gain_tax", gain_tax),
+        ("market_loss", int(price < cost)),
+        ("market_gifts_given", int(price == 0)),
+        ("market_sold_one", int(price == 1)),
+        ("market_666", int(price == 666)),
+    ):
+        if hit:
+            delta.add[stat] = hit
+    return delta
+
+
+def market_purchase_stats(
+    *,
+    price: int,
+    itp: int,
+    auction: bool,
+    serial: int | None,
+    title: bool,
+    tapete: bool,
+    balance_after: int,
+    when: datetime,
+) -> StatDelta:
+    """Estadísticas de quien compra en el Rastro.
+
+    Args:
+        price: Precio pagado (sin el ITP).
+        itp: ITP pagado.
+        auction: Si lo ganó en una subasta.
+        serial: Número de serie, si es de edición limitada.
+        title: Si es un título.
+        tapete: Si es un tapete.
+        balance_after: Saldo tras pagar.
+    """
+    delta = StatDelta(
+        add={"market_bought": 1, "market_spent": price + itp, **_sunday(when)},
+        peak={"market_bought_max": price, "balance_max": balance_after},
+    )
+    for stat, hit in (
+        ("market_itp", itp),
+        ("market_gift_received", int(price == 0)),
+        ("market_auction_won", int(auction)),
+        ("market_serial_bought", int(serial is not None)),
+        ("market_title_bought", int(title)),
+        ("market_tapete_bought", int(tapete)),
+        ("market_666", int(price == 666)),
+    ):
+        if hit:
+            delta.add[stat] = hit
+    return delta
 
 
 # -- Loterías --------------------------------------------------------------------------

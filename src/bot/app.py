@@ -35,6 +35,7 @@ from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
 from bot.repositories.poker import PokerRepository
 from bot.repositories.porras import PorraRepository
+from bot.repositories.rastro import MarketRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.slots import SlotsRepository
 from bot.repositories.telemetry import TelemetryRepository
@@ -93,6 +94,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.donations",
     "bot.cogs.bizum",
     "bot.cogs.shop",
+    "bot.cogs.rastro",
     "bot.cogs.pieles",
     "bot.cogs.pets",
     "bot.cogs.work",
@@ -152,6 +154,9 @@ class BotClient(commands.Bot):
         self.news = NewsRepository(database_path)
         # Catálogo e inventario de la tienda; el dinero de cada compra pasa por `economy`.
         self.shop = ShopRepository(database_path)
+        # Puestos, pujas y ventas de segunda mano del Rastro (`vender`, `rastro`); el
+        # dinero pasa por `economy` y el objeto, por la mochila de la tienda.
+        self.rastro = MarketRepository(database_path)
         # Estado de las mascotas (`mascota`); quién tiene cada una lo dice la tienda.
         self.pets = PetRepository(database_path)
         # Sorteos y boletos de `loteria`; el dinero también pasa por `economy`.
@@ -226,6 +231,7 @@ class BotClient(commands.Bot):
         await self.welcome.initialize()
         await self.news.initialize()
         await self.shop.initialize()
+        await self.rastro.initialize()
         await self.pets.initialize()
         await self.lottery.initialize()
         await self.todo.initialize()

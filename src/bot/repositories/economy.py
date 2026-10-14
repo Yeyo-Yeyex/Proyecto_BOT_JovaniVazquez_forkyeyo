@@ -82,6 +82,11 @@ Modelo de datos:
 - `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra
   (y, con `porra_id = 0`, la comisión de cada bote de la `timba`),
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
+- `economy_wallets` con `user_id = MARKET_ACCOUNT_ID`: el depósito del Rastro.
+  Guarda la puja más alta de cada subasta (con su ITP) hasta que se adjudica, o
+  hasta devolverla entera a quien es superado.
+- `economy_market_tax`: el ITP (de quien compra) y el IRPF de la plusvalía (de
+  quien vende) de cada venta del Rastro, para que `hacienda` los cuente.
 - `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
   cobrado de más antes de que la renta de las retenciones se reiniciara cada
   lunes (`regularize_irpf`). Se hace una sola vez.
@@ -136,6 +141,10 @@ PORRA_ACCOUNT_ID = -400
 
 #: `user_id` del 💎 Bote progresivo del póker, aparte del de la tragaperras.
 POKER_POT_ACCOUNT_ID = -500
+
+#: `user_id` del depósito del Rastro: la puja más alta de cada subasta espera aquí.
+#: La mochila usa el mismo id para los objetos que están en un puesto.
+MARKET_ACCOUNT_ID = -600
 
 
 class InsufficientFundsError(Exception):
@@ -457,6 +466,47 @@ class BizumReceipt:
     sent_today: int
 
 
+@dataclass(frozen=True, slots=True)
+class MarketPayment:
+    """El dinero de una venta del Rastro (`bot.services.rastro.Deal`).
+
+    Attributes:
+        buyer_id: Quien compra; paga el precio y el ITP.
+        seller_id: Quien vende; cobra el precio menos la plusvalía.
+        price: Precio pactado o puja ganadora.
+        itp_base: Base del ITP (el mayor entre precio y valor de referencia).
+        itp: ITP de quien compra.
+        gain: Ganancia de quien vende.
+        gain_tax: IRPF de esa ganancia.
+        escrowed: Si quien compra ya lo pagó al pujar y sale del depósito.
+    """
+
+    buyer_id: int
+    seller_id: int
+    price: int
+    itp_base: int
+    itp: int
+    gain: int
+    gain_tax: int
+    escrowed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MarketMove:
+    """Todo lo que mueve una operación del Rastro, en este orden.
+
+    Attributes:
+        hold: `(miembro, importe)` que entra en el depósito (una puja con su ITP).
+        refunds: `(miembro, importe)` que salen del depósito (pujas superadas o
+            subastas que no se pueden adjudicar).
+        payment: La venta, si se cierra una.
+    """
+
+    hold: tuple[int, int] | None = None
+    refunds: tuple[tuple[int, int], ...] = ()
+    payment: MarketPayment | None = None
+
+
 class EconomyRepository:
     """Acceso SQLite a la economía; comparte archivo con el resto del bot.
 
@@ -774,6 +824,16 @@ class EconomyRepository:
                     user_id INTEGER NOT NULL,
                     porra_id INTEGER NOT NULL,
                     tax INTEGER NOT NULL CHECK (tax >= 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_market_tax (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL CHECK (kind IN ('itp', 'plusvalia')),
+                    base INTEGER NOT NULL CHECK (base >= 0),
+                    tax INTEGER NOT NULL CHECK (tax > 0),
                     created_at REAL NOT NULL
                 );
 
@@ -2247,7 +2307,8 @@ class EconomyRepository:
         """Todo lo que cada miembro ha pagado al Estado, impuesto a impuesto.
 
         Solo lee. Las claves son las de `bot.services.tax_report.TAX_KINDS`:
-        IRPF del trabajo y de otros ingresos, del casino y del ahorro,
+        IRPF del trabajo y de otros ingresos, del casino y del ahorro (intereses y
+        plusvalías del Rastro), ITP del Rastro,
         Seguridad Social del trabajador (con la cuota de autónomos) y de la
         empresa, IGIC (las devoluciones restan), Patrimonio, gravamen de
         loterías, IAJ de las porras, multas, lo devuelto en la renta (positivo;
@@ -2302,6 +2363,12 @@ class EconomyRepository:
             SELECT user_id, 'iaj', tax, created_at
             FROM economy_gaming_tax WHERE guild_id = :guild
             UNION ALL
+            SELECT user_id, 'itp', tax, created_at
+            FROM economy_market_tax WHERE guild_id = :guild AND kind = 'itp'
+            UNION ALL
+            SELECT user_id, 'irpf_ahorro', tax, created_at
+            FROM economy_market_tax WHERE guild_id = :guild AND kind = 'plusvalia'
+            UNION ALL
             SELECT user_id, 'multas', amount, created_at
             FROM economy_sanctions WHERE guild_id = :guild
             UNION ALL
@@ -2339,7 +2406,8 @@ class EconomyRepository:
             ).fetchone()
             # Retenciones de ingresos y del casino, Patrimonio, IGIC, gravamen de
             # loterías, Seguridad Social de las nóminas (la de la empresa se apunta a
-            # quien cobra), multas e IRPF de los intereses, en una sola vista.
+            # quien cobra), multas, IRPF de los intereses e ITP y plusvalías del
+            # Rastro, en una sola vista.
             taxes = """
                 SELECT user_id, withheld, created_at AS at FROM economy_tax_records
                 WHERE guild_id = :guild
@@ -2370,6 +2438,9 @@ class EconomyRepository:
                 UNION ALL
                 SELECT user_id, charged AS withheld, created_at AS at
                 FROM economy_interest_savings WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_market_tax
+                WHERE guild_id = :guild
             """
             total, recent = connection.execute(
                 f"""
@@ -3339,6 +3410,97 @@ class EconomyRepository:
                 )
             return self._apply_in_transaction(connection, guild_id, user_id, entries)
 
+    # -- Rastro ------------------------------------------------------------------------
+
+    async def market(
+        self,
+        guild_id: int,
+        *,
+        now: float,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MarketMove]],
+    ) -> tuple[T, dict[int, int]]:
+        """Mueve el dinero de una operación del Rastro (puja, venta o cierre).
+
+        `prepare` lo pone `bot.repositories.rastro` y corre dentro de la misma
+        transacción, antes que el dinero: comprueba el puesto, mueve el objeto de
+        la mochila y dice qué dinero se mueve. Si lanza, o si a alguien no le
+        llega, no se guarda nada (tampoco lo de `prepare`).
+
+        En orden: la puja entra en el depósito (`MARKET_ACCOUNT_ID`), salen las
+        devoluciones y se paga la venta: quien compra paga precio e ITP (de su
+        monedero o del depósito, si pujó), quien vende cobra el precio menos la
+        plusvalía y los dos impuestos van al Estado y a `economy_market_tax`.
+
+        Returns:
+            `(lo que devuelva prepare, saldo final de cada miembro tocado)`.
+
+        Raises:
+            InsufficientFundsError: Si a quien puja o compra no le llega.
+            BalanceLimitError: Si a alguien no le cabe lo que cobra.
+        """
+        return await self._run(self._market_sync, guild_id, now, prepare)
+
+    def _market_sync(
+        self,
+        guild_id: int,
+        now: float,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MarketMove]],
+    ) -> tuple[T, dict[int, int]]:
+        with self._transaction() as connection:
+            result, move = prepare(connection)
+            balances: dict[int, int] = {}
+            self._open_empty_wallet(connection, guild_id, MARKET_ACCOUNT_ID)
+
+            def deposit(amount: int, reason: str) -> None:
+                self._apply_in_transaction(
+                    connection, guild_id, MARKET_ACCOUNT_ID, (LedgerEntry(amount, reason),)
+                )
+
+            def charge(member: int, entries: list[LedgerEntry]) -> None:
+                if entries:
+                    balances[member] = self._apply_in_transaction(
+                        connection, guild_id, member, entries
+                    )
+
+            if move.hold is not None:
+                bidder, amount = move.hold
+                charge(bidder, [LedgerEntry(-amount, "rastro:puja")])
+                deposit(amount, "rastro:puja")
+            for member, amount in move.refunds:
+                deposit(-amount, "rastro:devolucion")
+                charge(member, [LedgerEntry(amount, "rastro:puja_devuelta")])
+            if (pay := move.payment) is not None:
+                if pay.escrowed:
+                    deposit(-(pay.price + pay.itp), "rastro:adjudicado")
+                else:
+                    entries = [LedgerEntry(-pay.price, "rastro:compra")] if pay.price else []
+                    if pay.itp:
+                        entries.append(LedgerEntry(-pay.itp, "rastro:itp"))
+                    charge(pay.buyer_id, entries)
+                entries = [LedgerEntry(pay.price, "rastro:venta")] if pay.price else []
+                if pay.gain_tax:
+                    entries.append(LedgerEntry(-pay.gain_tax, "rastro:plusvalia"))
+                charge(pay.seller_id, entries)
+                for member, kind, base, tax in (
+                    (pay.buyer_id, "itp", pay.itp_base, pay.itp),
+                    (pay.seller_id, "plusvalia", pay.gain, pay.gain_tax),
+                ):
+                    if not tax:
+                        continue
+                    self._credit_state_in(connection, guild_id, tax, f"rastro:{kind}")
+                    connection.execute(
+                        """
+                        INSERT INTO economy_market_tax
+                            (guild_id, user_id, kind, base, tax, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, member, kind, base, tax, now),
+                    )
+                for member in (pay.buyer_id, pay.seller_id):
+                    if member not in balances:
+                        balances[member] = self._ensure_wallet(connection, guild_id, member)
+            return result, balances
+
     # -- Loterías ----------------------------------------------------------------------
 
     async def state_balance(self, guild_id: int) -> int:
@@ -3715,7 +3877,10 @@ class EconomyRepository:
             connection.close()
 
     async def other_taxes(self, guild_id: int, user_id: int, since: float) -> int:
-        """IGIC, Patrimonio e IRPF de los intereses desde `since` (logro «Socio de Hacienda»)."""
+        """IGIC, Patrimonio, IRPF de los intereses y lo del Rastro desde `since`.
+
+        Para el logro «Socio de Hacienda».
+        """
         return await self._run(self._other_taxes_sync, guild_id, user_id, since)
 
     def _other_taxes_sync(self, guild_id: int, user_id: int, since: float) -> int:
@@ -3749,7 +3914,14 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
-            return int(igic) + int(wealth) + int(interest) + int(savings)
+            (market,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(tax), 0) FROM economy_market_tax
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return int(igic) + int(wealth) + int(interest) + int(savings) + int(market)
         finally:
             connection.close()
 
@@ -4036,6 +4208,7 @@ class EconomyRepository:
                 "economy_porra_bets",
                 "economy_porra_settled",
                 "economy_gaming_tax",
+                "economy_market_tax",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

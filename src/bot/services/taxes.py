@@ -887,3 +887,42 @@ def gaming_tax(stake: int) -> int:
 def image_rights_withholding(gross: int) -> int:
     """Retención del 24 % sobre los derechos de imagen de una porra."""
     return round(max(0, gross) * IMAGE_RIGHTS_WITHHOLDING)
+
+
+# -- Rastro: ventas de segunda mano entre miembros (`bot.services.rastro`) ------------------
+#
+# Una venta entre particulares no lleva IGIC (quien vende no es empresario, art. 4
+# de la Ley 20/1991): paga el Impuesto sobre Transmisiones Patrimoniales Onerosas,
+# a cargo de quien compra (art. 8.a del Real Decreto Legislativo 1/1993). En
+# Canarias, los bienes muebles van al 5,5 % (art. 31.1.d del Decreto Legislativo
+# 1/2009). La base es el valor real del bien (art. 10.1 RDL 1/1993), que Hacienda
+# comprueba con sus propias tablas de precios (art. 57.1.b de la Ley 58/2003, como
+# los precios medios de los coches de segunda mano): por eso la base es el mayor
+# entre lo pactado y el valor de referencia, y vender a 1 Y$ no la baja.
+#
+# Si se vende por debajo del valor, la diferencia es una donación encubierta.
+# Está exenta de Donaciones por decisión del proyecto, igual que el Bizum (ver
+# `bot.services.bizum`).
+#
+# Quien vende por más de lo que le costó tiene una ganancia patrimonial (art. 33.1
+# LIRPF) de la base del ahorro (art. 46 LIRPF). El bot no tiene declaración anual,
+# así que la cobra en el momento al primer tipo de la escala del ahorro, el 19 %
+# (arts. 66.1 y 76 LIRPF), sin liquidación posterior.
+
+#: ITP de los bienes muebles en Canarias, en tanto por uno.
+ITP_RATE = 0.055
+#: Primer tramo de la escala del ahorro, que paga la plusvalía de una venta.
+CAPITAL_GAIN_RATE = 0.19
+
+
+def itp(base: int) -> int:
+    """ITP de una venta del Rastro sobre `base` Y$ (ya el mayor entre precio y valor)."""
+    return round(max(0, base) * ITP_RATE)
+
+
+def capital_gain_tax(gain: int) -> int:
+    """IRPF de la plusvalía de quien vende: el 19 % de la ganancia, si la hay.
+
+    Se redondea a la baja: nunca puede pasar de lo que cobra quien vende.
+    """
+    return max(0, gain) * round(CAPITAL_GAIN_RATE * 100) // 100

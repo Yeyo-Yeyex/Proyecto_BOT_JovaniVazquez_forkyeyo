@@ -59,6 +59,7 @@ class Event(StrEnum):
     LOTTERY_WIN = "lottery_win"
     LOTTERY_LOSE = "lottery_lose"
     BIZUM = "bizum"
+    TRADE = "trade"
     BIRTHDAY = "birthday"
     BEER = "beer"
     PROFILE = "profile"
@@ -523,6 +524,13 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} pregunta si el Bizum era para comprarle algo.",
         "{pet} sospecha que el Bizum era para comprar mascarillas.",
         "{pet} apunta el Bizum en una libreta, por si viene Hacienda.",
+    ),
+    Event.TRADE: (
+        "{pet} regatea por ti: «¿último precio?». Tiene más cara que un ministro.",
+        "{pet} olisquea el objeto de segunda mano. Huele a trastero de Galapagar.",
+        "{pet} pregunta si el ITP se puede pagar en chuches.",
+        "{pet} mira el ticket: entre ITP y plusvalía, Hacienda ha hecho mejor negocio que tú.",
+        "{pet} se sienta encima del trato como si fuera un notario. Firma con la pata.",
     ),
     Event.BIRTHDAY: (
         "{pet} te canta el cumpleaños a su manera: {sound}.",
