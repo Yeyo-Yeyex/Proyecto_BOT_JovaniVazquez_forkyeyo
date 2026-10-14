@@ -84,3 +84,19 @@ async def notify(
         await interaction.followup.send(content, ephemeral=ephemeral, **kwargs)
     else:
         await interaction.response.send_message(content, ephemeral=ephemeral, **kwargs)
+
+
+#: Prefijos de `custom_id` cuyos clics contesta un listener `on_interaction` propio
+#: (el minijuego de `pala`), no una vista: el rescate de clics del cog `Errors` no
+#: los toca aunque no encuentre su vista.
+_listener_prefixes: set[str] = set()
+
+
+def claim_custom_ids(prefix: str) -> None:
+    """Un listener contesta por su cuenta los clics cuyo `custom_id` empieza por `prefix`."""
+    _listener_prefixes.add(prefix)
+
+
+def is_claimed(custom_id: str) -> bool:
+    """`True` si un listener propio contesta los clics con ese `custom_id`."""
+    return custom_id.startswith(tuple(_listener_prefixes))

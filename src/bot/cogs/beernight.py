@@ -1067,10 +1067,11 @@ class Beernight(commands.Cog):
                 logros.note(self.bot, guild.id, user.id, StatDelta(add={"beer_events_forced": 1}))
                 await self.fire_event(state)
             elif action == "rotar":
+                # Se contesta antes del candado: lo retienen las rondas, que van a la base de datos.
+                await interaction.response.send_message("🔄 Mandamientos nuevos.", ephemeral=True)
                 async with state.lock:
                     self._rotate(state, everything=True)
                 state.log.append("🔄 El anfitrión ha cambiado los mandamientos.")
-                await interaction.response.send_message("🔄 Mandamientos nuevos.", ephemeral=True)
                 await self._refresh_panel(state)
             elif action == "gestion":
                 await self.show_settings(interaction)

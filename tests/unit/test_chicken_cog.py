@@ -440,3 +440,13 @@ async def test_si_aun_se_pinta_la_carretera_se_apaga_ya_y_sin_destripar(tmp_path
     renderer.gate.set()
     await task
     assert interaction.edit_original_response.await_count == 3
+
+
+async def test_dos_clics_seguidos_en_jugar_cobran_una_sola_partida(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    view = await open_road(cog, amount="100", hit=1)
+    await view._cross(make_interaction())  # atropellado: se puede volver a jugar
+    assert view.game is not None and not view.game.playing
+    before = await balance(cog)
+    await asyncio.gather(view._again(make_interaction()), view._again(make_interaction()))
+    assert await balance(cog) == before - 100

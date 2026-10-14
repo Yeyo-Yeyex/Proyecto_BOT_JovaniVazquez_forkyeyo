@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bot.cogs.lottery import Loteria, odds_table, scratch_text, ticket_tags
+from bot.cogs.lottery import TABS, Loteria, LotteryPanel, odds_table, scratch_text, ticket_tags
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
 from bot.repositories.lottery import DrawChanged, LotteryRepository
 from bot.services.achievements import lottery_buy_stats, lottery_prize_stats, scratch_stats
@@ -733,3 +733,19 @@ async def test_el_sorteo_usa_las_probabilidades_del_servidor(
     draw = await lottery.last_draw(GUILD, "primitiva")
     assert draw is not None and draw.result is not None
     assert classify(PRIMITIVA, pick, draw.result)[0] == "especial"
+
+
+@pytest.mark.parametrize("tab", [key for key, _ in TABS])
+def test_panel_rebuild_keeps_custom_ids(tab: str) -> None:
+    """Al rehacer el panel los botones conservan su `custom_id`, y no se repiten."""
+    panel = LotteryPanel(MagicMock(), MagicMock(), MagicMock(display_name="Ana"))
+    panel.tab = tab
+
+    def ids() -> list[str]:
+        panel.rebuild()
+        return [c.custom_id for c in panel.walk_children() if hasattr(c, "custom_id")]
+
+    first = ids()
+    assert first
+    assert len(set(first)) == len(first)
+    assert ids() == first

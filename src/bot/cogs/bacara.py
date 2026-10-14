@@ -368,11 +368,18 @@ class TableView(discord.ui.View):
             (Side.TIE, discord.ButtonStyle.success),
             (Side.BANKER, discord.ButtonStyle.danger),
         ):
-            self._add(f"{side.label} {side.pays}", side.emoji, style, table.bet_callback(side), 0)
-        self._add("Ficha", "🪙", discord.ButtonStyle.secondary, table.set_ficha, 1)
-        self._add("Repetir", "🔁", discord.ButtonStyle.secondary, table.repeat, 1)
-        self._add("Doblar", "⏫", discord.ButtonStyle.secondary, table.double, 1)
-        self._add("¡Cartas!", "🃏", discord.ButtonStyle.success, table.mark_ready, 1)
+            self._add(
+                f"{side.label} {side.pays}",
+                side.emoji,
+                style,
+                table.bet_callback(side),
+                0,
+                f"apuesta:{side.key}",
+            )
+        self._add("Ficha", "🪙", discord.ButtonStyle.secondary, table.set_ficha, 1, "ficha")
+        self._add("Repetir", "🔁", discord.ButtonStyle.secondary, table.repeat, 1, "repetir")
+        self._add("Doblar", "⏫", discord.ButtonStyle.secondary, table.double, 1, "doblar")
+        self._add("¡Cartas!", "🃏", discord.ButtonStyle.success, table.mark_ready, 1, "listo")
         # El 🎨: el tapete de cada uno, que se ve en las mesas que abra.
         if (paint := tienda.skin_button(table.cog.bot, GAME, row=1)) is not None:
             self.add_item(paint)
@@ -388,9 +395,10 @@ class TableView(discord.ui.View):
         style: discord.ButtonStyle,
         callback: Callable[[discord.Interaction], Awaitable[None]],
         row: int,
+        custom_id: str,
     ) -> None:
         button: discord.ui.Button = discord.ui.Button(
-            label=label, emoji=emoji, style=style, row=row
+            label=label, emoji=emoji, style=style, row=row, custom_id=f"{GAME}:{custom_id}"
         )
         button.callback = callback  # type: ignore[method-assign]
         self.add_item(button)

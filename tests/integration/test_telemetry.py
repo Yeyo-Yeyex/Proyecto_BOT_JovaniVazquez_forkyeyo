@@ -19,11 +19,20 @@ from unittest.mock import MagicMock
 
 import discord
 import pytest
+from discord.state import ConnectionState
 from interaction_fakes import fake_interaction
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
-from bot.cogs.telemetry import FIRST_RESPONSES, _timed_response, item_name
+from bot.cogs.telemetry import (
+    ARRIVAL,
+    FIRST_RESPONSES,
+    IN_BOT,
+    TRIP,
+    _arrival,
+    _timed_response,
+    item_name,
+)
 from bot.services.telemetry import report_render
 from bot.utils.interactions import ack
 from bot.utils.responder import CommandResponder
@@ -181,6 +190,43 @@ def test_la_primera_respuesta_apunta_la_latencia_desde_que_discord_creo_el_clic(
             assert latency is not None
             assert 2000 <= latency < 3000
             assert client.telemetry.take_answer(77) is None
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_la_latencia_se_parte_en_llegada_bot_y_viaje(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        client = await load_bot(tmp_path)
+        try:
+            assert ConnectionState.parse_interaction_create._telemetry_wrapped
+
+            class Response:
+                def __init__(self, parent: MagicMock) -> None:
+                    self._parent = parent
+                    self.done = False
+
+                def is_done(self) -> bool:
+                    return self.done
+
+                async def defer(self) -> None:
+                    await asyncio.sleep(0.05)
+                    self.done = True
+
+            parent = MagicMock(id=78, client=client, guild_id=GUILD_ID)
+            parent.created_at = discord.utils.utcnow() - timedelta(seconds=1)
+            _arrival(lambda _state, _data: None)(MagicMock(), {"id": "78"})
+            await _timed_response(Response.defer)(Response(parent))
+
+            tramos = {
+                key.name: counter.ms_total
+                for key, counter in client.telemetry._counters.items()
+                if key.kind == "respuesta"
+            }
+            assert set(tramos) == {ARRIVAL, IN_BOT, TRIP}
+            assert 900 <= tramos[ARRIVAL] < 2000
+            assert tramos[TRIP] >= 50
         finally:
             await client.close()
 

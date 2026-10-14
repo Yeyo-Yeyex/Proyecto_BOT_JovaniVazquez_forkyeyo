@@ -350,11 +350,22 @@ class ItemEditor(ui.LayoutView):
         self.add_item(container)
 
         actions: ui.ActionRow = ui.ActionRow()
-        actions.add_item(_button("✏️ Datos", self._edit_data, style=discord.ButtonStyle.primary))
-        actions.add_item(_button("📦 Límites", self._edit_limits))
-        actions.add_item(_button("🏷️ Rebaja", self._edit_sale))
         actions.add_item(
-            _button("🙈 Ocultar" if item.visible else "👁️ Mostrar", self._toggle_visible)
+            _button(
+                "✏️ Datos",
+                self._edit_data,
+                custom_id="ficha:datos",
+                style=discord.ButtonStyle.primary,
+            )
+        )
+        actions.add_item(_button("📦 Límites", self._edit_limits, custom_id="ficha:limites"))
+        actions.add_item(_button("🏷️ Rebaja", self._edit_sale, custom_id="ficha:rebaja"))
+        actions.add_item(
+            _button(
+                "🙈 Ocultar" if item.visible else "👁️ Mostrar",
+                self._toggle_visible,
+                custom_id="ficha:visible",
+            )
         )
         self.add_item(actions)
 
@@ -367,7 +378,9 @@ class ItemEditor(ui.LayoutView):
             )
             for rate in IGIC_RATES
         ]
-        select: ui.Select = ui.Select(placeholder="Tipo de IGIC", options=options)
+        select: ui.Select = ui.Select(
+            placeholder="Tipo de IGIC", options=options, custom_id="ficha:igic"
+        )
 
         async def pick_rate(interaction: discord.Interaction) -> None:
             await self._save(interaction, "🧾 IGIC cambiado.", igic=select.values[0])
@@ -380,13 +393,21 @@ class ItemEditor(ui.LayoutView):
         danger: ui.ActionRow = ui.ActionRow()
         if self.confirm_delete:
             danger.add_item(
-                _button("⚠️ Sí, retirarlo", self._delete, style=discord.ButtonStyle.danger)
+                _button(
+                    "⚠️ Sí, retirarlo",
+                    self._delete,
+                    custom_id="ficha:retirar",
+                    style=discord.ButtonStyle.danger,
+                )
             )
-            danger.add_item(_button("Mejor no", self._cancel_delete))
+            danger.add_item(_button("Mejor no", self._cancel_delete, custom_id="ficha:mejor-no"))
         else:
             danger.add_item(
                 _button(
-                    "🗑️ Retirar del catálogo", self._ask_delete, style=discord.ButtonStyle.danger
+                    "🗑️ Retirar del catálogo",
+                    self._ask_delete,
+                    custom_id="ficha:pedir-retirar",
+                    style=discord.ButtonStyle.danger,
                 )
             )
         self.add_item(danger)
@@ -584,26 +605,60 @@ class AdminPanel(ui.LayoutView):
             container.add_item(
                 ui.Section(
                     ui.TextDisplay(admin_card(item, self.guild, now)),
-                    accessory=_button("✏️ Editar", self._edit(item.id)),
+                    accessory=_button(
+                        "✏️ Editar", self._edit(item.id), custom_id=f"catalogo:editar:{item.id}"
+                    ),
                 )
             )
         self.add_item(container)
 
         create: ui.ActionRow = ui.ActionRow()
         green = discord.ButtonStyle.success
-        create.add_item(_button("➕ Rol", self._new_role, style=green))
-        create.add_item(_button("➕ Potenciador", self._new_boost, style=green))
-        create.add_item(_button("➕ Coleccionable", self._new_trophy, style=green))
-        create.add_item(_button("📦 Reponer surtido", self._restock))
+        create.add_item(
+            _button("➕ Rol", self._new_role, custom_id="catalogo:nuevo:rol", style=green)
+        )
+        create.add_item(
+            _button(
+                "➕ Potenciador",
+                self._new_boost,
+                custom_id="catalogo:nuevo:potenciador",
+                style=green,
+            )
+        )
+        create.add_item(
+            _button(
+                "➕ Coleccionable",
+                self._new_trophy,
+                custom_id="catalogo:nuevo:coleccionable",
+                style=green,
+            )
+        )
+        create.add_item(_button("📦 Reponer surtido", self._restock, custom_id="catalogo:reponer"))
         self.add_item(create)
 
         nav: ui.ActionRow = ui.ActionRow()
-        nav.add_item(_button("◀", self._move(-1), disabled=self.page == 0))
         nav.add_item(
-            _button(f"Página {self.page + 1}/{self.pages}", self._refresh_button, disabled=True)
+            _button(
+                "◀", self._move(-1), custom_id="catalogo:pagina:anterior", disabled=self.page == 0
+            )
         )
-        nav.add_item(_button("▶", self._move(1), disabled=self.page >= self.pages - 1))
-        nav.add_item(_button("🔄", self._refresh_button))
+        nav.add_item(
+            _button(
+                f"Página {self.page + 1}/{self.pages}",
+                self._refresh_button,
+                custom_id="catalogo:pagina",
+                disabled=True,
+            )
+        )
+        nav.add_item(
+            _button(
+                "▶",
+                self._move(1),
+                custom_id="catalogo:pagina:siguiente",
+                disabled=self.page >= self.pages - 1,
+            )
+        )
+        nav.add_item(_button("🔄", self._refresh_button, custom_id="catalogo:refrescar"))
         self.add_item(nav)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:

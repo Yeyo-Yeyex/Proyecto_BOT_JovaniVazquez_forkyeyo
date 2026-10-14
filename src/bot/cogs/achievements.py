@@ -427,7 +427,12 @@ class CategorySelect(discord.ui.Select):
         for key, full_title in menu_entries():
             emoji, _, title = full_title.partition(" ")
             options.append(discord.SelectOption(label=title, value=key, emoji=emoji))
-        super().__init__(placeholder="Elige una categoría", options=options, row=0)
+        super().__init__(
+            placeholder="Elige una categoría",
+            options=options,
+            row=0,
+            custom_id="logros:categoria",
+        )
         self.achievements_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -455,7 +460,9 @@ class SectionSelect(discord.ui.Select):
                 )
             )
         placeholder = "Elige un juego" if group_key == "casino_group" else "Elige una sección"
-        super().__init__(placeholder=placeholder, options=options, row=1)
+        super().__init__(
+            placeholder=placeholder, options=options, row=1, custom_id="logros:seccion"
+        )
         self.achievements_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:

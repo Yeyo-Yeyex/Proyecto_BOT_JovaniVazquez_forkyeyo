@@ -18,7 +18,9 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   (marcados con `LISTENER_ITEM`) no los cuenta la vista sino el listener.
 - Latencia de la primera respuesta (`defer`, `send_message`, `edit_message`,
   `send_modal`), desde que Discord creó la interacción. Es lo que tiene que
-  quedar por debajo de 3 segundos.
+  quedar por debajo de 3 segundos. Además, tipo `respuesta`, en tres tramos: lo
+  que tarda la interacción en llegar al bot (incluye el desfase de reloj del NAS),
+  lo que tarda el bot en empezar a contestar y el viaje de la respuesta a Discord.
 - `message`, `message_type`, `reaction`, `voice` (minutos de persona en cada
   canal, leídos de la caché cada minuto) y `member` (altas y bajas).
 - `log`: avisos y errores del log, por plantilla del mensaje (sin sus datos).
@@ -65,6 +67,7 @@ import discord
 import discord.webhook.async_
 from discord import app_commands
 from discord.ext import commands, tasks
+from discord.state import ConnectionState
 from discord.ui.view import BaseView, ViewStore
 
 from bot.services import telemetry as telemetry_service
@@ -108,6 +111,13 @@ LINK = re.compile(r"https?://")
 _WRAPPED = "_telemetry_wrapped"
 # Respuestas que cuentan como «primera respuesta» de una interacción.
 FIRST_RESPONSES = ("defer", "send_message", "edit_message", "send_modal")
+#: Tramos de la primera respuesta (tipo `respuesta`), en el orden en que pasan.
+ARRIVAL = "1 llegada al bot"
+IN_BOT = "2 dentro del bot"
+TRIP = "3 viaje de la respuesta"
+# Cuándo llegó al bot cada interacción por id: (`time.time()`, `perf_counter()`).
+_arrivals: dict[int, tuple[float, float]] = {}
+MAX_ARRIVALS = 500
 
 
 def _telemetry_of(client: object) -> TelemetryService | None:
@@ -121,14 +131,29 @@ def _user_id(interaction: discord.Interaction) -> int | None:
     return getattr(user, "id", None)
 
 
-def _answered(interaction: discord.Interaction) -> None:
-    """Apunta lo que tardó la primera respuesta, desde que Discord creó la interacción."""
+def _answered(interaction: discord.Interaction, sent: float, done: float) -> None:
+    """Apunta lo que tardó la primera respuesta, desde que Discord creó la interacción.
+
+    `sent` y `done` son el `perf_counter()` de cuando salió la respuesta y de
+    cuando Discord la confirmó.
+    """
+    arrival = _arrivals.pop(interaction.id, None)
     telemetry = _telemetry_of(interaction.client)
     if telemetry is None:
         return
-    elapsed = (discord.utils.utcnow() - interaction.created_at).total_seconds() * 1000
+    created = interaction.created_at.timestamp()
+    elapsed = (discord.utils.utcnow().timestamp() - created) * 1000
     # Con el reloj del NAS un poco adelantado podría salir negativo.
     telemetry.answered(interaction.id, max(0.0, elapsed))
+    if arrival is None:
+        return
+    wall, perf = arrival
+    for name, ms in (
+        (ARRIVAL, (wall - created) * 1000),
+        (IN_BOT, (sent - perf) * 1000),
+        (TRIP, (done - sent) * 1000),
+    ):
+        telemetry.count("respuesta", name, guild_id=interaction.guild_id, ms=max(0.0, ms))
 
 
 def _count_interaction(interaction: discord.Interaction, kind: str, name: str) -> None:
@@ -178,12 +203,24 @@ def _timed_response(original: Callable[..., Awaitable[Any]]) -> Callable[..., Aw
     @functools.wraps(original)
     async def respond(self: discord.InteractionResponse, *args: Any, **kwargs: Any) -> Any:
         first = not self.is_done()
+        sent = time.perf_counter()
         result = await original(self, *args, **kwargs)
         if first:
-            _answered(self._parent)
+            _answered(self._parent, sent, time.perf_counter())
         return result
 
     return respond
+
+
+def _arrival(original: Callable[..., None]) -> Callable[..., None]:
+    @functools.wraps(original)
+    def parse(self: ConnectionState, data: Any) -> None:
+        _arrivals[int(data["id"])] = (time.time(), time.perf_counter())
+        while len(_arrivals) > MAX_ARRIVALS:
+            del _arrivals[next(iter(_arrivals))]
+        original(self, data)
+
+    return parse
 
 
 def _counted_view_task(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
@@ -267,6 +304,8 @@ def install_hooks() -> None:
 
     - `InteractionResponse.defer`, `send_message`, `edit_message` y `send_modal`:
       la primera de ellas marca la latencia de la interacción;
+    - `ConnectionState.parse_interaction_create`: cuándo llega cada interacción,
+      para partir esa latencia en tramos;
     - `BaseView._scheduled_task`, `Modal._scheduled_task` y
       `ViewStore.schedule_dynamic_item_call`: corren el callback de cada botón,
       formulario o botón dinámico y saben cuál es;
@@ -274,13 +313,14 @@ def install_hooks() -> None:
       los mensajes con archivos (los de las interacciones, por el segundo) y se
       mide lo que tarda la subida.
 
-    Los tres últimos son métodos internos: si discord.py los cambia, la prueba de
+    Salvo los de `InteractionResponse`, son métodos internos: si discord.py los cambia, la prueba de
     integración de la telemetría falla. Los envoltorios no cambian lo que hace el
     método; si el cliente no tiene telemetría, no hacen nada. Es idempotente y no
     se deshace al descargar el cog (sin telemetría no cuentan nada).
     """
     for name in FIRST_RESPONSES:
         _wrap(discord.InteractionResponse, name, _timed_response)
+    _wrap(ConnectionState, "parse_interaction_create", _arrival)
     _wrap(BaseView, "_scheduled_task", _counted_view_task)
     _wrap(discord.ui.Modal, "_scheduled_task", _counted_modal_task)
     _wrap(ViewStore, "schedule_dynamic_item_call", _counted_dynamic_task)

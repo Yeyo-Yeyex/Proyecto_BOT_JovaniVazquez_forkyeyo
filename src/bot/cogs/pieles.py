@@ -205,9 +205,18 @@ class SkinPanel(ui.LayoutView):
                     ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{image_name(skin)}"))
                 )
             row: ui.ActionRow = ui.ActionRow()
-            row.add_item(self._button("🖼️ Subir imagen", self._open_form(skin), primary=True))
+            row.add_item(
+                self._button(
+                    "🖼️ Subir imagen",
+                    self._open_form(skin),
+                    f"pieles:subir:{skin.key}",
+                    primary=True,
+                )
+            )
             if image is not None:
-                row.add_item(self._button("🗑️ Quitar imagen", self._remove(skin)))
+                row.add_item(
+                    self._button("🗑️ Quitar imagen", self._remove(skin), f"pieles:quitar:{skin.key}")
+                )
             container.add_item(row)
 
         if self.offers:
@@ -215,14 +224,20 @@ class SkinPanel(ui.LayoutView):
             offer_row: ui.ActionRow = ui.ActionRow()
             for skin, item_id, price in self.offers[:5]:
                 offer_row.add_item(
-                    self._button(f"🛒 {skin.name} · {format_amount(price)}", self._buy(item_id))
+                    self._button(
+                        f"🛒 {skin.name} · {format_amount(price)}",
+                        self._buy(item_id),
+                        f"pieles:comprar:{item_id}",
+                    )
                 )
             container.add_item(offer_row)
         self.add_item(container)
 
         if self.own and (options := skin_game_options(self.entries, worn)):
             select: ui.Select = ui.Select(
-                placeholder="🎨 Cambiar la skin de una mesa", options=options
+                placeholder="🎨 Cambiar la skin de una mesa",
+                options=options,
+                custom_id="pieles:skin",
             )
 
             async def wear(interaction: discord.Interaction) -> None:
@@ -234,9 +249,15 @@ class SkinPanel(ui.LayoutView):
             self.add_item(wear_row)
 
     @staticmethod
-    def _button(label: str, callback, *, primary: bool = False) -> ui.Button:  # noqa: ANN001
+    def _button(  # noqa: ANN205
+        label: str,
+        callback,  # noqa: ANN001
+        custom_id: str,
+        *,
+        primary: bool = False,
+    ) -> ui.Button:
         style = discord.ButtonStyle.primary if primary else discord.ButtonStyle.secondary
-        button: ui.Button = ui.Button(label=label[:80], style=style)
+        button: ui.Button = ui.Button(label=label[:80], style=style, custom_id=custom_id)
         button.callback = callback  # type: ignore[method-assign]
         return button
 

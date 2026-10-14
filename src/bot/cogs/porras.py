@@ -360,23 +360,31 @@ class PorraView(discord.ui.View):
         self.table = table
         porra = table.porra
         if porra.status is Status.PROPOSED:
-            self._add("✅ Acepto", discord.ButtonStyle.success, self._accept)
-            self._add("❌ Paso", discord.ButtonStyle.danger, self._decline)
-            self._add("🗑️ Retirar", discord.ButtonStyle.secondary, self._cancel)
+            self._add("✅ Acepto", discord.ButtonStyle.success, self._accept, "aceptar")
+            self._add("❌ Paso", discord.ButtonStyle.danger, self._decline, "pasar")
+            self._add("🗑️ Retirar", discord.ButtonStyle.secondary, self._cancel, "retirar")
         elif porra.status is Status.OPEN:
             for index, option in enumerate(porra.options[:MAX_OPTION_BUTTONS]):
-                self._add(option[:80], discord.ButtonStyle.primary, self._bet_callback(index))
-            self._add("🔭", discord.ButtonStyle.secondary, self._snoop)
+                self._add(
+                    option[:80],
+                    discord.ButtonStyle.primary,
+                    self._bet_callback(index),
+                    f"apostar:{index}",
+                )
+            self._add("🔭", discord.ButtonStyle.secondary, self._snoop, "espiar")
         elif porra.status is Status.LOCKED:
-            self._add("🔭", discord.ButtonStyle.secondary, self._snoop)
+            self._add("🔭", discord.ButtonStyle.secondary, self._snoop, "espiar")
 
     def _add(
         self,
         label: str,
         style: discord.ButtonStyle,
         callback: Callable[[discord.Interaction], Awaitable[None]],
+        custom_id: str,
     ) -> None:
-        button: discord.ui.Button = discord.ui.Button(label=label, style=style)
+        button: discord.ui.Button = discord.ui.Button(
+            label=label, style=style, custom_id=f"porra:{custom_id}"
+        )
         button.callback = callback  # type: ignore[method-assign]
         self.add_item(button)
 

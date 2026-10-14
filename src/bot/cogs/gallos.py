@@ -1005,6 +1005,10 @@ class Duel:
         """❌ Rechazar: el reto se acaba sin mover dinero."""
         if not await self._only(interaction, Corner.BLUE, "Este reto no es para ti."):
             return
+        if self._lock.locked():
+            # Están aceptando (cobro en la base de datos): sin esperar al candado.
+            await interaction.response.defer()
+            return
         async with self._lock:
             if self.phase is not Phase.CHALLENGE:
                 await interaction.response.defer()
@@ -1030,6 +1034,10 @@ class Duel:
     async def withdraw(self, interaction: discord.Interaction) -> None:
         """🗑️ Retirar: quien reta se echa atrás antes de que acepten."""
         if not await self._only(interaction, Corner.RED, "Solo quien reta puede retirarlo."):
+            return
+        if self._lock.locked():
+            # Están aceptando (cobro en la base de datos): sin esperar al candado.
+            await interaction.response.defer()
             return
         async with self._lock:
             if self.phase is not Phase.CHALLENGE:

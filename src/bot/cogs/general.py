@@ -236,7 +236,12 @@ class HelpSelect(discord.ui.Select):
             )
             for page in view.pages.values()
         ]
-        super().__init__(placeholder="Elige una categoría", options=options, row=0)
+        super().__init__(
+            placeholder="Elige una categoría",
+            options=options,
+            row=0,
+            custom_id="ayuda:categoria",
+        )
         self.help_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
