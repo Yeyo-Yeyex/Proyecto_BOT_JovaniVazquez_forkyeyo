@@ -791,6 +791,78 @@ async def press_wear_title(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+SELLER_ID = 20
+
+
+async def verified_in_backpack(client: BotClient, user_id: int) -> int:
+    """Da a `user_id` la «Cuenta verificada» (se vende en el Rastro) y devuelve la entrada."""
+    await client.get_cog("Tienda").stock_up(GUILD_ID)
+    item = await client.shop.item_by_key(GUILD_ID, "verificado")
+    assert item is not None
+    entry, _dupe = await client.shop.grant(GUILD_ID, user_id, item, 0.0)
+    return entry.id
+
+
+async def rastro_stall(client: BotClient) -> int:
+    """Un puesto del Rastro de otro miembro; devuelve su id (ya en la memoria del cog)."""
+    cog = client.get_cog("Rastro")
+    entry = await verified_in_backpack(client, SELLER_ID)
+    listing = await client.rastro.open_stall(
+        GUILD_ID, SELLER_ID, entry, start_price=10, channel_id=None, now=cog.clock()
+    )
+    cog.listings[listing.id] = listing
+    return listing.id
+
+
+async def press_rastro_accept(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Rastro")
+    entry_id = await verified_in_backpack(client, SELLER_ID)
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(100_000, "test")])
+    entry = next(
+        e for e in await client.shop.inventory(GUILD_ID, SELLER_ID, cog.clock())
+        if e.id == entry_id
+    )  # fmt: skip
+    seller = MagicMock(spec=discord.Member)
+    seller.id, seller.bot, seller.display_name = SELLER_ID, False, "Ana"
+    view = module_of(client, "Rastro").OfferView(cog, GUILD_ID, seller, owner, entry, 100)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.accept.callback(interaction)
+
+    return click
+
+
+async def press_rastro_bid(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Rastro")
+    listing_id = await rastro_stall(client)
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(100_000, "test")])
+    form = module_of(client, "Rastro").BidForm(cog, cog.listings[listing_id])
+
+    async def click(interaction: MagicMock) -> None:
+        await form.on_submit(interaction)
+
+    return click
+
+
+async def press_rastro_withdraw(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Rastro")
+    entry = await verified_in_backpack(client, OWNER_ID)
+    listing = await client.rastro.open_stall(
+        GUILD_ID, OWNER_ID, entry, start_price=10, channel_id=None, now=cog.clock()
+    )
+    cog.listings[listing.id] = listing
+    button = module_of(client, "Rastro").WithdrawButton(listing.id)
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1049,6 +1121,9 @@ CASES: dict[str, Press] = {
     "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
+    "rastro: aceptar una oferta": press_rastro_accept,
+    "rastro: pujar": press_rastro_bid,
+    "rastro: retirar un puesto": press_rastro_withdraw,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,

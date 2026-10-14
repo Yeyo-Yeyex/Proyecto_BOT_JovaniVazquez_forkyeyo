@@ -8,6 +8,9 @@ criterio.
 
 ## 6.x
 
+### 6.4.0 · 2026-10-14
+- Rastro: `vender` y `rastro`, segunda mano entre miembros con subastas e ITP
+
 ### 6.3.1 · 2026-10-14
 
 - Botones: se acabó «Esta interacción ha fallado» al pulsar rápido o en botones viejos, y contestan antes tras un rato sin uso

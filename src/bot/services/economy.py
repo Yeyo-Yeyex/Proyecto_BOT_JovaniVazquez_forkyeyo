@@ -25,6 +25,7 @@ import discord
 
 from bot.repositories.economy import (
     HK_ACCOUNT_ID,
+    MARKET_ACCOUNT_ID,
     SHOP_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     BalanceLimitError,
@@ -40,6 +41,8 @@ from bot.repositories.economy import (
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
+    MarketMove,
+    MarketPayment,
     PokerSettlement,
     PorraBetReceipt,
     PorraCapError,
@@ -121,6 +124,9 @@ __all__ = [
     "SavingsRun",
     "JackpotRecord",
     "LotteryPayout",
+    "MARKET_ACCOUNT_ID",
+    "MarketMove",
+    "MarketPayment",
     "PorraBetReceipt",
     "PorraCapError",
     "PorraClosedError",
@@ -1182,6 +1188,38 @@ class EconomyService:
         return await self.repository.bizum(
             guild_id, sender_id, receiver_id, amount=amount, now=now, day_start=day_start
         )
+
+    async def market(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MarketMove]],
+    ) -> tuple[T, dict[int, int]]:
+        """Mueve el dinero de una operación del Rastro (`bot.services.rastro`).
+
+        Tratamiento fiscal:
+
+        - **Quien compra** paga el Impuesto sobre Transmisiones Patrimoniales
+          Onerosas (art. 7.1.A del RDL 1/1993; sujeto pasivo, art. 8.a), no IGIC:
+          quien vende es un particular, no un empresario (art. 4 de la Ley
+          20/1991). Tipo de los bienes muebles en Canarias, 5,5 % (art. 31.1.d
+          del Decreto Legislativo 1/2009), sobre el mayor entre el precio y el
+          valor de referencia (art. 10.1 RDL 1/1993 y art. 57.1.b de la Ley
+          58/2003; `taxes.itp`).
+        - **La parte regalada** (precio por debajo del valor) está exenta de
+          Donaciones por decisión del proyecto, como el Bizum.
+        - **Quien vende** tributa por la ganancia patrimonial (art. 33.1 LIRPF)
+          en la base del ahorro, al 19 % y en el momento (`taxes.capital_gain_tax`;
+          el bot no tiene declaración anual). Se le descuenta de lo que cobra.
+
+        Lo pujado espera en el depósito del Rastro (`MARKET_ACCOUNT_ID`) y los
+        dos impuestos van al Estado en la misma transacción. Ver
+        `EconomyRepository.market` para el orden de los movimientos.
+
+        Raises:
+            InsufficientFundsError: Si a quien puja o compra no le llega.
+            BalanceLimitError: Si a alguien no le cabe lo que cobra.
+        """
+        return await self.repository.market(guild_id, now=self._clock(), prepare=prepare)
 
     async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
         """El Bizum de mamá de `pala`: tu madre te adelanta `amount`.

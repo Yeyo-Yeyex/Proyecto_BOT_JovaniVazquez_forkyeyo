@@ -1303,6 +1303,24 @@ class Tienda(commands.Cog):
                 shop_title_stats(worn=after is not None),
             )
 
+    async def refresh_worn(self, guild_id: int, user_id: int) -> None:
+        """Vuelve a leer el título y las skins de un miembro tras perder un objeto.
+
+        Lo usa el Rastro (`bot.cogs.rastro`) cuando algo sale de la mochila (a un
+        puesto o a otra persona): si lo llevaba puesto, deja de lucirlo.
+        """
+        entries = await self.repository.inventory(guild_id, user_id, self.clock())
+        owned = {e.catalog_key for e in entries if e.catalog_key}
+        worn = next((e for e in entries if e.catalog_key in TITLE_KEYS and e.equipped), None)
+        if worn is None:
+            self.titles.pop((guild_id, user_id), None)
+        else:
+            self.titles[(guild_id, user_id)] = f"{worn.emoji} {worn.name}"
+        for key, skin_key in list(self.skins.items()):
+            skin = SKIN_BY_KEY.get(skin_key)
+            if key[:2] == (guild_id, user_id) and (skin is None or skin.catalog_key not in owned):
+                del self.skins[key]
+
     # -- Skins -----------------------------------------------------------------------
 
     def skin(self, guild_id: int, user_id: int, game: str) -> Skin | None:
@@ -2333,6 +2351,12 @@ def skin_params(bot: commands.Bot, guild_id: int, user_id: int, game: str) -> di
     if (cog := find_cog(bot, Tienda)) is not None:
         return cog.scene_params(guild_id, user_id, game)
     return skin_params_of(game, None)
+
+
+async def refresh_worn(bot: commands.Bot, guild_id: int, user_id: int) -> None:
+    """Puente de `Tienda.refresh_worn`; no hace nada si la tienda no está cargada."""
+    if (cog := find_cog(bot, Tienda)) is not None:
+        await cog.refresh_worn(guild_id, user_id)
 
 
 async def grant_reward_skins(
