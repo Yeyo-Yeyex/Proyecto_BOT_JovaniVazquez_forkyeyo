@@ -9,6 +9,7 @@ se agota (el jugador se duerme). El bucle no se arranca solo: cada prueba llama 
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sqlite3
 from collections.abc import Awaitable, Callable
@@ -301,6 +302,34 @@ async def test_el_turno_se_agota_en_el_plazo_que_se_ve(tmp_path: Path) -> None:
     table.cog.sleep = spy
     await table.play_hand()
     assert naps[0] == cog_module.TURN_SECONDS - 5
+
+
+async def test_la_mesa_de_entre_manos_no_tapa_la_mano_que_empieza(tmp_path: Path) -> None:
+    """La edición del último ✅ Listo, aún en vuelo al empezar la mano, llegaba a Discord
+    después que la de la mano: se veían los botones de entre manos y quien hablaba se
+    dormía (se retiraba) sin poder jugar."""
+    _, table, clock = await make_table(tmp_path)
+    assert table.message is not None
+    shown: list[str] = []
+
+    async def edit(**kwargs: Any) -> None:
+        title = kwargs["embed"].title
+        if "mano" not in title:  # la de entre manos tarda más en llegar
+            await asyncio.sleep(0.05)
+        shown.append(title)
+
+    table.message.edit = edit  # type: ignore[method-assign]
+    table.edit_soon()
+    seen: list[str] = []
+
+    async def look() -> None:
+        await asyncio.sleep(0.1)  # lo que hubiera en vuelo ya ha llegado
+        seen.append(shown[-1])
+        await act(table, ANA, "fold")()
+
+    clock.script = [look]
+    await table.play_hand()
+    assert seen == ["♣️ Timba · mano 1"]
 
 
 # -- Listo -----------------------------------------------------------------------------

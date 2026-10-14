@@ -671,6 +671,10 @@ class Table:
             self._dirty = False
             await self.edit(embed=self.lobby_embed(), view=TableView(self))
 
+    async def _wait_edits(self) -> None:
+        if self._edit_task is not None:
+            await asyncio.gather(self._edit_task, return_exceptions=True)
+
     async def publish(self) -> None:
         """Pinta la mano en curso y la pone en el mensaje con los botones de quien habla."""
         await self.render()
@@ -979,6 +983,9 @@ class Table:
             self.hand = self.deal_hand(stacks)
         self.button += 1
         self.phase = Phase.PLAYING
+        # Una edición de entre manos aún en vuelo (la del último ✅ Listo) llegaría a
+        # Discord después de la mano y taparía sus botones: quien habla se dormiría.
+        await self._wait_edits()
         hand = self.hand
         while not hand.finished:
             current = hand.current
