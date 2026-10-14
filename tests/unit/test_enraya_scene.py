@@ -125,13 +125,20 @@ async def test_con_node_mientras_cae_la_ficha_solo_se_devuelve_su_franja(
     assert move is not None
     steps, final = move_steps(BEFORE_WIN, [move])
     states = [state for state, _ms in steps] + [final]
-    patches = await scene.painter.render(META, states, procs=1)
-    assert patches is not None and len(patches) == len(states)
+    # Lo que devuelve la escena, sin montar (`render` ya da los fotogramas enteros).
+    results = await scene.painter.sequence([("setup", [META]), ("renderFrames", [states, 0])])
+    assert results is not None
+    patches = results[1]
+    assert len(patches) == len(states)
     sizes = [patch["image"].size for patch in patches]
     assert sizes[0] == SIZE and sizes[-1] == SIZE  # el primero y el que cambia el tablero
     falling = sizes[1:-1]
     assert falling and all(w * h < W * H / 4 for w, h in falling)
     frames = await asyncio.to_thread(browser_scene.assemble, patches, SIZE)
+    rendered = await scene.painter.render(META, states)
+    assert rendered is not None
+    for mine, theirs in zip(frames, rendered, strict=True):
+        assert mine.tobytes() == theirs["image"].tobytes()
     for index in (2, len(states) // 2, len(states) - 2):
         whole = png_image(await scene.still(META, states[index]))
         assert difference(frames[index].convert("RGB"), whole) < 0.5, index

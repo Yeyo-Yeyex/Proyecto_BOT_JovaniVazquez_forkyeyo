@@ -9,9 +9,14 @@ Chromium. Si no hay Node, la carrera también la pinta Chromium.
 No decide nada: Python le pasa dónde está cada caballo en cada fotograma (la
 carrera ya está resuelta) y aquí solo se pinta. Funciones que llama Python:
 
-- setupRace(meta)      prepara el fondo de una carrera (grada, pista, postes).
-- renderFrames(states) dibuja los fotogramas y devuelve cada uno entero
-                       (data URL de PNG en Chromium, píxeles en Node).
+- setupRace(meta)      prepara el fondo de una carrera (grada, pista, postes);
+                       `setup` es lo mismo, con el nombre que usa NodeScene.render.
+- renderFrames(states, first, prior)
+                       dibuja los fotogramas y devuelve cada uno entero
+                       (data URL de PNG en Chromium, píxeles en Node). `prior`
+                       son los fotogramas de justo antes, cuando un pintor
+                       empieza a mitad: con ellos recrea el polvo (`warmDust`).
+- warmDust(prior)      solo eso, sin pintar (antes del podio en otro pintor).
 - renderPodium(data)   el último fotograma: la llegada, con la foto-finish.
 - renderCard(data)     la parrilla de salida (HTML), para hacerle captura.
 - renderTicket(data)   el boleto (HTML), para hacerle captura.
@@ -446,12 +451,17 @@ function drawJockey(g, h, cycle) {
 
 // -- Polvo, lluvia y marcador -------------------------------------------------------------------
 
-function kickDust(hooves, scale, going) {
+// El polvo sale de un azar repetible por fotograma (`dustRng`) y vive como mucho
+// DUST_FRAMES fotogramas: un pintor que empieza a mitad de carrera (NodeScene
+// reparte los fotogramas entre procesos) lo recrea pasando sin pintar por los de
+// antes (`replayDust`) y saca los mismos píxeles que si la hubiera pintado entera.
+const dustRng = (st) => rng((META.seed | 0) * 7919 + st.frame * 104729 + 17);
+function kickDust(hooves, scale, going, r) {
   const col = going === "barro" ? [92, 66, 44] : going === "blando" ? [150, 116, 80] : [216, 186, 140];
   for (const p of hooves) {
-    if (!p.down || Math.random() > .55) continue;
-    PARTICLES.push({ x: p.x - 2, y: p.y, vx: -1.4 - Math.random() * 1.6, vy: -.6 - Math.random() * .9,
-                     r: (1.6 + Math.random() * 2.4) * scale, life: 1, col });
+    if (!p.down || r() > .55) continue;
+    PARTICLES.push({ x: p.x - 2, y: p.y, vx: -1.4 - r() * 1.6, vy: -.6 - r() * .9,
+                     r: (1.6 + r() * 2.4) * scale, life: 1, col });
   }
 }
 function drawParticles(g) {
@@ -544,12 +554,33 @@ window.setupRace = (meta) => {
   return true;
 };
 
+// Un lienzo que no pinta nada: para pasar por un fotograma solo por su polvo.
+const NOOP = new Proxy(function () {}, { get: () => NOOP, set: () => true, apply: () => NOOP });
+
+// Deja el polvo como si se hubieran pintado `prior` (los fotogramas de justo antes).
+function replayDust(prior) {
+  for (const st of prior) {
+    drawRunners(NOOP, st, st.rain ? META.wetGoing : META.going);
+    drawParticles(NOOP);
+  }
+}
+
 function paint(st) {
   const g = bctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.drawImage(st.rain ? BG.wet : BG.dry, 0, 0);
   g.setTransform(S, 0, 0, S, 0, 0);
-  const going = st.rain ? META.wetGoing : META.going;
+  drawRunners(g, st, st.rain ? META.wetGoing : META.going);
+  drawParticles(g);
+  if (st.gate || st.gateOpen < 1) drawGate(g, st.gateOpen);
+  if (st.rain) drawRain(g, st.frame * 7 + 3);
+  if (st.flash > 0) { g.fillStyle = `rgba(255,255,255,${st.flash})`; g.fillRect(0, 0, W, HUD_TOP); }
+  drawBug(g, st.frame);
+  drawHud(g, st);
+}
+
+function drawRunners(g, st, going) {
+  const r = dustRng(st);
   // Del fondo hacia delante: así los de cerca tapan a los de lejos.
   const order = META.horses.map((_, i) => i);
   for (const i of order) {
@@ -557,7 +588,7 @@ function paint(st) {
     if (x < -80 || x - 120 * s > W) continue;
     g.fillStyle = "rgba(0,0,0,.22)"; g.beginPath(); g.ellipse(x - 50 * s, y + 1, 44 * s, 5 * s, 0, 0, 7); g.fill();
     const hooves = drawHorse(g, h, x, y, s, st.cycles[i], {});
-    if (!st.gate && !st.frozen) kickDust(hooves, s, going);
+    if (!st.gate && !st.frozen) kickDust(hooves, s, going, r);
     if (st.stumble.includes(i)) {
       g.fillStyle = "#ffcf3a"; g.font = "16px Luckiest"; g.textAlign = "center";
       g.strokeStyle = "#000"; g.lineWidth = 3; g.strokeText("¡UY!", x - 40 * s, y - 70 * s); g.fillText("¡UY!", x - 40 * s, y - 70 * s);
@@ -567,12 +598,6 @@ function paint(st) {
       g.strokeStyle = "#000"; g.lineWidth = 3; g.strokeText("¡DESBOCADO!", x - 40 * s, y - 70 * s); g.fillText("¡DESBOCADO!", x - 40 * s, y - 70 * s);
     }
   }
-  drawParticles(g);
-  if (st.gate || st.gateOpen < 1) drawGate(g, st.gateOpen);
-  if (st.rain) drawRain(g, st.frame * 7 + 3);
-  if (st.flash > 0) { g.fillStyle = `rgba(255,255,255,${st.flash})`; g.fillRect(0, 0, W, HUD_TOP); }
-  drawBug(g, st.frame);
-  drawHud(g, st);
 }
 
 // En Chromium cada fotograma va como data URL de PNG; el pintor de Node
@@ -585,7 +610,14 @@ function snapshot() {
   return window.exportFrame(out);
 }
 
-window.renderFrames = (states) => states.map(st => { paint(st); return snapshot(); });
+// `setup` y `first` para NodeScene.render, que reparte los fotogramas; `prior`
+// son los de justo antes del tramo, para el polvo.
+window.setup = (meta) => window.setupRace(meta);
+window.warmDust = (prior) => { replayDust(prior); return true; };
+window.renderFrames = (states, first = 0, prior = []) => {
+  replayDust(prior);
+  return states.map(st => { paint(st); return snapshot(); });
+};
 
 window.renderPodium = (data) => {
   // Foto-finish: el instante en que el ganador cruza, en sepia, como la cámara de la meta.

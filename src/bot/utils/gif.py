@@ -16,6 +16,9 @@ lo hace numpy:
    comprimir, así que con 4 hilos va 2-3 veces más rápido que pasarle la lista
    entera a `Image.save`, que además compara otra vez cada fotograma entero
    con el anterior para recortarlo.
+4. En `local_palette_gif` cada fotograma solo depende del anterior, así que se
+   puede empezar antes de tener el GIF entero: `precode` lo codifica mientras
+   Node pinta los siguientes (`bot.services.node_scene`).
 
 La animación que se ve es idéntica a la de guardar los fotogramas tal cual.
 
@@ -43,8 +46,9 @@ import io
 import math
 import os
 import struct
+import weakref
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 
 import numpy as np
 from PIL import Image, ImageFile
@@ -101,8 +105,17 @@ def _frame(
     palette: Sequence[int] | None = None,
 ) -> bytes:
     """Un fotograma: control (tiempo, transparencia), descriptor, paleta local y LZW."""
+    return _control(ms, transparency) + _image(indices, box, palette)
+
+
+def _control(ms: int, transparency: int | None) -> bytes:
+    """La extensión de control de un fotograma: su tiempo y su índice transparente."""
     flags = (_KEEP << 2) | (1 if transparency is not None else 0)
-    control = b"!\xf9\x04" + struct.pack("<BHBB", flags, ms // 10, transparency or 0, 0)
+    return b"!\xf9\x04" + struct.pack("<BHBB", flags, ms // 10, transparency or 0, 0)
+
+
+def _image(indices: np.ndarray, box: Box, palette: Sequence[int] | None) -> bytes:
+    """Descriptor, paleta local (si la hay) y LZW de un fotograma, sin su tiempo."""
     x0, y0, x1, y1 = box
     descriptor = b"," + struct.pack("<HHHH", x0, y0, x1 - x0, y1 - y0)
     table = b""
@@ -111,7 +124,7 @@ def _frame(
     else:
         size, table = _color_table(palette)
         descriptor += bytes([0x80 | size])
-    return control + descriptor + table + b"\x08" + _lzw(indices) + b"\0"
+    return descriptor + table + b"\x08" + _lzw(indices) + b"\0"
 
 
 def _write(size: tuple[int, int], palette: Sequence[int], frames: list[bytes], loop: bool) -> bytes:
@@ -223,45 +236,123 @@ def local_palette_gif(
     """
     if not frames:
         raise ValueError("Hace falta al menos un fotograma.")
-    # Primera pasada, en orden: qué cambia en cada fotograma respecto al anterior.
-    jobs: list[tuple[np.ndarray | None, Box, Image.Image]] = []
-    ms: list[int] = []
-    previous: np.ndarray | None = None
-    for frame, duration in zip(frames, _durations(durations, len(frames)), strict=True):
-        rgb = frame.convert("RGB")
-        # Cada píxel como un entero de 32 bits: comparar es una sola pasada.
-        packed = np.frombuffer(rgb.tobytes("raw", "RGBX"), dtype=np.uint32)
-        packed = packed.reshape(rgb.height, rgb.width)
-        if previous is None:
-            jobs.append((None, (0, 0, *rgb.size), rgb))
-        else:
-            changed = packed != previous
-            box = _changed_box(changed)
-            if box is None:
-                ms[-1] += duration
-                continue
-            window = changed[box[1] : box[3], box[0] : box[2]]
-            jobs.append((window, box, rgb.crop(box)))
-        ms.append(duration)
-        previous = packed
-
-    def encode(
-        job: tuple[np.ndarray | None, Box, Image.Image], duration: int
-    ) -> tuple[bytes, list[int]]:
-        window, box, region = job
-        palette = region.quantize(colors=LOCAL_COLORS, method=Image.Quantize.FASTOCTREE)
-        # Sin tramado, el índice de un píxel no depende de los demás.
-        indices = np.asarray(region.quantize(palette=palette, dither=Image.Dither.NONE))
-        if window is not None:
-            indices = np.where(window, indices, LOCAL_TRANSPARENT).astype(np.uint8)
-        colors = (palette.getpalette() or [])[: LOCAL_COLORS * 3]
-        colors += [0] * (768 - len(colors))
-        # El primero usa la tabla global (su misma paleta), como escribe Pillow.
-        local = None if window is None else colors
-        return _frame(indices, box, duration, LOCAL_TRANSPARENT, local), colors
-
-    # Segunda pasada, en paralelo: la paleta y el LZW de cada fotograma no
-    # dependen de los demás y Pillow suelta el GIL al calcularlos.
+    # Primera pasada, en orden: qué cambia en cada fotograma respecto al anterior
+    # (salvo los que `precode` ya empezó mientras se pintaban). Segunda, en
+    # paralelo: la paleta y el LZW, que Pillow calcula soltando el GIL.
     with ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) as pool:
-        encoded = list(pool.map(encode, jobs, ms))
-    return _write(frames[0].size, encoded[0][1], [block for block, _ in encoded], loop)
+        jobs: list[Future[_Coded]] = []
+        before: Image.Image | None = None
+        previous: np.ndarray | None = None
+        for frame in frames:
+            job = _precoded(before, frame)
+            if job is not None:
+                previous = None
+            else:
+                rgb = _rgb(frame)
+                packed = _packed(rgb)
+                if before is not None and previous is None:
+                    previous = _packed(_rgb(before))
+                job = _submit(pool, previous, packed, rgb)
+                previous = packed
+            jobs.append(job)
+            before = frame
+        coded = [job.result() for job in jobs]
+    # El tiempo de un fotograma que no cambia nada se suma al anterior.
+    blocks: list[tuple[int, bytes]] = []
+    for part, duration in zip(coded, _durations(durations, len(frames)), strict=True):
+        if part is None:
+            blocks[-1] = (blocks[-1][0] + duration, blocks[-1][1])
+        else:
+            blocks.append((duration, part[0]))
+    frames_bytes = [_control(ms, LOCAL_TRANSPARENT) + image for ms, image in blocks]
+    first = coded[0]
+    assert first is not None
+    return _write(frames[0].size, first[1], frames_bytes, loop)
+
+
+#: Lo que se guarda en un fotograma con `precode`: a qué fotograma sigue y su trabajo.
+_PRECODE_ATTRIBUTE = "_gif_precode"
+
+
+def precode(before: Image.Image | None, frame: Image.Image, pool: Executor) -> None:
+    """Empieza ya en `pool` el trabajo de `frame` para un futuro `local_palette_gif`.
+
+    Para codificar mientras se pintan los fotogramas siguientes (ver
+    `bot.services.node_scene`). Solo se aprovecha si en el GIF `frame` va justo
+    detrás de `before` (`None` si es el primero): el autobús, por ejemplo, monta
+    dos GIF con un tramo común. Se guarda en el propio fotograma y se va con él.
+    """
+    previous = None if before is None else weakref.ref(before)
+    setattr(frame, _PRECODE_ATTRIBUTE, (previous, pool.submit(_code, before, frame)))
+
+
+def _precoded(before: Image.Image | None, frame: Image.Image) -> Future[_Coded] | None:
+    """El trabajo que `precode` empezó para `frame` detrás de `before`, si lo hay."""
+    saved = getattr(frame, _PRECODE_ATTRIBUTE, None)
+    if saved is None:
+        return None
+    previous, job = saved
+    follows = previous() if previous is not None else None
+    return job if follows is before else None
+
+
+#: Un fotograma codificado sin su tiempo (descriptor, paleta y LZW) y su paleta;
+#: `None` si es igual que el anterior.
+_Coded = tuple[bytes, list[int]] | None
+
+
+def _rgb(image: Image.Image) -> Image.Image:
+    return image if image.mode == "RGB" else image.convert("RGB")
+
+
+def _packed(rgb: Image.Image) -> np.ndarray:
+    """Cada píxel como un entero de 32 bits: comparar dos fotogramas es una sola pasada."""
+    packed = np.frombuffer(rgb.tobytes("raw", "RGBX"), dtype=np.uint32)
+    return packed.reshape(rgb.height, rgb.width)
+
+
+def _code(before: Image.Image | None, frame: Image.Image) -> _Coded:
+    """Lo que cambia `frame` respecto a `before`, entero (el trabajo de `precode`)."""
+    rgb = _rgb(frame)
+    previous = None if before is None else _packed(_rgb(before))
+    return _submit(None, previous, _packed(rgb), rgb).result()
+
+
+def _submit(
+    pool: Executor | None, previous: np.ndarray | None, packed: np.ndarray, rgb: Image.Image
+) -> Future[_Coded]:
+    """Compara con el anterior aquí y deja la paleta y el LZW a `pool` (o los hace ya)."""
+    if previous is None:
+        window, box, region = None, (0, 0, *rgb.size), rgb
+    else:
+        changed = packed != previous
+        found = _changed_box(changed)
+        if found is None:
+            done: Future[_Coded] = Future()
+            done.set_result(None)
+            return done
+        box = found
+        window = changed[box[1] : box[3], box[0] : box[2]]
+        region = rgb.crop(box)
+    if pool is not None:
+        return pool.submit(_quantize, window, box, region)
+    now: Future[_Coded] = Future()
+    now.set_result(_quantize(window, box, region))
+    return now
+
+
+def _quantize(window: np.ndarray | None, box: Box, region: Image.Image) -> _Coded:
+    """La paleta propia de lo que cambia y su LZW.
+
+    Dentro de la caja, los píxeles que no cambian (`window` falso) van con el
+    índice transparente. El primero (`window` es `None`) va entero y con la
+    tabla global, como lo escribe Pillow.
+    """
+    palette = region.quantize(colors=LOCAL_COLORS, method=Image.Quantize.FASTOCTREE)
+    # Sin tramado, el índice de un píxel no depende de los demás.
+    indices = np.asarray(region.quantize(palette=palette, dither=Image.Dither.NONE))
+    if window is not None:
+        indices = np.where(window, indices, LOCAL_TRANSPARENT).astype(np.uint8)
+    colors = (palette.getpalette() or [])[: LOCAL_COLORS * 3]
+    colors += [0] * (768 - len(colors))
+    return _image(indices, box, None if window is None else colors), colors

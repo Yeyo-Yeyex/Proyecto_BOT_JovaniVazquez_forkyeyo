@@ -18,8 +18,9 @@ from test_horses_cog import fixed_result
 from test_horses_scene import card_of, photo_result
 from test_node_scene import needs_node, node_ready
 
+from bot.services import node_scene
 from bot.services.horses_render import GATE_FRAMES, H, W
-from bot.services.horses_scene import SCENE, SceneRenderer
+from bot.services.horses_scene import DUST_FRAMES, SCENE, SceneRenderer
 from bot.services.node_scene import NodeScene
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
@@ -68,6 +69,45 @@ async def test_con_node_la_carrera_sale_como_gif_sin_abrir_el_navegador(
     png = Image.open(io.BytesIO(media.png))
     assert png.format == "PNG" and png.size == (640, 360)
     assert len(png.convert("RGB").getcolors(1 << 20) or []) > 100
+
+
+@needs_node
+@module_loop
+async def test_la_carrera_repartida_pinta_lo_mismo_que_de_un_tiron(
+    renderer: SceneRenderer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El polvo pasa de un fotograma a otro: repartida entre procesos, sale idéntica.
+
+    Cada proceso que empieza a mitad lo recrea con los fotogramas de antes, y
+    el podio (en otro proceso) también.
+    """
+    card, result = card_of(rain_chance=0.5), photo_result()
+    states = renderer.race_states(card, result)
+    podium = renderer.podium_data(card, result, None, states)
+    meta = renderer.race_meta(card)
+    whole = await renderer.painter.sequence(
+        [("setupRace", [meta]), ("renderFrames", [states]), ("renderPodium", [podium])]
+    )
+    assert whole is not None
+    setups: list[str] = []
+    call = node_scene._Process.call
+
+    async def counted(self: node_scene._Process, request: dict, **kw: bool):  # noqa: ANN202
+        setups.extend(["setup"] if request["call"] == "setup" else [])
+        return await call(self, request, **kw)
+
+    monkeypatch.setattr(node_scene._Process, "call", counted)
+    split = await renderer.painter.render(meta, states, warmup=DUST_FRAMES)
+    # Cada tramo empieza con su `setup`: con uno solo no se habría repartido.
+    assert len(setups) > 1, "La carrera no se ha repartido"
+    finish = await renderer.painter.sequence(
+        [("setup", [meta]), ("warmDust", [states[-DUST_FRAMES:]]), ("renderPodium", [podium])]
+    )
+    assert split is not None and finish is not None
+    assert len(split) == len(whole[1]) == len(states)
+    for a, b in zip(split, whole[1], strict=True):
+        assert a["image"].tobytes() == b["image"].tobytes()
+    assert finish[-1][0]["image"].tobytes() == whole[2][0]["image"].tobytes()
 
 
 @needs_node

@@ -6,9 +6,11 @@ mitades que se pintan de forma distinta:
 
 - **La carrera** (los fotogramas y el podio) es solo canvas 2D y la pinta
   Node con Skia (`bot.services.node_scene`), sin navegador y con los
-  fotogramas en RGBA crudo. Guarda estado de un fotograma al siguiente (el
-  polvo de los cascos), así que va en un solo proceso y en orden
-  (`NodeScene.sequence`). Si no hay Node, la pinta Chromium.
+  fotogramas en RGBA crudo, repartida entre todos los procesos
+  (`NodeScene.render`). El polvo de los cascos pasa de un fotograma al
+  siguiente: cada proceso que empieza a mitad lo recrea con los
+  `DUST_FRAMES` de antes (`warmup`), y el podio va a la vez en otro proceso.
+  Si no hay Node, la pinta Chromium.
 - **La parrilla y el boleto** son HTML/CSS con capturas de pantalla: esos
   siguen en Chromium (Playwright) y no tienen otro camino que Pillow.
 
@@ -30,9 +32,7 @@ de `bot.services.node_scene` son de todos los juegos) y la escena de la carrera
 le suma ~50 MB; el GIF se monta después en un hilo, fuera del event loop.
 Chromium arranca en ~1-2 s la primera vez y ocupa ~150-250 MB mientras está
 abierto (ahora solo para la parrilla y el boleto, o si Node falla) y se cierra
-solo tras `IDLE_SECONDS` sin uso. Solo hay una pestaña, y la carrera de Node
-va en un solo proceso (`NodeScene.sequence`: el polvo guarda estado de un
-fotograma al siguiente).
+solo tras `IDLE_SECONDS` sin uso. Solo hay una pestaña.
 """
 
 from __future__ import annotations
@@ -84,6 +84,9 @@ SCENE = Path(__file__).resolve().parent.parent / "assets" / "caballos" / "escena
 IDLE_SECONDS = 10 * 60
 #: Fotogramas que se piden al navegador de una vez (cada uno es un PNG en base64).
 BATCH = 40
+#: Fotogramas que vive el polvo de un casco (pierde 0,09 de vida por fotograma):
+#: los que la escena repasa sin pintar al empezar un tramo a mitad de carrera.
+DUST_FRAMES = 12
 #: Zancadas por segundo del GIF: con 70-80 ms por fotograma, unos 5 fotogramas por zancada.
 STRIDES_PER_SECOND = 2.6
 #: Fotogramas en que se abren las puertas de los cajones.
@@ -463,16 +466,20 @@ class SceneRenderer:
         podium = self.podium_data(card, result, odds, states)
         meta = self.race_meta(card)
 
-        calls: list[tuple[str, list[Any]]] = [("setupRace", [meta])]
-        calls += [
-            ("renderFrames", [states[start : start + BATCH]])
-            for start in range(0, len(states), BATCH)
-        ]
-        calls.append(("renderPodium", [podium]))
-        parts = await self.painter.sequence(calls)
-        if parts is not None:
-            # La primera llamada (setupRace) no devuelve imágenes.
-            frames = [patch["image"] for part in parts for patch in part]
+        # La carrera, repartida, y a la vez el podio en otro proceso, con el polvo
+        # que dejan los últimos fotogramas.
+        race, finish = await asyncio.gather(
+            self.painter.render(meta, states, warmup=DUST_FRAMES),
+            self.painter.sequence(
+                [
+                    ("setupRace", [meta]),
+                    ("warmDust", [states[-DUST_FRAMES:]]),
+                    ("renderPodium", [podium]),
+                ]
+            ),
+        )
+        if race is not None and finish is not None:
+            frames = [patch["image"] for patch in race] + [finish[-1][0]["image"]]
             return await asyncio.to_thread(self._encode, frames)
 
         async def work(page: Any) -> list[str]:
