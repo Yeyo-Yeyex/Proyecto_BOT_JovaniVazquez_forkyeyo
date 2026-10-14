@@ -282,6 +282,86 @@ semanas, fijadas en `package.json` con su `package-lock.json`. Aquí `docker
 build` no tiene red; se comprueba al menos que el `node` de `node:22-slim` y el
 `node_modules` pintan la escena dentro de `python:3.13-slim` con el usuario `bot`.
 
+## Juego nuevo con dibujo: de cero a rápido
+
+Orden para que un juego nuevo con animación salga como los del casino (moneda,
+dados, caballos). Cada paso trae su comprobación; la Biblia (sección 5) lo exige.
+
+1. **Escena** (`assets/<juego>/escena.html`), solo canvas 2D:
+   - API: `setup(meta)` reinicia todo lo que pasa de un fotograma a otro, así que
+     el primero sale entero; `renderFrames(states, first, prior)` devuelve un
+     recuadro por estado con `window.exportFrame(lienzo)`, y
+     `window.exportFrame ??= (c) => c.toDataURL("image/png")` deja que Chromium
+     siga valiendo. Solo el recuadro que cambia; entero si no hay anterior.
+   - **Nada de `Math.random`.** Azar repetible por fotograma (`rng(semilla, frame)`,
+     como `dustRng` de los caballos). Con `Math.random`, cada proceso pinta otra
+     cosa y la prueba de repartido contra un proceso falla.
+   - **Estado que pasa de un fotograma a otro** (partículas, estelas): se le pone
+     una vida máxima en fotogramas y se recrea desde `prior` sin pintar, con un
+     lienzo que no hace nada (`NOOP` y `replayDust` en `caballos/escena.html`). En
+     Python, `render(..., warmup=N)` con N esa vida (`DUST_FRAMES`).
+   - **Nombres:** en el contexto `vm` de Node las funciones de primer nivel son
+     propiedades de `window`. `function warmDust(){}` más
+     `window.warmDust = () => warmDust()` se llama a sí misma hasta «Maximum call
+     stack size exceeded». La función interna lleva otro nombre.
+   - La escena entra en `package-data` de `pyproject.toml`.
+2. **Python** (`services/<juego>_scene.py`): Node, luego Chromium, luego Pillow,
+   como `CoinScene`. `painter.render(meta, states)` ya devuelve los fotogramas
+   enteros y los deja codificándose para el GIF: se pasan tal cual a
+   `local_palette_gif(frames, ms)` dentro de `asyncio.to_thread`, los mismos
+   objetos y en el mismo orden. Si se copian, convierten o reordenan, el GIF sale
+   igual pero sin lo adelantado. Las duraciones salen de los estados, antes de
+   pintar. Una imagen quieta: `await asyncio.to_thread(patch_png, patches[0])`,
+   nunca en el bucle de eventos.
+3. **El reparto es automático:** `render` usa los 4 procesos y los que se abren a
+   mitad. `procs=1` solo en pruebas. `sequence` es para llamadas sueltas (el podio
+   de los caballos) y puede ir a la vez que `render` con `asyncio.gather`.
+4. **Cog:** pintar antes del clic (`prepare`, `_plan_key`), tapar la espera y no
+   volver a subir una imagen que no ha cambiado: se guarda la clave de lo que se ve
+   (`HousePanel._poster` en gallos) y se edita sin `attachments`. Cada mensaje con
+   archivo cuesta ~1,1 s fijos en Discord aunque pese poco, y el tamaño solo suma
+   ~0,4 s a partir de 1 MB (informe del 14/10/2026): mejor no subir que subir menos.
+5. **Pruebas**, copiando las de los juegos que ya están:
+   - Node contra Chromium, diferencia media por debajo de 4/255
+     (`test_node_y_chromium_pintan_lo_mismo*`).
+   - Repartido contra un solo proceso, byte a byte, comprobando que de verdad se ha
+     repartido (contar los `setup`):
+     `test_la_carrera_repartida_pinta_lo_mismo_que_de_un_tiron`,
+     `test_los_que_se_unen_a_mitad_pintan_lo_mismo_que_uno_solo`.
+   - Que no se resube lo que no cambia
+     (`test_repintar_la_misma_presentacion_no_vuelve_a_subir_la_imagen`).
+   - Al reescribir algo del camino de dibujo (`node_scene`, `gif`, `assemble`): el
+     GIF y el PNG finales de cada juego con el mismo `sha256` que en `upstream/main`.
+6. **Medir** con `docs/medir_dibujos.py`: se añade el juego a `GAMES` y se mide
+   antes y después (`--repo ../viejo`), dos veces cada uno. «1 abierto» es la
+   primera jugada tras 10 minutos sin jugar; «caliente», las siguientes.
+   Referencia a 4 hilos (14/10/2026, ms): moneda 410/275, dados 470/280, autobús
+   500/340, ruleta 620/380, bacará 820/630, caballos 900/750.
+7. **Memoria:** cada escena cargada suma ~50 MB a cada proceso de Node que la pinte
+   (hasta 4 procesos con 3 escenas cada uno). Se mira en «Sistema» del informe.
+8. **Tras desplegar**, en el informe: «Dibujos» (ms del pintor), «Subidas a
+   Discord», «Bloqueos del bucle» y memoria. «Bloqueos del bucle» tiene que estar
+   vacío: si sale `bot/...:función`, esa función hace trabajo pesado en el bucle y
+   va a `asyncio.to_thread`. `selectors.py:select` quiere decir que faltó CPU, no
+   que algo bloquee.
+
+## Notas para el agente en este repo
+
+- Python del proyecto: `.venv/Scripts/python` (3.13, el mismo que la imagen del
+  NAS). En la consola de Windows, `docs/analisis_metricas.py` necesita
+  `PYTHONIOENCODING=utf-8` o revienta con `UnicodeEncodeError`.
+- En este PC no hay Docker y la imagen no se puede construir. Si un cambio la
+  rompe, `actualizar.sh` vuelve sola a la anterior en el NAS; se avisa en la PR.
+- Sin atar a 4 hilos, este PC (24 hilos) da tiempos que el NAS nunca verá;
+  `docs/medir_dibujos.py` se ata solo. El N100 va ~1,5 veces más lento por hilo,
+  pero las comparaciones de antes y después sí valen.
+- Para comparar con lo desplegado: `git worktree add ../viejo upstream/main`. Allí
+  Node necesita `NODE_PATH` apuntando al `node_modules` de aquí (el script lo pone).
+- Lo que no se repite en `node_scene`: repartir solo entre los procesos libres al
+  empezar, porque casi siempre hay uno solo y los que se abren después no ayudan;
+  y dar trabajo a un proceso antes de que cargue la escena, porque el que ya
+  pintaba se queda esperándolo (los dados empeoraban 100 ms).
+
 ## Dos repositorios
 
 - `godzilin/Proyecto_BOT_JovaniVazquez` es el del bot: su `main` es lo que se despliega.

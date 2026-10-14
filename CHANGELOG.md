@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.2.5 · 2026-10-14
+
+- Interno: receta para que los juegos nuevos pinten igual de rápido
+
 ### 6.2.4 · 2026-10-14
 
 - Juegos: GIF más rápidos con los 4 pintores a la vez y Python 3.13
