@@ -1,8 +1,9 @@
 """Reglas del Casino Hold'em: póker Texas Hold'em contra la banca, con una sola decisión.
 
-Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.poker`) cobra el ante al
-repartir, cobra la apuesta de ir si se va, paga al final y pinta la mesa
-(`bot.services.poker_scene`).
+Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.poker`) lleva la mesa del
+canal, cobra el ante al sentarse y la apuesta de ir si se va, paga al final y
+pinta la mesa (`bot.services.poker_scene`). El rango, los retos y la racha van
+aparte, en `bot.services.poker_club`.
 
 **Cómo se juega.** Es el Casino Hold'em de los casinos de verdad:
 
@@ -35,7 +36,17 @@ una estrategia aprendida, algo peor que la óptima, sale un 2,6 % ± 0,2 %.
 la banca y cinco comunitarias) salen de una baraja de 52 barajada (`deal`). Se
 sortean al repartir, antes de decidir: lo que sale no depende de lo que se
 elija, igual que en la mesa de verdad, donde el turn y el river ya están en el
-mazo. Así el cog dibuja el final de las dos opciones mientras el jugador piensa.
+mazo.
+
+**La mesa compartida** (`deal_table`): hasta `MAX_SEATS` jugadores juegan la
+misma mano contra la misma banca, cada uno con sus dos cartas y las mismas
+cinco comunitarias, todo de una sola baraja. Cada asiento es una mano suelta
+(`TableDeal.seat`), con las mismas reglas y pagos.
+
+**El 💎 Bote** (`bonus`): apuesta aparte de `BONUS_STAKE` que se resuelve con
+las siete cartas del jugador aunque se retire. Una parte de cada apuesta
+(`BONUS_SHARE`) va al bote común del servidor, que se lleva entero la escalera
+real (y el 10 % la escalera de color); póker, full y color pagan fijo.
 """
 
 from __future__ import annotations

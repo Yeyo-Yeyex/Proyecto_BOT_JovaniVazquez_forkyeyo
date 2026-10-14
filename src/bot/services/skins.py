@@ -222,7 +222,7 @@ GAMES: dict[str, Game] = {g.key: g for g in (
     Game("dados", "Dados", "🎲", "tapete", FELT, group=TAPETE),
     Game("moneda", "Cara o cruz", "🪙", "tapete", FELT, group=TAPETE),
     Game("pollo", "Pollo", "🐔", "tapete", FELT, group=TAPETE),
-    Game("poker", "Póker", "♠️", "tapete", FELT, group=TAPETE),
+    Game("poker", "Póker", "♠️", "tapete", FELT, shared=True, group=TAPETE),
     # El gallo de serie es un giro colorado: pecho rojizo, esclavina naranja y
     # cola negra con reflejos verdes. Cada skin es un gallo entero.
     Game("gallos", "Gallos", "🐓", "gallo", _frozen({
@@ -284,6 +284,26 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#001a5c",
         "pattern": "israel",
     }), price=400_000, aisle="lujo", min_level=15),
+    # Los del club del póker: se ganan subiendo de rango (`poker_rango_7` y `_10`).
+    Skin("tapete_tahur", "tapete", "🏛️", "Tapete del Tahúr de Moncloa", (
+        "Azul Consejo de Ministros con filete dorado, como la sala donde se reparten "
+        "los fondos. Solo para quien llega a Tahúr de Moncloa en el club del póker."
+    ), _frozen({
+        "felt": ("#2b4f8f", "#16305e", "#08152e"),
+        "fiber": ("rgba(210,225,255,0.05)", "rgba(0,8,30,0.08)"),
+        "trim": "rgba(255,214,110,0.45)",
+        "ink": "#06112a",
+    }), price=100_000, aisle="moncloa", min_level=10, achievement="poker_rango_7"),
+    Skin("tapete_dios", "tapete", "👑", "Tapete del Dios del tapete", (
+        "Negro de esmoquin con ribete de oro y la celosía de Montecarlo. Nadie lo "
+        "compra: se gana llegando al último rango del club del póker."
+    ), _frozen({
+        "felt": ("#3a3a3a", "#1c1c1c", "#050505"),
+        "fiber": ("rgba(255,240,200,0.05)", "rgba(0,0,0,0.1)"),
+        "trim": "rgba(255,214,110,0.6)",
+        "ink": "#000000",
+        "pattern": "oro",
+    }), price=500_000, aisle="lujo", min_level=15, achievement="poker_rango_10"),
     Skin("tapete_canarias", "tapete", "🌋", "Tapete del Teide", (
         "Azul atlántico con olas, el Teide nevado asomando por encima del mar de "
         "nubes y la tricolor de las islas en el borde. Huele a gofio."

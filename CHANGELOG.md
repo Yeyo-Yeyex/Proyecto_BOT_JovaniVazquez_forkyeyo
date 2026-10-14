@@ -8,8 +8,9 @@ criterio.
 
 ## 5.x
 
-### 5.25.1 · 2026-10-14
+### 5.26.0 · 2026-10-14
 
+- Póker: mesa del canal para seis, 💎 Bote progresivo y el club (rango, retos y racha)
 - Interno: póker, comprobación rápida de la ventaja de la casa
 
 ### 5.25.0 · 2026-10-14

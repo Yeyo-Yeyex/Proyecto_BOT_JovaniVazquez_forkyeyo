@@ -1,16 +1,15 @@
 <!doctype html>
 <!--
-Escena del póker (Casino Hold'em), dibujada con canvas. La pinta Node con Skia
-(assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
-bot/services/poker_scene.py).
+Escena del póker (Casino Hold'em), la mesa del canal, dibujada con canvas. La
+pinta Node con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium sin
+ventana (ver bot/services/poker_scene.py).
 
 No decide nada: Python le pasa, fotograma a fotograma, dónde está cada carta,
-las pastillas, las fichas, la fila de la tabla que cobra y el cartel
-(bot/services/poker_render.py, `board_state`, `deal_states` y
-`showdown_states`). Aquí solo se pinta. Funciones que llama Python:
+cada asiento, la banca y el cartel (bot/services/poker_render.py, `board_state`,
+`deal_states` y `showdown_states`). Aquí solo se pinta. Funciones que llama Python:
 
 - loadFonts()                espera a las fuentes (canvas no las carga solo).
-- setup(meta)                {pays: [[mano, pago]…], skin}: la tabla del ante y el tapete.
+- setup(meta)                {pays, bonus: [[jugada, pago]…], skin}: las dos tablas y el tapete.
 - renderFrames(states, first) dibuja los fotogramas y devuelve, de cada uno, el
                              recuadro que ha cambiado (PNG en Chromium, píxeles
                              crudos en Node) y dónde va.
@@ -21,18 +20,19 @@ las pastillas, las fichas, la fila de la tabla que cobra y el cartel
 Un estado es:
   cards[]    en orden de dibujo (la última encima): card {rank, suit, label, red},
              x, y (centro), rot, scale, flip (0 dorso, 1 cara), lift, glow, dim.
-  player, dealer   {text | null, pop, win}: la pastilla con lo que lleva cada mano.
-  spots      {ante, call (0-1: la ficha), fold}: las casillas de las apuestas.
+  seats[]    {x, name, bonus, pill {text | null, pop, win}, ante, call (0-1: la
+             ficha), fold, badge {kind, text, a, bonus} | null}: un asiento.
+  dealer     {text | null, pop, win}: la pastilla de la banca.
   qualify    "si" | "no" | null: si la banca juega (se ilumina el aviso).
-  pays       fila de la tabla del ante que cobra, o null.
-  banner     {kind, title, sub, a} | null     sparks  [[x, y, radio, alfa, clase]]
-  ms         (lo ignora la escena)
+  banner     {kind, title, sub, a} | null     pot  texto con lo que lleva el bote.
+  sparks     [[x, y, radio, alfa, clase]]     ms   (lo ignora la escena)
 
 Se dibuja al doble de tamaño (S = 2) y se reduce al copiarlo. El recuadro que
 cambia se calcula comparando con el fotograma anterior, así que montar los
 recuadros da exactamente lo mismo que pintar cada fotograma entero. Sin emojis:
 el Chromium del Docker no trae su fuente; los palos son trazados de canvas. Las
-cartas son las del bacará (mismo dibujo, a 64×90 en la mesa).
+cartas son las del bacará (mismo dibujo, a 64×90 en la mesa y más pequeñas en
+los asientos).
 -->
 <html lang="es">
 <head>
@@ -49,16 +49,15 @@ cartas son las del bacará (mismo dibujo, a 64×90 en la mesa).
 "use strict";
 const S = 2;
 // Estas medidas salen de bot/services/poker_render.py: si cambian allí, cambian aquí.
-const W = 640, H = 420;
+const W = 820, H = 500;
 const CARD_W = 64, CARD_H = 90;
-const DECK_X = 578, DECK_Y = 72;
-const DEALER_SLOTS = [[285, 72], [355, 72]];
-const BOARD_SLOTS = [[172, 200], [246, 200], [320, 200], [394, 200], [468, 200]];
-const PLAYER_SLOTS = [[285, 330], [355, 330]];
-const DEALER_PILL = [455, 72], PLAYER_PILL = [455, 330];
-const ANTE_SPOT = [578, 300], CALL_SPOT = [578, 362];
-const QUALIFY_Y = 134, BANNER_Y = 266;
-const PAYS_X = 14, PAYS_Y = 268, PAYS_ROW = 19;
+const DECK_X = 770, DECK_Y = 82;
+const DEALER_SLOTS = [[375, 82], [445, 82]];
+const BOARD_SLOTS = [0, 1, 2, 3, 4].map((i) => [262 + 74 * i, 225]);
+const DEALER_PILL = [548, 82];
+const QUALIFY_Y = 148, BANNER_Y = 296;
+const SEAT_Y = 404, SEAT_NAME_Y = 352, SEAT_PILL_Y = 460, SEAT_CHIP_DX = 60;
+const PAYS_X = 14, BONUS_X = 630, TABLES_Y = 142, TABLE_ROW = 17, TABLE_W = 176;
 // Las cartas se dibujan una vez a este tamaño (el del bacará) y se reducen en la mesa.
 const SW = 80, SH = 112;
 
@@ -71,7 +70,7 @@ const bctx = big.getContext("2d");
 const octx = out.getContext("2d", { willReadFrequently: true });
 const cctx = crop.getContext("2d");
 
-let META = { pays: [] };
+let META = { pays: [], bonus: [] };
 let BG = null, BG_SKIN = null;   // el fondo y la skin con la que se pintó
 let PREV = null;           // píxeles del fotograma anterior (Uint32Array)
 const SPRITES = new Map(); // cartas ya dibujadas (una vez por página)
@@ -294,27 +293,15 @@ function paintDeck(g) {
   g.restore();
 }
 
-function spotRing(g, [x, y], label, color) {
-  g.save();
-  g.beginPath(); g.arc(x, y, 25, 0, Math.PI * 2);
-  g.fillStyle = "rgba(0,0,0,0.18)"; g.fill();
-  g.lineWidth = 2; g.strokeStyle = rgba(color, 0.85); g.stroke();
-  g.beginPath(); g.arc(x, y, 21, 0, Math.PI * 2);
-  g.setLineDash([2.5, 3]); g.lineWidth = 0.9; g.strokeStyle = "rgba(255,255,255,0.3)"; g.stroke(); g.setLineDash([]);
-  g.font = "700 8.5px Montserrat"; spaced(g, 1); g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillStyle = "rgba(255,240,200,0.85)"; g.fillText(label, x + 0.5, y + 37);
-  g.restore();
-}
-
 function paintBackground() {
   const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
   const g = c.getContext("2d"); g.scale(S, S);
   // Tapete con degradado radial y una textura de fieltro.
-  let grad = g.createRadialGradient(320, 200, 30, 320, 200, 470);
+  let grad = g.createRadialGradient(W / 2, 230, 30, W / 2, 230, 560);
   const felt = Tapete.felt(META.skin, ["#238253", "#135a37", "#06281a"]);
   grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
-  Tapete.pattern(g, 0, 0, W, H, META.skin, [W / 2, 200, 0.8]);
+  Tapete.pattern(g, 0, 0, W, H, META.skin, [W / 2, 225, 0.8]);
   const r = rng(17);
   for (let k = 0; k < 2600; k++) {
     g.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.06)";
@@ -322,60 +309,49 @@ function paintBackground() {
   }
   g.strokeStyle = "rgba(0,0,0,0.035)"; g.lineWidth = 1;
   for (let k = -H; k < W; k += 5) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + H, H); g.stroke(); }
-  grad = g.createRadialGradient(320, 210, 190, 320, 210, 430);
+  grad = g.createRadialGradient(W / 2, 240, 240, W / 2, 240, 540);
   grad.addColorStop(0, "rgba(0,0,0,0)"); grad.addColorStop(1, "rgba(0,0,0,0.5)");
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
   // La línea curva de las comunitarias, como en las mesas de verdad.
-  g.save(); g.beginPath(); g.ellipse(320, 200, 205, 68, 0, 0, Math.PI * 2);
+  g.save(); g.beginPath(); g.ellipse(W / 2, 225, 215, 70, 0, 0, Math.PI * 2);
   g.strokeStyle = "rgba(255,214,110,0.22)"; g.lineWidth = 1.2; g.stroke(); g.restore();
+  // El arco de los asientos, abajo.
+  g.save(); g.beginPath(); g.ellipse(W / 2, 560, 420, 190, 0, Math.PI, 2 * Math.PI);
+  g.strokeStyle = "rgba(255,214,110,0.18)"; g.lineWidth = 1.2; g.stroke(); g.restore();
   // Título.
   g.save(); g.font = "24px Luckiest"; spaced(g, 2); g.textAlign = "left"; g.textBaseline = "alphabetic";
   g.lineJoin = "round"; g.lineWidth = 5; g.strokeStyle = "rgba(20,10,0,0.6)"; g.strokeText("CASINO HOLD'EM", 18, 32);
   const tg = g.createLinearGradient(0, 10, 0, 34); tg.addColorStop(0, "#fff1a8"); tg.addColorStop(1, "#e0a41c");
   g.fillStyle = tg; g.fillText("CASINO HOLD'EM", 18, 32); g.restore();
-  // Nombres de cada mano, a la izquierda de sus cartas.
-  for (const [label, [x, y], color] of [["BANCA", DEALER_SLOTS[0], "#ff8f95"], ["TÚ", PLAYER_SLOTS[0], "#8db6ff"]]) {
-    g.save(); g.font = "18px Luckiest"; spaced(g, 1.5); g.textAlign = "right"; g.textBaseline = "middle";
-    g.lineJoin = "round"; g.lineWidth = 3; g.strokeStyle = "rgba(0,0,0,0.45)";
-    g.strokeText(label, x - CARD_W / 2 - 14, y + 1); g.fillStyle = color; g.fillText(label, x - CARD_W / 2 - 14, y + 1);
-    g.restore();
-  }
-  for (const [x, y] of [...DEALER_SLOTS, ...BOARD_SLOTS, ...PLAYER_SLOTS]) slotOutline(g, x, y);
+  g.save(); g.font = "18px Luckiest"; spaced(g, 1.5); g.textAlign = "right"; g.textBaseline = "middle";
+  g.lineJoin = "round"; g.lineWidth = 3; g.strokeStyle = "rgba(0,0,0,0.45)";
+  const bx = DEALER_SLOTS[0][0] - CARD_W / 2 - 14, by = DEALER_SLOTS[0][1] + 1;
+  g.strokeText("BANCA", bx, by); g.fillStyle = "#ff8f95"; g.fillText("BANCA", bx, by);
+  g.restore();
+  for (const [x, y] of [...DEALER_SLOTS, ...BOARD_SLOTS]) slotOutline(g, x, y);
   paintDeck(g);
-  spotRing(g, ANTE_SPOT, "ANTE", GOLD);
-  spotRing(g, CALL_SPOT, "IR ×2", GOLD);
-  // Tabla del ante: panel oscuro con sus filas (la que cobra se ilumina aparte).
-  const ph = 22 + META.pays.length * PAYS_ROW + 6;
-  roundRect(g, PAYS_X - 4, PAYS_Y - 4, 212, ph, 8);
-  g.fillStyle = "rgba(4,24,14,0.55)"; g.fill(); g.strokeStyle = "rgba(255,214,110,0.35)"; g.lineWidth = 1; g.stroke();
-  g.font = "13px Luckiest"; spaced(g, 1); g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = GOLD;
-  g.fillText("EL ANTE PAGA", PAYS_X + 4, PAYS_Y + 8);
-  spaced(g, 0);
-  paintPays(g, null);
+  paintTable(g, PAYS_X, "EL ANTE PAGA", META.pays);
+  paintTable(g, BONUS_X, "BOTE", META.bonus);
   // Marco dorado fino y rótulo de la mesa.
   g.save(); roundRect(g, 3, 3, W - 6, H - 6, 12); g.strokeStyle = "rgba(255,214,110,0.3)"; g.lineWidth = 1; g.stroke(); g.restore();
   g.save(); g.font = "700 7.5px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "rgba(255,214,110,0.3)";
-  spaced(g, 3); g.fillText("CASINO DEL ESTADO  ·  TEXAS HOLD'EM CONTRA LA BANCA", 320, 412.5); g.restore();
+  spaced(g, 3); g.fillText("CASINO DEL ESTADO  ·  TEXAS HOLD'EM CONTRA LA BANCA", W / 2, H - 7.5); g.restore();
   return c;
 }
 
-// Las filas de la tabla del ante; `lit` es la que cobra (o null).
-function paintPays(g, lit) {
-  META.pays.forEach(([label, pays], i) => {
-    const y = PAYS_Y + 26 + i * PAYS_ROW;
-    if (lit !== i && lit !== null) return;
-    g.save();
-    if (lit === i) {
-      roundRect(g, PAYS_X - 1, y - 8.5, 206, 17, 8.5);
-      g.shadowColor = "rgba(255,214,90,0.95)"; g.shadowBlur = 10 * S;
-      g.fillStyle = "rgba(224,164,28,0.9)"; g.fill(); g.shadowBlur = 0;
-    }
-    g.font = "700 9px Montserrat"; spaced(g, 0.6); g.textBaseline = "middle";
-    g.fillStyle = lit === i ? "#2a1600" : "#f2e8c8";
-    g.textAlign = "left"; g.fillText(label, PAYS_X + 6, y + 0.5);
-    g.font = "13px Luckiest"; spaced(g, 0.5); g.textAlign = "right";
-    g.fillStyle = lit === i ? "#2a1600" : "#fff";
-    g.fillText(pays, PAYS_X + 196, y + 1);
+// Una tabla de pagos: panel oscuro con su título y sus filas.
+function paintTable(g, x0, title, rows) {
+  const ph = 22 + rows.length * TABLE_ROW + 6;
+  roundRect(g, x0 - 4, TABLES_Y - 4, TABLE_W + 8, ph, 8);
+  g.fillStyle = "rgba(4,24,14,0.55)"; g.fill(); g.strokeStyle = "rgba(255,214,110,0.35)"; g.lineWidth = 1; g.stroke();
+  g.save(); g.font = "13px Luckiest"; spaced(g, 1); g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = GOLD;
+  g.fillText(title, x0 + 4, TABLES_Y + 8); g.restore();
+  rows.forEach(([label, pays], i) => {
+    const y = TABLES_Y + 26 + i * TABLE_ROW;
+    g.save(); g.font = "700 8.5px Montserrat"; spaced(g, 0.5); g.textBaseline = "middle";
+    g.fillStyle = "#f2e8c8"; g.textAlign = "left"; g.fillText(label, x0 + 4, y + 0.5);
+    g.font = "12px Luckiest"; spaced(g, 0.5); g.textAlign = "right"; g.fillStyle = "#fff";
+    g.fillText(pays, x0 + TABLE_W - 4, y + 1);
     g.restore();
   });
 }
@@ -387,7 +363,7 @@ function drawQualify(state) {
   const text = state === "si" ? "LA BANCA JUEGA" : state === "no" ? "LA BANCA NO JUEGA" : "LA BANCA JUEGA CON PAREJA DE 4 O MÁS";
   g.save(); g.font = "700 9.5px Montserrat"; spaced(g, 1.4);
   const w = g.measureText(text).width + 24, h = 20;
-  roundRect(g, 320 - w / 2, QUALIFY_Y - h / 2, w, h, 10);
+  roundRect(g, W / 2 - w / 2, QUALIFY_Y - h / 2, w, h, 10);
   if (state) {
     const on = state === "si" ? "#1c8a4c" : "#a5202a";
     g.shadowColor = state === "si" ? "rgba(93,255,154,0.8)" : "rgba(255,110,120,0.8)"; g.shadowBlur = 10 * S;
@@ -398,13 +374,13 @@ function drawQualify(state) {
   }
   g.lineWidth = 1.1; g.stroke();
   g.fillStyle = state ? "#fff" : "#ffe08a"; g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillText(text, 320.5, QUALIFY_Y + 0.5);
+  g.fillText(text, W / 2 + 0.5, QUALIFY_Y + 0.5);
   g.restore();
 }
 
-function drawPill(info, [x, y], color, light) {
+function drawPill(info, [x, y], color, light, size = 1) {
   if (!info || !info.text) return;
-  const g = bctx, sc = info.pop == null ? 1 : Math.max(info.pop, 0.01);
+  const g = bctx, sc = (info.pop == null ? 1 : Math.max(info.pop, 0.01)) * size;
   g.save(); g.translate(x, y); g.scale(sc, sc);
   g.font = "15px Luckiest"; spaced(g, 1);
   const w = Math.max(84, g.measureText(info.text).width + 26), h = 28;
@@ -438,19 +414,72 @@ function chip(g, [x, y], sc) {
   g.restore();
 }
 
-function drawSpots(spots) {
-  if (!spots) return;
-  const g = bctx;
-  chip(g, ANTE_SPOT, clamp(spots.ante || 0, 0, 1.3));
-  chip(g, CALL_SPOT, clamp(spots.call || 0, 0, 1.3));
-  if (spots.fold) {
-    // Retirado: el ante se apaga y lleva una cruz.
-    const [x, y] = ANTE_SPOT;
-    g.save(); g.beginPath(); g.arc(x, y, 17, 0, Math.PI * 2); g.fillStyle = "rgba(6,12,10,0.55)"; g.fill();
-    g.strokeStyle = "#ff8f95"; g.lineWidth = 3; g.lineCap = "round";
-    g.beginPath(); g.moveTo(x - 9, y - 9); g.lineTo(x + 9, y + 9); g.moveTo(x + 9, y - 9); g.lineTo(x - 9, y + 9); g.stroke();
+// Un asiento por detrás de sus cartas: nombre (con un rombo si juega el bote), huecos y fichas.
+function drawSeatBack(seat) {
+  const g = bctx, x = seat.x;
+  g.save(); g.font = "700 10.5px Montserrat"; spaced(g, 0.8); g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineJoin = "round"; g.lineWidth = 3; g.strokeStyle = "rgba(0,0,0,0.55)";
+  g.strokeText(seat.name, x, SEAT_NAME_Y); g.fillStyle = "#e9f1ff"; g.fillText(seat.name, x, SEAT_NAME_Y);
+  if (seat.bonus) {
+    const w = g.measureText(seat.name).width / 2 + 10;
+    g.save(); g.translate(x + w, SEAT_NAME_Y); g.rotate(Math.PI / 4);
+    g.shadowColor = "rgba(120,220,255,0.9)"; g.shadowBlur = 6 * S;
+    g.fillStyle = "#7fd8ff"; g.fillRect(-3.6, -3.6, 7.2, 7.2); g.restore();
+  }
+  g.restore();
+  for (const dx of [-25, 25]) {
+    g.save(); g.translate(x + dx, SEAT_Y); g.scale(0.72, 0.72);
+    roundRect(g, -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 6);
+    g.fillStyle = "rgba(0,0,0,0.12)"; g.fill();
+    g.setLineDash([4, 4]); g.lineWidth = 1.1; g.strokeStyle = "rgba(255,255,255,0.18)"; g.stroke();
     g.restore();
   }
+  chip(g, [x - SEAT_CHIP_DX, SEAT_Y], 0.6 * clamp(seat.ante || 0, 0, 1.3));
+  chip(g, [x + SEAT_CHIP_DX, SEAT_Y], 0.6 * clamp(seat.call || 0, 0, 1.3));
+  if (seat.fold) {
+    const cx = x - SEAT_CHIP_DX, cy = SEAT_Y;
+    g.save(); g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI * 2); g.fillStyle = "rgba(6,12,10,0.55)"; g.fill();
+    g.strokeStyle = "#ff8f95"; g.lineWidth = 2.2; g.lineCap = "round";
+    g.beginPath(); g.moveTo(cx - 5.5, cy - 5.5); g.lineTo(cx + 5.5, cy + 5.5); g.moveTo(cx + 5.5, cy - 5.5); g.lineTo(cx - 5.5, cy + 5.5); g.stroke();
+    g.restore();
+  }
+}
+
+// Un asiento por delante: su pastilla y, al final, la placa con el resultado.
+function drawSeatFront(seat) {
+  drawPill(seat.pill, [seat.x, SEAT_PILL_Y], BLUE, "#7eb0ff", 0.72);
+  const b = seat.badge;
+  if (!b || b.a <= 0) return;
+  const g = bctx, look = BANNERS[b.kind] || BANNERS.fold, a = clamp(b.a, 0, 1.4);
+  g.save(); g.translate(seat.x, SEAT_Y + 2); const sc = 0.6 + 0.4 * a; g.scale(sc, sc); g.globalAlpha = clamp(a * 1.4, 0, 1);
+  g.font = "16px Luckiest"; spaced(g, 0.8);
+  const w = Math.max(84, g.measureText(b.text).width + 22), h = 26;
+  g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 8 * S; g.shadowOffsetY = 2;
+  roundRect(g, -w / 2, -h / 2, w, h, 9);
+  const grad = g.createLinearGradient(0, -h / 2, 0, h / 2); grad.addColorStop(0, look.c[0]); grad.addColorStop(1, look.c[1]);
+  g.fillStyle = grad; g.fill(); g.shadowBlur = 0; g.shadowOffsetY = 0;
+  g.strokeStyle = "rgba(255,255,255,0.85)"; g.lineWidth = 1.6; g.stroke();
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round"; g.lineWidth = 4; g.strokeStyle = look.stroke;
+  g.strokeText(b.text, 0, 1.5); g.fillStyle = look.text; g.fillText(b.text, 0, 1.5);
+  if (b.bonus) {
+    g.font = "11px Luckiest"; spaced(g, 0.8);
+    const bw = g.measureText("BOTE").width + 14;
+    roundRect(g, -bw / 2, h / 2 - 2, bw, 15, 7.5); g.fillStyle = "#1a6fa8"; g.fill();
+    g.strokeStyle = "#bdf0ff"; g.lineWidth = 1; g.stroke();
+    g.fillStyle = "#fff"; g.fillText("BOTE", 0, h / 2 + 6);
+  }
+  g.restore();
+}
+
+// Lo que lleva el bote común, en el título de su tabla.
+function drawPot(text) {
+  if (!text) return;
+  const g = bctx;
+  g.save(); g.font = "14px Luckiest"; spaced(g, 1); g.textAlign = "right"; g.textBaseline = "middle";
+  g.lineJoin = "round"; g.lineWidth = 3.5; g.strokeStyle = "rgba(0,20,40,0.7)";
+  const x = BONUS_X + TABLE_W - 4, y = TABLES_Y + 8;
+  g.strokeText(text, x, y); g.fillStyle = "#9fe6ff"; g.fillText(text, x, y);
+  g.restore();
 }
 
 // -- Cartas ---------------------------------------------------------------------------------
@@ -541,12 +570,12 @@ function paint(st) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.drawImage(BG, 0, 0);
   g.save(); g.scale(S, S);
-  if (st.pays != null) paintPays(g, st.pays);
+  drawPot(st.pot);
   drawQualify(st.qualify);
-  drawSpots(st.spots);
+  for (const seat of st.seats || []) drawSeatBack(seat);
   for (const c of st.cards || []) drawCard(c);
   drawPill(st.dealer, DEALER_PILL, RED, "#ff858c");
-  drawPill(st.player, PLAYER_PILL, BLUE, "#7eb0ff");
+  for (const seat of st.seats || []) drawSeatFront(seat);
   drawBanner(st.banner);
   for (const [x, y, r, a, kind] of st.sparks || []) spark(g, x, y, r, a, kind);
   g.restore();
@@ -590,7 +619,7 @@ window.loadFonts = async () => {
 };
 window.setup = async (meta) => {
   await Tapete.ready(meta?.skin);
-  META = { pays: meta?.pays || [], skin: meta?.skin }; PREV = null;
+  META = { pays: meta?.pays || [], bonus: meta?.bonus || [], skin: meta?.skin }; PREV = null;
   const sk = meta?.skin?.key || "serie";
   if (!BG || BG_SKIN !== sk) { BG = paintBackground(); BG_SKIN = sk; }
   return true;

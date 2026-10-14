@@ -236,3 +236,16 @@ async def test_la_escalera_de_color_se_lleva_el_diez_por_ciento(tmp_path: Path) 
     )
     assert paid.pot_won == (POT_SEED + BONUS_SHARE) // 10
     assert paid.pot == POT_SEED + BONUS_SHARE - paid.pot_won
+
+
+def test_el_bote_devuelve_un_36_por_ciento_fijo_y_un_40_al_bote_comun() -> None:
+    """Con las frecuencias exactas de las jugadas de siete cartas (de 133.784.560 manos)."""
+    from fractions import Fraction
+
+    from bot.services.poker import BONUS_FIXED
+
+    hands = 133_784_560
+    exact = {Rank.QUADS: 224_848, Rank.FULL_HOUSE: 3_473_184, Rank.FLUSH: 4_047_644}
+    fixed = sum(Fraction(exact[r] * times, hands) for r, times in BONUS_FIXED.items())
+    assert round(float(fixed), 3) == 0.361
+    assert Fraction(BONUS_SHARE, BONUS_STAKE) == Fraction(2, 5)

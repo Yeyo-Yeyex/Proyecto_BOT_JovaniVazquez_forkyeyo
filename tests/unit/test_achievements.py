@@ -326,6 +326,10 @@ PRODUCED_STATS = {
     "poker_win_max", "poker_cash_666", "poker_cash_69", "poker_fold_would_win",
     "poker_fold_saved", "poker_fold_monster", "poker_night", "poker_reyes", "poker_inocentes",
     "poker_friday13",
+    # cogs/poker.py (`poker_club_stats`)
+    "poker_rank", "poker_streak", "poker_retos", "poker_retos_full", "poker_bonus_bets",
+    "poker_bonus_wins", "poker_pot_sf", "poker_pot_royal", "poker_pot_max", "poker_table_hands",
+    "poker_table_full", "poker_lone_win",
     *(f"{POKER_MADE_PREFIX}{rank.key}" for rank in PokerRank if rank is not PokerRank.HIGH_CARD),
     # cogs/craps.py (`craps_stats`)
     "dice_games", "dice_rolls", "dice_pass_games", "dice_dont_games", "dice_naturals",
