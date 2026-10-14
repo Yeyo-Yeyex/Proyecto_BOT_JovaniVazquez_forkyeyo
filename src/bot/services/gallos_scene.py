@@ -17,7 +17,8 @@ El primer fallo de cada uno se avisa en el log y desde entonces se usa el
 siguiente. El juego nunca se queda sin imagen.
 
 Cada fotograma se pinta entero a partir de su estado (los gallos se mueven por
-todo el reñidero y el público salta), así que se reparten entre dos procesos.
+todo el reñidero y el público salta), así que se reparten entre los procesos de
+Node libres (`bot.services.node_scene`).
 """
 
 from __future__ import annotations

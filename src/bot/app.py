@@ -37,6 +37,7 @@ from bot.repositories.telemetry import TelemetryRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
+from bot.services import node_scene
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
@@ -215,8 +216,16 @@ class BotClient(commands.Bot):
             await self.load_extension(extension)
             logger.info("Extensión cargada: %s", extension)
 
+        # El pintor de Node que siempre queda abierto: el primer dibujo no arranca en frío.
+        await node_scene.warm()
+
         synced = await self.tree.sync()
         logger.info("Comandos de aplicación sincronizados: %d", len(synced))
+
+    async def close(self) -> None:
+        """Cierra la conexión, descarga los cogs y luego los procesos de Node."""
+        await super().close()
+        await node_scene.shutdown()
 
     async def on_ready(self) -> None:
         """Registra en el log que el bot está conectado y operativo."""

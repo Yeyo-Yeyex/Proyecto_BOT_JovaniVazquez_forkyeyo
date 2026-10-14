@@ -23,6 +23,10 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   canal, leídos de la caché cada minuto) y `member` (altas y bajas).
 - `log`: avisos y errores del log, por plantilla del mensaje (sin sus datos).
 - `render`: lo que tarda cada dibujo de `NodeScene` y `BrowserScene`.
+- `upload`: lo que tarda cada mensaje con archivos en subir a Discord, por nombre
+  del archivo y tamaño. Se envuelve donde discord.py hace las peticiones con
+  archivos (`HTTPClient.request` y, para las interacciones, el adaptador de
+  webhooks).
 - Cada minuto, una muestra del sistema: memoria del contenedor (lo que vigila el
   `mem_limit` de `docker-compose.yml`), memoria del proceso, retraso del bucle
   de eventos, latencia con Discord y procesos de Chromium y Node abiertos.
@@ -40,6 +44,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import io
 import logging
 import math
 import os
@@ -51,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 import discord
+import discord.webhook.async_
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ui.view import BaseView, ViewStore
@@ -202,6 +208,40 @@ def _counted_dynamic_task(
     return run
 
 
+def _upload_size(file: discord.File) -> int:
+    """Bytes de un archivo por subir, sin mover el punto de lectura."""
+    try:
+        position = file.fp.tell()
+        size = file.fp.seek(0, io.SEEK_END)
+        file.fp.seek(position)
+    except (OSError, ValueError):
+        return 0
+    return size
+
+
+def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    @functools.wraps(original)
+    async def request(self: Any, *args: Any, **kwargs: Any) -> Any:
+        files = kwargs.get("files") or ()
+        if not files:
+            return await original(self, *args, **kwargs)
+        name = telemetry_service.upload_name(
+            files[0].filename or "archivo", sum(_upload_size(file) for file in files)
+        )
+        start = time.perf_counter()
+        failed = True
+        try:
+            result = await original(self, *args, **kwargs)
+            failed = False
+            return result
+        finally:
+            telemetry_service.report_upload(
+                name, (time.perf_counter() - start) * 1000, error=failed
+            )
+
+    return request
+
+
 def install_hooks() -> None:
     """Envuelve los puntos de discord.py por donde pasan todas las respuestas y clics.
 
@@ -213,7 +253,10 @@ def install_hooks() -> None:
       la primera de ellas marca la latencia de la interacción;
     - `BaseView._scheduled_task`, `Modal._scheduled_task` y
       `ViewStore.schedule_dynamic_item_call`: corren el callback de cada botón,
-      formulario o botón dinámico y saben cuál es.
+      formulario o botón dinámico y saben cuál es;
+    - `HTTPClient.request` y `AsyncWebhookAdapter.request`: por ahí salen todos
+      los mensajes con archivos (los de las interacciones, por el segundo) y se
+      mide lo que tarda la subida.
 
     Los tres últimos son métodos internos: si discord.py los cambia, la prueba de
     integración de la telemetría falla. Los envoltorios no cambian lo que hace el
@@ -225,6 +268,8 @@ def install_hooks() -> None:
     _wrap(BaseView, "_scheduled_task", _counted_view_task)
     _wrap(discord.ui.Modal, "_scheduled_task", _counted_modal_task)
     _wrap(ViewStore, "schedule_dynamic_item_call", _counted_dynamic_task)
+    _wrap(discord.http.HTTPClient, "request", _timed_upload)
+    _wrap(discord.webhook.async_.AsyncWebhookAdapter, "request", _timed_upload)
 
 
 def message_types(message: discord.Message) -> list[str]:
@@ -328,6 +373,7 @@ class Telemetry(commands.Cog):
         self._log_counter = LogCounter(self.telemetry, asyncio.get_running_loop())
         logging.getLogger().addHandler(self._log_counter)
         telemetry_service.render_observers.add(self._on_render)
+        telemetry_service.upload_observers.add(self._on_upload)
         self.flush_loop.start()
         self.prune_loop.start()
         self._lag_task = asyncio.create_task(self._probe_lag(), name="telemetria-retraso")
@@ -339,12 +385,16 @@ class Telemetry(commands.Cog):
         if self._lag_task is not None:
             self._lag_task.cancel()
         telemetry_service.render_observers.discard(self._on_render)
+        telemetry_service.upload_observers.discard(self._on_upload)
         if self._log_counter is not None:
             logging.getLogger().removeHandler(self._log_counter)
         await self.telemetry.flush()
 
     def _on_render(self, scene: str, ms: float) -> None:
         self.telemetry.count("render", scene, guild_id=None, ms=ms)
+
+    def _on_upload(self, name: str, ms: float, error: bool) -> None:
+        self.telemetry.count("upload", name, guild_id=None, ms=ms, error=error)
 
     # --- Bucles -------------------------------------------------------------
 

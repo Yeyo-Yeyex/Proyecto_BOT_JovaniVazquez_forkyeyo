@@ -8,6 +8,11 @@ criterio.
 
 ## 6.x
 
+### 6.2.2 · 2026-10-14
+
+- Juegos: los GIF se dibujan y se montan bastante más rápido (los gallos y el bacará, en menos de la mitad de tiempo) y el primero tras un rato ya no arranca en frío
+- Interno: el informe cuenta lo que tarda cada imagen o GIF en subir a Discord
+
 ### 6.2.1 · 2026-10-14
 
 - Interno: las pruebas pasan también en Windows (textos en UTF-8, la hora del meme del tuit y las piezas del pachinko)

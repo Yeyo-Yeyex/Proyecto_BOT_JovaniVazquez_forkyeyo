@@ -22,7 +22,8 @@ El primer fallo de cada uno se avisa en el log y desde entonces se usa el
 siguiente. El juego nunca se queda sin imagen.
 
 Cada fotograma se pinta entero a partir de su estado (la cámara se mueve casi
-siempre), así que los fotogramas se reparten entre dos procesos.
+siempre), así que los fotogramas se reparten entre los procesos de Node libres
+(`bot.services.node_scene`).
 """
 
 from __future__ import annotations

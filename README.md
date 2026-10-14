@@ -379,7 +379,7 @@ python -m bot
   navegador): gira en perspectiva, la bola corre al revés, rebota y salta de
   casilla en casilla a cámara lenta, y el marcador enseña los últimos
   números, los calientes y los fríos. Cada tirada se dibuja al momento
-  (~1 s, en dos procesos a la vez; mientras, la mesa dice «🎲 No va
+  (~1 s, repartida entre los procesos de Node libres; mientras, la mesa dice «🎲 No va
   más…»), salvo la que repite la última apuesta: esa se precarga mientras
   gira la anterior y sale al instante, como en el pachinko. Si no hay Node,
   la pinta Chromium y, si tampoco, la rueda de Pillow de antes.
@@ -798,8 +798,10 @@ suyo: mientras se usa ocupa unos 150-250 MB de memoria y se cierra solo tras
 10 minutos sin uso; si no estuviera, el bot dibuja con Pillow.
 Cara o cruz, los dados, la ruleta, el autobús, el bacará y la carrera de los
 caballos ya no usan Chromium: los pinta Node con `@napi-rs/canvas` (Skia, el mismo
-motor de dibujo), con procesos de unos 90 MB que arrancan en menos de medio
-segundo.
+motor de dibujo). Los procesos de Node son de todos los juegos: uno siempre
+abierto desde que arranca el bot, otro de reserva cuando se ocupan todos y
+hasta 4 (los hilos del NAS), que se cierran tras 10 minutos sin uso. Cada uno
+ocupa ~80 MB más ~50 MB por escena cargada (3 como mucho).
 
 1. Lleva el proyecto al NAS (`git clone` por SSH, o copia la carpeta).
 2. Crea el archivo de configuración y pon tu token:
