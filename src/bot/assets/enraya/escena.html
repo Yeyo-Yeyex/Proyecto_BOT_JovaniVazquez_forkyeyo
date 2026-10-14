@@ -1,0 +1,567 @@
+<!doctype html>
+<!--
+Escena del 4 en raya, dibujada con canvas. La pinta Node con Skia
+(assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/enraya_scene.py).
+
+No decide nada: Python le pasa, en cada fotograma, dónde está la ficha que cae,
+qué fichas hay en el tablero, a quién le toca, el avance del brillo de la raya,
+el confeti y el cartel (bot/services/enraya_render.py: meta_state y
+board_state). Aquí solo se pinta. Funciones que llama Python:
+
+- loadFonts()           espera a las fuentes (canvas no las carga solo).
+- setup(meta)           los jugadores, el título, la semilla y la geometría;
+                        pinta el fondo, el tablero y las fichas una sola vez.
+- renderFrames(states)  dibuja los fotogramas y devuelve, de cada uno, el
+                        recuadro que ha cambiado y dónde va ({x, y, u}).
+
+Orden de capas: fondo (con las tarjetas de los jugadores) -> ficha que cae ->
+fichas puestas -> tablero con los agujeros recortados -> aro de la última ->
+brillo de la raya -> confeti -> cartel. Las fichas van DETRÁS del tablero: la
+que cae se ve por los agujeros y las puestas quedan encajadas, con la sombra
+del hueco por encima. Todo se dibuja al doble de tamaño (S = 2) y se reduce al
+copiarlo. Sin emojis: el Chromium del Docker no trae su fuente.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+const W = 720, H = 480;
+const COLS = 7, ROWS = 6;
+const R = 25.5;          // radio de una ficha en el tablero
+const HOLE = 26.8;       // radio del agujero: deja un aro de sombra alrededor de la ficha
+const CARD_W = 120;
+
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const bctx = big.getContext("2d");
+const octx = out.getContext("2d");
+
+let META = null, G = null;          // la partida y su geometría
+let BG = null;                      // fondo con focos y viñeta
+let BASES = new Map();              // fondo + tarjetas, uno por turno (0, 1, 2)
+let BOARD = null;                   // tablero con agujeros, sombra y números
+let SPRITE = {};                    // fichas ya pintadas (una por color)
+let CONF = [];                      // piezas de confeti (salen de la semilla)
+
+const COLOR = {
+  1: { hi: "#ffa0a4", mid: "#e5283b", lo: "#7d0b1d", rim: ["#ff7b84", "#8e0f22"], rgb: "255,64,82", glow: "#ff4a5c" },
+  2: { hi: "#fff7b8", mid: "#ffc82b", lo: "#a96a05", rim: ["#ffe46b", "#b27508"], rgb: "255,208,48", glow: "#ffd23a" },
+};
+const KIND = {
+  win:  { a: "#ffd24a", b: "#ff9d1c", text: ["#fff6c2", "#ffd24a", "#f09a12"], rgb: "255,196,60" },
+  lose: { a: "#c58a96", b: "#7f8596", text: ["#f3dde1", "#c9a1aa", "#8b8fa0"], rgb: "190,120,134" },
+  draw: { a: "#6aaeff", b: "#3a6be0", text: ["#e3f1ff", "#8cc2ff", "#4a86ee"], rgb: "90,160,255" },
+  time: { a: "#b58cff", b: "#7a4fe0", text: ["#f1e6ff", "#c3a2ff", "#8f63ee"], rgb: "160,120,255" },
+};
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function circle(g, x, y, r) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); }
+function starPath(g, x, y, r) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r;
+    g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  g.closePath();
+}
+function sparkle(g, x, y, r) {
+  // Destello de cuatro puntas.
+  g.beginPath();
+  g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r);
+  g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.closePath();
+}
+function fitText(g, text, maxW, font, size, min = 10) {
+  // Reduce la letra hasta que quepa; la fuente va en `font(size)`.
+  for (let s = size; s >= min; s--) { g.font = font(s); if (g.measureText(text).width <= maxW) return s; }
+  g.font = font(min); return min;
+}
+function ellipsize(g, text, maxW) {
+  if (g.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && g.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t.trimEnd() + "…";
+}
+const cellX = (c) => G.x + (c + 0.5) * G.cell;
+const cellY = (y) => G.y + (ROWS - 1 - y + 0.5) * G.cell;
+
+// -- Una ficha (la misma para el tablero y para las tarjetas) --------------------------------
+
+function drawDisc(g, x, y, r, col) {
+  g.save(); g.translate(x, y);
+  // Cuerpo: luz arriba a la izquierda y borde oscuro.
+  let gr = g.createRadialGradient(-r * 0.32, -r * 0.4, r * 0.05, 0, 0, r);
+  gr.addColorStop(0, col.hi); gr.addColorStop(0.5, col.mid); gr.addColorStop(1, col.lo);
+  g.fillStyle = gr; circle(g, 0, 0, r); g.fill();
+  // Aro exterior en relieve: claro arriba a la izquierda, oscuro abajo a la derecha.
+  const rim = g.createLinearGradient(-r, -r, r, r);
+  rim.addColorStop(0, col.rim[0]); rim.addColorStop(0.5, col.mid); rim.addColorStop(1, col.rim[1]);
+  g.strokeStyle = rim; g.lineWidth = r * 0.17; circle(g, 0, 0, r * 0.915); g.stroke();
+  const edge = g.createLinearGradient(-r, -r, r, r);
+  edge.addColorStop(0, "rgba(255,255,255,0.65)"); edge.addColorStop(0.45, "rgba(255,255,255,0)");
+  edge.addColorStop(0.6, "rgba(0,0,0,0)"); edge.addColorStop(1, "rgba(0,0,0,0.55)");
+  g.strokeStyle = edge; g.lineWidth = Math.max(1, r * 0.06); circle(g, 0, 0, r * 0.985); g.stroke();
+  // Cara interior hundida: ranura oscura arriba, brillo de la ranura abajo.
+  const ri = r * 0.71;
+  const face = g.createLinearGradient(-ri, -ri, ri, ri);
+  face.addColorStop(0, "rgba(0,0,0,0.30)"); face.addColorStop(0.55, "rgba(0,0,0,0.04)");
+  face.addColorStop(1, "rgba(255,255,255,0.22)");
+  g.fillStyle = face; circle(g, 0, 0, ri); g.fill();
+  const groove = g.createLinearGradient(-ri, -ri, ri, ri);
+  groove.addColorStop(0, "rgba(0,0,0,0.55)"); groove.addColorStop(1, "rgba(255,255,255,0.55)");
+  g.strokeStyle = groove; g.lineWidth = Math.max(1, r * 0.055); circle(g, 0, 0, ri); g.stroke();
+  // Estrella grabada en el centro.
+  const sr = r * 0.4, d = Math.max(0.7, r * 0.035);
+  g.fillStyle = "rgba(255,255,255,0.5)"; starPath(g, -d, -d, sr); g.fill();
+  g.fillStyle = "rgba(0,0,0,0.38)"; starPath(g, d, d, sr); g.fill();
+  const sg = g.createLinearGradient(-sr, -sr, sr, sr);
+  sg.addColorStop(0, col.mid); sg.addColorStop(1, col.lo);
+  g.fillStyle = sg; starPath(g, 0, 0, sr); g.fill();
+  // Brillos: media luna en el aro y un punto de luz.
+  g.save(); g.rotate(-Math.PI / 4);
+  const sp = g.createLinearGradient(0, -r * 0.95, 0, -r * 0.5);
+  sp.addColorStop(0, "rgba(255,255,255,0.85)"); sp.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = sp; g.beginPath(); g.ellipse(0, -r * 0.72, r * 0.46, r * 0.24, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+  g.fillStyle = "rgba(255,255,255,0.8)"; circle(g, -r * 0.5, -r * 0.55, r * 0.07); g.fill();
+  g.restore();
+}
+
+function makeSprite(col) {
+  const size = Math.ceil((R * 2 + 4) * S);
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const g = c.getContext("2d"); g.scale(S, S);
+  drawDisc(g, size / S / 2, size / S / 2, R, col);
+  return { c, half: size / S / 2 };
+}
+function blitDisc(g, cx, cy, disc) {
+  const s = SPRITE[disc];
+  g.drawImage(s.c, cx - s.half, cy - s.half, s.half * 2, s.half * 2);
+}
+
+// -- El fondo --------------------------------------------------------------------------------
+
+function paintBackground() {
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  const rand = rng((META.seed | 0) ^ 0x5eed);
+  // Pared de la sala: azul noche que vira a morado en el centro.
+  let gr = g.createRadialGradient(W / 2, 250, 20, W / 2, 250, 470);
+  gr.addColorStop(0, "#3a2c7c"); gr.addColorStop(0.45, "#221d5a"); gr.addColorStop(1, "#0b0c26");
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // Dos focos que bajan del techo y se cruzan sobre el tablero.
+  g.save(); g.globalCompositeOperation = "lighter";
+  for (const [x0, x1] of [[150, 450], [570, 270]]) {
+    const cone = g.createLinearGradient(0, 0, 0, H);
+    cone.addColorStop(0, "rgba(170,160,255,0.26)"); cone.addColorStop(0.7, "rgba(120,130,255,0.07)");
+    cone.addColorStop(1, "rgba(120,130,255,0)");
+    g.fillStyle = cone; g.beginPath();
+    g.moveTo(x0 - 16, -10); g.lineTo(x0 + 16, -10); g.lineTo(x1 + 190, H); g.lineTo(x1 - 190, H); g.closePath(); g.fill();
+  }
+  // Resplandor del suelo detrás del tablero.
+  g.save(); g.translate(W / 2, 270); g.scale(1, 0.62);
+  const glow = g.createRadialGradient(0, 0, 10, 0, 0, 330);
+  glow.addColorStop(0, "rgba(120,100,255,0.30)"); glow.addColorStop(1, "rgba(120,100,255,0)");
+  g.fillStyle = glow; circle(g, 0, 0, 330); g.fill(); g.restore();
+  // Luces desenfocadas (bokeh).
+  const tints = ["150,170,255", "255,150,210", "255,214,120", "130,230,255"];
+  for (let i = 0; i < 30; i++) {
+    const x = rand() * W, y = rand() * H, r = 7 + rand() * 24, a = 0.05 + rand() * 0.10;
+    const t = tints[Math.floor(rand() * tints.length)];
+    const b = g.createRadialGradient(x, y, r * 0.15, x, y, r);
+    b.addColorStop(0, `rgba(${t},${a * 0.55})`); b.addColorStop(0.8, `rgba(${t},${a})`); b.addColorStop(1, `rgba(${t},0)`);
+    g.fillStyle = b; circle(g, x, y, r); g.fill();
+  }
+  g.restore();
+  // Viñeta.
+  const vg = g.createRadialGradient(W / 2, H / 2 + 10, 190, W / 2, H / 2 + 10, 480);
+  vg.addColorStop(0, "rgba(2,3,16,0)"); vg.addColorStop(1, "rgba(2,3,16,0.72)");
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  // Título y subtítulo.
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  const title = String(META.title || "");
+  if (title) {
+    const size = fitText(g, title, 400, (s) => `${s}px Luckiest`, 32, 18);
+    g.font = `${size}px Luckiest`;
+    g.shadowColor = "rgba(0,0,0,0.55)"; g.shadowBlur = 8 * S; g.shadowOffsetY = 3 * S;
+    g.strokeStyle = "#2a1450"; g.lineWidth = 6; g.strokeText(title, W / 2, 27);
+    g.shadowColor = "transparent"; g.shadowBlur = 0; g.shadowOffsetY = 0;
+    const tg = g.createLinearGradient(0, 27 - size / 2, 0, 27 + size / 2);
+    tg.addColorStop(0, "#fff6c4"); tg.addColorStop(0.5, "#ffd24a"); tg.addColorStop(1, "#f29a14");
+    g.fillStyle = tg; g.fillText(title, W / 2, 27);
+  }
+  const sub = String(META.subtitle || "");
+  if (sub) {
+    const size = fitText(g, sub, 420, (s) => `700 ${s}px Montserrat`, 12, 9);
+    g.font = `700 ${size}px Montserrat`;
+    g.fillStyle = "rgba(0,0,0,0.5)"; g.fillText(sub, W / 2 + 1, 53);
+    g.fillStyle = "#dfe4ff"; g.fillText(sub, W / 2, 52);
+  }
+  return c;
+}
+
+// -- Las tarjetas de los jugadores (se pintan con el fondo, una vez por turno) ----------------
+
+function paintCard(g, x, who, active) {
+  const col = COLOR[who === "red" ? 1 : 2], p = META[who];
+  const top = 98, h = 170, left = x - CARD_W / 2;
+  g.save();
+  if (active) {
+    // Halo del color del jugador.
+    g.shadowColor = `rgba(${col.rgb},0.9)`; g.shadowBlur = 26 * S;
+    g.fillStyle = `rgba(${col.rgb},0.20)`; roundRect(g, left, top, CARD_W, h, 18); g.fill();
+    g.shadowColor = "transparent"; g.shadowBlur = 0;
+  }
+  const bg = g.createLinearGradient(0, top, 0, top + h);
+  if (active) { bg.addColorStop(0, `rgba(${col.rgb},0.34)`); bg.addColorStop(1, "rgba(10,12,40,0.78)"); }
+  else { bg.addColorStop(0, "rgba(255,255,255,0.10)"); bg.addColorStop(1, "rgba(10,12,40,0.62)"); }
+  g.fillStyle = bg; roundRect(g, left, top, CARD_W, h, 18); g.fill();
+  g.lineWidth = active ? 2.5 : 1.2;
+  g.strokeStyle = active ? col.hi : "rgba(255,255,255,0.18)"; roundRect(g, left, top, CARD_W, h, 18); g.stroke();
+  // Reflejo de cristal en la mitad de arriba.
+  const gl = g.createLinearGradient(0, top, 0, top + h * 0.5);
+  gl.addColorStop(0, "rgba(255,255,255,0.14)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gl; roundRect(g, left + 2, top + 2, CARD_W - 4, h * 0.5, 16); g.fill();
+  // Ficha grande, con su sombra en el suelo.
+  const dy = top + 74;
+  g.fillStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.ellipse(x, dy + 38, 28, 7, 0, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = active ? 1 : 0.62;
+  drawDisc(g, x, dy, 34, col);
+  g.globalAlpha = 1;
+  if (active) {
+    // Etiqueta «TURNO» con una flecha.
+    g.fillStyle = col.glow; roundRect(g, x - 38, top + 10, 76, 20, 10); g.fill();
+    g.fillStyle = "rgba(255,255,255,0.22)"; roundRect(g, x - 36, top + 11, 72, 8, 4); g.fill();
+    g.fillStyle = "#1a0a14"; g.font = "700 11px Montserrat"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("TURNO", x + 6, top + 21);
+    g.beginPath(); g.moveTo(x - 27, top + 15); g.lineTo(x - 27, top + 27); g.lineTo(x - 18, top + 21); g.closePath(); g.fill();
+  }
+  // Nombre y línea de debajo.
+  g.textAlign = "center"; g.textBaseline = "middle";
+  fitText(g, p.name, CARD_W - 16, (s) => `700 ${s}px Montserrat`, 15, 12);
+  g.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.78)";
+  g.fillText(ellipsize(g, p.name, CARD_W - 16), x, top + 132);
+  g.font = "700 11px Montserrat";
+  g.fillStyle = active ? "rgba(235,240,255,0.78)" : "rgba(200,210,245,0.5)";
+  g.fillText(ellipsize(g, p.tag || "", CARD_W - 16), x, top + 152);
+  g.restore();
+}
+function baseFor(turn) {
+  let c = BASES.get(turn);
+  if (c) return c;
+  c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d"); g.drawImage(BG, 0, 0);
+  g.scale(S, S);
+  // Fondo oscuro detrás de los agujeros: sin él se ve la sala (lila) por las casillas vacías.
+  const bp = g.createLinearGradient(0, G.y, 0, G.y + ROWS * G.cell);
+  bp.addColorStop(0, "rgba(14,14,56,0.82)"); bp.addColorStop(1, "rgba(5,6,30,0.92)");
+  g.fillStyle = bp; roundRect(g, G.x - 8, G.y - 8, COLS * G.cell + 16, ROWS * G.cell + 16, 18); g.fill();
+  paintCard(g, 66, "red", turn === 1);
+  paintCard(g, W - 66, "yellow", turn === 2);
+  BASES.set(turn, c);
+  return c;
+}
+
+// -- El tablero (una vez): marco con relieve, agujeros, base y números ------------------------
+
+function paintBoard() {
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  const fx = G.x - 12, fy = G.y - 12, fw = COLS * G.cell + 24, fh = ROWS * G.cell + 24;
+  // Cuerpo azul con sombra suave sobre la sala.
+  g.save();
+  g.shadowColor = "rgba(0,0,20,0.7)"; g.shadowBlur = 24 * S; g.shadowOffsetY = 10 * S;
+  const body = g.createLinearGradient(fx, fy, fx + fw * 0.35, fy + fh);
+  body.addColorStop(0, "#3b73ff"); body.addColorStop(0.45, "#2149d0"); body.addColorStop(1, "#122a8e");
+  g.fillStyle = body; roundRect(g, fx, fy, fw, fh, 22); g.fill();
+  g.restore();
+  // Bisel: luz arriba y a la izquierda, sombra abajo y a la derecha.
+  g.save(); roundRect(g, fx, fy, fw, fh, 22); g.clip();
+  const sheen = g.createLinearGradient(fx, fy, fx + fw * 0.7, fy + fh * 0.7);
+  sheen.addColorStop(0, "rgba(255,255,255,0.22)"); sheen.addColorStop(0.5, "rgba(255,255,255,0)");
+  g.fillStyle = sheen; g.fillRect(fx, fy, fw, fh);
+  const bevel = g.createLinearGradient(fx, fy, fx + fw, fy + fh);
+  bevel.addColorStop(0, "rgba(190,215,255,0.95)"); bevel.addColorStop(0.5, "rgba(120,160,255,0.15)");
+  bevel.addColorStop(1, "rgba(5,10,60,0.9)");
+  g.strokeStyle = bevel; g.lineWidth = 5; roundRect(g, fx + 2.5, fy + 2.5, fw - 5, fh - 5, 20); g.stroke();
+  // Marco hundido alrededor de las casillas.
+  const inset = g.createLinearGradient(fx, fy, fx + fw, fy + fh);
+  inset.addColorStop(0, "rgba(5,10,70,0.65)"); inset.addColorStop(1, "rgba(150,190,255,0.5)");
+  g.strokeStyle = inset; g.lineWidth = 2; roundRect(g, fx + 7, fy + 7, fw - 14, fh - 14, 16); g.stroke();
+  g.restore();
+  // Remaches en las esquinas.
+  for (const [rx, ry] of [[fx + 11, fy + 11], [fx + fw - 11, fy + 11], [fx + 11, fy + fh - 11], [fx + fw - 11, fy + fh - 11]]) {
+    const rv = g.createRadialGradient(rx - 1, ry - 1.5, 0.5, rx, ry, 4);
+    rv.addColorStop(0, "#d6e6ff"); rv.addColorStop(0.6, "#5f8dff"); rv.addColorStop(1, "#14298a");
+    g.fillStyle = rv; circle(g, rx, ry, 3.6); g.fill();
+  }
+  // Agujeros: se recortan del todo y luego se les da fondo y borde.
+  g.save(); g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
+  for (let col = 0; col < COLS; col++) for (let row = 0; row < ROWS; row++) {
+    circle(g, cellX(col), cellY(row), HOLE); g.fill();
+  }
+  g.restore();
+  for (let col = 0; col < COLS; col++) for (let row = 0; row < ROWS; row++) {
+    const x = cellX(col), y = cellY(row);
+    // Pared del agujero: sombra sobre el azul, justo fuera del borde.
+    g.save(); g.globalCompositeOperation = "source-atop";
+    const wall = g.createRadialGradient(x, y, HOLE, x, y, HOLE + 7);
+    wall.addColorStop(0, "rgba(3,8,60,0.7)"); wall.addColorStop(1, "rgba(3,8,60,0)");
+    g.fillStyle = wall; circle(g, x, y, HOLE + 7); g.fill();
+    const lip = g.createLinearGradient(x - HOLE, y - HOLE, x + HOLE, y + HOLE);
+    lip.addColorStop(0, "rgba(2,6,50,0.8)"); lip.addColorStop(0.5, "rgba(0,0,0,0)"); lip.addColorStop(1, "rgba(170,205,255,0.85)");
+    g.strokeStyle = lip; g.lineWidth = 1.8; circle(g, x, y, HOLE + 0.7); g.stroke();
+    g.restore();
+    // Sombra de dentro: más oscura arriba, cae sobre la ficha que haya detrás.
+    const inner = g.createRadialGradient(x, y + 7, HOLE * 0.5, x, y + 7, HOLE * 1.27);
+    inner.addColorStop(0, "rgba(0,0,24,0)"); inner.addColorStop(1, "rgba(0,0,24,0.6)");
+    g.fillStyle = inner; circle(g, x, y, HOLE); g.fill();
+  }
+  // Base con los números de las columnas.
+  const by = G.y + ROWS * G.cell + 6, bx = G.x - 26, bw = COLS * G.cell + 52, bh = H - by - 2;
+  g.save();
+  g.shadowColor = "rgba(0,0,20,0.55)"; g.shadowBlur = 6 * S; g.shadowOffsetY = -2 * S;
+  const plate = g.createLinearGradient(0, by, 0, by + bh);
+  plate.addColorStop(0, "#2f5de0"); plate.addColorStop(0.15, "#1f43b8"); plate.addColorStop(1, "#0e1f6e");
+  g.fillStyle = plate; roundRect(g, bx, by, bw, bh, 12); g.fill();
+  g.restore();
+  g.strokeStyle = "rgba(190,215,255,0.55)"; g.lineWidth = 1.2; roundRect(g, bx + 0.6, by + 0.6, bw - 1.2, bh - 1.2, 11.5); g.stroke();
+  g.textAlign = "center"; g.textBaseline = "middle"; g.font = "700 15px Montserrat";
+  for (let col = 0; col < COLS; col++) {
+    const x = cellX(col), y = G.y + ROWS * G.cell + 28;
+    g.fillStyle = "rgba(2,8,60,0.85)"; g.fillText(String(col + 1), x + 0.8, y + 1);
+    g.fillStyle = "#e8f0ff"; g.fillText(String(col + 1), x, y);
+  }
+  return c;
+}
+
+// -- Confeti: las piezas salen de la semilla y su sitio de t -----------------------------------
+
+function makeConfetti() {
+  const rand = rng((META.seed | 0) ^ 0xc0ffee), list = [];
+  for (let i = 0; i < 84; i++) {
+    const side = i % 2, k = rand();
+    list.push({
+      sx: G.x + (side ? COLS * G.cell - 14 : 14) + (rand() - 0.5) * 40, sy: G.y - 8 + rand() * 14,
+      vx: (side ? -1 : 1) * (60 + rand() * 230) + (rand() - 0.5) * 80, vy: -(110 + rand() * 280),
+      rot: rand() * 6.28, spin: (rand() - 0.5) * 16, sway: rand() * 6.28, swayK: 3 + rand() * 4,
+      w: 6 + rand() * 6, h: 10 + rand() * 8, round: rand() < 0.22,
+      kind: k < 0.45 ? 0 : k < 0.7 ? 1 : k < 0.88 ? 2 : 3,
+    });
+  }
+  return list;
+}
+function drawConfetti(g, conf) {
+  const col = COLOR[conf.disc] || COLOR[1];
+  const palette = [col.mid, col.hi, "#ffd24a", "#ffffff"];
+  const tau = conf.t * 2.4;
+  const fade = conf.t > 0.8 ? clamp((1 - conf.t) / 0.2, 0, 1) : 1;
+  g.save(); g.globalAlpha = fade;
+  for (const p of CONF) {
+    const x = p.sx + p.vx * tau * (1 - 0.18 * tau) + Math.sin(tau * p.swayK + p.sway) * 9;
+    const y = p.sy + p.vy * tau + 0.5 * 430 * tau * tau;
+    if (y > H + 20 || x < -20 || x > W + 20) continue;
+    const a = p.rot + p.spin * tau, flat = Math.cos(tau * p.swayK * 1.7 + p.sway);
+    g.save(); g.translate(x, y); g.rotate(a); g.scale(1, 0.25 + 0.75 * Math.abs(flat));
+    g.fillStyle = palette[p.kind];
+    if (p.round) { circle(g, 0, 0, p.w * 0.5); g.fill(); } else g.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    g.restore();
+  }
+  g.restore();
+}
+
+// -- Final: brillo de la raya, cartel -----------------------------------------------------------
+
+function winGlow(g, win) {
+  const t = win.t, col = COLOR[win.disc] || COLOR[1];
+  const ramp = clamp(t * 6, 0, 1), pulse = (1 - Math.cos(Math.PI * 5 * t)) / 2;   // dos pulsos y medio
+  const k = ramp * (0.55 + 0.45 * pulse);
+  const cells = [...win.cells].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  g.save(); g.globalCompositeOperation = "lighter";
+  for (const [c, r] of cells) {
+    const x = cellX(c), y = cellY(r), reach = R * (1.55 + 0.25 * pulse);
+    const halo = g.createRadialGradient(x, y, R * 0.7, x, y, reach);
+    halo.addColorStop(0, `rgba(255,236,160,${0.75 * k})`); halo.addColorStop(0.45, `rgba(${col.rgb},${0.38 * k})`);
+    halo.addColorStop(1, `rgba(${col.rgb},0)`);
+    g.fillStyle = halo; circle(g, x, y, reach); g.fill();
+    g.fillStyle = `rgba(255,255,255,${0.22 * k})`; circle(g, x, y, R); g.fill();
+  }
+  g.restore();
+  // Raya brillante que se dibuja con t, de la primera a la última casilla.
+  const a = cells[0], b = cells[cells.length - 1];
+  const x0 = cellX(a[0]), y0 = cellY(a[1]), x1 = cellX(b[0]), y1 = cellY(b[1]);
+  const p = clamp(t / 0.55, 0, 1), e = 1 - Math.pow(1 - p, 3);
+  if (e > 0) {
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1, ux = (x1 - x0) / len, uy = (y1 - y0) / len, ext = 12;
+    const sx = x0 - ux * ext, sy = y0 - uy * ext, ex = sx + (x1 + ux * ext - sx) * e, ey = sy + (y1 + uy * ext - sy) * e;
+    g.save(); g.lineCap = "round";
+    g.strokeStyle = `rgba(255,214,90,${0.35 + 0.2 * pulse})`; g.lineWidth = 15; g.beginPath(); g.moveTo(sx, sy); g.lineTo(ex, ey); g.stroke();
+    g.strokeStyle = "rgba(255,244,200,0.85)"; g.lineWidth = 6; g.beginPath(); g.moveTo(sx, sy); g.lineTo(ex, ey); g.stroke();
+    g.strokeStyle = "#ffffff"; g.lineWidth = 2.6; g.beginPath(); g.moveTo(sx, sy); g.lineTo(ex, ey); g.stroke();
+    g.restore();
+  }
+  // Un destello en cada ficha, desfasados.
+  g.save(); g.fillStyle = "#ffffff"; g.shadowColor = "rgba(255,240,170,0.95)"; g.shadowBlur = 8 * S;
+  cells.forEach(([c, r], i) => {
+    const s = Math.max(0, Math.sin(t * Math.PI * 6 - i * 1.1)) * ramp;
+    if (s > 0.03) { sparkle(g, cellX(c) + R * 0.45, cellY(r) - R * 0.5, R * 0.62 * s); g.fill(); }
+  });
+  g.restore();
+}
+
+function drawBanner(g, b) {
+  const kd = KIND[b.kind] || KIND.win, a = clamp(b.a, 0, 1), sc = 0.9 + 0.1 * a;
+  // `y` lo pone Python: con raya, el cartel se aparta de ella (arriba o abajo).
+  const w = 460, h = 96, cx = W / 2, cy = b.y || 248;
+  g.save(); g.globalAlpha = a; g.translate(cx, cy); g.scale(sc, sc);
+  g.shadowColor = `rgba(${kd.rgb},0.6)`; g.shadowBlur = 28 * S;
+  const bg = g.createLinearGradient(0, -h / 2, 0, h / 2);
+  bg.addColorStop(0, "rgba(26,24,62,0.95)"); bg.addColorStop(1, "rgba(8,8,26,0.96)");
+  g.fillStyle = bg; roundRect(g, -w / 2, -h / 2, w, h, 20); g.fill();
+  g.shadowColor = "transparent"; g.shadowBlur = 0;
+  const line = g.createLinearGradient(-w / 2, 0, w / 2, 0);
+  line.addColorStop(0, kd.b); line.addColorStop(0.5, kd.a); line.addColorStop(1, kd.b);
+  g.strokeStyle = line; g.lineWidth = 3; roundRect(g, -w / 2, -h / 2, w, h, 20); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,0.14)"; g.lineWidth = 1; roundRect(g, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10, 16); g.stroke();
+  const gl = g.createLinearGradient(0, -h / 2, 0, 0);
+  gl.addColorStop(0, "rgba(255,255,255,0.16)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gl; roundRect(g, -w / 2 + 4, -h / 2 + 4, w - 8, h / 2 - 4, 16); g.fill();
+  // Rombos de adorno en los lados.
+  g.fillStyle = kd.a;
+  for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(sx * (w / 2 - 20), -7); g.lineTo(sx * (w / 2 - 13), 0); g.lineTo(sx * (w / 2 - 20), 7); g.lineTo(sx * (w / 2 - 27), 0); g.closePath(); g.fill(); }
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  const title = String(b.title || ""), sub = String(b.sub || "");
+  const ty = sub ? -13 : 0;
+  const size = fitText(g, title, w - 90, (s) => `${s}px Luckiest`, 38, 18);
+  g.font = `${size}px Luckiest`;
+  g.strokeStyle = "rgba(10,6,30,0.95)"; g.lineWidth = 7; g.strokeText(title, 0, ty);
+  const tg = g.createLinearGradient(0, ty - size / 2, 0, ty + size / 2);
+  tg.addColorStop(0, kd.text[0]); tg.addColorStop(0.5, kd.text[1]); tg.addColorStop(1, kd.text[2]);
+  g.fillStyle = tg; g.fillText(title, 0, ty);
+  if (sub) {
+    fitText(g, sub, w - 70, (s) => `700 ${s}px Montserrat`, 13, 9);
+    g.fillStyle = "rgba(0,0,0,0.55)"; g.fillText(sub, 1, 29);
+    g.fillStyle = "#e6eaff"; g.fillText(sub, 0, 28);
+  }
+  g.restore();
+}
+
+// -- Cada fotograma ------------------------------------------------------------------------------
+//
+// Casi siempre solo se mueve la ficha que cae. Entonces se repinta (con un recorte)
+// y se devuelve solo la franja que ocupaba en el fotograma anterior y en este.
+// Si cambia cualquier otra cosa, el fotograma va entero.
+
+let PREV_KEY = null, PREV_BOX = null;
+function fallBox(f) {
+  if (!f) return null;
+  const x = cellX(f.col), y = cellY(f.y), m = R + 10;
+  return [x - m, y - m, x + m, y + m + 4];
+}
+function union(a, b) {
+  if (!a) return b; if (!b) return a;
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+}
+function blit(g, src, box) {
+  const [x0, y0, x1, y1] = box;
+  g.drawImage(src, x0 * S, y0 * S, (x1 - x0) * S, (y1 - y0) * S, x0, y0, x1 - x0, y1 - y0);
+}
+
+function paint(st, box) {
+  const g = bctx;
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.save();
+  g.beginPath(); g.rect(box[0], box[1], box[2] - box[0], box[3] - box[1]); g.clip();
+  blit(g, baseFor(st.turn | 0), box);
+  const f = st.falling;
+  if (f) {
+    const x = cellX(f.col), y = cellY(f.y);
+    g.fillStyle = "rgba(0,0,20,0.32)"; circle(g, x + 1, y + 4, R + 1); g.fill();
+    blitDisc(g, x, y, f.disc);
+  }
+  const win = st.win, winning = new Set((win ? win.cells : []).map(([c, r]) => c * 8 + r));
+  for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+    const d = st.grid[c][r];
+    if (d) blitDisc(g, cellX(c), cellY(r), d);
+  }
+  blit(g, BOARD, box);
+  // Con la raya a la vista, las demás fichas se apagan un poco.
+  if (win) {
+    g.fillStyle = `rgba(6,8,34,${0.5 * clamp(win.t * 4, 0, 1)})`;
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+      if (st.grid[c][r] && !winning.has(c * 8 + r)) { circle(g, cellX(c), cellY(r), HOLE); g.fill(); }
+    }
+  }
+  if (st.last) {
+    const x = cellX(st.last[0]), y = cellY(st.last[1]);
+    g.strokeStyle = "rgba(0,0,0,0.3)"; g.lineWidth = 3.2; circle(g, x + 0.5, y + 0.8, R * 0.57); g.stroke();
+    g.strokeStyle = "rgba(255,255,255,0.88)"; g.lineWidth = 2; circle(g, x, y, R * 0.57); g.stroke();
+  }
+  if (win) winGlow(g, win);
+  if (st.confetti) drawConfetti(g, st.confetti);
+  const b = st.banner;
+  if (b && b.a > 0) {
+    if (b.kind !== "win") {
+      g.fillStyle = `rgba(4,4,20,${0.38 * clamp(b.a, 0, 1)})`;
+      roundRect(g, G.x - 12, G.y - 12, COLS * G.cell + 24, ROWS * G.cell + 24, 22); g.fill();
+    }
+    drawBanner(g, b);
+  }
+  g.restore();
+}
+
+function snapshot(st) {
+  const key = JSON.stringify({ ...st, falling: null });
+  const box = fallBox(st.falling);
+  let region;
+  if (key === PREV_KEY && PREV_BOX !== undefined && PREV_KEY !== null) {
+    region = union(box, PREV_BOX) || [0, 0, 1, 1];     // solo se movió la ficha que cae
+  } else region = [0, 0, W, H];
+  PREV_KEY = key; PREV_BOX = box;
+  const x0 = clamp(Math.floor(region[0]), 0, W - 1), y0 = clamp(Math.floor(region[1]), 0, H - 1);
+  const x1 = clamp(Math.ceil(region[2]), x0 + 1, W), y1 = clamp(Math.ceil(region[3]), y0 + 1, H);
+  paint(st, [x0, y0, x1, y1]);
+  const w = x1 - x0, h = y1 - y0;
+  out.width = w; out.height = h;
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, x0 * S, y0 * S, w * S, h * S, 0, 0, w, h);
+  return { x: x0, y: y0, u: window.exportFrame(out) };
+}
+
+// En Chromium cada recuadro va como data URL de PNG; el pintor de Node
+// (assets/escena_node.cjs) pone su exportFrame, que devuelve los píxeles tal cual.
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("30px Luckiest"), document.fonts.load("700 12px Montserrat")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => {
+  META = meta; G = meta.geom;
+  PREV_KEY = null; PREV_BOX = null; BASES = new Map();
+  BG = paintBackground(); BOARD = paintBoard(); CONF = makeConfetti();
+  SPRITE = { 1: makeSprite(COLOR[1]), 2: makeSprite(COLOR[2]) };
+  return true;
+};
+// El primer fotograma de cada tanda sale entero porque `setup` borra PREV_KEY.
+window.renderFrames = (states, first = 0) => states.map((st) => snapshot(st));
+</script>
+</body>
+</html>

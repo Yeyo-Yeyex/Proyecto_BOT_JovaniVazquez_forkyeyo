@@ -71,6 +71,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
+    await client.enraya.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
     await client.todo.initialize()
@@ -288,6 +289,48 @@ async def press_gallos_accept(client: BotClient, owner: MagicMock) -> Click:
             duel.task.cancel()
         if duel.prepared is not None:
             await duel.prepared
+
+    return click
+
+
+def enraya_cog(client: BotClient):  # noqa: ANN201
+    """El 4 en raya con dibujo falso, sin esperas y sin pintar por adelantado."""
+    cog = client.get_cog("Enraya")
+    module = module_of(client, "Enraya")
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog.ahead = False
+    cog.renderer = MagicMock()
+    cog.renderer.still = AsyncMock(return_value=b"PNG")
+    cog.renderer.animate = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    return cog, module
+
+
+async def press_enraya_drop(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = enraya_cog(client)
+    panel = module.SoloTable(cog, guild_id=GUILD_ID, owner=owner, channel=None)
+    # Las rojas ganan soltando en la columna 4: así el clic llega a apuntar la partida.
+    for column in (0, 0, 1, 1, 2, 2):
+        panel.board = panel.board.play(column)
+    panel.rebuild()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._column(interaction, 3)
+
+    return click
+
+
+async def press_enraya_accept(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = enraya_cog(client)
+    challenger = make_owner()
+    challenger.id = owner.id + 1
+    duel = module.Duel(
+        cog, guild_id=GUILD_ID, channel=None, challenger=challenger, rival=owner, stake=10
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await duel.accept(interaction)
+        if duel.timer is not None:
+            duel.timer.cancel()
 
     return click
 
@@ -904,6 +947,8 @@ CASES: dict[str, Press] = {
     "moneda: cobrar": press_coin_cash_out,
     "gallos: pelear contra la casa": press_gallos_fight,
     "gallos: aceptar un duelo": press_gallos_accept,
+    "4enraya: soltar ficha contra Jovani": press_enraya_drop,
+    "4enraya: aceptar un duelo": press_enraya_accept,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
     "póker: sentarse": press_poker_sit,

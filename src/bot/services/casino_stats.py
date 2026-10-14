@@ -59,6 +59,7 @@ GAMES: dict[str, tuple[str, str]] = {
     "caballos": ("🏇", "Caballos"),
     "bacara": ("🍸", "Bacará"),
     "gallos": ("🐓", "Gallos"),
+    "enraya": ("🔴", "4 en raya"),
     "porra": ("🎫", "Porras"),
 }
 
