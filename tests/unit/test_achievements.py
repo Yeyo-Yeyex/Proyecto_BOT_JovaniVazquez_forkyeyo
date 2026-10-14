@@ -326,6 +326,18 @@ PRODUCED_STATS = {
     "poker_win_max", "poker_cash_666", "poker_cash_69", "poker_fold_would_win",
     "poker_fold_saved", "poker_fold_monster", "poker_night", "poker_reyes", "poker_inocentes",
     "poker_friday13",
+    # cogs/timba.py (`timba_stats`)
+    "timba_hands", "timba_pots_won", "timba_showdowns_won", "timba_steals", "timba_raises",
+    "timba_allins", "timba_allin_wins", "timba_busted", "timba_knockouts", "timba_pot_max",
+    "timba_splits", "timba_side_pots", "timba_heads_up_wins", "timba_full_table",
+    "timba_bad_beat", "timba_cooler", "timba_aces", "timba_aces_cracked", "timba_72_win",
+    "timba_preflop_folds", "timba_timeouts", "timba_rake", "timba_night", "timba_friday13",
+    "timba_micro", "timba_pot_666",
+    *(f"timba_won_{rank.key}" for rank in PokerRank if rank.order >= PokerRank.STRAIGHT.order),
+    # cogs/poker.py (`poker_club_stats`)
+    "poker_rank", "poker_streak", "poker_retos", "poker_retos_full", "poker_bonus_bets",
+    "poker_bonus_wins", "poker_pot_sf", "poker_pot_royal", "poker_pot_max", "poker_table_hands",
+    "poker_table_full", "poker_lone_win",
     *(f"{POKER_MADE_PREFIX}{rank.key}" for rank in PokerRank if rank is not PokerRank.HIGH_CARD),
     # cogs/craps.py (`craps_stats`)
     "dice_games", "dice_rolls", "dice_pass_games", "dice_dont_games", "dice_naturals",

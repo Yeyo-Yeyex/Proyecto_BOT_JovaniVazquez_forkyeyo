@@ -23,7 +23,7 @@ services:
     # Chromium de la parrilla y el boleto de los caballos (ver
     # bot/services/horses_scene.py): unos 170 MB, que se cierra tras 10 min sin
     # uso. La moneda, los dados, la ruleta, el Pollo, el autobús, el bacará, el
-    # póker, los gallos y la carrera de los caballos ya no usan Chromium: los pintan procesos de Node
+    # póker, la timba, los gallos y la carrera de los caballos ya no usan Chromium: los pintan procesos de Node
     # (bot/services/node_scene.py) de ~90 MB cada uno (el Pollo suma dos, como
     # la moneda, los dados, la ruleta, el bacará, el póker y los gallos). Con el bot
     # (~300 MB) y todos abiertos se rondan los 2 GB, pero cada pintor se cierra a los

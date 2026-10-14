@@ -6,6 +6,15 @@ la sección «Versiones» de `Biblia.txt`. Las versiones anteriores a la 5.22.0
 se asignaron a posteriori, revisando cada PR y commit de `main` con el mismo
 criterio.
 
+## 6.x
+
+### 6.0.0 · 2026-10-14
+
+- Póker: mesa del canal para seis, 💎 Bote progresivo y el club (rango, retos y racha)
+- Timba: `timba`, Texas Hold'em sin límite entre miembros
+- Interno: póker, comprobación rápida de la ventaja de la casa
+- Rompe: `poker` ya no abre una mesa propia: es la mesa del canal y se juega sentándose con 🪑; el ante máximo depende del rango del club (10.000 Y$ al empezar).
+
 ## 5.x
 
 ### 5.25.0 · 2026-10-14

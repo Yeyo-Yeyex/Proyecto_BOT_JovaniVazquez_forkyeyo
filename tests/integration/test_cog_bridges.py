@@ -73,6 +73,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.work.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
+    await client.poker.initialize()
     await client.porras.initialize()
     await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
@@ -1243,50 +1244,97 @@ async def test_el_autobus_apunta_sus_logros_y_su_jugada_con_el_bot_real(tmp_path
         await client.close()
 
 
-async def test_el_poker_apunta_sus_logros_y_su_jugada_con_el_bot_real(tmp_path: Path) -> None:
-    """El póker carga antes que los logros: sus manos llegan a `logros` y a `apuestas`."""
+async def test_el_poker_apunta_sus_logros_su_jugada_y_su_club_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El póker carga antes que los logros: sus manos llegan a `logros`, `apuestas` y al club."""
     client = await load_bot(tmp_path)
     try:
         poker = importer("Póker", client)
         poker.REVEAL_MARGIN_SECONDS = 0
         media = poker.Media(gif=b"GIF", png=b"PNG", seconds=0.0)
         cog = client.get_cog("Póker")
+        cog.start = MagicMock()
+        cog.sleep = AsyncMock()
         cog.renderer = MagicMock()
         cog.renderer.deal = AsyncMock(return_value=media)
-        cog.renderer.showdown = AsyncMock(return_value=poker.Showdown(call=media, fold=media))
+        cog.renderer.showdown = AsyncMock(return_value=media)
         cog.renderer.board = AsyncMock(return_value=b"PNG")
         owner = MagicMock(spec=discord.Member)
         owner.id = OWNER_ID
         owner.display_name = "Diego"
         owner.mention = f"<@{OWNER_ID}>"
         owner.bot = False
-        await cog._poker_impl(
-            guild=MagicMock(id=GUILD_ID),
-            channel=None,
-            user=owner,
-            amount_text="100",
-            send=AsyncMock(return_value=MagicMock()),
-            send_error=AsyncMock(),
-        )
-        (view,) = cog.views
-        interaction = fake_interaction()
-        interaction.user = owner
-        interaction.guild = None
-        await view._deal_click(interaction)
-
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 5
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        table, _ = await cog.ensure_table(GUILD_ID, channel, OWNER_ID)
+        await table.sit(owner)
+        await table.deal()
         fold = fake_interaction()
         fold.user = owner
         fold.guild = None
-        await view._fold(fold)
+        await table.decide(fold, False)
+        await table.finish()
 
         profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
         assert profile.stats["poker_games"] == 1
         assert profile.stats["poker_folds"] == 1
+        assert profile.stats["poker_rank"] == 1
         assert {"poker_1", "pokerr_1"} <= set(profile.unlocked)
         report = await client.casino_stats.report(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.by_game["poker"].plays == 1
+        assert (await client.poker.player(GUILD_ID, OWNER_ID)).xp == 1
+    finally:
+        await client.close()
+
+
+async def test_la_timba_apunta_logros_y_jugadas_de_los_dos_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """La timba carga antes que los logros: sus manos llegan a `logros` y a `apuestas`."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Timba")
+        cog.start = MagicMock()
+        cog.renderer = MagicMock()
+        cog.renderer.timba = AsyncMock(return_value=b"PNG")
+        players = []
+        for user_id, name in ((OWNER_ID, "Diego"), (OWNER_ID + 1, "Ana")):
+            user = MagicMock(spec=discord.Member)
+            user.id = user_id
+            user.display_name = name
+            user.mention = f"<@{user_id}>"
+            user.bot = False
+            players.append(user)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 6
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        table, _ = await cog.ensure_table(GUILD_ID, channel, OWNER_ID, 20)
+
+        async def fold_first(_seconds: float) -> None:
+            hand = table.hand
+            if hand is not None and hand.current is not None:
+                interaction = fake_interaction()
+                interaction.user = next(p for p in players if p.id == hand.current.user_id)
+                interaction.guild = None
+                await table.fold_click(interaction)
+
+        cog.sleep = fold_first
+        for user in players:
+            await table.sit(user)
+        await table.play_hand()
+
+        for user in players:
+            profile = await client.achievements.profile(GUILD_ID, user.id)
+            assert profile.stats["timba_hands"] == 1
+            assert "timba_1" in profile.unlocked
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["timba"].plays == 1
     finally:
         await client.close()
 

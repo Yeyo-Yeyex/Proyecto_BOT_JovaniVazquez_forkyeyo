@@ -1,10 +1,10 @@
 """Póker (Casino Hold'em) con canvas: en Node, si no en Chromium y, si no, con Pillow.
 
 La escena (`assets/poker/escena.html`) pinta el tapete, el mazo, las cartas (con
-su vuelo, su giro y su brillo), las pastillas con lo que lleva cada mano, las
-casillas de ANTE e IR con sus fichas, la tabla del ante y el cartel. Python
-decide todo lo que se ve (`bot.services.poker_render`): la escena solo pinta, y
-el dibujo de Pillow (`PokerRenderer`) lee los mismos datos.
+su vuelo, su giro y su brillo), los asientos de la mesa del canal con sus
+pastillas, fichas y resultados, la banca, las tablas del ante y del 💎 Bote y el
+cartel. Python decide todo lo que se ve (`bot.services.poker_render`): la escena
+solo pinta, y el dibujo de Pillow (`PokerRenderer`) lee los mismos datos.
 
 La misma escena se pinta de tres maneras, de mejor a peor:
 
@@ -16,17 +16,12 @@ La misma escena se pinta de tres maneras, de mejor a peor:
 
 El primer fallo de cada uno se avisa en el log y desde entonces se usa el
 siguiente. El juego nunca se queda sin imagen.
-
-**Una sola llamada al pintor para los dos finales.** `showdown` pide de una vez
-el final si va y el final si se retira (el primer fotograma de cada uno sale
-entero) y monta los dos GIF en un hilo. El cog lo pide mientras el jugador mira
-el flop, así que al pulsar ya está hecho.
 """
 
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,12 +30,12 @@ from PIL import Image
 from bot.services import browser_scene
 from bot.services.browser_scene import BrowserScene
 from bot.services.node_scene import NodeScene, patch_png
-from bot.services.poker import Deal
+from bot.services.poker import TableDeal
 from bot.services.poker_render import (
     H,
     Media,
     PokerRenderer,
-    Showdown,
+    SeatView,
     W,
     board_state,
     deal_states,
@@ -56,23 +51,6 @@ SCENE = Path(__file__).resolve().parent.parent / "assets" / "poker" / "escena.ht
 def assemble(patches: list[dict[str, Any]]) -> list[Image.Image]:
     """Fotogramas enteros a partir de los recuadros de la escena (`browser_scene.assemble`)."""
     return browser_scene.assemble(patches, (W, H))
-
-
-def build_showdown(
-    patches: list[dict[str, Any]], states: list[dict[str, Any]], split: int
-) -> Showdown:
-    """Los dos GIF del final a partir de los recuadros de `ir + retirarse`.
-
-    Args:
-        patches: Los recuadros de los dos finales, uno detrás de otro.
-        states: Los mismos estados (de ahí salen los tiempos de cada fotograma).
-        split: Cuántos fotogramas tiene el final de ir.
-    """
-    frames = assemble(patches)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        call = pool.submit(encode, frames[:split], durations(states[:split]))
-        fold = pool.submit(encode, frames[split:], durations(states[split:]))
-        return Showdown(call=call.result(), fold=fold.result())
 
 
 class PokerScene:
@@ -119,45 +97,59 @@ class PokerScene:
             patches = await self.browser.render(meta, states)
         return patches
 
-    async def board(self, *, skin: dict[str, object] | None = None) -> bytes:
+    async def board(self, *, pot: int = 0, skin: dict[str, object] | None = None) -> bytes:
         """PNG de la mesa vacía (al abrirla) con el tapete `skin`."""
-        state = board_state()
+        state = board_state(pot)
         state["full"] = True
         patches = await self._frames({**meta_state(), "skin": skin}, [state])
         if patches is None:
-            return await asyncio.to_thread(self.fallback.board)
+            return await asyncio.to_thread(self.fallback.board, pot)
+        return patch_png(patches[0])
+
+    async def timba(self, meta: dict[str, Any], state: dict[str, Any]) -> bytes:
+        """PNG de la mesa de la timba (`poker_render.timba_meta` y `timba_state`)."""
+        patches = await self._frames({**meta}, [state])
+        if patches is None:
+            return await asyncio.to_thread(self.fallback.timba, meta, state)
         return patch_png(patches[0])
 
     async def deal(
-        self, cards: Deal, *, seed: int = 0, skin: dict[str, object] | None = None
+        self,
+        table: TableDeal,
+        views: Sequence[SeatView],
+        *,
+        pot: int = 0,
+        seed: int = 0,
+        skin: dict[str, object] | None = None,
     ) -> Media:
         """El GIF del reparto hasta la mesa de decidir, y su PNG final.
 
         Args:
-            cards: Las nueve cartas de la mano.
+            table: Las cartas de la mano.
+            views: Los asientos ocupados, en orden.
+            pot: Lo que lleva el 💎 Bote.
             seed: Semilla del vuelo de las cartas (misma semilla, mismo GIF).
-            skin: El tapete del jugador (`skins.params` de su mesa); `None`, el de serie.
+            skin: El tapete de quien abrió la mesa; `None`, el de serie.
         """
-        states = deal_states(cards, seed=seed)
+        states = deal_states(table, views, pot=pot, seed=seed)
         patches = await self._frames({**meta_state(), "skin": skin}, states)
         if patches is None:
-            return await asyncio.to_thread(self.fallback.deal, cards)
+            return await asyncio.to_thread(self.fallback.deal, table, views, pot=pot)
         return await asyncio.to_thread(lambda: encode(assemble(patches), durations(states)))
 
     async def showdown(
-        self, cards: Deal, *, seed: int = 0, skin: dict[str, object] | None = None
-    ) -> Showdown:
-        """Los GIF de los dos finales (ir y retirarse) con su PNG final.
-
-        Args:
-            cards: Las nueve cartas de la mano.
-            seed: Semilla del vuelo y las chispas.
-            skin: El tapete del jugador; `None`, el de serie.
-        """
-        call = showdown_states(cards, called=True, seed=seed)
-        fold = showdown_states(cards, called=False, seed=seed)
-        states = call + fold
+        self,
+        table: TableDeal,
+        views: Sequence[SeatView],
+        called: Sequence[bool],
+        *,
+        pot: int = 0,
+        seed: int = 0,
+        skin: dict[str, object] | None = None,
+    ) -> Media:
+        """El GIF del final con lo que ha decidido cada asiento, y su PNG final."""
+        states = showdown_states(table, views, called, pot=pot, seed=seed)
         patches = await self._frames({**meta_state(), "skin": skin}, states)
         if patches is None:
-            return await asyncio.to_thread(self.fallback.showdown, cards)
-        return await asyncio.to_thread(build_showdown, patches, states, len(call))
+            return await asyncio.to_thread(self.fallback.showdown, table, views, called, pot=pot)
+        return await asyncio.to_thread(lambda: encode(assemble(patches), durations(states)))
