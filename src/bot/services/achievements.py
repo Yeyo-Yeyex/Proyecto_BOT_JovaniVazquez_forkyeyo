@@ -9060,16 +9060,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_win_1", "Quince fuera", "Gana tu primera partida de backgammon.", C),
         (25, "bg_win_25", "Mayoría absoluta de fichas", "Gana 25 partidas de backgammon.", R),
         (100, "bg_win_100", "Rodillo en el tablero", "Gana 100 partidas de backgammon.", R),
-        (500, "bg_win_500", "Fichas atadas y bien atadas",
+        (500, "bg_win_500", "Quince fichas atadas y bien atadas",
          "Gana 500 partidas de backgammon.", E),
         (2_500, "bg_win_2500", "Mandato vitalicio del tablero",
          "Gana 2.500 partidas. Ni Maduro aguanta tanto.", L),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_losses", [
         (1, "bg_loss_1", "Fichas a la oposición", "Pierde una partida de backgammon.", C),
-        (10, "bg_loss_10", "Oposición constructiva", "Pierde 10 partidas de backgammon.", C),
-        (100, "bg_loss_100", "Manual de derrota", "Pierde 100 partidas de backgammon.", R),
-        (1_000, "bg_loss_1k", "Sé fuerte, ficha",
+        (10, "bg_loss_10", "Oposición con cubilete", "Pierde 10 partidas de backgammon.", C),
+        (100, "bg_loss_100", "Manual de derrota en la barra",
+         "Pierde 100 partidas de backgammon.", R),
+        (1_000, "bg_loss_1k", "Sé fuerte, cubilete",
          "Pierde 1.000 partidas de backgammon. Hacemos lo que podemos.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_gammons", [
@@ -9097,14 +9098,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("normal", "bg_casino", "La banca no siempre gana", "Gánale a Jovani de casino.", C),
         ("dificil", "bg_concentrado", "Le has pillado contando pips",
          "Gánale a Jovani concentrado.", R),
-        ("imposible", "bg_cafe_pr", "El café de Puerto Rico no era para tanto",
+        ("imposible", "bg_cafe_pr", "Le has quitado el café a Jovani",
          "Gánale a Jovani con café de Puerto Rico, el nivel Imposible.", E),
     ):  # fmt: skip
         a += _tiers("backgammon", f"{BACKGAMMON_BEAT_PREFIX}{key}", [
             (1, achievement_id, name, description, rarity),
         ])  # fmt: skip
     a += _tiers("backgammon", f"{BACKGAMMON_BEAT_PREFIX}imposible", [
-        (10, "bg_cafe_pr_10", "Le has cogido el truco a la máquina",
+        (10, "bg_cafe_pr_10", "Jovani ya no toma café contigo",
          "Gánale 10 veces a Jovani en Imposible.", L),
     ])  # fmt: skip
     a.append(
@@ -9157,7 +9158,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cierra el tablero al rival en 250 partidas.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_comeback", [
-        (1, "bg_remontada", "Manual de resistencia",
+        (1, "bg_remontada", "Remontada con 60 pips de deuda pública",
          "Gana una partida en la que llegaste a ir 60 pips por detrás.", R),
         (10, "bg_remontada_10", "Resucitado como Sánchez en 2016",
          "Gana 10 partidas yendo 60 pips por detrás.", E),
@@ -9177,14 +9178,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde con 14 fichas fuera. Te faltaba una.", R, True),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_resigns", [
-        (1, "bg_dimision", "Dimisión de las fichas", "Ríndete en una partida.", C, True),
+        (1, "bg_dimision", "Dimisión irrevocable del cubilete", "Ríndete en una partida.", C, True),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_timeouts", [
-        (1, "bg_siesta", "Siesta en el escaño",
+        (1, "bg_siesta", "Siesta en la barra",
          "Pierde un duelo de backgammon por dormirte.", C, True),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_opp_timeouts", [
-        (1, "bg_incomparecencia", "Victoria por incomparecencia",
+        (1, "bg_incomparecencia", "El rival se fue a por café",
          "Gana un duelo porque el rival se duerme.", C),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_doubles_offered", [
@@ -9193,10 +9194,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_doubles_taken", [
         (1, "bg_acepto", "Acepto pulpo como animal de compañía", "Acepta un doblado.", C),
-        (50, "bg_acepto_50", "Ni un paso atrás", "Acepta 50 doblados.", R),
+        (50, "bg_acepto_50", "Ni un paso atrás con el cubo", "Acepta 50 doblados.", R),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_drops", [
-        (1, "bg_paso", "Retirada a tiempo", "No aceptes un doblado.", C),
+        (1, "bg_paso", "Retirada a tiempo, como en Afganistán", "No aceptes un doblado.", C),
         (25, "bg_paso_25", "Más vale una derrota pequeña que un rescate",
          "No aceptes 25 doblados.", R),
     ])  # fmt: skip
@@ -9218,8 +9219,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana un backgammon con el cubo a ×8: la partida vale ×24.", L, True),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_streak_max", [
-        (3, "bg_racha_3", "Tripartito de victorias", "Gana 3 partidas seguidas.", C),
-        (5, "bg_racha_5", "Quinquenio dorado", "Gana 5 partidas seguidas.", C),
+        (3, "bg_racha_3", "Tripartito de dados", "Gana 3 partidas seguidas.", C),
+        (5, "bg_racha_5", "Quinquenio de pips", "Gana 5 partidas seguidas.", C),
         (10, "bg_racha_10", "Década prodigiosa del tablero", "Gana 10 partidas seguidas.", R),
         (20, "bg_racha_20", "Presidencia vitalicia del backgammon",
          "Gana 20 partidas seguidas.", E),
@@ -9233,15 +9234,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_duelo_1", "Cara a cara con cubilete",
          "Juega un duelo de backgammon contra alguien.", C),
         (10, "bg_duelo_10", "Debate a dos dados", "Juega 10 duelos de backgammon.", C),
-        (100, "bg_duelo_100", "Clásico del tablero", "Juega 100 duelos de backgammon.", R),
-        (500, "bg_duelo_500", "Rivalidad de legislatura",
+        (100, "bg_duelo_100", "Clásico de Montecarlo", "Juega 100 duelos de backgammon.", R),
+        (500, "bg_duelo_500", "Rivalidad de legislatura con cubilete",
          "Juega 500 duelos de backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_duel_wins", [
         (1, "bg_duelo_gana", "Le has sacado las quince antes",
          "Gana un duelo de backgammon.", C),
         (25, "bg_duelo_gana_25", "Terror del cubilete", "Gana 25 duelos de backgammon.", R),
-        (250, "bg_duelo_gana_250", "El que manda en el tablero",
+        (250, "bg_duelo_gana_250", "El que manda en el cubilete",
          "Gana 250 duelos de backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_friendlies", [
@@ -9265,15 +9266,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana 1.000.000 Y$ en un duelo de backgammon.", L),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_crowd_max", [
-        (1_000, "bg_publico", "Con público en la grada",
+        (1_000, "bg_publico", "Con público alrededor del tablero",
          "Juega un duelo de backgammon con 1.000 Y$ apostados en la grada.", C),
-        (10_000, "bg_lleno_grada", "Ambiente de final",
+        (10_000, "bg_lleno_grada", "Final de Montecarlo en la grada",
          "Juega un duelo con 10.000 Y$ apostados en la grada.", R),
-        (100_000, "bg_prime_time", "Prime time en La 1",
+        (100_000, "bg_prime_time", "Retransmitido en el Telediario",
          "Juega un duelo con 100.000 Y$ apostados en la grada.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_bets", [
-        (1, "bg_grada_1", "Desde la grada del tablero",
+        (1, "bg_grada_1", "Mirón de backgammon con apuesta",
          "Apuesta en el duelo de backgammon de otros.", C),
         (10, "bg_grada_10", "Abonado al cubilete", "Apuesta en 10 duelos de backgammon.", C),
         (100, "bg_grada_100", "Tertuliano de pips", "Apuesta en 100 duelos de backgammon.", R),
@@ -9287,13 +9288,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Acierta 500 apuestas de grada en el backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_bet_odds_max", [
-        (300, "bg_contra_todos", "Contra el pronóstico del CIS",
+        (300, "bg_contra_todos", "Pronóstico del CIS a la barra",
          "Acierta en la grada del backgammon a ×3 o más.", R),
-        (1_000, "bg_tezanos", "Mejor que Tezanos",
+        (1_000, "bg_tezanos", "Ni Tezanos con dados",
          "Acierta en la grada del backgammon a ×10 o más.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_bet_refund", [
-        (1, "bg_grada_desierta", "Grada desierta",
+        (1, "bg_grada_desierta", "Grada desierta de cubilete",
          "Que te devuelvan una apuesta de grada del backgammon porque nadie apostó al otro.",
          C, True),
     ])  # fmt: skip
@@ -9316,10 +9317,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Deja 100.000 Y$ de comisión a la casa en el backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_retos", [
-        (1, "bg_reto_1", "Reto cumplido", "Cumple un reto del día del backgammon.", C),
-        (10, "bg_reto_10", "Funcionario de los retos",
+        (1, "bg_reto_1", "Reto del cubilete cumplido", "Cumple un reto del día del backgammon.", C),
+        (10, "bg_reto_10", "Funcionario del cubilete",
          "Cumple 10 retos del día del backgammon.", R),
-        (100, "bg_reto_100", "Plan quinquenal de retos",
+        (100, "bg_reto_100", "Plan quinquenal de pips",
          "Cumple 100 retos del día del backgammon.", E),
         (500, "bg_reto_500", "Agenda 2030 del cubilete",
          "Cumple 500 retos del día del backgammon.", L),
@@ -9345,7 +9346,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega al backgammon el 6 de enero.", False),
         ("backgammon_night", "bg_insomnio", "Insomnio con cubilete",
          "Juega al backgammon entre las 2 y las 6 de la madrugada.", True),
-        ("backgammon_friday13", "bg_viernes13", "Dados negros",
+        ("backgammon_friday13", "bg_viernes13", "Dados negros un viernes 13",
          "Pierde una partida de backgammon un viernes 13.", True),
     ):  # fmt: skip
         a += _tiers("backgammon", stat, [(1, achievement_id, name, description, C, secret)])

@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
-from bot.services.backgammon_render import Cube, Media
 from interaction_fakes import fake_interaction
 
 from bot.cogs import backgammon as backgammon_cog
@@ -43,6 +42,7 @@ from bot.services.backgammon import (
     jovani_play,
     plan_seed,
 )
+from bot.services.backgammon_render import Cube, Media
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.gallos import duel_prize
 from bot.services.levels import TIMEZONE
@@ -219,7 +219,8 @@ async def started(cog: Backgammon, opening: tuple[int, int] = WHITE_STARTS) -> S
 
 def at_end(panel: SoloTable, start: Position, roll: tuple[int, int] = (1, 2)) -> None:
     """Pone la mesa en una posición preparada, con las blancas a punto de tirar `roll`."""
-    panel.position = start
+    panel.position = panel.origin = start
+    panel.log = []
     panel.hand = Hand(start, Side.WHITE, roll)
     panel.rebuild()
 
@@ -599,9 +600,11 @@ async def test_ganar_un_gammon_con_el_cubo_a_dos_cobra_por_cuatro(tmp_path: Path
         )
     duel.held = dict.fromkeys(Side, escrow(STAKE, 2))
     duel.cube = Cube(2, Side.WHITE)
-    duel.position = WHITE_ALMOST_GAMMON
+    duel.position = duel.origin = WHITE_ALMOST_GAMMON
+    duel.log = []
     duel.hand = Hand(WHITE_ALMOST_GAMMON, Side.WHITE, (1, 2))
     duel.turn, duel.stage = Side.WHITE, Stage.MOVE
+    duel.view.playing()
     await play_turn(duel)
     assert duel.phase is Phase.DONE
     risked = at_risk(STAKE, 2, 2)

@@ -336,7 +336,8 @@ dados, caballos). Cada paso trae su comprobación; la Biblia (sección 5) lo exi
    antes y después (`--repo ../viejo`), dos veces cada uno. «1 abierto» es la
    primera jugada tras 10 minutos sin jugar; «caliente», las siguientes.
    Referencia a 4 hilos (14/10/2026, ms): moneda 410/275, dados 470/280, autobús
-   500/340, ruleta 620/380, bacará 820/630, caballos 900/750.
+   500/340, ruleta 620/380, bacará 820/630, caballos 900/750, backgammon (un turno
+   entero con la respuesta de Jovani) 830/500.
 7. **Memoria:** cada escena cargada suma ~50 MB a cada proceso de Node que la pinte
    (hasta 4 procesos con 3 escenas cada uno). Se mira en «Sistema» del informe.
 8. **Tras desplegar**, en el informe: «Dibujos» (ms del pintor), «Subidas a

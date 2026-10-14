@@ -533,6 +533,31 @@ def jovani_note(play: tuple[Step, ...], roll: tuple[int, int], rng: random.Rando
     return where
 
 
+def safe_event(
+    log: list[Turn],
+    side: Side,
+    *,
+    start: Position,
+    ending: Ending,
+    level: Level | None,
+    kind: int,
+    cube: int = 1,
+    stake: int = 0,
+) -> GameEvent:
+    """La partida vista por `side` (`event_for`); si el registro no cuadra, solo lo básico.
+
+    No debería pasar nunca, pero si pasa, la partida se apunta igual (victoria,
+    retos, dinero ya pagado) y el fallo queda en el log, en vez de perderla.
+    """
+    try:
+        return event_for(
+            log, side, ending=ending, level=level, kind=kind, cube=cube, stake=stake, start=start
+        )
+    except ValueError:
+        logger.exception("El registro de una partida de backgammon no cuadra")
+        return GameEvent(ending, side, level, kind, cube=cube, stake=stake)
+
+
 def win_headline(kind: int) -> str:
     if kind == 3:
         return random.choice(BACKGAMMON_LINES)
@@ -563,6 +588,8 @@ class SoloTable(ui.View):
         self.record = PlayerRecord()
         self.phase = "start"
         self.position = Position.initial()
+        #: Desde dónde empieza el registro de la partida (`log`): la salida.
+        self.origin = Position.initial()
         self.log: list[Turn] = []
         self.hand: Hand | None = None
         #: Imágenes enseñadas antes de cada ficha movida en este turno (para ↩️) y la de ahora.
@@ -893,6 +920,7 @@ class SoloTable(ui.View):
             self.phase = "play"
             self.result = None
             self.log = list(advance.turns)
+            self.origin = Position.initial()
             self.position = advance.position
             self.hand = advance.hand
             self.shown = []
@@ -1134,7 +1162,9 @@ class SoloTable(ui.View):
             await renta.remind(self.cog.bot, interaction)
 
     def event(self, ending: Ending, kind: int) -> GameEvent:
-        return event_for(self.log, Side.WHITE, ending=ending, level=self.level, kind=kind)
+        return safe_event(
+            self.log, Side.WHITE, start=self.origin, ending=ending, level=self.level, kind=kind
+        )
 
     async def _settle(self, ending: Ending, kind: int) -> Settled:
         """Apunta la partida en la ficha, paga los retos y alimenta los logros."""
@@ -1357,6 +1387,8 @@ class Duel:
         #: Ficha de cada jugador, por id (se lee al retar: los colores se sortean al aceptar).
         self.records: dict[int, PlayerRecord] = {}
         self.position = Position.initial()
+        #: Desde dónde empieza el registro de la partida (`log`): la salida.
+        self.origin = Position.initial()
         self.log: list[Turn] = []
         self.hand: Hand | None = None
         #: A quién le toca (decidir o mover) y qué espera el duelo.
@@ -2422,9 +2454,10 @@ class Duel:
         return lines
 
     def event(self, side: Side, winner: Side, ending: Ending, kind: int) -> GameEvent:
-        return event_for(
+        return safe_event(
             self.log,
             side,
+            start=self.origin,
             ending=self._ending_for(side, winner, ending),
             level=None,
             kind=kind,

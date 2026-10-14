@@ -58,6 +58,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     """Cada juego: cómo crear su escena (con Node, sin Chromium) y una jugada de prueba."""
     from craps_fakes import game_after, table_for
     from test_bacara_node import BEFORE, HEADER, THIRDS
+    from test_backgammon_scene import META as BG_META
+    from test_backgammon_scene import typical_turn
     from test_bus_scene import CARDS
     from test_coin_scene import lost_game
     from test_horses_cog import fixed_result
@@ -65,6 +67,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_roulette_scene_browser import HISTORY, outcome
 
     from bot.services.bacara_scene import BacaraScene
+    from bot.services.backgammon_scene import BackgammonScene
     from bot.services.bus_scene import BusScene
     from bot.services.coin import Side
     from bot.services.coin_scene import CoinScene
@@ -95,6 +98,11 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
             lambda s: s.race(card_of(), fixed_result((0, 1, 2, 3, 4, 5))),
+        ),
+        # Un turno contra Jovani: tu jugada con una comida, su tirada, su jugada y tus dados.
+        "backgammon": (
+            lambda: BackgammonScene(executable_path=no),
+            lambda s: s.animate(BG_META, *typical_turn()),
         ),
     }
 

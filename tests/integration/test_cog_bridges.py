@@ -1230,7 +1230,7 @@ async def test_una_partida_de_backgammon_contra_jovani_apunta_logros_con_el_bot_
         points = [0] * 24
         points[0], points[20] = 1, -14
         start = module.Position(tuple(points), (0, 0), (14, 1))
-        panel.phase, panel.position = "play", start
+        panel.phase, panel.position, panel.origin = "play", start, start
         panel.hand = module.Hand(start, module.Side.WHITE, (1, 2))
         panel.hand.play(panel.hand.legal()[0])
         panel.rebuild()

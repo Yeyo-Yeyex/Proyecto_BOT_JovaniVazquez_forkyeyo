@@ -779,13 +779,14 @@ def event_for(
     kind: int,
     cube: int = 1,
     stake: int = 0,
+    start: Position | None = None,
 ) -> GameEvent:
-    """Rehace la partida desde la salida con `log` y cuenta lo que hizo `side`.
+    """Rehace la partida desde `start` (la salida, si no se da) con `log` y cuenta lo de `side`.
 
     Raises:
         ValueError: Si algún paso del registro no es legal en su posición.
     """
-    position = Position.initial()
+    position = start or Position.initial()
     rival = side.other
     turns = hits = hit_taken = doubles = run = double_run = max_deficit = 0
     closed_out = False

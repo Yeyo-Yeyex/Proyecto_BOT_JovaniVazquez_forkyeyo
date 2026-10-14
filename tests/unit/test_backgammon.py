@@ -1147,3 +1147,14 @@ def test_si_el_perdedor_no_tiene_retenido_lo_que_se_juega_falla() -> None:
     held = dict.fromkeys(Side, 100)
     with pytest.raises(ValueError):
         bg.duel_returns(held, 100, 1, 3, Side.WHITE)
+
+
+def test_event_for_rehace_la_partida_desde_la_posicion_que_se_le_da() -> None:
+    points = [0] * bg.POINTS
+    points[0], points[20] = 1, -14
+    start = Position(tuple(points), (0, 0), (14, 1))
+    log = [bg.Turn(Side.WHITE, (1, 2), (bg.Step(0, bg.OFF, 2),))]
+    event = bg.event_for(log, Side.WHITE, ending=bg.Ending.WIN, level=None, kind=1, start=start)
+    assert event.my_off == 15 and event.turns == 1
+    with pytest.raises(ValueError):
+        bg.event_for(log, Side.WHITE, ending=bg.Ending.WIN, level=None, kind=1)
