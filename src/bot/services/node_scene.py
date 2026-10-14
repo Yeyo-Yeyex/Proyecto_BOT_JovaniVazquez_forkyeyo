@@ -556,8 +556,17 @@ class NodeScene:
         tasks: list[asyncio.Task[None]] = []
 
         async def paint(worker: _Process, span: _Span | None) -> None:
-            while span is not None:
+            fresh = False
+            if span is None:
+                # Quien se une a mitad carga la escena antes de llevarse trabajo: si
+                # no, lo que se lleva esperaría a que la cargue en vez de pintarse ya.
                 await worker.call(self._request("setup", [meta]))
+                fresh = True
+                span = _steal(spans)
+            while span is not None:
+                if not fresh:
+                    await worker.call(self._request("setup", [meta]))
+                fresh = False
                 prior = states[max(0, span.pos - warmup) : span.pos]
                 while span.pos < span.end:
                     begin = span.pos
@@ -576,11 +585,7 @@ class NodeScene:
 
         async def recruit() -> None:
             while (worker := await pool.recruit(draw)) is not None:
-                span = _steal(spans)
-                if span is None:
-                    await pool.give_back(draw, worker)
-                else:
-                    tasks.append(asyncio.create_task(paint(worker, span)))
+                tasks.append(asyncio.create_task(paint(worker, None)))
 
         size = -(-len(states) // len(first))
         for worker, begin in zip(first, range(0, len(states), size), strict=False):
