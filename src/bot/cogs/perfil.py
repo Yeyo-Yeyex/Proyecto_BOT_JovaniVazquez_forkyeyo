@@ -17,6 +17,8 @@ desplegable cambia de sección en el mismo mensaje:
   las rachas que cuentan los logros.
 - 🎒 **Objetos**: la mochila en texto; el botón 🎒 la abre en un mensaje
   aparte para usar objetos y ponerse roles (`Tienda.backpack_view`).
+- 🐓 **Gallo**: la ficha del gallo de pelea (`Gallos.gallo_embed`).
+- 🔴 **4 en raya**: la ficha, la racha y los retos de hoy (`Enraya.enraya_embed`).
 
 Cada sección la pinta el cog dueño de esos datos y este cog solo la pide con
 `find_cog` (ver Biblia, «Cogs y comandos»). Si un cog no está cargado, su
