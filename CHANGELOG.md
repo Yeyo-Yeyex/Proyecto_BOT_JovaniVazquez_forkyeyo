@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.2.1 · 2026-10-14
+
+- Interno: las pruebas pasan también en Windows (textos en UTF-8, la hora del meme del tuit y las piezas del pachinko)
+
 ### 6.2.0 · 2026-10-14
 
 - 4 en raya: `4enraya`, contra Jovani con retos del día o en duelo con apuesta y grada

@@ -656,7 +656,9 @@ async def test_cambios_configura_el_aviso_que_publica_el_despliegue_con_el_bot_r
         deploy = client.get_cog("Despliegue")
         buzon = tmp_path / "buzon"
         buzon.mkdir()
-        (buzon / "novedades.txt").write_text("#5\tyeyo/pollo\ttitulo\tPollo más rápido\n")
+        (buzon / "novedades.txt").write_text(
+            "#5\tyeyo/pollo\ttitulo\tPollo más rápido\n", encoding="utf-8"
+        )
         deploy.mailbox = importer("Despliegue", client).Mailbox(buzon)
         deploy._fetch = AsyncMock(return_value=None)
         monkeypatch.setattr(type(client), "guilds", property(lambda self: [guild]))

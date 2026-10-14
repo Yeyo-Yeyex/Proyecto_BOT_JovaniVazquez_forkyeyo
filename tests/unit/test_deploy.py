@@ -89,7 +89,9 @@ def test_la_peticion_queda_escrita_para_el_nas(tmp_path: Path) -> None:
     mailbox = Mailbox(tmp_path / "buzon")
     mailbox.request(DeployRequest(555, YEYO, NOW))
 
-    written = DeployRequest.from_json((tmp_path / "buzon" / REQUEST_FILE).read_text())
+    written = DeployRequest.from_json(
+        (tmp_path / "buzon" / REQUEST_FILE).read_text(encoding="utf-8")
+    )
     assert written == DeployRequest(555, YEYO, NOW)
     assert mailbox.pending(NOW) == written
     assert not (tmp_path / "buzon" / f"{REQUEST_FILE}.tmp").exists()
@@ -98,7 +100,7 @@ def test_la_peticion_queda_escrita_para_el_nas(tmp_path: Path) -> None:
 def test_la_peticion_en_curso_tambien_cuenta_como_pendiente(tmp_path: Path) -> None:
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / RUNNING_FILE).write_text(DeployRequest(555, DANI, NOW).to_json())
+    (buzon / RUNNING_FILE).write_text(DeployRequest(555, DANI, NOW).to_json(), encoding="utf-8")
 
     assert Mailbox(buzon).pending(NOW + timedelta(minutes=5)).user_id == DANI
 
@@ -114,7 +116,7 @@ def test_una_peticion_caducada_se_descarta(tmp_path: Path) -> None:
 def test_una_nota_estropeada_no_bloquea(tmp_path: Path) -> None:
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / REQUEST_FILE).write_text("{esto no es json")
+    (buzon / REQUEST_FILE).write_text("{esto no es json", encoding="utf-8")
 
     assert Mailbox(buzon).pending(NOW) is None
 
@@ -122,8 +124,8 @@ def test_una_nota_estropeada_no_bloquea(tmp_path: Path) -> None:
 def test_recoger_el_resultado_vacia_el_buzon(tmp_path: Path) -> None:
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / RUNNING_FILE).write_text(DeployRequest(555, YEYO, NOW).to_json())
-    (buzon / RESULT_FILE).write_text("ok\nDesplegado abc1234: Logros nuevos\n")
+    (buzon / RUNNING_FILE).write_text(DeployRequest(555, YEYO, NOW).to_json(), encoding="utf-8")
+    (buzon / RESULT_FILE).write_text("ok\nDesplegado abc1234: Logros nuevos\n", encoding="utf-8")
     mailbox = Mailbox(buzon)
 
     result = mailbox.take_result()
@@ -139,7 +141,9 @@ def test_recoger_el_resultado_vacia_el_buzon(tmp_path: Path) -> None:
 def test_un_resultado_de_error(tmp_path: Path) -> None:
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / RESULT_FILE).write_text("error\nLa imagen no se ha podido construir.\n")
+    (buzon / RESULT_FILE).write_text(
+        "error\nLa imagen no se ha podido construir.\n", encoding="utf-8"
+    )
 
     result = Mailbox(buzon).take_result()
 
@@ -189,7 +193,7 @@ async def test_no_se_pide_dos_veces(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_si_no_puede_escribir_lo_explica(tmp_path: Path) -> None:
-    (tmp_path / "buzon").write_text("un archivo donde debería haber una carpeta")
+    (tmp_path / "buzon").write_text("un archivo donde debería haber una carpeta", encoding="utf-8")
     cog = make_cog(tmp_path)
     responder = FakeResponder(user_id=YEYO)
 
@@ -207,8 +211,8 @@ async def test_publica_el_resultado_en_el_canal_de_la_peticion(tmp_path: Path) -
     cog = make_cog(tmp_path, bot)
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / RUNNING_FILE).write_text(DeployRequest(555, YEYO, NOW).to_json())
-    (buzon / RESULT_FILE).write_text("ok\nDesplegado abc1234: Pollo más rápido\n")
+    (buzon / RUNNING_FILE).write_text(DeployRequest(555, YEYO, NOW).to_json(), encoding="utf-8")
+    (buzon / RESULT_FILE).write_text("ok\nDesplegado abc1234: Pollo más rápido\n", encoding="utf-8")
 
     assert await cog.announce() is True
 
@@ -229,7 +233,7 @@ def test_mensaje_de_error_dice_que_sigue_la_version_anterior() -> None:
 
 def test_recoger_las_novedades_las_borra(tmp_path: Path) -> None:
     mailbox = Mailbox(tmp_path)
-    (tmp_path / NEWS_FILE).write_text("Pollo más rápido\n\n  Caballos  \n")
+    (tmp_path / NEWS_FILE).write_text("Pollo más rápido\n\n  Caballos  \n", encoding="utf-8")
 
     assert mailbox.take_news() == ["Pollo más rápido", "Caballos"]
     assert not (tmp_path / NEWS_FILE).exists()
@@ -237,7 +241,7 @@ def test_recoger_las_novedades_las_borra(tmp_path: Path) -> None:
 
 
 def test_un_archivo_de_novedades_vacio_no_se_publica(tmp_path: Path) -> None:
-    (tmp_path / NEWS_FILE).write_text("\n")
+    (tmp_path / NEWS_FILE).write_text("\n", encoding="utf-8")
 
     assert Mailbox(tmp_path).take_news() is None
 
@@ -370,7 +374,9 @@ async def test_publica_las_novedades_con_lo_que_cuenta_github(tmp_path: Path) ->
     cog = make_cog(tmp_path, _bot_with(guild), fetch)
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("#5\tyeyo/caballos\ttitulo\tCarreras de caballos\n")
+    (buzon / NEWS_FILE).write_text(
+        "#5\tyeyo/caballos\ttitulo\tCarreras de caballos\n", encoding="utf-8"
+    )
 
     assert await cog.announce_news() is True
 
@@ -387,7 +393,7 @@ async def test_sin_github_sale_la_lista_de_titulos(tmp_path: Path) -> None:
     cog = make_cog(tmp_path, _bot_with(guild))
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n", encoding="utf-8")
 
     await cog.announce_news()
 
@@ -401,7 +407,7 @@ async def test_un_servidor_con_el_aviso_apagado_no_lo_recibe(tmp_path: Path) -> 
     cog = make_cog(tmp_path, _bot_with(guild, NewsSettings(enabled=False)))
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n", encoding="utf-8")
 
     assert await cog.announce_news() is True
 
@@ -417,7 +423,7 @@ async def test_el_aviso_va_al_canal_elegido(tmp_path: Path) -> None:
     cog = make_cog(tmp_path, _bot_with(guild, NewsSettings(channel_id=77)))
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n", encoding="utf-8")
 
     await cog.announce_news()
 
@@ -436,7 +442,7 @@ async def test_el_aviso_va_a_un_hilo_archivado(tmp_path: Path) -> None:
     cog = make_cog(tmp_path, _bot_with(guild, NewsSettings(channel_id=88)))
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n", encoding="utf-8")
 
     await cog.announce_news()
 
@@ -453,7 +459,7 @@ async def test_si_el_hilo_ya_no_existe_vuelve_a_chat_general(tmp_path: Path) -> 
     cog = make_cog(tmp_path, _bot_with(guild, NewsSettings(channel_id=88)))
     buzon = tmp_path / "buzon"
     buzon.mkdir()
-    (buzon / NEWS_FILE).write_text("Carreras de caballos\n")
+    (buzon / NEWS_FILE).write_text("Carreras de caballos\n", encoding="utf-8")
 
     await cog.announce_news()
 

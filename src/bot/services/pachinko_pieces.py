@@ -118,7 +118,8 @@ def piece_hash(data: object, scene: Path = SCENE_PATH) -> str:
     """
     digest = hashlib.sha256()
     digest.update(json.dumps(data, sort_keys=True, separators=(",", ":")).encode())
-    digest.update(scene.read_bytes())
+    # Sin los \r de un checkout de Windows: el resumen es el mismo que en el NAS.
+    digest.update(scene.read_bytes().replace(b"\r\n", b"\n"))
     return digest.hexdigest()[:16]
 
 
