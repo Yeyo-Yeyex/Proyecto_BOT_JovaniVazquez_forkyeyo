@@ -1032,6 +1032,36 @@ def duel_payouts(stake: int, cube: int, kind: int, winner: Side) -> dict[Side, i
     }
 
 
+def double_extra(stake: int, cube: int) -> int:
+    """Lo que tiene que retener de más cada jugador para pasar el cubo de `cube` a `2 * cube`.
+
+    Quien dobla lo pone al doblar y quien acepta, al aceptar; si el rival no
+    acepta, a quien dobló se le devuelve con el resto (`duel_returns`).
+    """
+    return escrow(stake, cube * 2) - escrow(stake, cube)
+
+
+def duel_returns(
+    held: Mapping[Side, int], stake: int, cube: int, kind: int, winner: Side
+) -> dict[Side, int]:
+    """Lo que se devuelve a cada uno al acabar, con lo que cada uno tiene retenido.
+
+    Como `duel_payouts`, pero lo retenido puede ser distinto para cada uno: quien
+    dobla retiene la parte del cubo nuevo antes de que el rival acepte o pase. El
+    perdedor recupera lo suyo menos lo que se jugaba (`at_risk`); el ganador, lo
+    suyo más el premio sin la comisión (`gallos.duel_prize`) menos lo que puso.
+
+    Raises:
+        ValueError: Si el perdedor no tiene retenido lo que se juega (no debería
+            pasar: `escrow` cubre un backgammon al valor del cubo).
+    """
+    risked = at_risk(stake, cube, kind)
+    loser = winner.other
+    if held[loser] < risked:
+        raise ValueError(f"Retenido {held[loser]} y en juego {risked}.")
+    return {winner: held[winner] + duel_prize(risked) - risked, loser: held[loser] - risked}
+
+
 def can_double(cube: int, owner: Side | None, side: Side, stake: int) -> bool:
     """Si `side` puede doblar: hay apuesta, el cubo no está al tope y no es del rival."""
     return stake > 0 and cube < MAX_CUBE and owner in (None, side)

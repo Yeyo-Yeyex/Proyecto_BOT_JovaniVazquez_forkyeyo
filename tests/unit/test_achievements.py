@@ -29,6 +29,7 @@ from bot.services.achievements import (
     APUESTAS_PAGES,
     APUESTAS_PERIODS,
     AVAILABLE,
+    BACKGAMMON_BEAT_PREFIX,
     BJ_HIGH_STAKE,
     BUS_WIN_PREFIX,
     BY_ID,
@@ -86,6 +87,7 @@ from bot.services.achievements import (
     total_reward,
 )
 from bot.services.autoplay import StopReason
+from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
 from bot.services.beernight import Reason as BeerReason
 from bot.services.blackjack import BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
@@ -317,6 +319,22 @@ PRODUCED_STATS = {
     "enraya_april4", "enraya_nochevieja", "enraya_canarias", "enraya_night",
     "enraya_friday13",
     *(f"{ENRAYA_BEAT_PREFIX}{lv.key}" for lv in ENRAYA_LEVELS),
+    # cogs/backgammon.py (`backgammon_stats`, `backgammon_bet_stats`, el cubo y los retos)
+    "backgammon_backgammoned", "backgammon_backgammons", "backgammon_bet_odds_max",
+    "backgammon_bet_refund", "backgammon_bets", "backgammon_bets_won", "backgammon_canarias",
+    "backgammon_casino_duels", "backgammon_challenges", "backgammon_closed_out",
+    "backgammon_comeback", "backgammon_crowd_max", "backgammon_cube_max", "backgammon_days_max",
+    "backgammon_double_run", "backgammon_doubles", "backgammon_doubles_offered",
+    "backgammon_doubles_taken", "backgammon_drops", "backgammon_duel_big", "backgammon_duel_wins",
+    "backgammon_duels", "backgammon_friday13", "backgammon_friendlies", "backgammon_games",
+    "backgammon_gammon_imposible", "backgammon_gammoned", "backgammon_gammons",
+    "backgammon_hit_taken", "backgammon_hits", "backgammon_last_checker", "backgammon_lose_facil",
+    "backgammon_losses", "backgammon_night", "backgammon_nochevieja", "backgammon_opp_drops",
+    "backgammon_opp_timeouts", "backgammon_quick_win", "backgammon_rake", "backgammon_rejected",
+    "backgammon_rejects", "backgammon_resigns", "backgammon_retos", "backgammon_retos_full",
+    "backgammon_reyes", "backgammon_stake_15", "backgammon_streak_max", "backgammon_timeouts",
+    "backgammon_untouched", "backgammon_value_max", "backgammon_win_max", "backgammon_wins",
+    *(f"{BACKGAMMON_BEAT_PREFIX}{lv.key}" for lv in BACKGAMMON_LEVELS),
     *(f"{GALLOS_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
     *(f"{GALLOS_SKIN_PREFIX}{k}" for k in ("serie", *GALLOS_FREE_SKINS)),
     # cogs/coin.py (`coin_stats`)

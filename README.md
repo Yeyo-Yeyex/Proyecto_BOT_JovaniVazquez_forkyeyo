@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `tienda` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -633,7 +633,7 @@ python -m bot
   Sustituye a `nivel`, `patrimonio`, `logros` y `mochila`. Solo lo maneja
   quien lo abre. Logros en 🏆 Coleccionista: *¿Quién soy yo?*, *Selfie
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
-  *Pegasus de barrio*, *Expediente completo* (ver las nueve secciones) y dos
+  *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
   secretos.
 - **Logros** (sección 🏆 de `perfil`): 3.288 logros en 50 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
@@ -1028,11 +1028,12 @@ src/bot/
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
 │   ├── gallos.py        # gallos: reñidero contra la casa, retos, grada y la pelea
+│   ├── backgammon.py    # backgammon: mesa contra Jovani, duelos con cubo y grada, retos
 │   ├── enraya.py        # 4enraya: mesa contra Jovani, duelos con grada y retos del día
 │   ├── porras.py        # porra: panel, apuestas, cierre, reparto y recuperación
 │   ├── lottery.py       # loteria: panel con pestañas, compras, rascas y sorteos
 │   ├── achievements.py  # Logros: seguimiento, premios, avisos y su vista
-│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas, objetos, gallo y 4 en raya
+│   ├── perfil.py        # `perfil`: nivel, patrimonio, trabajo, logros, rachas, objetos, gallo, 4 en raya y backgammon
 │   └── music.py         # Comandos de música y control por servidor
 ├── utils/
 │   └── responder.py     # Adaptador común: misma lógica para / y .
@@ -1099,6 +1100,9 @@ src/bot/
 │   ├── gallos.py        # Gallos: rivales, cuotas, la pelea, la grada y la ficha del gallo
 │   ├── gallos_render.py # Gallos: lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── gallos_scene.py  # Gallos con canvas en Node o Chromium (assets/gallos/escena.html)
+│   ├── backgammon.py    # backgammon: reglas, Jovani (heurística a 1 o 2 jugadas), retos, cubo
+│   ├── backgammon_render.py # backgammon: lo que se ve en cada fotograma y dibujo con Pillow
+│   ├── backgammon_scene.py  # backgammon con canvas en Node o Chromium (assets/backgammon)
 │   ├── enraya.py        # 4 en raya: tablero, Jovani (negamax), retos del día y grada
 │   ├── enraya_render.py # 4 en raya: lo que se ve en cada fotograma y dibujo con Pillow
 │   ├── enraya_scene.py  # 4 en raya con canvas en Node o Chromium (assets/enraya/escena.html)
@@ -1119,6 +1123,7 @@ src/bot/
     ├── bacara/         # escena.html: canvas de la mesa de bacará
     ├── poker/          # escena.html: canvas de la mesa de póker
     ├── gallos/         # escena.html: canvas del reñidero y los gallos
+    ├── backgammon/     # escena.html: canvas del tablero del backgammon (con tapete)
     ├── enraya/         # escena.html: canvas del tablero del 4 en raya
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
     └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)

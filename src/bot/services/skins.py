@@ -35,10 +35,11 @@ rompe nada; por eso un juego que admita skins no necesita tocar su Pillow.
 **Cuál se ve.** Cada miembro lleva una por juego (o ninguna: la de serie),
 elegida en la mochila o con el botón 🎨 de la mesa (`bot.cogs.shop`). En las
 mesas individuales se ve la de su dueño; en las compartidas (bacará, crash,
-caballos), la de quien abre la mesa, y el mensaje lo dice (`Game.shared`).
+caballos, los duelos de backgammon), la de quien abre la mesa, y el mensaje lo
+dice (`Game.shared`).
 
 **Tapetes.** Las mesas con fieltro (ruleta, autobús, bacará, dados, moneda,
-pollo y póker) son un juego cada una, del grupo `TAPETE` (`Game.group`). Una skin del
+pollo, póker y backgammon) son un juego cada una, del grupo `TAPETE` (`Game.group`). Una skin del
 grupo se compra una vez y se lleva en las mesas que quieras, cada una con la
 suya; una skin con la clave de una mesa (`moneda`) es un tapete solo de esa
 mesa (`fits`). Lo puesto va por mesa en `shop_skin_worn`. En el 🎨 de la mesa
@@ -223,6 +224,8 @@ GAMES: dict[str, Game] = {g.key: g for g in (
     Game("moneda", "Cara o cruz", "🪙", "tapete", FELT, group=TAPETE),
     Game("pollo", "Pollo", "🐔", "tapete", FELT, group=TAPETE),
     Game("poker", "Póker", "♠️", "tapete", FELT, shared=True, group=TAPETE),
+    # En un duelo se ve el tapete de quien reta; en la mesa contra Jovani, el del dueño.
+    Game("backgammon", "Backgammon", "♟️", "tapete", FELT, shared=True, group=TAPETE),
     # El gallo de serie es un giro colorado: pecho rojizo, esclavina naranja y
     # cola negra con reflejos verdes. Cada skin es un gallo entero.
     Game("gallos", "Gallos", "🐓", "gallo", _frozen({

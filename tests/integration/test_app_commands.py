@@ -35,6 +35,7 @@ EXPECTED_COMMANDS = {
     "bacara",
     "gallos",
     "4enraya",
+    "backgammon",
     "cohete",
     "minas",
     "pollo",
@@ -122,7 +123,8 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # Única excepción acordada: `.blackjack` con su atajo `.bj`.
             aliases = {c.name: c.aliases for c in client.commands if c.aliases}
             assert aliases == {"blackjack": ["bj"]}
-            long_names = {"blackjack", "beernight"}
+            # Nombres largos acordados (Biblia, «Cogs y comandos»).
+            long_names = {"blackjack", "beernight", "backgammon"}
             assert all(
                 len(name) <= MAX_COMMAND_NAME_LENGTH for name in text_names - effects - long_names
             )

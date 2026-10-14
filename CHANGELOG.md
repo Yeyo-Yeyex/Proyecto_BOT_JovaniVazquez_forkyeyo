@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.3.0 · 2026-10-14
+
+- Backgammon: `backgammon`, contra Jovani o en duelo con cubo de doblar
+
 ### 6.2.5 · 2026-10-14
 
 - Interno: receta para que los juegos nuevos pinten igual de rápido

@@ -72,6 +72,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.horses.initialize()
     await client.gallos.initialize()
     await client.enraya.initialize()
+    await client.backgammon.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
     await client.todo.initialize()
@@ -315,6 +316,71 @@ async def press_enraya_drop(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await panel._column(interaction, 3)
+
+    return click
+
+
+def backgammon_cog(client: BotClient):  # noqa: ANN201
+    """El backgammon con dibujo falso, sin esperas y sin pintar por adelantado."""
+    cog = client.get_cog("Backgammon")
+    module = module_of(client, "Backgammon")
+    module.REVEAL_MARGIN_SECONDS = 0
+    cog.ahead = False
+    cog.renderer = MagicMock()
+    cog.renderer.still = AsyncMock(return_value=b"PNG")
+    cog.renderer.animate = AsyncMock(return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0))
+    return cog, module
+
+
+async def press_backgammon_confirm(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = backgammon_cog(client)
+    panel = module.SoloTable(cog, guild_id=GUILD_ID, owner=owner, channel=None)
+    # A las blancas les queda una ficha: la sacan y ✅ gana, así el clic apunta la partida.
+    points = [0] * 24
+    points[0], points[20] = 1, -14
+    start = module.Position(tuple(points), (0, 0), (14, 1))
+    panel.phase, panel.position = "play", start
+    panel.hand = module.Hand(start, module.Side.WHITE, (1, 2))
+    panel.hand.play(panel.hand.legal()[0])
+    panel.rebuild()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._confirm(interaction)
+
+    return click
+
+
+async def press_backgammon_accept(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = backgammon_cog(client)
+    challenger = make_owner()
+    challenger.id = owner.id + 1
+    duel = module.Duel(
+        cog, guild_id=GUILD_ID, channel=None, challenger=challenger, rival=owner, stake=10
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await duel.accept(interaction)
+        if duel.timer is not None:
+            duel.timer.cancel()
+
+    return click
+
+
+async def press_backgammon_double(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = backgammon_cog(client)
+    rival = make_owner()
+    rival.id = owner.id + 1
+    duel = module.Duel(
+        cog, guild_id=GUILD_ID, channel=None, challenger=owner, rival=rival, stake=10
+    )
+    duel.phase = module.Phase.PLAYING
+    duel.stage = module.Stage.DECIDE
+    duel.turn = module.Side.WHITE
+
+    async def click(interaction: MagicMock) -> None:
+        await duel.double(interaction)
+        if duel.timer is not None:
+            duel.timer.cancel()
 
     return click
 
@@ -949,6 +1015,9 @@ CASES: dict[str, Press] = {
     "gallos: aceptar un duelo": press_gallos_accept,
     "4enraya: soltar ficha contra Jovani": press_enraya_drop,
     "4enraya: aceptar un duelo": press_enraya_accept,
+    "backgammon: confirmar la jugada que gana": press_backgammon_confirm,
+    "backgammon: aceptar un duelo": press_backgammon_accept,
+    "backgammon: doblar": press_backgammon_double,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
     "póker: sentarse": press_poker_sit,

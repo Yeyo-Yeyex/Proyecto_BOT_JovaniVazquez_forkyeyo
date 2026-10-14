@@ -1115,3 +1115,35 @@ def test_can_double_pide_apuesta_cubo_por_debajo_del_tope_y_que_no_sea_del_rival
     assert not can_double(MAX_CUBE, WHITE, WHITE, 100)
     assert not can_double(1, None, WHITE, 0)
     assert MAX_CUBE == 8 and bg.GAME == "backgammon"
+
+
+def test_doblar_retiene_de_mas_lo_que_cubre_el_cubo_nuevo() -> None:
+    assert bg.double_extra(100, 1) == bg.escrow(100, 2) - bg.escrow(100, 1)
+    assert bg.escrow(100, 1) + bg.double_extra(100, 1) == bg.escrow(100, 2)
+
+
+@pytest.mark.parametrize("kind", [1, 2, 3])
+def test_las_devoluciones_con_lo_retenido_de_cada_uno_cuadran(kind: int) -> None:
+    """Quien dobló y no le aceptaron tiene más retenido: se le devuelve entero lo de más."""
+    stake, cube = 100, 1
+    held = {
+        Side.WHITE: bg.escrow(stake, cube) + bg.double_extra(stake, cube),
+        Side.BLACK: bg.escrow(stake, cube),
+    }
+    returns = bg.duel_returns(held, stake, cube, kind, Side.WHITE)
+    risked = bg.at_risk(stake, cube, kind)
+    rake = 2 * risked - duel_prize(risked)
+    assert returns[Side.BLACK] == held[Side.BLACK] - risked
+    assert returns[Side.WHITE] - held[Side.WHITE] == duel_prize(risked) - risked
+    assert sum(returns.values()) + rake == sum(held.values())
+
+
+def test_con_lo_mismo_retenido_las_devoluciones_son_las_del_duelo() -> None:
+    held = dict.fromkeys(Side, bg.escrow(100, 4))
+    assert bg.duel_returns(held, 100, 4, 2, Side.BLACK) == bg.duel_payouts(100, 4, 2, Side.BLACK)
+
+
+def test_si_el_perdedor_no_tiene_retenido_lo_que_se_juega_falla() -> None:
+    held = dict.fromkeys(Side, 100)
+    with pytest.raises(ValueError):
+        bg.duel_returns(held, 100, 1, 3, Side.WHITE)

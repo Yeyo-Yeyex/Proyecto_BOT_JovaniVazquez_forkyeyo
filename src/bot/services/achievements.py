@@ -49,6 +49,10 @@ from bot.services.bacara import chop_run as baccarat_chop_run
 from bot.services.bacara import commission as baccarat_commission
 from bot.services.bacara import hand_points as baccarat_points
 from bot.services.bacara import road_stats as baccarat_road_stats
+from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
+from bot.services.backgammon import Ending as BackgammonEnding
+from bot.services.backgammon import GameEvent as BackgammonEvent
+from bot.services.backgammon import PlayerRecord as BackgammonRecord
 from bot.services.beernight import Reason as BeerReason
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
@@ -268,6 +272,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("baccarat", "🍸 Bacará", group=_CG),
     Category("gallos", "🐓 Gallos", group=_CG),
     Category("enraya", "🔴 4 en raya", group=_CG),
+    Category("backgammon", "♟️ Backgammon", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
     Category("lottery", "🎟️ Loterías"),
@@ -380,6 +385,7 @@ PERFIL_SECTIONS = (
     "objetos",
     "gallo",
     "enraya",
+    "backgammon",
 )
 #: Apuestas exactas con logro secreto propio (`casino_bet_<cifra>`), en cualquier juego.
 SECRET_STAKES = (1, 23, 33, 44, 47, 69, 87, 176, 600, 777, 1975, 1978)
@@ -592,6 +598,12 @@ GALLOS_STORY = (
 )
 #: Niveles de Jovani ganados en el 4 en raya: un contador por nivel (`enraya_beat_facil`).
 ENRAYA_BEAT_PREFIX = "enraya_beat_"
+#: Niveles de Jovani ganados en el backgammon: un contador por nivel (`backgammon_beat_facil`).
+BACKGAMMON_BEAT_PREFIX = "backgammon_beat_"
+#: Pips por detrás que convierten una victoria en remontada (`backgammon_comeback`).
+BACKGAMMON_COMEBACK_PIPS = 60
+#: Turnos propios (o menos) de una victoria relámpago (`backgammon_quick_win`).
+BACKGAMMON_QUICK_TURNS = 15
 #: Rivales de la casa ganados: un contador por rival (`gallos_beat_falcon`).
 GALLOS_BEAT_PREFIX = "gallos_beat_"
 #: Skins con las que ha peleado: un contador por skin (`gallos_skin_serie`).
@@ -4704,6 +4716,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
             ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
             ("enraya_casino_duels", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_eighteen_games",
+        name="Mayoría de edad del casino",
+        description="Juega a los dieciocho juegos del casino: también un backgammon con apuesta.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
+            ("enraya_casino_duels", 1), ("backgammon_casino_duels", 1),
         ),
     ))  # fmt: skip
 
@@ -9018,6 +9045,310 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde una partida de 4 en raya un viernes 13.", True),
     ):  # fmt: skip
         a += _tiers("enraya", stat, [(1, achievement_id, name, description, C, secret)])
+
+    # ♟️ Backgammon ------------------------------------------------------------------------
+    a += _tiers("backgammon", "backgammon_games", [
+        (1, "bg_1", "Primera tirada", "Juega tu primera partida de backgammon.", C),
+        (10, "bg_10", "Parroquiano del tablero", "Juega 10 partidas de backgammon.", C),
+        (100, "bg_100", "Cuentapips de barrio", "Juega 100 partidas de backgammon.", R),
+        (1_000, "bg_1k", "Más partidas que decretos ley",
+         "Juega 1.000 partidas de backgammon.", E),
+        (5_000, "bg_5k", "Federación Mesopotámica de Backgammon",
+         "Juega 5.000 partidas. Ya jugaban en Ur, pero no tanto.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_wins", [
+        (1, "bg_win_1", "Quince fuera", "Gana tu primera partida de backgammon.", C),
+        (25, "bg_win_25", "Mayoría absoluta de fichas", "Gana 25 partidas de backgammon.", R),
+        (100, "bg_win_100", "Rodillo en el tablero", "Gana 100 partidas de backgammon.", R),
+        (500, "bg_win_500", "Fichas atadas y bien atadas",
+         "Gana 500 partidas de backgammon.", E),
+        (2_500, "bg_win_2500", "Mandato vitalicio del tablero",
+         "Gana 2.500 partidas. Ni Maduro aguanta tanto.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_losses", [
+        (1, "bg_loss_1", "Fichas a la oposición", "Pierde una partida de backgammon.", C),
+        (10, "bg_loss_10", "Oposición constructiva", "Pierde 10 partidas de backgammon.", C),
+        (100, "bg_loss_100", "Manual de derrota", "Pierde 100 partidas de backgammon.", R),
+        (1_000, "bg_loss_1k", "Sé fuerte, ficha",
+         "Pierde 1.000 partidas de backgammon. Hacemos lo que podemos.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_gammons", [
+        (1, "bg_gammon", "Gammon", "Gana un gammon: el rival no ha sacado ni una ficha.", C),
+        (10, "bg_gammon_10", "Paliza por partida doble", "Gana 10 gammons.", R),
+        (100, "bg_gammon_100", "Rodillo con efecto multiplicador", "Gana 100 gammons.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_backgammons", [
+        (1, "bg_backgammon", "¡BACKGAMMON!",
+         "Gana un backgammon: el rival sin sacar ninguna y con una ficha en tu casa o en la barra.",
+         R),
+        (10, "bg_backgammon_10", "Motosierra de Milei en el tablero",
+         "Gana 10 backgammons.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_gammoned", [
+        (1, "bg_gammoneado", "Ni una fuera", "Pierde un gammon: sin sacar ni una ficha.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_backgammoned", [
+        (1, "bg_backgammoneado", "Exiliado en Waterloo",
+         "Pierde un backgammon, con una ficha todavía en casa del rival.", R, True),
+    ])  # fmt: skip
+    for key, achievement_id, name, description, rarity in (
+        ("facil", "bg_chiringuito", "Entre mojito y mojito",
+         "Gánale a Jovani en el chiringuito. Iba por el tercer mojito, no te vengas arriba.", C),
+        ("normal", "bg_casino", "La banca no siempre gana", "Gánale a Jovani de casino.", C),
+        ("dificil", "bg_concentrado", "Le has pillado contando pips",
+         "Gánale a Jovani concentrado.", R),
+        ("imposible", "bg_cafe_pr", "El café de Puerto Rico no era para tanto",
+         "Gánale a Jovani con café de Puerto Rico, el nivel Imposible.", E),
+    ):  # fmt: skip
+        a += _tiers("backgammon", f"{BACKGAMMON_BEAT_PREFIX}{key}", [
+            (1, achievement_id, name, description, rarity),
+        ])  # fmt: skip
+    a += _tiers("backgammon", f"{BACKGAMMON_BEAT_PREFIX}imposible", [
+        (10, "bg_cafe_pr_10", "Le has cogido el truco a la máquina",
+         "Gánale 10 veces a Jovani en Imposible.", L),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="bg_gira",
+            name="Jovani, de gira por todo el tablero",
+            description="Gánale a Jovani al backgammon en los cuatro niveles.",
+            category="backgammon",
+            rarity=E,
+            conditions=tuple((f"{BACKGAMMON_BEAT_PREFIX}{lv.key}", 1) for lv in BACKGAMMON_LEVELS),
+        )
+    )
+    a += _tiers("backgammon", "backgammon_gammon_imposible", [
+        (1, "bg_gammon_imposible", "Gammon con café de Puerto Rico",
+         "Gánale un gammon a Jovani en Imposible. Ni el CIS lo tenía.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_lose_facil", [
+        (1, "bg_borracho", "Derrotado por el chiringuito",
+         "Pierde contra Jovani en el chiringuito. Él ni se acuerda de la partida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_hits", [
+        (10, "bg_comer_10", "A la barra", "Come 10 fichas del rival.", C),
+        (100, "bg_comer_100", "Expropiación de fichas", "Come 100 fichas del rival.", R),
+        (1_000, "bg_comer_1k", "Hacienda del tablero", "Come 1.000 fichas del rival.", E),
+        (10_000, "bg_comer_10k", "Agujero negro de fichas",
+         "Come 10.000 fichas. Ni la UCO incauta tanto.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_hit_taken", [
+        (10, "bg_comido_10", "Grupo Mixto", "Que te coman 10 fichas.", C),
+        (100, "bg_comido_100", "Abonado a la barra", "Que te coman 100 fichas.", R),
+        (1_000, "bg_comido_1k", "La barra es mi casa", "Que te coman 1.000 fichas.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_doubles", [
+        (10, "bg_dobles_10", "Doble ración", "Saca 10 dobles al backgammon.", C),
+        (100, "bg_dobles_100", "Sueldo de ministro", "Saca 100 dobles al backgammon.", R),
+        (1_000, "bg_dobles_1k", "Doble o nada, siempre doble", "Saca 1.000 dobles.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_double_run", [
+        (2, "bg_dobles_seguidos_2", "Dobles y repetimos", "Saca dobles dos turnos seguidos.", C),
+        (3, "bg_dobles_seguidos_3", "Los dados están amañados",
+         "Saca dobles tres turnos seguidos.", R),
+        (4, "bg_dobles_seguidos_4", "Elecciones con el 87 %",
+         "Saca dobles cuatro turnos seguidos. Ni Putin.", E, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_closed_out", [
+        (1, "bg_cierre", "Cordón sanitario",
+         "Cierra el tablero: los seis puntos de tu casa hechos y el rival en la barra.", C),
+        (25, "bg_cierre_25", "Muro de Trump", "Cierra el tablero al rival en 25 partidas.", R),
+        (250, "bg_cierre_250", "Cúpula de Hierro del backgammon",
+         "Cierra el tablero al rival en 250 partidas.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_comeback", [
+        (1, "bg_remontada", "Manual de resistencia",
+         "Gana una partida en la que llegaste a ir 60 pips por detrás.", R),
+        (10, "bg_remontada_10", "Resucitado como Sánchez en 2016",
+         "Gana 10 partidas yendo 60 pips por detrás.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_quick_win", [
+        (1, "bg_relampago", "Por decreto ley",
+         "Gana una partida en 15 turnos tuyos o menos (Normal o más, o en duelo).", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_untouched", [
+        (1, "bg_intocable", "Intocable, como la Corona",
+         "Gana sin que te coman ninguna ficha (Normal o más, o en duelo).", C),
+        (25, "bg_intocable_25", "Aforado del tablero",
+         "Gana 25 partidas sin que te coman ninguna ficha.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_last_checker", [
+        (1, "bg_una_ficha", "A una ficha de la gloria",
+         "Pierde con 14 fichas fuera. Te faltaba una.", R, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_resigns", [
+        (1, "bg_dimision", "Dimisión de las fichas", "Ríndete en una partida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_timeouts", [
+        (1, "bg_siesta", "Siesta en el escaño",
+         "Pierde un duelo de backgammon por dormirte.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_opp_timeouts", [
+        (1, "bg_incomparecencia", "Victoria por incomparecencia",
+         "Gana un duelo porque el rival se duerme.", C),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_doubles_offered", [
+        (1, "bg_doblo", "Doblo y subo, como la luz", "Ofrece tu primer doblado del cubo.", C),
+        (50, "bg_doblo_50", "Arancelero del cubo", "Ofrece 50 doblados. Como Trump.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_doubles_taken", [
+        (1, "bg_acepto", "Acepto pulpo como animal de compañía", "Acepta un doblado.", C),
+        (50, "bg_acepto_50", "Ni un paso atrás", "Acepta 50 doblados.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_drops", [
+        (1, "bg_paso", "Retirada a tiempo", "No aceptes un doblado.", C),
+        (25, "bg_paso_25", "Más vale una derrota pequeña que un rescate",
+         "No aceptes 25 doblados.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_opp_drops", [
+        (1, "bg_le_asustas", "Le has asustado con el cubo",
+         "Gana porque el rival no acepta tu doblado.", C),
+        (25, "bg_le_asustas_25", "El cubo como arma diplomática",
+         "Gana 25 partidas porque no te aceptan el doblado.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_cube_max", [
+        (4, "bg_cubo_4", "El cubo ya pesa", "Acaba un duelo con el cubo a ×4.", R),
+        (8, "bg_cubo_8", "El cubo al tope",
+         "Acaba un duelo con el cubo a ×8, el máximo.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_value_max", [
+        (16, "bg_valor_16", "Partida de dieciséis",
+         "Gana un duelo que vale ×16 (cubo por gammon).", E),
+        (24, "bg_valor_24", "El rescate de Bankia",
+         "Gana un backgammon con el cubo a ×8: la partida vale ×24.", L, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_streak_max", [
+        (3, "bg_racha_3", "Tripartito de victorias", "Gana 3 partidas seguidas.", C),
+        (5, "bg_racha_5", "Quinquenio dorado", "Gana 5 partidas seguidas.", C),
+        (10, "bg_racha_10", "Década prodigiosa del tablero", "Gana 10 partidas seguidas.", R),
+        (20, "bg_racha_20", "Presidencia vitalicia del backgammon",
+         "Gana 20 partidas seguidas.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_days_max", [
+        (7, "bg_dias_7", "Semana de dados", "Juega al backgammon 7 días seguidos.", R),
+        (30, "bg_dias_30", "Un mes sin soltar el cubilete", "Juega 30 días seguidos.", E),
+        (100, "bg_dias_100", "Pips hasta en sueños", "Juega 100 días seguidos.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_duels", [
+        (1, "bg_duelo_1", "Cara a cara con cubilete",
+         "Juega un duelo de backgammon contra alguien.", C),
+        (10, "bg_duelo_10", "Debate a dos dados", "Juega 10 duelos de backgammon.", C),
+        (100, "bg_duelo_100", "Clásico del tablero", "Juega 100 duelos de backgammon.", R),
+        (500, "bg_duelo_500", "Rivalidad de legislatura",
+         "Juega 500 duelos de backgammon.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_duel_wins", [
+        (1, "bg_duelo_gana", "Le has sacado las quince antes",
+         "Gana un duelo de backgammon.", C),
+        (25, "bg_duelo_gana_25", "Terror del cubilete", "Gana 25 duelos de backgammon.", R),
+        (250, "bg_duelo_gana_250", "El que manda en el tablero",
+         "Gana 250 duelos de backgammon.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_friendlies", [
+        (1, "bg_amistoso", "Partidita entre colegas", "Juega un duelo amistoso de backgammon.", C),
+        (50, "bg_amistoso_50", "Tertulia de café con tablero",
+         "Juega 50 duelos amistosos de backgammon.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_casino_duels", [
+        (1, "bg_duelo_apuesta", "Con cubo y con dinero",
+         "Juega un duelo de backgammon con apuesta.", C),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_duel_big", [
+        (1, "bg_alto_standing", "Backgammon de alto standing",
+         "Juégate 10.000 Y$ o más por cabeza en un duelo de backgammon.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_win_max", [
+        (10_000, "bg_bolsa", "Bolsa del cubilete", "Gana 10.000 Y$ en un duelo de backgammon.", R),
+        (100_000, "bg_final", "Final del mundial de Montecarlo",
+         "Gana 100.000 Y$ en un duelo de backgammon.", E),
+        (1_000_000, "bg_millon", "El millón a quince fichas",
+         "Gana 1.000.000 Y$ en un duelo de backgammon.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_crowd_max", [
+        (1_000, "bg_publico", "Con público en la grada",
+         "Juega un duelo de backgammon con 1.000 Y$ apostados en la grada.", C),
+        (10_000, "bg_lleno_grada", "Ambiente de final",
+         "Juega un duelo con 10.000 Y$ apostados en la grada.", R),
+        (100_000, "bg_prime_time", "Prime time en La 1",
+         "Juega un duelo con 100.000 Y$ apostados en la grada.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_bets", [
+        (1, "bg_grada_1", "Desde la grada del tablero",
+         "Apuesta en el duelo de backgammon de otros.", C),
+        (10, "bg_grada_10", "Abonado al cubilete", "Apuesta en 10 duelos de backgammon.", C),
+        (100, "bg_grada_100", "Tertuliano de pips", "Apuesta en 100 duelos de backgammon.", R),
+        (1_000, "bg_grada_1k", "Palco de honor del backgammon",
+         "Apuesta en 1.000 duelos de backgammon.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_bets_won", [
+        (1, "bg_ojo", "Ojo de tahúr", "Acierta una apuesta de grada en el backgammon.", C),
+        (50, "bg_tahur", "Tahúr de grada", "Acierta 50 apuestas de grada en el backgammon.", R),
+        (500, "bg_oraculo", "Oráculo del cubilete",
+         "Acierta 500 apuestas de grada en el backgammon.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_bet_odds_max", [
+        (300, "bg_contra_todos", "Contra el pronóstico del CIS",
+         "Acierta en la grada del backgammon a ×3 o más.", R),
+        (1_000, "bg_tezanos", "Mejor que Tezanos",
+         "Acierta en la grada del backgammon a ×10 o más.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_bet_refund", [
+        (1, "bg_grada_desierta", "Grada desierta",
+         "Que te devuelvan una apuesta de grada del backgammon porque nadie apostó al otro.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_challenges", [
+        (1, "bg_reto", "¿Echamos un backgammon?", "Reta a alguien a un backgammon.", C),
+        (50, "bg_retador", "Retador de cubilete", "Reta a 50 personas al backgammon.", R),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_rejects", [
+        (1, "bg_no_juego", "Hoy no juego al backgammon",
+         "Rechaza un reto de backgammon.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_rejected", [
+        (1, "bg_plantado", "Plantado con el cubilete en la mano",
+         "Que te rechacen un reto de backgammon.", C, True),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_rake", [
+        (1_000, "bg_comision", "La casa también tira dados",
+         "Deja 1.000 Y$ de comisión a la casa en el backgammon.", C),
+        (100_000, "bg_mecenas", "Mecenas del cubilete",
+         "Deja 100.000 Y$ de comisión a la casa en el backgammon.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_retos", [
+        (1, "bg_reto_1", "Reto cumplido", "Cumple un reto del día del backgammon.", C),
+        (10, "bg_reto_10", "Funcionario de los retos",
+         "Cumple 10 retos del día del backgammon.", R),
+        (100, "bg_reto_100", "Plan quinquenal de retos",
+         "Cumple 100 retos del día del backgammon.", E),
+        (500, "bg_reto_500", "Agenda 2030 del cubilete",
+         "Cumple 500 retos del día del backgammon.", L),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_retos_full", [
+        (1, "bg_pleno", "Pleno del día con cubilete",
+         "Cumple los tres retos del día del backgammon.", C),
+        (7, "bg_pleno_7", "Semana redonda de pips",
+         "Cumple los tres retos del día del backgammon en 7 días distintos.", R),
+        (30, "bg_pleno_30", "Mes de mayoría absoluta de pips",
+         "Cumple los tres retos del día del backgammon en 30 días distintos.", E),
+    ])  # fmt: skip
+    a += _tiers("backgammon", "backgammon_stake_15", [
+        (1, "bg_15", "Quince fichas, quince Y$",
+         "Juégate exactamente 15 Y$ por cabeza en un duelo de backgammon.", C, True),
+    ])  # fmt: skip
+    for stat, achievement_id, name, description, secret in (
+        ("backgammon_nochevieja", "bg_uvas", "Doce uvas, quince fichas",
+         "Juega al backgammon en Nochevieja.", False),
+        ("backgammon_canarias", "bg_dia_canarias", "Pips con gofio",
+         "Juega al backgammon un 30 de mayo, Día de Canarias.", False),
+        ("backgammon_reyes", "bg_reyes", "Los Reyes traen cubilete",
+         "Juega al backgammon el 6 de enero.", False),
+        ("backgammon_night", "bg_insomnio", "Insomnio con cubilete",
+         "Juega al backgammon entre las 2 y las 6 de la madrugada.", True),
+        ("backgammon_friday13", "bg_viernes13", "Dados negros",
+         "Pierde una partida de backgammon un viernes 13.", True),
+    ):  # fmt: skip
+        a += _tiers("backgammon", stat, [(1, achievement_id, name, description, C, secret)])
 
     # 🛵 Reparto ------------------------------------------------------------------------
     a += _tiers("reparto", "work_orders", [
@@ -13769,6 +14100,127 @@ def enraya_bet_stats(
         delta.add["enraya_rake"] = rake
     if 2 <= when.hour < 6:
         delta.add["enraya_night"] = 1
+    return delta
+
+
+def backgammon_stats(
+    event: BackgammonEvent,
+    record: BackgammonRecord,
+    *,
+    when: datetime,
+    net: int = 0,
+    crowd_pool: int = 0,
+    rake: int = 0,
+    rival_slept: bool = False,
+    rival_dropped: bool = False,
+    retos: int = 0,
+    retos_full: bool = False,
+) -> StatDelta:
+    """Contadores de una partida de backgammon para uno de los jugadores (sin lo común del casino).
+
+    Args:
+        event: La partida, vista por este jugador (`backgammon.event_for`).
+        record: Su ficha tras la partida.
+        when: Hora local.
+        net: En un duelo con apuesta, ganado menos lo que se jugaba.
+        crowd_pool: Lo que apostó el público en el duelo.
+        rake: Comisión de la casa que se ha dejado.
+        rival_slept: Si ganó porque el rival se durmió.
+        rival_dropped: Si ganó porque el rival no aceptó su doblado.
+        retos: Retos del día que cumplió con esta partida.
+        retos_full: Si con ella completó los tres de hoy.
+    """
+    won, lost = event.won, event.lost
+    ending = event.ending
+    delta = StatDelta(
+        add={"backgammon_games": 1},
+        peak={
+            "backgammon_streak_max": record.best_streak,
+            "backgammon_days_max": record.day_streak,
+        },
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    # Una victoria «seria»: en duelo o contra Jovani en Normal o más (como los retos).
+    serious = won and (event.duel or event.beat_at_least(1))
+    bump("backgammon_wins", won)
+    bump("backgammon_losses", lost)
+    bump("backgammon_gammons", event.gammon)
+    bump("backgammon_backgammons", event.backgammon)
+    bump("backgammon_gammoned", lost and event.kind >= 2)
+    bump("backgammon_backgammoned", lost and event.kind == 3)
+    bump("backgammon_resigns", ending is BackgammonEnding.RESIGN)
+    bump("backgammon_timeouts", ending is BackgammonEnding.TIMEOUT)
+    bump("backgammon_drops", ending is BackgammonEnding.DROP)
+    bump("backgammon_opp_timeouts", rival_slept)
+    bump("backgammon_opp_drops", rival_dropped)
+    level = event.level
+    if level is not None:
+        bump(f"{BACKGAMMON_BEAT_PREFIX}{level.key}", won)
+        bump("backgammon_gammon_imposible", event.gammon and level.key == "imposible")
+        bump("backgammon_lose_facil", lost and level.key == "facil")
+    bump("backgammon_hits", amount=event.hits)
+    bump("backgammon_hit_taken", amount=event.hit_taken)
+    bump("backgammon_doubles", amount=event.doubles)
+    if event.double_run:
+        delta.peak["backgammon_double_run"] = event.double_run
+    bump("backgammon_closed_out", event.closed_out)
+    bump("backgammon_comeback", won and event.max_deficit >= BACKGAMMON_COMEBACK_PIPS)
+    bump("backgammon_quick_win", serious and event.turns <= BACKGAMMON_QUICK_TURNS)
+    bump("backgammon_untouched", serious and event.hit_taken == 0)
+    bump("backgammon_last_checker", lost and event.my_off == 14)
+    if event.duel:
+        bump("backgammon_duels")
+        bump("backgammon_duel_wins", won)
+        bump("backgammon_friendlies", not event.stake)
+        bump("backgammon_casino_duels", event.stake > 0)
+        bump("backgammon_duel_big", event.stake >= 10_000)
+        bump("backgammon_stake_15", event.stake == 15)
+        if event.stake:
+            delta.peak["backgammon_cube_max"] = event.cube
+            if won:
+                delta.peak["backgammon_value_max"] = event.cube * event.kind
+        if crowd_pool:
+            delta.peak["backgammon_crowd_max"] = crowd_pool
+        if net > 0:
+            delta.peak["backgammon_win_max"] = net
+    bump("backgammon_rake", amount=rake)
+    bump("backgammon_retos", amount=retos)
+    bump("backgammon_retos_full", retos_full)
+    bump("backgammon_nochevieja", when.month == 12 and when.day == 31)
+    bump("backgammon_canarias", when.month == 5 and when.day == 30)
+    bump("backgammon_reyes", when.month == 1 and when.day == 6)
+    bump("backgammon_night", 2 <= when.hour < 6)
+    bump("backgammon_friday13", lost and when.weekday() == 4 and when.day == 13)
+    return delta
+
+
+def backgammon_bet_stats(
+    *, won: bool, refunded: bool, odds_cents: int, rake: int, when: datetime
+) -> StatDelta:
+    """Contadores de una apuesta de grada en un duelo de backgammon (sin lo común del casino).
+
+    Args:
+        won: Si acertó.
+        refunded: Si se devolvió (nadie apostó por el otro color).
+        odds_cents: Cuota cobrada, en centésimas (0 si no cobró).
+        rake: Comisión de la casa que se ha dejado.
+        when: Hora local.
+    """
+    delta = StatDelta(add={"backgammon_bets": 1})
+    if refunded:
+        delta.add["backgammon_bet_refund"] = 1
+    elif won:
+        delta.add["backgammon_bets_won"] = 1
+        delta.peak["backgammon_bet_odds_max"] = odds_cents
+    if rake:
+        delta.add["backgammon_rake"] = rake
+    if 2 <= when.hour < 6:
+        delta.add["backgammon_night"] = 1
     return delta
 
 
