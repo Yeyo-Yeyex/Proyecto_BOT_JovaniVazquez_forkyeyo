@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.0.1 · 2026-10-14
+
+- Interno: reglas para que Claude navegue el código con el grafo de graphify
+
 ### 6.0.0 · 2026-10-14
 
 - Póker: mesa del canal para seis, 💎 Bote progresivo y el club (rango, retos y racha)
