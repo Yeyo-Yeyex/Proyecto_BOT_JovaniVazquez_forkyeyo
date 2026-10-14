@@ -74,6 +74,7 @@ def _report() -> dict:
             _entry("message", "#chat", 500, users=5),
             _entry("voice", "#sala", 90, users=2),
             _entry("render", "coin", 12, ms=1200.0, ms_max=2500),
+            _entry("upload", "moneda.gif · 250 KB-1 MB", 9, ms=800.0, ms_max=2100),
             _entry("log", "WARNING:bot.cogs.x", 7),
         ],
         "por_dia": per_day,
@@ -184,6 +185,7 @@ def test_secciones_salen_en_el_orden_pedido():
         "## Canales",
         "## Sistema",
         "## Dibujos",
+        "## Subidas a Discord",
         "## Log",
         "## Casino",
         "## Economía",
@@ -305,6 +307,9 @@ def test_sistema_respeta_el_limite_indicado():
 def test_dibujos_y_log_salen_ordenados():
     assert "| coin | 12 | 1200 | 2500 |" in _text(am.section_render(_report(), 10))
     assert "WARNING:bot.cogs.x | 7" in _text(am.section_log(_report(), 10))
+    assert "| moneda.gif · 250 KB-1 MB | 9 | 0 | 800 | 2100 |" in _text(
+        am.section_upload(_report(), 10)
+    )
 
 
 def test_casino_avisa_si_la_casa_pierde_o_no_hay_jugadas():

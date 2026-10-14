@@ -489,6 +489,30 @@ def section_render(report: Report, top: int) -> list[str]:
     return _section("Dibujos", body)
 
 
+def section_upload(report: Report, top: int) -> list[str]:
+    """Tiempo medio y máximo de subir cada archivo a Discord, por nombre y tamaño."""
+    rows = sorted(
+        _entries(report, "upload"),
+        key=lambda e: (-_num(e.get("ms_medio")), str(e.get("nombre"))),
+    )
+    body: list[str] = []
+    if rows:
+        body = _table(
+            ["Archivo", "Subidas", "Fallos", "ms medio", "ms máx"],
+            [
+                (
+                    e.get("nombre"),
+                    int(_num(e.get("eventos"))),
+                    int(_num(e.get("errores"))),
+                    "-" if e.get("ms_medio") is None else f"{e['ms_medio']:.0f}",
+                    f"{_num(e.get('ms_max')):.0f}",
+                )
+                for e in rows[:top]
+            ],
+        )
+    return _section("Subidas a Discord", body)
+
+
 def section_log(report: Report, top: int) -> list[str]:
     """Avisos y errores registrados por el bot, de más a menos frecuentes."""
     rows = sorted(
@@ -587,7 +611,13 @@ def build_text(
     ):
         lines += section(report, top)
     lines += section_system(report, top, limit_mb)
-    for section in (section_render, section_log, section_casino, section_economy):
+    for section in (
+        section_render,
+        section_upload,
+        section_log,
+        section_casino,
+        section_economy,
+    ):
         lines += section(report, top)
     return lines
 

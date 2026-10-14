@@ -25,12 +25,14 @@ misma cuenta que usa el dibujo con Pillow. La escena solo pinta.
 Pillow. El primer fallo de cada uno se avisa una vez en el log y desde
 entonces se salta. El juego nunca se queda sin imagen.
 
-Coste: una carrera son ~130-170 fotogramas. Node arranca en ~0,4 s y ocupa
-~90 MB; el GIF se monta después en un hilo, fuera del event loop. Chromium
-arranca en ~1-2 s la primera vez y ocupa ~150-250 MB mientras está abierto
-(ahora solo para la parrilla y el boleto, o si Node falla); ambos se cierran
-solos tras `IDLE_SECONDS` sin uso. Solo hay una pestaña y un proceso de Node,
-y una carrera se pinta detrás de otra.
+Coste: una carrera son ~130-170 fotogramas. Node ya está abierto (los procesos
+de `bot.services.node_scene` son de todos los juegos) y la escena de la carrera
+le suma ~50 MB; el GIF se monta después en un hilo, fuera del event loop.
+Chromium arranca en ~1-2 s la primera vez y ocupa ~150-250 MB mientras está
+abierto (ahora solo para la parrilla y el boleto, o si Node falla) y se cierra
+solo tras `IDLE_SECONDS` sin uso. Solo hay una pestaña, y la carrera de Node
+va en un solo proceso (`NodeScene.sequence`: el polvo guarda estado de un
+fotograma al siguiente).
 """
 
 from __future__ import annotations
