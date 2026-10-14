@@ -240,11 +240,12 @@ def _button(
     label: str,
     callback: Callable[[discord.Interaction], Awaitable[None]],
     *,
+    custom_id: str,
     style: discord.ButtonStyle = discord.ButtonStyle.secondary,
     disabled: bool = False,
 ) -> ui.Button:
-    """Botón con su callback ya enganchado."""
-    button: ui.Button = ui.Button(label=label, style=style, disabled=disabled)
+    """Botón con su callback ya enganchado y su `custom_id` fijo."""
+    button: ui.Button = ui.Button(label=label, style=style, disabled=disabled, custom_id=custom_id)
     button.callback = callback  # type: ignore[method-assign]
     return button
 
@@ -539,7 +540,14 @@ class Storefront(ui.LayoutView):
                     if key == self.tab
                     else discord.ButtonStyle.secondary
                 )
-                tabs.add_item(_button(f"{label} · {count}", self._tab(key), style=style))
+                tabs.add_item(
+                    _button(
+                        f"{label} · {count}",
+                        self._tab(key),
+                        custom_id=f"tienda:tab:{key}",
+                        style=style,
+                    )
+                )
             container.add_item(tabs)
         if (aisles := self._aisle_select()) is not None:
             row: ui.ActionRow = ui.ActionRow()
@@ -558,11 +566,14 @@ class Storefront(ui.LayoutView):
             )
         for item in page_items:
             if item.sold_out:
-                buy = _button("Agotado", self._noop, disabled=True)
+                buy = _button(
+                    "Agotado", self._noop, custom_id=f"tienda:agotado:{item.id}", disabled=True
+                )
             else:
                 buy = _button(
                     f"Comprar · {money(quote(item, now).base)}",
                     self._buy(item.id),
+                    custom_id=f"tienda:comprar:{item.id}",
                     style=discord.ButtonStyle.success,
                 )
             card = item_card(item, now, best_seller=item.id == self.best_seller)
@@ -570,10 +581,38 @@ class Storefront(ui.LayoutView):
         self.add_item(container)
 
         nav: ui.ActionRow = ui.ActionRow()
-        nav.add_item(_button("◀", self._move(-1), disabled=self.page == 0))
-        nav.add_item(_button(f"Página {self.page + 1}/{self.pages}", self._noop, disabled=True))
-        nav.add_item(_button("▶", self._move(1), disabled=self.page >= self.pages - 1))
-        nav.add_item(_button("🎒 Mi mochila", self._backpack, style=discord.ButtonStyle.primary))
+        nav.add_item(
+            _button(
+                "◀",
+                self._move(-1),
+                custom_id="tienda:pagina:anterior",
+                disabled=self.page == 0,
+            )
+        )
+        nav.add_item(
+            _button(
+                f"Página {self.page + 1}/{self.pages}",
+                self._noop,
+                custom_id="tienda:pagina",
+                disabled=True,
+            )
+        )
+        nav.add_item(
+            _button(
+                "▶",
+                self._move(1),
+                custom_id="tienda:pagina:siguiente",
+                disabled=self.page >= self.pages - 1,
+            )
+        )
+        nav.add_item(
+            _button(
+                "🎒 Mi mochila",
+                self._backpack,
+                custom_id="tienda:mochila",
+                style=discord.ButtonStyle.primary,
+            )
+        )
         self.add_item(nav)
 
     def _aisle_select(self) -> ui.Select | None:
@@ -602,7 +641,9 @@ class Storefront(ui.LayoutView):
             )
             for a in present[:24]
         ]
-        select: ui.Select = ui.Select(placeholder="🧭 Elige pasillo", options=options)
+        select: ui.Select = ui.Select(
+            placeholder="🧭 Elige pasillo", options=options, custom_id="tienda:pasillo"
+        )
 
         async def callback(interaction: discord.Interaction) -> None:
             value = select.values[0]
@@ -757,11 +798,12 @@ class Checkout(ui.LayoutView):
             _button(
                 f"💳 Pagar {format_amount(price.total)}",
                 self._pay,
+                custom_id="caja:pagar",
                 style=discord.ButtonStyle.success,
                 disabled=missing > 0,
             )
         )
-        row.add_item(_button("Cancelar", self._cancel))
+        row.add_item(_button("Cancelar", self._cancel, custom_id="caja:cancelar"))
         self.add_item(row)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -775,8 +817,9 @@ class Checkout(ui.LayoutView):
         await interaction.response.edit_message(view=self)
 
     async def _pay(self, interaction: discord.Interaction) -> None:
+        # El ack va antes del candado: un doble clic no espera a la compra del primero.
+        await ack(interaction)
         async with self._lock:
-            await ack(interaction)
             if self.done or self.failed:
                 return
             paid = await self.cog.complete_purchase(self, interaction)
@@ -920,7 +963,9 @@ class Backpack(ui.LayoutView):
                         description=use.summary.removeprefix("🫳 ")[:100],
                     )
                 )
-            use_select: ui.Select = ui.Select(placeholder="🫳 Usar algo", options=use_options)
+            use_select: ui.Select = ui.Select(
+                placeholder="🫳 Usar algo", options=use_options, custom_id="mochila:usar"
+            )
 
             async def use_callback(interaction: discord.Interaction) -> None:
                 await self.cog.start_use(interaction, self, int(use_select.values[0]))
@@ -943,7 +988,7 @@ class Backpack(ui.LayoutView):
                 for e in wardrobe[:25]
             ]
             select: ui.Select = ui.Select(
-                placeholder="👔 Ponerte o quitarte un rol", options=options
+                placeholder="👔 Ponerte o quitarte un rol", options=options, custom_id="mochila:rol"
             )
 
             async def callback(interaction: discord.Interaction) -> None:
@@ -972,7 +1017,9 @@ class Backpack(ui.LayoutView):
                 discord.SelectOption(label="Sin título", value=NO_TITLE, emoji="🚫")
             )
             title_select: ui.Select = ui.Select(
-                placeholder="🎖️ Qué título luces", options=title_options
+                placeholder="🎖️ Qué título luces",
+                options=title_options,
+                custom_id="mochila:titulo",
             )
 
             async def title_callback(interaction: discord.Interaction) -> None:
@@ -985,7 +1032,9 @@ class Backpack(ui.LayoutView):
 
         if self.viewer.id == self.member.id and (options := skin_game_options(self.entries, worn)):
             skin_select: ui.Select = ui.Select(
-                placeholder="🎨 Cambiar la skin de una mesa", options=options
+                placeholder="🎨 Cambiar la skin de una mesa",
+                options=options,
+                custom_id="mochila:skin",
             )
 
             async def skin_callback(interaction: discord.Interaction) -> None:

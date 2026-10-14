@@ -102,6 +102,15 @@ Todo botón nuevo, o que se toque, sigue estas reglas. Las funciones están en
    no espera a una escritura. Un repositorio nuevo no llama a `sqlite3.connect` a
    mano.
 
+9. **Los botones que se rehacen llevan `custom_id` fijo** (`minas:tile:5`, no el
+   que pone discord.py al azar). Entre `clear_items()` y que Discord tenga el
+   mensaje nuevo, un clic llega a un botón que ya no está en la vista; el rescate
+   de clics del cog `Errors` lo pasa al botón que lo sustituye por su `custom_id`.
+   Con uno al azar no lo encuentra y el clic se pierde (se acepta sin hacer nada).
+   El mismo rescate contesta con un aviso a los clics en vistas caducadas o de
+   antes de un reinicio. Un listener que atienda botones por su cuenta lo dice con
+   `claim_custom_ids(prefijo)` (`pala`).
+
 Para probarlo, el doble de `tests/interaction_fakes.py` (`fake_interaction`) se porta
 como Discord: una sola respuesta y `is_done()` de verdad. Con un `MagicMock` sin más,
 `is_done()` siempre es falso y la prueba no ve si el botón contesta tarde o dos veces.

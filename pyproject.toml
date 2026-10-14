@@ -5,6 +5,10 @@ description = "Bot de Discord con arquitectura modular en Python."
 requires-python = ">=3.12"
 dependencies = [
     "discord.py>=2.4,<3",
+    # discord.py los usa solos si están: orjson lee los eventos de Discord más rápido
+    # y zstandard comprime la conexión con zstd en vez de zlib.
+    "orjson>=3.10",
+    "zstandard>=0.23",
     "python-dotenv>=1.0,<2",
     "yt-dlp>=2024.1",
     "PyNaCl>=1.5,<2",

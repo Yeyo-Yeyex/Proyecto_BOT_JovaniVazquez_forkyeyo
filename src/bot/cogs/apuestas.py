@@ -549,7 +549,9 @@ class PageSelect(discord.ui.Select):
             discord.SelectOption(label=name, value=key, emoji=emoji, default=key == view.page)
             for key, (emoji, name) in PAGES.items()
         ]
-        super().__init__(placeholder="Elige qué mirar", options=options, row=0)
+        super().__init__(
+            placeholder="Elige qué mirar", options=options, row=0, custom_id="apuestas:pagina"
+        )
         self.stats_view = view
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -597,6 +599,7 @@ class StatsView(discord.ui.View):
                     else discord.ButtonStyle.secondary
                 ),
                 row=1,
+                custom_id=f"apuestas:periodo:{period.key}",
             )
             button.callback = self._period_callback(period)
             self.add_item(button)
@@ -607,6 +610,7 @@ class StatsView(discord.ui.View):
             style=discord.ButtonStyle.secondary,
             row=2,
             disabled=self.page == "ranking",
+            custom_id="apuestas:ambito",
         )
         scope.callback = self._toggle_scope
         self.add_item(scope)

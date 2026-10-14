@@ -140,11 +140,12 @@ def _button(
     label: str,
     callback: Callable[[discord.Interaction], Awaitable[None]],
     *,
+    custom_id: str,
     style: discord.ButtonStyle = discord.ButtonStyle.secondary,
     disabled: bool = False,
 ) -> ui.Button:
-    """Botón con su callback ya enganchado."""
-    button: ui.Button = ui.Button(label=label, style=style, disabled=disabled)
+    """Botón con su callback ya enganchado y su `custom_id` fijo."""
+    button: ui.Button = ui.Button(label=label, style=style, disabled=disabled, custom_id=custom_id)
     button.callback = callback  # type: ignore[method-assign]
     return button
 
@@ -373,7 +374,9 @@ class LotteryPanel(ui.LayoutView):
             for key, label in TABS[start : start + 5]:
                 selected = key == self.tab
                 style = discord.ButtonStyle.primary if selected else discord.ButtonStyle.secondary
-                row.add_item(_button(label, self._tab(key), style=style))
+                row.add_item(
+                    _button(label, self._tab(key), custom_id=f"loteria:tab:{key}", style=style)
+                )
             container.add_item(row)
         container.add_item(ui.Separator())
         if self.tab == "nacional":
@@ -387,7 +390,14 @@ class LotteryPanel(ui.LayoutView):
                 )
                 short = game.name.replace("Lotería Nacional del ", "").replace("Lotería de", "")
                 short = short.replace("Lotería del", "").strip().capitalize()
-                subtabs.add_item(_button(f"{game.emoji} {short}", self._nacional(key), style=style))
+                subtabs.add_item(
+                    _button(
+                        f"{game.emoji} {short}",
+                        self._nacional(key),
+                        custom_id=f"loteria:nacional:{key}",
+                        style=style,
+                    )
+                )
             container.add_item(subtabs)
         container.add_item(ui.TextDisplay(self.body[:3500]))
         actions = self._actions()
@@ -409,6 +419,7 @@ class LotteryPanel(ui.LayoutView):
                         f"{scratch_game.emoji} Rascar {scratch_game.name.replace('Rasca ', '')} · "
                         f"{format_amount(scratch_game.price)}",
                         self._scratch(key),
+                        custom_id=f"loteria:rascar:{key}",
                         style=discord.ButtonStyle.success,
                     )
                 )
@@ -420,6 +431,7 @@ class LotteryPanel(ui.LayoutView):
                 _button(
                     f"🎲 Décimo al azar · {format_amount(game.price)}",
                     self._quick(game.key, 1),
+                    custom_id=f"loteria:rapido:{game.key}:1",
                     style=discord.ButtonStyle.success,
                 )
             )
@@ -427,10 +439,17 @@ class LotteryPanel(ui.LayoutView):
                 _button(
                     f"🎲 Billete (10 décimos) · {format_amount(game.price * BILLETE)}",
                     self._quick(game.key, BILLETE),
+                    custom_id=f"loteria:rapido:{game.key}:{BILLETE}",
                     style=discord.ButtonStyle.success,
                 )
             )
-            row.add_item(_button("✍️ Elegir número", self._choose(game.key)))
+            row.add_item(
+                _button(
+                    "✍️ Elegir número",
+                    self._choose(game.key),
+                    custom_id=f"loteria:elegir:{game.key}",
+                )
+            )
             return row
         for count in QUICK_BETS:
             label = "apuesta" if count == 1 else "apuestas"
@@ -438,10 +457,15 @@ class LotteryPanel(ui.LayoutView):
                 _button(
                     f"🎲 {count} {label} · {format_amount(game.price * count)}",
                     self._quick(game.key, count),
+                    custom_id=f"loteria:rapido:{game.key}:{count}",
                     style=discord.ButtonStyle.success,
                 )
             )
-        row.add_item(_button("✍️ Elegir números", self._choose(game.key)))
+        row.add_item(
+            _button(
+                "✍️ Elegir números", self._choose(game.key), custom_id=f"loteria:elegir:{game.key}"
+            )
+        )
         return row
 
     async def _redirect(self, interaction: discord.Interaction) -> bool:

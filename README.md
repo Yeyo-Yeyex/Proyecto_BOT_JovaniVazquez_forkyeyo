@@ -949,7 +949,8 @@ La cola de música está en memoria y se pierde al reiniciar el contenedor.
 ### Telemetría interna: `informe`
 
 El bot cuenta cuánto se usa cada cosa para poder decidir mejoras con datos: comandos
-y botones (con lo que tardan en contestar y si se quedaron sin respuesta), mensajes
+y botones (con lo que tardan en contestar, partido en llegada al bot, trabajo del bot
+y viaje de la respuesta, y si se quedaron sin respuesta), mensajes
 por canal, reacciones, minutos de voz, altas y bajas, avisos del log, lo que tarda
 cada dibujo y cada subida de archivos a Discord, dónde se para el bucle de eventos
 cuando se queda bloqueado más de 250 ms y, cada minuto, la memoria del contenedor,

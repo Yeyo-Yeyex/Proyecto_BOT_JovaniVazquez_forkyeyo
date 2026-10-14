@@ -112,11 +112,14 @@ def _button(
     label: str,
     callback: Callable[[discord.Interaction], Awaitable[None]],
     *,
+    custom_id: str,
     emoji: str | None = None,
     style: discord.ButtonStyle = discord.ButtonStyle.secondary,
     disabled: bool = False,
 ) -> ui.Button:
-    button: ui.Button = ui.Button(label=label, emoji=emoji, style=style, disabled=disabled)
+    button: ui.Button = ui.Button(
+        label=label, emoji=emoji, style=style, disabled=disabled, custom_id=custom_id
+    )
     button.callback = callback  # type: ignore[method-assign]
     return button
 
@@ -281,7 +284,9 @@ class PetPanel(ui.LayoutView):
                 )
                 for p in self.pets[:SELECT_LIMIT]
             ]
-            select: ui.Select = ui.Select(placeholder="🐾 Ver otra mascota", options=options)
+            select: ui.Select = ui.Select(
+                placeholder="🐾 Ver otra mascota", options=options, custom_id="mascota:elegir"
+            )
 
             async def pick(interaction: discord.Interaction) -> None:
                 self.selected, self.note = int(select.values[0]), None
@@ -298,19 +303,26 @@ class PetPanel(ui.LayoutView):
         if self.mine:
             care_row: ui.ActionRow = ui.ActionRow()
             for care, emoji, label in _CARE_BUTTONS:
-                care_row.add_item(_button(label, self._care(care), emoji=emoji))
+                care_row.add_item(
+                    _button(
+                        label, self._care(care), custom_id=f"mascota:cuidar:{care}", emoji=emoji
+                    )
+                )
             self.add_item(care_row)
             extra: ui.ActionRow = ui.ActionRow()
             extra.add_item(
                 _button(
                     "Va contigo" if active else "Llevar contigo",
                     self._activate,
+                    custom_id="mascota:activar",
                     emoji="⭐",
                     style=discord.ButtonStyle.primary,
                     disabled=active,
                 )
             )
-            extra.add_item(_button("Ponerle nombre", self._rename, emoji="✏️"))
+            extra.add_item(
+                _button("Ponerle nombre", self._rename, custom_id="mascota:nombre", emoji="✏️")
+            )
             self.add_item(extra)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
