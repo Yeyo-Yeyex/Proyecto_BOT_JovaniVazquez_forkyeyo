@@ -37,6 +37,7 @@ archivos y añadir reacciones (para confirmar `.poker timba`).
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import logging
 import math
@@ -318,6 +319,8 @@ class Table:
         self.small_blind = max(1, big_blind // 2)
         self.skin = skin
         self.png = png
+        #: Lo que habrá pasado si quien habla se duerme y la imagen que se pinta para eso.
+        self.ahead: tuple[list[Event], asyncio.Task[bytes | None]] | None = None
         self.message: discord.Message | None = None
         self.phase = Phase.LOBBY
         self.chairs: list[Chair] = []
@@ -369,9 +372,9 @@ class Table:
 
     # -- Vista -----------------------------------------------------------------------------
 
-    def seat_views(self, *, reveal: bool = False) -> list[TimbaSeat]:
-        """Los asientos de la mano en curso tal y como los pinta la mesa."""
-        hand = self.hand
+    def seat_views(self, hand: TimbaHand | None = None, *, reveal: bool = False) -> list[TimbaSeat]:
+        """Los asientos de la mano en curso (o de `hand`) tal y como los pinta la mesa."""
+        hand = hand or self.hand
         assert hand is not None
         last: dict[int, Event] = {e.user_id: e for e in hand.events}
         result = hand.result
@@ -411,13 +414,41 @@ class Table:
             )
         return views
 
+    async def paint(self, hand: TimbaHand, *, reveal: bool = False) -> bytes:
+        """PNG de la mesa de `hand` (su final, con `reveal`)."""
+        views = self.seat_views(hand, reveal=reveal)
+        state = timba_state(hand.visible_board, views, pot=hand.pot)
+        meta = {**timba_meta(self.blinds_text()), "skin": self.skin}
+        return await self.cog.renderer.timba(meta, state)
+
     async def render(self, *, reveal: bool = False) -> None:
-        """Pinta la mesa de la mano en curso (o su final, con `reveal`)."""
+        """Pinta la mesa de la mano en curso (o su final, con `reveal`).
+
+        Si quien hablaba se durmió, la imagen ya se pintó mientras se le esperaba.
+        """
         hand = self.hand
         assert hand is not None
-        state = timba_state(hand.visible_board, self.seat_views(reveal=reveal), pot=hand.pot)
-        meta = {**timba_meta(self.blinds_text()), "skin": self.skin}
-        self.png = await self.cog.renderer.timba(meta, state)
+        ahead, self.ahead = self.ahead, None
+        if ahead is not None and ahead[0] == hand.events:
+            if (png := await ahead[1]) is not None:
+                self.png = png
+                return
+        self.png = await self.paint(hand, reveal=reveal)
+
+    def paint_ahead(self) -> None:
+        """Empieza a pintar la mesa tal y como quedará si quien habla se duerme."""
+        assert self.hand is not None
+        ahead = copy.deepcopy(self.hand)
+        ahead.timeout()
+
+        async def paint() -> bytes | None:
+            try:
+                return await self.paint(ahead, reveal=ahead.finished)
+            except Exception:
+                logger.debug("No se pudo pintar la timba por adelantado", exc_info=True)
+                return None
+
+        self.ahead = (ahead.events, asyncio.create_task(paint()))
 
     def log_lines(self) -> list[str]:
         hand = self.hand
@@ -829,6 +860,7 @@ class Table:
             self.acted.clear()
             self.turn_deadline = self.cog.wall_clock() + TURN_SECONDS
             await self.publish()
+            self.paint_ahead()
             # Hasta el plazo que se enseña: pintar y subir la mesa ya ha gastado parte.
             await self.nap(max(0.0, self.turn_deadline - self.cog.wall_clock()), wake=self.acted)
             if self.phase is Phase.CLOSED:

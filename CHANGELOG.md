@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.1.1 · 2026-10-14
+
+- Timba: mientras corre el turno se pinta ya la mesa de quien se duerme, y sale al momento al acabarse el tiempo
+
 ### 6.1.0 · 2026-10-14
 
 - Timba: botón ✅ Listo entre manos (si lo pulsan todos, empieza ya) y dos minutos de espera si no
