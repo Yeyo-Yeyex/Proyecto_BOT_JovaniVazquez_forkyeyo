@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.1.2 · 2026-10-14
+
+- Timba: la mesa de cada botón de quien habla (pasar o igualar, retirarse, cada subida y todo) se pinta mientras corre su turno, y la primera de cada mano durante la espera entre manos
+
 ### 6.1.1 · 2026-10-14
 
 - Timba: mientras corre el turno se pinta ya la mesa de quien se duerme, y sale al momento al acabarse el tiempo
