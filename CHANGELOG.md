@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.5.0 · 2026-10-14
+
+- Tienda: nueve tapetes nuevos (PSOE, Falcon, NO-DO, Modelo 100, Prove Me Wrong, archivos Epstein, Corea del Norte, diamantes y el Gordo) y el de Israel baja a 271.000 Y$
+
 ### 6.4.1 · 2026-10-14
 
 - Timba: al empezar la mano ya no se quedan los botones de entre manos y nadie se retira sin poder jugar
