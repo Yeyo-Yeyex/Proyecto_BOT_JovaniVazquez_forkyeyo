@@ -54,7 +54,9 @@ async def test_on_message_pasa_el_canal_que_otorgo_el_nivel() -> None:
 
     await cog.on_message(message)
 
-    cog._announce_level_up.assert_awaited_once_with(guild, channel, member, 1, reward=None)
+    cog._announce_level_up.assert_awaited_once_with(
+        guild, channel, member, 1, reward=None, gift=None
+    )
 
 
 @pytest.mark.asyncio

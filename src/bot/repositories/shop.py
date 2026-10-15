@@ -1149,6 +1149,7 @@ class ShopRepository:
         *,
         restock: bool = False,
         revised: Mapping[str, int] | None = None,
+        retired: Collection[str] = (),
     ) -> int:
         """Mete en el catálogo del servidor los artículos de serie que falten.
 
@@ -1163,12 +1164,22 @@ class ShopRepository:
                 (`shop_catalog.REVISED_PRICES`). Los que aún lo tienen pasan al
                 precio, nivel mínimo, existencias y descripción de `entries`; las
                 existencias nunca bajan de lo ya vendido.
+            retired: Claves de los artículos de serie que ya no se venden
+                (`shop_catalog.RETIRED_ITEMS`). Se ocultan una sola vez por servidor
+                (queda apuntado en `shop_seeded` como `retirado:<clave>`), así que un
+                administrador que los vuelva a enseñar no los ve ocultarse otra vez.
 
         Returns:
             Cuántos artículos ha añadido.
         """
         return await self._run(
-            self._stock_sync, guild_id, list(entries), now, restock, dict(revised or {})
+            self._stock_sync,
+            guild_id,
+            list(entries),
+            now,
+            restock,
+            dict(revised or {}),
+            tuple(retired),
         )
 
     def _stock_sync(
@@ -1178,6 +1189,7 @@ class ShopRepository:
         now: float,
         restock: bool,
         revised: dict[str, int],
+        retired: tuple[str, ...],
     ) -> int:
         connection = self._connect()
         try:
@@ -1234,6 +1246,18 @@ class ShopRepository:
                         (guild_id, entry.key),
                     )
                     added += 1
+                for key in retired:
+                    marker = f"retirado:{key}"
+                    if marker in seeded:
+                        continue
+                    connection.execute(
+                        "UPDATE shop_items SET visible = 0 WHERE guild_id = ? AND catalog_key = ?",
+                        (guild_id, key),
+                    )
+                    connection.execute(
+                        "INSERT OR IGNORE INTO shop_seeded (guild_id, catalog_key) VALUES (?, ?)",
+                        (guild_id, marker),
+                    )
                 for entry in entries:
                     old_price = revised.get(entry.key)
                     if old_price is None or old_price == entry.price:

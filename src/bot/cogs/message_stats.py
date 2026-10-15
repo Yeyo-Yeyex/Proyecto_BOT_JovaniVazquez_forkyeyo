@@ -65,6 +65,7 @@ from bot.services.levels import (
     streak_multiplier,
     voice_award,
 )
+from bot.services.lootboxes import FREE_BOX_LEVELS
 from bot.services.pets import Event, Moment
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -380,8 +381,22 @@ class MessageStats(commands.Cog):
         if current_level <= previous_level:
             return
         reward = await self._pay_level_reward(guild, member, previous_level, current_level)
+        # Una caja de regalo cada FREE_BOX_LEVELS niveles (no mueve dinero: ver `lootboxes`).
+        gifts = current_level // FREE_BOX_LEVELS - previous_level // FREE_BOX_LEVELS
+        gift = None
+        if gifts > 0:
+            gift = await tienda.grant_box(
+                self.bot,
+                guild.id,
+                member.id,
+                "caja_regalo",
+                because=f"llegar al nivel {current_level}",
+                count=gifts,
+            )
         channel = self._announce_target(guild, award, channel)
-        await self._announce_level_up(guild, channel, member, current_level, reward=reward)
+        await self._announce_level_up(
+            guild, channel, member, current_level, reward=reward, gift=gift
+        )
         delta = StatDelta(peak={"level_max": current_level})
         if reward is not None:
             delta.add["tax_paid"] = reward.tax
@@ -696,8 +711,12 @@ class MessageStats(commands.Cog):
         level: int,
         *,
         reward: IncomeResult | None = None,
+        gift: str | None = None,
     ) -> None:
-        """Publica el aviso en el canal donde se ganó el nivel, con el premio cobrado."""
+        """Publica el aviso en el canal donde se ganó el nivel, con el premio cobrado.
+
+        `gift` es la línea de la caja de regalo que se gana cada 5 niveles, si toca.
+        """
         text = (
             f"¡{discord.utils.escape_markdown(member.display_name)} "
             f"ha alcanzado el nivel **{level}**! {random.choice(LEVEL_LINES)}"
@@ -707,6 +726,8 @@ class MessageStats(commands.Cog):
                 f" {CURRENCY_EMOJI} +{format_amount(reward.net)}\n"
                 f"{tax_line(reward.gross, reward.tax, reward.rate)}"
             )
+        if gift:
+            text += f"\n{gift}"
         if pet := await mascotas.cameo(self.bot, guild.id, member.id, Moment(Event.LEVEL)):
             text += f"\n{pet}"
         try:

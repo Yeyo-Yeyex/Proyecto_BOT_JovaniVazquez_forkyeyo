@@ -68,6 +68,14 @@ numerados y piden nivel. Uno de cada por persona. No dan dinero ni XP.
 un logro están ocultas (`visible=False`), como las mascotas que aparecen
 solas. Cambian el aspecto de una mesa del casino y nada más.
 
+**Cajas y piezas.** Salen de `bot.services.lootboxes`: siete cajas con la clave de su
+artículo (`caja_carton`, `caja_regalo`, `maletin_ministro`, `cofre_rey_emerito` y las de
+temporada `caja_navidad`, `caja_halloween`, `caja_aniversario`), que se abren desde la
+mochila (uso `lootbox`) y pagan IGIC general, y las 82 piezas de colección
+(`pieza_<colección>_<pieza>`) que solo salen de ellas: coleccionables ocultos
+(`visible=False`) con su valor como precio. La caja botín de siempre (`caja_botin`)
+está en `RETIRED_ITEMS`: ya no se vende, pero se sigue abriendo.
+
 **Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
 desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
 (`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
@@ -79,6 +87,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bot.services.lootboxes import BOXES, COLLECTION_BY_KEY, PIECES, Box, Piece
 from bot.services.pets_catalog import SPECIES, Species
 from bot.services.shop import Kind
 from bot.services.shop_uses import USES, Use
@@ -223,6 +232,7 @@ def _t(
     level: int = 0,
     use: str | None = None,
     food: bool = False,
+    visible: bool = True,
 ) -> CatalogEntry:
     """Un objeto (coleccionable, usable o comestible)."""
     return CatalogEntry(
@@ -239,6 +249,7 @@ def _t(
         min_level=level,
         use=use,
         food=food,
+        visible=visible,
     )
 
 
@@ -286,6 +297,39 @@ def _skin(skin: Skin) -> CatalogEntry:
         per_user=1,
         min_level=skin.min_level,
         visible=skin.for_sale,
+    )
+
+
+def _box(box: Box) -> CatalogEntry:
+    """El artículo de una caja: se usa desde la mochila y paga IGIC general.
+
+    Las de temporada solo se venden en sus meses (`lootboxes.in_season`).
+    """
+    return CatalogEntry(
+        key=box.key,
+        kind=Kind.TROPHY,
+        aisle=box.aisle,
+        emoji=box.emoji,
+        name=box.name,
+        price=box.price,
+        description=box.description,
+        min_level=box.min_level,
+        use="lootbox",
+    )
+
+
+def _piece(piece: Piece) -> CatalogEntry:
+    """El artículo de una pieza de colección: oculto, solo sale de las cajas."""
+    return CatalogEntry(
+        key=piece.key,
+        kind=Kind.TROPHY,
+        aisle=COLLECTION_BY_KEY[piece.collection].aisle,
+        emoji=piece.emoji,
+        name=piece.name,
+        price=piece.price,
+        description=piece.description,
+        min_level=piece.min_level,
+        visible=False,
     )
 
 
@@ -643,7 +687,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "conocemos.", use="megafono"),
     _t("caja_botin", "bazar", "🎁", "Caja botín del colmado", 2_500,
        "Dentro hay un coleccionable al azar. Puede ser un yate. Suele ser un calcetín. "
-       "Como las de los videojuegos, pero con IGIC.", use="caja"),
+       "Como las de los videojuegos, pero con IGIC.", use="caja", visible=False),
     _t("papel_higienico", "bazar", "🧻", "Rollo de papel higiénico de 2020", 200,
        "Superviviente del acaparamiento de marzo de 2020. Vale más por lo que "
        "representa que por lo que hace."),
@@ -1018,8 +1062,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
 CATALOG += tuple(_pet(species) for species in SPECIES)
 #: Y las skins, con el suyo generado desde `skins`.
 CATALOG += tuple(_skin(skin) for skin in SKINS)
+#: Las cajas y sus piezas de colección, generadas desde `lootboxes`.
+CATALOG += tuple(_box(box) for box in BOXES)
+CATALOG += tuple(_piece(piece) for piece in PIECES)
 
 CATALOG_BY_KEY: dict[str, CatalogEntry] = {entry.key: entry for entry in CATALOG}
+
+#: Artículos de serie que ya no se venden. Los servidores nuevos los siembran ocultos
+#: y la primera apertura de la tienda oculta una vez los que ya tenían
+#: (`ShopRepository.stock_catalog`); lo que alguien tenga en la mochila se sigue usando.
+#: Un administrador puede volver a enseñarlos y no se vuelven a ocultar solos.
+RETIRED_ITEMS: frozenset[str] = frozenset({"caja_botin"})
 
 #: Artículos de serie que han cambiado de precio cuando ya estaban en los servidores,
 #: con el precio que tenían antes. La siembra solo mete lo que falta, así que sin esto el
