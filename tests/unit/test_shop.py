@@ -622,6 +622,30 @@ async def test_comprar_un_coleccionable_desde_la_caja(tmp_path: Path) -> None:
     assert "nº 1 de 3" in texts(backpack)
 
 
+def test_la_ficha_dice_lo_que_ya_tienes() -> None:
+    assert "Lo tienes" not in item_card(item(), NOW)
+    assert "**✅ Lo tienes**" in item_card(item(), NOW, owned=1)
+    assert "✅ Tienes 3" in item_card(item(), NOW, owned=3)
+    assert "✅ Ya lo tienes" in item_card(item(per_user=1), NOW, owned=1)
+    assert "✅ Tienes 2, el máximo" in item_card(item(per_user=2), NOW, owned=2)
+
+
+async def test_el_escaparate_marca_lo_que_ya_has_comprado(tmp_path: Path) -> None:
+    clock = Clock()
+    cog = await make_cog(tmp_path, clock)
+    it = await cog.repository.create_item(
+        GUILD, kind=Kind.TROPHY, name="Yate", emoji="🛥️", description="", price=500,
+        igic="general", now=NOW,
+    )  # fmt: skip
+    guild = make_guild()
+    member = make_member(guild)
+    view = await cog.storefront(guild, member)
+    assert "Lo tienes" not in texts(view)
+    await cog.repository.grant(GUILD, BUYER, it, NOW)
+    view = await cog.storefront(guild, member)
+    assert "✅ Lo tienes" in texts(view)
+
+
 async def test_rol_que_no_se_puede_dar_se_devuelve_entero(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, Clock())
     role = FakeRole(555, 10)
