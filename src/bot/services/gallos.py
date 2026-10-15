@@ -340,12 +340,18 @@ def win_probability(p0: Fraction | float, mine: float, theirs: float = 0.0) -> F
     return min(MAX_WIN, max(MIN_WIN, p))
 
 
+#: Contra la casa, la probabilidad no pasa de esto: así la cuota (`RTP / p`) nunca
+#: baja de ×1,01 y ganar siempre devuelve algo más de lo apostado.
+MAX_HOUSE_WIN = (RTP / Fraction(101, 100)).limit_denominator(10_000)
+
+
 def house_chance(rival: Rival, power: float) -> Fraction:
     """Probabilidad de que un gallo de `power` le gane a `rival`.
 
-    Con poder 0 es `rival.chance`, tal como era antes de los stats.
+    Con poder 0 es `rival.chance`, tal como era antes de los stats. Acotada a
+    `MAX_HOUSE_WIN`, para que la cuota no baje de ×1,01.
     """
-    return win_probability(rival.chance, power, 0.0)
+    return min(MAX_HOUSE_WIN, win_probability(rival.chance, power, 0.0))
 
 
 def duel_chance(red_power: float, blue_power: float) -> Fraction:

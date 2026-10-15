@@ -205,3 +205,13 @@ def test_el_gallo_que_sustituye_al_muerto_empieza_a_cero_pero_el_dueno_guarda_su
 def test_barras_de_stat() -> None:
     assert stat_bar(0) == "░" * 10 and stat_bar(100) == "█" * 10
     assert stat_bar(55) == "█" * 6 + "░" * 4
+
+
+def test_contra_la_casa_la_cuota_nunca_baja_de_1_01() -> None:
+    from bot.services.gallos import HOUSE, MAX_HOUSE_WIN, RTP, house_chance
+
+    for rival in HOUSE:
+        for power in (0, 50, 100):
+            p = house_chance(rival, power)
+            assert p <= MAX_HOUSE_WIN
+            assert RTP / p >= Fraction(101, 100) - Fraction(1, 1000)

@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.1.0 · 2026-10-15
+
+- Gallos: stats, entrenamiento y muertes en el reñidero
+
 ### 7.0.0 · 2026-10-15
 
 - Tragaperras: `tragas` junta todas las máquinas, la clásica y el Volcán
