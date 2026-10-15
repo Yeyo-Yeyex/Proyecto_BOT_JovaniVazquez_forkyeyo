@@ -206,3 +206,8 @@ class WarGame:
     def won(self) -> bool:
         """Si la mano principal acaba en ventaja para el jugador (gana o gana la guerra)."""
         return self.result in (Result.WIN, Result.WAR_WIN, Result.WAR_TIE)
+
+
+def main_net(game: WarGame) -> int:
+    """Lo que gana o pierde la mano principal, sin la lateral."""
+    return game.main_return - game.stake * (2 if game.went_to_war else 1)

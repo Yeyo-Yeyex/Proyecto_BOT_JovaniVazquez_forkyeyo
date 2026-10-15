@@ -1431,17 +1431,20 @@ async def test_la_guerra_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: 
     try:
         cog = client.get_cog("Guerra")
         cog.new_shoe = lambda: [Card(7, 0)] * 10 + [Card(1, 0), Card(13, 0)]
+        cog.ahead = False
         owner = MagicMock(spec=discord.Member)
         owner.id = OWNER_ID
         owner.display_name = "Diego"
         owner.mention = f"<@{OWNER_ID}>"
         owner.bot = False
+        message = MagicMock()
+        message.edit = AsyncMock()  # el GIF y el resultado se editan sobre el mensaje enviado
         await cog._guerra_impl(
             guild=MagicMock(id=GUILD_ID),
             channel=None,
             user=owner,
             amount_text="100",
-            send=AsyncMock(return_value=MagicMock()),
+            send=AsyncMock(return_value=message),
             send_error=AsyncMock(),
         )
 

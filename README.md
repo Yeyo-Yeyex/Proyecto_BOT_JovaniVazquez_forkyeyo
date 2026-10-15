@@ -518,8 +518,14 @@ python -m bot
   dragones. Devuelve el 99 % de media al cobrar en cualquier piso y los
   cobros de ×25 o más se anuncian en el canal.
 - **Guerra** (`/guerra`, `.guerra [cantidad]`): el Casino War. Una carta para
-  ti y otra para la banca en una mesa de imagen (el mismo tapete y baraja del
-  blackjack); gana la más alta, con el as por encima del rey y sin contar los
+  ti y otra para la banca en una mesa propia dibujada con canvas (Node, como
+  el bacará): tapete con skins (botón 🎨), cartas grandes que salen del zapato
+  y se voltean (primero la tuya, luego la de la banca), la ficha y la lateral
+  y un panel con las cuotas y el resultado. Cada jugada es un GIF de ~2 s
+  (repartir, ir a la guerra con las 3 cartas quemadas, rendirse) que acaba en
+  el PNG de la mesa, y se pinta antes del clic: las cartas de la próxima mano
+  se sortean al acabar la anterior y la mesa tiene ya hecho el GIF de cada
+  botón. Gana la más alta, con el as por encima del rey y sin contar los
   palos, y la tuya paga 1:1. Con empate eliges entre 🏳️ Rendirse (recuperas la
   mitad de la apuesta, redondeando hacia abajo) y ⚔️ A la guerra (otra apuesta
   igual, la banca quema 3 cartas y sale una carta más para cada uno): si la
@@ -1178,7 +1184,8 @@ src/bot/
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── war.py           # Reglas de la Guerra: comparar cartas, rendición, guerra y lateral
-│   ├── cards_render.py  # Imagen de la mesa de blackjack y de la Guerra
+│   ├── cards_render.py  # Imagen de la mesa de blackjack (y plan C de la Guerra)
+│   ├── war_scene.py     # Guerra con canvas en Node o Chromium (assets/guerra/escena.html)
 │   ├── roulette_render.py # Rueda de Pillow, de reserva si no hay navegador
 │   ├── roulette_scene.py # Ruleta con canvas en Node o Chromium (assets/ruleta/escena.html)
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
