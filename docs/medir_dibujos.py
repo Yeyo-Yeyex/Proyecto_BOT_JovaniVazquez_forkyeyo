@@ -132,6 +132,20 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 [housing_view.barrio_state(housing_market(), b.key, 10, NAMES) for b in BARRIOS]
             ),
         ),
+        # Cada una de las otras pantallas del panel.
+        **{
+            f"pisos_{screen}": (
+                lambda: HousingScene(executable_path=no),
+                lambda s, sample=sample: s.still(samples()[sample]),
+            )
+            for screen, sample in {
+                "mapa": "mapa",
+                "barrio": "barrio_schamann",
+                "cartera": "cartera",
+                "caja": "caja_compra",
+                "vpo": "vpo_apuntada",
+            }.items()
+        },
     }
 
 
