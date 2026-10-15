@@ -116,7 +116,7 @@ WIN_LINES = (
     "¡Eso es, mi amor!",
     "¡Acertaste!",
     "¡Dale!",
-    "¡Qué suerte, bendito!",
+    "¡Más suerte que Bibi en las urnas!",
     "¡Moneda de curso legal!",
     "¡Ni Fabra tiene tanta suerte!",
     "¡Lo clavas, no como el CIS!",
@@ -145,6 +145,7 @@ LOSE_LINES = (
     "¡Requisada por el Banco de España!",
     "¡Te la ha cogido la inflación!",
     "¡Moneda de la autarquía!",
+    "¡Acuñada por Nick Fuentes en su sótano!",
 )
 EDGE_LINES = (
     "La moneda se ha quedado **de pie**. {collector} la sella y se la queda.",
@@ -158,7 +159,7 @@ EDGE_LINES = (
 FLYING_LINES = (
     "🪙 La moneda vuela…",
     "🪙 ¡Arriba!",
-    "🙏 Que salga, que salga…",
+    "🪙 Más alta que la Cúpula de Hierro…",
     "😬 Gira, gira, gira…",
     "👀 Todos miran la moneda…",
     "🪙 Da más vueltas que Sánchez con la amnistía…",

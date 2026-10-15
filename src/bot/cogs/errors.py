@@ -49,6 +49,9 @@ EXPIRED_CLICK = (
     "Estos botones llevan más tiempo parados que una obra del AVE. Ábrelo otra vez con su comando.",
     "Ese mensaje ya no responde: o se acabó el tiempo o me he reiniciado. ¡Quiero café! "
     "Ábrelo otra vez con su comando.",
+    "Estos botones ya no van, como el juicio de Bibi: aplazados para siempre. Ábrelo otra vez "
+    "con su comando.",
+    "Aquí no queda nadie, ni el groyper del sótano. Ábrelo otra vez con su comando.",
 )
 #: Aviso para un botón o formulario que revienta (el error queda en el log).
 BUTTON_ERROR = (
@@ -56,6 +59,8 @@ BUTTON_ERROR = (
     "prueba otra vez.",
     "Ese botón se ha liado más que un pacto de Junts. Ya está apuntado; prueba otra vez.",
     "Error del sistema, y no es el de Hacienda. Ya está apuntado; prueba otra vez.",
+    "Ese botón lo ha tumbado algo que ni la Cúpula de Hierro para. Ya está apuntado; prueba "
+    "otra vez.",
 )
 # Marca de los métodos de discord.py ya envueltos (cada `load_extension` vuelve a
 # ejecutar este módulo, pero las clases son las mismas).

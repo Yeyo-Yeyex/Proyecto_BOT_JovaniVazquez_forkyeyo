@@ -188,6 +188,20 @@ LEVEL_LINES = (
 )
 
 IMPORT_DONE_LINES = (
+    "Me he leído {mensajes} mensajes de {canales} canales sin pedir el indulto, como Bibi. "
+    "Niveles encendidos: cada mensaje y cada rato en voz suma.",
+    "Contados {mensajes} mensajes en {canales} canales. Ni un groyper se lee tanto chat en su "
+    "sótano. `.ranking` y a presumir.",
+    "Hecho: {mensajes} mensajes de {canales} canales, archivados mejor que el NO-DO. Los "
+    "niveles ya cuentan; `.perfil` para ver el tuyo.",
+    "{mensajes} mensajes en {canales} canales: más horas de lectura que un discurso de Fidel. "
+    "Niveles encendidos; `.ranking` para ver quién manda.",
+    "Leídos {mensajes} mensajes de {canales} canales. Más papeles que los archivos Epstein, y "
+    "estos sin tachar. Niveles encendidos: `.ranking` y a presumir.",
+    "{mensajes} mensajes en {canales} canales, contados uno a uno como los votos de la "
+    "Knesset. Cada mensaje suma XP desde ya; mirad `.perfil`.",
+    "Recuento terminado: {mensajes} mensajes en {canales} canales. Ni el CIS de Tezanos "
+    "cuenta tan rápido. Niveles encendidos, y cada nivel paga yapdollars.",
     "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. Mirad "
     "dónde estáis con `.perfil` y `.ranking`, mi gente.",
     "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están encendidos; "

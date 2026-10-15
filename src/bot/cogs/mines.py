@@ -106,6 +106,9 @@ CASH_LINES = (
     "¡Más fino que un ministro con información privilegiada!",
     "¡Toma mangó!",
     "¿Con pulpa? ¡Sin pulpa! ¡Con plata!",
+    "¡Pisas con más cuidado que Bibi ante el juez!",
+    "¡Te la llevas antes de que la vea un groyper!",
+    "¡Plata limpia, no como los puros de Netanyahu!",
 )
 BOOM_LINES = (
     "¡BOOM!",
@@ -116,6 +119,8 @@ BOOM_LINES = (
     "¡Te pilló la UCO!",
     "¡Mina de carbón cerrada por Bruselas!",
     "¡Era un campo de Hacienda!",
+    "¡Mina detectada por la Cúpula de Hierro… tarde!",
+    "¡Mina sembrada por Nick Fuentes desde su sótano!",
 )
 #: Estadística de logros con el récord de casillas en una partida.
 RECORD_STAT = "mines_streak_max"

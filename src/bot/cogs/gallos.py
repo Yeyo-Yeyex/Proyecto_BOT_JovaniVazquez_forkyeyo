@@ -137,6 +137,9 @@ WIN_LINES = (
     "¡Kikirikí, mi amor!",
     "¡Toma mangó!",
     "¡Yo soy yo, y así me tienes que soportar!",
+    "¡Más espolón que Bibi en campaña!",
+    "¡Desplumado el gallo groyper!",
+    "¡Gallo de pelea con escolta, como un ministro!",
 )
 LOSE_LINES = (
     "¡Ay, bendito!",
@@ -147,17 +150,20 @@ LOSE_LINES = (
     "¡El gallo dimite! Algo inédito.",
     "¡Más desplumado que un autónomo!",
     "¡Caldito para Waterloo!",
+    "¡Pide aplazar la pelea, como Netanyahu su juicio!",
 )
 WAITING_LINES = (
     "🐓 Los gallos salen al ruedo…",
     "📣 ¡Hagan sus apuestas… ya no!",
     "🥁 Se calienta el reñidero…",
-    "👀 Todo el barrio mirando…",
+    "👀 Todo el barrio mirando el reñidero…",
+    "🐸 Un groyper lo retransmite desde el sótano…",
     "📣 Trump anuncia que su gallo es el más grande…",
     "🐓 Kim asegura que su gallo ya ganó ayer…",
     "☕ El barrio pide café y apuesta…",
     "🎙️ El NO-DO ya tiene escrito el resultado…",
     "🐎 Abascal llega a caballo a ver la pelea…",
+    "🪰 Quisiera ser una mosca… para verla desde el palco…",
 )
 
 

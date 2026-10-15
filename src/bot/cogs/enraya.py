@@ -159,6 +159,8 @@ JOVANI_BLOCKS = (
     "«Esa raya la paro como Hacienda tu devolución.»",
     "«Bloqueo institucional, como el CGPJ.»",
     "«Cúpula de Hierro, papi: no pasa nada.»",
+    "«Ni el ejército de ranas de Nick Fuentes me cuela esa raya.»",
+    "«Esa columna la aplazo como Bibi su juicio: hasta nunca.»",
 )
 #: Lo que dice al dejarte una amenaza encima.
 JOVANI_THREATS = (
@@ -170,44 +172,49 @@ JOVANI_THREATS = (
     "«Te pongo un arancel del 200 % a esa columna.»",
     "«Lagartijo, iguana, lagarto… y raya.»",
     "«Plan quinquenal en marcha, como Xi.»",
+    "«Te lo dibujo con rotulador, como Bibi la bomba en la ONU.»",
+    "«Te la monto con más socios que Netanyahu para gobernar.»",
 )
 #: Lo que dice cuando le tapas tú una suya.
 JOVANI_BLOCKED = (
     "«¡Ay, bendito! Me la has tapado.»",
-    "«Eso no venía en el Manual de resistencia.»",
+    "«Eso no me lo enseñó Sánchez en el Peugeot.»",
     "«Me has hecho la cobra, como a Bisbal.»",
-    "«Recurro al Constitucional.»",
+    "«Pido amparo al Tribunal Supremo… de Waterloo.»",
     "«Ni Pegasus lo vio venir.»",
-    "«Sofía, cállate, que me desconcentro.»",
+    "«Me has hecho una pregunta groyper en el turno de preguntas.»",
+    "«Bibi pediría el indulto por esto. Yo pido revancha.»",
 )
 #: Lo que dice de vez en cuando en una jugada sin más.
 JOVANI_CHATTER = (
     "«¿Con pulpa? ¡Sin pulpa!»",
     "«Mi jugada la aprueba hasta el Consejo de Ministros.»",
     "«Columna tomada, como Puigdemont el maletero.»",
-    "«Así se juega en Puerto Rico, mi amor.»",
-    "«Me lo ha recomendado el algoritmo de TikTok.»",
+    "«En Bayamón esto se juega con dominó, mi amor.»",
+    "«Me lo ha soplado un groyper desde el sótano de su madre.»",
     "«A lo loco, como Abascal a caballo.»",
     "«Esta ficha la pago con fondos Next Generation.»",
-    "«Estoy destruido, pero por dentro estoy nuevo.»",
-    "«Yo soy yo… y así me tienes que soportar.»",
+    "«Esta partida dura más que el juicio de Netanyahu.»",
+    "«Ficha puesta, como Milei con la motosierra: sin preguntar.»",
     "«Hazme café, que esto va para largo.»",
 )
 WIN_LINES = (
-    "¡Le ganas a Jovani!",
+    "¡Jovani, a la bancada de enfrente!",
     "¡Cuatro en raya y Jovani a la oposición!",
     "¡Toma mangó!",
-    "¡Victoria por mayoría absoluta!",
+    "¡Raya más limpia que unas cuentas en Suiza!",
+    "¡Ni la Cúpula de Hierro para tu raya!",
     "¡Jovani pide recuento!",
     "¡Jovani dimite! Algo inédito.",
     "¡Wepa! ¡Raya y para casa!",
     "¡Ganas con más claridad que el NO-DO!",
 )
 LOSE_LINES = (
-    "¡Jovani te pasa la motosierra!",
+    "¡Jovani te aplica el 155!",
     "¡Cuatro en raya de Jovani!",
     "¡Ay, bendito!",
-    "¡Jovani gobierna con mayoría absoluta!",
+    "¡Jovani forma gobierno sin ti!",
+    "¡Te ha baneado como a Nick Fuentes!",
     "¡Te ha tapado hasta el aire!",
     "¡Más derrota que el tapón de Bruselas!",
 )
@@ -219,22 +226,22 @@ DRAW_LINES = (
     "Tablas. El CIS dice que ganaste tú.",
 )
 RESIGN_LINES = (
-    "Dimisión irrevocable, como las de antes.",
-    "Se rinde antes que una moción de censura.",
-    "Rendición incondicional. Ni el Brexit fue tan rápido.",
-    "Bandera blanca. Más rápido que un ministro en un escándalo.",
+    "Tira la toalla como Feijóo una investidura.",
+    "Se retira a reflexionar cinco días, como Sánchez, pero no vuelve.",
+    "Abandona antes que Bibi su juicio: con un aplazamiento.",
+    "Se rinde y se va a Waterloo a hacer la maleta.",
 )
 SLEEP_LINES = (
-    "se ha dormido como el Senado en agosto",
-    "se ha quedado frito como un funcionario en la siesta",
-    "se ha ido a por café (¡quiero café!) y no ha vuelto",
-    "se ha dormido más que el Consejo de Ministros en un pleno",
+    "se ha dormido como Biden en una cumbre",
+    "se ha quedado roque como Rajoy con el Marca",
+    "se ha ido de puente como las Cortes en diciembre",
+    "se ha dormido esperando a que Bibi forme gobierno",
 )
 WAITING_LINES = (
     "🔴 Fichas cayendo…",
     "🟡 Se mueve el tablero…",
-    "👀 Todo el barrio mirando…",
-    "🎙️ El NO-DO ya tiene escrito el final…",
+    "📡 Lo retransmite un groyper en directo…",
+    "🗳️ Escrutinio al 99 %…",
 )
 #: Avisos de que Jovani amenaza (o tú) para el texto de la mesa.
 THREAT_NOTE = "⚠️ Jovani tiene raya en la **{cols}**."
