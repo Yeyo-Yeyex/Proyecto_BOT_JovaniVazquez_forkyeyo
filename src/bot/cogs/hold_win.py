@@ -152,6 +152,8 @@ WIN_LINES = (
     "¡Esto es la Next Generation!",
     "¡Toma mangó!",
     "¡American people want mango!",
+    "¡Más monedas que regalos en el caso de los puros de Bibi!",
+    "¡Lluvia de monedas, y Nick Fuentes sin enterarse en su sótano!",
 )
 COLLECT_LINES = {
     "volcan": (
@@ -166,15 +168,19 @@ NEAR_MISS_LINES = (
     "Las monedas ahí tiradas. Al maletín van, mi amor.",
     "Monedas sin recoger, como los fondos europeos sin ejecutar.",
     "Monedas en la mesa, como las promesas de campaña: ahí se quedan.",
+    "Más monedas sueltas que causas pendientes de Netanyahu.",
+    "Ahí se quedan, como un groyper esperando que le devuelvan la cuenta de Twitter.",
 )
 LOSS_LINES = (
-    "La próxima es la buena.",
-    "Nada, mi amor. Otra.",
+    "El volcán duerme la siesta.",
+    "Ni una chispa, mi amor. Otra.",
     "Calentando…",
-    "Como el AVE a Extremadura: no llega.",
+    "Como el tren de Canarias: ni está ni se le espera.",
     "La máquina está en huelga de celo.",
-    "Quiero café.",
+    "Hazme café, que esto no arranca.",
     "Calentando, como el planeta.",
+    "La lava se aplaza, como el juicio de Bibi.",
+    "Más frío que el debate de Nick Fuentes con su madre por el wifi.",
 )
 BONUS_INTRO = {
     "volcan": "La montaña ruge. Caen monedas y se quedan pegadas a la roca.",

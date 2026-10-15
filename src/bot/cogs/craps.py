@@ -124,7 +124,8 @@ WIN_LINES = (
     "¡Eso es, mi amor!",
     "¡Dale!",
     "¡Qué suerte, bendito!",
-    "¡A la saca!",
+    "¡Siete y a la saca!",
+    "¡Los dados aguantan más que Bibi en la Knesset!",
     "¡Los dados votan contigo, como Junts… esta vez!",
     "¡Suerte de Fabra!",
     "¡Ni el CIS lo predice!",
@@ -142,17 +143,20 @@ LOSE_LINES = (
     "¡Craps! Que en inglés suena aún peor.",
     "¡Los dados piden asilo en Waterloo!",
     "¡Dados cargados en el Kremlin!",
+    "¡Los dados se los ha tirado un groyper con la mano en la barbilla!",
 )
 FLYING_LINES = (
     "🎲 ¡Los dados vuelan!",
     "🎲 Sopla los dados, que da suerte…",
-    "🙏 Que salga, que salga…",
+    "🙏 Que salga un siete, que salga…",
     "👀 Toda la mesa mira los dados…",
+    "🎲 Bibi pide aplazar la tirada hasta después de las elecciones…",
     "🎲 ¡Contra la pared!",
     "🎲 Más vueltas que una negociación con Puigdemont…",
     "🎲 Trump grita «¡tremendo!» a los dados…",
     "🎲 Kim lanza los dados (y un misil)…",
     "☕ Quiero café… y un siete…",
+    "🏍️ Y Víctor le dijo a Joel: móntate en mi motora… y tira…",
 )
 NOTHING_LINES = (
     "Nada: sigue tirando.",

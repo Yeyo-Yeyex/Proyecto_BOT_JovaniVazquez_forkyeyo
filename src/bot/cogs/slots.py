@@ -188,6 +188,9 @@ TIER_LINES = {
         "💥 ¡AY, BENDITO, QUÉ PREMIO!",
         "💥 ¡TREMENDO, TREMENDO!",
         "💥 ¡TOMA MANGÓ!",
+        "💥 ¡NI LA CÚPULA DE HIERRO LO PARA!",
+        "💥 ¡MÁS GORDO QUE LA COALICIÓN DE BIBI!",
+        "💥 ¡LAS RANAS GROYPER SE QUITAN LA MANO DE LA BARBILLA!",
     ),
     WinTier.BIG: (
         "✨ ¡GRAN PREMIO!",
@@ -207,6 +210,8 @@ WIN_LINES = (
     "¡Paguita!",
     "¡Arancel cero!",
     "¡Al maletero!",
+    "¡Puros y champán, como a Bibi!",
+    "¡Ni el sótano de Nick Fuentes tiene tanta luz!",
 )
 SMALL_WIN_LINES = (
     "🍒 ¡Premio!",
@@ -223,6 +228,7 @@ NEAR_MISS_LINES = (
     "¡Casi! Como Feijóo en la investidura.",
     "Por un pelo. Hillary sabe lo que se siente.",
     "Faltó uno. Junts tiene la llave.",
+    "Por un pelo, como Bibi con la mayoría de la Knesset.",
 )
 LOSS_LINES = (
     "La próxima es la buena.",
@@ -235,6 +241,8 @@ LOSS_LINES = (
     "Pierdes. Pero el CIS dice que ganas.",
     "Quiero café.",
     "Estoy destruido, pero por fuera. Por dentro, como un coco.",
+    "Se queda en nada, como los streams de Nick Fuentes al día siguiente.",
+    "Premio aplazado sin fecha, como la sentencia de Netanyahu.",
 )
 DOUBLE_WIN_LINES = (
     "¡Dentro!",

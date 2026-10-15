@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.7.4 · 2026-10-15
+
+- Jovani: frases repasadas, sin bromas copiadas entre juegos y con más Bibi y groypers
+
 ### 6.7.3 · 2026-10-15
 
 - Tienda: el tapete de los archivos Epstein pasa a 3.000.000 Y$, con tres copias numeradas

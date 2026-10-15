@@ -450,6 +450,7 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} te mira como Milei a un ministerio: con la motosierra preparada.",
         "{pet} se pone a buscar trabajo. Alguien en esta casa tiene que traer pienso.",
         "{pet} recuerda la cartilla de racionamiento de los abuelos. Hoy la entiende.",
+        "{pet} se muda al sótano de Nick Fuentes. Allí, al menos, hay wifi.",
     ),
     Event.BIG_WIN: (
         "{pet} se pone a dar vueltas de la emoción. {collector} también.",
@@ -458,24 +459,28 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} pide el Falcon para ir a celebrarlo.",
         "{pet} grita «¿qué? ¿qué? ¡toma mangó!» a su manera: {sound}.",
         "{pet} le cuenta a Trump que el mérito es de {pet}. Trump dice que es suyo.",
+        "{pet} pide puros y champán, como los regalos de Bibi.",
     ),
     Event.WIN: (
         "{pet} aprueba la jugada con un {sound}.",
         "{pet} se acerca a oler las fichas ganadas.",
         "{pet} aplaude como en Pyongyang: por si acaso.",
         "{pet} se mueve al ritmo de «¡Jota Uve! ¡Pre!».",
+        "{pet} apoya la barbilla en la pata, como la rana groyper, y asiente.",
     ),
     Event.LOSE: (
         "{pet} hace como que no ha visto nada.",
         "{pet} se acurruca a tu lado. Se nota que lo necesitas.",
         "{pet} suspira como Feijóo en la noche electoral.",
         "{pet} te recuerda que Trump quebró seis casinos y acabó en la Casa Blanca.",
+        "{pet} te recuerda que Bibi siempre vuelve. Tú también puedes.",
     ),
     Event.TAX: (
         "{pet} le gruñe a {collector}. {collector} le retiene el 19 % del gruñido.",
         "{pet} se esconde debajo del sofá cuando llega la carta de Hacienda.",
         "{pet} esconde sus chuches en Andorra antes de que llegue {collector}.",
         "{pet} le pide factura a {collector}. No se la dan.",
+        "{pet} le pide a {collector} el indulto, como Bibi a Herzog.",
     ),
     Event.IMV: (
         "{pet} te acompaña a cobrar la paguita. Su parte, en pienso.",

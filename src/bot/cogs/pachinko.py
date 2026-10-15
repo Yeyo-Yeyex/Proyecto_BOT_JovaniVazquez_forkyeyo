@@ -203,7 +203,7 @@ WIN_LINES = (
     "¡Lluvia de bolas y de fondos europeos!",
     "¡Crecimiento a la japonesa!",
     "¡Bolas para dar y regalar!",
-    "¡Jota Uve! ¡Pre!",
+    "¡Más bolas que interceptores en la Cúpula de Hierro!",
 )
 SMALL_WIN_LINES = (
     "🎯 ¡Premio!",
@@ -222,13 +222,14 @@ REACH_LINES = (
 )
 LOSS_LINES = (
     "Las bolas se fueron por el desagüe.",
-    "Nada, mi amor. Otra.",
-    "La máquina se hace la difícil.",
+    "Ni una, mi amor. Otra tanda.",
+    "Las bolas se esconden como Puigdemont en el maletero.",
     "Calentando la compuerta…",
     "Las bolas se fueron a Andorra.",
     "Bolas al desagüe, como los fondos de los ERE.",
     "La máquina se ha puesto en modo ventanilla.",
-    "Quiero café.",
+    "Bolas al sótano, con Nick Fuentes y su micro.",
+    "Las bolas se aplazan, como la sentencia de Bibi.",
 )
 
 

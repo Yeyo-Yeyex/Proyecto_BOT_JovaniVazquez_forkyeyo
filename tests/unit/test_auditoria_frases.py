@@ -1,0 +1,48 @@
+"""La auditoría de frases (`docs/auditoria_frases.py`) pasa con las frases del bot.
+
+Así una lista nueva con una coletilla en cada frase, o una broma copiada de otro
+juego, se ve en las pruebas y no en Discord. El script vive en `docs/` (no es
+paquete), así que se carga por ruta.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType
+
+SCRIPT = Path(__file__).resolve().parents[2] / "docs" / "auditoria_frases.py"
+
+
+def _load() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("auditoria_frases", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # `dataclass` busca el módulo en `sys.modules` al crear la clase.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+af = _load()
+
+
+def test_las_frases_del_bot_pasan_la_auditoria(capsys) -> None:  # noqa: ANN001
+    warnings = af.report(*af.collect())
+    capsys.readouterr()
+    assert warnings == []
+
+
+def test_la_auditoria_encuentra_las_listas_de_frases() -> None:
+    lists, sources = af.collect()
+    places = {pl.where for pl in lists}
+    assert "cogs/errors:EXPIRED_CLICK" in places
+    assert "services/pets:CARE_LINES[Care.PET]" in places
+    assert sources["Netanyahu (Bibi)"] > 0 and sources["Groypers (Nick Fuentes)"] > 0
+
+
+def test_cuenta_las_coletillas_de_jovani() -> None:
+    assert af.catchphrases_in("¿Qué? ¿Qué? ¡Toma mangó!") == ["Toma mangó"]
+    assert af.catchphrases_in("Hazme café… ¡Quiero café!") == ["Quiero café"]
+    assert af.catchphrases_in("La bola no quiso.") == []

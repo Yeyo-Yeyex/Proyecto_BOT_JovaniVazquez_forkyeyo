@@ -119,6 +119,13 @@ BOT_LINES: tuple[str, ...] = (
     "tienes que soportar».",
     "{who} le lanza {item} a Jovani. Jovani lo coge al vuelo y pide: «Hazme café… ¡quiero café!».",
     "{who} va a por Jovani con {item}. Jovani se monta en la motora de Víctor y desaparece. 🏍️",
+    "{who} le lanza {item} a Jovani. Lo intercepta la Cúpula de Hierro del autotune. 🛡️",
+    "{who} intenta usar {item} contra Jovani. Jovani pide aplazar la vista, como Bibi, y se "
+    "va de gira.",
+    "{who} va a por Jovani con {item}. Jovani lo bloquea como Twitter a Nick Fuentes: tres veces.",
+    "{who} apunta a Jovani con {item}. Falla más que Feijóo en una investidura.",
+    "{who} le tira {item} a Jovani. Jovani lo declara fondo europeo y lo deja sin ejecutar.",
+    "{who} intenta usar {item} contra Jovani. Jovani lo manda a Waterloo en el maletero.",
 )
 #: Frase por defecto si te eliges a ti mismo.
 SELF_LINE = "{who} se aplica {item} a sí mismo. Nadie entiende nada, pero el colmado no devuelve."

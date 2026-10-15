@@ -126,7 +126,7 @@ CASH_LINES = (
     "¡Pollo de corral, cuenta en Suiza!",
     "¡El pollo se planta a tiempo, no como Biden!",
     "¡El pollo llega a Waterloo!",
-    "¡Al Falcon con el pollo!",
+    "¡El pollo se salva como Bibi del banquillo!",
     "¡Toma mangó!",
 )
 SPLAT_LINES = (
@@ -140,6 +140,7 @@ SPLAT_LINES = (
     "¡Pollo en pepitoria!",
     "¡Nuggets de Temu!",
     "¡Lo atropelló un Tesla sin conductor!",
+    "¡Lo arrolló la caravana de Nick Fuentes camino del sótano!",
 )
 TENSION_LINES = (
     "😰 Se oye un motor…",

@@ -171,7 +171,7 @@ TICKET_WIN_LINES = (
     "Ni Putin a caballo y sin camiseta llega tan fresco.",
     "Trump dice que el caballo lo entrenó él.",
     "Más rápido que Puigdemont saliendo de Barcelona.",
-    "¿Qué? ¿Qué? ¡Toma mangó!",
+    "¿Qué? ¿Qué? ¡Toma mangó! Y el caballo, también.",
     "Por la mínima, como una investidura.",
 )
 TICKET_LOSE_LINES = (
