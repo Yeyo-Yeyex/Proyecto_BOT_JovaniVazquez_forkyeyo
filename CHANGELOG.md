@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.7.5 · 2026-10-15
+
+- Interno: la prueba de caducidad de la música ya no falla al azar
+
 ### 6.7.4 · 2026-10-15
 
 - Jovani: frases repasadas, sin bromas copiadas entre juegos y con más Bibi y groypers
