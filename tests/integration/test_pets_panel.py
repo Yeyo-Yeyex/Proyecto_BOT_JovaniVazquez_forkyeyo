@@ -83,3 +83,33 @@ async def test_un_cuidado_rechazado_no_deja_el_panel_sin_responder(tmp_path: Pat
         assert events == ["response.defer", "edit_original_response"]
     finally:
         await client.close()
+
+
+async def test_los_atajos_abren_la_tienda_en_las_cosas_de_mascotas(tmp_path: Path) -> None:
+    client = await load_bot(tmp_path)
+    await client.pets.initialize()
+    try:
+        owner = make_owner()
+        cog = client.get_cog("Mascotas")
+        module = sys.modules[type(cog).__module__]
+        await client.shop.stock_catalog(GUILD_ID, module.CATALOG, cog.clock())
+        item = await client.shop.item_by_key(GUILD_ID, "mascota_gato")
+        await client.shop.grant(GUILD_ID, OWNER_ID, item, cog.clock())
+        panel = await cog.panel(owner.guild, owner, owner)
+        for name, tab, aisle in (("adoptar", "mascota", None), ("comida", "todo", "animales")):
+            button = next(
+                b
+                for b in panel.walk_children()
+                if getattr(b, "custom_id", None) == f"mascota:{name}"
+            )
+            interaction = fake_interaction(owner)
+            interaction.guild = owner.guild
+            await button.callback(interaction)
+            shop = interaction.edit_original_response.await_args.kwargs["view"]
+            assert (shop.tab, shop.aisle) == (tab, aisle)
+            assert interaction.response.defer.await_args.kwargs == {
+                "ephemeral": True,
+                "thinking": True,
+            }
+    finally:
+        await client.close()

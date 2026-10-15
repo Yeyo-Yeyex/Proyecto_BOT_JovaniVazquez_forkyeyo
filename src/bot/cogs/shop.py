@@ -2424,16 +2424,19 @@ async def consume_key(bot: commands.Bot, guild_id: int, user_id: int, catalog_ke
     return await cog.consume_key(guild_id, user_id, catalog_key)
 
 
-async def open_aisle(bot: commands.Bot, interaction: discord.Interaction, aisle: str) -> bool:
+async def open_aisle(
+    bot: commands.Bot, interaction: discord.Interaction, aisle: str | None, *, tab: str = "todo"
+) -> bool:
     """Rellena una respuesta ya aceptada (`ack`) con el escaparate abierto en `aisle`.
 
-    Es el atajo 🎁 de `pala` al pasillo de la familia. `False` si la tienda no
-    está cargada (y no se toca la respuesta).
+    Es el atajo 🎁 de `pala` al pasillo de la familia y el de 🐾 Adoptar y 🥣 Comida
+    del panel de `mascota`. `aisle` `None` son todos los pasillos; `tab`, la
+    pestaña (`TABS`). `False` si la tienda no está cargada (y no se toca la respuesta).
     """
     if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
         return False
     view = await cog.storefront(interaction.guild, interaction.user)
-    view.aisle, view.page = aisle, 0
+    view.aisle, view.tab, view.page = aisle, tab, 0
     view.rebuild()
     await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
     view.interaction = interaction
