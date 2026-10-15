@@ -278,6 +278,19 @@ async def press_gallos_fight(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_gallos_train(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = gallos_cog(client)
+    panel = module.HousePanel(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+    panel.record = module.RoosterRecord(name="Kiki")
+    panel.training = True
+    panel.rebuild()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._train(interaction, module.Stat.STRENGTH)
+
+    return click
+
+
 async def press_gallos_accept(client: BotClient, owner: MagicMock) -> Click:
     cog, module = gallos_cog(client)
     rival = make_owner()
@@ -1293,6 +1306,7 @@ CASES: dict[str, Press] = {
     "moneda: cara": press_coin_flip,
     "moneda: cobrar": press_coin_cash_out,
     "gallos: pelear contra la casa": press_gallos_fight,
+    "gallos: entrenar": press_gallos_train,
     "gallos: aceptar un duelo": press_gallos_accept,
     "4enraya: soltar ficha contra Jovani": press_enraya_drop,
     "4enraya: aceptar un duelo": press_enraya_accept,
