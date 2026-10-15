@@ -39,6 +39,7 @@ EXPECTED_COMMANDS = {
     "cohete",
     "minas",
     "torre",
+    "guerra",
     "pollo",
     "moneda",
     "guagua",
