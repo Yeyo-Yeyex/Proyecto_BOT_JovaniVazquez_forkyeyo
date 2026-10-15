@@ -38,6 +38,7 @@ puede crecer sin fin aunque se reinvierta.
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
@@ -51,7 +52,7 @@ from bot.services.housing_catalog import (
     Listing,
     RentLevel,
 )
-from bot.services.taxes import YAPDOLLARS_PER_EURO, capital_gain_tax
+from bot.services.taxes import WAGE_YAPDOLLARS_PER_EURO, YAPDOLLARS_PER_EURO, capital_gain_tax
 
 #: Participaciones en que se divide cada inmueble.
 SHARES = 100
@@ -308,6 +309,7 @@ def sale_quote(
     arrears: int = 0,
     arrears_ibi: int = 0,
     pool: int | None = None,
+    value: int | None = None,
 ) -> SaleQuote:
     """Cuenta de una venta al índice de hoy.
 
@@ -320,11 +322,13 @@ def sale_quote(
         pool: Participaciones que tienen todos los dueños juntos (`owned` si no se
             dice). La deuda se reparte entre ellas: quien lo tiene todo y vende de una
             en una paga lo mismo que vendiéndolo de golpe.
+        value: Precio pactado de las participaciones (la oferta del fondo buitre); si
+            no se dice, el de mercado al índice de hoy.
     """
     if not 1 <= shares <= owned <= SHARES:
         raise ValueError("No puedes vender más participaciones de las que tienes.")
     pool = max(owned, pool or owned)
-    value = share_price(listing, index) * shares
+    value = share_price(listing, index) * shares if value is None else value
     fee = round(value * SALE_FEE_RATE)
     debt = arrears * shares // pool
     debt_ibi = min(debt, arrears_ibi * shares // pool)
@@ -386,6 +390,9 @@ class Lease:
         eviction_at: Día de la vista del desahucio.
         arrears: Gastos sin pagar del inmueble entero (comunidad, seguro e IBI).
         arrears_ibi: La parte de `arrears` que es IBI.
+        member: El miembro que vive de alquiler, si el inquilino es del servidor.
+        bono: Si ese miembro cobra el Bono Alquiler Joven.
+        license: Si tiene licencia de vivienda vacacional.
     """
 
     status: str = VACANT
@@ -398,6 +405,9 @@ class Lease:
     eviction_at: date | None = None
     arrears: int = 0
     arrears_ibi: int = 0
+    member: int | None = None
+    bono: bool = False
+    license: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,21 +499,16 @@ def advance_day(
         rng: Azar inyectable.
     """
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
-    events: list[Event] = []
-    extra = 0
-    for kind in EVENTS:
-        if kind.kinds and listing.kind not in kind.kinds:
-            continue
-        if rng.random() >= kind.chance:
-            continue
-        cost = _euros(KINDS[listing.kind].community * kind.community_months)
-        if kind.euros[1]:
-            cost += _euros(rng.randint(*kind.euros))
-        extra += cost
-        events.append(Event(kind.key, cost))
+    extra, rolled = roll_events(listing, rng)
+    events = list(rolled)
 
     rent = 0
     status = lease.status
+    if status == HABITUAL or lease.member is not None:
+        # Vive su dueño, o un miembro de alquiler: no hay inquilinos ficticios que entren,
+        # se vayan o dejen de pagar (lo del miembro lo decide su monedero).
+        return DayOutcome(lease=lease, rent=0, costs=monthly_costs(listing), extra=extra,
+                          events=tuple(events))  # fmt: skip
     if status == EVICTING and lease.eviction_at is not None and day >= lease.eviction_at:
         lease = replace(
             lease,
@@ -541,7 +546,8 @@ def advance_day(
             lease = replace(lease, unpaid=lease.unpaid + 1)
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
-        if rng.random() < level.find:
+        find = level.find * (season_factor(day) if level.key == VACATION_LEVEL else 1.0)
+        if rng.random() < find:
             lease = replace(
                 lease,
                 status=RENTED,
@@ -558,6 +564,23 @@ def advance_day(
     return DayOutcome(
         lease=lease, rent=rent, costs=monthly_costs(listing), extra=extra, events=tuple(events)
     )
+
+
+def roll_events(listing: Listing, rng: random.Random) -> tuple[int, tuple[Event, ...]]:
+    """Los imprevistos de un mes: `(lo que cuestan, cuáles)`."""
+    events: list[Event] = []
+    extra = 0
+    for kind in EVENTS:
+        if kind.kinds and listing.kind not in kind.kinds:
+            continue
+        if rng.random() >= kind.chance:
+            continue
+        cost = _euros(KINDS[listing.kind].community * kind.community_months)
+        if kind.euros[1]:
+            cost += _euros(rng.randint(*kind.euros))
+        extra += cost
+        events.append(Event(kind.key, cost))
+    return extra, tuple(events)
 
 
 def start_eviction(lease: Lease, day: date, rng: random.Random) -> Lease:
@@ -658,3 +681,190 @@ def manager(holders: dict[int, int]) -> int | None:
         if shares * 2 > SHARES:
             return member
     return None
+
+
+# -- Fase 2: hipoteca, VPO y vivienda habitual ------------------------------------------
+
+#: Estado de un inmueble en el que vive su dueño: no se alquila, paga sus recibos.
+HABITUAL = "habitual"
+#: Tipos de inmueble que son vivienda (un trastero o un garaje no lo son).
+HOME_KINDS = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio"})
+
+#: Lo que presta el banco sobre el precio (sin ITP ni notaría): el 80 %. Con el aval del
+#: Estado (la línea de avales del ICO para la primera vivienda de jóvenes y familias con
+#: menores, de 2023), el 100 % en la VPO.
+MORTGAGE_LTV = 0.8
+VPO_LTV = 1.0
+#: Diferencial sobre el Euríbor: el tipo es fijo al firmar (Euríbor del día + 1 %).
+MORTGAGE_SPREAD = 0.01
+#: 30 años: 360 meses, que a un día = un mes son 360 días.
+MORTGAGE_MONTHS = 360
+#: La cuota no puede pasar de esta parte de los ingresos (lo que piden los bancos).
+DTI_MAX = 0.35
+#: Parte de las rentas de alquiler que el banco cuenta como ingreso.
+RENT_INCOME_SHARE = 0.7
+#: Días de ingresos que mira el banco (las nóminas de un mes de verdad).
+INCOME_DAYS = 30
+#: Euríbor simulado: empieza en el real de 2026 y se mueve un cuarto de punto los lunes.
+EURIBOR_START = 0.022
+EURIBOR_STEP = 0.0025
+EURIBOR_MIN = 0.0
+EURIBOR_MAX = 0.05
+#: Ejecución hipotecaria (art. 693.2 LEC, redacción de la Ley 5/2019): impagos de 12
+#: cuotas o del 3 % del capital en la primera mitad del préstamo.
+EXECUTION_INSTALLMENTS = 12
+EXECUTION_SHARE = 0.03
+#: Sin pujas, el banco se adjudica el inmueble por el 70 % de su valor (art. 671 LEC).
+AUCTION_SHARE = 0.7
+#: Vivienda habitual exenta en el Patrimonio hasta 300.000 € (art. 4.Nueve.c de la Ley
+#: 19/1991), a 10 Y$ por euro.
+HOME_WEALTH_EXEMPT = 3_000_000
+#: Emanciparse: la batería de `pala` recarga un 20 % más rápido en tu casa.
+HOME_REGEN = 1.2
+#: IPREM en euros al año (600 € × 14 pagas, el de 2025 prorrogado). La VPO pide no
+#: pasar de 3,5 veces el IPREM de ingresos.
+IPREM_EUR_YEAR = 8_400
+VPO_INCOME_IPREM = 3.5
+
+
+def installment(principal: int, annual_rate: float, months: int = MORTGAGE_MONTHS) -> int:
+    """Cuota mensual (un día del bot) de un préstamo francés, en Y$."""
+    if principal <= 0:
+        return 0
+    rate = annual_rate / 12
+    if rate <= 0:
+        return -(-principal // months)
+    return math.ceil(principal * rate / (1 - (1 + rate) ** -months))
+
+
+def mortgage_month(balance: int, annual_rate: float, payment: int) -> tuple[int, int]:
+    """`(intereses, amortización)` de una cuota: lo que no son intereses baja el capital."""
+    interest = round(balance * annual_rate / 12)
+    return interest, max(0, min(balance, payment - interest))
+
+
+def next_euribor(value: float, rng: random.Random) -> float:
+    """Euríbor del lunes siguiente: sube, baja o se queda un cuarto de punto."""
+    moved = value + rng.choice((-EURIBOR_STEP, 0.0, EURIBOR_STEP))
+    return round(min(EURIBOR_MAX, max(EURIBOR_MIN, moved)), 4)
+
+
+def vpo_income_cap() -> int:
+    """Neto diario de nómina máximo para la VPO, en Y$ de nómina (escala de `pala`)."""
+    return round(IPREM_EUR_YEAR * VPO_INCOME_IPREM * WAGE_YAPDOLLARS_PER_EURO / 365)
+
+
+def daily_income(work_net: int, rent: int) -> int:
+    """Lo que el banco cree que ganas al día: nóminas de 30 días y el 70 % de las rentas."""
+    return (work_net + round(rent * RENT_INCOME_SHARE)) // INCOME_DAYS
+
+
+def affordable(income: int, installments: int) -> bool:
+    """Si unas cuotas (al día) caben en el 35 % de los ingresos diarios."""
+    return installments <= income * DTI_MAX
+
+
+def must_execute(unpaid_count: int, unpaid_amount: int, principal: int) -> bool:
+    """Si el banco ya puede ejecutar la hipoteca (Ley 5/2019)."""
+    return unpaid_count >= EXECUTION_INSTALLMENTS or (
+        unpaid_amount > 0 and unpaid_amount >= principal * EXECUTION_SHARE
+    )
+
+
+def vpo_costs(unit_price: int, community_eur: int) -> MonthlyCosts:
+    """Recibos de un mes de una VPO: comunidad e IBI (sin seguro con impago: no se alquila)."""
+    return MonthlyCosts(
+        community=_euros(community_eur),
+        insurance=0,
+        ibi=round(unit_price * CADASTRAL_SHARE * IBI_RATE / 12),
+    )
+
+
+# -- Fase 3: miembros de alquiler y Bono Alquiler Joven ---------------------------------
+
+#: Bono Alquiler Joven: 250 € al mes (RD 42/2022), como mucho la mitad de la renta. Lo paga
+#: la cuenta del Estado mientras le quede dinero: si no, «partida agotada».
+BONO_EUR = 250
+BONO_MAX = BONO_EUR * YAPDOLLARS_PER_EURO
+BONO_SHARE = 0.5
+#: Ingresos máximos para el bono: 3 veces el IPREM (RD 42/2022, art. 4).
+BONO_INCOME_IPREM = 3.0
+
+
+def bono_amount(rent: int) -> int:
+    """Lo que paga el bono un mes: 250 € como mucho y nunca más de la mitad de la renta."""
+    return max(0, min(BONO_MAX, round(rent * BONO_SHARE)))
+
+
+def bono_income_cap() -> int:
+    """Neto diario de nómina máximo para el bono, en Y$ de nómina (escala de `pala`)."""
+    return round(IPREM_EUR_YEAR * BONO_INCOME_IPREM * WAGE_YAPDOLLARS_PER_EURO / 365)
+
+
+# -- Fase 4: vacacional, gran tenedor, fondo buitre y SOCIMI ----------------------------
+
+#: Nivel de renta de la vivienda vacacional (solo con licencia).
+VACATION_LEVEL = "vacacional"
+#: Lo que cuesta la licencia (proyecto, cédula y tasas), en Y$. La tasa va al Estado.
+LICENSE_FEE = 30_000
+#: Plazas vacacionales por barrio: la ley canaria limita las viviendas vacacionales por
+#: zona; aquí, una por barrio. Si está cogida, no hay licencia.
+LICENSE_PER_BARRIO = 1
+#: IGIC de las estancias vacacionales: el tipo general (art. 51 de la Ley 4/2012). Va
+#: dentro de lo que paga el turista: el dueño se queda el resto y lo ingresa en el Estado.
+VACATION_IGIC = 0.07
+#: Gran tenedor en zona tensionada: 5 viviendas o más (art. 3.k de la Ley 12/2023).
+BIG_HOLDER_HOMES = 5
+#: Un barrio está tensionado cuando su índice pasa de este valor (los precios subieron
+#: un 10 %): allí el gran tenedor no puede pedir más que la renta de referencia (art. 17.7).
+TENSE_INDEX = 1.10
+#: Niveles que el gran tenedor no puede pedir en zona tensionada.
+CAPPED_LEVELS = frozenset({"mercado", "nomadas", VACATION_LEVEL})
+#: Recargo del IBI de la vivienda vacía más de 2 años (24 días) de quien tiene 4 o más
+#: (art. 72.4 del RDL 2/2004, recargo de hasta el 150 %).
+EMPTY_DAYS = 24
+EMPTY_OWNER_HOMES = 4
+EMPTY_IBI_FACTOR = 2.5
+#: El fondo buitre ofrece un 15 % sobre el valor de mercado por un inmueble entero de quien
+#: tiene 3 enteros o un edificio, cada lunes; la oferta dura una semana.
+VULTURE_HOMES = 3
+VULTURE_PREMIUM = 0.15
+VULTURE_DAYS = 7
+#: SOCIMI: hace falta tener 3 inmuebles enteros y pagar la salida al BME Growth. Sus
+#: rentas no pagan IRPF del alquiler sino el 19 % del dividendo (base del ahorro, art. 66
+#: LIRPF): la sociedad tributa al 0 % (art. 9 de la Ley 11/2009).
+SOCIMI_HOMES = 3
+SOCIMI_FEE = 100_000
+SOCIMI_RATE = 0.19
+
+
+def season_factor(day: date) -> float:
+    """Ocupación vacacional: en Canarias la temporada alta es el invierno (de noviembre a marzo)."""
+    return 1.0 if day.month in (11, 12, 1, 2, 3) else 0.4
+
+
+def vacation_igic(rent: int) -> int:
+    """IGIC que va dentro de una estancia vacacional que cuesta `rent` con todo."""
+    return rent - round(rent / (1 + VACATION_IGIC))
+
+
+def tense(index: float) -> bool:
+    """Si un barrio está en zona tensionada."""
+    return index >= TENSE_INDEX
+
+
+def big_holder(whole_homes: int) -> bool:
+    """Si alguien es gran tenedor (en zona tensionada)."""
+    return whole_homes >= BIG_HOLDER_HOMES
+
+
+def level_allowed(level: str, *, index: float, whole_homes: int, license: bool) -> bool:
+    """Si se puede pedir una renta: la vacacional pide licencia y el gran tenedor tiene tope."""
+    if level == VACATION_LEVEL and not license:
+        return False
+    return not (level in CAPPED_LEVELS and tense(index) and big_holder(whole_homes))
+
+
+def socimi_tax(profit: int) -> int:
+    """El 19 % del dividendo que reparte la SOCIMI de un mes de alquiler."""
+    return round(max(0, profit) * SOCIMI_RATE)

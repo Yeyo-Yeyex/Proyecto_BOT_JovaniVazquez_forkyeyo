@@ -9,7 +9,8 @@ pasada a su escala con `housing.rent_to_fiscal`, como en el bot.
 
 Además dice cuánto dinero se crea de la nada si todo el servidor tiene alquilados los
 inmuebles más baratos, para compararlo con lo que pagan las nóminas de `pala` (Biblia,
-«Vigilar el dinero que se crea de la nada»).
+«Vigilar el dinero que se crea de la nada»), y lo que pide el banco por la hipoteca de
+cada vivienda: la entrada, la cuota y el neto de nómina al día con que cabe en el 35 %.
 
 Uso (desde la raíz del repo):
 
@@ -89,6 +90,21 @@ def main() -> None:
     print()
     print(f"Los 10 más baratos alquilados crean {created:,} Y$ al día de la nada;")
     print(f"las nóminas de pala pagan unos {PALA_PER_DAY:,} Y$ brutos al día.")
+    print()
+    print("Hipoteca del 80 % al Euríbor de partida + 1 % y el neto de nómina que pide el banco:")
+    rate = housing.EURIBOR_START + housing.MORTGAGE_SPREAD
+    for price, key, _rent, _net, _months in sorted(rows):
+        listing = next(item for item in LISTINGS if item.key == key)
+        if listing.kind not in housing.HOME_KINDS:
+            continue
+        quote = housing.purchase_quote(listing, housing.SHARES)
+        loan = round(quote.price * housing.MORTGAGE_LTV)
+        payment = housing.installment(loan, rate)
+        need = round(payment / housing.DTI_MAX)
+        print(f"{key:24} {price:>12,} entrada {quote.total - loan:>10,}"
+              f" cuota {payment:>7,} nómina {need:>7,}/día")  # fmt: skip
+    print(f"VPO: hasta {housing.vpo_income_cap():,}/día de nómina; bono: hasta "
+          f"{housing.bono_income_cap():,}/día.")
 
 
 if __name__ == "__main__":

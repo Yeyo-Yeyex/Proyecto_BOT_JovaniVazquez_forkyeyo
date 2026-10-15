@@ -16,6 +16,7 @@ Pantallas (`screen`):
 - `ficha`: un inmueble con todas sus cuentas.
 - `cartera`: lo que tiene un miembro.
 - `caja`: la cuenta de una compra o una venta, antes o después de pagar.
+- `vpo`: las viviendas de protección oficial, el sorteo de los lunes y lo tuyo.
 
 Las claves son estables: la escena las lee tal cual. Una pantalla nueva o una clave
 nueva se añade aquí y en la escena a la vez.
@@ -36,6 +37,8 @@ from bot.services.housing_catalog import (
     LISTING_BY_KEY,
     RENT_LEVELS,
     TENANT_BY_KEY,
+    VPO_BY_KEY,
+    VPO_UNITS,
     Listing,
     listings_of,
 )
@@ -49,6 +52,7 @@ STATUS_TEXT = {
     rules.DEFAULTING: "El inquilino no paga",
     rules.EVICTING: "Desahucio en marcha",
     rules.SQUATTED: "Okupado",
+    rules.HABITUAL: "Vive su dueño",
 }
 
 #: Qué pasa en una noticia, en una línea. `{tenant}` y `{amount}` se rellenan.
@@ -69,7 +73,25 @@ NEWS_TEXT = {
     "ite": "Inspección Técnica de Edificios: {amount}",
     "vecino": "El vecino del 3.º pone una queja por el ruido",
     "cerradura": "Cambio de cerradura: {amount}",
+    "hipoteca": "{who} firma una hipoteca de {amount}",
+    "amortiza": "{who} cancela la hipoteca: {amount}",
+    "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
+    "se_muda": "{who} se muda aquí",
+    "firma_miembro": "{who} firma el alquiler por {amount} al mes",
+    "partida_agotada": "Partida agotada: {who} se queda sin el Bono Alquiler Joven",
+    "licencia": "Licencia vacacional concedida (tasa de {amount})",
+    "tope_ley": "La Ley de Vivienda topa la renta: zona tensionada",
+    "recargo_ibi": "IBI recargado por vivienda vacía: {amount}",
+    "oferta_fondo": "Buitre Capital ofrece {amount} por el inmueble entero",
+    "venta_fondo": "{who} se lo vende a Buitre Capital",
+    "sorteo_vpo": "A {who} le toca la VPO en el sorteo",
+    "compra_vpo": "{who} compra la VPO por {amount}",
+    "devuelve_vpo": "{who} devuelve la VPO a la Administración",
+    "vpo_caducada": "A {who} se le pasa el plazo de la VPO",
 }
+
+#: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
+VPO_PREFIX = "vpo:"
 
 
 def _pct(value: float, digits: int = 1) -> str:
@@ -116,7 +138,9 @@ def news_line(item: News, names: dict[int, str], *, titled: bool = True) -> str:
         amount=format_amount(item.amount),
     )
     listing = LISTING_BY_KEY.get(item.listing)
-    where = f"{listing.title}: " if titled and listing is not None else ""
+    vpo = VPO_BY_KEY.get(item.listing.removeprefix(VPO_PREFIX))
+    title = listing.title if listing is not None else vpo.name if vpo is not None else ""
+    where = f"{title}: " if titled and title else ""
     return f"{item.day.strftime('%d/%m')} · {where}{text}"
 
 
@@ -284,6 +308,29 @@ def listing_state(
             + format_amount(abs(value - holding.cost)),
             "up": value >= holding.cost,
         }
+    state["mortgage"] = mortgage_box(market.mortgages_of(user_id, key))
+    home = None
+    for member, (kind, ref) in market.homes.items():
+        if ref == key and kind in ("propia", "alquiler"):
+            home = (member, kind)
+    state["home"] = (
+        ("Vives aquí" if home[0] == user_id else f"Vive {_name(names, home[0])}")
+        if home is not None and home[1] == "propia"
+        else (
+            ("Vives aquí de alquiler" if home[0] == user_id
+             else f"De alquiler: {_name(names, home[0])}")
+            if home is not None
+            else ""
+        )
+    )  # fmt: skip
+    state["bono"] = bool(lease and lease.member is not None and lease.bono)
+    state["license"] = bool(lease and lease.license)
+    state["tense"] = rules.tense(index)
+    offer = market.offers.get((key, user_id))
+    state["offer"] = (
+        {"price": format_amount(offer[0]), "until": offer[1].strftime("%d/%m")} if offer else None
+    )
+    state["socimi"] = user_id in market.socimi
     state["fallback"] = [
         f"{listing.title} ({card['m2']}, {listing.floor})",
         f"{state['barrio']}: {card['price']} · {card['share_price']} la participación",
@@ -292,6 +339,24 @@ def listing_state(
         listing.blurb,
     ]
     return state
+
+
+def mortgage_box(mortgages: list) -> State | None:  # list[Mortgage]
+    """Lo que se enseña de las hipotecas de un inmueble (o `None` si no tiene)."""
+    if not mortgages:
+        return None
+    owed = sum(m.owed for m in mortgages)
+    payment = sum(m.payment for m in mortgages)
+    unpaid = sum(m.unpaid_amount for m in mortgages)
+    return {
+        "owed": format_amount(owed),
+        "payment": format_amount(payment) + "/mes",
+        "months": f"{max(m.months_left for m in mortgages)} meses",
+        "rate": _pct(mortgages[0].rate, 2),
+        "unpaid": format_amount(unpaid) if unpaid else "",
+        "unpaid_count": max(m.unpaid_count for m in mortgages),
+        "aval": any(m.aval for m in mortgages),
+    }
 
 
 def portfolio_state(
@@ -321,9 +386,33 @@ def portfolio_state(
                 "rent": format_amount(lease.rent * holding.shares // rules.SHARES) + "/mes"
                 if lease and lease.rent
                 else "—",
+                "mortgage": _mortgage_line(market.mortgages_of(user_id, listing.key)),
+                "home": market.homes.get(user_id) == ("propia", listing.key),
             }
         )
+    unit = market.vpo_of(user_id)
+    if unit is not None:
+        spec = VPO_BY_KEY[unit]
+        items.insert(
+            0,
+            {
+                "key": f"{VPO_PREFIX}{unit}",
+                "kind": "vpo",
+                "title": spec.name,
+                "barrio": spec.town,
+                "shares": rules.SHARES,
+                "value": format_amount(spec.price),
+                "status": "Tu vivienda habitual (VPO)",
+                "status_kind": rules.HABITUAL,
+                "rent": "—",
+                "mortgage": _mortgage_line(market.mortgages_of(user_id, f"{VPO_PREFIX}{unit}")),
+                "home": True,
+            },
+        )
     worth = sum(market.value(h) for h in market.of_member(user_id))
+    worth += VPO_BY_KEY[unit].price if unit is not None else 0
+    debt = sum(m.owed for m in market.mortgages_of(user_id)) + market.bank_debts.get(user_id, 0)
+    home = market.homes.get(user_id)
     state: State = {
         "screen": "cartera",
         "user": {"name": name, "cash": format_amount(cash), "worth": format_amount(worth)},
@@ -336,6 +425,13 @@ def portfolio_state(
         },
         "news": [news_line(n, names) for n in news[:6]],
         "empty": not items,
+        "debt": format_amount(debt) if debt else "",
+        "bank_debt": format_amount(market.bank_debts[user_id])
+        if market.bank_debts.get(user_id)
+        else "",
+        "euribor": "Euríbor " + _pct(market.euribor, 2),
+        "living": _living(market, home, names),
+        "socimi": user_id in market.socimi,
         "footer": "Lo cobrado es antes del IRPF, que se retiene al cobrar",
     }
     state["fallback"] = [
@@ -343,6 +439,109 @@ def portfolio_state(
         f"Últimos 7 días: {state['week']['rent']} de renta, {state['week']['net']} netos",
         *(f"{i['title']} ({i['shares']} %): {i['value']} · {i['status']}" for i in items),
     ] if items else [f"{name} no tiene ningún piso. Generación inquilina."]  # fmt: skip
+    return state
+
+
+def _mortgage_line(mortgages: list) -> str:
+    box = mortgage_box(mortgages)
+    if box is None:
+        return ""
+    late = f" · debes {box['unpaid']}" if box["unpaid"] else ""
+    return f"Hipoteca {box['owed']} · {box['payment']}{late}"
+
+
+def _living(market: Market, home: tuple[str, str] | None, names: dict[int, str]) -> str:
+    if home is None:
+        return "Vives con tus padres"
+    kind, ref = home
+    if kind == "vpo":
+        return f"Vives en tu {VPO_BY_KEY[ref].name}"
+    title = LISTING_BY_KEY[ref].title if ref in LISTING_BY_KEY else "un piso"
+    if kind == "alquiler":
+        owners = market.shares_of(ref)
+        boss = max(owners, key=owners.get) if owners else None
+        landlord = _name(names, boss) if boss is not None else "el mercado"
+        return f"De alquiler en «{title}» (casero: {landlord})"
+    return f"Vives en «{title}»"
+
+
+def vpo_state(
+    market: Market,
+    user_id: int,
+    names: dict[int, str],
+    *,
+    eligible: bool,
+    reason: str,
+    next_draw: str,
+    income: int,
+) -> State:
+    """Las VPO: de quién es cada una, el sorteo de los lunes y lo tuyo.
+
+    Args:
+        eligible: Si puede apuntarse (sin casa y sin pasar del límite de ingresos).
+        reason: Por qué no, si no puede.
+        next_draw: Cuándo es el próximo sorteo («lunes 19/10»).
+        income: Su neto medio de nómina al día (lo que mira el límite).
+    """
+    rate = market.euribor + rules.MORTGAGE_SPREAD
+    units = []
+    for unit in VPO_UNITS:
+        owner = market.vpo.get(unit.key)
+        reserved = market.reservations.get(unit.key)
+        if owner is not None:
+            mine = owner.owner_id == user_id
+            status = "Tuya" if mine else f"De {_name(names, owner.owner_id)}"
+            kind = "tuyo" if mine else "ajeno"
+        elif reserved is not None:
+            mine = reserved[0] == user_id
+            who = "ti" if mine else _name(names, reserved[0])
+            status = f"Reservada para {who} hasta el {reserved[1].strftime('%d/%m')}"
+            kind = "compartido" if mine else "parcial"
+        else:
+            status, kind = "Libre: entra en el próximo sorteo", "venta"
+        units.append(
+            {
+                "key": unit.key,
+                "name": unit.name,
+                "town": unit.town,
+                "island": ISLANDS[unit.island],
+                "m2": f"{unit.m2} m²",
+                "price": format_amount(unit.price),
+                "payment": format_amount(rules.installment(unit.price, rate)) + "/mes",
+                "status": status,
+                "status_kind": kind,
+                "blurb": unit.blurb,
+            }
+        )
+    signed = user_id in market.signups
+    reservation = market.reservation_of(user_id)
+    state: State = {
+        "screen": "vpo",
+        "title": "VIVIENDA PROTEGIDA",
+        "subtitle": "Sorteo cada lunes · hipoteca al 100 % con aval del Estado",
+        "units": units,
+        "user": {
+            "signed_up": signed,
+            "eligible": eligible,
+            "reason": reason,
+            "reservation": VPO_BY_KEY[reservation].name if reservation else "",
+            "owns": market.vpo_of(user_id) is not None,
+            "income": format_amount(income) + "/día",
+            "income_ok": income <= rules.vpo_income_cap(),
+            "home_ok": not market.owns_home(user_id)
+            and market.homes.get(user_id, ("alquiler", ""))[0] == "alquiler",
+            "cap": format_amount(rules.vpo_income_cap()) + "/día",
+            "signups": len(market.signups),
+        },
+        "next_draw": next_draw,
+        "euribor": "Euríbor " + _pct(market.euribor, 2),
+        "footer": "Precio tasado · IGIC al tipo cero · no se alquila · se devuelve al Estado",
+    }
+    state["fallback"] = [
+        "Vivienda protegida: sorteo cada lunes",
+        f"Próximo sorteo: {next_draw} · {len(market.signups)} apuntados",
+        *(f"{u['name']}: {u['price']} · {u['status']}" for u in units),
+    ]
     return state
 
 

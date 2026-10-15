@@ -660,6 +660,9 @@ class Contract:
     position_since: float = 0.0
     battery: float = BATTERY_MAX
     battery_at: float = 0.0
+    #: Multiplica la recarga de la batería: más de 1 si vive en su casa de `pisos`
+    #: (emanciparse). Lo pone `WorkService` al leer el contrato; no hace falta guardarlo.
+    home_regen: float = 1.0
     #: Familia en `family_at`; desde entonces se recupera sola (`family_now`).
     family: float = FAMILY_MAX
     family_at: float = 0.0
@@ -729,7 +732,7 @@ def _recharge(contract: Contract, at: float) -> tuple[float, float]:
     hasta que la familia llega al tramo siguiente (o para siempre en el mejor).
     """
     family = family_now(contract, at)
-    rate = BATTERY_REGEN_PER_HOUR * family_tier(family).regen
+    rate = BATTERY_REGEN_PER_HOUR * family_tier(family).regen * contract.home_regen
     above = [t.low for t in FAMILY_TIERS if t.low > family]
     if not above or family >= FAMILY_MAX:
         return rate, math.inf

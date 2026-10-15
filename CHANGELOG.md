@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.7.0 · 2026-10-15
+
+- Pisos: hipoteca, VPO por sorteo, alquilar a miembros con Bono Alquiler Joven, vacacional, fondo buitre y SOCIMI
+
 ### 6.6.0 · 2026-10-15
 
 - Pisos: `pisos`, el mercado inmobiliario de Canarias, y el Patrimonio cuenta el ladrillo
