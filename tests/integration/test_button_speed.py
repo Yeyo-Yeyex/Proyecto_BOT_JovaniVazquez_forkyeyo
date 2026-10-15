@@ -436,6 +436,56 @@ async def press_bus_cash_out(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def tower_board(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Torre de Fácil con 10 Y$ y un dragón en la puerta 0 de cada piso."""
+    module = module_of(client, "Torre")
+    board = module.TowerBoard(
+        client.get_cog("Torre"),
+        guild_id=GUILD_ID,
+        owner=owner,
+        stake=10,
+        difficulty=module.Difficulty.EASY,
+    )
+    return board
+
+
+async def press_tower_again(client: BotClient, owner: MagicMock) -> Click:
+    board = tower_board(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._again(interaction)
+
+    return click
+
+
+async def started_tower(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Torre con la apuesta ya cobrada (antes de medir) y el primer piso subido."""
+    board = tower_board(client, owner)
+    assert await board.start() is None
+    assert board.game is not None
+    board.game.dragons = tuple(frozenset({0}) for _ in board.game.dragons)
+    board.game.climb(1)
+    return board
+
+
+async def press_tower_cash_out(client: BotClient, owner: MagicMock) -> Click:
+    board = await started_tower(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._cash_out(interaction)
+
+    return click
+
+
+async def press_tower_burn(client: BotClient, owner: MagicMock) -> Click:
+    board = await started_tower(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._climb(interaction, 0)
+
+    return click
+
+
 def poker_table(client: BotClient):  # noqa: ANN201
     """Mesa del póker del canal con dibujo falso, sin esperas y sin bucle propio."""
     cog = client.get_cog("Póker")
@@ -1176,6 +1226,9 @@ CASES: dict[str, Press] = {
     "backgammon: doblar": press_backgammon_double,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
+    "torre: jugar otra": press_tower_again,
+    "torre: cobrar": press_tower_cash_out,
+    "torre: quemarse": press_tower_burn,
     "póker: sentarse": press_poker_sit,
     "póker: ir": press_poker_call,
     "póker: bote": press_poker_bonus,

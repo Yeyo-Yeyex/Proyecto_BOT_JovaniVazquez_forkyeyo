@@ -12,7 +12,8 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `bus_stats`, `poker_stats`,
+`crash_stats`, `mines_stats`, `tower_stats`, `chicken_stats`, `coin_stats`, `bus_stats`,
+`poker_stats`,
 `poker_club_stats`, `timba_stats`, `craps_stats`,
 `pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
 `porra_bettor_stats`, `porra_subject_stats`,
@@ -145,6 +146,10 @@ from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
 from bot.services.timba import Act as TimbaAct
 from bot.services.timba import TimbaHand
+from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
+from bot.services.tower import FLOORS as TOWER_FLOORS
+from bot.services.tower import Status as TowerStatus
+from bot.services.tower import TowerGame
 from bot.services.work import (
     FAMILY_TIERS,
     FLOP_BELOW,
@@ -264,6 +269,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("crash", "🚀 Crash", group=_CG),
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
+    Category("tower", "🐉 Torre", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
     Category("poker", "♠️ Póker", group=_CG),
@@ -3463,6 +3469,200 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", f"mines_level_{MINES_MAX}", [
         (100, "mines_12_100", "Kamikaze del 12", "Juega 100 partidas con 12 minas.", E),
     ])  # fmt: skip
+
+    # 🐉 Torre del dragón ----------------------------------------------------------------
+    a += _tiers("tower", "tower_games", [
+        (1, "tower_1", "Inquilino del dragón",
+         "Juega tu primera partida de la Torre del dragón. Alquiler sin contrato y con fuego.", C),
+        (100, "tower_100", "Ascensorista de Moncloa", "Juega 100 partidas de la Torre del dragón.",
+         C),
+        (1_000, "tower_1k", "Capataz de la Torre de Babel",
+         "Juega 1.000 partidas de la Torre del dragón. Nadie se entiende, pero se sube.", E),
+        (5_000, "tower_5k", "Casa Targaryen",
+         "Juega 5.000 partidas de la Torre del dragón. La dinastía se te ha ido de las manos.", L),
+        (10_000, "tower_10k", "Mandato vitalicio, como el de Xi",
+         "Juega 10.000 partidas de la Torre del dragón. Ya no sales ni por referéndum.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors", [
+        (100, "tower_floors_100", "Escalador de la Torre Picasso", "Sube 100 pisos en total.", C),
+        (1_000, "tower_floors_1k", "Montañero del Teide", "Sube 1.000 pisos en total.", E),
+        (10_000, "tower_floors_10k", "Más pisos que la Sagrada Familia en obras",
+         "Sube 10.000 pisos en total. Y todavía sin licencia.", L),
+        (50_000, "tower_floors_50k", "Burj Khalifa a pie", "Sube 50.000 pisos en total.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cashouts", [
+        (10, "tower_cash_10", "Huevos a buen recaudo, como los sobres de Bárcenas",
+         "Cobra 10 partidas de la Torre del dragón.", C),
+        (100, "tower_cash_100", "Bajada con el botín, como un conseguidor de Moncloa",
+         "Cobra 100 partidas de la Torre del dragón.", R),
+        (1_000, "tower_cash_1k", "Tesorero del dragón",
+         "Cobra 1.000 partidas de la Torre del dragón. Hasta Hacienda te pide consejo.", L),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_burns", [
+        (1, "tower_burn_1", "Dracarys", "Que te queme un dragón por primera vez.", C),
+        (10, "tower_burn_10", "Huevo pasado por agua… hirviendo",
+         "Que te quemen 10 veces.", C),
+        (100, "tower_burn_100", "Barbacoa de domingo, como las del chalet de Galapagar",
+         "Que te quemen 100 veces.", R),
+        (1_000, "tower_burn_1k", "Chamusquina de Kim",
+         "Que te quemen 1.000 veces. Los misiles de cumpleaños pican menos.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_first_burn", [
+        (1, "tower_burn_first", "Ni la primera planta",
+         "Que te queme el dragón del primer piso. Cero pisos y mucha confianza.", C),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_burn_late", [
+        (1, "tower_burn_late", "A un tiro de la cima",
+         "Que te queme un dragón cuando ya llevabas 7 pisos o más.", R),
+        (10, "tower_burn_late_10", "Casi presidente del Gobierno",
+         "Que te queme un dragón con 7 pisos o más, 10 veces. Tan cerca, tan lejos.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_ninth_burn", [
+        (1, "tower_burn_ninth", "El dragón del ático",
+         "Que te queme el dragón del piso 9, con 8 pisos subidos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_ninth_burn_hard", [
+        (1, "tower_burn_ninth_hard", "Dragón de guardia en la azotea",
+         "Que te queme el dragón del piso 9 en Experto o Maestro. Eso es mala suerte, no Brexit.",
+         M, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_one", [
+        (25, "tower_cash_one_25", "Con un piso me vale",
+         "Cobra 25 veces tras un solo piso. Cobarde, pero cobras.", C),
+        (250, "tower_cash_one_250", "Planta baja y a casa",
+         "Cobra 250 veces tras un solo piso. La planta baja también tributa.", R),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_one_maestro", [
+        (1, "tower_cash_one_maestro", "Gallina de Maestro",
+         "Cobra tras un solo piso en Maestro. Entras, cobras y huyes del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_eight", [
+        (1, "tower_cash_eight", "A un piso de la gloria",
+         "Cobra con 8 pisos subidos en lugar de ir a por el noveno.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_mult_max", [
+        (300, "tower_x3", "Huevo de oro de la Agenda 2030", "Cobra en ×3 o más.", C),
+        (1_000, "tower_x10", "El dragón paga más que la paguita", "Cobra en ×10 o más.", C),
+        (2_500, "tower_x25", "Veinticinco veces, como la comisión de un conseguidor",
+         "Cobra en ×25 o más.", R),
+        (5_000, "tower_x50", "Cuarenta años de Franco más diez de propina",
+         "Cobra en ×50 o más.", L),
+        (10_000, "tower_x100", "Cien veces, como las dietas del Falcon", "Cobra en ×100 o más.", M),
+        (100_000, "tower_x1000", "Mil veces, como un expresidente en las puertas giratorias",
+         "Cobra en ×1.000 o más.", M),
+        (1_000_000, "tower_x10k", "Diez mil veces, como el patrimonio de un dictador",
+         "Cobra en ×10.000 o más.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_win_max", [
+        (10_000, "tower_rich", "Tesoro del dragón en un paraíso fiscal",
+         "Gana 10.000 Y$ en una partida de la Torre del dragón.", R),
+        (100_000, "tower_richer", "Cueva de Smaug con cuenta en Suiza",
+         "Gana 100.000 Y$ en una partida de la Torre del dragón. "
+         f"{TAX_COLLECTOR} ya huele el humo.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("tower", "tower_crown_facil", [
+        (1, "tower_crown_facil", "Escalera mecánica de El Corte Inglés",
+         "Corona la torre en Fácil: 9 pisos, 4 puertas y 1 dragón por piso.", R),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_normal", [
+        (1, "tower_crown_normal", "Presidente sin necesidad de pactar",
+         "Corona la torre en Normal: 3 puertas por piso y 1 dragón.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_dificil", [
+        (1, "tower_crown_dificil", "Cara o cruz nueve veces seguidas",
+         "Corona la torre en Difícil: 2 puertas por piso y un dragón en una.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_experto", [
+        (1, "tower_crown_experto", "Dragón de Xi domado",
+         "Corona la torre en Experto: 3 puertas por piso y 2 dragones. 1 entre 19.683.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_maestro", [
+        (1, "tower_crown_maestro", "Daenerys en el Trono de Hierro",
+         "Corona la torre en Maestro: 4 puertas por piso y 3 dragones. 1 entre 262.144.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crowns", [
+        (10, "tower_crown_10", "Rey de la Torre de Babel",
+         "Corona la torre 10 veces, en la dificultad que sea.", E),
+        (100, "tower_crown_100", "Rey de Poniente",
+         "Corona la torre 100 veces. Los dragones te piden el carnet.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floor_max", [
+        (5, "tower_floor_5", "Mitad de torre, mitad de legislatura",
+         "Sube 5 pisos en una partida.", C),
+        (7, "tower_floor_7", "Siete pisos de pura tensión", "Sube 7 pisos en una partida.", C),
+        (8, "tower_floor_8", "Vértigo de moción de censura", "Sube 8 pisos en una partida.", C),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_dificil", [
+        (6, "tower_dificil_6", "Seis pisos a cara o cruz", "Sube 6 pisos en Difícil.", L),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_experto", [
+        (4, "tower_experto_4", "Cuatro pisos entre dos dragones", "Sube 4 pisos en Experto.", M),
+        (6, "tower_experto_6", "Los dos dragones te tienen manía", "Sube 6 pisos en Experto.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_maestro", [
+        (3, "tower_maestro_3", "Tres pisos con tres dragones por piso",
+         "Sube 3 pisos en Maestro.", L),
+        (5, "tower_maestro_5", "Un milagro de los que salen en el BOE",
+         "Sube 5 pisos en Maestro. Una entre 1.024.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_games_experto", [
+        (100, "tower_experto_100", "Doble fuego, doble desastre",
+         "Juega 100 partidas en Experto.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_games_maestro", [
+        (100, "tower_maestro_100", "Kamikaze con corona",
+         "Juega 100 partidas en Maestro. Trabajas para el dragón.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_random", [
+        (50, "tower_dice", "Que elija el dragón", "Elige 50 puertas con 🎲.", R),
+        (500, "tower_dice_500", "Puerta al azar, como un nombramiento a dedo",
+         "Elige 500 puertas con 🎲.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_greedy", [
+        (1, "tower_greedy", "El que mucho sube",
+         "Que te queme un dragón con ×10 o más ya ganado. Se queda en la cueva.", R, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_easy_first_burn", [
+        (1, "tower_easy_burn", "Quemado en el modo fácil",
+         "Que te queme el dragón del primer piso en Fácil. Con 3 puertas buenas de 4.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_dice_crown", [
+        (1, "tower_dice_crown", "La suerte del principiante",
+         "Corona la torre eligiendo las 9 puertas con 🎲.", E, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_777", [
+        (1, "tower_777", "Los tres Reyes Magos del dragón",
+         "Cobra exactamente 777 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_666", [
+        (1, "tower_666", "El número de la bestia (con alas)",
+         "Cobra exactamente 666 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_69", [
+        (1, "tower_69", "Dragón de nivel avanzado",
+         "Cobra exactamente 69 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="tower_all_levels",
+            name="Todas las plantas del edificio",
+            description="Juega una partida en cada dificultad: Fácil, Normal, Difícil, "
+            "Experto y Maestro.",
+            category="tower",
+            rarity=C,
+            conditions=tuple((f"tower_games_{d.key}", 1) for d in TOWER_DIFFICULTIES),
+        )
+    )
+    a.append(
+        Achievement(
+            id="tower_all_crowns",
+            name="Coronado en todos los reinos",
+            description="Corona la torre en cada dificultad. Hasta Felipe VI se da por aludido.",
+            category="tower",
+            rarity=M,
+            conditions=tuple((f"tower_crown_{d.key}", 1) for d in TOWER_DIFFICULTIES),
+        )
+    )
 
     # 🪙 Cara o cruz -----------------------------------------------------------------------
     a += _tiers("coin", "coin_games", [
@@ -14174,6 +14374,50 @@ def mines_stats(game: MinesGame) -> StatDelta:
         bump("mines_almost", game.gems >= 1 and game.safe_total - game.gems == 1)
         # Explotar con ×10 o más ya ganado: lo que se llevaba se queda en la mesa.
         bump("mines_greedy", game.gems >= 1 and multiplier_cents(game.mines, game.gems) >= 1_000)
+    return delta
+
+
+def tower_stats(game: TowerGame) -> StatDelta:
+    """Contadores de una partida de la Torre del dragón terminada (sin lo común del casino)."""
+    key = game.difficulty.key
+    delta = StatDelta(
+        add={"tower_games": 1, f"tower_games_{key}": 1},
+        peak={"tower_floor_max": game.floor, f"tower_floors_max_{key}": game.floor},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("tower_floors", amount=game.floor)
+    bump("tower_random", amount=game.random_picks)
+    if game.status is TowerStatus.CASHED:
+        bump("tower_cashouts")
+        delta.peak["tower_mult_max"] = game.cents
+        if game.net > 0:
+            delta.peak["tower_win_max"] = game.net
+        bump("tower_cash_one", game.floor == 1)
+        bump("tower_cash_one_maestro", game.floor == 1 and key == "maestro")
+        bump("tower_cash_eight", game.floor == TOWER_FLOORS - 1)
+        bump("tower_crowns", game.crowned)
+        bump(f"tower_crown_{key}", game.crowned)
+        bump("tower_dice_crown", game.crowned and game.random_picks == TOWER_FLOORS)
+        bump("tower_cash_777", game.payout == 777)
+        bump("tower_cash_666", game.payout == 666)
+        bump("tower_cash_69", game.payout == 69)
+    elif game.status is TowerStatus.BURNED:
+        bump("tower_burns")
+        bump("tower_first_burn", game.floor == 0)
+        bump("tower_easy_first_burn", game.floor == 0 and key == "facil")
+        bump("tower_burn_late", game.floor >= 7)
+        bump("tower_ninth_burn", game.floor == TOWER_FLOORS - 1)
+        bump(
+            "tower_ninth_burn_hard",
+            game.floor == TOWER_FLOORS - 1 and key in ("experto", "maestro"),
+        )
+        # Quemarse con ×10 o más ya ganado: lo que se llevaba se queda en la cueva.
+        bump("tower_greedy", game.floor >= 1 and game.cents >= 1_000)
     return delta
 
 

@@ -116,6 +116,7 @@ from bot.services.poker import Rank as PokerRank
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
+from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
 from bot.services.work import WISHES
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
 
@@ -585,6 +586,15 @@ PRODUCED_STATS = {
     *(f"casino_bet_{n}" for n in SECRET_STAKES),
     "crash_cash_low", "crash_missed_moon",
     "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
+    # cogs/tower.py (`tower_stats`)
+    "tower_games", "tower_floors", "tower_random", "tower_cashouts", "tower_mult_max",
+    "tower_win_max", "tower_cash_one", "tower_cash_one_maestro", "tower_cash_eight",
+    "tower_crowns", "tower_dice_crown", "tower_cash_777", "tower_cash_666", "tower_cash_69",
+    "tower_burns", "tower_first_burn", "tower_easy_first_burn", "tower_ninth_burn",
+    "tower_ninth_burn_hard", "tower_burn_late", "tower_greedy", "tower_floor_max",
+    *(f"tower_games_{d.key}" for d in TOWER_DIFFICULTIES),
+    *(f"tower_crown_{d.key}" for d in TOWER_DIFFICULTIES),
+    *(f"tower_floors_max_{d.key}" for d in TOWER_DIFFICULTIES),
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
     "todo_done_batch_max",

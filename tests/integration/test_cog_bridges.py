@@ -38,6 +38,7 @@ GAMES = (
     "Botes",
     "Crash",
     "Minas",
+    "Torre",
     "Pollo",
     "Moneda",
     "Dados",
@@ -1293,6 +1294,47 @@ async def test_una_partida_de_backgammon_contra_jovani_apunta_logros_con_el_bot_
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert "backgammon" not in report.by_game
+    finally:
+        await client.close()
+
+
+async def test_la_torre_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: Path) -> None:
+    """La Torre del dragón carga antes que los logros: sus partidas deben llegar a `logros`."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Torre")
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._torre_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            difficulty=None,
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+        (board,) = cog.boards
+        board.game.dragons = tuple(frozenset({0}) for _ in board.game.dragons)
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+
+        await board._climb(interaction, 0)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["tower_games"] == 1
+        assert profile.stats["tower_burns"] == 1
+        assert {"tower_1", "tower_burn_1", "tower_burn_first", "tower_easy_burn"} <= set(
+            profile.unlocked
+        )
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["torre"].plays == 1
     finally:
         await client.close()
 
