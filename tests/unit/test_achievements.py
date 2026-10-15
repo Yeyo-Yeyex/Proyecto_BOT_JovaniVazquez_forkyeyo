@@ -41,6 +41,7 @@ from bot.services.achievements import (
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
+    GALLOS_TRAINED_BEAT_PREFIX,
     HORSE_BACKED_KINDS_STAT,
     HORSE_BACKED_MAX_STAT,
     HORSE_BET_KINDS,
@@ -356,6 +357,11 @@ PRODUCED_STATS = {
     "gallos_hispanidad", "gallos_canarias", "gallos_july4", "gallos_china_day",
     "gallos_europe_day", "gallos_africa_day", "gallos_night", "gallos_dawn",
     "gallos_nochevieja", "gallos_friday13",
+    # stats, entrenamiento y muertes (`gallos_stats` y `gallos_train_stats`)
+    "gallos_trains", "gallos_train_spent", "gallos_train_dawn", "gallos_trains_day_max",
+    "gallos_strength_max", "gallos_speed_max", "gallos_endurance_max", "gallos_power_max",
+    "gallos_upset", "gallos_deaths", "gallos_kills", "gallos_phoenix",
+    "gallos_death_veteran", "gallos_death_debut",
     # cogs/enraya.py (`enraya_stats`, `enraya_bet_stats` y los retos)
     "enraya_games", "enraya_wins", "enraya_losses", "enraya_draws", "enraya_resigns",
     "enraya_timeouts", "enraya_opp_timeouts", "enraya_beat_imposible_second",
@@ -387,6 +393,7 @@ PRODUCED_STATS = {
     "backgammon_untouched", "backgammon_value_max", "backgammon_win_max", "backgammon_wins",
     *(f"{BACKGAMMON_BEAT_PREFIX}{lv.key}" for lv in BACKGAMMON_LEVELS),
     *(f"{GALLOS_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
+    *(f"{GALLOS_TRAINED_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
     *(f"{GALLOS_SKIN_PREFIX}{k}" for k in ("serie", *GALLOS_FREE_SKINS)),
     # cogs/coin.py (`coin_stats`)
     "coin_games", "coin_flips", "coin_wins", "coin_wins_cara", "coin_wins_cruz",
