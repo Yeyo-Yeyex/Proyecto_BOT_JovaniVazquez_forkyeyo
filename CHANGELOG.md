@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.5.2 · 2026-10-15
+
+- Tragaperras: rótulos y fondos de la Mina y el Olimpo a la altura del Volcán
+
 ### 7.5.1 · 2026-10-15
 
 - Tragaperras: la Mina y el Olimpo, con el mismo arte que el Volcán
