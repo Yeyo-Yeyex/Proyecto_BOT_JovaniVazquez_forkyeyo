@@ -3,8 +3,9 @@
 - `mascota [miembro]` abre el panel de mascotas de alguien. Su dueño elige
   cuál ver, la acaricia, juega con ella, le da de comer lo que tenga en la
   mochila, le pone nombre y elige cuál le acompaña (la **activa**). Los
-  demás solo miran. Reglas en `bot.services.pets`; especies en
-  `bot.services.pets_catalog`.
+  demás solo miran. Dos atajos abren la tienda en privado: 🐾 Adoptar (la
+  pestaña de mascotas) y 🥣 Comida (la Tienda de animales). Reglas en
+  `bot.services.pets`; especies en `bot.services.pets_catalog`.
 - Las mascotas se adoptan en la `tienda` (pestaña 🐾 Mascotas) o aparecen
   solas cuando se da su momento (te quedas a cero, cobras el IMV…).
 
@@ -89,6 +90,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 COLOR = discord.Color.from_rgb(240, 160, 200)
+#: Pasillo de la tienda con la comida y las cosas de las mascotas (atajo 🥣 Comida).
+FOOD_AISLE = "animales"
 VIEW_TIMEOUT = 600
 #: Opciones de un desplegable de Discord.
 SELECT_LIMIT = 25
@@ -328,6 +331,16 @@ class PetPanel(ui.LayoutView):
             extra.add_item(
                 _button("Ponerle nombre", self._rename, custom_id="mascota:nombre", emoji="✏️")
             )
+            extra.add_item(
+                _button(
+                    "Adoptar", self._shop(None, "mascota"), custom_id="mascota:adoptar", emoji="🐾"
+                )
+            )
+            extra.add_item(
+                _button(
+                    "Comida", self._shop(FOOD_AISLE, "todo"), custom_id="mascota:comida", emoji="🥣"
+                )
+            )
             self.add_item(extra)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -344,6 +357,21 @@ class PetPanel(ui.LayoutView):
                 await self.cog.open_feeding(interaction, self)
             else:
                 await self.cog.care(interaction, self, care)
+
+        return callback
+
+    def _shop(
+        self, aisle: str | None, tab: str
+    ) -> Callable[[discord.Interaction], Awaitable[None]]:
+        """Atajo a la tienda en privado, en el pasillo y la pestaña de las mascotas."""
+
+        async def callback(interaction: discord.Interaction) -> None:
+            # Importado aquí: la tienda ya importa este módulo para sus mascotas.
+            from bot.cogs import shop as tienda
+
+            await ack(interaction, new_message=True)
+            if not await tienda.open_aisle(self.cog.bot, interaction, aisle, tab=tab):
+                await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
 
         return callback
 

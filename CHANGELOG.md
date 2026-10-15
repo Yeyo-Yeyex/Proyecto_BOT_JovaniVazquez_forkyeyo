@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.13.0 · 2026-10-15
+
+- Mascotas: atajos a adoptar y a la comida desde el panel
+
 ### 6.12.0 · 2026-10-15
 
 - Blackjack: el zapato dura entre manos y se pueden contar cartas

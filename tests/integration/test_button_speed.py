@@ -778,6 +778,17 @@ async def press_pala_gift_shop(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pets_food_shop(client: BotClient, owner: MagicMock) -> Click:
+    await client.pets.initialize()
+    panel = await client.get_cog("Mascotas").panel(owner.guild, owner, owner)
+    callback = panel._shop("animales", "todo")
+
+    async def click(interaction: MagicMock) -> None:
+        await callback(interaction)
+
+    return click
+
+
 async def press_pala_buy_gift(client: BotClient, owner: MagicMock) -> Click:
     panel = await obra_panel(client, owner)
 
@@ -1254,6 +1265,7 @@ CASES: dict[str, Press] = {
     "pala: pedir un favor a la familia": press_pala_favor,
     "pala: dar un regalo": press_pala_gift,
     "pala: ir a los regalos de la tienda": press_pala_gift_shop,
+    "mascota: atajo a la comida de la tienda": press_pets_food_shop,
     "pala: caja de un regalo": press_pala_buy_gift,
     "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
