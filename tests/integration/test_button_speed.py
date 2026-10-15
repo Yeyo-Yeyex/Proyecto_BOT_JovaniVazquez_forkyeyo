@@ -896,6 +896,30 @@ async def press_rastro_accept(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_rastro_swap(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Rastro")
+    given = await verified_in_backpack(client, SELLER_ID)
+    book = await client.shop.item_by_key(GUILD_ID, "manual_resistencia")
+    assert book is not None
+    received, _dupe = await client.shop.grant(GUILD_ID, OWNER_ID, book, 0.0)
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(100_000, "test")])
+    await client.economy.repository.apply(GUILD_ID, SELLER_ID, [LedgerEntry(100_000, "test")])
+    seller_entries = await client.shop.inventory(GUILD_ID, SELLER_ID, cog.clock())
+    owner_entries = await client.shop.inventory(GUILD_ID, OWNER_ID, cog.clock())
+    mine = next(e for e in seller_entries if e.id == given)
+    theirs = next(e for e in owner_entries if e.id == received.id)
+    seller = MagicMock(spec=discord.Member)
+    seller.id, seller.bot, seller.display_name = SELLER_ID, False, "Ana"
+    view = module_of(client, "Rastro").SwapView(cog, GUILD_ID, seller, owner, mine, theirs, 0)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.accept.callback(interaction)
+
+    return click
+
+
 async def press_rastro_bid(client: BotClient, owner: MagicMock) -> Click:
     from bot.repositories.economy import LedgerEntry
 
@@ -1271,6 +1295,7 @@ CASES: dict[str, Press] = {
     "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
     "rastro: aceptar una oferta": press_rastro_accept,
+    "rastro: aceptar un trueque": press_rastro_swap,
     "rastro: pujar": press_rastro_bid,
     "rastro: retirar un puesto": press_rastro_withdraw,
     "pisos: elegir barrio": press_pisos_barrio,

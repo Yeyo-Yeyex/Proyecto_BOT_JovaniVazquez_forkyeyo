@@ -39,6 +39,19 @@ Fiscalidad (`bot.services.taxes`, «Rastro»):
   particulares), o, si se compró en el Rastro, el mayor entre precio y valor más el
   ITP pagado (arts. 35.1.b y 36 LIRPF: la parte regalada vale lo que valía).
   Lo que salió de la caja botín o fue un regalo de la tienda cuesta 0.
+
+**Trueque** (`trueque`, `Swap`): dos miembros se cambian un objeto por otro, y quien
+lo propone puede añadir dinero. Es una permuta, con su fiscalidad propia:
+
+- **Cada uno paga el ITP de lo que recibe** (art. 23 del RDL 1/1993: «en las
+  permutas tributará cada permutante por el valor comprobado de los que adquiera»),
+  al 5,5 % y sobre su valor de referencia. Quien pone dinero, sobre el mayor entre
+  ese valor y el dinero, como en una venta.
+- **Cada uno tributa por la ganancia de lo que entrega** (art. 37.1.h LIRPF): el
+  mayor entre el valor de lo que entrega y el de lo que recibe a cambio, menos lo que
+  le costó. El dinero cuenta como parte de lo recibido para quien lo cobra y se
+  descuenta de lo recibido para quien lo pone.
+- Lo que cuesta lo recibido, para venderlo después, es la base de su ITP más el ITP.
 """
 
 from __future__ import annotations
@@ -146,6 +159,92 @@ class Deal:
     def buyer_cost(self) -> int:
         """Lo que le cuesta el objeto a quien compra, para su próxima venta."""
         return self.itp_base + self.itp
+
+
+@dataclass(frozen=True, slots=True)
+class Swap:
+    """Las cuentas de un trueque: quien propone da un objeto (y `money`) y recibe otro.
+
+    Attributes:
+        given_reference: Valor de referencia de lo que da quien propone.
+        given_cost: Lo que le costó a quien propone.
+        received_reference: Valor de referencia de lo que recibe a cambio.
+        received_cost: Lo que le costó a la otra persona.
+        money: Dinero que añade quien propone (0 si es un cambio sin más).
+    """
+
+    given_reference: int
+    given_cost: int
+    received_reference: int
+    received_cost: int
+    money: int = 0
+
+    @property
+    def proposer_itp_base(self) -> int:
+        """Base del ITP de quien propone: lo que recibe, o el dinero si pone más."""
+        return max(self.received_reference, self.money)
+
+    @property
+    def proposer_itp(self) -> int:
+        """ITP de quien propone."""
+        return itp(self.proposer_itp_base)
+
+    @property
+    def target_itp_base(self) -> int:
+        """Base del ITP de quien acepta: el valor de lo que recibe."""
+        return self.given_reference
+
+    @property
+    def target_itp(self) -> int:
+        """ITP de quien acepta."""
+        return itp(self.target_itp_base)
+
+    @property
+    def proposer_gain(self) -> int:
+        """Ganancia de quien propone por lo que entrega (0 si no gana)."""
+        received = max(0, self.received_reference - self.money)
+        return max(0, max(self.given_reference, received) - self.given_cost)
+
+    @property
+    def target_gain(self) -> int:
+        """Ganancia de quien acepta por lo que entrega, con el dinero que cobra."""
+        received = self.given_reference + self.money
+        return max(0, max(self.received_reference, received) - self.received_cost)
+
+    @property
+    def proposer_gain_tax(self) -> int:
+        """IRPF de la ganancia de quien propone."""
+        return capital_gain_tax(self.proposer_gain)
+
+    @property
+    def target_gain_tax(self) -> int:
+        """IRPF de la ganancia de quien acepta."""
+        return capital_gain_tax(self.target_gain)
+
+    @property
+    def proposer_pays(self) -> int:
+        """Lo que sale del monedero de quien propone: dinero, ITP y su plusvalía."""
+        return self.money + self.proposer_itp + self.proposer_gain_tax
+
+    @property
+    def target_pays(self) -> int:
+        """Lo que sale (o, si es negativo, entra) en el monedero de quien acepta."""
+        return self.target_itp + self.target_gain_tax - self.money
+
+    @property
+    def proposer_cost(self) -> int:
+        """Lo que le cuesta a quien propone lo que recibe, para su próxima venta."""
+        return self.proposer_itp_base + self.proposer_itp
+
+    @property
+    def target_cost(self) -> int:
+        """Lo que le cuesta a quien acepta lo que recibe, para su próxima venta."""
+        return self.target_itp_base + self.target_itp
+
+    @property
+    def taxes(self) -> int:
+        """Todo lo que se lleva Hacienda en el trueque."""
+        return self.proposer_itp + self.target_itp + self.proposer_gain_tax + self.target_gain_tax
 
 
 def escrow(amount: int, reference: int) -> int:

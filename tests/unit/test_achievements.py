@@ -208,6 +208,8 @@ PRODUCED_STATS = {
     "pet_renamed", "pet_named_sanxe", "pet_named_beast", "pet_switches",
     # cogs/rastro.py: ventas, compras, pujas y puestos del Rastro
     "market_sold", "market_sold_y", "market_bids_on_mine_max", "market_gain_tax",
+    "market_swaps", "market_swap_money", "market_swap_lopsided", "market_swap_fleeced",
+    "market_swap_titles",
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
     "market_bought", "market_spent", "market_bought_max", "market_itp",
     "market_gift_received", "market_auction_won", "market_serial_bought",

@@ -5567,6 +5567,34 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000_000, "rastro_bidmax_1m", "Puja de jeque",
          "Puja 1.000.000 Y$ de una vez en el Rastro.", E, True),
     ], unit="money")  # fmt: skip
+    # 🔄 Trueque (`trueque`): cuentan los dos, quien propone y quien acepta.
+    a += _tiers("rastro", "market_swaps", [
+        (1, "trueque_1", "Cambio de cromos en el recreo", "Haz tu primer `trueque`.", C),
+        (10, "trueque_10", "Mercadillo de cromos del domingo", "Haz 10 trueques.", R),
+        (50, "trueque_50", "Economía de trueque, como en el corralito",
+         "Haz 50 trueques. Los argentinos de 2001 te entienden.", E),
+        (200, "trueque_200", "Bolsa de Valores del patio del colegio", "Haz 200 trueques.", L),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_money", [
+        (1, "trueque_dinero", "Te doy esto y unas perras",
+         "Propón un trueque añadiendo dinero, y que te lo acepten.", C),
+        (10, "trueque_dinero_10", "Mejora de oferta, como Florentino en el mercado de fichajes",
+         "Cierra 10 trueques poniendo dinero encima.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_lopsided", [
+        (1, "trueque_estampita", "El timo de la estampita",
+         "Sal de un trueque con algo que vale diez veces lo que diste (y 1.000 Y$ o más).",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_fleeced", [
+        (1, "trueque_abanico", "Te han cambiado el Falcon por un abanico",
+         "Da en un trueque algo que vale diez veces lo que recibes (y 1.000 Y$ o más).",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_titles", [
+        (1, "trueque_titulos", "Pacto de investidura",
+         "Cambia un título por otro en un trueque. Hoy por ti, mañana Waterloo.", R),
+    ])  # fmt: skip
 
     # 🏠 Pisos (cogs/pisos.py: housing_*_stats) -------------------------------------------
     a += _tiers("pisos", "pisos_opened", [
@@ -15946,6 +15974,30 @@ def housing_day_stats(
         stat = f"{PISOS_EVENT_PREFIX}{kind}"
         add[stat] = add.get(stat, 0) + 1
     return StatDelta(add=add)
+
+
+def market_swap_stats(
+    *, gave: int, got: int, money: int, proposer: bool, titles: bool, when: datetime
+) -> StatDelta:
+    """Estadísticas de un trueque, para cada una de las dos personas.
+
+    Args:
+        gave: Valor de referencia de lo que dio (más el dinero, si lo puso).
+        got: Valor de referencia de lo que recibió (más el dinero, si lo cobró).
+        money: Dinero que añadió quien propuso.
+        proposer: Si es quien lo propuso.
+        titles: Si se cambiaron dos títulos.
+    """
+    delta = StatDelta(add={"market_swaps": 1, **_sunday(when)})
+    for stat, hit in (
+        ("market_swap_money", int(proposer and money > 0)),
+        ("market_swap_lopsided", int(got >= 1_000 and got >= 10 * max(1, gave))),
+        ("market_swap_fleeced", int(gave >= 1_000 and gave >= 10 * max(1, got))),
+        ("market_swap_titles", int(titles)),
+    ):
+        if hit:
+            delta.add[stat] = hit
+    return delta
 
 
 def market_sale_stats(
