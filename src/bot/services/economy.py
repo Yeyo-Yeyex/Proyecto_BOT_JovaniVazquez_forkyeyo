@@ -1744,6 +1744,10 @@ class EconomyService:
             guild_id, user_id, self._clock() - IMV_WORK_WINDOW_SECONDS
         )
 
+    async def work_net_days(self, guild_id: int, user_id: int, days: int) -> int:
+        """Neto de las nóminas (y pensiones) de los últimos `days` días (lo que mira el banco)."""
+        return await self.repository.work_net(guild_id, user_id, self._clock() - days * 86_400)
+
     async def week_tax_burden(self, guild_id: int, user_id: int) -> tuple[int, int]:
         """`(impuestos, neto)` de los últimos 7 días, para «Socio de Hacienda».
 
