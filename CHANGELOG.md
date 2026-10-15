@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.5.1 · 2026-10-15
+
+- Tragaperras: la Mina y el Olimpo, con el mismo arte que el Volcán
+
 ### 7.5.0 · 2026-10-15
 
 - Tienda: cajas por niveles, de temporada y ganadas jugando, con colecciones
