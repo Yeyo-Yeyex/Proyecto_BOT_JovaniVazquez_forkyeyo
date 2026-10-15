@@ -49,7 +49,9 @@ from bot.cogs import achievements as logros
 from bot.services.achievements import StatDelta, babel_stats, hong_kong_clock_stats
 from bot.services.babel import (
     HOME_LANGUAGE,
+    HOP_PAUSE_SECONDS,
     LANGUAGES,
+    RATE_LIMIT_BACKOFF,
     BabelResult,
     ChannelRenameLimiter,
     GoogleTranslator,
@@ -275,6 +277,9 @@ class Fun(commands.Cog):
         self._clock = clock
         # Inyectable para las pruebas; si no se da, se crea en `cog_load`.
         self._translator = translator
+        # Solo con el Google de verdad se espacian los saltos y se espera al límite de
+        # tasa: con un traductor de prueba no hay límite que esquivar.
+        self._pace = translator is None
         self._limiter = limiter or ChannelRenameLimiter()
         self._session: aiohttp.ClientSession | None = None
         self._lock = asyncio.Lock()
@@ -303,7 +308,14 @@ class Fun(commands.Cog):
                     f"🗼 Vuelta {step}/{total} · ahora en {_language_name(language)}…"
                 )
 
-        return await run_chain(text, pick_route(), translate, report)
+        return await run_chain(
+            text,
+            pick_route(),
+            translate,
+            report,
+            pause=HOP_PAUSE_SECONDS if self._pace else 0.0,
+            backoff=RATE_LIMIT_BACKOFF if self._pace else (),
+        )
 
     async def _babel_impl(
         self, responder: CommandResponder, text: str, replied_text: str = ""
