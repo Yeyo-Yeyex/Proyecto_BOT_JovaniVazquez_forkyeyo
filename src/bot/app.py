@@ -174,7 +174,7 @@ class BotClient(commands.Bot):
         # Lista de cosas que hacer del servidor (`lista`).
         self.todo = TodoRepository(database_path)
         # Maletines y botes de cada jugador en las máquinas de Botes
-        # (de momento, `volcan`); el dinero pasa por `economy`.
+        # (de momento, el Volcán, que se abre con `tragas volcan`); el dinero pasa por `economy`.
         self.hold_win = HoldWinRepository(database_path)
         # Calor y giro diario de la tragaperras (`tragas`); el dinero y el
         # bote pasan por `economy`.

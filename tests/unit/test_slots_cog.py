@@ -1109,3 +1109,14 @@ async def test_los_giros_gratis_no_llenan_la_barra(tmp_path: Path) -> None:
     await view.play(make_interaction())  # giro gratis
 
     assert cog.bonus(GUILD_ID, OWNER_ID).points == points
+
+
+def test_tragas_lee_la_maquina_y_la_cantidad_en_cualquier_orden() -> None:
+    from bot.cogs.slots import CLASSIC, MACHINE_CHOICES, parse_machine_args
+
+    assert parse_machine_args(()) == (None, None)
+    assert parse_machine_args(("500",)) == (None, "500")
+    assert parse_machine_args(("volcan", "500")) == ("volcan", "500")
+    assert parse_machine_args(("2k", "Volcán")) == ("volcan", "2k")
+    assert parse_machine_args(("clasica", "all")) == (CLASSIC, "all")
+    assert {c.value for c in MACHINE_CHOICES} >= {CLASSIC, "volcan"}

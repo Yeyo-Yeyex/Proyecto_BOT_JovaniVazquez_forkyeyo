@@ -30,7 +30,6 @@ EXPECTED_COMMANDS = {
     "volumen",
     "ruleta",
     "tragas",
-    "volcan",
     "caballo",
     "bacara",
     "gallos",

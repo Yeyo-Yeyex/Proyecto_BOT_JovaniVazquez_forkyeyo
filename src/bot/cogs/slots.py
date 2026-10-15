@@ -62,6 +62,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import hold_win as botes
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import (
     StatDelta,
@@ -92,6 +93,7 @@ from bot.services.economy import (
     gambling_tax_line,
     parse_amount,
 )
+from bot.services.hold_win import THEMES
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.slots import (
@@ -625,6 +627,36 @@ EditFn = Callable[..., Awaitable[Any]]
 # -- Máquina ------------------------------------------------------------------------
 
 
+#: Clave de la tragaperras clásica en `tragas`; las demás son las de Botes.
+CLASSIC = "clasica"
+#: Las máquinas de `tragas`: la clásica y cada una de `THEMES` (una nueva sale sola).
+MACHINE_CHOICES = [
+    app_commands.Choice(name="🎰 Clásica, con bote común", value=CLASSIC),
+    *(
+        app_commands.Choice(name=f"{theme.emoji} {theme.title}", value=theme.key)
+        for theme in THEMES.values()
+    ),
+]
+
+
+def parse_machine_args(args: tuple[str, ...]) -> tuple[str | None, str | None]:
+    """`.tragas volcan 500` → `("volcan", "500")`: la máquina y la cantidad, en cualquier orden.
+
+    Una palabra que es una máquina (`clasica`, `volcán`, `volcan`…) se toma como tal;
+    lo primero que no lo es, como la cantidad.
+    """
+    names = {CLASSIC: CLASSIC, "clásica": CLASSIC, **{key: key for key in THEMES}}
+    names.update({theme.title.lower(): theme.key for theme in THEMES.values()})
+    machine = amount = None
+    for word in args:
+        key = names.get(word.lower())
+        if key is not None and machine is None:
+            machine = key
+        elif amount is None:
+            amount = word
+    return machine, amount
+
+
 class SlotMachineView(discord.ui.View):
     """Máquina de un jugador: un mensaje con botones.
 
@@ -770,7 +802,7 @@ class SlotMachineView(discord.ui.View):
         if interaction.user.id == self.owner.id:
             return True
         await interaction.response.send_message(
-            f"Esta máquina es de {self.owner.display_name}. Abre la tuya con `slots`.",
+            f"Esta máquina es de {self.owner.display_name}. Abre la tuya con `tragas`.",
             ephemeral=True,
         )
         return False
@@ -1931,11 +1963,57 @@ class Slots(commands.Cog, name="Tragaperras"):
                 self.bot, guild.id, user, channel, slots_cooled_stats(lost=view.cooled)
             )
 
-    @app_commands.command(name="tragas", description="Tragaperras con bote común, a botones.")
-    @app_commands.describe(cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)")
+    async def _open_machine(
+        self,
+        machine: str | None,
+        *,
+        guild: discord.Guild | None,
+        channel: object,
+        user: discord.abc.User,
+        amount_text: str | None,
+        send: Callable[..., Awaitable[discord.Message]],
+        send_error: Callable[[str], Awaitable[None]],
+    ) -> None:
+        """Abre la clásica o una máquina de Botes (`bot.cogs.hold_win.THEMES`)."""
+        if machine is not None and machine != CLASSIC:
+            if await botes.open_theme(
+                self.bot,
+                machine,
+                guild=guild,
+                channel=channel,
+                user=user,
+                amount_text=amount_text,
+                send=send,
+                send_error=send_error,
+            ):
+                return
+            await send_error("Esa máquina está en el taller. Prueba con la clásica.")
+            return
+        await self._slots_impl(
+            guild=guild,
+            channel=channel,
+            user=user,
+            amount_text=amount_text,
+            send=send,
+            send_error=send_error,
+        )
+
+    @app_commands.command(
+        name="tragas", description="Tragaperras: la clásica con bote común o el Volcán."
+    )
+    @app_commands.describe(
+        cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)",
+        maquina="Qué máquina (por defecto, la clásica)",
+    )
+    @app_commands.choices(maquina=MACHINE_CHOICES)
     @app_commands.guild_only()
-    async def slots(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
-        """Abre una tragaperras con botones.
+    async def slots(
+        self,
+        interaction: discord.Interaction,
+        cantidad: str | None = None,
+        maquina: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Abre una tragaperras con botones: la clásica o una de Botes.
 
         Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado. Las
         tiradas mueven yapdollars a través de la economía del bot.
@@ -1945,7 +2023,8 @@ class Slots(commands.Cog, name="Tragaperras"):
             await interaction.response.send_message(**kwargs)
             return await interaction.original_response()
 
-        await self._slots_impl(
+        await self._open_machine(
+            maquina.value if maquina else None,
             guild=interaction.guild,
             channel=interaction.channel,
             user=interaction.user,
@@ -1956,17 +2035,22 @@ class Slots(commands.Cog, name="Tragaperras"):
 
     @commands.command(name="tragas")
     @commands.guild_only()
-    async def slots_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.tragas` o `.tragas 500`."""
+    async def slots_text(self, ctx: commands.Context, *args: str) -> None:
+        """Versión de texto: `.tragas`, `.tragas 500`, `.tragas volcan` o `.tragas volcan 500`.
+
+        La máquina y la cantidad van en cualquier orden.
+        """
+        machine, amount = parse_machine_args(args)
 
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)
 
-        await self._slots_impl(
+        await self._open_machine(
+            machine,
             guild=ctx.guild,
             channel=ctx.channel,
             user=ctx.author,
-            amount_text=cantidad,
+            amount_text=amount,
             send=send,
             send_error=ContextResponder(ctx).send_error,
         )
