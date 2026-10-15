@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.10.0 · 2026-10-15
+
+- Tienda: cada artículo dice si ya lo tienes y cuántos
+
 ### 6.9.0 · 2026-10-15
 
 - Aniversario: el 7 de octubre, fiesta del servidor con XP doble

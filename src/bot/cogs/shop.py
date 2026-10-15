@@ -56,7 +56,7 @@ import asyncio
 import logging
 import random
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -315,12 +315,30 @@ def price_text(item: ShopItem, now: float) -> str:
     )
 
 
-def item_card(item: ShopItem, now: float, *, best_seller: bool = False) -> str:
-    """Texto de un artículo en el escaparate."""
+def owned_tag(item: ShopItem, owned: int) -> str | None:
+    """La etiqueta de lo que ya tiene quien mira el escaparate, o `None` si no tiene.
+
+    Con el límite por persona cumplido lo dice, para no ir a la caja para nada.
+    """
+    if owned <= 0:
+        return None
+    if item.per_user is not None and owned >= item.per_user:
+        return "✅ Ya lo tienes" if item.per_user == 1 else f"✅ Tienes {owned}, el máximo"
+    return "✅ Lo tienes" if owned == 1 else f"✅ Tienes {owned}"
+
+
+def item_card(item: ShopItem, now: float, *, best_seller: bool = False, owned: int = 0) -> str:
+    """Texto de un artículo en el escaparate.
+
+    Args:
+        owned: Cuántos tiene en vigor quien mira (en su mochila), para verlo de un vistazo.
+    """
     lines = [f"### {item.emoji} {item.name}", price_text(item, now)]
     if item.description:
         lines.append(item.description)
     tags = [aisle_of(item.catalog_key).label, kind_detail(item)]
+    if tag := owned_tag(item, owned):
+        tags.insert(0, f"**{tag}**")
     if food_of(item.catalog_key):
         tags.append("🍽️ Se come (para tu mascota)")
     if best_seller:
@@ -485,14 +503,20 @@ class Storefront(ui.LayoutView):
         self.items_all: list[ShopItem] = []
         self.best_seller: int | None = None
         self.balance = 0
+        #: Cuántos tiene el dueño de cada artículo (por id), para marcarlos.
+        self.owned: Counter[int] = Counter()
         self.message: discord.Message | None = None
         self.interaction: discord.Interaction | None = None
 
     async def load(self) -> None:
-        """Lee el catálogo, el más vendido y el saldo del dueño."""
+        """Lee el catálogo, el más vendido, el saldo del dueño y lo que ya tiene."""
         self.items_all = await self.cog.repository.items(self.guild.id)
         self.best_seller = await self.cog.repository.best_seller(self.guild.id)
         self.balance = await self.cog.economy.balance(self.guild.id, self.owner.id)
+        entries = await self.cog.repository.inventory(
+            self.guild.id, self.owner.id, self.cog.clock()
+        )
+        self.owned = Counter(entry.item_id for entry in entries)
         self.rebuild()
 
     @property
@@ -577,7 +601,9 @@ class Storefront(ui.LayoutView):
                     custom_id=f"tienda:comprar:{item.id}",
                     style=discord.ButtonStyle.success,
                 )
-            card = item_card(item, now, best_seller=item.id == self.best_seller)
+            card = item_card(
+                item, now, best_seller=item.id == self.best_seller, owned=self.owned[item.id]
+            )
             container.add_item(ui.Section(ui.TextDisplay(card), accessory=buy))
         self.add_item(container)
 
