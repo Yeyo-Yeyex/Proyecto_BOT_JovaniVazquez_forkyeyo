@@ -1,4 +1,4 @@
-"""Botes: máquinas de monedas y recogida; de momento, el Volcán (`tragas volcan`).
+"""Botes: máquinas de monedas y recogida: el Volcán, la Mina y el Olimpo (`tragas volcan`).
 
 No tiene comando propio: se abre desde `tragas`, que junta todas las máquinas
 (`bot.cogs.slots` llama a `open_theme`). Antes era `volcan`.
@@ -164,6 +164,20 @@ COLLECT_LINES = {
         "🌋 ¡El Teide se pone celoso!",
         "🌋 ¡Erupción fiscal, y esta vez a tu favor!",
     ),
+    "mina": (
+        "🚃 ¡La vagoneta sale cargada de oro!",
+        "🚃 ¡Filón! Y esta vez no se lo lleva una multinacional.",
+        "🚃 ¡Se recoge el litio antes de que llegue la multinacional!",
+        "🚃 ¡La vagoneta vuelve a rodar, y sin que Bruselas la cierre!",
+        "🚃 ¡Un filón como el paraíso fiscal de Ayuso, pero para ti!",
+    ),
+    "olimpo": (
+        "⚡ ¡Zeus recoge las monedas con el rayo!",
+        "⚡ ¡Rescate griego, pero a tu favor!",
+        "⚡ ¡Varoufakis lo negoció y, por una vez, sale bien!",
+        "⚡ ¡Más monedas que préstamos le ha pedido Grecia a Bruselas!",
+        "⚡ ¡Esto la troika no lo vio venir!",
+    ),
 }
 NEAR_MISS_LINES = (
     "Tanta moneda y sin nadie que la recoja… ¡Ay, bendito!",
@@ -174,18 +188,40 @@ NEAR_MISS_LINES = (
     "Ahí se quedan, como un groyper esperando que le devuelvan la cuenta de Twitter.",
 )
 LOSS_LINES = (
-    "El volcán duerme la siesta.",
     "Ni una chispa, mi amor. Otra.",
     "Calentando…",
     "Como el tren de Canarias: ni está ni se le espera.",
     "La máquina está en huelga de celo.",
     "Hazme café, que esto no arranca.",
     "Calentando, como el planeta.",
-    "La lava se aplaza, como el juicio de Bibi.",
     "Más frío que el debate de Nick Fuentes con su madre por el wifi.",
 )
+#: Frases de una tirada sin premio que solo tienen gracia en su máquina.
+THEME_LOSS_LINES = {
+    "volcan": (
+        "El volcán duerme la siesta.",
+        "La lava se aplaza, como el juicio de Bibi.",
+    ),
+    "mina": (
+        "Pura roca, mi amor. Ni una pepita.",
+        "Mina cerrada por Bruselas: reconversión y cero monedas.",
+        "Aquí el litio se lo lleva otro, y a ti te toca la piedra.",
+        "Picar, picar y nada: como en la mina de carbón que cerraron.",
+    ),
+    "olimpo": (
+        "Zeus se ha ido a por otro rescate.",
+        "Ni un rayo, mi amor. Otra.",
+        "Grecia pide otro préstamo a Bruselas y tú, otra tirada.",
+        "Ha pasado la troika: recortes y cero monedas.",
+        "Mucho estadio olímpico y ningún premio.",
+    ),
+}
 BONUS_INTRO = {
     "volcan": "La montaña ruge. Caen monedas y se quedan pegadas a la roca.",
+    "mina": "Baja la jaula y se oye picar. Caen pepitas y se quedan en la roca, "
+    "no como el litio, que no se queda en el pueblo.",
+    "olimpo": "Truenan los cielos. Zeus reparte monedas y la troika mira desde abajo "
+    "sin atreverse a pedirlas.",
 }
 
 
@@ -301,7 +337,10 @@ def base_text(theme: Theme, play: BasePlay, rng: random.Random | None = None) ->
     elif spin.near_miss:
         lines.append(f"## {rng.choice(NEAR_MISS_LINES)}")
     else:
-        lines.append(f"## -{format_amount(play.stake)} · {rng.choice(LOSS_LINES)}")
+        lines.append(
+            f"## -{format_amount(play.stake)} · "
+            f"{rng.choice(LOSS_LINES + THEME_LOSS_LINES[theme.key])}"
+        )
 
     if spin.collectors:
         times = " ×2" if spin.collectors == 2 else ""
@@ -1119,7 +1158,7 @@ class HoldWinView(discord.ui.View):
 
 
 class HoldWin(commands.Cog, name="Botes"):
-    """Las máquinas de Botes (de momento, el Volcán)."""
+    """Las máquinas de Botes (el Volcán, la Mina y el Olimpo)."""
 
     def __init__(
         self,
@@ -1303,7 +1342,7 @@ class HoldWin(commands.Cog, name="Botes"):
                 channel,
                 user,
                 f"📣 {theme.emoji} ¡{user.mention} acaba de ganar "
-                f"**{format_amount(play.payout)}** en el {theme.title}!",
+                f"**{format_amount(play.payout)}** en {theme.named}!",
             )
 
     async def shout_bonus(
@@ -1313,18 +1352,18 @@ class HoldWin(commands.Cog, name="Botes"):
         jackpots = payout.result.jackpots
         if "grand" in jackpots:
             text = (
-                f"📣 🏆🏆🏆 ¡{user.mention} ha llenado la pantalla del {theme.title} y se lleva "
+                f"📣 🏆🏆🏆 ¡{user.mention} ha llenado la pantalla {theme.of_named} y se lleva "
                 f"el **GRAND**! **{format_amount(payout.amount)}** en total. {TAX_COLLECTOR} "
                 "ya está afilando los dientes."
             )
         elif "major" in jackpots:
             text = (
-                f"📣 🏆 ¡{user.mention} saca el **MAJOR** en el {theme.title}! "
+                f"📣 🏆 ¡{user.mention} saca el **MAJOR** en {theme.named}! "
                 f"**{format_amount(payout.amount)}** del bonus."
             )
         elif payout.amount >= SHOUT_MULTIPLIER * payout.stake:
             text = (
-                f"📣 {theme.emoji} ¡{user.mention} revienta el bonus del {theme.title}: "
+                f"📣 {theme.emoji} ¡{user.mention} revienta el bonus {theme.of_named}: "
                 f"**{format_amount(payout.amount)}**!"
             )
         else:
@@ -1346,9 +1385,9 @@ class HoldWin(commands.Cog, name="Botes"):
     ) -> None:
         """Lógica compartida entre `/x` y `.x`: abre la máquina."""
         if guild is None:
-            await send_error(f"El {theme.title} solo se juega dentro de un servidor.")
+            await send_error(f"{theme.sentence_named} solo se juega dentro de un servidor.")
             return
-        if error := casino_channel_error(self.casino_channel_ids, channel, f"El {theme.title}"):
+        if error := casino_channel_error(self.casino_channel_ids, channel, theme.sentence_named):
             await send_error(error)
             return
         balance = await self.economy.balance(guild.id, user.id)

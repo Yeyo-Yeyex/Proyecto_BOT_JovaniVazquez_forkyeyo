@@ -1999,7 +1999,8 @@ class Slots(commands.Cog, name="Tragaperras"):
         )
 
     @app_commands.command(
-        name="tragas", description="Tragaperras: la clásica con bote común o el Volcán."
+        name="tragas",
+        description="Tragaperras: la clásica con bote común, el Volcán, la Mina o el Olimpo.",
     )
     @app_commands.describe(
         cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)",
@@ -2036,7 +2037,7 @@ class Slots(commands.Cog, name="Tragaperras"):
     @commands.command(name="tragas")
     @commands.guild_only()
     async def slots_text(self, ctx: commands.Context, *args: str) -> None:
-        """Versión de texto: `.tragas`, `.tragas 500`, `.tragas volcan` o `.tragas volcan 500`.
+        """Versión de texto: `.tragas`, `.tragas 500`, `.tragas mina` o `.tragas olimpo 500`.
 
         La máquina y la cantidad van en cualquier orden.
         """

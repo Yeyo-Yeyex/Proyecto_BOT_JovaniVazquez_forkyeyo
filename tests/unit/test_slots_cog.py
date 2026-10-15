@@ -1120,4 +1120,6 @@ def test_tragas_lee_la_maquina_y_la_cantidad_en_cualquier_orden() -> None:
     assert parse_machine_args(("volcan", "500")) == ("volcan", "500")
     assert parse_machine_args(("2k", "Volcán")) == ("volcan", "2k")
     assert parse_machine_args(("clasica", "all")) == (CLASSIC, "all")
-    assert {c.value for c in MACHINE_CHOICES} >= {CLASSIC, "volcan"}
+    assert parse_machine_args(("Mina", "50")) == ("mina", "50")
+    assert parse_machine_args(("olimpo",)) == ("olimpo", None)
+    assert {c.value for c in MACHINE_CHOICES} >= {CLASSIC, "volcan", "mina", "olimpo"}

@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.3.0 · 2026-10-15
+
+- Tragaperras: la Mina y el Olimpo, dos máquinas nuevas en `tragas`
+
 ### 7.2.0 · 2026-10-15
 
 - Tienda: tapete del 20-N, la tele de 1975 con la caricatura de Franco
