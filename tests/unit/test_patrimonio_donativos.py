@@ -263,7 +263,8 @@ async def test_donar_por_texto_dona_y_cuenta_para_logros(
     text = ctx.send.await_args.kwargs["embed"].description
     assert "Mares Limpios" in text
     delta = track.await_args.args[4]
-    assert delta.add == {"donated": STARTING_BALANCE // 2}
+    half = STARTING_BALANCE // 2
+    assert delta.add == {"donated": half, "donations": 1, "donated_mares": half}
     assert delta.peak == {"ongs_supported": 1}
 
 
@@ -309,3 +310,20 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
     assert "Ricachón" in (embed.description or "")
     delta = note.call_args.args[3]
     assert delta.add == {"wealth_tax_paid": wealth_tax(BIG), "wealth_tax_weeks": 1}
+
+
+def test_los_logros_de_un_donativo_con_cifras_y_fechas_con_guasa() -> None:
+    from datetime import datetime
+
+    from bot.services.achievements import donation_stats
+    from bot.services.levels import TIMEZONE
+
+    xmas = datetime(2026, 12, 24, 20, tzinfo=TIMEZONE)
+    delta = donation_stats(ong="hambre", amount=666, ongs_supported=4, balance_after=0, when=xmas)
+    assert delta.add["donation_666"] == delta.add["donation_allin"] == 1
+    assert delta.add["donation_christmas"] == 1 and delta.add["donated_hambre"] == 666
+    assert delta.peak == {"ongs_supported": 4}
+    plain = donation_stats(
+        ong="mares", amount=1, ongs_supported=1, balance_after=5, when=xmas.replace(month=3)
+    )
+    assert plain.add == {"donated": 1, "donations": 1, "donated_mares": 1, "donation_one": 1}

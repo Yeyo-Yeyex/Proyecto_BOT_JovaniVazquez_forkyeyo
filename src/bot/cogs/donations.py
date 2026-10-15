@@ -8,13 +8,15 @@
   IRPF. Reglas en `bot.services.donations` y `bot.services.taxes`.
 
 El resultado es público, para presumir de generosidad. Donar gasta dinero, así
-que en `/donar` lleva el aviso de la Renta. Alimenta los logros `donated` y
-`ongs_supported` (Economía y Hacienda).
+que en `/donar` lleva el aviso de la Renta y la mascota habla del donativo
+(`Event.DONATE`). Logros en Economía y Hacienda con `donation_stats`: lo donado,
+los donativos, cada ONG, las cuatro, y las fechas y cifras con guasa.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import discord
@@ -23,7 +25,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import renta
-from bot.services.achievements import StatDelta
+from bot.services.achievements import donation_stats
 from bot.services.donations import ONGS, deduction_rule_text, find_ong, pick_spending
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -32,7 +34,8 @@ from bot.services.economy import (
     format_amount,
     parse_amount,
 )
-from bot.services.pets import Moment
+from bot.services.levels import TIMEZONE
+from bot.services.pets import Event, Moment
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -122,7 +125,7 @@ class Donaciones(commands.Cog):
             f"-# 🐶 Esta semana llevas {format_amount(receipt.donated_week)} donados. "
             f"Desgrava el {deduction_rule_text()}; te vuelve en la renta del lunes.",
         ]
-        hint = await renta.hint(self.bot, guild.id, user.id, Moment())
+        hint = await renta.hint(self.bot, guild.id, user.id, Moment(Event.DONATE))
         if hint is not None:
             lines.append(hint)
         await responder.send(
@@ -134,7 +137,13 @@ class Donaciones(commands.Cog):
             guild.id,
             user,
             responder.channel,
-            StatDelta(add={"donated": amount}, peak={"ongs_supported": receipt.ongs_supported}),
+            donation_stats(
+                ong=ong.key,
+                amount=amount,
+                ongs_supported=receipt.ongs_supported,
+                balance_after=receipt.balance,
+                when=datetime.now(TIMEZONE),
+            ),
         )
         return True
 

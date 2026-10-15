@@ -63,6 +63,7 @@ class Event(StrEnum):
     BIRTHDAY = "birthday"
     BEER = "beer"
     PROFILE = "profile"
+    DONATE = "donate"
 
 
 class Mood(StrEnum):
@@ -529,6 +530,13 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} pregunta si el Bizum era para comprarle algo.",
         "{pet} sospecha que el Bizum era para comprar mascarillas.",
         "{pet} apunta el Bizum en una libreta, por si viene Hacienda.",
+    ),
+    Event.DONATE: (
+        "{pet} mira el donativo y luego a ti: «¿y para chuches no había?».",
+        "{pet} se pregunta en qué yate acabará tu dinero.",
+        "{pet} aplaude tu generosidad y se apunta al banquete solidario de la ONG.",
+        "{pet} pide la factura de la donación: es la única que desgrava en esta casa.",
+        "{pet} se apunta de voluntario. Quiere la langosta del patronato.",
     ),
     Event.TRADE: (
         "{pet} regatea por ti: «¿último precio?». Tiene más cara que un ministro.",
