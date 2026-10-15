@@ -375,16 +375,18 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#030a1f",
         "pattern": "kirk",
     }), price=40_000, aisle="shitpost"),
+    # Tres copias numeradas y a precio de silencio: es el tapete más caro del casino.
     Skin("tapete_epstein", "tapete", "🗂️", "Tapete de los archivos Epstein", (
-        "Un expediente del FBI casi todo tachado en negro, con el sello de "
-        "CLASSIFIED. La lista de clientes está debajo de las fichas: no levantes ninguna."
+        "Un expediente del FBI tachado en negro con el sello de CLASSIFIED y la lista "
+        "de clientes debajo de las fichas. Tres copias, a lo que vale que tu nombre "
+        "salga tachado."
     ), _frozen({
         "felt": ("#e6d4a4", "#c9b077", "#7d6436"),
         "fiber": ("rgba(255,255,255,0.05)", "rgba(60,40,0,0.06)"),
         "trim": "rgba(60,50,30,0.4)",
         "ink": "#1a160c",
         "pattern": "epstein",
-    }), price=50_000, aisle="shitpost"),
+    }), price=3_000_000, aisle="shitpost", min_level=40, stock=3),
     Skin("tapete_corea", "tapete", "🚀", "Tapete del Líder Supremo", (
         "La bandera de Pyongyang con su estrella roja. Cada vez que pierdes, Kim "
         "lanza un misil al mar de Japón para celebrarlo."

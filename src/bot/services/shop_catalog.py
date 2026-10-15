@@ -1021,6 +1021,19 @@ CATALOG += tuple(_skin(skin) for skin in SKINS)
 
 CATALOG_BY_KEY: dict[str, CatalogEntry] = {entry.key: entry for entry in CATALOG}
 
+#: Artículos de serie que han cambiado de precio cuando ya estaban en los servidores,
+#: con el precio que tenían antes. La siembra solo mete lo que falta, así que sin esto el
+#: precio nuevo no llegaría a quien ya los tenía. `ShopRepository.stock_catalog` pasa a
+#: las cifras de `CATALOG` (precio, nivel mínimo, existencias y descripción) los que aún
+#: cuestan lo de antes; si un administrador cambió el precio a mano, ya no coincide y se
+#: respeta. Una entrada nueva se añade al cambiar el precio de un artículo existente.
+REVISED_PRICES: dict[str, int] = {
+    # 6.5.0 lo bajó de 400.000 Y$, pero no llegó a los servidores que ya lo tenían.
+    "skin_tapete_israel": 400_000,
+    # Pasó a ser el tapete más caro del casino, con tres copias numeradas.
+    "skin_tapete_epstein": 50_000,
+}
+
 
 def aisle_of(catalog_key: str | None) -> Aisle:
     """Pasillo de un artículo según su clave de serie; «De la casa» si no tiene."""

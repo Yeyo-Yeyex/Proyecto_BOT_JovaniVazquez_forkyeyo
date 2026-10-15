@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import re
 import sqlite3
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -54,6 +55,7 @@ from bot.services.shop_catalog import (
     CATALOG_BY_KEY,
     MIN_AISLE_SIZE,
     RETIRED_AISLES,
+    REVISED_PRICES,
     Aisle,
     aisle_of,
     use_of,
@@ -400,6 +402,37 @@ async def test_siembra_una_vez_y_respeta_lo_retirado(tmp_path: Path) -> None:
     every = await shop.items(GUILD, include_hidden=True)
     assert len(every) == 7 and len({i.catalog_key for i in every}) == 7
     assert await shop.stock_catalog(2, some, NOW) == 6, "cada servidor tiene su surtido"
+
+
+async def test_un_precio_revisado_llega_a_los_servidores_que_ya_tenian_el_articulo(
+    tmp_path: Path,
+) -> None:
+    _economy, shop = await make_stores(tmp_path, Clock())
+    entry = CATALOG_BY_KEY["skin_tapete_epstein"]
+    old = replace(entry, price=REVISED_PRICES[entry.key], min_level=0, stock=None)
+    await shop.stock_catalog(GUILD, [old], NOW)
+    await shop.stock_catalog(2, [old], NOW)
+    # En el servidor 2 un administrador le puso otro precio a mano: se respeta.
+    (custom,) = await shop.items(2)
+    await shop.update_item(2, custom.id, price=1_234)
+
+    for guild in (GUILD, 2):
+        assert await shop.stock_catalog(guild, [entry], NOW, revised=REVISED_PRICES) == 0
+    (revised,) = await shop.items(GUILD)
+    assert (revised.price, revised.min_level, revised.stock) == (
+        entry.price,
+        entry.min_level,
+        entry.stock,
+    )
+    assert revised.description == entry.description
+    (kept,) = await shop.items(2)
+    assert (kept.price, kept.min_level, kept.stock) == (1_234, 0, None)
+
+
+def test_los_precios_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:
+    for key, old_price in REVISED_PRICES.items():
+        assert key in CATALOG_BY_KEY
+        assert CATALOG_BY_KEY[key].price != old_price
 
 
 async def test_siembra_copia_limites_y_potenciadores(tmp_path: Path) -> None:

@@ -107,6 +107,7 @@ from bot.services.shop_catalog import (
     AISLES,
     CATALOG,
     HOUSE_AISLE,
+    REVISED_PRICES,
     TITLE_KEYS,
     CatalogEntry,
     aisle_of,
@@ -1593,7 +1594,9 @@ class Tienda(commands.Cog):
         """
         if guild_id in self._stocked or not self.catalog:
             return 0
-        added = await self.repository.stock_catalog(guild_id, self.catalog, self.clock())
+        added = await self.repository.stock_catalog(
+            guild_id, self.catalog, self.clock(), revised=REVISED_PRICES
+        )
         self._stocked.add(guild_id)
         if added:
             logger.info("Surtido de serie: %s artículos nuevos en %s", added, guild_id)
@@ -1602,7 +1605,7 @@ class Tienda(commands.Cog):
     async def restock(self, guild_id: int) -> int:
         """Vuelve a meter los artículos de serie que se hayan retirado."""
         added = await self.repository.stock_catalog(
-            guild_id, self.catalog, self.clock(), restock=True
+            guild_id, self.catalog, self.clock(), restock=True, revised=REVISED_PRICES
         )
         self._stocked.add(guild_id)
         return added
