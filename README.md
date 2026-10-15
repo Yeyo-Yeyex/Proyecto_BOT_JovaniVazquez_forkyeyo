@@ -506,16 +506,21 @@ python -m bot
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.
 - **Torre del dragón** (`/torre`, `.torre [cantidad] [nivel]`): una torre de
-  9 pisos propia, sin imágenes. En cada piso hay varias puertas y unas
+  9 pisos propia, animada. En cada piso hay varias puertas y unas
   esconden un dragón 🐉; las demás, un huevo 🥚. Eliges una por piso, de abajo
   arriba: con huevo subes y sube el multiplicador, con dragón lo pierdes todo.
   💰 Cobrar se lleva apuesta × multiplicador y coronar el piso 9 cobra solo.
   Cinco niveles en un menú: 🥚 Fácil (4 puertas, 1 dragón; la de por defecto,
   corona ×13,18), 🐣 Normal (3 y 1, ×38,06), 🔥 Difícil (2 y 1, ×506,88),
   🐲 Experto (3 y 2, ×19.486) y 👑 Maestro (4 y 3, ×259.522, 1 entre 262.144).
-  El texto dibuja la torre con el multiplicador de cada piso, dice lo que
-  sumaría el siguiente y su probabilidad, y al acabar enseña todos los
-  dragones. Devuelve el 99 % de media al cobrar en cualquier piso y los
+  Cada jugada es un GIF corto (canvas con Node): la puerta elegida tiembla
+  más cuanto más alto estás, y luego sale el huevo y subes al piso de arriba
+  o el dragón te chamusca; 🎲 tiene su ruleta, 💰 enseña en fantasma lo que
+  había detrás de las puertas siguientes, coronar sube a la cima con corona y
+  lluvia de monedas, y al acabar se ve la torre entera con los dragones
+  encendiéndose. Cada nivel tiene su tema (día, atardecer, noche, ruinas,
+  lava) y cada puerta su aspecto (madera, hierro, runas, bronce). Todo está
+  pintado antes del clic. Devuelve el 99 % de media al cobrar en cualquier piso y los
   cobros de ×25 o más se anuncian en el canal.
 - **Guerra** (`/guerra`, `.guerra [cantidad]`): el Casino War. Una carta para
   ti y otra para la banca en una mesa propia dibujada con canvas (Node, como
@@ -1138,7 +1143,7 @@ src/bot/
 │   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
-│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones (componentes v2)
+│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones, animada (componentes v2)
 │   ├── war.py           # Guerra: carta contra carta, rendirse o ir a la guerra, lateral de empate
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto

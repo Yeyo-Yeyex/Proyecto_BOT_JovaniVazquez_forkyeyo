@@ -1,0 +1,919 @@
+<!doctype html>
+<!--
+Escena de la Torre del dragón, dibujada con canvas. La pinta Node con Skia
+(assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/tower_scene.py).
+
+No decide nada: Python le pasa en cada fotograma qué se ve (el piso, cada
+puerta, el dragón, la cima o la torre entera, el panel) y aquí solo se pinta
+(bot/services/tower_scene.py, `pick_states`, `cashout_states`, `rest_state`).
+Funciones que llama Python:
+
+- loadFonts()                  espera a las fuentes (canvas no las carga solo).
+- setup(meta)                  tema, puertas, multiplicadores y dragones.
+- renderFrames(states, first)  dibuja los fotogramas y devuelve cada uno entero.
+
+Tres vistas:
+
+- "floor":  el piso por dentro, con sus puertas de frente (madera, hierro,
+            runas y bronce), dos ventanas, dos antorchas y el suelo del tema.
+            Al subir (`climb`), el piso baja y entra el de arriba (o la cima).
+- "summit": la cima al coronar: almenas, el dragón que se inclina, la corona
+            que baja y la lluvia de monedas.
+- "tower":  la torre entera al acabar, con los dragones encendiéndose de
+            abajo arriba (`tour`).
+
+A la derecha va siempre el panel: lo que se cobra y la torre en miniatura.
+Cada dificultad tiene su tema (THEMES): de día, al atardecer, de noche, en
+ruinas con brasas y de obsidiana con lava. Todo se dibuja al doble (S = 2) y
+se reduce al copiarlo. Sin emojis: el Chromium del Docker no trae su fuente.
+Nada de Math.random: el azar sale de `rng(semilla)` y del reloj `t` de cada
+estado, así que cada proceso pinta lo mismo.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+const W = 640, H = 360;
+const LW = 448;                          // ancho de la vista (el piso, la cima o la torre)
+const PX = 454, PY = 8, PW = 178, PH = 344;
+const GROUND_Y = 300;                    // donde empieza el suelo del piso
+const DOOR_Y = 112, DOOR_H = 158;
+const WINDOWS = [[22, 30, 46, 64], [LW - 68, 30, 46, 64]];
+const TORCHES = [[45, 166], [LW - 45, 166]];
+const TOWER = { x: 112, w: 224, base: 318, fh: 28 };   // la torre entera: piso f entre base-(f+1)·fh y base-f·fh
+const TAU = Math.PI * 2;
+
+const THEMES = {
+  facil: {
+    decor: "dia", sky: ["#6fc0ef", "#d6f0ff"], stone: ["#dcc8a0", "#b9a074"], mortar: "#8f7a56",
+    ground: ["#e0bb5e", "#a77c2c"], flame: ["#fffbd0", "#ffd03c", "#ff8a1f"], accent: "#ffd34d",
+    dragon: ["#5fbf4a", "#2c6f27", "#d7f58f"], egg: ["#fffaf0", "#e2d2b0", "#78b45e"],
+    hills: "#5d9a48", panel: ["#3a2a18", "#1c140b"],
+  },
+  normal: {
+    decor: "atardecer", sky: ["#ff7b4a", "#ffd47a"], stone: ["#cc9466", "#a26f48"], mortar: "#6e4528",
+    ground: ["#8d5c35", "#573620"], flame: ["#fff1b8", "#ff9a2e", "#e04a17"], accent: "#ffae42",
+    dragon: ["#d8432f", "#7f1a12", "#ffb894"], egg: ["#fff3e2", "#ecc39a", "#cf6a3a"],
+    hills: "#7a3324", panel: ["#3d2116", "#1d0f09"],
+  },
+  dificil: {
+    decor: "noche", sky: ["#070d2c", "#26336e"], stone: ["#5f6c8e", "#3f4a68"], mortar: "#262d47",
+    ground: ["#3b4360", "#1b2036"], flame: ["#f0fcff", "#7fd4ff", "#3a6dff"], accent: "#8fd8ff",
+    dragon: ["#7b52d4", "#33197a", "#dcc8ff"], egg: ["#eef5ff", "#b4c7ee", "#6576c9"],
+    hills: "#141a3a", panel: ["#1d2240", "#0b0e20"],
+  },
+  experto: {
+    decor: "ruinas", sky: ["#220505", "#6c2010"], stone: ["#5c4840", "#3a2c26"], mortar: "#1e1511",
+    ground: ["#3c2c25", "#191110"], flame: ["#ffe2a8", "#ff5a1f", "#a8140a"], accent: "#ff7a3a",
+    dragon: ["#4a1a18", "#140505", "#ff5a2e"], egg: ["#4c3c37", "#241a17", "#ff6a2a"],
+    hills: "#1a0b08", panel: ["#2c1410", "#120706"],
+  },
+  maestro: {
+    decor: "lava", sky: ["#0a0003", "#3d0a08"], stone: ["#2a2530", "#16131b"], mortar: "#08060a",
+    ground: ["#ff7a12", "#9c1800"], flame: ["#ffffff", "#ffe27a", "#ffb21f"], accent: "#ffd24a",
+    dragon: ["#f0be48", "#8e5c0e", "#fff1b4"], egg: ["#ffe27e", "#c99418", "#fff6cf"],
+    hills: "#120406", panel: ["#2a1c08", "#100a02"],
+  },
+};
+
+// Dibujos de runas: segmentos en un recuadro de 1×1.
+const RUNES = [
+  [[0.5, 0, 0.5, 1], [0.5, 0.2, 0.9, 0], [0.5, 0.45, 0.9, 0.25]],
+  [[0.2, 0, 0.2, 1], [0.2, 0, 0.8, 0.35], [0.8, 0.35, 0.2, 0.7]],
+  [[0.5, 0, 0.5, 1], [0.1, 0.3, 0.9, 0.7], [0.9, 0.3, 0.1, 0.7]],
+  [[0.2, 1, 0.5, 0], [0.5, 0, 0.8, 1], [0.32, 0.6, 0.68, 0.6]],
+  [[0.25, 0, 0.25, 1], [0.75, 0, 0.75, 1], [0.25, 0.5, 0.75, 0.2]],
+];
+
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const g = big.getContext("2d");
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const octx = out.getContext("2d");
+
+let META = null, TH = null, BG_KEY = null;
+let FLOOR_BG = null, TOWER_BG = null, SUMMIT_SKY = null, SUMMIT_FRONT = null;
+let PANELS = new Map();
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function rgbOf(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function mix(a, b, t) {
+  const x = rgbOf(a), y = rgbOf(b);
+  return `rgb(${x.map((v, i) => Math.round(lerp(v, y[i], t))).join(",")})`;
+}
+function rgba(hex, a) { const [r, gg, b] = rgbOf(hex); return `rgba(${r},${gg},${b},${a})`; }
+function linear(x, x0, y0, x1, y1, stops) {
+  const gr = x.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, c]) => gr.addColorStop(o, c)); return gr;
+}
+function radial(x, cx, cy, r0, r1, stops) {
+  const gr = x.createRadialGradient(cx, cy, r0, cx, cy, r1); stops.forEach(([o, c]) => gr.addColorStop(o, c)); return gr;
+}
+function layer(w, h) {
+  const c = document.createElement("canvas"); c.width = w * S; c.height = h * S;
+  const x = c.getContext("2d"); x.setTransform(S, 0, 0, S, 0, 0); return [c, x];
+}
+function roundRect(x, X, Y, w, h, r) {
+  x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r);
+  x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath();
+}
+function archSub(x, X, Y, w, h) {
+  const r = w / 2; x.moveTo(X, Y + h); x.lineTo(X, Y + r); x.arc(X + r, Y + r, r, Math.PI, 0); x.lineTo(X + w, Y + h); x.closePath();
+}
+function archPath(x, X, Y, w, h) { x.beginPath(); archSub(x, X, Y, w, h); }
+function text(x, str, X, Y, { font, fill, stroke, width = 0, align = "center", base = "middle" }) {
+  x.font = font; x.textAlign = align; x.textBaseline = base;
+  if (stroke) { x.lineJoin = "round"; x.lineWidth = width; x.strokeStyle = stroke; x.strokeText(str, X, Y); }
+  x.fillStyle = fill; x.fillText(str, X, Y);
+}
+
+// -- Fondos (se pintan una vez por tema) ------------------------------------------------
+
+function cloud(x, cx, cy, s, color) {
+  x.fillStyle = color; x.beginPath();
+  [[0, 0, 1], [-0.9, 0.2, 0.7], [0.9, 0.25, 0.75], [-0.4, -0.4, 0.75], [0.45, -0.3, 0.7]].forEach(([dx, dy, r]) => {
+    x.moveTo(cx + dx * s + r * s, cy + dy * s); x.arc(cx + dx * s, cy + dy * s, r * s, 0, TAU);
+  });
+  x.fill();
+}
+
+function paintSky(x, w, h, seed) {
+  x.fillStyle = linear(x, 0, 0, 0, h, [[0, TH.sky[0]], [1, TH.sky[1]]]); x.fillRect(0, 0, w, h);
+  const r = rng(seed);
+  if (TH.decor === "dia") {
+    x.fillStyle = radial(x, w * 0.82, h * 0.16, 4, 70, [[0, "rgba(255,250,200,0.95)"], [0.35, "rgba(255,240,150,0.5)"], [1, "rgba(255,240,150,0)"]]);
+    x.fillRect(0, 0, w, h);
+    x.fillStyle = "#fff6c2"; x.beginPath(); x.arc(w * 0.82, h * 0.16, 18, 0, TAU); x.fill();
+    for (let i = 0; i < 5; i++) cloud(x, r() * w, 30 + r() * h * 0.35, 12 + r() * 10, "rgba(255,255,255,0.9)");
+  } else if (TH.decor === "atardecer") {
+    x.fillStyle = radial(x, w * 0.3, h * 0.62, 10, 160, [[0, "rgba(255,240,170,0.95)"], [0.3, "rgba(255,190,90,0.5)"], [1, "rgba(255,150,80,0)"]]);
+    x.fillRect(0, 0, w, h);
+    x.fillStyle = "#ffe9a8"; x.beginPath(); x.arc(w * 0.3, h * 0.62, 34, 0, TAU); x.fill();
+    x.fillStyle = "rgba(150,60,110,0.45)";
+    for (let i = 0; i < 6; i++) { x.beginPath(); x.ellipse(r() * w, 20 + r() * h * 0.5, 40 + r() * 50, 4 + r() * 4, 0, 0, TAU); x.fill(); }
+  } else if (TH.decor === "noche") {
+    for (let i = 0; i < 90; i++) {
+      x.fillStyle = `rgba(255,255,255,${0.35 + r() * 0.65})`;
+      x.beginPath(); x.arc(r() * w, r() * h * 0.8, 0.5 + r() * 1.1, 0, TAU); x.fill();
+    }
+    const mx = w * 0.78, my = h * 0.17;
+    x.fillStyle = radial(x, mx, my, 10, 70, [[0, "rgba(220,235,255,0.45)"], [1, "rgba(220,235,255,0)"]]); x.fillRect(0, 0, w, h);
+    x.save(); x.beginPath(); x.arc(mx, my, 20, 0, TAU); x.clip();
+    x.fillStyle = "#f2f4ff"; x.fillRect(mx - 22, my - 22, 44, 44);
+    x.fillStyle = mix(TH.sky[0], TH.sky[1], my / h); x.beginPath(); x.arc(mx + 9, my - 5, 18, 0, TAU); x.fill();
+    x.restore();
+  } else if (TH.decor === "ruinas") {
+    x.fillStyle = radial(x, w * 0.5, h * 1.05, 20, h, [[0, "rgba(255,110,40,0.7)"], [1, "rgba(255,80,20,0)"]]); x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 7; i++) cloud(x, r() * w, 20 + r() * h * 0.5, 14 + r() * 16, "rgba(30,14,12,0.55)");
+  } else {
+    x.fillStyle = radial(x, w * 0.5, h * 1.1, 30, h * 1.1, [[0, "rgba(255,90,0,0.8)"], [1, "rgba(255,40,0,0)"]]); x.fillRect(0, 0, w, h);
+    x.fillStyle = "#7a0d08"; x.beginPath(); x.arc(w * 0.2, h * 0.18, 16, 0, TAU); x.fill();
+    x.fillStyle = radial(x, w * 0.2, h * 0.18, 14, 50, [[0, "rgba(200,30,10,0.5)"], [1, "rgba(200,30,10,0)"]]); x.fillRect(0, 0, w, h);
+  }
+}
+
+function paintBricks(x, X, Y, w, h, bw, bh, seed, lava) {
+  const r = rng(seed);
+  x.fillStyle = TH.mortar; x.fillRect(X, Y, w, h);
+  for (let row = 0; row * bh < h; row++) {
+    const off = row % 2 ? bw / 2 : 0;
+    for (let col = -1; col * bw - off < w; col++) {
+      const bx = X + col * bw - off + 1, by = Y + row * bh + 1, ww = bw - 2, hh = bh - 2;
+      const k = r();
+      x.fillStyle = mix(TH.stone[0], TH.stone[1], k); x.fillRect(bx, by, ww, hh);
+      x.fillStyle = "rgba(255,255,255,0.12)"; x.fillRect(bx, by, ww, Math.max(1, bh * 0.08));
+      x.fillStyle = "rgba(0,0,0,0.2)"; x.fillRect(bx, by + hh - Math.max(1, bh * 0.08), ww, Math.max(1, bh * 0.08));
+      if (TH.decor === "ruinas" && k > 0.78) {
+        x.strokeStyle = "rgba(0,0,0,0.55)"; x.lineWidth = 1; x.beginPath();
+        x.moveTo(bx + ww * r(), by); x.lineTo(bx + ww * r(), by + hh * 0.6); x.lineTo(bx + ww * r(), by + hh); x.stroke();
+      }
+      if (lava && k > 0.86) {
+        lava.strokeStyle = "#ff7a12"; lava.lineWidth = 1.6; lava.beginPath();
+        lava.moveTo(bx, by + hh + 1); lava.lineTo(bx + ww * 0.5, by + hh * (0.4 + r() * 0.5)); lava.lineTo(bx + ww, by + hh + 1); lava.stroke();
+      }
+    }
+  }
+}
+
+function paintGround(x, Y, w, h, seed) {
+  const r = rng(seed);
+  x.fillStyle = linear(x, 0, Y, 0, Y + h, [[0, TH.ground[0]], [1, TH.ground[1]]]); x.fillRect(0, Y, w, h);
+  if (TH.decor === "dia") {
+    for (let i = 0; i < 160; i++) {
+      const px = r() * w, py = Y + 4 + r() * (h - 6), a = r() * Math.PI;
+      x.strokeStyle = r() > 0.5 ? "rgba(255,236,150,0.8)" : "rgba(140,96,30,0.6)"; x.lineWidth = 1;
+      x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * 9, py + Math.sin(a) * 3); x.stroke();
+    }
+    for (const nx of [26, w - 26]) {
+      x.fillStyle = "#9a6a24"; x.beginPath(); x.ellipse(nx, Y + 26, 22, 9, 0, 0, TAU); x.fill();
+      x.fillStyle = "#6e4614"; x.beginPath(); x.ellipse(nx, Y + 24, 15, 5, 0, 0, TAU); x.fill();
+      drawEgg(x, nx - 5, Y + 19, 5, false); drawEgg(x, nx + 6, Y + 20, 4.5, false);
+    }
+  } else if (TH.decor === "atardecer") {
+    for (let i = 0; i < 5; i++) {
+      x.fillStyle = "rgba(0,0,0,0.25)"; x.fillRect(0, Y + i * 12, w, 1.5);
+      for (let j = 0; j < 6; j++) x.fillRect(((i * 53 + j * 83) % w), Y + i * 12, 1.5, 12);
+    }
+    x.fillStyle = "rgba(160,30,30,0.85)"; x.fillRect(w * 0.18, Y + 8, w * 0.64, h - 16);
+    x.strokeStyle = "rgba(255,200,90,0.8)"; x.lineWidth = 2; x.strokeRect(w * 0.18 + 4, Y + 12, w * 0.64 - 8, h - 24);
+  } else if (TH.decor === "noche") {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 12; j++) {
+      x.fillStyle = mix(TH.ground[0], TH.ground[1], r());
+      x.fillRect(j * (w / 12) + (i % 2) * 18 + 1, Y + i * 15 + 1, w / 12 - 2, 13);
+    }
+  } else if (TH.decor === "ruinas") {
+    for (let i = 0; i < 26; i++) {
+      x.fillStyle = mix(TH.stone[0], TH.stone[1], r()); const s = 4 + r() * 9;
+      x.beginPath(); x.ellipse(r() * w, Y + 8 + r() * (h - 12), s, s * 0.6, r(), 0, TAU); x.fill();
+    }
+    for (let i = 0; i < 40; i++) {
+      x.fillStyle = `rgba(255,${90 + r() * 90 | 0},30,${0.4 + r() * 0.5})`;
+      x.beginPath(); x.arc(r() * w, Y + 6 + r() * (h - 8), 0.8 + r() * 1.4, 0, TAU); x.fill();
+    }
+  } else {
+    x.fillStyle = "#14101a"; x.fillRect(0, Y, w, 12);
+    for (let i = 0; i < 9; i++) {
+      x.fillStyle = "rgba(255,240,150,0.55)"; x.beginPath();
+      x.ellipse(r() * w, Y + 22 + r() * (h - 28), 10 + r() * 22, 2 + r() * 2, 0, 0, TAU); x.fill();
+    }
+  }
+}
+
+function doorRects(n) {
+  const [w, gap] = { 2: [86, 46], 3: [74, 26], 4: [62, 16] }[n] || [62, 16];
+  const x0 = (LW - (n * w + (n - 1) * gap)) / 2;
+  return Array.from({ length: n }, (_, i) => ({ x: x0 + i * (w + gap), y: DOOR_Y, w, h: DOOR_H }));
+}
+
+function paintFloorBG() {
+  const [c, x] = layer(LW, H);
+  const [lavaCanvas, lava] = TH.decor === "lava" ? layer(LW, H) : [null, null];
+  paintSky(x, LW, H, 11);
+  x.save(); x.beginPath(); x.rect(0, 0, LW, GROUND_Y);
+  for (const [wx, wy, ww, wh] of WINDOWS) archSub(x, wx, wy, ww, wh);
+  x.clip("evenodd");
+  paintBricks(x, 0, 0, LW, GROUND_Y, 44, 20, 7, lava);
+  x.fillStyle = linear(x, 0, 0, 0, GROUND_Y, [[0, "rgba(0,0,0,0.35)"], [0.45, "rgba(0,0,0,0.04)"], [1, "rgba(0,0,0,0.32)"]]);
+  x.fillRect(0, 0, LW, GROUND_Y);
+  x.restore();
+  for (const [wx, wy, ww, wh] of WINDOWS) {
+    x.lineWidth = 5; x.strokeStyle = mix(TH.stone[1], "#000000", 0.35); archPath(x, wx, wy, ww, wh); x.stroke();
+    x.lineWidth = 2; x.strokeStyle = mix(TH.stone[0], "#ffffff", 0.2); archPath(x, wx - 3, wy - 3, ww + 6, wh + 6); x.stroke();
+    x.fillStyle = "rgba(20,14,10,0.85)"; x.fillRect(wx + ww / 2 - 1.5, wy + 4, 3, wh - 4); x.fillRect(wx, wy + wh * 0.55, ww, 3);
+    x.fillStyle = mix(TH.stone[1], "#000000", 0.3); x.fillRect(wx - 6, wy + wh, ww + 12, 6);
+  }
+  // Suelo y la sombra de la pared sobre él.
+  if (lavaCanvas) { x.globalAlpha = 0.85; x.drawImage(lavaCanvas, 0, 0, LW, H); x.globalAlpha = 1; }
+  paintGround(x, GROUND_Y, LW, H - GROUND_Y, 5);
+  x.fillStyle = linear(x, 0, GROUND_Y, 0, GROUND_Y + 14, [[0, "rgba(0,0,0,0.45)"], [1, "rgba(0,0,0,0)"]]);
+  x.fillRect(0, GROUND_Y, LW, 14);
+  // Marcos de las puertas, el hueco oscuro y la placa con el número.
+  doorRects(META.width).forEach((d, i) => {
+    archPath(x, d.x - 9, d.y - 9, d.w + 18, d.h + 9);
+    x.fillStyle = linear(x, d.x - 9, 0, d.x + d.w + 9, 0, [[0, mix(TH.stone[1], "#000000", 0.25)], [0.5, mix(TH.stone[0], "#ffffff", 0.1)], [1, mix(TH.stone[1], "#000000", 0.35)]]);
+    x.fill(); x.lineWidth = 1.5; x.strokeStyle = "rgba(0,0,0,0.5)"; x.stroke();
+    const r = d.w / 2 + 9;
+    for (let k = 1; k < 8; k++) {   // dovelas del arco
+      const a = Math.PI + (k * Math.PI) / 8, cx = d.x + d.w / 2, cy = d.y + d.w / 2;
+      x.beginPath(); x.moveTo(cx + Math.cos(a) * (d.w / 2), cy + Math.sin(a) * (d.w / 2));
+      x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); x.strokeStyle = "rgba(0,0,0,0.35)"; x.lineWidth = 1; x.stroke();
+    }
+    archPath(x, d.x, d.y, d.w, d.h);
+    x.fillStyle = linear(x, 0, d.y, 0, d.y + d.h, [[0, "#050304"], [1, "#1c1410"]]); x.fill();
+    const px = d.x + d.w / 2;
+    roundRect(x, px - 15, d.y + d.h + 6, 30, 19, 4);
+    x.fillStyle = linear(x, 0, d.y + d.h + 6, 0, d.y + d.h + 25, [[0, "#f3cd6a"], [1, "#a8701c"]]); x.fill();
+    x.lineWidth = 1.5; x.strokeStyle = "#5a3a0a"; x.stroke();
+    text(x, String(i + 1), px, d.y + d.h + 17, { font: "15px Luckiest", fill: "#3b2506" });
+  });
+  for (const [tx, ty] of TORCHES) {
+    x.fillStyle = "#2b2420"; x.fillRect(tx - 3, ty, 6, 26);
+    x.fillStyle = "#4a3c32"; x.beginPath(); x.moveTo(tx - 9, ty - 4); x.lineTo(tx + 9, ty - 4); x.lineTo(tx + 5, ty + 6); x.lineTo(tx - 5, ty + 6); x.closePath(); x.fill();
+    x.fillStyle = "#1b1612"; x.fillRect(tx - 7, ty + 22, 14, 4);
+  }
+  x.fillStyle = linear(x, 0, 0, LW, 0, [[0, "rgba(0,0,0,0.4)"], [0.12, "rgba(0,0,0,0)"], [0.88, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.4)"]]);
+  x.fillRect(0, 0, LW, H);
+  if (TH.decor === "ruinas" || TH.decor === "lava") drawEmbers(x, 0, 30, LW, H, 90);
+  return c;
+}
+
+function towerFloorY(f) { return TOWER.base - (f + 1) * TOWER.fh; }
+
+function paintTowerBG() {
+  const [c, x] = layer(LW, H);
+  paintSky(x, LW, H, 23);
+  const r = rng(31);
+  // Montes al fondo (en la lava, un volcán).
+  x.fillStyle = TH.hills; x.beginPath(); x.moveTo(0, H);
+  for (let px = 0; px <= LW; px += 16) x.lineTo(px, 250 + Math.sin(px / 47) * 18 + r() * 10);
+  x.lineTo(LW, H); x.closePath(); x.fill();
+  if (TH.decor === "lava") {
+    x.fillStyle = "#1a0606"; x.beginPath(); x.moveTo(330, H); x.lineTo(400, 200); x.lineTo(420, 200); x.lineTo(LW + 40, H); x.fill();
+    x.fillStyle = radial(x, 410, 198, 2, 40, [[0, "rgba(255,140,20,0.9)"], [1, "rgba(255,60,0,0)"]]); x.fillRect(360, 150, 100, 100);
+  }
+  paintGround(x, TOWER.base, LW, H - TOWER.base, 9);
+  const top = towerFloorY(8);
+  // Cuerpo de la torre, almenas y bandera.
+  x.save(); x.beginPath(); x.rect(TOWER.x, top, TOWER.w, TOWER.base - top); x.clip();
+  paintBricks(x, TOWER.x, top, TOWER.w, TOWER.base - top, 24, 10, 13, null);
+  x.restore();
+  for (let k = 0; k < 7; k++) {
+    const mx = TOWER.x + k * (TOWER.w / 7) + 3;
+    x.save(); x.beginPath(); x.rect(mx, top - 16, TOWER.w / 7 - 12, 16); x.clip();
+    paintBricks(x, mx, top - 16, TOWER.w / 7 - 12, 16, 24, 8, 40 + k, null); x.restore();
+  }
+  x.fillStyle = mix(TH.stone[1], "#000000", 0.35); x.fillRect(TOWER.x - 6, top - 2, TOWER.w + 12, 5);
+  x.fillStyle = "#3a2a1a"; x.fillRect(LW / 2 - 1.5, top - 50, 3, 36);
+  x.fillStyle = TH.accent; x.beginPath(); x.moveTo(LW / 2 + 1.5, top - 50); x.lineTo(LW / 2 + 30, top - 43); x.lineTo(LW / 2 + 1.5, top - 35); x.fill();
+  for (let f = 0; f < 9; f++) {
+    const y = towerFloorY(f);
+    x.fillStyle = "rgba(0,0,0,0.45)"; x.fillRect(TOWER.x, y + TOWER.fh - 3, TOWER.w, 3);
+    text(x, String(f + 1), TOWER.x - 10, y + TOWER.fh / 2, { font: "14px Luckiest", fill: "#fff", stroke: "rgba(0,0,0,0.7)", width: 3, align: "right" });
+    text(x, META.short[f], TOWER.x + TOWER.w + 9, y + TOWER.fh / 2, { font: "700 11px Montserrat", fill: "#fff", stroke: "rgba(0,0,0,0.75)", width: 3, align: "left" });
+  }
+  x.fillStyle = linear(x, TOWER.x, 0, TOWER.x + TOWER.w, 0, [[0, "rgba(0,0,0,0.35)"], [0.3, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.4)"]]);
+  x.fillRect(TOWER.x, top, TOWER.w, TOWER.base - top);
+  return c;
+}
+
+function paintSummit() {
+  const [c, x] = layer(LW, H);
+  paintSky(x, LW, H, 47);
+  const r = rng(53);
+  const tint = TH.decor === "lava" || TH.decor === "ruinas" ? "rgba(60,20,16,0.85)" : TH.decor === "noche" ? "rgba(70,80,130,0.8)" : "rgba(255,255,255,0.9)";
+  for (let i = 0; i < 9; i++) cloud(x, i * 56 + r() * 20, 236 + r() * 14, 20 + r() * 8, tint);
+  SUMMIT_SKY = c;
+  const [f, y] = layer(LW, H);
+  y.save(); y.beginPath(); y.rect(0, 286, LW, H - 286);
+  for (let k = 0; k < 8; k++) y.rect(k * 58 + 4, 258, 38, 28);
+  y.clip(); paintBricks(y, 0, 258, LW, H - 258, 40, 16, 61, null);
+  y.fillStyle = linear(y, 0, 258, 0, H, [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.45)"]]); y.fillRect(0, 258, LW, H - 258);
+  y.restore();
+  SUMMIT_FRONT = f;
+}
+
+function ensureBG() {
+  const key = `${META.theme}:${META.width}`;
+  if (BG_KEY === key) return;
+  BG_KEY = key; FLOOR_BG = TOWER_BG = SUMMIT_SKY = SUMMIT_FRONT = null;
+}
+
+// -- Piezas -----------------------------------------------------------------------------
+
+function drawEgg(x, cx, cy, r, ghost) {
+  x.save();
+  if (ghost) x.globalAlpha *= 0.6;
+  x.beginPath();
+  x.moveTo(cx, cy - r * 1.3);
+  x.bezierCurveTo(cx + r * 0.95, cy - r * 1.3, cx + r * 1.05, cy + r * 0.95, cx, cy + r * 0.95);
+  x.bezierCurveTo(cx - r * 1.05, cy + r * 0.95, cx - r * 0.95, cy - r * 1.3, cx, cy - r * 1.3);
+  x.closePath();
+  x.fillStyle = radial(x, cx - r * 0.3, cy - r * 0.4, r * 0.1, r * 1.5, [[0, mix(TH.egg[0], "#ffffff", 0.4)], [0.55, TH.egg[0]], [1, TH.egg[1]]]);
+  x.fill();
+  x.save(); x.clip();
+  const q = rng(Math.round(r * 10) + 3);
+  if (TH.decor === "ruinas") {
+    x.strokeStyle = TH.egg[2]; x.lineWidth = Math.max(1, r * 0.12);
+    x.beginPath(); x.moveTo(cx - r, cy - r * 0.1); x.lineTo(cx - r * 0.3, cy + r * 0.1); x.lineTo(cx + r * 0.1, cy - r * 0.4); x.lineTo(cx + r, cy - r * 0.1); x.stroke();
+  } else {
+    x.fillStyle = rgba(TH.egg[2], 0.7);
+    for (let i = 0; i < 7; i++) { x.beginPath(); x.ellipse(cx + (q() - 0.5) * r * 1.5, cy + (q() - 0.5) * r * 1.8, r * 0.1 + q() * r * 0.1, r * 0.08, q() * 3, 0, TAU); x.fill(); }
+  }
+  x.restore();
+  x.fillStyle = "rgba(255,255,255,0.55)"; x.beginPath(); x.ellipse(cx - r * 0.35, cy - r * 0.55, r * 0.18, r * 0.32, -0.4, 0, TAU); x.fill();
+  if (ghost) { x.lineWidth = 1.5; x.setLineDash([3, 3]); x.strokeStyle = "rgba(255,255,255,0.9)"; x.stroke(); x.setLineDash([]); }
+  x.restore();
+}
+
+// El dragón en pequeño (torre entera, panel): cabeza redonda, cuernos cortos y ojos.
+function drawDragonIcon(x, cx, cy, s, mouth) {
+  const [main, dark, light] = TH.dragon;
+  x.save(); x.translate(cx, cy); x.scale(s, s);
+  x.fillStyle = mix(light, "#fff4dc", 0.5);
+  for (const k of [-1, 1]) { x.beginPath(); x.moveTo(k * 0.12, -0.2); x.lineTo(k * 0.42, -0.5); x.lineTo(k * 0.3, -0.12); x.closePath(); x.fill(); }
+  x.fillStyle = main; x.beginPath(); x.ellipse(0, 0, 0.36, 0.32, 0, 0, TAU); x.fill();
+  x.lineWidth = 0.06; x.strokeStyle = dark; x.stroke();
+  x.fillStyle = mouth > 0.3 ? "#ffcf3a" : dark; x.beginPath(); x.ellipse(0, 0.18, 0.16, 0.04 + mouth * 0.08, 0, 0, TAU); x.fill();
+  x.fillStyle = "#ffe14d";
+  for (const k of [-1, 1]) { x.beginPath(); x.ellipse(k * 0.14, -0.05, 0.08, 0.06, k * 0.3, 0, TAU); x.fill(); }
+  x.fillStyle = "#120400";
+  for (const k of [-1, 1]) { x.beginPath(); x.ellipse(k * 0.14, -0.05, 0.02, 0.05, 0, 0, TAU); x.fill(); }
+  x.restore();
+}
+
+function drawDragonHead(x, cx, cy, s, o = {}) {
+  if (s < 40) { drawDragonIcon(x, cx, cy, s, o.mouth || 0); return; }
+  const [main, dark, light] = TH.dragon;
+  const m = o.mouth || 0, eyes = o.eyes ?? 1;
+  x.save(); x.translate(cx, cy); x.rotate(o.tilt || 0); x.scale(s, s);
+  if (o.ghost) x.globalAlpha *= 0.6;
+  const horn = mix(light, "#fff4dc", 0.5);
+  for (const k of [-1, 1]) {   // cuernos y crestas
+    x.fillStyle = horn; x.beginPath(); x.moveTo(k * 0.2, -0.3); x.quadraticCurveTo(k * 0.42, -0.46, k * 0.46, -0.7);
+    x.quadraticCurveTo(k * 0.28, -0.5, k * 0.06, -0.38); x.closePath(); x.fill();
+    x.fillStyle = dark; x.beginPath(); x.moveTo(k * 0.32, -0.12); x.lineTo(k * 0.6, -0.2); x.lineTo(k * 0.4, -0.02);
+    x.lineTo(k * 0.58, 0.04); x.lineTo(k * 0.34, 0.1); x.closePath(); x.fill();
+  }
+  // Boca: la mandíbula baja con `mouth`, unida a los lados de la cabeza.
+  const jaw = 0.3 + m * 0.26;
+  x.fillStyle = "#2a0404";
+  x.beginPath(); x.moveTo(-0.2, 0.2); x.quadraticCurveTo(0, jaw + 0.1, 0.2, 0.2); x.closePath(); x.fill();
+  if (m > 0) {
+    x.fillStyle = radial(x, 0, 0.3 + m * 0.1, 0, 0.22, [[0, rgba(TH.flame[0], 0.95 * m)], [0.5, rgba(TH.flame[1], 0.8 * m)], [1, "rgba(255,80,0,0)"]]);
+    x.beginPath(); x.ellipse(0, 0.32 + m * 0.1, 0.16, 0.03 + m * 0.12, 0, 0, TAU); x.fill();
+  }
+  x.fillStyle = linear(x, 0, jaw - 0.06, 0, jaw + 0.08, [[0, main], [1, dark]]);
+  x.beginPath(); x.moveTo(-0.27, 0.12); x.quadraticCurveTo(-0.24, jaw + 0.06, 0, jaw + 0.08);
+  x.quadraticCurveTo(0.24, jaw + 0.06, 0.27, 0.12); x.lineTo(0.19, 0.16);
+  x.quadraticCurveTo(0.16, jaw - 0.04, 0, jaw - 0.03); x.quadraticCurveTo(-0.16, jaw - 0.04, -0.19, 0.16); x.closePath(); x.fill();
+  x.fillStyle = "#fff8e8";
+  for (let i = -3; i <= 3; i++) {
+    x.beginPath(); x.moveTo(i * 0.05 - 0.017, 0.29); x.lineTo(i * 0.05 + 0.017, 0.29); x.lineTo(i * 0.05, 0.34 + m * 0.03); x.fill();
+    if (m > 0.05) { x.beginPath(); x.moveTo(i * 0.045 - 0.016, jaw - 0.03); x.lineTo(i * 0.045 + 0.016, jaw - 0.03); x.lineTo(i * 0.045, jaw - 0.08); x.fill(); }
+  }
+  x.fillStyle = radial(x, -0.08, -0.22, 0.02, 0.5, [[0, mix(main, "#ffffff", 0.25)], [0.6, main], [1, dark]]);
+  x.beginPath(); x.ellipse(0, -0.1, 0.37, 0.31, 0, 0, TAU); x.fill();
+  x.fillStyle = radial(x, 0, 0.08, 0.02, 0.3, [[0, mix(main, "#ffffff", 0.18)], [1, main]]);
+  x.beginPath(); x.ellipse(0, 0.13, 0.25, 0.17, 0, 0, TAU); x.fill();
+  x.fillStyle = dark;
+  for (const k of [-1, 1]) { x.beginPath(); x.ellipse(k * 0.075, 0.08, 0.03, 0.017, k * 0.4, 0, TAU); x.fill(); }
+  x.strokeStyle = rgba(light, 0.35); x.lineWidth = 0.015;
+  for (let i = 0; i < 4; i++) { x.beginPath(); x.arc(0, -0.36 + i * 0.07, 0.08 + i * 0.02, 0.25 * Math.PI, 0.75 * Math.PI); x.stroke(); }
+  for (const k of [-1, 1]) {   // cejas y ojos
+    x.fillStyle = dark; x.beginPath(); x.moveTo(k * 0.05, -0.2); x.lineTo(k * 0.3, -0.2); x.lineTo(k * 0.27, -0.13); x.closePath(); x.fill();
+    if (eyes > 0.05) {
+      x.fillStyle = radial(x, k * 0.16, -0.1, 0, 0.16, [[0, `rgba(255,230,80,${0.6 * eyes})`], [1, "rgba(255,200,40,0)"]]);
+      x.fillRect(k * 0.16 - 0.17, -0.27, 0.34, 0.34);
+      x.fillStyle = "#ffe14d"; x.beginPath(); x.ellipse(k * 0.16, -0.1, 0.075, 0.04 * eyes + 0.004, k * 0.3, 0, TAU); x.fill();
+      x.fillStyle = "#120400"; x.beginPath(); x.ellipse(k * 0.16, -0.1, 0.013, 0.036 * eyes + 0.002, 0, 0, TAU); x.fill();
+    } else {
+      x.strokeStyle = "#120400"; x.lineWidth = 0.02; x.beginPath(); x.arc(k * 0.16, -0.13, 0.06, 0.2 * Math.PI, 0.8 * Math.PI); x.stroke();
+    }
+  }
+  x.restore();
+}
+
+function drawLeafLook(x, look, d, t) {
+  const { x: X, y: Y, w, h } = d;
+  archPath(x, X, Y, w, h);
+  if (look === 0) {
+    x.fillStyle = linear(x, X, 0, X + w, 0, [[0, "#5c3519"], [0.5, "#946231"], [1, "#55301a"]]); x.fill();
+    x.save(); x.clip();
+    x.strokeStyle = "rgba(40,18,4,0.65)"; x.lineWidth = 1.6;
+    for (let i = 1; i < 4; i++) { x.beginPath(); x.moveTo(X + (w * i) / 4, Y); x.lineTo(X + (w * i) / 4, Y + h); x.stroke(); }
+    x.strokeStyle = "rgba(0,0,0,0.12)"; x.lineWidth = 1;
+    for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(X + 4 + i * (w / 8), Y + 20); x.bezierCurveTo(X + 8 + i * (w / 8), Y + h * 0.4, X + i * (w / 8), Y + h * 0.7, X + 5 + i * (w / 8), Y + h); x.stroke(); }
+    for (const yy of [Y + h * 0.3, Y + h * 0.74]) {
+      x.fillStyle = "#2e2925"; x.fillRect(X, yy, w, 7);
+      x.fillStyle = "#8a827a"; for (let k = 5; k < w; k += 12) { x.beginPath(); x.arc(X + k, yy + 3.5, 1.6, 0, TAU); x.fill(); }
+    }
+    x.restore();
+    x.strokeStyle = "#d8b25a"; x.lineWidth = 2.2; x.beginPath(); x.arc(X + w * 0.78, Y + h * 0.55, 5.5, 0, TAU); x.stroke();
+  } else if (look === 1) {
+    x.fillStyle = linear(x, X, 0, X + w, 0, [[0, "#4b5058"], [0.45, "#8a9099"], [1, "#454a51"]]); x.fill();
+    x.save(); x.clip();
+    for (let k = 0; k < 4; k++) {
+      const yy = Y + w * 0.5 + (k * (h - w * 0.5)) / 4;
+      x.fillStyle = "#33373d"; x.fillRect(X, yy, w, 5);
+      x.fillStyle = "#c3c8cf"; for (let j = 4; j < w; j += 9) { x.beginPath(); x.arc(X + j, yy + 2.5, 1.3, 0, TAU); x.fill(); }
+    }
+    const gx = X + w * 0.3, gy = Y + w * 0.32;
+    roundRect(x, gx, gy, w * 0.4, 20, 3); x.fillStyle = "#0b0b0d"; x.fill();
+    x.fillStyle = "#6c7179"; for (let j = 1; j < 4; j++) x.fillRect(gx + (w * 0.4 * j) / 4 - 1, gy, 2, 20);
+    x.restore();
+  } else if (look === 2) {
+    x.fillStyle = linear(x, X, 0, X + w, 0, [[0, "#3b464d"], [0.5, "#5f6d76"], [1, "#363f45"]]); x.fill();
+    x.save(); x.clip();
+    x.strokeStyle = "rgba(0,0,0,0.35)"; x.lineWidth = 1.2; archPath(x, X + 5, Y + 5, w - 10, h - 5); x.stroke();
+    const pulse = 0.65 + 0.35 * Math.sin(t * 0.7);
+    const cols = w > 70 ? 2 : 1;
+    for (let c = 0; c < cols; c++) for (let k = 0; k < 4; k++) {
+      const rune = RUNES[(k * 2 + c + 1) % RUNES.length];
+      const rx = X + w / 2 - 6 + (cols === 2 ? (c ? 10 : -10) : 0), ry = Y + w * 0.45 + k * 26, rs = 13;
+      for (const [lw, a] of [[4, 0.25 * pulse], [1.6, 0.95]]) {
+        x.strokeStyle = rgba(TH.accent, a); x.lineWidth = lw; x.lineCap = "round"; x.beginPath();
+        for (const [a1, b1, a2, b2] of rune) { x.moveTo(rx + a1 * rs, ry + b1 * rs); x.lineTo(rx + a2 * rs, ry + b2 * rs); }
+        x.stroke();
+      }
+    }
+    x.restore();
+  } else {
+    x.fillStyle = linear(x, X, 0, X + w, 0, [[0, "#7e4216"], [0.45, "#d18b3b"], [1, "#7a3f14"]]); x.fill();
+    x.save(); x.clip();
+    const cx = X + w / 2, cy = Y + w / 2;
+    x.fillStyle = "#ffd77a";
+    for (let k = 0; k <= 8; k++) { const a = Math.PI + (k * Math.PI) / 8; x.beginPath(); x.arc(cx + Math.cos(a) * (w / 2 - 5), cy + Math.sin(a) * (w / 2 - 5), 1.8, 0, TAU); x.fill(); }
+    for (let yy = cy + 8; yy < Y + h; yy += 14) for (const xx of [X + 5, X + w - 5]) { x.beginPath(); x.arc(xx, yy, 1.8, 0, TAU); x.fill(); }
+    const ey = Y + h * 0.56, er = w * 0.22;
+    x.fillStyle = radial(x, cx - er * 0.3, ey - er * 0.3, 1, er, [[0, "#fff1b0"], [0.6, "#e0a838"], [1, "#8c5a12"]]);
+    x.beginPath(); x.arc(cx, ey, er, 0, TAU); x.fill();
+    x.fillStyle = "#3a1204"; x.beginPath(); x.ellipse(cx, ey, er * 0.62, er * 0.32, 0, 0, TAU); x.fill();
+    x.fillStyle = "#ff8a1f"; x.beginPath(); x.ellipse(cx, ey, er * 0.14, er * 0.3, 0, 0, TAU); x.fill();
+    x.restore();
+  }
+  x.lineWidth = 1.5; x.strokeStyle = "rgba(0,0,0,0.55)"; archPath(x, X, Y, w, h); x.stroke();
+}
+
+function drawLeaf(x, look, d, open, t) {
+  const sx = Math.cos(open * Math.PI / 2 * 0.94);
+  if (sx < 0.03) return;
+  x.save();
+  x.translate(d.x, 0); x.scale(sx, 1); x.translate(-d.x, 0);
+  drawLeafLook(x, look, d, t);
+  if (open > 0) { archPath(x, d.x, d.y, d.w, d.h); x.fillStyle = `rgba(0,0,0,${open * 0.55})`; x.fill(); }
+  x.restore();
+}
+
+function drawSparkles(x, cx, cy, rad, t, n) {
+  x.save(); x.globalCompositeOperation = "lighter";
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + t * 0.25, rr = rad * (0.7 + 0.3 * Math.sin(t * 0.9 + i));
+    const sx = cx + Math.cos(a) * rr, sy = cy + Math.sin(a) * rr, s = 3 + 2 * Math.sin(t + i * 1.7);
+    x.fillStyle = "rgba(255,250,210,0.9)"; x.beginPath();
+    x.moveTo(sx, sy - s * 1.6); x.lineTo(sx + s * 0.35, sy); x.lineTo(sx, sy + s * 1.6); x.lineTo(sx - s * 0.35, sy); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(sx - s * 1.6, sy); x.lineTo(sx, sy + s * 0.35); x.lineTo(sx + s * 1.6, sy); x.lineTo(sx, sy - s * 0.35); x.closePath(); x.fill();
+  }
+  x.restore();
+}
+
+function drawContent(x, kind, d, a, t) {
+  const cx = d.x + d.w / 2, cy = d.y + d.h * 0.62;
+  const ghost = kind.startsWith("ghost");
+  x.save(); archPath(x, d.x, d.y, d.w, d.h); x.clip();
+  if (kind.endsWith("egg")) {
+    x.fillStyle = radial(x, cx, cy, 2, d.w * 0.8, [[0, rgba(TH.accent, 0.75 * a)], [1, rgba(TH.accent, 0)]]);
+    x.fillRect(d.x, d.y, d.w, d.h);
+    drawEgg(x, cx, cy + (1 - a) * 10, d.w * 0.3 * (0.75 + 0.25 * a), ghost);
+  } else {
+    x.fillStyle = radial(x, cx, cy - 10, 2, d.w * 0.8, [[0, `rgba(255,60,20,${0.55 * a})`], [1, "rgba(255,60,20,0)"]]);
+    x.fillRect(d.x, d.y, d.w, d.h);
+    drawDragonHead(x, cx, cy - 8, d.w * 0.9, { mouth: 0.25, ghost });
+  }
+  x.restore();
+  if (ghost) {
+    const label = kind.endsWith("egg") ? "HUEVO" : "DRAGÓN";
+    text(x, label, cx, d.y - 14, { font: "700 10px Montserrat", fill: kind.endsWith("egg") ? "#fff6c8" : "#ff8a6a", stroke: "rgba(0,0,0,0.8)", width: 3 });
+  }
+}
+
+function drawFlame(x, X, Y, t, s = 1) {
+  const f = 0.85 + 0.12 * Math.sin(t * 1.9 + X) + 0.07 * Math.sin(t * 3.7 + X * 0.3);
+  const lean = Math.sin(t * 1.3 + X) * 2;
+  x.save(); x.globalCompositeOperation = "lighter";
+  x.fillStyle = radial(x, X, Y - 10, 2, 70 * s, [[0, rgba(TH.flame[1], 0.35 * f)], [1, rgba(TH.flame[1], 0)]]);
+  x.fillRect(X - 70 * s, Y - 80 * s, 140 * s, 150 * s);
+  x.restore();
+  [[TH.flame[2], 1], [TH.flame[1], 0.72], [TH.flame[0], 0.42]].forEach(([c, k]) => {
+    const hh = 26 * s * f * k + 6 * s, ww = 9 * s * k + 2 * s;
+    x.fillStyle = c; x.beginPath(); x.moveTo(X + lean * k, Y - hh);
+    x.bezierCurveTo(X + ww, Y - hh * 0.4, X + ww, Y, X, Y + 2 * s);
+    x.bezierCurveTo(X - ww, Y, X - ww, Y - hh * 0.4, X + lean * k, Y - hh); x.fill();
+  });
+}
+
+function drawEmbers(x, t, n, w, h, seed) {
+  const r = rng(seed);
+  x.save(); x.globalCompositeOperation = "lighter";
+  for (let i = 0; i < n; i++) {
+    const bx = r() * w, speed = 1.5 + r() * 2.5, ph = r() * h;
+    const y = h - ((t * speed * 3 + ph) % (h + 20));
+    const xx = bx + Math.sin((t + i * 7) * 0.3) * 8, s = 0.8 + r() * 1.6;
+    x.fillStyle = `rgba(255,${120 + (r() * 100 | 0)},40,${0.5 + r() * 0.5})`;
+    x.beginPath(); x.arc(xx, y, s, 0, TAU); x.fill();
+  }
+  x.restore();
+}
+
+function drawRibbon(x, cx, y, title, sub) {
+  x.save();
+  const w = 190, h = 30;
+  x.fillStyle = mix(TH.panel[0], "#000000", 0.2);
+  for (const k of [-1, 1]) {
+    x.beginPath(); x.moveTo(cx + k * (w / 2 - 6), y + 4); x.lineTo(cx + k * (w / 2 + 20), y + 4); x.lineTo(cx + k * (w / 2 + 10), y + h / 2 + 4);
+    x.lineTo(cx + k * (w / 2 + 20), y + h + 4); x.lineTo(cx + k * (w / 2 - 6), y + h + 4); x.closePath(); x.fill();
+  }
+  roundRect(x, cx - w / 2, y, w, h, 5);
+  x.fillStyle = linear(x, 0, y, 0, y + h, [[0, mix(TH.panel[0], TH.accent, 0.35)], [1, TH.panel[1]]]); x.fill();
+  x.lineWidth = 2; x.strokeStyle = TH.accent; x.stroke();
+  text(x, title, cx - 18, y + h / 2 + 2, { font: "21px Luckiest", fill: "#fff", stroke: "rgba(0,0,0,0.6)", width: 4 });
+  text(x, sub, cx + 52, y + h / 2 + 1, { font: "700 12px Montserrat", fill: TH.accent });
+  x.restore();
+}
+
+function drawCoin(x, cx, cy, r, phase) {
+  const sx = Math.max(0.18, Math.abs(Math.cos(phase)));
+  x.save(); x.translate(cx, cy); x.scale(sx, 1);
+  x.fillStyle = "#9a6a10"; x.beginPath(); x.arc(0, 0, r, 0, TAU); x.fill();
+  x.fillStyle = radial(x, -r * 0.3, -r * 0.3, 0, r, [[0, "#fff4b0"], [0.6, "#f2c440"], [1, "#c58c14"]]);
+  x.beginPath(); x.arc(0, 0, r * 0.82, 0, TAU); x.fill();
+  if (sx > 0.5) text(x, "Y", 0, r * 0.08, { font: `${Math.round(r * 1.1)}px Luckiest`, fill: "#a8700c" });
+  x.restore();
+}
+
+function drawCoinRain(x, p, t, n, w) {
+  const r = rng(77);
+  for (let i = 0; i < n; i++) {
+    const bx = r() * w, delay = r() * 0.6, speed = 280 + r() * 160;
+    const y = -20 + (p - delay) * speed;
+    if (y < -20 || y > H + 20) continue;
+    drawCoin(x, bx + Math.sin(t * 0.4 + i) * 6, y, 6 + r() * 4, t * 0.6 + i);
+  }
+}
+
+function drawCrown(x, cx, cy, s) {
+  x.save(); x.translate(cx, cy); x.scale(s, s);
+  x.fillStyle = linear(x, 0, -40, 0, 30, [[0, "#fff1a0"], [0.5, "#f2c13a"], [1, "#a8700c"]]);
+  x.beginPath(); x.moveTo(-50, 26); x.lineTo(-56, -22); x.lineTo(-28, 2); x.lineTo(-14, -34); x.lineTo(0, -6);
+  x.lineTo(14, -34); x.lineTo(28, 2); x.lineTo(56, -22); x.lineTo(50, 26); x.closePath(); x.fill();
+  x.lineWidth = 2.5; x.strokeStyle = "#7a4c06"; x.stroke();
+  x.fillStyle = "#b07a10"; x.fillRect(-50, 14, 100, 12);
+  [[-30, 20, "#e0283c"], [0, 20, "#2a7ae0"], [30, 20, "#28c060"]].forEach(([jx, jy, c]) => {
+    x.fillStyle = c; x.beginPath(); x.arc(jx, jy, 5, 0, TAU); x.fill();
+    x.fillStyle = "rgba(255,255,255,0.7)"; x.beginPath(); x.arc(jx - 1.5, jy - 1.5, 1.6, 0, TAU); x.fill();
+  });
+  for (const [px, py] of [[-56, -22], [-14, -34], [14, -34], [56, -22]]) { x.fillStyle = "#fff6d0"; x.beginPath(); x.arc(px, py, 4, 0, TAU); x.fill(); }
+  x.restore();
+}
+
+function drawBanner(x, b) {
+  if (!b || b.a <= 0) return;
+  const colors = { burn: ["#ffd0a0", "#ff4d2e", "#7a0d02"], cash: ["#fff6c0", "#ffd24a", "#7a4c06"], crown: ["#ffffff", "#ffd24a", "#7a4c06"], egg: ["#ffffff", TH.accent, "#3a2a10"] }[b.kind] || ["#ffffff", "#ffffff", "#000000"];
+  const y = b.y ?? 150, s = b.s ?? 1;
+  x.save(); x.globalAlpha = clamp(b.a, 0, 1);
+  x.fillStyle = "rgba(0,0,0,0.55)"; x.fillRect(0, y - 34 * s, LW, (b.sub ? 74 : 60) * s);
+  x.fillStyle = colors[1]; x.fillRect(0, y - 34 * s, LW, 2); x.fillRect(0, y - 34 * s + (b.sub ? 74 : 60) * s - 2, LW, 2);
+  x.translate(LW / 2, y); x.scale(s, s);
+  const fill = linear(x, 0, -24, 0, 18, [[0, colors[0]], [1, colors[1]]]);
+  text(x, b.text, 0, -2, { font: "44px Luckiest", fill, stroke: colors[2], width: 8 });
+  if (b.sub) text(x, b.sub, 0, 30, { font: "700 15px Montserrat", fill: "#fff", stroke: "rgba(0,0,0,0.7)", width: 4 });
+  x.restore();
+}
+
+// -- Vistas -----------------------------------------------------------------------------
+
+function drawFloorAt(x, st, floor, oy, current) {
+  if (!FLOOR_BG) FLOOR_BG = paintFloorBG();
+  x.drawImage(FLOOR_BG, 0, oy, LW, H);
+  const t = st.t || 0;
+  for (const [tx, ty] of TORCHES) drawFlame(x, tx, ty + oy - 4, t + floor * 3);
+  drawRibbon(x, LW / 2, 8 + oy, `PISO ${floor + 1}`, META.short[floor]);
+  const rects = doorRects(META.width);
+  rects.forEach((d0, i) => {
+    const ds = (current && st.doors && st.doors[i]) || {};
+    const d = { x: d0.x + (ds.dx || 0), y: d0.y + oy, w: d0.w, h: d0.h };
+    if (ds.glow) {
+      x.save(); x.globalCompositeOperation = "lighter";
+      x.fillStyle = radial(x, d.x + d.w / 2, d.y + d.h / 2, 10, d.h * 0.85, [[0, rgba(TH.accent, 0.5 * ds.glow)], [1, rgba(TH.accent, 0)]]);
+      x.fillRect(d.x - d.h, d.y - d.h * 0.4, d.w + d.h * 2, d.h * 1.8); x.restore();
+    }
+    if (ds.show) drawContent(x, ds.show, d, ds.a ?? 1, t);
+    drawLeaf(x, i % 4, d, ds.open || 0, t + i * 2);
+    if (ds.glow) { x.lineWidth = 2 + 2 * ds.glow; x.strokeStyle = rgba(TH.accent, 0.9 * ds.glow); archPath(x, d.x - 1, d.y - 1, d.w + 2, d.h + 1); x.stroke(); }
+    if (ds.ring) { x.lineWidth = 4; x.strokeStyle = rgba("#ffffff", ds.ring); archPath(x, d.x - 4, d.y - 4, d.w + 8, d.h + 4); x.stroke(); }
+    if (ds.dim) { archPath(x, d.x - 9, d.y - 9, d.w + 18, d.h + 40); x.fillStyle = `rgba(0,0,0,${ds.dim})`; x.fill(); }
+    if (ds.sparkle) drawSparkles(x, d.x + d.w / 2, d.y + d.h * 0.6, d.w * 0.55, t, 6);
+  });
+  if (current && st.dragon) drawDragonAttack(x, st, rects, oy);
+}
+
+function drawDragonAttack(x, st, rects, oy) {
+  const dr = st.dragon, d = rects[dr.door], t = st.t || 0;
+  const rise = ease(clamp(dr.rise, 0, 1));
+  const cx = lerp(d.x + d.w / 2, LW / 2, rise), cy = lerp(d.y + d.h * 0.55 + oy, 175, rise);
+  const size = lerp(d.w * 0.9, 330, rise);
+  x.save();
+  if (rise < 0.25) { archPath(x, d.x, d.y + oy, d.w, d.h); x.clip(); }
+  drawDragonHead(x, cx, cy, size, { mouth: dr.mouth || 0, tilt: Math.sin(t * 1.7) * 0.04 * rise });
+  x.restore();
+  const fire = dr.fire || 0;
+  if (fire > 0) {
+    const mx = cx, my = cy + size * 0.36, r = rng(t * 131 + 7);
+    x.save(); x.globalCompositeOperation = "lighter";
+    x.fillStyle = radial(x, mx, my, 10, 120 + fire * 320, [[0, rgba(TH.flame[0], 0.9 * fire)], [0.35, rgba(TH.flame[1], 0.7 * fire)], [1, rgba(TH.flame[2], 0)]]);
+    x.fillRect(0, 0, LW, H);
+    for (let i = 0; i < 70; i++) {
+      const dist = fire * (10 + r() * 340), a = Math.PI / 2 + (r() - 0.5) * (1.6 + fire * 2.6);
+      const bx = mx + Math.cos(a) * dist * 1.25, by = my + Math.sin(a) * dist * 0.8, br = 14 + dist * 0.42;
+      const k = dist / 320;
+      const c = k < 0.3 ? TH.flame[0] : k < 0.65 ? TH.flame[1] : TH.flame[2];
+      x.fillStyle = radial(x, bx, by, 0, br, [[0, rgba(c, 0.85)], [1, rgba(c, 0)]]);
+      x.fillRect(bx - br, by - br, br * 2, br * 2);
+    }
+    x.restore();
+  }
+}
+
+function drawFloorView(x, st) {
+  const c = st.climb || 0, oy = ease(c) * H;
+  drawFloorAt(x, st, st.floor, oy, true);
+  if (c > 0) {
+    if (st.floor >= 8) drawSummitAt(x, st, oy - H);
+    else drawFloorAt(x, st, st.floor + 1, oy - H, false);
+  }
+  if (st.char) {
+    x.fillStyle = `rgba(30,12,4,${0.55 * st.char})`; x.fillRect(0, 0, LW, H);
+    const r = rng(17);
+    for (let i = 0; i < 10; i++) {
+      const sx = r() * LW, sy = H - ((st.t * 4 + r() * H) % H), sr = 18 + r() * 26;
+      x.fillStyle = radial(x, sx, sy, 0, sr, [[0, `rgba(40,36,34,${0.5 * st.char})`], [1, "rgba(40,36,34,0)"]]);
+      x.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+    }
+    drawEmbers(x, st.t, 22, LW, H, 333);
+  }
+  if (st.coins) {
+    // Vuelan hacia el panel y se pierden por el borde de la vista.
+    const p = st.coins, from = [LW / 2, 200], to = [LW + 60, 46];
+    for (let i = 0; i < 16; i++) {
+      const q = clamp(p * 1.7 - i * 0.045, 0, 1);
+      if (q <= 0 || q >= 1) continue;
+      const spread = (i % 2 ? 1 : -1) * (20 + (i * 13) % 50);
+      const bx = lerp(from[0] + spread, to[0], ease(q)), by = lerp(from[1], to[1], q) - Math.sin(q * Math.PI) * 90;
+      drawCoin(x, bx, by, 8, st.t * 0.7 + i);
+    }
+  }
+}
+
+function drawSummitAt(x, st, oy) {
+  if (!SUMMIT_SKY) paintSummit();
+  x.drawImage(SUMMIT_SKY, 0, oy, LW, H);
+  const bow = ease(clamp(st.bow || 0, 0, 1)), t = st.t || 0;
+  const [main, dark] = TH.dragon;
+  x.save(); x.translate(0, oy);
+  // Alas, cuello y cabeza del dragón, detrás de las almenas.
+  const wing = Math.sin(t * 0.5) * 6;
+  x.fillStyle = mix(dark, "#000000", 0.25);
+  for (const k of [-1, 1]) {
+    const bx = LW / 2 + k * 30;
+    x.beginPath(); x.moveTo(bx, 210);
+    x.quadraticCurveTo(bx + k * 90, 90 - wing, bx + k * 200, 60 - wing);
+    for (let j = 0; j < 4; j++) x.quadraticCurveTo(bx + k * (170 - j * 40), 130 - j * 4, bx + k * (150 - j * 40), 120 + j * 22);
+    x.quadraticCurveTo(bx + k * 20, 220, bx, 240); x.closePath(); x.fill();
+  }
+  const hx = LW / 2, hy = lerp(132, 186, bow);
+  x.fillStyle = linear(x, LW / 2 - 40, 0, LW / 2 + 60, 0, [[0, dark], [0.45, main], [1, dark]]);
+  x.beginPath(); x.moveTo(LW / 2 - 52, 300);
+  x.bezierCurveTo(LW / 2 - 40, 240, hx - 30, hy + 60, hx - 26, hy + 20);
+  x.lineTo(hx + 26, hy + 20);
+  x.bezierCurveTo(hx + 40, hy + 70, LW / 2 + 70, 240, LW / 2 + 64, 300); x.closePath(); x.fill();
+  x.fillStyle = rgba(TH.dragon[2], 0.55);
+  for (let k = 0; k < 6; k++) {   // escamas del vientre
+    const yy = lerp(hy + 36, 286, k / 6), ww = lerp(16, 30, k / 6);
+    x.beginPath(); x.ellipse(LW / 2 + 4, yy, ww, 7, 0, 0, Math.PI); x.fill();
+  }
+  drawDragonHead(x, hx, hy, 150, { tilt: bow * 0.18, eyes: 1 - bow, mouth: 0 });
+  x.restore();
+  if (st.crown != null) {
+    const c = ease(clamp(st.crown, 0, 1)), cy = lerp(-50, 50, c) + oy;
+    x.save(); x.globalCompositeOperation = "lighter";
+    x.translate(LW / 2, cy); x.rotate(t * 0.05);
+    for (let i = 0; i < 12; i++) {
+      x.rotate(TAU / 12); x.fillStyle = `rgba(255,230,140,${0.12 * c})`;
+      x.beginPath(); x.moveTo(0, 0); x.lineTo(-14, -220); x.lineTo(14, -220); x.closePath(); x.fill();
+    }
+    x.restore();
+    drawCrown(x, LW / 2, cy, 0.9);
+  }
+  x.drawImage(SUMMIT_FRONT, 0, oy, LW, H);
+  if (st.coins != null && oy === 0) drawCoinRain(x, st.coins, t, 40, LW);
+}
+
+function drawTowerView(x, st) {
+  if (!TOWER_BG) TOWER_BG = paintTowerBG();
+  x.drawImage(TOWER_BG, 0, 0, LW, H);
+  const t = st.t || 0, tour = st.tour ?? 9, picks = st.picks || [], n = META.width;
+  const dw = { 2: 40, 3: 34, 4: 30 }[n] || 30, gap = 10, x0 = LW / 2 - (n * dw + (n - 1) * gap) / 2;
+  for (let f = 0; f < 9; f++) {
+    const y = towerFloorY(f), lit = f < tour;
+    const sweep = clamp(1 - Math.abs(tour - 0.5 - f), 0, 1);
+    if (sweep > 0) { x.fillStyle = rgba(TH.accent, 0.35 * sweep); x.fillRect(TOWER.x, y, TOWER.w, TOWER.fh - 3); }
+    for (let i = 0; i < n; i++) {
+      const d = { x: x0 + i * (dw + gap), y: y + 4, w: dw, h: TOWER.fh - 7 };
+      const picked = picks[f] === i, burned = st.burned && st.burned[0] === f && st.burned[1] === i;
+      const dragon = META.dragons[f] && META.dragons[f].includes(i);
+      archPath(x, d.x, d.y, d.w, d.h); x.fillStyle = "#0a0605"; x.fill();
+      if (burned) {
+        x.save(); x.globalCompositeOperation = "lighter";
+        x.fillStyle = radial(x, d.x + d.w / 2, d.y + d.h / 2, 1, 26, [[0, "rgba(255,200,60,0.95)"], [1, "rgba(255,40,0,0)"]]);
+        x.fillRect(d.x - 20, d.y - 20, d.w + 40, d.h + 40); x.restore();
+      }
+      if (picked) {
+        x.fillStyle = radial(x, d.x + d.w / 2, d.y + d.h * 0.6, 1, d.w * 0.6, [[0, rgba(TH.accent, 0.8)], [1, rgba(TH.accent, 0)]]);
+        x.fillRect(d.x, d.y, d.w, d.h);
+        drawEgg(x, d.x + d.w / 2, d.y + d.h * 0.58, 6.5, false);
+      }
+      else if (dragon && (lit || burned)) drawDragonHead(x, d.x + d.w / 2, d.y + d.h * 0.62, burned ? 26 : 22, { mouth: burned ? 0.6 : 0.15 });
+      else if (!lit) { x.save(); x.globalAlpha = 0.9; drawLeafLook(x, i % 4, d, t); x.restore(); }
+      else { x.fillStyle = "rgba(255,255,255,0.08)"; archPath(x, d.x, d.y, d.w, d.h); x.fill(); }
+    }
+    if (st.ghost === f) {
+      x.save(); x.setLineDash([5, 4]); x.lineWidth = 2; x.strokeStyle = "#ffffff";
+      x.strokeRect(TOWER.x + 3, y + 1, TOWER.w - 6, TOWER.fh - 4); x.restore();
+    }
+  }
+  if (st.crowned) drawCrown(x, LW / 2, towerFloorY(8) - 34, 0.32);
+}
+
+// -- Panel ------------------------------------------------------------------------------
+
+function paintPanel(p) {
+  const [c, x] = layer(PW, PH);
+  roundRect(x, 1, 1, PW - 2, PH - 2, 10);
+  x.fillStyle = linear(x, 0, 0, 0, PH, [[0, TH.panel[0]], [1, TH.panel[1]]]); x.fill();
+  x.lineWidth = 2; x.strokeStyle = TH.accent; x.stroke();
+  roundRect(x, 6, 6, PW - 12, 66, 7); x.fillStyle = "rgba(0,0,0,0.35)"; x.fill();
+  text(x, p.label, PW / 2, 19, { font: "700 10px Montserrat", fill: p.labelColor || TH.accent });
+  x.font = "28px Luckiest";
+  const size = Math.min(28, Math.floor(28 * (PW - 24) / x.measureText(p.mult).width));
+  text(x, p.mult, PW / 2, 44, { font: `${size}px Luckiest`, fill: "#fff", stroke: "rgba(0,0,0,0.6)", width: 4 });
+  text(x, p.value, PW / 2, 63, { font: "700 12px Montserrat", fill: p.valueColor || "#f3e6c8" });
+  const n = META.width, top = 90, rh = 22, base = top + 9 * rh;
+  for (let k = 0; k < 7; k++) { x.fillStyle = mix(TH.stone[1], "#000000", 0.2); x.fillRect(12 + k * 23, top - 9, 14, 9); }
+  x.fillStyle = mix(TH.stone[1], "#000000", 0.35); x.fillRect(10, top - 1, PW - 20, base - top + 2);
+  for (let f = 0; f < 9; f++) {
+    const y = base - (f + 1) * rh;
+    const cur = p.current === f, done = f < (p.picks || []).length;
+    if (cur) { roundRect(x, 8, y + 1, PW - 16, rh - 2, 4); x.fillStyle = rgba(TH.accent, 0.22); x.fill(); x.lineWidth = 1.5; x.strokeStyle = TH.accent; x.stroke(); }
+    text(x, String(f + 1), 21, y + rh / 2 + 1, { font: "700 10px Montserrat", fill: cur ? "#fff" : "rgba(255,255,255,0.65)" });
+    for (let i = 0; i < n; i++) {
+      const cx = 32 + i * 17, cy = y + 4;
+      const burned = p.burned && p.burned[0] === f && p.burned[1] === i;
+      roundRect(x, cx, cy, 14, 14, 3); x.fillStyle = burned ? "#b8320f" : "rgba(0,0,0,0.45)"; x.fill();
+      if (done && p.picks[f] === i) drawEgg(x, cx + 7, cy + 8, 4.2, false);
+      else if (f < (p.reveal || 0) && META.dragons[f] && META.dragons[f].includes(i)) drawDragonHead(x, cx + 7, cy + 8.5, 13, { mouth: burned ? 0.5 : 0.1 });
+    }
+    text(x, META.short[f], PW - 12, y + rh / 2 + 1, { font: "700 10px Montserrat", align: "right", fill: cur ? "#fff" : done ? TH.accent : "rgba(255,255,255,0.5)" });
+  }
+  text(x, META.label, PW / 2, PH - 34, { font: "17px Luckiest", fill: TH.accent, stroke: "rgba(0,0,0,0.6)", width: 3 });
+  text(x, `APUESTA ${META.stake}`, PW / 2, PH - 15, { font: "700 10px Montserrat", fill: "rgba(255,255,255,0.75)" });
+  return c;
+}
+
+function drawPanel(x, p) {
+  const key = JSON.stringify(p);
+  let c = PANELS.get(key);
+  if (!c) { c = paintPanel(p); PANELS.set(key, c); if (PANELS.size > 24) PANELS.delete(PANELS.keys().next().value); }
+  x.drawImage(c, PX, PY, PW, PH);
+}
+
+// -- Fotograma -------------------------------------------------------------------------
+
+function paintFrame(st) {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+  g.fillStyle = "#0b0806"; g.fillRect(0, 0, W, H);
+  g.save(); g.beginPath(); g.rect(0, 0, LW, H); g.clip();
+  const [sx, sy] = st.shake || [0, 0];
+  g.translate(sx, sy);
+  if (st.view === "tower") drawTowerView(g, st);
+  else if (st.view === "summit") drawSummitAt(g, st, 0);
+  else drawFloorView(g, st);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  if (st.heart) {
+    g.fillStyle = radial(g, LW / 2, 190, 90, 300, [[0, "rgba(60,0,0,0)"], [1, `rgba(60,0,0,${st.heart})`]]);
+    g.fillRect(0, 0, LW, H);
+  }
+  if (st.flash) { const [r, gg, b, a] = st.flash; g.fillStyle = `rgba(${r},${gg},${b},${a})`; g.fillRect(0, 0, LW, H); }
+  drawBanner(g, st.banner);
+  if (st.fade) { g.fillStyle = `rgba(0,0,0,${st.fade})`; g.fillRect(0, 0, LW, H); }
+  g.restore();
+  drawPanel(g, st.panel);
+}
+
+function snapshot() {
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, 0, 0, W * S, H * S, 0, 0, W, H);
+  return { x: 0, y: 0, u: window.exportFrame(out) };
+}
+
+// En Chromium cada recuadro va como data URL de PNG; el pintor de Node
+// (assets/escena_node.cjs) pone su exportFrame, que devuelve los píxeles tal cual.
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("30px Luckiest"), document.fonts.load("700 12px Montserrat")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => {
+  META = meta; TH = THEMES[meta.theme] || THEMES.facil;
+  ensureBG();
+  return true;
+};
+window.renderFrames = (states, first = 0) => states.map((st) => { paintFrame(st); return snapshot(); });
+</script>
+</body>
+</html>
