@@ -547,7 +547,8 @@ PRODUCED_STATS = {
     "msg_fango", *IRONY_PATTERNS, "msg_23f", "msg_july4", "msg_20n", "msg_paguita", "msg_manual",
     "msg_hacienda", "msg_cuñado", "msg_ola_k_ase",
     "msg_bizum_ask", "msg_siesta", "msg_office", "msg_weekend", "msg_cinderella", "msg_reyes",
-    "msg_valentin", "msg_pino", "msg_hispanidad", "msg_inocentes", "msg_friday13",
+    "msg_valentin", "msg_pino", "msg_hispanidad", "msg_aniversario", "msg_inocentes",
+    "msg_friday13",
     "msg_monologue_max", "msg_day_max", "msg_first_of_day", "msg_echo", "msg_necro",
     "msg_edits",
     # Risas

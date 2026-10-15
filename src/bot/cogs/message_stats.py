@@ -40,6 +40,7 @@ from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.repositories.message_stats import ImportStatus, LevelAward, MessageStatsRepository
 from bot.services.achievements import StatDelta
+from bot.services.birthdays import anniversary_xp
 from bot.services.economy import (
     CURRENCY_EMOJI,
     BalanceLimitError,
@@ -253,9 +254,11 @@ class MessageStats(commands.Cog):
         now = time.time()
         # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop), y
         # la mascota activa suma su pequeño bonus encima (ver bot.cogs.pets).
-        boost = tienda.xp_multiplier(
-            self.bot, guild_id, message.author.id, now
-        ) * mascotas.xp_bonus(self.bot, guild_id, message.author.id, voice=False)
+        boost = (
+            tienda.xp_multiplier(self.bot, guild_id, message.author.id, now)
+            * mascotas.xp_bonus(self.bot, guild_id, message.author.id, voice=False)
+            * anniversary_xp(now)
+        )
         base_xp = round(random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP) * boost)
 
         def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
@@ -349,6 +352,7 @@ class MessageStats(commands.Cog):
                 random.randint(MIN_VOICE_XP, MAX_VOICE_XP)
                 * tienda.xp_multiplier(self.bot, guild.id, member.id, now)
                 * mascotas.xp_bonus(self.bot, guild.id, member.id, voice=True)
+                * anniversary_xp(now)
             )
             for member in eligible
         }

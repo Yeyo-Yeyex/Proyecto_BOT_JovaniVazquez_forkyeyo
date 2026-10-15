@@ -54,6 +54,7 @@ from bot.services.backgammon import Ending as BackgammonEnding
 from bot.services.backgammon import GameEvent as BackgammonEvent
 from bot.services.backgammon import PlayerRecord as BackgammonRecord
 from bot.services.beernight import Reason as BeerReason
+from bot.services.birthdays import ANNIVERSARY
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
@@ -459,6 +460,7 @@ SHOP_TRACKED_KEYS = frozenset(
         "skin_tapete_corea",
         "skin_tapete_diamantes",
         "skin_tapete_gordo",
+        "skin_tapete_aniversario",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -1455,6 +1457,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("time", "msg_hispanidad", [
         (1, "hispanidad", "Desfile del 12 de octubre", "Escribe el Día de la Hispanidad.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_aniversario", [
+        (1, "aniversario", "Cumpleaños feliz del servidor",
+         "Escribe el 7 de octubre, el día que nació el servidor.", C, True),
+        (100, "aniversario_100", "Fiesta de aniversario con barra libre",
+         "Escribe 100 mensajes en aniversarios del servidor.", R, True),
     ])  # fmt: skip
     a += _tiers("time", "msg_inocentes", [
         (1, "inocentes", "Inocente, inocente", "Escribe el 28 de diciembre.", C, True),
@@ -6452,6 +6460,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el tapete de diamantes. Las deudas también.", L, False),
         ("skin_tapete_gordo", "buy_tapete_gordo", "Salud, que es lo importante",
          "Compra el tapete del Gordo en Navidad.", R, False),
+        ("skin_tapete_aniversario", "buy_tapete_aniversario", "Soplando velas en el casino",
+         "Compra el tapete del aniversario en octubre, el mes en que nació el servidor.", C,
+         False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
@@ -12674,6 +12685,7 @@ def message_delta(
     bump("msg_20n", when.month == 11 and when.day == 20)
     bump("msg_pino", when.month == 9 and when.day == 8)
     bump("msg_hispanidad", when.month == 10 and when.day == 12)
+    bump("msg_aniversario", (when.month, when.day) == ANNIVERSARY)
     bump("msg_halloween", when.month == 10 and when.day == 31)
     bump("msg_christmas", when.month == 12 and when.day in (24, 25))
     bump("msg_inocentes", when.month == 12 and when.day == 28)
