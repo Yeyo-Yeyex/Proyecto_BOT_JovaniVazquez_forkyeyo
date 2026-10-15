@@ -17,8 +17,16 @@ se resuelve rindiéndose (es lo que menos pierde) para que nunca se quede dinero
 colgado. Si el proceso muere de golpe a mitad de un empate, lo apostado en esa
 mano se pierde (queda registrado en el libro de movimientos).
 
+La mesa se dibuja con canvas (`bot.services.war_scene`, escena `assets/guerra/escena.html`):
+tapete con skins (botón 🎨), cartas grandes que salen del zapato y se voltean, la ficha y
+la lateral, y un GIF por jugada (repartir, ir a la guerra, rendirse) de ~2 s cuyo último
+fotograma se queda como PNG. Las cartas de la próxima mano se sortean al acabar la
+anterior, sin enseñarlas, y mientras se ve el GIF de ahora (y mientras se decide un
+empate) la mesa pinta en segundo plano el GIF de cada botón posible (`WarTable.prepare`):
+al pulsar solo queda subirlo. La skin y el zapato entran en la clave del plan.
+
 Permisos del bot en el canal: enviar mensajes, insertar enlaces y adjuntar
-archivos (la imagen de la mesa).
+archivos (el GIF y la imagen de la mesa).
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ import logging
 import random
 import time
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -37,10 +46,11 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import casino_stats, war_stats
+from bot.services.bacara_render import Media
 from bot.services.blackjack import Card, new_shoe
-from bot.services.cards_render import CardRenderer, HandView
 from bot.services.economy import (
     BalanceLimitError,
     EconomyService,
@@ -50,7 +60,9 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
-from bot.services.war import BURN_CARDS, TIE_PAYS, WAR_TIE_BONUS, Result, WarGame
+from bot.services.war import BURN_CARDS, TIE_PAYS, WAR_TIE_BONUS, Result, WarGame, main_net
+from bot.services.war_scene import WarScene
+from bot.utils.ahead import Ahead
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -62,15 +74,22 @@ logger = logging.getLogger(__name__)
 GAME = "guerra"
 DEFAULT_STAKE = 100
 TABLE_TIMEOUT = 180
-#: Pausa mientras la banca quema las cartas de la guerra: lo justo para que se vea.
-WAR_PAUSE_SECONDS = 0.8
 PNG_NAME = "guerra.png"
+GIF_NAME = "guerra.gif"
+#: Lo que se deja pasar tras el GIF antes de enseñar el resultado: lo que tarda el cliente
+#: en descargarlo (si se queda corto, el resultado sale antes de acabar la animación).
+REVEAL_MARGIN_SECONDS = 0.5
 
 COLOR_PLAYING = discord.Color.from_rgb(21, 83, 64)
 COLOR_WAR = discord.Color.from_rgb(150, 40, 35)
 COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
 COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
+
+#: Lo que dice la mesa mientras suena cada GIF (sin resultado ni saldo).
+DEAL_BUSY = "## 🃏 Repartiendo…\nLa tuya primero."
+WAR_BUSY = f"## ⚔️ ¡A la guerra!\nLa banca quema {BURN_CARDS} cartas y reparte otras dos."
+SURRENDER_BUSY = "## 🏳️ Bandera blanca\nTe rindes: media ficha de vuelta."
 
 RULES_FOOTER = f"Gana la carta más alta · empate: rendirse o guerra · lateral {TIE_PAYS}:1"
 
@@ -178,61 +197,10 @@ SIDE_MISS_LINES = (
     "Lateral perdida: ni tablas ni sobres.",
 )
 
-RESULT_BADGES = {
-    Result.WIN: "GANAS",
-    Result.LOSE: "PIERDES",
-    Result.SURRENDER: "RENDICIÓN",
-    Result.WAR_WIN: "GUERRA GANADA",
-    Result.WAR_TIE: "GUERRA EMPATADA",
-    Result.WAR_LOSE: "GUERRA PERDIDA",
-}
-
 EditFn = Callable[..., Awaitable[Any]]
 
 
 # -- Presentación -------------------------------------------------------------------
-
-
-def main_net(game: WarGame) -> int:
-    """Lo que gana o pierde la mano principal, sin la lateral."""
-    return game.main_return - game.stake * (2 if game.went_to_war else 1)
-
-
-def _title(who: str, cards: list[Card]) -> str:
-    return f"{who} · " + " → ".join(card.label for card in cards)
-
-
-def render_table(renderer: CardRenderer, game: WarGame, *, burning: bool = False) -> bytes:
-    """PNG de la mesa en el estado actual de la mano.
-
-    Args:
-        burning: Enseña solo las primeras cartas (la banca está quemando las de
-            la guerra y todavía no han salido las otras dos).
-    """
-    count = 1 if burning else len(game.player)
-    player, dealer = game.player[:count], game.dealer[:count]
-    badge = None
-    good = False
-    if game.result is not None and not burning:
-        net = main_net(game)
-        badge = RESULT_BADGES[game.result]
-        if net > 0:
-            badge += " +" + f"{net:,}".replace(",", ".")
-        good = net > 0
-    return renderer.render(
-        dealer=dealer,
-        hide_hole=False,
-        dealer_title=_title("BANCA", dealer),
-        hands=[
-            HandView(
-                cards=player,
-                title=_title("TÚ", player),
-                active=game.awaiting_choice or burning,
-                badge=badge,
-                badge_good=good,
-            )
-        ],
-    )
 
 
 def side_line(game: WarGame, rng: random.Random) -> str:
@@ -288,22 +256,27 @@ def table_embed(
     streak: int,
     paid: bool,
     headline: str | None = None,
-    burning: bool = False,
+    busy: str | None = None,
+    image: str = PNG_NAME,
+    skin_label: str | None = None,
     rng: random.Random | None = None,
 ) -> discord.Embed:
     """Embed de la mesa. `headline` es el resultado de la última mano, si acabó.
 
     Args:
         paid: Si la mano ya se pagó (la mesa está lista para otra).
-        burning: La banca está quemando cartas: todavía no se ve el resultado.
+        busy: Texto mientras suena el GIF (repartiendo, a la guerra…): no enseña saldo ni
+            resultado, que se verían antes que las cartas.
+        image: Nombre del archivo que lleva la imagen del mensaje (el GIF o el PNG).
+        skin_label: El tapete que lleva el dueño, si no es el de serie.
     """
     rng = rng or random.Random()
-    if game is None:
+    if busy is not None:
+        description = busy
+        color = COLOR_WAR if "guerra" in busy.lower() else COLOR_PLAYING
+    elif game is None:
         description = "Pulsa 🃏 **Repartir**. El as manda y los palos no cuentan."
         color = COLOR_PLAYING
-    elif burning:
-        description = f"## ⚔️ ¡A la guerra!\n{rng.choice(WAR_LINES)}"
-        color = COLOR_WAR
     elif game.awaiting_choice:
         cost = format_amount(game.extra_stake)
         description = (
@@ -317,22 +290,27 @@ def table_embed(
     else:
         description = headline or result_headline(game, rng)
         color = COLOR_WIN if game.net > 0 else COLOR_PUSH if game.net == 0 else COLOR_LOSS
-    if balance == 0 and (game is None or paid):
+    if busy is None and balance == 0 and (game is None or paid):
         description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="⚔️ Guerra", description=description, color=color)
-    embed.add_field(name="Saldo", value=format_amount(balance))
     playing = game is not None and not paid
+    if busy is None:
+        embed.add_field(name="Saldo", value=format_amount(balance))
     embed.add_field(
         name="En juego" if playing else "Ficha",
         value=format_amount(game.total_stake if playing else stake),  # type: ignore[union-attr]
     )
-    embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
-    embed.add_field(
-        name=f"Empate {TIE_PAYS}:1",
-        value=f"✅ {format_amount(stake)}" if side_on else "—",
-    )
-    embed.set_image(url=f"attachment://{PNG_NAME}")
-    embed.set_footer(text=f"Mesa de {owner} · {RULES_FOOTER}")
+    if busy is None:
+        embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
+        embed.add_field(
+            name=f"Empate {TIE_PAYS}:1",
+            value=f"✅ {format_amount(stake)}" if side_on else "—",
+        )
+    embed.set_image(url=f"attachment://{image}")
+    footer = f"Mesa de {owner} · {RULES_FOOTER}"
+    if skin_label:
+        footer += f" · Tapete: {skin_label}"
+    embed.set_footer(text=footer)
     return embed
 
 
@@ -369,6 +347,12 @@ class WarTable(discord.ui.View):
         self._paid = True
         #: Mano ya pagada que falta contar para los logros, con su saldo e IRPF.
         self._to_track: tuple[WarGame, int, int] | None = None
+        #: Zapato de la próxima mano, sorteado al acabar la anterior (sin enseñarlo): así se
+        #: pinta antes del clic. Solo con `cog.ahead`; si no, se baraja al repartir.
+        self._next_shoe: list[Card] | None = None
+        #: GIF pintados por adelantado: repartir (con y sin lateral) o, en un empate, los de
+        #: ir a la guerra y rendirse (`prepare`).
+        self.ahead = Ahead(cog.ahead, name="la guerra")
         self._build_buttons()
 
     # -- Botones --------------------------------------------------------------------
@@ -407,6 +391,10 @@ class WarTable(discord.ui.View):
         self.side_button = self._add(
             f"🤝 Empate {TIE_PAYS}:1", 2, self._toggle_side, style=gray, custom_id="side"
         )
+        # El 🎨: elegir o comprar el tapete de esta mesa.
+        self.paint_button = tienda.skin_button(self.cog.bot, GAME, row=2)
+        if self.paint_button is not None:
+            self.add_item(self.paint_button)
         self._update_buttons()
 
     def _update_buttons(self, *, locked: bool = False) -> None:
@@ -416,6 +404,8 @@ class WarTable(discord.ui.View):
             button.disabled = locked or not deciding
         for button in (self.deal_button, *self.stake_buttons, self.side_button):
             button.disabled = locked or deciding
+        if self.paint_button is not None:
+            self.paint_button.disabled = locked
         self.side_button.style = (
             discord.ButtonStyle.success if self.side_on else discord.ButtonStyle.secondary
         )
@@ -436,6 +426,7 @@ class WarTable(discord.ui.View):
     async def on_timeout(self) -> None:
         """Cierra la mesa; si quedaba un empate sin decidir, se rinde y se paga."""
         self.cog.tables.discard(self)
+        self.ahead.drop()  # lo que quede por pintar ya no lo verá nadie
         # Una mano ya pagada se ve tal cual: solo hay que apagar los botones, sin
         # volver a subir la mesa (~1 s).
         unsettled = self.game is not None and not self._paid
@@ -448,7 +439,7 @@ class WarTable(discord.ui.View):
             embed = await self.current_embed()
             kwargs: dict[str, Any] = {"embed": embed, "view": self}
             if self.game is not None and unsettled:
-                png = await self.cog.render(self.game)
+                png = await self.cog.renderer.still(self.game, skin=self.skin())
                 kwargs["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]
             if self._last_interaction is not None:
                 await self._last_interaction.edit_original_response(**kwargs)
@@ -473,42 +464,164 @@ class WarTable(discord.ui.View):
         """Saldo actual del dueño."""
         return await self.cog.economy.balance(self.guild_id, self.owner.id)
 
+    def skin(self) -> dict[str, object]:
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.skin_params`)."""
+        return tienda.skin_params(self.cog.bot, self.guild_id, self.owner.id, GAME)
+
     async def current_embed(
-        self, balance: int | None = None, *, burning: bool = False
+        self, balance: int | None = None, *, busy: str | None = None, image: str = PNG_NAME
     ) -> discord.Embed:
         """Embed con el estado actual de la mesa."""
-        if balance is None:
+        if balance is None and busy is None:
             balance = await self.balance()
+        worn = tienda.skin_of(self.cog.bot, self.guild_id, self.owner.id, GAME)
         return table_embed(
             owner=self.owner.display_name,
             game=self.game,
-            balance=balance,
+            balance=balance or 0,
             stake=self.stake,
             side_on=self.side_on,
             streak=self.streak,
             paid=self._paid,
             headline=self.headline,
-            burning=burning,
+            busy=busy,
+            image=image,
+            skin_label=worn.label if worn else None,
         )
 
-    async def _show(self, edit_fn: EditFn, *, locked: bool = False, burning: bool = False) -> None:
-        """Dibuja la mesa y la envía con `edit_fn` (editar o enviar, según el caso)."""
-        assert self.game is not None
-        self._update_buttons(locked=locked)
-        png = await self.cog.render(self.game, burning=burning)
-        await edit_fn(
-            embed=await self.current_embed(burning=burning),
-            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+    # -- GIF por adelantado -----------------------------------------------------------
+
+    def _key(self) -> tuple[Any, ...]:
+        """Lo que decide los GIF que se pintan: la mano y el tapete.
+
+        La ficha entra al repartir (sale en la imagen); la lateral no, porque se pintan las
+        dos. El tapete va al final: si el dueño lo cambia, lo pintado ya no vale.
+        """
+        skin = self.skin()["key"]
+        game = self.game
+        if game is not None and game.awaiting_choice:
+            return ("tie", id(game), skin)
+        return ("deal", id(self._next_shoe), self.stake, skin)
+
+    def prepare(self) -> None:
+        """Pinta en segundo plano el GIF de cada botón que puede pulsar el jugador.
+
+        Entre manos, «Repartir» con la mano siguiente ya sorteada (con la lateral puesta y sin
+        ella, primero la que está elegida); con un empate por decidir, «A la guerra» y
+        «Rendirse». Va de uno en uno y cada dibujo comprueba antes de empezar que la mesa
+        sigue igual (`Ahead`).
+        """
+        if not self.cog.ahead or self.is_finished():
+            return
+        game, renderer, skin = self.game, self.cog.renderer, self.skin()
+        if game is not None and game.awaiting_choice:
+
+            async def paint_choice(item: Any) -> Media:
+                future = deepcopy(game)
+                if item == "war":
+                    future.go_to_war()
+                    return await renderer.war(future, skin=skin)
+                future.surrender()
+                return await renderer.surrender(future, skin=skin)
+
+            self.ahead.plan(self._key(), ["war", "surrender"], paint_choice)
+            return
+        if game is not None and not self._paid:
+            return
+        if self._next_shoe is None:
+            self._next_shoe = self.cog.new_shoe()
+        shoe, stake = self._next_shoe, self.stake
+
+        async def paint_deal(item: Any) -> Media:
+            future = WarGame(stake=stake, side=stake if item[1] else 0, shoe=list(shoe))
+            future.deal()
+            return await renderer.deal(future, skin=skin)
+
+        order = [("deal", self.side_on), ("deal", not self.side_on)]
+        self.ahead.plan(self._key(), order, paint_deal)
+
+    # -- Dibujo ---------------------------------------------------------------------------
+
+    async def _paint(self, game: WarGame, kind: str) -> Media:
+        """Pinta ahora el GIF de `kind` (repartir, guerra o rendirse), si no estaba hecho."""
+        scene, skin = self.cog.renderer, self.skin()
+        if kind == "war":
+            return await scene.war(game, skin=skin)
+        if kind == "surrender":
+            return await scene.surrender(game, skin=skin)
+        return await scene.deal(game, skin=skin)
+
+    async def _show(
+        self,
+        game: WarGame,
+        kind: str,
+        edit_fn: EditFn,
+        *,
+        ready: Media | None = None,
+        later: EditFn | None = None,
+        balance: int | None = None,
+        wait: bool = True,
+    ) -> None:
+        """Enseña el GIF de `kind` y, cuando acaba, el PNG con el resultado.
+
+        Mientras se pinta (si no estaba ya pintado por adelantado), la mesa ya enseña la
+        jugada con los botones apagados y sin resultado, en paralelo al dibujo.
+
+        Args:
+            ready: El GIF pintado por adelantado, si lo había.
+            later: Cómo se cambia el mensaje después de la primera edición, si no es con
+                `edit_fn` (el primer envío de `.guerra` crea el mensaje y luego se edita).
+            wait: Si hay que tapar la espera cuando el GIF no estaba pintado.
+        """
+        self._update_buttons(locked=True)
+        busy = WAR_BUSY if kind == "war" else SURRENDER_BUSY if kind == "surrender" else DEAL_BUSY
+
+        async def show_waiting() -> bool:
+            try:
+                await edit_fn(embed=await self.current_embed(busy=busy), view=self)
+            except discord.HTTPException:
+                logger.warning("No se pudo apagar la mesa de la guerra", exc_info=True)
+                return False
+            return True
+
+        media, shown = ready, False
+        if media is None:
+            if wait:
+                media, shown = await asyncio.gather(self._paint(game, kind), show_waiting())
+            else:
+                media = await self._paint(game, kind)
+        after = later or edit_fn
+        if media.gif is not None:
+            await (after if shown else edit_fn)(
+                embed=await self.current_embed(busy=busy, image=GIF_NAME),
+                attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                view=self,
+            )
+            # Lo que pueda pulsar el jugador después se pinta mientras se ve esta animación.
+            self.prepare()
+            await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+            shown = True
+        self._update_buttons()
+        # Sin nada enseñado aún (sin GIF y sin la espera tapada) no hay mensaje que editar.
+        await (after if shown else edit_fn)(
+            embed=await self.current_embed(balance),
+            attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
             view=self,
         )
+        if media.gif is None:
+            self.prepare()
 
     @property
     def side(self) -> int:
         """Apuesta lateral de la próxima mano: igual a la ficha, si está activada."""
         return self.stake if self.side_on else 0
 
-    async def start(self, first_edit: EditFn) -> str | None:
+    async def start(self, first_edit: EditFn, later: EditFn | None = None) -> str | None:
         """Cobra la ficha (y la lateral) y reparte una mano nueva.
+
+        Args:
+            first_edit: Cómo se enseña el GIF (enviar el mensaje o editarlo).
+            later: Cómo se cambia el mensaje después del GIF, si no es con `first_edit`.
 
         Returns:
             Un mensaje de error para el usuario si no se pudo repartir, o `None`.
@@ -522,15 +635,24 @@ class WarTable(discord.ui.View):
             return insufficient_text(error.balance, self.stake + side)
         # Para las porras: una mano repartida antes del cierre no cuenta.
         self.started_at = int(time.time())
-        self.game = WarGame(stake=self.stake, side=side, shoe=self.cog.new_shoe())
+        ready = await self.ahead.take(self._key(), ("deal", self.side_on))
+        self.ahead.drop()
+        shoe, self._next_shoe = self._next_shoe or self.cog.new_shoe(), None
+        self.game = WarGame(stake=self.stake, side=side, shoe=shoe)
         self._paid = False
         self.headline = None
         self.game.deal()
-        if self.game.awaiting_choice:
-            await self._show(first_edit)
-        else:
-            await self._finish(first_edit)
+        await self._play(self.game, "deal", first_edit, ready=ready, later=later)
         return None
+
+    async def _play(self, game: WarGame, kind: str, edit_fn: EditFn, **kwargs: Any) -> None:
+        """Enseña el GIF; si la mano acabó, la paga antes (sin enseñarla) y cuenta los logros."""
+        if game.awaiting_choice:
+            await self._show(game, kind, edit_fn, **kwargs)
+            return
+        balance = await self._settle(game)
+        await self._show(game, kind, edit_fn, balance=balance, **kwargs)
+        await self._track()
 
     async def _decide(self, interaction: discord.Interaction, *, war: bool) -> None:
         """Resuelve el empate: rendirse o ir a la guerra (con su segunda apuesta)."""
@@ -542,6 +664,7 @@ class WarTable(discord.ui.View):
         try:
             # Cobrar, pagar y dibujar la mesa tardan: se acepta el clic antes.
             await ack(interaction)
+            kind = "war" if war else "surrender"
             if war:
                 extra = game.extra_stake
                 try:
@@ -555,14 +678,14 @@ class WarTable(discord.ui.View):
                         f"{format_amount(error.balance)}. Siempre puedes rendirte.",
                     )
                     return
+            ready = await self.ahead.take(self._key(), kind)
+            self.ahead.drop()
+            if war:
                 game.go_to_war()
-                self._last_interaction = interaction
-                await self._show(interaction.edit_original_response, locked=True, burning=True)
-                await asyncio.sleep(WAR_PAUSE_SECONDS)
             else:
                 game.surrender()
-                self._last_interaction = interaction
-            await self._finish(interaction.edit_original_response)
+            self._last_interaction = interaction
+            await self._play(game, kind, interaction.edit_original_response, ready=ready)
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
@@ -572,20 +695,6 @@ class WarTable(discord.ui.View):
 
     async def _war(self, interaction: discord.Interaction) -> None:
         await self._decide(interaction, war=True)
-
-    async def _finish(self, edit_fn: EditFn) -> None:
-        """Paga la mano, enseña el resultado y cuenta los logros."""
-        game = self.game
-        assert game is not None
-        balance = await self._settle(game)
-        self._update_buttons()
-        png = await self.cog.render(game)
-        await edit_fn(
-            embed=await self.current_embed(balance),
-            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
-            view=self,
-        )
-        await self._track()
 
     async def _settle(self, game: WarGame) -> int:
         """Paga la mano y actualiza las rachas. Devuelve el saldo final.
@@ -687,6 +796,8 @@ class WarTable(discord.ui.View):
         self._update_buttons()
         await edit(interaction, embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
+        # La ficha sale en la imagen: lo pintado para la de antes ya no vale.
+        self.prepare()
 
     async def _halve(self, interaction: discord.Interaction) -> None:
         self.stake = max(1, self.stake // 2)
@@ -738,13 +849,22 @@ class War(commands.Cog, name="Guerra"):
         bot: commands.Bot,
         *,
         economy: EconomyService,
-        renderer: CardRenderer | None = None,
+        renderer: WarScene | None = None,
         shoe_factory: Callable[[], list[Card]] = new_shoe,
         casino_channel_ids: frozenset[int] = frozenset(),
+        ahead: bool | None = None,
     ) -> None:
+        """Prepara el cog; el dibujo por defecto es `WarScene`.
+
+        Args:
+            ahead: Si las mesas pintan por adelantado el GIF de cada botón
+                (`WarTable.prepare`). Por defecto, solo con el dibujo de verdad: con un
+                `renderer` de prueba, cada dibujo de más gastaría el azar de guion.
+        """
         self.bot = bot
         self.economy = economy
-        self.renderer = renderer or CardRenderer()
+        self.ahead = renderer is None if ahead is None else ahead
+        self.renderer = renderer or WarScene()
         self.new_shoe = shoe_factory
         self.casino_channel_ids = casino_channel_ids
         # Mesas abiertas: para resolver sus manos si el bot se apaga. Cada
@@ -760,10 +880,7 @@ class War(commands.Cog, name="Guerra"):
                 logger.exception("No se pudo cerrar una mano de la guerra al apagar")
             table.stop()
         self.tables.clear()
-
-    async def render(self, game: WarGame, *, burning: bool = False) -> bytes:
-        """PNG de la mesa, dibujado fuera del event loop."""
-        return await asyncio.to_thread(lambda: render_table(self.renderer, game, burning=burning))
+        await self.renderer.close()
 
     async def _guerra_impl(
         self,
@@ -799,16 +916,24 @@ class War(commands.Cog, name="Guerra"):
         table = WarTable(self, guild_id=guild.id, owner=user, stake=stake)
 
         async def first_edit(**kwargs: Any) -> None:
-            attachments = kwargs.pop("attachments")
-            table.message = await send(files=attachments, **kwargs)
+            # Lo primero que se envía es la mesa «repartiendo…» (Discord da 3 s) o, si el
+            # GIF ya está, con él. Lo siguiente, ya con mensaje, se edita.
+            if attachments := kwargs.pop("attachments", None):
+                kwargs["files"] = attachments
+            table.message = await send(**kwargs)
+
+        async def later(**kwargs: Any) -> None:
+            assert table.message is not None
+            await table.message.edit(**kwargs)
 
         # La mesa se apunta antes de cobrar: si Discord no deja enseñarla (la respuesta
         # llega tarde), la mano se cierra en el acto y nadie se queda con dinero colgado.
         self.tables.add(table)
         try:
-            error = await table.start(first_edit)
+            error = await table.start(first_edit, later)
         except discord.HTTPException:
             self.tables.discard(table)
+            table.stop()  # que no pinte por adelantado una mesa que nadie ve
             await table.force_settle()
             raise
         if error is not None:

@@ -54,7 +54,17 @@ def test_cada_skin_es_de_un_juego_y_solo_cambia_lo_que_su_escena_entiende() -> N
 
 
 def test_un_tapete_vale_en_todas_las_mesas_con_fieltro_y_uno_de_mesa_solo_en_la_suya() -> None:
-    felt = {"ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "poker", "backgammon"}
+    felt = {
+        "ruleta",
+        "autobus",
+        "bacara",
+        "dados",
+        "moneda",
+        "pollo",
+        "guerra",
+        "poker",
+        "backgammon",
+    }
     assert {g.key for g in skins.wearable_games(GRANATE)} == felt
     solo = Skin("solo_moneda", "moneda", "🪙", "Solo moneda", "", {}, price=1, aisle="lujo")
     assert [g.key for g in skins.wearable_games(solo)] == ["moneda"]
@@ -159,7 +169,7 @@ async def test_cambiar_de_skin_desde_la_mochila(tmp_path: Path) -> None:
     backpack = await cog.backpack_view(guild, member, member)
     select = skin_select(backpack)
     assert [o.value for o in select.options] == [
-        "ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "poker", "backgammon"
+        "ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "guerra", "poker", "backgammon"
     ]  # fmt: skip
 
     # Elegir una mesa abre su selector; cada mesa lleva su tapete.
