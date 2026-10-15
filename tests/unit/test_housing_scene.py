@@ -148,6 +148,29 @@ def money_market() -> Market:
     )  # fmt: skip
 
 
+def bubble_market() -> Market:
+    """Un barrio en burbuja, otro a precio de fondo buitre, uno tensionado y un chollo."""
+    return Market(
+        indexes={"vegueta": 1.45, "isleta": 0.8, "schamann": 1.12, "adeje": 1.31, "tafira": 0.86},
+        holdings={"vegueta_edificio": {10: Holding("vegueta_edificio", 10, 50, 1, 1, 0)}},
+        leases={"vegueta_edificio": rules.Lease(status="okupa")},
+    )
+
+
+def mood_samples() -> dict[str, dict[str, Any]]:
+    """Las pegatinas con guasa: burbuja, buitre, zona tensionada y chollo."""
+    m = bubble_market()
+    return {
+        "mapa_mercado": view.map_state(m, 10, "Ana", 120000),
+        "barrio_burbuja": view.barrio_state(m, "vegueta", 10, NAMES),
+        "barrio_buitre": view.barrio_state(m, "isleta", 10, NAMES),
+        "barrio_tensionada": view.barrio_state(m, "schamann", 10, NAMES),
+        "ficha_burbuja": view.listing_state(m, "vegueta_edificio", 10, NAMES, NEWS),
+        "ficha_chollo_buitre": view.listing_state(m, "tafira_chalet", 10, NAMES, []),
+        "ficha_chollo_tensionada": view.listing_state(m, "schamann_trastero", 10, NAMES, []),
+    }
+
+
 def money_samples() -> dict[str, dict[str, Any]]:
     """Las pantallas con lo de las fases 2 a 4: el peor caso de la ficha, la cartera y las VPO."""
     m, week = money_market(), MemberDay(30000, 1200, 4000)
@@ -233,7 +256,37 @@ def samples() -> dict[str, dict[str, Any]]:
     out["ficha_muchos_duenos"] = view.listing_state(m, LISTINGS[0].key, 10, NAMES, NEWS)
     out["ficha_desahucio"] = view.listing_state(m, LISTINGS[3].key, 10, NAMES, [])
     out["barrio_isleta"] = view.barrio_state(m, "isleta", 10, NAMES)
+    out["caja_hipoteca"] = checkout(
+        "vegueta_edificio",
+        selling=False,
+        lines=[
+            ("Precio (el inmueble entero)", 19200000, "normal"),
+            ("ITP 6,5 %", 1248000, "tax"),
+            ("Notaría, registro y gestoría", 288000, "normal"),
+            ("Total", 20736000, "normal"),
+            ("Hipoteca del banco (80 % del precio)", -15360000, "normal"),
+            ("Sale de tu bolsillo", 5376000, "total"),
+        ],
+        balance=9000000,
+        after=3624000,
+        note=(
+            "Cuota: 81.000 Y$ al mes durante 30 años (360 días) al 5,25 % fijo. "
+            "El banco no presta si pasa del 35 % de lo que ganas"
+        ),
+    )
+    out["caja_sin_saldo"] = checkout(
+        "adeje_chalet",
+        selling=False,
+        lines=[
+            ("Precio (el inmueble entero)", 18032000, "normal"),
+            ("Total", 18032000, "total"),
+        ],
+        balance=120000,
+        after=-17912000,
+        note="No te llega ni para la notaría",
+    )
     out.update(money_samples())
+    out.update(mood_samples())
     return out
 
 
@@ -267,6 +320,40 @@ def png_image(png: bytes) -> Image.Image:
 
 def difference(a: Image.Image, b: Image.Image) -> float:
     return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+
+
+# -- Lo que decide la vista para las pegatinas --------------------------------------------
+
+
+def test_las_pegatinas_salen_del_indice_la_rentabilidad_y_la_oferta_del_fondo() -> None:
+    assert view.market_badge(1.0) is None
+    assert view.market_badge(rules.TENSE_INDEX) == "tensionada"
+    assert view.market_badge(view.BURBUJA_INDEX) == "burbuja"
+    assert view.market_badge(view.BUITRE_INDEX) == "buitre"
+    assert view.listing_badges(0.05, 1.0) == []
+    assert view.listing_badges(view.CHOLLO_YIELD, 1.0) == ["chollo"]
+    # Una zona tensionada no es burbuja ni precio de buitre: eso va en el barrio.
+    assert view.listing_badges(0.05, rules.TENSE_INDEX) == []
+    assert view.listing_badges(0.09, view.BURBUJA_INDEX) == ["chollo", "burbuja"]
+    assert view.listing_badges(0.05, 1.0, offer=True) == ["buitre"]
+    assert view.listing_badges(0.05, view.BUITRE_INDEX, offer=True) == ["buitre"]
+
+
+def test_cada_pantalla_lleva_lo_que_la_escena_dibuja() -> None:
+    states = samples()
+    barrio = states["barrio_burbuja"]
+    assert barrio["barrio"]["badge"] == "burbuja"
+    assert states["barrio_buitre"]["barrio"]["badge"] == "buitre"
+    assert states["barrio_tensionada"]["barrio"]["badge"] == "tensionada"
+    assert states["barrio_schamann"]["barrio"]["badge"] is None
+    assert {c["lease_kind"] for c in states["barrio_burbuja"]["cards"]} >= {"okupa", ""}
+    pins = {p["key"]: p for isl in states["mapa_mercado"]["islands"] for p in isl["barrios"]}
+    assert pins["schamann"]["tense"] and pins["vegueta"]["tense"] and not pins["isleta"]["tense"]
+    assert states["ficha_burbuja"]["badges"] == ["burbuja"]
+    assert "chollo" in states["ficha_chollo_tensionada"]["badges"]
+    assert states["caja_compra"]["key"] == "schamann_bajo"
+    cartera = states["cartera_solo_vpo"]
+    assert cartera["items"][0]["badges"] == ["vpo"]
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------

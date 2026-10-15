@@ -93,6 +93,13 @@ NEWS_TEXT = {
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
 VPO_PREFIX = "vpo:"
 
+#: Pegatinas con guasa (solo presentación: ninguna regla las mira). Rentabilidad bruta anual a
+#: partir de la cual un inmueble es un «chollo»; índice del barrio desde el que hay «burbuja» y
+#: por debajo del cual el precio es «de fondo buitre».
+CHOLLO_YIELD = 0.08
+BURBUJA_INDEX = 1.3
+BUITRE_INDEX = 0.88
+
 
 def _pct(value: float, digits: int = 1) -> str:
     return f"{value * 100:.{digits}f}".replace(".", ",") + " %"
@@ -107,6 +114,32 @@ def _change(index: float) -> str:
 
 def _name(names: dict[int, str], member: int) -> str:
     return names.get(member) or "Alguien"
+
+
+def market_badge(index: float) -> str | None:
+    """La pegatina del barrio según su índice: `burbuja`, `tensionada`, `buitre` o `None`."""
+    if index >= BURBUJA_INDEX:
+        return "burbuja"
+    if rules.tense(index):
+        return "tensionada"
+    return "buitre" if index <= BUITRE_INDEX else None
+
+
+def listing_badges(yearly_yield: float, index: float, *, offer: bool = False) -> list[str]:
+    """Las pegatinas de un inmueble, de más a menos importante.
+
+    Args:
+        yearly_yield: Renta de un año entre el precio (0,08 = 8 %).
+        index: Índice de su barrio.
+        offer: Si el fondo buitre ha hecho una oferta por él (la ficha).
+    """
+    out = ["chollo"] if yearly_yield >= CHOLLO_YIELD else []
+    badge = market_badge(index)
+    if badge in ("burbuja", "buitre"):
+        out.append(badge)
+    if offer and "buitre" not in out:
+        out.append("buitre")
+    return out
 
 
 def listing_status(market: Market, key: str, user_id: int) -> tuple[str, str]:
@@ -163,6 +196,7 @@ def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
                     "change": _change(index),
                     "up": index > 1.0005,
                     "down": index < 0.9995,
+                    "tense": rules.tense(index),
                     "owned": any(user_id in market.holdings.get(i.key, {}) for i in items),
                     "free": sum(market.free_shares(i.key) for i in items),
                     "from": format_amount(min(rules.price(i, index) for i in items)),
@@ -205,6 +239,7 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
         "share_price": format_amount(rules.share_price(listing, index)),
         "rent": format_amount(rent) + "/mes",
         "yield": _pct(rent * 12 / value),
+        "badges": listing_badges(rent * 12 / value, index),
         "status": status,
         "status_kind": status_kind,
         "free": market.free_shares(listing.key),
@@ -213,6 +248,7 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
             for m, s in sorted(holders.items(), key=lambda kv: -kv[1])
         ],
         "lease": STATUS_TEXT.get(lease.status, "") if lease else "",
+        "lease_kind": lease.status if lease else "",
     }
 
 
@@ -233,6 +269,7 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
             "change": _change(index),
             "up": index > 1.0005,
             "down": index < 0.9995,
+            "badge": market_badge(index),
             "price_m2": format_amount(round(barrio.price_m2 * index * 10)) + "/m²",
         },
         "cards": cards,
@@ -330,6 +367,9 @@ def listing_state(
     state["offer"] = (
         {"price": format_amount(offer[0]), "until": offer[1].strftime("%d/%m")} if offer else None
     )
+    state["badges"] = listing_badges(
+        rent * 12 / rules.price(listing, index), index, offer=bool(offer)
+    )
     state["socimi"] = user_id in market.socimi
     state["fallback"] = [
         f"{listing.title} ({card['m2']}, {listing.floor})",
@@ -402,6 +442,7 @@ def portfolio_state(
                 "barrio": spec.town,
                 "shares": rules.SHARES,
                 "value": format_amount(spec.price),
+                "badges": ["vpo"],
                 "status": "Tu vivienda habitual (VPO)",
                 "status_kind": rules.HABITUAL,
                 "rent": "—",
@@ -567,6 +608,7 @@ def checkout_state(
     return {
         "screen": "caja",
         "selling": selling,
+        "key": listing.key,
         "kind": listing.kind,
         "title": listing.title,
         "barrio": BARRIO_BY_KEY[listing.barrio].name,

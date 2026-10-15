@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sqlite3
 from datetime import datetime
@@ -123,6 +124,88 @@ async def test_el_panel_abre_el_mapa_y_pinta_los_barrios_por_adelantado(tmp_path
     await cog.painter._worker  # el adelanto: los 20 barrios y la cartera
     screens = [s["screen"] for s in scene.painted[1:]]
     assert screens.count("barrio") == len(BARRIOS) and "cartera" in screens
+
+
+async def test_el_adelanto_pinta_de_uno_en_uno_y_lo_mas_probable_primero(tmp_path: Path) -> None:
+    cog, scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", 100)
+    sizes: list[int] = []
+    paint = scene.paint
+
+    async def counted(states: list[dict[str, Any]]) -> list[bytes]:
+        sizes.append(len(states))
+        await asyncio.sleep(0)  # un dibujo de verdad deja pasar a los demás
+        return await paint(states)
+
+    scene.paint = counted  # type: ignore[method-assign]
+    await open_panel(cog, ana, guild_with(ana))
+    await cog.painter._worker
+
+    assert set(sizes) == {1}  # nunca varias pantallas de golpe
+    order = [s["screen"] for s in scene.painted[1:]]
+    assert order[:2] == ["cartera", "vpo"]  # lo que se pulsa más, primero
+    assert scene.painted[3]["barrio"]["key"] == "taco"  # y los barrios donde ya tienes algo
+
+
+async def test_un_clic_sobre_lo_que_se_pinta_por_adelantado_espera_y_no_lo_pinta_otra_vez() -> None:
+    scene, gate = FakeScene(), asyncio.Event()
+    paint = scene.paint
+
+    async def held(states: list[dict[str, Any]]) -> list[bytes]:
+        await gate.wait()
+        return await paint(states)
+
+    scene.paint = held  # type: ignore[method-assign]
+    painter = Painter(scene)  # type: ignore[arg-type]
+    state = {"screen": "mapa", "x": 1}
+    painter.prefetch([state])
+    await asyncio.sleep(0)  # el adelanto ya está pintando (parado en la puerta)
+    click = asyncio.create_task(painter.paint([dict(state)]))
+    await asyncio.sleep(0)
+    assert not click.done()
+
+    gate.set()
+    assert await click == await painter.paint([state])
+    assert len(scene.painted) == 1
+
+
+async def test_el_adelanto_suelta_lo_que_ya_no_vale() -> None:
+    scene, valid = FakeScene(), {"yes": True}
+    paint = scene.paint
+
+    async def changing(states: list[dict[str, Any]]) -> list[bytes]:
+        valid["yes"] = False  # el panel cambia de pantalla mientras se pinta la primera
+        return await paint(states)
+
+    scene.paint = changing  # type: ignore[method-assign]
+    painter = Painter(scene)  # type: ignore[arg-type]
+    painter.prefetch(
+        [{"screen": "a"}, {"screen": "b"}, {"screen": "c"}], still=lambda: valid["yes"]
+    )
+    assert painter._worker is not None
+    await painter._worker
+    assert [s["screen"] for s in scene.painted] == ["a"]
+
+
+async def test_desde_la_ficha_y_la_caja_se_pinta_antes_el_mapa_la_cartera_y_la_ficha(
+    tmp_path: Path,
+) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "taco_bajo"
+    panel.screen = FICHA
+    assert (MAPA, {}) in panel._neighbours() and (CARTERA, {}) in panel._neighbours()
+    panel.screen = BARRIO
+    panel.barrio = "taco"
+    assert [s for s, _ in panel._neighbours()].count(FICHA) == 3 and (
+        CARTERA,
+        {},
+    ) in panel._neighbours()
+    panel.screen = CAJA
+    assert panel._neighbours() == [(FICHA, {"listing": "taco_bajo"}), (CARTERA, {}), (MAPA, {})]
 
 
 async def test_navegar_contesta_antes_de_pintar_y_no_resube_lo_que_ya_se_ve(
