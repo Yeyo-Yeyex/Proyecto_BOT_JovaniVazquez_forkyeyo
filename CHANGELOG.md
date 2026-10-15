@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.12.0 · 2026-10-15
+
+- Blackjack: el zapato dura entre manos y se pueden contar cartas
+
 ### 6.11.0 · 2026-10-15
 
 - Torre del dragón: `torre`, sube pisos esquivando dragones
