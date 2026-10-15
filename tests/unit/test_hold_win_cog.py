@@ -432,7 +432,15 @@ async def test_abrir_la_maquina_manda_imagen_y_botones(tmp_path: Path) -> None:
     ctx.channel = MagicMock(id=5)
     ctx.send = AsyncMock(return_value=MagicMock())
 
-    await cog.volcan_text.callback(cog, ctx, None)
+    await cog._open(
+        THEMES["volcan"],
+        guild=ctx.guild,
+        channel=ctx.channel,
+        user=ctx.author,
+        amount_text=None,
+        send=ctx.send,
+        send_error=ctx.reply,
+    )
 
     kwargs = ctx.send.await_args.kwargs
     assert kwargs["file"].filename == PNG_NAME
@@ -451,6 +459,14 @@ async def test_fuera_del_canal_de_casino_no_se_abre(tmp_path: Path) -> None:
     ctx.send = AsyncMock()
     ctx.reply = AsyncMock()
 
-    await cog.volcan_text.callback(cog, ctx, None)
+    await cog._open(
+        THEMES["volcan"],
+        guild=ctx.guild,
+        channel=ctx.channel,
+        user=ctx.author,
+        amount_text=None,
+        send=ctx.send,
+        send_error=ctx.reply,
+    )
 
     assert not cog.machines

@@ -2,7 +2,7 @@
 
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.hold_win`) cobra, paga y
 guarda; el dibujo vive en `bot.services.hold_win_render`. De momento hay una
-máquina, el Volcán (`volcan`). Las que se añadan a `THEMES` comparten estas
+máquina, el Volcán (`tragas volcan`). Las que se añadan a `THEMES` comparten estas
 reglas y estos números y solo cambian los dibujos y los textos, así que un solo
 juego de pruebas garantiza el retorno de todas.
 

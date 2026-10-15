@@ -6,6 +6,13 @@ la sección «Versiones» de `Biblia.txt`. Las versiones anteriores a la 5.22.0
 se asignaron a posteriori, revisando cada PR y commit de `main` con el mismo
 criterio.
 
+## 7.x
+
+### 7.0.0 · 2026-10-15
+
+- Tragaperras: `tragas` junta todas las máquinas, la clásica y el Volcán
+- Rompe: el comando `volcan` desaparece; el Volcán se abre con `tragas volcan` (o la opción máquina de `/tragas`)
+
 ## 6.x
 
 ### 6.17.0 · 2026-10-15

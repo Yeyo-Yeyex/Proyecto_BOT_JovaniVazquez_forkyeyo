@@ -565,6 +565,32 @@ async def test_auto_de_los_botes_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
         await client.close()
 
 
+async def test_tragas_volcan_abre_la_maquina_de_botes_con_el_bot_real(tmp_path: Path) -> None:
+    """`tragas` abre el Volcán a través del cog de Botes, que el bot carga aparte."""
+    client = await load_bot(tmp_path)
+    await client.hold_win.initialize()
+    try:
+        botes = importer("Botes", client)
+        client.get_cog("Botes").renderer = MagicMock()
+        client.get_cog("Botes").renderer.base_still = MagicMock(return_value=b"PNG")
+        tragas = client.get_cog("Tragaperras")
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.display_name, owner.bot = OWNER_ID, "Diego", False
+        ctx = MagicMock()
+        ctx.guild = MagicMock(id=GUILD_ID)
+        ctx.author = owner
+        ctx.channel = MagicMock(id=5)
+        ctx.send = AsyncMock(return_value=MagicMock())
+
+        await tragas.slots_text.callback(tragas, ctx, "volcán", "50")
+
+        view = ctx.send.await_args.kwargs["view"]
+        assert isinstance(view, botes.HoldWinView)
+        assert view.theme.key == "volcan" and view.stake == 50
+    finally:
+        await client.close()
+
+
 async def test_bizum_apunta_a_espaldas_de_sanchez_con_el_bot_real(tmp_path: Path) -> None:
     client = await load_bot(tmp_path)
     try:

@@ -1,4 +1,7 @@
-"""Botes: máquinas de monedas y recogida; de momento, el Volcán (`volcan`).
+"""Botes: máquinas de monedas y recogida; de momento, el Volcán (`tragas volcan`).
+
+No tiene comando propio: se abre desde `tragas`, que junta todas las máquinas
+(`bot.cogs.slots` llama a `open_theme`). Antes era `volcan`.
 
 Las reglas y los números viven en `bot.services.hold_win` (`THEMES` dice qué
 máquinas hay) y el dibujo en `bot.services.hold_win_render`. Cada jugador abre
@@ -46,7 +49,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
@@ -101,8 +103,8 @@ from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Me
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
-from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -565,7 +567,8 @@ class HoldWinView(discord.ui.View):
         if interaction.user.id == self.owner.id:
             return True
         await interaction.response.send_message(
-            f"Esta máquina es de {self.owner.display_name}. Abre la tuya con `{self.theme.key}`.",
+            f"Esta máquina es de {self.owner.display_name}. "
+            f"Abre la tuya con `tragas {self.theme.key}`.",
             ephemeral=True,
         )
         return False
@@ -1373,49 +1376,31 @@ class HoldWin(commands.Cog, name="Botes"):
         )
         self.machines.add(view)
 
-    async def _slash(
-        self, interaction: discord.Interaction, theme_key: str, cantidad: str | None
-    ) -> None:
-        async def send(**kwargs: Any) -> discord.Message:
-            await interaction.response.send_message(**kwargs)
-            return await interaction.original_response()
 
-        await self._open(
-            THEMES[theme_key],
-            guild=interaction.guild,
-            channel=interaction.channel,
-            user=interaction.user,
-            amount_text=cantidad,
-            send=send,
-            send_error=InteractionResponder(interaction).send_error,
-        )
-
-    async def _text(self, ctx: commands.Context, theme_key: str, cantidad: str | None) -> None:
-        async def send(**kwargs: Any) -> discord.Message:
-            return await ctx.send(**kwargs)
-
-        await self._open(
-            THEMES[theme_key],
-            guild=ctx.guild,
-            channel=ctx.channel,
-            user=ctx.author,
-            amount_text=cantidad,
-            send=send,
-            send_error=ContextResponder(ctx).send_error,
-        )
-
-    @app_commands.command(name="volcan", description="Volcán: monedas, recogida y bonus de lava.")
-    @app_commands.describe(cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)")
-    @app_commands.guild_only()
-    async def volcan(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
-        """Abre la máquina del Volcán. Mueve yapdollars a través de la economía."""
-        await self._slash(interaction, "volcan", cantidad)
-
-    @commands.command(name="volcan")
-    @commands.guild_only()
-    async def volcan_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.volcan` o `.volcan 500`."""
-        await self._text(ctx, "volcan", cantidad)
+async def open_theme(
+    bot: commands.Bot,
+    theme_key: str,
+    *,
+    guild: discord.Guild | None,
+    channel: object,
+    user: discord.abc.User,
+    amount_text: str | None,
+    send: Callable[..., Awaitable[discord.Message]],
+    send_error: Callable[[str], Awaitable[None]],
+) -> bool:
+    """Abre la máquina `theme_key` de `THEMES` desde `tragas`. `False` si el cog no está."""
+    if (cog := find_cog(bot, HoldWin)) is None or theme_key not in THEMES:
+        return False
+    await cog._open(
+        THEMES[theme_key],
+        guild=guild,
+        channel=channel,
+        user=user,
+        amount_text=amount_text,
+        send=send,
+        send_error=send_error,
+    )
+    return True
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

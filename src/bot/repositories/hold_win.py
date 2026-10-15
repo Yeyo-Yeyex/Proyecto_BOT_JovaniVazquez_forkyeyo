@@ -1,4 +1,4 @@
-"""Persistencia de las máquinas de Botes (de momento, `volcan`).
+"""Persistencia de las máquinas de Botes (de momento, el Volcán de `tragas volcan`).
 
 Tabla (en el mismo archivo SQLite que el resto del bot):
 
