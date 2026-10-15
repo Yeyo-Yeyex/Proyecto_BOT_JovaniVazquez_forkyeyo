@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.2.0 · 2026-10-15
+
+- Tienda: tapete del 20-N, la tele de 1975 con la caricatura de Franco
+
 ### 7.1.1 · 2026-10-15
 
 - Tragaperras: el bote crece el doble de rápido, con el 6 % de cada tirada
