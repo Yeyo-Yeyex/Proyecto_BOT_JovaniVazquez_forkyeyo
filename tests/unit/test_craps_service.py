@@ -29,9 +29,11 @@ from bot.services.craps import (
     format_odds,
     house_edge,
     milestone,
+    next_shooter,
     odds_profit,
     parse_bet,
     point_chance,
+    table_line,
     throw,
     total_chance,
 )
@@ -549,3 +551,31 @@ def test_jugar_la_partida_entera_pierde_la_ventaja_de_la_casa_de_media(bet: Bet)
 def test_las_odds_no_cambian_la_esperanza_de_la_partida(bet: Bet) -> None:
     """60 de apuesta y 120 de odds: múltiplos de todos los denominadores, sin redondeo."""
     assert expected_net(bet, stake=60, odds=120) == expected_net(bet, stake=60)
+
+
+# -- Mesa compartida ---------------------------------------------------------------------
+
+
+def test_el_cubilete_pasa_al_siguiente_que_apuesta_por_orden_de_llegada() -> None:
+    arrival = [1, 2, 3, 4]
+    assert next_shooter(arrival, 1, {1, 2, 3}) == 2
+    assert next_shooter(arrival, 3, {1, 2, 3}) == 1  # da la vuelta
+    assert next_shooter(arrival, 1, {1, 3, 4}) == 3  # se salta a quien no apuesta
+
+
+def test_con_un_solo_jugador_o_sin_nadie_el_cubilete_no_cambia() -> None:
+    assert next_shooter([1, 2], 1, {1}) == 1
+    assert next_shooter([1, 2], 1, set()) is None
+
+
+def test_si_el_tirador_ya_no_apuesta_sigue_el_siguiente_en_llegar() -> None:
+    assert next_shooter([1, 2, 3], 2, {1, 3}) == 3
+    assert next_shooter([1, 2, 3], 3, {1, 2}) == 1
+    assert next_shooter([1, 2, 3], 9, {2, 3}) == 2
+
+
+def test_la_linea_de_la_mesa_es_un_pase_que_decide_como_cualquiera() -> None:
+    line = table_line()
+    assert line.bet is Bet.PASS and line.status is Status.COME_OUT
+    line.roll((3, 4))
+    assert line.status is Status.WON

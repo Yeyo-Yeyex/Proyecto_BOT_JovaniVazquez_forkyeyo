@@ -34,6 +34,7 @@ en una mano son la «mano caliente» de los logros.
 from __future__ import annotations
 
 import random
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction
@@ -394,6 +395,43 @@ class Hand:
     def distinct_points(self) -> int:
         """Puntos distintos hechos en la mano (los seis son el «fuego»)."""
         return len(set(self.points))
+
+
+def table_line() -> CrapsGame:
+    """La línea de Pase del tirador en la mesa compartida (`dados mesa`).
+
+    Es la partida que marca el ritmo de la mesa: se tira, pone el punto y se decide
+    una vez para todos. Sus fichas no son de nadie (`stake` de relleno); cada jugador
+    lleva su propia `CrapsGame` y recibe las mismas tiradas.
+    """
+    return CrapsGame(stake=1, bet=Bet.PASS)
+
+
+def next_shooter(
+    arrival: Sequence[int], shooter: int | None, betting: Collection[int]
+) -> int | None:
+    """Quién coge los dados tras un siete fuera: el siguiente en llegar que apuesta.
+
+    Args:
+        arrival: Quienes han jugado en la mesa, por orden de llegada.
+        shooter: El tirador que acaba de sacar el siete fuera.
+        betting: Quienes tenían apuesta en la ronda que acaba.
+
+    Returns:
+        El siguiente de `betting` tras `shooter` en `arrival`, dando la vuelta; el
+        mismo tirador si es el único que apuesta y `None` si nadie apostaba.
+    """
+    ring = [user for user in arrival if user in betting]
+    if not ring:
+        return None
+    if shooter in ring:
+        return ring[(ring.index(shooter) + 1) % len(ring)]
+    # El tirador no apostaba: el primero que apuesta tras su lugar en la cola de llegada.
+    if shooter in arrival:
+        after = [user for user in arrival[arrival.index(shooter) :] if user in betting]
+        if after:
+            return after[0]
+    return ring[0]
 
 
 def milestone(points: int) -> str | None:

@@ -32,6 +32,7 @@ from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.cogs.craps_mesa import FichaModal
 from bot.services.blackjack import BlackjackGame, Card
 from bot.services.coin import Outcome, Side
 from bot.services.craps import Bet
@@ -637,6 +638,80 @@ async def press_dice_odds_max(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await view._odds_max(interaction)
+
+    return click
+
+
+def dice_table(client: BotClient, owner: MagicMock, *rolls: tuple[int, int]):  # noqa: ANN201
+    """Mesa compartida de los dados del bot real, con dibujo falso, sin esperas y azar de guion."""
+    cog = client.get_cog("Dados")
+    module = module_of(client, "Dados")
+    cog.renderer = MagicMock()
+    cog.renderer.throw = AsyncMock(
+        return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0, rest=module.OPENING_REST)
+    )
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    cog.rng = DiceScripted(*rolls)
+    cog.ahead = False
+
+    async def no_wait(seconds: float) -> None:
+        return None
+
+    cog.sleep = no_wait
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 7
+    table = module.CrapsTable(cog, guild_id=GUILD_ID, channel=channel, png=b"PNG")
+    table.open_round()
+    return table
+
+
+async def press_dice_table_bet(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.bet_callback(Bet.DONT)(interaction)
+
+    return click
+
+
+async def press_dice_table_repeat(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+    table.cog.last_bets[(GUILD_ID, OWNER_ID)] = (Bet.PASS, 10)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.repeat(interaction)
+
+    return click
+
+
+async def press_dice_table_double(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.double(interaction)
+
+    return click
+
+
+async def press_dice_table_odds(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner, (1, 5))
+    # El punto ya puesto (la apuesta cobrada antes de medir).
+    table.place(owner, Bet.PASS, 10)
+    await table.roll()
+
+    async def click(interaction: MagicMock) -> None:
+        await table.odds(interaction)
+
+    return click
+
+
+async def press_dice_table_modal(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+    modal = FichaModal(table)
+    modal.amount._value = "50"  # lo que Discord rellena al enviar
+
+    async def click(interaction: MagicMock) -> None:
+        await modal.on_submit(interaction)
 
     return click
 
@@ -1328,6 +1403,11 @@ CASES: dict[str, Press] = {
     "dados: tirar": press_dice_roll,
     "dados: odds": press_dice_odds,
     "dados: odds al máximo": press_dice_odds_max,
+    "dados mesa: apostar": press_dice_table_bet,
+    "dados mesa: repetir": press_dice_table_repeat,
+    "dados mesa: ×2": press_dice_table_double,
+    "dados mesa: odds": press_dice_table_odds,
+    "dados mesa: ficha": press_dice_table_modal,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "blackjack: seguro": press_blackjack_insurance,
