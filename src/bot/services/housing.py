@@ -45,6 +45,7 @@ from datetime import date, timedelta
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
     KINDS,
+    LISTINGS,
     RENT_LEVELS,
     TENANTS,
     Listing,
@@ -82,10 +83,13 @@ CONSTRUCTION_SHARE = 0.6
 #: rebajar la renta en zona tensionada, alquilar a jóvenes o rehabilitar.
 RENT_REDUCTION = 0.5
 
-#: Lo que sube el índice del barrio por cada inmueble entero que se compra, y lo
-#: que baja por cada uno que se vende. Comprar encarece el barrio a los demás.
-INDEX_BUY_STEP = 0.015
-INDEX_SELL_STEP = 0.01
+#: Lo que se mueve el índice del barrio si se compra (o se vende) todo el barrio de
+#: golpe. Cada operación lo mueve en proporción a lo que pesa en el barrio
+#: (`index_after`): comprar el trastero apenas lo toca y comprar la villa, mucho.
+#: Comprar encarece el barrio a los demás. Como es menor que lo que cuesta una ida y
+#: vuelta (ITP, notaría y agencia, ~11 %), inflarlo comprando y vendiendo nunca sale a
+#: cuenta.
+INDEX_STEP = 0.015
 #: Cada día el índice recorre esta parte de lo que le falta para volver a 1.
 INDEX_REVERSION = 0.01
 INDEX_MIN = 0.7
@@ -303,22 +307,27 @@ def sale_quote(
     index: float = 1.0,
     arrears: int = 0,
     arrears_ibi: int = 0,
+    pool: int | None = None,
 ) -> SaleQuote:
     """Cuenta de una venta al índice de hoy.
 
     Args:
         shares: Participaciones que vende.
-        owned: Participaciones que tiene (para repartir el coste y las deudas).
+        owned: Participaciones que tiene (para repartir lo que le costaron).
         cost: Lo que le costaron todas las que tiene.
-        arrears: Deudas del inmueble entero.
+        arrears: Deudas del inmueble (las de las participaciones que tienen dueño).
         arrears_ibi: La parte de `arrears` que es IBI.
+        pool: Participaciones que tienen todos los dueños juntos (`owned` si no se
+            dice). La deuda se reparte entre ellas: quien lo tiene todo y vende de una
+            en una paga lo mismo que vendiéndolo de golpe.
     """
     if not 1 <= shares <= owned <= SHARES:
         raise ValueError("No puedes vender más participaciones de las que tienes.")
+    pool = max(owned, pool or owned)
     value = share_price(listing, index) * shares
     fee = round(value * SALE_FEE_RATE)
-    debt = arrears * shares // SHARES
-    debt_ibi = min(debt, arrears_ibi * shares // SHARES)
+    debt = arrears * shares // pool
+    debt_ibi = min(debt, arrears_ibi * shares // pool)
     debt = min(debt, value - fee)
     debt_ibi = min(debt_ibi, debt)
     part_cost = cost * shares // owned
@@ -335,16 +344,27 @@ def sale_quote(
     )
 
 
-def index_after(index: float, shares: int, *, bought: bool) -> float:
-    """Índice del barrio tras comprar o vender `shares` participaciones."""
-    step = INDEX_BUY_STEP if bought else -INDEX_SELL_STEP
-    moved = index * (1 + step * shares / SHARES)
-    return min(INDEX_MAX, max(INDEX_MIN, round(moved, 4)))
+def barrio_weight(listing: Listing) -> float:
+    """Lo que pesa un inmueble en su barrio: su precio entre el de los tres juntos."""
+    total = sum(base_price(item) for item in LISTINGS if item.barrio == listing.barrio)
+    return base_price(listing) / total
+
+
+def index_after(index: float, listing: Listing, shares: int, *, bought: bool) -> float:
+    """Índice del barrio tras comprar o vender `shares` participaciones de `listing`.
+
+    Comprar multiplica por `1 + INDEX_STEP × peso × shares/100` y vender divide por lo
+    mismo: una compra y su venta dejan el índice exactamente igual. Sin redondear,
+    para que el redondeo no lo suba un poco en cada vuelta.
+    """
+    factor = 1 + INDEX_STEP * barrio_weight(listing) * shares / SHARES
+    moved = index * factor if bought else index / factor
+    return min(INDEX_MAX, max(INDEX_MIN, moved))
 
 
 def index_next_day(index: float) -> float:
     """El índice de mañana: vuelve poco a poco a 1 si nadie compra ni vende."""
-    return round(index + (1.0 - index) * INDEX_REVERSION, 4)
+    return index + (1.0 - index) * INDEX_REVERSION
 
 
 # -- El día a día de un inmueble --------------------------------------------------------
@@ -585,10 +605,9 @@ def settle_day(
     """Paga con la renta del día lo que se debe, por orden, y deja el resto a deber.
 
     Primero el IBI (del mes y el atrasado), luego la comunidad, el seguro y los
-    imprevistos (del día y los atrasados). Lo que la renta no cubre queda como
-    deuda del inmueble: se paga con la renta de los días siguientes o se descuenta
-    al vender. Así nadie pone dinero de su bolsillo un día malo y la deuda no se
-    olvida.
+    imprevistos (del día y los atrasados). Lo que la renta no cubre se intenta cobrar
+    del monedero de los dueños (`HousingDebit`, un recibo domiciliado) y lo que no
+    llegue queda como deuda del inmueble: se paga después o se descuenta al vender.
     """
     owed_ibi = costs.ibi + arrears_ibi
     owed_other = costs.community + costs.insurance + extra + (arrears - arrears_ibi)
@@ -606,10 +625,10 @@ def settle_day(
 
 
 def split(amount: int, holders: dict[int, int]) -> dict[int, int]:
-    """Reparte `amount` del inmueble entero entre las participaciones de cada uno.
+    """Reparte `amount` entero entre los dueños, según sus participaciones.
 
-    Las participaciones que no tiene nadie (siguen en venta) se quedan su parte, que
-    no cobra nadie. Los céntimos que sobran del redondeo van a quien más tiene.
+    `amount` ya es solo de las participaciones que tienen dueño (`owned_share`); los
+    céntimos que sobran del redondeo van a quien más tiene.
 
     Args:
         holders: Participaciones de cada miembro.
@@ -617,12 +636,20 @@ def split(amount: int, holders: dict[int, int]) -> dict[int, int]:
     owned = sum(holders.values())
     if amount <= 0 or not owned:
         return {member: 0 for member in holders}
-    parts = {member: amount * shares // SHARES for member, shares in holders.items()}
-    leftover = amount * owned // SHARES - sum(parts.values())
+    parts = {member: amount * shares // owned for member, shares in holders.items()}
+    leftover = amount - sum(parts.values())
     if leftover:
         top = max(holders, key=lambda member: (holders[member], -member))
         parts[top] += leftover
     return parts
+
+
+def owned_share(amount: int, owned: int) -> int:
+    """La parte de una cifra del inmueble entero que toca a las participaciones con dueño.
+
+    Las que siguen en venta no cobran renta ni pagan gastos: son de la promotora.
+    """
+    return amount * owned // SHARES
 
 
 def manager(holders: dict[int, int]) -> int | None:

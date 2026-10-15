@@ -152,7 +152,9 @@ def test_la_compra_paga_el_itp_de_inmuebles_y_la_notaria() -> None:
 
 def test_vender_con_ganancia_paga_el_19_por_ciento_y_la_deuda_va_con_el_piso() -> None:
     cost = rules.purchase_quote(BAJO, 50).total
-    quote = rules.sale_quote(BAJO, 50, 50, cost, index=1.5, arrears=10_000, arrears_ibi=2_000)
+    quote = rules.sale_quote(
+        BAJO, 50, 50, cost, index=1.5, arrears=10_000, arrears_ibi=2_000, pool=100
+    )
     assert quote.arrears == 5_000 and quote.arrears_ibi == 1_000
     assert quote.gain == quote.price - quote.fee - quote.arrears - cost
     assert quote.gain > 0
@@ -167,10 +169,10 @@ def test_vender_con_perdidas_no_paga_irpf() -> None:
     assert quote.gain_tax == 0
 
 
-def test_el_reparto_no_paga_las_participaciones_que_no_son_de_nadie() -> None:
-    parts = rules.split(10_001, {ANA: 60, BEA: 30})
-    assert parts[BEA] == 3_000
-    assert parts[ANA] + parts[BEA] == 10_001 * 90 // 100
+def test_el_reparto_es_entre_los_duenios_y_lo_que_no_es_de_nadie_no_cuenta() -> None:
+    parts = rules.split(9_001, {ANA: 60, BEA: 30})
+    assert parts[BEA] == 3_000 and parts[ANA] + parts[BEA] == 9_001
+    assert rules.owned_share(10_000, 90) == 9_000
     assert rules.split(0, {ANA: 100}) == {ANA: 0}
 
 
@@ -193,11 +195,41 @@ def test_la_renta_se_pasa_a_la_escala_de_la_retencion() -> None:
     assert rules.taxable_rent(100, 400) == 0
 
 
-def test_comprar_sube_el_indice_y_vender_lo_baja() -> None:
-    assert rules.index_after(1.0, 100, bought=True) == pytest.approx(1 + rules.INDEX_BUY_STEP)
-    assert rules.index_after(1.0, 100, bought=False) == pytest.approx(1 - rules.INDEX_SELL_STEP)
+def test_comprar_sube_el_indice_segun_lo_que_pesa_y_vender_lo_deja_igual() -> None:
+    weight = rules.barrio_weight(BAJO)
+    up = rules.index_after(1.0, BAJO, 100, bought=True)
+    assert up == pytest.approx(1 + rules.INDEX_STEP * weight)
+    assert rules.index_after(up, BAJO, 100, bought=False) == pytest.approx(1.0, abs=1e-12)
+    assert sum(rules.barrio_weight(item) for item in listings_of("schamann")) == pytest.approx(1)
+    trastero = LISTING_BY_KEY["schamann_trastero"]
+    assert rules.index_after(1.0, trastero, 100, bought=True) < up  # lo barato apenas lo mueve
     assert rules.index_next_day(1.5) < 1.5
-    assert rules.index_after(rules.INDEX_MAX, 100, bought=True) == rules.INDEX_MAX
+    assert rules.index_after(rules.INDEX_MAX, BAJO, 100, bought=True) == rules.INDEX_MAX
+
+
+def test_inflar_el_barrio_comprando_y_vendiendo_nunca_sale_a_cuenta() -> None:
+    """Revisión: con el índice viejo, mil idas y vueltas de una participación lo subían un 30 %.
+
+    Ahora una ida y vuelta lo deja igual, y comprar de verdad para inflar los demás pisos
+    cuesta más (ITP, notaría y agencia) de lo que suben.
+    """
+    index = 1.0
+    for _ in range(3_000):
+        index = rules.index_after(index, BAJO, 1, bought=True)
+        index = rules.index_after(index, BAJO, 1, bought=False)
+    assert index == pytest.approx(1.0, abs=1e-9)
+    for listing in LISTINGS:
+        others = sum(rules.base_price(i) for i in listings_of(listing.barrio)) - rules.base_price(
+            listing
+        )
+        cost = (
+            rules.purchase_quote(listing, 100).total
+            - rules.sale_quote(
+                listing, 100, 100, 0, index=rules.index_after(1.0, listing, 100, bought=True)
+            ).received
+        )
+        gain = (rules.index_after(1.0, listing, 100, bought=True) - 1) * others
+        assert gain < cost, listing.key
 
 
 def test_un_piso_vacio_encuentra_inquilino_con_la_renta_que_pide() -> None:
@@ -227,6 +259,24 @@ def test_un_inquilino_que_deja_de_pagar_acaba_desahuciado() -> None:
     assert done.lease.status == rules.VACANT and done.lease.tenant is None
     with pytest.raises(ValueError):
         rules.start_eviction(done.lease, day, random.Random(1))
+
+
+def test_vender_de_una_en_una_paga_la_misma_deuda_que_de_golpe() -> None:
+    """Revisión: antes, vender participación a participación se saltaba un 37 % de la deuda."""
+    cost = rules.purchase_quote(BAJO, 100).total
+    whole = rules.sale_quote(BAJO, 100, 100, cost, arrears=20_000, arrears_ibi=5_000)
+    arrears, arrears_ibi, owned, paid, paid_ibi = 20_000, 5_000, 100, 0, 0
+    while owned:
+        quote = rules.sale_quote(BAJO, 1, owned, cost * owned // 100, arrears=arrears,
+                                 arrears_ibi=arrears_ibi, pool=owned)  # fmt: skip
+        paid, paid_ibi = paid + quote.arrears, paid_ibi + quote.arrears_ibi
+        arrears, arrears_ibi, owned = (
+            arrears - quote.arrears,
+            arrears_ibi - quote.arrears_ibi,
+            owned - 1,
+        )
+    assert paid == whole.arrears == 20_000
+    assert paid_ibi == whole.arrears_ibi == 5_000
 
 
 def test_el_patrimonio_cuenta_lo_pagado_o_el_catastral() -> None:
@@ -320,12 +370,60 @@ async def test_un_dia_alquilado_reparte_la_renta_y_hacienda_cobra_lo_suyo(tmp_pa
     assert breakdown[ANA]["irpf_alquiler"] > 0
 
 
-async def test_un_dia_vacio_deja_la_deuda_en_el_piso_y_se_descuenta_al_vender(
+async def test_un_piso_vacio_paga_sus_recibos_del_monedero(tmp_path: Path) -> None:
+    """Revisión: un piso vacío también paga IBI y comunidad, del bolsillo de su dueño."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    balance = await economy.balance(GUILD, ANA)
+    state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    clock.now = at(15).timestamp()
+
+    await service.close_days(GUILD)
+
+    costs = rules.monthly_costs(BAJO)
+    lease = (await service.market(GUILD)).leases[BAJO.key]
+    assert lease.status == rules.VACANT and lease.arrears == 0
+    assert await economy.balance(GUILD, ANA) <= balance - costs.total
+    assert (
+        ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state
+        == costs.ibi
+        == housing_taxes(tmp_path, "ibi")
+    )
+    assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
+
+
+async def test_quien_compra_despues_del_dia_no_cobra_ese_dia(tmp_path: Path) -> None:
+    """Revisión: comprar entre la medianoche y el cierre no da la renta del día anterior."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 50)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01'"
+        )
+    clock.now = at(15, hour=0).timestamp() + 60  # las 00:01 del día siguiente
+    await service.buy(GUILD, BEA, BAJO.key, 50)
+    bea = await economy.balance(GUILD, BEA)
+
+    await service.close_days(GUILD)
+
+    assert await economy.balance(GUILD, BEA) == bea
+    day = await service.repository.income(GUILD, ANA, date(2026, 10, 14))
+    assert day.rent > 0
+
+
+async def test_un_dia_vacio_sin_dinero_deja_la_deuda_en_el_piso_y_se_descuenta_al_vender(
     tmp_path: Path,
 ) -> None:
     clock = Clock(at(14))
     economy, service = await make(tmp_path, clock)
-    await give(economy, ANA, 10_000_000)
+    total = rules.purchase_quote(BAJO, 100).total
+    await give(economy, ANA, total - STARTING_BALANCE)  # se queda a cero
     await service.buy(GUILD, ANA, BAJO.key, 100)
     clock.now = at(15).timestamp()
     await service.close_days(GUILD)
@@ -510,7 +608,7 @@ async def test_si_el_precio_cambia_mientras_miras_no_se_cobra(tmp_path: Path) ->
     trade = await service.buy(GUILD, ANA, BAJO.key, 10, expected=error.value.amount)
     assert trade.deal.quote.total == error.value.amount
     with pytest.raises(PriceChanged):
-        await service.sell(GUILD, ANA, BAJO.key, 10, expected=1)
+        await service.sell(GUILD, ANA, BAJO.key, 10, expected=10**9)
     assert (await service.market(GUILD)).shares_of(BAJO.key) == {ANA: 10}
 
 

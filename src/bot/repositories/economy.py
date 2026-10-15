@@ -562,6 +562,26 @@ class HousingRent:
 
 
 @dataclass(frozen=True, slots=True)
+class HousingDebit:
+    """Un recibo de un inmueble que se cobra del monedero de un dueño, si le llega.
+
+    Es lo que la renta del día no cubre (un piso vacío también paga IBI y comunidad):
+    se cobra lo que haya y lo que falte vuelve al inmueble como deuda (`HousingMove.settle`).
+
+    Attributes:
+        user_id: El dueño.
+        tag: El inmueble (`Listing.key`).
+        ibi: IBI que le toca (va al Estado).
+        other: Comunidad, seguro e imprevistos que le tocan (desaparecen).
+    """
+
+    user_id: int
+    tag: str
+    ibi: int
+    other: int
+
+
+@dataclass(frozen=True, slots=True)
 class HousingMove:
     """Todo el dinero de una operación de `pisos`, en este orden.
 
@@ -570,11 +590,16 @@ class HousingMove:
         entries: `(miembro, movimiento)` sin impuesto: el precio, la notaría, la
             agencia, la comunidad. Lo que sale desaparece y lo que entra se crea.
         taxes: Impuestos que pagan los miembros y van al Estado.
+        debits: Recibos que se cobran del monedero hasta donde llegue.
+        settle: Recibe, dentro de la misma transacción, lo que no llegó de los recibos
+            por inmueble (`{tag: (IBI, resto)}`) para guardarlo como deuda.
     """
 
     rents: tuple[HousingRent, ...] = ()
     entries: tuple[tuple[int, LedgerEntry], ...] = ()
     taxes: tuple[HousingTax, ...] = ()
+    debits: tuple[HousingDebit, ...] = ()
+    settle: Callable[[sqlite3.Connection, dict[str, tuple[int, int]]], None] | None = None
 
 
 class EconomyRepository:
@@ -3745,6 +3770,7 @@ class EconomyRepository:
                 {r.user_id for r in move.rents}
                 | {m for m, _e in move.entries}
                 | {t.user_id for t in move.taxes}
+                | {d.user_id for d in move.debits}
             )
             before = {m: self._ensure_wallet(connection, guild_id, m) for m in touched}
             for rent in move.rents:
@@ -3793,6 +3819,35 @@ class EconomyRepository:
                     """,
                     (guild_id, item.user_id, item.kind, max(0, item.base), item.tax, now),
                 )
+            unpaid: dict[str, tuple[int, int]] = {}
+            for debit in move.debits:
+                balance = balances.get(debit.user_id, before[debit.user_id])
+                ibi = min(balance, max(0, debit.ibi))
+                other = min(balance - ibi, max(0, debit.other))
+                charges = [LedgerEntry(-ibi, "pisos:ibi")] if ibi else []
+                if other:
+                    charges.append(LedgerEntry(-other, "pisos:comunidad"))
+                if charges:
+                    balances[debit.user_id] = self._apply_in_transaction(
+                        connection, guild_id, debit.user_id, charges
+                    )
+                if ibi:
+                    self._credit_state_in(connection, guild_id, ibi, "pisos:ibi")
+                    connection.execute(
+                        """
+                        INSERT INTO economy_housing_tax
+                            (guild_id, user_id, kind, base, tax, created_at)
+                        VALUES (?, ?, 'ibi', 0, ?, ?)
+                        """,
+                        (guild_id, debit.user_id, ibi, now),
+                    )
+                left = unpaid.get(debit.tag, (0, 0))
+                unpaid[debit.tag] = (
+                    left[0] + max(0, debit.ibi) - ibi,
+                    left[1] + max(0, debit.other) - other,
+                )
+            if move.settle is not None:
+                move.settle(connection, unpaid)
             for member in sorted(touched):
                 gained = balances.get(member, before[member]) - before[member]
                 if gained > 0 and (paid := self._collect_tax_debt_in(

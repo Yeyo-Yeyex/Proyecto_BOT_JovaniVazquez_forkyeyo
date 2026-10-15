@@ -34,11 +34,18 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
-from bot.repositories.economy import HousingMove, HousingRent, HousingTax, LedgerEntry
+from bot.repositories.economy import (
+    HousingDebit,
+    HousingMove,
+    HousingRent,
+    HousingTax,
+    LedgerEntry,
+)
 from bot.services import housing as rules
 from bot.services.housing_catalog import (
     DEFAULT_RENT_LEVEL,
@@ -46,6 +53,7 @@ from bot.services.housing_catalog import (
     RENT_LEVELS,
     Listing,
 )
+from bot.services.levels import local_day
 
 T = TypeVar("T")
 
@@ -137,14 +145,16 @@ class Market:
         """Lo que tiene un miembro, en el orden del catálogo."""
         out = []
         for key in LISTING_BY_KEY:
-            holding = self.holdings.get(key, {}).get(user_id)
+            holding = self.holdings.get(key, {}).get(user_id)  # solo inmuebles que existen
             if holding is not None:
                 out.append(holding)
         return out
 
     def value(self, holding: Holding) -> int:
-        """Valor de mercado de unas participaciones."""
-        listing = LISTING_BY_KEY[holding.listing]
+        """Valor de mercado de unas participaciones (0 si el inmueble ya no existe)."""
+        listing = LISTING_BY_KEY.get(holding.listing)
+        if listing is None:
+            return 0
         return rules.price(listing, self.index(listing.barrio)) * holding.shares // rules.SHARES
 
 
@@ -556,7 +566,9 @@ class HousingRepository:
                 raise HousingError(f"Solo quedan {free} participaciones libres.")
             index = market.index(listing.barrio)
             quote = rules.purchase_quote(listing, shares, index)
-            if expected is not None and quote.total != expected:
+            # Si sale más barato que en la caja se cobra (mejor para quien compra);
+            # si sale más caro, no.
+            if expected is not None and quote.total > expected:
                 raise PriceChanged(quote.total)
             first = not any(user_id in h for h in market.holdings.values())
             held = market.holdings.get(key, {}).get(user_id)
@@ -575,7 +587,7 @@ class HousingRepository:
                     connection, guild_id, key,
                     rules.Lease(level=DEFAULT_RENT_LEVEL, since=day),
                 )  # fmt: skip
-            after = rules.index_after(index, shares, bought=True)
+            after = rules.index_after(index, listing, shares, bought=True)
             _set_index_in(connection, guild_id, listing.barrio, after)
             bought = News(key, day, "compra", quote.price, user_id, None)
             _news_in(connection, guild_id, bought, now)
@@ -633,8 +645,9 @@ class HousingRepository:
             quote = rules.sale_quote(
                 listing, shares, held.shares, held.cost, index=index,
                 arrears=lease.arrears, arrears_ibi=lease.arrears_ibi,
+                pool=sum(market.shares_of(key).values()),
             )  # fmt: skip
-            if expected is not None and quote.received != expected:
+            if expected is not None and quote.received < expected:
                 raise PriceChanged(quote.received)
             left = held.shares - shares
             if left:
@@ -665,7 +678,10 @@ class HousingRepository:
                     "DELETE FROM housing_leases WHERE guild_id = ? AND listing = ?", (guild_id, key)
                 )
             _set_index_in(
-                connection, guild_id, listing.barrio, rules.index_after(index, shares, bought=False)
+                connection,
+                guild_id,
+                listing.barrio,
+                rules.index_after(index, listing, shares, bought=False),
             )
             _news_in(connection, guild_id, News(key, day, "venta", quote.price, user_id, None), now)
             held_days = max(0, int((now - held.since) // 86_400))
@@ -712,20 +728,45 @@ class HousingRepository:
             rents: list[HousingRent] = []
             entries: list[tuple[int, LedgerEntry]] = []
             taxes: list[HousingTax] = []
+            debits: list[HousingDebit] = []
             for key in LISTING_BY_KEY:
                 lease = market.leases.get(key)
-                holders = market.shares_of(key)
-                if lease is None or not holders:
+                if lease is None or not market.shares_of(key):
                     continue
+                # Solo cobra y paga ese mes quien ya era dueño ese día: comprar entre la
+                # medianoche y el cierre no da derecho a la renta del día anterior.
+                holders = {
+                    member: holding.shares
+                    for member, holding in market.holdings[key].items()
+                    if local_day(holding.since) <= day
+                }
                 listing = LISTING_BY_KEY[key]
                 outcome = rules.advance_day(listing, lease, day, market.index(listing.barrio), rng)
-                payout = rules.settle_day(
-                    outcome.rent, outcome.costs, outcome.extra, lease.arrears, lease.arrears_ibi
-                )
-                _save_lease_in(
-                    connection, guild_id, key,
-                    replace(outcome.lease, arrears=payout.arrears, arrears_ibi=payout.arrears_ibi),
+                owned = sum(holders.values())
+                if not owned:
+                    _save_lease_in(connection, guild_id, key, outcome.lease)
+                    continue
+                part = partial(rules.owned_share, owned=owned)
+                costs_owned = rules.MonthlyCosts(
+                    part(outcome.costs.community), part(outcome.costs.insurance),
+                    part(outcome.costs.ibi),
                 )  # fmt: skip
+                payout = rules.settle_day(
+                    part(outcome.rent), costs_owned, part(outcome.extra), lease.arrears,
+                    lease.arrears_ibi,
+                )  # fmt: skip
+                # Lo que la renta no cubre se intenta cobrar del monedero de los dueños
+                # (recibo domiciliado); lo que no llegue vuelve como deuda en `settle`.
+                _save_lease_in(
+                    connection, guild_id, key, replace(outcome.lease, arrears=0, arrears_ibi=0)
+                )
+                owe_ibi = rules.split(payout.arrears_ibi, holders)
+                owe_other = rules.split(payout.arrears - payout.arrears_ibi, holders)
+                debits.extend(
+                    HousingDebit(member, key, owe_ibi[member], owe_other[member])
+                    for member in holders
+                    if owe_ibi[member] or owe_other[member]
+                )
                 for event in outcome.events:
                     item = News(key, day, event.key, event.cost, None, outcome.lease.tenant
                                 or lease.tenant)  # fmt: skip
@@ -769,8 +810,27 @@ class HousingRepository:
             connection.execute(
                 "DELETE FROM housing_income WHERE guild_id = ? AND day < ?", (guild_id, horizon)
             )
+
+            def settle(conn: sqlite3.Connection, unpaid: dict[str, tuple[int, int]]) -> None:
+                for tag, (ibi, other) in unpaid.items():
+                    if ibi or other:
+                        conn.execute(
+                            """
+                            UPDATE housing_leases
+                            SET arrears = arrears + ?, arrears_ibi = arrears_ibi + ?
+                            WHERE guild_id = ? AND listing = ?
+                            """,
+                            (ibi + other, ibi, guild_id, tag),
+                        )
+
             run_ = DayRun(day, news=tuple(news), members=members, owners=owners)
-            return run_, HousingMove(rents=tuple(rents), entries=tuple(entries), taxes=tuple(taxes))
+            return run_, HousingMove(
+                rents=tuple(rents),
+                entries=tuple(entries),
+                taxes=tuple(taxes),
+                debits=tuple(debits),
+                settle=settle,
+            )
 
         return run
 

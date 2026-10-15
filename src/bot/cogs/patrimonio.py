@@ -30,7 +30,6 @@ Permisos: enviar mensajes e insertar enlaces en el canal del anuncio.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -162,7 +161,9 @@ class Patrimonio(commands.Cog):
         )
         try:
             week, run = await self.economy.charge_wealth_tax(guild.id, assets=assets)
-        except (OSError, sqlite3.Error):
+        except Exception:
+            # Nunca lanza: si saliera la excepción, `tasks.loop` dejaría de cobrar el
+            # Patrimonio para siempre (ahora lee también los pisos).
             logger.exception("No se pudo cobrar el Patrimonio en el servidor %s", guild.id)
             return
         self._done.add((guild.id, week))

@@ -255,7 +255,7 @@ async def test_si_otro_compra_en_el_barrio_la_caja_se_actualiza_y_no_cobra(
     panel = await open_panel(cog, ana, guild_with(ana, bea))
     await panel.refresh()
     panel.listing, panel.screen, panel.pending = "taco_trastero", CAJA, (False, 10)
-    await cog.service.buy(GUILD, bea.id, "taco_bajo", 100)  # mueve el índice de Taco
+    await cog.service.buy(GUILD, bea.id, "taco_piso3", 100)  # sube el índice de Taco
     before = await cog.economy.balance(GUILD, ana.id)
     pay = clicked(ana, [])
 

@@ -47,7 +47,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import renta
-from bot.repositories.economy import InsufficientFundsError
+from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
 from bot.repositories.housing import (
     DayRun,
     HousingError,
@@ -281,6 +281,7 @@ class Panel(ui.View):
                     index=index,
                     arrears=lease.arrears,
                     arrears_ibi=lease.arrears_ibi,
+                    pool=sum(self.market.shares_of(self.listing).values()),
                 )
             lines = [
                 (f"Precio ({quote.shares} participaciones)", quote.price, "normal"),
@@ -325,9 +326,9 @@ class Panel(ui.View):
         ]
         after = self.cash if self.done else self.cash - quote_b.total
         before = self.cash + quote_b.total if self.done else self.cash
-        rise = rules.index_after(index, quote_b.shares, bought=True) / index - 1
+        rise = rules.index_after(index, listing, quote_b.shares, bought=True) / index - 1
         barrio = BARRIO_BY_KEY[listing.barrio].name
-        note = f"Comprar sube el precio de {barrio} un {rise * 100:.1f} %".replace(".", ",")
+        note = f"Comprar sube el precio de {barrio} un {rise * 100:.2f} %".replace(".", ",")
         return view.checkout_state(
             listing,
             selling=False,
@@ -663,6 +664,7 @@ class Panel(ui.View):
         return rules.sale_quote(
             listing, min(shares, owned), owned, held.cost if held else 0, index=index,
             arrears=lease.arrears, arrears_ibi=lease.arrears_ibi,
+            pool=sum(self.market.shares_of(self.listing).values()),
         ).received  # fmt: skip
 
     async def _pay(self, interaction: discord.Interaction) -> None:
@@ -687,6 +689,9 @@ class Panel(ui.View):
                 trade = await self.cog.service.buy(
                     self.guild.id, self.owner.id, self.listing, shares, expected=expected
                 )
+        except BalanceLimitError:
+            await notify(interaction, "No te cabe más dinero en el monedero. Ni a Amancio.")
+            return
         except InsufficientFundsError as error:
             await notify(
                 interaction,

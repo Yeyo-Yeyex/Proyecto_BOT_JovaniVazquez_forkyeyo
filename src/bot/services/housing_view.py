@@ -115,7 +115,8 @@ def news_line(item: News, names: dict[int, str], *, titled: bool = True) -> str:
         tenant=tenant.name if tenant else "El inquilino",
         amount=format_amount(item.amount),
     )
-    where = f"{LISTING_BY_KEY[item.listing].title}: " if titled else ""
+    listing = LISTING_BY_KEY.get(item.listing)
+    where = f"{listing.title}: " if titled and listing is not None else ""
     return f"{item.day.strftime('%d/%m')} · {where}{text}"
 
 
