@@ -39,6 +39,7 @@ FONT = ASSETS / "fonts" / "luckiest-guy.woff"
 SIZE = 128
 K = 4  # factor de supersampling
 N = SIZE * K
+FILL = 126  # lado mayor del símbolo con su borde, como los del Volcán (~85-97 % de la casilla)
 
 Color = tuple[int, int, int]
 Point = tuple[float, float]
@@ -164,10 +165,11 @@ class Art:
         bottom: Color | None = None,
         *,
         edge: Color | None = None,
-        edge_w: float = 1.4,
+        edge_w: float = 1.8,
         shine: float = 0.5,
+        volume: float = 1.0,
     ) -> Image.Image:
-        """Pieza con degradado vertical, filo oscuro y brillo en el borde de arriba."""
+        """Pieza con degradado vertical, filo oscuro, volumen (sombra abajo, luz arriba) y reflejo."""
         mask = self._mask(fn)
         box = mask.getbbox()
         if box is None:
@@ -189,6 +191,25 @@ class Art:
             light = Image.new("RGBA", (N, N), (255, 255, 255, 255))
             light.putalpha(rim.point(lambda v: int(v * shine)))
             self.img.alpha_composite(light)
+        w, h = (box[2] - box[0]) / K, (box[3] - box[1]) / K
+        if volume and min(w, h) > 9:
+            # Sombra propia en el lado de abajo y de la derecha, para que la pieza tenga cuerpo.
+            low = ImageChops.subtract(mask, ImageChops.offset(mask, round(-4 * K), round(-5 * K)))
+            low = ImageChops.multiply(low.filter(ImageFilter.GaussianBlur(K * 1.6)), mask)
+            shade = Image.new("RGBA", (N, N), (*dark(bottom, 0.8), 255))
+            shade.putalpha(low.point(lambda v: int(v * 0.55 * volume)))
+            self.img.alpha_composite(shade)
+        if volume and min(w, h) > 18:
+            # Reflejo especular blando arriba a la izquierda.
+            spot = Image.new("L", (N, N), 0)
+            x0, y0 = box[0] + (box[2] - box[0]) * 0.18, box[1] + (box[3] - box[1]) * 0.12
+            ImageDraw.Draw(spot).ellipse(
+                (x0, y0, x0 + w * K * 0.26, y0 + h * K * 0.14), fill=255
+            )
+            spot = ImageChops.multiply(spot.filter(ImageFilter.GaussianBlur(K * 1.4)), mask)
+            gloss = Image.new("RGBA", (N, N), (255, 255, 255, 255))
+            gloss.putalpha(spot.point(lambda v: int(v * 0.6 * volume)))
+            self.img.alpha_composite(gloss)
         return mask
 
     def flat(self, fn, color: Color, alpha: int = 255) -> None:  # noqa: ANN001
@@ -216,8 +237,8 @@ class Art:
     def finish(self) -> Image.Image:
         alpha = self.img.getchannel("A")
         halo = alpha.filter(ImageFilter.GaussianBlur(4 * K)).point(lambda v: max(0, v - 30))
-        solid = alpha.filter(ImageFilter.GaussianBlur(2.6 * K)).point(
-            lambda v: 255 if v > 38 else 0
+        solid = alpha.filter(ImageFilter.GaussianBlur(3.8 * K)).point(
+            lambda v: 255 if v > 22 else 0
         )
         solid = solid.filter(ImageFilter.GaussianBlur(0.7 * K))
         out = Image.new("RGBA", (N, N), (0, 0, 0, 0))
@@ -228,11 +249,16 @@ class Art:
         edge.putalpha(solid)
         out.alpha_composite(edge)
         out.alpha_composite(self.img)
-        # Un 6 % más pequeño, centrado: el borde y el halo no llegan al filo del PNG.
-        inner = round(SIZE * 0.94)
-        small = out.resize((inner, inner), Image.Resampling.LANCZOS)
+        # Se recorta al contorno y se escala para llenar la casilla, como los del Volcán.
+        box = solid.point(lambda v: 255 if v > 128 else 0).getbbox() or (0, 0, N, N)
+        w, h = box[2] - box[0], box[3] - box[1]
+        m = 3 * K  # margen para que el halo no se corte en seco
+        f = min(FILL * K / (max(w, h) + 2 * m), 1.5)
+        wide = (box[0] - m, box[1] - m, box[2] + m, box[3] + m)
+        size = (round((w + 2 * m) * f / K), round((h + 2 * m) * f / K))
+        small = out.crop(wide).resize(size, Image.Resampling.LANCZOS)
         final = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        final.alpha_composite(small, ((SIZE - inner) // 2, (SIZE - inner) // 2))
+        final.alpha_composite(small, ((SIZE - size[0]) // 2, (SIZE - size[1]) // 2))
         return final
 
 
@@ -286,21 +312,24 @@ def mina_pay0() -> Image.Image:
 
 
 def mina_pay1() -> Image.Image:
-    """Lámpara de minero: casco amarillo con el foco encendido y rayos de luz."""
+    """Lámpara de minero: farol de latón con la llama encendida y el asa arriba."""
     art = mina_art()
-    art.flat(lambda p: [p.poly([(64, 54), (64 + 50 * math.cos(a), 54 + 50 * math.sin(a)),
-                                (64 + 50 * math.cos(a + 0.18), 54 + 50 * math.sin(a + 0.18))])
-                        for a in (-2.6, -2.15, -1.7, -1.25, -0.8, -0.35)],
-             (255, 244, 150), 150)  # fmt: skip
-    art.part(lambda p: p.rr(10, 80, 118, 98, 9), (240, 150, 30), (170, 80, 10), shine=0.5)
-    dome = smooth([(18, 84), (22, 58), (40, 38), (64, 32), (88, 38), (106, 58), (110, 84)])
-    art.part(lambda p: p.poly(dome), (255, 214, 60), (232, 130, 12), shine=0.7)
-    art.part(lambda p: p.poly(bar((64, 33), (64, 82), 10, 10)), (255, 236, 130), (240, 160, 30),
-             edge_w=0.9, shine=0.3)  # fmt: skip
-    art.part(lambda p: p.ell(64, 62, 17), (150, 158, 178), (70, 78, 98), shine=0.6)
-    art.part(lambda p: p.ell(64, 62, 11.5), (255, 255, 235), (255, 214, 70), edge_w=1.0, shine=0.0)
-    art.sparkle(98, 30, 9)
-    art.sparkle(30, 40, 6)
+    art.part(lambda p: p.line(smooth([(42, 34), (44, 12), (64, 6), (84, 12), (86, 34)], closed=False), 6),
+             STEEL_T, STEEL_B, shine=0.5)  # fmt: skip
+    art.part(lambda p: p.rr(41, 36, 87, 98, 12), (255, 252, 214), (255, 168, 30), shine=0.5)
+    art.flat(lambda p: p.ell(64, 70, 17, 25), (255, 214, 70), 255)
+    art.part(lambda p: p.poly(smooth([(64, 44), (76, 64), (78, 80), (64, 94), (50, 80), (52, 64)])),
+             (255, 255, 236), (255, 150, 20), edge_w=1.2, edge=(214, 100, 10), shine=0.0)  # fmt: skip
+    art.flat(lambda p: p.poly(smooth([(64, 62), (70, 76), (64, 88), (58, 76)])), (255, 255, 255))
+    for x in (47, 81):
+        art.part(lambda p, x=x: p.poly(bar((x, 38), (x, 96), 5)), (150, 94, 40), (84, 46, 14),
+                 edge_w=1.0, shine=0.3)  # fmt: skip
+    art.part(lambda p: p.poly([(34, 40), (94, 40), (84, 22), (44, 22)]), (240, 170, 50), (150, 80, 10),
+             shine=0.6)  # fmt: skip
+    art.part(lambda p: p.rr(30, 92, 98, 112, 6), (240, 170, 50), (150, 80, 10), shine=0.6)
+    art.part(lambda p: p.ell(64, 22, 7, 5), STEEL_T, STEEL_B, edge_w=1.0, shine=0.4)
+    art.sparkle(100, 36, 11)
+    art.sparkle(26, 56, 7)
     return art.finish()
 
 
@@ -345,22 +374,27 @@ def mina_pay3() -> Image.Image:
 
 
 def mina_pay4() -> Image.Image:
-    """Pepita de oro: grumo irregular con facetas y destellos."""
+    """Pepita de oro: tres pedruscos angulosos de oro macizo con facetas y destellos."""
     art = mina_art()
-    back = smooth([(78, 52), (96, 46), (112, 60), (110, 78), (92, 84), (76, 72)])
-    art.part(lambda p: p.poly(back), (255, 214, 80), (190, 112, 14), shine=0.5)
-    nugget = smooth([(14, 78), (20, 56), (38, 40), (62, 34), (84, 42), (100, 60), (104, 84),
-                     (90, 100), (62, 106), (34, 104), (18, 94)])  # fmt: skip
-    art.part(lambda p: p.poly(nugget), (255, 236, 120), (214, 130, 16), shine=0.9)
-    art.part(lambda p: p.poly([(34, 56), (56, 44), (64, 60), (44, 72)]), (255, 250, 190),
-             (255, 214, 80), edge_w=0.0, shine=0.0)  # fmt: skip
-    art.part(lambda p: p.poly([(66, 72), (86, 62), (94, 84), (74, 92)]), (232, 160, 30),
-             (190, 100, 10), edge_w=0.0, shine=0.0)  # fmt: skip
-    art.part(lambda p: p.poly([(30, 86), (50, 80), (58, 96), (38, 98)]), (222, 140, 24),
-             (180, 92, 8), edge_w=0.0, shine=0.0)  # fmt: skip
-    art.sparkle(34, 36, 12)
-    art.sparkle(104, 38, 8)
-    art.sparkle(100, 100, 6)
+    for pts in (
+        [(8, 100), (6, 82), (18, 68), (34, 74), (38, 92), (28, 104)],
+        [(88, 104), (84, 84), (96, 66), (114, 70), (122, 90), (112, 104)],
+    ):
+        art.part(lambda p, pts=pts: p.poly(pts), (255, 236, 120), (200, 118, 14), shine=0.6)
+    big = [(22, 108), (14, 78), (30, 50), (52, 28), (78, 30), (98, 52), (104, 82), (94, 108)]
+    art.part(lambda p: p.poly(big), (255, 232, 100), (206, 120, 12), shine=0.7)
+    art.part(lambda p: p.poly([(30, 50), (52, 28), (66, 44), (56, 64), (28, 70)]), (255, 252, 200),
+             (255, 222, 90), edge_w=0.0, shine=0.0, volume=0.0)  # fmt: skip
+    art.part(lambda p: p.poly([(66, 44), (78, 30), (98, 52), (88, 70), (68, 68)]), (255, 214, 70),
+             (234, 160, 24), edge_w=0.0, shine=0.0, volume=0.0)  # fmt: skip
+    art.part(lambda p: p.poly([(56, 64), (88, 70), (104, 82), (94, 108), (60, 104)]), (236, 164, 28),
+             (176, 90, 8), edge_w=0.0, shine=0.0, volume=0.0)  # fmt: skip
+    art.part(lambda p: p.poly([(28, 70), (56, 64), (60, 104), (22, 108), (14, 78)]), (248, 196, 52),
+             (200, 120, 14), edge_w=0.0, shine=0.0, volume=0.0)  # fmt: skip
+    art.flat(lambda p: p.poly(bar((34, 56), (52, 40), 4)), (255, 255, 255), 200)
+    art.sparkle(100, 30, 12)
+    art.sparkle(22, 40, 8)
+    art.sparkle(112, 100, 6)
     return art.finish()
 
 
@@ -481,23 +515,33 @@ def olimpo_pay1() -> Image.Image:
 
 
 def olimpo_pay2() -> Image.Image:
-    """Casco corintio: bronce con visera, carrilleras y penacho carmesí."""
+    """Casco corintio de perfil: cúpula, penacho de crin, carrillera con rendija y nasal."""
     art = olimpo_art()
-    plume = smooth([(38, 38), (46, 18), (72, 10), (98, 20), (108, 44), (94, 36), (82, 28),
-                    (62, 30)])  # fmt: skip
-    art.part(lambda p: p.poly(plume), (255, 96, 96), (170, 20, 40), shine=0.6)
-    art.part(lambda p: p.poly(smooth([(48, 32), (68, 30), (88, 38), (96, 58)])
-                              + [(96, 64), (50, 64)]), (255, 150, 150), (200, 40, 56),
-             edge_w=0.0, shine=0.0)  # fmt: skip
-    shell = smooth([(20, 66), (22, 42), (40, 28), (64, 24), (86, 32), (98, 54), (98, 78), (92, 104),
-                    (80, 114), (60, 116), (46, 100), (42, 82), (30, 84)])  # fmt: skip
-    art.part(lambda p: p.poly(shell), (255, 226, 120), (182, 108, 22), shine=0.9)
-    art.part(lambda p: (p.rr(44, 54, 84, 68, 6), p.poly([(48, 64), (60, 64), (58, 100), (50, 98)])),
-             (30, 18, 12), (30, 18, 12), edge_w=0.0, shine=0.0)  # fmt: skip
-    art.flat(lambda p: p.ell(70, 61, 4, 2.4), (255, 255, 255))
-    art.part(lambda p: p.poly(bar((24, 50), (88, 40), 4)), (255, 244, 170), (230, 160, 40),
-             edge_w=0.6, shine=0.0)  # fmt: skip
-    art.sparkle(86, 44, 6)
+    bronze_t, bronze_b = (255, 232, 120), (176, 100, 18)
+    # Crin del penacho: de la frente a la nuca, cayendo por detrás.
+    crest = smooth([(84, 30), (66, 10), (38, 6), (14, 20), (6, 46), (10, 72), (20, 78), (24, 56),
+                    (34, 38), (56, 32)])  # fmt: skip
+    art.part(lambda p: p.poly(crest), (255, 110, 110), (176, 18, 40), shine=0.7)
+    for i in range(5):
+        x = 22 + i * 12
+        art.flat(lambda p, x=x, i=i: p.poly(bar((x, 12 + abs(i - 2) * 3), (x - 6, 40), 2.4)),
+                 (255, 190, 190), 150)  # fmt: skip
+    # Cúpula, carrillera hacia delante y cubrenuca que se abre por detrás.
+    shell = smooth([(14, 104), (22, 70), (24, 46), (42, 30), (68, 26), (92, 38), (104, 60), (104, 86),
+                    (98, 108), (86, 118), (72, 114), (68, 96), (62, 84), (46, 88), (36, 104)])  # fmt: skip
+    art.part(lambda p: p.poly(shell), bronze_t, bronze_b, shine=0.9)
+    # Visera dorada y rendija del ojo.
+    art.part(lambda p: p.poly(bar((30, 48), (100, 56), 6, 7)), (255, 248, 190), (226, 150, 30),
+             edge_w=1.0, shine=0.3)  # fmt: skip
+    art.part(lambda p: p.poly(smooth([(60, 62), (74, 58), (92, 64), (86, 76), (70, 76)])),
+             (20, 12, 10), (50, 30, 20), edge_w=1.0, edge=(90, 50, 10), shine=0.0, volume=0.0)  # fmt: skip
+    art.flat(lambda p: p.ell(80, 67, 3, 2), (255, 255, 255))
+    # Nasal: la barra del frente que baja hasta la boca.
+    art.part(lambda p: p.poly(bar((96, 60), (92, 100), 9, 6)), (255, 250, 200), (216, 140, 26),
+             edge_w=1.0, shine=0.4)  # fmt: skip
+    art.part(lambda p: p.poly(smooth([(54, 96), (66, 96), (70, 108), (58, 112)])), (180, 110, 24),
+             (110, 56, 8), edge_w=0.0, shine=0.0, volume=0.0)  # fmt: skip
+    art.sparkle(30, 34, 8)
     return art.finish()
 
 
