@@ -23,23 +23,25 @@ rodillo (`respin_price`): cuesta lo que vale de media entre `RESPIN_RTP`.
 Números de la tabla actual (calculados en `tests/unit/test_slots_service.py`
 y buscados con `docs/calibrar_tragaperras.py`):
 
-- La línea devuelve ~84 % de lo apostado; con los giros gratis (que se
-  suman si salen 🎟️ dentro de ellos) y la máquina caliente, ~92,8 %; con la
-  barra de bonus (3 giros gratis cada ~80 tiradas), ~96,8 %. El 3 % de cada
-  apuesta va al bote común, que acaba saliendo entero: en total vuelve ~99,8 %.
+- La línea devuelve ~81 % de lo apostado; con los giros gratis (que se
+  suman si salen 🎟️ dentro de ellos) y la máquina caliente, ~89,6 %; con la
+  barra de bonus (3 giros gratis cada ~80 tiradas), ~93,4 %. El 6 % de cada
+  apuesta va al bote común, que acaba saliendo entero: en total vuelve ~99,5 %.
+  Hasta la 7.1 el bote era el 3 % y la línea, el 84 %: se pasó retorno de la
+  línea al bote para que crezca el doble de rápido por tirada.
   Se pierde despacio, que es lo que alarga las sesiones.
-- El 32 % de las tiradas paga algo, pero dos de cada tres de esas pagan menos
+- El 32 % de las tiradas paga algo, pero casi dos de cada tres de esas pagan menos
   de lo apostado (una 🍒 al principio devuelve la mitad). La máquina lo
   celebra y aun así pierdes.
-- Casi-premio en el 20,5 % de las tiradas; re-giro ofrecido en el 20 % y con
+- Casi-premio en el 21 % de las tiradas; re-giro ofrecido en el 20 % y con
   premio gordo en el 17 % de los re-giros.
-- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 22.000 tiradas. Además el bote cae
+- Jackpot (🃏 🃏 🃏 en la línea): 1 de cada 21.000 tiradas. Además el bote cae
   solo antes de llegar a `POT_CAP`.
-- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 120 tiradas.
+- Giros gratis (3 🎟️ en cualquier fila): 1 de cada 122 tiradas.
 - Barra de bonus: se llena cada ~80 tiradas pagadas, de las que ~18 las pasa
   por encima del 90 % (`add_bonus`).
-- Celebraciones: ÉPICO (×50) 1 de cada ~2.400 tiradas, MEGA (×15) 1 de cada
-  ~450 y GRAN PREMIO (×5) 1 de cada ~19.
+- Celebraciones: ÉPICO (×50) 1 de cada ~2.200 tiradas, MEGA (×15) 1 de cada
+  ~450 y GRAN PREMIO (×5) 1 de cada ~20.
 """
 
 from __future__ import annotations
@@ -111,16 +113,16 @@ REEL_STRIPS: tuple[str, str, str] = (
 # fmt: off
 REEL_WEIGHTS: tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]] = (
     (
-        4, 1, 12, 1, 39, 17, 13, 4, 14, 3, 5, 6, 9, 6, 8, 1,
-        1, 4, 11, 21, 1, 13, 13, 1, 30, 17, 1, 1, 1, 10, 13, 7,
+        44, 15, 10, 1, 9, 16, 1, 5, 60, 1, 56, 2, 6, 1, 1, 1,
+        5, 14, 2, 18, 2, 6, 5, 11, 6, 10, 3, 8, 3, 9, 8, 8,
     ),
     (
-        1, 13, 1, 1, 1, 4, 5, 8, 1, 1, 7, 5, 22, 42, 2,
-        1, 1, 21, 13, 10, 4, 50, 2, 2, 6, 4, 1, 10, 33, 20,
+        1, 21, 4, 1, 1, 13, 6, 9, 1, 4, 8, 13, 27, 37, 13,
+        4, 7, 1, 1, 15, 14, 21, 18, 1, 1, 10, 1, 11, 41, 12,
     ),
     (
-        19, 28, 10, 1, 21, 2, 1, 46, 14, 15, 29, 25, 32, 8, 49,
-        14, 43, 12, 49, 26, 43, 19, 1, 12, 8, 1, 7, 14, 20, 10,
+        23, 14, 1, 11, 33, 6, 1, 12, 18, 9, 22, 5, 19, 1, 25,
+        1, 36, 11, 50, 17, 20, 1, 3, 1, 3, 1, 8, 6, 36, 10,
     ),
 )
 # fmt: on
@@ -158,7 +160,7 @@ HEAT_MAX = 5
 #: Multiplicador de la tirada caliente (solo la línea, no el bote).
 HOT_MULTIPLIER = 2
 #: Parte de cada apuesta que va al bote común, en tanto por ciento.
-POT_SHARE_PERCENT = 3
+POT_SHARE_PERCENT = 6
 #: Lo que pone la casa en el bote cuando se vacía (y al estrenarlo).
 POT_SEED = 5_000
 #: Tope del bote misterioso: el bote cae solo, sin 🃏 🃏 🃏, al cruzar un punto

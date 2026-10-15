@@ -250,17 +250,17 @@ def exact_stats() -> dict[str, float]:
 
 def test_las_cifras_de_la_documentacion_son_las_reales(exact_stats) -> None:  # noqa: ANN001
     stats = exact_stats
-    assert stats["line"] == pytest.approx(0.84, abs=0.005)
+    assert stats["line"] == pytest.approx(0.81, abs=0.005)
     assert stats["hit"] == pytest.approx(0.32, abs=0.01)
-    # Dos de cada tres premios devuelven menos de lo apostado.
-    assert stats["ldw"] / stats["hit"] == pytest.approx(2 / 3, abs=0.03)
-    assert 1 / stats["jackpot"] == pytest.approx(22_000, rel=0.03)
-    assert 1 / stats["free"] == pytest.approx(120, rel=0.02)
-    assert stats["near"] == pytest.approx(0.205, abs=0.01)
+    # Casi dos de cada tres premios devuelven menos de lo apostado.
+    assert stats["ldw"] / stats["hit"] == pytest.approx(0.635, abs=0.03)
+    assert 1 / stats["jackpot"] == pytest.approx(21_000, rel=0.03)
+    assert 1 / stats["free"] == pytest.approx(122, rel=0.02)
+    assert stats["near"] == pytest.approx(0.21, abs=0.01)
     assert stats["respin"] == pytest.approx(0.20, abs=0.01)
-    assert 1 / stats["epic"] == pytest.approx(2_400, rel=0.1)
+    assert 1 / stats["epic"] == pytest.approx(2_200, rel=0.1)
     assert 1 / stats["mega"] == pytest.approx(450, rel=0.1)
-    assert 1 / stats["big"] == pytest.approx(19, rel=0.1)
+    assert 1 / stats["big"] == pytest.approx(20, rel=0.1)
 
 
 def test_el_retorno_total_es_el_de_un_casino_de_verdad(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -298,7 +298,7 @@ def test_el_retorno_total_es_el_de_un_casino_de_verdad(monkeypatch: pytest.Monke
             meter, award = add_bonus(meter, spin, stake, rng.randrange)
             free += BONUS_FREE_SPINS if award else 0
     house = returned / paid
-    assert 0.95 < house < 0.98
+    assert 0.92 < house < 0.95
     assert 0.98 < house + POT_SHARE_PERCENT / 100 < 1.0
 
 
@@ -386,8 +386,8 @@ def test_el_medio_premio_y_la_maquina_caliente() -> None:
 
 
 def test_parte_del_bote() -> None:
-    assert pot_share(100) == 3
-    assert pot_share(33) == 0
+    assert pot_share(100) == POT_SHARE_PERCENT
+    assert pot_share(100 // POT_SHARE_PERCENT - 1) == 0
 
 
 def test_el_calor_sube_con_cada_premio_y_la_tirada_caliente_lo_gasta() -> None:

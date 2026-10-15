@@ -55,6 +55,7 @@ from bot.services.slots import (
     SlotMachine,
     WinTier,
     daily_stake,
+    pot_share,
     respin_price,
     spin_at,
 )
@@ -251,7 +252,7 @@ async def test_tirar_cobra_gira_y_paga(tmp_path: Path) -> None:
     first, final = interaction.edit_original_response.await_args_list
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
-    assert await cog.pot(GUILD_ID) == POT_SEED + 3
+    assert await cog.pot(GUILD_ID) == POT_SEED + pot_share(100)
 
 
 async def test_en_turbo_solo_se_edita_una_vez(tmp_path: Path) -> None:

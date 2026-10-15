@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.1.1 · 2026-10-15
+
+- Tragaperras: el bote crece el doble de rápido, con el 6 % de cada tirada
+
 ### 7.1.0 · 2026-10-15
 
 - Gallos: stats, entrenamiento y muertes en el reñidero

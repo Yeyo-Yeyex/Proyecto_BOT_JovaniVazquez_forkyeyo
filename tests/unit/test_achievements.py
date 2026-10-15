@@ -117,6 +117,7 @@ from bot.services.poker import Rank as PokerRank
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
+from bot.services.slots import pot_share as slots_pot_share
 from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
 from bot.services.work import WISHES
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
@@ -1396,7 +1397,7 @@ def test_tragaperras_cuenta_el_medio_premio_como_ganar_perdiendo() -> None:
     assert delta.add["slots_ldw"] == 1
     assert "slots_wins" not in delta.add
     assert delta.add["slots_turbo"] == 1
-    assert delta.add["slots_pot_fed"] == 3
+    assert delta.add["slots_pot_fed"] == slots_pot_share(100)
 
 
 def test_tragaperras_cuenta_trios_bote_y_noche() -> None:
