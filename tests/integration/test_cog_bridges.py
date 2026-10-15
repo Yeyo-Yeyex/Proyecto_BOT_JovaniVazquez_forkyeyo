@@ -1715,3 +1715,36 @@ async def test_las_mesas_con_fieltro_llevan_el_boton_de_tapete_antes_y_durante_l
         assert not any("col" in (label or "") for label in labels)
     finally:
         await client.close()
+
+
+async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_path: Path) -> None:
+    """`pisos` carga después que el casino y el Patrimonio: sus puentes deben llegar."""
+    client = await load_bot(tmp_path)
+    try:
+        pisos_cog = client.get_cog("Pisos")
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(30_000_000, "test")])
+        trade = await pisos_cog.service.buy(GUILD, OWNER_ID, "vegueta_edificio", 100)
+
+        fiscal = await importer("Casino", client).pisos.fiscal_of(client, GUILD, OWNER_ID)
+        assert fiscal >= trade.deal.quote.price
+        patrimonio = client.get_cog("Patrimonio")
+        assert patrimonio.housing is client.housing
+        worth, _rank, _people = await patrimonio.net_worth(GUILD, OWNER_ID)
+        assert worth.homes > 0 and worth.homes_fiscal == fiscal
+        assert importer("Pisos", client).logros._cog(client) is client.get_cog("Achievements")
+
+        member = MagicMock(spec=discord.Member)
+        member.id, member.bot, member.display_name = OWNER_ID, False, "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD
+        guild.get_member = MagicMock(return_value=member)
+        responder = MagicMock()
+        responder.guild, responder.member, responder.channel = guild, member, MagicMock()
+        responder.send = AsyncMock()
+        await client.get_cog("Casino")._hacienda_impl(responder)
+        embed = responder.send.await_args.kwargs["embed"]
+        housing = [f for f in embed.fields if f.name.startswith("🏠 Lo que pagan los pisos")]
+        assert housing and "ITP" in housing[0].value
+        assert len(embed) <= 6_000
+    finally:
+        await client.close()
