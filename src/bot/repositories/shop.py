@@ -49,6 +49,7 @@ from bot.services.shop import (
     quote,
     rental_end,
 )
+from bot.services.shop_catalog import is_skin, use_of
 
 if TYPE_CHECKING:
     from bot.services.shop_catalog import CatalogEntry
@@ -137,6 +138,27 @@ def _item(row: sqlite3.Row) -> ShopItem:
         visible=bool(row["visible"]),
         created_at=float(row["created_at"]),
         catalog_key=row["catalog_key"],
+    )
+
+
+def _collection_count(connection: sqlite3.Connection, guild_id: int, user_id: int) -> int:
+    """Coleccionables distintos del miembro: lo que la mochila enseña como tales.
+
+    Los objetos de un solo uso (cajas, bulos, mascarillas) y las skins también son
+    `objeto`, pero no son piezas de vitrina y no cuentan para los logros de colección.
+    Lo que se usa sin gastarse (la piedra, el dado) sí: se queda para siempre.
+    """
+    rows = connection.execute(
+        """
+        SELECT DISTINCT item_id, catalog_key FROM shop_inventory
+        WHERE guild_id = ? AND user_id = ? AND kind = 'objeto' AND status = 'active'
+        """,
+        (guild_id, user_id),
+    ).fetchall()
+    return sum(
+        1
+        for _, key in rows
+        if not is_skin(key) and not ((use := use_of(key)) is not None and use.consumes)
     )
 
 
@@ -724,13 +746,7 @@ class ShopRepository:
                 now,
             ),
         )
-        (collection,) = connection.execute(
-            """
-            SELECT COUNT(DISTINCT item_id) FROM shop_inventory
-            WHERE guild_id = ? AND user_id = ? AND kind = 'objeto' AND status = 'active'
-            """,
-            (guild_id, user_id),
-        ).fetchone()
+        collection = _collection_count(connection, guild_id, user_id)
         sale = Sale(
             purchase_id=int(cursor.lastrowid or 0),
             invoice=int(invoice),
@@ -1386,16 +1402,9 @@ class ShopRepository:
     def _collection_sync(self, guild_id: int, user_id: int) -> int:
         connection = self._connect()
         try:
-            (count,) = connection.execute(
-                """
-                SELECT COUNT(DISTINCT item_id) FROM shop_inventory
-                WHERE guild_id = ? AND user_id = ? AND kind = 'objeto' AND status = 'active'
-                """,
-                (guild_id, user_id),
-            ).fetchone()
+            return _collection_count(connection, guild_id, user_id)
         finally:
             connection.close()
-        return int(count)
 
     # -- Limpieza --------------------------------------------------------------------
 

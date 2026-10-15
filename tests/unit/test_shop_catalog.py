@@ -520,6 +520,18 @@ async def test_regalo_de_la_caja_no_gasta_existencias(tmp_path: Path) -> None:
     assert await shop.collection_size(GUILD, BUYER) == 1
 
 
+async def test_las_cajas_y_las_skins_no_cuentan_como_coleccionables(tmp_path: Path) -> None:
+    """Una caja que se abre o una skin de mesa no son piezas de vitrina (logros de colección)."""
+    from bot.services.skins import SKINS
+
+    _economy, shop = await make_stores(tmp_path, Clock())
+    keys = ["piedra", "caja_carton", SKINS[0].catalog_key]
+    await shop.stock_catalog(GUILD, [CATALOG_BY_KEY[k] for k in keys], NOW)
+    for item in await shop.items(GUILD, include_hidden=True):
+        await shop.grant(GUILD, BUYER, item, NOW)
+    assert await shop.collection_size(GUILD, BUYER) == 1
+
+
 async def buy(economy: EconomyService, shop: ShopRepository, item_id: int) -> None:
     from bot.services.shop import quote
 
