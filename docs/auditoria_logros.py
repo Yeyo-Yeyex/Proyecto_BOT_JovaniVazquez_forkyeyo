@@ -60,6 +60,7 @@ from bot.services import (  # noqa: E402
     poker,
     roulette,
     slots,
+    tower,
 )
 from bot.services import horses as caballos  # noqa: E402
 from bot.services.achievements import (  # noqa: E402
@@ -89,6 +90,7 @@ from bot.services.achievements import (  # noqa: E402
     slots_double_stats,
     slots_respin_stats,
     slots_stats,
+    tower_stats,
 )
 from bot.services.levels import TIMEZONE  # noqa: E402
 from bot.services.pachinko_motion import motion_for  # noqa: E402
@@ -123,6 +125,7 @@ RITMO_CASINO = {
     "botes": 150,
     "crash": 30,
     "mines": 40,
+    "tower": 40,
     "chicken": 60,
     "coin": 60,
     "bus": 60,
@@ -361,6 +364,24 @@ def _jugar_minas(j: Jugador) -> StatDelta:
             if game.playing:
                 game.cash_out()
     return _con_casino(mines_stats(game), stake=APUESTA, net=game.net)
+
+
+#: Dificultad que elige un jugador normal de la Torre del dragón (Fácil es la de serie).
+_NIVELES = (("facil", 40), ("normal", 30), ("dificil", 15), ("experto", 10), ("maestro", 5))
+
+
+def _jugar_torre(j: Jugador) -> StatDelta:
+    """Una partida de la Torre: dificultad y objetivo de cobro variados, 🎲 a veces."""
+    rng = j.rng
+    difficulty = tower.Difficulty(_elegir(rng, _NIVELES))  # type: ignore[arg-type]
+    game = tower.TowerGame.new(APUESTA, difficulty, rng)
+    target = _elegir(rng, _OBJETIVOS)
+    dice = rng.random() < 0.1
+    while game.playing:
+        alive = game.climb(game.random_door(rng), random_pick=dice)
+        if alive and (game.crowned or game.cents >= target):  # type: ignore[operator]
+            game.cash_out()
+    return _con_casino(tower_stats(game), stake=APUESTA, net=game.net)
 
 
 _DIFICULTADES = (("facil", 20), ("media", 45), ("dificil", 25), ("hardcore", 10))
@@ -660,6 +681,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "botes": _jugar_botes,
     "pachinko": _jugar_pachinko,
     "mines": _jugar_minas,
+    "tower": _jugar_torre,
     "chicken": _jugar_pollo,
     "coin": _jugar_moneda,
     "bus": _jugar_autobus,

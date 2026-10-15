@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -481,6 +481,18 @@ python -m bot
   que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.
+- **Torre del dragón** (`/torre`, `.torre [cantidad] [nivel]`): una torre de
+  9 pisos propia, sin imágenes. En cada piso hay varias puertas y unas
+  esconden un dragón 🐉; las demás, un huevo 🥚. Eliges una por piso, de abajo
+  arriba: con huevo subes y sube el multiplicador, con dragón lo pierdes todo.
+  💰 Cobrar se lleva apuesta × multiplicador y coronar el piso 9 cobra solo.
+  Cinco niveles en un menú: 🥚 Fácil (4 puertas, 1 dragón; la de por defecto,
+  corona ×13,18), 🐣 Normal (3 y 1, ×38,06), 🔥 Difícil (2 y 1, ×506,88),
+  🐲 Experto (3 y 2, ×19.486) y 👑 Maestro (4 y 3, ×259.522, 1 entre 262.144).
+  El texto dibuja la torre con el multiplicador de cada piso, dice lo que
+  sumaría el siguiente y su probabilidad, y al acabar enseña todos los
+  dragones. Devuelve el 99 % de media al cobrar en cualquier piso y los
+  cobros de ×25 o más se anuncian en el canal.
 - **Pollo** (`/pollo`, `.pollo [cantidad] [dificultad] [autocobro]`): el
   Chicken Road de los casinos online. El pollo cruza una carretera carril a
   carril; cada carril sube el multiplicador, 💰 Cobrar se lo lleva y si te
@@ -622,7 +634,7 @@ python -m bot
   El bote no pasa de 5 veces lo que ella se juega, para que amañarla no
   salga tan a cuenta. Once propuestas: gana o pierde, si las gana todas,
   cuántas gana, si dobla, si se pega un palo, si saca un ×5, si acaba tieso
-  y las propias de minas, pollo y blackjack. Vale en todos los juegos menos
+  y las propias de minas, la torre, pollo y blackjack. Vale en todos los juegos menos
   el crash, y un juego nuevo las tiene sin hacer nada. Sin `miembro`, enseña
   las porras en marcha. En la tienda, los 🔭 Prismáticos de la UCO dejan ver
   quién apuesta qué y la 📓 Libreta de la porra, montar porras de 10 jugadas.
@@ -656,7 +668,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.288 logros en 50 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.727 logros en 55 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -1041,6 +1053,7 @@ src/bot/
 │   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
+│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones (componentes v2)
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
@@ -1092,6 +1105,7 @@ src/bot/
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
+│   ├── tower.py         # Dificultades, multiplicadores exactos y partida de la Torre del dragón
 │   ├── chicken.py       # Pollo: dificultades, multiplicadores y carril del atropello
 │   ├── chicken_render.py # Línea de tiempo del Pollo y dibujo de reserva con Pillow
 │   ├── chicken_scene.py # Pollo con canvas en Node o Chromium (assets/pollo/escena.html)

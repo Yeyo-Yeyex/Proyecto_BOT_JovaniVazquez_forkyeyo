@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.11.0 · 2026-10-15
+
+- Torre del dragón: `torre`, sube pisos esquivando dragones
+
 ### 6.10.0 · 2026-10-15
 
 - Tienda: cada artículo dice si ya lo tienes y cuántos
