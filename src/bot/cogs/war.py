@@ -802,11 +802,19 @@ class War(commands.Cog, name="Guerra"):
             attachments = kwargs.pop("attachments")
             table.message = await send(files=attachments, **kwargs)
 
-        error = await table.start(first_edit)
+        # La mesa se apunta antes de cobrar: si Discord no deja enseñarla (la respuesta
+        # llega tarde), la mano se cierra en el acto y nadie se queda con dinero colgado.
+        self.tables.add(table)
+        try:
+            error = await table.start(first_edit)
+        except discord.HTTPException:
+            self.tables.discard(table)
+            await table.force_settle()
+            raise
         if error is not None:
+            self.tables.discard(table)
             await send_error(error)
             return
-        self.tables.add(table)
 
     @app_commands.command(
         name="guerra",

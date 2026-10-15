@@ -96,6 +96,46 @@ class FlakyTranslator(FakeTranslator):
 
 
 @pytest.mark.asyncio
+async def test_la_cadena_se_corta_al_agotar_su_tiempo_y_vuelve_al_espanol() -> None:
+    """Con el plazo agotado no se sigue saltando: el token de Discord caduca a los 15 min."""
+    now = [0.0]
+    translator = FakeTranslator()
+
+    async def slow(text: str, source: str, target: str) -> str:
+        now[0] += 4.0
+        return await FakeTranslator.__call__(translator, text, source, target)
+
+    result = await run_chain(
+        "hola", ["ja", "zu", "fr", "de"], slow, budget=10.0, clock=lambda: now[0]
+    )
+
+    assert result.route == ("es", "ja", "zu", "fr", "es")
+    assert result.stopped_early
+
+
+@pytest.mark.asyncio
+async def test_sin_tiempo_para_la_espera_no_se_reintenta_el_limite() -> None:
+    translator = FlakyTranslator(limited=1)
+    waits: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    result = await run_chain(
+        "hola",
+        ["ja", "zu"],
+        translator,
+        backoff=(20.0,),
+        sleep=sleep,
+        budget=5.0,
+        clock=lambda: 0.0,
+    )
+
+    assert waits == []
+    assert result.stopped_early
+
+
+@pytest.mark.asyncio
 async def test_con_esperas_un_limite_pasajero_no_corta_la_cadena() -> None:
     translator = FlakyTranslator(limited=2)
     waits: list[float] = []

@@ -1947,28 +1947,36 @@ class Tienda(commands.Cog):
             await self.repository.restore(entry.id)
             await notify(interaction, "Esa caja no sé abrirla. Te la devuelvo.")
             return
-        await self.stock_up(guild.id)
-        mine = await self.repository.inventory(guild.id, member.id, now)
-        owned = {e.catalog_key for e in mine if e.catalog_key}
-        items = {
-            i.catalog_key: i
-            for i in await self.repository.items(guild.id, include_hidden=True)
-            if i.catalog_key
-        }
-        # Una pieza se da aunque esté oculta (siempre lo está); un tapete solo si se
-        # sigue vendiendo y sin existencias limitadas.
-        have = {k for k, i in items.items() if is_piece(k) or (i.visible and i.stock is None)}
-        drop = roll(box, self.rng, owned=owned, have=have)
-        if drop is None:
-            await self.repository.restore(entry.id)
-            await notify(
-                interaction,
-                "La caja está vacía: no hay piezas que sortear. Te la devuelvo.",
+        # La caja ya está gastada: si la base de datos falla antes de dar la pieza, se
+        # devuelve entera en vez de perderse.
+        try:
+            await self.stock_up(guild.id)
+            mine = await self.repository.inventory(guild.id, member.id, now)
+            owned = {e.catalog_key for e in mine if e.catalog_key}
+            items = {
+                i.catalog_key: i
+                for i in await self.repository.items(guild.id, include_hidden=True)
+                if i.catalog_key
+            }
+            # Una pieza se da aunque esté oculta (siempre lo está); un tapete solo si se
+            # sigue vendiendo y sin existencias limitadas.
+            have = {k for k, i in items.items() if is_piece(k) or (i.visible and i.stock is None)}
+            drop = roll(box, self.rng, owned=owned, have=have)
+            if drop is None:
+                await self.repository.restore(entry.id)
+                await notify(
+                    interaction,
+                    "La caja está vacía: no hay piezas que sortear. Te la devuelvo.",
+                )
+                return
+            _given, dupe = await self.repository.grant(
+                guild.id, member.id, items[drop.catalog_key], now
             )
+        except Exception:
+            logger.exception("No se pudo abrir una caja de %s; se devuelve", member.id)
+            await self.repository.restore(entry.id)
+            await notify(interaction, "La caja se ha atascado. Te la devuelvo entera.")
             return
-        _given, dupe = await self.repository.grant(
-            guild.id, member.id, items[drop.catalog_key], now
-        )
         held = owned | {drop.catalog_key}
         collection = COLLECTION_BY_KEY[drop.piece.collection] if drop.piece else None
         have_in_collection = (
@@ -2035,9 +2043,19 @@ class Tienda(commands.Cog):
         último fotograma, que es el resultado, sale como mensaje nuevo: nunca se pierde.
         """
         mentions = discord.AllowedMentions.none()
-        message = await interaction.followup.send(
-            frames[0], ephemeral=False, wait=True, allowed_mentions=mentions
-        )
+        try:
+            message = await interaction.followup.send(
+                frames[0], ephemeral=False, wait=True, allowed_mentions=mentions
+            )
+        except discord.HTTPException:
+            # Sin el primer fotograma no hay animación: el resultado sale solo, en privado
+            # si tampoco deja en público. La pieza ya está en la mochila.
+            logger.warning("No se pudo empezar la apertura de una caja", exc_info=True)
+            try:
+                await notify(interaction, frames[-1], allowed_mentions=mentions)
+            except discord.HTTPException:
+                logger.warning("Ni siquiera se pudo enseñar la caja abierta", exc_info=True)
+            return
         try:
             for frame in frames[1:]:
                 await asyncio.sleep(self.lootbox_pause)

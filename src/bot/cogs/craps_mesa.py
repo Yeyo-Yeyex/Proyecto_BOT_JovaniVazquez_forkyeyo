@@ -983,17 +983,31 @@ class CrapsTable:
         return dropped
 
     async def _pay(self, seats: list[Seat]) -> None:
-        """Paga a cada uno lo que le devuelve su partida (0 si pierde)."""
+        """Paga a cada uno lo que le devuelve su partida (0 si pierde).
+
+        Un fallo con un asiento (la base de datos ocupada) no deja sin cobrar a los
+        demás: se reintenta una vez y, si vuelve a fallar, queda en el log.
+        """
         for seat in seats:
             game = seat.game
             assert game is not None
-            try:
-                seat.settlement = await self.cog.economy.pay_winnings(
-                    self.guild_id, seat.user.id, game=GAME, amount=game.payout
-                )
-            except BalanceLimitError:
-                logger.warning("Premio de los dados por encima del saldo máximo; no se paga.")
-                seat.settlement = None
+            seat.settlement = None
+            for attempt in range(2):
+                try:
+                    seat.settlement = await self.cog.economy.pay_winnings(
+                        self.guild_id, seat.user.id, game=GAME, amount=game.payout
+                    )
+                    break
+                except BalanceLimitError:
+                    logger.warning("Premio de los dados por encima del saldo máximo; no se paga.")
+                    break
+                except Exception:
+                    if attempt:
+                        logger.exception(
+                            "Impago en la mesa de dados: %s Y$ a %s", game.payout, seat.user.id
+                        )
+                    else:
+                        await asyncio.sleep(0.5)
 
     def _round_info(self) -> RoundInfo:
         assert self.line is not None

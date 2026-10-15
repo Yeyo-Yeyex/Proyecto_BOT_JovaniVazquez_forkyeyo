@@ -859,6 +859,9 @@ class HousePanel(ui.View):
         """Cobra la apuesta, decide la pelea y paga, todo antes de enseñarla."""
         rival, stake = self.rival, self.stake
         async with self._lock:
+            # Con un duelo abierto el gallo ya está apostado: no pelea dos veces a la vez.
+            if (self.guild_id, self.owner.id) in self.cog.busy:
+                return "Tu gallo está en un duelo: nada de peleas con la casa hasta que acabe."
             try:
                 await self.cog.economy.place_bet(
                     self.guild_id, self.owner.id, game=GAME, stake=stake

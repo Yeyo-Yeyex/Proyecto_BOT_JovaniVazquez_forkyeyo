@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 from discord import ui
 from interaction_fakes import fake_interaction
 
@@ -328,6 +329,25 @@ async def test_apagar_con_partida_a_medias_cobra_o_devuelve(tmp_path: Path) -> N
     assert board.game is not None and board.game.status is Status.CASHED
     balance = await cog.economy.balance(GUILD_ID, OWNER_ID)
     assert ledger_sum(tmp_path) == balance
+
+
+async def test_si_discord_no_deja_ensenar_la_torre_se_devuelve_la_apuesta(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path)
+    send = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=404), "Unknown"))
+    with pytest.raises(discord.HTTPException):
+        await cog._torre_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=make_user(),
+            amount_text="100",
+            difficulty=Difficulty.EASY,
+            send=send,
+            send_error=AsyncMock(),
+        )
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+    assert not cog.boards
 
 
 async def test_torre_caducada_cobra_y_apaga_los_botones(tmp_path: Path) -> None:

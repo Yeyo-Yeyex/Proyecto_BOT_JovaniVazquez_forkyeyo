@@ -105,3 +105,50 @@ async def test_el_bot_vacia_el_registro_al_arrancar_y_lo_hace_cada_minuto(
         assert calls[:1] == [path]
     finally:
         await client.close()
+
+
+async def test_la_tabla_de_impuestos_de_pisos_de_antes_pierde_su_check(tmp_path: Path) -> None:
+    """Con el `CHECK (kind IN ('itp', 'plusvalia'))` de la primera versión de `pisos`,
+    el IBI, el IGIC del vacacional, la licencia y la SOCIMI hacían fallar la transacción."""
+    import sqlite3 as raw_sqlite
+
+    from bot.repositories.economy import EconomyRepository as Repo
+
+    path = tmp_path / "viejo.sqlite3"
+    old = raw_sqlite.connect(path)
+    old.execute(
+        """
+        CREATE TABLE economy_housing_tax (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('itp', 'plusvalia')),
+            base INTEGER NOT NULL CHECK (base >= 0),
+            tax INTEGER NOT NULL CHECK (tax > 0),
+            created_at REAL NOT NULL
+        )
+        """
+    )
+    old.execute(
+        "INSERT INTO economy_housing_tax (guild_id, user_id, kind, base, tax, created_at) "
+        "VALUES (1, 2, 'itp', 1000, 65, 0)"
+    )
+    old.commit()
+    old.close()
+
+    await Repo(path, starting_balance=0).initialize()
+
+    connection = raw_sqlite.connect(path)
+    try:
+        for kind in ("ibi", "igic", "licencia", "socimi"):
+            connection.execute(
+                "INSERT INTO economy_housing_tax (guild_id, user_id, kind, base, tax, created_at) "
+                "VALUES (1, 2, ?, 100, 1, 0)",
+                (kind,),
+            )
+        rows = connection.execute("SELECT kind FROM economy_housing_tax ORDER BY id").fetchall()
+        assert [r[0] for r in rows] == ["itp", "ibi", "igic", "licencia", "socimi"]
+    finally:
+        connection.close()
+    # Y una segunda vez no rehace nada.
+    await Repo(path, starting_balance=0).initialize()

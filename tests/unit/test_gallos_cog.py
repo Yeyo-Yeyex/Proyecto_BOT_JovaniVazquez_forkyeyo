@@ -557,6 +557,17 @@ async def test_no_se_entrena_en_pleno_duelo(tmp_path: Path) -> None:
     interaction.response.send_message.assert_awaited_once()
 
 
+async def test_no_se_pelea_con_la_casa_en_pleno_duelo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    cog.busy.add((GUILD_ID, OWNER_ID))
+    interaction = fake_interaction(make_user(OWNER_ID))
+    await panel._fight(interaction)
+    assert ledger(tmp_path, OWNER_ID) == []
+    interaction.followup.send.assert_awaited_once()
+    cog.renderer.fight.assert_not_awaited()
+
+
 async def test_un_gallo_entrenado_ve_otra_cuota_y_cobra_la_nueva(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, WIN)
     panel = await open_panel(cog)

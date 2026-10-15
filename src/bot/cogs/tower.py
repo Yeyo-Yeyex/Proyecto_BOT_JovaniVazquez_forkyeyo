@@ -414,23 +414,30 @@ class TowerBoard(ui.LayoutView):
             logger.debug("No se pudo cerrar la torre del dragón", exc_info=True)
 
     async def force_settle(self) -> None:
-        """Cierra la partida a medias sin que nadie pierda: cobra o devuelve."""
+        """Cierra la partida a medias sin que nadie pierda: cobra o devuelve.
+
+        Lo cobrado así cuenta igual que un cobro a mano: récord, logros, estadísticas
+        y porras (sin el aviso de la Renta, que necesita un clic).
+        """
+        settled: tuple[TowerGame, BetSettlement | None] | None = None
         async with self._lock:
             game = self.game
             if game is None or not game.playing:
                 return
             if game.floor:
                 game.cash_out()
-                await self._settle(game)
-                return
-            # Ni un piso subido: se devuelve la apuesta (neto 0).
-            try:
-                await self.cog.economy.pay_winnings(
-                    self.guild_id, self.owner.id, game=GAME, amount=game.stake
-                )
-            except BalanceLimitError:
-                logger.warning("No se pudo devolver una apuesta de la Torre del dragón.")
-            self.game = None
+                settled = game, await self._settle(game)
+            else:
+                # Ni un piso subido: se devuelve la apuesta (neto 0).
+                try:
+                    await self.cog.economy.pay_winnings(
+                        self.guild_id, self.owner.id, game=GAME, amount=game.stake
+                    )
+                except BalanceLimitError:
+                    logger.warning("No se pudo devolver una apuesta de la Torre del dragón.")
+                self.game = None
+        if settled is not None:
+            await self._after_game(None, *settled)
 
     # -- Juego ------------------------------------------------------------------------
 
@@ -480,10 +487,18 @@ class TowerBoard(ui.LayoutView):
         return settlement
 
     async def _after_game(
-        self, interaction: discord.Interaction, game: TowerGame, settlement: BetSettlement | None
+        self,
+        interaction: discord.Interaction | None,
+        game: TowerGame,
+        settlement: BetSettlement | None,
     ) -> None:
-        """Lo que va después de enseñar el final: renta, récord, logros y anuncio."""
-        await renta.remind(self.cog.bot, interaction)
+        """Lo que va después de enseñar el final: renta, récord, logros y anuncio.
+
+        Sin `interaction` (la partida se cobró sola al caducar o al apagar) no hay
+        aviso de la Renta: lo dará el siguiente clic con dinero.
+        """
+        if interaction is not None:
+            await renta.remind(self.cog.bot, interaction)
         self.cog.note_record(self.guild_id, self.owner.id, game.floor)
         delta = tower_stats(game)
         delta.merge(
@@ -803,8 +818,15 @@ class Tower(commands.Cog, name="Torre"):
         if error is not None:
             await send_error(error)
             return
-        board.message = await send(view=board)
+        # La apuesta ya está cobrada: si Discord no deja enseñar la torre (la respuesta
+        # llega tarde), se devuelve en el acto en vez de quedarse sin mesa que la cierre.
         self.boards.add(board)
+        try:
+            board.message = await send(view=board)
+        except discord.HTTPException:
+            self.boards.discard(board)
+            await board.force_settle()
+            raise
 
     @app_commands.command(
         name="torre",
