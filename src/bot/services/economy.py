@@ -1262,7 +1262,30 @@ class EconomyService:
         - **Vender** paga la comisión de la agencia (desaparece) y, si se gana, el
           19 % de la ganancia patrimonial (art. 33.1 LIRPF, base del ahorro,
           `taxes.capital_gain_tax`), como el Rastro. Simplificación: no hay
-          plusvalía municipal.
+          plusvalía municipal. Venderle al fondo buitre es una venta más.
+        - **La hipoteca** no es renta: el banco no existe, así que lo prestado se
+          crea de la nada y las cuotas desaparecen. El AJD lo paga el banco (RDL
+          17/2018) y amortizar no tiene comisión (decisión del proyecto; la Ley
+          5/2019 la limita). Los intereses del mes se restan de la renta de ese
+          inmueble (art. 23.1.a LIRPF). En la ejecución, la subasta al 70 % (art. 671
+          LEC) cancela lo que llegue y el resto queda como deuda con el banco.
+        - **La VPO** se compra a la promoción pública con IGIC al tipo cero
+          (primera entrega de vivienda protegida, art. 52 de la Ley 4/2012) y solo
+          paga notaría; el precio va a la cuenta del Estado, que la recompra al
+          mismo precio si se devuelve (sin ganancia, no hay IRPF).
+        - **El alquiler entre miembros**: lo que paga el inquilino es la renta del
+          casero, con el mismo IRPF de arriba; pagarla no desgrava (el inquilino
+          no tiene deducción estatal por alquiler desde 2015).
+        - **El Bono Alquiler Joven** (RD 42/2022) lo paga la cuenta del Estado y es
+          una subvención: ganancia patrimonial de la base general (art. 33.1 LIRPF),
+          con la misma retención a cuenta. Si el Estado no llega, no se paga.
+        - **Vacacional:** la estancia lleva dentro el IGIC general del 7 % (art. 51
+          de la Ley 4/2012), que el dueño ingresa en el Estado; la licencia es una
+          tasa al Estado. El recargo del IBI de la vivienda vacía (art. 72.4 del
+          RDL 2/2004) va al Estado como el IBI.
+        - **La SOCIMI** tributa al 0 % en Sociedades (art. 9 de la Ley 11/2009) y su
+          dueño paga el 19 % del dividendo en la base del ahorro (art. 66 LIRPF) en
+          lugar del IRPF del alquiler; la salida a bolsa desaparece.
 
         Los inquilinos y los compradores no existen: la renta y lo cobrado al
         vender se crean de la nada, y lo pagado al comprar desaparece. Ver

@@ -45,6 +45,7 @@ from bot.services.achievements import (
     HORSE_BACKED_MAX_STAT,
     HORSE_BET_KINDS,
     HORSE_DISTANCES,
+    HOUSING_ACTIONS,
     IMG_EFFECTS_STAT,
     IRONY_PATTERNS,
     LAUGH_KINDS,
@@ -123,10 +124,15 @@ USER = 10
 
 # Todas las estadísticas que produce algún sitio del bot. Si un logro usa
 # otra, nadie la sumaría nunca y sería imposible de conseguir.
+#: Contadores de las acciones de las fases 2 a 4.
+HOUSING_ACTIONS_STATS = tuple(HOUSING_ACTIONS.values())
+
 #: Lo que puede pasar un día en un inmueble: los imprevistos y los cambios de estado.
 HOUSING_EVENT_KEYS = (
     *(event.key for event in _HOUSING_EVENTS),
     "firma", "renueva", "se_va", "impago", "paga", "okupa", "desahucio",
+    "cuota_impagada", "ejecucion", "sorteo_vpo", "vpo_caducada", "partida_agotada",
+    "tope_ley", "recargo_ibi", "oferta_fondo",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -208,7 +214,9 @@ PRODUCED_STATS = {
     "market_expired", "market_bids", "market_bid_max", "market_outbid",
     # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
-    "pisos_opened", "pisos_exit", "pisos_tax_total", "pisos_tax_alquiler",
+    "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",
+    "pisos_installments", "pisos_bono", *HOUSING_ACTIONS_STATS, "pisos_tax_total",
+    "pisos_tax_alquiler",
     "pisos_tax_ganancia", "pisos_tax_over_rent", "pisos_level_changes", "pisos_evictions",
     "pisos_squatters_evicted",
     "pisos_bought", "pisos_spent", "pisos_itp", "pisos_one_share", "pisos_whole_buy",

@@ -320,6 +320,7 @@ class DayRun:
         bono: Lo que el Estado pagó de Bono Alquiler Joven a cada miembro.
         bono_unpaid: Miembros a los que no se pudo pagar el bono (partida agotada).
         mortgage_unpaid: Miembros que no pudieron pagar entera la cuota.
+        installments: Cuotas de hipoteca pagadas enteras por cada miembro.
     """
 
     day: date
@@ -333,6 +334,7 @@ class DayRun:
     bono: dict[int, int] = field(default_factory=dict)
     bono_unpaid: list[int] = field(default_factory=list)
     mortgage_unpaid: list[int] = field(default_factory=list)
+    installments: dict[int, int] = field(default_factory=dict)
 
 
 def _date(text: str | None) -> date | None:
@@ -1274,6 +1276,9 @@ class HousingRepository:
                 months = max(0, mortgage.months_left - (1 if pay else 0))
                 if left:
                     result.mortgage_unpaid.append(mortgage.user_id)
+                elif pay:
+                    member = mortgage.user_id
+                    result.installments[member] = result.installments.get(member, 0) + 1
                 if not balance and not left:
                     finance.close_mortgage_in(conn, mortgage_id, "pagada")
                     continue

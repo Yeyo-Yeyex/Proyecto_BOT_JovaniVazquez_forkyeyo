@@ -167,7 +167,10 @@ python -m bot
   servidor, a precio real × 10). Se compran participaciones (del 1 % al inmueble
   entero) con su ITP del 6,5 %, los inquilinos ficticios pagan cada noche un mes
   de alquiler (un día del bot es un mes) con su IRPF, IBI y comunidad, y se vende
-  al mercado con su plusvalía. Comprar sube el precio del barrio.
+  al mercado con su plusvalía. Comprar sube el precio del barrio. También hay
+  hipoteca al Euríbor (con ejecución si no pagas), VPO por sorteo con aval del
+  Estado, vivir en tu piso, alquilárselo a otro miembro con Bono Alquiler Joven,
+  licencia vacacional con IGIC, la Ley de Vivienda, el fondo buitre y la SOCIMI.
 - **Cuenta remunerada:** cada día el monedero paga intereses sobre el saldo
   medio del día anterior, por tramos: 2,5 % hasta 4.000 Y$, 1,25 % hasta 20.000
   y 0,4 % hasta 70.000 (500 Y$ brutos al día como mucho). Cobran también los
