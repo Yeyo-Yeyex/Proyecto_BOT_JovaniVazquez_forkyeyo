@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.8.0 · 2026-10-15
+
+- Torre del dragón: `torre` animada, con un tema por nivel y todo pintado antes del clic
+
 ### 7.7.1 · 2026-10-15
 
 - Logros de colección: las cajas y las skins ya no cuentan como coleccionables
