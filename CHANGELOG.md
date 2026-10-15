@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.7.2 · 2026-10-15
+
+- Pala: los marrones salen el doble, uno de cada tres turnos
+
 ### 6.7.1 · 2026-10-15
 
 - Mascotas: el panel ya no deja de responder tras pedir un respiro
