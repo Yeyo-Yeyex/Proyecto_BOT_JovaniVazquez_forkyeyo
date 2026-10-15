@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.14.1 · 2026-10-15
+
+- Interno: auditoría de las loterías con el código real
+
 ### 6.14.0 · 2026-10-15
 
 - Logros: todo lo del trabajo, en una sola entrada 🪏 Trabajo del menú
