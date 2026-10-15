@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.15.1 · 2026-10-15
+
+- Babel: `babel` ya no se corta a mitad cuando Google pide un respiro
+
 ### 6.15.0 · 2026-10-15
 
 - Rastro: `trueque`, cambia un objeto por otro con otro miembro
