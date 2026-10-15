@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.7.1 · 2026-10-15
+
+- Logros de colección: las cajas y las skins ya no cuentan como coleccionables
+
 ### 7.7.0 · 2026-10-15
 
 - Pisos: rediseño ilustrado, con las islas de verdad y mucha más guasa
