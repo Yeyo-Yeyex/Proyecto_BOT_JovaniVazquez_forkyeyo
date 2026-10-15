@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
-from bot.services.horses import GRAND_PRIX_POT, HorseRecord, updated_record
+from bot.services.horses import GRAND_PRIX_POT, GRAND_PRIX_POT_MAX, HorseRecord, updated_record
 
 T = TypeVar("T")
 
@@ -131,6 +131,7 @@ class HorseRepository:
         now: float,
         grand_prix: bool,
         pot: int | None = None,
+        pot_add: int = 0,
     ) -> Meta:
         """Apunta una carrera terminada: la forma de cada caballo y los contadores.
 
@@ -142,11 +143,16 @@ class HorseRepository:
                 está. Una carrera normal no lo toca: si se pasara el bote que
                 leyó al abrir, pisaría el de un Gran Premio de otro canal que
                 acabara mientras tanto.
+            pot_add: Lo que la carrera echa al bote (parte de lo perdido). Se suma
+                en la misma transacción al que haya, o a `pot`, sin pasar del tope
+                `GRAND_PRIX_POT_MAX`: así dos carreras a la vez no se pisan.
 
         Returns:
             Los contadores del servidor tras la carrera.
         """
-        return await self._run(self._record_race_sync, guild_id, list(finish), now, grand_prix, pot)
+        return await self._run(
+            self._record_race_sync, guild_id, list(finish), now, grand_prix, pot, pot_add
+        )
 
     def _record_race_sync(
         self,
@@ -155,6 +161,7 @@ class HorseRepository:
         now: float,
         grand_prix: bool,
         pot: int | None,
+        pot_add: int,
     ) -> Meta:
         with self._connect() as connection:
             records = self._records_in(connection, guild_id)
@@ -197,7 +204,7 @@ class HorseRepository:
                 races=before.races + 1,
                 since_grand_prix=0 if grand_prix else before.since_grand_prix + 1,
                 last_grand_prix=now if grand_prix else before.last_grand_prix,
-                pot=before.pot if pot is None else pot,
+                pot=min(GRAND_PRIX_POT_MAX, (before.pot if pot is None else pot) + pot_add),
             )
             connection.execute(
                 """

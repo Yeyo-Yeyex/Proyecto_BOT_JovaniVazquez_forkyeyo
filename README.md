@@ -563,8 +563,8 @@ python -m bot
   apuesta, así que sale en cuanto se cierra la parrilla. Si no hay Node, la
   pinta Chromium y, si tampoco, Pillow; la parrilla y el boleto, que son
   HTML/CSS, siempre los captura Chromium. Cada 8 carreras (y 4 h) sale el
-  Gran Premio con un bote para quien acierte el ganador, que crece si nadie
-  acierta. Tributa como el resto del
+  Gran Premio con un bote para quien acierte el ganador, que crece con el
+  10 % de lo que se pierde en cada carrera y si nadie acierta. Tributa como el resto del
   casino.
 - **Bacará** (`/bacara`, `.bacara [cantidad] [lado]`): Punto y Banca con las
   reglas de casino y un zapato de 8 barajas compartido por todo el canal. Se

@@ -44,8 +44,11 @@ LIRPF, y pérdidas que solo compensan ganancias de juego, art. 33.5.d LIRPF):
 entra en la retención diaria del casino y en la renta semanal. El bote del
 Gran Premio va dentro del mismo pago y tributa igual. **El bote sale de la
 nada**, como los premios de la casa en cualquier juego: decisión del
-proyecto. Lo compensan el margen de las cuotas (la casa se queda el 5-10 % de
-lo apostado) y la retención del casino. Cifras en `bot.services.horses`
+proyecto. Crece con el juego: cada carrera, normal o Gran Premio, le echa el
+`POT_LOSS_SHARE` % de lo que se pierde en sus boletos, y cada Gran Premio
+desierto, `GRAND_PRIX_POT_STEP`, hasta `GRAND_PRIX_POT_MAX`. Lo compensan el
+margen de las cuotas (la casa se queda el 5-10 % de lo apostado), del que el
+bote solo devuelve una parte, y la retención del casino. Cifras en `bot.services.horses`
 (`GRAND_PRIX_POT` y siguientes): como mucho un Gran Premio cada 4 horas por
 servidor y un boleto por persona, así que nadie puede cubrir todos los
 caballos para quedarse el bote.
@@ -98,6 +101,7 @@ from bot.services.horses import (
     GRAND_PRIX_COOLDOWN,
     GRAND_PRIX_EVERY,
     GRAND_PRIX_MIN_STAKE,
+    POT_LOSS_SHARE,
     RTP,
     BetKind,
     HorseError,
@@ -112,6 +116,7 @@ from bot.services.horses import (
     estimate,
     format_odds,
     grand_prix_due,
+    loss_contribution,
     margin_text,
     near_miss,
     new_card,
@@ -595,12 +600,16 @@ class Race:
             return (
                 f"**{pot}** para quien acierte el ganador con un boleto de "
                 f"{format_amount(GRAND_PRIX_MIN_STAKE)} o más (ganador, gemela o trío). "
-                "Si nadie acierta, el bote crece."
+                f"Si nadie acierta, el bote crece. Cada boleto perdido le echa el "
+                f"{POT_LOSS_SHARE} %."
             )
         left = max(0, GRAND_PRIX_EVERY - self.meta.since_grand_prix)
         if left:
             races = "carrera" if left == 1 else "carreras"
-            return f"Bote de **{pot}** · faltan {left} {races} para el próximo."
+            return (
+                f"Bote de **{pot}** · faltan {left} {races} para el próximo · "
+                f"el {POT_LOSS_SHARE} % de lo que se pierde va al bote."
+            )
         ready = self.meta.last_grand_prix + self.cog.grand_prix_cooldown
         return f"Bote de **{pot}** · el próximo sale a partir de <t:{math.ceil(ready)}:t>."
 
@@ -677,7 +686,7 @@ class Race:
                 verb = "se reparten" if len(pot_winners) > 1 else "se lleva"
                 text = f"🏆 {names} {verb} **{format_amount(pot)}**."
             else:
-                text = f"Desierto. El bote crece: **{format_amount(next_pot(pot, won=False))}**."
+                text = f"Desierto. El bote crece: **{format_amount(self.meta.pot)}**."
             embed.add_field(name="💰 Bote del Gran Premio", value=text, inline=False)
         embed.set_image(url=f"attachment://{FINISH_PNG}")
         embed.set_footer(text="🏇 Otra carrera abre la siguiente en este canal.")
@@ -1022,6 +1031,7 @@ class Race:
                 ticket.pot_share = 0
         finish = [(self.card.horses[i].key, place + 1) for place, i in enumerate(order)]
         new_pot = next_pot(pot, won=bool(winners)) if self.card.grand_prix else None
+        fed = loss_contribution((t.stake, t.prize - t.pot_share) for t in self.tickets.values())
         try:
             self.meta = await self.cog.repository.record_race(
                 self.guild_id,
@@ -1029,6 +1039,7 @@ class Race:
                 now=self.cog.wall_clock(),
                 grand_prix=self.card.grand_prix,
                 pot=new_pot,
+                pot_add=fed,
             )
         except Exception:
             logger.exception("No se pudo apuntar la carrera en el establo")

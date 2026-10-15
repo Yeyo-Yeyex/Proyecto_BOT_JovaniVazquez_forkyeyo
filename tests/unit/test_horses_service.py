@@ -372,3 +372,10 @@ def test_el_bote_crece_hasta_el_tope_y_vuelve_al_inicio() -> None:
     assert h.next_pot(GRAND_PRIX_POT, won=False) == GRAND_PRIX_POT + GRAND_PRIX_POT_STEP
     assert h.next_pot(GRAND_PRIX_POT_MAX, won=False) == GRAND_PRIX_POT_MAX
     assert h.next_pot(GRAND_PRIX_POT_MAX, won=True) == GRAND_PRIX_POT
+
+
+def test_cada_carrera_echa_al_bote_su_parte_de_lo_perdido() -> None:
+    # Un boleto perdido entero, uno que cobra menos de lo apostado y uno que gana.
+    tickets = [(1_000, 0), (500, 300), (200, 900)]
+    assert h.loss_contribution(tickets) == (1_000 + 200) * h.POT_LOSS_SHARE // 100
+    assert h.loss_contribution([]) == 0
