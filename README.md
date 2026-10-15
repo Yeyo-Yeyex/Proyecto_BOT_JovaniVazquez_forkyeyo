@@ -70,7 +70,7 @@ python -m bot
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
   | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `vender <objeto> <precio> [comprador]` |
+  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -365,7 +365,7 @@ python -m bot
   (0,50 €). Los máximos de Bizum (10.000 Y$ por operación y 20.000 Y$ al día)
   no se aplican: el bot avisa de que te has pasado y te da el logro
   *A espaldas de Sánchez*. El resultado es público y menciona a quien recibe.
-- **Rastro** (`vender`, `rastro`): segunda mano entre miembros. Con
+- **Rastro** (`vender`, `trueque`, `rastro`): segunda mano entre miembros. Con
   `vender <objeto> <precio> <comprador>` le haces una oferta (o se lo regalas
   con precio 0); sin comprador, lo pones en un puesto con precio de salida y,
   si lo quieren varios, se subasta: cada puja sube al menos un 5 % y da una
@@ -374,7 +374,9 @@ python -m bot
   el límite por persona del artículo. Quien compra paga el 5,5 % de ITP sobre
   el mayor entre el precio y el valor de la tienda (vender a 1 Y$ no lo baja;
   la parte regalada está exenta, como el Bizum) y quien vende con ganancia
-  paga el 19 % de la plusvalía.
+  paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
+  [dinero]` le propones cambiar un objeto por otro, con dinero encima si
+  quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el

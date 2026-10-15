@@ -1,4 +1,4 @@
-"""El Rastro: `vender` y `rastro`, la segunda mano entre miembros.
+"""El Rastro: `vender`, `trueque` y `rastro`, la segunda mano entre miembros.
 
 - `vender <objeto> <precio> [comprador]`: con comprador, le hace una oferta de venta
   directa (botones 🤝 Aceptar y ✖️ Rechazar, solo para él; ↩️ Retirar, para quien
@@ -6,6 +6,11 @@
   comprador, monta un puesto en el Rastro con ese precio de salida: el objeto sale
   de la mochila y cualquiera puede pujar con 🔨 Pujar. Si dos o más lo quieren, es
   una subasta: cada puja sube al menos un 5 % y da una hora más.
+- `trueque <tu objeto> <miembro> <su objeto> [dinero]`: le propone cambiar un objeto
+  de tu mochila por uno de la suya, con dinero encima si quieres. Botones 🤝 y ✖️
+  para quien recibe la oferta y ↩️ para quien la hace; caduca a los diez minutos.
+  Es una permuta: cada uno paga el ITP de lo que recibe y la plusvalía de lo que
+  entrega (`bot.services.rastro.Swap`).
 - `rastro`: el tablón con los puestos abiertos del servidor, sus pujas y cuándo se
   adjudican, con 🔨 para pujar y ↩️ para retirar los tuyos sin pujas.
 
@@ -52,6 +57,7 @@ from bot.services.achievements import (
     market_outbid_stats,
     market_purchase_stats,
     market_sale_stats,
+    market_swap_stats,
     market_withdraw_stats,
 )
 from bot.services.economy import EconomyService, format_amount, parse_amount
@@ -64,6 +70,7 @@ from bot.services.rastro import (
     OFFER_SECONDS,
     Deal,
     MarketError,
+    Swap,
     is_tapete,
     parse_sale_price,
     untradeable,
@@ -113,6 +120,14 @@ EXPIRED_CRIES = (
     "Nadie lo ha querido, ni regalado. Como un programa electoral de hace cuatro años.",
     "Una semana al sol y ni una puja. Ni en el Rastro de Cascorro, mi amor.",
     "Ni una oferta. Ni Milei con la motosierra lo habría rebajado tanto.",
+)
+#: Lo que dice al cerrar un trueque.
+SWAP_CRIES = (
+    "🔄 ¡Trueque hecho!",
+    "🔄 ¡Trueque hecho! Como los cromos del recreo, pero con ITP.",
+    "🔄 ¡Cambio cerrado! Ni el trueque de Sánchez con Junts fue tan rápido.",
+    "🔄 ¡Trato hecho! Hoy por ti, mañana por mí, y Hacienda por los dos.",
+    "🔄 ¡Cambiazo! Más limpio que un traspaso de cartera en el Consejo de Ministros.",
 )
 #: Lo que dice al cerrar una venta directa.
 DEAL_CRIES = (
@@ -196,6 +211,34 @@ def tax_note(deal: Deal) -> str:
     if not bite:
         return f"-# 🐶 {TAX_COLLECTOR} no rasca nada: ni valor, ni ITP, ni plusvalía."
     return f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(bite)} entre ITP y plusvalía."
+
+
+def swap_lines(swap: Swap, proposer: str, target: str) -> list[str]:
+    """Las cuentas de un trueque, para la oferta y para el resultado."""
+    itp_pct = f"{ITP_RATE * 100:.1f}".replace(".", ",")
+    gain_pct = round(CAPITAL_GAIN_RATE * 100)
+    lines = [
+        f"> 🏷️ Valores de referencia: **{format_amount(swap.given_reference)}** lo de "
+        f"{proposer} y **{format_amount(swap.received_reference)}** lo de {target}",
+        f"> 🧾 ITP del {itp_pct} % de lo que recibe cada uno: {proposer} "
+        f"**{format_amount(swap.proposer_itp)}**, {target} **{format_amount(swap.target_itp)}**",
+    ]
+    if swap.proposer_gain_tax or swap.target_gain_tax:
+        lines.append(
+            f"> 📈 Plusvalía del {gain_pct} % de lo que entrega cada uno: {proposer} "
+            f"**{format_amount(swap.proposer_gain_tax)}**, {target} "
+            f"**{format_amount(swap.target_gain_tax)}**"
+        )
+    target_side = (
+        f"paga **{format_amount(swap.target_pays)}**"
+        if swap.target_pays >= 0
+        else f"cobra **{format_amount(-swap.target_pays)}**"
+    )
+    lines.append(
+        f"> 💸 En total, {proposer} paga **{format_amount(swap.proposer_pays)}** y {target} "
+        f"{target_side}"
+    )
+    return lines
 
 
 def listing_line(listing: Listing, seller: str) -> str:
@@ -351,6 +394,151 @@ class Rastro(commands.Cog):
             self.bot, guild.id, seller, channel, market_listing_stats(when=self._when(now))
         )
         return None, embed, view
+
+    # -- trueque -----------------------------------------------------------------------
+
+    async def barter(
+        self,
+        guild: discord.Guild,
+        proposer: discord.abc.User,
+        target: discord.abc.User,
+        mine_text: str,
+        theirs_text: str,
+        money_text: str | None,
+    ) -> tuple[str | None, discord.Embed | None, ui.View | None]:
+        """Prepara la oferta de un trueque.
+
+        Returns:
+            `(texto, embed, vista)`. Sin embed, el texto es un error para quien propone;
+            con embed es la oferta pública, que menciona a quien la recibe.
+        """
+        if target.bot:
+            return "Los bots no cambian cromos, mi amor. Ni con el kit digital.", None, None
+        if target.id == proposer.id:
+            return "Cambiarte algo contigo mismo es hacer limpieza, no trueque.", None, None
+        now = self.clock()
+        mine = pick_entry(await self.shop.inventory(guild.id, proposer.id, now), mine_text)
+        if isinstance(mine, str):
+            return mine, None, None
+        theirs = pick_entry(await self.shop.inventory(guild.id, target.id, now), theirs_text)
+        if isinstance(theirs, str):
+            return (
+                f"{_name(target)} no tiene eso para cambiar: solo coleccionables y tapetes. "
+                f"Mira su mochila con `perfil`.",
+                None,
+                None,
+            )
+        if mine.item_id == theirs.item_id:
+            return "Cambiar una cosa por otra igual es perder el tiempo.", None, None
+        try:
+            money = parse_sale_price(money_text, allow_gift=True) if money_text else 0
+        except ValueError as error:
+            return str(error), None, None
+        given_ref, given_level, _per, given_cost = await self.repository.appraise(
+            guild.id, mine.item_id, mine.id, proposer.id
+        )
+        got_ref, got_level, _per, got_cost = await self.repository.appraise(
+            guild.id, theirs.item_id, theirs.id, target.id
+        )
+        for member, level in ((target, given_level), (proposer, got_level)):
+            if (problem := await self._requirements(guild.id, member.id, level)) is not None:
+                return problem, None, None
+        swap = Swap(given_ref, given_cost, got_ref, got_cost, money)
+        view = SwapView(self, guild.id, proposer, target, mine, theirs, money)
+        extra = f" y **{format_amount(money)}**" if money else ""
+        lines = [
+            f"🔄 **{_name(proposer)}** le propone a {target.mention} un trueque: su "
+            f"**{entry_label(mine)}**{extra} por tu **{entry_label(theirs)}**.",
+            *swap_lines(swap, _name(proposer), _name(target)),
+            f"-# La oferta caduca <t:{int(now) + OFFER_SECONDS}:R>. Las cifras se recalculan "
+            "al aceptar.",
+        ]
+        embed = discord.Embed(description="\n".join(lines), color=COLOR)
+        return target.mention, embed, view
+
+    async def accept_swap(self, interaction: discord.Interaction, offer: SwapView) -> bool:
+        """Cierra un trueque al pulsar 🤝 (ya con `ack`). Devuelve si se hizo."""
+        guild = interaction.guild
+        if guild is None:
+            return False
+        proposer, target = offer.proposer, offer.target
+        for member, item_id in ((target, offer.given_item), (proposer, offer.received_item)):
+            _ref, level, _per = await self.repository.reference(guild.id, item_id)
+            if (problem := await self._requirements(guild.id, member.id, level)) is not None:
+                await notify(interaction, problem)
+                return False
+        now = self.clock()
+        try:
+            barter, balances = await self.economy.market(
+                guild.id,
+                self.repository.swap(
+                    guild.id,
+                    proposer.id,
+                    target.id,
+                    offer.given_entry,
+                    offer.received_entry,
+                    offer.money,
+                    now,
+                ),
+            )
+        except MarketError as error:
+            await notify(interaction, str(error))
+            return False
+        except InsufficientFundsError as error:
+            await notify(
+                interaction,
+                f"¡Ay, bendito! A uno de los dos no le llega para el dinero y los impuestos "
+                f"(se quedaba en {format_amount(error.balance)}).",
+            )
+            return False
+        except BalanceLimitError:
+            await notify(interaction, "A uno de los dos ya no le cabe más dinero en la cuenta.")
+            return False
+        swap = barter.swap
+        lines = [
+            f"{self.rng.choice(SWAP_CRIES)} **{_name(proposer)}** se lleva "
+            f"**{offer.received_label}** y **{_name(target)}**, **{offer.given_label}**"
+            + (f" y {format_amount(swap.money)}." if swap.money else "."),
+            *swap_lines(swap, _name(proposer), _name(target)),
+            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(swap.taxes)} entre ITP y plusvalía."
+            if swap.taxes
+            else f"-# 🐶 {TAX_COLLECTOR} no rasca nada: ni valor, ni ITP, ni plusvalía.",
+        ]
+        if (
+            hint := await renta.hint(self.bot, guild.id, target.id, Moment(Event.TRADE))
+        ) is not None:
+            lines.append(hint)
+        await edit(
+            interaction,
+            content=None,
+            embed=discord.Embed(description="\n".join(lines), color=COLOR_DONE),
+            view=None,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        for member in (proposer, target):
+            await tienda.refresh_worn(self.bot, guild.id, member.id)
+        await renta.remind(self.bot, interaction)
+        when = self._when(now)
+        titles = is_title(barter.given[3]) and is_title(barter.received[3])
+        for member, gave, got, is_proposer in (
+            (proposer, swap.given_reference + swap.money, swap.received_reference, True),
+            (target, swap.received_reference, swap.given_reference + swap.money, False),
+        ):
+            await logros.track(
+                self.bot,
+                guild.id,
+                member,
+                interaction.channel,
+                market_swap_stats(
+                    gave=gave,
+                    got=got,
+                    money=swap.money,
+                    proposer=is_proposer,
+                    titles=titles,
+                    when=when,
+                ),
+            )
+        return True
 
     def _when(self, now: float) -> datetime:
         return datetime.fromtimestamp(now, TIMEZONE)
@@ -793,6 +981,90 @@ class Rastro(commands.Cog):
         if isinstance(view, OfferView):
             view.message = message
 
+    @app_commands.command(
+        name="trueque", description="Cambia un objeto de tu mochila por uno de la de otro."
+    )
+    @app_commands.guild_only()
+    @app_commands.describe(
+        objeto="Lo que das de tu mochila (coleccionables y tapetes).",
+        miembro="Con quién lo cambias.",
+        a_cambio="Lo que quieres de su mochila.",
+        dinero="Dinero que añades tú (por defecto, nada).",
+    )
+    async def trueque(
+        self,
+        interaction: discord.Interaction,
+        objeto: str,
+        miembro: discord.Member,
+        a_cambio: str,
+        dinero: str | None = None,
+    ) -> None:
+        """Propone un trueque en el canal. Público: menciona a quien lo recibe."""
+        assert interaction.guild is not None  # guild_only
+        content, embed, view = await self.barter(
+            interaction.guild, interaction.user, miembro, objeto, a_cambio, dinero
+        )
+        if embed is None:
+            await interaction.response.send_message(content or "No se pudo.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            content,
+            embed=embed,
+            view=view or discord.utils.MISSING,
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=[miembro]),
+        )
+        if isinstance(view, SwapView):
+            view.message = await interaction.original_response()
+
+    @trueque.autocomplete("objeto")
+    async def _trueque_mine_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        return await self._objeto_autocomplete(interaction, current)
+
+    @trueque.autocomplete("a_cambio")
+    async def _trueque_theirs_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Lo que se puede pedir de la mochila del miembro ya elegido."""
+        member = getattr(interaction.namespace, "miembro", None)
+        if interaction.guild is None or member is None:
+            return []
+        entries = await self.sellable_entries(interaction.guild.id, member.id)
+        needle = current.casefold()
+        return [
+            app_commands.Choice(name=entry_label(entry)[:100], value=str(entry.id))
+            for entry in entries
+            if needle in entry.name.casefold()
+        ][:25]
+
+    @commands.command(name="trueque")
+    @commands.guild_only()
+    async def trueque_text(
+        self,
+        ctx: commands.Context,
+        miembro: discord.Member,
+        objeto: str,
+        a_cambio: str,
+        dinero: str | None = None,
+    ) -> None:
+        """Versión de texto: `.trueque @miembro "tu objeto" "su objeto" [dinero]`."""
+        assert ctx.guild is not None
+        content, embed, view = await self.barter(
+            ctx.guild, ctx.author, miembro, objeto, a_cambio, dinero
+        )
+        if embed is None:
+            await ctx.reply(content or "No se pudo.", mention_author=False)
+            return
+        message = await ctx.send(
+            content,
+            embed=embed,
+            view=view,  # type: ignore[arg-type]
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=[miembro]),
+        )
+        if isinstance(view, SwapView):
+            view.message = message
+
     @app_commands.command(name="rastro", description="Mira los puestos del Rastro y puja.")
     @app_commands.guild_only()
     async def rastro(self, interaction: discord.Interaction) -> None:
@@ -913,6 +1185,111 @@ class OfferView(ui.View):
                 content=None,
                 embed=discord.Embed(
                     description=f"⌛ La oferta de **{self.label}** ha caducado.", color=COLOR
+                ),
+                view=None,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except discord.HTTPException:
+            pass
+
+
+class SwapView(ui.View):
+    """Oferta de trueque: 🤝 y ✖️ para quien la recibe, ↩️ para quien la hace."""
+
+    def __init__(
+        self,
+        cog: Rastro,
+        guild_id: int,
+        proposer: discord.abc.User,
+        target: discord.abc.User,
+        given: InventoryEntry,
+        received: InventoryEntry,
+        money: int,
+    ) -> None:
+        super().__init__(timeout=OFFER_SECONDS)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.proposer = proposer
+        self.target = target
+        self.given_entry, self.given_item = given.id, given.item_id
+        self.received_entry, self.received_item = received.id, received.item_id
+        self.given_label = entry_label(given)
+        self.received_label = entry_label(received)
+        self.money = money
+        #: Mensaje de la oferta, para apagarla al caducar.
+        self.message: discord.Message | None = None
+        #: Hay un 🤝 en marcha: un segundo clic no puede cambiar dos veces.
+        self.busy = False
+
+    async def _close(self, interaction: discord.Interaction, text: str) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            content=None,
+            embed=discord.Embed(description=text, color=COLOR),
+            view=None,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @ui.button(
+        label="Aceptar",
+        emoji="🤝",
+        style=discord.ButtonStyle.success,
+        custom_id="rastro:trueque:si",
+    )
+    async def accept(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message("Ese trueque no es para ti.", ephemeral=True)
+            return
+        if self.busy:
+            await interaction.response.send_message(
+                "Un momento, que lo está firmando.", ephemeral=True
+            )
+            return
+        self.busy = True
+        await ack(interaction)
+        try:
+            if await self.cog.accept_swap(interaction, self):
+                self.stop()
+        finally:
+            self.busy = False
+
+    @ui.button(
+        label="Rechazar",
+        emoji="✖️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="rastro:trueque:no",
+    )
+    async def reject(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self.target.id:
+            await interaction.response.send_message("Ese trueque no es para ti.", ephemeral=True)
+            return
+        await self._close(
+            interaction,
+            f"✖️ {_name(self.target)} no cambia **{self.received_label}** por "
+            f"**{self.given_label}**. Ni con el Falcon de regalo.",
+        )
+
+    @ui.button(
+        label="Retirar",
+        emoji="↩️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="rastro:trueque:retirar",
+    )
+    async def withdraw(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self.proposer.id:
+            await interaction.response.send_message("Ese trueque no es tuyo.", ephemeral=True)
+            return
+        await self._close(interaction, f"↩️ {_name(self.proposer)} se lo ha pensado mejor.")
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(
+                content=None,
+                embed=discord.Embed(
+                    description=f"⌛ El trueque de **{self.given_label}** ha caducado.",
+                    color=COLOR,
                 ),
                 view=None,
                 allowed_mentions=discord.AllowedMentions.none(),

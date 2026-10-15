@@ -37,6 +37,7 @@ from bot.services.rastro import (
     MAX_LISTINGS,
     Deal,
     MarketError,
+    Swap,
     escrow,
     min_bid,
     untradeable,
@@ -140,6 +141,25 @@ class Trade:
     listing: Listing | None = None
     void: bool = False
     expired: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Barter:
+    """Un trueque cerrado: quién da qué y sus cuentas.
+
+    Attributes:
+        proposer_id: Quien lo propuso (y pone el dinero, si hay).
+        target_id: Quien lo aceptó.
+        given: `(nombre, emoji, número de serie, clave)` de lo que da quien propone.
+        received: Lo mismo de lo que recibe a cambio.
+        swap: Las cuentas (`bot.services.rastro.Swap`).
+    """
+
+    proposer_id: int
+    target_id: int
+    given: tuple[str, str, int | None, str | None]
+    received: tuple[str, str, int | None, str | None]
+    swap: Swap
 
 
 def _listing(row: sqlite3.Row) -> Listing:
@@ -493,6 +513,121 @@ class MarketRepository:
             return _hand_over_in(
                 connection, guild_id, entry, seller_id, seller_id, buyer_id, deal, None, now
             )
+
+        return run
+
+    def swap(
+        self,
+        guild_id: int,
+        proposer_id: int,
+        target_id: int,
+        given_entry: int,
+        received_entry: int,
+        money: int,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], tuple[Barter, MarketMove]]:
+        """Trueque: los dos objetos cambian de mochila y cada uno paga sus impuestos.
+
+        Raises (al correr):
+            MarketError: Si alguno de los objetos ya no está en su mochila o no se puede
+                cambiar, o si alguien ya tiene todos los que puede tener de lo que recibe.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[Barter, MarketMove]:
+            if proposer_id == target_id or target_id <= 0:
+                raise MarketError("Cambiarte algo contigo mismo es hacer limpieza, no trueque.")
+            mine = _owned_in(connection, guild_id, proposer_id, given_entry)
+            try:
+                theirs = _owned_in(connection, guild_id, target_id, received_entry)
+            except MarketError as error:
+                raise MarketError("Lo que pedías a cambio ya no está en su mochila.") from error
+            if mine["item_id"] == theirs["item_id"]:
+                raise MarketError("Cambiar una cosa por otra igual es perder el tiempo.")
+            rules = {
+                "mine": _item_rules_in(connection, guild_id, mine["item_id"]),
+                "theirs": _item_rules_in(connection, guild_id, theirs["item_id"]),
+            }
+            for receiver, row, key in (
+                (target_id, mine, "mine"),
+                (proposer_id, theirs, "theirs"),
+            ):
+                per_user = rules[key][2]
+                if (
+                    per_user is not None
+                    and _held_in(connection, guild_id, receiver, row["item_id"]) >= per_user
+                ):
+                    raise MarketError(
+                        "Uno de los dos ya tiene todos los que se pueden tener de lo que recibe."
+                    )
+            swap = Swap(
+                given_reference=rules["mine"][0],
+                given_cost=_cost_in(connection, guild_id, given_entry, proposer_id),
+                received_reference=rules["theirs"][0],
+                received_cost=_cost_in(connection, guild_id, received_entry, target_id),
+                money=money,
+            )
+            for row, holder, receiver in (
+                (mine, proposer_id, target_id),
+                (theirs, target_id, proposer_id),
+            ):
+                if move_entry_in(connection, guild_id, int(row["id"]), holder, receiver) is None:
+                    raise MarketError("Uno de los objetos se ha perdido por el camino.")
+            # Cada mitad del trueque se apunta como una venta, con lo que le cuesta a
+            # quien lo recibe: así su plusvalía sale bien si luego lo vende.
+            for row, seller, buyer, price, reference, tax, gain_tax, cost in (
+                (
+                    mine, proposer_id, target_id, 0, swap.given_reference,
+                    swap.target_itp, swap.proposer_gain_tax, swap.target_cost,
+                ),
+                (
+                    theirs, target_id, proposer_id, money, swap.received_reference,
+                    swap.proposer_itp, swap.target_gain_tax, swap.proposer_cost,
+                ),
+            ):  # fmt: skip
+                connection.execute(
+                    """
+                    INSERT INTO market_sales
+                        (guild_id, entry_id, item_id, seller_id, buyer_id, price, reference,
+                         itp, gain_tax, cost, listing_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                    """,
+                    (
+                        guild_id, int(row["id"]), int(row["item_id"]), seller, buyer, price,
+                        reference, tax, gain_tax, cost, now,
+                    ),
+                )  # fmt: skip
+            barter = Barter(
+                proposer_id=proposer_id,
+                target_id=target_id,
+                given=(mine["name"], mine["emoji"], mine["serial"], mine["catalog_key"]),
+                received=(theirs["name"], theirs["emoji"], theirs["serial"], theirs["catalog_key"]),
+                swap=swap,
+            )
+            payments = (
+                # Lo que recibe quien propone: paga el dinero y su ITP; quien acepta
+                # cobra el dinero menos su plusvalía.
+                MarketPayment(
+                    buyer_id=proposer_id,
+                    seller_id=target_id,
+                    price=money,
+                    itp_base=swap.proposer_itp_base,
+                    itp=swap.proposer_itp,
+                    gain=swap.target_gain,
+                    gain_tax=swap.target_gain_tax,
+                ),
+                # Lo que recibe quien acepta: sin dinero, solo su ITP; quien propone
+                # paga su plusvalía.
+                MarketPayment(
+                    buyer_id=target_id,
+                    seller_id=proposer_id,
+                    price=0,
+                    itp_base=swap.target_itp_base,
+                    itp=swap.target_itp,
+                    gain=swap.proposer_gain,
+                    gain_tax=swap.proposer_gain_tax,
+                ),
+            )
+            return barter, MarketMove(payments=payments)
 
         return run
 

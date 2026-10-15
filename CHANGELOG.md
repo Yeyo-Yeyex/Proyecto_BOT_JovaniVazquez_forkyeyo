@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.15.0 · 2026-10-15
+
+- Rastro: `trueque`, cambia un objeto por otro con otro miembro
+
 ### 6.14.2 · 2026-10-15
 
 - Tragaperras y todo el bot: ya no van más lentos cuanto más se juega

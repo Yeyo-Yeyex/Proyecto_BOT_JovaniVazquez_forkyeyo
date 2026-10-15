@@ -518,11 +518,14 @@ class MarketMove:
         refunds: `(miembro, importe)` que salen del depósito (pujas superadas o
             subastas que no se pueden adjudicar).
         payment: La venta, si se cierra una.
+        payments: Más ventas en la misma operación (las dos mitades de un trueque),
+            que se pagan después de `payment` y en este orden.
     """
 
     hold: tuple[int, int] | None = None
     refunds: tuple[tuple[int, int], ...] = ()
     payment: MarketPayment | None = None
+    payments: tuple[MarketPayment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -3724,7 +3727,7 @@ class EconomyRepository:
             for member, amount in move.refunds:
                 deposit(-amount, "rastro:devolucion")
                 charge(member, [LedgerEntry(amount, "rastro:puja_devuelta")])
-            if (pay := move.payment) is not None:
+            for pay in (*((move.payment,) if move.payment else ()), *move.payments):
                 if pay.escrowed:
                     deposit(-(pay.price + pay.itp), "rastro:adjudicado")
                 else:
