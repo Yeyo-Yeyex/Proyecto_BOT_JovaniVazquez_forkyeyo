@@ -1013,6 +1013,10 @@ RENT_LEVELS: dict[str, RentLevel] = {
         RentLevel("referencia", "De referencia", "📊", 1.0, 0.6, 0.004, 60),
         RentLevel("mercado", "De mercado", "📈", 1.25, 0.35, 0.006, 60),
         RentLevel("nomadas", "Para nómadas digitales", "💻", 1.6, 0.15, 0.001, 9),
+        # Vivienda vacacional: solo con licencia (`housing.VACATION_LEVEL`). Cada «mes» es
+        # una estancia corta, se cobra por adelantado (no hay impago) y la ocupación
+        # depende de la temporada (`housing.season_factor`).
+        RentLevel("vacacional", "Vacacional (con licencia)", "🏖️", 2.0, 0.6, 0.0, 1),
     )
 }
 DEFAULT_RENT_LEVEL = "referencia"
@@ -1121,6 +1125,80 @@ TENANTS: tuple[Tenant, ...] = (
         ("nomadas",),
         "¿Aceptas el pago en mi moneda? Mañana vale el doble, seguro.",
     ),
+    Tenant(
+        "britanicos",
+        "Familia británica de vacaciones",
+        "☀️",
+        ("vacacional",),
+        "Lovely! Where is the full English breakfast?",
+    ),
+    Tenant(
+        "despedida",
+        "Despedida de soltero alemana",
+        "🍻",
+        ("vacacional",),
+        "Prost! ¿El balcón aguanta a ocho?",
+    ),
+    Tenant(
+        "nordicos",
+        "Pareja nórdica jubilada",
+        "🧓",
+        ("vacacional",),
+        "Venimos de noviembre a marzo desde 1998. Nos quedamos con el piso.",
+    ),
+    Tenant(
+        "surferos",
+        "Grupo de surferos",
+        "🏄",
+        ("vacacional",),
+        "¿Hay sitio para seis tablas en el salón?",
+    ),
 )
 
 TENANT_BY_KEY: dict[str, Tenant] = {t.key: t for t in TENANTS}
+
+
+@dataclass(frozen=True, slots=True)
+class VpoUnit:
+    """Una vivienda de protección oficial: se sortea, se compra a precio tasado y no se alquila.
+
+    Attributes:
+        key: Clave estable.
+        name: Nombre de la promoción.
+        town: Municipio.
+        island: Clave de `ISLANDS`.
+        m2: Metros.
+        price: Precio máximo legal, en Y$ (no sigue al índice de ningún barrio).
+        community: Comunidad en euros al mes.
+        blurb: La letra pequeña.
+    """
+
+    key: str
+    name: str
+    town: str
+    island: str
+    m2: int
+    price: int
+    community: int
+    blurb: str
+
+
+#: Las VPO del servidor: una de cada. El precio está pensado para que la cuota de la
+#: hipoteca (con el aval del Estado, al 100 %) quepa en el 35 % del sueldo de un celador.
+VPO_UNITS: tuple[VpoUnit, ...] = (
+    VpoUnit("rehoyas", "VPO en Las Rehoyas", "Las Palmas de Gran Canaria", "gc", 52, 420_000, 30,
+            "Promoción pública de 1970 rehabilitada en 2019. El ascensor llegó en 2023."),
+    VpoUnit("jinamar", "VPO en Jinámar", "Telde", "gc", 60, 450_000, 30,
+            "El polígono más grande de Canarias. Vistas al mar y a la autopista."),
+    VpoUnit("tamaraceite", "VPO en Tamaraceite", "Las Palmas de Gran Canaria", "gc", 65,
+            480_000, 35,
+            "Obra nueva del Cabildo. Entregada con seis años de retraso, como manda la tradición."),
+    VpoUnit("anaza", "VPO en Añaza", "Santa Cruz de Tenerife", "tf", 55, 430_000, 30,
+            "Barrio de los 90 junto al mar. La guagua pasa cuando le parece."),
+    VpoUnit("gallega", "VPO en La Gallega", "Santa Cruz de Tenerife", "tf", 58, 440_000, 30,
+            "Bloques de colores y una de las mejores vistas de Santa Cruz que nadie va a ver."),
+    VpoUnit("cardonal", "VPO en El Cardonal", "San Cristóbal de La Laguna", "tf", 62, 460_000, 35,
+            "Junto a la universidad: tu vecino es un opositor y el de enfrente, otro."),
+)  # fmt: skip
+
+VPO_BY_KEY: dict[str, VpoUnit] = {unit.key: unit for unit in VPO_UNITS}

@@ -553,12 +553,36 @@ class HousingRent:
             se aplica el tipo de retención.
         fiscal: `taxable` pasado a la escala de la retención
             (`housing.rent_to_fiscal`): es lo que se apunta como renta sujeta.
+        concept: Motivo del libro y concepto en `economy_tax_records` (la renta de un
+            alquiler, o el Bono Alquiler Joven si lo paga el Estado).
+        tag: Para qué es (un inmueble); si un pago del Estado no se hace, se avisa
+            con esta etiqueta en `settle`.
     """
 
     user_id: int
     gross: int
     taxable: int
     fiscal: int
+    concept: str = HOUSING_RENT_CONCEPT
+    tag: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class HousingPull:
+    """Un pago de un miembro que se hace entero o no se hace (la renta de un inquilino).
+
+    Attributes:
+        user_id: Quien paga.
+        amount: Cuánto; si no le llega, no se cobra nada y la etiqueta no sale en
+            los pagados (el inquilino deja de pagar).
+        tag: Para qué es (el inmueble).
+        reason: Motivo del libro.
+    """
+
+    user_id: int
+    amount: int
+    tag: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -572,13 +596,16 @@ class HousingDebit:
         user_id: El dueño.
         tag: El inmueble (`Listing.key`).
         ibi: IBI que le toca (va al Estado).
-        other: Comunidad, seguro e imprevistos que le tocan (desaparecen).
+        other: Comunidad, seguro e imprevistos que le tocan (desaparecen), o la cuota de
+            la hipoteca (el banco no existe: también desaparece).
+        reason: Motivo del libro de `other`.
     """
 
     user_id: int
     tag: str
     ibi: int
     other: int
+    reason: str = "pisos:comunidad"
 
 
 @dataclass(frozen=True, slots=True)
@@ -592,7 +619,13 @@ class HousingMove:
         taxes: Impuestos que pagan los miembros y van al Estado.
         debits: Recibos que se cobran del monedero hasta donde llegue.
         settle: Recibe, dentro de la misma transacción, lo que no llegó de los recibos
-            por inmueble (`{tag: (IBI, resto)}`) para guardarlo como deuda.
+            por etiqueta (`{tag: (IBI, resto)}`) para guardarlo como deuda, y lo que el
+            Estado no pudo pagar de `grants` (`(0, importe)`).
+        pulls: Pagos de miembros que van primero, enteros o nada.
+        then: Recibe las etiquetas de `pulls` que se pagaron y devuelve lo que se mueve
+            después (la renta que reciben los caseros solo si el inquilino pagó).
+        grants: Pagos del Estado con su IRPF (el Bono Alquiler Joven): solo si la
+            cuenta del Estado llega; si no, «partida agotada».
     """
 
     rents: tuple[HousingRent, ...] = ()
@@ -600,6 +633,9 @@ class HousingMove:
     taxes: tuple[HousingTax, ...] = ()
     debits: tuple[HousingDebit, ...] = ()
     settle: Callable[[sqlite3.Connection, dict[str, tuple[int, int]]], None] | None = None
+    pulls: tuple[HousingPull, ...] = ()
+    then: Callable[[sqlite3.Connection, frozenset[str]], HousingMove] | None = None
+    grants: tuple[HousingRent, ...] = ()
 
 
 class EconomyRepository:
@@ -936,7 +972,7 @@ class EconomyRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
                     user_id INTEGER NOT NULL,
-                    kind TEXT NOT NULL CHECK (kind IN ('itp', 'ibi', 'plusvalia')),
+                    kind TEXT NOT NULL,
                     base INTEGER NOT NULL CHECK (base >= 0),
                     tax INTEGER NOT NULL CHECK (tax > 0),
                     created_at REAL NOT NULL
@@ -2496,6 +2532,7 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'itp' THEN 'itp_pisos' WHEN 'ibi' THEN 'ibi'
+                        WHEN 'igic' THEN 'igic' WHEN 'licencia' THEN 'tasas'
                         ELSE 'irpf_ahorro' END,
                    tax, created_at
             FROM economy_housing_tax WHERE guild_id = :guild
@@ -2554,7 +2591,9 @@ class EconomyRepository:
         try:
             rows = connection.execute(
                 """
-                SELECT user_id, CASE kind WHEN 'plusvalia' THEN 'ganancia' ELSE kind END,
+                SELECT user_id,
+                       CASE kind WHEN 'plusvalia' THEN 'ganancia' WHEN 'socimi' THEN 'ganancia'
+                            ELSE kind END,
                        SUM(tax)
                 FROM economy_housing_tax WHERE guild_id = :guild AND user_id > 0
                 GROUP BY user_id, kind
@@ -2723,7 +2762,8 @@ class EconomyRepository:
             charges = []
             for user_id in sorted(set(cash) | {m for m, v in extra.items() if m > 0 and v > 0}):
                 balance = cash.get(user_id, 0)
-                worth = balance + max(0, extra.get(user_id, 0))
+                # Las deudas de los pisos (hipotecas, banco) restan también del efectivo.
+                worth = max(0, balance + extra.get(user_id, 0))
                 due = max(0, tax_for(worth))
                 tax = min(balance, due)
                 # Lo que no llega en efectivo se embarga de lo que cobre por sus pisos
@@ -3766,95 +3806,154 @@ class EconomyRepository:
         with self._transaction() as connection:
             result, move = prepare(connection)
             balances: dict[int, int] = {}
-            touched = (
-                {r.user_id for r in move.rents}
-                | {m for m, _e in move.entries}
-                | {t.user_id for t in move.taxes}
-                | {d.user_id for d in move.debits}
+            before: dict[int, int] = {}
+            self._housing_move_in(
+                connection, guild_id, now, window_seconds, rate_for, move, balances, before
             )
-            before = {m: self._ensure_wallet(connection, guild_id, m) for m in touched}
-            for rent in move.rents:
-                if rent.gross <= 0:
-                    continue
-                recent = self._recent_taxable_in(
-                    connection, guild_id, rent.user_id, now - window_seconds
-                )
-                rate = rate_for(rent.fiscal, recent) if rent.fiscal > 0 else 0.0
-                tax = max(0, min(rent.gross, round(rent.taxable * rate)))
-                entries = [LedgerEntry(rent.gross, HOUSING_RENT_CONCEPT)]
-                if tax:
-                    entries.append(LedgerEntry(-tax, f"irpf:{HOUSING_RENT_CONCEPT}"))
-                balances[rent.user_id] = self._apply_in_transaction(
-                    connection, guild_id, rent.user_id, entries
-                )
-                if tax:
-                    self._credit_state_in(connection, guild_id, tax, f"irpf:{HOUSING_RENT_CONCEPT}")
-                if rent.fiscal > 0 or tax:
-                    connection.execute(
-                        """
-                        INSERT INTO economy_tax_records
-                            (guild_id, user_id, created_at, concept, gross, withheld)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (guild_id, rent.user_id, now, HOUSING_RENT_CONCEPT, rent.fiscal, tax),
-                    )
-            for member, entry in move.entries:
-                if entry.delta:
-                    balances[member] = self._apply_in_transaction(
-                        connection, guild_id, member, (entry,)
-                    )
-            for item in move.taxes:
-                if item.tax <= 0:
-                    continue
-                reason = f"pisos:{item.kind}"
-                balances[item.user_id] = self._apply_in_transaction(
-                    connection, guild_id, item.user_id, (LedgerEntry(-item.tax, reason),)
-                )
-                self._credit_state_in(connection, guild_id, item.tax, reason)
-                connection.execute(
-                    """
-                    INSERT INTO economy_housing_tax
-                        (guild_id, user_id, kind, base, tax, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (guild_id, item.user_id, item.kind, max(0, item.base), item.tax, now),
-                )
-            unpaid: dict[str, tuple[int, int]] = {}
-            for debit in move.debits:
-                balance = balances.get(debit.user_id, before[debit.user_id])
-                ibi = min(balance, max(0, debit.ibi))
-                other = min(balance - ibi, max(0, debit.other))
-                charges = [LedgerEntry(-ibi, "pisos:ibi")] if ibi else []
-                if other:
-                    charges.append(LedgerEntry(-other, "pisos:comunidad"))
-                if charges:
-                    balances[debit.user_id] = self._apply_in_transaction(
-                        connection, guild_id, debit.user_id, charges
-                    )
-                if ibi:
-                    self._credit_state_in(connection, guild_id, ibi, "pisos:ibi")
-                    connection.execute(
-                        """
-                        INSERT INTO economy_housing_tax
-                            (guild_id, user_id, kind, base, tax, created_at)
-                        VALUES (?, ?, 'ibi', 0, ?, ?)
-                        """,
-                        (guild_id, debit.user_id, ibi, now),
-                    )
-                left = unpaid.get(debit.tag, (0, 0))
-                unpaid[debit.tag] = (
-                    left[0] + max(0, debit.ibi) - ibi,
-                    left[1] + max(0, debit.other) - other,
-                )
-            if move.settle is not None:
-                move.settle(connection, unpaid)
-            for member in sorted(touched):
+            for member in sorted(before):
                 gained = balances.get(member, before[member]) - before[member]
                 if gained > 0 and (paid := self._collect_tax_debt_in(
                     connection, guild_id, member, gained, now
                 )):  # fmt: skip
                     balances[member] = balances.get(member, before[member]) - paid
             return result, balances
+
+    def _housing_move_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        now: float,
+        window_seconds: float,
+        rate_for: Callable[[int, int], float],
+        move: HousingMove,
+        balances: dict[int, int],
+        before: dict[int, int],
+    ) -> None:
+        """Aplica una etapa de `HousingMove` (y la siguiente, si la hay).
+
+        Orden: pagos de miembros (enteros o nada), lo que venga después de saber cuáles
+        se pagaron (`then`), rentas con su retención, pagos del Estado, movimientos sin
+        impuesto, impuestos y recibos (hasta donde llegue cada monedero).
+        """
+
+        def touch(member: int) -> int:
+            if member not in before:
+                before[member] = self._ensure_wallet(connection, guild_id, member)
+            return balances.get(member, before[member])
+
+        def credit(rent: HousingRent) -> None:
+            touch(rent.user_id)
+            recent = self._recent_taxable_in(
+                connection, guild_id, rent.user_id, now - window_seconds
+            )
+            rate = rate_for(rent.fiscal, recent) if rent.fiscal > 0 else 0.0
+            tax = max(0, min(rent.gross, round(rent.taxable * rate)))
+            entries = [LedgerEntry(rent.gross, rent.concept)]
+            if tax:
+                entries.append(LedgerEntry(-tax, f"irpf:{rent.concept}"))
+            balances[rent.user_id] = self._apply_in_transaction(
+                connection, guild_id, rent.user_id, entries
+            )
+            if tax:
+                self._credit_state_in(connection, guild_id, tax, f"irpf:{rent.concept}")
+            if rent.fiscal > 0 or tax:
+                connection.execute(
+                    """
+                    INSERT INTO economy_tax_records
+                        (guild_id, user_id, created_at, concept, gross, withheld)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, rent.user_id, now, rent.concept, rent.fiscal, tax),
+                )
+
+        paid_tags: set[str] = set()
+        for pull in move.pulls:
+            if pull.amount <= 0:
+                paid_tags.add(pull.tag)
+                continue
+            if touch(pull.user_id) < pull.amount:
+                continue
+            balances[pull.user_id] = self._apply_in_transaction(
+                connection, guild_id, pull.user_id, (LedgerEntry(-pull.amount, pull.reason),)
+            )
+            paid_tags.add(pull.tag)
+        unpaid: dict[str, tuple[int, int]] = {}
+        for rent in move.rents:
+            if rent.gross > 0:
+                credit(rent)
+        for grant in move.grants:
+            if grant.gross <= 0:
+                continue
+            if self._state_balance_in(connection, guild_id) < grant.gross:
+                left = unpaid.get(grant.tag, (0, 0))
+                unpaid[grant.tag] = (left[0], left[1] + grant.gross)
+                continue
+            self._apply_in_transaction(
+                connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(-grant.gross, grant.concept),)
+            )
+            credit(grant)
+        for member, entry in move.entries:
+            if entry.delta:
+                touch(member)
+                balances[member] = self._apply_in_transaction(
+                    connection, guild_id, member, (entry,)
+                )
+        for item in move.taxes:
+            if item.tax <= 0:
+                continue
+            touch(item.user_id)
+            reason = f"pisos:{item.kind}"
+            balances[item.user_id] = self._apply_in_transaction(
+                connection, guild_id, item.user_id, (LedgerEntry(-item.tax, reason),)
+            )
+            self._credit_state_in(connection, guild_id, item.tax, reason)
+            connection.execute(
+                """
+                INSERT INTO economy_housing_tax
+                    (guild_id, user_id, kind, base, tax, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, item.user_id, item.kind, max(0, item.base), item.tax, now),
+            )
+        for debit in move.debits:
+            balance = touch(debit.user_id)
+            ibi = min(balance, max(0, debit.ibi))
+            other = min(balance - ibi, max(0, debit.other))
+            charges = [LedgerEntry(-ibi, "pisos:ibi")] if ibi else []
+            if other:
+                charges.append(LedgerEntry(-other, debit.reason))
+            if charges:
+                balances[debit.user_id] = self._apply_in_transaction(
+                    connection, guild_id, debit.user_id, charges
+                )
+            if ibi:
+                self._credit_state_in(connection, guild_id, ibi, "pisos:ibi")
+                connection.execute(
+                    """
+                    INSERT INTO economy_housing_tax
+                        (guild_id, user_id, kind, base, tax, created_at)
+                    VALUES (?, ?, 'ibi', 0, ?, ?)
+                    """,
+                    (guild_id, debit.user_id, ibi, now),
+                )
+            left = unpaid.get(debit.tag, (0, 0))
+            unpaid[debit.tag] = (
+                left[0] + max(0, debit.ibi) - ibi,
+                left[1] + max(0, debit.other) - other,
+            )
+        if move.settle is not None:
+            move.settle(connection, unpaid)
+        if move.then is not None:
+            self._housing_move_in(
+                connection,
+                guild_id,
+                now,
+                window_seconds,
+                rate_for,
+                move.then(connection, frozenset(paid_tags)),
+                balances,
+                before,
+            )
 
     def _collect_tax_debt_in(
         self, connection: sqlite3.Connection, guild_id: int, user_id: int, most: int, now: float

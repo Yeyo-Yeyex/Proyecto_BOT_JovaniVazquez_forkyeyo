@@ -649,6 +649,47 @@ PISOS_TAX_RENT_STORY = (
     "mitad del rendimiento neto, que alquilar vivienda tiene reducción (art. 23.2 LIRPF)."
 )
 
+#: Discurso de la primera hipoteca (`pisos_mortgage_1`).
+PISOS_MORTGAGE_STORY = (
+    "🏦 **Ahorra el 30 %, decían.** El banco te presta el 80 % del precio y tú pones la "
+    "entrada, el ITP y la notaría. El tipo es fijo: el Euríbor de la semana más un 1 %, a "
+    "30 años (360 días del bot). El banco no presta si la cuota pasa del 35 % de lo que "
+    "ganas: sin nómina en `pala` no hay hipoteca. El AJD de la hipoteca lo paga el banco "
+    "desde 2018 (RDL 17/2018); lo demás, tú."
+)
+
+#: Discurso de la primera ejecución hipotecaria (`pisos_executed_1`).
+PISOS_EXECUTION_STORY = (
+    "⚖️ **El banco se queda el piso.** Con doce cuotas sin pagar (o el 3 % del capital) el "
+    "banco puede ejecutar la hipoteca (Ley 5/2019). Sin pujas, se lo adjudica por el 70 % "
+    "de lo que vale (art. 671 LEC) y lo que falte lo sigues debiendo: en España no hay "
+    "dación en pago. Se te irá cobrando de todo lo que entre."
+)
+
+#: Discurso de la primera VPO (`pisos_vpo_bought_1`).
+PISOS_VPO_STORY = (
+    "🏛️ **Vivienda protegida.** Precio tasado, IGIC al tipo cero (art. 52 de la Ley 4/2012) "
+    "y una hipoteca al 100 % con el aval del Estado. A cambio: no se alquila, no se vende "
+    "a precio de mercado y, si la dejas, la Administración la recompra al mismo precio "
+    "para sortearla otra vez. Te ha tocado un piso; a los otros dos mil apuntados, no."
+)
+
+#: Discurso del primer Bono Alquiler Joven (`pisos_bono_1`).
+PISOS_BONO_STORY = (
+    "💶 **Bono Alquiler Joven.** 250 € al mes, como mucho la mitad de la renta, para quien "
+    "gana menos de tres veces el IPREM (RD 42/2022). Lo paga la cuenta del Estado mientras "
+    "le quede dinero y tributa en el IRPF, como una subvención. Cuando la partida se agota, "
+    "se agota: como en la vida real."
+)
+
+#: Discurso de la SOCIMI (`pisos_socimi_1`).
+PISOS_SOCIMI_STORY = (
+    "📈 **Ya eres un fondo.** Una SOCIMI tributa al 0 % en el Impuesto sobre Sociedades "
+    "(art. 9 de la Ley 11/2009) si reparte sus beneficios, y quien los cobra paga el 19 % "
+    "del dividendo en la base del ahorro, no el IRPF progresivo del alquiler. Es la vía "
+    "que usan los grandes tenedores. Ahora también la usas tú."
+)
+
 #: Discurso del primer IBI de `pisos` (`pisos_ibi_1`).
 PISOS_IBI_STORY = (
     "🏘️ **El IBI no perdona.** El Impuesto sobre Bienes Inmuebles se paga por tener el "
@@ -5535,6 +5576,114 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que lo que has pagado de impuestos por tus pisos supere todo lo que te han "
          "pagado de alquiler.", R, True),
     ])  # fmt: skip
+    # Fase 2: hipoteca, VPO y vivienda habitual.
+    a.append(Achievement(
+        id="pisos_mortgage_1", name="Ahorra el 30 %", description="Firma tu primera hipoteca.",
+        category="pisos", rarity=C, conditions=(("pisos_mortgages", 1),),
+        story=PISOS_MORTGAGE_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_mortgages", [
+        (5, "pisos_mortgage_5", "Hipotecado hasta las cejas", "Firma 5 hipotecas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_loan_max", [
+        (1_000_000, "pisos_loan_1m", "Hipoteca de las de antes",
+         "Que el banco te preste 1.000.000 Y$ de una vez.", R),
+        (10_000_000, "pisos_loan_10m", "Préstamo de la burbuja",
+         "Que el banco te preste 10.000.000 Y$ de una vez.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_installments", [
+        (30, "pisos_inst_30", "Treinta cuotas sin fallar",
+         "Paga 30 cuotas de hipoteca enteras.", R),
+        (360, "pisos_inst_360", "Hipoteca pagada (en un año de verdad)",
+         "Paga 360 cuotas de hipoteca enteras.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_amortized", [
+        (1, "pisos_amortize_1", "Amortizo, luego existo",
+         "Cancela una hipoteca de golpe.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}cuota_impagada", [
+        (1, "pisos_unpaid_1", "Este mes no llego (al banco)",
+         "Que no te llegue para la cuota de la hipoteca.", C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_executed_1", name="Desahuciado por el banco",
+        description="Que el banco ejecute tu hipoteca.", category="pisos", rarity=E,
+        conditions=((f"{PISOS_EVENT_PREFIX}ejecucion", 1),), secret=True,
+        story=PISOS_EXECUTION_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_vpo_signups", [
+        (1, "pisos_vpo_signup_1", "Me apunto a la VPO",
+         "Apúntate al sorteo de vivienda protegida.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}sorteo_vpo", [
+        (1, "pisos_vpo_won_1", "Me ha tocado la VPO",
+         "Gana el sorteo de una vivienda protegida. Más difícil que el Gordo.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_vpo_bought_1", name="Vivienda protegida",
+        description="Compra tu VPO con el aval del Estado.", category="pisos", rarity=R,
+        conditions=(("pisos_vpo_bought", 1),), story=PISOS_VPO_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}vpo_caducada", [
+        (1, "pisos_vpo_late_1", "Se me pasó el plazo de la VPO",
+         "Que te toque la VPO y no la compres a tiempo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_vpo_returned", [
+        (1, "pisos_vpo_back_1", "Devuelvo la VPO a la Administración",
+         "Devuelve tu VPO para que la sorteen otra vez.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_home", [
+        (1, "pisos_home_1", "Emancipado a los 35",
+         "Múdate a un piso tuyo. Tu madre ya ha convertido tu cuarto en vestidor.", C),
+    ])  # fmt: skip
+    # Fase 3: miembros de alquiler y bono.
+    a += _tiers("pisos", "pisos_member_tenant", [
+        (1, "pisos_mtenant_1", "Generación inquilina", "Alquila el piso de otro miembro.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_member_landlord", [
+        (1, "pisos_mlandlord_1", "Casero de un colega", "Alquílale un piso a otro miembro.", C),
+        (5, "pisos_mlandlord_5", "Inmobiliaria de colegas",
+         "Alquila pisos a otros miembros 5 veces.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_bono_1", name="Bono Alquiler Joven",
+        description="Cobra el Bono Alquiler Joven.", category="pisos", rarity=C,
+        conditions=(("pisos_bono", 1),), unit="money", story=PISOS_BONO_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_bono", [
+        (100_000, "pisos_bono_100k", "Subvencionado por Sanxe",
+         "Cobra 100.000 Y$ de Bono Alquiler Joven.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}partida_agotada", [
+        (1, "pisos_nobono_1", "Partida agotada",
+         "Quédate sin el bono porque el Estado no tiene un duro.", C, True),
+    ])  # fmt: skip
+    # Fase 4: vacacional, gran tenedor, fondo buitre y SOCIMI.
+    a += _tiers("pisos", "pisos_licenses", [
+        (1, "pisos_license_1", "Licencia vacacional",
+         "Consigue una licencia de vivienda vacacional. Canarias tiene un límite; tú, no.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}tope_ley", [
+        (1, "pisos_cap_1", "La Ley de Vivienda me ha topado",
+         "Que la renta de tu piso se tope por ser gran tenedor en zona tensionada.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}recargo_ibi", [
+        (1, "pisos_empty_1", "Vivienda vacía, IBI recargado",
+         "Paga el recargo del IBI por tener un piso vacío más de dos años.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}oferta_fondo", [
+        (1, "pisos_vulture_1", "Me llama un fondo buitre",
+         "Recibe una oferta de Buitre Capital por un inmueble.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_vulture_sold", [
+        (1, "pisos_vulturesold_1", "Vendido a Buitre Capital",
+         "Acepta la oferta del fondo buitre. Con inquilinos dentro.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_socimi_1", name="SOCIMI al 0 %", description="Monta tu SOCIMI.",
+        category="pisos", rarity=E, conditions=(("pisos_socimi", 1),),
+        story=PISOS_SOCIMI_STORY,
+    ))  # fmt: skip
     a += _tiers("pisos", "pisos_squatters_evicted", [
         (1, "pisos_squatters_1", "Desokupación con burofax",
          "Pide el desahucio de unos okupas. Ni empresa de desokupación ni nada: juzgado y "
@@ -15421,15 +15570,51 @@ def housing_tax_stats(*, taxes: dict[str, int], rent: int) -> StatDelta:
     return StatDelta(add=add, peak={k: v for k, v in peak.items() if v > 0})
 
 
-def housing_day_stats(*, rent: int, ibi: int, events: tuple[str, ...]) -> StatDelta:
+#: Acciones de las fases 2 a 4 y el contador que suma cada una (`housing_action_stats`).
+HOUSING_ACTIONS = {
+    "amortiza": "pisos_amortized",
+    "vpo_signup": "pisos_vpo_signups",
+    "compra_vpo": "pisos_vpo_bought",
+    "devuelve_vpo": "pisos_vpo_returned",
+    "se_muda": "pisos_home",
+    "casero_miembro": "pisos_member_landlord",
+    "inquilino_miembro": "pisos_member_tenant",
+    "licencia": "pisos_licenses",
+    "venta_fondo": "pisos_vulture_sold",
+    "socimi": "pisos_socimi",
+}
+
+
+def housing_action_stats(action: str, *, loan: int = 0) -> StatDelta:
+    """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
+
+    Args:
+        loan: Lo prestado, con `hipoteca`.
+    """
+    if action == "hipoteca":
+        return StatDelta(add={"pisos_mortgages": 1}, peak={"pisos_loan_max": loan})
+    stat = HOUSING_ACTIONS.get(action)
+    return StatDelta(add={stat: 1}) if stat else StatDelta()
+
+
+def housing_day_stats(
+    *, rent: int, ibi: int, events: tuple[str, ...], bono: int = 0, installments: int = 0
+) -> StatDelta:
     """Estadísticas de un día cerrado de los pisos de un miembro.
 
     Args:
         rent: Renta cobrada (antes del IRPF).
         ibi: IBI pagado.
-        events: Lo que ha pasado en sus inmuebles (`housing.Event.key`).
+        events: Lo que ha pasado en sus inmuebles o le ha pasado a él
+            (`housing.Event.key`, `ejecucion`, `sorteo_vpo`, `cuota_impagada`…).
+        bono: Bono Alquiler Joven cobrado.
+        installments: Cuotas de hipoteca pagadas enteras.
     """
     add: dict[str, int] = {}
+    if bono > 0:
+        add["pisos_bono"] = bono
+    if installments > 0:
+        add["pisos_installments"] = installments
     if rent > 0:
         add["pisos_rent"] = rent
         add["pisos_rent_days"] = 1

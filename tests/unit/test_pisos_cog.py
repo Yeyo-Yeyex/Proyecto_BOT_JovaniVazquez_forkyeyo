@@ -13,10 +13,24 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 from interaction_fakes import fake_interaction
 
-from bot.cogs.pisos import BARRIO, CAJA, CARTERA, FICHA, MAPA, Painter, Panel, Pisos, SharesModal
+from bot.cogs.pisos import (
+    BARRIO,
+    CAJA,
+    CARTERA,
+    FICHA,
+    MAPA,
+    VPO,
+    Painter,
+    Panel,
+    Pisos,
+    SharesModal,
+    TenantOffer,
+)
 from bot.repositories.economy import EconomyRepository, LedgerEntry
-from bot.repositories.housing import HousingRepository
+from bot.repositories.housing import DayRun, HousingRepository, MemberDay, News
+from bot.repositories.housing_finance import HOME_RENTED
 from bot.services import housing as rules
+from bot.services.achievements import PISOS_EVENT_PREFIX
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.housing_catalog import BARRIOS, listings_of
 from bot.services.housing_market import HousingService
@@ -291,7 +305,7 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
     panel = await open_panel(cog, ana, guild_with(ana))
     await panel.refresh()
     for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
-                            (CAJA, (False, 10)), (CAJA, (True, 10))):  # fmt: skip
+                            (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -327,3 +341,164 @@ async def test_abrir_otro_panel_para_el_anterior_del_mismo_miembro(tmp_path: Pat
     second = await open_panel(cog, ana, guild)
     assert first.is_finished() and first not in cog.panels
     assert second in cog.panels and other in cog.panels
+
+
+def salary(tmp_path: Path, user_id: int, net_per_day: int, clock: Clock) -> None:
+    """Nóminas de los últimos 30 días que suman `net_per_day` × 30 (lo que mira el banco)."""
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+            "ss_employer, irpf, net, created_at) VALUES (?, ?, 'pala:obra', ?, 0, 0, 0, ?, ?)",
+            (GUILD, user_id, net_per_day * 30, net_per_day * 30, clock.now - 3600),
+        )
+
+
+def ids(panel: Panel) -> list[str]:
+    return [getattr(item, "custom_id", "") for item in panel.children]
+
+
+async def test_la_caja_compra_con_hipoteca_y_luego_se_amortiza_con_dos_clics(
+    tmp_path: Path,
+) -> None:
+    cog, scene, clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    salary(tmp_path, ana.id, 20_000, clock)
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(1_000_000, "prueba")])
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "schamann_bajo"
+    await panel.open_checkout(clicked(ana, []), selling=False, shares=rules.SHARES)
+    assert "pisos:financiar" in ids(panel)
+
+    await panel._toggle_mortgage(clicked(ana, []))
+    assert panel.financed
+    labels = [line["label"] for line in scene.painted[-1]["lines"]]
+    assert "Sale de tu bolsillo" in labels
+    await panel._pay(clicked(ana, []))
+
+    purchase = panel.done[1]  # type: ignore[index]
+    assert purchase.loan == round(purchase.quote.price * rules.MORTGAGE_LTV)
+    pocket = purchase.quote.total - purchase.loan
+    assert await cog.economy.balance(GUILD, ana.id) == STARTING_BALANCE + 1_000_000 - pocket
+
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:amortizar" in ids(panel)
+    arm = clicked(ana, [], custom_id="pisos:amortizar")
+    await panel._arm(arm)
+    arm.response.edit_message.assert_awaited_once()
+    assert "pisos:amortizar:si" in ids(panel)  # el primer clic no cobra
+    assert (await cog.service.market(GUILD)).mortgages_of(ana.id)
+
+    await panel._amortize(clicked(ana, []))
+    assert not (await cog.service.market(GUILD)).mortgages_of(ana.id)
+    assert panel.confirm is None and "pisos:amortizar" not in ids(panel)
+
+
+async def test_sin_nomina_la_hipoteca_avisa_y_no_compra(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "schamann_bajo"
+    panel.screen, panel.pending, panel.financed = CAJA, (False, rules.SHARES), True
+    pay = clicked(ana, [])
+
+    await panel._pay(pay)
+
+    assert panel.done is None
+    assert "banco" in pay.followup.send.await_args.args[0]
+    assert (await cog.service.market(GUILD)).holdings == {}
+
+
+async def test_la_vpo_se_apunta_se_sortea_y_se_compra_desde_su_pantalla(tmp_path: Path) -> None:
+    cog, scene, clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await panel._go_vpo(clicked(ana, []))
+    shown = scene.painted[-1]
+    assert shown["screen"] == "vpo" and shown["next_draw"] == "lunes 19/10"
+    assert "pisos:sorteo" in ids(panel)
+
+    await panel._vpo_signup(clicked(ana, []))
+    assert ana.id in (await cog.service.market(GUILD)).signups
+    clock.now += 6 * 86_400  # martes 20: se cierra el lunes 19, que sortea
+    (run,) = await cog.close_guild(GUILD)
+    assert run.draws and run.draws[0][0] == ana.id
+
+    salary(tmp_path, ana.id, 6_000, clock)
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(50_000, "notaría")])
+    await panel._go_vpo(clicked(ana, []))
+    await panel._arm(clicked(ana, [], custom_id="pisos:comprar_vpo"))
+    buy = clicked(ana, [])
+    await panel._vpo_buy(buy)
+    market = await cog.service.market(GUILD)
+    assert market.vpo_of(ana.id) == run.draws[0][1]
+    assert "pisos:devolver" in ids(panel)
+
+    # El Estado la recompra con lo que cobró al venderla.
+    await panel._arm(clicked(ana, [], custom_id="pisos:devolver"))
+    await panel._vpo_return(clicked(ana, []))
+    market = await cog.service.market(GUILD)
+    assert market.vpo_of(ana.id) is None and ana.id not in market.homes
+    assert "pisos:sorteo" in ids(panel)
+
+
+async def test_alquilar_a_un_miembro_le_pide_que_acepte(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    bea.mention = "<@20>"
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana, bea))
+    panel.barrio, panel.listing = "taco", "taco_bajo"
+    await panel._back_to_listing(clicked(ana, []))
+    assert {"pisos:vivir", "pisos:miembro", "pisos:licencia"} <= set(ids(panel))
+
+    await panel._arm(clicked(ana, [], custom_id="pisos:miembro"))
+    assert "pisos:inquilino" in ids(panel)
+    pick = clicked(ana, [], values=[str(bea.id)])
+    await panel._pick_tenant(pick)
+    offer = pick.followup.send.await_args.kwargs["view"]
+    assert isinstance(offer, TenantOffer) and offer.tenant is bea
+
+    stranger = fake_interaction(ana)
+    await offer.accept.callback(stranger)  # type: ignore[attr-defined]
+    stranger.response.send_message.assert_awaited_once()  # no es para ella
+
+    yes = clicked(bea, [])
+    await offer.accept.callback(yes)  # type: ignore[attr-defined]
+    market = await cog.service.market(GUILD)
+    assert market.leases["taco_bajo"].member == bea.id
+    assert market.homes[bea.id] == (HOME_RENTED, "taco_bajo")
+    assert offer.is_finished()
+
+
+async def test_cada_noche_lo_personal_va_solo_a_su_miembro(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from bot.cogs import pisos
+
+    cog, _scene, _clock = await make(tmp_path)
+    run = DayRun(day=datetime(2026, 10, 19).date())
+    run.news = [
+        News("taco_bajo", run.day, "ejecucion", 1, 10, None),
+        News("taco_bajo", run.day, "impago", 1, 30, None),  # 30: el miembro de alquiler
+    ]
+    run.owners = {"taco_bajo": (10, 20)}
+    run.members = {20: MemberDay(rent=100)}
+    run.mortgage_unpaid, run.bono, run.installments = [20], {30: 500}, {10: 1}
+    cog.service.close_days = AsyncMock(return_value=[run])  # type: ignore[method-assign]
+    cog.tax_stats = AsyncMock(return_value={})  # type: ignore[method-assign]
+    noted: dict[int, Any] = {}
+
+    def note(_bot: object, _guild: int, who: int, delta: Any, *_rest: object) -> None:
+        noted[who] = delta
+
+    monkeypatch.setattr(pisos.logros, "note", note)
+
+    await cog.close_guild(GUILD)
+
+    ev = PISOS_EVENT_PREFIX
+    assert noted[10].add[f"{ev}ejecucion"] == 1 and noted[10].add["pisos_installments"] == 1
+    assert f"{ev}ejecucion" not in noted[20].add
+    assert noted[20].add[f"{ev}cuota_impagada"] == 1 and noted[20].add[f"{ev}impago"] == 1
+    assert noted[30].add == {"pisos_bono": 500}

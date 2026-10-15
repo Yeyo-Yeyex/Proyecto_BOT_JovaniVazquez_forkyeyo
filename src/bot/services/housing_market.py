@@ -16,13 +16,16 @@ from datetime import date, timedelta
 
 from bot.repositories.housing import (
     DayRun,
+    HousingError,
     HousingRepository,
     Market,
     MemberDay,
     News,
     Purchase,
     Sale,
+    VpoDeal,
 )
+from bot.services import housing as rules
 from bot.services.economy import EconomyService
 from bot.services.housing import Lease
 from bot.services.levels import local_day
@@ -79,23 +82,46 @@ class HousingService:
         """Lo que un miembro ha cobrado y pagado por sus inmuebles en los últimos 7 días."""
         return await self.repository.income(guild_id, user_id, self.today() - timedelta(days=7))
 
+    async def income(self, guild_id: int, user_id: int) -> int:
+        """Lo que el banco cree que gana alguien al día (nóminas y el 70 % de las rentas)."""
+        work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
+        rent = await self.repository.income(
+            guild_id, user_id, self.today() - timedelta(days=rules.INCOME_DAYS)
+        )
+        return rules.daily_income(work, rent.rent)
+
+    async def work_income(self, guild_id: int, user_id: int) -> int:
+        """Neto medio de nómina al día de los últimos 30 días (lo que miran VPO y bono)."""
+        work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
+        return work // rules.INCOME_DAYS
+
     async def buy(
-        self, guild_id: int, user_id: int, key: str, shares: int, *, expected: int | None = None
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        shares: int,
+        *,
+        expected: int | None = None,
+        financed: bool = False,
     ) -> Trade:
-        """Compra participaciones (ver `EconomyService.housing` para los impuestos).
+        """Compra participaciones, al contado o con hipoteca (ver `EconomyService.housing`).
 
         Args:
-            expected: El total que enseñó la caja; si ha cambiado, no se compra.
+            expected: Lo que sale del bolsillo según la caja; si sube, no se compra.
+            financed: Con hipoteca del 80 % (el banco mira `income`).
 
         Raises:
-            HousingError: Si no se puede (quedan menos libres, número no válido).
-            PriceChanged: Si el total ya no es `expected`.
+            HousingError: Si no se puede (quedan menos libres, el banco no presta…).
+            PriceChanged: Si lo que sale del bolsillo ya no es `expected`.
             InsufficientFundsError: Si no le llega. No se mueve nada.
         """
         now = self._clock()
+        income = await self.income(guild_id, user_id) if financed else 0
         run = self.repository.buy(
-            guild_id, user_id, key, shares, local_day(now), now, expected=expected
-        )
+            guild_id, user_id, key, shares, local_day(now), now, expected=expected,
+            financed=financed, income=income,
+        )  # fmt: skip
         purchase, balances = await self.economy.housing(guild_id, run)
         return Trade(purchase, balances[user_id])
 
@@ -114,6 +140,103 @@ class HousingService:
         now = self._clock()
         run = self.repository.sell(
             guild_id, user_id, key, shares, local_day(now), now, expected=expected
+        )
+        sale, balances = await self.economy.housing(guild_id, run)
+        return Trade(sale, balances[user_id])
+
+    async def amortize(self, guild_id: int, user_id: int, mortgage_id: int) -> tuple[int, int]:
+        """Cancela una hipoteca de golpe. Devuelve `(lo pagado, saldo)`.
+
+        Raises:
+            HousingError: Si la hipoteca ya no existe.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.amortize(guild_id, user_id, mortgage_id, local_day(now), now)
+        paid, balances = await self.economy.housing(guild_id, run)
+        return paid, balances[user_id]
+
+    async def vpo_signup(self, guild_id: int, user_id: int, *, join: bool = True) -> None:
+        """Se apunta (o se borra) del sorteo de VPO de los lunes.
+
+        Raises:
+            HousingError: Si gana demasiado (más de 3,5 veces el IPREM) o ya tiene casa.
+        """
+        if join and await self.work_income(guild_id, user_id) > rules.vpo_income_cap():
+            raise HousingError(
+                "Ganas demasiado para una VPO: el límite son 3,5 veces el IPREM. "
+                "Felicidades, eres clase media: búscate la vida en el mercado."
+            )
+        await self.repository.vpo_signup(guild_id, user_id, self._clock(), join)
+
+    async def vpo_buy(self, guild_id: int, user_id: int, unit: str) -> tuple[VpoDeal, int]:
+        """Compra la VPO que le ha tocado. Devuelve `(la compra, saldo)`.
+
+        Raises:
+            HousingError: Si no le toca, gana demasiado o el banco no presta.
+            InsufficientFundsError: Si no le llega para la notaría.
+        """
+        if await self.work_income(guild_id, user_id) > rules.vpo_income_cap():
+            raise HousingError("Desde que te apuntaste ganas demasiado: la VPO ya no es para ti.")
+        now = self._clock()
+        income = await self.income(guild_id, user_id)
+        run = self.repository.vpo_buy(guild_id, user_id, unit, local_day(now), now, income=income)
+        deal, balances = await self.economy.housing(guild_id, run)
+        return deal, balances[user_id]
+
+    async def vpo_return(self, guild_id: int, user_id: int) -> tuple[VpoDeal, int]:
+        """Devuelve su VPO al Estado a precio tasado. Devuelve `(la devolución, saldo)`.
+
+        Raises:
+            HousingError: Si no tiene VPO.
+            InsufficientFundsError: Si el Estado no tiene partida para recomprarla.
+        """
+        now = self._clock()
+        run = self.repository.vpo_return(guild_id, user_id, local_day(now), now)
+        deal, balances = await self.economy.housing(guild_id, run)
+        return deal, balances[user_id]
+
+    async def set_home(self, guild_id: int, user_id: int, key: str) -> None:
+        """Se muda a un piso suyo (vivienda habitual)."""
+        now = self._clock()
+        await self.repository.set_home(guild_id, user_id, key, local_day(now), now)
+
+    async def leave_home(self, guild_id: int, user_id: int) -> str:
+        """Deja su vivienda habitual. Devuelve el tipo que deja."""
+        now = self._clock()
+        return await self.repository.leave_home(guild_id, user_id, local_day(now), now)
+
+    async def rent_to_member(self, guild_id: int, owner_id: int, key: str, member_id: int) -> Lease:
+        """Alquila un piso a un miembro; si gana poco, cobra el Bono Alquiler Joven."""
+        now = self._clock()
+        bono = await self.work_income(guild_id, member_id) <= rules.bono_income_cap()
+        return await self.repository.rent_to_member(
+            guild_id, owner_id, key, member_id, local_day(now), now, bono=bono
+        )
+
+    async def buy_license(self, guild_id: int, user_id: int, key: str) -> tuple[int, int]:
+        """Pide la licencia vacacional. Devuelve `(tasa, saldo)`."""
+        now = self._clock()
+        run = self.repository.buy_license(guild_id, user_id, key, local_day(now), now)
+        fee, balances = await self.economy.housing(guild_id, run)
+        return fee, balances[user_id]
+
+    async def found_socimi(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """Monta su SOCIMI. Devuelve `(lo pagado, saldo)`."""
+        now = self._clock()
+        run = self.repository.found_socimi(guild_id, user_id, local_day(now), now)
+        fee, balances = await self.economy.housing(guild_id, run)
+        return fee, balances[user_id]
+
+    async def accept_offer(self, guild_id: int, user_id: int, key: str) -> Trade:
+        """Vende entero al fondo buitre al precio de su oferta."""
+        market = await self.market(guild_id)
+        held = market.holdings.get(key, {}).get(user_id)
+        if held is None:
+            raise HousingError("No tienes nada en este inmueble.")
+        now = self._clock()
+        run = self.repository.sell(
+            guild_id, user_id, key, held.shares, local_day(now), now, vulture=True
         )
         sale, balances = await self.economy.housing(guild_id, run)
         return Trade(sale, balances[user_id])

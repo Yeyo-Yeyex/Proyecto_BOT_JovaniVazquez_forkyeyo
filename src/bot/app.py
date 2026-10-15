@@ -186,7 +186,7 @@ class BotClient(commands.Bot):
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
         self.porras = PorraRepository(database_path)
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
-        self.work = WorkService(WorkRepository(database_path), self.economy)
+        self.work = WorkService(WorkRepository(database_path), self.economy, housing=self.housing)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")

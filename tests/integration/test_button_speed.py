@@ -912,6 +912,41 @@ async def press_pisos_level(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pisos_mortgage(client: BotClient, owner: MagicMock) -> Click:
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.pending = "taco_trastero", "caja", (False, 10)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_mortgage(interaction)
+
+    return click
+
+
+async def press_pisos_vpo_signup(client: BotClient, owner: MagicMock) -> Click:
+    panel = pisos_panel(client, owner)
+    panel.screen = "vpo"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._vpo_signup(interaction)
+
+    return click
+
+
+async def press_pisos_license(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+    cog = client.get_cog("Pisos")
+    await cog.service.buy(GUILD_ID, OWNER_ID, "taco_bajo", 100)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "ficha", "licencia"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._license(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1176,6 +1211,9 @@ CASES: dict[str, Press] = {
     "pisos: elegir barrio": press_pisos_barrio,
     "pisos: pagar en la caja": press_pisos_pay,
     "pisos: cambiar la renta": press_pisos_level,
+    "pisos: caja con hipoteca": press_pisos_mortgage,
+    "pisos: apuntarse a la VPO": press_pisos_vpo_signup,
+    "pisos: pedir la licencia": press_pisos_license,
     "tienda: lucir un título": press_wear_title,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,

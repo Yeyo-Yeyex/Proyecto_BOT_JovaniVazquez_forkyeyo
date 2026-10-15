@@ -38,7 +38,9 @@ Todo el dinero pasa por `EconomyService`:
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
+import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field, replace
@@ -46,6 +48,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from bot.services.economy import EconomyService, InsufficientFundsError
+from bot.services.housing import HOME_REGEN
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     EXEMPT_7P_PER_DAY,
@@ -160,7 +163,10 @@ from bot.services.work_games import MiniGame, new_game
 from bot.services.work_tools import NO_PERKS, Perks, perks_for, with_rewards
 
 if TYPE_CHECKING:
+    from bot.repositories.housing import HousingRepository
     from bot.repositories.work import WorkRepository
+
+logger = logging.getLogger(__name__)
 
 #: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
 #: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
@@ -485,6 +491,8 @@ class WorkService:
         economy: Única puerta al dinero.
         clock: Fuente de tiempo (epoch); inyectable en pruebas.
         rng: Azar de minijuegos, accidentes y eventos; inyectable en pruebas.
+        housing: `pisos`: quien vive en su casa (o de alquiler en la de otro miembro)
+            recarga la batería más rápido (`housing.HOME_REGEN`). Sin él, como siempre.
     """
 
     def __init__(
@@ -494,9 +502,11 @@ class WorkService:
         *,
         clock: Callable[[], float] = time.time,
         rng: random.Random | None = None,
+        housing: HousingRepository | None = None,
     ) -> None:
         self.repository = repository
         self.economy = economy
+        self.housing = housing
         self._clock = clock
         self.rng = rng or random.Random()
         self._locks: dict[tuple[int, int], asyncio.Lock] = {}
@@ -504,6 +514,22 @@ class WorkService:
     def now(self) -> float:
         """Hora actual según el reloj del servicio (epoch)."""
         return self._clock()
+
+    async def _contract(self, guild_id: int, user_id: int) -> Contract | None:
+        """El contrato, con la recarga de quien vive en su casa de `pisos`.
+
+        Simplificación: la recarga nueva vale desde que se apuntó la batería por última
+        vez, aunque se mudara después.
+        """
+        contract = await self.repository.contract(guild_id, user_id)
+        if contract is not None and self.housing is not None:
+            try:
+                home = await self.housing.home_of(guild_id, user_id)
+            except (OSError, sqlite3.Error):
+                logger.warning("No se pudo mirar la casa de %s en pisos", user_id, exc_info=True)
+                home = None
+            contract.home_regen = HOME_REGEN if home is not None else 1.0
+        return contract
 
     def _lock(self, guild_id: int, user_id: int) -> asyncio.Lock:
         key = (guild_id, user_id)
@@ -520,7 +546,7 @@ class WorkService:
 
     async def status(self, guild_id: int, user_id: int) -> Status | None:
         """Estado del contrato, o `None` si no trabaja."""
-        contract = await self.repository.contract(guild_id, user_id)
+        contract = await self._contract(guild_id, user_id)
         if contract is None:
             return None
         return await self._status(guild_id, user_id, contract)
@@ -589,7 +615,7 @@ class WorkService:
             raise WorkError("Ese oficio no existe (todavía).")
         async with self._lock(guild_id, user_id):
             now = self._clock()
-            current = await self.repository.contract(guild_id, user_id)
+            current = await self._contract(guild_id, user_id)
             if current is not None and current.job == job_key:
                 title = job.position(current.level, current.branch).title
                 raise WorkError(f"Ya trabajas de {title}.")
@@ -827,7 +853,7 @@ class WorkService:
     async def _finish_shift(self, guild_id: int, user_id: int, shift: Shift) -> ShiftOutcome:
         now = self._clock()
         shift.game.finish(now)
-        contract = await self.repository.contract(guild_id, user_id)
+        contract = await self._contract(guild_id, user_id)
         if contract is None or contract.job != shift.job.key:
             raise WorkError("Cambiaste de curro a mitad de turno. Este no cuenta.")
         if shift.kind is ShiftKind.STUDY:
@@ -1319,7 +1345,7 @@ class WorkService:
         if event is None or option not in (0, 1):
             raise WorkError("Ese marrón ya no existe.")
         async with self._lock(guild_id, user_id):
-            contract = await self.repository.contract(guild_id, user_id)
+            contract = await self._contract(guild_id, user_id)
             if contract is None:
                 raise WorkError("No tienes curro.")
             now = self._clock()
@@ -1500,7 +1526,7 @@ class WorkService:
     async def decline_promotion(self, guild_id: int, user_id: int) -> None:
         """Rechaza el ascenso de hoy (mañana te lo vuelven a ofrecer)."""
         async with self._lock(guild_id, user_id):
-            contract = await self.repository.contract(guild_id, user_id)
+            contract = await self._contract(guild_id, user_id)
             if contract is None:
                 raise WorkError("No tienes curro.")
             contract.declined_day = local_day(self._clock()).isoformat()
@@ -1563,7 +1589,7 @@ class WorkService:
         if coffee is None:
             raise WorkError("Esa máquina no tiene eso.")
         async with self._lock(guild_id, user_id):
-            contract = await self.repository.contract(guild_id, user_id)
+            contract = await self._contract(guild_id, user_id)
             if contract is None:
                 raise WorkError("La máquina de café es solo para quien tiene curro.")
             now = self._clock()
@@ -1615,7 +1641,7 @@ class WorkService:
         if gift is None:
             raise WorkError("Eso no es un regalo para la familia.")
         async with self._lock(guild_id, user_id):
-            contract = await self.repository.contract(guild_id, user_id)
+            contract = await self._contract(guild_id, user_id)
             if contract is None:
                 raise WorkError("Los regalos se dan desde `pala`: primero búscate un curro.")
             now = self._clock()
@@ -1712,7 +1738,7 @@ class WorkService:
         if event_key == RESIGN_EVENT.key or event_key not in EVENT_BY_KEY:
             raise WorkError("De esta no te saca ni tu madre.")
         async with self._lock(guild_id, user_id):
-            contract = await self.repository.contract(guild_id, user_id)
+            contract = await self._contract(guild_id, user_id)
             if contract is None:
                 raise WorkError("No tienes curro.")
             now = self._clock()
