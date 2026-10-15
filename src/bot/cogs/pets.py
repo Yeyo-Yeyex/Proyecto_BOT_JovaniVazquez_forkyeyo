@@ -216,7 +216,13 @@ class PetPanel(ui.LayoutView):
         return next((p for p in self.pets if p.id == self.selected), None)
 
     async def load(self) -> None:
-        """Lee las mascotas y el dueño, y elige qué mascota enseñar."""
+        """Lee las mascotas y el dueño, y elige qué mascota enseñar.
+
+        No rehace los botones: eso lo hace `rebuild` justo antes de enseñar el
+        panel. Si un cuidado se rechaza (pide un respiro, la comida ya no está),
+        el mensaje no se edita, y unos botones rehechos sin editar dejarían a
+        discord.py apuntando a los viejos: tiraría todos los clics siguientes.
+        """
         self.pets = [
             p
             for p in await self.cog.repository.pets(self.guild.id, self.member.id)
@@ -230,7 +236,6 @@ class PetPanel(ui.LayoutView):
                 if self.owner.active_id in ids
                 else (self.pets[0].id if self.pets else None)
             )
-        self.rebuild()
 
     def rebuild(self) -> None:
         self.clear_items()
@@ -353,12 +358,20 @@ class PetPanel(ui.LayoutView):
         await interaction.response.send_modal(RenameForm(self.cog, self, state))
 
     async def refresh(self, interaction: discord.Interaction | None = None) -> None:
-        """Vuelve a leer y a pintar el panel (desde un botón o desde otra vista)."""
+        """Vuelve a leer y a pintar el panel (desde un botón o desde otra vista).
+
+        Args:
+            interaction: El clic en un botón del propio panel. Su token sirve 15
+                minutos para editar el mensaje, así que se guarda: el desplegable
+                de comida, que es otro mensaje, repinta el panel con el último.
+        """
         await self.load()
+        self.rebuild()
         mentions = discord.AllowedMentions.none()
         try:
             if interaction is not None:
                 await edit(interaction, view=self, allowed_mentions=mentions)
+                self.interaction = interaction
             elif self.interaction is not None:
                 await self.interaction.edit_original_response(view=self, allowed_mentions=mentions)
             elif self.message is not None:
@@ -615,6 +628,7 @@ class Mascotas(commands.Cog):
         """Panel de mascotas de `member` visto por `viewer`, listo para enviar."""
         view = PetPanel(self, guild, member, viewer)
         await view.load()
+        view.rebuild()
         return view
 
     async def care(
