@@ -38,6 +38,7 @@ EXPECTED_COMMANDS = {
     "backgammon",
     "cohete",
     "minas",
+    "torre",
     "pollo",
     "moneda",
     "guagua",
