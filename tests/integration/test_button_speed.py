@@ -886,6 +886,22 @@ async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_open_lootbox(client: BotClient, owner: MagicMock) -> Click:
+    """Abrir una caja desde la mochila: el clic se acepta antes de gastarla y sortearla."""
+    tienda = client.get_cog("Tienda")
+    tienda.lootbox_pause = 0  # sin esperar entre fotogramas
+    await tienda.stock_up(GUILD_ID)
+    box = await client.shop.item_by_key(GUILD_ID, "caja_regalo")
+    assert box is not None
+    await client.shop.grant(GUILD_ID, OWNER_ID, box, 0.0)
+    backpack = await tienda.backpack_view(owner.guild, owner, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await tienda.start_use(interaction, backpack, box.id)
+
+    return click
+
+
 async def press_wear_title(client: BotClient, owner: MagicMock) -> Click:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1362,6 +1378,7 @@ CASES: dict[str, Press] = {
     "pisos: apuntarse a la VPO": press_pisos_vpo_signup,
     "pisos: pedir la licencia": press_pisos_license,
     "tienda: lucir un título": press_wear_title,
+    "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,
     "pieles: subir imagen": press_pieles_upload,

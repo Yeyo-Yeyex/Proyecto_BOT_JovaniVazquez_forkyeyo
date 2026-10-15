@@ -64,6 +64,7 @@ class Event(StrEnum):
     BEER = "beer"
     PROFILE = "profile"
     DONATE = "donate"
+    LOOTBOX = "lootbox"
 
 
 class Mood(StrEnum):
@@ -525,6 +526,15 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} mira lo que acabas de hacer y no quiere saber nada.",
         "{pet} se tapa los ojos. Prefiere no declarar ante la UCO.",
         "{pet} hace como Rajoy: no sabe nada, no ha visto nada.",
+    ),
+    Event.LOOTBOX: (
+        "{pet} mete la cabeza en la caja vacía. Le gusta más que lo que había dentro.",
+        "{pet} se sienta encima del cartón y no hay manera de moverlo.",
+        "{pet} olisquea la pieza nueva y la da por buena con un {sound}.",
+        "{pet} te recuerda que las cajas botín no estarían en un cajón si fueran gratis.",
+        "{pet} exige su parte del botín. En pienso, que no tributa.",
+        "{pet} pregunta si la caja traía factura. Con IGIC, claro.",
+        "{pet} mira la vitrina y suspira: cada vez hay menos sitio para ella.",
     ),
     Event.BIZUM: (
         "{pet} pregunta si el Bizum era para comprarle algo.",

@@ -108,6 +108,9 @@ from bot.services.housing_catalog import BARRIO_BY_KEY as HOUSING_BARRIOS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.housing_catalog import RENT_LEVELS as HOUSING_LEVELS
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import BOXES as LOOTBOXES
+from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
+from bot.services.lootboxes import Rarity as LootRarity
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
 from bot.services.pachinko import Kind as PachinkoKind
@@ -200,6 +203,11 @@ PRODUCED_STATS = {
     "shop_got_hit", "shop_got_messy", "shop_got_love", "shop_got_raided",
     "shop_clover_broken", "shop_no_parsley", "shop_flash", "shop_fake_champagne",
     "shop_ball_dogs",
+    # Cajas (cogs/shop.py: lootbox_stats al abrir, lootbox_free_stats al ganarlas jugando)
+    "lootbox_opened", "lootbox_tapete", "lootbox_dupes", "lootbox_season", "lootbox_night",
+    "lootbox_free", *(f"lootbox_box_{box.key}" for box in LOOTBOXES),
+    *(f"lootbox_got_{rarity.stat}" for rarity in LootRarity),
+    *(collection.stat for collection in LOOTBOX_COLLECTIONS),
     # Mascotas (cogs/pets.py: pet_adopt_stats, pet_care_stats, pet_cameo_stats…)
     "pet_adopted", "pet_spawned", "pet_protectora", "pet_owned_max", PET_SPECIES_STAT,
     PET_SPAWN_KINDS_STAT, *(f"{PET_SPECIES_PREFIX}{s.key}" for s in PET_SPECIES),

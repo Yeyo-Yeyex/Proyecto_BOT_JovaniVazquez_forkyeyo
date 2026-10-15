@@ -118,6 +118,7 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame, multiplier_cents
@@ -423,6 +424,11 @@ LAUGH_KINDS = ("es", "en", "emoji", "skull", "smash", "intl", "phrase", "xd")
 SHOP_USED_PREFIX = "shop_used_"
 #: Estadística virtual: objetos distintos (por tipo de uso) que ha usado el miembro.
 SHOP_USE_KINDS_STAT = "shop_use_kinds"
+#: Cajas (`bot.services.lootboxes`): `lootbox_box_<caja>` cuenta las aperturas de cada una,
+#: `lootbox_got_<rareza>` las piezas por rareza y `lootbox_col_<colección>` es el máximo de
+#: piezas distintas que ha tenido de esa colección.
+LOOTBOX_BOX_PREFIX = "lootbox_box_"
+LOOTBOX_RARITY_PREFIX = "lootbox_got_"
 #: Prefijo de las compras por pasillo del colmado (`shop_aisle_moncloa`).
 SHOP_AISLE_PREFIX = "shop_aisle_"
 #: Estadística virtual: pasillos del surtido de serie en los que ha comprado.
@@ -6813,6 +6819,209 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_mystery_jackpot", [
         (1, "mystery_jackpot", "Me tocó el gordo de la caja",
          "Que la caja botín te dé algo de 100.000 Y$ o más.", L, True),
+    ])  # fmt: skip
+    # 🛍️ Tienda: las cajas por niveles, de temporada y ganadas jugando --------------------
+    a += _tiers("shop", "lootbox_opened", [
+        (1, "box_open_1", "Abre que es regalo", "Abre tu primera caja del colmado.", C),
+        (10, "box_open_10", "Ludopatía de cartón", "Abre 10 cajas.", R),
+        (100, "box_open_100", "Cien cajas y un cajero",
+         "Abre 100 cajas. El anteproyecto de ley sigue en el cajón.", E),
+        (1_000, "box_open_1k", "Presupuesto prorrogado en cartón",
+         "Abre 1.000 cajas. Hasta Perro Sanxe se ha quedado sin cajas que recaudar.", L),
+    ])  # fmt: skip
+    for box_key, achievement_id, name, description, rarity in (
+        ("caja_carton", "box_first_carton", "Mudanza de ministerio", "Abre una caja de cartón.", C),
+        (
+            "caja_regalo",
+            "box_first_regalo",
+            "Con lazo y todo",
+            "Abre una caja de regalo. Bibi también las recibe, pero con champán.",
+            R,
+        ),
+        (
+            "maletin_ministro",
+            "box_first_maletin",
+            "Un maletín y no se declara",
+            "Abre un maletín del ministro. Pesa lo suyo y no hay recibo.",
+            E,
+        ),
+        (
+            "cofre_rey_emerito",
+            "box_first_cofre",
+            "Con la llave puesta desde Abu Dabi",
+            "Abre un cofre del Rey emérito.",
+            L,
+        ),
+        (
+            "caja_navidad",
+            "box_first_navidad",
+            "Regalo antes del discurso del Rey",
+            "Abre una caja de Navidad.",
+            R,
+        ),
+        (
+            "caja_halloween",
+            "box_first_halloween",
+            "Truco o trato fiscal",
+            "Abre una caja de Halloween.",
+            R,
+        ),
+        (
+            "caja_aniversario",
+            "box_first_aniversario",
+            "Soplar velas en el servidor",
+            "Abre una caja del aniversario.",
+            R,
+        ),
+    ):
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((f"{LOOTBOX_BOX_PREFIX}{box_key}", 1),),
+        ))  # fmt: skip
+    for rarity_key, achievement_id, name, description, rarity in (
+        ("common", "box_got_common", "Lo que hay", "Que una caja te dé una pieza Común.", C),
+        ("rare", "box_got_rare", "Algo es algo", "Que una caja te dé una pieza Rara.", C),
+        (
+            "epic",
+            "box_got_epic",
+            "Brilla más que el Falcon",
+            "Que una caja te dé una pieza Épica.",
+            R,
+        ),
+        (
+            "legendary",
+            "box_got_legendary",
+            "Legendaria, como los mandatos del Sahel",
+            "Que una caja te dé una pieza Legendaria.",
+            E,
+        ),
+        (
+            "mythic",
+            "box_got_mythic",
+            "¡Toma mangó mítico!",
+            "Que una caja te dé una pieza Mítica. Casi nadie las ha visto.",
+            L,
+        ),
+    ):
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((f"{LOOTBOX_RARITY_PREFIX}{rarity_key}", 1),),
+        ))  # fmt: skip
+    for collection_key, achievement_id, name, description, rarity in (
+        (
+            "transicion",
+            "box_col_transicion",
+            "Álbum de la Transición",
+            "Completa los Cromos de la Transición. El del Consenso, además, ni existía.",
+            M,
+        ),
+        (
+            "congreso",
+            "box_col_congreso",
+            "Legislatura completa",
+            "Completa los Muñecos del Congreso. Sin quórum, pero con todos los muñecos.",
+            L,
+        ),
+        (
+            "bobbleheads",
+            "box_col_bobbleheads",
+            "Cumbre del G-20 en la estantería",
+            "Completa los Bobbleheads de líderes mundiales: ocho cabezas que asienten a todo.",
+            M,
+        ),
+        (
+            "eurovision",
+            "box_col_eurovision",
+            "Doce puntos, dos de la UER",
+            "Completa las Chapas de Eurovisión. Hasta el jurado te da la máxima.",
+            L,
+        ),
+        (
+            "hacienda",
+            "box_col_hacienda",
+            "Inspección completada",
+            "Completa las Pegatinas de Hacienda. Con la Cl@ve caducada y todo.",
+            M,
+        ),
+        (
+            "figuritas",
+            "box_col_figuritas",
+            "Consejo de Ministros con quórum",
+            "Completa las Figuritas de la Moncloa. Aquí sí hay mayoría.",
+            L,
+        ),
+        (
+            "nodo",
+            "box_col_nodo",
+            "Noticiario completo",
+            "Completa los Cromos del NO-DO. Franco, por cierto, sigue muerto.",
+            M,
+        ),
+        (
+            "canarias",
+            "box_col_canarias",
+            "Souvenirs, Cabildo y gofio",
+            "Completa los Souvenirs de Canarias, con la primera piedra de La Aldea incluida.",
+            L,
+        ),
+        (
+            "navidad",
+            "box_col_navidad",
+            "Navidades completas",
+            "Completa la colección de Navidad, turrón duro y mensaje del Rey incluidos.",
+            M,
+        ),
+        (
+            "halloween",
+            "box_col_halloween",
+            "Noche de brujas sin sustos fiscales",
+            "Completa la colección de Halloween. El Coco del déficit, el último.",
+            M,
+        ),
+        (
+            "aniversario",
+            "box_col_aniversario",
+            "Felices años, servidor",
+            "Completa la colección del aniversario del servidor.",
+            L,
+        ),
+    ):
+        collection = next(c for c in LOOTBOX_COLLECTIONS if c.key == collection_key)
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((collection.stat, collection.size),),
+        ))  # fmt: skip
+    a.append(Achievement(
+        id="box_all_collections", name="Museo con IGIC",
+        description=f"Completa las {len(LOOTBOX_COLLECTIONS)} colecciones de las cajas.",
+        category="shop", rarity=M,
+        conditions=tuple((c.stat, c.size) for c in LOOTBOX_COLLECTIONS),
+    ))  # fmt: skip
+    a += _tiers("shop", "lootbox_tapete", [
+        (1, "box_tapete", "Alfombra de la suerte",
+         "Que una caja te dé un tapete. Pasa casi nunca, y la gente lo cuenta.", L, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_season", [
+        (1, "box_season_1", "Caja con fecha de caducidad", "Abre una caja de temporada.", R),
+        (10, "box_season_10", "Fijo discontinuo de las cajas",
+         "Abre 10 cajas de temporada.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_free", [
+        (1, "box_free_1", "Cortesía de la casa",
+         "Gana una caja gratis jugando en el casino o subiendo de nivel.", C),
+        (10, "box_free_10", "Premio de la casa", "Gana 10 cajas gratis.", R),
+        (100, "box_free_100", "Sobre de la Moncloa, versión caja",
+         "Gana 100 cajas gratis.", L),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_dupes", [
+        (10, "box_dupe_10", "Repe, repe y más repe",
+         "Que las cajas te den 10 piezas que ya tenías.", R),
+        (100, "box_dupe_100", "Mercadillo de repes",
+         "Que las cajas te den 100 piezas que ya tenías. Hay un Rastro para eso.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_night", [
+        (1, "box_night", "Ludopatía de madrugada",
+         "Abre una caja entre las 3 y las 6 de la mañana.", C, True),
     ])  # fmt: skip
     a += _tiers("shop", "shop_consumed", [
         (100, "consumed_100", "Usar y tirar", "Gasta 100 objetos de un solo uso.", R),
@@ -16098,6 +16307,50 @@ def shop_use_stats(
     bump("shop_use_canarias", (moment.month, moment.day) == (5, 30))
     bump("shop_use_pino", (moment.month, moment.day) == (9, 8))
     return delta
+
+
+def lootbox_stats(
+    *,
+    box: str,
+    rarity: str,
+    tapete: bool,
+    dupe: bool,
+    seasonal: bool,
+    collection: str | None,
+    owned: int,
+    when: float,
+) -> StatDelta:
+    """Estadísticas de quien abre una caja de `bot.services.lootboxes`.
+
+    Args:
+        box: Clave de la caja (`lootbox_box_<caja>` cuenta cada una).
+        rarity: Rareza de lo que ha salido (`Rarity.stat`: `common`…`mythic`).
+        tapete: Si ha salido un tapete (no cuenta como pieza Mítica).
+        dupe: Si ya tenía esa pieza.
+        seasonal: Si era una caja de temporada.
+        collection: Colección de la pieza, o `None` si fue un tapete.
+        owned: Piezas distintas que tiene ya de esa colección.
+        when: Momento de abrirla (epoch).
+    """
+    delta = StatDelta(add={"lootbox_opened": 1, f"{LOOTBOX_BOX_PREFIX}{box}": 1})
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            delta.add[stat] = delta.add.get(stat, 0) + 1
+
+    bump("lootbox_tapete", tapete)
+    bump(f"{LOOTBOX_RARITY_PREFIX}{rarity}", not tapete)
+    bump("lootbox_dupes", dupe)
+    bump("lootbox_season", seasonal)
+    if collection is not None:
+        delta.peak[f"lootbox_col_{collection}"] = owned
+    bump("lootbox_night", 3 <= datetime.fromtimestamp(when, TIMEZONE).hour < 6)
+    return delta
+
+
+def lootbox_free_stats(count: int = 1) -> StatDelta:
+    """Estadísticas de quien gana cajas gratis jugando (100 jugadas) o subiendo de nivel."""
+    return StatDelta(add={"lootbox_free": count})
 
 
 # -- Mascotas -------------------------------------------------------------------------

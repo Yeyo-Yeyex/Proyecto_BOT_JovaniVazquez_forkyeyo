@@ -235,12 +235,23 @@ python -m bot
     comen). Lo que un administrador retire no vuelve solo. Las reglas para
     añadir artículos (tipo por lo que hace, pasillo por su tema) están en la
     Biblia.
-  - Objetos que se usan (59): desde la mochila, contra alguien o sin más:
+  - Cajas (7): 📦 Caja de cartón (1.000 Y$), 🎁 Caja de regalo (5.000), 💼 Maletín del
+    ministro (25.000) y 👑 Cofre del Rey emérito (100.000, nivel 10) se abren desde la
+    mochila con una animación corta y dan piezas de colección: 82 coleccionables en 11
+    colecciones (ocho normales de 8 piezas, como los Cromos de la Transición, los
+    Bobbleheads de líderes mundiales o las Pegatinas de Hacienda, y tres de temporada
+    de 6) con rareza Común, Rara, Épica, Legendaria y Mítica, que solo salen de cajas y
+    se pueden vender y cambiar en el Rastro. El maletín y el cofre pueden dar, rarísimo,
+    un tapete del casino. Cada caja devuelve de media un 95 % de lo que cuesta a valor de
+    catálogo. 🎄 Navidad (dic. y ene.), 🎃 Halloween y 🎂 aniversario (oct.) cuestan 5.000
+    Y$, solo se venden en su temporada y sacan antes su colección. Una 📦 gratis cada 100
+    jugadas del casino y una 🎁 cada 5 niveles. Comprar paga IGIC; abrir no mueve dinero.
+    La caja botín de siempre ya no se vende, pero se sigue abriendo.
+  - Objetos que se usan (60): desde la mochila, contra alguien o sin más:
     huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
     Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
     bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
-    Robuso (contesta según la hora real de Hong Kong) y la caja botín (da un
-    coleccionable al azar). El resultado sale en el canal y menciona a quien
+    Robuso (contesta según la hora real de Hong Kong) y las cajas (arriba). El resultado sale en el canal y menciona a quien
     lo recibe. Los de un solo uso se gastan; el resto tiene una espera entre
     usos. Usar no mueve dinero.
   - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
