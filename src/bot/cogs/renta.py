@@ -120,7 +120,8 @@ async def hint(
     """Líneas pequeñas para el resultado de cualquier acción con dinero, o `None`.
 
     La de la renta pendiente; una sola vez, la de los intereses que el miembro
-    aún no ha visto (`bot.cogs.intereses`); y lo que diga su mascota activa
+    aún no ha visto (`bot.cogs.intereses`); la de las cajas gratis que ha ganado jugando
+    (`bot.cogs.shop.notice`); y lo que diga su mascota activa
     (`bot.cogs.pets.cameo`). Así el cobro diario de la cuenta y las mascotas
     llegan a todos los juegos sin tocarlos uno a uno.
 
@@ -136,6 +137,11 @@ async def hint(
     ):
         lines.append(line)
     if line := await intereses.hint(bot, guild_id, user_id):
+        lines.append(line)
+    # Import tardío: `shop` importa este módulo.
+    from bot.cogs import shop as tienda
+
+    if line := tienda.notice(bot, guild_id, user_id):
         lines.append(line)
     if line := await mascotas.cameo(bot, guild_id, user_id, moment):
         lines.append(line)

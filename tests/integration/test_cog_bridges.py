@@ -9,6 +9,7 @@ con `INITIAL_EXTENSIONS`, en el mismo orden que en producción.
 
 from __future__ import annotations
 
+import random
 import sys
 from datetime import date
 from pathlib import Path
@@ -1905,5 +1906,155 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         housing = [f for f in embed.fields if f.name.startswith("🏠 Lo que pagan los pisos")]
         assert housing and "ITP" in housing[0].value
         assert len(embed) <= 6_000
+    finally:
+        await client.close()
+
+
+async def test_cada_100_jugadas_del_casino_dan_una_caja_de_carton_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`apuestas.record` cuenta cada jugada de cada juego y la tienda da la caja y avisa."""
+    from bot.services.casino_stats import Play
+
+    client = await load_bot(tmp_path)
+    try:
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot = OWNER_ID, False
+        earlier = Play(game="ruleta", stake=100, payout=0, tax=0, balance_after=0)
+        for _ in range(98):
+            await client.casino_stats.record(GUILD_ID, OWNER_ID, earlier, now=1.0)
+        # La 99 y la 100 llegan por el puente de dos juegos distintos, cargados antes.
+        for game in ("Casino", "Moneda"):
+            module = importer(game, client)
+            await module.apuestas.record(
+                client, GUILD_ID, owner, game="ruleta", stake=100, net=-100, balance_after=0, tax=0
+            )
+            if game == "Casino":
+                tienda = client.get_cog("Tienda")
+                assert await client.shop.inventory(GUILD_ID, OWNER_ID, tienda.clock()) == []
+        tienda = client.get_cog("Tienda")
+        mine = await client.shop.inventory(GUILD_ID, OWNER_ID, tienda.clock())
+        keys = [e.catalog_key for e in mine]
+        assert keys == ["caja_carton"]
+
+        # El aviso espera al siguiente resultado con dinero, de cualquier juego, y sale una vez.
+        module = importer("Dados", client)
+        hint = await module.renta.hint(client, GUILD_ID, OWNER_ID)
+        assert hint is not None and "Caja de cartón" in hint and "100 jugadas" in hint
+        assert "Caja de cartón" not in (await module.renta.hint(client, GUILD_ID, OWNER_ID) or "")
+
+        await client.get_cog("Achievements").flush()
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["lootbox_free"] == 1 and "box_free_1" in profile.unlocked
+        # Las jugadas 101 a 199 no dan nada más.
+        for _ in range(5):
+            await importer("Casino", client).apuestas.record(
+                client, GUILD_ID, owner, game="ruleta", stake=100, net=-100, balance_after=0, tax=0
+            )
+        assert len(await client.shop.inventory(GUILD_ID, OWNER_ID, tienda.clock())) == 1
+    finally:
+        await client.close()
+
+
+async def test_cada_5_niveles_dan_una_caja_de_regalo_con_el_bot_real(tmp_path: Path) -> None:
+    """`message_stats` carga antes que la tienda: su puente tiene que llegar a la mochila."""
+    from bot.repositories.message_stats import LevelAward
+
+    client = await load_bot(tmp_path)
+    try:
+        stats = client.get_cog("MessageStats")
+        module = sys.modules[type(stats).__module__]
+        assert module.tienda.grant_box is not None
+        member = MagicMock(spec=discord.Member)
+        member.id, member.bot, member.display_name = OWNER_ID, False, "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        tienda = client.get_cog("Tienda")
+
+        async def level_up(before: int, after: int) -> None:
+            award = LevelAward(
+                previous_xp=50 * before * (before + 1) + 1,
+                total_xp=50 * after * (after + 1) + 1,
+                cooldown_seconds=60,
+                announce_channel_id=None,
+            )
+            await stats._handle_level_up(guild, channel, member, award)
+
+        def announcement(channel: MagicMock) -> str:
+            """El último aviso de nivel (los de logros llevan un embed y no tienen texto)."""
+            return [c.args[0] for c in channel.send.await_args_list if c.args][-1]
+
+        async def boxes() -> list[str]:
+            entries = await client.shop.inventory(GUILD_ID, OWNER_ID, tienda.clock())
+            # Subir de nivel también puede traer una mascota que aparece sola: se ignora.
+            return sorted(e.catalog_key for e in entries if e.catalog_key.startswith("caja_"))
+
+        await level_up(3, 4)
+        assert await boxes() == [], "el nivel 4 no es múltiplo de 5"
+        await level_up(4, 5)
+        assert await boxes() == ["caja_regalo"]
+        text = announcement(channel)
+        assert "nivel **5**" in text and "Caja de regalo" in text
+        await level_up(5, 9)
+        assert len(await boxes()) == 1
+        await level_up(9, 20)  # cruza el 10, el 15 y el 20
+        assert await boxes() == ["caja_regalo"] * 4
+        assert "3 **Caja de regalo**" in announcement(channel)
+        await client.get_cog("Achievements").flush()
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["lootbox_free"] == 4
+    finally:
+        await client.close()
+
+
+async def test_abrir_una_caja_apunta_logros_y_la_mascota_habla_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Abrir una caja llega a logros (cajas, colecciones) y a la mascota con su `Event`."""
+    from bot.services.lootboxes import BOX_BY_KEY, COLLECTION_BY_KEY, PIECE_BY_KEY
+    from bot.services.pets import BOND_LEVELS, PetState
+
+    client = await load_bot(tmp_path)
+    await client.pets.initialize()
+    try:
+        tienda = client.get_cog("Tienda")
+        tienda.lootbox_pause = 0
+        await tienda.stock_up(GUILD_ID)
+        box = await client.shop.item_by_key(GUILD_ID, "caja_carton")
+        assert box is not None
+        await client.shop.grant(GUILD_ID, OWNER_ID, box, 0.0)
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        pets = client.get_cog("Mascotas")
+        pets.active[(GUILD_ID, OWNER_ID)] = PetState(
+            id=1, guild_id=GUILD_ID, user_id=OWNER_ID, species="perro", name="Toby",
+            bond=BOND_LEVELS[4],
+        )  # fmt: skip
+        pets.rng = type("Always", (random.Random,), {"random": lambda self: 0.0})()
+        backpack = await tienda.backpack_view(guild, owner, owner)
+        interaction = fake_interaction(owner)
+        message = MagicMock(edit=AsyncMock())
+        interaction.followup.send = AsyncMock(return_value=message)
+        interaction.channel = MagicMock(spec=discord.TextChannel)
+        interaction.channel.send = AsyncMock()
+
+        await tienda.start_use(interaction, backpack, box.id)
+
+        piece = next(
+            PIECE_BY_KEY[e.catalog_key]
+            for e in await client.shop.inventory(GUILD_ID, OWNER_ID, tienda.clock())
+            if e.catalog_key in PIECE_BY_KEY
+        )
+        collection = COLLECTION_BY_KEY[piece.collection]
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["lootbox_opened"] == 1
+        assert profile.stats[f"lootbox_box_{BOX_BY_KEY['caja_carton'].key}"] == 1
+        assert profile.stats[collection.stat] == 1
+        assert {"box_open_1", "box_first_carton", "use_1"} <= set(profile.unlocked)
+        assert "**Toby**" in message.edit.await_args.kwargs["content"]
     finally:
         await client.close()

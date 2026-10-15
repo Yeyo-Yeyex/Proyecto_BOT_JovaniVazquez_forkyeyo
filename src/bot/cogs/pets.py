@@ -52,6 +52,7 @@ from bot.services.achievements import (
     pet_switch_stats,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import is_piece
 from bot.services.pets import (
     BOND_LEVELS,
     CARE_RULES,
@@ -792,6 +793,7 @@ class Mascotas(commands.Cog):
             and use_of(item.catalog_key) is None
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
+            and not is_piece(item.catalog_key)
         ]
         if not candidates:
             return None
