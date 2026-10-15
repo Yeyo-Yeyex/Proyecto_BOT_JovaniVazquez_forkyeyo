@@ -27,6 +27,7 @@ from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.horses import (
     GRAND_PRIX_POT,
     GRAND_PRIX_POT_STEP,
+    POT_LOSS_SHARE,
     SEGMENTS,
     BetKind,
     Pick,
@@ -358,6 +359,8 @@ async def test_la_carrera_se_apunta_en_el_establo(
     assert records[race.card.horses[0].key].form == (6,)
     meta = await cog.repository.meta(GUILD_ID)
     assert (meta.races, meta.since_grand_prix) == (1, 1)
+    # El boleto al 1 perdió: su parte va al bote del próximo Gran Premio.
+    assert meta.pot == GRAND_PRIX_POT + 100 * POT_LOSS_SHARE // 100
 
 
 async def test_el_resultado_privado_dice_lo_que_se_escapo(
@@ -522,7 +525,8 @@ async def test_gran_premio_desierto_hace_crecer_el_bote(
     await race.race()
     assert race.tickets[ANA].prize == 0
     meta = await cog.repository.meta(GUILD_ID)
-    assert meta.pot == GRAND_PRIX_POT + GRAND_PRIX_POT_STEP
+    # El desierto suma su escalón y el boleto perdido, su parte.
+    assert meta.pot == GRAND_PRIX_POT + GRAND_PRIX_POT_STEP + 100 * POT_LOSS_SHARE // 100
     # Sin bote ni boletos gordos: no hay anuncios aparte (solo la parrilla).
     assert channel.send.await_count == 1
 

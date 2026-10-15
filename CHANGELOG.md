@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.8.0 · 2026-10-15
+
+- Caballos: el bote del Gran Premio crece con el 10 % de lo que se pierde en cada carrera, hasta 50.000 Y$
+
 ### 6.7.5 · 2026-10-15
 
 - Interno: la prueba de caducidad de la música ya no falla al azar
