@@ -192,7 +192,7 @@ STYLES: dict[str, Style] = {
     ),
     "mina": Style(
         top=(104, 76, 56),
-        bottom=(30, 20, 16),
+        bottom=(66, 46, 34),
         frame=(214, 150, 70),
         frame_dark=(36, 22, 14),
         cells="reel",
@@ -201,9 +201,9 @@ STYLES: dict[str, Style] = {
         title_glow=(255, 130, 20),
         effect="gold",
         plaques=(
-            ((236, 146, 84), (122, 56, 24)),
-            ((226, 232, 246), (84, 96, 118)),
-            ((255, 214, 80), (150, 92, 10)),
+            ((255, 205, 90), (176, 84, 32)),
+            ((255, 205, 90), (96, 112, 142)),
+            ((255, 205, 90), (196, 128, 12)),
         ),
         cell_full=((92, 70, 58), (42, 32, 28)),
         cell_empty=((44, 33, 28), (24, 17, 15)),
@@ -220,9 +220,9 @@ STYLES: dict[str, Style] = {
         title_glow=(120, 190, 255),
         effect="lightning",
         plaques=(
-            ((232, 160, 92), (70, 60, 140)),
-            ((232, 238, 252), (64, 96, 196)),
-            ((255, 214, 80), (34, 56, 150)),
+            ((255, 210, 90), (120, 66, 200)),
+            ((255, 210, 90), (30, 130, 236)),
+            ((255, 210, 90), (24, 70, 176)),
         ),
         cell_full=((62, 100, 196), (22, 42, 116)),
         cell_empty=((26, 42, 104), (10, 18, 58)),
@@ -1361,10 +1361,10 @@ def _mine_backdrop(image: Image.Image, style: Style) -> None:
         angles = sorted(rng.uniform(0, 2 * math.pi) for _ in range(7))
         shape = [(cx + r * math.cos(a) * rng.uniform(0.7, 1.1),
                   cy + r * math.sin(a) * rng.uniform(0.7, 1.1)) for a in angles]  # fmt: skip
-        tone = rng.choice(((0, 0, 0, 46), (255, 210, 150, 16), (0, 0, 0, 28)))
-        draw.polygon(shape, fill=tone, outline=(0, 0, 0, 44))
+        tone = rng.choice(((0, 0, 0, 46), (255, 200, 140, 34), (0, 0, 0, 28)))
+        draw.polygon(shape, fill=tone, outline=(0, 0, 0, 90))
     veins = []
-    for _ in range(8):
+    for _ in range(14):
         x, y = rng.uniform(0, width), rng.uniform(0, height * 0.9)
         points = [(x, y)]
         for _ in range(rng.randint(4, 7)):
@@ -1382,7 +1382,7 @@ def _mine_backdrop(image: Image.Image, style: Style) -> None:
     # Solo se ve lo que queda por encima de las placas y a los lados del rótulo.
     cx, floor = width / 2, 58 * S
     horizon = 14 * S
-    mouth = (width * 0.07, 8 * S, width * 0.93, GRID_Y * S + 12 * S)
+    mouth = (width * 0.2, 8 * S, width * 0.8, GRID_Y * S + 12 * S)
     draw.rounded_rectangle(mouth, radius=60 * S, fill=(14, 8, 6))
     _glow_layer(
         image,
@@ -1392,10 +1392,10 @@ def _mine_backdrop(image: Image.Image, style: Style) -> None:
         14,
     )
     # Vigas de apeo de la boca: dos postes con jabalcones y un dintel que cruza todo.
-    for x in (width * 0.17, width * 0.83):
+    for x in (width * 0.26, width * 0.74):
         draw.line((x, 10 * S, x, floor), fill=(34, 18, 8), width=7 * S)
         draw.line((x, 10 * S, x, floor), fill=(122, 76, 36), width=5 * S)
-    for x0, x1 in ((width * 0.17, width * 0.25), (width * 0.83, width * 0.75)):
+    for x0, x1 in ((width * 0.26, width * 0.31), (width * 0.74, width * 0.69)):
         draw.line((x0, 30 * S, x1, 12 * S), fill=(34, 18, 8), width=6 * S)
         draw.line((x0, 30 * S, x1, 12 * S), fill=(134, 84, 38), width=4 * S)
     # Marco de madera de la boca.
@@ -1403,17 +1403,13 @@ def _mine_backdrop(image: Image.Image, style: Style) -> None:
     draw.rounded_rectangle(mouth, radius=60 * S, outline=(146, 90, 40), width=8 * S)
 
 
-def _flame(image: Image.Image, x: float, y: float) -> None:
-    """Llama de antorcha con su halo (`x`, `y` en píxeles dobles)."""
-    _halo(image, (x - 24 * S, y - 28 * S, x + 24 * S, y + 16 * S), (255, 150, 30, 130), 10)
-    draw = ImageDraw.Draw(image, "RGBA")
-    drop = [(x, y - 24 * S), (x + 4 * S, y - 13 * S), (x + 9 * S, y - 5 * S),
-            (x + 7 * S, y + 3 * S),
-            (x, y + 6 * S), (x - 7 * S, y + 3 * S), (x - 9 * S, y - 5 * S),
-            (x - 4 * S, y - 13 * S)]  # fmt: skip
-    draw.polygon(drop, fill=(255, 120, 20), outline=(150, 40, 10))
-    draw.polygon([(x, y - 14 * S), (x + 4 * S, y - 4 * S), (x, y + 3 * S), (x - 4 * S, y - 4 * S)],
-                 fill=(255, 228, 120))  # fmt: skip
+def _big(image: Image.Image, painter, x: float, y: float, k: float) -> None:  # noqa: ANN001
+    """Pinta `painter(capa, x, y)` en una capa, la amplía `k` veces y la pone en (`x`, `y`)."""
+    w, h = 120 * S, 70 * S
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    painter(layer, w // 2, 52 * S)
+    layer = layer.resize((int(w * k), int(h * k)), Image.Resampling.LANCZOS)
+    image.alpha_composite(layer, (int(x - layer.width / 2), int(y - 52 * S * k)))
 
 
 def _nugget(draw: ImageDraw.ImageDraw, x: float, y: float, r: float) -> None:
@@ -1476,26 +1472,11 @@ def _mine_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
         r = rng.choice((1, 2, 3)) * S / 2
         draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 210, 120, 110))
     # Vigas: dos postes y un dintel arriba, con jabalcones en las esquinas.
-    post = 8 * S
-    for x0 in (0, w - post):
-        _wood(draw, (x0, 0, x0 + post, h), vertical=True, rng=rng)
-    _wood(draw, (0, 0, w, 8 * S), vertical=False, rng=rng)
-    for side in (-1, 1):
-        ax = post if side < 0 else w - post
-        draw.polygon([(ax, 8 * S), (ax - side * 30 * S, 8 * S), (ax, 38 * S)], fill=(34, 18, 8))
-        draw.polygon([(ax, 9 * S), (ax - side * 25 * S, 9 * S), (ax, 32 * S)], fill=(134, 82, 36))
-    # Antorchas junto al rótulo.
-    for x in (30 * S, w - 30 * S):
-        draw.rounded_rectangle((x - 3 * S, 34 * S, x + 3 * S, 58 * S), radius=2 * S,
-                               fill=(92, 54, 24), outline=(34, 18, 8), width=S)  # fmt: skip
-        draw.rectangle(
-            (x - 6 * S, 32 * S, x + 6 * S, 38 * S), fill=(70, 74, 88), outline=(20, 20, 26)
-        )
-        _flame(image, x, 28 * S)
-    _cart(image, 98 * S, 42 * S)
-    _gold_pile(image, w - 98 * S, 42 * S)
+    _wood(draw, (0, 0, w, 6 * S), vertical=False, rng=rng)
+    _big(image, lambda im, x, y: _cart(im, x, y), 50 * S, 58 * S, 1.4)
+    _big(image, lambda im, x, y: _gold_pile(im, x, y), w - 50 * S, 58 * S, 1.4)
     # Marco de tablones alrededor de la rejilla.
-    box = _grid_box(9)
+    box = _grid_box(7)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.rounded_rectangle(
         (box[0] - 4 * S, box[1] - 4 * S, box[2] + 4 * S, box[3] + 4 * S), radius=10 * S,
@@ -1592,19 +1573,6 @@ def _bolt(cx: float, top: float, bottom: float, half: float) -> list[tuple[float
             (cx + half * 1.3, top)]  # fmt: skip
 
 
-def _column(draw: ImageDraw.ImageDraw, x0: float, x1: float, y0: float, y1: float) -> None:
-    """Columna de mármol acanalada con capitel y base de oro."""
-    draw.rectangle((x0, y0, x1, y1), fill=(30, 40, 96))
-    draw.rectangle((x0 + S, y0, x1 - S, y1), fill=(238, 242, 252))
-    flute = (x1 - x0) / 4
-    for k in (1, 2, 3):
-        draw.line((x0 + flute * k, y0 + 5 * S, x0 + flute * k, y1 - 5 * S), fill=(176, 190, 222),
-                  width=S)  # fmt: skip
-    draw.rectangle((x0 + S, y0, x0 + (x1 - x0) * 0.3, y1), fill=(255, 255, 255))
-    for y in (y0, y1 - 4 * S):
-        draw.rectangle((x0 - S, y, x1 + S, y + 4 * S), fill=(255, 210, 90), outline=(120, 80, 10))
-
-
 def _meander(draw: ImageDraw.ImageDraw, box: tuple) -> None:
     """Greca griega (meandro) de azul noche por los cuatro lados del marco de mármol."""
     u, band = 8 * S, 4 * S  # largo de cada greca y alto de la cinta
@@ -1632,8 +1600,6 @@ def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None
     """Frontón de mármol con el rayo de Zeus, columnas, marco de mármol y oro, y nubes al pie."""
     w, h = image.size
     draw = ImageDraw.Draw(image, "RGBA")
-    for x0 in (1 * S, w - 13 * S):
-        _column(draw, x0, x0 + 12 * S, 54 * S, h - 8 * S)
     # Frontón: mármol por fuera y un tímpano azul con el rayo dentro.
     roof = [(3 * S, 56 * S), (3 * S, 26 * S), (w / 2, 2 * S), (w - 3 * S, 26 * S),
             (w - 3 * S, 56 * S)]  # fmt: skip
@@ -1664,8 +1630,8 @@ def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None
     _glow_layer(image, lambda d: d.polygon(bolt, fill=(255, 226, 90, 255)), 14)
     draw = ImageDraw.Draw(image, "RGBA")
     draw.polygon(bolt, fill=(255, 240, 120), outline=(255, 190, 30), width=S)
-    for sx in (w / 2 - 118 * S, w / 2 + 118 * S):
-        small = _bolt(sx, 12 * S, 50 * S, 12 * S)
+    for sx in (w / 2 - 138 * S, w / 2 + 138 * S):
+        small = _bolt(sx, 4 * S, 56 * S, 17 * S)
         _glow_layer(image, lambda d, small=small: d.polygon(small, fill=(255, 226, 90, 200)), 6)
         draw = ImageDraw.Draw(image, "RGBA")
         draw.polygon(small, fill=(255, 244, 150), outline=(255, 190, 30), width=S)
@@ -1674,7 +1640,7 @@ def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None
     for x in range(10 * S, w, 24 * S):
         draw.rectangle((x, 55 * S, x + 6 * S, 58 * S), fill=(255, 210, 90))
     # Marco de mármol y oro alrededor de la rejilla.
-    box = _grid_box(9)
+    box = _grid_box(7)
     draw.rounded_rectangle(
         (box[0] - 4 * S, box[1] - 4 * S, box[2] + 4 * S, box[3] + 4 * S), radius=10 * S,
         fill=(14, 24, 84))  # fmt: skip
@@ -1722,18 +1688,20 @@ def _stone_title(
     rim: tuple[int, int, int] | None,
     vein_colors: Sequence[tuple[int, int, int, int]],
     seed: str,
+    size: int = 46,
+    dy: int = 0,
 ) -> None:
     """Rótulo como el del Volcán: letras gordas con relieve, borde grueso, sombra y halo.
 
     El relleno es un degradado de varias paradas (`stops`) con vetas encima, un filo
     de color (`rim`) entre el borde y la letra y un brillo en el tercio de arriba.
     """
-    font = _title_font(fonts, "luckiest-guy.woff", 46)
-    cx, cy = WIDTH / 2, TITLE_Y + TITLE_H / 2 + 4
-    size = image.size
+    font = _title_font(fonts, "luckiest-guy.woff", size)
+    cx, cy = WIDTH / 2, TITLE_Y + TITLE_H / 2 + 4 + dy
+    canvas = image.size
 
     def stamp(offset: float, width: int, fill: tuple[int, ...]) -> Image.Image:
-        layer = Image.new("RGBA", size, (0, 0, 0, 0))
+        layer = Image.new("RGBA", canvas, (0, 0, 0, 0))
         ImageDraw.Draw(layer).text((cx, cy + offset), text, font=font, anchor="mm", fill=fill,
                                    stroke_width=width, stroke_fill=fill)  # fmt: skip
         return layer
@@ -1741,36 +1709,38 @@ def _stone_title(
     image.alpha_composite(
         stamp(0, 8, style.title_glow + (255,)).filter(ImageFilter.GaussianBlur(7))
     )
-    image.alpha_composite(stamp(4, 6, (0, 0, 0, 150)).filter(ImageFilter.GaussianBlur(1.2)))
-    image.alpha_composite(stamp(3, 5, edge + (255,)))
+    image.alpha_composite(stamp(7, 8, (0, 0, 0, 170)).filter(ImageFilter.GaussianBlur(1.5)))
+    image.alpha_composite(stamp(3, 7, edge + (255,)))
     if rim is not None:
         image.alpha_composite(stamp(0, 3, rim + (255,)))
-    mask = Image.new("L", size, 0)
+    mask = Image.new("L", canvas, 0)
     ImageDraw.Draw(mask).text((cx, cy), text, font=font, anchor="mm", fill=255)
-    top, bottom = TITLE_Y + 4, TITLE_Y + TITLE_H + 2
-    t = np.clip((np.arange(size[1]) - top) / (bottom - top), 0, 1)[:, None]
-    face = np.zeros((size[1], 3), np.float32)
+    top, bottom = int(cy - size * 0.72), int(cy + size * 0.5)
+    t = np.clip((np.arange(canvas[1]) - top) / (bottom - top), 0, 1)[:, None]
+    face = np.zeros((canvas[1], 3), np.float32)
     for channel in range(3):
         face[:, channel] = np.interp(t[:, 0], [s[0] for s in stops], [s[1][channel] for s in stops])
-    fill = Image.fromarray(np.repeat(face[:, None, :], size[0], axis=1).astype(np.uint8), "RGB")
+    fill = Image.fromarray(np.repeat(face[:, None, :], canvas[0], axis=1).astype(np.uint8), "RGB")
     fill = fill.convert("RGBA")
     rng = random.Random(seed)
     fill.alpha_composite(
         _veins(
-            size,
+            canvas,
             rng,
-            (int(cx - 90), TITLE_Y + 6, int(cx + 90), TITLE_Y + TITLE_H - 4),
-            9,
+            (int(cx - size * 1.9), top + 4, int(cx + size * 1.9), bottom - 8),
+            11,
             vein_colors,
         )  # fmt: skip
     )
     image.paste(fill, (0, 0), mask)
     # Brillo arriba y una línea de luz en el borde de abajo de cada letra, para el relieve.
-    shine = Image.new("L", size, 0)
-    ImageDraw.Draw(shine).rectangle((0, TITLE_Y, WIDTH, TITLE_Y + TITLE_H * 0.34), fill=96)
-    image.paste(Image.new("RGBA", size, WHITE + (255,)), (0, 0), ImageChops.multiply(mask, shine))
+    shine = Image.new("L", canvas, 0)
+    ImageDraw.Draw(shine).rectangle((0, top, WIDTH, top + (bottom - top) * 0.4), fill=96)
+    image.paste(Image.new("RGBA", canvas, WHITE + (255,)), (0, 0), ImageChops.multiply(mask, shine))
     low = ImageChops.subtract(mask, ImageChops.offset(mask, 0, -3))
-    image.paste(Image.new("RGBA", size, (0, 0, 0, 255)), (0, 0), low.point(lambda v: v * 70 // 255))
+    image.paste(
+        Image.new("RGBA", canvas, (0, 0, 0, 255)), (0, 0), low.point(lambda v: v * 70 // 255)
+    )
 
 
 def _mine_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
@@ -1780,7 +1750,7 @@ def _mine_title(image: Image.Image, text: str, style: Style, fonts: Path) -> Non
         stops=((0.0, (255, 252, 190)), (0.45, (255, 205, 60)), (1.0, (196, 104, 10))),
         edge=(38, 20, 8), rim=(150, 78, 20),
         vein_colors=((170, 96, 10, 200), (255, 255, 220, 190), (210, 130, 20, 170)),
-        seed="mina-rotulo",
+        seed="mina-rotulo", size=58, dy=2,
     )  # fmt: skip
 
 
@@ -1791,7 +1761,7 @@ def _olympus_title(image: Image.Image, text: str, style: Style, fonts: Path) -> 
         stops=((0.0, (255, 255, 255)), (0.55, (226, 234, 250)), (1.0, (150, 170, 214))),
         edge=(10, 20, 70), rim=(255, 206, 80),
         vein_colors=((120, 140, 190, 120), (170, 186, 224, 130), (96, 112, 170, 100)),
-        seed="olimpo-rotulo",
+        seed="olimpo-rotulo", size=52, dy=1,
     )  # fmt: skip
 
 
