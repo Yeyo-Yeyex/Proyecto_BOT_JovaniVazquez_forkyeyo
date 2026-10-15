@@ -21,6 +21,12 @@
   guarda en la columna `equipped` de la mochila, como los roles, y el cog lo
   tiene en memoria (`titles`) para que esas listas no lean la base de datos.
   No salen en la caja botín ni en los regalos de las mascotas.
+- **Cajas** (`bot.services.lootboxes`): cuatro por niveles y tres de temporada, que se
+  abren desde la mochila con una animación de tres fotogramas sobre un mismo mensaje y
+  dan piezas de colección o, muy de vez en cuando, un tapete. Las de temporada solo se
+  venden en sus meses (`on_sale`). La caja botín vieja ya no se vende pero se abre.
+  Una cada 100 jugadas del casino y una de regalo cada 5 niveles se ganan gratis
+  (`grant_box`, que llaman `apuestas` y `message_stats`).
 - Surtido de serie: la primera vez que se abre la tienda en un servidor se
   llena con los artículos de `bot.services.shop_catalog`, repartidos en
   pasillos que el escaparate deja filtrar. Desde ahí, los administradores los
@@ -56,7 +62,7 @@ import asyncio
 import logging
 import random
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -71,6 +77,8 @@ from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
 from bot.services import skins as skins_registry
 from bot.services.achievements import (
+    lootbox_free_stats,
+    lootbox_stats,
     shop_hit_stats,
     shop_skin_stats,
     shop_stats,
@@ -84,6 +92,20 @@ from bot.services.economy import (
     format_amount,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
+from bot.services.lootboxes import (
+    BOX_BY_KEY,
+    COLLECTION_BY_KEY,
+    FRAME_SECONDS,
+    Rarity,
+    box_of,
+    free_box_line,
+    glow_frame,
+    is_piece,
+    reveal_frame,
+    roll,
+    shake_frame,
+)
+from bot.services.lootboxes import in_season as box_in_season
 from bot.services.pets import Event, Moment
 from bot.services.pets_catalog import species_of
 from bot.services.shop import (
@@ -107,6 +129,8 @@ from bot.services.shop_catalog import (
     AISLES,
     CATALOG,
     HOUSE_AISLE,
+    RETIRED_ITEMS,
+    REVISED_PRICES,
     TITLE_KEYS,
     CatalogEntry,
     aisle_of,
@@ -258,10 +282,22 @@ def local_now(epoch: float) -> datetime:
     return datetime.fromtimestamp(epoch, TIMEZONE)
 
 
-def on_sale(item: ShopItem, when: datetime) -> bool:
-    """Si un artículo se vende ahora: las skins de temporada, solo en sus meses."""
+def season_name(item: ShopItem) -> str | None:
+    """La temporada en la que se vende un artículo, o `None` si se vende todo el año."""
     skin = skin_of_item(item.catalog_key)
-    return skin is None or in_season(skin, when)
+    if skin is not None:
+        return skin.season.name if skin.season else None
+    box = box_of(item.catalog_key)
+    return box.season.name if box is not None and box.season else None
+
+
+def on_sale(item: ShopItem, when: datetime) -> bool:
+    """Si un artículo se vende ahora: las skins y las cajas de temporada, solo en sus meses."""
+    skin = skin_of_item(item.catalog_key)
+    if skin is not None:
+        return in_season(skin, when)
+    box = box_of(item.catalog_key)
+    return box is None or box_in_season(box, when)
 
 
 def kind_detail(item: ShopItem) -> str:
@@ -314,12 +350,30 @@ def price_text(item: ShopItem, now: float) -> str:
     )
 
 
-def item_card(item: ShopItem, now: float, *, best_seller: bool = False) -> str:
-    """Texto de un artículo en el escaparate."""
+def owned_tag(item: ShopItem, owned: int) -> str | None:
+    """La etiqueta de lo que ya tiene quien mira el escaparate, o `None` si no tiene.
+
+    Con el límite por persona cumplido lo dice, para no ir a la caja para nada.
+    """
+    if owned <= 0:
+        return None
+    if item.per_user is not None and owned >= item.per_user:
+        return "✅ Ya lo tienes" if item.per_user == 1 else f"✅ Tienes {owned}, el máximo"
+    return "✅ Lo tienes" if owned == 1 else f"✅ Tienes {owned}"
+
+
+def item_card(item: ShopItem, now: float, *, best_seller: bool = False, owned: int = 0) -> str:
+    """Texto de un artículo en el escaparate.
+
+    Args:
+        owned: Cuántos tiene en vigor quien mira (en su mochila), para verlo de un vistazo.
+    """
     lines = [f"### {item.emoji} {item.name}", price_text(item, now)]
     if item.description:
         lines.append(item.description)
     tags = [aisle_of(item.catalog_key).label, kind_detail(item)]
+    if tag := owned_tag(item, owned):
+        tags.insert(0, f"**{tag}**")
     if food_of(item.catalog_key):
         tags.append("🍽️ Se come (para tu mascota)")
     if best_seller:
@@ -484,14 +538,20 @@ class Storefront(ui.LayoutView):
         self.items_all: list[ShopItem] = []
         self.best_seller: int | None = None
         self.balance = 0
+        #: Cuántos tiene el dueño de cada artículo (por id), para marcarlos.
+        self.owned: Counter[int] = Counter()
         self.message: discord.Message | None = None
         self.interaction: discord.Interaction | None = None
 
     async def load(self) -> None:
-        """Lee el catálogo, el más vendido y el saldo del dueño."""
+        """Lee el catálogo, el más vendido, el saldo del dueño y lo que ya tiene."""
         self.items_all = await self.cog.repository.items(self.guild.id)
         self.best_seller = await self.cog.repository.best_seller(self.guild.id)
         self.balance = await self.cog.economy.balance(self.guild.id, self.owner.id)
+        entries = await self.cog.repository.inventory(
+            self.guild.id, self.owner.id, self.cog.clock()
+        )
+        self.owned = Counter(entry.item_id for entry in entries)
         self.rebuild()
 
     @property
@@ -576,7 +636,9 @@ class Storefront(ui.LayoutView):
                     custom_id=f"tienda:comprar:{item.id}",
                     style=discord.ButtonStyle.success,
                 )
-            card = item_card(item, now, best_seller=item.id == self.best_seller)
+            card = item_card(
+                item, now, best_seller=item.id == self.best_seller, owned=self.owned[item.id]
+            )
             container.add_item(ui.Section(ui.TextDisplay(card), accessory=buy))
         self.add_item(container)
 
@@ -1209,6 +1271,11 @@ class Tienda(commands.Cog):
         #: En memoria por lo mismo; solo la tienen quienes compraron una y la
         #: subieron, y cada una pesa decenas de KB (`skin_images.MAX_SIDE`).
         self.skin_images: dict[tuple[int, int, str], SkinImage] = {}
+        #: Segundos entre fotogramas al abrir una caja (las pruebas lo ponen a 0).
+        self.lootbox_pause = FRAME_SECONDS
+        #: Avisos de cajas ganadas jugando que aún no ha visto su dueño: salen en el
+        #: siguiente resultado con dinero (`notices_for`, que llama `renta.hint`).
+        self.notices: dict[tuple[int, int], list[str]] = defaultdict(list)
 
     async def cog_load(self) -> None:
         """Carga potenciadores, títulos y skins puestos, y arranca la caducidad."""
@@ -1593,7 +1660,9 @@ class Tienda(commands.Cog):
         """
         if guild_id in self._stocked or not self.catalog:
             return 0
-        added = await self.repository.stock_catalog(guild_id, self.catalog, self.clock())
+        added = await self.repository.stock_catalog(
+            guild_id, self.catalog, self.clock(), revised=REVISED_PRICES, retired=RETIRED_ITEMS
+        )
         self._stocked.add(guild_id)
         if added:
             logger.info("Surtido de serie: %s artículos nuevos en %s", added, guild_id)
@@ -1602,7 +1671,12 @@ class Tienda(commands.Cog):
     async def restock(self, guild_id: int) -> int:
         """Vuelve a meter los artículos de serie que se hayan retirado."""
         added = await self.repository.stock_catalog(
-            guild_id, self.catalog, self.clock(), restock=True
+            guild_id,
+            self.catalog,
+            self.clock(),
+            restock=True,
+            revised=REVISED_PRICES,
+            retired=RETIRED_ITEMS,
         )
         self._stocked.add(guild_id)
         return added
@@ -1768,6 +1842,9 @@ class Tienda(commands.Cog):
         who = f"**{_name(member)}**"
         item_label = f"{entry.emoji} {entry.name}"
         prize: ShopItem | None = None
+        if use.special == "lootbox":
+            await self._perform_lootbox(interaction, backpack, entry, who, now)
+            return
         if use.special == "mystery":
             outcome = await self._open_mystery(guild.id, member.id, who, entry, now)
             if outcome is None:
@@ -1846,6 +1923,178 @@ class Tienda(commands.Cog):
                 self.bot, guild.id, victim, interaction.channel, shop_hit_stats(use=use.key)
             )
 
+    async def _perform_lootbox(
+        self,
+        interaction: discord.Interaction,
+        backpack: Backpack,
+        entry: InventoryEntry,
+        who: str,
+        now: float,
+    ) -> None:
+        """Abre una caja de `lootboxes` (la unidad ya está gastada y el clic aceptado).
+
+        Sortea (`lootboxes.roll`), mete la pieza o el tapete en la mochila sin cobrar
+        (`ShopRepository.grant`) y lo enseña con una animación de tres fotogramas sobre un
+        mismo mensaje (agitar la caja, el color de la rareza, la pieza), de ~1,5 s en total.
+        Todo lo que toca la base de datos va antes del primer fotograma. Abrir no mueve
+        dinero (Biblia, «Usar un objeto no mueve dinero»): lo que tributó fue la compra, con
+        IGIC general. Si no hay nada que dar (el servidor ha retirado todas las piezas), la
+        caja vuelve a la mochila.
+        """
+        guild, member = backpack.guild, interaction.user
+        box = box_of(entry.catalog_key)
+        if box is None:
+            await self.repository.restore(entry.id)
+            await notify(interaction, "Esa caja no sé abrirla. Te la devuelvo.")
+            return
+        # La caja ya está gastada: si la base de datos falla antes de dar la pieza, se
+        # devuelve entera en vez de perderse.
+        try:
+            await self.stock_up(guild.id)
+            mine = await self.repository.inventory(guild.id, member.id, now)
+            owned = {e.catalog_key for e in mine if e.catalog_key}
+            items = {
+                i.catalog_key: i
+                for i in await self.repository.items(guild.id, include_hidden=True)
+                if i.catalog_key
+            }
+            # Una pieza se da aunque esté oculta (siempre lo está); un tapete solo si se
+            # sigue vendiendo y sin existencias limitadas.
+            have = {k for k, i in items.items() if is_piece(k) or (i.visible and i.stock is None)}
+            drop = roll(box, self.rng, owned=owned, have=have)
+            if drop is None:
+                await self.repository.restore(entry.id)
+                await notify(
+                    interaction,
+                    "La caja está vacía: no hay piezas que sortear. Te la devuelvo.",
+                )
+                return
+            _given, dupe = await self.repository.grant(
+                guild.id, member.id, items[drop.catalog_key], now
+            )
+        except Exception:
+            logger.exception("No se pudo abrir una caja de %s; se devuelve", member.id)
+            await self.repository.restore(entry.id)
+            await notify(interaction, "La caja se ha atascado. Te la devuelvo entera.")
+            return
+        held = owned | {drop.catalog_key}
+        collection = COLLECTION_BY_KEY[drop.piece.collection] if drop.piece else None
+        have_in_collection = (
+            sum(1 for p in collection.pieces if p.key in held) if collection is not None else 0
+        )
+        last = reveal_frame(
+            who,
+            box,
+            drop,
+            dupe=dupe,
+            owned=have_in_collection,
+            rng=self.rng,
+            price_text=format_amount(drop.price),
+        )
+        # Las piezas buenas y los tapetes son un momento sonado: la mascota sale siempre.
+        notable = drop.skin is not None or drop.rarity >= Rarity.LEGENDARY
+        moment = Moment(Event.LOOTBOX, notable)
+        if pet := await mascotas.cameo(self.bot, guild.id, member.id, moment):
+            last += f"\n{pet}"
+        await self._animate(
+            interaction, [shake_frame(who, box, self.rng), glow_frame(who, box, drop), last]
+        )
+        await self._refresh_backpack(backpack)
+
+        collection_size = await self.repository.collection_size(guild.id, member.id)
+        await logros.track(
+            self.bot,
+            guild.id,
+            member,
+            interaction.channel,
+            shop_use_stats(
+                use="lootbox",
+                flags=(),
+                consumed=True,
+                targeted=False,
+                at_self=False,
+                at_bot=False,
+                prize_price=None,
+                collection=collection_size,
+                when=now,
+            ),
+        )
+        await logros.track(
+            self.bot,
+            guild.id,
+            member,
+            interaction.channel,
+            lootbox_stats(
+                box=box.key,
+                rarity=drop.rarity.stat,
+                tapete=drop.skin is not None,
+                dupe=dupe,
+                seasonal=box.season is not None,
+                collection=collection.key if collection is not None else None,
+                owned=have_in_collection,
+                when=now,
+            ),
+        )
+
+    async def _animate(self, interaction: discord.Interaction, frames: list[str]) -> None:
+        """Manda el primer fotograma al canal y lo va editando con los demás.
+
+        Si una edición falla (mensaje borrado, límite de Discord) se salta el resto y el
+        último fotograma, que es el resultado, sale como mensaje nuevo: nunca se pierde.
+        """
+        mentions = discord.AllowedMentions.none()
+        try:
+            message = await interaction.followup.send(
+                frames[0], ephemeral=False, wait=True, allowed_mentions=mentions
+            )
+        except discord.HTTPException:
+            # Sin el primer fotograma no hay animación: el resultado sale solo, en privado
+            # si tampoco deja en público. La pieza ya está en la mochila.
+            logger.warning("No se pudo empezar la apertura de una caja", exc_info=True)
+            try:
+                await notify(interaction, frames[-1], allowed_mentions=mentions)
+            except discord.HTTPException:
+                logger.warning("Ni siquiera se pudo enseñar la caja abierta", exc_info=True)
+            return
+        try:
+            for frame in frames[1:]:
+                await asyncio.sleep(self.lootbox_pause)
+                await message.edit(content=frame, allowed_mentions=mentions)
+        except (discord.HTTPException, AttributeError):
+            logger.warning("No se pudo animar la apertura de una caja", exc_info=True)
+            await notify(interaction, frames[-1], ephemeral=False, allowed_mentions=mentions)
+
+    async def grant_free_box(
+        self, guild_id: int, user_id: int, box_key: str, *, count: int = 1, because: str
+    ) -> str | None:
+        """Mete en la mochila `count` cajas ganadas jugando, sin cobrar, y devuelve el aviso.
+
+        Es un regalo del colmado, como `ShopRepository.grant`: no mueve dinero (Biblia,
+        sección 4), así que no hay ni IGIC ni gancho de la Renta. Cuenta para los logros
+        de cajas gratis.
+
+        Args:
+            because: Por qué se gana, para el aviso («tus 100 jugadas»).
+
+        Returns:
+            La línea del aviso, o `None` si el servidor no tiene la caja.
+        """
+        box = BOX_BY_KEY[box_key]
+        await self.stock_up(guild_id)
+        item = await self.repository.item_by_key(guild_id, box.key)
+        if item is None or count < 1:
+            return None
+        now = self.clock()
+        for _ in range(count):
+            await self.repository.grant(guild_id, user_id, item, now)
+        logros.note(self.bot, guild_id, user_id, lootbox_free_stats(count))
+        return free_box_line(box, because=because, count=count)
+
+    def notices_for(self, guild_id: int, user_id: int) -> str | None:
+        """Los avisos de cajas ganadas que aún no ha visto (se sirven una sola vez)."""
+        lines = self.notices.pop((guild_id, user_id), None)
+        return "\n".join(lines) if lines else None
+
     async def _open_mystery(
         self, guild_id: int, user_id: int, who: str, box: InventoryEntry, now: float
     ) -> tuple[UseResult, ShopItem] | None:
@@ -1864,6 +2113,7 @@ class Tienda(commands.Cog):
             and use_of(item.catalog_key) is None
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
+            and not is_piece(item.catalog_key)
         ]
         if not candidates:
             return None
@@ -1956,8 +2206,7 @@ class Tienda(commands.Cog):
         """
         note = None
         if not on_sale(item, local_now(now)):
-            skin = skin_of_item(item.catalog_key)
-            season = skin.season.name if skin and skin.season else "su temporada"
+            season = season_name(item) or "su temporada"
             return f"Eso solo se vende en {season}. Vuelve entonces, mi amor.", None
         if item.kind is Kind.ROLE:
             role = guild.get_role(item.role_id or 0)
@@ -2002,7 +2251,7 @@ class Tienda(commands.Cog):
         now = self.clock()
         if not on_sale(view.item, local_now(now)):
             # La caja se abrió en temporada y se ha pagado fuera: no se cobra.
-            view.failed, view.result = True, "❌ Se acabó la temporada de esa skin."
+            view.failed, view.result = True, "❌ Se acabó la temporada de ese artículo."
             return None
         level = await self.member_level(guild.id, buyer.id) if view.item.min_level else 0
         try:
@@ -2385,6 +2634,43 @@ async def grant_free_skins(bot: commands.Bot, guild_id: int, user_id: int, game:
         logger.exception("No se pudieron dar las skins gratis de %s a %s", game, user_id)
 
 
+async def grant_box(
+    bot: commands.Bot,
+    guild_id: int,
+    user_id: int,
+    box_key: str,
+    *,
+    because: str,
+    count: int = 1,
+    pending: bool = False,
+) -> str | None:
+    """Regala una caja ganada jugando (`Tienda.grant_free_box`) y devuelve la línea de aviso.
+
+    `apuestas` da una de cartón cada 100 jugadas y `message_stats`, una de regalo cada 5
+    niveles. Con `pending`, el aviso espera a `notice` (el siguiente resultado con dinero
+    de ese miembro) en vez de devolverse. No lanza: si la tienda no está o falla, solo se
+    pierde la caja, y queda en el log.
+    """
+    if (cog := find_cog(bot, Tienda)) is None:
+        return None
+    try:
+        line = await cog.grant_free_box(guild_id, user_id, box_key, count=count, because=because)
+    except Exception:
+        logger.exception("No se pudo dar la caja %s a %s", box_key, user_id)
+        return None
+    if line is not None and pending:
+        cog.notices[(guild_id, user_id)].append(line)
+        return None
+    return line
+
+
+def notice(bot: commands.Bot, guild_id: int, user_id: int) -> str | None:
+    """El aviso pendiente de cajas ganadas, una sola vez; lo añade `renta.hint`."""
+    if (cog := find_cog(bot, Tienda)) is None:
+        return None
+    return cog.notices_for(guild_id, user_id)
+
+
 async def consume_key(bot: commands.Bot, guild_id: int, user_id: int, catalog_key: str) -> bool:
     """Gasta una unidad de un objeto de serie; `False` si no lo tiene o la tienda no está.
 
@@ -2395,16 +2681,19 @@ async def consume_key(bot: commands.Bot, guild_id: int, user_id: int, catalog_ke
     return await cog.consume_key(guild_id, user_id, catalog_key)
 
 
-async def open_aisle(bot: commands.Bot, interaction: discord.Interaction, aisle: str) -> bool:
+async def open_aisle(
+    bot: commands.Bot, interaction: discord.Interaction, aisle: str | None, *, tab: str = "todo"
+) -> bool:
     """Rellena una respuesta ya aceptada (`ack`) con el escaparate abierto en `aisle`.
 
-    Es el atajo 🎁 de `pala` al pasillo de la familia. `False` si la tienda no
-    está cargada (y no se toca la respuesta).
+    Es el atajo 🎁 de `pala` al pasillo de la familia y el de 🐾 Adoptar y 🥣 Comida
+    del panel de `mascota`. `aisle` `None` son todos los pasillos; `tab`, la
+    pestaña (`TABS`). `False` si la tienda no está cargada (y no se toca la respuesta).
     """
     if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
         return False
     view = await cog.storefront(interaction.guild, interaction.user)
-    view.aisle, view.page = aisle, 0
+    view.aisle, view.tab, view.page = aisle, tab, 0
     view.rebuild()
     await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
     view.interaction = interaction

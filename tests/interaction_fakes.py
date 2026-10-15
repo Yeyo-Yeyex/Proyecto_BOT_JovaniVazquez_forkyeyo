@@ -45,9 +45,12 @@ def fake_interaction(user: object | None = None, *, events: list[str] | None = N
         return AsyncMock(side_effect=respond)
 
     def later(name: str) -> AsyncMock:
-        async def send(*args: object, **kwargs: object) -> None:
+        async def send(*args: object, **kwargs: object) -> MagicMock:
             if events is not None:
                 events.append(name)
+            # Con `wait=True` Discord devuelve el mensaje, que se puede editar (las
+            # animaciones de `lootboxes`); `message.edit` es un AsyncMock.
+            return MagicMock(edit=AsyncMock())
 
         return AsyncMock(side_effect=send)
 

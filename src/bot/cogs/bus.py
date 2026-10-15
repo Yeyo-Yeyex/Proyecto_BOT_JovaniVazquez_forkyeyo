@@ -125,7 +125,7 @@ CASH_LINES = (
     "¡Parada solicitada!",
     "¡A la saca!",
     "¡Te bajas en Waterloo!",
-    "¡Al Falcon con la plata!",
+    "¡Te bajas antes que Bibi del banquillo!",
     "¡Te bajas antes de que Óscar Puente lo tuitee!",
     "¡Fin de trayecto, y cobrando!",
     "¡Bajada en marcha y con la saca!",
@@ -143,11 +143,12 @@ LOSE_LINES = (
     "¡La guagua se fue sin ti!",
     "¡Revisor de Hacienda a bordo!",
     "¡Se acabó el abono gratis!",
+    "¡Te ha pillado un groyper sin billete!",
 )
 FLIPPING_LINES = (
     "🃏 La carta tiembla…",
     "🚌 El autobús frena…",
-    "🙏 Que salga, que salga…",
+    "🐸 Una rana groyper mira por la ventanilla…",
     "😬 Se levanta la carta…",
     "👀 Todos miran la carta…",
     "🚏 Próxima parada: la ruina o la gloria…",

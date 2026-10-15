@@ -63,6 +63,8 @@ class Event(StrEnum):
     BIRTHDAY = "birthday"
     BEER = "beer"
     PROFILE = "profile"
+    DONATE = "donate"
+    LOOTBOX = "lootbox"
 
 
 class Mood(StrEnum):
@@ -450,6 +452,7 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} te mira como Milei a un ministerio: con la motosierra preparada.",
         "{pet} se pone a buscar trabajo. Alguien en esta casa tiene que traer pienso.",
         "{pet} recuerda la cartilla de racionamiento de los abuelos. Hoy la entiende.",
+        "{pet} se muda al sótano de Nick Fuentes. Allí, al menos, hay wifi.",
     ),
     Event.BIG_WIN: (
         "{pet} se pone a dar vueltas de la emoción. {collector} también.",
@@ -458,24 +461,28 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} pide el Falcon para ir a celebrarlo.",
         "{pet} grita «¿qué? ¿qué? ¡toma mangó!» a su manera: {sound}.",
         "{pet} le cuenta a Trump que el mérito es de {pet}. Trump dice que es suyo.",
+        "{pet} pide puros y champán, como los regalos de Bibi.",
     ),
     Event.WIN: (
         "{pet} aprueba la jugada con un {sound}.",
         "{pet} se acerca a oler las fichas ganadas.",
         "{pet} aplaude como en Pyongyang: por si acaso.",
         "{pet} se mueve al ritmo de «¡Jota Uve! ¡Pre!».",
+        "{pet} apoya la barbilla en la pata, como la rana groyper, y asiente.",
     ),
     Event.LOSE: (
         "{pet} hace como que no ha visto nada.",
         "{pet} se acurruca a tu lado. Se nota que lo necesitas.",
         "{pet} suspira como Feijóo en la noche electoral.",
         "{pet} te recuerda que Trump quebró seis casinos y acabó en la Casa Blanca.",
+        "{pet} te recuerda que Bibi siempre vuelve. Tú también puedes.",
     ),
     Event.TAX: (
         "{pet} le gruñe a {collector}. {collector} le retiene el 19 % del gruñido.",
         "{pet} se esconde debajo del sofá cuando llega la carta de Hacienda.",
         "{pet} esconde sus chuches en Andorra antes de que llegue {collector}.",
         "{pet} le pide factura a {collector}. No se la dan.",
+        "{pet} le pide a {collector} el indulto, como Bibi a Herzog.",
     ),
     Event.IMV: (
         "{pet} te acompaña a cobrar la paguita. Su parte, en pienso.",
@@ -520,10 +527,26 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} se tapa los ojos. Prefiere no declarar ante la UCO.",
         "{pet} hace como Rajoy: no sabe nada, no ha visto nada.",
     ),
+    Event.LOOTBOX: (
+        "{pet} mete la cabeza en la caja vacía. Le gusta más que lo que había dentro.",
+        "{pet} se sienta encima del cartón y no hay manera de moverlo.",
+        "{pet} olisquea la pieza nueva y la da por buena con un {sound}.",
+        "{pet} te recuerda que las cajas botín no estarían en un cajón si fueran gratis.",
+        "{pet} exige su parte del botín. En pienso, que no tributa.",
+        "{pet} pregunta si la caja traía factura. Con IGIC, claro.",
+        "{pet} mira la vitrina y suspira: cada vez hay menos sitio para ella.",
+    ),
     Event.BIZUM: (
         "{pet} pregunta si el Bizum era para comprarle algo.",
         "{pet} sospecha que el Bizum era para comprar mascarillas.",
         "{pet} apunta el Bizum en una libreta, por si viene Hacienda.",
+    ),
+    Event.DONATE: (
+        "{pet} mira el donativo y luego a ti: «¿y para chuches no había?».",
+        "{pet} se pregunta en qué yate acabará tu dinero.",
+        "{pet} aplaude tu generosidad y se apunta al banquete solidario de la ONG.",
+        "{pet} pide la factura de la donación: es la única que desgrava en esta casa.",
+        "{pet} se apunta de voluntario. Quiere la langosta del patronato.",
     ),
     Event.TRADE: (
         "{pet} regatea por ti: «¿último precio?». Tiene más cara que un ministro.",

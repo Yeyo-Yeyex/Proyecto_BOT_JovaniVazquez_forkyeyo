@@ -7,8 +7,11 @@ from datetime import date, datetime
 from bot.services.achievements import (
     GALLOS_BEAT_PREFIX,
     GALLOS_SKIN_PREFIX,
+    GALLOS_TRAINED_BEAT_PREFIX,
+    GALLOS_TRAINED_POWER,
     gallos_bet_stats,
     gallos_stats,
+    gallos_train_stats,
 )
 from bot.services.gallos import Corner, Exchange, Fight, Finish, RoosterRecord
 from bot.services.levels import TIMEZONE
@@ -71,6 +74,68 @@ def test_perder_contra_temu_es_secreto_y_cuenta_aparte() -> None:
     fight = Fight(BLUE, Finish.POINTS, (Exchange(3, BLUE, "aletazo", 10, False, False, (90, 100)),))
     got = stats(fight, net=-100)
     assert got["gallos_temu_loss"] == 1 and f"{GALLOS_BEAT_PREFIX}temu" not in got
+
+
+def win_fight() -> Fight:
+    return Fight(RED, Finish.POINTS, (Exchange(3, RED, "aletazo", 10, False, False, (100, 90)),))
+
+
+def test_ganar_con_un_gallo_entrenado_cuenta_para_la_gira_entrenada() -> None:
+    trained = stats(win_fight(), power=GALLOS_TRAINED_POWER)
+    assert trained[f"{GALLOS_TRAINED_BEAT_PREFIX}temu"] == 1
+    assert trained[f"{GALLOS_BEAT_PREFIX}temu"] == 1
+    flat = stats(win_fight(), power=GALLOS_TRAINED_POWER - 1)
+    assert f"{GALLOS_TRAINED_BEAT_PREFIX}temu" not in flat
+    assert f"{GALLOS_TRAINED_BEAT_PREFIX}temu" not in stats(win_fight(), rival=None, power=90)
+
+
+def test_ganar_con_menos_del_20_por_ciento_es_una_sorpresa_solo_contra_la_casa() -> None:
+    assert stats(win_fight(), rival="marte", chance=0.19)["gallos_upset"] == 1
+    assert "gallos_upset" not in stats(win_fight(), rival="marte", chance=0.20)
+    assert "gallos_upset" not in stats(win_fight(), rival=None, chance=0.1)
+    loss = Fight(BLUE, Finish.POINTS, (Exchange(3, BLUE, "aletazo", 10, False, False, (90, 100)),))
+    assert "gallos_upset" not in stats(loss, rival="marte", chance=0.1)
+
+
+def test_la_muerte_cuenta_veterano_y_debut_y_el_duelo_cuenta_la_muerte_ajena() -> None:
+    loss = Fight(BLUE, Finish.KO, (Exchange(1, BLUE, "patada", 100, True, False, (0, 100)),))
+    veteran = RoosterRecord(name="Roca", fights=80, wins=50)
+    got = stats(loss, died=veteran, record=veteran)
+    assert got["gallos_deaths"] == got["gallos_death_veteran"] == 1
+    assert "gallos_death_debut" not in got
+    debut = RoosterRecord(name="Novato", fights=1)
+    got = stats(loss, died=debut, record=debut)
+    assert got["gallos_deaths"] == got["gallos_death_debut"] == 1
+    assert "gallos_death_veteran" not in got
+    assert "gallos_deaths" not in stats(loss)
+    won = stats(Fight(RED, Finish.KO, loss.exchanges), rival=None, killed=True)
+    assert won["gallos_kills"] == 1 and "gallos_deaths" not in won
+
+
+def test_el_ave_fenix_es_ganar_la_primera_pelea_del_gallo_nuevo_tras_una_muerte() -> None:
+    fresh = RoosterRecord(name="Nuevo", fights=1, wins=1, deaths=1)
+    assert stats(win_fight(), record=fresh)["gallos_phoenix"] == 1
+    first_ever = RoosterRecord(name="Nuevo", fights=1, wins=1)
+    assert "gallos_phoenix" not in stats(win_fight(), record=first_ever)
+    second = RoosterRecord(name="Nuevo", fights=2, wins=2, deaths=1)
+    assert "gallos_phoenix" not in stats(win_fight(), record=second)
+
+
+def test_entrenar_cuenta_gasto_maximos_y_cupo_del_dia() -> None:
+    record = RoosterRecord(name="Roca", strength=60, speed=30, endurance=0)
+    delta = gallos_train_stats(record=record, paid=1_284, today=6, when=WHEN)
+    assert delta.add == {"gallos_trains": 1, "gallos_train_spent": 1_284, "gallos_train_dawn": 1}
+    assert delta.peak == {
+        "gallos_strength_max": 60,
+        "gallos_speed_max": 30,
+        "gallos_endurance_max": 0,
+        "gallos_power_max": 30,
+        "gallos_trains_day_max": 6,
+    }
+    noon = WHEN.replace(hour=12)
+    assert (
+        "gallos_train_dawn" not in gallos_train_stats(record=record, paid=1, today=1, when=noon).add
+    )
 
 
 def test_apuesta_de_grada() -> None:

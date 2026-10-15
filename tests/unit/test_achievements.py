@@ -41,6 +41,7 @@ from bot.services.achievements import (
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
+    GALLOS_TRAINED_BEAT_PREFIX,
     HORSE_BACKED_KINDS_STAT,
     HORSE_BACKED_MAX_STAT,
     HORSE_BET_KINDS,
@@ -107,6 +108,9 @@ from bot.services.housing_catalog import BARRIO_BY_KEY as HOUSING_BARRIOS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.housing_catalog import RENT_LEVELS as HOUSING_LEVELS
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import BOXES as LOOTBOXES
+from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
+from bot.services.lootboxes import Rarity as LootRarity
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
 from bot.services.pachinko import Kind as PachinkoKind
@@ -116,6 +120,8 @@ from bot.services.poker import Rank as PokerRank
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
+from bot.services.slots import pot_share as slots_pot_share
+from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
 from bot.services.work import WISHES
 from bot.services.work_catalog import EVENTS, RESIGN_EVENT
 
@@ -197,6 +203,11 @@ PRODUCED_STATS = {
     "shop_got_hit", "shop_got_messy", "shop_got_love", "shop_got_raided",
     "shop_clover_broken", "shop_no_parsley", "shop_flash", "shop_fake_champagne",
     "shop_ball_dogs",
+    # Cajas (cogs/shop.py: lootbox_stats al abrir, lootbox_free_stats al ganarlas jugando)
+    "lootbox_opened", "lootbox_tapete", "lootbox_dupes", "lootbox_season", "lootbox_night",
+    "lootbox_free", *(f"lootbox_box_{box.key}" for box in LOOTBOXES),
+    *(f"lootbox_got_{rarity.stat}" for rarity in LootRarity),
+    *(collection.stat for collection in LOOTBOX_COLLECTIONS),
     # Mascotas (cogs/pets.py: pet_adopt_stats, pet_care_stats, pet_cameo_stats…)
     "pet_adopted", "pet_spawned", "pet_protectora", "pet_owned_max", PET_SPECIES_STAT,
     PET_SPAWN_KINDS_STAT, *(f"{PET_SPECIES_PREFIX}{s.key}" for s in PET_SPECIES),
@@ -207,6 +218,10 @@ PRODUCED_STATS = {
     "pet_renamed", "pet_named_sanxe", "pet_named_beast", "pet_switches",
     # cogs/rastro.py: ventas, compras, pujas y puestos del Rastro
     "market_sold", "market_sold_y", "market_bids_on_mine_max", "market_gain_tax",
+    "market_swaps", "market_swap_money", "market_swap_lopsided", "market_swap_fleeced",
+    "donations", "donated_desmontar", "donated_ayudante", "donated_mares", "donated_hambre",
+    "donation_one", "donation_allin", "donation_666", "donation_christmas",
+    "market_swap_titles",
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
     "market_bought", "market_spent", "market_bought_max", "market_itp",
     "market_gift_received", "market_auction_won", "market_serial_bought",
@@ -243,7 +258,8 @@ PRODUCED_STATS = {
     "roulette_streak_max", "roulette_repeat_pocket",
     "bj_hands", "bj_wins", "bj_naturals", "bj_double_wins", "bj_splits", "bj_split_sweeps",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
-    "bj_dealer_bj_saved", "bj_max_stake", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
+    "bj_dealer_bj_saved", "bj_max_stake", "bj_cut_cards", "bj_hot_wins", "bj_spread_max",
+    "bj_pit_boss", "bj_cold_shoe", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
     "bj_natural_insured", "bj_natural_insured_saved", "bj_natural_greed",
     "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
@@ -278,7 +294,7 @@ PRODUCED_STATS = {
     "slots_ticket_creative", "slots_ticket_taxed", "slots_ticket_zero", "slots_ticket_dry",
     "slots_ticket_quick",
     # Botes (cogs/hold_win.py: hold_win_stats, hold_win_bonus_stats y el botón de Auto)
-    "botes_spins", "botes_spins_volcan",
+    "botes_spins", *(f"botes_spins_{theme}" for theme in ("volcan", "mina", "olimpo")),
     "botes_collects", "botes_double_collect", "botes_near_miss", "botes_ways_5",
     "botes_wild_wins", "botes_chips", "botes_turbo", "botes_night", "botes_win_max",
     "botes_bonuses", *(f"botes_bonus_{kind}" for kind in ("green", "blue", "red", "grand")),
@@ -350,6 +366,11 @@ PRODUCED_STATS = {
     "gallos_hispanidad", "gallos_canarias", "gallos_july4", "gallos_china_day",
     "gallos_europe_day", "gallos_africa_day", "gallos_night", "gallos_dawn",
     "gallos_nochevieja", "gallos_friday13",
+    # stats, entrenamiento y muertes (`gallos_stats` y `gallos_train_stats`)
+    "gallos_trains", "gallos_train_spent", "gallos_train_dawn", "gallos_trains_day_max",
+    "gallos_strength_max", "gallos_speed_max", "gallos_endurance_max", "gallos_power_max",
+    "gallos_upset", "gallos_deaths", "gallos_kills", "gallos_phoenix",
+    "gallos_death_veteran", "gallos_death_debut",
     # cogs/enraya.py (`enraya_stats`, `enraya_bet_stats` y los retos)
     "enraya_games", "enraya_wins", "enraya_losses", "enraya_draws", "enraya_resigns",
     "enraya_timeouts", "enraya_opp_timeouts", "enraya_beat_imposible_second",
@@ -381,6 +402,7 @@ PRODUCED_STATS = {
     "backgammon_untouched", "backgammon_value_max", "backgammon_win_max", "backgammon_wins",
     *(f"{BACKGAMMON_BEAT_PREFIX}{lv.key}" for lv in BACKGAMMON_LEVELS),
     *(f"{GALLOS_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
+    *(f"{GALLOS_TRAINED_BEAT_PREFIX}{r.key}" for r in GALLOS_HOUSE),
     *(f"{GALLOS_SKIN_PREFIX}{k}" for k in ("serie", *GALLOS_FREE_SKINS)),
     # cogs/coin.py (`coin_stats`)
     "coin_games", "coin_flips", "coin_wins", "coin_wins_cara", "coin_wins_cruz",
@@ -428,6 +450,10 @@ PRODUCED_STATS = {
     "dice_inocentes", "dice_friday13", "dice_snake_eyes", "dice_boxcars",
     "dice_game_rolls_max", "dice_hand_points_max", "dice_hand_rolls_max", "dice_fire_max",
     "dice_repeat_max",
+    # Mesa compartida (`dados mesa`).
+    "dice_table_rolls", "dice_shooter", "dice_public_points_max", "dice_table_alone",
+    "dice_table_shooter_wins", "dice_table_vs_shooter", "dice_table_players_max",
+    "dice_table_lonely", "dice_table_boxcars", "dice_table_wipeout", "dice_table_unanimous",
     *(f"dice_total_{t}" for t in range(2, 13)),
     *(f"dice_point_made_{p}" for p in (4, 5, 6, 8, 9, 10)),
     *(f"dice_hard_{p}" for p in (4, 6, 8, 10)),
@@ -547,7 +573,8 @@ PRODUCED_STATS = {
     "msg_fango", *IRONY_PATTERNS, "msg_23f", "msg_july4", "msg_20n", "msg_paguita", "msg_manual",
     "msg_hacienda", "msg_cuñado", "msg_ola_k_ase",
     "msg_bizum_ask", "msg_siesta", "msg_office", "msg_weekend", "msg_cinderella", "msg_reyes",
-    "msg_valentin", "msg_pino", "msg_hispanidad", "msg_inocentes", "msg_friday13",
+    "msg_valentin", "msg_pino", "msg_hispanidad", "msg_aniversario", "msg_inocentes",
+    "msg_friday13",
     "msg_monologue_max", "msg_day_max", "msg_first_of_day", "msg_echo", "msg_necro",
     "msg_edits",
     # Risas
@@ -585,6 +612,23 @@ PRODUCED_STATS = {
     *(f"casino_bet_{n}" for n in SECRET_STAKES),
     "crash_cash_low", "crash_missed_moon",
     "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
+    # cogs/tower.py (`tower_stats`)
+    "tower_games", "tower_floors", "tower_random", "tower_cashouts", "tower_mult_max",
+    "tower_win_max", "tower_cash_one", "tower_cash_one_maestro", "tower_cash_eight",
+    "tower_crowns", "tower_dice_crown", "tower_cash_777", "tower_cash_666", "tower_cash_69",
+    "tower_burns", "tower_first_burn", "tower_easy_first_burn", "tower_ninth_burn",
+    "tower_ninth_burn_hard", "tower_burn_late", "tower_greedy", "tower_floor_max",
+    *(f"tower_games_{d.key}" for d in TOWER_DIFFICULTIES),
+    *(f"tower_crown_{d.key}" for d in TOWER_DIFFICULTIES),
+    *(f"tower_floors_max_{d.key}" for d in TOWER_DIFFICULTIES),
+    # cogs/war.py (`war_stats`)
+    "war_hands", "war_wins", "war_ties", "war_wars", "war_surrenders", "war_war_wins",
+    "war_war_losses", "war_war_ties", "war_side_bets", "war_side_hits", "war_triple",
+    "war_win_streak_max", "war_lose_streak_max", "war_tie_streak_max", "war_win_max",
+    "war_max_stake", "war_ace_ace", "war_king_lost", "war_tie_two", "war_win_two",
+    "war_surrender_ace", "war_surrender_one", "war_cash_777", "war_cash_666", "war_cash_69",
+    *(f"war_win_rank_{n}" for n in range(3, 15)),
+    *(f"war_tie_rank_{n}" for n in range(2, 15)),
     *(f"chicken_games_{d.key}" for d in CHICKEN_DIFFICULTIES),
     *(f"lottery_game_{g.key}" for g in LOTTERY_GAMES),
     "todo_done_batch_max",
@@ -1365,7 +1409,7 @@ def test_tragaperras_cuenta_el_medio_premio_como_ganar_perdiendo() -> None:
     assert delta.add["slots_ldw"] == 1
     assert "slots_wins" not in delta.add
     assert delta.add["slots_turbo"] == 1
-    assert delta.add["slots_pot_fed"] == 3
+    assert delta.add["slots_pot_fed"] == slots_pot_share(100)
 
 
 def test_tragaperras_cuenta_trios_bote_y_noche() -> None:

@@ -1,11 +1,13 @@
 """Peleas de gallos: `gallos`, tu gallo contra los de la casa o contra el de otra persona.
 
 - `gallos` (o `gallos 500`) abre tu reñidero, un panel que solo toca su dueño:
-  la ficha de tu gallo (nombre, victorias, KO, rachas), un desplegable con los
-  gallos de la casa (cada uno con su cuota, de ×1,12 a ×9,50) y los botones
+  la ficha de tu gallo (nombre, victorias, KO, rachas y sus tres stats), un
+  desplegable con los gallos de la casa (cada uno con su cuota y su
+  probabilidad, que cambian con el poder de tu gallo) y los botones
   🐓 **¡A pelear!**, ½, ×2 y 💰 All-in para la apuesta, ✏️ **Nombre** para
-  bautizar al gallo y 🎨 para cambiarle el aspecto (skins de la tienda; hay
-  tres gratis).
+  bautizar al gallo, 🎨 para cambiarle el aspecto (skins de la tienda; hay
+  tres gratis) y 🏋️ **Entrenar**, que abre el gimnasio: un botón por stat
+  (💪 fuerza, 🪶 velocidad, ❤️ aguante).
 - `gallos @alguien 500` le reta a un duelo de 500 Y$ por cabeza. El retado
   acepta o rechaza; quien reta puede retirarlo. Al aceptar se cobra a los dos y
   se abre la grada (`LOBBY_SECONDS`): el público apuesta por 🔴 uno u 🔵 otro a
@@ -29,6 +31,19 @@ pierde), antes del GIF: un apagado a mitad no deja a nadie sin cobrar. La
 comisión del duelo y de la grada se destruye (es el margen de la casa, no un
 impuesto). Si el bot se apaga con la grada abierta, se devuelve lo apostado.
 
+**Entrenar** (`Gallos.train`) es una compra, no un juego: paga **IGIC general
+(7 %)**, porque es una prestación de servicios hecha en Canarias a título
+oneroso (art. 4 de la Ley 20/1991; tipo general del art. 51 de la Ley 4/2012).
+Va por `EconomyService.purchase` con el motivo `gallos:entreno`: la base va a la
+caja de la tienda, el IGIC al Estado y el stat sube en la misma transacción
+(`GallosRepository.train`). Es un sumidero: no crea dinero. Sin IRPF (gastar no
+es renta) y sin retención de juego (no es una apuesta).
+
+**Morir.** Quien pierde por KO, contra la casa o en un duelo, muere con
+probabilidad `gallos.death_chance` (del 10 % al 5 % según el aguante), sorteada
+con el azar del cog. La ficha pasa al cementerio, el dueño empieza con un gallo
+nuevo y se cuenta con una línea de luto. Morir no mueve dinero.
+
 Si `CASINO_CHANNEL_IDS` está configurado, solo se pelea en esos canales.
 Permisos del bot en el canal: enviar mensajes, insertar enlaces y adjuntar
 archivos.
@@ -39,6 +54,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 import random
 import secrets
 import time
@@ -59,7 +75,13 @@ from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.repositories.gallos import GallosRepository
 from bot.services import skins
-from bot.services.achievements import StatDelta, casino_stats, gallos_bet_stats, gallos_stats
+from bot.services.achievements import (
+    StatDelta,
+    casino_stats,
+    gallos_bet_stats,
+    gallos_stats,
+    gallos_train_stats,
+)
 from bot.services.economy import (
     BalanceLimitError,
     BetSettlement,
@@ -76,27 +98,44 @@ from bot.services.gallos import (
     NAME_MAX,
     POOL_CUT,
     RIVAL_BY_KEY,
+    STAT_MAX,
+    TRAIN_CONCEPT,
+    TRAIN_COOLDOWN,
+    TRAIN_PER_DAY,
     Corner,
+    Fallen,
     Fight,
     Finish,
     PoolBet,
     Rival,
     RoosterRecord,
+    Stat,
+    TrainError,
+    check_training,
     clean_name,
+    dies,
     draw_winner,
+    duel_chance,
     duel_prize,
     format_odds,
+    house_chance,
+    house_multiplier,
     house_payout,
     narrate,
     pool_odds,
     pool_payouts,
     pool_totals,
     simulate,
+    stat_bar,
+    train_gain,
+    train_price,
+    trains_today,
 )
 from bot.services.gallos_render import Fighter, Media, intro_state, meta_state
 from bot.services.gallos_scene import GallosScene
-from bot.services.levels import TIMEZONE
-from bot.services.pets import bet_moment
+from bot.services.levels import TIMEZONE, local_day
+from bot.services.pets import Event, Moment, bet_moment
+from bot.services.taxes import IGIC_GENERAL_RATE, TAX_COLLECTOR, igic
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -137,6 +176,9 @@ WIN_LINES = (
     "¡Kikirikí, mi amor!",
     "¡Toma mangó!",
     "¡Yo soy yo, y así me tienes que soportar!",
+    "¡Más espolón que Bibi en campaña!",
+    "¡Desplumado el gallo groyper!",
+    "¡Gallo de pelea con escolta, como un ministro!",
 )
 LOSE_LINES = (
     "¡Ay, bendito!",
@@ -147,22 +189,152 @@ LOSE_LINES = (
     "¡El gallo dimite! Algo inédito.",
     "¡Más desplumado que un autónomo!",
     "¡Caldito para Waterloo!",
+    "¡Pide aplazar la pelea, como Netanyahu su juicio!",
 )
 WAITING_LINES = (
     "🐓 Los gallos salen al ruedo…",
     "📣 ¡Hagan sus apuestas… ya no!",
     "🥁 Se calienta el reñidero…",
-    "👀 Todo el barrio mirando…",
+    "👀 Todo el barrio mirando el reñidero…",
+    "🐸 Un groyper lo retransmite desde el sótano…",
     "📣 Trump anuncia que su gallo es el más grande…",
     "🐓 Kim asegura que su gallo ya ganó ayer…",
     "☕ El barrio pide café y apuesta…",
     "🎙️ El NO-DO ya tiene escrito el resultado…",
     "🐎 Abascal llega a caballo a ver la pelea…",
+    "🪰 Quisiera ser una mosca… para verla desde el palco…",
+)
+
+
+#: Frases de entrenamiento por stat; `{name}` es el nombre del gallo.
+TRAIN_LINES: dict[Stat, tuple[str, ...]] = {
+    Stat.STRENGTH: (
+        "**{name}** sube la escalera de Filadelfia con un cubo de alpiste. Rocky llora de orgullo.",
+        "**{name}** levanta mancuernas como Putin a caballo: sin camiseta y con mucha propaganda.",
+        "**{name}** pasa por el gimnasio de Ayuso: pesas de ración y un batido de libertad.",
+        "**{name}** carga arancel sobre arancel hasta el 200 %: Trump firma, él levanta la barra.",
+        "**{name}** hace sentadillas con el peso de los Presupuestos prorrogados a la espalda.",
+        "**{name}** tira de la cuerda como la oposición de la moción de censura: mucho, y sin "
+        "que se rompa nada.",
+        "**{name}** empuja el Falcon por la pista de despegue. Pesa más que la paciencia de "
+        "Bruselas.",
+        "**{name}** pide jugo de china de el bueno entre serie y serie. Sin pulpa.",
+    ),
+    Stat.SPEED: (
+        "**{name}** corre la vuelta ciclista al corral, en etapa llana y con viento de cola de "
+        "la Moncloa.",
+        "**{name}** persigue una lombriz más rápido de lo que un ministro huye de una pregunta.",
+        "**{name}** hace series de cien metros y Kim Jong-un anuncia que ha batido el récord "
+        "mundial. Él, personalmente.",
+        "**{name}** entrena con el pelotón de la Vuelta: llega primero y sin dopaje. Ni la UCO "
+        "encuentra nada.",
+        "**{name}** esquiva conos de obra como Puigdemont esquiva a los Mossos: maletero y a "
+        "correr.",
+        "**{name}** sprinta hasta el NO-DO: lo graban tres veces y siempre sale ganando.",
+        "**{name}** sube como la inflación argentina, pero en la dirección buena. Milei pide "
+        "la motosierra para que no se pase.",
+    ),
+    Stat.ENDURANCE: (
+        "**{name}** aguanta una hora de discurso de Maduro sin pestañear. Es lo más duro que ha "
+        "hecho.",
+        "**{name}** resiste en el gimnasio como el Gobierno en minoría: en pie, sin aprobar "
+        "nada, pero en pie.",
+        "**{name}** hace fondo en el parque: más kilómetros que un juicio de Netanyahu y con "
+        "menos aplazamientos.",
+        "**{name}** llega a Hacienda a las 14:59 y sale vivo. Ahora ya puede con todo.",
+        "**{name}** aguanta un desfile de Kim Jong-un en directo: tres horas de aplausos "
+        "obligatorios, de pie.",
+        "**{name}** hace plancha mientras suena un discurso de Rajoy: «un vaso es un vaso», y "
+        "él, firme.",
+        "**{name}** aguanta como el Falcon con el depósito vacío: por inercia y con mucha cara.",
+        "**{name}** pide café entre series: ¡quiero café! Y se lo toma con la cresta bien alta.",
+    ),
+}
+#: Líneas de luto cuando muere un gallo; `{name}` es su nombre. Cuentan la pena, sin regodearse.
+DEATH_LINES = (
+    "**{name}** cuelga el espolón. El NO-DO le dedica dos minutos y un himno.",
+    "Entierro de la sardina para **{name}**: bombo, capuchas de cartón y llanto de mentira.",
+    "Tres días de luto por **{name}**. Sánchez asistirá al funeral en el Falcon, claro.",
+    "**{name}** descansa en paz. Bruselas manda una directiva de condolencias de 400 páginas.",
+    "Funeral de Estado para **{name}**: banda de música y un discurso de Rajoy que no entiende "
+    "nadie.",
+    "**{name}** se va al corral grande. Putin guarda un minuto de silencio, a caballo y sin "
+    "camiseta.",
+    "Cae **{name}**. Feijóo asegura que con él en el gallinero esto no habría pasado.",
+    "**{name}** pasa a mejor corral. El cementerio de gallos ya tiene lista de espera, como "
+    "la sanidad.",
+    "Luto por **{name}**: Ayuso decreta una semana de gallinero abierto, con cañas.",
+    "Muere **{name}** y Erdoğan ofrece un mausoleo de mil habitaciones. Lo rechazan por humilde.",
+    "Kim Jong-un declara tres días de luto por **{name}**. Los aplausos, obligatorios; las "
+    "lágrimas, también.",
+    "Biden intenta darle el pésame a **{name}** y se sube mal las escaleras de la capilla.",
+    "Adiós a **{name}**. ¿Con pulpa? ¡Sin pulpa! Ni pulpa ni espolón. Descansa en paz.",
+    "**{name}** se despide del reñidero. El NO-DO ya prepara el «Franco sigue muerto» de la "
+    "ocasión.",
+)
+#: Línea del entierro y del gallo nuevo; `{name}` es el caído y `{new}`, el que lo sustituye.
+BURIAL_LINES = (
+    "⚰️ **{name}** queda en el cementerio del reñidero. **{new}**, el gallo nuevo, ya picotea "
+    "en su jaula: a cero y con ganas.",
+    "⚰️ Quema de la sardina y a otra cosa: **{new}** entra al ruedo con el contador a cero.",
+    "⚰️ Hacienda reclama la herencia de **{name}**. No hay: las plumas ya tributaron. "
+    "**{new}** sale al corral.",
+    "⚰️ Se inaugura la tumba de **{name}** con corte de cinta y sobrecoste. **{new}** ocupa la "
+    "jaula vacía.",
+    "⚰️ El NO-DO cierra el funeral con «y España, un gallo menos». **{new}** empieza de cero.",
+    "⚰️ La exhumación de **{name}** queda pendiente de aprobación parlamentaria. Mientras, "
+    "**{new}** a entrenar.",
+    "⚰️ **{name}** ya es historia, y la ficha se la guardan en el cementerio. **{new}** nace "
+    "sin deudas y sin músculos.",
 )
 
 
 def _percent(chance: Fraction) -> str:
     return f"{float(chance) * 100:.0f} %"
+
+
+def stat_line(record: RoosterRecord) -> str:
+    """`💪 12 · 🪶 5 · ❤️ 0 · ⚡ poder 6`: los stats de un gallo en una línea."""
+    parts = [f"{s.emoji} {record.stat(s)}" for s in Stat]
+    return " · ".join([*parts, f"⚡ poder {record.power:.0f}"])
+
+
+def stat_lines(record: RoosterRecord) -> list[str]:
+    """Una línea con barra por stat y otra con el poder (la ficha del gallo)."""
+    lines = [f"{s.emoji} **{s.label}** `{stat_bar(record.stat(s))}` {record.stat(s)}" for s in Stat]
+    lines.append(f"⚡ **Poder** `{stat_bar(round(record.power))}` {record.power:.0f}")
+    return lines
+
+
+def killer_text(fallen: Fallen) -> str:
+    """Quién mató a un gallo: el rival de la casa o el gallo de un miembro."""
+    if fallen.killer_kind == "casa":
+        rival = RIVAL_BY_KEY.get(fallen.killer)
+        return f"a manos de {rival.label if rival else 'la casa'}"
+    return f"a manos del gallo de <@{fallen.killer}>"
+
+
+def fallen_lines(fallen: list[Fallen]) -> list[str]:
+    """«🪦 En memoria de…»: los últimos gallos caídos, el más reciente primero."""
+    if not fallen:
+        return []
+    lines = ["### 🪦 En memoria de…"]
+    for dead in fallen:
+        lines.append(
+            f"**{dead.name}** · {dead.fights} pelea{'s' if dead.fights != 1 else ''}, "
+            f"{dead.wins} victoria{'s' if dead.wins != 1 else ''} · "
+            f"💪 {dead.strength} 🪶 {dead.speed} ❤️ {dead.endurance} · {killer_text(dead)} "
+            f"· <t:{int(dead.died_at)}:d>"
+        )
+    return lines
+
+
+def mourning_lines(dead: RoosterRecord, new_name: str) -> list[str]:
+    """El luto y el entierro de un gallo que muere (frases al azar de `DEATH_LINES`)."""
+    return [
+        f"## 🪦 {random.choice(DEATH_LINES).format(name=dead.name)}",
+        random.choice(BURIAL_LINES).format(name=dead.name, new=new_name),
+    ]
 
 
 # -- Lo común a las dos mesas ------------------------------------------------------------
@@ -195,12 +367,17 @@ def fighter_of(owner: Owner, odds: str = "") -> Fighter:
     )
 
 
-def fighter_of_rival(rival: Rival) -> Fighter:
-    """Un gallo de la casa tal como lo pinta la escena."""
+def fighter_of_rival(rival: Rival, power: float = 0.0) -> Fighter:
+    """Un gallo de la casa tal como lo pinta la escena, con la cuota para un gallo de `power`."""
     look = dict(skins.GAMES[SKIN_GAME].defaults)
     look.update(rival.look)
     look["key"] = f"casa_{rival.key}"
-    return Fighter(name=rival.name, tag=rival.origin, skin=look, odds=format_odds(rival.multiplier))
+    return Fighter(
+        name=rival.name,
+        tag=rival.origin,
+        skin=look,
+        odds=format_odds(rival.multiplier_for(power)),
+    )
 
 
 def record_line(record: RoosterRecord) -> str:
@@ -258,8 +435,10 @@ class HousePanel(ui.View):
         self.rival = RIVAL_BY_KEY[DEFAULT_RIVAL]
         self.record = RoosterRecord(name="")
         self.balance = 0
-        #: Qué presentación se ve ahora (rival, nombre, apuesta); `None` si otra imagen.
-        self._poster: tuple[object, str, int] | None = None
+        #: Si se ve el gimnasio (🏋️) en lugar del reñidero.
+        self.training = False
+        #: Qué presentación se ve ahora (rival, nombre, apuesta, poder); `None` si otra imagen.
+        self._poster: tuple[object, str, int, float] | None = None
         self.channel: object = None
         self.message: discord.Message | None = None
         self.result: str | None = None
@@ -269,19 +448,27 @@ class HousePanel(ui.View):
 
     # -- Texto ------------------------------------------------------------------------
 
+    @property
+    def power(self) -> float:
+        """Poder del gallo del panel (0 a 100)."""
+        return self.record.power
+
     def description(self) -> str:
         """Texto del embed: tu gallo, el rival elegido y, si lo hay, el último resultado."""
         rival = self.rival
+        chance = rival.chance_for(self.power)
         lines = []
         if self.result:
             lines.append(self.result)
         lines.append(f"### 🐓 {self.record.name}")
         lines.append(f"-# {record_line(self.record)}")
+        lines.append(f"-# {stat_line(self.record)}")
         lines.append(f"### 🆚 {rival.label}")
         lines.append(f"*{rival.blurb}*")
         lines.append(
-            f"Cuota **{format_odds(rival.multiplier)}** · le ganas el {_percent(rival.chance)} "
-            f"de las veces · si ganas, cobras **{format_amount(house_payout(self.stake, rival))}**"
+            f"Cuota **{format_odds(rival.multiplier_for(self.power))}** · le ganas el "
+            f"{_percent(chance)} de las veces · si ganas, cobras "
+            f"**{format_amount(house_payout(self.stake, rival, self.power))}**"
         )
         lines.append(
             f"-# Apuesta {format_amount(self.stake)} · Saldo {format_amount(self.balance)}"
@@ -290,13 +477,38 @@ class HousePanel(ui.View):
             lines.append("**Estás a cero.** `imv` te recarga.")
         return "\n".join(lines)
 
+    def gym_text(self) -> str:
+        """Texto del gimnasio: los stats, lo que cuesta cada uno y cuánto queda de cupo."""
+        now = self.cog.wall_clock()
+        today = trains_today(self.record, local_day(now))
+        lines = []
+        if self.result:
+            lines.append(self.result)
+        lines.append(f"### 🏋️ Gimnasio de {self.record.name}")
+        lines += stat_lines(self.record)
+        lines.append(
+            f"-# Entrenar sube un stat +3 hasta el 40, +2 hasta el 70 y +1 después, sin pasar "
+            f"de {STAT_MAX}. Cuesta lo que marca cada botón (IGIC del "
+            f"{IGIC_GENERAL_RATE * 100:g} % incluido) y sube con el nivel."
+        )
+        lines.append(
+            f"-# Hoy {today}/{TRAIN_PER_DAY} entrenamientos · una hora de descanso entre uno y "
+            f"otro · Saldo {format_amount(self.balance)}"
+        )
+        wait = self.record.last_train + TRAIN_COOLDOWN - now
+        if wait > 0:
+            lines.append(f"⏳ Tu gallo descansa {math.ceil(wait / 60)} min más.")
+        return "\n".join(lines)
+
     def embed(
         self, *, image: str = PNG_NAME, text: str | None = None, color: discord.Color | None = None
     ) -> discord.Embed:
         """Embed con la imagen adjunta (`attachment://`)."""
+        if text is None:
+            text = self.gym_text() if self.training else self.description()
         embed = discord.Embed(
             title=f"🐓 Reñidero de {self.owner.display_name}",
-            description=text if text is not None else self.description(),
+            description=text,
             color=color or COLOR_IDLE,
         )
         embed.set_image(url=f"attachment://{image}")
@@ -304,9 +516,36 @@ class HousePanel(ui.View):
 
     # -- Componentes ------------------------------------------------------------------
 
+    def _rebuild_gym(self, *, busy: bool) -> None:
+        """Los botones del gimnasio: uno por stat, con lo que sube y lo que cuesta."""
+        today = trains_today(self.record, local_day(self.cog.wall_clock()))
+        for stat in Stat:
+            level = self.record.stat(stat)
+            base = train_price(level)
+            full = level >= STAT_MAX
+            goes_to = min(STAT_MAX, level + train_gain(level))
+            label = (
+                f"{stat.emoji} {stat.label} al máximo"
+                if full
+                else f"{stat.emoji} {stat.label} {level} → {goes_to}"
+                f" · {format_amount(base + igic(base))}"
+            )
+            self._button(
+                label,
+                f"train_{stat.value}",
+                self._trainer(stat),
+                style=discord.ButtonStyle.primary,
+                row=0,
+                disabled=busy or full or today >= TRAIN_PER_DAY,
+            )
+        self._button("↩️ Volver al reñidero", "train_back", self._leave_gym, row=1, disabled=busy)
+
     def rebuild(self, *, busy: bool = False) -> None:
         """Vuelve a montar el desplegable y los botones con el estado actual."""
         self.clear_items()
+        if self.training:
+            self._rebuild_gym(busy=busy)
+            return
         select: ui.Select = ui.Select(
             placeholder="Elige rival",
             row=0,
@@ -314,10 +553,13 @@ class HousePanel(ui.View):
             custom_id=f"{GAME}:rival",
             options=[
                 discord.SelectOption(
-                    label=f"{r.name} · {format_odds(r.multiplier)}"[:100],
+                    label=f"{r.name} · {format_odds(r.multiplier_for(self.power))}"[:100],
                     value=r.key,
                     emoji=r.emoji,
-                    description=r.blurb[:100],
+                    description=(
+                        f"Poder {r.power} · le ganas el {_percent(r.chance_for(self.power))}. "
+                        f"{r.blurb}"
+                    )[:100],
                     default=r.key == self.rival.key,
                 )
                 for r in HOUSE
@@ -337,6 +579,7 @@ class HousePanel(ui.View):
         self._button("×2", "x2", self._double, row=1, disabled=busy)
         self._button("💰 All-in", "allin", self._all_in, row=1, disabled=busy)
         self._button("✏️ Nombre", "name", self._name, row=2, disabled=busy)
+        self._button("🏋️ Entrenar", "train", self._gym, row=2, disabled=busy)
         if (button := tienda.skin_button(self.cog.bot, SKIN_GAME, row=2)) is not None:
             button.disabled = busy
             self.add_item(button)
@@ -396,13 +639,16 @@ class HousePanel(ui.View):
             tienda.skin_of(self.cog.bot, self.guild_id, self.owner.id, SKIN_GAME),
         )
 
-    def _meta(self, seed: int) -> dict[str, Any]:
+    def _meta(self, seed: int, owner: Owner | None = None) -> dict[str, Any]:
+        """La presentación; con `owner` se pinta ese gallo (el que peleó, aunque haya muerto)."""
+        owner = owner or self._owner()
         rival = self.rival
+        power = owner.record.power
         return meta_state(
-            fighter_of(self._owner(), odds=format_amount(self.stake)),
-            fighter_of_rival(rival),
+            fighter_of(owner, odds=format_amount(self.stake)),
+            fighter_of_rival(rival, power),
             title="PELEA DE GALLOS",
-            subtitle=f"Contra la casa · {format_odds(rival.multiplier)}",
+            subtitle=f"Contra la casa · {format_odds(rival.multiplier_for(power))}",
             seed=seed,
         )
 
@@ -412,7 +658,7 @@ class HousePanel(ui.View):
 
     async def repaint(self, interaction: discord.Interaction) -> None:
         """Repinta la presentación, el texto y los botones."""
-        key = (self.rival, self.record.name, self.stake)
+        key = (self.rival, self.record.name, self.stake, self.power)
         if key == self._poster:
             # Ya se ve esta misma presentación: subirla otra vez cuesta ~1 s y no cambia nada.
             self.rebuild()
@@ -462,6 +708,99 @@ class HousePanel(ui.View):
                 self.channel,
                 StatDelta(add={"gallos_renamed": 1}),
             )
+
+    # -- Gimnasio ---------------------------------------------------------------------
+
+    async def _gym(self, interaction: discord.Interaction) -> None:
+        """🏋️ Entrenar: abre el gimnasio. Solo cambia memoria, así que contesta directo."""
+        if self._busy:
+            await interaction.response.send_message("Espera a que acabe la pelea.", ephemeral=True)
+            return
+        if (self.guild_id, self.owner.id) in self.cog.busy:
+            await interaction.response.send_message(
+                "Tu gallo está en un duelo: nada de gimnasio hasta que acabe.", ephemeral=True
+            )
+            return
+        self.training = True
+        self.result = None
+        self.rebuild()
+        self._last_interaction = interaction
+        await edit(interaction, embed=self.embed(), view=self)
+
+    async def _leave_gym(self, interaction: discord.Interaction) -> None:
+        """↩️ Volver al reñidero: la cuota cambia con el poder, así que se repinta la imagen."""
+        await ack(interaction)
+        if self._busy:
+            return
+        self.training = False
+        self.result = None
+        await self.repaint(interaction)
+
+    def _trainer(self, stat: Stat) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._train(interaction, stat)
+
+        return callback
+
+    async def _train(self, interaction: discord.Interaction, stat: Stat) -> None:
+        """Entrena un stat: cobra con IGIC y sube el stat en la misma transacción."""
+        if self._busy:
+            await interaction.response.send_message(
+                "Espera, que ya se está moviendo.", ephemeral=True
+            )
+            return
+        # Cobrar y guardar van a la base de datos: se acepta el clic ya.
+        await ack(interaction)
+        self._busy = True
+        self._last_interaction = interaction
+        training: Training | None = None
+        try:
+            outcome = await self.cog.train(self.guild_id, self.owner.id, self.record, stat)
+            if isinstance(outcome, str):
+                self.result = f"❌ {outcome}"
+            else:
+                training = outcome
+                self.record, self.balance = outcome.after, outcome.balance
+                self.result = await self._train_text(outcome)
+            self.rebuild()
+            await edit(interaction, embed=self.embed(), view=self)
+        except discord.HTTPException:
+            logger.warning("No se pudo enseñar un entrenamiento de gallos", exc_info=True)
+        finally:
+            self._busy = False
+        if training is not None:
+            await self._after_train(interaction, training)
+
+    async def _train_text(self, training: Training) -> str:
+        """El resultado del entrenamiento: lo que sube, una frase y la mordida del IGIC."""
+        stat, after = training.stat, training.after
+        lines = [
+            f"# 🏋️ {stat.emoji} {stat.label} {training.before.stat(stat)} → {after.stat(stat)}",
+            random.choice(TRAIN_LINES[stat]).format(name=after.name),
+            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(training.tax)} de IGIC "
+            f"(tipo general, {IGIC_GENERAL_RATE * 100:g} % de {format_amount(training.base)}). "
+            f"Pagas {format_amount(training.total)}.",
+        ]
+        if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(Event.BUY)):
+            lines.append(hint)
+        return "\n".join(lines)
+
+    async def _after_train(self, interaction: discord.Interaction, training: Training) -> None:
+        """Lo que va después de contestar: aviso de la Renta y logros."""
+        await renta.remind(self.cog.bot, interaction)
+        today = trains_today(training.after, local_day(self.cog.wall_clock()))
+        await logros.track(
+            self.cog.bot,
+            self.guild_id,
+            self.owner,
+            self.channel,
+            gallos_train_stats(
+                record=training.after,
+                paid=training.total,
+                today=today,
+                when=datetime.now(TIMEZONE),
+            ),
+        )
 
     def _idle(self) -> bool:
         return not self._busy
@@ -520,6 +859,9 @@ class HousePanel(ui.View):
         """Cobra la apuesta, decide la pelea y paga, todo antes de enseñarla."""
         rival, stake = self.rival, self.stake
         async with self._lock:
+            # Con un duelo abierto el gallo ya está apostado: no pelea dos veces a la vez.
+            if (self.guild_id, self.owner.id) in self.cog.busy:
+                return "Tu gallo está en un duelo: nada de peleas con la casa hasta que acabe."
             try:
                 await self.cog.economy.place_bet(
                     self.guild_id, self.owner.id, game=GAME, stake=stake
@@ -527,22 +869,37 @@ class HousePanel(ui.View):
             except InsufficientFundsError as error:
                 return insufficient_text(error.balance, stake)
             rng = self.cog.rng
-            fight = simulate(draw_winner(rival.chance, rng), rng)
+            # La probabilidad y la cuota salen del poder que se vio en el panel: la misma
+            # `p` que se sortea es la que fija lo que se cobra, y el margen no cambia.
+            chance = house_chance(rival, self.power)
+            fight = simulate(draw_winner(chance, rng), rng)
             won = fight.winner is Corner.RED
-            payout = house_payout(stake, rival) if won else 0
+            payout = int(stake * house_multiplier(chance)) if won else 0
             settlement = await self.cog.pay(self.guild_id, self.owner.id, payout)
             self.balance = (
                 settlement.balance
                 if settlement
                 else await self.cog.economy.balance(self.guild_id, self.owner.id)
             )
-            _before, self.record = await self.cog.repository.record_fight(
+            _before, after = await self.cog.repository.record_fight(
                 self.guild_id,
                 self.owner.id,
                 won=won,
                 finish=fight.finish,
                 day=datetime.now(TIMEZONE).date(),
             )
+            owner = Owner(
+                self.owner,
+                after,
+                tienda.skin_of(self.cog.bot, self.guild_id, self.owner.id, SKIN_GAME),
+            )
+            self.record = after
+            fallen = None
+            if not won and fight.finish is Finish.KO and dies(after, rng):
+                fallen = after
+                self.record = await self.cog.bury(
+                    self.guild_id, self.owner.id, killer_kind="casa", killer=rival.key
+                )
             return HouseFight(
                 rival=rival,
                 stake=stake,
@@ -550,7 +907,10 @@ class HousePanel(ui.View):
                 payout=payout,
                 settlement=settlement,
                 seed=rng.randrange(1, 2**31),
-                owner=self._owner(),
+                owner=owner,
+                chance=chance,
+                fallen=fallen,
+                reborn=self.record.name if fallen else None,
             )
 
     async def _show(self, interaction: discord.Interaction, game: HouseFight) -> None:
@@ -559,7 +919,7 @@ class HousePanel(ui.View):
         waiting = (
             f"# {random.choice(WAITING_LINES)}\n"
             f"**{game.owner.record.name}** 🆚 **{game.rival.label}** · "
-            f"{format_amount(game.stake)} a {format_odds(game.rival.multiplier)}"
+            f"{format_amount(game.stake)} a {format_odds(house_multiplier(game.chance))}"
         )
         names = {Corner.RED: game.owner.record.name, Corner.BLUE: game.rival.name}
 
@@ -569,7 +929,7 @@ class HousePanel(ui.View):
             except discord.HTTPException:
                 logger.warning("No se pudo apagar el reñidero", exc_info=True)
 
-        meta = self._meta(game.seed)
+        meta = self._meta(game.seed, game.owner)
         _, media = await asyncio.gather(
             show_waiting(), self.cog.renderer.fight(meta, game.fight, names, seed=game.seed)
         )
@@ -593,7 +953,18 @@ class HousePanel(ui.View):
     async def _result_text(self, game: HouseFight, names: dict[Corner, str]) -> str:
         fight = game.fight
         lines = []
-        if game.won:
+        if game.won and game.net < 0:
+            # Con un gallo muy entrenado contra uno flojo la cuota baja de ×1: ganar sale caro.
+            lines.append(
+                f"# 🏆 {random.choice(WIN_LINES)} {format_amount(game.net)}\n"
+                f"Tu gallo gana, pero a {format_odds(house_multiplier(game.chance))} "
+                "la casa te devuelve menos de lo apostado. Así de favorito eres."
+            )
+            lines.append(
+                f"**{names[Corner.RED]}** gana a {game.rival.label} {fight.finish.label} y cobras "
+                f"**{format_amount(game.payout)}**."
+            )
+        elif game.won:
             lines.append(f"# 🏆 {random.choice(WIN_LINES)} +{format_amount(game.net)}")
             lines.append(
                 f"**{names[Corner.RED]}** gana a {game.rival.label} {fight.finish.label} y cobras "
@@ -603,6 +974,8 @@ class HousePanel(ui.View):
             lines.append(f"# 💀 {random.choice(LOSE_LINES)} -{format_amount(game.stake)}")
             lines.append(f"{game.rival.label} gana {fight.finish.label}.")
         lines += narrate(fight, names, {Corner.BLUE: game.rival.signature})
+        if game.fallen is not None and game.reborn is not None:
+            lines += mourning_lines(game.fallen, game.reborn)
         if game.settlement is not None and (tax := gambling_tax_line(game.settlement)):
             lines.append(tax)
         if hint := await renta.hint(
@@ -622,15 +995,17 @@ class HousePanel(ui.View):
             fight=game.fight,
             corner=Corner.RED,
             rival=game.rival.key,
-            chance=float(game.rival.chance),
+            chance=float(game.chance),
             stake=game.stake,
             net=game.net,
-            record=self.record,
+            record=game.owner.record,
             skin=game.owner.skin_key,
             paid_skin=game.owner.paid_skin,
             crowd_pool=0,
             rake=0,
             when=datetime.now(TIMEZONE),
+            power=game.owner.record.power,
+            died=game.fallen,
         )
         delta.merge(
             casino_stats(stake=game.stake, net=game.net, balance_after=self.balance, tax_delta=tax)
@@ -669,6 +1044,11 @@ class HouseFight:
     settlement: BetSettlement | None
     seed: int
     owner: Owner
+    #: Probabilidad que tenía tu gallo de ganar (la que fija la cuota).
+    chance: Fraction
+    #: La ficha del gallo si ha muerto en esta pelea, y el nombre del que lo sustituye.
+    fallen: RoosterRecord | None = None
+    reborn: str | None = None
 
     @property
     def won(self) -> bool:
@@ -797,6 +1177,12 @@ class Duel:
         self.channel = channel
         self.owners = {Corner.RED: red, Corner.BLUE: blue}
         self.stake = stake
+        #: Probabilidad de que gane el rojo, de los poderes de los dos gallos.
+        self.chance = duel_chance(red.record.power, blue.record.power)
+        #: Gallos que mueren en este duelo (la ficha con la que murieron) y la ficha
+        #: de cada uno tras pelear, antes de enterrarlo.
+        self.fallen: dict[Corner, RoosterRecord] = {}
+        self.finals: dict[Corner, RoosterRecord] = {}
         self.phase = Phase.CHALLENGE
         self.view = DuelView(self)
         self.message: discord.Message | None = None
@@ -852,7 +1238,16 @@ class Duel:
         owner = self.owners[corner]
         return (
             f"{corner.emoji} **{owner.record.name}** de {owner.member.mention} · "
-            f"{record_line(owner.record)}"
+            f"{record_line(owner.record)}\n-# {stat_line(owner.record)}"
+        )
+
+    def _chance_line(self) -> str:
+        """`-# Probabilidad de ganar: 🔴 55 % · 🔵 45 %` (solo si los poderes difieren)."""
+        if self.chance == Fraction(1, 2):
+            return ""
+        return (
+            f"-# Probabilidad de ganar: {Corner.RED.emoji} {_percent(self.chance)} · "
+            f"{Corner.BLUE.emoji} {_percent(1 - self.chance)}, por el poder de cada gallo."
         )
 
     def embed(
@@ -877,6 +1272,7 @@ class Duel:
                 f"(la casa se queda el {int(DUEL_CUT * 100)} %).",
                 self._corner_line(Corner.RED),
                 self._corner_line(Corner.BLUE),
+                *([line] if (line := self._chance_line()) else []),
                 f"-# {blue.display_name} tiene <t:{int(self.lobby_ends)}:R> para aceptar.",
             ]
         )
@@ -890,6 +1286,7 @@ class Duel:
             f"Bote del duelo: **{format_amount(duel_prize(self.stake))}**.",
             self._corner_line(Corner.RED),
             self._corner_line(Corner.BLUE),
+            *([line] if (line := self._chance_line()) else []),
             "### Grada",
         ]
         for corner in Corner:
@@ -967,10 +1364,11 @@ class Duel:
             self.started_at = time.time()
             self.lobby_ends = self.cog.wall_clock() + LOBBY_SECONDS
             # La pelea se decide y se pinta ya, mientras se apuesta: el resultado no
-            # depende de las apuestas (sale de su propio azar, 50 % cada uno) y no se
-            # enseña ni se guarda en ningún sitio hasta que salen los gallos.
+            # depende de las apuestas (sale de su propio azar, con la probabilidad que dan
+            # los poderes de los dos gallos) y no se enseña ni se guarda en ningún sitio
+            # hasta que salen los gallos.
             rng = self.cog.rng
-            self.fight = simulate(draw_winner(Fraction(1, 2), rng), rng)
+            self.fight = simulate(draw_winner(self.chance, rng), rng)
             self.prepared = asyncio.create_task(
                 self.cog.renderer.fight(self.meta(), self.fight, self.names(), seed=self.seed),
                 name="gallos-dibujo",
@@ -1180,17 +1578,29 @@ class Duel:
                     finish=fight.finish,
                     day=day,
                 )
-        names = self.names()
-        waiting = f"# {random.choice(WAITING_LINES)}\n{self._corner_line(Corner.RED)}\n" + (
-            self._corner_line(Corner.BLUE)
-        )
+                self.finals[corner] = owner.record
+            # Lo que se enseña (nombres, ficha, dibujo) se fija antes de enterrar a nadie.
+            names = self.names()
+            waiting = f"# {random.choice(WAITING_LINES)}\n{self._corner_line(Corner.RED)}\n" + (
+                self._corner_line(Corner.BLUE)
+            )
+            meta = self.meta()
+            if fight.finish is Finish.KO and dies(self.finals[fight.loser], self.cog.rng):
+                self.fallen[fight.loser] = self.finals[fight.loser]
+                loser = self.owners[fight.loser]
+                loser.record = await self.cog.bury(
+                    self.guild_id,
+                    loser.member.id,
+                    killer_kind="miembro",
+                    killer=str(self.owners[fight.winner].member.id),
+                )
         await self.edit(embed=self.embed(waiting), view=None)
         assert self.prepared is not None
         try:
             media = await self.prepared
         except Exception:
             logger.warning("No se pudo pintar el duelo por adelantado", exc_info=True)
-            media = await self.cog.renderer.fight(self.meta(), fight, names, seed=self.seed)
+            media = await self.cog.renderer.fight(meta, fight, names, seed=self.seed)
         await self.edit(
             embed=self.embed(waiting, image=GIF_NAME),
             attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
@@ -1217,6 +1627,8 @@ class Duel:
             f"(+{format_amount(prize - self.stake)}).",
             *narrate(fight, names),
         ]
+        for corner, dead in self.fallen.items():
+            lines += mourning_lines(dead, self.owners[corner].record.name)
         if self.crowd:
             winners = [s for s in self.crowd.values() if s.payout > s.bet.stake]
             refund = all(s.payout == s.bet.stake for s in self.crowd.values())
@@ -1306,16 +1718,19 @@ class Duel:
                 fight=fight,
                 corner=corner,
                 rival=None,
-                chance=0.5,
+                chance=float(self.chance if corner is Corner.RED else 1 - self.chance),
                 stake=self.stake,
                 net=net,
-                record=owner.record,
+                record=self.finals.get(corner, owner.record),
                 skin=owner.skin_key,
                 paid_skin=owner.paid_skin,
                 crowd_pool=crowd_pool,
                 # La comisión del bote sale a medias de los dos.
                 rake=(2 * self.stake - prize) // 2,
                 when=when,
+                power=self.finals.get(corner, owner.record).power,
+                died=self.fallen.get(corner),
+                killed=won and fight.loser in self.fallen,
             )
             delta.merge(
                 casino_stats(stake=self.stake, net=net, balance_after=balance, tax_delta=tax)
@@ -1395,6 +1810,32 @@ class Duel:
 # -- Cog ---------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class Training:
+    """Un entrenamiento ya cobrado y apuntado.
+
+    Attributes:
+        stat: El stat que ha subido.
+        before: La ficha de antes.
+        after: La ficha de después.
+        base: Base imponible (el precio sin IGIC).
+        tax: IGIC cobrado sobre la base.
+        balance: Saldo del miembro tras pagar.
+    """
+
+    stat: Stat
+    before: RoosterRecord
+    after: RoosterRecord
+    base: int
+    tax: int
+    balance: int
+
+    @property
+    def total(self) -> int:
+        """Lo que ha pagado el miembro: base más IGIC."""
+        return self.base + self.tax
+
+
 class Gallos(commands.Cog, name="Gallos"):
     """Peleas de gallos contra la casa y entre miembros, con los yapdollars de la economía."""
 
@@ -1462,6 +1903,61 @@ class Gallos(commands.Cog, name="Gallos"):
             logger.warning("Premio de gallos por encima del saldo máximo; no se paga.")
             return None
 
+    async def train(
+        self, guild_id: int, user_id: int, record: RoosterRecord, stat: Stat
+    ) -> Training | str:
+        """Cobra un entrenamiento y sube el stat, todo en una transacción.
+
+        Tratamiento fiscal: IGIC general (7 %), porque entrenar es una prestación
+        de servicios hecha en Canarias a título oneroso (art. 4 de la Ley 20/1991)
+        y el tipo general es el del art. 51 de la Ley 4/2012 (ver
+        `EconomyService.purchase`). La base (`gallos.train_price`) va a la caja de
+        la tienda, el IGIC al Estado y el stat sube dentro de la misma
+        transacción (`GallosRepository.train`). Es un sumidero: no crea dinero. No
+        hay IRPF (gastar no es renta) ni retención de juego (no es una apuesta).
+
+        Args:
+            record: La ficha que ve el miembro; de ella salen el precio y las
+                comprobaciones previas. El repositorio las repite al cobrar.
+
+        Returns:
+            El `Training` si se ha pagado, o el texto del problema (sin saldo,
+            descansando, tope diario, stat al máximo) sin haber movido dinero.
+        """
+        now = self.wall_clock()
+        day = local_day(now)
+        try:
+            check_training(record, stat, now=now, day=day)
+        except TrainError as error:
+            return str(error)
+        level = record.stat(stat)
+        base = train_price(level)
+        tax = igic(base)
+        try:
+            (before, after), balance = await self.economy.purchase(
+                guild_id,
+                user_id,
+                base=base,
+                tax=tax,
+                concept=TRAIN_CONCEPT,
+                reserve=self.repository.train(
+                    guild_id, user_id, stat, level=level, now=now, day=day
+                ),
+            )
+        except TrainError as error:
+            return str(error)
+        except InsufficientFundsError as error:
+            return insufficient_text(error.balance, base + tax)
+        return Training(stat, before, after, base, tax, balance)
+
+    async def bury(
+        self, guild_id: int, user_id: int, *, killer_kind: str, killer: str
+    ) -> RoosterRecord:
+        """Entierra al gallo del miembro y devuelve la ficha del nuevo (no mueve dinero)."""
+        return await self.repository.bury(
+            guild_id, user_id, killer_kind=killer_kind, killer=killer, now=self.wall_clock()
+        )
+
     async def shout(self, channel: object, text: str, user: discord.abc.User) -> None:
         """Anuncia en el canal las victorias gordas."""
         if not isinstance(channel, discord.abc.Messageable):
@@ -1485,9 +1981,11 @@ class Gallos(commands.Cog, name="Gallos"):
         skin = tienda.skin_of(self.bot, guild_id, member.id, SKIN_GAME)
         ranking = await self.repository.ranking(guild_id, limit=100)
         place = next((i for i, (uid, _r) in enumerate(ranking, 1) if uid == member.id), None)
+        fallen = await self.repository.graveyard(guild_id, member.id, limit=3)
         lines = [
             f"### 🐓 {record.name}",
             f"Aspecto: {skin.label if skin else '🐓 Gallo colorado (de serie)'}",
+            *stat_lines(record),
             record_line(record),
         ]
         if record.fights:
@@ -1499,7 +1997,11 @@ class Gallos(commands.Cog, name="Gallos"):
             lines.append(f"📅 {record.day_streak} días seguidos peleando")
         if place is not None:
             lines.append(f"🏟️ Puesto {place} del reñidero del servidor")
-        lines.append("-# `gallos` para pelear · ✏️ para bautizarlo · 🎨 para cambiarle el aspecto")
+        lines += fallen_lines(fallen)
+        lines.append(
+            "-# `gallos` para pelear · 🏋️ para entrenarlo · ✏️ para bautizarlo · "
+            "🎨 para cambiarle el aspecto · si pierde por KO puede morir"
+        )
         return discord.Embed(
             title=f"🐓 El gallo de {member.display_name}",
             description="\n".join(lines),

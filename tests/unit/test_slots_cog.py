@@ -55,6 +55,7 @@ from bot.services.slots import (
     SlotMachine,
     WinTier,
     daily_stake,
+    pot_share,
     respin_price,
     spin_at,
 )
@@ -251,7 +252,7 @@ async def test_tirar_cobra_gira_y_paga(tmp_path: Path) -> None:
     first, final = interaction.edit_original_response.await_args_list
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
-    assert await cog.pot(GUILD_ID) == POT_SEED + 3
+    assert await cog.pot(GUILD_ID) == POT_SEED + pot_share(100)
 
 
 async def test_en_turbo_solo_se_edita_una_vez(tmp_path: Path) -> None:
@@ -1109,3 +1110,16 @@ async def test_los_giros_gratis_no_llenan_la_barra(tmp_path: Path) -> None:
     await view.play(make_interaction())  # giro gratis
 
     assert cog.bonus(GUILD_ID, OWNER_ID).points == points
+
+
+def test_tragas_lee_la_maquina_y_la_cantidad_en_cualquier_orden() -> None:
+    from bot.cogs.slots import CLASSIC, MACHINE_CHOICES, parse_machine_args
+
+    assert parse_machine_args(()) == (None, None)
+    assert parse_machine_args(("500",)) == (None, "500")
+    assert parse_machine_args(("volcan", "500")) == ("volcan", "500")
+    assert parse_machine_args(("2k", "Volcán")) == ("volcan", "2k")
+    assert parse_machine_args(("clasica", "all")) == (CLASSIC, "all")
+    assert parse_machine_args(("Mina", "50")) == ("mina", "50")
+    assert parse_machine_args(("olimpo",)) == ("olimpo", None)
+    assert {c.value for c in MACHINE_CHOICES} >= {CLASSIC, "volcan", "mina", "olimpo"}

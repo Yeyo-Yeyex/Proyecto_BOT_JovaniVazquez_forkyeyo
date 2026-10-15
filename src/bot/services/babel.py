@@ -14,12 +14,16 @@ Sobre el traductor real: usa el mismo endpoint público y sin clave que la
 extensión de Google Translate para navegadores (`client=gtx`). No es una API
 documentada ni tiene garantías: Google puede limitar la IP (HTTP 429 o una
 redirección a su página de captcha) si se abusa. Por eso el cog solo permite
-una cadena a la vez y la cadena se corta en cuanto Google se queja, en lugar
-de insistir.
+una cadena a la vez, deja un respiro entre saltos (`HOP_PAUSE_SECONDS`) y, si
+Google se queja, espera y lo vuelve a intentar unas pocas veces
+(`RATE_LIMIT_BACKOFF`) antes de cortar la cadena. Desde el NAS, tres de cada
+cuatro tiradas se cortaban así a mitad (informes de octubre de 2026): el límite
+de Google es pasajero y basta con esperar unos segundos.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import re
@@ -38,9 +42,19 @@ HOME_LANGUAGE = "es"
 #: Traducciones de una tirada completa: 99 idiomas intermedios + la vuelta al español.
 TOTAL_HOPS = 100
 
+#: Lo que espera el cog entre un salto y el siguiente, para no pisar el límite de Google.
+HOP_PAUSE_SECONDS = 0.3
+#: Esperas antes de reintentar un salto cuando Google limita la tasa; si sigue
+#: limitando tras la última, la cadena se corta.
+RATE_LIMIT_BACKOFF: tuple[float, ...] = (3.0, 8.0, 20.0)
+
 #: Fallos seguidos (sin contar el límite de tasa) a partir de los cuales se
 #: da la cadena por rota: lo normal es que la red o Google estén caídos.
 MAX_CONSECUTIVE_FAILURES = 5
+
+#: Tope de una cadena entera, esperas incluidas. El token de la interacción vale
+#: 15 minutos: pasado eso, el resultado ya no se puede enseñar.
+CHAIN_BUDGET_SECONDS = 600.0
 
 #: Idiomas intermedios posibles, con su nombre en español para el progreso.
 #: Códigos de Google Translate; el español queda fuera porque es la llegada.
@@ -136,12 +150,19 @@ async def run_chain(
     route: Sequence[str],
     translate: Translator,
     on_progress: ProgressCallback | None = None,
+    *,
+    pause: float = 0.0,
+    backoff: Sequence[float] = (),
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+    budget: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> BabelResult:
     """Traduce `text` por cada idioma de `route` y vuelve al español.
 
     Un idioma que falla se salta (la cadena sigue desde el último que
-    funcionó). Si Google limita la tasa o fallan demasiados seguidos, la
-    cadena se corta y se intenta una sola traducción de vuelta al español
+    funcionó). Si Google limita la tasa, se espera cada pausa de `backoff` y se
+    reintenta el mismo salto; si sigue limitando, o fallan demasiados seguidos,
+    la cadena se corta y se intenta una sola traducción de vuelta al español
     para que el resultado sea legible; si tampoco sale, se devuelve el texto
     tal como esté.
 
@@ -150,6 +171,13 @@ async def run_chain(
         route: Idiomas intermedios, en orden.
         translate: Traductor que se usará en cada salto.
         on_progress: Se llama tras cada salto con el avance.
+        pause: Segundos de espera entre saltos (el cog usa `HOP_PAUSE_SECONDS`).
+        backoff: Esperas antes de cada reintento por límite de tasa (el cog usa
+            `RATE_LIMIT_BACKOFF`); vacío, se corta al primero.
+        sleep: Cómo se espera (inyectable en las pruebas).
+        budget: Segundos que puede durar la cadena (el cog usa
+            `CHAIN_BUDGET_SECONDS`); agotados, se corta como con el límite de tasa.
+        clock: Reloj para `budget` (inyectable en las pruebas).
 
     Returns:
         El resultado, con la ruta que se recorrió de verdad.
@@ -160,10 +188,33 @@ async def run_chain(
     total = len(route) + 1
     consecutive_failures = 0
     stopped_early = False
+    deadline = None if budget is None else clock() + budget
+
+    def out_of_time(wait: float = 0.0) -> bool:
+        return deadline is not None and clock() + wait > deadline
+
+    async def limited(text_in: str, source: str, target: str) -> str:
+        """Un salto, reintentado tras cada pausa de `backoff` si Google limita."""
+        for wait in (*backoff, None):
+            try:
+                return await translate(text_in, source, target)
+            except RateLimitedError:
+                # Sin tiempo para esperar, se rinde ya: lo que haya se enseña a tiempo.
+                if wait is None or out_of_time(wait):
+                    raise
+                logger.info("Babel: Google pide un respiro; se reintenta en %.0f s", wait)
+                await sleep(wait)
+        raise AssertionError("inalcanzable")
 
     for step, target in enumerate(route, start=1):
+        if out_of_time():
+            logger.warning("Babel: se acaba el tiempo en el salto %d", step)
+            stopped_early = True
+            break
+        if step > 1 and pause:
+            await sleep(pause)
         try:
-            translated = await translate(current_text, current_lang, target)
+            translated = await limited(current_text, current_lang, target)
         except RateLimitedError:
             logger.warning("Babel: Google limitó la tasa en el salto %d (%s)", step, target)
             stopped_early = True
@@ -186,7 +237,7 @@ async def run_chain(
 
     if current_lang != HOME_LANGUAGE:
         try:
-            current_text = await translate(current_text, current_lang, HOME_LANGUAGE)
+            current_text = await limited(current_text, current_lang, HOME_LANGUAGE)
             current_lang = HOME_LANGUAGE
             visited.append(HOME_LANGUAGE)
         except TranslationError as error:

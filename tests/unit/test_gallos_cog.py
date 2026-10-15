@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,11 +20,29 @@ from interaction_fakes import fake_interaction
 from bot.cogs import gallos as gallos_cog
 from bot.cogs.gallos import Duel, Gallos, HousePanel, Phase
 from bot.repositories import sqlite as sqlite_module
-from bot.repositories.economy import EconomyRepository
+from bot.repositories.economy import SHOP_ACCOUNT_ID, STATE_ACCOUNT_ID, EconomyRepository
 from bot.repositories.gallos import GallosRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.gallos import RIVAL_BY_KEY, Corner, duel_prize, house_payout, pool_payouts
+from bot.services.gallos import (
+    HOUSE,
+    RIVAL_BY_KEY,
+    TRAIN_COOLDOWN,
+    TRAIN_PER_DAY,
+    Corner,
+    Exchange,
+    Fight,
+    Finish,
+    RoosterRecord,
+    Stat,
+    default_name,
+    duel_prize,
+    format_odds,
+    house_payout,
+    pool_payouts,
+    train_price,
+)
 from bot.services.gallos_render import Media
+from bot.services.taxes import igic
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -68,7 +87,22 @@ def fake_renderer() -> MagicMock:
     return renderer
 
 
-async def make_cog(tmp_path: Path, first: float) -> Gallos:
+class Scripted(random.Random):
+    """Azar que da primero los `values` pedidos (quién gana, el sorteo de la muerte…).
+
+    Después sigue con una semilla. Las peleas de las pruebas de muerte se fijan
+    aparte (`ko_fight`), así que cada `random()` cuenta.
+    """
+
+    def __init__(self, *values: float) -> None:
+        super().__init__(7)
+        self.values = list(values)
+
+    def random(self) -> float:
+        return self.values.pop(0) if self.values else super().random()
+
+
+async def make_cog(tmp_path: Path, first: float, rng: random.Random | None = None) -> Gallos:
     economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await economy_repository.initialize()
     repository = GallosRepository(tmp_path / "bot.db")
@@ -83,7 +117,7 @@ async def make_cog(tmp_path: Path, first: float) -> Gallos:
         MagicMock(),
         economy=EconomyService(economy_repository),
         repository=repository,
-        rng=Fixed(first),
+        rng=rng or Fixed(first),
         renderer=fake_renderer(),
         sleep=no_sleep,
     )
@@ -339,3 +373,369 @@ async def test_apagar_con_la_grada_abierta_devuelve_lo_apostado(tmp_path: Path) 
     for user_id, stake in ((OWNER_ID, 500), (RIVAL_ID, 500), (FAN_IDS[0], 300)):
         assert ledger(tmp_path, user_id) == [("gallos:apuesta", -stake), ("gallos:premio", stake)]
     assert duel.phase is Phase.DONE
+
+
+# -- Stats, entrenamiento y muertes -------------------------------------------------------
+
+#: Un mediodía canario cualquiera: seis entrenamientos con su hora de espera caben en el día.
+NOON = 1_760_000_000.0
+
+
+def wallet_total(tmp_path: Path) -> int:
+    """Todo el dinero que hay en los monederos del servidor (el libro se mueve, no se crea)."""
+    connection = sqlite_module.connect(tmp_path / "bot.db")
+    try:
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(balance), 0) FROM economy_wallets WHERE guild_id = ?",
+            (GUILD_ID,),
+        ).fetchone()
+    finally:
+        connection.close()
+    return int(total)
+
+
+def books_balance(tmp_path: Path) -> bool:
+    """Si el saldo de cada monedero es la suma de sus apuntes del libro."""
+    connection = sqlite_module.connect(tmp_path / "bot.db")
+    try:
+        rows = connection.execute(
+            """
+            SELECT w.balance, COALESCE(SUM(l.delta), 0) FROM economy_wallets w
+            LEFT JOIN economy_ledger l ON l.guild_id = w.guild_id AND l.user_id = w.user_id
+            WHERE w.guild_id = ? GROUP BY w.user_id
+            """,
+            (GUILD_ID,),
+        ).fetchall()
+    finally:
+        connection.close()
+    return all(balance == booked for balance, booked in rows)
+
+
+async def set_stats(cog: Gallos, user_id: int = OWNER_ID, **stats: int) -> RoosterRecord:
+    """Le da stats a mano al gallo de un miembro (lo que dejaría haber entrenado mucho)."""
+    await cog.repository.rename(GUILD_ID, user_id, "Roca")
+    connection = sqlite_module.connect(cog.repository.database_path)
+    try:
+        for column, value in stats.items():
+            connection.execute(
+                f"UPDATE gallos SET {column} = ? WHERE guild_id = ? AND user_id = ?",
+                (value, GUILD_ID, user_id),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    return await cog.repository.get(GUILD_ID, user_id)
+
+
+def ko_fight(winner: Corner) -> Fight:
+    """Una pelea que `winner` gana por KO (la vida cae a cero en el último golpe)."""
+    hp = (100, 0) if winner is Corner.RED else (0, 100)
+    return Fight(winner, Finish.KO, (Exchange(1, winner, "patada", 100, True, False, hp),))
+
+
+def points_fight(winner: Corner) -> Fight:
+    """Una pelea que `winner` gana a los puntos."""
+    hp = (60, 40) if winner is Corner.RED else (40, 60)
+    return Fight(winner, Finish.POINTS, (Exchange(3, winner, "aletazo", 10, False, False, hp),))
+
+
+async def test_entrenar_cobra_con_igic_al_estado_y_sube_el_stat(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    total_before = wallet_total(tmp_path)
+    interaction = fake_interaction(make_user(OWNER_ID))
+    await panel._train(interaction, Stat.STRENGTH)
+    base = train_price(0)
+    tax = igic(base)
+    assert tax > 0
+    assert ledger(tmp_path, OWNER_ID) == [
+        ("tienda:gallos:entreno", -base),
+        ("tienda:igic", -tax),
+    ]
+    assert ledger(tmp_path, SHOP_ACCOUNT_ID) == [("tienda:venta", base)]
+    assert ("igic:tienda", tax) in ledger(tmp_path, STATE_ACCOUNT_ID)
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - base - tax
+    stored = await cog.repository.get(GUILD_ID, OWNER_ID)
+    assert stored.strength == panel.record.strength == 3 and stored.speed == 0
+    assert "IGIC" in (panel.result or "") and "Perro Sanxe" in (panel.result or "")
+    # Es un sumidero: el dinero cambia de manos (caja y Estado) y no se crea ni se destruye.
+    assert wallet_total(tmp_path) == total_before
+    assert books_balance(tmp_path)
+    assert not panel._busy
+
+
+async def test_entrenar_contesta_antes_de_tocar_la_base_de_datos(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    events: list[str] = []
+    interaction = fake_interaction(make_user(OWNER_ID), events=events)
+    await panel._train(interaction, Stat.SPEED)
+    assert events[0] == "response.defer"
+    assert "edit_original_response" in events
+
+
+async def test_sin_saldo_no_se_entrena_ni_se_cobra(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    await cog.economy.place_bet(GUILD_ID, OWNER_ID, game="gallos", stake=STARTING_BALANCE - 10)
+    await panel._train(fake_interaction(make_user(OWNER_ID)), Stat.ENDURANCE)
+    assert (panel.result or "").startswith("❌")
+    assert panel.record.endurance == 0
+    assert [reason for reason, _ in ledger(tmp_path, OWNER_ID)] == ["gallos:apuesta"]
+
+
+async def test_una_hora_de_espera_y_seis_entrenamientos_al_dia(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    await cog.economy.pay_winnings(GUILD_ID, OWNER_ID, game="gallos", amount=100_000)
+    clock = [NOON]
+    cog.wall_clock = lambda: clock[0]
+    owner = make_user(OWNER_ID)
+
+    async def train() -> bool:
+        before = panel.record.strength
+        await panel._train(fake_interaction(owner), Stat.STRENGTH)
+        return panel.record.strength > before
+
+    assert await train()
+    # Sin esperar la hora, no: ni se sube ni se cobra.
+    spent = [reason for reason, _ in ledger(tmp_path, OWNER_ID)].count("tienda:gallos:entreno")
+    assert not await train() and "descansa" in (panel.result or "")
+    clock[0] += TRAIN_COOLDOWN - 1
+    assert not await train()
+    assert [r for r, _ in ledger(tmp_path, OWNER_ID)].count("tienda:gallos:entreno") == spent
+    for _ in range(TRAIN_PER_DAY - 1):
+        clock[0] += TRAIN_COOLDOWN
+        assert await train()
+    assert panel.record.trains_today == TRAIN_PER_DAY
+    clock[0] += TRAIN_COOLDOWN
+    assert not await train() and "entrenamientos" in (panel.result or "")
+    assert panel.record.strength == TRAIN_PER_DAY * 3
+    # Al día siguiente (hora canaria) vuelve el cupo.
+    clock[0] += 24 * 3600
+    assert await train()
+    assert books_balance(tmp_path)
+
+
+async def test_un_stat_al_maximo_no_se_entrena(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    panel.record = await set_stats(cog, strength=100)
+    await panel._train(fake_interaction(make_user(OWNER_ID)), Stat.STRENGTH)
+    assert "máximo" in (panel.result or "")
+    assert ledger(tmp_path, OWNER_ID) == []
+
+
+async def test_el_gimnasio_tiene_un_boton_por_stat_con_custom_id_fijo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    ids = {c.custom_id for c in panel.children if isinstance(c, discord.ui.Button)}
+    assert "gallos:train" in ids
+    await panel._gym(fake_interaction(make_user(OWNER_ID)))
+    assert panel.training
+    ids = {c.custom_id for c in panel.children if isinstance(c, discord.ui.Button)}
+    assert ids == {
+        "gallos:train_fuerza",
+        "gallos:train_velocidad",
+        "gallos:train_aguante",
+        "gallos:train_back",
+    }
+    assert "Gimnasio" in panel.embed().description
+    await panel._leave_gym(fake_interaction(make_user(OWNER_ID)))
+    assert not panel.training and "gallos:fight" in {
+        c.custom_id for c in panel.children if isinstance(c, discord.ui.Button)
+    }
+
+
+async def test_no_se_entrena_en_pleno_duelo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    cog.busy.add((GUILD_ID, OWNER_ID))
+    interaction = fake_interaction(make_user(OWNER_ID))
+    await panel._gym(interaction)
+    assert not panel.training
+    interaction.response.send_message.assert_awaited_once()
+
+
+async def test_no_se_pelea_con_la_casa_en_pleno_duelo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    cog.busy.add((GUILD_ID, OWNER_ID))
+    interaction = fake_interaction(make_user(OWNER_ID))
+    await panel._fight(interaction)
+    assert ledger(tmp_path, OWNER_ID) == []
+    interaction.followup.send.assert_awaited_once()
+    cog.renderer.fight.assert_not_awaited()
+
+
+async def test_un_gallo_entrenado_ve_otra_cuota_y_cobra_la_nueva(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    panel = await open_panel(cog)
+    rival = RIVAL_BY_KEY["falcon"]
+    flat = panel.description()
+    panel.record = await set_stats(cog, strength=100, speed=100, endurance=100)
+    assert panel.power == 100
+    text = panel.description()
+    assert format_odds(rival.multiplier_for(100)) in text and text != flat
+    assert f"{round(float(rival.chance_for(100)) * 100)} %" in text
+    panel.rebuild()
+    select = next(c for c in panel.children if isinstance(c, discord.ui.Select))
+    labels = [option.label for option in select.options]
+    assert labels == [f"{r.name} · {format_odds(r.multiplier_for(100))}" for r in HOUSE]
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert ledger(tmp_path, OWNER_ID) == [
+        ("gallos:apuesta", -100),
+        ("gallos:premio", house_payout(100, rival, 100)),
+    ]
+    assert books_balance(tmp_path)
+
+
+async def test_el_azar_de_la_pelea_usa_la_probabilidad_con_stats(tmp_path: Path) -> None:
+    rival = RIVAL_BY_KEY["falcon"]  # 50 % sin entrenar
+    # Un 0,6 pierde sin entrenar (0,5) y gana con un gallo de poder 100 (~95 %).
+    cog = await make_cog(tmp_path, 0.6)
+    panel = await open_panel(cog)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert panel.record.wins == 0
+    other = tmp_path / "otro"
+    other.mkdir()
+    cog = await make_cog(other, 0.6)
+    panel = await open_panel(cog)
+    panel.record = await set_stats(cog, strength=100, speed=100, endurance=100)
+    assert float(rival.chance_for(100)) > 0.6
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert panel.record.wins == 1
+
+
+# -- Muertes ------------------------------------------------------------------------------
+
+
+async def test_perder_por_ko_y_fallar_el_sorteo_mata_al_gallo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: ko_fight(winner))
+    cog = await make_cog(tmp_path, LOSE, rng=Scripted(LOSE, 0.0))
+    panel = await open_panel(cog)
+    panel.record = await set_stats(cog, strength=30, fights=9, wins=4)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    # Nada de dinero por morir: solo la apuesta perdida.
+    assert ledger(tmp_path, OWNER_ID) == [("gallos:apuesta", -100)]
+    (grave,) = await cog.repository.graveyard(GUILD_ID, OWNER_ID)
+    assert (grave.name, grave.fights, grave.strength) == ("Roca", 10, 30)
+    assert (grave.killer_kind, grave.killer) == ("casa", "falcon")
+    fresh = await cog.repository.get(GUILD_ID, OWNER_ID)
+    assert fresh.name == default_name(OWNER_ID) and fresh.fights == 0 and fresh.strength == 0
+    assert fresh.deaths == 1 and panel.record == fresh
+    assert "🪦" in (panel.result or "") and "⚰️" in (panel.result or "")
+    assert not panel._busy
+
+
+async def test_el_sorteo_de_la_muerte_se_salva_si_cae_por_encima(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: ko_fight(winner))
+    cog = await make_cog(tmp_path, LOSE, rng=Scripted(LOSE, 0.5))
+    panel = await open_panel(cog)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert await cog.repository.graveyard(GUILD_ID, OWNER_ID) == []
+    assert panel.record.fights == 1 and panel.record.deaths == 0
+    assert "🪦" not in (panel.result or "")
+
+
+@pytest.mark.parametrize(
+    ("endurance", "roll", "dies"), [(0, 0.07, True), (100, 0.07, False), (100, 0.04, True)]
+)
+async def test_el_aguante_baja_la_probabilidad_de_morir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endurance: int, roll: float, dies: bool
+) -> None:
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: ko_fight(winner))
+    cog = await make_cog(tmp_path, LOSE, rng=Scripted(LOSE, roll))
+    panel = await open_panel(cog)
+    panel.record = await set_stats(cog, endurance=endurance)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert bool(await cog.repository.graveyard(GUILD_ID, OWNER_ID)) is dies
+
+
+async def test_solo_se_muere_perdiendo_por_ko(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: points_fight(winner))
+    cog = await make_cog(tmp_path, LOSE, rng=Scripted(LOSE, 0.0))
+    panel = await open_panel(cog)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert await cog.repository.graveyard(GUILD_ID, OWNER_ID) == []
+    # Ni ganando por KO.
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: ko_fight(winner))
+    other = tmp_path / "otro"
+    other.mkdir()
+    cog = await make_cog(other, WIN, rng=Scripted(WIN, 0.0))
+    panel = await open_panel(cog)
+    await panel._fight(fake_interaction(make_user(OWNER_ID)))
+    assert await cog.repository.graveyard(GUILD_ID, OWNER_ID) == []
+    assert panel.record.wins == 1
+
+
+async def test_en_un_duelo_el_que_pierde_por_ko_puede_morir_y_lo_mata_el_otro(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gallos_cog, "simulate", lambda winner, rng: ko_fight(winner))
+    # El duelo gasta el primer número en su semilla; luego, quién gana y el sorteo de la muerte.
+    cog = await make_cog(tmp_path, WIN, rng=Scripted(0.5, WIN, 0.0))
+    duel = await challenge(cog)
+    await accept(duel)
+    await duel.brawl()
+    assert duel.fight is not None and duel.fight.winner is Corner.RED
+    assert set(duel.fallen) == {Corner.BLUE}
+    (grave,) = await cog.repository.graveyard(GUILD_ID, RIVAL_ID)
+    assert (grave.killer_kind, grave.killer) == ("miembro", str(OWNER_ID))
+    assert await cog.repository.graveyard(GUILD_ID, OWNER_ID) == []
+    assert (await cog.repository.get(GUILD_ID, RIVAL_ID)).fights == 0
+    assert (await cog.repository.get(GUILD_ID, OWNER_ID)).wins == 1
+    assert books_balance(tmp_path)
+
+
+async def test_en_un_duelo_los_stats_cambian_quien_gana(tmp_path: Path) -> None:
+    # Un 0,6 da la victoria al azul con los gallos iguales (0,5) y al rojo si está entrenado.
+    cog = await make_cog(tmp_path, 0.6, rng=Scripted(0.5, 0.6))
+    duel = await challenge(cog)
+    assert duel.chance == Fraction(1, 2)
+    await accept(duel)
+    assert duel.fight is not None and duel.fight.winner is Corner.BLUE
+
+    other = tmp_path / "otro"
+    other.mkdir()
+    cog = await make_cog(other, 0.6, rng=Scripted(0.5, 0.6))
+    await set_stats(cog, strength=100)
+    duel = await challenge(cog)
+    assert duel.chance > Fraction(6, 10)
+    await accept(duel)
+    assert duel.fight is not None and duel.fight.winner is Corner.RED
+    assert "Probabilidad de ganar" in duel.challenge_text()
+
+
+async def test_la_ficha_enseña_los_stats_y_los_tres_ultimos_caidos(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, WIN)
+    await set_stats(cog, strength=40, speed=20, endurance=0)
+    for name in ("Uno", "Dos", "Tres", "Cuatro"):
+        await cog.repository.rename(GUILD_ID, OWNER_ID, name)
+        await cog.bury(GUILD_ID, OWNER_ID, killer_kind="casa", killer="marte")
+    await cog.repository.rename(GUILD_ID, OWNER_ID, "Vivo")
+    embed = await cog.gallo_embed(GUILD_ID, make_user(OWNER_ID))
+    text = embed.description or ""
+    assert "Fuerza" in text and "Velocidad" in text and "Aguante" in text and "Poder" in text
+    assert "En memoria de" in text
+    assert "Cuatro" in text and "Tres" in text and "Dos" in text and "Uno" not in text
+    assert "Gallo de Marte" in text
+
+
+def test_las_frases_de_entrenamiento_y_luto_se_arman_sin_huecos() -> None:
+    for stat, lines in gallos_cog.TRAIN_LINES.items():
+        assert len(lines) >= 6, stat
+        for line in lines:
+            assert "{" not in line.format(name="Roca"), line
+    for line in gallos_cog.DEATH_LINES:
+        assert "Roca" in line.format(name="Roca") and "{" not in line.format(name="Roca")
+    for line in gallos_cog.BURIAL_LINES:
+        text = line.format(name="Roca", new="Pluma")
+        assert "{" not in text and "Pluma" in text
+    assert len(gallos_cog.DEATH_LINES) >= 10 and len(gallos_cog.BURIAL_LINES) >= 6

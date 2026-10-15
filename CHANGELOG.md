@@ -6,7 +6,131 @@ la sección «Versiones» de `Biblia.txt`. Las versiones anteriores a la 5.22.0
 se asignaron a posteriori, revisando cada PR y commit de `main` con el mismo
 criterio.
 
+## 7.x
+
+### 7.7.0 · 2026-10-15
+
+- Pisos: rediseño ilustrado, con las islas de verdad y mucha más guasa
+
+### 7.6.0 · 2026-10-15
+
+- Guerra: mesa animada con tapete propio, pintada antes del clic
+
+### 7.5.3 · 2026-10-15
+
+- Arreglos: impuestos de pisos en bases antiguas y cobros que se quedaban colgados
+
+### 7.5.2 · 2026-10-15
+
+- Tragaperras: rótulos y fondos de la Mina y el Olimpo a la altura del Volcán
+
+### 7.5.1 · 2026-10-15
+
+- Tragaperras: la Mina y el Olimpo, con el mismo arte que el Volcán
+
+### 7.5.0 · 2026-10-15
+
+- Tienda: cajas por niveles, de temporada y ganadas jugando, con colecciones
+
+### 7.4.0 · 2026-10-15
+
+- Dados: mesa compartida del canal, con tirador y tiradas para todos
+
+### 7.3.0 · 2026-10-15
+
+- Tragaperras: la Mina y el Olimpo, dos máquinas nuevas en `tragas`
+
+### 7.2.0 · 2026-10-15
+
+- Tienda: tapete del 20-N, la tele de 1975 con la caricatura de Franco
+
+### 7.1.1 · 2026-10-15
+
+- Tragaperras: el bote crece el doble de rápido, con el 6 % de cada tirada
+
+### 7.1.0 · 2026-10-15
+
+- Gallos: stats, entrenamiento y muertes en el reñidero
+
+### 7.0.0 · 2026-10-15
+
+- Tragaperras: `tragas` junta todas las máquinas, la clásica y el Volcán
+- Rompe: el comando `volcan` desaparece; el Volcán se abre con `tragas volcan` (o la opción máquina de `/tragas`)
+
 ## 6.x
+
+### 6.17.0 · 2026-10-15
+
+- Guerra: `guerra`, carta contra carta y a la guerra si empatas
+
+### 6.16.0 · 2026-10-15
+
+- ONGs: once logros nuevos, más frases y la mascota comenta el donativo
+
+### 6.15.1 · 2026-10-15
+
+- Babel: `babel` ya no se corta a mitad cuando Google pide un respiro
+
+### 6.15.0 · 2026-10-15
+
+- Rastro: `trueque`, cambia un objeto por otro con otro miembro
+
+### 6.14.2 · 2026-10-15
+
+- Tragaperras y todo el bot: ya no van más lentos cuanto más se juega
+
+### 6.14.1 · 2026-10-15
+
+- Interno: auditoría de las loterías con el código real
+
+### 6.14.0 · 2026-10-15
+
+- Logros: todo lo del trabajo, en una sola entrada 🪏 Trabajo del menú
+
+### 6.13.0 · 2026-10-15
+
+- Mascotas: atajos a adoptar y a la comida desde el panel
+
+### 6.12.0 · 2026-10-15
+
+- Blackjack: el zapato dura entre manos y se pueden contar cartas
+
+### 6.11.0 · 2026-10-15
+
+- Torre del dragón: `torre`, sube pisos esquivando dragones
+
+### 6.10.0 · 2026-10-15
+
+- Tienda: cada artículo dice si ya lo tienes y cuántos
+
+### 6.9.0 · 2026-10-15
+
+- Aniversario: el 7 de octubre, fiesta del servidor con XP doble
+
+### 6.8.0 · 2026-10-15
+
+- Caballos: el bote del Gran Premio crece con el 10 % de lo que se pierde en cada carrera, hasta 50.000 Y$
+
+### 6.7.5 · 2026-10-15
+
+- Interno: la prueba de caducidad de la música ya no falla al azar
+
+### 6.7.4 · 2026-10-15
+
+- Jovani: frases repasadas, sin bromas copiadas entre juegos y con más Bibi y groypers
+
+### 6.7.3 · 2026-10-15
+
+- Tienda: el tapete de los archivos Epstein pasa a 3.000.000 Y$, con tres copias numeradas
+- Tienda: los cambios de precio llegan también a las tiendas que ya tenían el artículo (el de Israel ya cuesta 271.000 Y$)
+
+### 6.7.2 · 2026-10-15
+
+- Pala: los marrones salen el doble, uno de cada tres turnos
+
+### 6.7.1 · 2026-10-15
+
+- Mascotas: el panel ya no deja de responder tras pedir un respiro
 
 ### 6.7.0 · 2026-10-15
 

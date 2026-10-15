@@ -67,6 +67,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_housing_scene import NAMES, samples
     from test_housing_scene import market as housing_market
     from test_roulette_scene_browser import HISTORY, outcome
+    from test_war_scene import tied, war_of, won
 
     from bot.services import housing_view
     from bot.services.bacara_scene import BacaraScene
@@ -79,8 +80,15 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.housing_catalog import BARRIOS
     from bot.services.housing_scene import HousingScene
     from bot.services.roulette_scene import RouletteScene
+    from bot.services.war_scene import WarScene
 
     no = "/no/existe/chromium"
+
+    async def tie_and_war(scene: WarScene) -> None:
+        """Un empate y la guerra que sigue: lo más largo que se pinta en una mano."""
+        await scene.deal(tied())
+        await scene.war(war_of())
+
     spin = outcome(17, [("17", 100), ("rojo", 50)], {17: 200})
     return {
         "moneda": (
@@ -100,6 +108,9 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
             lambda: RouletteScene(executable_path=no),
             lambda s: s.spin(spin, history=HISTORY, seed=3),
         ),
+        # Repartir una mano sin empate, y un empate con su guerra (dos GIF seguidos).
+        "guerra": (lambda: WarScene(executable_path=no), lambda s: s.deal(won())),
+        "guerra_2": (lambda: WarScene(executable_path=no), tie_and_war),
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
             lambda s: s.race(card_of(), fixed_result((0, 1, 2, 3, 4, 5))),
@@ -121,6 +132,20 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 [housing_view.barrio_state(housing_market(), b.key, 10, NAMES) for b in BARRIOS]
             ),
         ),
+        # Cada una de las otras pantallas del panel.
+        **{
+            f"pisos_{screen}": (
+                lambda: HousingScene(executable_path=no),
+                lambda s, sample=sample: s.still(samples()[sample]),
+            )
+            for screen, sample in {
+                "mapa": "mapa",
+                "barrio": "barrio_schamann",
+                "cartera": "cartera",
+                "caja": "caja_compra",
+                "vpo": "vpo_apuntada",
+            }.items()
+        },
     }
 
 

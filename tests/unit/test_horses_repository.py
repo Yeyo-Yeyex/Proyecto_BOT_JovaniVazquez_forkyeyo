@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from bot.repositories.horses import HorseRepository, Meta
-from bot.services.horses import FORM_SIZE, GRAND_PRIX_POT
+from bot.services.horses import FORM_SIZE, GRAND_PRIX_POT, GRAND_PRIX_POT_MAX
 
 
 async def make_repo(tmp_path: Path) -> HorseRepository:
@@ -58,3 +58,18 @@ async def test_salir_del_servidor_lo_borra_todo(tmp_path: Path) -> None:
     assert await repository.records(1) == {}
     assert await repository.meta(1) == Meta(pot=GRAND_PRIX_POT)
     assert "falcon" in await repository.records(2)
+
+
+async def test_lo_perdido_se_suma_al_bote_sin_pasar_del_tope(tmp_path: Path) -> None:
+    repository = await make_repo(tmp_path)
+    meta = await repository.record_race(1, [("falcon", 1)], now=1.0, grand_prix=False, pot_add=40)
+    assert meta.pot == GRAND_PRIX_POT + 40
+    # El Gran Premio fija el bote y le suma lo que se perdió en él.
+    meta = await repository.record_race(
+        1, [("falcon", 1)], now=2.0, grand_prix=True, pot=GRAND_PRIX_POT, pot_add=10
+    )
+    assert meta.pot == GRAND_PRIX_POT + 10
+    meta = await repository.record_race(
+        1, [("falcon", 1)], now=3.0, grand_prix=False, pot_add=GRAND_PRIX_POT_MAX
+    )
+    assert meta.pot == GRAND_PRIX_POT_MAX

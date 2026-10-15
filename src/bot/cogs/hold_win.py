@@ -1,4 +1,7 @@
-"""Botes: máquinas de monedas y recogida; de momento, el Volcán (`volcan`).
+"""Botes: máquinas de monedas y recogida: el Volcán, la Mina y el Olimpo (`tragas volcan`).
+
+No tiene comando propio: se abre desde `tragas`, que junta todas las máquinas
+(`bot.cogs.slots` llama a `open_theme`). Antes era `volcan`.
 
 Las reglas y los números viven en `bot.services.hold_win` (`THEMES` dice qué
 máquinas hay) y el dibujo en `bot.services.hold_win_render`. Cada jugador abre
@@ -46,7 +49,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
@@ -101,8 +103,8 @@ from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Me
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
-from bot.utils.responder import ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -152,6 +154,8 @@ WIN_LINES = (
     "¡Esto es la Next Generation!",
     "¡Toma mangó!",
     "¡American people want mango!",
+    "¡Más monedas que regalos en el caso de los puros de Bibi!",
+    "¡Lluvia de monedas, y Nick Fuentes sin enterarse en su sótano!",
 )
 COLLECT_LINES = {
     "volcan": (
@@ -160,24 +164,64 @@ COLLECT_LINES = {
         "🌋 ¡El Teide se pone celoso!",
         "🌋 ¡Erupción fiscal, y esta vez a tu favor!",
     ),
+    "mina": (
+        "🚃 ¡La vagoneta sale cargada de oro!",
+        "🚃 ¡Filón! Y esta vez no se lo lleva una multinacional.",
+        "🚃 ¡Se recoge el litio antes de que llegue la multinacional!",
+        "🚃 ¡La vagoneta vuelve a rodar, y sin que Bruselas la cierre!",
+        "🚃 ¡Un filón como el paraíso fiscal de Ayuso, pero para ti!",
+    ),
+    "olimpo": (
+        "⚡ ¡Zeus recoge las monedas con el rayo!",
+        "⚡ ¡Rescate griego, pero a tu favor!",
+        "⚡ ¡Varoufakis lo negoció y, por una vez, sale bien!",
+        "⚡ ¡Más monedas que préstamos le ha pedido Grecia a Bruselas!",
+        "⚡ ¡Esto la troika no lo vio venir!",
+    ),
 }
 NEAR_MISS_LINES = (
     "Tanta moneda y sin nadie que la recoja… ¡Ay, bendito!",
     "Las monedas ahí tiradas. Al maletín van, mi amor.",
     "Monedas sin recoger, como los fondos europeos sin ejecutar.",
     "Monedas en la mesa, como las promesas de campaña: ahí se quedan.",
+    "Más monedas sueltas que causas pendientes de Netanyahu.",
+    "Ahí se quedan, como un groyper esperando que le devuelvan la cuenta de Twitter.",
 )
 LOSS_LINES = (
-    "La próxima es la buena.",
-    "Nada, mi amor. Otra.",
+    "Ni una chispa, mi amor. Otra.",
     "Calentando…",
-    "Como el AVE a Extremadura: no llega.",
+    "Como el tren de Canarias: ni está ni se le espera.",
     "La máquina está en huelga de celo.",
-    "Quiero café.",
+    "Hazme café, que esto no arranca.",
     "Calentando, como el planeta.",
+    "Más frío que el debate de Nick Fuentes con su madre por el wifi.",
 )
+#: Frases de una tirada sin premio que solo tienen gracia en su máquina.
+THEME_LOSS_LINES = {
+    "volcan": (
+        "El volcán duerme la siesta.",
+        "La lava se aplaza, como el juicio de Bibi.",
+    ),
+    "mina": (
+        "Pura roca, mi amor. Ni una pepita.",
+        "Mina cerrada por Bruselas: reconversión y cero monedas.",
+        "Aquí el litio se lo lleva otro, y a ti te toca la piedra.",
+        "Picar, picar y nada: como en la mina de carbón que cerraron.",
+    ),
+    "olimpo": (
+        "Zeus se ha ido a por otro rescate.",
+        "Ni un rayo, mi amor. Otra.",
+        "Grecia pide otro préstamo a Bruselas y tú, otra tirada.",
+        "Ha pasado la troika: recortes y cero monedas.",
+        "Mucho estadio olímpico y ningún premio.",
+    ),
+}
 BONUS_INTRO = {
     "volcan": "La montaña ruge. Caen monedas y se quedan pegadas a la roca.",
+    "mina": "Baja la jaula y se oye picar. Caen pepitas y se quedan en la roca, "
+    "no como el litio, que no se queda en el pueblo.",
+    "olimpo": "Truenan los cielos. Zeus reparte monedas y la troika mira desde abajo "
+    "sin atreverse a pedirlas.",
 }
 
 
@@ -293,7 +337,10 @@ def base_text(theme: Theme, play: BasePlay, rng: random.Random | None = None) ->
     elif spin.near_miss:
         lines.append(f"## {rng.choice(NEAR_MISS_LINES)}")
     else:
-        lines.append(f"## -{format_amount(play.stake)} · {rng.choice(LOSS_LINES)}")
+        lines.append(
+            f"## -{format_amount(play.stake)} · "
+            f"{rng.choice(LOSS_LINES + THEME_LOSS_LINES[theme.key])}"
+        )
 
     if spin.collectors:
         times = " ×2" if spin.collectors == 2 else ""
@@ -559,7 +606,8 @@ class HoldWinView(discord.ui.View):
         if interaction.user.id == self.owner.id:
             return True
         await interaction.response.send_message(
-            f"Esta máquina es de {self.owner.display_name}. Abre la tuya con `{self.theme.key}`.",
+            f"Esta máquina es de {self.owner.display_name}. "
+            f"Abre la tuya con `tragas {self.theme.key}`.",
             ephemeral=True,
         )
         return False
@@ -1110,7 +1158,7 @@ class HoldWinView(discord.ui.View):
 
 
 class HoldWin(commands.Cog, name="Botes"):
-    """Las máquinas de Botes (de momento, el Volcán)."""
+    """Las máquinas de Botes (el Volcán, la Mina y el Olimpo)."""
 
     def __init__(
         self,
@@ -1294,7 +1342,7 @@ class HoldWin(commands.Cog, name="Botes"):
                 channel,
                 user,
                 f"📣 {theme.emoji} ¡{user.mention} acaba de ganar "
-                f"**{format_amount(play.payout)}** en el {theme.title}!",
+                f"**{format_amount(play.payout)}** en {theme.named}!",
             )
 
     async def shout_bonus(
@@ -1304,18 +1352,18 @@ class HoldWin(commands.Cog, name="Botes"):
         jackpots = payout.result.jackpots
         if "grand" in jackpots:
             text = (
-                f"📣 🏆🏆🏆 ¡{user.mention} ha llenado la pantalla del {theme.title} y se lleva "
+                f"📣 🏆🏆🏆 ¡{user.mention} ha llenado la pantalla {theme.of_named} y se lleva "
                 f"el **GRAND**! **{format_amount(payout.amount)}** en total. {TAX_COLLECTOR} "
                 "ya está afilando los dientes."
             )
         elif "major" in jackpots:
             text = (
-                f"📣 🏆 ¡{user.mention} saca el **MAJOR** en el {theme.title}! "
+                f"📣 🏆 ¡{user.mention} saca el **MAJOR** en {theme.named}! "
                 f"**{format_amount(payout.amount)}** del bonus."
             )
         elif payout.amount >= SHOUT_MULTIPLIER * payout.stake:
             text = (
-                f"📣 {theme.emoji} ¡{user.mention} revienta el bonus del {theme.title}: "
+                f"📣 {theme.emoji} ¡{user.mention} revienta el bonus {theme.of_named}: "
                 f"**{format_amount(payout.amount)}**!"
             )
         else:
@@ -1337,9 +1385,9 @@ class HoldWin(commands.Cog, name="Botes"):
     ) -> None:
         """Lógica compartida entre `/x` y `.x`: abre la máquina."""
         if guild is None:
-            await send_error(f"El {theme.title} solo se juega dentro de un servidor.")
+            await send_error(f"{theme.sentence_named} solo se juega dentro de un servidor.")
             return
-        if error := casino_channel_error(self.casino_channel_ids, channel, f"El {theme.title}"):
+        if error := casino_channel_error(self.casino_channel_ids, channel, theme.sentence_named):
             await send_error(error)
             return
         balance = await self.economy.balance(guild.id, user.id)
@@ -1367,49 +1415,31 @@ class HoldWin(commands.Cog, name="Botes"):
         )
         self.machines.add(view)
 
-    async def _slash(
-        self, interaction: discord.Interaction, theme_key: str, cantidad: str | None
-    ) -> None:
-        async def send(**kwargs: Any) -> discord.Message:
-            await interaction.response.send_message(**kwargs)
-            return await interaction.original_response()
 
-        await self._open(
-            THEMES[theme_key],
-            guild=interaction.guild,
-            channel=interaction.channel,
-            user=interaction.user,
-            amount_text=cantidad,
-            send=send,
-            send_error=InteractionResponder(interaction).send_error,
-        )
-
-    async def _text(self, ctx: commands.Context, theme_key: str, cantidad: str | None) -> None:
-        async def send(**kwargs: Any) -> discord.Message:
-            return await ctx.send(**kwargs)
-
-        await self._open(
-            THEMES[theme_key],
-            guild=ctx.guild,
-            channel=ctx.channel,
-            user=ctx.author,
-            amount_text=cantidad,
-            send=send,
-            send_error=ContextResponder(ctx).send_error,
-        )
-
-    @app_commands.command(name="volcan", description="Volcán: monedas, recogida y bonus de lava.")
-    @app_commands.describe(cantidad="Apuesta por tirada: 500, 2k, all… (por defecto 100)")
-    @app_commands.guild_only()
-    async def volcan(self, interaction: discord.Interaction, cantidad: str | None = None) -> None:
-        """Abre la máquina del Volcán. Mueve yapdollars a través de la economía."""
-        await self._slash(interaction, "volcan", cantidad)
-
-    @commands.command(name="volcan")
-    @commands.guild_only()
-    async def volcan_text(self, ctx: commands.Context, cantidad: str | None = None) -> None:
-        """Versión de texto: `.volcan` o `.volcan 500`."""
-        await self._text(ctx, "volcan", cantidad)
+async def open_theme(
+    bot: commands.Bot,
+    theme_key: str,
+    *,
+    guild: discord.Guild | None,
+    channel: object,
+    user: discord.abc.User,
+    amount_text: str | None,
+    send: Callable[..., Awaitable[discord.Message]],
+    send_error: Callable[[str], Awaitable[None]],
+) -> bool:
+    """Abre la máquina `theme_key` de `THEMES` desde `tragas`. `False` si el cog no está."""
+    if (cog := find_cog(bot, HoldWin)) is None or theme_key not in THEMES:
+        return False
+    await cog._open(
+        THEMES[theme_key],
+        guild=guild,
+        channel=channel,
+        user=user,
+        amount_text=amount_text,
+        send=send,
+        send_error=send_error,
+    )
+    return True
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

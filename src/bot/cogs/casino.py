@@ -155,9 +155,10 @@ WIN_LINES = (
     "Escaño ganado.",
     "Pleno en el CIS.",
     "La UCO no se entera.",
-    "¡Arancel cero!",
+    "Aranceles de Trump a la banca.",
     "La bola se exilia en tu casilla.",
     "¿Qué? ¿Qué? ¡Toma mangó!",
+    "La bola cae como Bibi: siempre de pie.",
 )
 BIG_WIN_LINES = (
     "💥 ¡PLENAZO!",
@@ -166,13 +167,14 @@ BIG_WIN_LINES = (
     "💥 ¡MAYORÍA ABSOLUTA!",
     "💥 ¡NI FABRA CON LA LOTERÍA!",
     "💥 ¡RESCATE BANCARIO AL REVÉS!",
-    "💥 ¡TREMENDO, TREMENDO!",
+    "💥 ¡QUE LO CANTE EL NIÑO DE SAN ILDEFONSO!",
     "💥 ¡CRECIMIENTO A LA CHINA!",
-    "💥 ¡TOMA MANGÓ!",
+    "💥 ¡PLENO Y A LA SACA!",
+    "💥 ¡MÁS LEGISLATURAS QUE BIBI!",
 )
 LOSS_LINES = (
     "Casi.",
-    "La próxima es la buena.",
+    "A la siguiente vuelta, papi.",
     "La bola no quiso.",
     "Uf, por poco.",
     "La bola se fue a Waterloo.",
@@ -185,6 +187,8 @@ LOSS_LINES = (
     "El crupier te manda un «sé fuerte».",
     "Quiero café. Y otra ficha.",
     "Sofía, cállate… que la bola no quiso.",
+    "La bola pide aplazar la vista, como Netanyahu.",
+    "La bola se fue a ver un stream de Nick Fuentes y no vuelve.",
 )
 
 

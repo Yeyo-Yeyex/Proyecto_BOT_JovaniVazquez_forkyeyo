@@ -68,9 +68,9 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
-  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `vender <objeto> <precio> [comprador]` |
+  | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
@@ -134,6 +134,8 @@ python -m bot
   llamado `🎂 Cumpleañero`, el bot se lo pone durante el día (necesita
   **Gestionar roles**). Los regalos pagan IRPF con retención (ganancia
   patrimonial, art. 33.1 LIRPF), aunque solo muerde a quien ya pasa del mínimo.
+  El 7 de octubre, aniversario del servidor, el bot lo anuncia y el XP va
+  doble todo el día.
 - **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del
@@ -233,12 +235,23 @@ python -m bot
     comen). Lo que un administrador retire no vuelve solo. Las reglas para
     añadir artículos (tipo por lo que hace, pasillo por su tema) están en la
     Biblia.
-  - Objetos que se usan (59): desde la mochila, contra alguien o sin más:
+  - Cajas (7): 📦 Caja de cartón (1.000 Y$), 🎁 Caja de regalo (5.000), 💼 Maletín del
+    ministro (25.000) y 👑 Cofre del Rey emérito (100.000, nivel 10) se abren desde la
+    mochila con una animación corta y dan piezas de colección: 82 coleccionables en 11
+    colecciones (ocho normales de 8 piezas, como los Cromos de la Transición, los
+    Bobbleheads de líderes mundiales o las Pegatinas de Hacienda, y tres de temporada
+    de 6) con rareza Común, Rara, Épica, Legendaria y Mítica, que solo salen de cajas y
+    se pueden vender y cambiar en el Rastro. El maletín y el cofre pueden dar, rarísimo,
+    un tapete del casino. Cada caja devuelve de media un 95 % de lo que cuesta a valor de
+    catálogo. 🎄 Navidad (dic. y ene.), 🎃 Halloween y 🎂 aniversario (oct.) cuestan 5.000
+    Y$, solo se venden en su temporada y sacan antes su colección. Una 📦 gratis cada 100
+    jugadas del casino y una 🎁 cada 5 niveles. Comprar paga IGIC; abrir no mueve dinero.
+    La caja botín de siempre ya no se vende, pero se sigue abriendo.
+  - Objetos que se usan (60): desde la mochila, contra alguien o sin más:
     huevos, tomates, burofax, multas de la DGT, el chivatazo a la UCO,
     Pegasus, indultos, bulos, la encuesta del CIS, pimientos de Padrón, la
     bola 8, el d20, el megáfono, el DNI falso (cambia el apodo), la llamada a
-    Robuso (contesta según la hora real de Hong Kong) y la caja botín (da un
-    coleccionable al azar). El resultado sale en el canal y menciona a quien
+    Robuso (contesta según la hora real de Hong Kong) y las cajas (arriba). El resultado sale en el canal y menciona a quien
     lo recibe. Los de un solo uso se gastan; el resto tiene una espera entre
     usos. Usar no mueve dinero.
   - La mochila (🎒 en el escaparate o en la sección 🎒 Objetos de `perfil`)
@@ -363,7 +376,7 @@ python -m bot
   (0,50 €). Los máximos de Bizum (10.000 Y$ por operación y 20.000 Y$ al día)
   no se aplican: el bot avisa de que te has pasado y te da el logro
   *A espaldas de Sánchez*. El resultado es público y menciona a quien recibe.
-- **Rastro** (`vender`, `rastro`): segunda mano entre miembros. Con
+- **Rastro** (`vender`, `trueque`, `rastro`): segunda mano entre miembros. Con
   `vender <objeto> <precio> <comprador>` le haces una oferta (o se lo regalas
   con precio 0); sin comprador, lo pones en un puesto con precio de salida y,
   si lo quieren varios, se subasta: cada puja sube al menos un 5 % y da una
@@ -372,7 +385,9 @@ python -m bot
   el límite por persona del artículo. Quien compra paga el 5,5 % de ITP sobre
   el mayor entre el precio y el valor de la tienda (vender a 1 Y$ no lo baja;
   la parte regalada está exenta, como el Bizum) y quien vende con ganancia
-  paga el 19 % de la plusvalía.
+  paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
+  [dinero]` le propones cambiar un objeto por otro, con dinero encima si
+  quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
@@ -408,7 +423,9 @@ python -m bot
   Sin seguro. Al terminar, 🃏 Repartir juega otra mano en el mismo
   mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
   (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
-  pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
+  pantalla. Reglas: 6 barajas que duran entre manos hasta la carta de corte
+  (se pueden contar cartas, y el jefe de sala baraja si subes la ficha más de
+  ×4 con la cuenta alta), la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
   apuesta (empate si tú también lo tienes). Seguro con un as de la banca,
   también si tienes blackjack: cuesta media apuesta y paga 2:1 si ella lo
@@ -447,9 +464,17 @@ python -m bot
   los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
   tercero frena despacio. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
-- **Botes** (`/volcan`, `.volcan [cantidad]`): una tragaperras de 5×4 al
-  estilo de las de casino, ilustrada (cerezas, campana, BAR, siete, máscaras
-  tiki, diamante WILD y un volcán de recogedor). Los símbolos pagan por
+- **Botes** (`/tragas máquina:Volcán`, `.tragas volcan [cantidad]`; antes `volcan`): una tragaperras de 5×4 al
+  estilo de las de casino, ilustrada, con tres máquinas que comparten reglas y
+  números y cambian los dibujos y las bromas: 🌋 el **Volcán** (`volcan`:
+  cerezas, campana, BAR, siete, máscaras tiki, diamante WILD y un volcán de
+  recogedor), 🪨 la **Mina** (`mina`: pico, lámpara de minero, carretilla,
+  dinamita, pepita y lingote de oro, diamante en bruto y una vagoneta de oro;
+  bonus Cobre, Plata, Oro y ¡FILÓN!) y ⚡ el **Olimpo** (`olimpo`: ánfora,
+  lira, casco, laurel, tridente, águila, rayo de Zeus y el propio Zeus de
+  recogedor; bonus Bronce, Plata, Oro y ¡IRA DE ZEUS!). Cada una tiene su
+  escenario: lava, galería de mina con raíles y antorchas, templo de mármol
+  sobre las nubes. Se abren con `tragas mina` y `tragas olimpo`. Los símbolos pagan por
   **ways** y las monedas (verde, azul y roja, cada una con su forma) llevan su
   premio escrito: el volcán en el rodillo 1 o el 5 las cobra todas. Cada
   moneda que cae llena el **maletín** de su color, que se guarda en la base de
@@ -460,7 +485,8 @@ python -m bot
   ⏩ Auto bonus, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios. Devuelve ~94 %, con
   un bonus cada ~58 tiradas. GIF de 300-450 KB por tirada base y ~200 KB por
   tirada del bonus; en turbo, solo el PNG (~120 KB). Tributan como el resto
-  del casino. Las reglas admiten más máquinas con otros dibujos (`THEMES`).
+  del casino. Una máquina nueva sale sola en `tragas` al añadirla a `THEMES`; sus símbolos se
+  dibujan con `docs/dibujar_botes.py`.
 - **Crash** (`/cohete`, `.cohete [cantidad] [auto]`): un cohete compartido
   por canal. En el embarque (7-10 s) se entra con 🚀 o con `.cohete 500 2x`
   (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.
@@ -479,6 +505,40 @@ python -m bot
   que sumaría la siguiente y su probabilidad, celebra rachas y avisa al batir
   tu récord. Devuelve el 99 % de media desde la segunda casilla, sin
   imágenes, y los cobros de ×25 o más se anuncian en el canal.
+- **Torre del dragón** (`/torre`, `.torre [cantidad] [nivel]`): una torre de
+  9 pisos propia, sin imágenes. En cada piso hay varias puertas y unas
+  esconden un dragón 🐉; las demás, un huevo 🥚. Eliges una por piso, de abajo
+  arriba: con huevo subes y sube el multiplicador, con dragón lo pierdes todo.
+  💰 Cobrar se lleva apuesta × multiplicador y coronar el piso 9 cobra solo.
+  Cinco niveles en un menú: 🥚 Fácil (4 puertas, 1 dragón; la de por defecto,
+  corona ×13,18), 🐣 Normal (3 y 1, ×38,06), 🔥 Difícil (2 y 1, ×506,88),
+  🐲 Experto (3 y 2, ×19.486) y 👑 Maestro (4 y 3, ×259.522, 1 entre 262.144).
+  El texto dibuja la torre con el multiplicador de cada piso, dice lo que
+  sumaría el siguiente y su probabilidad, y al acabar enseña todos los
+  dragones. Devuelve el 99 % de media al cobrar en cualquier piso y los
+  cobros de ×25 o más se anuncian en el canal.
+- **Guerra** (`/guerra`, `.guerra [cantidad]`): el Casino War. Una carta para
+  ti y otra para la banca en una mesa propia dibujada con canvas (Node, como
+  el bacará): tapete con skins (botón 🎨), cartas grandes que salen del zapato
+  y se voltean (primero la tuya, luego la de la banca), la ficha y la lateral
+  y un panel con las cuotas y el resultado. Cada jugada es un GIF de ~2 s
+  (repartir, ir a la guerra con las 3 cartas quemadas, rendirse) que acaba en
+  el PNG de la mesa, y se pinta antes del clic: las cartas de la próxima mano
+  se sortean al acabar la anterior y la mesa tiene ya hecho el GIF de cada
+  botón. Gana la más alta, con el as por encima del rey y sin contar los
+  palos, y la tuya paga 1:1. Con empate eliges entre 🏳️ Rendirse (recuperas la
+  mitad de la apuesta, redondeando hacia abajo) y ⚔️ A la guerra (otra apuesta
+  igual, la banca quema 3 cartas y sale una carta más para cada uno): si la
+  tuya iguala o supera a la de la banca, cobras 1:1 la apuesta de la guerra y
+  se te devuelve la original; si no, caen las dos, y si la guerra vuelve a
+  empatar, premio extra igual a la apuesta original (la regla de Las Vegas).
+  El botón 🤝 Empate 10:1 suma una apuesta lateral igual a la ficha que paga
+  10:1 si las dos primeras cartas empatan. Zapato de 6 barajas barajado en cada
+  mano y sin tope de apuesta. Devuelve el 97,67 % de la ficha yendo siempre a la
+  guerra, el 96,30 % rindiéndose siempre y el 81,35 % de la lateral
+  (`docs/rtp_guerra.py`). La ficha y la lateral se cobran al repartir y la
+  segunda apuesta al ir a la guerra; el premio se paga al acabar. Si la mesa
+  caduca o el bot se apaga con un empate sin decidir, la mano se rinde.
 - **Pollo** (`/pollo`, `.pollo [cantidad] [dificultad] [autocobro]`): el
   Chicken Road de los casinos online. El pollo cruza una carretera carril a
   carril; cada carril sube el multiplicador, 💰 Cobrar se lo lleva y si te
@@ -534,7 +594,7 @@ python -m bot
   para el primero tras el botón y comisión del 5 % (tope de 3 ciegas) de cada
   bote que llega al flop, que va al Estado como IAJ. En cada mano te juegas tu
   saldo hasta 100 ciegas; lo que no gastas vuelve.
-- **Dados** (`/dados`, `.dados [cantidad] [apuesta]`): craps de casino. Eliges
+- **Dados** (`/dados`, `.dados [cantidad] [apuesta] [mesa]`): craps de casino. Eliges
   ✅ Pase o 🚫 No pase y tiras la salida: con Pase, el 7 y el 11 ganan y el 2,
   el 3 y el 12 pierden; con No pase, al revés, y el 12 empata. Cualquier otro
   total es el **punto**: se sigue tirando hasta repetirlo (gana Pase) o sacar
@@ -548,6 +608,23 @@ python -m bot
   tampoco, con Pillow): los dados rojos vuelan en 3D, chocan contra la pared
   de pirámides, ruedan y se paran; luego se encienden el total y el cartel, el
   disco ON/OFF se mueve a su casilla y Perro Sanxe recoge o paga las fichas.
+  **Mesa compartida:** `/dados mesa:Compartida` o `.dados mesa [cantidad] [apuesta]`
+  abre (o baja al final del canal) la mesa del canal, con varios jugadores y las
+  mismas tiradas para todos. Cualquiera apuesta a ✅ Pase o 🚫 No pase con su
+  ficha (🪙 Ficha, ½ y ×2 la cambian; 🔁 Repetir pone lo de la ronda anterior y te
+  marca listo). Con la primera apuesta empieza una cuenta atrás de 20 s; si todos
+  los que han apostado pulsan 🃏 Listo, se tira ya. Tira el **tirador**, el primero
+  que apostó en la mesa, con 🎲 Tirar (solo él) o, si no lo hace a tiempo, el bot
+  tira solo; con un siete fuera pasa al siguiente que apuesta, por orden de
+  llegada. Con el punto puesto cada uno con apuesta puede poner ➕ Odds (hasta ×3)
+  entre tiradas; quien llega tarde espera a la siguiente salida. Cada tirada se
+  resuelve para todos a la vez y el mensaje enseña quién gana o pierde cuánto. Los
+  dados de la próxima tirada se sortean al abrir cada ronda y su GIF se pinta
+  mientras se apuesta, así que sale nada más tirar (el dibujo no lleva fichas ni
+  importes). Lleva el tapete de quien abre la mesa. Cada jugador cobra y paga lo
+  suyo por la economía (juego, sin comisiones nuevas); si la mesa se cierra con el
+  punto puesto, el bot tira solo hasta decidir y paga. Sin apuestas en 5 minutos,
+  la mesa se cierra.
 - **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
   una carrera por canal, solo cuando alguien la pide. Un establo de 16
   caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
@@ -563,8 +640,8 @@ python -m bot
   apuesta, así que sale en cuanto se cierra la parrilla. Si no hay Node, la
   pinta Chromium y, si tampoco, Pillow; la parrilla y el boleto, que son
   HTML/CSS, siempre los captura Chromium. Cada 8 carreras (y 4 h) sale el
-  Gran Premio con un bote para quien acierte el ganador, que crece si nadie
-  acierta. Tributa como el resto del
+  Gran Premio con un bote para quien acierte el ganador, que crece con el
+  10 % de lo que se pierde en cada carrera y si nadie acierta. Tributa como el resto del
   casino.
 - **Bacará** (`/bacara`, `.bacara [cantidad] [lado]`): Punto y Banca con las
   reglas de casino y un zapato de 8 barajas compartido por todo el canal. Se
@@ -607,6 +684,28 @@ python -m bot
   perlas de dragón o llamas), rótulo de neón y la pantalla jugando
   la reserva mientras siguen cayendo bolas. Tributa como el resto del casino
   y los SUPER RUSH, los rush de 5 o más y los premios de ×20 se anuncian.
+- **Gallos** (`gallos [cantidad] [miembro]`): peleas de gallos contra once
+  rivales satíricos de la casa o, retando a un miembro, en duelo con grada
+  de apuestas. Cada gallo tiene tres stats de 0 a 100 (💪 fuerza, 🪶
+  velocidad y ❤️ aguante) y su *poder* es la media; el aspecto (skins de la
+  tienda) no pelea, los stats sí. Con poder 0 se juega como siempre; entrenar
+  sube la probabilidad de ganar (`p = sigmoid(logit(p0) + 3·Δpoder/100)`,
+  entre el 3 y el 97 %) y la **cuota se recalcula con cada pelea** (`95 % / p`),
+  así que lo esperado contra la casa sigue siendo el 95 %: entrenar cambia el
+  riesgo, no el margen. En un duelo la ventaja del más entrenado es real
+  (es dinero entre jugadores). El botón 🏋️ **Entrenar** abre el gimnasio, con un
+  botón por stat: cuesta `200·(1 + nivel/20)²` Y$ redondeado a la decena (200
+  a 0, 1.800 a 40, 7.200 a 100) y sube +3 por debajo de 40, +2 hasta 70 y +1
+  después. Una hora de descanso entre entrenamientos y 6 al día (día
+  canario). **Entrenar paga IGIC general (7 %)** por una prestación de
+  servicios hecha en Canarias (art. 4 de la Ley 20/1991; tipo general del
+  art. 51 de la Ley 4/2012): la base va a la caja de la tienda, el IGIC al
+  Estado, y es un sumidero de dinero. Quien **pierde por KO** (contra la casa o
+  en un duelo) muere con un 10 % de probabilidad, que baja con el aguante
+  hasta el 5 %: su ficha pasa al cementerio (la ficha enseña los tres últimos
+  caídos), el miembro empieza con un gallo nuevo a cero y la skin no se
+  pierde. Morir no mueve dinero. 140 logros en 🐓 Gallos (39 de stats,
+  entrenamiento y muertes). Reglas en `bot.services.gallos`.
 - **Porras** (`porra`): apuestas entre miembros sobre las próximas jugadas
   de otro. `/porra @ana minas mina 3 500` le monta a Ana una porra: «¿pisa
   alguna mina en sus próximas 3 partidas de al menos 500 Y$?». Nadie puede
@@ -620,7 +719,7 @@ python -m bot
   El bote no pasa de 5 veces lo que ella se juega, para que amañarla no
   salga tan a cuenta. Once propuestas: gana o pierde, si las gana todas,
   cuántas gana, si dobla, si se pega un palo, si saca un ×5, si acaba tieso
-  y las propias de minas, pollo y blackjack. Vale en todos los juegos menos
+  y las propias de minas, la torre, la guerra, pollo y blackjack. Vale en todos los juegos menos
   el crash, y un juego nuevo las tiene sin hacer nada. Sin `miembro`, enseña
   las porras en marcha. En la tienda, los 🔭 Prismáticos de la UCO dejan ver
   quién apuesta qué y la 📓 Libreta de la porra, montar porras de 10 jugadas.
@@ -654,7 +753,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.288 logros en 50 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.931 logros en 56 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -662,7 +761,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, hostelería, sanidad, oficina, reparto,
   funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 603 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 692 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -1039,12 +1138,15 @@ src/bot/
 │   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
+│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones (componentes v2)
+│   ├── war.py           # Guerra: carta contra carta, rendirse o ir a la guerra, lateral de empate
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
 │   ├── poker.py         # poker: mesa por canal, ir o retirarse, 💎 Bote y club
 │   ├── timba.py         # poker modo timba: Texas Hold'em entre miembros, turnos y botes
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
+│   ├── craps_mesa.py    # dados mesa: la mesa compartida del canal, con tirador
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
@@ -1081,7 +1183,9 @@ src/bot/
 │   ├── pets_catalog.py  # Especies de mascota: personalidad, frases y trucos
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
-│   ├── cards_render.py  # Imagen de la mesa de blackjack
+│   ├── war.py           # Reglas de la Guerra: comparar cartas, rendición, guerra y lateral
+│   ├── cards_render.py  # Imagen de la mesa de blackjack (y plan C de la Guerra)
+│   ├── war_scene.py     # Guerra con canvas en Node o Chromium (assets/guerra/escena.html)
 │   ├── roulette_render.py # Rueda de Pillow, de reserva si no hay navegador
 │   ├── roulette_scene.py # Ruleta con canvas en Node o Chromium (assets/ruleta/escena.html)
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
@@ -1090,6 +1194,7 @@ src/bot/
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
+│   ├── tower.py         # Dificultades, multiplicadores exactos y partida de la Torre del dragón
 │   ├── chicken.py       # Pollo: dificultades, multiplicadores y carril del atropello
 │   ├── chicken_render.py # Línea de tiempo del Pollo y dibujo de reserva con Pillow
 │   ├── chicken_scene.py # Pollo con canvas en Node o Chromium (assets/pollo/escena.html)

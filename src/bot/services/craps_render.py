@@ -656,6 +656,11 @@ class Table:
         stake: La apuesta de la mesa (la de la partida si hay una en curso).
         bet: A qué apuesta la mesa.
         history: Últimas tiradas de la mano, como `(tirada, apuesta)`.
+        crowd: Solo en la mesa compartida (`bot.cogs.craps_mesa`): rótulo y subtítulo
+            del panel (`("MESA", "3 jugadores")`). Con él no se pintan fichas ni
+            importes (cada uno gana o pierde lo suyo y el dibujo no depende de las
+            apuestas, así que se pinta antes de apostar) y `game` es la línea de Pase
+            del tirador.
     """
 
     game: CrapsGame | None
@@ -663,6 +668,7 @@ class Table:
     stake: int
     bet: Bet
     history: tuple[tuple[Roll, Bet], ...] = ()
+    crowd: tuple[str, str] | None = None
 
 
 def panel_state(table: Table, *, upto: int | None = None) -> dict[str, Any]:
@@ -696,10 +702,19 @@ def panel_state(table: Table, *, upto: int | None = None) -> dict[str, Any]:
     if upto is not None and game is not None and game.rolls[upto].made:
         hand_points -= 1
     shown_point = point if status in ("point", "comeout") else (game.point if game else None)
+    if table.crowd is not None:
+        label, stake_text, odds = table.crowd[0], table.crowd[1], 0
+        bet = Bet.PASS
+    else:
+        label, stake_text = bet.label.upper(), _amount(stake)
+    # La mesa compartida cambia el rótulo y quita la fila de Odds; la individual no
+    # lleva estas claves y se pinta igual que siempre.
+    shared = {"title": "MESA COMPARTIDA", "shared": True} if table.crowd is not None else {}
     return {
-        "bet": bet.label.upper(),
+        **shared,
+        "bet": label,
         "betKey": bet.key,
-        "stake": _amount(stake),
+        "stake": stake_text,
         "odds": _amount(odds) if odds else None,
         "pays": format_odds(bet, shown_point) if shown_point in POINTS else None,
         "point": point,
@@ -711,8 +726,11 @@ def panel_state(table: Table, *, upto: int | None = None) -> dict[str, Any]:
     }
 
 
-def banner_for(game: CrapsGame, hand: Hand) -> dict[str, str] | None:
+def banner_for(game: CrapsGame, hand: Hand, *, plain: bool = False) -> dict[str, str] | None:
     """El cartel de la última tirada: qué salió y qué supone.
+
+    Con `plain` (mesa compartida) el subtítulo es solo el nombre del total, sin
+    importes: la línea de Pase del tirador no es la apuesta de nadie.
 
     `kind` decide el color: `win`, `lose`, `push`, `point` o `fire` (mano
     caliente). Las tiradas que no deciden nada no llevan cartel.
@@ -744,7 +762,7 @@ def banner_for(game: CrapsGame, hand: Hand) -> dict[str, str] | None:
         return {
             "kind": "fire" if title == "¡MANO CALIENTE!" else "win",
             "title": title,
-            "sub": f"{name} · +{_amount(game.net)}",
+            "sub": name if plain else f"{name} · +{_amount(game.net)}",
         }
     if game.status is Status.LOST:
         if roll.seven_out:
@@ -755,12 +773,15 @@ def banner_for(game: CrapsGame, hand: Hand) -> dict[str, str] | None:
             title = "¡NATURAL!"
         else:
             title = "¡PIFIA!"
-        return {"kind": "lose", "title": title, "sub": f"{name} · -{_amount(game.wagered)}"}
+        sub = name if plain else f"{name} · -{_amount(game.wagered)}"
+        return {"kind": "lose", "title": title, "sub": sub}
     return None
 
 
 def _chips(game: CrapsGame | None, table: Table, *, settled: bool, t: float) -> list[dict]:
     """Las fichas del tapete. Con `settled`, mueve las que gana o pierde (`t` de 0 a 1)."""
+    if table.crowd is not None:
+        return []
     if game is None:
         return [chip_stack(table.stake, *_bet_spot(table.bet), alpha=0.55)]
     bx, by = _bet_spot(game.bet)
@@ -792,7 +813,9 @@ def board_state(table: Table, rest: tuple[DieRest, DieRest]) -> dict[str, Any]:
     """El fotograma quieto: dados donde quedaron, fichas, disco y cartel si lo hay."""
     game = table.game
     settled = game is not None and not game.playing
-    banner = banner_for(game, table.hand) if game is not None else None
+    banner = (
+        banner_for(game, table.hand, plain=table.crowd is not None) if game is not None else None
+    )
     point = game.point if game is not None and game.playing else None
     return {
         "dice": sorted((r.geometry() for r in rest), key=lambda d: -d["depth"]),

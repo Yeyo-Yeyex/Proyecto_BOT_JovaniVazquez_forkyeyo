@@ -12,8 +12,9 @@ estadísticas son contadores con nombre (`messages`, `voice_minutes`,
 Quien juega o habla no toca esto directamente: los cogs calculan qué ha
 pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
-`crash_stats`, `mines_stats`, `chicken_stats`, `coin_stats`, `bus_stats`, `poker_stats`,
-`poker_club_stats`, `timba_stats`, `craps_stats`,
+`crash_stats`, `mines_stats`, `tower_stats`, `chicken_stats`, `coin_stats`, `bus_stats`,
+`poker_stats`,
+`poker_club_stats`, `timba_stats`, `craps_stats`, `craps_table_stats`,
 `pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
 `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
@@ -54,10 +55,12 @@ from bot.services.backgammon import Ending as BackgammonEnding
 from bot.services.backgammon import GameEvent as BackgammonEvent
 from bot.services.backgammon import PlayerRecord as BackgammonRecord
 from bot.services.beernight import Reason as BeerReason
+from bot.services.birthdays import ANNIVERSARY
 from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.blackjack import (
+    PIT_BOSS_SPREAD,
     BlackjackGame,
     Result,
     hand_total,
@@ -89,6 +92,7 @@ from bot.services.enraya import Ending as EnrayaEnding
 from bot.services.enraya import GameEvent as EnrayaEvent
 from bot.services.enraya import PlayerRecord as EnrayaRecord
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
+from bot.services.gallos import TRAINED_POWER as GALLOS_TRAINED_POWER
 from bot.services.gallos import Corner as GallosCorner
 from bot.services.gallos import Fight as GallosFight
 from bot.services.gallos import Finish as GallosFinish
@@ -114,6 +118,7 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame, multiplier_cents
@@ -145,6 +150,14 @@ from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
 from bot.services.timba import Act as TimbaAct
 from bot.services.timba import TimbaHand
+from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
+from bot.services.tower import FLOORS as TOWER_FLOORS
+from bot.services.tower import Status as TowerStatus
+from bot.services.tower import TowerGame
+from bot.services.war import ACE_VALUE as WAR_ACE_VALUE
+from bot.services.war import Result as WarResult
+from bot.services.war import WarGame
+from bot.services.war import rank_value as war_rank
 from bot.services.work import (
     FAMILY_TIERS,
     FLOP_BELOW,
@@ -232,11 +245,15 @@ CASINO_GROUP = Group("casino_group", "🎰 Casino")
 CHAT_GROUP = Group("chat_group", "💬 Chat")
 #: Y la voz: llamada, micro y cámara, entradas y música.
 VOICE_GROUP = Group("voice_group", "🎙️ Voz")
-GROUPS: dict[str, Group] = {g.key: g for g in (CHAT_GROUP, VOICE_GROUP, CASINO_GROUP)}
+#: Todo lo de `pala` (turnos, oficios, Hong Kong) va en una sola entrada: antes eran
+#: nueve sueltas y llenaban el menú.
+WORK_GROUP = Group("work_group", "🪏 Trabajo")
+GROUPS: dict[str, Group] = {g.key: g for g in (CHAT_GROUP, VOICE_GROUP, CASINO_GROUP, WORK_GROUP)}
 
 _CG = CASINO_GROUP.key
 _CH = CHAT_GROUP.key
 _VG = VOICE_GROUP.key
+_WG = WORK_GROUP.key
 CATEGORIES: tuple[Category, ...] = (
     Category("chat", "💬 General", group=_CH),
     Category("style", "✍️ Estilo", group=_CH),
@@ -264,6 +281,8 @@ CATEGORIES: tuple[Category, ...] = (
     Category("crash", "🚀 Crash", group=_CG),
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
+    Category("tower", "🐉 Torre", group=_CG),
+    Category("war", "⚔️ Guerra", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
     Category("poker", "♠️ Póker", group=_CG),
@@ -284,15 +303,16 @@ CATEGORIES: tuple[Category, ...] = (
     Category("pets", "🐾 Mascotas"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
-    Category("work", "🪏 Trabajo"),
-    Category("jobs", "👷 Oficios"),
-    Category("hosteleria", "🍽️ Hostelería"),
-    Category("sanidad", "🏥 Sanidad"),
-    Category("oficina", "💻 Oficina"),
-    Category("reparto", "🛵 Reparto"),
-    Category("funcionariado", "🗂️ Funcionariado"),
-    Category("influencer", "🤳 Influencer"),
-    Category("hongkong", "🇭🇰 Hong Kong"),
+    # 🪏 Trabajo: una entrada del menú con una sección por oficio, como el casino.
+    Category("work", "🪏 General", group=_WG),
+    Category("jobs", "👷 Oficios", group=_WG),
+    Category("hosteleria", "🍽️ Hostelería", group=_WG),
+    Category("sanidad", "🏥 Sanidad", group=_WG),
+    Category("oficina", "💻 Oficina", group=_WG),
+    Category("reparto", "🛵 Reparto", group=_WG),
+    Category("funcionariado", "🗂️ Funcionariado", group=_WG),
+    Category("influencer", "🤳 Influencer", group=_WG),
+    Category("hongkong", "🇭🇰 Hong Kong", group=_WG),
     Category("meta", "🏆 Coleccionista"),
 )
 CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
@@ -404,6 +424,11 @@ LAUGH_KINDS = ("es", "en", "emoji", "skull", "smash", "intl", "phrase", "xd")
 SHOP_USED_PREFIX = "shop_used_"
 #: Estadística virtual: objetos distintos (por tipo de uso) que ha usado el miembro.
 SHOP_USE_KINDS_STAT = "shop_use_kinds"
+#: Cajas (`bot.services.lootboxes`): `lootbox_box_<caja>` cuenta las aperturas de cada una,
+#: `lootbox_got_<rareza>` las piezas por rareza y `lootbox_col_<colección>` es el máximo de
+#: piezas distintas que ha tenido de esa colección.
+LOOTBOX_BOX_PREFIX = "lootbox_box_"
+LOOTBOX_RARITY_PREFIX = "lootbox_got_"
 #: Prefijo de las compras por pasillo del colmado (`shop_aisle_moncloa`).
 SHOP_AISLE_PREFIX = "shop_aisle_"
 #: Estadística virtual: pasillos del surtido de serie en los que ha comprado.
@@ -459,6 +484,8 @@ SHOP_TRACKED_KEYS = frozenset(
         "skin_tapete_corea",
         "skin_tapete_diamantes",
         "skin_tapete_gordo",
+        "skin_tapete_aniversario",
+        "skin_tapete_20n",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -717,6 +744,12 @@ BACKGAMMON_COMEBACK_PIPS = 60
 BACKGAMMON_QUICK_TURNS = 15
 #: Rivales de la casa ganados: un contador por rival (`gallos_beat_falcon`).
 GALLOS_BEAT_PREFIX = "gallos_beat_"
+#: Rivales de la casa ganados con un gallo entrenado (poder `GALLOS_TRAINED_POWER` o más).
+GALLOS_TRAINED_BEAT_PREFIX = "gallos_tbeat_"
+#: Un gallo que ya ha ganado esto al morir cuenta como veterano (`gallos_death_veteran`).
+GALLOS_VETERAN_WINS = 50
+#: Se llama sorpresa a ganar con menos probabilidad que esta (`gallos_upset`).
+GALLOS_UPSET_CHANCE = 0.20
 #: Skins con las que ha peleado: un contador por skin (`gallos_skin_serie`).
 GALLOS_SKIN_PREFIX = "gallos_skin_"
 #: Las skins gratis de los gallos (claves de `bot.services.skins`).
@@ -1455,6 +1488,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("time", "msg_hispanidad", [
         (1, "hispanidad", "Desfile del 12 de octubre", "Escribe el Día de la Hispanidad.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_aniversario", [
+        (1, "aniversario", "Cumpleaños feliz del servidor",
+         "Escribe el 7 de octubre, el día que nació el servidor.", C, True),
+        (100, "aniversario_100", "Fiesta de aniversario con barra libre",
+         "Escribe 100 mensajes en aniversarios del servidor.", R, True),
     ])  # fmt: skip
     a += _tiers("time", "msg_inocentes", [
         (1, "inocentes", "Inocente, inocente", "Escribe el 28 de diciembre.", C, True),
@@ -2456,6 +2495,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "bj_tope_1k", "Regla de gasto de Bruselas",
          "Juega 1.000 manos de 5.000 Y$ o más.", R),
     ])  # fmt: skip
+    # El zapato dura entre manos: se cuentan cartas y el jefe de sala vigila.
+    a += _tiers("blackjack", "bj_cut_cards", [
+        (1, "bj_corte", "Carta de corte", "Juega hasta que salga la carta de corte.", C),
+        (50, "bj_corte_50", "Zapatero remendón", "Llega 50 veces a la carta de corte.", R),
+        (500, "bj_corte_500", "Seis barajas de memoria",
+         "Llega 500 veces a la carta de corte. Ya te sabes el zapato como el Cara al Sol "
+         "un ministro de Franco.", E),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_hot_wins", [
+        (1, "bj_rain_man", "Rain Man",
+         "Gana una mano habiendo subido la ficha con la cuenta a +3 o más.", R),
+        (25, "bj_mit", "Equipo del MIT",
+         "Gana 25 manos habiendo subido la ficha con la cuenta a +3 o más.", E),
+        (250, "bj_veintiuno", "Veintiuno, la película",
+         "Gana 250 manos habiendo subido la ficha con la cuenta a +3 o más.", L),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_spread_max", [
+        (PIT_BOSS_SPREAD, "bj_subida", "Subida de manual",
+         f"Juega una mano a {PIT_BOSS_SPREAD} veces tu ficha más baja del zapato sin que te "
+         "pille el jefe de sala.", C),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_pit_boss", [
+        (1, "bj_fichado", "Fichado por el jefe de sala",
+         "Que el jefe de sala baraje porque sospecha que cuentas.", C, True),
+        (10, "bj_non_grata", "Persona non grata en Montecarlo",
+         "Que el jefe de sala te baraje 10 veces.", R, True),
+        (100, "bj_vetado", "Vetado como Puigdemont en el Congreso",
+         "Que el jefe de sala te baraje 100 veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_cold_shoe", [
+        (1, "bj_zapato_helado", "Zapato más frío que Bruselas en enero",
+         "Juega una mano con la cuenta a −4 o menos.", C, True),
+    ])  # fmt: skip
 
     # 💰 Casino ---------------------------------------------------------------------------
     a += _tiers("casino", "casino_wagered", [
@@ -2739,9 +2811,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega 500 tiradas sin cerrar la máquina.", E, True),
     ])  # fmt: skip
     a += _tiers("slots", "slots_pot_fed", [
-        (1_000, "pot_1k", "Alimentador del bote", "Aporta 1.000 Y$ al bote.", C),
-        (10_000, "pot_10k", "Mecenas del bote", "Aporta 10.000 Y$ al bote.", E),
-        (100_000, "pot_100k", "El bote es tuyo (o casi)", "Aporta 100.000 Y$ al bote.", L),
+        # Umbrales doblados en la 7.2, cuando el bote pasó del 3 % al 6 % de cada apuesta.
+        (2_000, "pot_1k", "Alimentador del bote", "Aporta 2.000 Y$ al bote.", C),
+        (20_000, "pot_10k", "Mecenas del bote", "Aporta 20.000 Y$ al bote.", E),
+        (200_000, "pot_100k", "El bote es tuyo (o casi)", "Aporta 200.000 Y$ al bote.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_night", [
         (1, "slots_night", "Ludopatía nocturna", "Juega a la tragaperras entre las 3 y las 6.", C,
@@ -3114,9 +3187,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
 
-    # 🌋 Botes (de momento, volcan) ---------------------------------------------------------
+    # 🌋 Botes (volcan, mina y olimpo) ---------------------------------------------------------
     a += _tiers("botes", "botes_spins", [
-        (1, "botes_1", "Hold & win", "Juega tu primera tirada en el Volcán.",
+        (1, "botes_1", "Hold & win", "Juega tu primera tirada en una máquina de Botes.",
          C),
         (100, "botes_100", "Coleccionista de monedas de Bárcenas",
          "Juega 100 tiradas en los botes.", C),
@@ -3128,6 +3201,36 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("botes", "botes_spins_volcan", [
         (100, "botes_timanfaya", "Turista en Timanfaya", "Juega 100 tiradas en el Volcán.", C),
     ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_mina", [
+        (100, "botes_mina", "Picando como en Asturias", "Juega 100 tiradas en la Mina.", C),
+        (1_000, "botes_mina_1k", "Capataz del litio",
+         "Juega 1.000 tiradas en la Mina. El litio, de momento, se lo llevan otros.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_olimpo", [
+        (100, "botes_olimpo", "Rescate griego", "Juega 100 tiradas en el Olimpo.", C),
+        (1_000, "botes_olimpo_1k", "Troika a la puerta",
+         "Juega 1.000 tiradas en el Olimpo. Zeus pide otro préstamo a Bruselas.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="botes_tres",
+        name="Las tres máquinas",
+        description="Juega al menos una tirada en el Volcán, en la Mina y en el Olimpo.",
+        category="botes",
+        rarity=C,
+        conditions=(
+            ("botes_spins_volcan", 1), ("botes_spins_mina", 1), ("botes_spins_olimpo", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="botes_tres_100",
+        name="Gira de casinos por Europa",
+        description="Juega 100 tiradas en cada máquina de Botes: Volcán, Mina y Olimpo.",
+        category="botes",
+        rarity=R,
+        conditions=(
+            ("botes_spins_volcan", 100), ("botes_spins_mina", 100), ("botes_spins_olimpo", 100),
+        ),
+    ))  # fmt: skip
     a += _tiers("botes", "botes_collects", [
         (1, "botes_collect", "Recogida", "Recoge las monedas con el recogedor.", C),
         (50, "botes_collect_50", "Barrendero de monedas", "Haz 50 recogidas.", C),
@@ -3463,6 +3566,394 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", f"mines_level_{MINES_MAX}", [
         (100, "mines_12_100", "Kamikaze del 12", "Juega 100 partidas con 12 minas.", E),
     ])  # fmt: skip
+
+    # 🐉 Torre del dragón ----------------------------------------------------------------
+    a += _tiers("tower", "tower_games", [
+        (1, "tower_1", "Inquilino del dragón",
+         "Juega tu primera partida de la Torre del dragón. Alquiler sin contrato y con fuego.", C),
+        (100, "tower_100", "Ascensorista de Moncloa", "Juega 100 partidas de la Torre del dragón.",
+         C),
+        (1_000, "tower_1k", "Capataz de la Torre de Babel",
+         "Juega 1.000 partidas de la Torre del dragón. Nadie se entiende, pero se sube.", E),
+        (5_000, "tower_5k", "Casa Targaryen",
+         "Juega 5.000 partidas de la Torre del dragón. La dinastía se te ha ido de las manos.", L),
+        (10_000, "tower_10k", "Mandato vitalicio, como el de Xi",
+         "Juega 10.000 partidas de la Torre del dragón. Ya no sales ni por referéndum.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors", [
+        (100, "tower_floors_100", "Escalador de la Torre Picasso", "Sube 100 pisos en total.", C),
+        (1_000, "tower_floors_1k", "Montañero del Teide", "Sube 1.000 pisos en total.", E),
+        (10_000, "tower_floors_10k", "Más pisos que la Sagrada Familia en obras",
+         "Sube 10.000 pisos en total. Y todavía sin licencia.", L),
+        (50_000, "tower_floors_50k", "Burj Khalifa a pie", "Sube 50.000 pisos en total.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cashouts", [
+        (10, "tower_cash_10", "Huevos a buen recaudo, como los sobres de Bárcenas",
+         "Cobra 10 partidas de la Torre del dragón.", C),
+        (100, "tower_cash_100", "Bajada con el botín, como un conseguidor de Moncloa",
+         "Cobra 100 partidas de la Torre del dragón.", R),
+        (1_000, "tower_cash_1k", "Tesorero del dragón",
+         "Cobra 1.000 partidas de la Torre del dragón. Hasta Hacienda te pide consejo.", L),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_burns", [
+        (1, "tower_burn_1", "Dracarys", "Que te queme un dragón por primera vez.", C),
+        (10, "tower_burn_10", "Huevo pasado por agua… hirviendo",
+         "Que te quemen 10 veces.", C),
+        (100, "tower_burn_100", "Barbacoa de domingo, como las del chalet de Galapagar",
+         "Que te quemen 100 veces.", R),
+        (1_000, "tower_burn_1k", "Chamusquina de Kim",
+         "Que te quemen 1.000 veces. Los misiles de cumpleaños pican menos.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_first_burn", [
+        (1, "tower_burn_first", "Ni la primera planta",
+         "Que te queme el dragón del primer piso. Cero pisos y mucha confianza.", C),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_burn_late", [
+        (1, "tower_burn_late", "A un tiro de la cima",
+         "Que te queme un dragón cuando ya llevabas 7 pisos o más.", R),
+        (10, "tower_burn_late_10", "Casi presidente del Gobierno",
+         "Que te queme un dragón con 7 pisos o más, 10 veces. Tan cerca, tan lejos.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_ninth_burn", [
+        (1, "tower_burn_ninth", "El dragón del ático",
+         "Que te queme el dragón del piso 9, con 8 pisos subidos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_ninth_burn_hard", [
+        (1, "tower_burn_ninth_hard", "Dragón de guardia en la azotea",
+         "Que te queme el dragón del piso 9 en Experto o Maestro. Eso es mala suerte, no Brexit.",
+         M, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_one", [
+        (25, "tower_cash_one_25", "Con un piso me vale",
+         "Cobra 25 veces tras un solo piso. Cobarde, pero cobras.", C),
+        (250, "tower_cash_one_250", "Planta baja y a casa",
+         "Cobra 250 veces tras un solo piso. La planta baja también tributa.", R),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_one_maestro", [
+        (1, "tower_cash_one_maestro", "Gallina de Maestro",
+         "Cobra tras un solo piso en Maestro. Entras, cobras y huyes del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_eight", [
+        (1, "tower_cash_eight", "A un piso de la gloria",
+         "Cobra con 8 pisos subidos en lugar de ir a por el noveno.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_mult_max", [
+        (300, "tower_x3", "Huevo de oro de la Agenda 2030", "Cobra en ×3 o más.", C),
+        (1_000, "tower_x10", "El dragón paga más que la paguita", "Cobra en ×10 o más.", C),
+        (2_500, "tower_x25", "Veinticinco veces, como la comisión de un conseguidor",
+         "Cobra en ×25 o más.", R),
+        (5_000, "tower_x50", "Cuarenta años de Franco más diez de propina",
+         "Cobra en ×50 o más.", L),
+        (10_000, "tower_x100", "Cien veces, como las dietas del Falcon", "Cobra en ×100 o más.", M),
+        (100_000, "tower_x1000", "Mil veces, como un expresidente en las puertas giratorias",
+         "Cobra en ×1.000 o más.", M),
+        (1_000_000, "tower_x10k", "Diez mil veces, como el patrimonio de un dictador",
+         "Cobra en ×10.000 o más.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_win_max", [
+        (10_000, "tower_rich", "Tesoro del dragón en un paraíso fiscal",
+         "Gana 10.000 Y$ en una partida de la Torre del dragón.", R),
+        (100_000, "tower_richer", "Cueva de Smaug con cuenta en Suiza",
+         "Gana 100.000 Y$ en una partida de la Torre del dragón. "
+         f"{TAX_COLLECTOR} ya huele el humo.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("tower", "tower_crown_facil", [
+        (1, "tower_crown_facil", "Escalera mecánica de El Corte Inglés",
+         "Corona la torre en Fácil: 9 pisos, 4 puertas y 1 dragón por piso.", R),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_normal", [
+        (1, "tower_crown_normal", "Presidente sin necesidad de pactar",
+         "Corona la torre en Normal: 3 puertas por piso y 1 dragón.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_dificil", [
+        (1, "tower_crown_dificil", "Cara o cruz nueve veces seguidas",
+         "Corona la torre en Difícil: 2 puertas por piso y un dragón en una.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_experto", [
+        (1, "tower_crown_experto", "Dragón de Xi domado",
+         "Corona la torre en Experto: 3 puertas por piso y 2 dragones. 1 entre 19.683.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crown_maestro", [
+        (1, "tower_crown_maestro", "Daenerys en el Trono de Hierro",
+         "Corona la torre en Maestro: 4 puertas por piso y 3 dragones. 1 entre 262.144.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_crowns", [
+        (10, "tower_crown_10", "Rey de la Torre de Babel",
+         "Corona la torre 10 veces, en la dificultad que sea.", E),
+        (100, "tower_crown_100", "Rey de Poniente",
+         "Corona la torre 100 veces. Los dragones te piden el carnet.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floor_max", [
+        (5, "tower_floor_5", "Mitad de torre, mitad de legislatura",
+         "Sube 5 pisos en una partida.", C),
+        (7, "tower_floor_7", "Siete pisos de pura tensión", "Sube 7 pisos en una partida.", C),
+        (8, "tower_floor_8", "Vértigo de moción de censura", "Sube 8 pisos en una partida.", C),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_dificil", [
+        (6, "tower_dificil_6", "Seis pisos a cara o cruz", "Sube 6 pisos en Difícil.", L),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_experto", [
+        (4, "tower_experto_4", "Cuatro pisos entre dos dragones", "Sube 4 pisos en Experto.", M),
+        (6, "tower_experto_6", "Los dos dragones te tienen manía", "Sube 6 pisos en Experto.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_floors_max_maestro", [
+        (3, "tower_maestro_3", "Tres pisos con tres dragones por piso",
+         "Sube 3 pisos en Maestro.", L),
+        (5, "tower_maestro_5", "Un milagro de los que salen en el BOE",
+         "Sube 5 pisos en Maestro. Una entre 1.024.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_games_experto", [
+        (100, "tower_experto_100", "Doble fuego, doble desastre",
+         "Juega 100 partidas en Experto.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_games_maestro", [
+        (100, "tower_maestro_100", "Kamikaze con corona",
+         "Juega 100 partidas en Maestro. Trabajas para el dragón.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_random", [
+        (50, "tower_dice", "Que elija el dragón", "Elige 50 puertas con 🎲.", R),
+        (500, "tower_dice_500", "Puerta al azar, como un nombramiento a dedo",
+         "Elige 500 puertas con 🎲.", E),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_greedy", [
+        (1, "tower_greedy", "El que mucho sube",
+         "Que te queme un dragón con ×10 o más ya ganado. Se queda en la cueva.", R, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_easy_first_burn", [
+        (1, "tower_easy_burn", "Quemado en el modo fácil",
+         "Que te queme el dragón del primer piso en Fácil. Con 3 puertas buenas de 4.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_dice_crown", [
+        (1, "tower_dice_crown", "La suerte del principiante",
+         "Corona la torre eligiendo las 9 puertas con 🎲.", E, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_777", [
+        (1, "tower_777", "Los tres Reyes Magos del dragón",
+         "Cobra exactamente 777 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_666", [
+        (1, "tower_666", "El número de la bestia (con alas)",
+         "Cobra exactamente 666 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cash_69", [
+        (1, "tower_69", "Dragón de nivel avanzado",
+         "Cobra exactamente 69 Y$ en la Torre del dragón.", C, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="tower_all_levels",
+            name="Todas las plantas del edificio",
+            description="Juega una partida en cada dificultad: Fácil, Normal, Difícil, "
+            "Experto y Maestro.",
+            category="tower",
+            rarity=C,
+            conditions=tuple((f"tower_games_{d.key}", 1) for d in TOWER_DIFFICULTIES),
+        )
+    )
+    a.append(
+        Achievement(
+            id="tower_all_crowns",
+            name="Coronado en todos los reinos",
+            description="Corona la torre en cada dificultad. Hasta Felipe VI se da por aludido.",
+            category="tower",
+            rarity=M,
+            conditions=tuple((f"tower_crown_{d.key}", 1) for d in TOWER_DIFFICULTIES),
+        )
+    )
+
+    # ⚔️ Guerra --------------------------------------------------------------------------
+    a += _tiers("war", "war_hands", [
+        (1, "war_1", "Declaración de guerra",
+         "Juega tu primera mano de la Guerra. Sin consultar al Congreso.", C),
+        (100, "war_100", "Ministerio de Defensa",
+         "Juega 100 manos de la Guerra. Presupuesto ilimitado, como el de Moncloa.", C),
+        (300, "war_300", "Cuartel general del Falcon", "Juega 300 manos de la Guerra.", R),
+        (1_000, "war_1k", "Veterano del NO-DO",
+         "Juega 1.000 manos de la Guerra. Tus hazañas salen en el NO-DO, con voz de locutor.", E),
+        (5_000, "war_5k", "La Guerra de los Cien Años, con IGIC",
+         "Juega 5.000 manos de la Guerra. Dura más que la tramitación de una ley.", L),
+        (10_000, "war_10k", "Guerra Fría, edición eterna",
+         "Juega 10.000 manos de la Guerra. Ya ni Brézhnev se acuerda del motivo.", M),
+    ])  # fmt: skip
+    a += _tiers("war", "war_wins", [
+        (1, "warw_1", "Primera batalla ganada",
+         "Gana tu primera mano. La banca pide un recuento.", C),
+        (50, "warw_50", "Mayoría de una carta",
+         "Gana 50 manos. Sin necesidad de pactar con Junts.", C),
+        (250, "warw_250", "Mayoría aplastante", "Gana 250 manos. Gobiernas sin oposición.", R),
+        (1_000, "warw_1k", "El mejor de la historia, según Trump",
+         "Gana 1.000 manos. Según la banca, también.", E),
+        (4_000, "warw_4k", "Mandato vitalicio, estilo Xi",
+         "Gana 4.000 manos. Ya no hay límite de mandatos.", L),
+        (10_000, "warw_10k", "Elecciones al 87 %, como en Rusia",
+         "Gana 10.000 manos. La banca ha votado a tu favor, qué remedio.", M),
+    ])  # fmt: skip
+    a += _tiers("war", "war_ties", [
+        (1, "war_tie_1", "Tablas de campaña",
+         "Empata la primera carta con la banca. Ni para ti ni para mí.", C),
+        (25, "war_tie_25", "Barómetro de Tezanos",
+         "Empata 25 veces. Tezanos dice que ha ganado el PSOE.", R),
+        (100, "war_tie_100", "La guerra de las cifras",
+         "Empata 100 veces. Cada cifra, un titular distinto.", E),
+        (500, "war_tie_500", "Empate eterno, como el juicio de Netanyahu",
+         "Empata 500 veces. La sentencia se aplaza.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_wars", [
+        (1, "war_war_1", "¡A la guerra!",
+         "Ve a la guerra por primera vez. Trump aplaude desde el Despacho Oval.", C),
+        (10, "war_war_10", "Guerra comercial", "Ve a la guerra 10 veces. Aranceles para todos.", R),
+        (50, "war_war_50", "Guerra cultural",
+         "Ve a la guerra 50 veces. Nadie sabe por qué, pero todos tienen una opinión.", E),
+        (250, "war_war_250", "Ministro de Defensa del bar de la esquina",
+         "Ve a la guerra 250 veces. Tu estrategia sale en las tertulias.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrenders", [
+        (1, "war_surr_1", "Bandera blanca", "Ríndete por primera vez. Media ficha de vuelta.", C),
+        (10, "war_surr_10", "Gila llamando al enemigo",
+         "Ríndete 10 veces. Y avisas al enemigo de dónde estás, por cortesía.", R),
+        (50, "war_surr_50", "Pacifista de Moncloa",
+         "Ríndete 50 veces. Nunca pierdes del todo, y nunca ganas.", E),
+        (200, "war_surr_200", "Nobel de la Paz por adelantado",
+         "Ríndete 200 veces. Como Obama: el premio, antes que la paz.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_wins", [
+        (1, "war_ww_1", "Guerra ganada",
+         "Gana tu primera guerra: cobras la ficha de la guerra y te devuelven la original.", C),
+        (10, "war_ww_10", "La Guerra de las Galaxias, de Reagan",
+         "Gana 10 guerras. Sin disparar un solo láser.", R),
+        (50, "war_ww_50", "Comandante en jefe de nadie", "Gana 50 guerras.", E),
+        (200, "war_ww_200", "Pax Romana, edición de bolsillo", "Gana 200 guerras.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_losses", [
+        (1, "war_wl_1", "Guerra perdida",
+         "Pierde tu primera guerra: las dos fichas, a la banca. Trump lo llamaría un gran acuerdo.",
+         C),
+        (10, "war_wl_10", "Guerra con los jueces",
+         "Pierde 10 guerras. Sánchez habla de un malentendido institucional.", R),
+        (50, "war_wl_50", "Arancel del 100 %",
+         "Pierde 50 guerras. La banca ha subido los aranceles y tú pagas el IGIC.", E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_ties", [
+        (1, "war_wt_1", "Tablas con botín",
+         "Empata también la guerra y cobra el premio extra. Guerra Fría, pero con botín.", R),
+        (5, "war_wt_5", "Guerra fría con intereses", "Empata 5 guerras y cobra el premio.", E),
+        (25, "war_wt_25", "Ni Gorbachov ni Reagan, pero cobras",
+         "Empata 25 guerras y cobra el premio.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_tie_streak_max", [
+        (2, "war_tie_streak_2", "Guerra fría",
+         "Empata la primera carta en dos manos seguidas. Nadie dispara.", C),
+        (3, "war_tie_streak_3", "Triple empate técnico",
+         "Empata la primera carta en tres manos seguidas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_side_bets", [
+        (1, "war_side_1", "Voto en blanco",
+         "Juega la apuesta lateral de Empate 10:1 una vez. Apostar al empate es votar en blanco.",
+         C),
+        (100, "war_side_100", "Abstencionista habitual",
+         "Juega la lateral de empate 100 veces. Siempre esperando un empate que no llega.", R),
+        (1_000, "war_side_1k", "Fiel a la abstención",
+         "Juega la lateral de empate 1.000 veces. La banca te manda una felicitación de Navidad.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_side_hits", [
+        (1, "war_hit_1", "Empate cobrado", "Cobra la lateral de empate: 10 a 1.", C),
+        (10, "war_hit_10", "Vidente del CIS",
+         "Cobra la lateral de empate 10 veces. Lo tenías todo previsto.", E),
+        (50, "war_hit_50", "Pitoniso de Moncloa",
+         "Cobra la lateral de empate 50 veces. La banca ya te pone un cuarto aparte.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_triple", [
+        (1, "war_triple", "Triple corona",
+         "Cobra la lateral de empate, ve a la guerra y gana, todo en la misma mano.", R),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_streak_max", [
+        (5, "war_streak_5", "Racha de cinco",
+         "Gana 5 manos seguidas. Todavía no hay que llamar a Hacienda.", C),
+        (7, "war_streak_7", "Gobierno de coalición", "Gana 7 manos seguidas.", R),
+        (9, "war_streak_9", "Nueve vidas, como los gatos de Ayuso", "Gana 9 manos seguidas.", E),
+        (11, "war_streak_11", "Once seguidas, como un equipo de la liga",
+         "Gana 11 manos seguidas.", L),
+        (13, "war_streak_13", "Mandato eterno, sin elecciones",
+         "Gana 13 manos seguidas. Atado y bien atado.", M, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_lose_streak_max", [
+        (6, "war_lose_6", "Seis de seis para la banca",
+         "Pierde 6 manos seguidas. Cada vez que parpadeas, ha ganado la banca.", R),
+        (9, "war_lose_9", "Moción de censura fallida",
+         "Pierde 9 manos seguidas. Sigues con la misma mayoría que ayer: ninguna.", E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_max", [
+        (10_000, "war_rich", "Botín de guerra, con cuenta en Suiza",
+         "Gana 10.000 Y$ en una sola mano de la Guerra.", R),
+        (100_000, "war_richer", "Reparto del botín en Waterloo",
+         f"Gana 100.000 Y$ en una sola mano de la Guerra. {TAX_COLLECTOR} afila el lápiz.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("war", "war_max_stake", [
+        (1, "war_max_stake", "Presupuesto de defensa",
+         "Juega una mano de la Guerra con 5.000 Y$ o más. Más gasto militar que nadie.", C),
+    ])  # fmt: skip
+    a += _tiers("war", "war_ace_ace", [
+        (1, "war_ace_ace", "El as contra el as",
+         "Que tu primera carta y la de la banca sean ases. Duelo de titanes, a tamaño carta.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_king_lost", [
+        (1, "war_king_lost", "Rey, pero sin corona",
+         "Pierde con un rey contra un as. Ni la corona te salva del as.", R, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_two", [
+        (1, "war_win_two", "Ganar con un dos, imposible",
+         "Gana con un 2 empatando a doses en la guerra. Imposible, según las matemáticas de "
+         "Moncloa.", E, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_tie_two", [
+        (1, "war_tie_two", "Dos doses",
+         "Empata a doses en la primera carta. El empate de los que no llegan a nada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrender_ace", [
+        (1, "war_surr_ace", "Capitulación con ases",
+         "Empata con ases y te rindes. Tenías la baraja de tu parte y dices «no, gracias».",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrender_one", [
+        (1, "war_surr_one", "Media ficha de nada",
+         "Ríndete con una ficha de 1 Y$. Recuperas 0 Y$, que es la mitad redondeada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_777", [
+        (1, "war_777", "Los Reyes Magos del campo de batalla",
+         "Cobra exactamente 777 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_666", [
+        (1, "war_666", "El número de la bestia (y su arancel)",
+         "Cobra exactamente 666 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_69", [
+        (1, "war_69", "Guerra de nivel avanzado",
+         "Cobra exactamente 69 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="war_all_wins",
+            name="El mazo entero",
+            description="Gana a la primera carta con cada rango, del 3 al as. El 2 no gana "
+            "nunca a la primera, ni con recuento.",
+            category="war",
+            rarity=R,
+            conditions=tuple((f"war_win_rank_{n}", 1) for n in range(3, WAR_ACE_VALUE + 1)),
+        )
+    )
+    a.append(
+        Achievement(
+            id="war_all_ties",
+            name="Un empate de cada",
+            description="Empata la primera carta con cada rango, del 2 al as. Hasta con el rey "
+            "se puede empatar.",
+            category="war",
+            rarity=R,
+            conditions=tuple((f"war_tie_rank_{n}", 1) for n in range(2, WAR_ACE_VALUE + 1)),
+        )
+    )
 
     # 🪙 Cara o cruz -----------------------------------------------------------------------
     a += _tiers("coin", "coin_games", [
@@ -4408,6 +4899,75 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dados_777", "El 777 del cubilete", "Cobra exactamente 777 Y$ en los dados.", C,
          True),
     ])  # fmt: skip
+    # La mesa compartida del canal (`dados mesa`).
+    a += _tiers("dice", "dice_table_rolls", [
+        (1, "dadosm_1", "Pleno ordinario en el tapete",
+         "Juega una tirada en la mesa compartida de los dados.", C),
+        (10, "dadosm_10", "Tertulia de cubilete",
+         "Juega 10 tiradas en la mesa compartida de los dados.", C),
+        (100, "dadosm_100", "Habitual del corrillo",
+         "Juega 100 tiradas en la mesa compartida de los dados.", R),
+        (1_000, "dadosm_1k", "Más sesiones que el Consejo de Ministros",
+         "Juega 1.000 tiradas en la mesa compartida de los dados.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_shooter", [
+        (1, "dadosm_tirador", "Quien tiene el cubilete tiene el poder",
+         "Sé el tirador de una ronda en la mesa compartida.", C),
+        (10, "dadosm_tirador_10", "Presidente de mesa, sin moción de censura",
+         "Sé el tirador de 10 rondas en la mesa compartida.", C),
+        (100, "dadosm_tirador_100", "Cubilete vitalicio, como un sillón en el Consejo de Estado",
+         "Sé el tirador de 100 rondas en la mesa compartida.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_public_points_max", [
+        (5, "dadosm_publico_5", "Mitin con el aforo completo",
+         "Haz 5 puntos en una mano con otros jugadores mirando.", R),
+        (10, "dadosm_publico_10", "Moción de confianza por aclamación",
+         "Haz 10 puntos en una mano con otros jugadores mirando.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_alone", [
+        (1, "dadosm_solo", "Yo contra el barrio",
+         "Gana en la mesa compartida mientras pierden al menos otros dos.", C),
+        (25, "dadosm_solo_25", "Voto particular que se impone",
+         "Gana 25 veces mientras pierden al menos otros dos.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_shooter_wins", [
+        (1, "dadosm_gracias", "Gracias al tirador",
+         "Gana una partida con la mano de otro tirador.", C),
+        (25, "dadosm_gracias_25", "Mano de cocinero amigo",
+         "Gana 25 partidas con la mano de otros tiradores.", R),
+        (250, "dadosm_gracias_250", "Tirador de cabecera, médico de familia",
+         "Gana 250 partidas con la mano de otros tiradores.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_vs_shooter", [
+        (1, "dadosm_contra", "Oposición al tirador",
+         "Apuesta a No pase contra el tirador, que va a Pase, y gana.", C),
+        (25, "dadosm_contra_25", "Cordón sanitario al cubilete",
+         "Gana 25 veces apostando a No pase contra el tirador.", R),
+        (250, "dadosm_contra_250", "Pacto de las banderas, versión dados",
+         "Gana 250 veces apostando a No pase contra el tirador.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_players_max", [
+        (6, "dadosm_llena", "Mesa llena, como un ERE de Andalucía",
+         "Juega con 6 o más jugadores en la misma ronda de la mesa compartida.", R),
+        (10, "dadosm_colgado_el_cartel", "Colgado el cartel de «no hay billetes»",
+         "Juega con 10 o más jugadores en la misma ronda de la mesa compartida.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_lonely", [
+        (1, "dadosm_solitario", "Mesa compartida con tu cuñado imaginario",
+         "Juega tú solo en la mesa compartida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_boxcars", [
+        (1, "dadosm_doble_seis", "Doble seis ante el pleno",
+         "Saca un 12 en la salida como tirador, con 3 o más jugadores mirando.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_wipeout", [
+        (1, "dadosm_barra_libre", "Barra libre para el Casino del Estado",
+         "Pierde en una mesa de 4 o más jugadores donde pierden todos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_unanimous", [
+        (1, "dadosm_unanimidad", "Unanimidad de Politburó",
+         "Gana en una mesa de 3 o más jugadores donde ganan todos.", C, True),
+    ])  # fmt: skip
 
     # 🐔 Pollo ---------------------------------------------------------------------------
     a += _tiers("chicken", "chicken_games", [
@@ -5320,6 +5880,34 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000_000, "rastro_bidmax_1m", "Puja de jeque",
          "Puja 1.000.000 Y$ de una vez en el Rastro.", E, True),
     ], unit="money")  # fmt: skip
+    # 🔄 Trueque (`trueque`): cuentan los dos, quien propone y quien acepta.
+    a += _tiers("rastro", "market_swaps", [
+        (1, "trueque_1", "Cambio de cromos en el recreo", "Haz tu primer `trueque`.", C),
+        (10, "trueque_10", "Mercadillo de cromos del domingo", "Haz 10 trueques.", R),
+        (50, "trueque_50", "Economía de trueque, como en el corralito",
+         "Haz 50 trueques. Los argentinos de 2001 te entienden.", E),
+        (200, "trueque_200", "Bolsa de Valores del patio del colegio", "Haz 200 trueques.", L),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_money", [
+        (1, "trueque_dinero", "Te doy esto y unas perras",
+         "Propón un trueque añadiendo dinero, y que te lo acepten.", C),
+        (10, "trueque_dinero_10", "Mejora de oferta, como Florentino en el mercado de fichajes",
+         "Cierra 10 trueques poniendo dinero encima.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_lopsided", [
+        (1, "trueque_estampita", "El timo de la estampita",
+         "Sal de un trueque con algo que vale diez veces lo que diste (y 1.000 Y$ o más).",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_fleeced", [
+        (1, "trueque_abanico", "Te han cambiado el Falcon por un abanico",
+         "Da en un trueque algo que vale diez veces lo que recibes (y 1.000 Y$ o más).",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "market_swap_titles", [
+        (1, "trueque_titulos", "Pacto de investidura",
+         "Cambia un título por otro en un trueque. Hoy por ti, mañana Waterloo.", R),
+    ])  # fmt: skip
 
     # 🏠 Pisos (cogs/pisos.py: housing_*_stats) -------------------------------------------
     a += _tiers("pisos", "pisos_opened", [
@@ -5855,6 +6443,40 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "ongs_supported", [
         (4, "donate_all", "Accionista del tercer sector", "Dona a las 4 ONGs.", R),
     ])  # fmt: skip
+    a += _tiers("economy", "donations", [
+        (10, "donations_10", "Socio de cuota", "Haz 10 donativos.", C),
+        (100, "donations_100", "Socio de honor con placa en la sede", "Haz 100 donativos.", R),
+        (1_000, "donations_1k", "Benefactor de chiringuitos con nombre de calle",
+         "Haz 1.000 donativos.", E),
+    ])  # fmt: skip
+    for ong_key, title, text in (
+        ("desmontar", "Patrono de la Fundación Desmontando España",
+         "Dona 10.000 Y$ a desmontar España. Ya llevas un trozo."),
+        ("ayudante", "Ayudante del Ayudante",
+         "Dona 10.000 Y$ a la Asociación Ayuda al Ayudante. El coche de empresa es tuyo."),
+        ("mares", "Grumete del yate solidario",
+         "Dona 10.000 Y$ a Mares Limpios S. L. El segundo yate lleva tu nombre."),
+        ("hambre", "Comensal del banquete contra el hambre",
+         "Dona 10.000 Y$ a Cubiertos de Plata. Te guardan una langosta."),
+    ):  # fmt: skip
+        a += _tiers("economy", f"donated_{ong_key}", [
+            (10_000, f"donate_{ong_key}_10k", title, text, R),
+        ], unit="money")  # fmt: skip
+    a += _tiers("economy", "donation_one", [
+        (1, "donate_one", "La voluntad", "Dona 1 Y$. La ONG te manda un certificado de 3 Y$.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_allin", [
+        (1, "donate_allin", "Caridad bien entendida empieza por uno mismo… o no",
+         "Dona todo tu saldo y quédate a cero.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_666", [
+        (1, "donate_666", "Limosna del diablo", "Dona 666 Y$ exactos.", C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_christmas", [
+        (1, "donate_xmas", "Espíritu navideño de telemaratón",
+         "Dona en Nochebuena o en Navidad, como en el maratón de la tele.", C),
+    ])  # fmt: skip
     a += _tiers("economy", "tax_refunds", [
         (1, "refund_day", "Desgravación", "Recupera IRPF del casino perdiendo el mismo día.", C),
     ])  # fmt: skip
@@ -6297,6 +6919,209 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "mystery_jackpot", "Me tocó el gordo de la caja",
          "Que la caja botín te dé algo de 100.000 Y$ o más.", L, True),
     ])  # fmt: skip
+    # 🛍️ Tienda: las cajas por niveles, de temporada y ganadas jugando --------------------
+    a += _tiers("shop", "lootbox_opened", [
+        (1, "box_open_1", "Abre que es regalo", "Abre tu primera caja del colmado.", C),
+        (10, "box_open_10", "Ludopatía de cartón", "Abre 10 cajas.", R),
+        (100, "box_open_100", "Cien cajas y un cajero",
+         "Abre 100 cajas. El anteproyecto de ley sigue en el cajón.", E),
+        (1_000, "box_open_1k", "Presupuesto prorrogado en cartón",
+         "Abre 1.000 cajas. Hasta Perro Sanxe se ha quedado sin cajas que recaudar.", L),
+    ])  # fmt: skip
+    for box_key, achievement_id, name, description, rarity in (
+        ("caja_carton", "box_first_carton", "Mudanza de ministerio", "Abre una caja de cartón.", C),
+        (
+            "caja_regalo",
+            "box_first_regalo",
+            "Con lazo y todo",
+            "Abre una caja de regalo. Bibi también las recibe, pero con champán.",
+            R,
+        ),
+        (
+            "maletin_ministro",
+            "box_first_maletin",
+            "Un maletín y no se declara",
+            "Abre un maletín del ministro. Pesa lo suyo y no hay recibo.",
+            E,
+        ),
+        (
+            "cofre_rey_emerito",
+            "box_first_cofre",
+            "Con la llave puesta desde Abu Dabi",
+            "Abre un cofre del Rey emérito.",
+            L,
+        ),
+        (
+            "caja_navidad",
+            "box_first_navidad",
+            "Regalo antes del discurso del Rey",
+            "Abre una caja de Navidad.",
+            R,
+        ),
+        (
+            "caja_halloween",
+            "box_first_halloween",
+            "Truco o trato fiscal",
+            "Abre una caja de Halloween.",
+            R,
+        ),
+        (
+            "caja_aniversario",
+            "box_first_aniversario",
+            "Soplar velas en el servidor",
+            "Abre una caja del aniversario.",
+            R,
+        ),
+    ):
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((f"{LOOTBOX_BOX_PREFIX}{box_key}", 1),),
+        ))  # fmt: skip
+    for rarity_key, achievement_id, name, description, rarity in (
+        ("common", "box_got_common", "Lo que hay", "Que una caja te dé una pieza Común.", C),
+        ("rare", "box_got_rare", "Algo es algo", "Que una caja te dé una pieza Rara.", C),
+        (
+            "epic",
+            "box_got_epic",
+            "Brilla más que el Falcon",
+            "Que una caja te dé una pieza Épica.",
+            R,
+        ),
+        (
+            "legendary",
+            "box_got_legendary",
+            "Legendaria, como los mandatos del Sahel",
+            "Que una caja te dé una pieza Legendaria.",
+            E,
+        ),
+        (
+            "mythic",
+            "box_got_mythic",
+            "¡Toma mangó mítico!",
+            "Que una caja te dé una pieza Mítica. Casi nadie las ha visto.",
+            L,
+        ),
+    ):
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((f"{LOOTBOX_RARITY_PREFIX}{rarity_key}", 1),),
+        ))  # fmt: skip
+    for collection_key, achievement_id, name, description, rarity in (
+        (
+            "transicion",
+            "box_col_transicion",
+            "Álbum de la Transición",
+            "Completa los Cromos de la Transición. El del Consenso, además, ni existía.",
+            M,
+        ),
+        (
+            "congreso",
+            "box_col_congreso",
+            "Legislatura completa",
+            "Completa los Muñecos del Congreso. Sin quórum, pero con todos los muñecos.",
+            L,
+        ),
+        (
+            "bobbleheads",
+            "box_col_bobbleheads",
+            "Cumbre del G-20 en la estantería",
+            "Completa los Bobbleheads de líderes mundiales: ocho cabezas que asienten a todo.",
+            M,
+        ),
+        (
+            "eurovision",
+            "box_col_eurovision",
+            "Doce puntos, dos de la UER",
+            "Completa las Chapas de Eurovisión. Hasta el jurado te da la máxima.",
+            L,
+        ),
+        (
+            "hacienda",
+            "box_col_hacienda",
+            "Inspección completada",
+            "Completa las Pegatinas de Hacienda. Con la Cl@ve caducada y todo.",
+            M,
+        ),
+        (
+            "figuritas",
+            "box_col_figuritas",
+            "Consejo de Ministros con quórum",
+            "Completa las Figuritas de la Moncloa. Aquí sí hay mayoría.",
+            L,
+        ),
+        (
+            "nodo",
+            "box_col_nodo",
+            "Noticiario completo",
+            "Completa los Cromos del NO-DO. Franco, por cierto, sigue muerto.",
+            M,
+        ),
+        (
+            "canarias",
+            "box_col_canarias",
+            "Souvenirs, Cabildo y gofio",
+            "Completa los Souvenirs de Canarias, con la primera piedra de La Aldea incluida.",
+            L,
+        ),
+        (
+            "navidad",
+            "box_col_navidad",
+            "Navidades completas",
+            "Completa la colección de Navidad, turrón duro y mensaje del Rey incluidos.",
+            M,
+        ),
+        (
+            "halloween",
+            "box_col_halloween",
+            "Noche de brujas sin sustos fiscales",
+            "Completa la colección de Halloween. El Coco del déficit, el último.",
+            M,
+        ),
+        (
+            "aniversario",
+            "box_col_aniversario",
+            "Felices años, servidor",
+            "Completa la colección del aniversario del servidor.",
+            L,
+        ),
+    ):
+        collection = next(c for c in LOOTBOX_COLLECTIONS if c.key == collection_key)
+        a.append(Achievement(
+            id=achievement_id, name=name, description=description, category="shop",
+            rarity=rarity, conditions=((collection.stat, collection.size),),
+        ))  # fmt: skip
+    a.append(Achievement(
+        id="box_all_collections", name="Museo con IGIC",
+        description=f"Completa las {len(LOOTBOX_COLLECTIONS)} colecciones de las cajas.",
+        category="shop", rarity=M,
+        conditions=tuple((c.stat, c.size) for c in LOOTBOX_COLLECTIONS),
+    ))  # fmt: skip
+    a += _tiers("shop", "lootbox_tapete", [
+        (1, "box_tapete", "Alfombra de la suerte",
+         "Que una caja te dé un tapete. Pasa casi nunca, y la gente lo cuenta.", L, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_season", [
+        (1, "box_season_1", "Caja con fecha de caducidad", "Abre una caja de temporada.", R),
+        (10, "box_season_10", "Fijo discontinuo de las cajas",
+         "Abre 10 cajas de temporada.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_free", [
+        (1, "box_free_1", "Cortesía de la casa",
+         "Gana una caja gratis jugando en el casino o subiendo de nivel.", C),
+        (10, "box_free_10", "Premio de la casa", "Gana 10 cajas gratis.", R),
+        (100, "box_free_100", "Sobre de la Moncloa, versión caja",
+         "Gana 100 cajas gratis.", L),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_dupes", [
+        (10, "box_dupe_10", "Repe, repe y más repe",
+         "Que las cajas te den 10 piezas que ya tenías.", R),
+        (100, "box_dupe_100", "Mercadillo de repes",
+         "Que las cajas te den 100 piezas que ya tenías. Hay un Rastro para eso.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "lootbox_night", [
+        (1, "box_night", "Ludopatía de madrugada",
+         "Abre una caja entre las 3 y las 6 de la mañana.", C, True),
+    ])  # fmt: skip
     a += _tiers("shop", "shop_consumed", [
         (100, "consumed_100", "Usar y tirar", "Gasta 100 objetos de un solo uso.", R),
         (1_000, "consumed_1k", "Sociedad de consumo", "Gasta 1.000 objetos de un solo uso.", E),
@@ -6439,18 +7264,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el tapete del Falcon. El vuelo a Benidorm, a cuenta del erario.", R, False),
         ("skin_tapete_franco", "buy_tapete_franco", "Noticiario de las nueve",
          "Compra el tapete del NO-DO. Franco, por cierto, sigue muerto.", R, False),
+        ("skin_tapete_20n", "buy_tapete_20n", "Españoles, el tapete ha llegado",
+         "Compra el tapete del 20-N. Arias Navarro lo anuncia llorando en la tele.", E, False),
         ("skin_tapete_hacienda", "buy_tapete_hacienda", "Borrador de la Renta",
          "Compra el tapete del Modelo 100. Montoro te manda un abrazo.", R, False),
         ("skin_tapete_kirk", "buy_tapete_kirk", "Prove me wrong",
          "Compra el tapete del cartel de Charlie Kirk.", R, False),
         ("skin_tapete_epstein", "buy_tapete_epstein", "Desclasificado",
-         "Compra el tapete de los archivos Epstein. Tu nombre sale tachado.", R, False),
+         "Compra una de las tres copias del tapete de los archivos Epstein. Tu nombre sale "
+         "tachado.", L, False),
         ("skin_tapete_corea", "buy_tapete_corea", "Querido Líder del tapete",
          "Compra el tapete de Pyongyang. Ganas siempre: lo dice la tele estatal.", R, False),
         ("skin_tapete_diamantes", "buy_tapete_diamantes", "Los diamantes son para siempre",
          "Compra el tapete de diamantes. Las deudas también.", L, False),
         ("skin_tapete_gordo", "buy_tapete_gordo", "Salud, que es lo importante",
          "Compra el tapete del Gordo en Navidad.", R, False),
+        ("skin_tapete_aniversario", "buy_tapete_aniversario", "Soplando velas en el casino",
+         "Compra el tapete del aniversario en octubre, el mes en que nació el servidor.", C,
+         False),
     ):  # fmt: skip
         a.append(Achievement(
             id=achievement_id, name=name, description=description, category="shop",
@@ -9447,6 +10278,212 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ):
         a += _tiers("gallos", stat, [(1, achievement_id, name, description, C, secret)])
+
+    # Stats, entrenamiento y muertes. Entrenar es cuestión de días (una hora de espera y
+    # seis al día) y de dinero (el precio sube con el stat); morir es suerte: ~3 % por pelea
+    # (un 28 % de perderlas por KO por el 10 % de morir), así que la primera muerte llega
+    # a las ~35 peleas y los duelos que acaban en muerte, a una de cada ~70.
+    a += _tiers("gallos", "gallos_trains", [
+        (1, "gallos_gym_1", "Primer día de gimnasio",
+         "Entrena a tu gallo por primera vez. Como Rocky, pero con alpiste.", C),
+        (10, "gallos_gym_10", "Escalera de Filadelfia",
+         "Entrena 10 veces. Los escalones eran de Filadelfia; el sudor, de tu gallo.", C),
+        (100, "gallos_gym_100", "Pectorales de propaganda",
+         "Entrena 100 veces. Putin a caballo sin camiseta te manda un mensaje de respeto.", E),
+        (1_000, "gallos_gym_1k", "Vuelta ciclista al corral",
+         "Entrena 1.000 veces. Más etapas que la Vuelta y mucho menos dopaje.", M),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_strength_max", [
+        (50, "gallos_fuerza_50", "Fruta para los bíceps",
+         "Lleva la fuerza de un gallo a 50. Gimnasio de Ayuso, con caña incluida.", R),
+        (100, "gallos_fuerza_100", "Levantador de aranceles",
+         "Lleva la fuerza de un gallo a 100. Aguanta hasta el 200 % de recargo.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_speed_max", [
+        (50, "gallos_velocidad_50", "Velocidad de crucero del Falcon",
+         "Lleva la velocidad de un gallo a 50. Llega a todas partes, hasta a su propia boda.", R),
+        (100, "gallos_velocidad_100", "Escapada de Puigdemont",
+         "Lleva la velocidad de un gallo a 100. Ni los Mossos le ven ya el maletero.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_endurance_max", [
+        (50, "gallos_aguante_50", "Aguante de moción de censura",
+         "Lleva el aguante de un gallo a 50. Ha sobrevivido a más mociones que el Gobierno.", R),
+        (100, "gallos_aguante_100", "Juicio eterno de Bibi",
+         "Lleva el aguante de un gallo a 100. Aplaza hasta la muerte, que le debe un turno.", E),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_dios",
+            name="Gallo Dios",
+            description=(
+                "Ten un gallo con fuerza, velocidad y aguante a 100. Franco sigue muerto; "
+                "tu gallo, casi inmortal."
+            ),
+            category="gallos",
+            rarity=M,
+            conditions=(
+                ("gallos_strength_max", 100),
+                ("gallos_speed_max", 100),
+                ("gallos_endurance_max", 100),
+            ),
+        )
+    )
+    a += _tiers("gallos", "gallos_power_max", [
+        (50, "gallos_poder_50", "Mayoría simple de plumas",
+         "Ten un gallo con poder 50. Con los votos de Junts, ya gobiernas el gallinero.", E),
+        (75, "gallos_poder_75", "Mayoría absoluta de plumas",
+         "Ten un gallo con poder 75. Aprobar presupuestos ya no es problema tuyo.", L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_upset", [
+        (1, "gallos_sorpasso", "Sorpasso en el corral",
+         "Gana a un rival de la casa con menos de un 20 % de probabilidades. "
+         "Sorpasso de verdad, no como el de Podemos.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_deaths", [
+        (1, "gallos_entierro_1", "Entierro de la sardina",
+         "Que muera tu gallo. Procesión, bombo y sardina de cartón.", R),
+        (10, "gallos_entierro_10", "Valle de los Caídos del gallinero",
+         "Que mueran 10 gallos tuyos. La exhumación, otro día; el cementerio, ya lleno.", E),
+        (50, "gallos_entierro_50", "Fosa común con sobrecoste",
+         "Que mueran 50 gallos tuyos. La obra del cementerio se pasó de presupuesto, como todas.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_kills", [
+        (1, "gallos_sicario", "Sicario del reñidero",
+         "Mata al gallo de otro miembro en un duelo. El NO-DO no se enterará.", R),
+        (10, "gallos_funeraria", "Dueño de la funeraria",
+         "Mata a 10 gallos de otros en duelos. El cementerio ya tiene tu nombre en la fachada.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_phoenix", [
+        (1, "gallos_fenix", "Ave Fénix",
+         "Gana la primera pelea de tu gallo nuevo, justo tras perder al anterior. "
+         "Resurgir, como el PSOE después de 2016.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_death_veteran", [
+        (1, "gallos_jubilacion", "Jubilación sin pensión",
+         "Que muera un gallo con 50 victorias o más. Cotizó de sobra y no le llega ni el IMV.",
+         L, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_death_debut", [
+        (1, "gallos_debut", "Debut y despedida",
+         "Que tu gallo muera en su primera pelea. Dura menos que un ministro de Boris.",
+         L, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_trains_day_max", [
+        (6, "gallos_maraton", "Maratón de gimnasio",
+         "Entrena 6 veces en un día. Tu gallo registra una moción de censura contra ti.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_train_dawn", [
+        (1, "gallos_madrugon", "Madrugón de Rocky",
+         "Entrena de madrugada (de 2 a 6). Rocky corría antes del amanecer; tu gallo, con sueño.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_train_spent", [
+        (10_000, "gallos_cuota_gym", "Cuota del gimnasio",
+         "Gasta 10.000 Y$ en entrenar gallos, IGIC incluido. Perro Sanxe aplaude.", R),
+        (100_000, "gallos_gym_ayuso", "Gimnasio con sobrecostes",
+         "Gasta 100.000 Y$ en entrenar gallos. Más que el Falcon en un viaje a Lanzarote.", E),
+        (1_000_000, "gallos_gym_estado", "Gimnasio de Estado",
+         "Gasta 1.000.000 Y$ en entrenar gallos. Los Presupuestos Generales te piden el recibo.",
+         M),
+    ], unit="money")  # fmt: skip
+    for key, achievement_id, name, description, rarity in (
+        (
+            "temu",
+            "gallos_tbeat_temu",
+            "Reclamación a Temu",
+            "Gánale al Gallo de Temu con un gallo entrenado. Esta vez sí llega la pata.",
+            R,
+        ),
+        (
+            "teror",
+            "gallos_tbeat_teror",
+            "Gofio con proteínas",
+            "Gánale al Pollo de Teror con un gallo entrenado. Hasta el Pino pide batido.",
+            R,
+        ),
+        (
+            "directiva",
+            "gallos_tbeat_directiva",
+            "Enmienda al tapón",
+            "Gánale a la Directiva 2019/904 con un gallo entrenado. Bruselas pide otro informe.",
+            R,
+        ),
+        (
+            "falcon",
+            "gallos_tbeat_falcon",
+            "Falcon sin combustible",
+            "Gánale al Gallo del Falcon con un gallo entrenado. Esta vez vuelas tú.",
+            R,
+        ),
+        (
+            "motosierra",
+            "gallos_tbeat_motosierra",
+            "Motosierra sin gasolina",
+            "Gánale a La Motosierra con un gallo entrenado. El «¡afuera!» te lo dicen a ti.",
+            R,
+        ),
+        (
+            "sahel",
+            "gallos_tbeat_sahel",
+            "Contragolpe de Estado",
+            "Gánale al Coronel del Sahel con un gallo entrenado. Elecciones «pronto», claro.",
+            R,
+        ),
+        (
+            "arancel",
+            "gallos_tbeat_arancel",
+            "Arancel del 0 %",
+            "Gánale a Arancel con un gallo entrenado. Sin recargo, de momento.",
+            E,
+        ),
+        (
+            "credito",
+            "gallos_tbeat_credito",
+            "Crédito social con pesas",
+            "Gánale a Crédito Social con un gallo entrenado. Te suben la nota por levantar.",
+            E,
+        ),
+        (
+            "cupula",
+            "gallos_tbeat_cupula",
+            "Intercepción fallida",
+            "Gánale a la Cúpula de Hierro con un gallo entrenado. Esta vez no lo intercepta.",
+            E,
+        ),
+        (
+            "actas",
+            "gallos_tbeat_actas",
+            "Recuento verificable",
+            "Gánale al Gallo de las Actas con un gallo entrenado. Las actas, por fin, aparecen.",
+            E,
+        ),
+        (
+            "marte",
+            "gallos_tbeat_marte",
+            "Cohete aterrizado",
+            "Gánale al Gallo de Marte con un gallo entrenado. Despegar, solo despega el despido.",
+            E,
+        ),
+    ):
+        assert key in {r.key for r in GALLOS_HOUSE}
+        a += _tiers("gallos", f"{GALLOS_TRAINED_BEAT_PREFIX}{key}", [
+            (1, achievement_id, name, description, rarity),
+        ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_gira_entrenada",
+            name="Gira mundial con preparador físico",
+            description=(
+                "Gánale a todos los gallos de la casa con un gallo entrenado "
+                f"(poder {GALLOS_TRAINED_POWER} o más). Ni un solo rival se libra."
+            ),
+            category="gallos",
+            rarity=L,
+            conditions=tuple((f"{GALLOS_TRAINED_BEAT_PREFIX}{r.key}", 1) for r in GALLOS_HOUSE),
+        )
+    )
 
     # 🔴 4 en raya ------------------------------------------------------------------------
     a += _tiers("enraya", "enraya_games", [
@@ -12673,6 +13710,7 @@ def message_delta(
     bump("msg_20n", when.month == 11 and when.day == 20)
     bump("msg_pino", when.month == 9 and when.day == 8)
     bump("msg_hispanidad", when.month == 10 and when.day == 12)
+    bump("msg_aniversario", (when.month, when.day) == ANNIVERSARY)
     bump("msg_halloween", when.month == 10 and when.day == 31)
     bump("msg_christmas", when.month == 12 and when.day in (24, 25))
     bump("msg_inocentes", when.month == 12 and when.day == 28)
@@ -13160,6 +14198,32 @@ def roulette_stats(
 BJ_HIGH_STAKE = 5_000
 
 
+def blackjack_shoe_stats(
+    game: BlackjackGame, *, caught: bool, cut: bool, count: float, spread: int | None
+) -> StatDelta:
+    """Contadores del zapato de la mesa en una mano ya pagada (cuenta de cartas).
+
+    Args:
+        caught: El jefe de sala barajó antes de repartirla.
+        cut: Salió la carta de corte y se barajó antes de repartirla.
+        count: Cuenta Hi-Lo verdadera al repartir (0 con el zapato recién barajado).
+        spread: Veces que la ficha cabía en la más baja del zapato (`None` en la
+            primera mano del zapato o si el jefe de sala barajó).
+    """
+    delta = StatDelta()
+    if caught:
+        delta.add["bj_pit_boss"] = 1
+    if cut:
+        delta.add["bj_cut_cards"] = 1
+    if count <= -4:
+        delta.add["bj_cold_shoe"] = 1
+    if spread is not None and spread >= 2:
+        delta.peak["bj_spread_max"] = spread
+        if count >= 3 and game.net > 0:
+            delta.add["bj_hot_wins"] = 1
+    return delta
+
+
 def blackjack_stats(game: BlackjackGame) -> StatDelta:
     """Contadores de una mano de blackjack ya pagada (sin lo común del casino)."""
     delta = StatDelta(add={"bj_hands": 1})
@@ -13504,7 +14568,7 @@ def hold_win_stats(
     """Contadores de una tirada base de Botes (sin lo común del casino).
 
     Args:
-        theme: Máquina (de momento, `volcan`).
+        theme: Máquina (`volcan`, `mina` u `olimpo`).
         payout: Lo cobrado en la tirada (ways más recogida).
         trigger: Bonus que dispara la tirada, si alguno.
         session_spins: Tiradas en esta máquina, contando esta.
@@ -14176,6 +15240,101 @@ def mines_stats(game: MinesGame) -> StatDelta:
     return delta
 
 
+def tower_stats(game: TowerGame) -> StatDelta:
+    """Contadores de una partida de la Torre del dragón terminada (sin lo común del casino)."""
+    key = game.difficulty.key
+    delta = StatDelta(
+        add={"tower_games": 1, f"tower_games_{key}": 1},
+        peak={"tower_floor_max": game.floor, f"tower_floors_max_{key}": game.floor},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    bump("tower_floors", amount=game.floor)
+    bump("tower_random", amount=game.random_picks)
+    if game.status is TowerStatus.CASHED:
+        bump("tower_cashouts")
+        delta.peak["tower_mult_max"] = game.cents
+        if game.net > 0:
+            delta.peak["tower_win_max"] = game.net
+        bump("tower_cash_one", game.floor == 1)
+        bump("tower_cash_one_maestro", game.floor == 1 and key == "maestro")
+        bump("tower_cash_eight", game.floor == TOWER_FLOORS - 1)
+        bump("tower_crowns", game.crowned)
+        bump(f"tower_crown_{key}", game.crowned)
+        bump("tower_dice_crown", game.crowned and game.random_picks == TOWER_FLOORS)
+        bump("tower_cash_777", game.payout == 777)
+        bump("tower_cash_666", game.payout == 666)
+        bump("tower_cash_69", game.payout == 69)
+    elif game.status is TowerStatus.BURNED:
+        bump("tower_burns")
+        bump("tower_first_burn", game.floor == 0)
+        bump("tower_easy_first_burn", game.floor == 0 and key == "facil")
+        bump("tower_burn_late", game.floor >= 7)
+        bump("tower_ninth_burn", game.floor == TOWER_FLOORS - 1)
+        bump(
+            "tower_ninth_burn_hard",
+            game.floor == TOWER_FLOORS - 1 and key in ("experto", "maestro"),
+        )
+        # Quemarse con ×10 o más ya ganado: lo que se llevaba se queda en la cueva.
+        bump("tower_greedy", game.floor >= 1 and game.cents >= 1_000)
+    return delta
+
+
+def war_stats(game: WarGame, *, win_run: int = 0, lose_run: int = 0, tie_run: int = 0) -> StatDelta:
+    """Contadores de una mano de la Guerra ya pagada (sin lo común del casino).
+
+    Args:
+        game: La mano terminada.
+        win_run: Manos ganadas seguidas en la mesa, contando esta.
+        lose_run: Manos perdidas seguidas en la mesa, contando esta.
+        tie_run: Manos seguidas con empate en la primera carta, contando esta.
+    """
+    delta = StatDelta(add={"war_hands": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    result = game.result
+    mine, theirs = war_rank(game.player[0]), war_rank(game.dealer[0])
+    war_won = result in (WarResult.WAR_WIN, WarResult.WAR_TIE)
+    bump("war_wins", game.won)
+    bump("war_ties", game.tied)
+    bump("war_wars", game.went_to_war)
+    bump("war_surrenders", result is WarResult.SURRENDER)
+    bump("war_war_wins", war_won)
+    bump("war_war_losses", result is WarResult.WAR_LOSE)
+    bump("war_war_ties", result is WarResult.WAR_TIE)
+    bump("war_side_bets", game.side > 0)
+    bump("war_side_hits", game.side > 0 and game.tied)
+    bump("war_triple", game.side > 0 and war_won)
+    if win_run:
+        delta.peak["war_win_streak_max"] = win_run
+    if lose_run:
+        delta.peak["war_lose_streak_max"] = lose_run
+    if tie_run:
+        delta.peak["war_tie_streak_max"] = tie_run
+    if game.net > 0:
+        delta.peak["war_win_max"] = game.net
+    bump("war_max_stake", game.stake >= BJ_HIGH_STAKE)
+    bump("war_ace_ace", mine == WAR_ACE_VALUE and theirs == WAR_ACE_VALUE)
+    bump("war_king_lost", result is WarResult.LOSE and mine == 13 and theirs == WAR_ACE_VALUE)
+    bump("war_tie_two", game.tied and mine == 2)
+    bump("war_win_two", war_won and war_rank(game.player[1]) == 2)
+    bump("war_surrender_ace", result is WarResult.SURRENDER and mine == WAR_ACE_VALUE)
+    bump("war_surrender_one", result is WarResult.SURRENDER and game.stake == 1)
+    for exact in (777, 666, 69):
+        bump(f"war_cash_{exact}", game.total_return == exact)
+    bump(f"war_win_rank_{mine}", result is WarResult.WIN)
+    bump(f"war_tie_rank_{mine}", game.tied)
+    return delta
+
+
 def chicken_stats(game: ChickenGame, *, vehicle: str | None = None) -> StatDelta:
     """Contadores de una partida del Pollo terminada (sin lo común del casino).
 
@@ -14555,6 +15714,9 @@ def gallos_stats(
     crowd_pool: int,
     rake: int,
     when: datetime,
+    power: float = 0.0,
+    died: RoosterRecord | None = None,
+    killed: bool = False,
 ) -> StatDelta:
     """Contadores de una pelea de gallos para uno de los dos dueños (sin lo común del casino).
 
@@ -14562,15 +15724,18 @@ def gallos_stats(
         fight: La pelea.
         corner: La esquina de este dueño.
         rival: Clave del gallo de la casa (`gallos.HOUSE`), o `None` en un duelo.
-        chance: Probabilidad que tenía de ganar.
+        chance: Probabilidad real que tenía de ganar (con sus stats).
         stake: Lo apostado.
         net: Ganado menos apostado.
-        record: La ficha de su gallo tras la pelea.
+        record: La ficha de su gallo tras la pelea (antes de enterrarlo, si muere).
         skin: Clave de la skin con la que peleó (`serie` si ninguna).
         paid_skin: Si esa skin es de las de la tienda (ni de serie ni gratis).
         crowd_pool: Lo que apostó el público en el duelo (0 contra la casa).
         rake: Comisión de la casa que se ha dejado (0 contra la casa).
         when: Hora local.
+        power: Poder de su gallo en la pelea (0 a 100).
+        died: La ficha de su gallo si ha muerto en esta pelea.
+        killed: Si en este duelo ha matado al gallo del otro.
     """
     won = fight.winner is corner
     mine = corner
@@ -14602,6 +15767,9 @@ def gallos_stats(
         bump("gallos_close_win", fight.hp(mine) <= 10)
         bump("gallos_blitz", fight.finish is GallosFinish.KO and fight.rounds == 1)
         bump("gallos_paid_skin_win", paid_skin)
+        # Con un gallo nuevo justo tras perder al anterior: la primera pelea de la ficha.
+        bump("gallos_phoenix", record.fights == 1 and record.deaths > 0)
+        bump("gallos_upset", rival is not None and chance < GALLOS_UPSET_CHANCE)
         if net > 0:
             delta.peak["gallos_win_max"] = net
     else:
@@ -14611,6 +15779,7 @@ def gallos_stats(
         bump("gallos_friday13", when.weekday() == 4 and when.day == 13)
     if rival is not None:
         bump(f"{GALLOS_BEAT_PREFIX}{rival}", won)
+        bump(f"{GALLOS_TRAINED_BEAT_PREFIX}{rival}", won and power >= GALLOS_TRAINED_POWER)
         bump("gallos_temu_loss", not won and rival == "temu")
     else:
         bump("gallos_duels")
@@ -14629,6 +15798,37 @@ def gallos_stats(
     bump("gallos_night", 2 <= when.hour < 6)
     bump("gallos_dawn", 6 <= when.hour < 8)
     bump("gallos_nochevieja", when.month == 12 and when.day == 31)
+    if died is not None:
+        bump("gallos_deaths")
+        bump("gallos_death_veteran", died.wins >= GALLOS_VETERAN_WINS)
+        bump("gallos_death_debut", died.fights == 1)
+    bump("gallos_kills", killed)
+    return delta
+
+
+def gallos_train_stats(
+    *, record: RoosterRecord, paid: int, today: int, when: datetime
+) -> StatDelta:
+    """Contadores de un entrenamiento de gallos (se apuntan después de enseñar el resultado).
+
+    Args:
+        record: La ficha del gallo tras entrenar.
+        paid: Lo que ha costado, IGIC incluido.
+        today: Entrenamientos que lleva el dueño hoy, este incluido.
+        when: Hora local.
+    """
+    delta = StatDelta(
+        add={"gallos_trains": 1, "gallos_train_spent": paid},
+        peak={
+            "gallos_strength_max": record.strength,
+            "gallos_speed_max": record.speed,
+            "gallos_endurance_max": record.endurance,
+            "gallos_power_max": int(record.power),
+            "gallos_trains_day_max": today,
+        },
+    )
+    if 2 <= when.hour < 6:
+        delta.add["gallos_train_dawn"] = 1
     return delta
 
 
@@ -15072,6 +16272,58 @@ def craps_stats(game: CrapsGame, hand: Hand, *, when: datetime) -> StatDelta:
     return delta
 
 
+def craps_table_stats(
+    game: CrapsGame,
+    *,
+    players: int,
+    shooter: bool,
+    shooter_bet: CrapsBet | None,
+    hand_points: int,
+    others_won: int,
+    others_lost: int,
+) -> StatDelta:
+    """Contadores de una partida terminada en la mesa compartida (`dados mesa`).
+
+    Se suman a los de `craps_stats` (la partida es la misma que en la individual).
+
+    Args:
+        game: La partida del jugador, terminada.
+        players: Jugadores con apuesta en la ronda, él incluido.
+        shooter: Si él llevaba los dados.
+        shooter_bet: A qué apostaba el tirador (`None` si no apostaba).
+        hand_points: Puntos de la mano del tirador (solo cuenta si `shooter`).
+        others_won: Cuántos de los demás ganaron.
+        others_lost: Cuántos de los demás perdieron (los empates no cuentan).
+    """
+    won = game.status is CrapsStatus.WON
+    lost = game.status is CrapsStatus.LOST
+    others = players - 1
+    delta = StatDelta(
+        add={"dice_table_rolls": len(game.rolls)},
+        peak={"dice_table_players_max": players},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            add[stat] = add.get(stat, 0) + 1
+
+    bump("dice_shooter", shooter)
+    if shooter and players >= 2 and hand_points:
+        delta.peak["dice_public_points_max"] = hand_points
+    bump("dice_table_alone", won and others >= 2 and others_lost == others)
+    bump("dice_table_shooter_wins", won and not shooter)
+    bump(
+        "dice_table_vs_shooter",
+        won and not shooter and game.bet is CrapsBet.DONT and shooter_bet is CrapsBet.PASS,
+    )
+    bump("dice_table_lonely", players == 1)
+    bump("dice_table_boxcars", shooter and players >= 3 and game.rolls[0].total == 12)
+    bump("dice_table_wipeout", lost and players >= 4 and others_lost == others)
+    bump("dice_table_unanimous", won and players >= 3 and others_won == others)
+    return delta
+
+
 def shop_stats(
     *,
     kind: str,
@@ -15206,6 +16458,50 @@ def shop_use_stats(
     bump("shop_use_canarias", (moment.month, moment.day) == (5, 30))
     bump("shop_use_pino", (moment.month, moment.day) == (9, 8))
     return delta
+
+
+def lootbox_stats(
+    *,
+    box: str,
+    rarity: str,
+    tapete: bool,
+    dupe: bool,
+    seasonal: bool,
+    collection: str | None,
+    owned: int,
+    when: float,
+) -> StatDelta:
+    """Estadísticas de quien abre una caja de `bot.services.lootboxes`.
+
+    Args:
+        box: Clave de la caja (`lootbox_box_<caja>` cuenta cada una).
+        rarity: Rareza de lo que ha salido (`Rarity.stat`: `common`…`mythic`).
+        tapete: Si ha salido un tapete (no cuenta como pieza Mítica).
+        dupe: Si ya tenía esa pieza.
+        seasonal: Si era una caja de temporada.
+        collection: Colección de la pieza, o `None` si fue un tapete.
+        owned: Piezas distintas que tiene ya de esa colección.
+        when: Momento de abrirla (epoch).
+    """
+    delta = StatDelta(add={"lootbox_opened": 1, f"{LOOTBOX_BOX_PREFIX}{box}": 1})
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            delta.add[stat] = delta.add.get(stat, 0) + 1
+
+    bump("lootbox_tapete", tapete)
+    bump(f"{LOOTBOX_RARITY_PREFIX}{rarity}", not tapete)
+    bump("lootbox_dupes", dupe)
+    bump("lootbox_season", seasonal)
+    if collection is not None:
+        delta.peak[f"lootbox_col_{collection}"] = owned
+    bump("lootbox_night", 3 <= datetime.fromtimestamp(when, TIMEZONE).hour < 6)
+    return delta
+
+
+def lootbox_free_stats(count: int = 1) -> StatDelta:
+    """Estadísticas de quien gana cajas gratis jugando (100 jugadas) o subiendo de nivel."""
+    return StatDelta(add={"lootbox_free": count})
 
 
 # -- Mascotas -------------------------------------------------------------------------
@@ -15624,6 +16920,56 @@ def housing_day_stats(
         stat = f"{PISOS_EVENT_PREFIX}{kind}"
         add[stat] = add.get(stat, 0) + 1
     return StatDelta(add=add)
+
+
+def donation_stats(
+    *, ong: str, amount: int, ongs_supported: int, balance_after: int, when: datetime
+) -> StatDelta:
+    """Estadísticas de un donativo a una ONG (`donar`).
+
+    Args:
+        ong: Clave de la ONG.
+        amount: Lo donado.
+        ongs_supported: ONGs distintas a las que ha donado el miembro.
+        balance_after: Saldo tras donar (0 si lo ha dado todo).
+    """
+    delta = StatDelta(
+        add={"donated": amount, "donations": 1, f"donated_{ong}": amount},
+        peak={"ongs_supported": ongs_supported},
+    )
+    for stat, hit in (
+        ("donation_one", amount == 1),
+        ("donation_allin", balance_after == 0),
+        ("donation_666", amount == 666),
+        ("donation_christmas", when.month == 12 and when.day in (24, 25)),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
+
+
+def market_swap_stats(
+    *, gave: int, got: int, money: int, proposer: bool, titles: bool, when: datetime
+) -> StatDelta:
+    """Estadísticas de un trueque, para cada una de las dos personas.
+
+    Args:
+        gave: Valor de referencia de lo que dio (más el dinero, si lo puso).
+        got: Valor de referencia de lo que recibió (más el dinero, si lo cobró).
+        money: Dinero que añadió quien propuso.
+        proposer: Si es quien lo propuso.
+        titles: Si se cambiaron dos títulos.
+    """
+    delta = StatDelta(add={"market_swaps": 1, **_sunday(when)})
+    for stat, hit in (
+        ("market_swap_money", int(proposer and money > 0)),
+        ("market_swap_lopsided", int(got >= 1_000 and got >= 10 * max(1, gave))),
+        ("market_swap_fleeced", int(gave >= 1_000 and gave >= 10 * max(1, got))),
+        ("market_swap_titles", int(titles)),
+    ):
+        if hit:
+            delta.add[stat] = hit
+    return delta
 
 
 def market_sale_stats(

@@ -7,6 +7,11 @@ Tabla (en el mismo archivo SQLite que el resto del bot):
   también el día, la hora y el día de la semana en hora canaria, porque SQLite
   no sabe de zonas horarias y agrupar por hora local es lo que más se consulta.
 
+- `casino_play_counts`: cuántas jugadas lleva cada miembro desde que existe esta tabla
+  (un contador persistente, no un `COUNT(*)` de lo anterior). Solo cuentan las de
+  `FREE_BOX_MIN_STAKE` o más; cada 100 el colmado le regala una caja de cartón
+  (`bot.services.lootboxes.FREE_BOX_PLAYS`).
+
 Solo se escribe desde `CasinoStatsRepository.record`, a la que llaman los
 juegos al terminar cada jugada (ver `bot.cogs.apuestas.record`). No mueve
 dinero: el dinero sigue pasando únicamente por `EconomyService`. Por eso,
@@ -41,6 +46,7 @@ from bot.services.casino_stats import (
     Totals,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import FREE_BOX_MIN_STAKE
 
 T = TypeVar("T")
 
@@ -160,6 +166,12 @@ class CasinoStatsRepository:
                     hour INTEGER NOT NULL,
                     weekday INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS casino_play_counts (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    plays INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id)
+                );
                 CREATE INDEX IF NOT EXISTS casino_plays_guild_time
                     ON casino_plays (guild_id, created_at);
                 CREATE INDEX IF NOT EXISTS casino_plays_member_time
@@ -167,17 +179,20 @@ class CasinoStatsRepository:
                 """
             )
 
-    async def record(self, guild_id: int, user_id: int, play: Play, *, now: float) -> None:
-        """Apunta una jugada terminada.
+    async def record(self, guild_id: int, user_id: int, play: Play, *, now: float) -> int | None:
+        """Apunta una jugada terminada y devuelve las que lleva el miembro (contador persistente).
+
+        Devuelve `None` si la jugada no llega a `FREE_BOX_MIN_STAKE` y no suma al
+        contador (sí queda en `casino_plays`).
 
         Raises:
             ValueError: Si la apuesta o el premio son negativos.
         """
         if play.stake < 0 or play.payout < 0:
             raise ValueError("Jugada inválida: apuesta y premio no pueden ser negativos.")
-        await self._run(self._record_sync, guild_id, user_id, play, now)
+        return await self._run(self._record_sync, guild_id, user_id, play, now)
 
-    def _record_sync(self, guild_id: int, user_id: int, play: Play, now: float) -> None:
+    def _record_sync(self, guild_id: int, user_id: int, play: Play, now: float) -> int | None:
         local = datetime.fromtimestamp(now, TIMEZONE)
         with self._connect() as connection:
             connection.execute(
@@ -201,6 +216,20 @@ class CasinoStatsRepository:
                     local.weekday(),
                 ),
             )
+            if play.stake < FREE_BOX_MIN_STAKE:
+                return None
+            connection.execute(
+                """
+                INSERT INTO casino_play_counts (guild_id, user_id, plays) VALUES (?, ?, 1)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET plays = plays + 1
+                """,
+                (guild_id, user_id),
+            )
+            (plays,) = connection.execute(
+                "SELECT plays FROM casino_play_counts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+        return int(plays)
 
     async def report(
         self, guild_id: int, user_id: int | None, *, since: float | None, today: date
@@ -402,3 +431,4 @@ class CasinoStatsRepository:
     def _delete_guild_data_sync(self, guild_id: int) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM casino_plays WHERE guild_id = ?", (guild_id,))
+            connection.execute("DELETE FROM casino_play_counts WHERE guild_id = ?", (guild_id,))

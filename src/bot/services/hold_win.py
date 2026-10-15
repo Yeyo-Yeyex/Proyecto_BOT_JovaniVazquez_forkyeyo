@@ -2,7 +2,8 @@
 
 Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.hold_win`) cobra, paga y
 guarda; el dibujo vive en `bot.services.hold_win_render`. De momento hay una
-máquina, el Volcán (`volcan`). Las que se añadan a `THEMES` comparten estas
+máquinas: el Volcán, la Mina y el Olimpo (`tragas volcan`, `tragas mina`, `tragas
+olimpo`). Las que se añadan a `THEMES` comparten estas
 reglas y estos números y solo cambian los dibujos y los textos, así que un solo
 juego de pruebas garantiza el retorno de todas.
 
@@ -865,6 +866,7 @@ class Theme:
         symbols: Emoji y nombre de los símbolos normales, de menos a más valor.
         wild, collect: Emoji y nombre del comodín y del recogedor.
         bonus_names: Nombre de cada bonus (`BonusKind`).
+        article: Artículo del nombre en minúscula (`el Volcán`, `la Mina`).
     """
 
     key: str
@@ -874,6 +876,22 @@ class Theme:
     wild: tuple[str, str]
     collect: tuple[str, str]
     bonus_names: dict[str, str]
+    article: str = "el"
+
+    @property
+    def named(self) -> str:
+        """El nombre con su artículo, para frases: `el Volcán`, `la Mina`."""
+        return f"{self.article} {self.title}"
+
+    @property
+    def of_named(self) -> str:
+        """`del Volcán`, `de la Mina`."""
+        return f"del {self.title}" if self.article == "el" else f"de {self.named}"
+
+    @property
+    def sentence_named(self) -> str:
+        """`El Volcán`, `La Mina`, para empezar una frase."""
+        return f"{self.article.capitalize()} {self.title}"
 
 
 THEMES: dict[str, Theme] = {
@@ -898,6 +916,49 @@ THEMES: dict[str, Theme] = {
                 BonusKind.BLUE: "Magma",
                 BonusKind.RED: "Lava",
                 BonusKind.GRAND: "¡ERUPCIÓN!",
+            },
+        ),
+        Theme(
+            key="mina",
+            title="Mina",
+            emoji="🪨",
+            symbols=(
+                ("⛏️", "Pico"),
+                ("🔦", "Lámpara de minero"),
+                ("🛒", "Carretilla"),
+                ("🧨", "Dinamita"),
+                ("🪙", "Pepita de oro"),
+                ("🥇", "Lingote"),
+            ),
+            wild=("💎", "Diamante en bruto"),
+            collect=("🚃", "Vagoneta de oro"),
+            bonus_names={
+                BonusKind.GREEN: "Cobre",
+                BonusKind.BLUE: "Plata",
+                BonusKind.RED: "Oro",
+                BonusKind.GRAND: "¡FILÓN!",
+            },
+            article="la",
+        ),
+        Theme(
+            key="olimpo",
+            title="Olimpo",
+            emoji="⚡",
+            symbols=(
+                ("🏺", "Ánfora"),
+                ("🎵", "Lira"),
+                ("🪖", "Casco"),
+                ("🌿", "Laurel"),
+                ("🔱", "Tridente"),
+                ("🦅", "Águila"),
+            ),
+            wild=("⚡", "Rayo de Zeus"),
+            collect=("🧔", "Zeus"),
+            bonus_names={
+                BonusKind.GREEN: "Bronce",
+                BonusKind.BLUE: "Plata",
+                BonusKind.RED: "Oro",
+                BonusKind.GRAND: "¡IRA DE ZEUS!",
             },
         ),
     )

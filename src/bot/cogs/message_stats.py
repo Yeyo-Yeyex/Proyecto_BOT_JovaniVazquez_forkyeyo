@@ -40,6 +40,7 @@ from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.repositories.message_stats import ImportStatus, LevelAward, MessageStatsRepository
 from bot.services.achievements import StatDelta
+from bot.services.birthdays import anniversary_xp
 from bot.services.economy import (
     CURRENCY_EMOJI,
     BalanceLimitError,
@@ -64,6 +65,7 @@ from bot.services.levels import (
     streak_multiplier,
     voice_award,
 )
+from bot.services.lootboxes import FREE_BOX_LEVELS
 from bot.services.pets import Event, Moment
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -188,6 +190,20 @@ LEVEL_LINES = (
 )
 
 IMPORT_DONE_LINES = (
+    "Me he leído {mensajes} mensajes de {canales} canales sin pedir el indulto, como Bibi. "
+    "Niveles encendidos: cada mensaje y cada rato en voz suma.",
+    "Contados {mensajes} mensajes en {canales} canales. Ni un groyper se lee tanto chat en su "
+    "sótano. `.ranking` y a presumir.",
+    "Hecho: {mensajes} mensajes de {canales} canales, archivados mejor que el NO-DO. Los "
+    "niveles ya cuentan; `.perfil` para ver el tuyo.",
+    "{mensajes} mensajes en {canales} canales: más horas de lectura que un discurso de Fidel. "
+    "Niveles encendidos; `.ranking` para ver quién manda.",
+    "Leídos {mensajes} mensajes de {canales} canales. Más papeles que los archivos Epstein, y "
+    "estos sin tachar. Niveles encendidos: `.ranking` y a presumir.",
+    "{mensajes} mensajes en {canales} canales, contados uno a uno como los votos de la "
+    "Knesset. Cada mensaje suma XP desde ya; mirad `.perfil`.",
+    "Recuento terminado: {mensajes} mensajes en {canales} canales. Ni el CIS de Tezanos "
+    "cuenta tan rápido. Niveles encendidos, y cada nivel paga yapdollars.",
     "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. Mirad "
     "dónde estáis con `.perfil` y `.ranking`, mi gente.",
     "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están encendidos; "
@@ -239,9 +255,11 @@ class MessageStats(commands.Cog):
         now = time.time()
         # Los potenciadores de la tienda multiplican el XP base (ver bot.cogs.shop), y
         # la mascota activa suma su pequeño bonus encima (ver bot.cogs.pets).
-        boost = tienda.xp_multiplier(
-            self.bot, guild_id, message.author.id, now
-        ) * mascotas.xp_bonus(self.bot, guild_id, message.author.id, voice=False)
+        boost = (
+            tienda.xp_multiplier(self.bot, guild_id, message.author.id, now)
+            * mascotas.xp_bonus(self.bot, guild_id, message.author.id, voice=False)
+            * anniversary_xp(now)
+        )
         base_xp = round(random.randint(MIN_MESSAGE_XP, MAX_MESSAGE_XP) * boost)
 
         def decide(_user_id: int, state: MemberActivity, cooldown: int) -> MemberActivity | None:
@@ -335,6 +353,7 @@ class MessageStats(commands.Cog):
                 random.randint(MIN_VOICE_XP, MAX_VOICE_XP)
                 * tienda.xp_multiplier(self.bot, guild.id, member.id, now)
                 * mascotas.xp_bonus(self.bot, guild.id, member.id, voice=True)
+                * anniversary_xp(now)
             )
             for member in eligible
         }
@@ -362,8 +381,22 @@ class MessageStats(commands.Cog):
         if current_level <= previous_level:
             return
         reward = await self._pay_level_reward(guild, member, previous_level, current_level)
+        # Una caja de regalo cada FREE_BOX_LEVELS niveles (no mueve dinero: ver `lootboxes`).
+        gifts = current_level // FREE_BOX_LEVELS - previous_level // FREE_BOX_LEVELS
+        gift = None
+        if gifts > 0:
+            gift = await tienda.grant_box(
+                self.bot,
+                guild.id,
+                member.id,
+                "caja_regalo",
+                because=f"llegar al nivel {current_level}",
+                count=gifts,
+            )
         channel = self._announce_target(guild, award, channel)
-        await self._announce_level_up(guild, channel, member, current_level, reward=reward)
+        await self._announce_level_up(
+            guild, channel, member, current_level, reward=reward, gift=gift
+        )
         delta = StatDelta(peak={"level_max": current_level})
         if reward is not None:
             delta.add["tax_paid"] = reward.tax
@@ -678,8 +711,12 @@ class MessageStats(commands.Cog):
         level: int,
         *,
         reward: IncomeResult | None = None,
+        gift: str | None = None,
     ) -> None:
-        """Publica el aviso en el canal donde se ganó el nivel, con el premio cobrado."""
+        """Publica el aviso en el canal donde se ganó el nivel, con el premio cobrado.
+
+        `gift` es la línea de la caja de regalo que se gana cada 5 niveles, si toca.
+        """
         text = (
             f"¡{discord.utils.escape_markdown(member.display_name)} "
             f"ha alcanzado el nivel **{level}**! {random.choice(LEVEL_LINES)}"
@@ -689,6 +726,8 @@ class MessageStats(commands.Cog):
                 f" {CURRENCY_EMOJI} +{format_amount(reward.net)}\n"
                 f"{tax_line(reward.gross, reward.tax, reward.rate)}"
             )
+        if gift:
+            text += f"\n{gift}"
         if pet := await mascotas.cameo(self.bot, guild.id, member.id, Moment(Event.LEVEL)):
             text += f"\n{pet}"
         try:

@@ -211,8 +211,9 @@ PERFECT_SCORE = 100
 # -- Café ------------------------------------------------------------------------------
 
 MAX_COFFEES = 3
-#: Uno de cada tantos turnos trae un evento.
-EVENT_CHANCE = 1 / 6
+#: Uno de cada tantos turnos trae un evento. Era uno de cada 6 y casi no se veían:
+#: con pocos marrones por oficio en los primeros puestos, pasaban días sin ninguno.
+EVENT_CHANCE = 1 / 3
 
 # -- Guardias (sanidad) ----------------------------------------------------------------
 

@@ -25,7 +25,11 @@ Con `/apuestas` el panel es efímero; con `.apuestas` se ve en el canal.
 Apuntar jugadas: cada juego del casino llama a `record` (función puente de
 este módulo) al terminar una jugada, junto a `achievements.casino_play`. No
 mueve dinero ni lanza: si falla, se registra en el log y el juego sigue. La
-misma llamada cuenta la jugada para las porras (`bot.cogs.porras`).
+misma llamada cuenta la jugada para las porras (`bot.cogs.porras`) y para el contador
+persistente de jugadas de cada miembro (las de 100 Y$ o más): cada 100 se gana una
+📦 caja de cartón gratis
+(`bot.cogs.shop.grant_box`, sin mover dinero), cuyo aviso sale en el siguiente
+resultado con dinero.
 
 Logros: categoría 📊 Estadísticas del grupo 🎰 Casino (`apuestas_stats`).
 No necesita permisos especiales ni intents.
@@ -75,6 +79,7 @@ from bot.services.casino_stats import (
 )
 from bot.services.economy import EconomyService, day_bounds, format_amount
 from bot.services.levels import TIMEZONE, local_day
+from bot.services.lootboxes import FREE_BOX_PLAYS
 from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
@@ -733,9 +738,14 @@ class Apuestas(commands.Cog):
         self.economy = economy
         self._clock = clock
 
-    async def record_play(self, guild_id: int, user_id: int, play: Play) -> None:
-        """Apunta una jugada terminada (ver la función puente `record`)."""
-        await self.repository.record(guild_id, user_id, play, now=self._clock())
+    async def record_play(self, guild_id: int, user_id: int, play: Play) -> int | None:
+        """Apunta una jugada terminada (ver la función puente `record`).
+
+        Returns:
+            Las jugadas que lleva el miembro (contador persistente), o `None` si esta
+            no llega a la apuesta mínima y no cuenta.
+        """
+        return await self.repository.record(guild_id, user_id, play, now=self._clock())
 
     async def report(self, guild_id: int, user_id: int | None, period: Period) -> Report:
         """Cifras de un ámbito y un periodo, con el libro de la economía."""
@@ -886,9 +896,19 @@ async def record(
     if cog is None:
         return
     try:
-        await cog.record_play(guild_id, user.id, play)
+        plays = await cog.record_play(guild_id, user.id, play)
     except Exception:
         logger.exception("No se pudo apuntar la jugada de %s en %s", user.id, game)
+        return
+    if plays is not None and plays % FREE_BOX_PLAYS == 0:
+        # Una caja de cartón gratis cada 100 jugadas. Import tardío: `shop` importa
+        # medio bot. El aviso sale en el siguiente resultado con dinero (`renta.hint`),
+        # porque la jugada ya se ha enseñado cuando llega `record`.
+        from bot.cogs import shop as tienda
+
+        await tienda.grant_box(
+            bot, guild_id, user.id, "caja_carton", because=f"tus {plays} jugadas", pending=True
+        )
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

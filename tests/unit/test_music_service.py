@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from bot.services.music import (
@@ -32,7 +34,9 @@ def make_track(title: str = "Canción de prueba") -> Track:
 
 class TestTrackIsStale:
     def test_una_pista_recien_resuelta_no_esta_caducada(self) -> None:
-        track = make_track()
+        # Un `resolved_at` exacto: con el de `monotonic`, sumar y restar el plazo en
+        # coma flotante a veces se pasa por una millonésima y la prueba fallaba al azar.
+        track = replace(make_track(), resolved_at=1_000.0)
 
         assert not track.is_stale(now=track.resolved_at + STREAM_TTL_SECONDS)
 

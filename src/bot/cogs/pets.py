@@ -3,8 +3,9 @@
 - `mascota [miembro]` abre el panel de mascotas de alguien. Su dueño elige
   cuál ver, la acaricia, juega con ella, le da de comer lo que tenga en la
   mochila, le pone nombre y elige cuál le acompaña (la **activa**). Los
-  demás solo miran. Reglas en `bot.services.pets`; especies en
-  `bot.services.pets_catalog`.
+  demás solo miran. Dos atajos abren la tienda en privado: 🐾 Adoptar (la
+  pestaña de mascotas) y 🥣 Comida (la Tienda de animales). Reglas en
+  `bot.services.pets`; especies en `bot.services.pets_catalog`.
 - Las mascotas se adoptan en la `tienda` (pestaña 🐾 Mascotas) o aparecen
   solas cuando se da su momento (te quedas a cero, cobras el IMV…).
 
@@ -51,6 +52,7 @@ from bot.services.achievements import (
     pet_switch_stats,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import is_piece
 from bot.services.pets import (
     BOND_LEVELS,
     CARE_RULES,
@@ -89,6 +91,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 COLOR = discord.Color.from_rgb(240, 160, 200)
+#: Pasillo de la tienda con la comida y las cosas de las mascotas (atajo 🥣 Comida).
+FOOD_AISLE = "animales"
 VIEW_TIMEOUT = 600
 #: Opciones de un desplegable de Discord.
 SELECT_LIMIT = 25
@@ -216,7 +220,13 @@ class PetPanel(ui.LayoutView):
         return next((p for p in self.pets if p.id == self.selected), None)
 
     async def load(self) -> None:
-        """Lee las mascotas y el dueño, y elige qué mascota enseñar."""
+        """Lee las mascotas y el dueño, y elige qué mascota enseñar.
+
+        No rehace los botones: eso lo hace `rebuild` justo antes de enseñar el
+        panel. Si un cuidado se rechaza (pide un respiro, la comida ya no está),
+        el mensaje no se edita, y unos botones rehechos sin editar dejarían a
+        discord.py apuntando a los viejos: tiraría todos los clics siguientes.
+        """
         self.pets = [
             p
             for p in await self.cog.repository.pets(self.guild.id, self.member.id)
@@ -230,7 +240,6 @@ class PetPanel(ui.LayoutView):
                 if self.owner.active_id in ids
                 else (self.pets[0].id if self.pets else None)
             )
-        self.rebuild()
 
     def rebuild(self) -> None:
         self.clear_items()
@@ -323,6 +332,16 @@ class PetPanel(ui.LayoutView):
             extra.add_item(
                 _button("Ponerle nombre", self._rename, custom_id="mascota:nombre", emoji="✏️")
             )
+            extra.add_item(
+                _button(
+                    "Adoptar", self._shop(None, "mascota"), custom_id="mascota:adoptar", emoji="🐾"
+                )
+            )
+            extra.add_item(
+                _button(
+                    "Comida", self._shop(FOOD_AISLE, "todo"), custom_id="mascota:comida", emoji="🥣"
+                )
+            )
             self.add_item(extra)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -342,6 +361,21 @@ class PetPanel(ui.LayoutView):
 
         return callback
 
+    def _shop(
+        self, aisle: str | None, tab: str
+    ) -> Callable[[discord.Interaction], Awaitable[None]]:
+        """Atajo a la tienda en privado, en el pasillo y la pestaña de las mascotas."""
+
+        async def callback(interaction: discord.Interaction) -> None:
+            # Importado aquí: la tienda ya importa este módulo para sus mascotas.
+            from bot.cogs import shop as tienda
+
+            await ack(interaction, new_message=True)
+            if not await tienda.open_aisle(self.cog.bot, interaction, aisle, tab=tab):
+                await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+
+        return callback
+
     async def _activate(self, interaction: discord.Interaction) -> None:
         await self.cog.activate(interaction, self)
 
@@ -353,12 +387,20 @@ class PetPanel(ui.LayoutView):
         await interaction.response.send_modal(RenameForm(self.cog, self, state))
 
     async def refresh(self, interaction: discord.Interaction | None = None) -> None:
-        """Vuelve a leer y a pintar el panel (desde un botón o desde otra vista)."""
+        """Vuelve a leer y a pintar el panel (desde un botón o desde otra vista).
+
+        Args:
+            interaction: El clic en un botón del propio panel. Su token sirve 15
+                minutos para editar el mensaje, así que se guarda: el desplegable
+                de comida, que es otro mensaje, repinta el panel con el último.
+        """
         await self.load()
+        self.rebuild()
         mentions = discord.AllowedMentions.none()
         try:
             if interaction is not None:
                 await edit(interaction, view=self, allowed_mentions=mentions)
+                self.interaction = interaction
             elif self.interaction is not None:
                 await self.interaction.edit_original_response(view=self, allowed_mentions=mentions)
             elif self.message is not None:
@@ -615,6 +657,7 @@ class Mascotas(commands.Cog):
         """Panel de mascotas de `member` visto por `viewer`, listo para enviar."""
         view = PetPanel(self, guild, member, viewer)
         await view.load()
+        view.rebuild()
         return view
 
     async def care(
@@ -750,6 +793,7 @@ class Mascotas(commands.Cog):
             and use_of(item.catalog_key) is None
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
+            and not is_piece(item.catalog_key)
         ]
         if not candidates:
             return None

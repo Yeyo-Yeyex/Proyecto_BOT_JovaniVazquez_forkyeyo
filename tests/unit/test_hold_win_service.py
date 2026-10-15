@@ -308,7 +308,7 @@ def test_los_modificadores_desaparecen_en_la_tirada_siguiente() -> None:
 
 
 def test_cada_maquina_tiene_seis_simbolos_y_sus_bonus() -> None:
-    assert set(THEMES) == {"volcan"}
+    assert set(THEMES) == {"volcan", "mina", "olimpo"}
     for theme in THEMES.values():
         assert len(theme.symbols) == len(WAYS_PAYS)
         assert set(theme.bonus_names) == set(BonusKind.ALL)

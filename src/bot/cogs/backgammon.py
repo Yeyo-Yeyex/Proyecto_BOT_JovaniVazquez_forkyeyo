@@ -203,6 +203,9 @@ JOVANI_HIT = (
     "«Me la has birlado como un fondo Next Generation.»",
     "«Sofía, cállate, que me desconcentro.»",
     "«Estoy destruido, pero por dentro estoy nuevo.»",
+    "«Me la has interceptado mejor que la Cúpula de Hierro.»",
+    "«Esto lo veo en la Knesset y me echan de la coalición.»",
+    "«Me la comes y te llevas los puros y el champán, como Bibi.»",
 )
 #: Lo que dice cuando saca dobles.
 JOVANI_DOUBLES = (
@@ -211,6 +214,8 @@ JOVANI_DOUBLES = (
     "«Doble ración, como el café: ¡quiero café!»",
     "«Dobles, papi. Esto ya es mayoría absoluta.»",
     "«¡Wepa! Dobles y para casa.»",
+    "«¡Dobles! Más repetido que Bibi de primer ministro.»",
+    "«¡Dobles! Lo celebra el ejército de ranas de Nick Fuentes.»",
 )
 #: Lo que dice cuando no puede mover.
 JOVANI_STUCK = (
@@ -230,6 +235,9 @@ JOVANI_CHATTER = (
     "«Yo soy yo… y así me tienes que soportar.»",
     "«Lagartijo, iguana, lagarto… y ficha al seis.»",
     "«Y Víctor le dijo a Joel: móntate en mi ficha.»",
+    "«Muevo más ficha que Bibi para no ir al juzgado.»",
+    "«America First, y tus fichas, las últimas. Lo dice un groyper.»",
+    "«Esta ficha la tengo asegurada como el escaño de Bibi.»",
 )
 WIN_LINES = (
     "¡Le ganas a Jovani!",
@@ -237,6 +245,7 @@ WIN_LINES = (
     "¡Toma mangó!",
     "¡Victoria por mayoría absoluta!",
     "¡Jovani pide recuento de pips!",
+    "¡Jovani pide el indulto, como Bibi!",
     "¡Wepa! ¡Fichas fuera y para casa!",
 )
 GAMMON_LINES = (
@@ -255,6 +264,7 @@ LOSE_LINES = (
     "¡Ay, bendito!",
     "¡Jovani gobierna con mayoría absoluta!",
     "¡Te ha dejado más atrás que el AVE a Extremadura!",
+    "¡Jovani dura más en el cargo que Bibi!",
 )
 RESIGN_LINES = (
     "Dimisión irrevocable, como las de antes.",
@@ -283,6 +293,7 @@ WAITING_LINES = (
     "🎲 Los dados ruedan…",
     "⚪ Las fichas vuelan…",
     "👀 Todo el barrio mirando el tablero…",
+    "🐸 Una rana groyper apoya la barbilla y mira…",
     "🎙️ El NO-DO ya tiene escrito el final…",
 )
 

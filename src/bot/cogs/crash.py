@@ -128,8 +128,9 @@ CASH_LINES = (
     "¡Saltaste a tiempo!",
     "¡Eso es, cobras!",
     "¡Wepa!",
-    "¡Qué olfato!",
+    "¡Olfato de piloto!",
     "¡Saltas del Falcon en marcha!",
+    "¡Te bajas antes que Bibi de una comparecencia!",
     "¡Te bajas antes que Biden!",
     "¡Paracaídas dorado de consejero!",
     "¡Te bajas como Boris del Gobierno!",
@@ -145,6 +146,8 @@ BOOM_LINES = (
     "¡Pinchazo de la burbuja!",
     "¡Lehman Brothers!",
     "¡Brexit!",
+    "¡Ni la Cúpula de Hierro lo intercepta!",
+    "¡Cohete groyper: despega en un sótano y aterriza en el baneo!",
 )
 
 

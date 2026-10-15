@@ -18,6 +18,7 @@ siguiente: el panel nunca se queda sin imagen.
 from __future__ import annotations
 
 import asyncio
+import io
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,19 @@ from bot.services.node_scene import NodeScene, patch_png
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "pisos" / "escena.html"
 
 __all__ = ["H", "SCENE", "W", "HousingScene"]
+
+#: Nivel de compresión del PNG de Node. Con las ilustraciones, el 6 de `patch_png` tarda un 35 %
+#: más que el 3 (~24 frente a ~17 ms por pantalla) y solo ahorra un 3-8 % de peso (~260 KB).
+PNG_LEVEL = 3
+
+
+def _png(patch: dict[str, Any]) -> bytes:
+    """El PNG de una pantalla: los píxeles de Node se comprimen con `PNG_LEVEL`."""
+    if "image" not in patch:
+        return patch_png(patch)
+    buffer = io.BytesIO()
+    patch["image"].save(buffer, format="PNG", compress_level=PNG_LEVEL)
+    return buffer.getvalue()
 
 
 class HousingScene:
@@ -75,7 +89,7 @@ class HousingScene:
             patches = await self.browser.render(meta, states)
         if patches is None:
             return [await asyncio.to_thread(self.fallback.paint, state) for state in states]
-        return [await asyncio.to_thread(patch_png, patch) for patch in patches]
+        return [await asyncio.to_thread(_png, patch) for patch in patches]
 
     async def still(self, state: dict[str, Any]) -> bytes:
         """PNG de una sola pantalla."""

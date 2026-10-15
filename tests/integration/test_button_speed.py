@@ -32,10 +32,12 @@ from render_fakes import use_fake_drawings
 
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
+from bot.cogs.craps_mesa import FichaModal
 from bot.services.blackjack import BlackjackGame, Card
 from bot.services.coin import Outcome, Side
 from bot.services.craps import Bet
 from bot.services.todo import Priority
+from bot.services.war import WarGame
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -277,6 +279,19 @@ async def press_gallos_fight(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_gallos_train(client: BotClient, owner: MagicMock) -> Click:
+    cog, module = gallos_cog(client)
+    panel = module.HousePanel(cog, guild_id=GUILD_ID, owner=owner, stake=10)
+    panel.record = module.RoosterRecord(name="Kiki")
+    panel.training = True
+    panel.rebuild()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._train(interaction, module.Stat.STRENGTH)
+
+    return click
+
+
 async def press_gallos_accept(client: BotClient, owner: MagicMock) -> Click:
     cog, module = gallos_cog(client)
     rival = make_owner()
@@ -436,6 +451,56 @@ async def press_bus_cash_out(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def tower_board(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Torre de Fácil con 10 Y$ y un dragón en la puerta 0 de cada piso."""
+    module = module_of(client, "Torre")
+    board = module.TowerBoard(
+        client.get_cog("Torre"),
+        guild_id=GUILD_ID,
+        owner=owner,
+        stake=10,
+        difficulty=module.Difficulty.EASY,
+    )
+    return board
+
+
+async def press_tower_again(client: BotClient, owner: MagicMock) -> Click:
+    board = tower_board(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._again(interaction)
+
+    return click
+
+
+async def started_tower(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Torre con la apuesta ya cobrada (antes de medir) y el primer piso subido."""
+    board = tower_board(client, owner)
+    assert await board.start() is None
+    assert board.game is not None
+    board.game.dragons = tuple(frozenset({0}) for _ in board.game.dragons)
+    board.game.climb(1)
+    return board
+
+
+async def press_tower_cash_out(client: BotClient, owner: MagicMock) -> Click:
+    board = await started_tower(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._cash_out(interaction)
+
+    return click
+
+
+async def press_tower_burn(client: BotClient, owner: MagicMock) -> Click:
+    board = await started_tower(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._climb(interaction, 0)
+
+    return click
+
+
 def poker_table(client: BotClient):  # noqa: ANN201
     """Mesa del póker del canal con dibujo falso, sin esperas y sin bucle propio."""
     cog = client.get_cog("Póker")
@@ -577,6 +642,80 @@ async def press_dice_odds_max(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def dice_table(client: BotClient, owner: MagicMock, *rolls: tuple[int, int]):  # noqa: ANN201
+    """Mesa compartida de los dados del bot real, con dibujo falso, sin esperas y azar de guion."""
+    cog = client.get_cog("Dados")
+    module = module_of(client, "Dados")
+    cog.renderer = MagicMock()
+    cog.renderer.throw = AsyncMock(
+        return_value=module.Media(gif=b"GIF", png=b"PNG", seconds=0.0, rest=module.OPENING_REST)
+    )
+    cog.renderer.board = AsyncMock(return_value=b"PNG")
+    cog.rng = DiceScripted(*rolls)
+    cog.ahead = False
+
+    async def no_wait(seconds: float) -> None:
+        return None
+
+    cog.sleep = no_wait
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 7
+    table = module.CrapsTable(cog, guild_id=GUILD_ID, channel=channel, png=b"PNG")
+    table.open_round()
+    return table
+
+
+async def press_dice_table_bet(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.bet_callback(Bet.DONT)(interaction)
+
+    return click
+
+
+async def press_dice_table_repeat(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+    table.cog.last_bets[(GUILD_ID, OWNER_ID)] = (Bet.PASS, 10)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.repeat(interaction)
+
+    return click
+
+
+async def press_dice_table_double(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await table.double(interaction)
+
+    return click
+
+
+async def press_dice_table_odds(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner, (1, 5))
+    # El punto ya puesto (la apuesta cobrada antes de medir).
+    table.place(owner, Bet.PASS, 10)
+    await table.roll()
+
+    async def click(interaction: MagicMock) -> None:
+        await table.odds(interaction)
+
+    return click
+
+
+async def press_dice_table_modal(client: BotClient, owner: MagicMock) -> Click:
+    table = dice_table(client, owner)
+    modal = FichaModal(table)
+    modal.amount._value = "50"  # lo que Discord rellena al enviar
+
+    async def click(interaction: MagicMock) -> None:
+        await modal.on_submit(interaction)
+
+    return click
+
+
 async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     module = module_of(client, "Casino")
     module.REVEAL_MARGIN_SECONDS = 0  # el doble del dibujo ya dice que la rueda gira en 0 s
@@ -610,6 +749,46 @@ async def press_blackjack_insurance(client: BotClient, owner: MagicMock) -> Clic
 
     async def click(interaction: MagicMock) -> None:
         await table.insure(interaction, take=True)
+
+    return click
+
+
+def war_table(client: BotClient, owner: MagicMock, *, tied: bool):  # noqa: ANN201
+    """Mesa de la Guerra con ficha de 2; si `tied`, con un empate por decidir."""
+    module = module_of(client, "Guerra")
+    module.REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
+    client.get_cog("Guerra").ahead = False  # sin pintar por adelantado: no es lo que se mide
+    table = module.WarTable(client.get_cog("Guerra"), guild_id=GUILD_ID, owner=owner, stake=2)
+    if tied:
+        table.game = WarGame(stake=2, shoe=[Card(7, 0)] * 6 + [Card(9, 1), Card(9, 0)])
+        table.game.deal()
+        table._paid = False
+    return table
+
+
+async def press_war_deal(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=False)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._deal_again(interaction)
+
+    return click
+
+
+async def press_war_war(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=True)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._war(interaction)
+
+    return click
+
+
+async def press_war_surrender(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=True)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._surrender(interaction)
 
     return click
 
@@ -728,6 +907,17 @@ async def press_pala_gift_shop(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pets_food_shop(client: BotClient, owner: MagicMock) -> Click:
+    await client.pets.initialize()
+    panel = await client.get_cog("Mascotas").panel(owner.guild, owner, owner)
+    callback = panel._shop("animales", "todo")
+
+    async def click(interaction: MagicMock) -> None:
+        await callback(interaction)
+
+    return click
+
+
 async def press_pala_buy_gift(client: BotClient, owner: MagicMock) -> Click:
     panel = await obra_panel(client, owner)
 
@@ -768,6 +958,22 @@ async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await tienda.open_checkout(interaction, item.id)
+
+    return click
+
+
+async def press_open_lootbox(client: BotClient, owner: MagicMock) -> Click:
+    """Abrir una caja desde la mochila: el clic se acepta antes de gastarla y sortearla."""
+    tienda = client.get_cog("Tienda")
+    tienda.lootbox_pause = 0  # sin esperar entre fotogramas
+    await tienda.stock_up(GUILD_ID)
+    box = await client.shop.item_by_key(GUILD_ID, "caja_regalo")
+    assert box is not None
+    await client.shop.grant(GUILD_ID, OWNER_ID, box, 0.0)
+    backpack = await tienda.backpack_view(owner.guild, owner, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await tienda.start_use(interaction, backpack, box.id)
 
     return click
 
@@ -828,6 +1034,30 @@ async def press_rastro_accept(client: BotClient, owner: MagicMock) -> Click:
     seller = MagicMock(spec=discord.Member)
     seller.id, seller.bot, seller.display_name = SELLER_ID, False, "Ana"
     view = module_of(client, "Rastro").OfferView(cog, GUILD_ID, seller, owner, entry, 100)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.accept.callback(interaction)
+
+    return click
+
+
+async def press_rastro_swap(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Rastro")
+    given = await verified_in_backpack(client, SELLER_ID)
+    book = await client.shop.item_by_key(GUILD_ID, "manual_resistencia")
+    assert book is not None
+    received, _dupe = await client.shop.grant(GUILD_ID, OWNER_ID, book, 0.0)
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(100_000, "test")])
+    await client.economy.repository.apply(GUILD_ID, SELLER_ID, [LedgerEntry(100_000, "test")])
+    seller_entries = await client.shop.inventory(GUILD_ID, SELLER_ID, cog.clock())
+    owner_entries = await client.shop.inventory(GUILD_ID, OWNER_ID, cog.clock())
+    mine = next(e for e in seller_entries if e.id == given)
+    theirs = next(e for e in owner_entries if e.id == received.id)
+    seller = MagicMock(spec=discord.Member)
+    seller.id, seller.bot, seller.display_name = SELLER_ID, False, "Ana"
+    view = module_of(client, "Rastro").SwapView(cog, GUILD_ID, seller, owner, mine, theirs, 0)
 
     async def click(interaction: MagicMock) -> None:
         await view.accept.callback(interaction)
@@ -1168,6 +1398,7 @@ CASES: dict[str, Press] = {
     "moneda: cara": press_coin_flip,
     "moneda: cobrar": press_coin_cash_out,
     "gallos: pelear contra la casa": press_gallos_fight,
+    "gallos: entrenar": press_gallos_train,
     "gallos: aceptar un duelo": press_gallos_accept,
     "4enraya: soltar ficha contra Jovani": press_enraya_drop,
     "4enraya: aceptar un duelo": press_enraya_accept,
@@ -1176,6 +1407,9 @@ CASES: dict[str, Press] = {
     "backgammon: doblar": press_backgammon_double,
     "autobús: pedir carta": press_bus_pick,
     "autobús: cobrar": press_bus_cash_out,
+    "torre: jugar otra": press_tower_again,
+    "torre: cobrar": press_tower_cash_out,
+    "torre: quemarse": press_tower_burn,
     "póker: sentarse": press_poker_sit,
     "póker: ir": press_poker_call,
     "póker: bote": press_poker_bonus,
@@ -1186,9 +1420,17 @@ CASES: dict[str, Press] = {
     "dados: tirar": press_dice_roll,
     "dados: odds": press_dice_odds,
     "dados: odds al máximo": press_dice_odds_max,
+    "dados mesa: apostar": press_dice_table_bet,
+    "dados mesa: repetir": press_dice_table_repeat,
+    "dados mesa: ×2": press_dice_table_double,
+    "dados mesa: odds": press_dice_table_odds,
+    "dados mesa: ficha": press_dice_table_modal,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "blackjack: seguro": press_blackjack_insurance,
+    "guerra: repartir": press_war_deal,
+    "guerra: a la guerra": press_war_war,
+    "guerra: rendirse": press_war_surrender,
     "bacará: apostar": press_bacara_bet,
     "bacará: repetir": press_bacara_repeat,
     "bacará: doblar": press_bacara_double,
@@ -1201,11 +1443,13 @@ CASES: dict[str, Press] = {
     "pala: pedir un favor a la familia": press_pala_favor,
     "pala: dar un regalo": press_pala_gift,
     "pala: ir a los regalos de la tienda": press_pala_gift_shop,
+    "mascota: atajo a la comida de la tienda": press_pets_food_shop,
     "pala: caja de un regalo": press_pala_buy_gift,
     "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
     "rastro: aceptar una oferta": press_rastro_accept,
+    "rastro: aceptar un trueque": press_rastro_swap,
     "rastro: pujar": press_rastro_bid,
     "rastro: retirar un puesto": press_rastro_withdraw,
     "pisos: elegir barrio": press_pisos_barrio,
@@ -1215,6 +1459,7 @@ CASES: dict[str, Press] = {
     "pisos: apuntarse a la VPO": press_pisos_vpo_signup,
     "pisos: pedir la licencia": press_pisos_license,
     "tienda: lucir un título": press_wear_title,
+    "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,
     "mesa: botón 🎨": press_table_skin_button,
     "pieles: subir imagen": press_pieles_upload,

@@ -25,7 +25,9 @@ Rapidez: cada clic contesta antes de leer la base de datos o pintar (`ack`), una
 imagen que ya se ve no se vuelve a subir, las imágenes se guardan por su contenido
 (`Painter`) y, mientras miras una pantalla, se pintan por adelantado las que se abren
 desde sus botones (los 20 barrios desde el mapa, los tres inmuebles desde un barrio,
-la caja de comprar entero o vender todo desde una ficha…).
+la caja de comprar entero o vender todo desde una ficha, el mapa y la cartera desde
+casi todas, la ficha desde la caja…). Van de una en una, la más probable primero, y
+cada una comprueba antes de empezar que el panel sigue donde estaba.
 
 Funciones puente para otros cogs: `fiscal_of` (valor fiscal de los pisos de alguien,
 para el aviso del Patrimonio de `saldo`). No lanzan y devuelven 0 sin el cog.
@@ -103,7 +105,7 @@ GAME = "pisos"
 PNG_NAME = "pisos.png"
 #: El panel caduca tras este rato sin tocarlo.
 VIEW_TIMEOUT = 15 * 60
-#: Imágenes pintadas que se guardan (unos 150-250 KB cada una).
+#: Imágenes pintadas que se guardan (unos 200-400 KB cada una).
 CACHE_SIZE = 48
 #: Inmuebles de tu cartera que salen en su desplegable (el máximo de Discord).
 MAX_OPTIONS = 25
@@ -125,9 +127,12 @@ def _name(guild: discord.Guild | None, user_id: int) -> str:
 class Painter:
     """Pinta pantallas y las guarda por su contenido, para no pintar dos veces lo mismo.
 
-    Los dibujos por adelantado (`prefetch`) van de uno en uno: si llega otro mientras
-    se pinta uno, espera, y si llegan varios, solo vale el último (los anteriores ya
-    no se van a ver).
+    Los dibujos por adelantado (`prefetch`) van de uno en uno y por orden (el primero
+    es el que más probablemente se pulse): antes de empezar cada uno se mira si ya
+    está guardado o se está pintando y si sigue valiendo (el panel no ha cambiado de
+    pantalla). Si llegan otros mientras se pinta uno, los anteriores se sueltan: ya no
+    se van a ver. Si se pulsa algo que se está pintando por adelantado, se espera a
+    ese dibujo en vez de pintarlo otra vez.
 
     Args:
         scene: Lo que pinta (Node, Chromium o Pillow).
@@ -136,8 +141,9 @@ class Painter:
     def __init__(self, scene: HousingScene) -> None:
         self.scene = scene
         self.cache: OrderedDict[str, bytes] = OrderedDict()
-        self._next: list[dict[str, Any]] | None = None
+        self._next: list[tuple[dict[str, Any], Callable[[], bool] | None]] = []
         self._worker: asyncio.Task[None] | None = None
+        self._painting: dict[str, asyncio.Future[None]] = {}
 
     @staticmethod
     def key(state: dict[str, Any]) -> str:
@@ -152,40 +158,64 @@ class Painter:
             self.cache.popitem(last=False)
 
     async def paint(self, states: list[dict[str, Any]]) -> list[bytes]:
-        """PNG de cada pantalla, pintando solo las que no estén guardadas."""
+        """PNG de cada pantalla, pintando solo las que no estén guardadas ni en marcha."""
         keys = [self.key(s) for s in states]
-        missing: dict[str, dict[str, Any]] = {}
-        for key, state in zip(keys, states, strict=True):
-            if key in self.cache:
-                self.cache.move_to_end(key)
-            else:
-                missing.setdefault(key, state)
-        if missing:
-            pngs = await self.scene.paint(list(missing.values()))
-            for key, png in zip(missing, pngs, strict=True):
-                self._store(key, png)
-        return [self.cache[k] for k in keys]
+        while True:
+            missing: dict[str, dict[str, Any]] = {}
+            waiting: list[asyncio.Future[None]] = []
+            for key, state in zip(keys, states, strict=True):
+                if key in self.cache:
+                    self.cache.move_to_end(key)
+                elif key in self._painting:
+                    waiting.append(self._painting[key])
+                else:
+                    missing.setdefault(key, state)
+            if not missing:
+                if not waiting:
+                    return [self.cache[k] for k in keys]
+                await asyncio.wait(waiting)  # un dibujo por adelantado: se espera a ese
+                continue  # (si falló o se guardó, se mira otra vez)
+            marks = {key: asyncio.get_running_loop().create_future() for key in missing}
+            self._painting.update(marks)
+            try:
+                pngs = await self.scene.paint(list(missing.values()))
+                for key, png in zip(missing, pngs, strict=True):
+                    self._store(key, png)
+            finally:
+                for key, mark in marks.items():
+                    self._painting.pop(key, None)
+                    mark.set_result(None)
+            if waiting:
+                await asyncio.wait(waiting)
+            return [self.cache[k] for k in keys]
 
-    def prefetch(self, states: list[dict[str, Any]]) -> None:
-        """Pinta en segundo plano las pantallas que pueden venir después."""
-        todo = [s for s in states if self.key(s) not in self.cache]
-        if not todo:
-            return
-        self._next = todo
-        if self._worker is None or self._worker.done():
+    def prefetch(
+        self, states: list[dict[str, Any]], still: Callable[[], bool] | None = None
+    ) -> None:
+        """Pinta en segundo plano las pantallas que pueden venir después, de una en una.
+
+        Args:
+            states: Las pantallas, de la más a la menos probable.
+            still: Si ya no vale (el panel ha cambiado de pantalla), devuelve `False` y
+                lo que queda de esta tanda se suelta.
+        """
+        self._next = [(s, still) for s in states if self.key(s) not in self.cache]
+        if self._next and (self._worker is None or self._worker.done()):
             self._worker = asyncio.create_task(self._work(), name="pisos-adelanto")
 
     async def _work(self) -> None:
-        while self._next is not None:
-            todo, self._next = self._next, None
+        while self._next:
+            state, still = self._next.pop(0)
+            if (still is not None and not still()) or self.key(state) in self.cache:
+                continue
             try:
-                await self.paint(todo)
+                await self.paint([state])
             except Exception:
-                logger.exception("No se pudieron pintar por adelantado las pantallas de pisos")
+                logger.exception("No se pudo pintar por adelantado una pantalla de pisos")
 
     async def close(self) -> None:
         """Para lo pendiente y cierra el pintor."""
-        self._next = None
+        self._next = []
         if self._worker is not None:
             self._worker.cancel()
         await self.scene.close()
@@ -396,24 +426,36 @@ class Panel(ui.View):
         )
 
     def _neighbours(self) -> list[tuple[str, dict[str, str]]]:
-        """Pantallas que se abren desde la de ahora (para pintarlas antes del clic)."""
+        """Pantallas que se abren desde la de ahora, de la más a la menos probable.
+
+        Salen con los datos que ya hay en memoria (volver al mapa, la cartera, la ficha
+        de un inmueble desde su barrio…) y se pintan en este orden, de una en una.
+        """
+        me = self.owner.id
         if self.screen == MAPA:
-            return [(BARRIO, {"barrio": b.key}) for b in BARRIOS] + [(CARTERA, {}), (VPO, {})]
+            mine = {LISTING_BY_KEY[h.listing].barrio for h in self.market.of_member(me)}
+            # Los barrios donde ya tienes algo van primero (`sorted` es estable).
+            barrios = sorted(BARRIOS, key=lambda b: b.key not in mine)
+            return [(CARTERA, {}), (VPO, {})] + [(BARRIO, {"barrio": b.key}) for b in barrios]
         if self.screen == BARRIO:
-            return [(FICHA, {"listing": i.key}) for i in listings_of(self.barrio)] + [(MAPA, {})]
+            fichas = [(FICHA, {"listing": i.key}) for i in listings_of(self.barrio)]
+            return [*fichas, (MAPA, {}), (CARTERA, {})]
         if self.screen == FICHA:
-            return [(BARRIO, {"barrio": LISTING_BY_KEY[self.listing].barrio}), (CARTERA, {})]
+            barrio = LISTING_BY_KEY[self.listing].barrio
+            return [(BARRIO, {"barrio": barrio}), (CARTERA, {}), (MAPA, {})]
         if self.screen == CARTERA:
-            mine = self.market.of_member(self.owner.id)[:6]
+            mine = self.market.of_member(me)[:6]
             return [(FICHA, {"listing": h.listing}) for h in mine] + [(MAPA, {}), (VPO, {})]
         if self.screen == VPO:
             return [(MAPA, {}), (CARTERA, {})]
+        if self.screen == CAJA:  # cancelar o «ver la ficha», y los atajos de siempre
+            return [(FICHA, {"listing": self.listing}), (CARTERA, {}), (MAPA, {})]
         return []
 
     async def _prefetch(self) -> None:
-        states = []
-        for screen, where in self._neighbours():
-            states.append(await self._state(screen, **where))
+        """Deja pintando en segundo plano lo que se puede pulsar desde esta pantalla."""
+        here = self._where()
+        checkouts: list[dict[str, Any]] = []
         saved = self.pending, self.financed
         if self.screen == FICHA and self.done is None:
             # La caja de comprar todo lo libre (al contado y con hipoteca) o vender todo
@@ -421,13 +463,28 @@ class Panel(ui.View):
             for selling, shares in self._default_checkouts():
                 for financed in (False, True) if not selling else (False,):
                     self.pending, self.financed = (selling, shares), financed
-                    states.append(self._checkout_state())
+                    checkouts.append(self._checkout_state())
         elif self.screen == CAJA and self.done is None and self.pending and not self.pending[0]:
             # La misma caja con el otro modo de pago (el botón de al lado).
             self.financed = not self.financed
-            states.append(self._checkout_state())
+            checkouts.append(self._checkout_state())
         self.pending, self.financed = saved
-        self.cog.painter.prefetch(states)
+        states = list(checkouts)
+        for screen, where in self._neighbours():
+            states.append(await self._state(screen, **where))
+        if self._where() == here:  # si ya han cambiado de pantalla, lo de esta ya no vale
+            self.cog.painter.prefetch(states, still=lambda: self._where() == here)
+
+    def _where(self) -> tuple[Any, ...]:
+        """Dónde está el panel: si cambia, lo que se pintaba por adelantado ya no vale."""
+        return (
+            self.screen,
+            self.barrio,
+            self.listing,
+            self.pending,
+            self.financed,
+            self.done is None,
+        )
 
     def _default_checkouts(self) -> list[tuple[bool, int]]:
         out = []

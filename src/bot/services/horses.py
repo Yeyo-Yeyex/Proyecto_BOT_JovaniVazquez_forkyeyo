@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -765,7 +766,12 @@ GRAND_PRIX_COOLDOWN = 4 * 3600
 #: desierto, hasta el tope. Sale de la nada (ver el cog).
 GRAND_PRIX_POT = 2_500
 GRAND_PRIX_POT_STEP = 2_500
-GRAND_PRIX_POT_MAX = 25_000
+#: Parte de lo que se pierde en cada carrera (normal o Gran Premio) que va al bote del
+#: próximo Gran Premio: así crece con el juego del servidor, no solo con los desiertos.
+POT_LOSS_SHARE = 10
+#: Tope del bote: 500 tiradas. «Nada crece sin tope» (Biblia): con lo perdido
+#: entrando en cada carrera, sin él crecería sin fin en un servidor con mucho juego.
+GRAND_PRIX_POT_MAX = 50_000
 #: Apuesta mínima para entrar en el reparto del bote: una tirada.
 GRAND_PRIX_MIN_STAKE = 100
 
@@ -788,10 +794,24 @@ def pot_eligible(pick: Pick, stake: int, order: tuple[int, ...]) -> bool:
 
 
 def next_pot(pot: int, *, won: bool) -> int:
-    """El bote del próximo Gran Premio: vuelve al inicio si se lo llevan, crece si no."""
+    """El bote del próximo Gran Premio: vuelve al inicio si se lo llevan, crece si no.
+
+    Sin contar lo perdido en la carrera, que se suma aparte (`loss_contribution`).
+    """
     if won:
         return GRAND_PRIX_POT
     return min(GRAND_PRIX_POT_MAX, pot + GRAND_PRIX_POT_STEP)
+
+
+def loss_contribution(stakes_and_prizes: Iterable[tuple[int, int]]) -> int:
+    """Lo que echa al bote una carrera: el `POT_LOSS_SHARE` % de lo perdido.
+
+    Args:
+        stakes_and_prizes: Apuesta y premio de cada boleto (sin la parte del bote).
+            Un boleto pierde lo que el premio no llega a devolver de la apuesta.
+    """
+    lost = sum(max(0, stake - prize) for stake, prize in stakes_and_prizes)
+    return lost * POT_LOSS_SHARE // 100
 
 
 # -- Narración y casi aciertos ------------------------------------------------------------------

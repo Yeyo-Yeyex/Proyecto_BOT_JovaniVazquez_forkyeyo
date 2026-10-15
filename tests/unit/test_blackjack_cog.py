@@ -6,6 +6,7 @@ cartas salen en el orden indicado) y un renderizador falso.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +19,15 @@ from interaction_fakes import fake_interaction
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
 from bot.repositories.economy import EconomyRepository
-from bot.services.blackjack import INSURANCE_PAYS, Action, Card
+from bot.services.blackjack import (
+    CUT_CARD,
+    DECKS,
+    INSURANCE_PAYS,
+    PIT_BOSS_SPREAD,
+    Action,
+    Card,
+    new_shoe,
+)
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 GUILD_ID = 1
@@ -417,3 +426,47 @@ def test_dinero_par_con_apuesta_impar_da_las_dos_cifras() -> None:
     text = blackjack_module.natural_insurance_text(5, 2)
     assert "asegurado cobras 4 Y$ o 5 Y$" in text
     assert "sin seguro, 7 Y$ o empate" in text
+
+
+# -- Zapato de mesa: contar cartas ----------------------------------------------------
+
+
+async def test_el_zapato_dura_entre_manos_y_se_pueden_contar_cartas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    cog.new_shoe = lambda: new_shoe(random.Random(7).shuffle)
+    table, *_ = await open_table(cog)
+    shoe = table.shoe
+    left = len(shoe)
+    assert left < DECKS * 52
+    table.game.stand_all()
+    table.game.settled = True
+    assert table._shoe_for(100) is shoe, "la mano siguiente sigue con el mismo zapato"
+    assert table.shoe_note is None
+    embed = await table.current_embed(balance=0)
+    assert any(f.name == "Zapato" and str(left) in f.value for f in embed.fields)
+
+
+async def test_la_carta_de_corte_baraja_un_zapato_nuevo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    cog.new_shoe = lambda: new_shoe(random.Random(7).shuffle)
+    table = BlackjackTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    table.shoe = [c(7)] * (CUT_CARD - 1)
+    shoe = table._shoe_for(100)
+    assert len(shoe) == DECKS * 52
+    assert table.shoe_note == blackjack_module.SHUFFLE_LINE
+    assert table._shoe_event == (False, True, 0.0, None)
+
+
+async def test_el_jefe_de_sala_baraja_si_subes_mucho_con_la_cuenta_alta(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    cog.new_shoe = lambda: new_shoe(random.Random(7).shuffle)
+    table = BlackjackTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
+    # Solo quedan dieces: ya han salido las cartas bajas y la cuenta está por las nubes.
+    table.shoe, table.lowest = [c(10)] * 104, 100
+    assert table._shoe_for(PIT_BOSS_SPREAD * 100) is table.shoe, "una subida de 1 a 4 vale"
+    table.shoe, table.lowest = [c(10)] * 104, 100
+    shoe = table._shoe_for(PIT_BOSS_SPREAD * 100 + 1)
+    assert len(shoe) == DECKS * 52
+    assert table.shoe_note in blackjack_module.PIT_BOSS_LINES
+    assert table.lowest == PIT_BOSS_SPREAD * 100 + 1
+    assert table._shoe_event[0] is True

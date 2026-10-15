@@ -80,6 +80,93 @@ async def test_limite_de_tasa_corta_la_cadena_e_intenta_volver_al_espanol() -> N
     assert result.stopped_early
 
 
+class FlakyTranslator(FakeTranslator):
+    """Google limita la tasa las `limited` primeras veces que se pide un idioma."""
+
+    def __init__(self, limited: int) -> None:
+        super().__init__()
+        self.limited = limited
+
+    async def __call__(self, text: str, source: str, target: str) -> str:
+        if target == "zu" and self.limited:
+            self.limited -= 1
+            self.calls.append((text, source, target))
+            raise RateLimitedError("429")
+        return await super().__call__(text, source, target)
+
+
+@pytest.mark.asyncio
+async def test_la_cadena_se_corta_al_agotar_su_tiempo_y_vuelve_al_espanol() -> None:
+    """Con el plazo agotado no se sigue saltando: el token de Discord caduca a los 15 min."""
+    now = [0.0]
+    translator = FakeTranslator()
+
+    async def slow(text: str, source: str, target: str) -> str:
+        now[0] += 4.0
+        return await FakeTranslator.__call__(translator, text, source, target)
+
+    result = await run_chain(
+        "hola", ["ja", "zu", "fr", "de"], slow, budget=10.0, clock=lambda: now[0]
+    )
+
+    assert result.route == ("es", "ja", "zu", "fr", "es")
+    assert result.stopped_early
+
+
+@pytest.mark.asyncio
+async def test_sin_tiempo_para_la_espera_no_se_reintenta_el_limite() -> None:
+    translator = FlakyTranslator(limited=1)
+    waits: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    result = await run_chain(
+        "hola",
+        ["ja", "zu"],
+        translator,
+        backoff=(20.0,),
+        sleep=sleep,
+        budget=5.0,
+        clock=lambda: 0.0,
+    )
+
+    assert waits == []
+    assert result.stopped_early
+
+
+@pytest.mark.asyncio
+async def test_con_esperas_un_limite_pasajero_no_corta_la_cadena() -> None:
+    translator = FlakyTranslator(limited=2)
+    waits: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    result = await run_chain(
+        "hola", ["ja", "zu", "fr"], translator, pause=0.3, backoff=(3, 8, 20), sleep=sleep
+    )
+
+    assert result.route == ("es", "ja", "zu", "fr", "es")
+    assert not result.stopped_early
+    # Un respiro entre saltos y, en el idioma limitado, dos esperas antes de reintentar.
+    assert waits == [0.3, 3, 8, 0.3]
+
+
+@pytest.mark.asyncio
+async def test_si_el_limite_no_se_pasa_tras_las_esperas_se_corta() -> None:
+    translator = FlakyTranslator(limited=10)
+    waits: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    result = await run_chain("hola", ["ja", "zu", "fr"], translator, backoff=(1, 2), sleep=sleep)
+
+    assert result.stopped_early and result.route == ("es", "ja", "es")
+    assert waits == [1, 2]
+
+
 @pytest.mark.asyncio
 async def test_si_no_puede_volver_al_espanol_devuelve_el_texto_donde_estaba() -> None:
     translator = FakeTranslator(fail={"es": TranslationError("caído")})

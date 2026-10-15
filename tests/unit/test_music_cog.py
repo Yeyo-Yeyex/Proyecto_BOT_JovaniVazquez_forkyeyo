@@ -334,7 +334,13 @@ async def test_una_pista_caducada_se_vuelve_a_resolver_antes_de_sonar(
     )
 
     player.voices[0].finish()
-    await settle()
+    # Volver a resolver pasa por un hilo: con el PC cargado, 20 vueltas del bucle no
+    # bastaban y la prueba fallaba al azar. Se espera a que llegue (2 s como mucho).
+    for _ in range(200):
+        await settle()
+        if player.searches[-1] != "uno":
+            break
+        await asyncio.sleep(0.01)
 
     assert player.searches[-1] == "https://example.com/vieja"
     assert player.voices[0].played[-1] != "https://example.com/caducada"

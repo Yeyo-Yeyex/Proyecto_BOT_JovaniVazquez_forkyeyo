@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import re
 import sqlite3
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -19,6 +20,7 @@ import discord
 import pytest
 from discord import ui
 from interaction_fakes import fake_interaction
+from lootbox_fakes import Scripted
 
 from bot.cogs.shop import TABS, Backpack, Storefront, TargetPicker, Tienda, UseTextForm, in_tab
 from bot.cogs.shop_admin import AdminPanel
@@ -27,6 +29,9 @@ from bot.repositories.shop import ShopRepository
 from bot.services.achievements import (
     SHOP_AISLES_STAT,
     SHOP_USE_KINDS_STAT,
+    lootbox_free_stats,
+    lootbox_stats,
+    newly_unlocked,
     shop_hit_stats,
     shop_stats,
     shop_use_stats,
@@ -34,6 +39,15 @@ from bot.services.achievements import (
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import (
+    BOX_BY_KEY,
+    BOXES,
+    COLLECTION_BY_KEY,
+    PIECE_BY_KEY,
+    TAPETE,
+    is_piece,
+    tapetes_for,
+)
 from bot.services.pets_catalog import SPECIES, species_of
 from bot.services.porras import BINOCULARS_KEY, NOTEBOOK_KEY
 from bot.services.shop import (
@@ -54,11 +68,14 @@ from bot.services.shop_catalog import (
     CATALOG_BY_KEY,
     MIN_AISLE_SIZE,
     RETIRED_AISLES,
+    RETIRED_ITEMS,
+    REVISED_PRICES,
     Aisle,
     aisle_of,
     use_of,
 )
 from bot.services.shop_uses import (
+    COG_SPECIALS,
     MYSTERY_JACKPOT,
     USES,
     Target,
@@ -109,8 +126,13 @@ def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
         elif (skin := skin_of_item(entry.key)) is not None:
             # Las skins de logro y las gratis no se venden: van ocultas.
             assert entry.visible is skin.for_sale, entry.key
+        elif is_piece(entry.key):
+            # Las piezas de colección solo salen de las cajas: ocultas, con su valor de precio.
+            assert not entry.visible and entry.kind is Kind.TROPHY and entry.use is None
+        elif entry.key in RETIRED_ITEMS:
+            assert not entry.visible, "lo que ya no se vende se siembra oculto"
         else:
-            assert entry.visible, "solo las mascotas que aparecen solas y algunas skins van ocultas"
+            assert entry.visible, "solo mascotas, skins, piezas y lo retirado van ocultos"
         if entry.food:
             assert entry.kind is Kind.TROPHY, entry.key
         if entry.kind is Kind.BOOST:
@@ -206,7 +228,7 @@ def test_lo_retirado_no_tiene_pasillo_y_va_a_la_casa() -> None:
 
 @pytest.mark.parametrize(
     "key",
-    sorted(k for k, u in USES.items() if u.special not in {"mystery", "megaphone", "nickname"}),
+    sorted(k for k, u in USES.items() if u.special not in COG_SPECIALS),
 )
 def test_cada_uso_arma_sus_frases_sin_huecos(key: str) -> None:
     use = USES[key]
@@ -311,6 +333,7 @@ def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
         and e.stock is None
         and not e.title
         and not e.key.startswith("skin_")
+        and not is_piece(e.key)
     ]
     expected = mystery_expected(prizes)
     assert 0.5 * box.price < expected < box.price
@@ -400,6 +423,37 @@ async def test_siembra_una_vez_y_respeta_lo_retirado(tmp_path: Path) -> None:
     every = await shop.items(GUILD, include_hidden=True)
     assert len(every) == 7 and len({i.catalog_key for i in every}) == 7
     assert await shop.stock_catalog(2, some, NOW) == 6, "cada servidor tiene su surtido"
+
+
+async def test_un_precio_revisado_llega_a_los_servidores_que_ya_tenian_el_articulo(
+    tmp_path: Path,
+) -> None:
+    _economy, shop = await make_stores(tmp_path, Clock())
+    entry = CATALOG_BY_KEY["skin_tapete_epstein"]
+    old = replace(entry, price=REVISED_PRICES[entry.key], min_level=0, stock=None)
+    await shop.stock_catalog(GUILD, [old], NOW)
+    await shop.stock_catalog(2, [old], NOW)
+    # En el servidor 2 un administrador le puso otro precio a mano: se respeta.
+    (custom,) = await shop.items(2)
+    await shop.update_item(2, custom.id, price=1_234)
+
+    for guild in (GUILD, 2):
+        assert await shop.stock_catalog(guild, [entry], NOW, revised=REVISED_PRICES) == 0
+    (revised,) = await shop.items(GUILD)
+    assert (revised.price, revised.min_level, revised.stock) == (
+        entry.price,
+        entry.min_level,
+        entry.stock,
+    )
+    assert revised.description == entry.description
+    (kept,) = await shop.items(2)
+    assert (kept.price, kept.min_level, kept.stock) == (1_234, 0, None)
+
+
+def test_los_precios_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:
+    for key, old_price in REVISED_PRICES.items():
+        assert key in CATALOG_BY_KEY
+        assert CATALOG_BY_KEY[key].price != old_price
 
 
 async def test_siembra_copia_limites_y_potenciadores(tmp_path: Path) -> None:
@@ -572,6 +626,14 @@ async def give(cog: Tienda, key: str, *, times: int = 1) -> int:
     return item.id
 
 
+async def grant_hidden(cog: Tienda, member: MagicMock, key: str) -> int:
+    """Mete en la mochila un artículo oculto (no se puede comprar) y devuelve su id."""
+    item = await cog.repository.item_by_key(GUILD, key)
+    assert item is not None
+    await cog.repository.grant(GUILD, member.id, item, NOW)
+    return item.id
+
+
 async def backpack_for(cog: Tienda, guild: MagicMock, member: MagicMock) -> Backpack:
     view = await cog.backpack_view(guild, member, member)
     view.interaction = make_interaction(member)
@@ -668,7 +730,7 @@ async def test_caja_botin_da_un_coleccionable_ilimitado(tmp_path: Path) -> None:
     guild = make_guild()
     member = make_member(guild)
     await cog.stock_up(GUILD)
-    box = await give(cog, "caja_botin")
+    box = await grant_hidden(cog, member, "caja_botin")
     backpack = await backpack_for(cog, guild, member)
     click = make_interaction(member)
     await cog.start_use(click, backpack, box)
@@ -684,7 +746,7 @@ async def test_caja_botin_sin_premios_se_devuelve(tmp_path: Path) -> None:
     guild = make_guild()
     member = make_member(guild)
     await cog.stock_up(GUILD)
-    box = await give(cog, "caja_botin")
+    box = await grant_hidden(cog, member, "caja_botin")
     backpack = await backpack_for(cog, guild, member)
     click = make_interaction(member)
     await cog.start_use(click, backpack, box)
@@ -776,3 +838,349 @@ def test_cada_herramienta_de_curro_esta_en_la_ferreteria() -> None:
         assert "`pala`" in entry.description, tool.key
         item = MagicMock(kind=entry.kind, catalog_key=tool.key)
         assert tool.effect in kind_detail(item)
+
+
+# -- Cajas por niveles, de temporada y ganadas jugando -------------------------------------
+
+
+def lootbox_click(member: MagicMock) -> tuple[MagicMock, MagicMock]:
+    """Una interacción cuyo mensaje público se puede editar, y ese mensaje."""
+    click = make_interaction(member)
+    message = MagicMock(edit=AsyncMock())
+    click.followup.send = AsyncMock(return_value=message)
+    return click, message
+
+
+async def lootbox_cog(tmp_path: Path, clock: Clock | None = None, **kwargs: object) -> Tienda:
+    cog = await make_cog(tmp_path, clock or Clock(), **kwargs)  # type: ignore[arg-type]
+    cog.lootbox_pause = 0
+    await cog.stock_up(GUILD)
+    return cog
+
+
+def test_las_cajas_nuevas_son_articulos_que_se_usan_con_igic_general() -> None:
+    for box in BOXES:
+        entry = CATALOG_BY_KEY[box.key]
+        assert entry.use == "lootbox" and entry.igic == "general" and entry.visible
+        assert entry.price == box.price and entry.stock is None and entry.kind is Kind.TROPHY
+    prices = {key: BOX_BY_KEY[key].price for key in BOX_BY_KEY}
+    assert prices == {
+        "caja_carton": 1_000, "caja_regalo": 5_000, "maletin_ministro": 25_000,
+        "cofre_rey_emerito": 100_000, "caja_navidad": 5_000, "caja_halloween": 5_000,
+        "caja_aniversario": 5_000,
+    }  # fmt: skip
+    assert CATALOG_BY_KEY["cofre_rey_emerito"].min_level == 10
+
+
+def test_la_caja_botin_vieja_deja_de_venderse_sin_cambiar_su_clave() -> None:
+    entry = CATALOG_BY_KEY["caja_botin"]
+    assert not entry.visible and entry.use == "caja" and "caja_botin" in RETIRED_ITEMS
+    assert entry.price == 2_500
+
+
+async def test_la_caja_botin_vieja_no_sale_en_el_escaparate_pero_se_abre(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    member = make_member(guild)
+    view = await cog.storefront(guild, member)
+    assert "caja_botin" not in {i.catalog_key for i in view.items_all}
+    assert "caja_carton" in {i.catalog_key for i in view.items_all}
+    old = await cog.repository.item_by_key(GUILD, "caja_botin")
+    assert old is not None and not old.visible
+    click = make_interaction(member)
+    await cog.open_checkout(click, old.id)
+    assert "ya no está a la venta" in click.edit_original_response.await_args.kwargs["content"]
+
+
+async def test_los_servidores_que_ya_tenian_la_caja_vieja_la_ocultan_una_sola_vez(
+    tmp_path: Path,
+) -> None:
+    _economy, shop = await make_stores(tmp_path, Clock())
+    visible = replace(CATALOG_BY_KEY["caja_botin"], visible=True)
+    await shop.stock_catalog(GUILD, [visible], NOW)
+    (item,) = await shop.items(GUILD)
+    assert item.visible
+    await shop.stock_catalog(GUILD, [visible], NOW, retired=RETIRED_ITEMS)
+    assert await shop.items(GUILD) == []
+    # Un administrador la vuelve a enseñar: no se vuelve a ocultar sola.
+    await shop.update_item(GUILD, item.id, visible=True)
+    await shop.stock_catalog(GUILD, [visible], NOW, retired=RETIRED_ITEMS)
+    await shop.stock_catalog(GUILD, [visible], NOW, restock=True, retired=RETIRED_ITEMS)
+    assert [i.catalog_key for i in await shop.items(GUILD)] == ["caja_botin"]
+
+
+async def test_las_piezas_estan_ocultas_en_el_escaparate_y_en_el_catalogo_del_servidor(
+    tmp_path: Path,
+) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    view = await cog.storefront(guild, make_member(guild))
+    shown = {i.catalog_key for i in view.items_all}
+    assert not any(is_piece(key) for key in shown)
+    every = {i.catalog_key for i in await cog.repository.items(GUILD, include_hidden=True)}
+    assert set(PIECE_BY_KEY) <= every
+
+
+async def test_comprar_una_caja_paga_igic_y_abrirla_no_mueve_dinero(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    member = make_member(guild)
+    before = await cog.economy.balance(GUILD, BUYER)
+    box = await give(cog, "caja_carton")
+    from bot.services.shop import quote
+
+    item = await cog.repository.item(GUILD, box)
+    assert item is not None
+    price = quote(item, NOW)
+    assert price.tax > 0 and price.total == price.base + price.tax
+    paid = await cog.economy.balance(GUILD, BUYER)
+    assert before - paid == price.total
+
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, box)
+    assert await cog.economy.balance(GUILD, BUYER) == paid, "abrir no mueve dinero"
+    # Una animación sobre un mismo mensaje: agitar, brillar, pieza.
+    assert click.followup.send.await_args.kwargs["wait"] is True
+    assert click.followup.send.await_args.kwargs["ephemeral"] is False
+    assert message.edit.await_count == 2
+    final = message.edit.await_args.kwargs["content"]
+    mine = await cog.repository.inventory(GUILD, BUYER, NOW)
+    (prize,) = mine
+    assert prize.catalog_key in PIECE_BY_KEY, "la caja se ha gastado y ha dado una pieza"
+    piece = PIECE_BY_KEY[prize.catalog_key]
+    assert piece.name in final and "Caja de cartón" in final
+    item = await cog.repository.item(GUILD, prize.item_id)
+    assert item is not None and item.stock is None and item.sold == 0 and not item.visible
+
+
+async def test_abrir_responde_antes_de_tocar_la_base_de_datos(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    member = make_member(guild)
+    box = await give(cog, "caja_regalo")
+    backpack = await backpack_for(cog, guild, member)
+    events: list[str] = []
+    click = fake_interaction(member, events=events)
+    click.guild, click.channel = guild, MagicMock()
+    consume = cog.repository.consume
+
+    async def spy(*args: object) -> bool:
+        events.append("base de datos")
+        return await consume(*args)
+
+    cog.repository.consume = spy  # type: ignore[method-assign]
+    await cog.start_use(click, backpack, box)
+    assert events[0] == "response.defer"
+    assert events.index("base de datos") > events.index("response.defer")
+
+
+async def test_la_rareza_sale_en_el_segundo_fotograma_y_el_tapete_en_el_ultimo(
+    tmp_path: Path,
+) -> None:
+    cog = await lootbox_cog(tmp_path)
+    cog.rng = Scripted(["M"])
+    guild = make_guild()
+    member = make_member(guild)
+    box = await give(cog, "caja_regalo")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, box)
+    glow = message.edit.await_args_list[0].kwargs["content"]
+    assert "🔴" in glow and "MÍTICA" not in glow, "el color avisa y no destripa la pieza"
+    assert "Mítica" in message.edit.await_args_list[1].kwargs["content"]
+
+
+async def test_un_tapete_de_una_caja_llega_a_la_mochila_como_el_de_la_tienda(
+    tmp_path: Path,
+) -> None:
+    cog = await lootbox_cog(tmp_path)
+    cog.rng = Scripted([TAPETE])
+    guild = make_guild()
+    member = make_member(guild)
+    box = await give(cog, "cofre_rey_emerito")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, box)
+    (prize,) = await cog.repository.inventory(GUILD, BUYER, NOW)
+    skin = skin_of_item(prize.catalog_key)
+    assert skin is not None and skin in tapetes_for(BOX_BY_KEY["cofre_rey_emerito"])
+    assert "TAPETE" in message.edit.await_args.kwargs["content"]
+
+
+async def test_un_tapete_que_ya_tienes_se_vuelve_a_sortear_entre_las_piezas(
+    tmp_path: Path,
+) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    member = make_member(guild)
+    cofre = BOX_BY_KEY["cofre_rey_emerito"]
+    for skin in tapetes_for(cofre):
+        item = await cog.repository.item_by_key(GUILD, skin.catalog_key)
+        assert item is not None
+        await cog.repository.grant(GUILD, BUYER, item, NOW)
+    cog.rng = Scripted([TAPETE, "L"])
+    box = await give(cog, "cofre_rey_emerito")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, box)
+    owned = {e.catalog_key for e in await cog.repository.inventory(GUILD, BUYER, NOW)}
+    pieces = owned & set(PIECE_BY_KEY)
+    assert len(pieces) == 1 and PIECE_BY_KEY[next(iter(pieces))].rarity.label == "Legendaria"
+    assert "vuelto a sortear" in message.edit.await_args.kwargs["content"]
+
+
+async def test_repetir_pieza_lo_dice_y_el_progreso_de_la_coleccion_cuenta_las_que_tienes(
+    tmp_path: Path,
+) -> None:
+    cog = await lootbox_cog(tmp_path)
+    cog.rng = Scripted(["C", "C"], seed=3)
+    guild = make_guild()
+    member = make_member(guild)
+    first = await give(cog, "caja_carton")
+    second = await give(cog, "caja_carton")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, first)
+    piece_key = next(e.catalog_key for e in await cog.repository.inventory(GUILD, BUYER, NOW)
+                     if e.catalog_key in PIECE_BY_KEY)  # fmt: skip
+    # La misma pieza otra vez: se fuerza dando el segundo sorteo igual que el primero.
+    cog.rng = Scripted(["C"], seed=3)
+    again, again_message = lootbox_click(member)
+    await cog.start_use(again, backpack, second)
+    final = again_message.edit.await_args.kwargs["content"]
+    got = [e.catalog_key for e in await cog.repository.inventory(GUILD, BUYER, NOW)
+           if e.catalog_key in PIECE_BY_KEY]  # fmt: skip
+    collection = COLLECTION_BY_KEY[PIECE_BY_KEY[piece_key].collection]
+    distinct = len(set(got) & {p.key for p in collection.pieces})
+    assert f"{distinct}/{collection.size}" in final
+    assert ("Repetida" in final) == (len(got) != len(set(got)))
+
+
+async def test_una_caja_sin_piezas_en_el_servidor_se_devuelve(tmp_path: Path) -> None:
+    only_boxes = tuple(CATALOG_BY_KEY[b.key] for b in BOXES)
+    cog = await lootbox_cog(tmp_path, catalog=only_boxes)
+    guild = make_guild()
+    member = make_member(guild)
+    box = await give(cog, "caja_carton")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    await cog.start_use(click, backpack, box)
+    assert click.followup.send.await_args.kwargs["ephemeral"] is True
+    assert "vacía" in click.followup.send.await_args.args[0]
+    message.edit.assert_not_awaited()
+    assert len(await cog.repository.inventory(GUILD, BUYER, NOW)) == 1
+
+
+async def test_si_falla_una_edicion_el_resultado_sale_como_mensaje_nuevo(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    guild = make_guild()
+    member = make_member(guild)
+    box = await give(cog, "caja_carton")
+    backpack = await backpack_for(cog, guild, member)
+    click, message = lootbox_click(member)
+    message.edit = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=404), "borrado"))
+    await cog.start_use(click, backpack, box)
+    last = click.followup.send.await_args_list[-1]
+    assert last.kwargs["ephemeral"] is False and "Caja de cartón" in last.args[0]
+
+
+async def test_las_cajas_de_temporada_solo_salen_y_se_cobran_en_su_temporada(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(datetime(2026, 12, 20, 12, tzinfo=TIMEZONE).timestamp())
+    cog = await lootbox_cog(tmp_path, clock)
+    guild = make_guild()
+    member = make_member(guild)
+    view = await cog.storefront(guild, member)
+    seasonal = lambda: {i.catalog_key for i in view.shown if i.catalog_key in BOX_BY_KEY}  # noqa: E731
+    assert {"caja_navidad", "caja_carton"} <= seasonal()
+    assert not seasonal() & {"caja_halloween", "caja_aniversario"}
+    clock.now = datetime(2026, 10, 20, 12, tzinfo=TIMEZONE).timestamp()
+    assert {"caja_halloween", "caja_aniversario", "caja_regalo"} <= seasonal()
+    assert "caja_navidad" not in seasonal()
+    # Fuera de temporada ni siquiera abre la caja de compra.
+    xmas = await cog.repository.item_by_key(GUILD, "caja_navidad")
+    assert xmas is not None
+    click = make_interaction(member)
+    await cog.open_checkout(click, xmas.id)
+    assert "Navidad" in click.edit_original_response.await_args.kwargs["content"]
+    clock.now = datetime(2027, 1, 5, 12, tzinfo=TIMEZONE).timestamp()
+    ok = make_interaction(member)
+    await cog.open_checkout(ok, xmas.id)
+    assert "view" in ok.edit_original_response.await_args.kwargs
+
+
+async def test_el_cofre_pide_nivel_10(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    cog.levels.member_xp = AsyncMock(return_value=0)  # type: ignore[union-attr]
+    guild = make_guild()
+    member = make_member(guild)
+    cofre = await cog.repository.item_by_key(GUILD, "cofre_rey_emerito")
+    assert cofre is not None
+    click = make_interaction(member)
+    await cog.open_checkout(click, cofre.id)
+    assert "nivel 10" in click.edit_original_response.await_args.kwargs["content"]
+
+
+async def test_una_caja_gratis_entra_en_la_mochila_sin_cobrar_y_avisa(tmp_path: Path) -> None:
+    cog = await lootbox_cog(tmp_path)
+    before = await cog.economy.balance(GUILD, BUYER)
+    line = await cog.grant_free_box(GUILD, BUYER, "caja_carton", because="tus 100 jugadas")
+    assert line is not None and "Caja de cartón" in line and "tus 100 jugadas" in line
+    several = await cog.grant_free_box(GUILD, BUYER, "caja_regalo", count=2, because="el nivel 10")
+    assert several is not None and "2 **Caja de regalo**" in several
+    keys = sorted(e.catalog_key for e in await cog.repository.inventory(GUILD, BUYER, NOW))
+    assert keys == ["caja_carton", "caja_regalo", "caja_regalo"]
+    assert await cog.economy.balance(GUILD, BUYER) == before, "regalar no mueve dinero"
+    item = await cog.repository.item_by_key(GUILD, "caja_carton")
+    assert item is not None and item.sold == 0
+
+
+def test_el_aviso_de_una_caja_gratis_sale_una_sola_vez(tmp_path: Path) -> None:
+    bot = MagicMock()
+    cog = Tienda(bot, MagicMock(), MagicMock())
+    cog.notices[(GUILD, BUYER)].append("-# 📦 una caja")
+    assert cog.notices_for(GUILD, BUYER) == "-# 📦 una caja"
+    assert cog.notices_for(GUILD, BUYER) is None
+
+
+# -- Logros de las cajas ----------------------------------------------------------------
+
+
+def test_estadisticas_de_abrir_una_caja() -> None:
+    night = datetime(2026, 10, 6, 4, tzinfo=TIMEZONE).timestamp()
+    delta = lootbox_stats(box="caja_halloween", rarity="mythic", tapete=False, dupe=True,
+                          seasonal=True, collection="halloween", owned=3, when=night)  # fmt: skip
+    assert delta.add == {
+        "lootbox_opened": 1, "lootbox_box_caja_halloween": 1, "lootbox_got_mythic": 1,
+        "lootbox_dupes": 1, "lootbox_season": 1, "lootbox_night": 1,
+    }  # fmt: skip
+    assert delta.peak == {"lootbox_col_halloween": 3}
+    tapete = lootbox_stats(box="cofre_rey_emerito", rarity="mythic", tapete=True, dupe=False,
+                           seasonal=False, collection=None, owned=0, when=NOW)  # fmt: skip
+    assert tapete.add["lootbox_tapete"] == 1 and "lootbox_got_mythic" not in tapete.add
+    assert lootbox_free_stats(3).add == {"lootbox_free": 3}
+
+
+def test_completar_una_coleccion_y_todas_desbloquea_sus_logros() -> None:
+    from bot.services.lootboxes import COLLECTIONS
+
+    stats = {c.stat: c.size - 1 for c in COLLECTIONS}
+    assert not {u for u in newly_unlocked(stats, []) if u.startswith("box_col_")}
+    stats[COLLECTIONS[0].stat] = COLLECTIONS[0].size
+    assert newly_unlocked(stats, []).count(f"box_col_{COLLECTIONS[0].key}") == 1
+    assert "box_all_collections" not in newly_unlocked(stats, [])
+    full = {c.stat: c.size for c in COLLECTIONS}
+    unlocked = set(newly_unlocked(full, []))
+    assert "box_all_collections" in unlocked
+    assert {f"box_col_{c.key}" for c in COLLECTIONS} <= unlocked
+
+
+def test_los_logros_de_cajas_se_consiguen_con_lo_que_suma_el_cog() -> None:
+    delta = lootbox_stats(box="caja_carton", rarity="common", tapete=False, dupe=False,
+                          seasonal=False, collection="nodo", owned=1, when=NOW)  # fmt: skip
+    unlocked = set(newly_unlocked({**delta.add, **delta.peak}, []))
+    assert {"box_open_1", "box_first_carton", "box_got_common"} <= unlocked
+    free = set(newly_unlocked(lootbox_free_stats(1).add, []))
+    assert "box_free_1" in free

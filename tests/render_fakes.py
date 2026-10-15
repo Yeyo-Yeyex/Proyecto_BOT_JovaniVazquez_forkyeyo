@@ -27,6 +27,8 @@ import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
 import bot.services.slots_render as slots_render
+import bot.services.war_scene as war_scene
+from bot.services.bacara_render import Media as WarMedia
 
 
 class FakeSlotsRenderer:
@@ -84,9 +86,40 @@ class FakePachinkoRenderer:
         return pachinko_render.PachinkoMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
 
+class FakeWarScene:
+    """`WarScene` sin dibujar: apunta lo que se le pide y devuelve un PNG de relleno.
+
+    Sin GIF (`gif=None`, como el plan B de Pillow): cada jugada acaba en una sola edición
+    con el PNG, sin esperar al final de una animación.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    async def _media(self, name: str, game: object) -> WarMedia:
+        self.calls.append((name, game))
+        return WarMedia(gif=None, png=b"PNG", seconds=0.0)
+
+    async def deal(self, game: object, *, skin: object = None) -> WarMedia:
+        return await self._media("deal", game)
+
+    async def war(self, game: object, *, skin: object = None) -> WarMedia:
+        return await self._media("war", game)
+
+    async def surrender(self, game: object, *, skin: object = None) -> WarMedia:
+        return await self._media("surrender", game)
+
+    async def still(self, game: object, *, skin: object = None) -> bytes:
+        return b"PNG"
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_render, "SlotsRenderer", FakeSlotsRenderer)
     monkeypatch.setattr(roulette_render, "WheelRenderer", FakeWheelRenderer)
     monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)
+    monkeypatch.setattr(war_scene, "WarScene", FakeWarScene)

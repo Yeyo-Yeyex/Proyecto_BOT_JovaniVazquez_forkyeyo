@@ -131,6 +131,8 @@ GAME_ALIASES = {
     "tragas": "tragaperras",
     "bj": "blackjack",
     "volcan": "botes",
+    "mina": "botes",
+    "olimpo": "botes",
     "gallina": "pollo",
     "cara": "moneda",
     "cruz": "moneda",

@@ -33,9 +33,14 @@ sin tocarla) o el bot se apaga de forma ordenada con un punto puesto, el
 bot tira solo hasta decidirla: la apuesta de Pase o No pase no se puede
 retirar, igual que en un casino.
 
+**Mesa compartida.** `/dados mesa:Compartida` o `.dados mesa` abre en cambio la
+mesa del canal, con varios jugadores, un tirador y las mismas tiradas para todos
+(ver `bot.cogs.craps_mesa`). Es el mismo comando: la mesa individual de arriba
+sigue igual.
+
 Si `CASINO_CHANNEL_IDS` está configurado, solo se juega en esos canales.
 Permisos del bot en el canal: enviar mensajes, insertar enlaces y adjuntar
-archivos.
+archivos (y añadir reacciones para confirmar `.dados mesa 500 pase`).
 """
 
 from __future__ import annotations
@@ -60,6 +65,7 @@ from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
+from bot.cogs.craps_mesa import NO_MENTIONS, CrapsTable, MesaError, remember
 from bot.services.achievements import casino_stats, craps_stats
 from bot.services.craps import (
     BAR,
@@ -103,6 +109,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 GAME = "dados"
+#: Valor de la opción `mesa` del comando para la mesa compartida del canal.
+SHARED_KEY = "compartida"
 DEFAULT_STAKE = 100
 VIEW_TIMEOUT = 180
 #: Desde estos puntos en una mano se anuncia en el canal.
@@ -124,7 +132,8 @@ WIN_LINES = (
     "¡Eso es, mi amor!",
     "¡Dale!",
     "¡Qué suerte, bendito!",
-    "¡A la saca!",
+    "¡Siete y a la saca!",
+    "¡Los dados aguantan más que Bibi en la Knesset!",
     "¡Los dados votan contigo, como Junts… esta vez!",
     "¡Suerte de Fabra!",
     "¡Ni el CIS lo predice!",
@@ -142,17 +151,20 @@ LOSE_LINES = (
     "¡Craps! Que en inglés suena aún peor.",
     "¡Los dados piden asilo en Waterloo!",
     "¡Dados cargados en el Kremlin!",
+    "¡Los dados se los ha tirado un groyper con la mano en la barbilla!",
 )
 FLYING_LINES = (
     "🎲 ¡Los dados vuelan!",
     "🎲 Sopla los dados, que da suerte…",
-    "🙏 Que salga, que salga…",
+    "🙏 Que salga un siete, que salga…",
     "👀 Toda la mesa mira los dados…",
+    "🎲 Bibi pide aplazar la tirada hasta después de las elecciones…",
     "🎲 ¡Contra la pared!",
     "🎲 Más vueltas que una negociación con Puigdemont…",
     "🎲 Trump grita «¡tremendo!» a los dados…",
     "🎲 Kim lanza los dados (y un misil)…",
     "☕ Quiero café… y un siete…",
+    "🏍️ Y Víctor le dijo a Joel: móntate en mi motora… y tira…",
 )
 NOTHING_LINES = (
     "Nada: sigue tirando.",
@@ -914,6 +926,8 @@ class Craps(commands.Cog, name="Dados"):
         rng: random.Random | None = None,
         renderer: CrapsScene | None = None,
         ahead: bool | None = None,
+        wall_clock: Callable[[], float] = time.time,
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
     ) -> None:
         """Prepara el cog; el dibujo por defecto es `CrapsScene`.
 
@@ -921,6 +935,8 @@ class Craps(commands.Cog, name="Dados"):
             ahead: Si las mesas pintan por adelantado el GIF de la próxima tirada
                 (`CrapsView.prepare`). Por defecto, solo con el dibujo de verdad: con
                 un `renderer` de prueba, cada dibujo de más se contaría como jugada.
+            wall_clock: Reloj de la mesa compartida (las pruebas lo cambian).
+            sleep: Espera de la mesa compartida (las pruebas la cambian).
         """
         self.bot = bot
         self.economy = economy
@@ -929,11 +945,31 @@ class Craps(commands.Cog, name="Dados"):
         self.rng = rng or secrets.SystemRandom()
         self.ahead = renderer is None if ahead is None else ahead
         self.renderer = renderer or CrapsScene()
+        self.wall_clock = wall_clock
+        self.sleep = sleep
         # Mesas abiertas: para decidir sus partidas si el bot se apaga.
         self.views: set[CrapsView] = set()
+        #: Mesa compartida de cada canal y canales en los que se está abriendo una.
+        self.tables: dict[int, CrapsTable] = {}
+        self._opening: set[int] = set()
+        # Ficha y última apuesta por (servidor, miembro): acotadas (`remember`) y
+        # perdidas al reiniciar.
+        self._fichas: dict[tuple[int, int], int] = {}
+        self.last_bets: dict[tuple[int, int], tuple[Bet, int]] = {}
 
     async def cog_unload(self) -> None:
         """Al apagar, decide las partidas con el punto puesto y cierra el navegador."""
+        for table in list(self.tables.values()):
+            table.stopping = True
+            if table.task is not None:
+                if table.sleeping:
+                    table.task.cancel()
+                await asyncio.gather(table.task, return_exceptions=True)
+            try:
+                await table.shutdown()
+            except Exception:
+                logger.exception("No se pudo cerrar una mesa compartida de dados al apagar")
+        self.tables.clear()
         for view in list(self.views):
             try:
                 await view.force_settle()
@@ -942,6 +978,138 @@ class Craps(commands.Cog, name="Dados"):
             view.stop()
         self.views.clear()
         await self.renderer.close()
+
+    # -- Mesa compartida --------------------------------------------------------------
+
+    def ficha(self, guild_id: int, user_id: int) -> int:
+        """Ficha recordada de un miembro en la mesa compartida."""
+        return self._fichas.get((guild_id, user_id), DEFAULT_STAKE)
+
+    def set_ficha(self, guild_id: int, user_id: int, stake: int) -> None:
+        """Recuerda la ficha de un miembro."""
+        remember(self._fichas, (guild_id, user_id), max(1, stake))
+
+    def release(self, table: CrapsTable) -> None:
+        """Libera el canal cuando su mesa se cierra."""
+        channel_id = getattr(table.channel, "id", 0)
+        if self.tables.get(channel_id) is table:
+            del self.tables[channel_id]
+
+    async def ensure_table(
+        self, guild_id: int, channel: discord.abc.Messageable, opener_id: int = 0
+    ) -> tuple[CrapsTable | None, bool]:
+        """La mesa compartida del canal: la que hay o una nueva que se publica ya.
+
+        Una mesa nueva lleva el tapete de quien la abre (`opener_id`).
+
+        Returns:
+            La mesa (`None` si otra se está abriendo) y si es nueva.
+        """
+        channel_id = getattr(channel, "id", 0)
+        table = self.tables.get(channel_id)
+        if table is not None:
+            return table, False
+        if channel_id in self._opening:
+            return None, False
+        self._opening.add(channel_id)
+        table = None
+        try:
+            skin = tienda.skin_params(self.bot, guild_id, opener_id, GAME)
+            worn = tienda.skin_of(self.bot, guild_id, opener_id, GAME)
+            table = CrapsTable(
+                self,
+                guild_id=guild_id,
+                channel=channel,
+                png=b"",
+                skin=skin,
+                skin_label=worn.label if worn else None,
+            )
+            table.png = await self.renderer.board(table.drawing(), table.rest, skin=skin)
+            table.open_round()
+            table.message = await channel.send(
+                embed=table.embed(),
+                view=table.view_now(),
+                file=table.table_file(),
+                allowed_mentions=NO_MENTIONS,
+            )
+        except Exception:
+            if table is not None:
+                table.stopping = True
+                table.cancel_painting()
+            raise
+        finally:
+            self._opening.discard(channel_id)
+        self.tables[channel_id] = table
+        self.start(table)
+        return table, True
+
+    def start(self, table: CrapsTable) -> None:
+        """Arranca el bucle de una mesa compartida recién abierta."""
+        channel_id = getattr(table.channel, "id", 0)
+        table.task = asyncio.create_task(table.run(), name=f"dados-mesa-{channel_id}")
+
+    async def _mesa_impl(
+        self,
+        *,
+        guild: discord.Guild | None,
+        channel: object,
+        user: discord.abc.User,
+        amount_text: str | None,
+        bet: Bet | None,
+        confirm: Callable[[str], Awaitable[None]],
+        send_error: Callable[[str], Awaitable[None]],
+    ) -> None:
+        """Lógica de `/dados mesa:Compartida` y `.dados mesa`: abre (o baja) la mesa y apuesta."""
+        if guild is None or not isinstance(channel, discord.abc.Messageable):
+            await send_error("Los dados solo se juegan dentro de un servidor.")
+            return
+        if error := casino_channel_error(self.casino_channel_ids, channel, "Los dados"):
+            await send_error(error)
+            return
+        stake: int | None = None
+        if amount_text is not None or bet is not None:
+            balance = await self.economy.balance(guild.id, user.id)
+            try:
+                stake = (
+                    parse_amount(amount_text, balance)
+                    if amount_text
+                    else max(1, min(self.ficha(guild.id, user.id), balance))
+                )
+            except ValueError as error:
+                await send_error(str(error))
+                return
+            if balance <= 0 or stake > balance:
+                await send_error(insufficient_text(balance, stake))
+                return
+            if amount_text:
+                self.set_ficha(guild.id, user.id, stake)
+        table, new = await self.ensure_table(guild.id, channel, user.id)
+        if table is None:
+            await send_error("Se está abriendo la mesa en este canal; un segundo.")
+            return
+        if bet is None:
+            if not new:
+                try:
+                    await table.move()
+                except MesaError as error:
+                    await send_error(str(error))
+                    return
+            if stake is not None:
+                await confirm(f"🪙 Tu ficha: **{format_amount(stake)}** por ronda.")
+            else:
+                await confirm("")
+            return
+        assert stake is not None
+        try:
+            await table.bet_now(user, bet, stake)
+        except MesaError as error:
+            await send_error(str(error))
+            return
+        table.edit_soon()
+        await confirm(
+            f"{bet.emoji} **{format_amount(stake)}** a **{bet.label}**. "
+            "Se cobra al tirar la salida; pulsa 🃏 Listo en la mesa cuando quieras."
+        )
 
     async def shout(
         self, game: CrapsGame, hand: Hand, user: discord.abc.User, channel: object
@@ -1027,9 +1195,11 @@ class Craps(commands.Cog, name="Dados"):
     @app_commands.describe(
         cantidad="Apuesta: 500, 2k, all… (por defecto 100)",
         apuesta="Pase o No pase para tirar ya (si no, eliges con los botones)",
+        mesa="Compartida: la mesa del canal, con varios jugadores y un tirador",
     )
     @app_commands.choices(
-        apuesta=[app_commands.Choice(name=f"{b.emoji} {b.label}", value=b.key) for b in Bet]
+        apuesta=[app_commands.Choice(name=f"{b.emoji} {b.label}", value=b.key) for b in Bet],
+        mesa=[app_commands.Choice(name="Compartida", value=SHARED_KEY)],
     )
     @app_commands.guild_only()
     async def dados(
@@ -1037,14 +1207,20 @@ class Craps(commands.Cog, name="Dados"):
         interaction: discord.Interaction,
         cantidad: str | None = None,
         apuesta: str | None = None,
+        mesa: str | None = None,
     ) -> None:
         """Abre una mesa de craps y, si se elige apuesta, tira la salida.
 
-        Solo en los canales de `CASINO_CHANNEL_IDS` si está configurado. Cobra
-        la apuesta al tirar la salida y las Odds al ponerlas; paga al decidirse.
+        Con `mesa:Compartida` abre (o baja al final) la mesa del canal y la
+        apuesta entra en su próxima salida. Solo en los canales de
+        `CASINO_CHANNEL_IDS` si está configurado. Cobra la apuesta al tirar la
+        salida y las Odds al ponerlas; paga al decidirse.
         """
         responder = InteractionResponder(interaction)
         bet = parse_bet(apuesta) if apuesta else None
+        if mesa == SHARED_KEY:
+            await self._shared_slash(interaction, cantidad, bet)
+            return
 
         async def send(**kwargs: Any) -> discord.Message:
             await interaction.response.send_message(**kwargs)
@@ -1062,18 +1238,46 @@ class Craps(commands.Cog, name="Dados"):
         if bet is not None:
             await renta.remind(self.bot, interaction)
 
+    async def _shared_slash(
+        self, interaction: discord.Interaction, cantidad: str | None, bet: Bet | None
+    ) -> None:
+        """`/dados mesa:Compartida`: abrir la mesa dibuja y publica, así que se difiere."""
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        async def confirm(text: str) -> None:
+            await interaction.followup.send(
+                text or "🎲 Mesa compartida abierta: abajo del todo.", ephemeral=True
+            )
+
+        async def send_error(text: str) -> None:
+            await interaction.followup.send(text, ephemeral=True)
+
+        await self._mesa_impl(
+            guild=interaction.guild,
+            channel=interaction.channel,
+            user=interaction.user,
+            amount_text=cantidad,
+            bet=bet,
+            confirm=confirm,
+            send_error=send_error,
+        )
+        await renta.remind(self.bot, interaction)
+
     @commands.command(name="dados")
     @commands.guild_only()
     async def dados_text(self, ctx: commands.Context, *args: str) -> None:
         """Versión de texto: `.dados`, `.dados 500`, `.dados 500 pase`, `.dados nopase`.
 
-        La cantidad y la apuesta van en cualquier orden.
+        La cantidad y la apuesta van en cualquier orden. Con `mesa` (`.dados mesa`,
+        `.dados mesa 500 pase`) es la mesa compartida del canal.
         """
         responder = ContextResponder(ctx)
         amount_text: str | None = None
         bet: Bet | None = None
         # «no pase» en dos palabras es una sola apuesta.
         words = " ".join(args).lower().replace("no pase", "nopase").split()
+        shared = "mesa" in words
+        words = [word for word in words if word != "mesa"]
         for arg in words:
             try:
                 bet = parse_bet(arg)
@@ -1086,6 +1290,27 @@ class Craps(commands.Cog, name="Dados"):
         async def send(**kwargs: Any) -> discord.Message:
             return await ctx.send(**kwargs)
 
+        if shared:
+
+            async def confirm(text: str) -> None:
+                if not text:
+                    return
+                # Sin mensajes privados en comandos de texto: una reacción basta.
+                try:
+                    await ctx.message.add_reaction("🎲")
+                except discord.HTTPException:
+                    await ctx.send(text, allowed_mentions=NO_MENTIONS)
+
+            await self._mesa_impl(
+                guild=ctx.guild,
+                channel=ctx.channel,
+                user=ctx.author,
+                amount_text=amount_text,
+                bet=bet,
+                confirm=confirm,
+                send_error=responder.send_error,
+            )
+            return
         await self._dados_impl(
             guild=ctx.guild,
             channel=ctx.channel,

@@ -19,7 +19,9 @@ usos (`cooldown`) para que no se conviertan en spam.
 
 Ningún uso mueve dinero: lo que cuesta es comprarlos (con IGIC, en la caja).
 Así no hacen falta reglas fiscales nuevas (Biblia, sección 4). La caja botín
-tampoco: da un objeto del catálogo, sin valor de reventa, y no Y$.
+tampoco: da un objeto del catálogo, sin valor de reventa, y no Y$. Las cajas por
+niveles y de temporada (`bot.services.lootboxes`) igual: pagan IGIC al comprarlas y
+abrirlas no mueve dinero.
 """
 
 from __future__ import annotations
@@ -71,7 +73,7 @@ class Use:
         outcomes: Desenlaces posibles, elegidos al azar por su peso.
         pools: Huecos extra de las plantillas: `{"multa": ("frase", …)}`.
         special: Usos con lógica propia (`d20`, `padron`, `robuso`, `mystery`,
-            `megaphone`); sus desenlaces se arman en código.
+            `lootbox`, `megaphone`); sus desenlaces se arman en código.
         on_self: Frase si te eliges a ti mismo (solo `Target.MEMBER`).
     """
 
@@ -119,6 +121,13 @@ BOT_LINES: tuple[str, ...] = (
     "tienes que soportar».",
     "{who} le lanza {item} a Jovani. Jovani lo coge al vuelo y pide: «Hazme café… ¡quiero café!».",
     "{who} va a por Jovani con {item}. Jovani se monta en la motora de Víctor y desaparece. 🏍️",
+    "{who} le lanza {item} a Jovani. Lo intercepta la Cúpula de Hierro del autotune. 🛡️",
+    "{who} intenta usar {item} contra Jovani. Jovani pide aplazar la vista, como Bibi, y se "
+    "va de gira.",
+    "{who} va a por Jovani con {item}. Jovani lo bloquea como Twitter a Nick Fuentes: tres veces.",
+    "{who} apunta a Jovani con {item}. Falla más que Feijóo en una investidura.",
+    "{who} le tira {item} a Jovani. Jovani lo declara fondo europeo y lo deja sin ejecutar.",
+    "{who} intenta usar {item} contra Jovani. Jovani lo manda a Waterloo en el maletero.",
 )
 #: Frase por defecto si te eliges a ti mismo.
 SELF_LINE = "{who} se aplica {item} a sí mismo. Nadie entiende nada, pero el colmado no devuelve."
@@ -743,6 +752,8 @@ _USES: tuple[Use, ...] = (
     Use("d20", "Tirar", consumes=False, cooldown=20, special="d20"),
     Use("megafono", "Gritar", Target.TEXT, special="megaphone"),
     Use("caja", "Abrir", special="mystery"),
+    # Las siete cajas de `lootboxes` comparten uso: cuál es lo dice la clave del artículo.
+    Use("lootbox", "Abrir", special="lootbox"),
     Use(
         "bocina",
         "Pitar",
@@ -1305,7 +1316,7 @@ _USES: tuple[Use, ...] = (
 
 USES: dict[str, Use] = {use.key: use for use in _USES}
 #: Usos que necesitan la base de datos o Discord y los resuelve el cog.
-COG_SPECIALS = frozenset({"mystery", "megaphone", "nickname"})
+COG_SPECIALS = frozenset({"mystery", "lootbox", "megaphone", "nickname"})
 
 # -- Textos de los usos especiales -----------------------------------------------------
 

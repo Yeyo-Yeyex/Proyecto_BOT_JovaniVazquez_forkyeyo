@@ -39,7 +39,8 @@ caballos, los duelos de backgammon), la de quien abre la mesa, y el mensaje lo
 dice (`Game.shared`).
 
 **Tapetes.** Las mesas con fieltro (ruleta, autobús, bacará, dados, moneda,
-pollo, póker y backgammon) son un juego cada una, del grupo `TAPETE` (`Game.group`). Una skin del
+pollo, guerra, póker y backgammon) son un juego cada una, del grupo `TAPETE`
+(`Game.group`). Una skin del
 grupo se compra una vez y se lleva en las mesas que quieras, cada una con la
 suya; una skin con la clave de una mesa (`moneda`) es un tapete solo de esa
 mesa (`fits`). Lo puesto va por mesa en `shop_skin_worn`. En el 🎨 de la mesa
@@ -223,6 +224,7 @@ GAMES: dict[str, Game] = {g.key: g for g in (
     Game("dados", "Dados", "🎲", "tapete", FELT, group=TAPETE),
     Game("moneda", "Cara o cruz", "🪙", "tapete", FELT, group=TAPETE),
     Game("pollo", "Pollo", "🐔", "tapete", FELT, group=TAPETE),
+    Game("guerra", "Guerra", "⚔️", "tapete", FELT, group=TAPETE),
     Game("poker", "Póker", "♠️", "tapete", FELT, shared=True, group=TAPETE),
     # En un duelo se ve el tapete de quien reta; en la mesa contra Jovani, el del dueño.
     Game("backgammon", "Backgammon", "♟️", "tapete", FELT, shared=True, group=TAPETE),
@@ -355,6 +357,18 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#14110b",
         "pattern": "nodo",
     }), price=20_000, aisle="espana"),
+    # La skin «épica» de Franco: su caricatura en la tele del 20-N. Se ríe del anuncio y
+    # del régimen, como pide la Biblia; la bandera con el águila no se pone (eso sería lucirla).
+    Skin("tapete_20n", "tapete", "📺", "Tapete del 20-N", (
+        "La tele de madera del salón de 1975 con la caricatura del Caudillo y el rótulo de "
+        "Arias Navarro: «Españoles, Franco ha muerto». Lo hemos comprobado: sigue muerto."
+    ), _frozen({
+        "felt": ("#a88a5c", "#7a5f3a", "#2e2213"),
+        "fiber": ("rgba(255,240,210,0.05)", "rgba(40,20,0,0.08)"),
+        "trim": "rgba(241,234,216,0.45)",
+        "ink": "#1d1408",
+        "pattern": "franco",
+    }), price=150_000, aisle="espana", min_level=15),
     Skin("tapete_hacienda", "tapete", "📎", "Tapete del Modelo 100", (
         "La declaración de la Renta hecha tapete: casillas, renglones y el sello de "
         "A INGRESAR. Hacienda somos todos, pero unos más que otros."
@@ -375,16 +389,18 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#030a1f",
         "pattern": "kirk",
     }), price=40_000, aisle="shitpost"),
+    # Tres copias numeradas y a precio de silencio: es el tapete más caro del casino.
     Skin("tapete_epstein", "tapete", "🗂️", "Tapete de los archivos Epstein", (
-        "Un expediente del FBI casi todo tachado en negro, con el sello de "
-        "CLASSIFIED. La lista de clientes está debajo de las fichas: no levantes ninguna."
+        "Un expediente del FBI tachado en negro con el sello de CLASSIFIED y la lista "
+        "de clientes debajo de las fichas. Tres copias, a lo que vale que tu nombre "
+        "salga tachado."
     ), _frozen({
         "felt": ("#e6d4a4", "#c9b077", "#7d6436"),
         "fiber": ("rgba(255,255,255,0.05)", "rgba(60,40,0,0.06)"),
         "trim": "rgba(60,50,30,0.4)",
         "ink": "#1a160c",
         "pattern": "epstein",
-    }), price=50_000, aisle="shitpost"),
+    }), price=3_000_000, aisle="shitpost", min_level=40, stock=3),
     Skin("tapete_corea", "tapete", "🚀", "Tapete del Líder Supremo", (
         "La bandera de Pyongyang con su estrella roja. Cada vez que pierdes, Kim "
         "lanza un misil al mar de Japón para celebrarlo."
@@ -415,6 +431,16 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#041a0b",
         "pattern": "gordo",
     }), price=22_000, aisle="cotillon", season=Season("Navidad", frozenset({12, 1}))),
+    # 7.000 Y$ por el 7 de octubre, el día que nació el servidor.
+    Skin("tapete_aniversario", "tapete", "🎂", "Tapete del aniversario", (
+        "Morado de fiesta con ribete dorado, para jugarse la tarta el mes en que nació "
+        "el servidor. Solo se vende en octubre; las velas, al precio de la luz."
+    ), _frozen({
+        "felt": ("#9b5bd6", "#6a2fa8", "#2c0b4f"),
+        "fiber": ("rgba(240,220,255,0.05)", "rgba(20,0,40,0.08)"),
+        "trim": "rgba(255,214,110,0.55)",
+        "ink": "#1c0533",
+    }), price=7_000, aisle="cotillon", season=Season("Aniversario", frozenset({10}))),
     Skin("tapete_propio", "tapete", "🖼️", "Tapete propio", (
         "Un tapete con la imagen que tú subas con `pieles`: tu cara, tu perro o el "
         "Falcon. Hasta que la subas, fieltro liso. Una por persona; si Bruselas la "
