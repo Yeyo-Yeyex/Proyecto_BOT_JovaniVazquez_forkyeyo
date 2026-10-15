@@ -239,11 +239,15 @@ CASINO_GROUP = Group("casino_group", "🎰 Casino")
 CHAT_GROUP = Group("chat_group", "💬 Chat")
 #: Y la voz: llamada, micro y cámara, entradas y música.
 VOICE_GROUP = Group("voice_group", "🎙️ Voz")
-GROUPS: dict[str, Group] = {g.key: g for g in (CHAT_GROUP, VOICE_GROUP, CASINO_GROUP)}
+#: Todo lo de `pala` (turnos, oficios, Hong Kong) va en una sola entrada: antes eran
+#: nueve sueltas y llenaban el menú.
+WORK_GROUP = Group("work_group", "🪏 Trabajo")
+GROUPS: dict[str, Group] = {g.key: g for g in (CHAT_GROUP, VOICE_GROUP, CASINO_GROUP, WORK_GROUP)}
 
 _CG = CASINO_GROUP.key
 _CH = CHAT_GROUP.key
 _VG = VOICE_GROUP.key
+_WG = WORK_GROUP.key
 CATEGORIES: tuple[Category, ...] = (
     Category("chat", "💬 General", group=_CH),
     Category("style", "✍️ Estilo", group=_CH),
@@ -292,15 +296,16 @@ CATEGORIES: tuple[Category, ...] = (
     Category("pets", "🐾 Mascotas"),
     Category("bizum", "🏦 Banco: Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
-    Category("work", "🪏 Trabajo"),
-    Category("jobs", "👷 Oficios"),
-    Category("hosteleria", "🍽️ Hostelería"),
-    Category("sanidad", "🏥 Sanidad"),
-    Category("oficina", "💻 Oficina"),
-    Category("reparto", "🛵 Reparto"),
-    Category("funcionariado", "🗂️ Funcionariado"),
-    Category("influencer", "🤳 Influencer"),
-    Category("hongkong", "🇭🇰 Hong Kong"),
+    # 🪏 Trabajo: una entrada del menú con una sección por oficio, como el casino.
+    Category("work", "🪏 General", group=_WG),
+    Category("jobs", "👷 Oficios", group=_WG),
+    Category("hosteleria", "🍽️ Hostelería", group=_WG),
+    Category("sanidad", "🏥 Sanidad", group=_WG),
+    Category("oficina", "💻 Oficina", group=_WG),
+    Category("reparto", "🛵 Reparto", group=_WG),
+    Category("funcionariado", "🗂️ Funcionariado", group=_WG),
+    Category("influencer", "🤳 Influencer", group=_WG),
+    Category("hongkong", "🇭🇰 Hong Kong", group=_WG),
     Category("meta", "🏆 Coleccionista"),
 )
 CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
