@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from bot.services import blackjack as bj
 from bot.services.blackjack import (
     INSURANCE_PAYS,
     SUITS,
@@ -328,3 +329,41 @@ def test_no_se_puede_liquidar_a_medias() -> None:
     g = game("10♠", "10♥", "6♦", "7♣")
     with pytest.raises(RuntimeError):
         g.settle()
+
+
+def test_la_cuenta_hi_lo_de_un_zapato_entero_es_cero() -> None:
+    shoe = bj.new_shoe()
+    assert bj.true_count(shoe) == 0
+    assert sum(bj.hilo(card) for card in shoe) == 0
+    assert [bj.hilo(bj.Card(rank, 0)) for rank in (2, 6, 7, 9, 10, 13, 1)] == [
+        1,
+        1,
+        0,
+        0,
+        -1,
+        -1,
+        -1,
+    ]
+
+
+def test_la_cuenta_verdadera_divide_por_las_barajas_que_quedan() -> None:
+    # Quedan dos barajas de solo figuras: ha salido lo contrario, +104 entre 2.
+    shoe = [bj.Card(13, 0)] * 104
+    assert bj.true_count(shoe) == 52
+    assert bj.true_count([]) == 0
+
+
+def test_la_carta_de_corte_esta_a_tres_cuartos_del_zapato() -> None:
+    assert bj.CUT_CARD == bj.DECKS * 52 // 4
+    assert not bj.needs_shuffle([bj.Card(7, 0)] * bj.CUT_CARD)
+    assert bj.needs_shuffle([bj.Card(7, 0)] * (bj.CUT_CARD - 1))
+
+
+def test_el_jefe_de_sala_solo_ve_subidas_grandes_con_la_cuenta_alta() -> None:
+    hot = [bj.Card(10, 0)] * 104
+    cold = [bj.Card(5, 0)] * 104
+    top = bj.PIT_BOSS_SPREAD * 100
+    assert not bj.pit_boss_shuffles(hot, stake=top, lowest=100)
+    assert bj.pit_boss_shuffles(hot, stake=top + 1, lowest=100)
+    assert not bj.pit_boss_shuffles(cold, stake=top * 10, lowest=100)
+    assert not bj.pit_boss_shuffles(hot, stake=top * 10, lowest=None), "primera mano del zapato"

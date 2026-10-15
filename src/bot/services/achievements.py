@@ -60,6 +60,7 @@ from bot.services.bizum import MAX_DAILY as BIZUM_MAX_DAILY
 from bot.services.bizum import MAX_OPERATION as BIZUM_MAX_OPERATION
 from bot.services.bizum import MIN_AMOUNT as BIZUM_MIN_AMOUNT
 from bot.services.blackjack import (
+    PIT_BOSS_SPREAD,
     BlackjackGame,
     Result,
     hand_total,
@@ -2469,6 +2470,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega 100 manos de 5.000 Y$ o más.", R),
         (1_000, "bj_tope_1k", "Regla de gasto de Bruselas",
          "Juega 1.000 manos de 5.000 Y$ o más.", R),
+    ])  # fmt: skip
+    # El zapato dura entre manos: se cuentan cartas y el jefe de sala vigila.
+    a += _tiers("blackjack", "bj_cut_cards", [
+        (1, "bj_corte", "Carta de corte", "Juega hasta que salga la carta de corte.", C),
+        (50, "bj_corte_50", "Zapatero remendón", "Llega 50 veces a la carta de corte.", R),
+        (500, "bj_corte_500", "Seis barajas de memoria",
+         "Llega 500 veces a la carta de corte. Ya te sabes el zapato como el Cara al Sol "
+         "un ministro de Franco.", E),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_hot_wins", [
+        (1, "bj_rain_man", "Rain Man",
+         "Gana una mano habiendo subido la ficha con la cuenta a +3 o más.", R),
+        (25, "bj_mit", "Equipo del MIT",
+         "Gana 25 manos habiendo subido la ficha con la cuenta a +3 o más.", E),
+        (250, "bj_veintiuno", "Veintiuno, la película",
+         "Gana 250 manos habiendo subido la ficha con la cuenta a +3 o más.", L),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_spread_max", [
+        (PIT_BOSS_SPREAD, "bj_subida", "Subida de manual",
+         f"Juega una mano a {PIT_BOSS_SPREAD} veces tu ficha más baja del zapato sin que te "
+         "pille el jefe de sala.", C),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_pit_boss", [
+        (1, "bj_fichado", "Fichado por el jefe de sala",
+         "Que el jefe de sala baraje porque sospecha que cuentas.", C, True),
+        (10, "bj_non_grata", "Persona non grata en Montecarlo",
+         "Que el jefe de sala te baraje 10 veces.", R, True),
+        (100, "bj_vetado", "Vetado como Puigdemont en el Congreso",
+         "Que el jefe de sala te baraje 100 veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_cold_shoe", [
+        (1, "bj_zapato_helado", "Zapato más frío que Bruselas en enero",
+         "Juega una mano con la cuenta a −4 o menos.", C, True),
     ])  # fmt: skip
 
     # 💰 Casino ---------------------------------------------------------------------------
@@ -13371,6 +13405,32 @@ def roulette_stats(
 #: Mano «de las gordas» para los logros de `bj_max_stake` (50 tiradas). Era el
 #: tope de la mesa hasta que el blackjack dejó de favorecer al jugador.
 BJ_HIGH_STAKE = 5_000
+
+
+def blackjack_shoe_stats(
+    game: BlackjackGame, *, caught: bool, cut: bool, count: float, spread: int | None
+) -> StatDelta:
+    """Contadores del zapato de la mesa en una mano ya pagada (cuenta de cartas).
+
+    Args:
+        caught: El jefe de sala barajó antes de repartirla.
+        cut: Salió la carta de corte y se barajó antes de repartirla.
+        count: Cuenta Hi-Lo verdadera al repartir (0 con el zapato recién barajado).
+        spread: Veces que la ficha cabía en la más baja del zapato (`None` en la
+            primera mano del zapato o si el jefe de sala barajó).
+    """
+    delta = StatDelta()
+    if caught:
+        delta.add["bj_pit_boss"] = 1
+    if cut:
+        delta.add["bj_cut_cards"] = 1
+    if count <= -4:
+        delta.add["bj_cold_shoe"] = 1
+    if spread is not None and spread >= 2:
+        delta.peak["bj_spread_max"] = spread
+        if count >= 3 and game.net > 0:
+            delta.add["bj_hot_wins"] = 1
+    return delta
 
 
 def blackjack_stats(game: BlackjackGame) -> StatDelta:

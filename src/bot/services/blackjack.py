@@ -7,8 +7,15 @@ la economía.
 
 Reglas (las habituales de un casino):
 
-- Zapato de 6 barajas, barajado de nuevo en cada mano (no se pueden contar
-  cartas).
+- Zapato de 6 barajas que dura entre manos en la mesa de cada jugador: se
+  baraja de nuevo al llegar a la carta de corte (`CUT_CARD`, a tres cuartos del
+  zapato), así que **se pueden contar cartas**, como en un casino. Y como en un
+  casino, el jefe de sala vigila: si la apuesta pasa de `PIT_BOSS_SPREAD` veces la
+  más baja de ese zapato con la cuenta Hi-Lo verdadera en `PIT_BOSS_COUNT` o más,
+  baraja antes de repartir (`pit_boss_shuffles`). Contar con una subida de 1 a 4
+  sigue valiendo: quien cuenta Hi-Lo perfecto con estrategia básica se queda en
+  ≈ 100 % de lo apostado (sin contar, ≈ 99,6 %; `docs/rtp_blackjack.py --contar`,
+  2 millones de manos). Subir sin límite con el zapato caliente, no.
 - La banca se planta en 17, también en 17 blando.
 - La banca mira si tiene blackjack cuando enseña un as o una figura/10; si
   lo tiene, la mano acaba ahí y se pierde la apuesta (empate si el jugador
@@ -46,6 +53,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 DECKS = 6
+#: Cartas que quedan cuando sale la carta de corte: a partir de aquí se baraja antes
+#: de la mano siguiente (penetración del 75 %, la de una mesa de casino normal).
+CUT_CARD = DECKS * 52 // 4
+#: El jefe de sala baraja si la apuesta pasa de tantas veces la más baja del zapato…
+PIT_BOSS_SPREAD = 4
+#: …y la cuenta verdadera Hi-Lo (por baraja que queda) llega a esto.
+PIT_BOSS_COUNT = 2
 SUITS = ("♠", "♥", "♦", "♣")
 RANK_LABELS = {1: "A", 11: "J", 12: "Q", 13: "K"}
 DEALER_STANDS_ON = 17
@@ -107,6 +121,47 @@ def new_shoe(shuffle: Callable[[list[Card]], None] | None = None) -> list[Card]:
     cards = [Card(rank, suit) for _ in range(DECKS) for suit in range(4) for rank in range(1, 14)]
     (shuffle or random.SystemRandom(secrets.randbits(64)).shuffle)(cards)
     return cards
+
+
+def hilo(card: Card) -> int:
+    """Valor de una carta en la cuenta Hi-Lo: +1 del 2 al 6, 0 del 7 al 9 y −1 el resto."""
+    if 2 <= card.value <= 6:
+        return 1
+    if card.value in (7, 8, 9):
+        return 0
+    return -1
+
+
+def needs_shuffle(shoe: Sequence[Card]) -> bool:
+    """Si el zapato ha llegado a la carta de corte y hay que barajar antes de repartir."""
+    return len(shoe) < CUT_CARD
+
+
+def true_count(shoe: Sequence[Card]) -> float:
+    """Cuenta Hi-Lo verdadera de lo que ya ha salido: la cuenta entre las barajas que quedan.
+
+    Un zapato entero suma 0 en Hi-Lo, así que lo que ha salido suma lo contrario de
+    lo que queda. Con el zapato vacío, 0.
+    """
+    if not shoe:
+        return 0.0
+    running = -sum(hilo(card) for card in shoe)
+    return running / (len(shoe) / 52)
+
+
+def pit_boss_shuffles(shoe: Sequence[Card], *, stake: int, lowest: int | None) -> bool:
+    """Si el jefe de sala baraja antes de esta mano porque sospecha que cuentas.
+
+    Args:
+        shoe: Lo que queda en el zapato.
+        stake: La apuesta de la mano que va a repartirse.
+        lowest: La apuesta más baja jugada con este zapato; `None` si es su primera mano.
+    """
+    return (
+        lowest is not None
+        and stake > PIT_BOSS_SPREAD * lowest
+        and true_count(shoe) >= PIT_BOSS_COUNT
+    )
 
 
 class Result(Enum):
