@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.5.0 · 2026-10-15
+
+- Tienda: cajas por niveles, de temporada y ganadas jugando, con colecciones
+
 ### 7.4.0 · 2026-10-15
 
 - Dados: mesa compartida del canal, con tirador y tiradas para todos
