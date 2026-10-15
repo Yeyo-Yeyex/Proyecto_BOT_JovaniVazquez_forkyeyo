@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.7.0 · 2026-10-15
+
+- Pisos: rediseño ilustrado, con las islas de verdad y mucha más guasa
+
 ### 7.6.0 · 2026-10-15
 
 - Guerra: mesa animada con tapete propio, pintada antes del clic
