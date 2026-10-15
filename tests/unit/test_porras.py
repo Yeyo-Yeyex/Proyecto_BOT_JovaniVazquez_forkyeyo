@@ -23,6 +23,7 @@ from bot.cogs import craps as craps_cog
 from bot.cogs import mines as mines_cog
 from bot.cogs import poker as poker_cog
 from bot.cogs import tower as tower_cog
+from bot.cogs import war as war_cog
 from bot.cogs.porras import Porras, Table, parse_text_args, resolve_game
 from bot.repositories.economy import (
     PORRA_ACCOUNT_ID,
@@ -195,6 +196,7 @@ def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
         for m in (
             mines_cog,
             tower_cog,
+            war_cog,
             chicken_cog,
             coin_cog,
             bus_cog,
@@ -234,6 +236,8 @@ def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
         ("mina", [play(50, boom=0)], 0),
         ("dragon", [play(50, game="torre", boom=0), play(-100, game="torre", boom=1)], 1),
         ("dragon", [play(50, game="torre", boom=0)], 0),
+        ("guerra", [play(100, game="guerra", war=0), play(-200, game="guerra", war=1)], 1),
+        ("guerra", [play(100, game="guerra", war=0)], 0),
         ("atropello", [play(-100, game="pollo", splat=1)], 1),
         ("pasarse", [play(-100, game="blackjack", bust=1)], 1),
         ("natural", [play(150, game="blackjack", natural=1)], 0),
@@ -255,6 +259,8 @@ def test_las_opciones_de_cuantas_van_de_cero_a_n() -> None:
     assert not PROPOSITION_BY_KEY["mina"].fits("pollo", 3)
     assert PROPOSITION_BY_KEY["dragon"].fits("torre", 3)
     assert not PROPOSITION_BY_KEY["dragon"].fits("minas", 3)
+    assert PROPOSITION_BY_KEY["guerra"].fits("guerra", 3)
+    assert not PROPOSITION_BY_KEY["guerra"].fits("blackjack", 3)
 
 
 def test_solo_cuentan_las_jugadas_del_juego_y_la_apuesta_y_tras_el_cierre() -> None:

@@ -39,6 +39,7 @@ GAMES = (
     "Crash",
     "Minas",
     "Torre",
+    "Guerra",
     "Pollo",
     "Moneda",
     "Dados",
@@ -1335,6 +1336,38 @@ async def test_la_torre_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: P
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.by_game["torre"].plays == 1
+    finally:
+        await client.close()
+
+
+async def test_la_guerra_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: Path) -> None:
+    """La Guerra carga antes que los logros: sus manos deben llegar a `logros` y al casino."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Guerra")
+        cog.new_shoe = lambda: [Card(7, 0)] * 10 + [Card(1, 0), Card(13, 0)]
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._guerra_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            send=AsyncMock(return_value=MagicMock()),
+            send_error=AsyncMock(),
+        )
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["war_hands"] == 1
+        # Rey contra as: la banca gana y salta el secreto del rey sin corona.
+        assert {"war_1", "war_king_lost"} <= set(profile.unlocked)
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["guerra"].plays == 1
     finally:
         await client.close()
 

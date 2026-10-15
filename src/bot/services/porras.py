@@ -221,6 +221,15 @@ PROPOSITIONS: tuple[Proposition, ...] = (
         details=frozenset({"boom"}),
     ),
     Proposition(
+        "guerra", "⚔️", "¿Se va a la guerra?",
+        "¿{who} va a la guerra en alguna de las {n} manos de la Guerra?",
+        ("🕊️ Ni una guerra", "⚔️ Va a la guerra"),
+        lambda plays, _stake: 1 if any(p.detail("war") for p in plays) else 0,
+        favourable=None,
+        games=frozenset({"guerra"}),
+        details=frozenset({"war"}),
+    ),
+    Proposition(
         "atropello", "🚗", "¿Lo atropellan?", "¿{who} cruza vivo en las {n} partidas del pollo?",
         ("🐔 Cruza vivo", "🚗 Lo atropellan"),
         lambda plays, _stake: 1 if any(p.detail("splat") for p in plays) else 0,
