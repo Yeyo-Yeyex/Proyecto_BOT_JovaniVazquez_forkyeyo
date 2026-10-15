@@ -67,7 +67,9 @@ GAMES: dict[str, tuple[str, str]] = {
 }
 
 #: Prefijos del libro que pertenecen a otro juego de `GAMES`.
-LEDGER_ALIASES: dict[str, str] = {"volcan": "botes", "olimpo": "botes", "filon": "botes"}
+LEDGER_ALIASES: dict[str, str] = {
+    "volcan": "botes", "mina": "botes", "olimpo": "botes", "filon": "botes",
+}  # fmt: skip
 
 #: Una tirada de referencia del casino (Biblia, «Equilibrio: medir en tiradas»).
 REFERENCE_STAKE = 100

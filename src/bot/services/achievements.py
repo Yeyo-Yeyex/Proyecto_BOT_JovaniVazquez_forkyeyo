@@ -3181,9 +3181,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
 
-    # 🌋 Botes (de momento, volcan) ---------------------------------------------------------
+    # 🌋 Botes (volcan, mina y olimpo) ---------------------------------------------------------
     a += _tiers("botes", "botes_spins", [
-        (1, "botes_1", "Hold & win", "Juega tu primera tirada en el Volcán.",
+        (1, "botes_1", "Hold & win", "Juega tu primera tirada en una máquina de Botes.",
          C),
         (100, "botes_100", "Coleccionista de monedas de Bárcenas",
          "Juega 100 tiradas en los botes.", C),
@@ -3195,6 +3195,36 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("botes", "botes_spins_volcan", [
         (100, "botes_timanfaya", "Turista en Timanfaya", "Juega 100 tiradas en el Volcán.", C),
     ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_mina", [
+        (100, "botes_mina", "Picando como en Asturias", "Juega 100 tiradas en la Mina.", C),
+        (1_000, "botes_mina_1k", "Capataz del litio",
+         "Juega 1.000 tiradas en la Mina. El litio, de momento, se lo llevan otros.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_olimpo", [
+        (100, "botes_olimpo", "Rescate griego", "Juega 100 tiradas en el Olimpo.", C),
+        (1_000, "botes_olimpo_1k", "Troika a la puerta",
+         "Juega 1.000 tiradas en el Olimpo. Zeus pide otro préstamo a Bruselas.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="botes_tres",
+        name="Las tres máquinas",
+        description="Juega al menos una tirada en el Volcán, en la Mina y en el Olimpo.",
+        category="botes",
+        rarity=C,
+        conditions=(
+            ("botes_spins_volcan", 1), ("botes_spins_mina", 1), ("botes_spins_olimpo", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="botes_tres_100",
+        name="Gira de casinos por Europa",
+        description="Juega 100 tiradas en cada máquina de Botes: Volcán, Mina y Olimpo.",
+        category="botes",
+        rarity=R,
+        conditions=(
+            ("botes_spins_volcan", 100), ("botes_spins_mina", 100), ("botes_spins_olimpo", 100),
+        ),
+    ))  # fmt: skip
     a += _tiers("botes", "botes_collects", [
         (1, "botes_collect", "Recogida", "Recoge las monedas con el recogedor.", C),
         (50, "botes_collect_50", "Barrendero de monedas", "Haz 50 recogidas.", C),
@@ -14260,7 +14290,7 @@ def hold_win_stats(
     """Contadores de una tirada base de Botes (sin lo común del casino).
 
     Args:
-        theme: Máquina (de momento, `volcan`).
+        theme: Máquina (`volcan`, `mina` u `olimpo`).
         payout: Lo cobrado en la tirada (ways más recogida).
         trigger: Bonus que dispara la tirada, si alguno.
         session_spins: Tiradas en esta máquina, contando esta.

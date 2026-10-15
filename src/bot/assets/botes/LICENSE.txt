@@ -12,6 +12,14 @@ Volcán
   volcan_collect.png (volcán): dibujados para el bot con Pillow. El BAR usa la
   letra Bungee y el siete y el WILD, Luckiest Guy (ver abajo).
 
+Mina y Olimpo
+- mina_pay0.png a mina_pay5.png (pico, lámpara de minero, carretilla, dinamita,
+  pepita de oro y lingote), mina_wild.png (diamante en bruto), mina_collect.png
+  (vagoneta de oro), olimpo_pay0.png a olimpo_pay5.png (ánfora, lira, casco,
+  laurel, tridente y águila), olimpo_wild.png (rayo de Zeus) y
+  olimpo_collect.png (Zeus): dibujados para el bot con Pillow y numpy por
+  `docs/dibujar_botes.py`, que los regenera. La cinta WILD usa Luckiest Guy.
+
 Modificadores del bonus (comunes)
 - ticket.png (fichas), extra.png (reloj), instant.png (petardo) y max.png
   (saco de dinero): pack «FiveM Inventory Icons» de SwisserDev, CC0 1.0.
@@ -21,7 +29,7 @@ Modificadores del bonus (comunes)
 Letras
 - fonts/luckiest-guy.woff: Luckiest Guy, de Astigmatic (Brian J. Bonislawsky),
   con licencia Apache 2.0 (fonts/LICENSE-luckiest-guy.txt), tomada del paquete
-  @fontsource/luckiest-guy. La usa el rótulo «VOLCÁN».
+  @fontsource/luckiest-guy. La usan los rótulos «VOLCÁN», «MINA» y «OLIMPO».
 - Bungee (David Jonathan Ross) y Cinzel (The Cinzel Project Authors), con
   licencia SIL Open Font License 1.1, solo se usaron para dibujar los PNG; no
   van en el repositorio.
