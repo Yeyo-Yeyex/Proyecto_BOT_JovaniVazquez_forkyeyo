@@ -36,6 +36,7 @@ from bot.services.blackjack import BlackjackGame, Card
 from bot.services.coin import Outcome, Side
 from bot.services.craps import Bet
 from bot.services.todo import Priority
+from bot.services.war import WarGame
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -664,6 +665,45 @@ async def press_blackjack_insurance(client: BotClient, owner: MagicMock) -> Clic
     return click
 
 
+def war_table(client: BotClient, owner: MagicMock, *, tied: bool):  # noqa: ANN201
+    """Mesa de la Guerra con ficha de 2; si `tied`, con un empate por decidir."""
+    module = module_of(client, "Guerra")
+    module.WAR_PAUSE_SECONDS = 0  # sin esperar a que la banca queme las cartas
+    table = module.WarTable(client.get_cog("Guerra"), guild_id=GUILD_ID, owner=owner, stake=2)
+    if tied:
+        table.game = WarGame(stake=2, shoe=[Card(7, 0)] * 6 + [Card(9, 1), Card(9, 0)])
+        table.game.deal()
+        table._paid = False
+    return table
+
+
+async def press_war_deal(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=False)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._deal_again(interaction)
+
+    return click
+
+
+async def press_war_war(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=True)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._war(interaction)
+
+    return click
+
+
+async def press_war_surrender(client: BotClient, owner: MagicMock) -> Click:
+    table = war_table(client, owner, tied=True)
+
+    async def click(interaction: MagicMock) -> None:
+        await table._surrender(interaction)
+
+    return click
+
+
 async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
     panel = module_of(client, "Trabajo").PalaPanel(
         client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
@@ -1277,6 +1317,9 @@ CASES: dict[str, Press] = {
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "blackjack: seguro": press_blackjack_insurance,
+    "guerra: repartir": press_war_deal,
+    "guerra: a la guerra": press_war_war,
+    "guerra: rendirse": press_war_surrender,
     "bacará: apostar": press_bacara_bet,
     "bacará: repetir": press_bacara_repeat,
     "bacará: doblar": press_bacara_double,

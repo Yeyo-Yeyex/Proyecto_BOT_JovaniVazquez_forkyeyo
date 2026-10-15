@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.17.0 · 2026-10-15
+
+- Guerra: `guerra`, carta contra carta y a la guerra si empatas
+
 ### 6.16.0 · 2026-10-15
 
 - ONGs: once logros nuevos, más frases y la mascota comenta el donativo

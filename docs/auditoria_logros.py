@@ -61,6 +61,7 @@ from bot.services import (  # noqa: E402
     roulette,
     slots,
     tower,
+    war,
 )
 from bot.services import horses as caballos  # noqa: E402
 from bot.services.achievements import (  # noqa: E402
@@ -91,6 +92,7 @@ from bot.services.achievements import (  # noqa: E402
     slots_respin_stats,
     slots_stats,
     tower_stats,
+    war_stats,
 )
 from bot.services.levels import TIMEZONE  # noqa: E402
 from bot.services.pachinko_motion import motion_for  # noqa: E402
@@ -126,6 +128,7 @@ RITMO_CASINO = {
     "crash": 30,
     "mines": 40,
     "tower": 40,
+    "war": 40,
     "chicken": 60,
     "coin": 60,
     "bus": 60,
@@ -382,6 +385,29 @@ def _jugar_torre(j: Jugador) -> StatDelta:
         if alive and (game.crowned or game.cents >= target):  # type: ignore[operator]
             game.cash_out()
     return _con_casino(tower_stats(game), stake=APUESTA, net=game.net)
+
+
+def _jugar_guerra(j: Jugador) -> StatDelta:
+    """Una mano de la Guerra: va a la guerra 2 de cada 3 empates y a veces juega la lateral.
+
+    Lleva las rachas de la mesa (ganadas, perdidas y empates seguidos) como el cog.
+    """
+    rng = j.rng
+    side = APUESTA if rng.random() < 0.15 else 0
+    game = war.WarGame(APUESTA, side=side, shoe=bj.new_shoe(rng.shuffle))
+    game.deal()
+    if game.awaiting_choice:
+        game.go_to_war() if rng.random() < 2 / 3 else game.surrender()
+    runs = j.extra.setdefault("runs", {"win": 0, "lose": 0, "tie": 0})
+    if game.won:
+        runs["win"], runs["lose"] = runs["win"] + 1, 0
+    elif game.result in (war.Result.LOSE, war.Result.WAR_LOSE):
+        runs["win"], runs["lose"] = 0, runs["lose"] + 1
+    else:
+        runs["win"] = runs["lose"] = 0
+    runs["tie"] = runs["tie"] + 1 if game.tied else 0
+    delta = war_stats(game, win_run=runs["win"], lose_run=runs["lose"], tie_run=runs["tie"])
+    return _con_casino(delta, stake=game.total_stake, net=game.net)
 
 
 _DIFICULTADES = (("facil", 20), ("media", 45), ("dificil", 25), ("hardcore", 10))
@@ -682,6 +708,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "pachinko": _jugar_pachinko,
     "mines": _jugar_minas,
     "tower": _jugar_torre,
+    "war": _jugar_guerra,
     "chicken": _jugar_pollo,
     "coin": _jugar_moneda,
     "bus": _jugar_autobus,

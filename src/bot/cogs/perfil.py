@@ -111,6 +111,7 @@ STREAKS: tuple[tuple[str, str, str, str], ...] = (
     ("porra_win_streak_max", "🎫", "Porras seguidas acertadas", "porras"),
     ("mines_streak_max", "💎", "Casillas destapadas en una partida de minas", "casillas"),
     ("tower_floor_max", "🐉", "Pisos subidos en una partida de la Torre del dragón", "pisos"),
+    ("war_win_streak_max", "⚔️", "Manos seguidas ganadas en una mesa de la Guerra", "manos"),
     ("voice_mute_streak_max", "🔇", "Minutos seguidos en voz silenciado", "minutos"),
 )
 

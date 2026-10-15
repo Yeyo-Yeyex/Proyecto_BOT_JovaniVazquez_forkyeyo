@@ -78,6 +78,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.crash",
     "bot.cogs.mines",
     "bot.cogs.tower",
+    "bot.cogs.war",
     "bot.cogs.chicken",
     "bot.cogs.coin",
     "bot.cogs.bus",

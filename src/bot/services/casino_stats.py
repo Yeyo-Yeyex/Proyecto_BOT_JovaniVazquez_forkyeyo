@@ -50,6 +50,7 @@ GAMES: dict[str, tuple[str, str]] = {
     "crash": ("🚀", "Crash"),
     "minas": ("💣", "Minas"),
     "torre": ("🐉", "Torre del dragón"),
+    "guerra": ("⚔️", "Guerra"),
     "pollo": ("🐔", "Pollo"),
     "moneda": ("🪙", "Cara o cruz"),
     "autobus": ("🚌", "Autobús"),

@@ -152,6 +152,10 @@ from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
 from bot.services.tower import FLOORS as TOWER_FLOORS
 from bot.services.tower import Status as TowerStatus
 from bot.services.tower import TowerGame
+from bot.services.war import ACE_VALUE as WAR_ACE_VALUE
+from bot.services.war import Result as WarResult
+from bot.services.war import WarGame
+from bot.services.war import rank_value as war_rank
 from bot.services.work import (
     FAMILY_TIERS,
     FLOP_BELOW,
@@ -276,6 +280,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("mines", "💣 Minas", group=_CG),
     Category("chicken", "🐔 Pollo", group=_CG),
     Category("tower", "🐉 Torre", group=_CG),
+    Category("war", "⚔️ Guerra", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
     Category("poker", "♠️ Póker", group=_CG),
@@ -3708,6 +3713,200 @@ def _build_catalog() -> tuple[Achievement, ...]:
             category="tower",
             rarity=M,
             conditions=tuple((f"tower_crown_{d.key}", 1) for d in TOWER_DIFFICULTIES),
+        )
+    )
+
+    # ⚔️ Guerra --------------------------------------------------------------------------
+    a += _tiers("war", "war_hands", [
+        (1, "war_1", "Declaración de guerra",
+         "Juega tu primera mano de la Guerra. Sin consultar al Congreso.", C),
+        (100, "war_100", "Ministerio de Defensa",
+         "Juega 100 manos de la Guerra. Presupuesto ilimitado, como el de Moncloa.", C),
+        (300, "war_300", "Cuartel general del Falcon", "Juega 300 manos de la Guerra.", R),
+        (1_000, "war_1k", "Veterano del NO-DO",
+         "Juega 1.000 manos de la Guerra. Tus hazañas salen en el NO-DO, con voz de locutor.", E),
+        (5_000, "war_5k", "La Guerra de los Cien Años, con IGIC",
+         "Juega 5.000 manos de la Guerra. Dura más que la tramitación de una ley.", L),
+        (10_000, "war_10k", "Guerra Fría, edición eterna",
+         "Juega 10.000 manos de la Guerra. Ya ni Brézhnev se acuerda del motivo.", M),
+    ])  # fmt: skip
+    a += _tiers("war", "war_wins", [
+        (1, "warw_1", "Primera batalla ganada",
+         "Gana tu primera mano. La banca pide un recuento.", C),
+        (50, "warw_50", "Mayoría de una carta",
+         "Gana 50 manos. Sin necesidad de pactar con Junts.", C),
+        (250, "warw_250", "Mayoría aplastante", "Gana 250 manos. Gobiernas sin oposición.", R),
+        (1_000, "warw_1k", "El mejor de la historia, según Trump",
+         "Gana 1.000 manos. Según la banca, también.", E),
+        (4_000, "warw_4k", "Mandato vitalicio, estilo Xi",
+         "Gana 4.000 manos. Ya no hay límite de mandatos.", L),
+        (10_000, "warw_10k", "Elecciones al 87 %, como en Rusia",
+         "Gana 10.000 manos. La banca ha votado a tu favor, qué remedio.", M),
+    ])  # fmt: skip
+    a += _tiers("war", "war_ties", [
+        (1, "war_tie_1", "Tablas de campaña",
+         "Empata la primera carta con la banca. Ni para ti ni para mí.", C),
+        (25, "war_tie_25", "Barómetro de Tezanos",
+         "Empata 25 veces. Tezanos dice que ha ganado el PSOE.", R),
+        (100, "war_tie_100", "La guerra de las cifras",
+         "Empata 100 veces. Cada cifra, un titular distinto.", E),
+        (500, "war_tie_500", "Empate eterno, como el juicio de Netanyahu",
+         "Empata 500 veces. La sentencia se aplaza.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_wars", [
+        (1, "war_war_1", "¡A la guerra!",
+         "Ve a la guerra por primera vez. Trump aplaude desde el Despacho Oval.", C),
+        (10, "war_war_10", "Guerra comercial", "Ve a la guerra 10 veces. Aranceles para todos.", R),
+        (50, "war_war_50", "Guerra cultural",
+         "Ve a la guerra 50 veces. Nadie sabe por qué, pero todos tienen una opinión.", E),
+        (250, "war_war_250", "Ministro de Defensa del bar de la esquina",
+         "Ve a la guerra 250 veces. Tu estrategia sale en las tertulias.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrenders", [
+        (1, "war_surr_1", "Bandera blanca", "Ríndete por primera vez. Media ficha de vuelta.", C),
+        (10, "war_surr_10", "Gila llamando al enemigo",
+         "Ríndete 10 veces. Y avisas al enemigo de dónde estás, por cortesía.", R),
+        (50, "war_surr_50", "Pacifista de Moncloa",
+         "Ríndete 50 veces. Nunca pierdes del todo, y nunca ganas.", E),
+        (200, "war_surr_200", "Nobel de la Paz por adelantado",
+         "Ríndete 200 veces. Como Obama: el premio, antes que la paz.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_wins", [
+        (1, "war_ww_1", "Guerra ganada",
+         "Gana tu primera guerra: cobras la ficha de la guerra y te devuelven la original.", C),
+        (10, "war_ww_10", "La Guerra de las Galaxias, de Reagan",
+         "Gana 10 guerras. Sin disparar un solo láser.", R),
+        (50, "war_ww_50", "Comandante en jefe de nadie", "Gana 50 guerras.", E),
+        (200, "war_ww_200", "Pax Romana, edición de bolsillo", "Gana 200 guerras.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_losses", [
+        (1, "war_wl_1", "Guerra perdida",
+         "Pierde tu primera guerra: las dos fichas, a la banca. Trump lo llamaría un gran acuerdo.",
+         C),
+        (10, "war_wl_10", "Guerra con los jueces",
+         "Pierde 10 guerras. Sánchez habla de un malentendido institucional.", R),
+        (50, "war_wl_50", "Arancel del 100 %",
+         "Pierde 50 guerras. La banca ha subido los aranceles y tú pagas el IGIC.", E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_war_ties", [
+        (1, "war_wt_1", "Tablas con botín",
+         "Empata también la guerra y cobra el premio extra. Guerra Fría, pero con botín.", R),
+        (5, "war_wt_5", "Guerra fría con intereses", "Empata 5 guerras y cobra el premio.", E),
+        (25, "war_wt_25", "Ni Gorbachov ni Reagan, pero cobras",
+         "Empata 25 guerras y cobra el premio.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_tie_streak_max", [
+        (2, "war_tie_streak_2", "Guerra fría",
+         "Empata la primera carta en dos manos seguidas. Nadie dispara.", C),
+        (3, "war_tie_streak_3", "Triple empate técnico",
+         "Empata la primera carta en tres manos seguidas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_side_bets", [
+        (1, "war_side_1", "Voto en blanco",
+         "Juega la apuesta lateral de Empate 10:1 una vez. Apostar al empate es votar en blanco.",
+         C),
+        (100, "war_side_100", "Abstencionista habitual",
+         "Juega la lateral de empate 100 veces. Siempre esperando un empate que no llega.", R),
+        (1_000, "war_side_1k", "Fiel a la abstención",
+         "Juega la lateral de empate 1.000 veces. La banca te manda una felicitación de Navidad.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_side_hits", [
+        (1, "war_hit_1", "Empate cobrado", "Cobra la lateral de empate: 10 a 1.", C),
+        (10, "war_hit_10", "Vidente del CIS",
+         "Cobra la lateral de empate 10 veces. Lo tenías todo previsto.", E),
+        (50, "war_hit_50", "Pitoniso de Moncloa",
+         "Cobra la lateral de empate 50 veces. La banca ya te pone un cuarto aparte.", L),
+    ])  # fmt: skip
+    a += _tiers("war", "war_triple", [
+        (1, "war_triple", "Triple corona",
+         "Cobra la lateral de empate, ve a la guerra y gana, todo en la misma mano.", R),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_streak_max", [
+        (5, "war_streak_5", "Racha de cinco",
+         "Gana 5 manos seguidas. Todavía no hay que llamar a Hacienda.", C),
+        (7, "war_streak_7", "Gobierno de coalición", "Gana 7 manos seguidas.", R),
+        (9, "war_streak_9", "Nueve vidas, como los gatos de Ayuso", "Gana 9 manos seguidas.", E),
+        (11, "war_streak_11", "Once seguidas, como un equipo de la liga",
+         "Gana 11 manos seguidas.", L),
+        (13, "war_streak_13", "Mandato eterno, sin elecciones",
+         "Gana 13 manos seguidas. Atado y bien atado.", M, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_lose_streak_max", [
+        (6, "war_lose_6", "Seis de seis para la banca",
+         "Pierde 6 manos seguidas. Cada vez que parpadeas, ha ganado la banca.", R),
+        (9, "war_lose_9", "Moción de censura fallida",
+         "Pierde 9 manos seguidas. Sigues con la misma mayoría que ayer: ninguna.", E),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_max", [
+        (10_000, "war_rich", "Botín de guerra, con cuenta en Suiza",
+         "Gana 10.000 Y$ en una sola mano de la Guerra.", R),
+        (100_000, "war_richer", "Reparto del botín en Waterloo",
+         f"Gana 100.000 Y$ en una sola mano de la Guerra. {TAX_COLLECTOR} afila el lápiz.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("war", "war_max_stake", [
+        (1, "war_max_stake", "Presupuesto de defensa",
+         "Juega una mano de la Guerra con 5.000 Y$ o más. Más gasto militar que nadie.", C),
+    ])  # fmt: skip
+    a += _tiers("war", "war_ace_ace", [
+        (1, "war_ace_ace", "El as contra el as",
+         "Que tu primera carta y la de la banca sean ases. Duelo de titanes, a tamaño carta.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_king_lost", [
+        (1, "war_king_lost", "Rey, pero sin corona",
+         "Pierde con un rey contra un as. Ni la corona te salva del as.", R, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_win_two", [
+        (1, "war_win_two", "Ganar con un dos, imposible",
+         "Gana con un 2 empatando a doses en la guerra. Imposible, según las matemáticas de "
+         "Moncloa.", E, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_tie_two", [
+        (1, "war_tie_two", "Dos doses",
+         "Empata a doses en la primera carta. El empate de los que no llegan a nada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrender_ace", [
+        (1, "war_surr_ace", "Capitulación con ases",
+         "Empata con ases y te rindes. Tenías la baraja de tu parte y dices «no, gracias».",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_surrender_one", [
+        (1, "war_surr_one", "Media ficha de nada",
+         "Ríndete con una ficha de 1 Y$. Recuperas 0 Y$, que es la mitad redondeada.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_777", [
+        (1, "war_777", "Los Reyes Magos del campo de batalla",
+         "Cobra exactamente 777 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_666", [
+        (1, "war_666", "El número de la bestia (y su arancel)",
+         "Cobra exactamente 666 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a += _tiers("war", "war_cash_69", [
+        (1, "war_69", "Guerra de nivel avanzado",
+         "Cobra exactamente 69 Y$ en una mano de la Guerra.", C, True),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="war_all_wins",
+            name="El mazo entero",
+            description="Gana a la primera carta con cada rango, del 3 al as. El 2 no gana "
+            "nunca a la primera, ni con recuento.",
+            category="war",
+            rarity=R,
+            conditions=tuple((f"war_win_rank_{n}", 1) for n in range(3, WAR_ACE_VALUE + 1)),
+        )
+    )
+    a.append(
+        Achievement(
+            id="war_all_ties",
+            name="Un empate de cada",
+            description="Empata la primera carta con cada rango, del 2 al as. Hasta con el rey "
+            "se puede empatar.",
+            category="war",
+            rarity=R,
+            conditions=tuple((f"war_tie_rank_{n}", 1) for n in range(2, WAR_ACE_VALUE + 1)),
         )
     )
 
@@ -14557,6 +14756,57 @@ def tower_stats(game: TowerGame) -> StatDelta:
         )
         # Quemarse con ×10 o más ya ganado: lo que se llevaba se queda en la cueva.
         bump("tower_greedy", game.floor >= 1 and game.cents >= 1_000)
+    return delta
+
+
+def war_stats(game: WarGame, *, win_run: int = 0, lose_run: int = 0, tie_run: int = 0) -> StatDelta:
+    """Contadores de una mano de la Guerra ya pagada (sin lo común del casino).
+
+    Args:
+        game: La mano terminada.
+        win_run: Manos ganadas seguidas en la mesa, contando esta.
+        lose_run: Manos perdidas seguidas en la mesa, contando esta.
+        tie_run: Manos seguidas con empate en la primera carta, contando esta.
+    """
+    delta = StatDelta(add={"war_hands": 1})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    result = game.result
+    mine, theirs = war_rank(game.player[0]), war_rank(game.dealer[0])
+    war_won = result in (WarResult.WAR_WIN, WarResult.WAR_TIE)
+    bump("war_wins", game.won)
+    bump("war_ties", game.tied)
+    bump("war_wars", game.went_to_war)
+    bump("war_surrenders", result is WarResult.SURRENDER)
+    bump("war_war_wins", war_won)
+    bump("war_war_losses", result is WarResult.WAR_LOSE)
+    bump("war_war_ties", result is WarResult.WAR_TIE)
+    bump("war_side_bets", game.side > 0)
+    bump("war_side_hits", game.side > 0 and game.tied)
+    bump("war_triple", game.side > 0 and war_won)
+    if win_run:
+        delta.peak["war_win_streak_max"] = win_run
+    if lose_run:
+        delta.peak["war_lose_streak_max"] = lose_run
+    if tie_run:
+        delta.peak["war_tie_streak_max"] = tie_run
+    if game.net > 0:
+        delta.peak["war_win_max"] = game.net
+    bump("war_max_stake", game.stake >= BJ_HIGH_STAKE)
+    bump("war_ace_ace", mine == WAR_ACE_VALUE and theirs == WAR_ACE_VALUE)
+    bump("war_king_lost", result is WarResult.LOSE and mine == 13 and theirs == WAR_ACE_VALUE)
+    bump("war_tie_two", game.tied and mine == 2)
+    bump("war_win_two", war_won and war_rank(game.player[1]) == 2)
+    bump("war_surrender_ace", result is WarResult.SURRENDER and mine == WAR_ACE_VALUE)
+    bump("war_surrender_one", result is WarResult.SURRENDER and game.stake == 1)
+    for exact in (777, 666, 69):
+        bump(f"war_cash_{exact}", game.total_return == exact)
+    bump(f"war_win_rank_{mine}", result is WarResult.WIN)
+    bump(f"war_tie_rank_{mine}", game.tied)
     return delta
 
 

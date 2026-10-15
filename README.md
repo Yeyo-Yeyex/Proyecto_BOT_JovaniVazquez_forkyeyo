@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad]` · `volcan [cantidad]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad]` · `volcan [cantidad]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -497,6 +497,22 @@ python -m bot
   sumaría el siguiente y su probabilidad, y al acabar enseña todos los
   dragones. Devuelve el 99 % de media al cobrar en cualquier piso y los
   cobros de ×25 o más se anuncian en el canal.
+- **Guerra** (`/guerra`, `.guerra [cantidad]`): el Casino War. Una carta para
+  ti y otra para la banca en una mesa de imagen (el mismo tapete y baraja del
+  blackjack); gana la más alta, con el as por encima del rey y sin contar los
+  palos, y la tuya paga 1:1. Con empate eliges entre 🏳️ Rendirse (recuperas la
+  mitad de la apuesta, redondeando hacia abajo) y ⚔️ A la guerra (otra apuesta
+  igual, la banca quema 3 cartas y sale una carta más para cada uno): si la
+  tuya iguala o supera a la de la banca, cobras 1:1 la apuesta de la guerra y
+  se te devuelve la original; si no, caen las dos, y si la guerra vuelve a
+  empatar, premio extra igual a la apuesta original (la regla de Las Vegas).
+  El botón 🤝 Empate 10:1 suma una apuesta lateral igual a la ficha que paga
+  10:1 si las dos primeras cartas empatan. Zapato de 6 barajas barajado en cada
+  mano y sin tope de apuesta. Devuelve el 97,67 % de la ficha yendo siempre a la
+  guerra, el 96,30 % rindiéndose siempre y el 81,35 % de la lateral
+  (`docs/rtp_guerra.py`). La ficha y la lateral se cobran al repartir y la
+  segunda apuesta al ir a la guerra; el premio se paga al acabar. Si la mesa
+  caduca o el bot se apaga con un empate sin decidir, la mano se rinde.
 - **Pollo** (`/pollo`, `.pollo [cantidad] [dificultad] [autocobro]`): el
   Chicken Road de los casinos online. El pollo cruza una carretera carril a
   carril; cada carril sube el multiplicador, 💰 Cobrar se lo lleva y si te
@@ -638,7 +654,7 @@ python -m bot
   El bote no pasa de 5 veces lo que ella se juega, para que amañarla no
   salga tan a cuenta. Once propuestas: gana o pierde, si las gana todas,
   cuántas gana, si dobla, si se pega un palo, si saca un ×5, si acaba tieso
-  y las propias de minas, la torre, pollo y blackjack. Vale en todos los juegos menos
+  y las propias de minas, la torre, la guerra, pollo y blackjack. Vale en todos los juegos menos
   el crash, y un juego nuevo las tiene sin hacer nada. Sin `miembro`, enseña
   las porras en marcha. En la tienda, los 🔭 Prismáticos de la UCO dejan ver
   quién apuesta qué y la 📓 Libreta de la porra, montar porras de 10 jugadas.
@@ -672,7 +688,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.727 logros en 55 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.805 logros en 56 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -680,7 +696,7 @@ python -m bot
   tienda, mascotas, banco, economía, trabajo, oficios, hostelería, sanidad, oficina, reparto,
   funcionariado, influencer, Hong Kong y coleccionista. Cinco rarezas según lo que cuesta conseguirlos: ▫️ común,
   🔹 raro, 💠 épico, 🌟 legendario y 👑 mítico (las del casino, calibradas
-  con una simulación, ver `docs/auditoria-logros.md`). 603 son secretos y
+  con una simulación, ver `docs/auditoria-logros.md`). 684 son secretos y
   se ven como `???` hasta conseguirlos. Las risas se reconocen de muchas
   formas (jaja, jsjs, lol, xd, 😂, 💀, ajsjsjs, kkkk, «me meo»…).
   Cada logro paga yapdollars según su rareza (50, 200, 750,
@@ -1058,6 +1074,7 @@ src/bot/
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
 │   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones (componentes v2)
+│   ├── war.py           # Guerra: carta contra carta, rendirse o ir a la guerra, lateral de empate
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
@@ -1100,7 +1117,8 @@ src/bot/
 │   ├── pets_catalog.py  # Especies de mascota: personalidad, frases y trucos
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
-│   ├── cards_render.py  # Imagen de la mesa de blackjack
+│   ├── war.py           # Reglas de la Guerra: comparar cartas, rendición, guerra y lateral
+│   ├── cards_render.py  # Imagen de la mesa de blackjack y de la Guerra
 │   ├── roulette_render.py # Rueda de Pillow, de reserva si no hay navegador
 │   ├── roulette_scene.py # Ruleta con canvas en Node o Chromium (assets/ruleta/escena.html)
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
