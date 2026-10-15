@@ -756,7 +756,8 @@ async def press_blackjack_insurance(client: BotClient, owner: MagicMock) -> Clic
 def war_table(client: BotClient, owner: MagicMock, *, tied: bool):  # noqa: ANN201
     """Mesa de la Guerra con ficha de 2; si `tied`, con un empate por decidir."""
     module = module_of(client, "Guerra")
-    module.WAR_PAUSE_SECONDS = 0  # sin esperar a que la banca queme las cartas
+    module.REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
+    client.get_cog("Guerra").ahead = False  # sin pintar por adelantado: no es lo que se mide
     table = module.WarTable(client.get_cog("Guerra"), guild_id=GUILD_ID, owner=owner, stake=2)
     if tied:
         table.game = WarGame(stake=2, shoe=[Card(7, 0)] * 6 + [Card(9, 1), Card(9, 0)])

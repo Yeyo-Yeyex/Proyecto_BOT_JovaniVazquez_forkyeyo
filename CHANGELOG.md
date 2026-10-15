@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.6.0 · 2026-10-15
+
+- Guerra: mesa animada con tapete propio, pintada antes del clic
+
 ### 7.5.3 · 2026-10-15
 
 - Arreglos: impuestos de pisos en bases antiguas y cobros que se quedaban colgados
