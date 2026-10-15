@@ -806,9 +806,86 @@ window.Tapete = (() => {
     }
   }
 
+  // -- 20-N ------------------------------------------------------------------------------------
+  // Salón de 1975: papel pintado de rayas, la tele de madera con la caricatura del dictador en
+  // blanco y negro y el rótulo de Arias Navarro debajo. La broma es el anuncio, no el régimen.
+
+  function franco(g, w, h, [ex, ey, es] = [w / 2, h / 2, 1]) {
+    const d = Math.hypot(w, h);
+    g.fillStyle = radial(g, w * 0.5, h * 0.4, 0, w * 0.5, h * 0.5, d * 0.6, [
+      [0, "#a88a5c"], [0.55, "#7a5f3a"], [1, "#2e2213"],
+    ]);
+    g.fillRect(0, 0, w, h);
+    // Papel pintado setentero: rayas verticales anchas y finas, muy tenues.
+    const sw = Math.max(10, w / 18);
+    for (let x = 0, i = 0; x < w; x += sw, i++) {
+      g.fillStyle = i % 2 ? "rgba(255,235,190,0.06)" : "rgba(60,30,0,0.07)";
+      g.fillRect(x, 0, sw * 0.62, h);
+    }
+    const k = h * 0.0028 * es;
+    g.save(); g.translate(ex, ey - h * 0.02); g.scale(k, k);
+    // Las antenas de cuernos encima de la tele.
+    g.strokeStyle = "#2a2a2a"; g.lineWidth = 1.6; g.lineCap = "round";
+    g.beginPath(); g.moveTo(-4, -50); g.lineTo(-26, -82); g.moveTo(4, -50); g.lineTo(28, -80); g.stroke();
+    for (const [x, y] of [[-26, -82], [28, -80]]) {
+      g.beginPath(); g.arc(x, y, 2.2, 0, TAU); g.fillStyle = "#2a2a2a"; g.fill();
+    }
+    g.beginPath(); g.ellipse(0, -50, 10, 4, 0, 0, TAU); g.fillStyle = "#3a3a3a"; g.fill();
+    // El mueble de madera con su sombra.
+    g.shadowColor = "rgba(20,10,0,0.55)"; g.shadowBlur = 6; g.shadowOffsetY = 2;
+    roundRect(g, -78, -48, 156, 104, 12);
+    g.fillStyle = linear(g, 0, -48, 0, 56, [[0, "#7b4f28"], [1, "#4a2c12"]]); g.fill();
+    g.shadowColor = "transparent";
+    g.strokeStyle = "rgba(255,220,170,0.25)"; g.lineWidth = 1; g.stroke();
+    // La pantalla abombada, en grises, con su brillo.
+    roundRect(g, -68, -40, 112, 88, 16);
+    g.fillStyle = radial(g, -14, -6, 0, -12, 4, 70, [[0, "#e6e4dc"], [0.65, "#a9a8a2"], [1, "#4c4c49"]]);
+    g.fill();
+    g.save(); roundRect(g, -68, -40, 112, 88, 16); g.clip();
+    // La caricatura: cuello de guerrera, papada, cara redonda, entradas y bigotito.
+    g.fillStyle = "#3d3f3c"; g.beginPath(); g.moveTo(-40, 48); g.quadraticCurveTo(-12, 22, 16, 48); g.fill();
+    g.fillStyle = "#c9c6bc"; g.beginPath(); g.moveTo(-26, 48); g.lineTo(-12, 30); g.lineTo(2, 48); g.fill();
+    g.strokeStyle = "#202020"; g.lineWidth = 1.4;
+    g.fillStyle = "#d9d6cc";
+    g.beginPath(); g.ellipse(-12, 6, 22, 27, 0, 0, TAU); g.fill(); g.stroke();
+    g.beginPath(); g.ellipse(-12, 26, 15, 7, 0, 0, Math.PI); g.stroke();
+    for (const x of [-35, 11]) { g.beginPath(); g.ellipse(x, 6, 4, 7, 0, 0, TAU); g.fill(); g.stroke(); }
+    // Pelo: solo a los lados y una raya peinada hacia atrás; la frente, despejada.
+    g.fillStyle = "#3a3a38";
+    for (const x of [-33, 9]) { g.beginPath(); g.ellipse(x, -6, 4, 10, x < 0 ? 0.2 : -0.2, 0, TAU); g.fill(); }
+    g.strokeStyle = "rgba(40,40,38,0.6)"; g.lineWidth = 1;
+    for (const y of [-17, -13]) { g.beginPath(); g.moveTo(-28, y); g.quadraticCurveTo(-12, y - 7, 4, y); g.stroke(); }
+    // Cejas, ojillos, nariz, el bigotito y la boca.
+    g.strokeStyle = "#1c1c1c"; g.lineWidth = 1.6;
+    for (const x of [-20, -4]) {
+      g.beginPath(); g.moveTo(x - 5, -2); g.lineTo(x + 5, -3); g.stroke();
+      g.beginPath(); g.arc(x, 2.5, 1.8, 0, TAU); g.fillStyle = "#1c1c1c"; g.fill();
+    }
+    g.lineWidth = 1.2; g.beginPath(); g.moveTo(-12, 4); g.quadraticCurveTo(-8, 12, -13, 13); g.stroke();
+    g.lineWidth = 2.2; g.beginPath(); g.moveTo(-20, 17); g.quadraticCurveTo(-12, 15, -4, 17); g.stroke();
+    g.lineWidth = 1.2; g.beginPath(); g.moveTo(-17, 22); g.quadraticCurveTo(-12, 24, -7, 22); g.stroke();
+    // Líneas de barrido de la tele.
+    g.fillStyle = "rgba(0,0,0,0.07)";
+    for (let y = -40; y < 48; y += 3) g.fillRect(-68, y, 112, 1.2);
+    g.restore();
+    roundRect(g, -68, -40, 112, 88, 16); g.strokeStyle = "#1a1208"; g.lineWidth = 2.2; g.stroke();
+    // Los botones de la tele.
+    for (const y of [-22, 0]) {
+      g.beginPath(); g.arc(60, y, 6, 0, TAU); g.fillStyle = "#2a1a0c"; g.fill();
+      g.strokeStyle = "#d8b98a"; g.lineWidth = 1; g.beginPath(); g.moveTo(60, y); g.lineTo(60, y - 5); g.stroke();
+    }
+    for (let i = 0; i < 4; i++) g.fillRect(53, 18 + i * 5, 14, 2);
+    // El rótulo de Arias Navarro, en una franja debajo.
+    roundRect(g, -82, 64, 164, 26, 4); g.fillStyle = "rgba(15,12,8,0.86)"; g.fill();
+    g.strokeStyle = "rgba(235,225,200,0.8)"; g.lineWidth = 1; g.stroke();
+    label(g, "ESPAÑOLES, FRANCO HA MUERTO", 0, 74, 9.5, "#f1ead8");
+    label(g, "20-N-1975 · Y SIGUE MUERTO", 0, 85, 6.5, "#c9bea3");
+    g.restore();
+  }
+
   const PATTERNS = {
     oro, israel, espana, canarias, boricua, imagen,
-    kirk, psoe, nodo, diamantes, epstein, falcon, hacienda, corea, gordo,
+    kirk, psoe, nodo, diamantes, epstein, falcon, hacienda, corea, gordo, franco,
   };
   // Si la skin trae un dibujo que se puede pintar: el de imagen, solo con su imagen ya cargada.
   const painter = (skin) => {

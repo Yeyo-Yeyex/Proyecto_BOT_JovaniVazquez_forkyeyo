@@ -479,6 +479,7 @@ SHOP_TRACKED_KEYS = frozenset(
         "skin_tapete_diamantes",
         "skin_tapete_gordo",
         "skin_tapete_aniversario",
+        "skin_tapete_20n",
     }
 )
 #: Usos de la tienda que ensucian a quien los recibe, y los que son de cariño.
@@ -6955,6 +6956,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Compra el tapete del Falcon. El vuelo a Benidorm, a cuenta del erario.", R, False),
         ("skin_tapete_franco", "buy_tapete_franco", "Noticiario de las nueve",
          "Compra el tapete del NO-DO. Franco, por cierto, sigue muerto.", R, False),
+        ("skin_tapete_20n", "buy_tapete_20n", "Españoles, el tapete ha llegado",
+         "Compra el tapete del 20-N. Arias Navarro lo anuncia llorando en la tele.", E, False),
         ("skin_tapete_hacienda", "buy_tapete_hacienda", "Borrador de la Renta",
          "Compra el tapete del Modelo 100. Montoro te manda un abrazo.", R, False),
         ("skin_tapete_kirk", "buy_tapete_kirk", "Prove me wrong",

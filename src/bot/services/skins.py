@@ -355,6 +355,18 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#14110b",
         "pattern": "nodo",
     }), price=20_000, aisle="espana"),
+    # La skin «épica» de Franco: su caricatura en la tele del 20-N. Se ríe del anuncio y
+    # del régimen, como pide la Biblia; la bandera con el águila no se pone (eso sería lucirla).
+    Skin("tapete_20n", "tapete", "📺", "Tapete del 20-N", (
+        "La tele de madera del salón de 1975 con la caricatura del Caudillo y el rótulo de "
+        "Arias Navarro: «Españoles, Franco ha muerto». Lo hemos comprobado: sigue muerto."
+    ), _frozen({
+        "felt": ("#a88a5c", "#7a5f3a", "#2e2213"),
+        "fiber": ("rgba(255,240,210,0.05)", "rgba(40,20,0,0.08)"),
+        "trim": "rgba(241,234,216,0.45)",
+        "ink": "#1d1408",
+        "pattern": "franco",
+    }), price=150_000, aisle="espana", min_level=15),
     Skin("tapete_hacienda", "tapete", "📎", "Tapete del Modelo 100", (
         "La declaración de la Renta hecha tapete: casillas, renglones y el sello de "
         "A INGRESAR. Hacienda somos todos, pero unos más que otros."
