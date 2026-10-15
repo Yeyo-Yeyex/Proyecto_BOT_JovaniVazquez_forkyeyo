@@ -20,8 +20,16 @@ Lo que se cambia y por qué:
   pierde nada.
 - Sin checkpoint al cerrar: como cada operación abre y cierra su conexión, la
   última en cerrarse volcaría el registro y sincronizaría el disco en cada
-  operación. Con `SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE` el volcado lo hace SQLite
-  solo cuando el registro llega a unas 1.000 páginas.
+  operación (`SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE`).
+- **Checkpoint cada minuto (`checkpoint`).** Se creía que, sin el de cerrar, SQLite
+  volcaría el registro solo al llegar a unas 1.000 páginas, pero con conexiones que
+  se abren y se cierran en cada operación no lo recicla nunca: crecía sin fin
+  (36 MB en 3.000 escrituras) y abrir cada conexión tardaba más cuanto más crecía,
+  porque tiene que leerlo entero. Era lo que hacía que la tragaperras fuera cada vez
+  más lenta (de 29 a 60 ms por tirada en 600 tiradas) y, con ella, todo el bot.
+  `BotClient` lo vuelca y lo vacía (`TRUNCATE`) cada `CHECKPOINT_SECONDS`: un solo
+  `fsync` por minuto en vez de uno por operación. El modo `PASSIVE` no vale: vuelca
+  las páginas, pero el registro sigue creciendo.
 
 Con el registro aparte, la base vive en tres archivos (`.sqlite3`, `-wal` y
 `-shm`): una copia de seguridad hecha a mano copia los tres a la vez, con el bot
@@ -36,6 +44,11 @@ from pathlib import Path
 #: Segundos que una conexión espera a que otra suelte el bloqueo de escritura
 #: antes de fallar con «database is locked».
 BUSY_TIMEOUT_SECONDS = 30
+#: Cada cuánto `BotClient` vuelca y vacía el registro WAL (`checkpoint`).
+CHECKPOINT_SECONDS = 60
+#: Lo que espera el checkpoint a que acaben las lecturas y escrituras en curso. Mientras
+#: espera, las escrituras nuevas esperan detrás: mejor corto, y si no, al minuto siguiente.
+CHECKPOINT_BUSY_SECONDS = 2
 
 
 def connect(database_path: Path, *, isolation_level: str | None = "DEFERRED") -> sqlite3.Connection:
@@ -58,3 +71,24 @@ def connect(database_path: Path, *, isolation_level: str | None = "DEFERRED") ->
     connection.execute("PRAGMA journal_mode = WAL")
     connection.execute("PRAGMA synchronous = NORMAL")
     return connection
+
+
+def checkpoint(database_path: Path) -> tuple[int, int, int]:
+    """Vuelca el registro WAL en la base y lo deja vacío (`PRAGMA wal_checkpoint(TRUNCATE)`).
+
+    Es síncrono: se llama en un hilo (`asyncio.to_thread`). Si hay lecturas o
+    escrituras en curso espera `CHECKPOINT_BUSY_SECONDS` como mucho; si no le da
+    tiempo, no vacía nada y lo deja para la vez siguiente.
+
+    Returns:
+        Lo que devuelve SQLite: `(ocupado, páginas del registro, páginas volcadas)`;
+        `ocupado` es 1 si no pudo terminar.
+    """
+    if not database_path.exists():
+        return (0, 0, 0)
+    connection = sqlite3.connect(database_path, timeout=CHECKPOINT_BUSY_SECONDS)
+    try:
+        row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    finally:
+        connection.close()
+    return int(row[0]), int(row[1]), int(row[2])

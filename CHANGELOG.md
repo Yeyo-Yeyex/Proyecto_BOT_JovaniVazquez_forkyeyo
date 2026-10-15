@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.14.2 · 2026-10-15
+
+- Tragaperras y todo el bot: ya no van más lentos cuanto más se juega
+
 ### 6.14.1 · 2026-10-15
 
 - Interno: auditoría de las loterías con el código real
