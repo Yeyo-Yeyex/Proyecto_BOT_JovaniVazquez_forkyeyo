@@ -4,20 +4,37 @@ Lógica pura, sin Discord ni dinero. El cog (`bot.cogs.gallos`) cobra, paga y
 pinta (`bot.services.gallos_scene`); la ficha de cada gallo se guarda en
 `bot.repositories.gallos`.
 
+**Stats, entrenamiento y muerte.** Cada gallo tiene tres stats de 0 a 100
+(`Stat`: 💪 fuerza, 🪶 velocidad y ❤️ aguante) y su *poder* es la media. Se
+entrenan pagando (`train_price`, `train_gain`, con una hora de espera y un tope
+diario) y deciden quién gana (`win_probability`). Si un gallo pierde por KO
+puede morir (`death_chance`, que baja con el aguante): su ficha pasa al
+cementerio y el dueño empieza con un gallo nuevo, a cero.
+
 **Dos maneras de pelear:**
 
 - *Contra la casa*: tu gallo contra uno de los rivales de `HOUSE`, cada uno con
-  su probabilidad de que ganes (`Rival.chance`) y una cuota fija que devuelve
-  de media el `RTP` (95 %) de lo apostado, como las cuotas de los caballos.
+  la probabilidad de que le gane un gallo sin entrenar (`Rival.chance`). La
+  cuota se recalcula con la probabilidad real de cada pelea (`house_chance`) y
+  devuelve de media el `RTP` (95 %) de lo apostado, como las cuotas de los
+  caballos: entrenar cambia el riesgo, no el margen de la casa.
 - *Contra otra persona*: los dos ponen lo mismo y el ganador se lleva el bote
-  menos la comisión de la casa (`DUEL_CUT`). Mientras se calientan los gallos,
+  menos la comisión de la casa (`DUEL_CUT`). Entrenar sí da ventaja aquí
+  (`win_probability` partiendo de 0,5): es dinero entre jugadores, de suma cero
+  menos la comisión. Mientras se calientan los gallos,
   el público apuesta por uno u otro a la porra: todo lo apostado se reparte
   entre los que acierten, menos la misma comisión (`pool_payouts`).
 
-**La skin no pelea.** El aspecto del gallo (`bot.services.skins`, juego
-`gallos`), su nombre y su historial no tocan ninguna probabilidad: entre dos
-personas cada gallo gana el 50 %. Lo mismo los rivales de la casa: su aspecto
-y su golpe estrella (`Rival.signature`) son solo la gracia.
+**La skin no pelea; los stats sí.** El aspecto del gallo (`bot.services.skins`,
+juego `gallos`), su nombre y su historial no tocan ninguna probabilidad. Lo que
+pelea son los stats: `p = sigmoid(logit(p0) + K * (poder_tuyo - poder_rival) /
+100)` con `K = 3`, acotada a [3 %, 97 %]. Contra la casa, `p0` es la `chance` de
+serie del rival, anclada a un gallo sin entrenar (poder 0): ese juega
+exactamente como antes de que existieran los stats. Entre dos personas `p0` es
+0,5 y cuentan los dos poderes. El aspecto de los rivales de la casa y su golpe
+estrella (`Rival.signature`) son solo la gracia; su `Rival.power` es el poder
+que se le supone al cartel y sirve para ordenarlos y enseñarlo, no para el
+sorteo.
 
 **Cómo se decide y cómo se cuenta.** Primero se sortea quién gana (con la
 probabilidad de arriba) y luego `simulate` cuenta una pelea que acabe así. La
@@ -25,6 +42,7 @@ pelea se simula simétrica (cada intercambio lo empieza cualquiera de los dos al
 50 %) y, si el ganador que sale no es el sorteado, se le da la vuelta entera:
 como las dos esquinas son intercambiables, el resultado tiene exactamente la
 probabilidad sorteada y la pelea parece igual de natural en los dos sentidos.
+Los stats solo deciden quién gana: no cambian la animación.
 
 **El dinero que sale de la nada.** Los premios de la casa salen de la nada,
 como en cualquier juego del casino; los compensa el margen de las cuotas. En
@@ -36,6 +54,7 @@ nunca cobra menos de lo que apostó, aunque casi todos apostaran lo mismo.
 
 from __future__ import annotations
 
+import math
 import random
 import re
 from collections.abc import Mapping
@@ -67,6 +86,25 @@ CRIT_CHANCE = 0.10
 #: Por debajo de esta vida, un gallo puede salir corriendo tras un golpe.
 FLEE_HP = 25
 FLEE_CHANCE = 0.15
+
+#: Tope de cada stat.
+STAT_MAX = 100
+#: Cuánto pesa una diferencia de poder (de 0 a 100) en el logit de ganar.
+POWER_K = 3.0
+#: La probabilidad de ganar nunca sale de aquí, por mucho que se entrene.
+MIN_WIN = Fraction(3, 100)
+MAX_WIN = Fraction(97, 100)
+#: Un gallo con este poder o más cuenta como «entrenado» para los logros.
+TRAINED_POWER = 25
+
+#: Segundos de espera entre dos entrenamientos y entrenamientos al día (día canario).
+TRAIN_COOLDOWN = 3600
+TRAIN_PER_DAY = 6
+#: Motivo del libro de un entrenamiento (la tienda lo antepone: `tienda:gallos:entreno`).
+TRAIN_CONCEPT = "gallos:entreno"
+
+#: Probabilidad base de morir al perder por KO; el aguante la rebaja hasta la mitad.
+DEATH_CHANCE = 0.10
 
 #: Largo máximo del nombre de un gallo.
 NAME_MAX = 24
@@ -170,10 +208,13 @@ class Rival:
         emoji: Bandera o icono de su sitio.
         origin: De dónde viene, para el texto.
         blurb: Su ficha en una frase.
-        chance: Probabilidad de que tu gallo le gane.
+        chance: Probabilidad de que le gane un gallo sin entrenar (poder 0).
         signature: Nombre de su golpe estrella (su patada voladora).
         look: Parámetros de la escena que cambia respecto al gallo de serie
             (los mismos que una skin: `skins.GAMES["gallos"].defaults`).
+        power: Poder que se le supone (0 a 100): crece con su dificultad y es lo
+            que se enseña para compararlo con el tuyo. No entra en el sorteo
+            (ver `house_chance`).
     """
 
     key: str
@@ -184,6 +225,7 @@ class Rival:
     chance: Fraction
     signature: str
     look: Mapping[str, object] = field(default_factory=dict)
+    power: int = 0
 
     @property
     def label(self) -> str:
@@ -192,8 +234,16 @@ class Rival:
 
     @property
     def multiplier(self) -> Fraction:
-        """Cuota a la que paga ganarle (apuesta incluida)."""
+        """Cuota a la que paga ganarle con un gallo sin entrenar (apuesta incluida)."""
         return house_multiplier(self.chance)
+
+    def chance_for(self, power: float) -> Fraction:
+        """Probabilidad de que le gane un gallo de ese poder."""
+        return house_chance(self, power)
+
+    def multiplier_for(self, power: float) -> Fraction:
+        """Cuota a la que paga ganarle con un gallo de ese poder (devuelve el `RTP`)."""
+        return house_multiplier(house_chance(self, power))
 
 
 # fmt: off
@@ -202,57 +252,61 @@ HOUSE: tuple[Rival, ...] = (
           "Lo pediste por 2,99 y llegó en tres cajas. Falta una pata.",
           Fraction(85, 100), "Pieza de recambio",
           _look(body="#d9c25a", hackle="#f0dc78", wing="#b49a3a",
-                tail=("#7a6a2a", "#a08a3a", "#c9b45a"), comb="#e86a6a", accessory="caja")),
+                tail=("#7a6a2a", "#a08a3a", "#c9b45a"), comb="#e86a6a", accessory="caja"),
+          power=10),
     Rival("teror", "El Pollo de Teror", "🌋", "Gran Canaria",
           "Gallo viejo de la Fiesta del Pino. Ya no pica, pero huele a gofio.",
           Fraction(80, 100), "Gofiazo",
           _look(body="#e8d27a", hackle="#fff0a8", wing="#c9ad4a",
-                tail=("#3a6b3a", "#2f5a8a", "#e8d27a"), accessory="sombrero")),
+                tail=("#3a6b3a", "#2f5a8a", "#e8d27a"), accessory="sombrero"), power=15),
     Rival("directiva", "Directiva 2019/904", "🇪🇺", "Bruselas",
           "Lleva el tapón pegado a la cresta y pide tres formularios antes de cada picotazo.",
           Fraction(65, 100), "Tapón solidario",
           _look(body="#2a4aa8", hackle="#3c64d0", wing="#1f3a86",
-                tail=("#f2c42a", "#2a4aa8", "#f2c42a"), comb="#f2c42a", accessory="estrellas")),
+                tail=("#f2c42a", "#2a4aa8", "#f2c42a"), comb="#f2c42a", accessory="estrellas"),
+          power=30),
     Rival("falcon", "El Gallo del Falcon", "🇪🇸", "la Moncloa",
           "Vuela a todas partes en avión oficial y no dimite ni con el pico roto.",
           Fraction(50, 100), "Manual de resistencia",
           _look(body="#c8102e", hackle="#e8344a", wing="#9a0c22",
-                tail=("#1a1a1a", "#c8102e", "#f2f2f2"), accessory="rosa")),
+                tail=("#1a1a1a", "#c8102e", "#f2f2f2"), accessory="rosa"), power=50),
     Rival("motosierra", "La Motosierra", "🇦🇷", "la Casa Rosada",
           "Le grita «¡afuera!» a cada pluma que le sobra. Pelado a lo león.",
           Fraction(45, 100), "¡Afuera!",
           _look(body="#6ab0e8", hackle="#f2f2f2", wing="#4a90c8",
-                tail=("#6ab0e8", "#f2f2f2", "#6ab0e8"), accessory="patillas")),
+                tail=("#6ab0e8", "#f2f2f2", "#6ab0e8"), accessory="patillas"), power=55),
     Rival("sahel", "El Coronel del Sahel", "🌍", "un cuartel del Sahel",
           "Llegó al reñidero con un golpe de Estado y promete elecciones «pronto».",
           Fraction(40, 100), "Golpe de Estado",
           _look(body="#5a6a3a", hackle="#7a8a4a", wing="#4a5a2a",
-                tail=("#3a4a2a", "#5a6a3a", "#8a7a4a"), accessory="boina")),
+                tail=("#3a4a2a", "#5a6a3a", "#8a7a4a"), accessory="boina"), power=60),
     Rival("arancel", "Arancel", "🇺🇸", "el Despacho Oval",
           "Tupé naranja, gorra roja y un 200 % de recargo a cada pluma que entra.",
           Fraction(35, 100), "Arancel del 200 %",
           _look(body="#f2a03a", hackle="#ffc85a", wing="#d0802a",
-                tail=("#c8102e", "#f2f2f2", "#1a3a8a"), accessory="gorra")),
+                tail=("#c8102e", "#f2f2f2", "#1a3a8a"), accessory="gorra"), power=65),
     Rival("credito", "Crédito Social", "🇨🇳", "Zhongnanhai",
           "Te quita puntos por cada picotazo que le das. Y por cada uno que no le das.",
           Fraction(30, 100), "Bajada de crédito social",
           _look(body="#c8102e", hackle="#ffd200", wing="#a00c24",
-                tail=("#ffd200", "#c8102e", "#ffd200"), comb="#ffd200", accessory="camara")),
+                tail=("#ffd200", "#c8102e", "#ffd200"), comb="#ffd200", accessory="camara"),
+          power=70),
     Rival("cupula", "Cúpula de Hierro", "🇮🇱", "la Knesset",
           "Intercepta casi todo y lleva treinta años con el juicio aplazado.",
           Fraction(25, 100), "Intercepción",
           _look(body="#e8eef8", hackle="#ffffff", wing="#b8c8e8",
-                tail=("#1a4ab8", "#e8eef8", "#1a4ab8"), accessory="escudo")),
+                tail=("#1a4ab8", "#e8eef8", "#1a4ab8"), accessory="escudo"), power=75),
     Rival("actas", "El Gallo de las Actas", "🇻🇪", "Miraflores",
           "Gana siempre según sus actas. Las actas no aparecen.",
           Fraction(15, 100), "Recuento propio",
           _look(body="#ffcc00", hackle="#1a3a8a", wing="#cf142b",
-                tail=("#ffcc00", "#1a3a8a", "#cf142b"), accessory="bigote")),
+                tail=("#ffcc00", "#1a3a8a", "#cf142b"), accessory="bigote"), power=85),
     Rival("marte", "Gallo de Marte", "🚀", "una nave que explotó en el despegue",
           "Despide a medio gallinero a las 3 de la mañana y lo anuncia en X.",
           Fraction(10, 100), "Despido masivo",
           _look(body="#2a2a2a", hackle="#4a4a4a", wing="#1a1a1a",
-                tail=("#e8e8e8", "#8a8a8a", "#e8e8e8"), comb="#e8e8e8", accessory="casco")),
+                tail=("#e8e8e8", "#8a8a8a", "#e8e8e8"), comb="#e8e8e8", accessory="casco"),
+          power=90),
 )
 # fmt: on
 RIVAL_BY_KEY: dict[str, Rival] = {r.key: r for r in HOUSE}
@@ -269,9 +323,43 @@ def house_multiplier(chance: Fraction) -> Fraction:
     return RTP / chance
 
 
-def house_payout(stake: int, rival: Rival) -> int:
-    """Lo que cobra quien le gana a `rival` con `stake` (apuesta incluida, redondeado abajo)."""
-    return int(stake * rival.multiplier)
+def win_probability(p0: Fraction | float, mine: float, theirs: float = 0.0) -> Fraction:
+    """Probabilidad de ganar con poder `mine` contra poder `theirs`, partiendo de `p0`.
+
+    `p = sigmoid(logit(p0) + POWER_K * (mine - theirs) / 100)`, acotada a
+    [`MIN_WIN`, `MAX_WIN`] y redondeada a la diezmilésima para que la cuota
+    (`RTP / p`) siga siendo una fracción limpia. Con poderes iguales devuelve
+    `p0` tal cual.
+    """
+    base = min(MAX_WIN, max(MIN_WIN, Fraction(p0).limit_denominator(10_000)))
+    diff = mine - theirs
+    if diff == 0:
+        return base
+    x = math.log(base / (1 - base)) + POWER_K * diff / 100
+    p = Fraction(round(10_000 / (1 + math.exp(-x))), 10_000)
+    return min(MAX_WIN, max(MIN_WIN, p))
+
+
+def house_chance(rival: Rival, power: float) -> Fraction:
+    """Probabilidad de que un gallo de `power` le gane a `rival`.
+
+    Con poder 0 es `rival.chance`, tal como era antes de los stats.
+    """
+    return win_probability(rival.chance, power, 0.0)
+
+
+def duel_chance(red_power: float, blue_power: float) -> Fraction:
+    """Probabilidad de que gane el rojo en un duelo (0,5 con los mismos poderes)."""
+    return win_probability(Fraction(1, 2), red_power, blue_power)
+
+
+def house_payout(stake: int, rival: Rival, power: float = 0.0) -> int:
+    """Lo que cobra quien le gana a `rival` con `stake` (apuesta incluida, redondeado abajo).
+
+    `power` es el poder de su gallo: la cuota se recalcula con la probabilidad de
+    esa pelea.
+    """
+    return int(stake * rival.multiplier_for(power))
 
 
 def format_odds(multiplier: Fraction | float) -> str:
@@ -472,9 +560,42 @@ def pool_payouts(bets: Mapping[int, PoolBet], winner: Corner) -> dict[int, int]:
 # -- La ficha del gallo ------------------------------------------------------------------
 
 
+class Stat(Enum):
+    """Los tres stats de un gallo; el valor es la clave estable (botones y columnas)."""
+
+    STRENGTH = "fuerza"
+    SPEED = "velocidad"
+    ENDURANCE = "aguante"
+
+    @property
+    def emoji(self) -> str:
+        """💪, 🪶 o ❤️."""
+        return {Stat.STRENGTH: "💪", Stat.SPEED: "🪶", Stat.ENDURANCE: "❤️"}[self]
+
+    @property
+    def label(self) -> str:
+        """`Fuerza`, `Velocidad` o `Aguante`."""
+        return self.value.capitalize()
+
+    @property
+    def column(self) -> str:
+        """Columna de la ficha y campo de `RoosterRecord`."""
+        return {
+            Stat.STRENGTH: "strength",
+            Stat.SPEED: "speed",
+            Stat.ENDURANCE: "endurance",
+        }[self]
+
+
+STAT_BY_KEY: dict[str, Stat] = {s.value: s for s in Stat}
+
+
 @dataclass(frozen=True, slots=True)
 class RoosterRecord:
-    """El historial de un gallo (no toca ninguna probabilidad).
+    """La ficha de un gallo: su historial, sus stats y su entrenamiento.
+
+    El historial y el aspecto no tocan ninguna probabilidad; los stats sí (ver
+    la docstring del módulo).
 
     Attributes:
         name: Su nombre.
@@ -485,6 +606,14 @@ class RoosterRecord:
         best_streak: La racha más larga.
         day_streak: Días seguidos peleando.
         last_day: Último día que peleó (`None` si nunca).
+        strength: 💪 Fuerza (0 a 100).
+        speed: 🪶 Velocidad (0 a 100).
+        endurance: ❤️ Aguante (0 a 100); rebaja la probabilidad de morir.
+        deaths: Gallos que ha perdido el dueño (no se reinicia al morir uno).
+        last_train: Instante (epoch) del último entrenamiento del dueño, 0 si ninguno.
+        train_day: Día canario del último entrenamiento.
+        trains_today: Entrenamientos de ese día. La espera y el tope diario son del
+            dueño, no del gallo: un gallo nuevo no se salta el cupo.
     """
 
     name: str
@@ -495,11 +624,136 @@ class RoosterRecord:
     best_streak: int = 0
     day_streak: int = 0
     last_day: date | None = None
+    strength: int = 0
+    speed: int = 0
+    endurance: int = 0
+    deaths: int = 0
+    last_train: float = 0.0
+    train_day: date | None = None
+    trains_today: int = 0
 
     @property
     def losses(self) -> int:
         """Derrotas."""
         return self.fights - self.wins
+
+    def stat(self, stat: Stat) -> int:
+        """Valor de un stat."""
+        return int(getattr(self, stat.column))
+
+    @property
+    def power(self) -> float:
+        """Poder: la media de los tres stats (0 a 100)."""
+        return (self.strength + self.speed + self.endurance) / 3
+
+
+class TrainError(ValueError):
+    """No se puede entrenar ahora; el mensaje se enseña tal cual."""
+
+
+def train_price(level: int) -> int:
+    """Base imponible de entrenar un stat que está en `level`: 200 · (1 + nivel/20)², a la decena.
+
+    200 Y$ a 0, 1.800 a 40 y 7.200 a 100. Se escribe en enteros: 200 · (20 + n)² / 400.
+    """
+    return ((20 + level) ** 2 + 10) // 20 * 10
+
+
+def train_gain(level: int) -> int:
+    """Lo que sube un stat en `level`: +3 por debajo de 40, +2 por debajo de 70 y +1 después."""
+    return 3 if level < 40 else 2 if level < 70 else 1
+
+
+def trains_today(record: RoosterRecord, day: date) -> int:
+    """Entrenamientos que ya lleva el dueño hoy (día canario)."""
+    return record.trains_today if record.train_day == day else 0
+
+
+def check_training(record: RoosterRecord, stat: Stat, *, now: float, day: date) -> None:
+    """Comprueba que se puede entrenar `stat` ahora.
+
+    Raises:
+        TrainError: Si el stat ya está al máximo, hace falta esperar a la hora
+            de descanso o se ha llegado al tope del día.
+    """
+    if record.stat(stat) >= STAT_MAX:
+        raise TrainError(
+            f"{stat.emoji} {stat.label} ya está al máximo. Más no se puede: ni el Falcon "
+            "vuela más alto."
+        )
+    if trains_today(record, day) >= TRAIN_PER_DAY:
+        raise TrainError(
+            f"Hoy ya van {TRAIN_PER_DAY} entrenamientos. Hasta Rocky descansaba el domingo."
+        )
+    wait = record.last_train + TRAIN_COOLDOWN - now
+    if wait > 0:
+        raise TrainError(
+            f"Tu gallo está agotado: descansa {math.ceil(wait / 60)} min más antes de volver "
+            "al gimnasio."
+        )
+
+
+def after_train(record: RoosterRecord, stat: Stat, *, now: float, day: date) -> RoosterRecord:
+    """La ficha tras un entrenamiento válido (sube el stat sin pasar de `STAT_MAX`)."""
+    level = record.stat(stat)
+    return replace(
+        record,
+        **{stat.column: min(STAT_MAX, level + train_gain(level))},
+        last_train=now,
+        train_day=day,
+        trains_today=trains_today(record, day) + 1,
+    )
+
+
+def death_chance(endurance: int) -> float:
+    """Probabilidad de morir al perder por KO: del 10 % (aguante 0) al 5 % (aguante 100)."""
+    return DEATH_CHANCE * (1 - endurance / 200)
+
+
+def dies(record: RoosterRecord, rng: random.Random) -> bool:
+    """Sortea si el gallo `record` muere tras perder por KO."""
+    return rng.random() < death_chance(record.endurance)
+
+
+def stat_bar(value: int, width: int = 10) -> str:
+    """Barra de un stat: `██████░░░░` para 60 de 100."""
+    filled = round(width * value / STAT_MAX)
+    return "█" * filled + "░" * (width - filled)
+
+
+@dataclass(frozen=True, slots=True)
+class Fallen:
+    """Un gallo caído, tal como queda en el cementerio.
+
+    Attributes:
+        name: Su nombre.
+        fights: Peleas que llegó a dar.
+        wins: Victorias.
+        kos: Victorias por KO.
+        strength: Fuerza con la que murió.
+        speed: Velocidad con la que murió.
+        endurance: Aguante con el que murió.
+        died_at: Instante (epoch) de la muerte.
+        killer_kind: `casa` si lo mató un rival de la casa o `miembro` si fue el
+            gallo de otro miembro en un duelo.
+        killer: Clave del rival (`Rival.key`) o ID del miembro que lo mató.
+    """
+
+    name: str
+    fights: int
+    wins: int
+    kos: int
+    strength: int
+    speed: int
+    endurance: int
+    died_at: float
+    killer_kind: str
+    killer: str
+
+    @property
+    def power(self) -> float:
+        """Su poder cuando murió."""
+        return (self.strength + self.speed + self.endurance) / 3
 
 
 def after_fight(record: RoosterRecord, *, won: bool, finish: Finish, day: date) -> RoosterRecord:
@@ -526,6 +780,37 @@ def after_fight(record: RoosterRecord, *, won: bool, finish: Finish, day: date) 
 def default_name(user_id: int) -> str:
     """Nombre de serie de un gallo: siempre el mismo para el mismo dueño."""
     return DEFAULT_NAMES[user_id % len(DEFAULT_NAMES)]
+
+
+def fallen_from(record: RoosterRecord, *, died_at: float, killer_kind: str, killer: str) -> Fallen:
+    """La entrada del cementerio para un gallo que muere con la ficha `record`."""
+    return Fallen(
+        name=record.name,
+        fights=record.fights,
+        wins=record.wins,
+        kos=record.kos,
+        strength=record.strength,
+        speed=record.speed,
+        endurance=record.endurance,
+        died_at=died_at,
+        killer_kind=killer_kind,
+        killer=killer,
+    )
+
+
+def reborn(record: RoosterRecord, user_id: int) -> RoosterRecord:
+    """La ficha del gallo que sustituye al que muere: nombre de serie, stats e historial a cero.
+
+    Se queda con lo que es del dueño y no del gallo: cuántos ha perdido (uno
+    más) y su cupo de entrenamientos. La skin vive en la tienda y no se pierde.
+    """
+    return RoosterRecord(
+        name=default_name(user_id),
+        deaths=record.deaths + 1,
+        last_train=record.last_train,
+        train_day=record.train_day,
+        trains_today=record.trains_today,
+    )
 
 
 _MARKUP = re.compile(r"[`*_~|<>@#\\]")

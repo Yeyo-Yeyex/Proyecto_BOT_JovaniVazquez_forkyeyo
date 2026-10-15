@@ -92,6 +92,7 @@ from bot.services.enraya import Ending as EnrayaEnding
 from bot.services.enraya import GameEvent as EnrayaEvent
 from bot.services.enraya import PlayerRecord as EnrayaRecord
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
+from bot.services.gallos import TRAINED_POWER as GALLOS_TRAINED_POWER
 from bot.services.gallos import Corner as GallosCorner
 from bot.services.gallos import Fight as GallosFight
 from bot.services.gallos import Finish as GallosFinish
@@ -736,6 +737,12 @@ BACKGAMMON_COMEBACK_PIPS = 60
 BACKGAMMON_QUICK_TURNS = 15
 #: Rivales de la casa ganados: un contador por rival (`gallos_beat_falcon`).
 GALLOS_BEAT_PREFIX = "gallos_beat_"
+#: Rivales de la casa ganados con un gallo entrenado (poder `GALLOS_TRAINED_POWER` o más).
+GALLOS_TRAINED_BEAT_PREFIX = "gallos_tbeat_"
+#: Un gallo que ya ha ganado esto al morir cuenta como veterano (`gallos_death_veteran`).
+GALLOS_VETERAN_WINS = 50
+#: Se llama sorpresa a ganar con menos probabilidad que esta (`gallos_upset`).
+GALLOS_UPSET_CHANCE = 0.20
 #: Skins con las que ha peleado: un contador por skin (`gallos_skin_serie`).
 GALLOS_SKIN_PREFIX = "gallos_skin_"
 #: Las skins gratis de los gallos (claves de `bot.services.skins`).
@@ -9960,6 +9967,212 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ):
         a += _tiers("gallos", stat, [(1, achievement_id, name, description, C, secret)])
 
+    # Stats, entrenamiento y muertes. Entrenar es cuestión de días (una hora de espera y
+    # seis al día) y de dinero (el precio sube con el stat); morir es suerte: ~3 % por pelea
+    # (un 28 % de perderlas por KO por el 10 % de morir), así que la primera muerte llega
+    # a las ~35 peleas y los duelos que acaban en muerte, a una de cada ~70.
+    a += _tiers("gallos", "gallos_trains", [
+        (1, "gallos_gym_1", "Primer día de gimnasio",
+         "Entrena a tu gallo por primera vez. Como Rocky, pero con alpiste.", C),
+        (10, "gallos_gym_10", "Escalera de Filadelfia",
+         "Entrena 10 veces. Los escalones eran de Filadelfia; el sudor, de tu gallo.", C),
+        (100, "gallos_gym_100", "Pectorales de propaganda",
+         "Entrena 100 veces. Putin a caballo sin camiseta te manda un mensaje de respeto.", E),
+        (1_000, "gallos_gym_1k", "Vuelta ciclista al corral",
+         "Entrena 1.000 veces. Más etapas que la Vuelta y mucho menos dopaje.", M),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_strength_max", [
+        (50, "gallos_fuerza_50", "Fruta para los bíceps",
+         "Lleva la fuerza de un gallo a 50. Gimnasio de Ayuso, con caña incluida.", R),
+        (100, "gallos_fuerza_100", "Levantador de aranceles",
+         "Lleva la fuerza de un gallo a 100. Aguanta hasta el 200 % de recargo.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_speed_max", [
+        (50, "gallos_velocidad_50", "Velocidad de crucero del Falcon",
+         "Lleva la velocidad de un gallo a 50. Llega a todas partes, hasta a su propia boda.", R),
+        (100, "gallos_velocidad_100", "Escapada de Puigdemont",
+         "Lleva la velocidad de un gallo a 100. Ni los Mossos le ven ya el maletero.", E),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_endurance_max", [
+        (50, "gallos_aguante_50", "Aguante de moción de censura",
+         "Lleva el aguante de un gallo a 50. Ha sobrevivido a más mociones que el Gobierno.", R),
+        (100, "gallos_aguante_100", "Juicio eterno de Bibi",
+         "Lleva el aguante de un gallo a 100. Aplaza hasta la muerte, que le debe un turno.", E),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_dios",
+            name="Gallo Dios",
+            description=(
+                "Ten un gallo con fuerza, velocidad y aguante a 100. Franco sigue muerto; "
+                "tu gallo, casi inmortal."
+            ),
+            category="gallos",
+            rarity=M,
+            conditions=(
+                ("gallos_strength_max", 100),
+                ("gallos_speed_max", 100),
+                ("gallos_endurance_max", 100),
+            ),
+        )
+    )
+    a += _tiers("gallos", "gallos_power_max", [
+        (50, "gallos_poder_50", "Mayoría simple de plumas",
+         "Ten un gallo con poder 50. Con los votos de Junts, ya gobiernas el gallinero.", E),
+        (75, "gallos_poder_75", "Mayoría absoluta de plumas",
+         "Ten un gallo con poder 75. Aprobar presupuestos ya no es problema tuyo.", L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_upset", [
+        (1, "gallos_sorpasso", "Sorpasso en el corral",
+         "Gana a un rival de la casa con menos de un 20 % de probabilidades. "
+         "Sorpasso de verdad, no como el de Podemos.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_deaths", [
+        (1, "gallos_entierro_1", "Entierro de la sardina",
+         "Que muera tu gallo. Procesión, bombo y sardina de cartón.", R),
+        (10, "gallos_entierro_10", "Valle de los Caídos del gallinero",
+         "Que mueran 10 gallos tuyos. La exhumación, otro día; el cementerio, ya lleno.", E),
+        (50, "gallos_entierro_50", "Fosa común con sobrecoste",
+         "Que mueran 50 gallos tuyos. La obra del cementerio se pasó de presupuesto, como todas.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_kills", [
+        (1, "gallos_sicario", "Sicario del reñidero",
+         "Mata al gallo de otro miembro en un duelo. El NO-DO no se enterará.", R),
+        (10, "gallos_funeraria", "Dueño de la funeraria",
+         "Mata a 10 gallos de otros en duelos. El cementerio ya tiene tu nombre en la fachada.",
+         L),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_phoenix", [
+        (1, "gallos_fenix", "Ave Fénix",
+         "Gana la primera pelea de tu gallo nuevo, justo tras perder al anterior. "
+         "Resurgir, como el PSOE después de 2016.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_death_veteran", [
+        (1, "gallos_jubilacion", "Jubilación sin pensión",
+         "Que muera un gallo con 50 victorias o más. Cotizó de sobra y no le llega ni el IMV.",
+         L, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_death_debut", [
+        (1, "gallos_debut", "Debut y despedida",
+         "Que tu gallo muera en su primera pelea. Dura menos que un ministro de Boris.",
+         L, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_trains_day_max", [
+        (6, "gallos_maraton", "Maratón de gimnasio",
+         "Entrena 6 veces en un día. Tu gallo registra una moción de censura contra ti.", R),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_train_dawn", [
+        (1, "gallos_madrugon", "Madrugón de Rocky",
+         "Entrena de madrugada (de 2 a 6). Rocky corría antes del amanecer; tu gallo, con sueño.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("gallos", "gallos_train_spent", [
+        (10_000, "gallos_cuota_gym", "Cuota del gimnasio",
+         "Gasta 10.000 Y$ en entrenar gallos, IGIC incluido. Perro Sanxe aplaude.", R),
+        (100_000, "gallos_gym_ayuso", "Gimnasio con sobrecostes",
+         "Gasta 100.000 Y$ en entrenar gallos. Más que el Falcon en un viaje a Lanzarote.", E),
+        (1_000_000, "gallos_gym_estado", "Gimnasio de Estado",
+         "Gasta 1.000.000 Y$ en entrenar gallos. Los Presupuestos Generales te piden el recibo.",
+         M),
+    ], unit="money")  # fmt: skip
+    for key, achievement_id, name, description, rarity in (
+        (
+            "temu",
+            "gallos_tbeat_temu",
+            "Reclamación a Temu",
+            "Gánale al Gallo de Temu con un gallo entrenado. Esta vez sí llega la pata.",
+            R,
+        ),
+        (
+            "teror",
+            "gallos_tbeat_teror",
+            "Gofio con proteínas",
+            "Gánale al Pollo de Teror con un gallo entrenado. Hasta el Pino pide batido.",
+            R,
+        ),
+        (
+            "directiva",
+            "gallos_tbeat_directiva",
+            "Enmienda al tapón",
+            "Gánale a la Directiva 2019/904 con un gallo entrenado. Bruselas pide otro informe.",
+            R,
+        ),
+        (
+            "falcon",
+            "gallos_tbeat_falcon",
+            "Falcon sin combustible",
+            "Gánale al Gallo del Falcon con un gallo entrenado. Esta vez vuelas tú.",
+            R,
+        ),
+        (
+            "motosierra",
+            "gallos_tbeat_motosierra",
+            "Motosierra sin gasolina",
+            "Gánale a La Motosierra con un gallo entrenado. El «¡afuera!» te lo dicen a ti.",
+            R,
+        ),
+        (
+            "sahel",
+            "gallos_tbeat_sahel",
+            "Contragolpe de Estado",
+            "Gánale al Coronel del Sahel con un gallo entrenado. Elecciones «pronto», claro.",
+            R,
+        ),
+        (
+            "arancel",
+            "gallos_tbeat_arancel",
+            "Arancel del 0 %",
+            "Gánale a Arancel con un gallo entrenado. Sin recargo, de momento.",
+            E,
+        ),
+        (
+            "credito",
+            "gallos_tbeat_credito",
+            "Crédito social con pesas",
+            "Gánale a Crédito Social con un gallo entrenado. Te suben la nota por levantar.",
+            E,
+        ),
+        (
+            "cupula",
+            "gallos_tbeat_cupula",
+            "Intercepción fallida",
+            "Gánale a la Cúpula de Hierro con un gallo entrenado. Esta vez no lo intercepta.",
+            E,
+        ),
+        (
+            "actas",
+            "gallos_tbeat_actas",
+            "Recuento verificable",
+            "Gánale al Gallo de las Actas con un gallo entrenado. Las actas, por fin, aparecen.",
+            E,
+        ),
+        (
+            "marte",
+            "gallos_tbeat_marte",
+            "Cohete aterrizado",
+            "Gánale al Gallo de Marte con un gallo entrenado. Despegar, solo despega el despido.",
+            E,
+        ),
+    ):
+        assert key in {r.key for r in GALLOS_HOUSE}
+        a += _tiers("gallos", f"{GALLOS_TRAINED_BEAT_PREFIX}{key}", [
+            (1, achievement_id, name, description, rarity),
+        ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="gallos_gira_entrenada",
+            name="Gira mundial con preparador físico",
+            description=(
+                "Gánale a todos los gallos de la casa con un gallo entrenado "
+                f"(poder {GALLOS_TRAINED_POWER} o más). Ni un solo rival se libra."
+            ),
+            category="gallos",
+            rarity=L,
+            conditions=tuple((f"{GALLOS_TRAINED_BEAT_PREFIX}{r.key}", 1) for r in GALLOS_HOUSE),
+        )
+    )
+
     # 🔴 4 en raya ------------------------------------------------------------------------
     a += _tiers("enraya", "enraya_games", [
         (1, "enraya_1", "Primera ficha", "Juega tu primera partida de 4 en raya.", C),
@@ -15189,6 +15402,9 @@ def gallos_stats(
     crowd_pool: int,
     rake: int,
     when: datetime,
+    power: float = 0.0,
+    died: RoosterRecord | None = None,
+    killed: bool = False,
 ) -> StatDelta:
     """Contadores de una pelea de gallos para uno de los dos dueños (sin lo común del casino).
 
@@ -15196,15 +15412,18 @@ def gallos_stats(
         fight: La pelea.
         corner: La esquina de este dueño.
         rival: Clave del gallo de la casa (`gallos.HOUSE`), o `None` en un duelo.
-        chance: Probabilidad que tenía de ganar.
+        chance: Probabilidad real que tenía de ganar (con sus stats).
         stake: Lo apostado.
         net: Ganado menos apostado.
-        record: La ficha de su gallo tras la pelea.
+        record: La ficha de su gallo tras la pelea (antes de enterrarlo, si muere).
         skin: Clave de la skin con la que peleó (`serie` si ninguna).
         paid_skin: Si esa skin es de las de la tienda (ni de serie ni gratis).
         crowd_pool: Lo que apostó el público en el duelo (0 contra la casa).
         rake: Comisión de la casa que se ha dejado (0 contra la casa).
         when: Hora local.
+        power: Poder de su gallo en la pelea (0 a 100).
+        died: La ficha de su gallo si ha muerto en esta pelea.
+        killed: Si en este duelo ha matado al gallo del otro.
     """
     won = fight.winner is corner
     mine = corner
@@ -15236,6 +15455,9 @@ def gallos_stats(
         bump("gallos_close_win", fight.hp(mine) <= 10)
         bump("gallos_blitz", fight.finish is GallosFinish.KO and fight.rounds == 1)
         bump("gallos_paid_skin_win", paid_skin)
+        # Con un gallo nuevo justo tras perder al anterior: la primera pelea de la ficha.
+        bump("gallos_phoenix", record.fights == 1 and record.deaths > 0)
+        bump("gallos_upset", rival is not None and chance < GALLOS_UPSET_CHANCE)
         if net > 0:
             delta.peak["gallos_win_max"] = net
     else:
@@ -15245,6 +15467,7 @@ def gallos_stats(
         bump("gallos_friday13", when.weekday() == 4 and when.day == 13)
     if rival is not None:
         bump(f"{GALLOS_BEAT_PREFIX}{rival}", won)
+        bump(f"{GALLOS_TRAINED_BEAT_PREFIX}{rival}", won and power >= GALLOS_TRAINED_POWER)
         bump("gallos_temu_loss", not won and rival == "temu")
     else:
         bump("gallos_duels")
@@ -15263,6 +15486,37 @@ def gallos_stats(
     bump("gallos_night", 2 <= when.hour < 6)
     bump("gallos_dawn", 6 <= when.hour < 8)
     bump("gallos_nochevieja", when.month == 12 and when.day == 31)
+    if died is not None:
+        bump("gallos_deaths")
+        bump("gallos_death_veteran", died.wins >= GALLOS_VETERAN_WINS)
+        bump("gallos_death_debut", died.fights == 1)
+    bump("gallos_kills", killed)
+    return delta
+
+
+def gallos_train_stats(
+    *, record: RoosterRecord, paid: int, today: int, when: datetime
+) -> StatDelta:
+    """Contadores de un entrenamiento de gallos (se apuntan después de enseñar el resultado).
+
+    Args:
+        record: La ficha del gallo tras entrenar.
+        paid: Lo que ha costado, IGIC incluido.
+        today: Entrenamientos que lleva el dueño hoy, este incluido.
+        when: Hora local.
+    """
+    delta = StatDelta(
+        add={"gallos_trains": 1, "gallos_train_spent": paid},
+        peak={
+            "gallos_strength_max": record.strength,
+            "gallos_speed_max": record.speed,
+            "gallos_endurance_max": record.endurance,
+            "gallos_power_max": int(record.power),
+            "gallos_trains_day_max": today,
+        },
+    )
+    if 2 <= when.hour < 6:
+        delta.add["gallos_train_dawn"] = 1
     return delta
 
 
