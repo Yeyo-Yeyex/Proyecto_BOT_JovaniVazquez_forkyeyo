@@ -63,6 +63,9 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             "art. 33.5.d LIRPF"),
     TaxKind("irpf_ahorro", "🏦", "IRPF del ahorro (intereses y plusvalías)", "IRPF ahorro",
             Group.DIRECT, "arts. 25.2, 33 y 66 LIRPF"),
+    TaxKind("irpf_alquiler", "🔑", "IRPF de los alquileres", "IRPF alq.", Group.DIRECT,
+            "arts. 22 y 23 LIRPF"),
+    TaxKind("ibi", "🏘️", "IBI de los pisos", "IBI", Group.DIRECT, "art. 60 RDL 2/2004"),
     TaxKind("ss_trabajador", "🧑‍🏭", "Seguridad Social del trabajador y autónomos", "SS",
             Group.DIRECT, "LGSS"),
     TaxKind("patrimonio", "🏰", "Impuesto sobre el Patrimonio", "Patrim.", Group.DIRECT,
@@ -74,6 +77,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.INDIRECT, "LGSS"),
     TaxKind("itp", "🧺", "Transmisiones Patrimoniales (Rastro)", "ITP", Group.INDIRECT,
             "art. 31.1.d DLeg 1/2009 de Canarias"),
+    TaxKind("itp_pisos", "🏠", "Transmisiones Patrimoniales (pisos)", "ITP pisos",
+            Group.INDIRECT, "art. 31 DLeg 1/2009 de Canarias"),
     TaxKind("iaj", "🎫", "Impuesto sobre Actividades de Juego (porras)", "IAJ",
             Group.INDIRECT, "art. 48 Ley 13/2011"),
     TaxKind("multas", "🚨", "Multas de la Inspección", "Multas", Group.OTHER, "LGT"),
@@ -151,13 +156,26 @@ def _sign(kind: TaxKind) -> str:
     return "−" if kind.group is Group.REFUND else ""
 
 
+#: Impuestos que salen en la línea corta de cada miembro (los que más ha pagado).
+COMPACT_KINDS = 5
+
+
 def compact_line(bill: TaxBill) -> str:
-    """`IRPF nóm. 1.200 · SS empresa 3.000 · IGIC 70`: solo lo que no es cero."""
+    """`IRPF nóm. 1.200 · SS empresa 3.000 · IGIC 70`: los que más ha pagado.
+
+    Solo lo que no es cero y como mucho `COMPACT_KINDS`, de más a menos, para que
+    la lista de `hacienda` quepa en un embed aunque todos paguen de todo.
+    """
+    kinds = sorted(
+        (k for k in TAX_KINDS if bill.amounts.get(k.key) and k.group is not Group.FOREIGN),
+        key=lambda k: -abs(bill.amounts[k.key]),
+    )
     parts = [
         f"{kind.short} {_sign(kind)}{format_amount(bill.amounts[kind.key]).removesuffix(' Y$')}"
-        for kind in TAX_KINDS
-        if bill.amounts.get(kind.key) and kind.group is not Group.FOREIGN
+        for kind in kinds[:COMPACT_KINDS]
     ]
+    if len(kinds) > COMPACT_KINDS:
+        parts.append(f"y {len(kinds) - COMPACT_KINDS} más")
     return " · ".join(parts) if parts else "Nada todavía"
 
 
@@ -251,6 +269,64 @@ def add_bill_fields(
             name="Lo que paga cada uno (directo e indirecto)" if i == 0 else "\u200b",
             value=block,
             inline=False,
+        )
+
+
+#: Lo que pagan los pisos, en el orden del bloque 🏠: `(clave, emoji, nombre, norma)`.
+HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
+    ("itp", "🏠", "ITP al comprar", "art. 31 DLeg 1/2009 de Canarias"),
+    ("ibi", "🏘️", "IBI", "art. 60 RDL 2/2004"),
+    ("alquiler", "🔑", "IRPF de las rentas", "arts. 22 y 23 LIRPF"),
+    ("ganancia", "📈", "IRPF de lo ganado al vender", "art. 33 LIRPF"),
+)
+
+
+def housing_lines(amounts: dict[str, int]) -> list[str]:
+    """Una línea por impuesto de los pisos que se haya pagado."""
+    return [
+        f"{emoji} {label}: {format_amount(amounts[key])} · {law}"
+        for key, emoji, label, law in HOUSING_TAXES
+        if amounts.get(key)
+    ]
+
+
+def add_housing_fields(
+    embed: discord.Embed, housing: dict[int, dict[str, int]], names: dict[int, str]
+) -> None:
+    """Bloque 🏠 de `hacienda`: lo que pagan los pisos del servidor y cada casero.
+
+    Args:
+        housing: Lo de `EconomyService.housing_tax_breakdown`.
+        names: Nombre de cada miembro.
+    """
+    if not housing:
+        return
+    totals: dict[str, int] = {}
+    for amounts in housing.values():
+        for key, value in amounts.items():
+            totals[key] = totals.get(key, 0) + value
+    total = sum(totals.values())
+    embed.add_field(
+        name=f"🏠 Lo que pagan los pisos · {format_amount(total)}",
+        value="\n".join(housing_lines(totals)),
+        inline=False,
+    )
+    ranked = sorted(housing.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
+    lines = []
+    for i, (user_id, amounts) in enumerate(ranked[:TOP_BILLS]):
+        rank = _MEDALS[i] if i < len(_MEDALS) else f"`{i + 1}.`"
+        parts = " · ".join(
+            f"{emoji} {format_amount(amounts[key])}"
+            for key, emoji, _label, _law in HOUSING_TAXES
+            if amounts.get(key)
+        )
+        lines.append(
+            f"{rank} {names.get(user_id, f'<@{user_id}>')} · "
+            f"**{format_amount(sum(amounts.values()))}**\n-# {parts}"
+        )
+    for i, block in enumerate(_chunks(lines)):
+        embed.add_field(
+            name="Los caseros que más pagan" if i == 0 else "​", value=block, inline=False
         )
 
 

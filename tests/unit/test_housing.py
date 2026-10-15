@@ -1,0 +1,621 @@
+"""Pruebas de `pisos`: catálogo, reglas, compra, venta, un día de rentas y el Patrimonio."""
+
+from __future__ import annotations
+
+import random
+import sqlite3
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from bot.repositories.economy import (
+    STATE_ACCOUNT_ID,
+    EconomyRepository,
+    InsufficientFundsError,
+    LedgerEntry,
+)
+from bot.repositories.housing import HousingError, HousingRepository, assets_in
+from bot.services import housing as rules
+from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.housing_catalog import (
+    BARRIO_BY_KEY,
+    BARRIOS,
+    ISLANDS,
+    KINDS,
+    LISTING_BY_KEY,
+    LISTINGS,
+    RENT_LEVELS,
+    TENANT_BY_KEY,
+    listings_of,
+)
+from bot.services.housing_market import HousingService
+from bot.services.levels import TIMEZONE
+from bot.services.taxes import WEALTH_MINIMUM, wealth_tax
+
+GUILD = 1
+ANA = 10
+BEA = 20
+BAJO = LISTING_BY_KEY["schamann_bajo"]
+
+
+class Clock:
+    def __init__(self, when: datetime) -> None:
+        self.now = when.timestamp()
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class Scripted(random.Random):
+    """Azar de guion: `random()` devuelve los valores dados y luego `fill`."""
+
+    def __init__(self, values: list[float] | None = None, fill: float = 0.99) -> None:
+        super().__init__(0)
+        self.values = list(values or [])
+        self.fill = fill
+
+    def random(self) -> float:
+        return self.values.pop(0) if self.values else self.fill
+
+
+def at(d: int, hour: int = 12) -> datetime:
+    return datetime(2026, 10, d, hour, tzinfo=TIMEZONE)
+
+
+async def make(tmp_path: Path, clock: Clock, rng: random.Random | None = None):
+    economy_repo = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await economy_repo.initialize()
+    housing_repo = HousingRepository(tmp_path / "bot.db")
+    await housing_repo.initialize()
+    economy = EconomyService(economy_repo, clock=clock)
+    return economy, HousingService(housing_repo, economy, clock=clock, rng=rng or Scripted())
+
+
+def ledger_sum(tmp_path: Path, user_id: int) -> int:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(delta), 0) FROM economy_ledger WHERE guild_id = ? AND user_id = ?",
+            (GUILD, user_id),
+        ).fetchone()
+    return int(total)
+
+
+def housing_taxes(tmp_path: Path, kind: str) -> int:
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(tax), 0) FROM economy_housing_tax WHERE guild_id = ? AND kind = ?",
+            (GUILD, kind),
+        ).fetchone()
+    return int(total)
+
+
+async def give(economy: EconomyService, user_id: int, amount: int) -> None:
+    await economy.repository.apply(GUILD, user_id, [LedgerEntry(amount, "prueba")])
+
+
+# -- Catálogo ----------------------------------------------------------------------------
+
+
+def test_hay_veinte_barrios_de_gran_canaria_y_tenerife_con_tres_inmuebles_cada_uno() -> None:
+    assert len(BARRIOS) == 20
+    assert {b.island for b in BARRIOS} == set(ISLANDS)
+    assert sum(b.island == "gc" for b in BARRIOS) == 10
+    assert len(LISTINGS) == 60
+    assert len(LISTING_BY_KEY) == 60
+    assert len(BARRIO_BY_KEY) == 20
+    for barrio in BARRIOS:
+        assert len(listings_of(barrio.key)) == 3, barrio.key
+        assert 0 <= barrio.x <= 1 and 0 <= barrio.y <= 1
+    for listing in LISTINGS:
+        assert listing.kind in KINDS
+        assert listing.key.startswith(listing.barrio + "_")
+        assert rules.base_price(listing) > 0
+        assert rules.reference_rent(listing) > 0
+
+
+def test_cada_nivel_de_renta_tiene_inquilinos_que_lo_aceptan() -> None:
+    for level in RENT_LEVELS:
+        assert any(level in tenant.levels for tenant in TENANT_BY_KEY.values()), level
+
+
+def test_lo_barato_renta_mas_que_lo_caro() -> None:
+    def gross_yield(key: str) -> float:
+        listing = LISTING_BY_KEY[key]
+        return rules.reference_rent(listing) / rules.base_price(listing)
+
+    assert gross_yield("schamann_bajo") > gross_yield("adeje_chalet")
+
+
+def test_un_piso_se_paga_en_meses_y_no_en_dias_ni_en_anios() -> None:
+    """Con un día = un mes, la renta neta paga el bajo de Schamann en unos meses de verdad."""
+    costs = rules.monthly_costs(BAJO).total
+    net = rules.reference_rent(BAJO) - costs
+    days = rules.purchase_quote(BAJO, rules.SHARES).total / net
+    assert 90 < days < 365
+
+
+# -- Reglas ------------------------------------------------------------------------------
+
+
+def test_la_compra_paga_el_itp_de_inmuebles_y_la_notaria() -> None:
+    quote = rules.purchase_quote(BAJO, 10)
+    assert quote.price == rules.share_price(BAJO) * 10
+    assert quote.itp == round(quote.price * rules.ITP_RATE)
+    assert quote.notary == round(quote.price * rules.NOTARY_RATE)
+    assert quote.total == quote.price + quote.itp + quote.notary
+    with pytest.raises(ValueError):
+        rules.purchase_quote(BAJO, 0)
+    with pytest.raises(ValueError):
+        rules.purchase_quote(BAJO, rules.SHARES + 1)
+
+
+def test_vender_con_ganancia_paga_el_19_por_ciento_y_la_deuda_va_con_el_piso() -> None:
+    cost = rules.purchase_quote(BAJO, 50).total
+    quote = rules.sale_quote(
+        BAJO, 50, 50, cost, index=1.5, arrears=10_000, arrears_ibi=2_000, pool=100
+    )
+    assert quote.arrears == 5_000 and quote.arrears_ibi == 1_000
+    assert quote.gain == quote.price - quote.fee - quote.arrears - cost
+    assert quote.gain > 0
+    assert quote.gain_tax == rules.capital_gain_tax(quote.gain)
+    assert quote.received == quote.price - quote.fee - quote.arrears - quote.gain_tax
+
+
+def test_vender_con_perdidas_no_paga_irpf() -> None:
+    cost = rules.purchase_quote(BAJO, 100).total
+    quote = rules.sale_quote(BAJO, 100, 100, cost)
+    assert quote.gain < 0
+    assert quote.gain_tax == 0
+
+
+def test_el_reparto_es_entre_los_duenios_y_lo_que_no_es_de_nadie_no_cuenta() -> None:
+    parts = rules.split(9_001, {ANA: 60, BEA: 30})
+    assert parts[BEA] == 3_000 and parts[ANA] + parts[BEA] == 9_001
+    assert rules.owned_share(10_000, 90) == 9_000
+    assert rules.split(0, {ANA: 100}) == {ANA: 0}
+
+
+def test_la_renta_paga_primero_el_ibi_y_lo_que_falta_queda_a_deber() -> None:
+    costs = rules.MonthlyCosts(community=300, insurance=100, ibi=200)
+    paid = rules.settle_day(rent=1_000, costs=costs, extra=0, arrears=0, arrears_ibi=0)
+    assert (paid.ibi, paid.costs, paid.net, paid.arrears) == (200, 400, 400, 0)
+    empty = rules.settle_day(rent=0, costs=costs, extra=50, arrears=100, arrears_ibi=30)
+    assert (empty.ibi, empty.costs, empty.net) == (0, 0, 0)
+    assert empty.arrears == 100 + 600 + 50
+    assert empty.arrears_ibi == 30 + 200
+    short = rules.settle_day(rent=250, costs=costs, extra=0, arrears=0, arrears_ibi=0)
+    assert (short.ibi, short.costs, short.net, short.arrears_ibi) == (200, 50, 0, 0)
+
+
+def test_la_renta_se_pasa_a_la_escala_de_la_retencion() -> None:
+    assert rules.rent_to_fiscal(365) == 12
+    assert rules.rent_to_fiscal(-5) == 0
+    assert rules.taxable_rent(1_000, 400) == 300
+    assert rules.taxable_rent(100, 400) == 0
+
+
+def test_comprar_sube_el_indice_segun_lo_que_pesa_y_vender_lo_deja_igual() -> None:
+    weight = rules.barrio_weight(BAJO)
+    up = rules.index_after(1.0, BAJO, 100, bought=True)
+    assert up == pytest.approx(1 + rules.INDEX_STEP * weight)
+    assert rules.index_after(up, BAJO, 100, bought=False) == pytest.approx(1.0, abs=1e-12)
+    assert sum(rules.barrio_weight(item) for item in listings_of("schamann")) == pytest.approx(1)
+    trastero = LISTING_BY_KEY["schamann_trastero"]
+    assert rules.index_after(1.0, trastero, 100, bought=True) < up  # lo barato apenas lo mueve
+    assert rules.index_next_day(1.5) < 1.5
+    assert rules.index_after(rules.INDEX_MAX, BAJO, 100, bought=True) == rules.INDEX_MAX
+
+
+def test_inflar_el_barrio_comprando_y_vendiendo_nunca_sale_a_cuenta() -> None:
+    """Revisión: con el índice viejo, mil idas y vueltas de una participación lo subían un 30 %.
+
+    Ahora una ida y vuelta lo deja igual, y comprar de verdad para inflar los demás pisos
+    cuesta más (ITP, notaría y agencia) de lo que suben.
+    """
+    index = 1.0
+    for _ in range(3_000):
+        index = rules.index_after(index, BAJO, 1, bought=True)
+        index = rules.index_after(index, BAJO, 1, bought=False)
+    assert index == pytest.approx(1.0, abs=1e-9)
+    for listing in LISTINGS:
+        others = sum(rules.base_price(i) for i in listings_of(listing.barrio)) - rules.base_price(
+            listing
+        )
+        cost = (
+            rules.purchase_quote(listing, 100).total
+            - rules.sale_quote(
+                listing, 100, 100, 0, index=rules.index_after(1.0, listing, 100, bought=True)
+            ).received
+        )
+        gain = (rules.index_after(1.0, listing, 100, bought=True) - 1) * others
+        assert gain < cost, listing.key
+
+
+def test_un_piso_vacio_encuentra_inquilino_con_la_renta_que_pide() -> None:
+    day = date(2026, 10, 14)
+    events_off = [0.99] * len(rules.EVENTS)
+    lease = rules.Lease(level="mercado", since=day)
+    out = rules.advance_day(BAJO, lease, day, 1.0, Scripted([*events_off, 0.0]))
+    assert out.lease.status == rules.RENTED
+    assert out.lease.rent == rules.asking_rent(BAJO, RENT_LEVELS["mercado"])
+    assert out.lease.until == day + timedelta(days=RENT_LEVELS["mercado"].months)
+    assert out.rent == 0  # el primer mes se cobra mañana
+    assert TENANT_BY_KEY[out.lease.tenant].levels.count("mercado") == 1
+
+
+def test_un_inquilino_que_deja_de_pagar_acaba_desahuciado() -> None:
+    day = date(2026, 10, 14)
+    events_off = [0.99] * len(rules.EVENTS)
+    rented = rules.Lease(status=rules.RENTED, tenant="familia", rent=5_000, until=day + timedelta(
+        days=30), since=day)  # fmt: skip
+    out = rules.advance_day(BAJO, rented, day, 1.0, Scripted([*events_off, 0.0]))
+    assert out.lease.status == rules.DEFAULTING and out.rent == 0
+    evicting = rules.start_eviction(out.lease, day, random.Random(1))
+    assert evicting.status == rules.EVICTING
+    low, high = rules.EVICTION_DAYS
+    assert day + timedelta(days=low) <= evicting.eviction_at <= day + timedelta(days=high)
+    done = rules.advance_day(BAJO, evicting, evicting.eviction_at, 1.0, Scripted())
+    assert done.lease.status == rules.VACANT and done.lease.tenant is None
+    with pytest.raises(ValueError):
+        rules.start_eviction(done.lease, day, random.Random(1))
+
+
+def test_vender_de_una_en_una_paga_la_misma_deuda_que_de_golpe() -> None:
+    """Revisión: antes, vender participación a participación se saltaba un 37 % de la deuda."""
+    cost = rules.purchase_quote(BAJO, 100).total
+    whole = rules.sale_quote(BAJO, 100, 100, cost, arrears=20_000, arrears_ibi=5_000)
+    arrears, arrears_ibi, owned, paid, paid_ibi = 20_000, 5_000, 100, 0, 0
+    while owned:
+        quote = rules.sale_quote(BAJO, 1, owned, cost * owned // 100, arrears=arrears,
+                                 arrears_ibi=arrears_ibi, pool=owned)  # fmt: skip
+        paid, paid_ibi = paid + quote.arrears, paid_ibi + quote.arrears_ibi
+        arrears, arrears_ibi, owned = (
+            arrears - quote.arrears,
+            arrears_ibi - quote.arrears_ibi,
+            owned - 1,
+        )
+    assert paid == whole.arrears == 20_000
+    assert paid_ibi == whole.arrears_ibi == 5_000
+
+
+def test_el_patrimonio_cuenta_lo_pagado_o_el_catastral() -> None:
+    assert rules.fiscal_value(BAJO, 100, 0) == rules.cadastral_value(BAJO)
+    assert rules.fiscal_value(BAJO, 100, 10**9) == 10**9
+
+
+# -- Dinero en la base de datos ------------------------------------------------------------
+
+
+async def test_comprar_cobra_precio_itp_y_notaria_y_el_libro_cuadra(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 1_000_000)
+    trade = await service.buy(GUILD, ANA, BAJO.key, 40)
+    quote = trade.deal.quote
+
+    assert trade.balance == STARTING_BALANCE + 1_000_000 - quote.total
+    assert ledger_sum(tmp_path, ANA) == trade.balance
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == quote.itp
+    assert housing_taxes(tmp_path, "itp") == quote.itp
+    market = await service.market(GUILD)
+    assert market.shares_of(BAJO.key) == {ANA: 40}
+    assert market.free_shares(BAJO.key) == 60
+    assert market.index("schamann") > 1.0
+    assert market.leases[BAJO.key].status == rules.VACANT
+    assert trade.deal.first
+
+
+async def test_sin_dinero_no_se_compra_nada(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    with pytest.raises(InsufficientFundsError):
+        await service.buy(GUILD, ANA, BAJO.key, 100)
+    market = await service.market(GUILD)
+    assert market.holdings == {} and market.leases == {} and market.indexes == {}
+    assert await economy.balance(GUILD, ANA) == STARTING_BALANCE
+
+
+async def test_no_se_compran_mas_participaciones_de_las_que_quedan(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 70)
+    with pytest.raises(HousingError, match="30"):
+        await service.buy(GUILD, BEA, BAJO.key, 31)
+    await service.buy(GUILD, BEA, BAJO.key, 30)
+    with pytest.raises(HousingError):
+        await service.buy(GUILD, BEA, BAJO.key, 1)
+
+
+async def test_un_dia_alquilado_reparte_la_renta_y_hacienda_cobra_lo_suyo(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 75)
+    await service.buy(GUILD, BEA, BAJO.key, 25)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01' WHERE listing = ?",
+            (BAJO.key,),
+        )
+    # Ana cobra además un buen premio esta semana: su renta del alquiler ya retiene.
+    await economy.pay_income(GUILD, ANA, gross=300_000, concept="nivel:30")
+    before = {m: await economy.balance(GUILD, m) for m in (ANA, BEA)}
+    state_before = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    clock.now = at(15).timestamp()
+
+    runs = await service.close_days(GUILD)
+    again = await service.close_days(GUILD)
+
+    assert [r.day for r in runs] == [date(2026, 10, 14)] and again == []
+    costs = rules.monthly_costs(BAJO)
+    got = {m: await economy.balance(GUILD, m) - before[m] for m in (ANA, BEA)}
+    net = 8_000 - costs.total
+    assert 0 < got[BEA] < got[ANA] <= net * 75 // 100 + 1  # +1: el redondeo va al que más tiene
+    assert sum(got.values()) <= net
+    for member in (ANA, BEA):
+        assert ledger_sum(tmp_path, member) == await economy.balance(GUILD, member)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (irpf,) = connection.execute(
+            "SELECT COALESCE(SUM(-delta), 0) FROM economy_ledger "
+            "WHERE user_id > 0 AND reason = 'irpf:pisos:renta'"
+        ).fetchone()
+    ibi = housing_taxes(tmp_path, "ibi")
+    assert irpf > 0
+    assert ibi == costs.ibi
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state_before == irpf + ibi
+    breakdown = await economy.tax_breakdown(GUILD)
+    assert breakdown[ANA]["ibi"] > 0 and "itp_pisos" in breakdown[ANA]
+    assert breakdown[ANA]["irpf_alquiler"] > 0
+
+
+async def test_un_piso_vacio_paga_sus_recibos_del_monedero(tmp_path: Path) -> None:
+    """Revisión: un piso vacío también paga IBI y comunidad, del bolsillo de su dueño."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    balance = await economy.balance(GUILD, ANA)
+    state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    clock.now = at(15).timestamp()
+
+    await service.close_days(GUILD)
+
+    costs = rules.monthly_costs(BAJO)
+    lease = (await service.market(GUILD)).leases[BAJO.key]
+    assert lease.status == rules.VACANT and lease.arrears == 0
+    assert await economy.balance(GUILD, ANA) <= balance - costs.total
+    assert (
+        ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state
+        == costs.ibi
+        == housing_taxes(tmp_path, "ibi")
+    )
+    assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
+
+
+async def test_quien_compra_despues_del_dia_no_cobra_ese_dia(tmp_path: Path) -> None:
+    """Revisión: comprar entre la medianoche y el cierre no da la renta del día anterior."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 50)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01'"
+        )
+    clock.now = at(15, hour=0).timestamp() + 60  # las 00:01 del día siguiente
+    await service.buy(GUILD, BEA, BAJO.key, 50)
+    bea = await economy.balance(GUILD, BEA)
+
+    await service.close_days(GUILD)
+
+    assert await economy.balance(GUILD, BEA) == bea
+    day = await service.repository.income(GUILD, ANA, date(2026, 10, 14))
+    assert day.rent > 0
+
+
+async def test_un_dia_vacio_sin_dinero_deja_la_deuda_en_el_piso_y_se_descuenta_al_vender(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    total = rules.purchase_quote(BAJO, 100).total
+    await give(economy, ANA, total - STARTING_BALANCE)  # se queda a cero
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    clock.now = at(15).timestamp()
+    await service.close_days(GUILD)
+    lease = (await service.market(GUILD)).leases[BAJO.key]
+    assert lease.status == rules.VACANT
+    assert lease.arrears >= rules.monthly_costs(BAJO).total
+    balance = await economy.balance(GUILD, ANA)
+    state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+
+    trade = await service.sell(GUILD, ANA, BAJO.key, 100)
+
+    quote = trade.deal.quote
+    assert quote.arrears == lease.arrears and quote.arrears_ibi == lease.arrears_ibi
+    assert trade.balance == balance + quote.received
+    assert ledger_sum(tmp_path, ANA) == trade.balance
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == quote.arrears_ibi + quote.gain_tax
+    market = await service.market(GUILD)
+    assert BAJO.key not in market.leases and market.holdings == {}
+
+
+async def test_vender_con_ganancia_paga_irpf_del_ahorro(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 10)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_index SET value = 2.0")
+
+    trade = await service.sell(GUILD, ANA, BAJO.key, 10)
+
+    assert trade.deal.quote.gain_tax > 0
+    assert housing_taxes(tmp_path, "plusvalia") == trade.deal.quote.gain_tax
+    breakdown = await economy.tax_breakdown(GUILD)
+    assert breakdown[ANA]["irpf_ahorro"] == trade.deal.quote.gain_tax
+
+
+async def test_cambiar_la_renta_y_desahuciar_lo_decide_quien_tiene_la_mayoria(
+    tmp_path: Path,
+) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 60)
+    await service.buy(GUILD, BEA, BAJO.key, 10)
+    with pytest.raises(HousingError, match="mitad"):
+        await service.set_level(GUILD, BEA, BAJO.key, "mercado")
+    lease = await service.set_level(GUILD, ANA, BAJO.key, "mercado")
+    assert lease.level == "mercado"
+    with pytest.raises(HousingError):
+        await service.evict(GUILD, ANA, BAJO.key)  # nadie debe nada
+
+
+async def test_el_patrimonio_cuenta_los_inmuebles(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    edificio = LISTING_BY_KEY["vegueta_edificio"]
+    price = rules.purchase_quote(edificio, 100).total
+    await give(economy, ANA, price + 1_000_000)
+    await service.buy(GUILD, ANA, edificio.key, 100)
+    cash = await economy.balance(GUILD, ANA)
+    await economy.charge_wealth_tax(GUILD)  # la primera semana solo activa
+    clock.now = at(19, hour=1).timestamp()
+
+    _, run = await economy.charge_wealth_tax(
+        GUILD, assets=lambda connection: assets_in(connection, GUILD)
+    )
+
+    worth = cash + rules.fiscal_value(edificio, 100, rules.share_price(edificio) * 100)
+    assert worth > WEALTH_MINIMUM
+    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [
+        (ANA, worth, min(cash, wealth_tax(worth)))
+    ]
+
+
+def test_todas_las_cifras_son_enteras() -> None:
+    """Los Y$ son enteros: un `round(x, -3)` de un float devuelve un float."""
+    for listing in LISTINGS:
+        for index in (1.0, 1.137):
+            assert type(rules.price(listing, index)) is int
+            assert type(rules.share_price(listing, index)) is int
+            assert type(rules.reference_rent(listing, index)) is int
+            for level in RENT_LEVELS.values():
+                assert type(rules.asking_rent(listing, level, index)) is int
+
+
+async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> None:
+    import discord
+
+    from bot.services.achievements import housing_tax_stats
+    from bot.services.tax_report import add_housing_fields, housing_lines
+
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await economy.pay_income(GUILD, ANA, gross=300_000, concept="nivel:30")
+    buy = await service.buy(GUILD, ANA, BAJO.key, 100)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01'"
+        )
+    clock.now = at(15).timestamp()
+    await service.close_days(GUILD)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_index SET value = 2.0")
+    sale = await service.sell(GUILD, ANA, BAJO.key, 100)
+
+    taxes = (await economy.housing_tax_breakdown(GUILD))[ANA]
+
+    assert taxes["itp"] == buy.deal.quote.itp
+    assert taxes["ibi"] == rules.monthly_costs(BAJO).ibi
+    assert taxes["alquiler"] > 0
+    assert taxes["ganancia"] == sale.deal.quote.gain_tax
+    assert len(housing_lines(taxes)) == 4
+    embed = discord.Embed()
+    add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
+    assert format_total(sum(taxes.values())) in embed.fields[0].name
+    assert "Ana" in embed.fields[1].value
+    rent = (await economy.housing_rent_totals(GUILD))[ANA]
+    delta = housing_tax_stats(taxes=taxes, rent=rent)
+    assert delta.peak["pisos_tax_total"] == sum(taxes.values())
+    assert delta.peak["pisos_tax_ganancia"] == taxes["ganancia"]
+
+
+def format_total(amount: int) -> str:
+    from bot.services.economy import format_amount
+
+    return format_amount(amount)
+
+
+async def test_quien_lo_tiene_todo_en_ladrillo_paga_el_patrimonio_con_un_embargo(
+    tmp_path: Path,
+) -> None:
+    """Sin efectivo el lunes, el Patrimonio se embarga de lo que cobre por sus pisos."""
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    edificio = LISTING_BY_KEY["vegueta_edificio"]
+    total = rules.purchase_quote(edificio, 100).total
+    await give(economy, ANA, total - STARTING_BALANCE)  # se queda a cero tras comprar
+    await service.buy(GUILD, ANA, edificio.key, 100)
+    assert await economy.balance(GUILD, ANA) == 0
+    await economy.charge_wealth_tax(GUILD)  # activación
+    clock.now = at(19, hour=1).timestamp()
+
+    _, run = await economy.charge_wealth_tax(
+        GUILD, assets=lambda connection: assets_in(connection, GUILD)
+    )
+
+    (charge,) = run.charges
+    assert charge.tax == 0 and charge.debt == wealth_tax(charge.balance) > 0
+    assert await economy.tax_debt(GUILD, ANA) == charge.debt
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', "
+            "rent = 90000, until = '2027-01-01'"
+        )
+    state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    clock.now = at(20).timestamp()
+    await service.close_days(GUILD)
+
+    owed = await economy.tax_debt(GUILD, ANA)
+    embargoed = charge.debt - owed
+    assert embargoed > 0
+    assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
+    breakdown = await economy.tax_breakdown(GUILD)
+    assert breakdown[ANA]["patrimonio"] == embargoed
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state >= embargoed
+
+
+async def test_si_el_precio_cambia_mientras_miras_no_se_cobra(tmp_path: Path) -> None:
+    from bot.repositories.housing import PriceChanged
+
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 10_000_000)
+    seen = rules.purchase_quote(BAJO, 10).total
+    await service.buy(GUILD, BEA, "schamann_piso2", 100)  # sube el índice del barrio
+    with pytest.raises(PriceChanged) as error:
+        await service.buy(GUILD, ANA, BAJO.key, 10, expected=seen)
+    assert error.value.amount > seen
+    assert (await service.market(GUILD)).shares_of(BAJO.key) == {}
+    trade = await service.buy(GUILD, ANA, BAJO.key, 10, expected=error.value.amount)
+    assert trade.deal.quote.total == error.value.amount
+    with pytest.raises(PriceChanged):
+        await service.sell(GUILD, ANA, BAJO.key, 10, expected=10**9)
+    assert (await service.market(GUILD)).shares_of(BAJO.key) == {ANA: 10}
+
+
+async def test_al_salir_del_servidor_se_borran_sus_pisos(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 10)
+    await service.repository.delete_guild_data(GUILD)
+    market = await service.market(GUILD)
+    assert market.holdings == {} and market.leases == {} and market.indexes == {}

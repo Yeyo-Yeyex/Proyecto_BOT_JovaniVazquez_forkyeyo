@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.6.0 · 2026-10-15
+
+- Pisos: `pisos`, el mercado inmobiliario de Canarias, y el Patrimonio cuenta el ladrillo
+
 ### 6.5.0 · 2026-10-14
 
 - Tienda: nueve tapetes nuevos (PSOE, Falcon, NO-DO, Modelo 100, Prove Me Wrong, archivos Epstein, Corea del Norte, diamantes y el Gordo) y el de Israel baja a 271.000 Y$

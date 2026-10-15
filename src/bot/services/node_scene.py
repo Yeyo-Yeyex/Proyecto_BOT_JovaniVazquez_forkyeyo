@@ -525,6 +525,7 @@ class NodeScene:
         *,
         procs: int = MAX_WORKERS,
         warmup: int = 0,
+        gif: bool | None = None,
     ) -> list[Patch] | None:
         """Cada fotograma entero (`image`, ver `browser_scene.assemble`); `None` si no hay Node.
 
@@ -533,6 +534,11 @@ class NodeScene:
         `setup(meta)` y `renderFrames(estados, primero)`; con `warmup`, esa
         primera llamada recibe además los `warmup` estados de antes del tramo,
         para que la escena recree lo que arrastra de un fotograma a otro.
+
+        Args:
+            gif: Si los fotogramas van a un GIF y conviene ir codificándolos mientras
+                se pintan. Por defecto, si hay más de uno. Las pantallas sueltas (el
+                panel de `pisos`) pasan `False`: cada una acaba en su propio PNG.
         """
         if self.disabled:
             return None
@@ -551,7 +557,7 @@ class NodeScene:
             self.disabled = True
             return None
         start = time.perf_counter()
-        assembler = _Assembler(len(states), gif=len(states) > 1)
+        assembler = _Assembler(len(states), gif=len(states) > 1 if gif is None else gif)
         assembling = asyncio.ensure_future(asyncio.to_thread(assembler.run))
         tasks: list[asyncio.Task[None]] = []
 

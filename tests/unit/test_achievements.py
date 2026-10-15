@@ -52,6 +52,12 @@ from bot.services.achievements import (
     PET_SPAWN_KINDS_STAT,
     PET_SPECIES_PREFIX,
     PET_SPECIES_STAT,
+    PISOS_BARRIO_PREFIX,
+    PISOS_BARRIOS_STAT,
+    PISOS_EVENT_PREFIX,
+    PISOS_KIND_PREFIX,
+    PISOS_KINDS_STAT,
+    PISOS_LEVEL_PREFIX,
     POKER_MADE_PREFIX,
     PORRA_GAME_PREFIX,
     PORRA_GAMES,
@@ -95,6 +101,10 @@ from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.enraya import LEVELS as ENRAYA_LEVELS
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
+from bot.services.housing import EVENTS as _HOUSING_EVENTS
+from bot.services.housing_catalog import BARRIO_BY_KEY as HOUSING_BARRIOS
+from bot.services.housing_catalog import KINDS as HOUSING_KINDS
+from bot.services.housing_catalog import RENT_LEVELS as HOUSING_LEVELS
 from bot.services.levels import TIMEZONE
 from bot.services.lottery import GAMES as LOTTERY_GAMES
 from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
@@ -113,6 +123,12 @@ USER = 10
 
 # Todas las estadísticas que produce algún sitio del bot. Si un logro usa
 # otra, nadie la sumaría nunca y sería imposible de conseguir.
+#: Lo que puede pasar un día en un inmueble: los imprevistos y los cambios de estado.
+HOUSING_EVENT_KEYS = (
+    *(event.key for event in _HOUSING_EVENTS),
+    "firma", "renueva", "se_va", "impago", "paga", "okupa", "desahucio",
+)  # fmt: skip
+
 PRODUCED_STATS = {
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
@@ -148,7 +164,7 @@ PRODUCED_STATS = {
     "beer_custom_added", "beer_custom_broken", "beer_sound_saved", "beer_retired",
     "beer_events_forced",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
-    "wealth_tax_paid", "wealth_tax_weeks", "donated", "ongs_supported",
+    "wealth_tax_paid", "wealth_tax_weeks", "wealth_embargo", "donated", "ongs_supported",
     # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
     "interest_earned", "interest_days", "interest_tax", "interest_capped", "interest_rounding",
     "interest_zero", "interest_grasshopper", "interest_gambled", "interest_beats_imv",
@@ -190,6 +206,20 @@ PRODUCED_STATS = {
     "market_gift_received", "market_auction_won", "market_serial_bought",
     "market_title_bought", "market_tapete_bought", "market_listings", "market_withdrawn",
     "market_expired", "market_bids", "market_bid_max", "market_outbid",
+    # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
+    # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
+    "pisos_opened", "pisos_exit", "pisos_tax_total", "pisos_tax_alquiler",
+    "pisos_tax_ganancia", "pisos_tax_over_rent", "pisos_level_changes", "pisos_evictions",
+    "pisos_squatters_evicted",
+    "pisos_bought", "pisos_spent", "pisos_itp", "pisos_one_share", "pisos_whole_buy",
+    "pisos_night", "pisos_canarias_day", "pisos_broke", "pisos_buy_max", "pisos_holdings_max",
+    "pisos_whole_max", "pisos_islands_max", "pisos_sold", "pisos_sold_y", "pisos_sold_whole",
+    "pisos_flip", "pisos_loss", "pisos_arrears_paid", "pisos_gain_max", "pisos_rent",
+    "pisos_rent_days", "pisos_ibi", PISOS_BARRIOS_STAT, PISOS_KINDS_STAT,
+    *(f"{PISOS_KIND_PREFIX}{kind}" for kind in HOUSING_KINDS),
+    *(f"{PISOS_BARRIO_PREFIX}{barrio}" for barrio in HOUSING_BARRIOS),
+    *(f"{PISOS_LEVEL_PREFIX}{level}" for level in HOUSING_LEVELS),
+    *(f"{PISOS_EVENT_PREFIX}{event}" for event in HOUSING_EVENT_KEYS),
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
     "bizum_broke", "bizum_received_count", "bizum_received",

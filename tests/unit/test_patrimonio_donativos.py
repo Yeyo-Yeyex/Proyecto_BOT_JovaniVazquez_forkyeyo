@@ -30,6 +30,8 @@ from bot.services.taxes import (
 GUILD = 1
 USER = 10
 RICH = 20
+#: Un patrimonio que paga: el doble del mínimo exento.
+BIG = 2 * WEALTH_MINIMUM
 
 
 class Clock:
@@ -72,21 +74,23 @@ def test_patrimonio_exento_hasta_el_minimo() -> None:
     assert wealth_tax(0) == 0
 
 
-def test_patrimonio_usa_la_escala_real_escalada() -> None:
-    """200.000 Y$ dejan 130.000 Y$ de base = 1,3 M€ con la escala del art. 30."""
+def test_patrimonio_usa_la_escala_real_a_la_escala_general() -> None:
+    """13 millones de Y$ por encima del mínimo son 1,3 M€ de base con la escala del art. 30."""
     expected_eur = (
         167_129.45 * 0.002
         + (334_252.88 - 167_129.45) * 0.003
         + (668_499.75 - 334_252.88) * 0.005
         + (1_300_000 - 668_499.75) * 0.009
     )
-    assert wealth_tax(200_000) == round(expected_eur / 10)
+    assert WEALTH_MINIMUM == 7_000_000  # 700.000 € a 10 Y$ por euro
+    assert wealth_tax(WEALTH_MINIMUM + 13_000_000) == round(expected_eur * 10)
 
 
 def test_patrimonio_es_progresivo() -> None:
-    rates = [wealth_tax(b) / b for b in (100_000, 500_000, 2_000_000, 20_000_000)]
+    amounts = [WEALTH_MINIMUM * k for k in (2, 5, 20, 200)]
+    rates = [wealth_tax(b) / b for b in amounts]
     assert rates == sorted(rates)
-    assert wealth_tax(20_000_000) < 20_000_000 * 0.035
+    assert wealth_tax(amounts[-1]) < amounts[-1] * 0.035
 
 
 def test_igic_es_el_siete_por_ciento() -> None:
@@ -127,7 +131,7 @@ def test_apply_scale_no_cambia() -> None:
 async def test_la_primera_semana_solo_activa_y_la_siguiente_cobra(tmp_path: Path) -> None:
     clock = Clock(day(6))
     service = await make_service(tmp_path, clock)
-    await service.repository.apply(GUILD, RICH, [_entry(199_000)])
+    await service.repository.apply(GUILD, RICH, [_entry(BIG - STARTING_BALANCE)])
     await service.balance(GUILD, USER)  # 1.000 Y$: no paga
 
     week, first = await service.charge_wealth_tax(GUILD)
@@ -139,24 +143,26 @@ async def test_la_primera_semana_solo_activa_y_la_siguiente_cobra(tmp_path: Path
     again = await service.charge_wealth_tax(GUILD)
 
     assert week == date(2026, 10, 5)
-    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [
-        (RICH, 200_000, wealth_tax(200_000))
-    ]
+    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [(RICH, BIG, wealth_tax(BIG))]
     assert again[1].done_before
-    assert await service.balance(GUILD, RICH) == 200_000 - wealth_tax(200_000)
+    assert await service.balance(GUILD, RICH) == BIG - wealth_tax(BIG)
     assert ledger_sum(tmp_path, RICH) == await service.balance(GUILD, RICH)
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == wealth_tax(200_000)
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == wealth_tax(BIG)
     treasury = await service.treasury(GUILD, since=0)
-    assert treasury.collected_total == wealth_tax(200_000)
-    assert treasury.top_contributors == ((RICH, wealth_tax(200_000)),)
+    assert treasury.collected_total == wealth_tax(BIG)
+    assert treasury.top_contributors == ((RICH, wealth_tax(BIG)),)
 
 
 async def test_ni_el_estado_ni_las_ongs_pagan_patrimonio(tmp_path: Path) -> None:
     clock = Clock(day(6))
     service = await make_service(tmp_path, clock)
-    await service.repository.apply(GUILD, RICH, [_entry(500_000)])
+    await service.repository.apply(GUILD, RICH, [_entry(3 * WEALTH_MINIMUM)])
     await service.donate(
-        GUILD, RICH, ong_key="mares", ong_account=BY_KEY["mares"].account_id, amount=300_000
+        GUILD,
+        RICH,
+        ong_key="mares",
+        ong_account=BY_KEY["mares"].account_id,
+        amount=2 * WEALTH_MINIMUM,
     )
     await service.charge_wealth_tax(GUILD)
     clock.at(day(12))
@@ -277,7 +283,7 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
 ) -> None:
     clock = Clock(day(6))
     service = await make_service(tmp_path, clock)
-    await service.repository.apply(GUILD, RICH, [_entry(299_000)])
+    await service.repository.apply(GUILD, RICH, [_entry(BIG - STARTING_BALANCE)])
     await service.charge_wealth_tax(GUILD)  # activación
     clock.at(day(12))
     monkeypatch.setattr("bot.cogs.patrimonio.time.time", clock)
@@ -302,4 +308,4 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
     embed = channel.send.await_args.kwargs["embed"]
     assert "Ricachón" in (embed.description or "")
     delta = note.call_args.args[3]
-    assert delta.add == {"wealth_tax_paid": wealth_tax(300_000), "wealth_tax_weeks": 1}
+    assert delta.add == {"wealth_tax_paid": wealth_tax(BIG), "wealth_tax_weeks": 1}

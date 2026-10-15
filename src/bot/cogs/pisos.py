@@ -1,0 +1,972 @@
+"""`pisos`: el mercado inmobiliario de Canarias, en un panel que es solo imágenes.
+
+`/pisos` (o `.pisos`) abre en el canal el panel de quien lo pide. Todo se ve en una
+imagen (`bot.services.housing_view` decide qué sale y `bot.services.housing_scene`
+lo pinta) y se navega con el desplegable de barrios y los botones de cada pantalla:
+el mapa de Gran Canaria y Tenerife, cada barrio con sus tres inmuebles, la ficha de
+cada uno, tus pisos y la caja de cada compra o venta. Solo lo toca quien lo abrió;
+a los demás se les dice que abran el suyo.
+
+Dinero (todo por `EconomyService.housing`, impuestos en su docstring): comprar
+participaciones (ITP del 6,5 % al Estado, notaría que desaparece), venderlas al
+mercado (agencia, deudas del piso e IRPF de la ganancia) y, cada noche, la renta de
+cada inmueble alquilado con su IRPF, el IBI y la comunidad. Lo de cada noche lo cierra
+una tarea cada 10 minutos (`HousingService.close_days`), que recupera hasta 7 días si
+el bot ha estado apagado.
+
+Rapidez: cada clic contesta antes de leer la base de datos o pintar (`ack`), una
+imagen que ya se ve no se vuelve a subir, las imágenes se guardan por su contenido
+(`Painter`) y, mientras miras una pantalla, se pintan por adelantado las que se abren
+desde sus botones (los 20 barrios desde el mapa, los tres inmuebles desde un barrio,
+la caja de comprar entero o vender todo desde una ficha…).
+
+Funciones puente para otros cogs: `fiscal_of` (valor fiscal de los pisos de alguien,
+para el aviso del Patrimonio de `saldo`). No lanzan y devuelven 0 sin el cog.
+
+Logros: categoría 🏠 Pisos (`housing_*_stats` de `bot.services.achievements`).
+
+Permisos: enviar mensajes y adjuntar archivos en el canal del panel.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import io
+import json
+import logging
+import sqlite3
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+import discord
+from discord import app_commands, ui
+from discord.ext import commands, tasks
+
+from bot.cogs import achievements as logros
+from bot.cogs import renta
+from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
+from bot.repositories.housing import (
+    DayRun,
+    HousingError,
+    HousingRepository,
+    Market,
+    PriceChanged,
+    Purchase,
+    Sale,
+)
+from bot.services import housing as rules
+from bot.services import housing_view as view
+from bot.services.achievements import (
+    StatDelta,
+    housing_day_stats,
+    housing_panel_stats,
+    housing_purchase_stats,
+    housing_sale_stats,
+    housing_tax_stats,
+)
+from bot.services.economy import EconomyService, format_amount
+from bot.services.housing_catalog import (
+    BARRIO_BY_KEY,
+    BARRIOS,
+    ISLANDS,
+    KINDS,
+    LISTING_BY_KEY,
+    RENT_LEVELS,
+    listings_of,
+)
+from bot.services.housing_market import HousingService
+from bot.services.housing_scene import HousingScene
+from bot.services.levels import TIMEZONE
+from bot.services.pets import Event, Moment
+from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit, notify
+from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
+
+if TYPE_CHECKING:
+    from bot.app import BotClient
+
+logger = logging.getLogger(__name__)
+
+GAME = "pisos"
+PNG_NAME = "pisos.png"
+#: El panel caduca tras este rato sin tocarlo.
+VIEW_TIMEOUT = 15 * 60
+#: Imágenes pintadas que se guardan (unos 150-250 KB cada una).
+CACHE_SIZE = 48
+#: Inmuebles de tu cartera que salen en su desplegable (el máximo de Discord).
+MAX_OPTIONS = 25
+
+MAPA, BARRIO, FICHA, CARTERA, CAJA = "mapa", "barrio", "ficha", "cartera", "caja"
+
+
+def _name(guild: discord.Guild | None, user_id: int) -> str:
+    member = guild.get_member(user_id) if guild is not None else None
+    return member.display_name if member is not None else "Alguien"
+
+
+class Painter:
+    """Pinta pantallas y las guarda por su contenido, para no pintar dos veces lo mismo.
+
+    Los dibujos por adelantado (`prefetch`) van de uno en uno: si llega otro mientras
+    se pinta uno, espera, y si llegan varios, solo vale el último (los anteriores ya
+    no se van a ver).
+
+    Args:
+        scene: Lo que pinta (Node, Chromium o Pillow).
+    """
+
+    def __init__(self, scene: HousingScene) -> None:
+        self.scene = scene
+        self.cache: OrderedDict[str, bytes] = OrderedDict()
+        self._next: list[dict[str, Any]] | None = None
+        self._worker: asyncio.Task[None] | None = None
+
+    @staticmethod
+    def key(state: dict[str, Any]) -> str:
+        """Huella de una pantalla: dos pantallas iguales se pintan igual."""
+        text = json.dumps(state, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha1(text.encode()).hexdigest()
+
+    def _store(self, key: str, png: bytes) -> None:
+        self.cache[key] = png
+        self.cache.move_to_end(key)
+        while len(self.cache) > CACHE_SIZE:
+            self.cache.popitem(last=False)
+
+    async def paint(self, states: list[dict[str, Any]]) -> list[bytes]:
+        """PNG de cada pantalla, pintando solo las que no estén guardadas."""
+        keys = [self.key(s) for s in states]
+        missing: dict[str, dict[str, Any]] = {}
+        for key, state in zip(keys, states, strict=True):
+            if key in self.cache:
+                self.cache.move_to_end(key)
+            else:
+                missing.setdefault(key, state)
+        if missing:
+            pngs = await self.scene.paint(list(missing.values()))
+            for key, png in zip(missing, pngs, strict=True):
+                self._store(key, png)
+        return [self.cache[k] for k in keys]
+
+    def prefetch(self, states: list[dict[str, Any]]) -> None:
+        """Pinta en segundo plano las pantallas que pueden venir después."""
+        todo = [s for s in states if self.key(s) not in self.cache]
+        if not todo:
+            return
+        self._next = todo
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.create_task(self._work(), name="pisos-adelanto")
+
+    async def _work(self) -> None:
+        while self._next is not None:
+            todo, self._next = self._next, None
+            try:
+                await self.paint(todo)
+            except Exception:
+                logger.exception("No se pudieron pintar por adelantado las pantallas de pisos")
+
+    async def close(self) -> None:
+        """Para lo pendiente y cierra el pintor."""
+        self._next = None
+        if self._worker is not None:
+            self._worker.cancel()
+        await self.scene.close()
+
+
+class SharesModal(ui.Modal):
+    """Cuántas participaciones comprar o vender."""
+
+    def __init__(self, panel: Panel, *, selling: bool, most: int) -> None:
+        super().__init__(title="Vender participaciones" if selling else "Comprar participaciones")
+        self.panel = panel
+        self.selling = selling
+        self.most = most
+        self.amount: ui.TextInput = ui.TextInput(
+            # Discord corta la etiqueta en 45 caracteres: la explicación va en el ejemplo.
+            label=f"Participaciones (1 a {most})",
+            placeholder="100 participaciones son el inmueble entero",
+            default=str(most),
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Valida el número y enseña la caja."""
+        text = self.amount.value.strip()
+        if not text.isdigit() or not 1 <= int(text) <= self.most:
+            await notify(interaction, f"Pon un número de 1 a {self.most}.")
+            return
+        await ack(interaction)
+        await self.panel.open_checkout(interaction, selling=self.selling, shares=int(text))
+
+
+class Panel(ui.View):
+    """El panel de `pisos` de un miembro: una pantalla a la vez, todas en imagen."""
+
+    def __init__(self, cog: Pisos, *, guild: discord.Guild, owner: discord.abc.User) -> None:
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        self.guild = guild
+        self.owner = owner
+        self.screen = MAPA
+        self.barrio = BARRIOS[0].key
+        self.listing = listings_of(self.barrio)[0].key
+        #: Caja abierta: `(vende, participaciones)`.
+        self.pending: tuple[bool, int] | None = None
+        #: Sello de la caja tras pagar (`PAGADO`, `VENDIDO`) y su resultado.
+        self.done: tuple[str, Purchase | Sale] | None = None
+        self.market = Market()
+        self.cash = 0
+        self.message: discord.Message | None = None
+        self._shown: str | None = None
+        self._last: discord.Interaction | None = None
+
+    # -- Pantallas ------------------------------------------------------------------
+
+    def _names(self, market: Market) -> dict[int, str]:
+        members = {m for holders in market.holdings.values() for m in holders}
+        return {m: _name(self.guild, m) for m in members}
+
+    async def refresh(self) -> None:
+        """Lee el mercado y el saldo (una consulta cada uno)."""
+        service = self.cog.service
+        self.market = await service.market(self.guild.id)
+        self.cash = await self.cog.economy.balance(self.guild.id, self.owner.id)
+
+    async def _state(
+        self, screen: str, *, barrio: str | None = None, listing: str | None = None
+    ) -> dict[str, Any]:
+        market, me = self.market, self.owner.id
+        names = self._names(market)
+        if screen == BARRIO:
+            return view.barrio_state(market, barrio or self.barrio, me, names)
+        if screen == FICHA:
+            key = listing or self.listing
+            news = await self.cog.service.news(self.guild.id, (key,), 4)
+            return view.listing_state(market, key, me, names, news)
+        if screen == CARTERA:
+            mine = tuple(h.listing for h in market.of_member(me))
+            news = await self.cog.service.news(self.guild.id, mine, 6)
+            week = await self.cog.service.week_income(self.guild.id, me)
+            return view.portfolio_state(
+                market, me, self.owner.display_name, self.cash, week, news, names
+            )
+        if screen == CAJA:
+            return self._checkout_state()
+        return view.map_state(market, me, self.owner.display_name, self.cash)
+
+    def _checkout_state(self, stamp: str | None = None) -> dict[str, Any]:
+        listing = LISTING_BY_KEY[self.listing]
+        index = self.market.index(listing.barrio)
+        selling, shares = self.pending or (False, 1)
+        if self.done is not None:
+            stamp, deal = self.done
+            index = deal.index_before if isinstance(deal, Purchase) else index
+        if selling:
+            if self.done is not None and isinstance(self.done[1], Sale):
+                quote = self.done[1].quote
+            else:
+                held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+                lease = self.market.leases.get(self.listing, rules.Lease())
+                owned = held.shares if held else shares
+                quote = rules.sale_quote(
+                    listing,
+                    min(shares, owned),
+                    owned,
+                    held.cost if held else 0,
+                    index=index,
+                    arrears=lease.arrears,
+                    arrears_ibi=lease.arrears_ibi,
+                    pool=sum(self.market.shares_of(self.listing).values()),
+                )
+            lines = [
+                (f"Precio ({quote.shares} participaciones)", quote.price, "normal"),
+                ("Agencia 3 %", -quote.fee, "normal"),
+            ]
+            if quote.arrears:
+                lines.append(("Deudas del piso (comunidad e IBI)", -quote.arrears, "normal"))
+            if quote.gain_tax:
+                lines.append(("IRPF de la ganancia 19 %", -quote.gain_tax, "tax"))
+            lines.append(("Cobras", quote.received, "total"))
+            after = self.cash if self.done else self.cash + quote.received
+            before = self.cash - quote.received if self.done else self.cash
+            if quote.gain >= 0:
+                note = f"Ganas {format_amount(quote.gain)} sobre lo que te costó"
+            else:
+                note = f"Pierdes {format_amount(-quote.gain)}: el ladrillo nunca baja, dijeron"
+            return view.checkout_state(
+                listing,
+                selling=True,
+                lines=lines,
+                balance=before,
+                after=after,
+                note=note,
+                stamp=stamp,
+            )
+        if self.done is not None and isinstance(self.done[1], Purchase):
+            quote_b = self.done[1].quote
+        else:
+            quote_b = rules.purchase_quote(listing, shares, index)
+        whole = quote_b.shares == rules.SHARES
+        lines = [
+            (
+                "Precio (el inmueble entero)"
+                if whole
+                else f"Precio ({quote_b.shares} participaciones)",
+                quote_b.price,
+                "normal",
+            ),
+            ("ITP 6,5 %", quote_b.itp, "tax"),
+            ("Notaría, registro y gestoría", quote_b.notary, "normal"),
+            ("Total", quote_b.total, "total"),
+        ]
+        after = self.cash if self.done else self.cash - quote_b.total
+        before = self.cash + quote_b.total if self.done else self.cash
+        rise = rules.index_after(index, listing, quote_b.shares, bought=True) / index - 1
+        barrio = BARRIO_BY_KEY[listing.barrio].name
+        note = f"Comprar sube el precio de {barrio} un {rise * 100:.2f} %".replace(".", ",")
+        return view.checkout_state(
+            listing,
+            selling=False,
+            lines=lines,
+            balance=before,
+            after=after,
+            note=note,
+            stamp=stamp,
+        )
+
+    def _neighbours(self) -> list[tuple[str, dict[str, str]]]:
+        """Pantallas que se abren desde la de ahora (para pintarlas antes del clic)."""
+        if self.screen == MAPA:
+            return [(BARRIO, {"barrio": b.key}) for b in BARRIOS] + [(CARTERA, {})]
+        if self.screen == BARRIO:
+            return [(FICHA, {"listing": i.key}) for i in listings_of(self.barrio)] + [(MAPA, {})]
+        if self.screen == FICHA:
+            return [(BARRIO, {"barrio": LISTING_BY_KEY[self.listing].barrio}), (CARTERA, {})]
+        if self.screen == CARTERA:
+            mine = self.market.of_member(self.owner.id)[:6]
+            return [(FICHA, {"listing": h.listing}) for h in mine] + [(MAPA, {})]
+        return []
+
+    async def _prefetch(self) -> None:
+        states = []
+        for screen, where in self._neighbours():
+            states.append(await self._state(screen, **where))
+        if self.screen == FICHA and self.done is None:
+            # La caja de comprar todo lo libre o vender todo lo tuyo: los dos botones
+            # que más se pulsan desde una ficha.
+            saved = self.pending
+            for selling, shares in self._default_checkouts():
+                self.pending = (selling, shares)
+                states.append(self._checkout_state())
+            self.pending = saved
+        self.cog.painter.prefetch(states)
+
+    def _default_checkouts(self) -> list[tuple[bool, int]]:
+        out = []
+        if free := self.market.free_shares(self.listing):
+            out.append((False, free))
+        if held := self.market.holdings.get(self.listing, {}).get(self.owner.id):
+            out.append((True, held.shares))
+        return out
+
+    async def show(
+        self,
+        interaction: discord.Interaction | None,
+        *,
+        content: str | None = None,
+        send: Callable[..., Awaitable[discord.Message]] | None = None,
+    ) -> None:
+        """Pinta la pantalla de ahora y la pone en el mensaje (o lo manda, la primera vez)."""
+        await self.refresh()
+        state = self._checkout_state() if self.screen == CAJA else await self._state(self.screen)
+        key = Painter.key(state)
+        self.rebuild()
+        if send is not None:
+            png = (await self.cog.painter.paint([state]))[0]
+            self.message = await send(
+                content=content, file=discord.File(io.BytesIO(png), filename=PNG_NAME), view=self
+            )
+        elif interaction is not None and key == self._shown:
+            # Ya se ve esta imagen: subirla otra vez cuesta ~1 s y no cambia nada.
+            self._last = interaction
+            await edit(interaction, content=content, view=self)
+        elif interaction is not None:
+            png = (await self.cog.painter.paint([state]))[0]
+            self._last = interaction
+            await edit(
+                interaction,
+                content=content,
+                embed=None,
+                attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+                view=self,
+            )
+        self._shown = key
+        await self._prefetch()
+
+    # -- Componentes ----------------------------------------------------------------
+
+    def rebuild(self) -> None:
+        """Monta el desplegable y los botones de la pantalla de ahora."""
+        self.clear_items()
+        if self.screen == CAJA:
+            self._caja_buttons()
+            return
+        select: ui.Select = ui.Select(
+            placeholder="Elige un barrio",
+            custom_id=f"{GAME}:barrio",
+            row=0,
+            options=[
+                discord.SelectOption(
+                    label=b.name,
+                    value=b.key,
+                    description=f"{ISLANDS[b.island]} · {b.town}"[:100],
+                    emoji="🏝️" if b.island == "gc" else "🌋",
+                    default=self.screen in (BARRIO, FICHA) and b.key == self.barrio,
+                )
+                for b in BARRIOS
+            ],
+        )
+        select.callback = self._pick_barrio  # type: ignore[method-assign]
+        self.add_item(select)
+        if self.screen == BARRIO:
+            for slot, item in enumerate(listings_of(self.barrio)):
+                price = rules.price(item, self.market.index(item.barrio))
+                self._button(
+                    f"{KINDS[item.kind].name} · {format_amount(price)}",
+                    f"ver:{slot}",
+                    self._open_listing,
+                    row=1,
+                    style=discord.ButtonStyle.primary,
+                )
+            self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
+            self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+        elif self.screen == FICHA:
+            self._ficha_buttons()
+        elif self.screen == CARTERA:
+            mine = self.market.of_member(self.owner.id)[:MAX_OPTIONS]
+            if mine:
+                pick: ui.Select = ui.Select(
+                    placeholder="Abre uno de tus pisos",
+                    custom_id=f"{GAME}:mio",
+                    row=1,
+                    options=[
+                        discord.SelectOption(
+                            label=LISTING_BY_KEY[h.listing].title[:100],
+                            value=h.listing,
+                            description=f"{BARRIO_BY_KEY[LISTING_BY_KEY[h.listing].barrio].name}"
+                            f" · {h.shares} %",
+                        )
+                        for h in mine
+                    ],
+                )
+                pick.callback = self._pick_mine  # type: ignore[method-assign]
+                self.add_item(pick)
+            self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
+        else:
+            self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=1)
+
+    def _ficha_buttons(self) -> None:
+        key = self.listing
+        holders = self.market.shares_of(key)
+        mine = holders.get(self.owner.id, 0)
+        free = self.market.free_shares(key)
+        lease = self.market.leases.get(key)
+        if free:
+            label = "🛒 Comprar entero" if free == rules.SHARES else f"🛒 Comprar (quedan {free})"
+            self._button(label, "comprar", self._buy, row=1, style=discord.ButtonStyle.success)
+        if mine:
+            self._button("💰 Vender", "vender", self._sell, row=1, style=discord.ButtonStyle.danger)
+        boss = rules.manager(holders)
+        can_decide = mine and (boss is None or boss == self.owner.id)
+        if can_decide and lease is not None and lease.status in (rules.DEFAULTING, rules.SQUATTED):
+            self._button("⚖️ Desahuciar", "desahuciar", self._evict, row=1)
+        if boss == self.owner.id and lease is not None:
+            listing = LISTING_BY_KEY[key]
+            index = self.market.index(listing.barrio)
+            levels: ui.Select = ui.Select(
+                placeholder="Renta que pides",
+                custom_id=f"{GAME}:renta",
+                row=2,
+                options=[
+                    discord.SelectOption(
+                        label=(
+                            f"{level.name} · "
+                            f"{format_amount(rules.asking_rent(listing, level, index))}"
+                        ),
+                        value=level.key,
+                        emoji=level.emoji,
+                        description="Vale para el próximo contrato (art. 18 LAU)",
+                        default=level.key == lease.level,
+                    )
+                    for level in RENT_LEVELS.values()
+                ],
+            )
+            levels.callback = self._pick_level  # type: ignore[method-assign]
+            self.add_item(levels)
+        barrio = BARRIO_BY_KEY[LISTING_BY_KEY[key].barrio].name
+        self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+
+    def _caja_buttons(self) -> None:
+        if self.done is not None:
+            self._button(
+                "🏠 Ver la ficha",
+                "ficha",
+                self._back_to_listing,
+                row=0,
+                style=discord.ButtonStyle.primary,
+            )
+            self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=0)
+            self._button("🗺️ Mapa", "mapa", self._go_map, row=0)
+            return
+        selling = self.pending[0] if self.pending else False
+        self._button(
+            "🤝 Vender" if selling else "💳 Pagar",
+            "pagar",
+            self._pay,
+            row=0,
+            style=discord.ButtonStyle.success,
+        )
+        self._button("✖️ Cancelar", "cancelar", self._back_to_listing, row=0)
+
+    def _button(
+        self,
+        label: str,
+        custom_id: str,
+        callback: Callable[[discord.Interaction], Awaitable[None]],
+        *,
+        row: int,
+        style: discord.ButtonStyle = discord.ButtonStyle.secondary,
+    ) -> None:
+        button: ui.Button = ui.Button(
+            label=label[:80], style=style, custom_id=f"{GAME}:{custom_id}", row=row
+        )
+        button.callback = callback  # type: ignore[method-assign]
+        self.add_item(button)
+
+    # -- Ciclo de vida --------------------------------------------------------------
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Solo el dueño mueve su panel."""
+        if interaction.user.id == self.owner.id:
+            return True
+        await interaction.response.send_message(
+            f"Este panel es de {self.owner.display_name}. Abre el tuyo con `/pisos`.",
+            ephemeral=True,
+        )
+        return False
+
+    async def on_timeout(self) -> None:
+        """Caduca: quita los botones (la imagen se queda)."""
+        self.cog.panels.discard(self)
+        try:
+            if self._last is not None:
+                await self._last.edit_original_response(view=None)
+            elif self.message is not None:
+                await self.message.edit(view=None)
+        except discord.HTTPException:
+            logger.debug("No se pudo cerrar el panel de pisos", exc_info=True)
+
+    # -- Navegación -----------------------------------------------------------------
+
+    async def _go(self, interaction: discord.Interaction, screen: str) -> None:
+        await ack(interaction)
+        self.screen, self.pending, self.done = screen, None, None
+        await self.show(interaction)
+        logros.note(
+            self.cog.bot,
+            self.guild.id,
+            self.owner.id,
+            housing_panel_stats(screen=screen),
+            getattr(interaction.channel, "id", None),
+        )
+
+    async def _go_map(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, MAPA)
+
+    async def _go_portfolio(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, CARTERA)
+
+    async def _go_barrio(self, interaction: discord.Interaction) -> None:
+        self.barrio = LISTING_BY_KEY[self.listing].barrio
+        await self._go(interaction, BARRIO)
+
+    async def _back_to_listing(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, FICHA)
+
+    async def _pick_barrio(self, interaction: discord.Interaction) -> None:
+        values = interaction.data.get("values", []) if interaction.data else []
+        if not values or values[0] not in BARRIO_BY_KEY:
+            await ack(interaction)
+            return
+        self.barrio = values[0]
+        await self._go(interaction, BARRIO)
+
+    async def _open_listing(self, interaction: discord.Interaction) -> None:
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        slot = custom_id.rsplit(":", 1)[-1]
+        items = listings_of(self.barrio)
+        if not slot.isdigit() or int(slot) >= len(items):
+            await ack(interaction)
+            return
+        self.listing = items[int(slot)].key
+        await self._go(interaction, FICHA)
+
+    async def _pick_mine(self, interaction: discord.Interaction) -> None:
+        values = interaction.data.get("values", []) if interaction.data else []
+        if not values or values[0] not in LISTING_BY_KEY:
+            await ack(interaction)
+            return
+        self.listing = values[0]
+        self.barrio = LISTING_BY_KEY[self.listing].barrio
+        await self._go(interaction, FICHA)
+
+    # -- Dinero ---------------------------------------------------------------------
+
+    async def _buy(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario (o la caja, si solo cabe comprarlo entero). Solo memoria."""
+        free = self.market.free_shares(self.listing)
+        if free <= 0:
+            await notify(interaction, "Ya no queda nada libre de este inmueble.")
+            return
+        await interaction.response.send_modal(SharesModal(self, selling=False, most=free))
+
+    async def _sell(self, interaction: discord.Interaction) -> None:
+        held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+        if held is None:
+            await notify(interaction, "No tienes nada en este inmueble.")
+            return
+        await interaction.response.send_modal(SharesModal(self, selling=True, most=held.shares))
+
+    async def open_checkout(
+        self, interaction: discord.Interaction, *, selling: bool, shares: int
+    ) -> None:
+        """Enseña la caja con las cuentas de hoy (aún no se mueve dinero)."""
+        self.screen, self.pending, self.done = CAJA, (selling, shares), None
+        await self.show(interaction)
+
+    def _expected(self) -> int:
+        """Lo que dice la caja que se ve ahora: el total de la compra o lo que se cobra."""
+        listing = LISTING_BY_KEY[self.listing]
+        index = self.market.index(listing.barrio)
+        selling, shares = self.pending or (False, 1)
+        if not selling:
+            return rules.purchase_quote(listing, shares, index).total
+        held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+        lease = self.market.leases.get(self.listing, rules.Lease())
+        owned = held.shares if held else shares
+        return rules.sale_quote(
+            listing, min(shares, owned), owned, held.cost if held else 0, index=index,
+            arrears=lease.arrears, arrears_ibi=lease.arrears_ibi,
+            pool=sum(self.market.shares_of(self.listing).values()),
+        ).received  # fmt: skip
+
+    async def _pay(self, interaction: discord.Interaction) -> None:
+        # Un segundo clic en Pagar (o uno que llega tarde) no vuelve a cobrar.
+        if self.pending is None or self.done is not None:
+            await ack(interaction)
+            return
+        await ack(interaction)
+        slot = (self.guild.id, self.owner.id)
+        if slot in self.cog.working:
+            await notify(interaction, "Espera a que termine la operación de antes.")
+            return
+        self.cog.working.add(slot)
+        selling, shares = self.pending
+        try:
+            expected = self._expected()
+            if selling:
+                trade = await self.cog.service.sell(
+                    self.guild.id, self.owner.id, self.listing, shares, expected=expected
+                )
+            else:
+                trade = await self.cog.service.buy(
+                    self.guild.id, self.owner.id, self.listing, shares, expected=expected
+                )
+        except BalanceLimitError:
+            await notify(interaction, "No te cabe más dinero en el monedero. Ni a Amancio.")
+            return
+        except InsufficientFundsError as error:
+            await notify(
+                interaction,
+                f"No te llega: tienes {format_amount(error.balance)}. El banco tampoco te presta "
+                "(todavía no hay hipotecas).",
+            )
+            return
+        except PriceChanged as error:
+            self.cog.working.discard(slot)
+            await self.show(interaction)
+            await notify(
+                interaction,
+                "El precio ha cambiado mientras mirabas (alguien ha comprado o vendido en el "
+                f"barrio): ahora son {format_amount(error.amount)}. No se ha cobrado nada; "
+                "mira la caja y vuelve a pulsar.",
+            )
+            return
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        except (OSError, sqlite3.Error, ValueError):
+            logger.exception("No se pudo cerrar una operación de pisos")
+            await notify(interaction, "Se ha caído el notario. Prueba otra vez en un momento.")
+            return
+        finally:
+            self.cog.working.discard(slot)
+        self.done = ("VENDIDO" if selling else "PAGADO", trade.deal)
+        moment = Moment(Event.TRADE if selling else Event.BUY)
+        hint = await renta.hint(self.cog.bot, self.guild.id, self.owner.id, moment)
+        await self.show(interaction, content=hint)
+        await renta.remind(self.cog.bot, interaction)
+        await self.cog.track_trade(
+            self.guild.id, self.owner, interaction.channel, trade.deal, trade.balance
+        )
+
+    async def _pick_level(self, interaction: discord.Interaction) -> None:
+        values = interaction.data.get("values", []) if interaction.data else []
+        await ack(interaction)
+        if not values or values[0] not in RENT_LEVELS:
+            return
+        try:
+            await self.cog.service.set_level(self.guild.id, self.owner.id, self.listing, values[0])
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        logros.note(
+            self.cog.bot,
+            self.guild.id,
+            self.owner.id,
+            housing_panel_stats(screen="renta", level=values[0]),
+            getattr(interaction.channel, "id", None),
+        )
+
+    async def _evict(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        try:
+            lease = await self.cog.service.evict(self.guild.id, self.owner.id, self.listing)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        await logros.track(
+            self.cog.bot,
+            self.guild.id,
+            self.owner,
+            interaction.channel,
+            housing_panel_stats(screen="desahucio", squatters=lease.unpaid == 0),
+        )
+
+
+class Pisos(commands.Cog):
+    """El mercado inmobiliario: el panel, la tarea de cada noche y los puentes."""
+
+    def __init__(
+        self,
+        bot: commands.Bot,
+        *,
+        economy: EconomyService,
+        repository: HousingRepository,
+        service: HousingService | None = None,
+        renderer: HousingScene | None = None,
+    ) -> None:
+        self.bot = bot
+        self.economy = economy
+        self.repository = repository
+        self.service = service or HousingService(repository, economy)
+        self.painter = Painter(renderer or HousingScene())
+        self.panels: set[Panel] = set()
+        #: `(servidor, miembro)` con una compra o venta en marcha: una a la vez.
+        self.working: set[tuple[int, int]] = set()
+
+    async def cog_load(self) -> None:
+        self._nightly.start()
+
+    async def cog_unload(self) -> None:
+        self._nightly.cancel()
+        for panel in list(self.panels):
+            panel.stop()
+        self.panels.clear()
+        await self.painter.close()
+
+    # -- Cada noche -----------------------------------------------------------------
+
+    @tasks.loop(minutes=10)
+    async def _nightly(self) -> None:
+        for guild in self.bot.guilds:
+            try:
+                await self.close_guild(guild.id)
+            except Exception:
+                # Un servidor roto no para la tarea: si saliera la excepción, `tasks.loop`
+                # se pararía para siempre y nadie cobraría más alquileres.
+                logger.exception("Fallo inesperado cerrando los días de pisos en %s", guild.id)
+
+    @_nightly.before_loop
+    async def _before_nightly(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def close_guild(self, guild_id: int) -> list[DayRun]:
+        """Cierra los días que falten en un servidor y apunta sus logros. Nunca lanza."""
+        try:
+            runs = await self.service.close_days(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron cerrar los días de pisos en %s", guild_id)
+            return []
+        if runs:
+            for member, delta in (await self.tax_stats(guild_id)).items():
+                logros.note(self.bot, guild_id, member, delta)
+        for run in runs:
+            events: dict[int, list[str]] = {}
+            for item in run.news:
+                for member in run.owners.get(item.listing, ()):
+                    events.setdefault(member, []).append(item.kind)
+            for member in set(run.members) | set(events):
+                day = run.members.get(member)
+                logros.note(
+                    self.bot,
+                    guild_id,
+                    member,
+                    housing_day_stats(
+                        rent=day.rent if day else 0,
+                        ibi=day.ibi if day else 0,
+                        events=tuple(events.get(member, ())),
+                    ),
+                )
+        return runs
+
+    # -- Logros de compras y ventas ------------------------------------------------
+
+    async def tax_stats(self, guild_id: int) -> dict[int, StatDelta]:
+        """Logros de Hacienda de cada casero: lo que lleva pagado por sus pisos."""
+        try:
+            taxes = await self.economy.housing_tax_breakdown(guild_id)
+            rents = await self.economy.housing_rent_totals(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron leer los impuestos de los pisos")
+            return {}
+        return {
+            member: housing_tax_stats(taxes=amounts, rent=rents.get(member, 0))
+            for member, amounts in taxes.items()
+        }
+
+    async def track_trade(
+        self,
+        guild_id: int,
+        member: discord.abc.User,
+        channel: object,
+        deal: Purchase | Sale,
+        balance: int,
+    ) -> None:
+        """Logros de una compra o una venta. Nunca lanza."""
+        when = datetime.now(TIMEZONE)
+        market = await self.service.market(guild_id)
+        mine = market.of_member(member.id)
+        listing = LISTING_BY_KEY[deal.listing]
+        if isinstance(deal, Purchase):
+            delta = housing_purchase_stats(
+                kind=listing.kind,
+                barrio=listing.barrio,
+                total=deal.quote.total,
+                itp=deal.quote.itp,
+                shares=deal.quote.shares,
+                shares_now=deal.shares,
+                holdings=len(mine),
+                whole=sum(h.shares == rules.SHARES for h in mine),
+                islands=len({BARRIO_BY_KEY[LISTING_BY_KEY[h.listing].barrio].island for h in mine}),
+                balance_after=balance,
+                when=when,
+            )
+        else:
+            delta = housing_sale_stats(
+                shares=deal.quote.shares,
+                received=deal.quote.received,
+                gain=deal.quote.gain,
+                arrears=deal.quote.arrears,
+                held_days=deal.held_days,
+                holdings_left=len(mine),
+            )
+        if (taxes := (await self.tax_stats(guild_id)).get(member.id)) is not None:
+            delta.merge(taxes)
+        await logros.track(self.bot, guild_id, member, channel, delta)
+
+    # -- Comando --------------------------------------------------------------------
+
+    async def _open(
+        self,
+        responder: CommandResponder,
+        send: Callable[..., Awaitable[discord.Message]],
+    ) -> None:
+        guild, member = responder.guild, responder.member
+        if guild is None or member is None:
+            await responder.send_error("Los pisos solo se compran dentro de un servidor.")
+            return
+        # Un panel vivo por persona: cada uno pinta pantallas por adelantado, y abrir
+        # veinte seguidos dejaría sin hilos al resto del bot. El viejo se queda quieto.
+        for old in [p for p in self.panels if p.owner.id == member.id and p.guild.id == guild.id]:
+            old.stop()
+            self.panels.discard(old)
+        panel = Panel(self, guild=guild, owner=member)
+        self.panels.add(panel)
+        try:
+            await panel.show(None, send=send)
+        except (OSError, sqlite3.Error, discord.HTTPException):
+            self.panels.discard(panel)
+            logger.exception("No se pudo abrir el panel de pisos en %s", guild.id)
+            await responder.send_error(
+                "La inmobiliaria está cerrada ahora mismo. Prueba en un rato."
+            )
+            return
+        logros.note_for(self.bot, responder, housing_panel_stats(screen="abrir"))
+
+    @app_commands.command(name="pisos", description="El mercado inmobiliario de Canarias.")
+    @app_commands.guild_only()
+    async def pisos(self, interaction: discord.Interaction) -> None:
+        """Abre tu panel de pisos en el canal.
+
+        Dibujar la primera pantalla puede pasar de 3 s (el pintor recién abierto), así
+        que se acepta antes y el panel llega como seguimiento.
+        """
+        await interaction.response.defer(thinking=True)
+
+        async def send(**kwargs: Any) -> discord.Message:
+            return await interaction.followup.send(wait=True, **kwargs)
+
+        await self._open(InteractionResponder(interaction), send)
+
+    @commands.command(name="pisos")
+    @commands.guild_only()
+    async def pisos_text(self, ctx: commands.Context) -> None:
+        """Versión de texto (`.pisos`)."""
+        await self._open(ContextResponder(ctx), ctx.send)
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Borra los pisos del servidor cuando el bot deja de pertenecer a él."""
+        await self.repository.delete_guild_data(guild.id)
+        logger.info("Se eliminaron los pisos del servidor %s", guild.id)
+
+
+# -- Funciones puente ---------------------------------------------------------------
+
+
+async def fiscal_of(bot: commands.Bot, guild_id: int, user_id: int) -> int:
+    """Valor fiscal de los pisos de alguien (lo que suma al Patrimonio), o 0."""
+    cog = find_cog(bot, Pisos)
+    if cog is None:
+        return 0
+    try:
+        _values, fiscal = await cog.repository.member_values(guild_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo leer el valor fiscal de los pisos")
+        return 0
+    return fiscal.get(user_id, 0)
+
+
+async def setup(bot: BotClient) -> None:  # type: ignore[override]
+    """Registra el cog con la economía y los pisos del bot."""
+    await bot.add_cog(Pisos(bot, economy=bot.economy, repository=bot.housing))

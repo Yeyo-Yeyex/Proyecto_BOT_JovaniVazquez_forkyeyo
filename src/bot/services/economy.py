@@ -34,6 +34,7 @@ from bot.repositories.economy import (
     DailyClaim,
     DonationReceipt,
     EconomyRepository,
+    HousingMove,
     InsufficientFundsError,
     InterestNotice,
     InterestRun,
@@ -112,6 +113,7 @@ __all__ = [
     "WealthRun",
     "RentaClaim",
     "EconomyService",
+    "HousingMove",
     "SalaryResult",
     "imv_after_work",
     "IncomeResult",
@@ -268,7 +270,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
         value=(
             "IRPF con retención en premios, niveles, cumpleaños y saludos · IRPF del "
             "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
-            f"de {format_amount(WEALTH_MINIMUM)} · IGIC en las compras de la `tienda` "
+            f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
+            "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
             f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
             " · Los `bizum` entre miembros, exentos de Donaciones"
             f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
@@ -1031,12 +1034,23 @@ class EconomyService:
             balance=balance,
         )
 
-    async def charge_wealth_tax(self, guild_id: int) -> tuple[date, WealthRun]:
+    async def charge_wealth_tax(
+        self,
+        guild_id: int,
+        *,
+        assets: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
+    ) -> tuple[date, WealthRun]:
         """Cobra el Impuesto sobre el Patrimonio de la semana que acaba de cerrar.
 
         Tratamiento fiscal: Impuesto sobre el Patrimonio (Ley 19/1991), escala
-        y mínimo en `bot.services.taxes.wealth_tax`. Lo recaudado va al Estado.
-        Es idempotente: si la semana ya se cobró, no hace nada.
+        y mínimo en `bot.services.taxes.wealth_tax`, sobre el efectivo más los
+        inmuebles a su valor fiscal (`assets`, art. 10 de la Ley 19/1991). Lo
+        recaudado va al Estado. Es idempotente: si la semana ya se cobró, no hace
+        nada.
+
+        Args:
+            assets: Valor fiscal de lo que tiene cada miembro además del efectivo,
+                leído en la misma transacción (`bot.repositories.housing.assets_in`).
 
         Returns:
             `(lunes de la semana cobrada, resultado)`.
@@ -1044,7 +1058,7 @@ class EconomyService:
         now = self._clock()
         week = week_start(local_day(now)) - timedelta(days=7)
         run = await self.repository.charge_wealth_tax(
-            guild_id, week=week.isoformat(), now=now, tax_for=wealth_tax
+            guild_id, week=week.isoformat(), now=now, tax_for=wealth_tax, assets=assets
         )
         return week, run
 
@@ -1221,6 +1235,52 @@ class EconomyService:
         """
         return await self.repository.market(guild_id, now=self._clock(), prepare=prepare)
 
+    async def housing(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, HousingMove]],
+    ) -> tuple[T, dict[int, int]]:
+        """Mueve el dinero de una operación de `pisos` (`bot.services.housing`).
+
+        Tratamiento fiscal:
+
+        - **Comprar** un inmueble de segunda mano paga el ITP de los inmuebles de
+          Canarias, 6,5 % (art. 31 del Decreto Legislativo 1/2009), a cargo de
+          quien compra (art. 8.a del RDL 1/1993), sin IGIC: quien vende es un
+          particular (art. 4 de la Ley 20/1991). Notaría, registro y gestoría no
+          son impuestos: desaparecen.
+        - **La renta** es rendimiento del capital inmobiliario (art. 22 LIRPF) de
+          la base general: ingresos menos gastos deducibles y amortización, con la
+          reducción del 50 % del art. 23.2. Entre particulares no hay retención
+          (art. 101.8 LIRPF solo obliga a las empresas que alquilan), pero el bot
+          no tiene declaración anual: se retiene a cuenta con la proyección de
+          toda la renta de la semana, como cualquier otra renta general (Biblia,
+          «Una sola renta y una sola semana»). La renta se pasa a esa escala con
+          `housing.rent_to_fiscal`.
+        - **El IBI** (art. 60 del RDL 2/2004) va al Estado: en el juego no hay
+          ayuntamientos. Comunidad y seguro desaparecen.
+        - **Vender** paga la comisión de la agencia (desaparece) y, si se gana, el
+          19 % de la ganancia patrimonial (art. 33.1 LIRPF, base del ahorro,
+          `taxes.capital_gain_tax`), como el Rastro. Simplificación: no hay
+          plusvalía municipal.
+
+        Los inquilinos y los compradores no existen: la renta y lo cobrado al
+        vender se crean de la nada, y lo pagado al comprar desaparece. Ver
+        `EconomyRepository.housing` para el orden de los movimientos.
+
+        Raises:
+            InsufficientFundsError: Si a quien compra no le llega.
+            BalanceLimitError: Si a alguien no le cabe lo que cobra.
+        """
+        now = self._clock()
+        return await self.repository.housing(
+            guild_id,
+            now=now,
+            window_seconds=fiscal_window(now),
+            rate_for=lambda fiscal, recent: compute_withholding(fiscal, recent).rate,
+            prepare=prepare,
+        )
+
     async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
         """El Bizum de mamá de `pala`: tu madre te adelanta `amount`.
 
@@ -1394,6 +1454,18 @@ class EconomyService:
     ) -> dict[int, dict[str, int]]:
         """Impuestos pagados por cada miembro, por tipo (ver `EconomyRepository.tax_breakdown`)."""
         return await self.repository.tax_breakdown(guild_id, since=since)
+
+    async def tax_debt(self, guild_id: int, user_id: int) -> int:
+        """Patrimonio que un miembro aún debe y se le embargará de lo que cobre por sus pisos."""
+        return await self.repository.tax_debt(guild_id, user_id)
+
+    async def housing_rent_totals(self, guild_id: int) -> dict[int, int]:
+        """Toda la renta de `pisos` que ha cobrado cada miembro, antes del IRPF."""
+        return await self.repository.reason_totals(guild_id, "pisos:renta")
+
+    async def housing_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
+        """Lo que cada miembro ha pagado por sus pisos (ver `EconomyRepository`)."""
+        return await self.repository.housing_tax_breakdown(guild_id)
 
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""

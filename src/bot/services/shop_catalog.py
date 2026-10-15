@@ -38,10 +38,10 @@ del 7 %. El oro de inversión va al cero porque está exento.
 
 **Precios.** Escala general de la economía: 10 Y$ = 1 € y una tirada del
 casino son 100 Y$ (Biblia, sección 4). Lo de comer y tirar cuesta unas
-pocas tiradas; los caprichos, unos cuantos IMV; y el lujo pasa del mínimo
-del Patrimonio (70.000 Y$), que es justo la gracia: lo que está en la vitrina
-no lo ve el Patrimonio, que solo mira el saldo. Un sumidero de dinero, como
-pide la Biblia para compensar el que se crea de la nada.
+pocas tiradas; los caprichos, unos cuantos IMV; y el lujo, cientos de miles o
+millones, que es justo la gracia: lo que está en la vitrina no lo ve el
+Patrimonio, que mira el saldo y los pisos. Un sumidero de dinero, como pide la
+Biblia para compensar el que se crea de la nada.
 
 **Usos.** Los artículos con `use` se usan desde la mochila
 (`bot.services.shop_uses`). Los que se gastan desaparecen al usarlos.

@@ -15,10 +15,12 @@ Qué cuenta como activo y cómo se valora:
 - **Boletos de lotería** de sorteos que aún no se han celebrado, a su coste.
 - **Derechos de cobro:** lo que la renta semanal le tiene que devolver y aún
   no ha presentado.
+- **Inmuebles de `pisos`**, a su valor de mercado de hoy (con el índice del barrio).
 
-No hay deudas personales en el bot (las multas se cobran al momento), así que
-el patrimonio neto es la suma de los activos. El Impuesto sobre el Patrimonio
-que cobra `bot.cogs.patrimonio` sigue mirando solo el efectivo.
+No hay deudas personales en el bot (las multas se cobran al momento, y lo que debe
+un piso se descuenta al venderlo), así que el patrimonio neto es la suma de los
+activos. El Impuesto sobre el Patrimonio que cobra `bot.cogs.patrimonio` mira el
+efectivo y los inmuebles a su valor fiscal (`homes_fiscal`), no a precio de mercado.
 """
 
 from __future__ import annotations
@@ -50,6 +52,8 @@ class NetWorth:
         goods: Bienes de la tienda en vigor, del más valioso al menos.
         lottery: Coste de sus boletos para sorteos pendientes.
         renta: Lo que la renta le debe y no ha cobrado.
+        homes: Sus inmuebles de `pisos`, a precio de mercado.
+        homes_fiscal: Los mismos, a su valor fiscal (lo que mira el Patrimonio).
     """
 
     user_id: int
@@ -57,6 +61,8 @@ class NetWorth:
     goods: tuple[Holding, ...] = field(default_factory=tuple)
     lottery: int = 0
     renta: int = 0
+    homes: int = 0
+    homes_fiscal: int = 0
 
     @property
     def goods_value(self) -> int:
@@ -66,7 +72,7 @@ class NetWorth:
     @property
     def total(self) -> int:
         """Patrimonio neto."""
-        return self.cash + self.goods_value + self.lottery + self.renta
+        return self.cash + self.goods_value + self.lottery + self.renta + self.homes
 
     @property
     def illiquid_share(self) -> float:
@@ -79,6 +85,8 @@ def build(
     holdings: list[tuple[int, str, str, str, int, float | None]],
     lottery: dict[int, int],
     renta: dict[int, int],
+    homes: dict[int, int] | None = None,
+    homes_fiscal: dict[int, int] | None = None,
 ) -> list[NetWorth]:
     """Junta las piezas en un `NetWorth` por miembro, del más rico al menos.
 
@@ -87,11 +95,15 @@ def build(
         holdings: Filas de `ShopRepository.holdings`.
         lottery: Coste de boletos pendientes por miembro.
         renta: Devolución pendiente por miembro.
+        homes: Valor de mercado de los inmuebles por miembro.
+        homes_fiscal: Valor fiscal de los inmuebles por miembro.
     """
+    homes = homes or {}
+    homes_fiscal = homes_fiscal or {}
     goods: dict[int, list[Holding]] = {}
     for user_id, name, emoji, kind, value, expires in holdings:
         goods.setdefault(user_id, []).append(Holding(name, emoji, kind, value, expires))
-    users = set(balances) | set(goods) | set(lottery) | set(renta)
+    users = set(balances) | set(goods) | set(lottery) | set(renta) | set(homes)
     out = [
         NetWorth(
             user_id=user_id,
@@ -99,6 +111,8 @@ def build(
             goods=tuple(sorted(goods.get(user_id, []), key=lambda h: (-h.value, h.name))),
             lottery=lottery.get(user_id, 0),
             renta=renta.get(user_id, 0),
+            homes=homes.get(user_id, 0),
+            homes_fiscal=homes_fiscal.get(user_id, 0),
         )
         for user_id in users
     ]

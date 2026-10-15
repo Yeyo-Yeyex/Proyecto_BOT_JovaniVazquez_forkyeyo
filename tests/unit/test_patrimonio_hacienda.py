@@ -31,6 +31,7 @@ from bot.services.tax_report import (
     Group,
     TaxBill,
     add_bill_fields,
+    add_housing_fields,
     bills,
     member_bill_embed,
     server_bill,
@@ -211,6 +212,8 @@ def test_los_embeds_de_hacienda_caben_con_muchos_miembros() -> None:
     embed = discord.Embed(title="🏛️ Hacienda", description="x" * 300)
     embed.add_field(name="Qué se cobra", value="y" * 900)
     add_bill_fields(embed, all_bills, server, names)
+    every_home = {"itp": 9_876_543, "ibi": 9_876_543, "alquiler": 9_876_543, "ganancia": 9_876_543}
+    add_housing_fields(embed, {b.user_id: dict(every_home) for b in all_bills}, names)
     check(embed)
     personal = member_bill_embed(
         member_name="Ana",

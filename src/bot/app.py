@@ -29,6 +29,7 @@ from bot.repositories.entrance_sounds import EntranceSoundStore
 from bot.repositories.gallos import GallosRepository
 from bot.repositories.hold_win import HoldWinRepository
 from bot.repositories.horses import HorseRepository
+from bot.repositories.housing import HousingRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.news import NewsRepository
@@ -95,6 +96,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.bizum",
     "bot.cogs.shop",
     "bot.cogs.rastro",
+    "bot.cogs.pisos",
     "bot.cogs.pieles",
     "bot.cogs.pets",
     "bot.cogs.work",
@@ -157,6 +159,8 @@ class BotClient(commands.Bot):
         # Puestos, pujas y ventas de segunda mano del Rastro (`vender`, `rastro`); el
         # dinero pasa por `economy` y el objeto, por la mochila de la tienda.
         self.rastro = MarketRepository(database_path)
+        # Inmuebles, participaciones e inquilinos de `pisos`; el dinero pasa por `economy`.
+        self.housing = HousingRepository(database_path)
         # Estado de las mascotas (`mascota`); quién tiene cada una lo dice la tienda.
         self.pets = PetRepository(database_path)
         # Sorteos y boletos de `loteria`; el dinero también pasa por `economy`.
@@ -232,6 +236,7 @@ class BotClient(commands.Bot):
         await self.news.initialize()
         await self.shop.initialize()
         await self.rastro.initialize()
+        await self.housing.initialize()
         await self.pets.initialize()
         await self.lottery.initialize()
         await self.todo.initialize()

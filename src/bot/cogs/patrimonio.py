@@ -2,9 +2,10 @@
 
 Una tarea cada 10 minutos mira si la semana anterior ya se cobró en cada
 servidor; si no, cobra la cuota (`bot.services.taxes.wealth_tax`) a todos los
-monederos que pasen del mínimo exento y lo anuncia en `#chat-general` (o en el
-canal del sistema). La primera semana tras activarlo en un servidor no se
-cobra, para que nadie pague por sorpresa al desplegar.
+miembros cuyo patrimonio (efectivo más los inmuebles de `pisos` a su valor fiscal)
+pase del mínimo exento y lo anuncia en `#chat-general` (o en el canal del sistema).
+La primera semana tras activarlo en un servidor no se cobra, para que nadie pague
+por sorpresa al desplegar.
 
 `saldo` avisa de lo que te tocaría pagar y `hacienda` suma lo recaudado. No
 es una interacción, así que el aviso de la Renta no aplica; el anuncio
@@ -14,8 +15,8 @@ público hace de recordatorio. Logros: `wealth_tax_paid` y `wealth_tax_weeks`
 Consultas (no mueven dinero; ver `bot.services.net_worth`):
 
 - Sección 🏰 Patrimonio de `perfil` (`patrimonio_embed`): todos los activos
-  de alguien (efectivo, bienes de la tienda, boletos de lotería pendientes y
-  la renta por cobrar), con su valor, su puesto y el Patrimonio que le
+  de alguien (efectivo, pisos, bienes de la tienda, boletos de lotería pendientes
+  y la renta por cobrar), con su valor, su puesto y el Patrimonio que le
   tocaría pagar el lunes.
 - `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
   de la riqueza del servidor (Gini y lo que tiene el más rico) y el título
@@ -29,7 +30,6 @@ Permisos: enviar mensajes e insertar enlaces en el canal del anuncio.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -40,6 +40,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import shop as tienda
+from bot.repositories.housing import assets_in as housing_assets_in
 from bot.services.achievements import StatDelta, patrimonio_stats
 from bot.services.economy import (
     EconomyService,
@@ -55,6 +56,7 @@ from bot.utils.responder import CommandResponder, ContextResponder, InteractionR
 
 if TYPE_CHECKING:
     from bot.app import BotClient
+    from bot.repositories.housing import HousingRepository
     from bot.repositories.lottery import LotteryRepository
     from bot.repositories.shop import ShopRepository
 
@@ -77,11 +79,16 @@ def wealth_embed(
     week: date, charges: tuple[WealthCharge, ...], names: dict[int, str]
 ) -> discord.Embed:
     """Anuncio público del cobro semanal del Patrimonio."""
-    total = sum(c.tax for c in charges)
+    total = sum(c.tax + c.debt for c in charges)
     medals = ("🥇", "🥈", "🥉")
     lines = [
         f"{medals[i] if i < len(medals) else '▫️'} **{names[c.user_id]}** paga "
         f"{format_amount(c.tax)} (tenía {format_amount(c.balance)})"
+        + (
+            f" y le embargan {format_amount(c.debt)} de sus alquileres: todo en ladrillo"
+            if c.debt
+            else ""
+        )
         for i, c in enumerate(charges[:ANNOUNCE_TOP])
     ]
     if len(charges) > ANNOUNCE_TOP:
@@ -97,9 +104,9 @@ def wealth_embed(
     )
     embed.set_footer(
         text=(
-            f"Paga cada lunes lo que tengas parado por encima de "
-            f"{format_amount(WEALTH_MINIMUM)}. Gástalo, mi amor, que el dinero quieto "
-            f"se lo come {TAX_COLLECTOR}."
+            f"Paga cada lunes por lo que tengas (efectivo y pisos) por encima de "
+            f"{format_amount(WEALTH_MINIMUM)}. El ladrillo también se lo come "
+            f"{TAX_COLLECTOR}, mi amor."
         )
     )
     return embed
@@ -115,11 +122,13 @@ class Patrimonio(commands.Cog):
         *,
         shop: ShopRepository | None = None,
         lottery: LotteryRepository | None = None,
+        housing: HousingRepository | None = None,
     ) -> None:
         self.bot = bot
         self.economy = economy
         self.shop = shop
         self.lottery = lottery
+        self.housing = housing
         #: `(servidor, lunes)` ya revisados, para no tocar la base de datos cada
         #: 10 minutos durante toda la semana.
         self._done: set[tuple[int, date]] = set()
@@ -144,9 +153,17 @@ class Patrimonio(commands.Cog):
         last_week = week_start(local_day(time.time())) - timedelta(days=7)
         if (guild.id, last_week) in self._done:
             return
+        housing = self.housing
+        assets = (
+            (lambda connection: housing_assets_in(connection, guild.id))
+            if housing is not None
+            else None
+        )
         try:
-            week, run = await self.economy.charge_wealth_tax(guild.id)
-        except (OSError, sqlite3.Error):
+            week, run = await self.economy.charge_wealth_tax(guild.id, assets=assets)
+        except Exception:
+            # Nunca lanza: si saliera la excepción, `tasks.loop` dejaría de cobrar el
+            # Patrimonio para siempre (ahora lee también los pisos).
             logger.exception("No se pudo cobrar el Patrimonio en el servidor %s", guild.id)
             return
         self._done.add((guild.id, week))
@@ -177,7 +194,13 @@ class Patrimonio(commands.Cog):
                 self.bot,
                 guild.id,
                 charge.user_id,
-                StatDelta(add={"wealth_tax_paid": charge.tax, "wealth_tax_weeks": 1}),
+                StatDelta(
+                    add={
+                        "wealth_tax_paid": charge.tax,
+                        "wealth_tax_weeks": 1,
+                        **({"wealth_embargo": 1} if charge.debt else {}),
+                    }
+                ),
                 channel.id if channel is not None else None,
             )
 
@@ -189,13 +212,16 @@ class Patrimonio(commands.Cog):
         balances = await self.economy.member_balances(guild_id)
         holdings = await self.shop.holdings(guild_id, None, now) if self.shop else []
         lottery = await self.lottery.open_stakes(guild_id) if self.lottery else {}
-        users = set(balances) | {row[0] for row in holdings} | set(lottery)
+        homes, homes_fiscal = (
+            await self.housing.member_values(guild_id) if self.housing else ({}, {})
+        )
+        users = set(balances) | {row[0] for row in holdings} | set(lottery) | set(homes)
         renta = {}
         for user_id in users:
             pending = await self.economy.pending_declarations(guild_id, user_id)
             if total := sum(d.refund for d in pending):
                 renta[user_id] = total
-        return build(balances, holdings, lottery, renta)
+        return build(balances, holdings, lottery, renta, homes, homes_fiscal)
 
     @staticmethod
     def _name(guild: discord.Guild, user_id: int) -> str:
@@ -235,6 +261,7 @@ class Patrimonio(commands.Cog):
         worth, rank, people = await self.net_worth(guild.id, target.id)
         lines = [
             f"💵 Efectivo: **{format_amount(worth.cash)}**",
+            f"🏠 Pisos: **{format_amount(worth.homes)}**",
             f"🛍️ Bienes de la tienda: **{format_amount(worth.goods_value)}** ({len(worth.goods)})",
             f"🎟️ Boletos de lotería por sortear: **{format_amount(worth.lottery)}**",
             f"📬 Renta por cobrar: **{format_amount(worth.renta)}**",
@@ -255,18 +282,22 @@ class Patrimonio(commands.Cog):
                 shown.append(f"-# Y {len(worth.goods) - 15} cosas más.")
             text = "\n".join(shown)
             embed.add_field(name="Bienes", value=text[:1_024], inline=False)
-        tax = wealth_tax(worth.cash)
-        embed.add_field(
-            name=f"🐶 {TAX_COLLECTOR}",
-            value=(
-                f"El lunes te cobraría {format_amount(tax)} de Patrimonio (solo mira el "
-                f"efectivo que pase de {format_amount(WEALTH_MINIMUM)})."
-                if tax
-                else f"No llegas al mínimo del Patrimonio ({format_amount(WEALTH_MINIMUM)} en "
-                "efectivo). Sanxe te perdona esta semana."
-            ),
-            inline=False,
+        tax = wealth_tax(worth.cash + worth.homes_fiscal)
+        debt = await self.economy.tax_debt(guild.id, target.id)
+        text = (
+            f"El lunes te cobraría {format_amount(tax)} de Patrimonio (efectivo y pisos "
+            f"a su valor fiscal, por lo que pase de {format_amount(WEALTH_MINIMUM)}). Lo que "
+            "no tengas en efectivo se embarga de tus alquileres."
+            if tax
+            else f"No llegas al mínimo del Patrimonio ({format_amount(WEALTH_MINIMUM)} "
+            "entre efectivo y pisos). Sanxe te perdona esta semana."
         )
+        if debt:
+            text += (
+                f"\nDebes {format_amount(debt)} de semanas anteriores: se cobran de lo "
+                "próximo que te den tus pisos."
+            )
+        embed.add_field(name=f"🐶 {TAX_COLLECTOR}", value=text, inline=False)
         embed.set_footer(
             text="Bienes al precio pagado sin IGIC; lo que caduca vale la vida que le queda."
         )
@@ -301,6 +332,7 @@ class Patrimonio(commands.Cog):
             f"{medals[i] if i < len(medals) else f'`{i + 1}.`'} {self._titled(guild, w.user_id)} · "
             f"**{format_amount(w.total)}**\n-# 💵 {format_amount(w.cash)} · 🛍️ "
             f"{format_amount(w.goods_value)}"
+            + (f" · 🏠 {format_amount(w.homes)}" if w.homes else "")
             + (f" · 🎟️ {format_amount(w.lottery)}" if w.lottery else "")
             + (f" · 📬 {format_amount(w.renta)}" if w.renta else "")
             for i, w in enumerate(everyone[:FORTUNES_TOP])
@@ -332,7 +364,7 @@ class Patrimonio(commands.Cog):
         if block:
             embed.add_field(name="La lista" if first else "\u200b", value=block, inline=False)
         embed.set_footer(
-            text="Efectivo, bienes de la tienda, boletos por sortear y renta por cobrar. "
+            text="Efectivo, pisos, bienes de la tienda, boletos por sortear y renta por cobrar. "
             "Gini: 0 si todos tienen lo mismo, 1 si uno lo tiene todo."
         )
         await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
@@ -370,4 +402,6 @@ class Patrimonio(commands.Cog):
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
     """Registra el cog con la economía compartida del bot."""
-    await bot.add_cog(Patrimonio(bot, bot.economy, shop=bot.shop, lottery=bot.lottery))
+    await bot.add_cog(
+        Patrimonio(bot, bot.economy, shop=bot.shop, lottery=bot.lottery, housing=bot.housing)
+    )
