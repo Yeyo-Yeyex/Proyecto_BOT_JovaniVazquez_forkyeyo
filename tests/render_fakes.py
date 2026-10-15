@@ -7,13 +7,13 @@ de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los 
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia las cuatro clases en sus módulos de servicio ANTES de cargar los
-cogs. `load_extension` vuelve a ejecutar cada cog y su `from ... import SlotsRenderer`
-recoge el doble, así que el cog, el bot y la base de datos son los reales y solo se
-sustituye el dibujo. Los dobles devuelven los mismos tipos (`SlotsMedia`, `SpinMedia`,
-`PachinkoMedia`) con bytes de relleno y `seconds=0.0`, y respetan `turbo` (GIF vacío),
-que es lo que el cog mira para decidir qué enseña. Las pruebas del dibujo de verdad están
-en `tests/unit/test_*_render.py`, que no usan esto.
+`use_fake_drawings` cambia esas clases (y la de la Torre del dragón) en sus módulos de
+servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
+`from ... import SlotsRenderer` recoge el doble, así que el cog, el bot y la base de datos
+son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
+(`SlotsMedia`, `SpinMedia`, `PachinkoMedia`) con bytes de relleno y `seconds=0.0`, y
+respetan `turbo` (GIF vacío), que es lo que el cog mira para decidir qué enseña. Las
+pruebas del dibujo de verdad están en `tests/unit/test_*_render.py`, que no usan esto.
 
 Se importa como `from render_fakes import use_fake_drawings` (`pyproject.toml` añade
 `tests/` al path de importación de pytest).
@@ -27,8 +27,10 @@ import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
 import bot.services.slots_render as slots_render
+import bot.services.tower_scene as tower_scene
 import bot.services.war_scene as war_scene
 from bot.services.bacara_render import Media as WarMedia
+from bot.services.tower_scene import Media as TowerMedia
 
 
 class FakeSlotsRenderer:
@@ -116,6 +118,39 @@ class FakeWarScene:
         return None
 
 
+class FakeTowerScene:
+    """La Torre del dragón sin dibujo: un PNG y un GIF de relleno que duran 0 s.
+
+    Con `images=False` hace como si no hubiera Node ni navegador (todo `None`) y
+    la torre se queda con texto.
+    """
+
+    def __init__(self, *args: object, images: bool = True, **kwargs: object) -> None:
+        self.images = images
+        self.calls: list[tuple[object, ...]] = []
+
+    def _media(self, *call: object) -> TowerMedia | None:
+        self.calls.append(call)
+        return TowerMedia(gif=b"gif", png=b"png", seconds=0.0) if self.images else None
+
+    async def opening(self, difficulty: object, stake: object) -> bytes | None:
+        self.calls.append(("opening", difficulty, stake))
+        return b"png" if self.images else None
+
+    async def still(self, game: object) -> bytes | None:
+        self.calls.append(("still", game))
+        return b"png" if self.images else None
+
+    async def pick(self, game: object, door: int, *, roulette: bool = False) -> TowerMedia | None:
+        return self._media("pick", door, roulette)
+
+    async def cashout(self, game: object) -> TowerMedia | None:
+        return self._media("cashout")
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_render, "SlotsRenderer", FakeSlotsRenderer)
@@ -123,3 +158,4 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)
     monkeypatch.setattr(war_scene, "WarScene", FakeWarScene)
+    monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)

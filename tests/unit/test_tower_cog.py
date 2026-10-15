@@ -14,6 +14,7 @@ import discord
 import pytest
 from discord import ui
 from interaction_fakes import fake_interaction
+from render_fakes import FakeTowerScene
 
 from bot.cogs.tower import (
     BOOM,
@@ -57,7 +58,13 @@ def make_interaction(user_id: int = OWNER_ID) -> MagicMock:
 async def make_cog(tmp_path: Path) -> Tower:
     repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await repository.initialize()
-    return Tower(MagicMock(), economy=EconomyService(repository), rng=random.Random(7))
+    # Sin Node ni navegador: la torre de texto, instantánea (las de imagen, más abajo).
+    return Tower(
+        MagicMock(),
+        economy=EconomyService(repository),
+        rng=random.Random(7),
+        renderer=FakeTowerScene(images=False),  # type: ignore[arg-type]
+    )
 
 
 async def open_board(
@@ -492,3 +499,197 @@ async def test_la_partida_terminada_no_deja_el_menu_ni_las_puertas_activas(
     assert board.game is not None and board.game.status is Status.BURNED
     assert [i for i in board.walk_children() if isinstance(i, ui.Select)]
     assert all(b.disabled for b in picks(board))
+
+
+# -- Con imagen ---------------------------------------------------------------------------
+
+
+async def image_cog(tmp_path: Path, *, ahead: bool = False) -> Tower:
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    return Tower(
+        MagicMock(),
+        economy=EconomyService(repository),
+        rng=random.Random(7),
+        renderer=FakeTowerScene(),  # type: ignore[arg-type]
+        ahead=ahead,
+    )
+
+
+def uploads(interaction: MagicMock) -> list[str]:
+    """Nombre del archivo que sube cada edición (o `-` si no sube nada)."""
+    names = []
+    for call in interaction.edit_original_response.await_args_list:
+        files = call.kwargs.get("attachments")
+        names.append(files[0].filename if files else "-")
+    return names
+
+
+@pytest.fixture(autouse=True)
+def no_reveal_margin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("bot.cogs.tower.REVEAL_MARGIN_SECONDS", 0)
+
+
+async def test_con_imagen_la_torre_sale_con_su_png_y_sin_la_torre_de_texto(
+    tmp_path: Path,
+) -> None:
+    cog = await image_cog(tmp_path)
+    send = AsyncMock(return_value=MagicMock())
+    await cog._torre_impl(
+        guild=MagicMock(id=GUILD_ID),
+        channel=None,
+        user=make_user(),
+        amount_text="100",
+        difficulty=Difficulty.EASY,
+        send=send,
+        send_error=AsyncMock(),
+    )
+    (board,) = cog.boards
+    assert send.await_args.kwargs["file"].filename == "torre.png"
+    assert board.image == "torre.png"
+    galleries = [i for i in board.walk_children() if isinstance(i, ui.MediaGallery)]
+    assert [g.items[0].media.url for g in galleries] == ["attachment://torre.png"]
+    # La imagen ya enseña la torre: el texto no la repite.
+    assert not [ln for ln in board.header().splitlines() if "`" in ln]
+
+
+async def test_subir_un_piso_ensena_el_gif_y_despues_el_png_sin_delatar_nada(
+    tmp_path: Path,
+) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    seen: list[str] = []
+    interaction = make_interaction()
+    original = interaction.edit_original_response
+
+    async def spy(**kwargs: object) -> object:
+        seen.append(board.header())
+        return await original(**kwargs)
+
+    interaction.edit_original_response = AsyncMock(side_effect=spy)
+    await board._climb(interaction, 1)
+    interaction.response.defer.assert_awaited_once()
+    # Sin pintar por adelantado: primero apaga los botones, luego el GIF y el PNG.
+    assert uploads(interaction) == ["-", "torre.gif", "torre.png"]
+    # Mientras: la puerta elegida, sin saldo ni multiplicador nuevo.
+    for waiting in seen[:2]:
+        assert "Puerta 2" in waiting and "Saldo" not in waiting and "×" not in waiting
+    assert "Saldo" in seen[2]
+    assert board.game is not None and board.game.floor == 1
+    assert not board._busy and board.image == "torre.png"
+
+
+async def test_quemarse_cobra_y_acaba_con_el_png_de_la_torre_destapada(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    interaction = make_interaction()
+    await board._climb(interaction, 0)
+    assert board.game is not None and board.game.status is Status.BURNED
+    assert uploads(interaction) == ["-", "torre.gif", "torre.png"]
+    assert any((b.label or "").startswith("🔁 Jugar") for b in buttons(board))
+    assert ledger_sum(tmp_path) == STARTING_BALANCE - 100
+
+
+async def test_cobrar_con_imagen_paga_y_ensena_su_gif(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    await board._climb(make_interaction(), 1)
+    interaction = make_interaction()
+    await board._cash_out(interaction)
+    assert board.game is not None and board.game.status is Status.CASHED
+    assert uploads(interaction) == ["-", "torre.gif", "torre.png"]
+    assert ("cashout",) in cog.renderer.calls  # type: ignore[attr-defined]
+
+
+async def test_cada_boton_sale_pintado_antes_del_clic(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path, ahead=True)
+    board = await open_board(cog)
+    place(board, {0})
+    assert board._painting is not None
+    await board._painting
+    renderer: FakeTowerScene = cog.renderer  # type: ignore[assignment]
+    assert board._dice is not None
+    # Las cuatro puertas, 🎲 con su puerta ya sorteada y el primer piso de las
+    # otras cuatro dificultades del menú.
+    picks_painted = [c for c in renderer.calls if c[0] == "pick"]
+    assert picks_painted == [("pick", d, False) for d in range(4)] + [
+        ("pick", board._dice[2], True)
+    ]
+    assert sum(c[0] == "opening" for c in renderer.calls) == 4
+    painted = len(renderer.calls)
+    click = make_interaction()
+    await board._climb(click, 1)
+    # Pintado de antes: el GIF sale en la primera edición, sin espera.
+    assert uploads(click) == ["torre.gif", "torre.png"]
+    assert board._painting is not None
+    await board._painting
+    # El clic no pinta (usa el GIF hecho); lo nuevo es ya el piso siguiente.
+    later = renderer.calls[painted:]
+    assert later[:4] == [("pick", d, False) for d in range(4)]
+    assert ("cashout",) in later
+
+
+async def test_al_azar_usa_la_puerta_sorteada_al_pintar(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path, ahead=True)
+    board = await open_board(cog, difficulty=Difficulty.NORMAL)
+    assert board._painting is not None
+    await board._painting
+    assert board._dice is not None and board.game is not None
+    door = board._dice[2]
+    board.game.dragons = tuple(frozenset({(door + 1) % 3}) for _ in range(FLOORS))
+    await board._random(make_interaction())
+    assert board.game.picks == [door] and board.game.random_picks == 1
+
+
+async def test_cambiar_la_apuesta_al_acabar_no_vuelve_a_subir_la_imagen(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    await board._climb(make_interaction(), 0)  # dragón
+    interaction = make_interaction()
+    await board._halve(interaction)
+    assert uploads(interaction) == ["-"]
+    assert board.image == "torre.png"
+    again = make_interaction()
+    await board._again(again)
+    assert uploads(again) == ["torre.png"]  # la partida nueva sí trae su primer piso
+
+
+async def test_el_menu_antes_del_primer_piso_cambia_la_imagen(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    interaction = make_interaction()
+    await board._choose_level(interaction, "maestro")
+    assert board.game is not None and board.game.difficulty is Difficulty.MASTER
+    assert uploads(interaction) == ["torre.png"]
+    assert ("opening", Difficulty.MASTER, 100) in cog.renderer.calls  # type: ignore[attr-defined]
+
+
+async def test_sin_pintor_a_mitad_de_partida_vuelve_la_torre_de_texto(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    cog.renderer.images = False  # type: ignore[attr-defined]
+    interaction = make_interaction()
+    await board._climb(interaction, 1)
+    assert board.image is None
+    assert [ln for ln in board.header().splitlines() if "`" in ln]
+    assert interaction.edit_original_response.await_args_list[-1].kwargs["attachments"] == []
+
+
+async def test_torre_con_imagen_caducada_cobra_y_ensena_la_torre_destapada(
+    tmp_path: Path,
+) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    board.message = MagicMock(edit=AsyncMock())
+    place(board, {0})
+    await board._climb(make_interaction(), 1)
+    board._last_interaction = None
+    await board.on_timeout()
+    assert board.game is not None and board.game.status is Status.CASHED
+    (call,) = board.message.edit.await_args_list
+    assert call.kwargs["attachments"][0].filename == "torre.png"

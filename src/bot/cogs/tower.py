@@ -11,16 +11,35 @@ Hay cinco dificultades (Fácil, Normal, Difícil, Experto y Maestro: más puerta
 o menos dragones, más o menos riesgo y premio) y se cambian con un menú
 mientras no se haya subido el primer piso y entre partidas.
 
-Mientras se juega, el texto dibuja la torre entera, de arriba abajo y con el
-multiplicador de cada piso, y lleva la cuenta de pisos (🏰 3/9), lo que
-sumaría el siguiente y su probabilidad, frases al pasar por ciertos pisos y el
-aviso de récord personal. Al acabar enseña dónde estaban todos los dragones y
-deja jugar otra con 🔁, cambiar la apuesta (½, ×2, 💰 All-in) y la dificultad.
+**Cada jugada es un GIF** (`bot.services.tower_scene`): el piso por dentro con
+sus puertas de frente (madera, hierro, runas y bronce), la puerta elegida que
+brilla y tiembla antes de abrirse (más rato cuanto más alto), y luego el huevo
+que sube al piso de arriba o el dragón que sale escupiendo fuego. 🎲 tiene su
+ruleta sobre las puertas, 💰 abre en fantasma el piso siguiente (lo que había
+detrás) con lluvia de monedas, coronar sube a la cima (corona, dragón que se
+inclina y monedas), y al acabar se ve la torre entera con los dragones
+encendiéndose de abajo arriba. Cada dificultad tiene su tema: de día, al
+atardecer, de noche, en ruinas con brasas y de obsidiana con lava. Después del
+GIF queda un PNG con el piso nuevo y los botones vuelven.
+
+**Todo está pintado antes del clic.** Los dragones se sortean al empezar, así
+que mientras se ve un GIF la torre pinta en segundo plano el de cada puerta
+del piso siguiente, el de 🎲 (su puerta se sortea ya, sin enseñarla) y el de
+💰; antes del primer piso, también el primer piso de cada dificultad del menú,
+y al acabar, el de 🔁 Jugar (`TowerBoard.prepare`). Si al pulsar aún no está,
+la torre apaga los botones al momento y espera.
+
+El texto lleva lo que no se ve en la imagen: la cuenta de pisos (🏰 3/9), lo
+que sumaría el siguiente y su probabilidad, frases al pasar por ciertos pisos
+y el aviso de récord personal. Al acabar deja jugar otra con 🔁, cambiar la
+apuesta (½, ×2, 💰 All-in) y la dificultad. Si no hay Node ni navegador para
+pintar, la torre vuelve a dibujarse con texto (`TowerBoard.tower_text`): cada
+clic es entonces una edición de texto y botones, instantánea.
 
 El mensaje usa los componentes nuevos de Discord (`LayoutView`): un bloque con
-el texto y una sola fila de puertas (las del piso actual), una fila de
-controles y el menú de dificultad. No hay imágenes: cada clic es una edición
-de texto y botones, así que es instantáneo.
+el texto, la imagen y una sola fila de puertas (las del piso actual), una fila
+de controles y el menú de dificultad. Ancho de banda: cada jugada sube un GIF
+(~0,5-1,5 MB) y un PNG.
 
 Reglas en `bot.services.tower`. Dinero: la apuesta se cobra al empezar
 (`place_bet`) y se paga al cobrar o al quemarse (`pay_winnings`, con 0 si te
@@ -30,17 +49,19 @@ ordenada con una partida a medias, se cobra sola; si no se había subido ningún
 piso, se devuelve la apuesta.
 
 Si `CASINO_CHANNEL_IDS` está configurado, solo se juega en esos canales.
-Permisos del bot en el canal: enviar mensajes.
+Permisos del bot en el canal: enviar mensajes y adjuntar archivos.
 """
 
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -77,6 +98,7 @@ from bot.services.tower import (
     plural_dragons,
     risk_summary,
 )
+from bot.services.tower_scene import Media, TowerScene
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -91,6 +113,10 @@ DEFAULT_STAKE = 100
 BOARD_TIMEOUT = 180
 #: Desde este multiplicador (en centésimas) se anuncia el premio en el canal.
 SHOUT_CENTS = 2_500
+GIF_NAME = "torre.gif"
+PNG_NAME = "torre.png"
+#: Margen tras el GIF antes de poner el PNG: lo que tarda el cliente en bajarlo.
+REVEAL_MARGIN_SECONDS = 0.5
 
 EMPTY = "⬛"
 EGG = "🥚"
@@ -188,6 +214,20 @@ class TowerBoard(ui.LayoutView):
         self.started_at = 0
         self._lock = asyncio.Lock()
         self._last_interaction: discord.Interaction | None = None
+        #: El adjunto que se ve (`torre.png` o `torre.gif`); `None`, la torre de texto.
+        self.image: str | None = None
+        #: Texto mientras se ve el GIF de una jugada (no delata el resultado).
+        self.waiting: str | None = None
+        #: Mientras se enseña una jugada, los clics se aceptan sin hacer nada.
+        self._busy = False
+        self._text: ui.TextDisplay | None = None
+        self._gallery: ui.MediaGallery | None = None
+        #: Lo pintado por adelantado: la clave (`_plan_key`) y una imagen por botón.
+        self._plan: tuple[tuple[Any, ...], dict[str, asyncio.Future[Any]]] | None = None
+        self._painting: asyncio.Task[None] | None = None
+        #: La puerta de 🎲 del piso actual, sorteada al pintar por adelantado:
+        #: (partida, piso, puerta).
+        self._dice: tuple[int, int, int] | None = None
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -221,6 +261,15 @@ class TowerBoard(ui.LayoutView):
         game = self.game
         name = self.owner.display_name
         lines = [f"### 🐉 Torre del dragón · {name}"]
+        if self.waiting:
+            # Sin saldo ni multiplicador: delatarían el resultado antes del GIF.
+            difficulty = game.difficulty if game is not None else self.difficulty
+            stake = game.stake if game is not None else self.stake
+            lines.append(self.waiting)
+            lines.append(
+                f"-# Apuesta {format_amount(stake)} · {difficulty.emoji} {difficulty.label}"
+            )
+            return "\n".join(lines)
         if game is None:
             lines.append("Pulsa 🔁 para jugar.")
         elif game.playing:
@@ -270,7 +319,7 @@ class TowerBoard(ui.LayoutView):
                 lines.append("Te quemó el dragón del primer piso. Qué manera de empezar.")
             if self.record_before and game.floor > self.record_before:
                 lines.append(f"🏅 Aun así, récord personal: piso {game.floor}.")
-        if game is not None:
+        if game is not None and self.image is None:
             lines.append(self.tower_text(game))
         if self.note:
             lines.append(self.note)
@@ -327,7 +376,12 @@ class TowerBoard(ui.LayoutView):
         game = self.game
         shown = game.difficulty if game is not None else self.difficulty
         container = ui.Container(accent_colour=self.color())
-        container.add_item(ui.TextDisplay(self.header()))
+        self._text = ui.TextDisplay(self.header())
+        container.add_item(self._text)
+        self._gallery = None
+        if self.image is not None:
+            self._gallery = ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{self.image}"))
+            container.add_item(self._gallery)
         container.add_item(ui.Separator())
         doors: ui.ActionRow = ui.ActionRow()
         for door in range(shown.width):
@@ -400,16 +454,24 @@ class TowerBoard(ui.LayoutView):
         return False
 
     async def on_timeout(self) -> None:
-        """Caduca: si había partida a medias, se cobra sola."""
+        """Caduca: si había partida a medias, se cobra sola (y se enseña la torre destapada)."""
         self.cog.boards.discard(self)
+        game = self.game
+        was_playing = game is not None and game.playing
         await self.force_settle()
+        files: dict[str, Any] = {}
+        if self.image is not None and was_playing and game is self.game and game is not None:
+            png = await self.cog.renderer.still(game)
+            if png is not None:
+                self.image = PNG_NAME
+                files["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]
         self.rebuild()
         self.disable_all()
         try:
             if self._last_interaction is not None:
-                await self._last_interaction.edit_original_response(view=self)
+                await self._last_interaction.edit_original_response(view=self, **files)
             elif self.message is not None:
-                await self.message.edit(view=self)
+                await self.message.edit(view=self, **files)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar la torre del dragón", exc_info=True)
 
@@ -530,10 +592,56 @@ class TowerBoard(ui.LayoutView):
 
     async def _climb(self, interaction: discord.Interaction, door: int | None) -> None:
         """Elige `door` (o una al azar) en el piso actual y enseña el resultado."""
-        if self._lock.locked():
+        if self._busy or self._lock.locked():
             # Doble clic mientras se procesa el anterior: se ignora.
             await ack(interaction)
             return
+        if self.image is None:
+            await self._climb_text(interaction, door)
+            return
+        game = self.game
+        if game is None or not game.playing:
+            await ack(interaction)
+            return
+        self._busy = True
+        played = False
+        settlement: BetSettlement | None = None
+        try:
+            await ack(interaction)
+            async with self._lock:
+                random_pick = door is None
+                target = self._random_door(game) if door is None else door
+                ready = self._take_plan("random" if random_pick else f"pick:{target}")
+                before = deepcopy(game)
+                try:
+                    safe = game.climb(target, random_pick=random_pick)
+                except TowerError:
+                    return
+                played = True
+                if not safe:
+                    settlement = await self._settle(game)
+                elif game.crowned:
+                    game.cash_out()
+                    settlement = await self._settle(game)
+                else:
+                    self.note = None
+                self._last_interaction = interaction
+            waiting = "# 🎲 Que elija la torre…" if random_pick else f"# 🚪 Puerta {target + 1}…"
+            await self._show(
+                interaction,
+                ready,
+                lambda: self.cog.renderer.pick(before, target, roulette=random_pick),
+                waiting,
+            )
+        except discord.HTTPException:
+            logger.warning("No se pudo enseñar un piso de la Torre del dragón", exc_info=True)
+        finally:
+            self._busy = False
+        if played and not game.playing:
+            await self._after_game(interaction, game, settlement)
+
+    async def _climb_text(self, interaction: discord.Interaction, door: int | None) -> None:
+        """`_climb` con la torre de texto: sin imagen que subir, así que es instantáneo."""
         async with self._lock:
             game = self.game
             if game is None or not game.playing:
@@ -575,25 +683,39 @@ class TowerBoard(ui.LayoutView):
 
     async def _cash_out(self, interaction: discord.Interaction) -> None:
         """💰 Cobrar: se retira con el multiplicador actual."""
-        if self._lock.locked():
+        if self._busy or self._lock.locked():
             await ack(interaction)
             return
-        async with self._lock:
-            game = self.game
-            if game is None or not game.playing or not game.floor:
-                await ack(interaction)
-                return
+        game = self.game
+        if game is None or not game.playing or not game.floor:
             await ack(interaction)
-            game.cash_out()
-            settlement = await self._settle(game)
-            self._last_interaction = interaction
-            self.rebuild()
-            await edit(interaction, view=self)
+            return
+        self._busy = True
+        settlement: BetSettlement | None = None
+        try:
+            await ack(interaction)
+            async with self._lock:
+                ready = self._take_plan("cashout")
+                before = deepcopy(game)
+                game.cash_out()
+                settlement = await self._settle(game)
+                self._last_interaction = interaction
+                if self.image is None:
+                    self.rebuild()
+                    await edit(interaction, view=self)
+            if self.image is not None:
+                await self._show(
+                    interaction, ready, lambda: self.cog.renderer.cashout(before), "# 💰 Cobrando…"
+                )
+        except discord.HTTPException:
+            logger.warning("No se pudo enseñar el cobro de la Torre del dragón", exc_info=True)
+        finally:
+            self._busy = False
         await self._after_game(interaction, game, settlement)
 
     async def _again(self, interaction: discord.Interaction) -> None:
         """🔁 Jugar: cobra otra vez y sortea dragones nuevos."""
-        if self._lock.locked():
+        if self._busy or self._lock.locked():
             await ack(interaction)
             return
         async with self._lock:
@@ -601,28 +723,43 @@ class TowerBoard(ui.LayoutView):
                 await ack(interaction)
                 return
             await ack(interaction)
+            ready = self._take_plan("again")
             error = await self.start()
             if error is not None:
                 await notify(interaction, error)
                 return
             self._last_interaction = interaction
-            await edit(interaction, view=self)
+            await self._present(
+                interaction, ready, lambda: self.cog.renderer.opening(self.difficulty, self.stake)
+            )
         await renta.remind(self.cog.bot, interaction)
 
-    async def _refresh(self, interaction: discord.Interaction) -> None:
+    async def _refresh(
+        self,
+        interaction: discord.Interaction,
+        *,
+        ready: asyncio.Future[Any] | None = None,
+        paint: Callable[[], Awaitable[bytes | None]] | None = None,
+    ) -> None:
         """Pinta la torre tras cambiar apuesta o dificultad (sin dinero de por medio).
 
-        Lee el saldo de la base de datos: se acepta el clic antes.
+        Lee el saldo de la base de datos: se acepta el clic antes. Con `paint`
+        (la partida se rehízo en otra dificultad) cambia también la imagen.
         """
         await ack(interaction)
         self.balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
         self.note = None
-        self.rebuild()
         self._last_interaction = interaction
+        if paint is not None:
+            await self._present(interaction, ready, paint)
+            return
+        self.rebuild()
         await edit(interaction, view=self)
+        # La apuesta o la dificultad de 🔁 han cambiado: se pinta la partida nueva.
+        self.prepare()
 
     def _idle(self) -> bool:
-        return self.game is None or not self.game.playing
+        return (self.game is None or not self.game.playing) and not self._busy
 
     def _level_editable(self) -> bool:
         """Si el menú de dificultad se puede usar: sin partida o antes del primer piso.
@@ -669,20 +806,212 @@ class TowerBoard(ui.LayoutView):
         Con la partida empezada y ningún piso subido, se rehace con la
         dificultad nueva y la misma apuesta, que ya está cobrada: no se mueve dinero.
         """
-        if self._lock.locked() or not self._level_editable() or key not in DIFFICULTY_BY_KEY:
+        if (
+            self._busy
+            or self._lock.locked()
+            or not self._level_editable()
+            or key not in DIFFICULTY_BY_KEY
+        ):
             await ack(interaction)
             return
         difficulty = DIFFICULTY_BY_KEY[key]
         async with self._lock:
             game = self.game
+            rebuilt: TowerGame | None = None
+            ready = None
             if game is not None and game.playing:
                 if game.picks:
                     await ack(interaction)
                     return
-                self.game = TowerGame.new(game.stake, difficulty, self.cog.rng)
+                ready = self._take_plan(f"level:{difficulty.key}")
+                rebuilt = TowerGame.new(game.stake, difficulty, self.cog.rng)
+                self.game = rebuilt
             self.difficulty = difficulty
             self.cog.set_difficulty(self.guild_id, self.owner.id, difficulty)
-            await self._refresh(interaction)
+            if rebuilt is None:
+                await self._refresh(interaction)
+                return
+            stake = rebuilt.stake
+            await self._refresh(
+                interaction,
+                ready=ready,
+                paint=lambda: self.cog.renderer.opening(difficulty, stake),
+            )
+
+    # -- Imagen -----------------------------------------------------------------------
+
+    def _hold(self, waiting: str, *, image: str | None = None) -> None:
+        """Apaga los controles sin rehacerlos y pone el texto de espera (y `image`).
+
+        Rehacerlos delataría el resultado: las etiquetas nuevas (💰 Cobrar 840 Y$,
+        🔁 Jugar) saldrían antes que el GIF.
+        """
+        self.waiting = waiting
+        if self._text is not None:
+            self._text.content = self.header()
+        if image is not None and self._gallery is not None:
+            self._gallery.items = [discord.MediaGalleryItem(f"attachment://{image}")]
+        self.disable_all()
+
+    async def _show(
+        self,
+        interaction: discord.Interaction,
+        ready: asyncio.Future[Any] | None,
+        paint: Callable[[], Awaitable[Media | None]],
+        waiting: str,
+    ) -> None:
+        """Enseña el GIF de la jugada y después el PNG con el estado nuevo.
+
+        El GIF pintado por adelantado (`ready`) sale al momento. Si aún no está,
+        la torre apaga los botones ya (si no, tras el clic no cambia nada y parece
+        que no responde) y espera al dibujo.
+        """
+        self._hold(waiting)
+        media: Media | None = ready.result() if ready is not None and ready.done() else None
+        if media is None:
+
+            async def show_waiting() -> None:
+                try:
+                    await edit(interaction, view=self)
+                except discord.HTTPException:
+                    logger.warning("No se pudo apagar la Torre del dragón", exc_info=True)
+
+            async def get() -> Media | None:
+                found = await ready if ready is not None else None
+                return found or await paint()
+
+            _, media = await asyncio.gather(show_waiting(), get())
+        if media is None:
+            # Ni Node ni navegador: la torre sigue con texto.
+            self.waiting = None
+            self.image = None
+            self.rebuild()
+            await edit(interaction, view=self, attachments=[])
+            return
+        self._hold(waiting, image=GIF_NAME)
+        await edit(
+            interaction,
+            view=self,
+            attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+        )
+        self.image = GIF_NAME
+        # Lo siguiente ya está sorteado: se pinta mientras se ve este GIF.
+        self.prepare()
+        await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+        self.waiting = None
+        self.image = PNG_NAME
+        self.rebuild()
+        await edit(
+            interaction,
+            view=self,
+            attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
+        )
+
+    async def _present(
+        self,
+        interaction: discord.Interaction,
+        ready: asyncio.Future[Any] | None,
+        paint: Callable[[], Awaitable[bytes | None]],
+    ) -> None:
+        """Pone la imagen quieta de la partida nueva (la pintada por adelantado, si está)."""
+        if self.image is None:
+            self.rebuild()
+            await edit(interaction, view=self)
+            return
+        png = await ready if ready is not None else None
+        png = png or await paint()
+        self.image = PNG_NAME if png is not None else None
+        self.rebuild()
+        files = [discord.File(io.BytesIO(png), filename=PNG_NAME)] if png is not None else []
+        await edit(interaction, view=self, attachments=files)
+        self.prepare()
+
+    def _plan_key(self) -> tuple[Any, ...]:
+        """De qué depende lo pintado por adelantado (salvo el botón que se pulse)."""
+        game = self.game
+        if game is not None and game.playing:
+            return ("play", id(game), game.floor)
+        return ("idle", self.stake, self.difficulty.key)
+
+    def _random_door(self, game: TowerGame) -> int:
+        """La puerta de 🎲: la sorteada al pintar por adelantado, si es de este piso."""
+        if self._dice is not None and self._dice[:2] == (id(game), game.floor):
+            return self._dice[2]
+        return game.random_door(self.cog.rng)
+
+    def prepare(self) -> None:
+        """Pinta en segundo plano lo que puede pedir el próximo clic, si no lo está ya.
+
+        Jugando: el GIF de cada puerta del piso, el de 🎲 (con su puerta ya
+        sorteada) y el de 💰; antes del primer piso, el primer piso de cada
+        dificultad del menú. Sin partida: la imagen de 🔁 Jugar. Se pinta uno
+        detrás de otro y nunca se corta a medias: si la partida cambia, lo que
+        aún no ha empezado no se pinta.
+        """
+        if not self.cog.ahead or self.image is None or self.is_finished():
+            return
+        key = self._plan_key()
+        if self._plan is not None and self._plan[0] == key:
+            return
+        game = self.game
+        if game is not None and game.playing:
+            self._dice = (id(game), game.floor, game.random_door(self.cog.rng))
+            order = [f"pick:{door}" for door in range(game.difficulty.width)] + ["random"]
+            if game.floor:
+                order.append("cashout")
+            else:
+                order += [f"level:{d.key}" for d in DIFFICULTIES if d is not game.difficulty]
+        else:
+            order = ["again"]
+        loop = asyncio.get_running_loop()
+        futures: dict[str, asyncio.Future[Any]] = {kind: loop.create_future() for kind in order}
+        self._plan = (key, futures)
+        previous = self._painting
+        self._painting = asyncio.create_task(self._paint_ahead(key, order, futures, previous))
+
+    async def _paint_ahead(
+        self,
+        key: tuple[Any, ...],
+        order: list[str],
+        futures: dict[str, asyncio.Future[Any]],
+        previous: asyncio.Task[None] | None,
+    ) -> None:
+        # Un plan detrás de otro: así un plan viejo nunca hace esperar dos dibujos.
+        if previous is not None:
+            await asyncio.gather(previous, return_exceptions=True)
+        for kind in order:
+            result: Any = None
+            if self._plan_key() == key and not self.is_finished():
+                try:
+                    result = await self._paint(kind)
+                except Exception:
+                    logger.warning("No se pudo pintar por adelantado la Torre", exc_info=True)
+            if not futures[kind].done():
+                futures[kind].set_result(result)
+
+    async def _paint(self, kind: str) -> Media | bytes | None:
+        """Lo que enseñaría pulsar `kind` con la partida tal como está ahora."""
+        renderer = self.cog.renderer
+        if kind == "again":
+            return await renderer.opening(self.difficulty, self.stake)
+        assert self.game is not None
+        game = deepcopy(self.game)
+        if kind == "cashout":
+            return await renderer.cashout(game)
+        if kind == "random":
+            assert self._dice is not None
+            return await renderer.pick(game, self._dice[2], roulette=True)
+        name, _, value = kind.partition(":")
+        if name == "level":
+            return await renderer.opening(DIFFICULTY_BY_KEY[value], game.stake)
+        return await renderer.pick(game, int(value))
+
+    def _take_plan(self, kind: str) -> asyncio.Future[Any] | None:
+        """Lo pintado por adelantado para `kind`, si vale para la partida tal como está."""
+        plan, self._plan = self._plan, None
+        if plan is None or plan[0] != self._plan_key():
+            return None
+        return plan[1].get(kind)
 
 
 # -- Cog -------------------------------------------------------------------------------
@@ -699,12 +1028,23 @@ class Tower(commands.Cog, name="Torre"):
         casino_channel_ids: frozenset[int] = frozenset(),
         rng: random.Random | None = None,
         load_record: Callable[[int, int], Awaitable[int]] | None = None,
+        renderer: TowerScene | None = None,
+        ahead: bool | None = None,
     ) -> None:
+        """Prepara el cog; el dibujo por defecto es `TowerScene`.
+
+        Args:
+            ahead: Si las torres pintan por adelantado lo que puede pedir el
+                próximo clic (`TowerBoard.prepare`). Por defecto, solo con el
+                dibujo de verdad.
+        """
         self.bot = bot
         self.economy = economy
         self.casino_channel_ids = casino_channel_ids
         # `secrets` usa el azar del sistema operativo: no se puede predecir.
         self.rng = rng or secrets.SystemRandom()
+        self.ahead = renderer is None if ahead is None else ahead
+        self.renderer = renderer or TowerScene()
         # Torres abiertas: para cerrar sus partidas si el bot se apaga.
         # Cada torre sale de aquí al caducar, así que el tamaño está acotado.
         self.boards: set[TowerBoard] = set()
@@ -751,6 +1091,7 @@ class Tower(commands.Cog, name="Torre"):
                 logger.exception("No se pudo cerrar una partida de la Torre al apagar")
             board.stop()
         self.boards.clear()
+        await self.renderer.close()
 
     async def shout(self, game: TowerGame, user: discord.abc.User, channel: object) -> None:
         """Anuncia en el canal los cobros enormes, para que se vea."""
@@ -818,15 +1159,23 @@ class Tower(commands.Cog, name="Torre"):
         if error is not None:
             await send_error(error)
             return
+        assert board.game is not None
+        png = await self.renderer.still(board.game)
+        extra: dict[str, Any] = {}
+        if png is not None:
+            board.image = PNG_NAME
+            board.rebuild()
+            extra["file"] = discord.File(io.BytesIO(png), filename=PNG_NAME)
         # La apuesta ya está cobrada: si Discord no deja enseñar la torre (la respuesta
         # llega tarde), se devuelve en el acto en vez de quedarse sin mesa que la cierre.
         self.boards.add(board)
         try:
-            board.message = await send(view=board)
+            board.message = await send(view=board, **extra)
         except discord.HTTPException:
             self.boards.discard(board)
             await board.force_settle()
             raise
+        board.prepare()
 
     @app_commands.command(
         name="torre",

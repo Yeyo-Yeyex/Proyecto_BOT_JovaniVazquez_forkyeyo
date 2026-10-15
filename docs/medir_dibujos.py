@@ -67,6 +67,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_housing_scene import NAMES, samples
     from test_housing_scene import market as housing_market
     from test_roulette_scene_browser import HISTORY, outcome
+    from test_tower_scene import game_at
     from test_war_scene import tied, war_of, won
 
     from bot.services import housing_view
@@ -80,6 +81,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.housing_catalog import BARRIOS
     from bot.services.housing_scene import HousingScene
     from bot.services.roulette_scene import RouletteScene
+    from bot.services.tower import Difficulty
+    from bot.services.tower_scene import TowerScene
     from bot.services.war_scene import WarScene
 
     no = "/no/existe/chromium"
@@ -110,6 +113,11 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
         ),
         # Repartir una mano sin empate, y un empate con su guerra (dos GIF seguidos).
         "guerra": (lambda: WarScene(executable_path=no), lambda s: s.deal(won())),
+        # Un dragón en el piso 6 de Experto: tensión, fuego y la torre destapada.
+        "torre": (
+            lambda: TowerScene(executable_path=no),
+            lambda s: s.pick(game_at(Difficulty.EXPERT, 5), 0),
+        ),
         "guerra_2": (lambda: WarScene(executable_path=no), tie_and_war),
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
