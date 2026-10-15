@@ -8,6 +8,11 @@ criterio.
 
 ## 6.x
 
+### 6.7.3 · 2026-10-15
+
+- Tienda: el tapete de los archivos Epstein pasa a 3.000.000 Y$, con tres copias numeradas
+- Tienda: los cambios de precio llegan también a las tiendas que ya tenían el artículo (el de Israel ya cuesta 271.000 Y$)
+
 ### 6.7.2 · 2026-10-15
 
 - Pala: los marrones salen el doble, uno de cada tres turnos

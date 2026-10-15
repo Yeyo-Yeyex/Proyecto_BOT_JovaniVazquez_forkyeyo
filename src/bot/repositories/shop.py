@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
@@ -1142,7 +1142,13 @@ class ShopRepository:
     # -- Surtido de serie ------------------------------------------------------------
 
     async def stock_catalog(
-        self, guild_id: int, entries: Sequence[CatalogEntry], now: float, *, restock: bool = False
+        self,
+        guild_id: int,
+        entries: Sequence[CatalogEntry],
+        now: float,
+        *,
+        restock: bool = False,
+        revised: Mapping[str, int] | None = None,
     ) -> int:
         """Mete en el catálogo del servidor los artículos de serie que falten.
 
@@ -1152,13 +1158,26 @@ class ShopRepository:
         retirados, pero nunca duplica uno que siga en el catálogo, aunque esté
         oculto.
 
+        Args:
+            revised: Precio de antes de los artículos de serie que lo han cambiado
+                (`shop_catalog.REVISED_PRICES`). Los que aún lo tienen pasan al
+                precio, nivel mínimo, existencias y descripción de `entries`; las
+                existencias nunca bajan de lo ya vendido.
+
         Returns:
             Cuántos artículos ha añadido.
         """
-        return await self._run(self._stock_sync, guild_id, list(entries), now, restock)
+        return await self._run(
+            self._stock_sync, guild_id, list(entries), now, restock, dict(revised or {})
+        )
 
     def _stock_sync(
-        self, guild_id: int, entries: list[CatalogEntry], now: float, restock: bool
+        self,
+        guild_id: int,
+        entries: list[CatalogEntry],
+        now: float,
+        restock: bool,
+        revised: dict[str, int],
     ) -> int:
         connection = self._connect()
         try:
@@ -1215,6 +1234,28 @@ class ShopRepository:
                         (guild_id, entry.key),
                     )
                     added += 1
+                for entry in entries:
+                    old_price = revised.get(entry.key)
+                    if old_price is None or old_price == entry.price:
+                        continue
+                    connection.execute(
+                        """
+                        UPDATE shop_items
+                        SET price = ?, min_level = ?, description = ?,
+                            stock = CASE WHEN ? IS NULL THEN NULL ELSE MAX(?, sold) END
+                        WHERE guild_id = ? AND catalog_key = ? AND price = ?
+                        """,
+                        (
+                            entry.price,
+                            entry.min_level,
+                            entry.description,
+                            entry.stock,
+                            entry.stock,
+                            guild_id,
+                            entry.key,
+                            old_price,
+                        ),
+                    )
         finally:
             connection.close()
         return added

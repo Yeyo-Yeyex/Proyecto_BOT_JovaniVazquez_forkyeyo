@@ -6444,7 +6444,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("skin_tapete_kirk", "buy_tapete_kirk", "Prove me wrong",
          "Compra el tapete del cartel de Charlie Kirk.", R, False),
         ("skin_tapete_epstein", "buy_tapete_epstein", "Desclasificado",
-         "Compra el tapete de los archivos Epstein. Tu nombre sale tachado.", R, False),
+         "Compra una de las tres copias del tapete de los archivos Epstein. Tu nombre sale "
+         "tachado.", L, False),
         ("skin_tapete_corea", "buy_tapete_corea", "Querido Líder del tapete",
          "Compra el tapete de Pyongyang. Ganas siempre: lo dice la tele estatal.", R, False),
         ("skin_tapete_diamantes", "buy_tapete_diamantes", "Los diamantes son para siempre",
