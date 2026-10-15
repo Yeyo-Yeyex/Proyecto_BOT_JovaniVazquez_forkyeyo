@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.9.0 · 2026-10-15
+
+- Torre del dragón: dibujo rehecho con sombreado, luces y un dragón nuevo
+
 ### 7.8.0 · 2026-10-15
 
 - Torre del dragón: `torre` animada, con un tema por nivel y todo pintado antes del clic

@@ -335,7 +335,7 @@ def _burn(tl: _Timeline, scene: Any, after: TowerGame, door: int, width: int) ->
                 doors=opened,
                 dragon={"door": door, "rise": 1, "mouth": 1, "fire": round(fire, 3)},
                 shake=_shake(k + 5, 6 * fire),
-                flash=[255, 120, 30, round(0.45 * fire, 3)],
+                flash=[255, 120, 30, round(0.25 * fire, 3)],
             ),
         )
     later = panel_state(after)
