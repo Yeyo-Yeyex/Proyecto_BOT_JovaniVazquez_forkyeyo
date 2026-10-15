@@ -6130,6 +6130,40 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "ongs_supported", [
         (4, "donate_all", "Accionista del tercer sector", "Dona a las 4 ONGs.", R),
     ])  # fmt: skip
+    a += _tiers("economy", "donations", [
+        (10, "donations_10", "Socio de cuota", "Haz 10 donativos.", C),
+        (100, "donations_100", "Socio de honor con placa en la sede", "Haz 100 donativos.", R),
+        (1_000, "donations_1k", "Benefactor de chiringuitos con nombre de calle",
+         "Haz 1.000 donativos.", E),
+    ])  # fmt: skip
+    for ong_key, title, text in (
+        ("desmontar", "Patrono de la Fundación Desmontando España",
+         "Dona 10.000 Y$ a desmontar España. Ya llevas un trozo."),
+        ("ayudante", "Ayudante del Ayudante",
+         "Dona 10.000 Y$ a la Asociación Ayuda al Ayudante. El coche de empresa es tuyo."),
+        ("mares", "Grumete del yate solidario",
+         "Dona 10.000 Y$ a Mares Limpios S. L. El segundo yate lleva tu nombre."),
+        ("hambre", "Comensal del banquete contra el hambre",
+         "Dona 10.000 Y$ a Cubiertos de Plata. Te guardan una langosta."),
+    ):  # fmt: skip
+        a += _tiers("economy", f"donated_{ong_key}", [
+            (10_000, f"donate_{ong_key}_10k", title, text, R),
+        ], unit="money")  # fmt: skip
+    a += _tiers("economy", "donation_one", [
+        (1, "donate_one", "La voluntad", "Dona 1 Y$. La ONG te manda un certificado de 3 Y$.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_allin", [
+        (1, "donate_allin", "Caridad bien entendida empieza por uno mismo… o no",
+         "Dona todo tu saldo y quédate a cero.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_666", [
+        (1, "donate_666", "Limosna del diablo", "Dona 666 Y$ exactos.", C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_christmas", [
+        (1, "donate_xmas", "Espíritu navideño de telemaratón",
+         "Dona en Nochebuena o en Navidad, como en el maratón de la tele.", C),
+    ])  # fmt: skip
     a += _tiers("economy", "tax_refunds", [
         (1, "refund_day", "Desgravación", "Recupera IRPF del casino perdiendo el mismo día.", C),
     ])  # fmt: skip
@@ -15974,6 +16008,32 @@ def housing_day_stats(
         stat = f"{PISOS_EVENT_PREFIX}{kind}"
         add[stat] = add.get(stat, 0) + 1
     return StatDelta(add=add)
+
+
+def donation_stats(
+    *, ong: str, amount: int, ongs_supported: int, balance_after: int, when: datetime
+) -> StatDelta:
+    """Estadísticas de un donativo a una ONG (`donar`).
+
+    Args:
+        ong: Clave de la ONG.
+        amount: Lo donado.
+        ongs_supported: ONGs distintas a las que ha donado el miembro.
+        balance_after: Saldo tras donar (0 si lo ha dado todo).
+    """
+    delta = StatDelta(
+        add={"donated": amount, "donations": 1, f"donated_{ong}": amount},
+        peak={"ongs_supported": ongs_supported},
+    )
+    for stat, hit in (
+        ("donation_one", amount == 1),
+        ("donation_allin", balance_after == 0),
+        ("donation_666", amount == 666),
+        ("donation_christmas", when.month == 12 and when.day in (24, 25)),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
 
 
 def market_swap_stats(

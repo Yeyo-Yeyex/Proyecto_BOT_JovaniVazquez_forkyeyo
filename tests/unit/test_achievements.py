@@ -209,6 +209,8 @@ PRODUCED_STATS = {
     # cogs/rastro.py: ventas, compras, pujas y puestos del Rastro
     "market_sold", "market_sold_y", "market_bids_on_mine_max", "market_gain_tax",
     "market_swaps", "market_swap_money", "market_swap_lopsided", "market_swap_fleeced",
+    "donations", "donated_desmontar", "donated_ayudante", "donated_mares", "donated_hambre",
+    "donation_one", "donation_allin", "donation_666", "donation_christmas",
     "market_swap_titles",
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
     "market_bought", "market_spent", "market_bought_max", "market_itp",

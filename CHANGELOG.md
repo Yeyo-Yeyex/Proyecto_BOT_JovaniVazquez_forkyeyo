@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.16.0 · 2026-10-15
+
+- ONGs: once logros nuevos, más frases y la mascota comenta el donativo
+
 ### 6.15.1 · 2026-10-15
 
 - Babel: `babel` ya no se corta a mitad cuando Google pide un respiro
