@@ -2804,9 +2804,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega 500 tiradas sin cerrar la máquina.", E, True),
     ])  # fmt: skip
     a += _tiers("slots", "slots_pot_fed", [
-        (1_000, "pot_1k", "Alimentador del bote", "Aporta 1.000 Y$ al bote.", C),
-        (10_000, "pot_10k", "Mecenas del bote", "Aporta 10.000 Y$ al bote.", E),
-        (100_000, "pot_100k", "El bote es tuyo (o casi)", "Aporta 100.000 Y$ al bote.", L),
+        # Umbrales doblados en la 7.2, cuando el bote pasó del 3 % al 6 % de cada apuesta.
+        (2_000, "pot_1k", "Alimentador del bote", "Aporta 2.000 Y$ al bote.", C),
+        (20_000, "pot_10k", "Mecenas del bote", "Aporta 20.000 Y$ al bote.", E),
+        (200_000, "pot_100k", "El bote es tuyo (o casi)", "Aporta 200.000 Y$ al bote.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_night", [
         (1, "slots_night", "Ludopatía nocturna", "Juega a la tragaperras entre las 3 y las 6.", C,
