@@ -14,7 +14,7 @@ pasado con las funciones de este módulo (`message_stats`, `roulette_stats`,
 `blackjack_stats`, `slots_stats`, `hold_win_stats`, `hold_win_bonus_stats`,
 `crash_stats`, `mines_stats`, `tower_stats`, `chicken_stats`, `coin_stats`, `bus_stats`,
 `poker_stats`,
-`poker_club_stats`, `timba_stats`, `craps_stats`,
+`poker_club_stats`, `timba_stats`, `craps_stats`, `craps_table_stats`,
 `pachinko_stats`, `horses_stats`, `porra_open_stats`, `porra_bet_stats`,
 `porra_bettor_stats`, `porra_subject_stats`,
 `casino_stats`, `shop_stats`, `bizum_stats`, `message_delta`,
@@ -4892,6 +4892,75 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("dice", "dice_cash_777", [
         (1, "dados_777", "El 777 del cubilete", "Cobra exactamente 777 Y$ en los dados.", C,
          True),
+    ])  # fmt: skip
+    # La mesa compartida del canal (`dados mesa`).
+    a += _tiers("dice", "dice_table_rolls", [
+        (1, "dadosm_1", "Pleno ordinario en el tapete",
+         "Juega una tirada en la mesa compartida de los dados.", C),
+        (10, "dadosm_10", "Tertulia de cubilete",
+         "Juega 10 tiradas en la mesa compartida de los dados.", C),
+        (100, "dadosm_100", "Habitual del corrillo",
+         "Juega 100 tiradas en la mesa compartida de los dados.", R),
+        (1_000, "dadosm_1k", "Más sesiones que el Consejo de Ministros",
+         "Juega 1.000 tiradas en la mesa compartida de los dados.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_shooter", [
+        (1, "dadosm_tirador", "Quien tiene el cubilete tiene el poder",
+         "Sé el tirador de una ronda en la mesa compartida.", C),
+        (10, "dadosm_tirador_10", "Presidente de mesa, sin moción de censura",
+         "Sé el tirador de 10 rondas en la mesa compartida.", C),
+        (100, "dadosm_tirador_100", "Cubilete vitalicio, como un sillón en el Consejo de Estado",
+         "Sé el tirador de 100 rondas en la mesa compartida.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_public_points_max", [
+        (5, "dadosm_publico_5", "Mitin con el aforo completo",
+         "Haz 5 puntos en una mano con otros jugadores mirando.", R),
+        (10, "dadosm_publico_10", "Moción de confianza por aclamación",
+         "Haz 10 puntos en una mano con otros jugadores mirando.", M),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_alone", [
+        (1, "dadosm_solo", "Yo contra el barrio",
+         "Gana en la mesa compartida mientras pierden al menos otros dos.", C),
+        (25, "dadosm_solo_25", "Voto particular que se impone",
+         "Gana 25 veces mientras pierden al menos otros dos.", R),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_shooter_wins", [
+        (1, "dadosm_gracias", "Gracias al tirador",
+         "Gana una partida con la mano de otro tirador.", C),
+        (25, "dadosm_gracias_25", "Mano de cocinero amigo",
+         "Gana 25 partidas con la mano de otros tiradores.", R),
+        (250, "dadosm_gracias_250", "Tirador de cabecera, médico de familia",
+         "Gana 250 partidas con la mano de otros tiradores.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_vs_shooter", [
+        (1, "dadosm_contra", "Oposición al tirador",
+         "Apuesta a No pase contra el tirador, que va a Pase, y gana.", C),
+        (25, "dadosm_contra_25", "Cordón sanitario al cubilete",
+         "Gana 25 veces apostando a No pase contra el tirador.", R),
+        (250, "dadosm_contra_250", "Pacto de las banderas, versión dados",
+         "Gana 250 veces apostando a No pase contra el tirador.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_players_max", [
+        (6, "dadosm_llena", "Mesa llena, como un ERE de Andalucía",
+         "Juega con 6 o más jugadores en la misma ronda de la mesa compartida.", R),
+        (10, "dadosm_colgado_el_cartel", "Colgado el cartel de «no hay billetes»",
+         "Juega con 10 o más jugadores en la misma ronda de la mesa compartida.", E),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_lonely", [
+        (1, "dadosm_solitario", "Mesa compartida con tu cuñado imaginario",
+         "Juega tú solo en la mesa compartida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_boxcars", [
+        (1, "dadosm_doble_seis", "Doble seis ante el pleno",
+         "Saca un 12 en la salida como tirador, con 3 o más jugadores mirando.", C, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_wipeout", [
+        (1, "dadosm_barra_libre", "Barra libre para el Casino del Estado",
+         "Pierde en una mesa de 4 o más jugadores donde pierden todos.", R, True),
+    ])  # fmt: skip
+    a += _tiers("dice", "dice_table_unanimous", [
+        (1, "dadosm_unanimidad", "Unanimidad de Politburó",
+         "Gana en una mesa de 3 o más jugadores donde ganan todos.", C, True),
     ])  # fmt: skip
 
     # 🐔 Pollo ---------------------------------------------------------------------------
@@ -15991,6 +16060,58 @@ def craps_stats(game: CrapsGame, hand: Hand, *, when: datetime) -> StatDelta:
     bump("dice_nochevieja", when.month == 12 and when.day == 31)
     bump("dice_inocentes", when.month == 12 and when.day == 28)
     bump("dice_friday13", game.net < 0 and when.weekday() == 4 and when.day == 13)
+    return delta
+
+
+def craps_table_stats(
+    game: CrapsGame,
+    *,
+    players: int,
+    shooter: bool,
+    shooter_bet: CrapsBet | None,
+    hand_points: int,
+    others_won: int,
+    others_lost: int,
+) -> StatDelta:
+    """Contadores de una partida terminada en la mesa compartida (`dados mesa`).
+
+    Se suman a los de `craps_stats` (la partida es la misma que en la individual).
+
+    Args:
+        game: La partida del jugador, terminada.
+        players: Jugadores con apuesta en la ronda, él incluido.
+        shooter: Si él llevaba los dados.
+        shooter_bet: A qué apostaba el tirador (`None` si no apostaba).
+        hand_points: Puntos de la mano del tirador (solo cuenta si `shooter`).
+        others_won: Cuántos de los demás ganaron.
+        others_lost: Cuántos de los demás perdieron (los empates no cuentan).
+    """
+    won = game.status is CrapsStatus.WON
+    lost = game.status is CrapsStatus.LOST
+    others = players - 1
+    delta = StatDelta(
+        add={"dice_table_rolls": len(game.rolls)},
+        peak={"dice_table_players_max": players},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True) -> None:
+        if condition:
+            add[stat] = add.get(stat, 0) + 1
+
+    bump("dice_shooter", shooter)
+    if shooter and players >= 2 and hand_points:
+        delta.peak["dice_public_points_max"] = hand_points
+    bump("dice_table_alone", won and others >= 2 and others_lost == others)
+    bump("dice_table_shooter_wins", won and not shooter)
+    bump(
+        "dice_table_vs_shooter",
+        won and not shooter and game.bet is CrapsBet.DONT and shooter_bet is CrapsBet.PASS,
+    )
+    bump("dice_table_lonely", players == 1)
+    bump("dice_table_boxcars", shooter and players >= 3 and game.rolls[0].total == 12)
+    bump("dice_table_wipeout", lost and players >= 4 and others_lost == others)
+    bump("dice_table_unanimous", won and players >= 3 and others_won == others)
     return delta
 
 
