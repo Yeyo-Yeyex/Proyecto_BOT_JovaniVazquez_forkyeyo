@@ -26,7 +26,8 @@ Apuntar jugadas: cada juego del casino llama a `record` (función puente de
 este módulo) al terminar una jugada, junto a `achievements.casino_play`. No
 mueve dinero ni lanza: si falla, se registra en el log y el juego sigue. La
 misma llamada cuenta la jugada para las porras (`bot.cogs.porras`) y para el contador
-persistente de jugadas de cada miembro: cada 100 se gana una 📦 caja de cartón gratis
+persistente de jugadas de cada miembro (las de 100 Y$ o más): cada 100 se gana una
+📦 caja de cartón gratis
 (`bot.cogs.shop.grant_box`, sin mover dinero), cuyo aviso sale en el siguiente
 resultado con dinero.
 
@@ -737,11 +738,12 @@ class Apuestas(commands.Cog):
         self.economy = economy
         self._clock = clock
 
-    async def record_play(self, guild_id: int, user_id: int, play: Play) -> int:
+    async def record_play(self, guild_id: int, user_id: int, play: Play) -> int | None:
         """Apunta una jugada terminada (ver la función puente `record`).
 
         Returns:
-            Las jugadas que lleva el miembro (contador persistente).
+            Las jugadas que lleva el miembro (contador persistente), o `None` si esta
+            no llega a la apuesta mínima y no cuenta.
         """
         return await self.repository.record(guild_id, user_id, play, now=self._clock())
 
@@ -898,7 +900,7 @@ async def record(
     except Exception:
         logger.exception("No se pudo apuntar la jugada de %s en %s", user.id, game)
         return
-    if plays % FREE_BOX_PLAYS == 0:
+    if plays is not None and plays % FREE_BOX_PLAYS == 0:
         # Una caja de cartón gratis cada 100 jugadas. Import tardío: `shop` importa
         # medio bot. El aviso sale en el siguiente resultado con dinero (`renta.hint`),
         # porque la jugada ya se ha enseñado cuando llega `record`.

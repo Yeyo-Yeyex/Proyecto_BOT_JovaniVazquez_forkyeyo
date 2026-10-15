@@ -273,6 +273,31 @@ async def test_natural_pase_gana_no_pase_pierde_y_el_libro_cuadra(tmp_path: Path
     assert "Leo" in embed.description and "-300" in embed.description
 
 
+async def test_un_fallo_al_pagar_a_uno_se_reintenta_y_no_deja_sin_cobrar_a_los_demas(
+    tmp_path: Path,
+) -> None:
+    cog, _clock = await make_cog(tmp_path, NATURAL)
+    channel = make_channel()
+    table = await open_table(cog, channel)
+    await mesa(cog, channel, user_id=ANA, amount="100", bet=PASS)
+    await mesa(cog, channel, user_id=LEO, amount="100", bet=PASS)
+    real = cog.economy.pay_winnings
+    failed: list[int] = []
+
+    async def flaky(guild_id: int, user_id: int, **kwargs: object):  # type: ignore[no-untyped-def]
+        if user_id == ANA and not failed:
+            failed.append(user_id)
+            raise sqlite3.OperationalError("database is locked")
+        return await real(guild_id, user_id, **kwargs)  # type: ignore[arg-type]
+
+    cog.economy.pay_winnings = flaky  # type: ignore[method-assign]
+    await table.roll()
+    assert failed == [ANA]
+    for user_id in (ANA, LEO):
+        assert await balance(cog, user_id) > STARTING_BALANCE
+        assert await balance(cog, user_id) == ledger_sum(tmp_path, user_id)
+
+
 async def test_una_tirada_para_todos_dos_dados_una_vez(tmp_path: Path) -> None:
     cog, _clock = await make_cog(tmp_path, SNAKE_EYES)
     channel = make_channel()

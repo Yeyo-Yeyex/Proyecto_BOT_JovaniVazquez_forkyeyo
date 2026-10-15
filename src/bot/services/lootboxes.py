@@ -83,6 +83,9 @@ MYTHIC_MIN_LEVEL = 10
 
 #: Cuántas jugadas del casino dan una 📦 de cartón gratis.
 FREE_BOX_PLAYS = 100
+#: Apuesta mínima de una jugada para que cuente hacia la caja gratis: con menos,
+#: cien tiradas de 1 Y$ darían una caja de 1.000 casi sin jugar.
+FREE_BOX_MIN_STAKE = 100
 #: Cada cuántos niveles se gana una 🎁 de regalo.
 FREE_BOX_LEVELS = 5
 #: Retorno medio de cada caja respecto a su precio, a valor de catálogo.

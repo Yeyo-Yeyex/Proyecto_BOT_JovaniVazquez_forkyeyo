@@ -48,6 +48,7 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.services.achievements import StatDelta, babel_stats, hong_kong_clock_stats
 from bot.services.babel import (
+    CHAIN_BUDGET_SECONDS,
     HOME_LANGUAGE,
     HOP_PAUSE_SECONDS,
     LANGUAGES,
@@ -315,6 +316,7 @@ class Fun(commands.Cog):
             report,
             pause=HOP_PAUSE_SECONDS if self._pace else 0.0,
             backoff=RATE_LIMIT_BACKOFF if self._pace else (),
+            budget=CHAIN_BUDGET_SECONDS,
         )
 
     async def _babel_impl(

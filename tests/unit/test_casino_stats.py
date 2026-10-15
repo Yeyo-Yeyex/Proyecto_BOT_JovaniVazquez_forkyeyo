@@ -133,6 +133,24 @@ def test_las_cifras_derivadas_de_los_totales() -> None:
 # -- Repositorio --------------------------------------------------------------------------
 
 
+async def test_solo_las_jugadas_de_la_apuesta_minima_cuentan_para_la_caja_gratis(
+    tmp_path: Path,
+) -> None:
+    """Cien tiradas de 1 Y$ no dan una caja de 1.000: quedan apuntadas pero no suman."""
+    repository = await make_repo(tmp_path)
+
+    assert await repository.record(GUILD, ANA, play("ruleta", 99, 0), now=NOW) is None
+    assert await repository.record(GUILD, ANA, play("botes", 0, 50), now=NOW) is None
+    assert await repository.record(GUILD, ANA, play("ruleta", 100, 0), now=NOW) == 1
+    assert await repository.record(GUILD, ANA, play("ruleta", 1, 0), now=NOW) is None
+    assert await repository.record(GUILD, ANA, play("ruleta", 5_000, 0), now=NOW) == 2
+
+    report = await repository.report(GUILD, ANA, since=None, today=date(2026, 10, 6))
+    by_game = report.by_game
+    assert by_game["ruleta"].plays == 4
+    assert by_game["botes"].free_plays == 1
+
+
 async def test_el_informe_agrega_jugadas_por_juego_con_ganadas_empates_y_gratis(
     tmp_path: Path,
 ) -> None:

@@ -1018,8 +1018,50 @@ class EconomyRepository:
                     "ALTER TABLE economy_slots_jackpots "
                     "ADD COLUMN mystery INTEGER NOT NULL DEFAULT 0"
                 )
+            self._drop_housing_tax_check(connection)
         finally:
             connection.close()
+
+    @staticmethod
+    def _drop_housing_tax_check(connection: sqlite3.Connection) -> None:
+        """Quita el `CHECK (kind IN (...))` de `economy_housing_tax` en bases de antes.
+
+        La primera versión de `pisos` solo apuntaba ITP y plusvalía y la tabla lo
+        exigía. Las fases 2 a 4 apuntan también IBI, IGIC del vacacional, la tasa de
+        la licencia y la SOCIMI: con el `CHECK` viejo, la transacción de `housing`
+        entera fallaba (el día de rentas del servidor incluido). `CREATE TABLE IF
+        NOT EXISTS` no cambia una tabla que ya existe, así que se rehace sin él,
+        copiando las filas, en una sola transacción.
+        """
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'economy_housing_tax'"
+        ).fetchone()
+        if row is None or "CHECK (kind IN" not in (row[0] or ""):
+            return
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE economy_housing_tax_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    base INTEGER NOT NULL CHECK (base >= 0),
+                    tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO economy_housing_tax_new
+                    (id, guild_id, user_id, kind, base, tax, created_at)
+                SELECT id, guild_id, user_id, kind, base, tax, created_at
+                FROM economy_housing_tax
+                """
+            )
+            connection.execute("DROP TABLE economy_housing_tax")
+            connection.execute("ALTER TABLE economy_housing_tax_new RENAME TO economy_housing_tax")
 
     # -- Monederos -----------------------------------------------------------------
 

@@ -8,8 +8,9 @@ Tabla (en el mismo archivo SQLite que el resto del bot):
   no sabe de zonas horarias y agrupar por hora local es lo que más se consulta.
 
 - `casino_play_counts`: cuántas jugadas lleva cada miembro desde que existe esta tabla
-  (un contador persistente, no un `COUNT(*)` de lo anterior). Cada 100 el colmado le
-  regala una caja de cartón (`bot.services.lootboxes.FREE_BOX_PLAYS`).
+  (un contador persistente, no un `COUNT(*)` de lo anterior). Solo cuentan las de
+  `FREE_BOX_MIN_STAKE` o más; cada 100 el colmado le regala una caja de cartón
+  (`bot.services.lootboxes.FREE_BOX_PLAYS`).
 
 Solo se escribe desde `CasinoStatsRepository.record`, a la que llaman los
 juegos al terminar cada jugada (ver `bot.cogs.apuestas.record`). No mueve
@@ -45,6 +46,7 @@ from bot.services.casino_stats import (
     Totals,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.lootboxes import FREE_BOX_MIN_STAKE
 
 T = TypeVar("T")
 
@@ -177,8 +179,11 @@ class CasinoStatsRepository:
                 """
             )
 
-    async def record(self, guild_id: int, user_id: int, play: Play, *, now: float) -> int:
+    async def record(self, guild_id: int, user_id: int, play: Play, *, now: float) -> int | None:
         """Apunta una jugada terminada y devuelve las que lleva el miembro (contador persistente).
+
+        Devuelve `None` si la jugada no llega a `FREE_BOX_MIN_STAKE` y no suma al
+        contador (sí queda en `casino_plays`).
 
         Raises:
             ValueError: Si la apuesta o el premio son negativos.
@@ -187,7 +192,7 @@ class CasinoStatsRepository:
             raise ValueError("Jugada inválida: apuesta y premio no pueden ser negativos.")
         return await self._run(self._record_sync, guild_id, user_id, play, now)
 
-    def _record_sync(self, guild_id: int, user_id: int, play: Play, now: float) -> int:
+    def _record_sync(self, guild_id: int, user_id: int, play: Play, now: float) -> int | None:
         local = datetime.fromtimestamp(now, TIMEZONE)
         with self._connect() as connection:
             connection.execute(
@@ -211,6 +216,8 @@ class CasinoStatsRepository:
                     local.weekday(),
                 ),
             )
+            if play.stake < FREE_BOX_MIN_STAKE:
+                return None
             connection.execute(
                 """
                 INSERT INTO casino_play_counts (guild_id, user_id, plays) VALUES (?, ?, 1)

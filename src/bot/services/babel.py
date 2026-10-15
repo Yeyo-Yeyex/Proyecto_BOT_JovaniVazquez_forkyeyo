@@ -52,6 +52,10 @@ RATE_LIMIT_BACKOFF: tuple[float, ...] = (3.0, 8.0, 20.0)
 #: da la cadena por rota: lo normal es que la red o Google estén caídos.
 MAX_CONSECUTIVE_FAILURES = 5
 
+#: Tope de una cadena entera, esperas incluidas. El token de la interacción vale
+#: 15 minutos: pasado eso, el resultado ya no se puede enseñar.
+CHAIN_BUDGET_SECONDS = 600.0
+
 #: Idiomas intermedios posibles, con su nombre en español para el progreso.
 #: Códigos de Google Translate; el español queda fuera porque es la llegada.
 LANGUAGES: dict[str, str] = {
@@ -150,6 +154,8 @@ async def run_chain(
     pause: float = 0.0,
     backoff: Sequence[float] = (),
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+    budget: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> BabelResult:
     """Traduce `text` por cada idioma de `route` y vuelve al español.
 
@@ -169,6 +175,9 @@ async def run_chain(
         backoff: Esperas antes de cada reintento por límite de tasa (el cog usa
             `RATE_LIMIT_BACKOFF`); vacío, se corta al primero.
         sleep: Cómo se espera (inyectable en las pruebas).
+        budget: Segundos que puede durar la cadena (el cog usa
+            `CHAIN_BUDGET_SECONDS`); agotados, se corta como con el límite de tasa.
+        clock: Reloj para `budget` (inyectable en las pruebas).
 
     Returns:
         El resultado, con la ruta que se recorrió de verdad.
@@ -179,6 +188,10 @@ async def run_chain(
     total = len(route) + 1
     consecutive_failures = 0
     stopped_early = False
+    deadline = None if budget is None else clock() + budget
+
+    def out_of_time(wait: float = 0.0) -> bool:
+        return deadline is not None and clock() + wait > deadline
 
     async def limited(text_in: str, source: str, target: str) -> str:
         """Un salto, reintentado tras cada pausa de `backoff` si Google limita."""
@@ -186,13 +199,18 @@ async def run_chain(
             try:
                 return await translate(text_in, source, target)
             except RateLimitedError:
-                if wait is None:
+                # Sin tiempo para esperar, se rinde ya: lo que haya se enseña a tiempo.
+                if wait is None or out_of_time(wait):
                     raise
                 logger.info("Babel: Google pide un respiro; se reintenta en %.0f s", wait)
                 await sleep(wait)
         raise AssertionError("inalcanzable")
 
     for step, target in enumerate(route, start=1):
+        if out_of_time():
+            logger.warning("Babel: se acaba el tiempo en el salto %d", step)
+            stopped_early = True
+            break
         if step > 1 and pause:
             await sleep(pause)
         try:
