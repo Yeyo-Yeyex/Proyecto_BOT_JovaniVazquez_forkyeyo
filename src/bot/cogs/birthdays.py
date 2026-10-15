@@ -13,6 +13,10 @@ existe un rol llamado `BIRTHDAY_ROLE_NAME`, se lo pone durante el día; el
 bot no crea roles por su cuenta (necesita **Gestionar roles** y estar por
 encima de ese rol).
 
+El aniversario del servidor (7 de octubre) se anuncia igual, una vez al año y
+apuntado como una celebración del miembro `SERVER_ID`, y ese día el XP de
+mensajes y voz va doble (`bot.cogs.message_stats` pide `anniversary_xp`).
+
 Felicitar cuenta tanto con el botón como escribiendo: un mensaje que
 mencione o responda al cumpleañero y suene a felicitación ("feliz cumple",
 "felicidades", 🎂…). El bot reacciona 🎉 a los mensajes que cuentan.
@@ -40,14 +44,18 @@ from bot.cogs import renta
 from bot.repositories.birthdays import BirthdayRepository
 from bot.services.achievements import StatDelta
 from bot.services.birthdays import (
+    ANNIVERSARY_XP,
     BIRTHDAY_GIFT,
     GREETED_BONUS,
     GREETER_REWARD,
+    SERVER_ID,
     days_until,
     format_birthday,
+    is_anniversary,
     is_birthday,
     is_greeting,
     parse_birthday,
+    server_age,
 )
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -83,6 +91,19 @@ BIRTHDAY_LINES = (
     "Putin le felicita desde la otra punta de la mesa larga.",
     "Feijóo dice que la tarta la ha pagado el PP.",
     "Lagartijo, iguana, lagarto: todo el zoo le canta el cumpleaños feliz.",
+)
+#: Coletilla del anuncio del aniversario del servidor.
+ANNIVERSARY_LINES = (
+    "Más años que una legislatura de Sánchez, y sin presupuestos nuevos.",
+    "Kim lo celebra con un desfile y Putin, con una mesa larguísima.",
+    "Ni Bibi ha durado tanto en el cargo. Bueno, sí. Pero casi.",
+    "El NO-DO lo anuncia: el servidor sigue vivo, como Franco no.",
+    "Perro Sanxe ya está calculando el IRPF de la tarta.",
+    "Hazme café… ¡quiero café! Y tarta para todo el servidor.",
+    "Trump dice que es el mejor servidor de la historia. Tremendo, tremendo.",
+    "Puigdemont lo celebra desde Waterloo, por videollamada.",
+    "Ni el juicio de Netanyahu ha dado tanto que hablar.",
+    "Bruselas exige que la tarta lleve el tapón pegado.",
 )
 
 
@@ -297,6 +318,10 @@ class Birthdays(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _check_guild(self, guild: discord.Guild, today: date) -> None:
+        if is_anniversary(today) and await self.repository.mark_celebrated(
+            guild.id, SERVER_ID, today.year
+        ):
+            await self._announce_anniversary(guild, today)
         birthdays = await self.repository.list_birthdays(guild.id)
         members = [
             member
@@ -314,6 +339,40 @@ class Birthdays(commands.Cog):
                         self.bot, guild.id, member.id, StatDelta(add={"tax_paid": income.tax})
                     )
                 await self._announce(guild, member, today.year, income)
+
+    async def _announce_anniversary(self, guild: discord.Guild, today: date) -> None:
+        """Anuncia el aniversario del servidor y la XP doble del día."""
+        channel = (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+        if channel is None:
+            return
+        years = server_age(guild.created_at, today)
+        title = (
+            f"🎂 ¡El servidor cumple {years} año{'s' if years != 1 else ''}!"
+            if years
+            else "🎂 ¡Hoy es el aniversario del servidor!"
+        )
+        boost = f"{ANNIVERSARY_XP:g}".replace(".", ",")
+        embed = discord.Embed(
+            title=title,
+            description=(
+                f"Un 7 de octubre nació **{discord.utils.escape_markdown(guild.name)}**. "
+                f"{random.choice(ANNIVERSARY_LINES)}\n\n"
+                f"🎉 Hoy, todo el día, **XP ×{boost}** en mensajes y en llamada. "
+                "Escribid algo: el logro del aniversario solo se consigue hoy."
+            ),
+            color=COLOR,
+        )
+        if guild.icon is not None:
+            embed.set_thumbnail(url=guild.icon.url)
+        try:
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning(
+                "No se pudo anunciar el aniversario en el servidor %s", guild.id, exc_info=True
+            )
 
     async def _announce(
         self,

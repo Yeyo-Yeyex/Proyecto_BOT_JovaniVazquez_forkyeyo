@@ -15,17 +15,29 @@ gratis de una entidad es una ganancia patrimonial (art. 33.1 de la Ley
 - El día del cumpleaños, el cumpleañero recibe `BIRTHDAY_GIFT`.
 - Cada persona que le felicita recibe `GREETER_REWARD` y le suma
   `GREETED_BONUS` al cumpleañero. Una vez por persona y cumpleaños.
+
+El aniversario del servidor (`ANNIVERSARY`, el 7 de octubre) también se celebra:
+un anuncio por la mañana y XP doble todo el día (`anniversary_xp`). No mueve dinero.
 """
 
 from __future__ import annotations
 
 import calendar
 import re
-from datetime import date
+from datetime import date, datetime
+
+from bot.services.levels import local_day
 
 BIRTHDAY_GIFT = 3_000
 GREETER_REWARD = 500
 GREETED_BONUS = 100
+
+#: El día (mes, día) en que nació el servidor: se celebra cada año.
+ANNIVERSARY = (10, 7)
+#: El XP de mensajes y voz se multiplica por esto el día del aniversario.
+ANNIVERSARY_XP = 2.0
+#: Id con el que el aniversario se apunta en las celebraciones (no es un miembro).
+SERVER_ID = 0
 
 MONTH_NAMES = (
     "enero",
@@ -99,3 +111,20 @@ def format_birthday(day: int, month: int) -> str:
 def is_greeting(text: str) -> bool:
     """Si el texto suena a felicitación de cumpleaños."""
     return _GREETING.search(text) is not None
+
+
+def is_anniversary(day: date) -> bool:
+    """Si `day` es el aniversario del servidor."""
+    return (day.month, day.day) == ANNIVERSARY
+
+
+def anniversary_xp(now: float) -> float:
+    """Multiplicador de XP de `now` (epoch): `ANNIVERSARY_XP` el día del aniversario."""
+    return ANNIVERSARY_XP if is_anniversary(local_day(now)) else 1.0
+
+
+def server_age(created: datetime | date, today: date) -> int:
+    """Años que cumple el servidor el aniversario de `today` (0 si es el primero)."""
+    month, day = ANNIVERSARY
+    born = created.year + (1 if (created.month, created.day) > (month, day) else 0)
+    return max(0, today.year - born)

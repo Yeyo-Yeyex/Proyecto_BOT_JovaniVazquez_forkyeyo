@@ -8,6 +8,10 @@ criterio.
 
 ## 6.x
 
+### 6.9.0 · 2026-10-15
+
+- Aniversario: el 7 de octubre, fiesta del servidor con XP doble
+
 ### 6.8.0 · 2026-10-15
 
 - Caballos: el bote del Gran Premio crece con el 10 % de lo que se pierde en cada carrera, hasta 50.000 Y$

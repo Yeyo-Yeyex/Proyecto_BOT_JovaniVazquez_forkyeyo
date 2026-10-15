@@ -134,6 +134,8 @@ python -m bot
   llamado `🎂 Cumpleañero`, el bot se lo pone durante el día (necesita
   **Gestionar roles**). Los regalos pagan IRPF con retención (ganancia
   patrimonial, art. 33.1 LIRPF), aunque solo muerde a quien ya pasa del mínimo.
+  El 7 de octubre, aniversario del servidor, el bot lo anuncia y el XP va
+  doble todo el día.
 - **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
   diaria del casino tributan; el IMV está exento, como el real (art. 7.y
   LIRPF). En el casino, las pérdidas del día compensan las ganancias del

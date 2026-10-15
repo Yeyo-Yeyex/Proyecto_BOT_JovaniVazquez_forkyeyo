@@ -417,6 +417,16 @@ SKINS: tuple[Skin, ...] = (
         "ink": "#041a0b",
         "pattern": "gordo",
     }), price=22_000, aisle="cotillon", season=Season("Navidad", frozenset({12, 1}))),
+    # 7.000 Y$ por el 7 de octubre, el día que nació el servidor.
+    Skin("tapete_aniversario", "tapete", "🎂", "Tapete del aniversario", (
+        "Morado de fiesta con ribete dorado, para jugarse la tarta el mes en que nació "
+        "el servidor. Solo se vende en octubre; las velas, al precio de la luz."
+    ), _frozen({
+        "felt": ("#9b5bd6", "#6a2fa8", "#2c0b4f"),
+        "fiber": ("rgba(240,220,255,0.05)", "rgba(20,0,40,0.08)"),
+        "trim": "rgba(255,214,110,0.55)",
+        "ink": "#1c0533",
+    }), price=7_000, aisle="cotillon", season=Season("Aniversario", frozenset({10}))),
     Skin("tapete_propio", "tapete", "🖼️", "Tapete propio", (
         "Un tapete con la imagen que tú subas con `pieles`: tu cara, tu perro o el "
         "Falcon. Hasta que la subas, fieltro liso. Una por persona; si Bruselas la "

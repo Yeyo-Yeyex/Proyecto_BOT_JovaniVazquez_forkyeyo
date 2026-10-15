@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -15,16 +15,21 @@ from bot.cogs.birthdays import Birthdays, GreetOutcome
 from bot.repositories.birthdays import BirthdayRepository
 from bot.repositories.economy import EconomyRepository
 from bot.services.birthdays import (
+    ANNIVERSARY_XP,
     BIRTHDAY_GIFT,
     GREETED_BONUS,
     GREETER_REWARD,
+    anniversary_xp,
     celebration_date,
     days_until,
     format_birthday,
+    is_anniversary,
     is_greeting,
     parse_birthday,
+    server_age,
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.levels import TIMEZONE
 from bot.services.taxes import compute_withholding
 
 GUILD = 1
@@ -268,3 +273,56 @@ async def test_felicitar_por_encima_del_minimo_retiene_irpf_para_el_estado(
     assert greeting.income is not None and greeting.income.tax > 0
     after = await economy.treasury(GUILD, since=0)
     assert after.collected_total - collected == greeting.income.tax
+
+
+# -- Aniversario del servidor -------------------------------------------------------
+
+
+def test_el_aniversario_es_el_7_de_octubre_y_trae_xp_doble() -> None:
+    assert is_anniversary(date(2026, 10, 7))
+    assert not is_anniversary(date(2026, 10, 8))
+    # 7 de octubre de 2026 a mediodía en Canarias (UTC+1 en verano).
+    noon = datetime(2026, 10, 7, 12, tzinfo=TIMEZONE).timestamp()
+    assert anniversary_xp(noon) == ANNIVERSARY_XP
+    assert anniversary_xp(noon + 86_400) == 1.0
+
+
+def test_los_anios_del_servidor_cuentan_desde_su_primer_7_de_octubre() -> None:
+    assert server_age(date(2021, 10, 7), date(2026, 10, 7)) == 5
+    # Nació después de un 7 de octubre: el primero que cumple es el del año siguiente.
+    assert server_age(date(2021, 11, 1), date(2026, 10, 7)) == 4
+    assert server_age(date(2026, 10, 7), date(2026, 10, 7)) == 0
+
+
+async def test_el_aniversario_se_anuncia_una_sola_vez_al_anio(tmp_path: Path) -> None:
+    cog, _repository, _economy = await make_cog(tmp_path)
+    guild = SimpleNamespace(id=GUILD, get_member=lambda _id: None, roles=[])
+    cog._announce_anniversary = AsyncMock()  # type: ignore[method-assign]
+
+    await cog._check_guild(guild, date(2026, 10, 7))  # type: ignore[arg-type]
+    await cog._check_guild(guild, date(2026, 10, 7))  # type: ignore[arg-type]
+    await cog._check_guild(guild, date(2026, 10, 8))  # type: ignore[arg-type]
+    await cog._check_guild(guild, date(2027, 10, 7))  # type: ignore[arg-type]
+
+    assert cog._announce_anniversary.await_count == 2
+
+
+async def test_el_anuncio_del_aniversario_dice_los_anios_y_la_xp_doble(tmp_path: Path) -> None:
+    cog, _repository, _economy = await make_cog(tmp_path)
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = SimpleNamespace(
+        id=GUILD,
+        name="Servidor",
+        text_channels=[channel],
+        system_channel=None,
+        created_at=datetime(2023, 10, 7, tzinfo=TIMEZONE),
+        icon=None,
+    )
+
+    await cog._announce_anniversary(guild, date(2026, 10, 7))  # type: ignore[arg-type]
+
+    embed = channel.send.await_args.kwargs["embed"]
+    assert "3 años" in embed.title
+    assert "XP ×2" in embed.description
