@@ -527,6 +527,9 @@ def vpo_state(
             "reservation": VPO_BY_KEY[reservation].name if reservation else "",
             "owns": market.vpo_of(user_id) is not None,
             "income": format_amount(income) + "/día",
+            "income_ok": income <= rules.vpo_income_cap(),
+            "home_ok": not market.owns_home(user_id)
+            and market.homes.get(user_id, ("alquiler", ""))[0] == "alquiler",
             "cap": format_amount(rules.vpo_income_cap()) + "/día",
             "signups": len(market.signups),
         },

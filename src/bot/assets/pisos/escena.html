@@ -1171,12 +1171,9 @@ function paintCartera(st) {
 
 // VPO ------------------------------------------------------------------------------------
 
-// Qué comprobación falla: lo dice el motivo («Ganas demasiado…», «Ya tienes casa…»). Sin motivo claro, el límite de ingresos.
+// Las dos comprobaciones de la VPO las decide housing_view (`income_ok`, `home_ok`).
 function vpoChecks(u) {
-  if (u.eligible) return [true, true];
-  const home = u.owns || /vivienda|casa|piso|propi|alquil|hipoteca/i.test(u.reason);
-  const money = /ingres|gana|sueldo|n[oó]mina|l[ií]mite|demasiad/i.test(u.reason);
-  return [!(money || !home), !home];
+  return [u.income_ok ?? u.eligible, u.home_ok ?? u.eligible];
 }
 
 function vpoRow(un, x, y, w, h) {
