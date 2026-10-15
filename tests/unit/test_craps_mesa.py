@@ -574,7 +574,8 @@ def test_el_dibujo_de_la_mesa_compartida_no_lleva_fichas_ni_importes() -> None:
     table = crowd_table(NATURAL)
     state = board_state(table, OPENING_REST)
     assert state["chips"] == []
-    assert state["panel"]["bet"] == "MESA" and state["panel"]["odds"] is None
+    assert state["panel"]["bet"] == "PASE" and state["panel"]["odds"] is None
+    assert state["panel"]["title"] == "MESA COMPARTIDA" and state["panel"]["shared"]
     assert "Y$" not in state["banner"]["sub"]
     states, _rest = throw_states(table, seed=3)
     assert all(frame["chips"] == [] for frame in states)

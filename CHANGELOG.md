@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.4.0 · 2026-10-15
+
+- Dados: mesa compartida del canal, con tirador y tiradas para todos
+
 ### 7.3.0 · 2026-10-15
 
 - Tragaperras: la Mina y el Olimpo, dos máquinas nuevas en `tragas`

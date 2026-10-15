@@ -353,13 +353,16 @@ function miniDie(g, x, y, s, v) {
 function drawPanel(g, p) {
   const x0 = PANEL_X + 14, x1 = PANEL_X + PANEL_W - 14;
   g.save(); g.textBaseline = "middle";
-  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("TU APUESTA", x0, 26);
+  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText(p.title || "TU APUESTA", x0, 26);
   g.font = "20px Luckiest"; g.fillStyle = p.betKey === "pase" ? "#ffe08a" : "#ffb0a0"; g.fillText(p.bet, x0, 44);
   g.font = "700 11px Montserrat"; g.fillStyle = "#f5efe0"; g.textAlign = "right"; g.fillText(p.stake, x1, 45);
   g.textAlign = "left";
-  g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("ODDS", x0, 66);
-  g.textAlign = "right"; g.font = "700 11px Montserrat"; g.fillStyle = p.odds ? "#f5efe0" : "rgba(245,239,224,0.35)";
-  g.fillText(p.odds || "—", x1, 66);
+  // En la mesa compartida cada uno lleva sus Odds: el panel no las enseña (`shared`).
+  if (!p.shared) {
+    g.font = "700 8px Montserrat"; g.fillStyle = "rgba(255,226,170,0.6)"; g.fillText("ODDS", x0, 66);
+    g.textAlign = "right"; g.font = "700 11px Montserrat"; g.fillStyle = p.odds ? "#f5efe0" : "rgba(245,239,224,0.35)";
+    g.fillText(p.odds || "—", x1, 66);
+  }
   g.textAlign = "left";
   // El punto, en un disco como el de la mesa.
   const cx = x0 + 26, cy = 104;

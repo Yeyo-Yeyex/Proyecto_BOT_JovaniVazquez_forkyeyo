@@ -116,7 +116,7 @@ ARRIVAL_LIMIT = 64
 GIF_NAME = "dados.gif"
 PNG_NAME = "dados.png"
 #: Rótulo del panel del dibujo: no depende de quién apueste.
-CROWD = ("MESA", "COMPARTIDA")
+CROWD = ("PASE", "DEL TIRADOR")
 NO_MENTIONS = discord.AllowedMentions.none()
 
 COLOR_OPEN = discord.Color.from_rgb(88, 101, 242)

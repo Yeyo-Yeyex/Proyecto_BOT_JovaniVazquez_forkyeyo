@@ -707,7 +707,11 @@ def panel_state(table: Table, *, upto: int | None = None) -> dict[str, Any]:
         bet = Bet.PASS
     else:
         label, stake_text = bet.label.upper(), _amount(stake)
+    # La mesa compartida cambia el rótulo y quita la fila de Odds; la individual no
+    # lleva estas claves y se pinta igual que siempre.
+    shared = {"title": "MESA COMPARTIDA", "shared": True} if table.crowd is not None else {}
     return {
+        **shared,
         "bet": label,
         "betKey": bet.key,
         "stake": stake_text,
