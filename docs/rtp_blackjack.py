@@ -4,6 +4,7 @@ Uso, desde la raíz del repo:
 
     python docs/rtp_blackjack.py                  # 2 millones de manos en 4 procesos
     python docs/rtp_blackjack.py --manos 400000   # más rápido, menos preciso
+    python docs/rtp_blackjack.py --contar         # además, quien cuenta cartas
 
 Juega `bot.services.blackjack.BlackjackGame` tal cual, con la estrategia básica
 de 6 barajas, banca que se planta en 17 blando, doblar tras separar y sin
@@ -16,6 +17,13 @@ blackjack del jugador y de la banca, RTP del seguro y, con blackjack propio, lo
 que se cobra asegurado frente a sin asegurar. El RTP es lo que la Biblia y la
 docstring de `bot.services.blackjack` citan: al cambiar una regla o un pago, se
 vuelve a pasar y se actualizan las cifras.
+
+Con `--contar` juega además con el zapato que dura entre manos, como la mesa del
+bot (`CUT_CARD`, `needs_shuffle`), dos jugadores: el que no cuenta (siempre la
+misma apuesta) y uno que cuenta Hi-Lo perfecto y sube de 1 a `--subida` unidades
+según la cuenta verdadera (`true_count`). El jefe de sala del bot
+(`pit_boss_shuffles`) baraja si se pasa: con la subida de 1 a 4 no lo ve nunca.
+Salida: RTP de cada uno y cuántas veces barajó el jefe de sala.
 """
 
 from __future__ import annotations
@@ -145,11 +153,46 @@ def _play(hands: int, seed: int) -> dict[str, float]:
     return totals
 
 
+def _count(hands: int, seed: int, spread: int, counting: bool) -> dict[str, float]:
+    """Manos seguidas con el zapato de la mesa; `counting` sube la apuesta con la cuenta."""
+    rng = random.Random(seed)
+    shoe = bj.new_shoe(rng.shuffle)
+    lowest: int | None = None
+    totals = dict.fromkeys(("staked", "returned", "boss"), 0.0)
+    for _ in range(hands):
+        if bj.needs_shuffle(shoe):
+            shoe, lowest = bj.new_shoe(rng.shuffle), None
+        # Una unidad con la cuenta verdadera por debajo de 2; con 2 o más, tantas
+        # unidades como la cuenta, hasta la subida.
+        count = bj.true_count(shoe)
+        units = max(1, min(spread, math.floor(count))) if counting and count >= 2 else 1
+        stake = 100 * units
+        if bj.pit_boss_shuffles(shoe, stake=stake, lowest=lowest):
+            totals["boss"] += 1
+            shoe, lowest = bj.new_shoe(rng.shuffle), None
+        lowest = stake if lowest is None else min(lowest, stake)
+        game = bj.BlackjackGame(stake=stake, shoe=shoe)
+        game.deal()
+        if game.insurance_pending:
+            game.decide_insurance(False)
+        while game.player_turn:
+            game.act(basic_action(game))
+        game.reveal_hole()
+        while game.dealer_should_draw():
+            game.dealer_draw()
+        game.settle()
+        totals["staked"] += game.total_stake
+        totals["returned"] += game.total_return
+    return totals
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--manos", type=int, default=2_000_000)
     parser.add_argument("--procesos", type=int, default=4)
     parser.add_argument("--semilla", type=int, default=1)
+    parser.add_argument("--contar", action="store_true", help="medir también al contador")
+    parser.add_argument("--subida", type=int, default=bj.PIT_BOSS_SPREAD)
     args = parser.parse_args(argv)
     share = args.manos // args.procesos
     with ProcessPoolExecutor(args.procesos) as pool:
@@ -188,6 +231,24 @@ def main(argv: list[str] | None = None) -> int:
             f"asegurado cobras {insured:.3f} apuestas de media y sin asegurar {plain:.3f} "
             f"(la banca tiene blackjack el {p_bj:.2%})"
         )
+    if args.contar:
+        seeds = range(args.semilla, args.semilla + args.procesos)
+        for counting, label in ((False, "Sin contar, zapato de mesa"), (True, "Contando Hi-Lo")):
+            with ProcessPoolExecutor(args.procesos) as pool:
+                parts = list(
+                    pool.map(
+                        _count,
+                        [share] * args.procesos,
+                        seeds,
+                        [args.subida] * args.procesos,
+                        [counting] * args.procesos,
+                    )
+                )
+            c = {key: sum(part[key] for part in parts) for key in parts[0]}
+            print(
+                f"{label} (subida 1-{args.subida}): RTP {c['returned'] / c['staked']:.4%} · "
+                f"el jefe de sala baraja {c['boss']:.0f} veces"
+            )
     return 0
 
 

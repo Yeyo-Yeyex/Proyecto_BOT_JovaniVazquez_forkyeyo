@@ -408,7 +408,9 @@ python -m bot
   Sin seguro. Al terminar, 🃏 Repartir juega otra mano en el mismo
   mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
   (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
-  pantalla. Reglas: 6 barajas rebarajadas en cada mano, la banca se planta
+  pantalla. Reglas: 6 barajas que duran entre manos hasta la carta de corte
+  (se pueden contar cartas, y el jefe de sala baraja si subes la ficha más de
+  ×4 con la cuenta alta), la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
   apuesta (empate si tú también lo tienes). Seguro con un as de la banca,
   también si tienes blackjack: cuesta media apuesta y paga 2:1 si ella lo

@@ -5,6 +5,11 @@ que solo pulsa su dueño, dinero siempre a través de `EconomyService`,
 mismo control de canales (`CASINO_CHANNEL_IDS`) y fichas con ½ / ×2 /
 All-in. `.bj 500` reparte al momento.
 
+El zapato (6 barajas) dura entre manos en cada mesa y se baraja al llegar a la
+carta de corte, así que se pueden contar cartas; la mesa enseña cuántas quedan.
+Si la apuesta pasa de `PIT_BOSS_SPREAD` veces la más baja del zapato con la cuenta
+alta, el jefe de sala baraja antes de repartir (`bot.services.blackjack`).
+
 El dinero en juego se cobra al repartir (y al doblar o separar), y el premio
 se paga al terminar la mano. Para que nunca se quede dinero colgado, una
 mano abierta se resuelve plantándose si la mesa caduca o si el bot se apaga
@@ -32,15 +37,19 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
 from bot.cogs.casino import casino_channel_error, insufficient_text
-from bot.services.achievements import blackjack_stats, casino_stats
+from bot.services.achievements import blackjack_shoe_stats, blackjack_stats, casino_stats
 from bot.services.blackjack import (
+    CUT_CARD,
     INSURANCE_PAYS,
     Action,
     BlackjackGame,
     Card,
     Result,
     blackjack_prize,
+    needs_shuffle,
     new_shoe,
+    pit_boss_shuffles,
+    true_count,
 )
 from bot.services.cards_render import CardRenderer, HandView
 from bot.services.economy import (
@@ -73,6 +82,17 @@ COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 COLOR_PUSH = discord.Color.from_rgb(120, 140, 160)
 
 RULES_FOOTER = "Blackjack paga 3:2 · seguro 2:1 · la banca se planta en 17"
+#: Lo que dice el jefe de sala cuando baraja porque sospecha que cuentas.
+PIT_BOSS_LINES = (
+    "🕵️ El jefe de sala te ha visto mover los labios contando. Baraja el zapato.",
+    "🕵️ «Aquí no se cuenta, que esto no es el CIS». El jefe de sala baraja.",
+    "🕵️ Subes la ficha justo cuando quedan figuras. Casualidad, seguro. Se baraja.",
+    "🕵️ El jefe de sala llama a Rain Man por el pinganillo y baraja el zapato.",
+    "🕵️ Ni Montoro miraba tanto las cuentas. El jefe de sala baraja.",
+    "🕵️ Te han reconocido del equipo del MIT. Zapato nuevo.",
+)
+#: Al llegar a la carta de corte.
+SHUFFLE_LINE = "🔀 Ha salido la carta de corte: zapato nuevo de 6 barajas."
 
 BLACKJACK_LINES = (
     "🂡 ¡BLACKJACK!",
@@ -247,8 +267,15 @@ def table_embed(
     stake: int,
     streak: int,
     headline: str | None = None,
+    shoe_left: int | None = None,
+    note: str | None = None,
 ) -> discord.Embed:
-    """Embed de la mesa. `headline` es el resultado de la última mano, si acabó."""
+    """Embed de la mesa. `headline` es el resultado de la última mano, si acabó.
+
+    Args:
+        shoe_left: Cartas que quedan en el zapato de la mesa, para quien cuenta.
+        note: Aviso de la mano (se ha barajado o el jefe de sala sospecha).
+    """
     if game is None:
         description = "Pulsa 🃏 **Repartir** para empezar."
         color = COLOR_PLAYING
@@ -278,6 +305,8 @@ def table_embed(
     else:
         description = headline or result_headline(game)
         color = COLOR_WIN if game.net > 0 else COLOR_PUSH if game.net == 0 else COLOR_LOSS
+    if note:
+        description += f"\n-# {note}"
     if balance == 0 and (game is None or game.settled):
         description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🃏 Blackjack", description=description, color=color)
@@ -288,6 +317,8 @@ def table_embed(
         value=format_amount(game.total_stake if playing else stake),  # type: ignore[union-attr]
     )
     embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
+    if shoe_left is not None:
+        embed.add_field(name="Zapato", value=f"🂠 {shoe_left} cartas · corte en {CUT_CARD}")
     embed.set_image(url=f"attachment://{PNG_NAME}")
     embed.set_footer(text=f"Mesa de {owner} · {RULES_FOOTER}")
     return embed
@@ -312,6 +343,15 @@ class BlackjackTable(discord.ui.View):
         self.owner = owner
         self.stake = stake
         self.game: BlackjackGame | None = None
+        #: Zapato de la mesa: dura entre manos hasta la carta de corte (se cuentan cartas).
+        self.shoe: list[Card] = []
+        #: Apuesta más baja jugada con este zapato, para el jefe de sala.
+        self.lowest: int | None = None
+        #: Aviso de la mano en curso: se ha barajado o el jefe de sala ha sospechado.
+        self.shoe_note: str | None = None
+        #: Lo que pasó con el zapato al repartir la última mano, para los logros:
+        #: `(jefe de sala, carta de corte, cuenta verdadera, veces la apuesta más baja)`.
+        self._shoe_event: tuple[bool, bool, float, int | None] | None = None
         self.streak = 0
         self.headline: str | None = None
         self.message: discord.Message | None = None
@@ -460,6 +500,8 @@ class BlackjackTable(discord.ui.View):
             stake=self.stake,
             streak=self.streak,
             headline=self.headline,
+            shoe_left=len(self.shoe) if self.shoe else None,
+            note=self.shoe_note,
         )
 
     async def _show(self, edit: EditFn, *, locked: bool = False) -> None:
@@ -487,7 +529,7 @@ class BlackjackTable(discord.ui.View):
             return insufficient_text(error.balance)
         # Para las porras: una mano repartida antes del cierre no cuenta.
         self.started_at = time.time()
-        self.game = BlackjackGame(stake=self.stake, shoe=self.cog.new_shoe())
+        self.game = BlackjackGame(stake=self.stake, shoe=self._shoe_for(self.stake))
         self.headline = None
         self.game.deal()
         if self.game.player_turn or self.game.insurance_pending:
@@ -496,6 +538,24 @@ class BlackjackTable(discord.ui.View):
             # Blackjack de alguien en el reparto: se resuelve sin turno.
             await self._finish(first_edit, next_edit)
         return None
+
+    def _shoe_for(self, stake: int) -> list[Card]:
+        """El zapato con el que se reparte la mano: el de la mesa o uno recién barajado.
+
+        Se baraja al llegar a la carta de corte o si el jefe de sala sospecha
+        (`pit_boss_shuffles`). La mano reparte de esta misma lista, así que lo que
+        sale se queda fuera para las siguientes.
+        """
+        caught = pit_boss_shuffles(self.shoe, stake=stake, lowest=self.lowest)
+        cut = bool(self.shoe) and needs_shuffle(self.shoe)
+        count = true_count(self.shoe)
+        spread = None if self.lowest is None else stake // max(1, self.lowest)
+        if caught or needs_shuffle(self.shoe):
+            self.shoe, self.lowest, count = self.cog.new_shoe(), None, 0.0
+        self.shoe_note = random.choice(PIT_BOSS_LINES) if caught else SHUFFLE_LINE if cut else None
+        self._shoe_event = (caught, cut, count, None if caught else spread)
+        self.lowest = stake if self.lowest is None else min(self.lowest, stake)
+        return self.shoe
 
     async def act(self, interaction: discord.Interaction, action: Action) -> None:
         """Aplica una acción del jugador; si termina su turno, juega la banca."""
@@ -657,6 +717,11 @@ class BlackjackTable(discord.ui.View):
         game, balance, tax_delta = self._to_track
         self._to_track = None
         delta = blackjack_stats(game)
+        if self._shoe_event is not None:
+            caught, cut, count, spread = self._shoe_event
+            delta.merge(
+                blackjack_shoe_stats(game, caught=caught, cut=cut, count=count, spread=spread)
+            )
         delta.merge(
             casino_stats(
                 stake=game.total_stake, net=game.net, balance_after=balance, tax_delta=tax_delta
