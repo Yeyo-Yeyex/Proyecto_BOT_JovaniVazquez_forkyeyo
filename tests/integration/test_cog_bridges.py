@@ -418,6 +418,59 @@ async def test_los_dados_apuntan_sus_logros_y_jugadas_con_el_bot_real(tmp_path: 
         await client.close()
 
 
+async def test_la_mesa_compartida_de_los_dados_apunta_logros_y_jugadas_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`dados mesa` cuenta sus logros de mesa y sus jugadas, y lleva el 🎨 con el bot cargado."""
+    from bot.services.craps import Bet
+
+    client = await load_bot(tmp_path)
+    try:
+        dados = importer("Dados", client)
+        cog = client.get_cog("Dados")
+        cog.renderer = MagicMock()
+        cog.renderer.throw = AsyncMock(
+            return_value=dados.Media(gif=b"GIF", png=b"PNG", seconds=0.0, rest=dados.OPENING_REST)
+        )
+        cog.renderer.board = AsyncMock(return_value=b"PNG")
+        cog.rng = DiceScripted((1, 1))  # pide pase, sale pifia
+        cog.ahead = False
+        cog.start = MagicMock()
+
+        async def no_wait(seconds: float) -> None:
+            return None
+
+        cog.sleep = no_wait
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 9
+        channel.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        table, _new = await cog.ensure_table(GUILD_ID, channel, OWNER_ID)
+        assert table is not None
+        for view in (table.open_view, table.point_view):
+            assert any(
+                isinstance(item, discord.ui.Button) and str(item.emoji) == "🎨"
+                for item in view.children
+            ), "la mesa compartida sin 🎨"
+        await table.bet_now(owner, Bet.PASS, 100)
+        await table.roll()
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["dice_table_rolls"] == 1
+        assert profile.stats["dice_shooter"] == 1
+        assert {"dadosm_1", "dadosm_tirador", "dadosm_solitario"} <= set(profile.unlocked)
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["dados"].plays == 1
+    finally:
+        await client.close()
+
+
 async def test_las_carreras_apuntan_sus_logros_y_jugadas_con_el_bot_real(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -442,6 +442,10 @@ PRODUCED_STATS = {
     "dice_inocentes", "dice_friday13", "dice_snake_eyes", "dice_boxcars",
     "dice_game_rolls_max", "dice_hand_points_max", "dice_hand_rolls_max", "dice_fire_max",
     "dice_repeat_max",
+    # Mesa compartida (`dados mesa`).
+    "dice_table_rolls", "dice_shooter", "dice_public_points_max", "dice_table_alone",
+    "dice_table_shooter_wins", "dice_table_vs_shooter", "dice_table_players_max",
+    "dice_table_lonely", "dice_table_boxcars", "dice_table_wipeout", "dice_table_unanimous",
     *(f"dice_total_{t}" for t in range(2, 13)),
     *(f"dice_point_made_{p}" for p in (4, 5, 6, 8, 9, 10)),
     *(f"dice_hard_{p}" for p in (4, 6, 8, 10)),

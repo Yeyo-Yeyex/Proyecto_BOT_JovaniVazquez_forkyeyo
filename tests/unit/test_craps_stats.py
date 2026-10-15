@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+from itertools import product
 
 import pytest
 from craps_fakes import game_after, table_for
 
-from bot.services.achievements import AVAILABLE, craps_stats
+from bot.services.achievements import AVAILABLE, craps_stats, craps_table_stats
 from bot.services.craps import ODDS_MAX, POINTS, Bet, CrapsGame, Hand, Roll
 
 PASS, DONT = Bet.PASS, Bet.DONT
@@ -389,6 +390,19 @@ def battery() -> set[str]:
     for game in games:
         keys |= set(stats(game))
         keys |= set(peaks(game))
+        for players, shooter, shooter_bet, others_won in product(
+            (1, 3, 4, 6), (False, True), (PASS, DONT, None), (0, 3)
+        ):
+            delta = craps_table_stats(
+                game,
+                players=players,
+                shooter=shooter,
+                shooter_bet=shooter_bet,
+                hand_points=5,
+                others_won=others_won,
+                others_lost=players - 1 - others_won if others_won < players else 0,
+            )
+            keys |= set(delta.add) | set(delta.peak)
         for when in (
             datetime(2026, 1, 3, 3),
             datetime(2026, 5, 30, 12),
@@ -404,3 +418,73 @@ def test_cada_condicion_de_los_logros_de_dados_la_alimenta_craps_stats() -> None
     produced = battery()
     missing = {stat for a in DICE for stat, _goal in a.conditions if stat not in produced}
     assert not missing, f"Contadores que ningún caso de craps_stats produce: {sorted(missing)}"
+
+
+# -- Mesa compartida (`craps_table_stats`) ---------------------------------------------------
+
+
+def table(
+    game: CrapsGame,
+    *,
+    players: int = 3,
+    shooter: bool = False,
+    shooter_bet: Bet | None = PASS,
+    hand_points: int = 0,
+    others_won: int = 0,
+    others_lost: int = 0,
+) -> tuple[dict[str, int], dict[str, int]]:
+    delta = craps_table_stats(
+        game,
+        players=players,
+        shooter=shooter,
+        shooter_bet=shooter_bet,
+        hand_points=hand_points,
+        others_won=others_won,
+        others_lost=others_lost,
+    )
+    return delta.add, delta.peak
+
+
+def test_toda_partida_de_mesa_cuenta_sus_tiradas_y_los_jugadores() -> None:
+    add, peak = table(game_after(SIX, NOTHING, (2, 4)), players=5)
+    assert add["dice_table_rolls"] == 3 and peak["dice_table_players_max"] == 5
+
+
+def test_el_tirador_cuenta_la_ronda_y_su_mano_ante_el_publico() -> None:
+    game = game_after(NATURAL)
+    add, peak = table(game, shooter=True, players=2, hand_points=5)
+    assert add["dice_shooter"] == 1 and peak["dice_public_points_max"] == 5
+    # Solo, o sin ser el tirador, no hay público ni cubilete.
+    assert "dice_public_points_max" not in table(game, shooter=True, players=1, hand_points=5)[1]
+    assert "dice_shooter" not in table(game)[0]
+
+
+def test_ganar_mientras_pierden_al_menos_otros_dos() -> None:
+    game = game_after(NATURAL)
+    assert table(game, players=3, others_lost=2)[0]["dice_table_alone"] == 1
+    assert "dice_table_alone" not in table(game, players=2, others_lost=1)[0]
+    assert "dice_table_alone" not in table(game, players=3, others_lost=1, others_won=1)[0]
+    assert "dice_table_alone" not in table(game_after(SNAKE_EYES), players=3, others_lost=2)[0]
+
+
+def test_que_el_tirador_te_haga_ganar_y_apostar_contra_el_tirador() -> None:
+    won_dont = game_after(SNAKE_EYES, bet=DONT)
+    add, _ = table(won_dont, shooter_bet=PASS)
+    assert add["dice_table_shooter_wins"] == 1 and add["dice_table_vs_shooter"] == 1
+    # El tirador no gana «gracias al tirador», y contra uno que apuesta No pase no es contra él.
+    assert "dice_table_shooter_wins" not in table(won_dont, shooter=True)[0]
+    assert "dice_table_vs_shooter" not in table(won_dont, shooter_bet=DONT)[0]
+    assert "dice_table_vs_shooter" not in table(game_after(NATURAL))[0]
+
+
+def test_los_secretos_de_la_mesa() -> None:
+    assert table(game_after(NATURAL), players=1)[0]["dice_table_lonely"] == 1
+    boxcars = game_after(BOXCARS)
+    assert table(boxcars, shooter=True, players=3)[0]["dice_table_boxcars"] == 1
+    assert "dice_table_boxcars" not in table(boxcars, shooter=True, players=2)[0]
+    assert "dice_table_boxcars" not in table(boxcars, players=3)[0]
+    lost = game_after(SNAKE_EYES)
+    assert table(lost, players=4, others_lost=3)[0]["dice_table_wipeout"] == 1
+    assert "dice_table_wipeout" not in table(lost, players=3, others_lost=2)[0]
+    assert table(game_after(NATURAL), players=3, others_won=2)[0]["dice_table_unanimous"] == 1
+    assert "dice_table_unanimous" not in table(game_after(NATURAL), players=3, others_won=1)[0]

@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -568,7 +568,7 @@ python -m bot
   para el primero tras el botón y comisión del 5 % (tope de 3 ciegas) de cada
   bote que llega al flop, que va al Estado como IAJ. En cada mano te juegas tu
   saldo hasta 100 ciegas; lo que no gastas vuelve.
-- **Dados** (`/dados`, `.dados [cantidad] [apuesta]`): craps de casino. Eliges
+- **Dados** (`/dados`, `.dados [cantidad] [apuesta] [mesa]`): craps de casino. Eliges
   ✅ Pase o 🚫 No pase y tiras la salida: con Pase, el 7 y el 11 ganan y el 2,
   el 3 y el 12 pierden; con No pase, al revés, y el 12 empata. Cualquier otro
   total es el **punto**: se sigue tirando hasta repetirlo (gana Pase) o sacar
@@ -582,6 +582,23 @@ python -m bot
   tampoco, con Pillow): los dados rojos vuelan en 3D, chocan contra la pared
   de pirámides, ruedan y se paran; luego se encienden el total y el cartel, el
   disco ON/OFF se mueve a su casilla y Perro Sanxe recoge o paga las fichas.
+  **Mesa compartida:** `/dados mesa:Compartida` o `.dados mesa [cantidad] [apuesta]`
+  abre (o baja al final del canal) la mesa del canal, con varios jugadores y las
+  mismas tiradas para todos. Cualquiera apuesta a ✅ Pase o 🚫 No pase con su
+  ficha (🪙 Ficha, ½ y ×2 la cambian; 🔁 Repetir pone lo de la ronda anterior y te
+  marca listo). Con la primera apuesta empieza una cuenta atrás de 20 s; si todos
+  los que han apostado pulsan 🃏 Listo, se tira ya. Tira el **tirador**, el primero
+  que apostó en la mesa, con 🎲 Tirar (solo él) o, si no lo hace a tiempo, el bot
+  tira solo; con un siete fuera pasa al siguiente que apuesta, por orden de
+  llegada. Con el punto puesto cada uno con apuesta puede poner ➕ Odds (hasta ×3)
+  entre tiradas; quien llega tarde espera a la siguiente salida. Cada tirada se
+  resuelve para todos a la vez y el mensaje enseña quién gana o pierde cuánto. Los
+  dados de la próxima tirada se sortean al abrir cada ronda y su GIF se pinta
+  mientras se apuesta, así que sale nada más tirar (el dibujo no lleva fichas ni
+  importes). Lleva el tapete de quien abre la mesa. Cada jugador cobra y paga lo
+  suyo por la economía (juego, sin comisiones nuevas); si la mesa se cierra con el
+  punto puesto, el bot tira solo hasta decidir y paga. Sin apuestas en 5 minutos,
+  la mesa se cierra.
 - **Carreras de caballos** (`/caballo`, `.caballo [cantidad] [caballos] [tipo]`):
   una carrera por canal, solo cuando alguien la pide. Un establo de 16
   caballos con rasgos propios (velocidad, aguante, salida, terreno preferido y
@@ -710,7 +727,7 @@ python -m bot
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
   *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
   secretos.
-- **Logros** (sección 🏆 de `perfil`): 3.864 logros en 56 categorías. El menú
+- **Logros** (sección 🏆 de `perfil`): 3.888 logros en 56 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
   reír, lengua y temas, conversación, horarios y fechas, imágenes y babel),
   🎙️ Voz (llamada, micro y cámara, entradas y salidas, música) y 🎰 Casino
@@ -1103,6 +1120,7 @@ src/bot/
 │   ├── poker.py         # poker: mesa por canal, ir o retirarse, 💎 Bote y club
 │   ├── timba.py         # poker modo timba: Texas Hold'em entre miembros, turnos y botes
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
+│   ├── craps_mesa.py    # dados mesa: la mesa compartida del canal, con tirador
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
