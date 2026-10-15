@@ -285,7 +285,7 @@ PRODUCED_STATS = {
     "slots_ticket_creative", "slots_ticket_taxed", "slots_ticket_zero", "slots_ticket_dry",
     "slots_ticket_quick",
     # Botes (cogs/hold_win.py: hold_win_stats, hold_win_bonus_stats y el botón de Auto)
-    "botes_spins", "botes_spins_volcan",
+    "botes_spins", *(f"botes_spins_{theme}" for theme in ("volcan", "mina", "olimpo")),
     "botes_collects", "botes_double_collect", "botes_near_miss", "botes_ways_5",
     "botes_wild_wins", "botes_chips", "botes_turbo", "botes_night", "botes_win_max",
     "botes_bonuses", *(f"botes_bonus_{kind}" for kind in ("green", "blue", "red", "grand")),

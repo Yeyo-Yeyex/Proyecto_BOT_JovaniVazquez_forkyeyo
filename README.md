@@ -454,8 +454,16 @@ python -m bot
   tercero frena despacio. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
 - **Botes** (`/tragas máquina:Volcán`, `.tragas volcan [cantidad]`; antes `volcan`): una tragaperras de 5×4 al
-  estilo de las de casino, ilustrada (cerezas, campana, BAR, siete, máscaras
-  tiki, diamante WILD y un volcán de recogedor). Los símbolos pagan por
+  estilo de las de casino, ilustrada, con tres máquinas que comparten reglas y
+  números y cambian los dibujos y las bromas: 🌋 el **Volcán** (`volcan`:
+  cerezas, campana, BAR, siete, máscaras tiki, diamante WILD y un volcán de
+  recogedor), 🪨 la **Mina** (`mina`: pico, lámpara de minero, carretilla,
+  dinamita, pepita y lingote de oro, diamante en bruto y una vagoneta de oro;
+  bonus Cobre, Plata, Oro y ¡FILÓN!) y ⚡ el **Olimpo** (`olimpo`: ánfora,
+  lira, casco, laurel, tridente, águila, rayo de Zeus y el propio Zeus de
+  recogedor; bonus Bronce, Plata, Oro y ¡IRA DE ZEUS!). Cada una tiene su
+  escenario: lava, galería de mina con raíles y antorchas, templo de mármol
+  sobre las nubes. Se abren con `tragas mina` y `tragas olimpo`. Los símbolos pagan por
   **ways** y las monedas (verde, azul y roja, cada una con su forma) llevan su
   premio escrito: el volcán en el rodillo 1 o el 5 las cobra todas. Cada
   moneda que cae llena el **maletín** de su color, que se guarda en la base de
@@ -466,7 +474,8 @@ python -m bot
   ⏩ Auto bonus, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios. Devuelve ~94 %, con
   un bonus cada ~58 tiradas. GIF de 300-450 KB por tirada base y ~200 KB por
   tirada del bonus; en turbo, solo el PNG (~120 KB). Tributan como el resto
-  del casino. Las reglas admiten más máquinas con otros dibujos (`THEMES`).
+  del casino. Una máquina nueva sale sola en `tragas` al añadirla a `THEMES`; sus símbolos se
+  dibujan con `docs/dibujar_botes.py`.
 - **Crash** (`/cohete`, `.cohete [cantidad] [auto]`): un cohete compartido
   por canal. En el embarque (7-10 s) se entra con 🚀 o con `.cohete 500 2x`
   (500 Y$ y auto-retiro en 2x); ½, ×2, 💰 All-in y 🎯 Auto cambian tu ficha.

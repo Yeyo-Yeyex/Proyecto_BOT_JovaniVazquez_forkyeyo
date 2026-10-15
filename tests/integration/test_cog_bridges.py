@@ -565,8 +565,13 @@ async def test_auto_de_los_botes_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
         await client.close()
 
 
-async def test_tragas_volcan_abre_la_maquina_de_botes_con_el_bot_real(tmp_path: Path) -> None:
-    """`tragas` abre el Volcán a través del cog de Botes, que el bot carga aparte."""
+@pytest.mark.parametrize(
+    ("word", "key"), [("volcán", "volcan"), ("mina", "mina"), ("olimpo", "olimpo")]
+)
+async def test_tragas_abre_cada_maquina_de_botes_con_el_bot_real(
+    tmp_path: Path, word: str, key: str
+) -> None:
+    """`tragas` abre el Volcán, la Mina y el Olimpo por el cog de Botes, que el bot carga aparte."""
     client = await load_bot(tmp_path)
     await client.hold_win.initialize()
     try:
@@ -582,11 +587,11 @@ async def test_tragas_volcan_abre_la_maquina_de_botes_con_el_bot_real(tmp_path: 
         ctx.channel = MagicMock(id=5)
         ctx.send = AsyncMock(return_value=MagicMock())
 
-        await tragas.slots_text.callback(tragas, ctx, "volcán", "50")
+        await tragas.slots_text.callback(tragas, ctx, word, "50")
 
         view = ctx.send.await_args.kwargs["view"]
         assert isinstance(view, botes.HoldWinView)
-        assert view.theme.key == "volcan" and view.stake == 50
+        assert view.theme.key == key and view.stake == 50
     finally:
         await client.close()
 

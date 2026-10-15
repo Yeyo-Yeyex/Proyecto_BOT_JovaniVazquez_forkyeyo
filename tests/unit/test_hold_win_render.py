@@ -20,6 +20,7 @@ from bot.services.hold_win import (
     spin_base,
 )
 from bot.services.hold_win_render import (
+    ASSETS,
     HEIGHT,
     WIDTH,
     Banner,
@@ -137,3 +138,46 @@ def test_la_imagen_parada_del_juego_base_y_del_bonus(renderer: HoldWinRenderer) 
     panel = BonusPanel("Bonus Ares", 150, 600, 100_000, 3, 3, 1, 0)
     png = renderer.bonus_still("volcan", game.board, stake=100, panel=panel)
     assert png.startswith(b"\x89PNG")
+
+
+SYMBOLS = ("pay0", "pay1", "pay2", "pay3", "pay4", "pay5", "wild", "collect")
+
+
+@pytest.mark.parametrize("theme", ["mina", "olimpo"])
+def test_los_simbolos_de_cada_maquina_nueva_son_png_de_128_con_fondo_transparente(
+    theme: str,
+) -> None:
+    masks = []
+    for name in SYMBOLS:
+        image = Image.open(ASSETS / f"{theme}_{name}.png")
+        assert image.size == (128, 128) and image.mode == "RGBA"
+        alpha = image.getchannel("A")
+        assert alpha.getpixel((0, 0)) == 0 and alpha.getpixel((127, 127)) == 0
+        assert alpha.getbbox() is not None
+        masks.append(alpha.resize((16, 16)).point(lambda a: 255 if a > 90 else 0).tobytes())
+    # Se distinguen por la silueta y no solo por el color (deuteranopia).
+    assert len(set(masks)) == len(masks)
+
+
+def test_cada_maquina_tiene_su_escenario(renderer: HoldWinRenderer) -> None:
+    """El fondo, el marco y el rótulo no son el del Volcán con otro color."""
+    backgrounds = {key: renderer._kit(key).background for key in THEMES}
+    for a in backgrounds:
+        for b in backgrounds:
+            if a < b:
+                diff = np.abs(
+                    np.asarray(backgrounds[a], np.int16) - np.asarray(backgrounds[b], np.int16)
+                )
+                assert float(diff.mean()) > 20, (a, b)
+
+
+@pytest.mark.parametrize("theme", sorted(THEMES))
+def test_la_recogida_se_pinta_en_cada_maquina(renderer: HoldWinRenderer, theme: str) -> None:
+    for seed in range(300):
+        spin = spin_base(random.Random(seed))
+        if spin.collectors and spin.coins:
+            break
+    else:  # pragma: no cover
+        pytest.fail("ninguna tirada con recogida")
+    media = renderer.render_base(theme, spin, stake=100, panel=PANEL)
+    assert len(frames(media.gif)) > 10

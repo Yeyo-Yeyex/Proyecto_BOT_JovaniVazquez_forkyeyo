@@ -1,15 +1,25 @@
-"""Dibujo de las máquinas de Botes (de momento, el Volcán): GIF y PNG.
+"""Dibujo de las máquinas de Botes (el Volcán, la Mina y el Olimpo): GIF y PNG.
 
 Estilo de tragaperras de casino ilustrada: todo dibujado, con piezas gordas,
-borde oscuro grueso y brillo. El Volcán tiene un fondo magenta con estampado de
-lava y un volcán morado echando lava detrás del rótulo, el rótulo «VOLCÁN» en
-letra gorda (Luckiest Guy) rellena de lava agrietada, un marco de templo morado
-con arco y filo de oro, casillas de rodillo magenta y la recogida con chorros
-de lava. Los símbolos (cerezas, campana, BAR, siete, máscaras tiki, diamante
-WILD y volcán) son PNG de `assets/botes`, dibujados para el bot.
+borde oscuro grueso y brillo. Cada máquina tiene su escenario:
 
-Una máquina nueva necesita su `Style`, su escenario en `SCENES`, su rótulo en
-`TITLES` y sus símbolos `<máquina>_pay0…5`, `_wild` y `_collect`.
+- **Volcán:** fondo magenta con estampado de lava y un volcán morado echando lava
+  detrás del rótulo «VOLCÁN» (Luckiest Guy, rellena de lava agrietada), marco de
+  templo morado con arco y filo de oro, casillas de rodillo magenta y la recogida
+  con chorros de lava.
+- **Mina:** roca oscura con vetas de oro, la boca de un túnel con raíles detrás del
+  rótulo, vigas de madera a los lados, antorchas y raíles abajo; marco de madera,
+  casillas de roca y la recogida con lluvia de oro.
+- **Olimpo:** cielo con nubes, un frontón de mármol con el rayo de Zeus detrás del
+  rótulo, columnas a los lados, marco de mármol y oro, casillas de azul lapislázuli
+  y la recogida con rayos.
+
+Los símbolos son PNG de `assets/botes`; los del Volcán son anteriores y los de la
+Mina y el Olimpo salen de `docs/dibujar_botes.py`.
+
+Una máquina nueva necesita su `Style`, su fondo en `BACKDROPS`, su escenario en
+`SCENES`, su rótulo en `TITLES` y sus símbolos `<máquina>_pay0…5`, `_wild` y
+`_collect`.
 
 Una tirada del juego base es un GIF de ~2 s: los cinco rodillos caen y paran de
 izquierda a derecha con rebote. Si el recogedor está en el rodillo 1 y ya se
@@ -139,6 +149,8 @@ class Style:
         cells: Material de las casillas (`_cell_tile`); de momento solo
             `"reel"`, el rodillo de casino.
         title, title_glow: Relleno y halo del rótulo.
+        effect: Recogida: `lightning` (rayos), `lava` (chorros) o cualquier otro
+            (lluvia de estrellas de oro).
     """
 
     top: tuple[int, int, int]
@@ -155,6 +167,10 @@ class Style:
         ((255, 205, 70), (120, 76, 10)),
         ((205, 120, 255), (70, 20, 110)),
     )
+    #: Casilla llena y vacía (arriba y abajo del degradado) y su filo, por defecto las del Volcán.
+    cell_full: tuple[tuple[int, int, int], tuple[int, int, int]] = ((190, 50, 150), (96, 14, 96))
+    cell_empty: tuple[tuple[int, int, int], tuple[int, int, int]] = ((70, 10, 70), (40, 4, 44))
+    cell_rims: tuple[tuple[int, int, int], tuple[int, int, int]] = ((120, 30, 110), (90, 20, 90))
 
 
 STYLES: dict[str, Style] = {
@@ -173,6 +189,44 @@ STYLES: dict[str, Style] = {
             ((255, 196, 60), (230, 90, 20)),
             ((255, 196, 60), (110, 30, 150)),
         ),
+    ),
+    "mina": Style(
+        top=(104, 76, 56),
+        bottom=(30, 20, 16),
+        frame=(214, 150, 70),
+        frame_dark=(36, 22, 14),
+        cells="reel",
+        glow=(255, 190, 70),
+        title=(255, 224, 110),
+        title_glow=(255, 130, 20),
+        effect="gold",
+        plaques=(
+            ((236, 146, 84), (122, 56, 24)),
+            ((226, 232, 246), (84, 96, 118)),
+            ((255, 214, 80), (150, 92, 10)),
+        ),
+        cell_full=((92, 70, 58), (42, 32, 28)),
+        cell_empty=((44, 33, 28), (24, 17, 15)),
+        cell_rims=((150, 108, 62), (70, 50, 36)),
+    ),
+    "olimpo": Style(
+        top=(60, 120, 232),
+        bottom=(198, 224, 255),
+        frame=(255, 210, 90),
+        frame_dark=(12, 24, 78),
+        cells="reel",
+        glow=(255, 236, 120),
+        title=(255, 240, 150),
+        title_glow=(120, 190, 255),
+        effect="lightning",
+        plaques=(
+            ((232, 160, 92), (70, 60, 140)),
+            ((232, 238, 252), (64, 96, 196)),
+            ((255, 214, 80), (34, 56, 150)),
+        ),
+        cell_full=((62, 100, 196), (22, 42, 116)),
+        cell_empty=((26, 42, 104), (10, 18, 58)),
+        cell_rims=((140, 178, 244), (44, 66, 140)),
     ),
 }
 
@@ -421,8 +475,8 @@ class HoldWinRenderer:
         kit = _Kit(
             style=style,
             background=self._background(theme, style),
-            cell_bg=_cell_tile(style.cells, empty=False),
-            empty_bg=_cell_tile(style.cells, empty=True),
+            cell_bg=_cell_tile(style, empty=False),
+            empty_bg=_cell_tile(style, empty=True),
             symbols=symbols,
         )
         return kit
@@ -1103,43 +1157,48 @@ def _illustrated_backdrop(theme: str, style: Style, size: tuple[int, int]) -> Im
     b = np.array(style.bottom, np.float32)
     pixels = a + (b - a) * t
     image = Image.fromarray(pixels.astype(np.uint8), "RGB").convert("RGBA")
-    draw = ImageDraw.Draw(image, "RGBA")
-    if theme == "volcan":
-        # Ondas de lava enfriada de fondo, como un estampado.
-        for row, y in enumerate(range(-20 * S, height, 34 * S)):
-            shift = (row % 2) * 30 * S
-            for x in range(-40 * S + shift, width, 60 * S):
-                draw.arc((x, y, x + 60 * S, y + 40 * S), 200, 340, fill=(255, 140, 170, 60),
-                         width=4 * S)  # fmt: skip
-        # Volcán morado detrás del rótulo, con el cráter echando lava.
-        top_y = 30 * S
-        cone = [(-60 * S, GRID_Y * S + 40 * S), (width * 0.36, top_y), (width * 0.64, top_y),
-                (width + 60 * S, GRID_Y * S + 40 * S)]  # fmt: skip
-        _glow_layer(
-            image,
-            lambda d: d.ellipse(
-                (width * 0.25, -60 * S, width * 0.75, top_y + 70 * S), fill=(255, 210, 60, 200)
-            ),
-            30,
-        )
-        draw.polygon(cone, fill=(80, 20, 104))
-        draw.polygon(
-            [(width * 0.36, top_y), (width * 0.64, top_y), (width * 0.75, GRID_Y * S),
-             (width * 0.25, GRID_Y * S)],
-            fill=(120, 44, 150),
-        )  # fmt: skip
-        draw.line(cone[:3] + [cone[3]], fill=(46, 6, 40), width=5 * S)
-        draw.rectangle((width * 0.36, top_y - 4 * S, width * 0.64, top_y + 10 * S),
-                       fill=(255, 220, 70))  # fmt: skip
-        rng = random.Random("volcan-drips")
-        for k in range(7):
-            x = width * (0.37 + 0.26 * k / 6)
-            length = rng.uniform(20, 70) * S
-            draw.rounded_rectangle((x - 5 * S, top_y, x + 5 * S, top_y + length), radius=5 * S,
-                                   fill=(255, 210, 60))  # fmt: skip
-            draw.ellipse((x - 8 * S, top_y + length - 8 * S, x + 8 * S, top_y + length + 8 * S),
-                         fill=(255, 190, 40))  # fmt: skip
+    BACKDROPS[theme](image, style)
     return image
+
+
+def _volcano_backdrop(image: Image.Image, style: Style) -> None:
+    """Estampado de lava enfriada y un volcán morado con el cráter echando lava."""
+    width, height = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    # Ondas de lava enfriada de fondo, como un estampado.
+    for row, y in enumerate(range(-20 * S, height, 34 * S)):
+        shift = (row % 2) * 30 * S
+        for x in range(-40 * S + shift, width, 60 * S):
+            draw.arc((x, y, x + 60 * S, y + 40 * S), 200, 340, fill=(255, 140, 170, 60),
+                     width=4 * S)  # fmt: skip
+    # Volcán morado detrás del rótulo, con el cráter echando lava.
+    top_y = 30 * S
+    cone = [(-60 * S, GRID_Y * S + 40 * S), (width * 0.36, top_y), (width * 0.64, top_y),
+            (width + 60 * S, GRID_Y * S + 40 * S)]  # fmt: skip
+    _glow_layer(
+        image,
+        lambda d: d.ellipse(
+            (width * 0.25, -60 * S, width * 0.75, top_y + 70 * S), fill=(255, 210, 60, 200)
+        ),
+        30,
+    )
+    draw.polygon(cone, fill=(80, 20, 104))
+    draw.polygon(
+        [(width * 0.36, top_y), (width * 0.64, top_y), (width * 0.75, GRID_Y * S),
+         (width * 0.25, GRID_Y * S)],
+        fill=(120, 44, 150),
+    )  # fmt: skip
+    draw.line(cone[:3] + [cone[3]], fill=(46, 6, 40), width=5 * S)
+    draw.rectangle((width * 0.36, top_y - 4 * S, width * 0.64, top_y + 10 * S),
+                   fill=(255, 220, 70))  # fmt: skip
+    rng = random.Random("volcan-drips")
+    for k in range(7):
+        x = width * (0.37 + 0.26 * k / 6)
+        length = rng.uniform(20, 70) * S
+        draw.rounded_rectangle((x - 5 * S, top_y, x + 5 * S, top_y + length), radius=5 * S,
+                               fill=(255, 210, 60))  # fmt: skip
+        draw.ellipse((x - 8 * S, top_y + length - 8 * S, x + 8 * S, top_y + length + 8 * S),
+                     fill=(255, 190, 40))  # fmt: skip
 
 
 def _volcano_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
@@ -1181,8 +1240,20 @@ def _title_font(fonts: Path, name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(fonts / name), size)
 
 
-def _volcano_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
-    """«VOLCÁN» en letras gordas (Luckiest Guy) de lava agrietada, con borde morado y halo."""
+def _title(
+    image: Image.Image,
+    text: str,
+    style: Style,
+    fonts: Path,
+    *,
+    fill: tuple[tuple[int, int, int], tuple[int, int, int]] = ((255, 246, 140), (255, 70, 10)),
+    edge: tuple[int, int, int] = (46, 6, 40),
+    crack: tuple[int, int, int] | None = (150, 20, 10),
+) -> None:
+    """Rótulo en letras gordas (Luckiest Guy): degradado `fill`, borde `edge`, halo y grietas.
+
+    Por defecto, el «VOLCÁN»: lava agrietada con borde morado.
+    """
     font = _title_font(fonts, "luckiest-guy.woff", 46)
     cx, cy = WIDTH / 2, TITLE_Y + TITLE_H / 2 + 4
     glow = Image.new("RGBA", image.size, (0, 0, 0, 0))
@@ -1190,24 +1261,24 @@ def _volcano_title(image: Image.Image, text: str, style: Style, fonts: Path) -> 
                               stroke_width=8, stroke_fill=style.title_glow)  # fmt: skip
     image.alpha_composite(glow.filter(ImageFilter.GaussianBlur(7)))
     outline = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    ImageDraw.Draw(outline).text((cx, cy + 3), text, font=font, anchor="mm", fill=(46, 6, 40),
-                                 stroke_width=5, stroke_fill=(46, 6, 40))  # fmt: skip
+    ImageDraw.Draw(outline).text((cx, cy + 3), text, font=font, anchor="mm", fill=edge,
+                                 stroke_width=5, stroke_fill=edge)  # fmt: skip
     image.alpha_composite(outline)
     mask = Image.new("L", image.size, 0)
     ImageDraw.Draw(mask).text((cx, cy), text, font=font, anchor="mm", fill=255)
     lava = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    band = _gradient((WIDTH, TITLE_H), (255, 246, 140), (255, 70, 10)).convert("RGBA")
+    band = _gradient((WIDTH, TITLE_H), *fill).convert("RGBA")
     lava.paste(band, (0, TITLE_Y))
     # Grietas oscuras dentro de las letras.
     cracks = ImageDraw.Draw(lava)
     rng = random.Random("grietas")
-    for _ in range(14):
+    for _ in range(14 if crack else 0):
         x = rng.uniform(cx - 120, cx + 120)
         y = rng.uniform(TITLE_Y + 8, TITLE_Y + TITLE_H - 6)
         cracks.line(
             [(x, y), (x + rng.uniform(-8, 8), y + rng.uniform(4, 10)),
              (x + rng.uniform(-10, 10), y + rng.uniform(10, 18))],
-            fill=(150, 20, 10), width=1,
+            fill=crack, width=1,
         )  # fmt: skip
     image.paste(lava, (0, 0), mask)
     shine = Image.new("L", image.size, 0)
@@ -1217,9 +1288,294 @@ def _volcano_title(image: Image.Image, text: str, style: Style, fonts: Path) -> 
     )
 
 
-#: Escenario (marco y decoración) y rótulo de cada máquina.
-SCENES = {"volcan": _volcano_scene}
-TITLES = {"volcan": _volcano_title}
+# -- Mina ---------------------------------------------------------------------------
+
+
+def _wood(draw: ImageDraw.ImageDraw, box: tuple, *, vertical: bool, rng: random.Random) -> None:
+    """Viga de madera con borde oscuro, vetas y luz por un lado."""
+    x0, y0, x1, y1 = box
+    draw.rectangle((x0 - S, y0 - S, x1 + S, y1 + S), fill=(34, 18, 8))
+    draw.rectangle(box, fill=(150, 94, 42))
+    if vertical:
+        draw.rectangle((x0, y0, x0 + (x1 - x0) * 0.34, y1), fill=(176, 114, 54))
+        for _ in range(8):
+            x = rng.uniform(x0 + S, x1 - S)
+            y = rng.uniform(y0, y1 - 30 * S)
+            draw.line((x, y, x + rng.uniform(-S, S), y + rng.uniform(14, 40) * S),
+                      fill=(104, 62, 26), width=S)  # fmt: skip
+    else:
+        draw.rectangle((x0, y0, x1, y0 + (y1 - y0) * 0.34), fill=(176, 114, 54))
+        for _ in range(8):
+            y = rng.uniform(y0 + S, y1 - S)
+            x = rng.uniform(x0, x1 - 30 * S)
+            draw.line((x, y, x + rng.uniform(14, 40) * S, y + rng.uniform(-S, S)),
+                      fill=(104, 62, 26), width=S)  # fmt: skip
+
+
+def _mine_backdrop(image: Image.Image, style: Style) -> None:
+    """Roca oscura con vetas de oro y la boca de un túnel con raíles detrás del rótulo."""
+    width, height = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    rng = random.Random("mina-roca")
+    for _ in range(38):
+        cx, cy, r = rng.uniform(0, width), rng.uniform(0, height), rng.uniform(22, 62) * S
+        angles = sorted(rng.uniform(0, 2 * math.pi) for _ in range(7))
+        shape = [(cx + r * math.cos(a) * rng.uniform(0.7, 1.1),
+                  cy + r * math.sin(a) * rng.uniform(0.7, 1.1)) for a in angles]  # fmt: skip
+        tone = rng.choice(((0, 0, 0, 46), (255, 210, 150, 16), (0, 0, 0, 28)))
+        draw.polygon(shape, fill=tone, outline=(0, 0, 0, 44))
+    veins = []
+    for _ in range(8):
+        x, y = rng.uniform(0, width), rng.uniform(0, height * 0.9)
+        points = [(x, y)]
+        for _ in range(rng.randint(4, 7)):
+            x += rng.uniform(-26, 26) * S
+            y += rng.uniform(8, 24) * S
+            points.append((x, y))
+        veins.append(points)
+    _glow_layer(
+        image, lambda d: [d.line(v, fill=(255, 190, 60, 150), width=6 * S) for v in veins], 8
+    )
+    for points in veins:
+        draw.line(points, fill=(255, 214, 90, 230), width=2 * S, joint="curve")
+        draw.line(points, fill=(255, 250, 200, 200), width=max(1, S // 2), joint="curve")
+    # Boca del túnel: oscuridad al fondo, una luz y raíles en perspectiva.
+    # Solo se ve lo que queda por encima de las placas y a los lados del rótulo.
+    cx, floor = width / 2, 58 * S
+    horizon = 14 * S
+    mouth = (width * 0.07, 8 * S, width * 0.93, GRID_Y * S + 12 * S)
+    draw.rounded_rectangle(mouth, radius=60 * S, fill=(14, 8, 6))
+    _glow_layer(
+        image,
+        lambda d: d.ellipse(
+            (cx - 70 * S, horizon - 30 * S, cx + 70 * S, horizon + 22 * S), fill=(255, 196, 80, 120)
+        ),
+        14,
+    )
+    reach = 175 * S  # lo que se abren los raíles al llegar abajo
+    for k in range(1, 7):
+        f = (k / 6) ** 1.5
+        y = horizon + (floor - horizon) * f
+        half = (4 + reach / S * f) * S
+        draw.line((cx - half - 6 * S * f, y, cx + half + 6 * S * f, y), fill=(122, 76, 36),
+                  width=max(S, int(5 * S * f)))  # fmt: skip
+    for side in (-1, 1):
+        rail = (cx + side * 4 * S, horizon, cx + side * reach, floor)
+        draw.line(rail, fill=(150, 156, 174), width=3 * S)
+        draw.line(rail, fill=(240, 244, 252), width=S)
+    # Marco de madera de la boca.
+    draw.rounded_rectangle(mouth, radius=60 * S, outline=(34, 18, 8), width=12 * S)
+    draw.rounded_rectangle(mouth, radius=60 * S, outline=(146, 90, 40), width=8 * S)
+
+
+def _flame(image: Image.Image, x: float, y: float) -> None:
+    """Llama de antorcha con su halo (`x`, `y` en píxeles dobles)."""
+    _glow_layer(
+        image,
+        lambda d: d.ellipse(
+            (x - 20 * S, y - 24 * S, x + 20 * S, y + 14 * S), fill=(255, 150, 30, 90)
+        ),
+        10,
+    )
+    draw = ImageDraw.Draw(image, "RGBA")
+    drop = [(x, y - 24 * S), (x + 4 * S, y - 13 * S), (x + 9 * S, y - 5 * S),
+            (x + 7 * S, y + 3 * S),
+            (x, y + 6 * S), (x - 7 * S, y + 3 * S), (x - 9 * S, y - 5 * S),
+            (x - 4 * S, y - 13 * S)]  # fmt: skip
+    draw.polygon(drop, fill=(255, 120, 20), outline=(150, 40, 10))
+    draw.polygon([(x, y - 14 * S), (x + 4 * S, y - 4 * S), (x, y + 3 * S), (x - 4 * S, y - 4 * S)],
+                 fill=(255, 228, 120))  # fmt: skip
+
+
+def _mine_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
+    """Vigas de madera, antorchas, marco de tablones y raíles abajo, como una galería de mina."""
+    w, h = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    for _ in range(36):
+        x, y = rng.uniform(0, w), rng.uniform(GRID_Y * S, h)
+        r = rng.choice((1, 2, 3)) * S / 2
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 210, 120, 110))
+    # Vigas: dos postes y un dintel arriba, con jabalcones en las esquinas.
+    post = 13 * S
+    for x0 in (0, w - post):
+        _wood(draw, (x0, 0, x0 + post, h), vertical=True, rng=rng)
+    _wood(draw, (0, 0, w, 8 * S), vertical=False, rng=rng)
+    for side in (-1, 1):
+        ax = post if side < 0 else w - post
+        draw.polygon([(ax, 8 * S), (ax - side * 30 * S, 8 * S), (ax, 38 * S)], fill=(34, 18, 8))
+        draw.polygon([(ax, 9 * S), (ax - side * 25 * S, 9 * S), (ax, 32 * S)], fill=(134, 82, 36))
+    # Antorchas junto al rótulo.
+    for x in (46 * S, w - 46 * S):
+        draw.rounded_rectangle((x - 3 * S, 34 * S, x + 3 * S, 58 * S), radius=2 * S,
+                               fill=(92, 54, 24), outline=(34, 18, 8), width=S)  # fmt: skip
+        draw.rectangle(
+            (x - 6 * S, 32 * S, x + 6 * S, 38 * S), fill=(70, 74, 88), outline=(20, 20, 26)
+        )
+        _flame(image, x, 28 * S)
+    # Marco de tablones alrededor de la rejilla.
+    box = _grid_box(9)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.rounded_rectangle(
+        (box[0] - 4 * S, box[1] - 4 * S, box[2] + 4 * S, box[3] + 4 * S), radius=10 * S,
+        fill=(34, 18, 8))  # fmt: skip
+    draw.rounded_rectangle(box, radius=7 * S, fill=(150, 94, 42), outline=style.frame, width=S)
+    draw.rounded_rectangle(
+        (box[0], box[1], box[2], box[1] + 3 * S), radius=3 * S, fill=(184, 122, 58)
+    )
+    draw.rounded_rectangle((box[0] + 6 * S, box[1] + 6 * S, box[2] - 6 * S, box[3] - 6 * S),
+                           radius=4 * S, fill=(24, 14, 10))  # fmt: skip
+    for x, y in (
+        (box[0] + 3 * S, box[1] + 3 * S),
+        (box[2] - 3 * S, box[1] + 3 * S),
+        (box[0] + 3 * S, box[3] - 3 * S),
+        (box[2] - 3 * S, box[3] - 3 * S),
+    ):
+        draw.ellipse((x - 1.6 * S, y - 1.6 * S, x + 1.6 * S, y + 1.6 * S), fill=(200, 204, 216),
+                     outline=(40, 40, 50))  # fmt: skip
+    # Raíles al pie, con sus traviesas.
+    floor = h - 11 * S
+    draw.rectangle((0, floor, w, h), fill=(30, 18, 10))
+    for x in range(8 * S, w, 22 * S):
+        draw.rectangle((x, floor + S, x + 12 * S, h), fill=(122, 76, 36), outline=(40, 22, 10))
+    for y in (floor + 2 * S, floor + 7 * S):
+        draw.rectangle((0, y, w, y + 2 * S), fill=(190, 196, 210), outline=(70, 74, 88))
+
+
+# -- Olimpo -------------------------------------------------------------------------
+
+
+def _cloud(draw: ImageDraw.ImageDraw, x: float, y: float, size: float) -> None:
+    """Nube de bolas blancas."""
+    for dx, dy, r in ((-1.2, 0.2, 0.7), (-0.5, -0.3, 0.95), (0.4, -0.45, 1.05), (1.2, 0.0, 0.8),
+                      (0.0, 0.25, 1.1)):  # fmt: skip
+        draw.ellipse((x + (dx - r) * size, y + (dy - r) * size, x + (dx + r) * size,
+                      y + (dy + r) * size), fill=(255, 255, 255, 235))  # fmt: skip
+
+
+def _olympus_backdrop(image: Image.Image, style: Style) -> None:
+    """Cielo con haces de luz, nubes y estrellitas."""
+    width, height = image.size
+    rng = random.Random("olimpo-cielo")
+    rays = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    rd = ImageDraw.Draw(rays)
+    far = height * 1.5
+    for k in range(9):
+        a0 = math.radians(60 + k * 7.5)
+        a1 = a0 + math.radians(3)
+        rd.polygon([(width / 2, -10 * S), (width / 2 + far * math.cos(a0), far * math.sin(a0)),
+                    (width / 2 + far * math.cos(a1), far * math.sin(a1))],
+                   fill=(255, 255, 255, 34))  # fmt: skip
+    image.alpha_composite(rays)
+    clouds = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    cd = ImageDraw.Draw(clouds)
+    for _ in range(16):
+        y = rng.uniform(height * 0.3, height) if rng.random() < 0.7 else rng.uniform(0, height)
+        _cloud(cd, rng.uniform(0, width), y, rng.uniform(10, 22) * S)
+    image.alpha_composite(clouds.filter(ImageFilter.GaussianBlur(2 * S)))
+    draw = ImageDraw.Draw(image, "RGBA")
+    for _ in range(26):
+        x, y = rng.uniform(0, width), rng.uniform(0, height)
+        r = rng.choice((1, 2)) * S / 2
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 200))
+
+
+def _bolt(cx: float, top: float, bottom: float, half: float) -> list[tuple[float, float]]:
+    """Rayo en zigzag de `top` a `bottom`, de ancho `half` a cada lado."""
+    h = bottom - top
+    return [(cx + half * 0.7, top), (cx - half, top + h * 0.52), (cx - half * 0.1, top + h * 0.52),
+            (cx - half * 0.8, bottom), (cx + half, top + h * 0.4),
+            (cx + half * 0.15, top + h * 0.4),
+            (cx + half * 1.3, top)]  # fmt: skip
+
+
+def _column(draw: ImageDraw.ImageDraw, x0: float, x1: float, y0: float, y1: float) -> None:
+    """Columna de mármol acanalada con capitel y base de oro."""
+    draw.rectangle((x0, y0, x1, y1), fill=(30, 40, 96))
+    draw.rectangle((x0 + S, y0, x1 - S, y1), fill=(238, 242, 252))
+    flute = (x1 - x0) / 4
+    for k in (1, 2, 3):
+        draw.line((x0 + flute * k, y0 + 5 * S, x0 + flute * k, y1 - 5 * S), fill=(176, 190, 222),
+                  width=S)  # fmt: skip
+    draw.rectangle((x0 + S, y0, x0 + (x1 - x0) * 0.3, y1), fill=(255, 255, 255))
+    for y in (y0, y1 - 4 * S):
+        draw.rectangle((x0 - S, y, x1 + S, y + 4 * S), fill=(255, 210, 90), outline=(120, 80, 10))
+
+
+def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None:
+    """Frontón de mármol con el rayo de Zeus, columnas, marco de mármol y oro, y nubes al pie."""
+    w, h = image.size
+    draw = ImageDraw.Draw(image, "RGBA")
+    for x0 in (1 * S, w - 13 * S):
+        _column(draw, x0, x0 + 12 * S, 54 * S, h - 8 * S)
+    # Frontón: mármol por fuera y un tímpano azul con el rayo dentro.
+    roof = [(3 * S, 56 * S), (3 * S, 26 * S), (w / 2, 2 * S), (w - 3 * S, 26 * S),
+            (w - 3 * S, 56 * S)]  # fmt: skip
+    draw.polygon(roof, fill=(238, 242, 252))
+    inset = [(8 * S, 53 * S), (8 * S, 28 * S), (w / 2, 8 * S), (w - 8 * S, 28 * S),
+             (w - 8 * S, 53 * S)]  # fmt: skip
+    mask = Image.new("L", image.size, 0)
+    ImageDraw.Draw(mask).polygon(inset, fill=255)
+    sky = Image.new("RGBA", image.size)
+    sky.paste(_gradient((w, 60 * S), (70, 110, 220), (16, 28, 100)), (0, 0))
+    image.paste(sky, (0, 0), mask)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.line(roof + [roof[0]], fill=(255, 210, 90), width=2 * S, joint="curve")
+    draw.line(inset + [inset[0]], fill=(14, 24, 84), width=S, joint="curve")
+    _glow_layer(
+        image,
+        lambda d: d.ellipse((w / 2 - 105 * S, 12 * S, w / 2 + 105 * S, 50 * S),
+                            fill=(255, 236, 140, 150)),
+        16,
+    )  # fmt: skip
+    bolt = _bolt(w / 2, 6 * S, 56 * S, 36 * S)
+    _glow_layer(image, lambda d: d.polygon(bolt, fill=(255, 226, 90, 255)), 14)
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.polygon(bolt, fill=(255, 240, 120), outline=(255, 190, 30), width=S)
+    for sx in (w / 2 - 118 * S, w / 2 + 118 * S):
+        small = _bolt(sx, 12 * S, 50 * S, 12 * S)
+        _glow_layer(image, lambda d, small=small: d.polygon(small, fill=(255, 226, 90, 200)), 6)
+        draw = ImageDraw.Draw(image, "RGBA")
+        draw.polygon(small, fill=(255, 244, 150), outline=(255, 190, 30), width=S)
+    # Cornisa con triglifos de oro.
+    draw.rectangle((0, 54 * S, w, 59 * S), fill=(238, 242, 252), outline=(14, 24, 84))
+    for x in range(10 * S, w, 24 * S):
+        draw.rectangle((x, 55 * S, x + 6 * S, 58 * S), fill=(255, 210, 90))
+    # Marco de mármol y oro alrededor de la rejilla.
+    box = _grid_box(9)
+    draw.rounded_rectangle(
+        (box[0] - 4 * S, box[1] - 4 * S, box[2] + 4 * S, box[3] + 4 * S), radius=10 * S,
+        fill=(14, 24, 84))  # fmt: skip
+    draw.rounded_rectangle(
+        box, radius=7 * S, fill=(238, 242, 252), outline=style.frame, width=2 * S
+    )
+    draw.rounded_rectangle((box[0] + 3 * S, box[1] + 3 * S, box[2] - 3 * S, box[3] - 3 * S),
+                           radius=5 * S, outline=(176, 190, 222), width=S)  # fmt: skip
+    draw.rounded_rectangle((box[0] + 6 * S, box[1] + 6 * S, box[2] - 6 * S, box[3] - 6 * S),
+                           radius=4 * S, fill=(10, 18, 60))  # fmt: skip
+    # Nubes por delante, al pie de la máquina.
+    clouds = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    cd = ImageDraw.Draw(clouds)
+    for x in range(0, w + 40 * S, 38 * S):
+        _cloud(cd, x, h - 2 * S, 9 * S + (x // (38 * S)) % 3 * 2 * S)
+    image.alpha_composite(clouds.filter(ImageFilter.GaussianBlur(S)))
+
+
+def _mine_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
+    """«MINA» en oro con vetas, con borde de madera oscura."""
+    _title(image, text, style, fonts, fill=((255, 250, 170), (226, 140, 20)),
+           edge=(38, 20, 8), crack=(150, 84, 10))  # fmt: skip
+
+
+def _olympus_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
+    """«OLIMPO» en oro liso con borde azul noche, sobre el rayo."""
+    _title(image, text, style, fonts, fill=((255, 252, 200), (244, 176, 36)),
+           edge=(10, 20, 70), crack=None)  # fmt: skip
+
+
+#: Fondo, escenario (marco y decoración) y rótulo de cada máquina.
+BACKDROPS = {"volcan": _volcano_backdrop, "mina": _mine_backdrop, "olimpo": _olympus_backdrop}
+SCENES = {"volcan": _volcano_scene, "mina": _mine_scene, "olimpo": _olympus_scene}
+TITLES = {"volcan": _title, "mina": _mine_title, "olimpo": _olympus_title}
 
 
 def rad_gradient(size: tuple[int, int], inner: tuple, outer: tuple) -> Image.Image:
@@ -1232,18 +1588,19 @@ def rad_gradient(size: tuple[int, int], inner: tuple, outer: tuple) -> Image.Ima
     return Image.fromarray((a + (b - a) * t).astype(np.uint8), "RGB").convert("RGBA")
 
 
-def _cell_tile(material: str, *, empty: bool) -> Image.Image:
+def _cell_tile(style: Style, *, empty: bool) -> Image.Image:
     """Fondo de una casilla según el material de la máquina (llena o vacía en el bonus).
 
-    `"reel"` es un rodillo de casino: magenta que oscurece hacia abajo, sin
-    bordes marcados, para que cada columna parezca una tira continua.
+    `"reel"` es un rodillo de casino: un degradado con los colores de la máquina
+    (`cell_full`, `cell_empty`) que oscurece hacia abajo, sin bordes marcados,
+    para que cada columna parezca una tira continua.
     """
-    if material != "reel":
-        raise ValueError(f"Material de casilla desconocido: {material}")
+    if style.cells != "reel":
+        raise ValueError(f"Material de casilla desconocido: {style.cells}")
     size = CELL * S
-    top, bottom = ((70, 10, 70), (40, 4, 44)) if empty else ((190, 50, 150), (96, 14, 96))
+    top, bottom = style.cell_empty if empty else style.cell_full
     face = rad_gradient((size, size), top, bottom)
-    rim = (90, 20, 90) if empty else (120, 30, 110)
+    rim = style.cell_rims[1] if empty else style.cell_rims[0]
     tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=3 * S, fill=255)

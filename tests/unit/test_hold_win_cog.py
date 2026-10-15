@@ -470,3 +470,20 @@ async def test_fuera_del_canal_de_casino_no_se_abre(tmp_path: Path) -> None:
     )
 
     assert not cog.machines
+
+
+@pytest.mark.parametrize("theme", sorted(THEMES))
+def test_cada_maquina_tiene_sus_frases(theme: str) -> None:
+    from bot.cogs.hold_win import BONUS_INTRO, COLLECT_LINES, THEME_LOSS_LINES
+
+    assert len(COLLECT_LINES[theme]) >= 4
+    assert BONUS_INTRO[theme]
+    assert len(THEME_LOSS_LINES[theme]) >= 2
+
+
+def test_el_nombre_de_cada_maquina_lleva_su_articulo() -> None:
+    assert THEMES["volcan"].named == "el Volcán"
+    assert THEMES["mina"].named == "la Mina"
+    assert THEMES["olimpo"].of_named == "del Olimpo"
+    assert THEMES["mina"].of_named == "de la Mina"
+    assert THEMES["mina"].sentence_named == "La Mina"
