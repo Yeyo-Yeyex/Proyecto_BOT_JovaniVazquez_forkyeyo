@@ -5,7 +5,7 @@ La pinta Node con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium s
 ventana (ver bot/services/housing_scene.py).
 
 No decide nada: Python le pasa cada pantalla ya formateada (bot/services/housing_view.py:
-map_state, barrio_state, listing_state, portfolio_state y checkout_state) y aquí solo se
+map_state, barrio_state, listing_state, portfolio_state, checkout_state y vpo_state) y aquí solo se
 pinta. Las cifras llegan como texto: la escena nunca calcula dinero. Funciones que llama
 Python:
 
@@ -13,7 +13,7 @@ Python:
 - setup(meta)                no guarda nada: cada pantalla se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera y caja. Como no hay estado entre
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja y vpo. Como no hay estado entre
 fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
 Todo se dibuja al doble de tamaño (S = 2) y se reduce al copiarlo. Nada de Math.random
@@ -146,19 +146,35 @@ function card(x, y, w, h, o = {}) {
 
 const CHIP = {
   green: [C.green, "#fff"], blue: [C.blue, "#fff"], amber: [C.amber, "#3a2800"],
-  red: [C.red, "#fff"], grey: [C.grey, "#fff"],
+  red: [C.red, "#fff"], grey: [C.grey, "#fff"], orange: [C.orange, "#fff"], ink: [C.ink, "#fff"],
 };
 const STATUS_COLOR = { venta: "green", tuyo: "blue", compartido: "blue", parcial: "amber", ajeno: "grey",
-  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red" };
-// Una etiqueta de color. Devuelve su ancho. `align`: left | right | center.
+  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue" };
+// Una etiqueta de color. Devuelve su ancho. `align`: left | right | center. `outline`: borde y sin relleno.
 function chip(text, x, y, kind, o = {}) {
   const size = o.size || 20, maxW = o.maxW || 400, h = size + 14;
   const [t, z] = fit(text, maxW - 20, F.d, size, 13);
   const w = width(t, F.d(z)) + 22;
   const x0 = o.align === "right" ? x - w : o.align === "center" ? x - w / 2 : x;
   const [bg, fg] = CHIP[STATUS_COLOR[kind] || kind] || CHIP.grey;
-  fillRR(x0, y, w, h, h / 2, bg);
-  T(t, x0 + w / 2, y + h / 2 + 1, { font: F.d(z), color: fg, align: "center" });
+  if (o.outline) { fillRR(x0, y, w, h, h / 2, "#fff"); rr(x0 + 1, y + 1, w - 2, h - 2, h / 2); g.strokeStyle = bg; g.lineWidth = 2; g.stroke(); }
+  else fillRR(x0, y, w, h, h / 2, bg);
+  T(t, x0 + w / 2, y + h / 2 + 1, { font: F.d(z), color: o.outline ? bg : fg, align: "center" });
+  return w;
+}
+// Lo que mide una etiqueta de `tag` (con su icono), sin pintarla.
+function tagW(text, size, icon, maxW = 400) {
+  const [t, z] = fit(text, maxW - 22 - (icon ? size + 6 : 0), F.d, size, 12);
+  return width(t, F.d(z)) + 22 + (icon ? size + 6 : 0);
+}
+// Una etiqueta pequeña con un icono delante (casa, sol, corazón, aviso). Devuelve su ancho.
+function tag(text, x, y, kind, icon, size = 16, maxW = 400) {
+  const h = size + 10, ic = icon ? size + 6 : 0;
+  const [t, z] = fit(text, maxW - 22 - ic, F.d, size, 12);
+  const w = width(t, F.d(z)) + 22 + ic, [bg, fg] = CHIP[kind] || CHIP.grey;
+  fillRR(x, y, w, h, h / 2, bg);
+  if (icon) smallIcon(icon, x + 11 + size * 0.5, y + h / 2, size * 0.5, fg);
+  T(t, x + 11 + ic, y + h / 2 + 1, { font: F.d(z), color: fg });
   return w;
 }
 
@@ -290,6 +306,58 @@ function starPath(cx, cy, r, color) {
   g.closePath(); g.fillStyle = color; g.fill();
 }
 
+// Iconos pequeños para etiquetas y cajas: casa, sol, corazón, aviso, banco, visto y cruz.
+function smallIcon(key, cx, cy, r, color) {
+  g.save(); g.translate(cx, cy); g.fillStyle = color; g.strokeStyle = color; g.lineCap = "round"; g.lineJoin = "round";
+  if (key === "house") {
+    g.beginPath(); g.moveTo(-r, -r * 0.05); g.lineTo(0, -r); g.lineTo(r, -r * 0.05); g.lineTo(r * 0.7, -r * 0.05); g.lineTo(r * 0.7, r * 0.85);
+    g.lineTo(-r * 0.7, r * 0.85); g.lineTo(-r * 0.7, -r * 0.05); g.closePath(); g.fill();
+  } else if (key === "sun") {
+    circle(0, 0, r * 0.45); g.fill(); g.lineWidth = r * 0.22;
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7); g.lineTo(Math.cos(a) * r, Math.sin(a) * r); g.stroke(); }
+  } else if (key === "heart") {
+    g.beginPath(); g.moveTo(0, r * 0.85); g.bezierCurveTo(-r * 1.5, -r * 0.1, -r * 0.7, -r * 1.0, 0, -r * 0.3);
+    g.bezierCurveTo(r * 0.7, -r * 1.0, r * 1.5, -r * 0.1, 0, r * 0.85); g.fill();
+  } else if (key === "warn") {
+    g.beginPath(); g.moveTo(0, -r); g.lineTo(r, r * 0.8); g.lineTo(-r, r * 0.8); g.closePath(); g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.0)"; g.fillStyle = "#3a2800"; g.fillRect(-r * 0.08, -r * 0.35, r * 0.16, r * 0.6); g.fillRect(-r * 0.08, r * 0.35, r * 0.16, r * 0.16);
+  } else if (key === "bank") {
+    g.beginPath(); g.moveTo(-r, -r * 0.35); g.lineTo(0, -r); g.lineTo(r, -r * 0.35); g.closePath(); g.fill();
+    for (let i = 0; i < 4; i++) g.fillRect(-r * 0.8 + i * r * 0.5, -r * 0.2, r * 0.26, r * 0.8);
+    g.fillRect(-r, r * 0.7, r * 2, r * 0.26);
+  } else if (key === "check") {
+    g.lineWidth = r * 0.34; g.beginPath(); g.moveTo(-r * 0.7, 0); g.lineTo(-r * 0.15, r * 0.55); g.lineTo(r * 0.75, -r * 0.5); g.stroke();
+  } else if (key === "cross") {
+    g.lineWidth = r * 0.34; g.beginPath(); g.moveTo(-r * 0.6, -r * 0.6); g.lineTo(r * 0.6, r * 0.6); g.moveTo(r * 0.6, -r * 0.6); g.lineTo(-r * 0.6, r * 0.6); g.stroke();
+  }
+  g.restore();
+}
+// Un círculo con visto (verde) o cruz (rojo) delante de una comprobación.
+function tick(ok, cx, cy, r) {
+  circle(cx, cy, r); g.fillStyle = ok ? C.green : C.red; g.fill();
+  smallIcon(ok ? "check" : "cross", cx, cy, r * 0.62, "#fff");
+}
+// Un buitre en vuelo, de una sola mancha: alas anchas con los dedos abiertos, cuello pelado y pico ganchudo.
+function vulture(cx, cy, sz, color, eye) {
+  g.save(); g.translate(cx, cy); g.scale(sz, sz); g.fillStyle = color;
+  for (const m of [-1, 1]) {
+    g.save(); g.scale(m, 1);
+    poly([[0.08, -0.14], [0.6, -0.36], [1.02, -0.36], [1.05, 0.12], [0.6, 0.24], [0.08, 0.3]], color);
+    for (let k = 0; k < 5; k++) { // los dedos del ala
+      const y0 = -0.32 + k * 0.1;
+      poly([[0.98, y0 - 0.07], [0.98, y0 + 0.07], [1.5 - Math.abs(k - 2) * 0.05, y0 - 0.1 + k * 0.07]], color);
+    }
+    g.restore();
+  }
+  poly([[-0.2, 0.4], [0.2, 0.4], [0.3, 0.88], [-0.3, 0.88]], color); // cola
+  g.beginPath(); g.ellipse(0, 0.12, 0.21, 0.42, 0, 0, TAU); g.fill();
+  poly([[-0.24, -0.1], [-0.07, -0.5], [0.07, -0.5], [0.24, -0.1]], color); // cuello con la gola
+  circle(0, -0.6, 0.14); g.fill();
+  poly([[0.08, -0.66], [0.38, -0.58], [0.34, -0.4], [0.24, -0.5], [0.08, -0.5]], color); // pico
+  if (eye) { circle(0.03, -0.62, 0.04); g.fillStyle = eye; g.fill(); }
+  g.restore();
+}
+
 // -- Fachadas -----------------------------------------------------------------------------
 // Cada una se dibuja en un recuadro de referencia de 300 x 200 (el suelo en y = 172),
 // escalado a la altura de la caja y centrado; el fondo llena toda la caja.
@@ -315,6 +383,12 @@ const PAL = {
   medano: { wall: "#efe0b8", trim: "#1f8aa0", roof: "#c76b3c" },
   cristianos: { wall: "#fdfdf8", trim: "#2a8fbd", roof: "#c76b3c" },
   adeje: { wall: "#fffaf0", trim: "#d0883a", roof: "#c76b3c" },
+  "vpo:rehoyas": { wall: "#efe6d2", trim: "#d0583a", roof: "#8a95a3" },
+  "vpo:jinamar": { wall: "#e9eef2", trim: "#1f8aa0", roof: "#8a95a3" },
+  "vpo:tamaraceite": { wall: "#f3ead0", trim: "#2f8a5a", roof: "#8a95a3" },
+  "vpo:anaza": { wall: "#eadfe8", trim: "#7a4a9a", roof: "#8a95a3" },
+  "vpo:gallega": { wall: "#e6efd9", trim: "#d09a1a", roof: "#8a95a3" },
+  "vpo:cardonal": { wall: "#e3e9f3", trim: "#c8452f", roof: "#8a95a3" },
 };
 function palette(key) {
   const b = String(key).split("_")[0];
@@ -322,7 +396,7 @@ function palette(key) {
   const h = hash(b) % 360;
   return { wall: `hsl(${h},45%,78%)`, trim: `hsl(${h},40%,32%)`, roof: "#b4532a" };
 }
-const SKY_KINDS = ["piso2", "piso3", "atico", "chalet", "edificio"];
+const SKY_KINDS = ["piso2", "piso3", "atico", "chalet", "edificio", "vpo"];
 
 function glass(x, y, w, h, lit = false, r = null) {
   if (lit) {
@@ -471,6 +545,31 @@ const DRAW = {
     line(24, 188, 74, 188, "rgba(255,255,255,0.7)", 2); line(18, 193, 82, 193, "rgba(255,255,255,0.5)", 2);
     g.strokeStyle = "#e8e4da"; g.lineWidth = 3; g.strokeRect(6, 182, 86, 16);
     for (let x = 100; x < 250; x += 10) line(x, 172, x, 182, "#e8e4da", 2); line(96, 177, 252, 177, "#e8e4da", 2);
+  },
+  vpo(p, r, o) {
+    // un bloque de vivienda protegida: paredes claras, antepechos de colores y un cartel azul
+    const bx = 38, bw = 224, top = 34, bottom = 172, rows = 4, cols = 4;
+    const accents = [p.trim, C.orange, "#f2c230", "#1f9dab", "#d2504a"];
+    rect(bx - 5, top - 14, bw + 10, 16, "#7d8896"); fillRR(bx + bw / 2 - 22, top - 12, 44, 12, 2, C.blue); T("VPO", bx + bw / 2, top - 6, { font: F.d(10), color: "#fff", align: "center" }); rect(bx, top + 2, bw, bottom - top - 2, p.wall);
+    rect(bx, top + 2, 7, bottom - top - 2, "rgba(0,0,0,0.06)"); rect(bx + bw - 8, top + 2, 8, bottom - top - 2, "rgba(0,0,0,0.12)");
+    rect(bx + 24, top - 26, 26, 12, "#aab4be"); rect(bx + 28, top - 31, 18, 5, "#8a95a3"); // depósito de la azotea
+    const rowH = (bottom - top - 40) / rows, cw = bw / cols;
+    for (let k = 0; k < rows; k++) {
+      const y0 = top + 10 + k * rowH;
+      for (let c = 0; c < cols; c++) {
+        const wx = bx + c * cw + (cw - 24) / 2, wy = y0 + 4, col = accents[hash(o.key + k + "," + c) % accents.length];
+        glass(wx, wy, 24, rowH * 0.5, false, r);
+        rect(wx - 5, wy + rowH * 0.5 + 2, 34, rowH * 0.3, col); rect(wx - 5, wy + rowH * 0.5 + 2, 34, 2, "rgba(255,255,255,0.45)"); // antepecho de color
+        if ((k + c) % 3 === 0) line(wx - 4, wy + rowH * 0.5 + 8 + rowH * 0.3, wx + 28, wy + rowH * 0.5 + 8 + rowH * 0.3, "rgba(255,255,255,0.9)", 1.4); // tendedero
+      }
+    }
+    // planta baja: portal con marquesina y dos ventanas enrejadas
+    const fy = bottom - 36;
+    rect(bx, fy, bw, 36, p.trim); rect(bx, fy, bw, 3, "rgba(255,255,255,0.35)");
+    fillRR(130, fy + 6, 40, 30, 3, "#3a2a20"); rect(135, fy + 10, 30, 14, "#8fb2cc"); line(150, fy + 10, 150, fy + 24, "#3a2a20", 2);
+    rect(124, fy + 2, 52, 5, "#f6f6f2");
+    for (const sx of [bx + 20, bx + bw - 62]) { rect(sx, fy + 9, 42, 20, "#6a7c8c"); bars(sx, fy + 9, 42, 20, 5, "#2a2f36"); }
+    rect(bx - 6, bottom - 2, bw + 12, 4, "#b8bec6");
   },
   edificio(p, r, o) {
     cloud(26, 30, 0.8); cloud(246, 20, 0.7);
@@ -740,7 +839,7 @@ function listingCard(c, x, y, w, h) {
   cy += 30;
   chip(c.status, x + 14, cy, c.status_kind, { size: 20, maxW: w - 28 });
   cy += 36;
-  if (c.lease) { const kind = c.lease === "Alquilado" ? "green" : /no paga|Okupado|Desahucio/.test(c.lease) ? "red" : "grey"; chip(c.lease, x + 14, cy, kind, { size: 17, maxW: w - 28 }); }
+  if (c.lease) { const kind = c.lease === "Alquilado" ? "green" : c.lease === "Vive su dueño" ? "blue" : /no paga|Okupado|Desahucio/.test(c.lease) ? "red" : "grey"; chip(c.lease, x + 14, cy, kind, { size: 17, maxW: w - 28 }); }
   if (c.owners.length) ownersLine(c.owners, c.free, x + 14, y + h - 36, w - 28, 17);
 }
 
@@ -768,6 +867,36 @@ function row2(label, value, x, y, w, o = {}) {
   fitText(value, x + w, y, w - lw, F.d, o.vsize || 22, 14, { color: o.vc || C.ink, align: "right" });
 }
 
+// La hipoteca del inmueble: lo que debes, la cuota, y si hay cuotas sin pagar y aval del Estado. Devuelve el alto.
+function mortgageH(m) { return 90 + (m.unpaid ? 28 : 0); }
+function mortgageBox(m, x, y, w) {
+  const h = mortgageH(m), bad = !!m.unpaid;
+  card(x, y, w, h, { fill: bad ? "#fdf1ef" : "#fff", stroke: bad ? "#efb9b4" : null });
+  smallIcon("bank", x + 26, y + 22, 11, bad ? C.redDk : C.ink);
+  let ry = y + 22;
+  T("Hipoteca", x + 48, ry, { font: F.d(21), color: C.ink });
+  if (m.aval) chip("Aval del Estado", x + w - 12, y + 8, "blue", { size: 14, align: "right", maxW: 190 });
+  ry += 28;
+  T("Pendiente", x + 14, ry, { font: F.m(21), color: C.mute });
+  fitText(m.owed, x + w - 14, ry, 180, F.d, 23, 14, { color: C.ink, align: "right" });
+  ry += 28;
+  fitText(`${m.payment} · ${m.months} · ${m.rate}`, x + 14, ry, w - 28, F.m, 20, 13, { color: C.mute });
+  if (m.unpaid) {
+    ry += 28;
+    fitText(`Debes ${m.unpaid} (${m.unpaid_count} ${m.unpaid_count === 1 ? "cuota" : "cuotas"})`, x + 14, ry, w - 28, F.d, 20, 13, { color: C.redDk });
+  }
+  return h;
+}
+
+// La oferta de Buitre Capital: una caja oscura con un buitre mirando el precio.
+function offerBanner(o, x, y, w, h) {
+  fillRR(x, y, w, h, 12, C.ink);
+  g.save(); rr(x, y, w, h, 12); g.clip(); rect(x, y, 6, h, C.red); g.restore();
+  vulture(x + 46, y + h / 2 + 1, 18, "#e9edf2", C.red);
+  T("Buitre Capital ofrece", x + 86, y + 19, { font: F.m(18), color: "#f2b27a" });
+  fitText(`${o.price} · hasta el ${o.until}`, x + 86, y + 43, w - 86 - 12, F.d, 24, 14, { color: "#fff" });
+}
+
 function paintFicha(st) {
   header(st.title, `${st.barrio} · ${st.town} · ${st.kind_name}`, { size: 30 });
   const y0 = 100, colA = 16, wA = 296, colB = 328, wB = 304, colC = 648, wC = 336;
@@ -784,6 +913,7 @@ function paintFicha(st) {
   const legend = shown.length + (st.owners.length > shown.length ? 1 : 0) + (st.free > 0 ? 1 : 0);
   card(colA, ay, wA, 62 + legend * 24 + 6);
   T("Dueños", colA + 14, ay + 20, { font: F.m(18), color: C.mute });
+  if (st.socimi) { const sw = tagW("SOCIMI", 13, null); tag("SOCIMI", colA + wA - 10 - sw, ay + 6, "ink", null, 13); }
   ownersBar(colA + 14, ay + 34, wA - 28, 14, st.owners, st.free);
   let ly = ay + 68;
   shown.forEach((o, i) => {
@@ -814,51 +944,79 @@ function paintFicha(st) {
   st.costs.forEach((c, i) => row2(c.label, c.amount, colB + 14, by + 48 + i * 28, wB - 28, { size: 22, vsize: 22 }));
   rect(colB + 14, by + 120, wB - 28, 1.5, C.line);
   row2("Se amortiza en", st.payback, colB + 14, by + 146, wB - 28, { size: 22, vsize: 22, vc: C.blue });
-  // -- columna C: inquilino, lo tuyo y noticias
+  // -- columna C: la oferta del fondo, inquilino, hipoteca, lo tuyo y noticias
+  const tags = [];
+  if (st.bono) tags.push({ text: "Bono Alquiler Joven", kind: "green", icon: "heart" });
+  if (st.license) tags.push({ text: "Licencia vacacional", kind: "orange", icon: "sun" });
+  if (st.tense) tags.push({ text: "Zona tensionada", kind: "amber", icon: "warn" });
   let cy = y0;
-  const extra = (st.eviction_at ? 1 : 0) + (st.arrears ? 1 : 0);
+  if (st.offer) { offerBanner(st.offer, colC, cy, wC, 60); cy += 70; }
+  const memberRent = !st.tenant && st.contract_rent;
+  const extra = (st.eviction_at ? 1 : 0) + (st.arrears ? 1 : 0) + (memberRent ? 1 : 0);
   const lh = !st.lease_status ? 62 : st.tenant ? (extra ? 122 + extra * 28 : 114) : extra ? 60 + extra * 28 : 56;
   card(colC, cy, wC, lh);
   if (st.lease_status) {
-    const bad = ["impago", "desahucio", "okupa"].includes(st.lease_status);
-    chip(st.lease, colC + 14, cy + 12, STATUS_COLOR[st.lease_status] || "grey", { size: 17, maxW: wC - 28 });
+    const lw = chip(st.lease, colC + 14, cy + 12, STATUS_COLOR[st.lease_status] || "grey", { size: 17, maxW: wC - 28 });
+    // la casa donde vive alguien va junto al estado si cabe; si no, con las demás etiquetas
+    if (st.home) {
+      const room = wC - 28 - lw - 8;
+      if (tagW(st.home, 15, "house") <= room) tag(st.home, colC + wC - 14 - tagW(st.home, 15, "house"), cy + 14, "blue", "house", 15, room);
+      else tags.unshift({ text: st.home, kind: "blue", icon: "house" });
+    }
     if (st.tenant) {
       tenantIcon(st.tenant_key, colC + 38, cy + 70, 24);
       fitText(st.tenant, colC + 72, cy + 62, wC - 86, F.d, 22, 14, { color: C.ink });
       fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + 72, cy + 88, wC - 86, F.m, 20, 13, { color: C.mute });
     }
     let ry = st.tenant ? cy + 124 : cy + 64;
+    if (memberRent) { T("Renta", colC + 14, ry, { font: F.m(20), color: C.mute }); fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + wC - 14, ry, wC - 100, F.d, 20, 13, { color: C.ink, align: "right" }); ry += 28; }
     if (st.eviction_at) { T("Juicio", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.eviction_at, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); ry += 28; }
     if (st.arrears) { T("Debe", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.arrears, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); }
   } else T("Sin inquilino", colC + 14, cy + 31, { font: F.m(22), color: C.mute });
   cy += lh + 12;
+  if (st.mortgage) cy += mortgageBox(st.mortgage, colC, cy, wC) + 12;
+  // las etiquetas van en una fila a lo ancho; si llegan hasta debajo de esta columna, esta acaba antes
+  // Todas a 16 px; si no caben en una fila, la más larga se encoge (o se recorta) y las demás se quedan como están.
+  const tagSize = 16, tagCap = tags.map(() => 968);
+  const nat = tags.map((t) => tagW(t.text, tagSize, t.icon)), over = nat.reduce((a, b) => a + b + 8, -8) - 968;
+  if (over > 0) { const k = nat.indexOf(Math.max(...nat)); tagCap[k] = Math.max(150, nat[k] - over); }
+  const tagsEnd = 16 + tags.reduce((a, t, i) => a + Math.min(nat[i], tagCap[i]) + 8, -8);
+  const limit = tags.length && tagsEnd > colC - 10 ? 526 : 560;
   if (st.mine) {
-    const m = st.mine;
-    card(colC, cy, wC, 98, { fill: "#e8f1fa", stroke: "#b6d3ec" });
+    const m = st.mine, tight = st.mortgage || st.offer, avail = limit - cy;
+    const mh = avail >= 98 || !tight ? 98 : avail >= 80 ? 80 : avail >= 44 ? 40 : 0, d = mh === 80 ? 23 : 26;
+    if (mh) card(colC, cy, wC, mh, { fill: "#e8f1fa", stroke: "#b6d3ec" });
     const mineTitle = `Tienes el ${m.shares} %`, tw = width(mineTitle, F.d(21));
-    T(mineTitle, colC + 14, cy + 22, { font: F.d(21), color: C.blue });
-    fitText(m.gain, colC + wC - 14, cy + 22, wC - 28 - tw - 12, F.d, 22, 14, { color: m.up ? C.greenDk : C.redDk, align: "right" });
-    T("Vale", colC + 14, cy + 52, { font: F.m(21), color: C.mute }); fitText(m.value, colC + wC - 14, cy + 52, 200, F.d, 21, 13, { color: C.ink, align: "right" });
-    T("Pagaste", colC + 14, cy + 78, { font: F.m(21), color: C.mute }); fitText(m.paid, colC + wC - 14, cy + 78, 200, F.m, 21, 13, { color: C.ink, align: "right" });
-    cy += 110;
+    if (mh) {
+      T(mineTitle, colC + 14, cy + (mh === 40 ? 20 : 21), { font: F.d(21), color: C.blue });
+      fitText(m.gain, colC + wC - 14, cy + (mh === 40 ? 20 : 21), wC - 28 - tw - 12, F.d, 22, 14, { color: m.up ? C.greenDk : C.redDk, align: "right" });
+    }
+    if (mh >= 80) {
+      T("Vale", colC + 14, cy + 21 + d, { font: F.m(21), color: C.mute }); fitText(m.value, colC + wC - 14, cy + 21 + d, 200, F.d, 21, 13, { color: C.ink, align: "right" });
+      T("Pagaste", colC + 14, cy + 21 + 2 * d, { font: F.m(21), color: C.mute }); fitText(m.paid, colC + wC - 14, cy + 21 + 2 * d, 200, F.m, 21, 13, { color: C.ink, align: "right" });
+    }
+    if (mh) cy += mh + 12;
   }
-  // noticias: las que quepan
-  const nh = 560 - cy;
-  if (st.news.length && nh > 60) {
+  // noticias: las que quepan (sin título si hay poco sitio)
+  const nh = limit - cy, titled = nh >= 110;
+  if (st.news.length && nh >= 44) {
     card(colC, cy, wC, nh);
-    T("Últimas noticias", colC + 14, cy + 20, { font: F.m(18), color: C.mute });
-    let ny = cy + 42;
+    if (titled) T("Últimas noticias", colC + 14, cy + 20, { font: F.m(18), color: C.mute });
+    let ny = cy + (titled ? 42 : 16);
     const prefix = `${st.title}: `;
     for (const raw of st.news) {
       const i = raw.indexOf(" · "), date = i > 0 ? raw.slice(0, i) : "", rest = i > 0 ? raw.slice(i + 3) : raw;
       const text = rest.startsWith(prefix) ? rest.slice(prefix.length) : rest;
-      const lines = wrap(text, wC - 28 - 56, F.r(20), 2);
+      const lines = wrap(text, wC - 28 - 56, F.r(20), nh < 150 ? 1 : 2);
       if (ny + lines.length * 24 > cy + nh - 4) break;
       T(date, colC + 14, ny + 9, { font: F.d(17), color: C.orange });
       lines.forEach((l, k) => T(l, colC + 70, ny + 9 + k * 24, { font: F.r(20), color: C.ink }));
       ny += lines.length * 24 + 8;
     }
   }
+  // etiquetas: una fila a lo ancho, bajo las tres columnas
+  let tx = 16;
+  tags.forEach((t, i) => { tx += tag(t.text, tx, 534, t.kind, t.icon, tagSize, tagCap[i]) + 8; });
   // letra pequeña del anuncio
   const bl = wrap(st.blurb, 960, F.r(21), 2);
   bl.forEach((l, i) => T(l, 20, 576 + i * 25, { font: F.r(21), color: C.mute, skew: true }));
@@ -900,19 +1058,28 @@ function sofaRoom(x, y, w, h) {
 }
 
 // Lo que cabe en la etiqueta de una fila: la frase entera y, si no entra, una más corta.
-const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado" };
+const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí" };
+// `compact`: dos líneas y la etiqueta a la derecha; con hipoteca lleva además una tercera con la deuda.
 function itemRow(it, x, y, w, h, compact) {
   card(x, y, w, h, { r: 12 });
   const ih = h - 12, iw = compact ? Math.min(ih * 1.25, 70) : Math.min(ih * 1.4, 92);
   facade(it.kind, x + 6, y + 6, iw, ih, { key: it.key, floor: "", r: 8 });
+  if (it.home) { // vives aquí: una chincheta con casa en la esquina de la fachada
+    circle(x + 16, y + 16, 11); g.fillStyle = "#fff"; g.fill(); circle(x + 16, y + 16, 9); g.fillStyle = C.blue; g.fill(); house(x + 16, y + 15, 5, "#fff");
+  }
   const tx = x + iw + 18, right = x + w - 14, vw = compact ? 128 : 160;
   const csize = compact ? 14 : 16, room = compact ? 150 : w - iw - 40;
   const label = it.status && width(it.status, F.d(csize)) + 24 > room ? SHORT[it.status_kind] || it.status : it.status;
   if (compact) {
-    fitText(it.title, tx, y + h * 0.3, right - vw - tx - 8, F.m, 20, 18, { color: C.ink });
-    fitText(`${it.barrio} · ${it.shares} %`, tx, y + h * 0.72, right - vw - tx - 8, F.m, 18, 14, { color: C.mute });
-    fitText(it.value, right, y + h * 0.3, vw, F.d, 19, 12, { color: C.ink, align: "right" });
-    if (label) chip(label, right, y + h * 0.5, it.status_kind, { size: csize, align: "right", maxW: 150 });
+    const mort = !!it.mortgage, a = mort ? 0.2 : 0.3, b = mort ? 0.55 : 0.72;
+    fitText(it.title, tx, y + h * a, right - vw - tx - 8, F.m, 20, 18, { color: C.ink });
+    fitText(`${it.barrio} · ${it.shares} %`, tx, y + h * b, right - vw - tx - 8, F.m, 18, 14, { color: C.mute });
+    fitText(it.value, right, y + h * a, vw, F.d, 19, 12, { color: C.ink, align: "right" });
+    if (label) chip(label, right, y + h * (mort ? 0.52 : 0.5) - (mort ? 13 : 0), it.status_kind, { size: csize, align: "right", maxW: 150 });
+    if (mort) {
+      smallIcon("bank", tx + 7, y + h * 0.82, 7, /debes/.test(it.mortgage) ? C.redDk : C.mute);
+      fitText(it.mortgage, tx + 20, y + h * 0.82, right - tx - 20, F.m, 17, 12, { color: /debes/.test(it.mortgage) ? C.redDk : C.mute });
+    }
     return;
   }
   fitText(it.title, tx, y + 22, right - vw - tx - 8, F.m, 22, 18, { color: C.ink });
@@ -924,16 +1091,33 @@ function itemRow(it, x, y, w, h, compact) {
 
 function paintCartera(st) {
   const u = st.user;
-  header(`Los pisos de ${u.name}`, "Tu cartera de ladrillo");
-  card(16, 100, 400, 78);
-  T("Efectivo", 32, 122, { font: F.m(18), color: C.mute }); fitText(u.cash, 32, 152, 170, F.d, 25, 14, { color: C.ink });
-  T("En ladrillo", 218, 122, { font: F.m(18), color: C.mute }); fitText(u.worth, 218, 152, 184, F.d, 25, 14, { color: C.blue });
-  const w = st.week;
-  card(432, 100, 552, 78);
-  T("Últimos 7 días", 448, 120, { font: F.m(18), color: C.mute });
+  // a la derecha de la cabecera: lo que debes tras una ejecución y si eres una SOCIMI
+  const pills = [];
+  if (st.bank_debt) pills.push({ text: `Tras la ejecución debes ${st.bank_debt}`, kind: "red" });
+  if (st.socimi) pills.push({ text: "SOCIMI", kind: "grey" });
+  const pw = Math.max(0, ...pills.map((p) => width(p.text, F.d(17)) + 22));
+  header(`Los pisos de ${u.name}`, st.living || "Tu cartera de ladrillo", pills.length ? { rightW: pw, right() {
+    pills.forEach((p, i) => chip(p.text, W - 20, pills.length === 1 ? 30 : 12 + i * 36, p.kind, { size: 17, align: "right", maxW: 500 }));
+  } } : {});
+  const debt = !!st.debt, lw0 = debt ? 470 : 400;
+  card(16, 100, lw0, 78);
+  if (debt) { // tres cifras: cada una con el ancho que pide, y todas caben
+    const cols = [["Efectivo", u.cash, C.ink], ["En ladrillo", u.worth, C.blue], ["Deuda con el banco", st.debt, C.redDk]];
+    const nat = cols.map(([l, v]) => Math.max(width(l, F.m(17)), width(v, F.d(23))) + 14);
+    const k = Math.min(1, (lw0 - 32) / nat.reduce((a, b) => a + b, 0));
+    let cx = 32;
+    cols.forEach(([l, v, c], i) => { const cw = nat[i] * k; fitText(l, cx, 122, cw - 6, F.m, 17, 13, { color: C.mute }); fitText(v, cx, 152, cw - 8, F.d, 23, 12, { color: c }); cx += cw; });
+  } else {
+    T("Efectivo", 32, 122, { font: F.m(18), color: C.mute }); fitText(u.cash, 32, 152, 170, F.d, 25, 14, { color: C.ink });
+    T("En ladrillo", 218, 122, { font: F.m(18), color: C.mute }); fitText(u.worth, 218, 152, 184, F.d, 25, 14, { color: C.blue });
+  }
+  const w = st.week, wx = 16 + lw0 + 16, ww = 984 - wx, wc = (ww - 32) / 4;
+  card(wx, 100, ww, 78);
+  T("Últimos 7 días", wx + 16, 120, { font: F.m(18), color: C.mute });
+  if (st.euribor) T(st.euribor, wx + ww - 16, 120, { font: F.m(17), color: C.mute, align: "right" });
   [["Renta", w.rent, C.ink], ["IBI", w.ibi, C.redDk], ["Gastos", w.costs, C.redDk], ["Neto", w.net, C.greenDk]].forEach(([l, v, c], i) => {
-    const x = 448 + i * 132;
-    T(l, x, 142, { font: F.m(17), color: C.mute }); fitText(v, x, 164, 124, F.d, 19, 12, { color: c });
+    const x = wx + 16 + i * wc;
+    T(l, x, 142, { font: F.m(17), color: C.mute }); fitText(v, x, 164, wc - 8, F.d, 19, 12, { color: c });
   });
   if (st.empty) {
     card(16, 192, 520, 408); sofaRoom(16, 192, 520, 408);
@@ -942,18 +1126,30 @@ function paintCartera(st) {
     fillRR(560, 540, 330, 52, 26, C.orange); T("Elige un barrio y empieza", 725, 567, { font: F.d(19), color: "#fff", align: "center" });
     return;
   }
-  const items = st.items.slice(0, 10), more = st.items.length - items.length;
-  const n = items.length, many = n > 5, hasNews = st.news.length > 0;
-  const top = 192, bottom = many ? (hasNews ? 540 : more ? 570 : 604) : 604;
-  const cols = many ? 2 : 1, rows = Math.ceil(n / cols);
-  const lw = many ? 476 : hasNews ? 620 : 968, gap = many ? 8 : 10;
-  const rh = clamp(Math.floor((bottom - top - gap * (rows - 1)) / rows), 44, 96);
+  // Las filas con hipoteca llevan una línea más y necesitan alto: si no caben con la franja de «Última hora»,
+  // se quita la franja; si aun así no caben, se enseñan menos y el resto va a «y N más».
+  const hasMort = st.items.some((it) => it.mortgage), minH = hasMort ? 68 : 44;
+  let count = Math.min(st.items.length, 10), layout;
+  for (; count >= 1; count--) {
+    const more = st.items.length - count, many = count > 5, rows = Math.ceil(count / (many ? 2 : 1)), gap = many ? 8 : 10;
+    for (const withNews of st.news.length ? [true, false] : [false]) {
+      const bottom = many ? (withNews ? 540 : more ? 570 : 604) : 604;
+      const rh = clamp(Math.floor((bottom - 192 - gap * (rows - 1)) / rows), 44, 96);
+      layout = { count, more, many, rows, gap, rh, withNews };
+      if (rh >= minH) break;
+    }
+    if (layout.rh >= minH) break;
+  }
+  const { more, many, rows, gap, rh, withNews } = layout;
+  const items = st.items.slice(0, layout.count), top = 192;
+  const hasNews = st.news.length > 0 && (many ? withNews : true);
+  const lw = many ? 476 : hasNews ? 620 : 968;
   items.forEach((it, i) => {
     const col = many ? Math.floor(i / rows) : 0, r = many ? i % rows : i;
-    itemRow(it, 16 + col * (lw + 16), top + r * (rh + gap), lw, rh, rh < 70);
+    itemRow(it, 16 + col * (lw + 16), top + r * (rh + gap), lw, rh, rh < 70 || hasMort);
   });
   const news = st.news.map((raw) => { const i = raw.indexOf(" · "); return i > 0 ? [raw.slice(0, i), raw.slice(i + 3)] : ["", raw]; });
-  if (more && !hasNews) T(`y ${more} más`, 984, 588, { font: F.m(20), color: C.mute, align: "right" });
+  if (more && !(many && hasNews)) T(`y ${more} más`, 984, many ? 588 : 620, { font: F.m(20), color: C.mute, align: "right" });
   if (!hasNews) return;
   if (!many) {
     card(652, 192, 332, 412); T("Últimas noticias", 668, 214, { font: F.m(19), color: C.mute });
@@ -971,6 +1167,63 @@ function paintCartera(st) {
     fitText(news[0][1], 222, 578, more ? 640 : 750, F.r, 20, 14, { color: C.ink });
     if (more) T(`y ${more} más`, 972, 578, { font: F.m(20), color: C.mute, align: "right" });
   }
+}
+
+// VPO ------------------------------------------------------------------------------------
+
+// Qué comprobación falla: lo dice el motivo («Ganas demasiado…», «Ya tienes casa…»). Sin motivo claro, el límite de ingresos.
+function vpoChecks(u) {
+  if (u.eligible) return [true, true];
+  const home = u.owns || /vivienda|casa|piso|propi|alquil|hipoteca/i.test(u.reason);
+  const money = /ingres|gana|sueldo|n[oó]mina|l[ií]mite|demasiad/i.test(u.reason);
+  return [!(money || !home), !home];
+}
+
+function vpoRow(un, x, y, w, h) {
+  card(x, y, w, h, { r: 10 });
+  const ih = h - 8, iw = Math.round(ih * 1.5);
+  facade("vpo", x + 4, y + 4, iw, ih, { key: "vpo:" + un.key, floor: "", r: 7 });
+  const tx = x + iw + 18, right = x + w - 14, pw = 150;
+  const cmax = 330, cs = 15;
+  const cw = Math.min(cmax, width(un.status, F.d(cs)) + 22);
+  const cx = right - pw - 14 - cw;
+  chip(un.status, cx, y + (h - (cs + 14)) / 2, un.status_kind, { size: cs, maxW: cmax, outline: un.status_kind === "compartido" });
+  const room = cx - 14 - tx;
+  fitText(un.name, tx, y + h * 0.32, room, F.m, 22, 16, { color: C.ink });
+  fitText(`${un.town} · ${un.island} · ${un.m2}`, tx, y + h * 0.74, room, F.m, 17, 12, { color: C.mute });
+  fitText(un.price, right, y + h * 0.32, pw, F.d, 22, 14, { color: C.ink, align: "right" });
+  fitText(un.payment, right, y + h * 0.74, pw, F.m, 17, 12, { color: C.mute, align: "right" });
+}
+
+function paintVpo(st) {
+  header(st.title, st.subtitle);
+  const u = st.user, n = st.units.length, res = !!u.reservation;
+  const UH = 124, banner = res ? 50 : 0, bottom = 606, userTop = bottom - UH - banner - (res ? 8 : 0);
+  const gap = 6, rh = clamp(Math.floor((userTop - 10 - 100 - gap * (n - 1)) / n), 44, 62);
+  st.units.forEach((un, i) => vpoRow(un, 16, 100 + i * (rh + gap), 968, rh));
+  let y = bottom - UH - banner - (res ? 8 : 0);
+  if (res) { // te ha tocado: el aviso más grande de la pantalla
+    fillRR(16, y, 968, banner, 12, "#fff3c4"); rr(16, y, 968, banner, 12); g.strokeStyle = C.amber; g.lineWidth = 3; g.stroke();
+    starPath(52, y + banner / 2 + 1, 17, C.amber);
+    fitText(`¡Te ha tocado ${u.reservation}! Cómprala antes de que caduque`, 84, y + banner / 2 + 1, 968 - 84 - 20, F.d, 25, 15, { color: "#5a3a00" });
+    y += banner + 8;
+  }
+  // lo tuyo: apuntado o no, las dos comprobaciones y el motivo si no puedes
+  card(16, y, 580, UH);
+  const inn = u.signed_up;
+  circle(44, y + 27, 14); g.fillStyle = inn ? C.green : C.grey; g.fill();
+  smallIcon(inn ? "check" : "cross", 44, y + 27, 9, "#fff");
+  fitText(inn ? "Estás apuntado/a al sorteo" : "No estás apuntado", 68, y + 27, 508, F.d, 24, 16, { color: inn ? C.greenDk : C.ink });
+  const [incomeOk, homeOk] = vpoChecks(u);
+  tick(incomeOk, 34, y + 58, 10); fitText(`Ingresos ${u.income} (límite ${u.cap})`, 54, y + 58, 530, F.m, 20, 13, { color: C.ink });
+  tick(homeOk, 34, y + 84, 10); T("Sin vivienda propia", 54, y + 84, { font: F.m(20), color: C.ink });
+  if (u.reason && !u.eligible) fitText(u.reason, 30, y + 110, 548, F.d, 19, 13, { color: C.redDk });
+  // el sorteo
+  card(612, y, 372, UH);
+  T("Próximo sorteo", 630, y + 24, { font: F.m(18), color: C.mute });
+  fitText(st.next_draw, 630, y + 54, 336, F.d, 28, 16, { color: C.ink });
+  fitText(`${u.signups} apuntados`, 630, y + 84, 336, F.m, 21, 14, { color: C.ink });
+  if (st.euribor) T(st.euribor, 966, y + 108, { font: F.m(17), color: C.mute, align: "right" });
 }
 
 // CAJA ----------------------------------------------------------------------------------
@@ -1040,7 +1293,7 @@ function paintCaja(st) {
 
 // -- Entrada ------------------------------------------------------------------------------
 
-const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja };
+const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

@@ -18,6 +18,7 @@ from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
 from bot.repositories.housing import Holding, Market, MemberDay, News
+from bot.repositories.housing_finance import Mortgage, VpoOwner
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
 from bot.services import housing_view as view
@@ -99,12 +100,94 @@ NEWS = [
 ]
 
 
+def money_market() -> Market:
+    """Hipotecas, vivienda, licencia, zona tensionada, oferta del fondo, VPO y una ejecución."""
+    key = LONGEST.key
+    return Market(
+        indexes={"schamann": 1.15, LONGEST.barrio: 1.2, "vegueta": 1.1},
+        holdings={
+            "schamann_bajo": {10: Holding("schamann_bajo", 10, 100, 434000, 470000, 0)},
+            key: {10: Holding(key, 10, 40, 250000, 280000, 0), 30: Holding(key, 30, 60, 1, 1, 0)},
+            "vegueta_edificio": {10: Holding("vegueta_edificio", 10, 100, 900000, 960000, 0)},
+            "adeje_chalet": {10: Holding("adeje_chalet", 10, 100, 900000, 960000, 0)},
+        },
+        leases={
+            "schamann_bajo": rules.Lease(
+                status="alquilado", member=20, bono=True, rent=4300, until=date(2026, 12, 14),
+                license=True,
+            ),
+            key: rules.Lease(
+                status="impago", tenant="enfermeros", rent=3800, until=date(2027, 1, 9),
+                arrears=5200, eviction_at=date(2026, 11, 20), license=True, member=40, bono=True,
+            ),
+            "vegueta_edificio": rules.Lease(status="habitual"),
+            "adeje_chalet": rules.Lease(status="vacio"),
+        },
+        mortgages=(
+            Mortgage(1, 10, "schamann_bajo", 347200, 340000, 0.032, 1502, 350, 2, 3004, None),
+            Mortgage(2, 10, key, 200000, 190000, 0.032, 900, 300, 0, 0, None),
+            Mortgage(3, 10, "vpo:jinamar", 450000, 449000, 0.032, 1947, 359, 0, 0, "ico"),
+            Mortgage(5, 10, "adeje_chalet", 800000, 790000, 0.032, 3400, 340, 0, 0, "ico"),
+            Mortgage(4, 10, "vegueta_edificio", 700000, 690000, 0.032, 3000, 200, 1, 3000, None),
+        ),
+        vpo={
+            "jinamar": VpoOwner("jinamar", 10, 450000, 0, 0, 0),
+            "anaza": VpoOwner("anaza", 30, 430000, 0, 0, 0),
+        },
+        signups=(20, 40),
+        reservations={"rehoyas": (20, date(2026, 10, 26)), "cardonal": (50, date(2026, 10, 26))},
+        homes={20: ("alquiler", "schamann_bajo"), 10: ("vpo", "jinamar"),
+               60: ("propia", "vegueta_edificio"), 40: ("alquiler", key)},
+        euribor=0.0225,
+        bank_debts={10: 25000},
+        offers={
+            ("schamann_bajo", 10): (520000, date(2026, 10, 26)),
+            (key, 10): (900000, date(2026, 10, 26)),
+        },
+        socimi=frozenset({10}),
+    )  # fmt: skip
+
+
+def money_samples() -> dict[str, dict[str, Any]]:
+    """Las pantallas con lo de las fases 2 a 4: el peor caso de la ficha, la cartera y las VPO."""
+    m, week = money_market(), MemberDay(30000, 1200, 4000)
+    news4 = [News("schamann_bajo", date(2026, 10, 14), "firma_miembro", 4300, 20, None)] * 4
+    full = view.portfolio_state(m, 10, "Ana", 120000, week, NEWS, NAMES)
+    many = {**full, "items": (full["items"] * 3)[:10]}
+    mine_only = Market(vpo=m.vpo, homes={30: ("vpo", "anaza")}, euribor=0.0225)
+    return {
+        "ficha_miembro": view.listing_state(m, "schamann_bajo", 10, NAMES, news4),
+        "ficha_peor": view.listing_state(m, LONGEST.key, 10, NAMES, NEWS),
+        "ficha_vive_dueno": view.listing_state(m, "vegueta_edificio", 10, NAMES, NEWS),
+        "ficha_aval": view.listing_state(m, "adeje_chalet", 10, NAMES, []),
+        "ficha_de_otro": view.listing_state(m, "schamann_bajo", 40, NAMES, NEWS),
+        "cartera_finanzas": full,
+        "cartera_diez": many,
+        "cartera_solo_vpo": view.portfolio_state(
+            mine_only, 30, "Perro Sanxe", 900, MemberDay(), [], NAMES
+        ),
+        "cartera_ejecutada": view.portfolio_state(m, 70, "Luis", 50, MemberDay(), [], NAMES)
+        | {"bank_debt": "25.000 Y$", "debt": "25.000 Y$"},
+        "vpo_apuntada": view.vpo_state(
+            m, 20, NAMES, eligible=True, reason="", next_draw="lunes 19/10", income=6000
+        ),
+        "vpo_no": view.vpo_state(
+            m, 99, NAMES, eligible=False, reason="Ganas demasiado para una VPO",
+            next_draw="lunes 19/10", income=9000,
+        ),
+        "vpo_con_casa": view.vpo_state(
+            m, 10, NAMES, eligible=False, reason="Ya tienes vivienda: una VPO es para vivir",
+            next_draw="lunes 19/10", income=2000,
+        ),
+    }  # fmt: skip
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
 
 def samples() -> dict[str, dict[str, Any]]:
-    """Las pantallas de muestra: las cinco, con casos largos, vacíos y de todos los tipos."""
+    """Las pantallas de muestra: las seis, con casos largos, vacíos y de todos los tipos."""
     m = market()
     week = MemberDay(30000, 1200, 4000)
     out: dict[str, dict[str, Any]] = {
@@ -150,10 +233,11 @@ def samples() -> dict[str, dict[str, Any]]:
     out["ficha_muchos_duenos"] = view.listing_state(m, LISTINGS[0].key, 10, NAMES, NEWS)
     out["ficha_desahucio"] = view.listing_state(m, LISTINGS[3].key, 10, NAMES, [])
     out["barrio_isleta"] = view.barrio_state(m, "isleta", 10, NAMES)
+    out.update(money_samples())
     return out
 
 
-NINE = [
+CORE = [
     state
     for name, state in samples().items()
     if name
@@ -167,6 +251,10 @@ NINE = [
         "cartera_vacia",
         "caja_compra",
         "caja_venta",
+        "ficha_peor",
+        "cartera_finanzas",
+        "vpo_apuntada",
+        "vpo_no",
     }
 ]
 
@@ -188,7 +276,7 @@ async def test_sin_node_ni_chromium_cada_pantalla_cae_a_pillow() -> None:
     scene = HousingScene(executable_path=NO_CHROMIUM, node=NO_NODE)
     try:
         pngs = await scene.paint(list(samples().values()))
-        still = await scene.still(NINE[0])
+        still = await scene.still(CORE[0])
     finally:
         await scene.close()
     assert scene.disabled
@@ -250,7 +338,7 @@ async def test_las_pantallas_repartidas_pintan_lo_mismo_que_con_un_proceso(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cada pantalla es entera: repartir el dibujo entre procesos no cambia ni un byte."""
-    states = NINE * 4
+    states = CORE * 4
     node = own_node()
     sharing = HousingScene(executable_path=NO_CHROMIUM, node=node)
     try:
