@@ -64,6 +64,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_blackjack_scene import c, dealt, standing
     from test_bus_scene import CARDS
     from test_coin_scene import lost_game
+    from test_hold_win_scene import STAKE as BOTES_STAKE
+    from test_hold_win_scene import bonus_step, find_spin, is_rescue_miss
     from test_horses_cog import fixed_result
     from test_horses_scene import card_of
     from test_housing_scene import NAMES, samples
@@ -73,6 +75,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_tower_scene import game_at
     from test_war_scene import tied, war_of, won
 
+    from bot.cogs.hold_win import base_panel
     from bot.services import housing_view
     from bot.services.allatu import Phase
     from bot.services.allatu_scene import AllatuScene
@@ -83,6 +86,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.coin import Side
     from bot.services.coin_scene import CoinScene
     from bot.services.craps_scene import CrapsScene
+    from bot.services.hold_win import Meters
+    from bot.services.hold_win_scene import HoldWinScene, tease_of
     from bot.services.horses_scene import SceneRenderer
     from bot.services.housing_catalog import BARRIOS
     from bot.services.housing_scene import HousingScene
@@ -100,6 +105,26 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
         await scene.war(war_of())
 
     spin = outcome(17, [("17", 100), ("rojo", 50)], {17: 200})
+    panel = base_panel(Meters(), BOTES_STAKE)
+
+    def botes(predicate):  # noqa: ANN001, ANN202
+        found = find_spin(predicate)
+        return lambda s: s.base("volcan", found, stake=BOTES_STAKE, before=panel, after=panel)
+
+    def botes_bonus(s: HoldWinScene):  # noqa: ANN202
+        game, before, step, pb, pa, finish = bonus_step(
+            lambda pb, st, fin: fin is not None and fin.result.coins >= 10
+        )
+        return s.bonus_step(
+            "volcan",
+            before,
+            step,
+            stake=game.stake,
+            panel_before=pb,
+            panel_after=pa,
+            finish=finish,
+        )
+
     return {
         "moneda": (
             lambda: CoinScene(executable_path=no),
@@ -160,6 +185,14 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 stops=LOSS.stops, amount=400, pick="red", won=True, history=["S"], fresh=True
             ),
         ),
+        # Botes: una tirada sin nada, un rescate que se hace esperar y el final de un bonus
+        # con su recuento. Las dos primeras se pintan antes del clic, y el bonus también.
+        "botes": (
+            lambda: HoldWinScene(executable_path=no),
+            botes(lambda sp: not sp.points and tease_of(sp).kind is None),
+        ),
+        "botes_espera": (lambda: HoldWinScene(executable_path=no), botes(is_rescue_miss)),
+        "botes_bonus": (lambda: HoldWinScene(executable_path=no), botes_bonus),
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
             lambda s: s.race(card_of(), fixed_result((0, 1, 2, 3, 4, 5))),
