@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.20.0 · 2026-10-16
+
+- Botes: el Volcán, la Mina y el Olimpo con suspense, rescates y recuento del bonus
+- Tragaperras: carteles, luces y marcador comunes a todas las máquinas (interno)
+
 ### 7.19.0 · 2026-10-16
 
 - Tragaperras: máquina más bonita, tirada con suspense y doble o nada con carta

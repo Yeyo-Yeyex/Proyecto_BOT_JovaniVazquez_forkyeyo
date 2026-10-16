@@ -11,8 +11,14 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from render_fakes import FakePachinkoRenderer, FakeSlotsScene, FakeWheelRenderer
+from render_fakes import (
+    FakeHoldWinScene,
+    FakePachinkoRenderer,
+    FakeSlotsScene,
+    FakeWheelRenderer,
+)
 
+from bot.services.hold_win_scene import HoldWinScene
 from bot.services.pachinko_render import PachinkoRenderer
 from bot.services.roulette_render import WheelRenderer
 from bot.services.slots_scene import SlotsScene
@@ -22,6 +28,7 @@ from bot.services.slots_scene import SlotsScene
     ("fake", "real"),
     [
         (FakeSlotsScene, SlotsScene),
+        (FakeHoldWinScene, HoldWinScene),
         (FakeWheelRenderer, WheelRenderer),
         (FakePachinkoRenderer, PachinkoRenderer),
     ],

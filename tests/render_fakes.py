@@ -1,8 +1,8 @@
 """Dobles de los dibujantes de las máquinas del casino, para pruebas que no miran la imagen.
 
-`SlotsScene`, `WheelRenderer`, `RouletteScene` y `PachinkoRenderer` tardan entre 0,05 y 3 s por
-tirada (más el precalentamiento de los tres al cargar el cog, que dibuja las 38 casillas
-de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los botones
+`SlotsScene`, `HoldWinScene`, `WheelRenderer`, `RouletteScene` y `PachinkoRenderer` tardan entre
+0,05 y 3 s por tirada (más el precalentamiento de los tres al cargar el cog, que dibuja las 38
+casillas de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los botones
 (`tests/integration/test_button_speed.py`) y de los puentes entre cogs
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
@@ -12,7 +12,8 @@ blackjack) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsScene` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
-(`SlotsMedia`, `SpinMedia`, `PachinkoMedia`) con bytes de relleno y `seconds=0.0`, y
+(`SlotsMedia`, `SpinMedia`, `PachinkoMedia`, `Media` de Botes) con bytes de relleno y
+`seconds=0.0`, y
 respetan `turbo` (GIF vacío), que es lo que el cog mira para decidir qué enseña. Las
 pruebas del dibujo de verdad están en `tests/unit/test_*_render.py`, que no usan esto.
 
@@ -26,6 +27,8 @@ import pytest
 
 import bot.services.allatu_scene as allatu_scene
 import bot.services.blackjack_scene as blackjack_scene
+import bot.services.hold_win_render as hold_win_render
+import bot.services.hold_win_scene as hold_win_scene
 import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
@@ -67,6 +70,70 @@ class FakeSlotsScene:
         fresh: bool,
     ) -> slots_render.SlotsMedia | None:
         return slots_render.SlotsMedia(gif=b"GIF", png=b"PNG", seconds=0.0)
+
+    async def close(self) -> None:
+        return None
+
+
+class FakeHoldWinScene:
+    """`HoldWinScene` sin dibujar: PNG y GIF de relleno (el GIF vacío en turbo).
+
+    Las cuatro tiradas de las máquinas de Botes (la base, la entrada al bonus, una del bonus
+    y la quieta) devuelven bytes fijos y duran 0 s.
+    """
+
+    @property
+    def disabled(self) -> bool:
+        return False
+
+    async def base(
+        self,
+        theme: str,
+        spin: object,
+        *,
+        stake: int,
+        before: object,
+        after: object,
+        banner: object = None,
+        turbo: bool = False,
+    ) -> hold_win_render.Media:
+        return hold_win_render.Media(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
+
+    async def still(
+        self, theme: str, spin: object, *, stake: int, panel: object, highlight: bool = False
+    ) -> bytes:
+        return b"PNG"
+
+    async def bonus_intro(
+        self,
+        theme: str,
+        spin: object,
+        *,
+        base_stake: int,
+        before: object,
+        after: object,
+        game: object,
+        panel: object,
+        name: str,
+        banner: object,
+        turbo: bool = False,
+    ) -> hold_win_render.Media:
+        return hold_win_render.Media(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
+
+    async def bonus_step(
+        self,
+        theme: str,
+        before: object,
+        step: object,
+        *,
+        stake: int,
+        panel_before: object,
+        panel_after: object,
+        finish: object = None,
+        banner: object = None,
+        turbo: bool = False,
+    ) -> hold_win_render.Media:
+        return hold_win_render.Media(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
     async def close(self) -> None:
         return None
@@ -265,6 +332,7 @@ class FakeAllatuScene:
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_scene, "SlotsScene", FakeSlotsScene)
+    monkeypatch.setattr(hold_win_scene, "HoldWinScene", FakeHoldWinScene)
     monkeypatch.setattr(roulette_render, "WheelRenderer", FakeWheelRenderer)
     monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)

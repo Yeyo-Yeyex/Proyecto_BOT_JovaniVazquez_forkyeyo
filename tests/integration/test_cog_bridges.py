@@ -27,6 +27,7 @@ from bot.repositories.economy import LedgerEntry
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
 from bot.services.enraya import Board, Disc
+from bot.services.hold_win_render import Media
 from bot.services.skins import SKIN_BY_KEY
 from bot.services.work import ShiftRecord
 
@@ -607,9 +608,11 @@ async def test_auto_de_los_botes_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
             cog, theme=botes.THEMES["volcan"], guild_id=GUILD_ID, owner=owner, stake=10
         )
         view.message = None
+        cog.ahead = False  # pintar por adelantado gastaría las tiradas del Auto
         cog.renderer = MagicMock()
-        cog.renderer.base_still = MagicMock(return_value=b"PNG")
-        cog.renderer.bonus_still = MagicMock(return_value=b"PNG")
+        cog.renderer.still = AsyncMock(return_value=b"PNG")
+        cog.renderer.bonus_intro = AsyncMock(return_value=Media(gif=b"", png=b"PNG", seconds=0.0))
+        cog.renderer.close = AsyncMock()
         interaction = fake_interaction()
         interaction.user = owner
 
@@ -635,8 +638,10 @@ async def test_tragas_abre_cada_maquina_de_botes_con_el_bot_real(
     await client.hold_win.initialize()
     try:
         botes = importer("Botes", client)
+        client.get_cog("Botes").ahead = False
         client.get_cog("Botes").renderer = MagicMock()
-        client.get_cog("Botes").renderer.base_still = MagicMock(return_value=b"PNG")
+        client.get_cog("Botes").renderer.still = AsyncMock(return_value=b"PNG")
+        client.get_cog("Botes").renderer.close = AsyncMock()
         tragas = client.get_cog("Tragaperras")
         owner = MagicMock(spec=discord.Member)
         owner.id, owner.display_name, owner.bot = OWNER_ID, "Diego", False
