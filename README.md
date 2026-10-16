@@ -1099,6 +1099,12 @@ carpeta `informes/`, junto a `docker-compose.yml`, y guarda los 14 últimos. La 
 pedirlo, comparte esa carpeta por SMB desde el panel del NAS (solo lectura basta).
 Sin la carpeta montada, el bot no guarda nada.
 
+Para no depender del NAS, un administrador elige un canal con `/informe canal:#canal`
+(o `.informe #canal`): el bot sube ahí el informe cada día y, en ese momento, el de
+hoy (un reinicio el mismo día no lo repite). Hazlo privado: que solo lo vean el bot y
+quien vaya a leerlo, porque lleva los nombres de los canales y las cifras de uso.
+`/informe quitar:True` (o `.informe quitar`) deja de publicarlo.
+
 ## Pruebas y calidad
 
 ```bash

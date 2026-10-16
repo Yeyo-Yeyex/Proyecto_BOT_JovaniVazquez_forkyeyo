@@ -37,7 +37,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs.deploy import can_post, news_channel, resolve_target
-from bot.cogs.telemetry import report_inputs
+from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
 from bot.repositories.welcome import WelcomeSettings
 from bot.services.levels import MAX_XP_COOLDOWN_SECONDS, MIN_XP_COOLDOWN_SECONDS
@@ -51,6 +51,7 @@ from bot.services.moderation import (
 )
 from bot.services.telemetry import TelemetryService
 from bot.services.welcome import GifError, classify_gif
+from bot.utils.cogs import find_cog
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,10 @@ GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 # usuarios por día se borran a los 90 (`bot.repositories.telemetry`).
 DEFAULT_REPORT_DAYS = 30
 MAX_REPORT_DAYS = 90
+INFORME_USAGE = (
+    f"Uso: `.informe [días]` (1 a {MAX_REPORT_DAYS}) para descargarlo, `.informe #canal` "
+    "para publicarlo ahí cada día o `.informe quitar` para dejar de publicarlo."
+)
 
 # Acciones de `niveles`; "mismo" vuelve a anunciar donde se sube de nivel.
 LEVEL_ACTIONS = ("importar", "activar", "desactivar", "mismo")
@@ -1044,36 +1049,61 @@ class Admin(commands.Cog):
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
-        dias=f"Días hacia atrás (1–{MAX_REPORT_DAYS}; por defecto {DEFAULT_REPORT_DAYS})."
+        dias=f"Días hacia atrás (1–{MAX_REPORT_DAYS}; por defecto {DEFAULT_REPORT_DAYS}).",
+        canal="Canal privado donde publicar el informe cada día (en vez de descargarlo).",
+        quitar="Deja de publicar el informe cada día.",
     )
     async def informe(
         self,
         interaction: discord.Interaction,
         dias: app_commands.Range[int, 1, MAX_REPORT_DAYS] = DEFAULT_REPORT_DAYS,
+        canal: discord.TextChannel | app_commands.AppCommandThread | None = None,
+        quitar: bool = False,
     ) -> None:
-        """Manda el informe de uso en un JSON que solo ves tú."""
-        await self._informe_impl(InteractionResponder(interaction), dias)
+        """Manda el informe de uso en un JSON que solo ves tú, o elige dónde publicarlo."""
+        channel_id = canal.id if canal is not None else None
+        await self._informe_impl(InteractionResponder(interaction), dias, channel_id, quitar)
 
     @commands.command(name="informe")
-    async def informe_text(self, ctx: commands.Context, dias: int = DEFAULT_REPORT_DAYS) -> None:
-        """Versión de texto: deja el JSON en el canal donde se pide."""
-        if not 1 <= dias <= MAX_REPORT_DAYS:
-            await ctx.send(f"Uso: `.informe [días]`, de 1 a {MAX_REPORT_DAYS}.")
-            return
-        await self._informe_impl(ContextResponder(ctx), dias)
+    async def informe_text(self, ctx: commands.Context, *args: str) -> None:
+        """Versión de texto: acepta en cualquier orden unos días y un #canal o `quitar`."""
+        days = DEFAULT_REPORT_DAYS
+        channel_id: int | None = None
+        remove = False
+        for arg in args:
+            if arg.isdigit() and 1 <= int(arg) <= MAX_REPORT_DAYS:
+                days = int(arg)
+            elif arg.lower() == "quitar":
+                remove = True
+            elif (converted := await _channel_or_thread_id(ctx, arg)) is not None:
+                channel_id = converted
+            else:
+                await ctx.send(INFORME_USAGE)
+                return
+        await self._informe_impl(ContextResponder(ctx), days, channel_id, remove)
 
-    async def _informe_impl(self, responder: CommandResponder, days: int) -> None:
-        """Vuelca la telemetría y adjunta el informe de los últimos `days` días.
+    async def _informe_impl(
+        self,
+        responder: CommandResponder,
+        days: int,
+        channel_id: int | None = None,
+        remove: bool = False,
+    ) -> None:
+        """Adjunta el informe de los últimos `days` días, o cambia su canal diario.
 
         El informe (ver `bot.services.telemetry.build_report`) lleva cantidades y
         seudónimos (u1, u2…), nunca mensajes ni IDs de miembros. Sirve para que un
         agente decida mejoras: se guarda en `docs/metricas/` del fork y se analiza
-        con `docs/analisis_metricas.py`.
+        con `docs/analisis_metricas.py`. Con un canal, el cog `Telemetry` lo publica
+        ahí cada día (`publish_daily`); con `remove`, deja de hacerlo.
         """
         guild = responder.guild
         telemetry = getattr(self.bot, "telemetry", None)
         if guild is None or not isinstance(telemetry, TelemetryService):
             await responder.send_error("La telemetría no está disponible ahora mismo.")
+            return
+        if channel_id is not None or remove:
+            await self._report_channel_impl(responder, guild, telemetry, channel_id, remove)
             return
         await responder.start_progress("📊 Preparando el informe…", ephemeral=True)
         names, channel_names = report_inputs(self.bot, guild)
@@ -1081,10 +1111,50 @@ class Admin(commands.Cog):
             guild_id=guild.id, days=days, commands=names, channel_names=channel_names
         )
         data = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode()
+        daily = await telemetry.report_channel(guild.id)
         await responder.finish(
             f"📊 Informe de {days} días ({math.ceil(len(data) / 1024)} KB). Súbelo a "
-            "`docs/metricas/` del fork o pásaselo a Claude.",
+            "`docs/metricas/` del fork o pásaselo a Claude.\n"
+            + (
+                f"Cada día se publica en <#{daily}>."
+                if daily is not None
+                else "No se publica cada día; elige un canal privado con `/informe canal:`."
+            ),
             file=discord.File(io.BytesIO(data), filename=f"informe-{report['hasta']}.json"),
+        )
+
+    async def _report_channel_impl(
+        self,
+        responder: CommandResponder,
+        guild: discord.Guild,
+        telemetry: TelemetryService,
+        channel_id: int | None,
+        remove: bool,
+    ) -> None:
+        """Guarda o quita el canal del informe diario y, si hay uno, publica ya el de hoy."""
+        if remove and channel_id is not None:
+            await responder.send_error("Elige un canal o «quitar», no las dos cosas.")
+            return
+        target = None if channel_id is None else await resolve_target(guild, channel_id)
+        if channel_id is not None and (target is None or not can_post(target, guild.me)):
+            await responder.send_error(
+                "No encuentro ese canal o hilo, o no puedo escribir en él. Si es privado, "
+                "dame permiso para verlo y escribir."
+            )
+            return
+        if not await telemetry.set_report_channel(guild.id, channel_id):
+            await responder.send_error("La telemetría no está disponible ahora mismo.")
+            return
+        if target is None:
+            await responder.send("🗑️ El informe ya no se publica cada día.", ephemeral=True)
+            return
+        await responder.start_progress("📊 Publicando el informe de hoy…", ephemeral=True)
+        cog = find_cog(self.bot, Telemetry)
+        published = cog is not None and await cog.publish_daily(guild)
+        await responder.finish(
+            f"✅ El informe se publicará cada día en {target.mention}. "
+            + ("Ya está el de hoy." if published else "⚠️ El de hoy no se pudo publicar.")
+            + " Que sea privado: lleva nombres de canales y cifras de uso."
         )
 
 
