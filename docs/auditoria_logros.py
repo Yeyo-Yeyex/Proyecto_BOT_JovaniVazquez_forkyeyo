@@ -95,6 +95,7 @@ from bot.services.achievements import (  # noqa: E402
     slots_stats,
     tower_stats,
     war_stats,
+    with_derived,
 )
 from bot.services.levels import TIMEZONE  # noqa: E402
 from bot.services.pachinko_motion import motion_for  # noqa: E402
@@ -278,9 +279,18 @@ def _jugar_slots(j: Jugador) -> StatDelta:
         net += won - price
 
     amount, doubles = payout + jackpot, 0
+    # La fila de las últimas cartas de la máquina (`slots_scene.double_suit`): del color
+    # elegido si gana y del otro si pierde. Elige casi siempre el mismo color.
+    cards = j.extra.setdefault("cards", [])
     while amount and doubles < slots.DOUBLE_MAX and rng.random() < 0.5:
         won = rng.random() < 0.5
-        delta.merge(slots_double_stats(amount=amount, won=won, chain=doubles + won))
+        red = (rng.random() < 0.8) == won
+        suit = rng.choice("HD" if red else "SC")
+        cards[:] = [*cards, suit][-5:]
+        run = len(cards) - len("".join(cards).rstrip(suit))
+        delta.merge(
+            slots_double_stats(amount=amount, won=won, chain=doubles + won, suit=suit, run=run)
+        )
         paid += amount
         net += amount if won else -amount
         if not won:
@@ -789,7 +799,9 @@ def simular(
             j.sumar(jugar(j))
             if partida % 10 and partida > 50:
                 continue  # mirar cada 10 partidas basta y va diez veces más rápido
-            for a in [a for a in pendientes if _met(a, j.stats)]:
+            # Con las estadísticas calculadas (palos distintos, plenos por número…).
+            full = with_derived(j.stats)
+            for a in [a for a in pendientes if _met(a, full)]:
                 dias[a.id].append(partida / ritmo)
                 pendientes.remove(a)
     out = {}

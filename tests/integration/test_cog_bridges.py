@@ -164,8 +164,10 @@ async def test_rafaga_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_pa
         channel.send = AsyncMock()
         view.message = MagicMock()
         view.message.channel = channel
+        view.cog.ahead = False
         view.cog.renderer = MagicMock()
-        view.cog.renderer.still_png = MagicMock(return_value=b"PNG")
+        view.cog.renderer.still = AsyncMock(return_value=b"PNG")
+        view.cog.renderer.close = AsyncMock()
         interaction = fake_interaction()
         interaction.user = owner
         interaction.guild = None
@@ -205,10 +207,12 @@ async def test_auto_de_la_tragaperras_apunta_sus_logros_con_el_bot_real(tmp_path
         view.message = MagicMock()
         view.message.channel = channel
         view.message.edit = AsyncMock()
+        cog.ahead = False
         cog.renderer = MagicMock()
-        cog.renderer.render = MagicMock(
+        cog.renderer.spin = AsyncMock(
             return_value=slots.SlotsMedia(gif=b"GIF", png=b"PNG", seconds=0.0)
         )
+        cog.renderer.close = AsyncMock()
         interaction = fake_interaction()
         interaction.user = owner
         interaction.guild = None

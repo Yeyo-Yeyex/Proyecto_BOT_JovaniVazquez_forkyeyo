@@ -1,4 +1,8 @@
-"""Animación de la tragaperras: un GIF por tirada y una imagen fija final.
+"""Animación de la tragaperras con Pillow: un GIF por tirada y una imagen fija final.
+
+Es el dibujo de reserva: la máquina se pinta con canvas (`bot.services.slots_scene`) y
+este solo se usa si no hay ni Node ni navegador. Es más pequeño y lleva el ritmo de
+antes; los símbolos de `assets/slots` (200 px) se reducen a 50.
 
 La ruleta tiene 38 resultados y prerrenderiza un GIF por casilla. Aquí hay
 unas 29.000 combinaciones de rodillos, así que no se puede: el GIF se monta

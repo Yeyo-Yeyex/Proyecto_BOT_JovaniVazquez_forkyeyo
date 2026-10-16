@@ -256,3 +256,48 @@ def test_hay_muchos_logros_nuevos_con_secretos() -> None:
     new = [a for a in CATALOG if a.category == "slots" and a.stat in new_stats]
     assert len(new) >= 30
     assert any(a.secret for a in new)
+
+
+# -- Lo que se ve en la máquina pintada ----------------------------------------------------
+
+
+def test_el_apagon_camino_del_bote_y_el_frenazo_que_se_pasa_solo_cuentan_si_se_ven() -> None:
+    blackout = _spin(lambda s: s.line[:2] == ("W", "W") and not s.is_jackpot)
+    slipped = _spin(lambda s: s.teaser is not None and s.grid[2][2] == s.teaser)
+    args = {"stake": 100, "payout": 0, "jackpot": 0, "free": False, "hot": False}
+    seen = slots_stats(blackout, turbo=False, session_spins=1, when=NOON, **args)
+    assert seen.add["slots_jackpot_tease"] == 1 and "blackout_1" in _unlocks(seen)
+    turbo = slots_stats(blackout, turbo=True, session_spins=1, when=NOON, **args)
+    assert "slots_jackpot_tease" not in turbo.add
+    passed = slots_stats(slipped, turbo=False, session_spins=1, when=NOON, **args)
+    assert passed.add["slots_slipped"] == 1
+    # El que se queda encima no ha cruzado la línea.
+    short = _spin(lambda s: s.teaser is not None and s.grid[0][2] == s.teaser != s.grid[2][2])
+    assert (
+        "slots_slipped"
+        not in slots_stats(short, turbo=False, session_spins=1, when=NOON, **args).add
+    )
+
+
+def test_la_carta_del_doble_o_nada_cuenta_sus_palos_y_sus_rachas() -> None:
+    heart = slots_double_stats(amount=100, won=False, chain=0, suit="H", run=1)
+    assert heart.add["slots_card_H"] == 1 and heart.add["slots_heart_loss"] == 1
+    assert "card_heart" in _unlocks(heart)
+    # Sin carta pintada (sin Node ni navegador), nada de palos.
+    assert "slots_card_H" not in slots_double_stats(amount=100, won=False, chain=0).add
+
+    stats: dict[str, int] = {}
+    for suit in "HDSC":
+        stats.update(slots_double_stats(amount=100, won=True, chain=1, suit=suit, run=1).add)
+    assert "card_suits" in set(newly_unlocked(stats, []))
+
+    color = slots_double_stats(amount=100, won=True, chain=2, suit="D", run=5)
+    assert {"card_run_3", "card_run_5"} <= _unlocks(color)
+    spade = slots_double_stats(amount=1_600, won=True, chain=SLOTS_DOUBLE_MAX, suit="S", run=1)
+    assert "card_spade_five" in _unlocks(spade)
+    assert (
+        "slots_spade_five"
+        not in slots_double_stats(
+            amount=1_600, won=True, chain=SLOTS_DOUBLE_MAX, suit="C", run=1
+        ).add
+    )

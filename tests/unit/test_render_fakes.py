@@ -11,17 +11,17 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from render_fakes import FakePachinkoRenderer, FakeSlotsRenderer, FakeWheelRenderer
+from render_fakes import FakePachinkoRenderer, FakeSlotsScene, FakeWheelRenderer
 
 from bot.services.pachinko_render import PachinkoRenderer
 from bot.services.roulette_render import WheelRenderer
-from bot.services.slots_render import SlotsRenderer
+from bot.services.slots_scene import SlotsScene
 
 
 @pytest.mark.parametrize(
     ("fake", "real"),
     [
-        (FakeSlotsRenderer, SlotsRenderer),
+        (FakeSlotsScene, SlotsScene),
         (FakeWheelRenderer, WheelRenderer),
         (FakePachinkoRenderer, PachinkoRenderer),
     ],

@@ -69,6 +69,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_housing_scene import NAMES, samples
     from test_housing_scene import market as housing_market
     from test_roulette_scene_browser import HISTORY, outcome
+    from test_slots_scene import LINE_TEASE, LOSS, SEVENS
     from test_tower_scene import game_at
     from test_war_scene import tied, war_of, won
 
@@ -86,6 +87,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.housing_catalog import BARRIOS
     from bot.services.housing_scene import HousingScene
     from bot.services.roulette_scene import RouletteScene
+    from bot.services.slots_scene import SlotsScene
     from bot.services.tower import Difficulty
     from bot.services.tower_scene import TowerScene
     from bot.services.war_scene import WarScene
@@ -143,6 +145,20 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
         "allatu_llamada": (
             lambda: AllatuScene(executable_path=no),
             lambda s: s.call(game_in(Phase.OFFER)),
+        ),
+        # Tragaperras: una tirada sin nada, una con el tercer rodillo lento, un ÉPICO
+        # (lo más largo) y el doble o nada. Todas se pintan antes del clic.
+        "tragas": (lambda: SlotsScene(executable_path=no), lambda s: s.spin(LOSS)),
+        "tragas_lenta": (lambda: SlotsScene(executable_path=no), lambda s: s.spin(LINE_TEASE)),
+        "tragas_epico": (
+            lambda: SlotsScene(executable_path=no),
+            lambda s: s.spin(SEVENS, won=20_000, stake=100),
+        ),
+        "tragas_doble": (
+            lambda: SlotsScene(executable_path=no),
+            lambda s: s.double(
+                stops=LOSS.stops, amount=400, pick="red", won=True, history=["S"], fresh=True
+            ),
         ),
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
