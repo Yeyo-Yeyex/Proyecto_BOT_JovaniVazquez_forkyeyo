@@ -9,6 +9,9 @@ respuesta a Discord (`discord.Interaction` frente a `commands.Context`).
 `CommandResponder` oculta esa diferencia detrás de una interfaz única,
 para que los cogs no dupliquen sus reglas entre las dos variantes (ver
 Biblia.txt, norma "No duplicar reglas entre comandos").
+
+Cada `send_error` cuenta un `rechazo` del comando en la telemetría interna: los
+comandos que más contestan con un error son los que confunden o fallan.
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ import abc
 
 import discord
 from discord.ext import commands
+
+from bot.services.telemetry import report_event
 
 
 class CommandResponder(abc.ABC):
@@ -109,6 +114,8 @@ class InteractionResponder(CommandResponder):
             await self._interaction.response.send_message(**kwargs)
 
     async def send_error(self, content: str) -> None:
+        command = self._interaction.command
+        report_event("rechazo", command.qualified_name if command is not None else "?")
         await self.send(content, ephemeral=True)
 
     async def start_progress(
@@ -158,6 +165,8 @@ class ContextResponder(CommandResponder):
         await self._ctx.send(content, embed=embed, allowed_mentions=allowed_mentions)
 
     async def send_error(self, content: str) -> None:
+        command = self._ctx.command
+        report_event("rechazo", command.qualified_name if command is not None else "?")
         await self._ctx.send(content)
 
     async def start_progress(

@@ -1076,9 +1076,26 @@ y botones (con lo que tardan en contestar, partido en llegada al bot, trabajo de
 y viaje de la respuesta, y si se quedaron sin respuesta), mensajes
 por canal, reacciones, minutos de voz, altas y bajas, avisos del log, lo que tarda
 cada dibujo y cada subida de archivos a Discord, dónde se para el bucle de eventos
-cuando se queda bloqueado más de 250 ms y, cada minuto, la memoria del contenedor,
-el retraso del bucle y los procesos de Chromium y Node. Nunca guarda el texto de un
-mensaje.
+cuando se queda bloqueado más de 250 ms, lo que espera cada miembro del clic a la
+imagen, las vistas que caducan a medias, cada arranque con su versión, los cortes con
+Discord, sus respuestas 429 por ruta, los procesos que el contenedor mata por memoria
+lo que tarda cada sentencia de cada repositorio en la base de datos (y sus «database
+is locked»), lo que se espera en cada candado, los procesos de Node que se abren y la
+espera hasta tener uno, los dibujos que salen con el plan B, lo que pesa cada imagen,
+las interacciones que Discord ya daba por perdidas (10062), cada vista abierta,
+cerrada o abandonada con lo que duró, la opción elegida en cada desplegable (las
+páginas de la ayuda, entre ellas), los comandos mal escritos o que contestan con un
+error, los errores con traza por tipo y función, la música (búsquedas, pistas
+escuchadas o saltadas, fallos y cola), lo que tarda cada llamada a Discord por ruta,
+cada vuelta de cada tarea programada, lo que tarda en arrancar, los mensajes del bot
+y las reacciones que reciben, y, cada minuto, la memoria y la CPU del contenedor, el
+retraso del bucle, los procesos de Chromium y Node y su memoria, lo leído y escrito en
+disco, las tareas vivas del bucle, lo que ocupa la base de datos y el disco libre. Al sacar el informe lee también, sin escribir nada,
+cuántos miembros tienen cada logro (frente a su rareza), las ventas de la tienda por
+artículo, las mascotas por especie, el dinero que entra y sale cada día (con lo que
+recauda el Estado por impuesto, el Gini y su saldo) y los primeros pasos de los
+miembros nuevos. Nunca guarda
+el texto de un mensaje.
 
 Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
 `telemetry_*` del mismo archivo). Las horas sueltas se pliegan en días a los 90 días
@@ -1091,13 +1108,30 @@ guarda en `docs/metricas/` del fork y se resume con:
 
 ```bash
 python docs/analisis_metricas.py docs/metricas/informe-AAAA-MM-DD.json
+python docs/analisis_metricas.py docs/metricas/   # visión global de todos
 ```
+
+Con una carpeta (o varios JSON) junta todos los informes: lo que va por día (uso
+diario, sistema, arranques) cubre toda la historia y «Versiones y reinicios» compara
+cada versión del bot con las anteriores. Las muestras del sistema solo se guardan 14
+días en el bot, así que la historia de memoria y CPU sale de ir guardando informes.
 
 Además, al arrancar y una vez al día el bot deja ese mismo informe (30 días) en la
 carpeta `informes/`, junto a `docker-compose.yml`, y guarda los 14 últimos. La crea
 `actualizar.sh` con permisos para el contenedor. Para que un agente lo lea sin
 pedirlo, comparte esa carpeta por SMB desde el panel del NAS (solo lectura basta).
 Sin la carpeta montada, el bot no guarda nada.
+
+Junto a cada informe del canal va un mensaje corto con la versión del bot y lo que
+hay que vigilar del día anterior (clics sin respuesta, interacciones perdidas, bot
+caído, CPU, memoria o disco al límite, base de datos bloqueada, reinicios…), o «nada
+que vigilar».
+
+Para no depender del NAS, un administrador elige un canal con `/informe canal:#canal`
+(o `.informe #canal`): el bot sube ahí el informe cada día y, en ese momento, el de
+hoy (un reinicio el mismo día no lo repite). Hazlo privado: que solo lo vean el bot y
+quien vaya a leerlo, porque lleva los nombres de los canales y las cifras de uso.
+`/informe quitar:True` (o `.informe quitar`) deja de publicarlo.
 
 ## Pruebas y calidad
 

@@ -82,6 +82,7 @@ from bot.services.economy import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -188,7 +189,7 @@ class BusView(ui.View):
         self.channel: object = None
         self.started_at = 0.0
         self._busy = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("bus:BusView._lock")
         self._last_interaction: discord.Interaction | None = None
         #: Cartas de la partida que se está jugando o de la siguiente.
         self.deck: tuple[Card, ...] = ()

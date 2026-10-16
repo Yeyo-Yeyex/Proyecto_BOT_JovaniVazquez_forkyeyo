@@ -87,6 +87,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -197,7 +198,7 @@ class CoinView(ui.View):
         self.channel: object = None
         self.started_at = 0.0
         self._busy = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("coin:CoinView._lock")
         self._last_interaction: discord.Interaction | None = None
         #: Primer lanzamiento de la próxima partida, sorteado por adelantado.
         self._opening: Outcome | None = None

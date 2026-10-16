@@ -47,9 +47,12 @@ Lo que más se olvida:
 - **Decidir con datos:** antes de optimizar, quitar o rehacer algo, mira si hay
   informes de uso en `docs/metricas/` y pásalos por `docs/analisis_metricas.py`
   (botones lentos, fallos, retención, memoria del NAS, bloqueos del bucle). El bot deja
-  cada día el informe en `informes/` del NAS (README, «Telemetría interna»); si la
-  persona la comparte por SMB, léelo de ahí. Si no hay uno reciente, pídeselo: lo saca
-  un administrador con `/informe`. La telemetría no lleva logros.
+  cada día el informe en `informes/` del NAS (README, «Telemetría interna») y lo sube
+  al canal que eligió un administrador con `/informe canal:`; bájalo de ahí con
+  `docs/descargar_informe.py` (necesita `INFORME_TOKEN` e `INFORME_CANAL` en `.env`) y
+  mira la visión global con `docs/analisis_metricas.py docs/metricas/` («Versiones y
+  reinicios» compara cada versión con las anteriores). Si no hay
+  uno reciente, pídeselo: lo saca un administrador con `/informe`. La telemetría no lleva logros.
 - **Versión:** todo cambio que entra en `main` sube `__version__` (`src/bot/__init__.py`)
   y añade su entrada arriba en `CHANGELOG.md`. MAYOR si algo que la gente ya hacía deja
   de funcionar igual (comando quitado o renombrado, datos perdidos), MENOR si hay algo
@@ -96,9 +99,12 @@ Todo botón nuevo, o que se toque, sigue estas reglas. Las funciones están en
 7. **Clics en ráfaga contra un mismo candado** (como el minijuego de `pala`): el
    clic que llega tarde se acepta fuera del candado. Si se acepta dentro, cada
    clic espera a que el anterior termine de hablar con Discord y los últimos pasan
-   de 3 segundos.
+   de 3 segundos. Los candados se crean con `TimedLock("modulo:Clase._lock")`
+   (`bot.services.telemetry`), no con `asyncio.Lock()`: así el informe dice qué
+   candado hace esperar y cuánto («Esperas en candados»).
 8. **La base de datos se abre siempre con `bot.repositories.sqlite.connect`**, que
-   activa el modo WAL. Una escritura no sincroniza el disco del NAS y una lectura
+   activa el modo WAL (y mide cada sentencia para el informe, «Base de datos»). Una
+   escritura no sincroniza el disco del NAS y una lectura
    no espera a una escritura. Un repositorio nuevo no llama a `sqlite3.connect` a
    mano.
 

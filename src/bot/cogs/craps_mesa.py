@@ -88,6 +88,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, notify
 
 if TYPE_CHECKING:
@@ -391,7 +392,7 @@ class CrapsTable:
         self._plan: tuple[tuple[Any, ...], asyncio.Future[Media | None]] | None = None
         self._painting: asyncio.Task[None] | None = None
         self.task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("craps_mesa:CrapsTable._lock")
         self._edit_task: asyncio.Task[None] | None = None
         self._dirty = False
         #: Se activan con la primera apuesta y cuando se debe tirar ya.

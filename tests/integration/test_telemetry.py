@@ -15,7 +15,7 @@ import json
 import logging
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -275,6 +275,74 @@ def test_mensajes_dibujos_y_avisos_del_log_llegan_al_informe_sin_su_contenido(
             await client.close()
 
     asyncio.run(scenario())
+
+
+class ChannelResponder(Responder):
+    """Responder que apunta lo que contesta `informe` al elegir canal."""
+
+    def __init__(self, guild: MagicMock) -> None:
+        super().__init__(guild)
+        self.said: list[str] = []
+
+    async def send(self, content: str | None = None, **kwargs: object) -> None:
+        self.said.append(content or "")
+
+    async def finish(self, content: str | None = None, **kwargs: object) -> None:
+        self.said.append(content or "")
+
+
+def test_informe_elige_el_canal_diario_publica_el_de_hoy_y_se_quita(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        client = await load_bot(tmp_path)
+        try:
+            channel = MagicMock(spec=discord.TextChannel, id=77, mention="<#77>")
+            channel.send = AsyncMock()
+
+            async def history(limit: int):  # noqa: ANN202, ARG001
+                return
+                yield
+
+            channel.history = history
+            guild = MagicMock(id=GUILD_ID, threads=[], channels=[channel])
+            guild.get_channel_or_thread.return_value = channel
+            admin = client.get_cog("Admin")
+            responder = ChannelResponder(guild)
+
+            await admin._informe_impl(responder, 30, 77)  # type: ignore[union-attr]
+            assert responder.errors == []
+            assert await client.telemetry.report_channel(GUILD_ID) == 77
+            published = channel.send.await_args.kwargs["file"]
+            assert published.filename.startswith("informe") and published.filename.endswith(".json")
+            assert "Ya está el de hoy" in responder.said[-1]
+
+            await admin._informe_impl(responder, 30, remove=True)  # type: ignore[union-attr]
+            assert await client.telemetry.report_channel(GUILD_ID) is None
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_los_tiempos_de_la_base_de_datos_y_las_vistas_llegan_al_informe(tmp_path: Path) -> None:
+    async def scenario() -> dict:
+        client = await load_bot(tmp_path)
+        try:
+            await client.telemetry.set_report_channel(GUILD_ID, 77)
+            Panel(timeout=60).stop()
+            cog = client.get_cog("Telemetry")
+            # El minuto de la telemetría recoge los tiempos de SQLite de los hilos.
+            await cog.flush_loop.coro(cog)  # type: ignore[union-attr]
+            return await client.telemetry.report(
+                guild_id=GUILD_ID, days=1, commands=[], channel_names={}
+            )
+        finally:
+            await client.close()
+
+    report = asyncio.run(scenario())
+    assert usage(report, "sql")["telemetry · escritura"]["eventos"] >= 1
+    assert usage(report, "vista")["Panel"]["eventos"] == 1
+    assert usage(report, "vista_cerrada")["Panel"]["ms_medio"] is not None
+    assert report["version_bot"]
 
 
 def test_al_cerrar_el_bot_se_guarda_lo_pendiente_y_se_sueltan_los_enganches(

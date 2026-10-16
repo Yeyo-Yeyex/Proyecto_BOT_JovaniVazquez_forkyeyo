@@ -136,6 +136,7 @@ from bot.services.gallos_scene import GallosScene
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pets import Event, Moment, bet_moment
 from bot.services.taxes import IGIC_GENERAL_RATE, TAX_COLLECTOR, igic
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -443,7 +444,7 @@ class HousePanel(ui.View):
         self.message: discord.Message | None = None
         self.result: str | None = None
         self._busy = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("gallos:HousePanel._lock")
         self._last_interaction: discord.Interaction | None = None
 
     # -- Texto ------------------------------------------------------------------------
@@ -1197,7 +1198,7 @@ class Duel:
         self.fight: Fight | None = None
         self.seed = cog.rng.randrange(1, 2**31)
         self.prepared: asyncio.Task[Media] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("gallos:Duel._lock")
         self.timer: asyncio.Task[None] | None = None
 
     def owner(self, corner: Corner) -> Owner:

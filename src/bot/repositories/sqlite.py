@@ -31,6 +31,12 @@ Lo que se cambia y por qué:
   `fsync` por minuto en vez de uno por operación. El modo `PASSIVE` no vale: vuelca
   las páginas, pero el registro sigue creciendo.
 
+**Tiempos para la telemetría.** Cada conexión es una `TimedConnection`, que apunta
+lo que tarda cada sentencia y cada commit, con el repositorio que la abrió, en
+`_timings`. Las conexiones se usan en hilos (`asyncio.to_thread`), así que no
+cuentan directamente: el cog `Telemetry` lo recoge cada minuto (`drain_timings`).
+Un «database is locked» se apunta como error.
+
 Con el registro aparte, la base vive en tres archivos (`.sqlite3`, `-wal` y
 `-shm`): una copia de seguridad hecha a mano copia los tres a la vez, con el bot
 parado (ver README).
@@ -39,7 +45,11 @@ parado (ver README).
 from __future__ import annotations
 
 import sqlite3
+import sys
+import time
+from collections import deque
 from pathlib import Path
+from typing import Any
 
 #: Segundos que una conexión espera a que otra suelte el bloqueo de escritura
 #: antes de fallar con «database is locked».
@@ -49,6 +59,71 @@ CHECKPOINT_SECONDS = 60
 #: Lo que espera el checkpoint a que acaben las lecturas y escrituras en curso. Mientras
 #: espera, las escrituras nuevas esperan detrás: mejor corto, y si no, al minuto siguiente.
 CHECKPOINT_BUSY_SECONDS = 2
+#: Tiempos guardados como mucho entre dos recogidas; sin telemetría, los viejos se tiran.
+MAX_TIMINGS = 50_000
+
+#: `(repositorio, operación, ms, error)` de cada sentencia, hasta `drain_timings`.
+#: `deque.append` y `popleft` son seguros entre hilos.
+_timings: deque[tuple[str, str, float, bool]] = deque(maxlen=MAX_TIMINGS)
+
+
+def drain_timings() -> list[tuple[str, str, float, bool]]:
+    """Se lleva los tiempos apuntados desde la última vez."""
+    taken = []
+    while True:
+        try:
+            taken.append(_timings.popleft())
+        except IndexError:
+            return taken
+
+
+def _operation(sql: str) -> str:
+    """`lectura` para SELECT (y PRAGMA, WITH), `escritura` para lo demás."""
+    word = sql.lstrip().split(None, 1)[0].upper() if sql.strip() else ""
+    return "lectura" if word in ("SELECT", "PRAGMA", "WITH", "EXPLAIN") else "escritura"
+
+
+class TimedConnection(sqlite3.Connection):
+    """Conexión que apunta en `_timings` lo que tarda cada sentencia y cada commit.
+
+    En una lectura solo se mide hasta la primera fila: SQLite saca las demás al
+    recorrer el cursor. Las consultas que agregan o buscan por índice hacen ahí
+    casi todo el trabajo.
+    """
+
+    #: Módulo que abrió la conexión (`economy`); lo pone `connect`.
+    repository = "?"
+
+    def _timed(self, operation: str, call: Any, *args: Any) -> Any:
+        start = time.perf_counter()
+        try:
+            result = call(*args)
+        except sqlite3.OperationalError:
+            # «database is locked», disco lleno: lo que hace esperar o fallar a un botón.
+            _timings.append((self.repository, operation, _ms(start), True))
+            raise
+        _timings.append((self.repository, operation, _ms(start), False))
+        return result
+
+    def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+        return self._timed(_operation(sql), super().execute, sql, parameters)
+
+    def executemany(self, sql: str, parameters: Any, /) -> sqlite3.Cursor:
+        return self._timed(_operation(sql), super().executemany, sql, parameters)
+
+    def executescript(self, sql_script: str, /) -> sqlite3.Cursor:
+        return self._timed("escritura", super().executescript, sql_script)
+
+    def commit(self) -> None:
+        self._timed("commit", super().commit)
+
+    def __exit__(self, *exc: Any) -> Any:
+        # `with conexión:` hace el commit (o el rollback) en C, sin pasar por `commit`.
+        return self._timed("commit", super().__exit__, *exc)
+
+
+def _ms(start: float) -> float:
+    return (time.perf_counter() - start) * 1000
 
 
 def connect(database_path: Path, *, isolation_level: str | None = "DEFERRED") -> sqlite3.Connection:
@@ -64,12 +139,19 @@ def connect(database_path: Path, *, isolation_level: str | None = "DEFERRED") ->
     """
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(
-        database_path, timeout=BUSY_TIMEOUT_SECONDS, isolation_level=isolation_level
+        database_path,
+        timeout=BUSY_TIMEOUT_SECONDS,
+        isolation_level=isolation_level,
+        factory=TimedConnection,
     )
+    # El repositorio es el módulo que llama (`bot.repositories.economy` → `economy`).
+    caller = sys._getframe(1).f_globals.get("__name__", "?")
+    connection.repository = caller.rsplit(".", 1)[-1]  # type: ignore[attr-defined]
     connection.row_factory = sqlite3.Row
     connection.setconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, True)
-    connection.execute("PRAGMA journal_mode = WAL")
-    connection.execute("PRAGMA synchronous = NORMAL")
+    # Sin medir: son de cada conexión y no dicen nada del repositorio.
+    sqlite3.Connection.execute(connection, "PRAGMA journal_mode = WAL")
+    sqlite3.Connection.execute(connection, "PRAGMA synchronous = NORMAL")
     return connection
 
 
@@ -87,8 +169,10 @@ def checkpoint(database_path: Path) -> tuple[int, int, int]:
     if not database_path.exists():
         return (0, 0, 0)
     connection = sqlite3.connect(database_path, timeout=CHECKPOINT_BUSY_SECONDS)
+    start = time.perf_counter()
     try:
         row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
     finally:
         connection.close()
+        _timings.append(("sqlite", "checkpoint", _ms(start), False))
     return int(row[0]), int(row[1]), int(row[2])

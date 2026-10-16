@@ -95,7 +95,7 @@ from bot.services.pala import (
 from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment
 from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
-from bot.services.telemetry import LISTENER_ITEM
+from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
@@ -793,13 +793,13 @@ class PalaPanel(ui.LayoutView):
         self.shift: Shift | None = None
         self.notes: list[str] = []
         self.pending_event: Event | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("work:PalaPanel._lock")
         self._timer: asyncio.Task[None] | None = None
         self._finishing = False
         #: Identifica el panel en los `custom_id` del minijuego.
         self.token = cog.new_token()
         #: Una edición del panel cada vez durante el minijuego.
-        self._render_lock = asyncio.Lock()
+        self._render_lock = TimedLock("work:PalaPanel._render_lock")
         #: Clics del minijuego recibidos; solo el último redibuja.
         self._ticket = 0
         #: Herramientas de curro que tenía al fichar (para los logros).

@@ -75,6 +75,7 @@ from bot.services.horses_render import (
     screen_positions,
 )
 from bot.services.node_scene import NodeScene
+from bot.services.telemetry import TimedLock
 from bot.utils.gif import local_palette_gif
 
 logger = logging.getLogger(__name__)
@@ -170,7 +171,7 @@ class SceneRenderer:
         self._playwright: Any = None
         self._browser: Any = None
         self._page: Any = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("horses_scene:SceneRenderer._lock")
         self._idle: asyncio.TimerHandle | None = None
         #: Pinta la carrera sin navegador; tiene su propio `disabled`.
         self.painter = NodeScene(

@@ -100,6 +100,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -234,7 +235,7 @@ class CrapsView(ui.View):
         self.channel: object = None
         self.started_at = 0.0
         self._busy = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("craps:CrapsView._lock")
         self._last_interaction: discord.Interaction | None = None
         #: Dados de la próxima tirada y semilla de su vuelo, sorteados por adelantado.
         self._dice: tuple[int, int] | None = None

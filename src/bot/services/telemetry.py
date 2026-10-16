@@ -28,6 +28,32 @@ son los acordados:
 - `lag`: bloqueos del bucle de eventos de más de 250 ms (con su duración en
   `ms`), por la función del bot que lo tenía parado
   (`bot/services/coin_scene.py:board`).
+- `arranque`: cada vez que arranca el bot, con su versión como nombre (`7.11.0`).
+- `imagen`: del clic (o del `/`) a que la primera imagen de su respuesta queda
+  subida a Discord, en `ms`, por archivo (`moneda.gif`). Es la espera que ve el
+  miembro; si el dibujo estaba hecho antes del clic, se acerca a la de `upload`.
+- `caducada`: vistas que caducan sin que nadie las cierre, por clase (`CoinView`).
+- `gateway`: conexión con Discord (`conectada`, `desconexion`, `reanudada`).
+- `ratelimit`: respuestas 429 de Discord, por método y ruta sin IDs ni tokens.
+- `oom`: procesos del contenedor matados por quedarse sin memoria (Chromium, Node).
+- `db`: lo que tarda en escribirse cada volcado de la telemetría (`volcado`), que
+  mide de paso cómo va el disco del NAS.
+- `sql`: lo que tarda cada sentencia de cada repositorio (`economy · escritura`).
+- `candado`: lo que espera un `TimedLock` que ya estaba cogido, por su nombre.
+- `node` (procesos que se abren, se cierran, se matan y la espera hasta tener uno)
+  y `plan_b`: dibujos que no pudo hacer Node o Chromium y salieron con el plan B.
+- `peso`: KB de cada imagen subida (en los campos de `ms`).
+- `10062`: interacciones contestadas cuando Discord ya las daba por perdidas.
+- `vista`, `vista_cerrada`: vistas abiertas y paradas (con lo que duraron).
+- `menu`: opción elegida en cada desplegable.
+- `uso_mal` y `rechazo`: comandos mal escritos y comandos que contestan con error.
+- `excepcion`: errores con traza, por tipo y función del bot.
+- `musica`: búsquedas (con su duración), pistas escuchadas o saltadas (con lo que
+  sonaron), fallos, cola llena y posición en la cola (en los campos de `ms`).
+- `api`: cada llamada a Discord por método y plantilla de la ruta, con su duración.
+- `tarea`: cada vuelta de cada tarea programada (`tasks.loop`), con su duración.
+- `conexion_inicial`: del arranque del proceso a la primera conexión con Discord.
+- `bot_mensaje` y `reaccion_bot`: mensajes del bot y reacciones a ellos, por canal.
 
 Privacidad: el único dato por persona es el `user_id` en `UserKey`, que se
 borra a los 90 días y nunca sale en el informe (se seudonimiza como u1, u2...).
@@ -39,6 +65,7 @@ import asyncio
 import logging
 import math
 import re
+import statistics
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -47,6 +74,7 @@ from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from typing import TYPE_CHECKING, Any
 
+from bot import __version__
 from bot.repositories.economy import (
     HK_ACCOUNT_ID,
     POKER_POT_ACCOUNT_ID,
@@ -55,6 +83,7 @@ from bot.repositories.economy import (
     SLOTS_POT_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
 )
+from bot.services.achievements import AVAILABLE
 from bot.services.levels import TIMEZONE
 
 if TYPE_CHECKING:
@@ -82,10 +111,10 @@ si la vista lo contara, saldría siempre sin respuesta. Lo cuenta el listener co
 LATENCY_BUCKETS = (500, 1000, 3000)
 """Cortes de latencia en ms: `<500`, `<1000`, `<3000` y `>=3000`."""
 
-REPORT_VERSION = 1
+REPORT_VERSION = 4
 
 # Tipos cuyo nombre es un id de canal que se traduce a «#nombre» en el informe.
-CHANNEL_KINDS = frozenset({"message", "voice", "reaction"})
+CHANNEL_KINDS = frozenset({"message", "voice", "reaction", "bot_mensaje", "reaccion_bot"})
 
 # Nombres de las cuentas del sistema de la economía (user_id <= 0) en el informe.
 SYSTEM_ACCOUNTS: dict[int, str] = {
@@ -170,7 +199,16 @@ class UserKey:
 
 @dataclass(frozen=True)
 class SystemSample:
-    """Muestra del estado del proceso. `memory_mb` es la del contenedor (cgroup) y puede faltar."""
+    """Muestra del estado del proceso. `memory_mb` es la del contenedor (cgroup) y puede faltar.
+
+    `cpu_pct` es la CPU del contenedor en el último minuto sobre todos los hilos
+    (100 = todos ocupados); `db_mb`, lo que ocupa la base de datos con su WAL, y
+    `disk_free_mb`, lo que queda libre en su disco. `chromium_mb` y `node_mb` son la
+    memoria de esos procesos sumados; `io_read_mb` e `io_write_mb`, lo leído y
+    escrito en disco por el contenedor en el último minuto, y `tasks`, las tareas
+    vivas del bucle de eventos (si crecen sin parar, algo se acumula). Pueden faltar
+    fuera de Linux.
+    """
 
     at: float
     day: str
@@ -180,6 +218,14 @@ class SystemSample:
     gateway_ms: float | None
     chromium: int
     node: int
+    cpu_pct: float | None = None
+    db_mb: float | None = None
+    disk_free_mb: float | None = None
+    chromium_mb: float | None = None
+    node_mb: float | None = None
+    io_read_mb: float | None = None
+    io_write_mb: float | None = None
+    tasks: int | None = None
 
 
 @dataclass
@@ -202,17 +248,28 @@ class ReportData:
     - `usage`: dicts con `kind, name, events, errors, ms_count, ms_total, ms_max,
       lt500, lt1000, lt3000, ge3000`.
     - `daily`: tuplas `(day, kind, events, errors)`.
+    - `daily_ms`: tuplas `(day, kind, ms_count, ms_total, ge3000)` de los tipos con latencia.
+    - `starts`: tuplas `(day, version, veces)` de los arranques del bot.
     - `hourly`: tuplas `(hour, kind, events)` solo de horas 0-23.
     - `users`: tuplas `(day, kind, name, user_id)`.
     - `system`: dicts con `day, memory_max, memory_avg, rss_max, lag_max,
-      gateway_avg, chromium_max, node_max`.
+      gateway_avg, chromium_max, node_max, cpu_max, cpu_avg, db_max, disk_min`.
     - `casino`: dicts con `game, plays, free, players, wagered, paid`.
     - `balances`: saldos de los miembros; `system_accounts`: `{user_id <= 0: saldo}`.
     - `ledger`: dicts con `reason, moves, inflow, outflow` (solo miembros).
+    - `ledger_daily`: tuplas `(day, inflow, outflow, moves)` de los miembros.
+    - `state_daily`: tuplas `(day, motivo, inflow, outflow)` de la cuenta del Estado;
+      el motivo es la primera parte del de la economía (`irpf` de `irpf:juego`).
+    - `achievements`: tuplas `(logro, total, en la ventana)`; `achievement_members`,
+      miembros con algún logro.
+    - `shop`: dicts con `name, kind, sales, renewals, buyers, spent`.
+    - `pets`: dicts con `species, total, active`.
     """
 
     usage: list[dict[str, Any]] = field(default_factory=list)
     daily: list[tuple[str, str, int, int]] = field(default_factory=list)
+    daily_ms: list[tuple[str, str, int, int, int]] = field(default_factory=list)
+    starts: list[tuple[str, str, int]] = field(default_factory=list)
     hourly: list[tuple[int, str, int]] = field(default_factory=list)
     users: list[tuple[str, str, str, int]] = field(default_factory=list)
     system: list[dict[str, Any]] = field(default_factory=list)
@@ -220,6 +277,12 @@ class ReportData:
     balances: list[int] = field(default_factory=list)
     system_accounts: dict[int, int] = field(default_factory=dict)
     ledger: list[dict[str, Any]] = field(default_factory=list)
+    ledger_daily: list[tuple[str, int, int, int]] = field(default_factory=list)
+    state_daily: list[tuple[str, str, int, int]] = field(default_factory=list)
+    achievements: list[tuple[str, int, int]] = field(default_factory=list)
+    achievement_members: int = 0
+    shop: list[dict[str, Any]] = field(default_factory=list)
+    pets: list[dict[str, Any]] = field(default_factory=list)
 
 
 #: Quien quiera saber lo que tarda cada dibujo se apunta aquí (el cog `Telemetry`).
@@ -252,6 +315,40 @@ def report_upload(name: str, ms: float, *, error: bool = False) -> None:
     """Avisa de que la subida `name` (ver `upload_name`) ha tardado `ms` milisegundos."""
     for observer in tuple(upload_observers):
         observer(name, ms, error)
+
+
+#: Quien quiera contar lo que pasa lejos de un cliente (vistas que caducan, esperas
+#: de imagen) se apunta aquí con `(tipo, nombre, ms, error)`: el cog `Telemetry`.
+event_observers: set[Callable[[str, str, float | None, bool], None]] = set()
+
+
+def report_event(kind: str, name: str, ms: float | None = None, *, error: bool = False) -> None:
+    """Avisa de un evento `kind`/`name` sin servidor (con su duración en `ms`, si la tiene)."""
+    for observer in tuple(event_observers):
+        observer(kind, name, ms, error)
+
+
+class TimedLock(asyncio.Lock):
+    """`asyncio.Lock` que avisa (`candado`) de lo que se espera cuando ya estaba cogido.
+
+    Si estaba libre no cuenta nada: solo interesan los clics que esperan a otro.
+
+    Args:
+        name: Nombre estable en el informe (`CoinView._lock`).
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self.name = name
+
+    async def acquire(self) -> bool:
+        if not self.locked():
+            return await super().acquire()
+        start = time.perf_counter()
+        try:
+            return await super().acquire()
+        finally:
+            report_event("candado", self.name, (time.perf_counter() - start) * 1000)
 
 
 def local_moment(at: float) -> tuple[str, int]:
@@ -329,6 +426,14 @@ def _daily_entries(data: ReportData) -> dict[str, dict[str, dict[str, int]]]:
             kind, {"eventos": 0, "errores": 0, "usuarios": 0}
         )
         entry["usuarios"] = len(ids)
+    for day, kind, ms_count, ms_total, slow in data.daily_ms:
+        if ms_count:
+            entry = per_day.setdefault(day, {}).setdefault(
+                kind, {"eventos": 0, "errores": 0, "usuarios": 0}
+            )
+            entry["ms_medio"] = round(int(ms_total) / int(ms_count), 1)
+            entry["ms_n"] = int(ms_count)
+            entry["lentos"] = int(slow)
     return dict(sorted(per_day.items()))
 
 
@@ -385,6 +490,135 @@ def _economy(data: ReportData) -> dict[str, Any]:
     }
 
 
+def _economy_days(data: ReportData, until: date) -> dict[str, dict[str, Any]]:
+    """Dinero de los miembros y del Estado por día; el último día, la foto entera.
+
+    Por día: entradas, salidas y movimientos de los miembros, lo que recauda el
+    Estado por impuesto (`impuestos`) y lo que gasta (`estado_gasto`). La masa
+    monetaria, el Gini y el saldo del Estado solo se saben el día del informe: al
+    juntar informes de días distintos sale la serie entera.
+    """
+    empty: dict[str, Any] = {"entradas": 0, "salidas": 0, "movimientos": 0}
+    days: dict[str, dict[str, Any]] = {
+        day: {"entradas": int(inflow), "salidas": int(outflow), "movimientos": int(moves)}
+        for day, inflow, outflow, moves in data.ledger_daily
+    }
+    for day, reason, inflow, outflow in data.state_daily:
+        entry = days.setdefault(day, dict(empty))
+        if inflow:
+            taxes = entry.setdefault("impuestos", {})
+            taxes[reason] = taxes.get(reason, 0) + int(inflow)
+        if outflow:
+            entry["estado_gasto"] = entry.get("estado_gasto", 0) + int(outflow)
+    if data.balances or data.system_accounts:
+        today = days.setdefault(until.isoformat(), dict(empty))
+        today["masa"] = int(sum(data.balances) + sum(data.system_accounts.values()))
+        today["gini"] = round(gini(data.balances), 4)
+        today["estado"] = int(data.system_accounts.get(STATE_ACCOUNT_ID, 0))
+    return dict(sorted(days.items()))
+
+
+#: Días que tiene que pasar un nuevo para contar como «vuelve» (`nuevos`).
+RETURN_AFTER_DAYS = 7
+
+
+def _newcomers(data: ReportData) -> dict[str, Any]:
+    """Primeros pasos de quien entró en la ventana: si escribe, usa comandos o botones.
+
+    Sale de `users`: el alta (`member:alta`) y el primer día de cada cosa. Solo
+    cuentas, sin seudónimos.
+    """
+    joined: dict[int, str] = {}
+    first: dict[tuple[int, str], str] = {}
+    last: dict[int, str] = {}
+    step_of = {
+        "message": "mensaje",
+        "slash": "comando",
+        "text": "comando",
+        "button": "boton",
+        "modal": "boton",
+    }
+    for day, kind, name, user_id in data.users:
+        if kind == "member" and name == "alta":
+            joined[user_id] = min(day, joined.get(user_id, day))
+            continue
+        step = step_of.get(kind)
+        if step is not None:
+            key = (user_id, step)
+            first[key] = min(day, first.get(key, day))
+        last[user_id] = max(day, last.get(user_id, day))
+
+    def days_to(step: str) -> list[int]:
+        return sorted(
+            (date.fromisoformat(first[(uid, step)]) - date.fromisoformat(day)).days
+            for uid, day in joined.items()
+            if (uid, step) in first and first[(uid, step)] >= day
+        )
+
+    def median(values: list[int]) -> float | None:
+        return float(statistics.median(values)) if values else None
+
+    returned = sum(
+        1
+        for uid, day in joined.items()
+        if uid in last
+        and (date.fromisoformat(last[uid]) - date.fromisoformat(day)).days >= RETURN_AFTER_DAYS
+    )
+    message, command, button = days_to("mensaje"), days_to("comando"), days_to("boton")
+    return {
+        "altas": len(joined),
+        "escribieron": len(message),
+        "usaron_comandos": len(command),
+        "usaron_botones": len(button),
+        "volvieron_tras_7_dias": returned,
+        "dias_hasta_escribir_mediana": median(message),
+        "dias_hasta_comando_mediana": median(command),
+        "dias_hasta_boton_mediana": median(button),
+    }
+
+
+def _achievements(data: ReportData, catalog: Mapping[str, str]) -> dict[str, Any]:
+    """Cuántos miembros tienen cada logro, frente a su rareza; y los que nadie tiene."""
+    members = data.achievement_members
+    rows = [
+        {
+            "logro": achievement,
+            "rareza": catalog.get(achievement),
+            "miembros": total,
+            "en_la_ventana": recent,
+            "pct_miembros": round(total / members, 4) if members else None,
+        }
+        for achievement, total, recent in sorted(data.achievements, key=lambda r: (-r[1], r[0]))
+    ]
+    owned = {achievement for achievement, _total, _recent in data.achievements}
+    return {
+        "miembros_con_logros": members,
+        "por_logro": rows,
+        "sin_conseguir": sorted(set(catalog) - owned),
+    }
+
+
+def _shop(data: ReportData) -> list[dict[str, Any]]:
+    return [
+        {
+            "articulo": row["name"],
+            "tipo": row["kind"],
+            "ventas": int(row["sales"]),
+            "renovaciones": int(row["renewals"] or 0),
+            "compradores": int(row["buyers"]),
+            "gastado": int(row["spent"] or 0),
+        }
+        for row in sorted(data.shop, key=lambda r: (-int(r["sales"]), str(r["name"])))
+    ]
+
+
+def _pets(data: ReportData) -> dict[str, dict[str, int]]:
+    return {
+        str(row["species"]): {"total": int(row["total"]), "activas": int(row["active"] or 0)}
+        for row in sorted(data.pets, key=lambda r: str(r["species"]))
+    }
+
+
 def build_report(
     data: ReportData,
     *,
@@ -393,6 +627,7 @@ def build_report(
     commands: Iterable[str],
     channel_names: Mapping[int, str],
     guild_id: int = 0,
+    achievements: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Convierte los agregados en el informe JSON (claves en español, serializable tal cual).
 
@@ -403,6 +638,7 @@ def build_report(
         commands: Nombres de todos los comandos del bot, para `comandos_sin_uso`.
         channel_names: Nombres de canal por id, para traducir `message`, `voice`, `reaction`.
         guild_id: Servidor del informe (solo se copia a `servidor`).
+        achievements: Rareza de cada logro del catálogo por id, para `logros`.
 
     El `user_id` nunca aparece: la actividad va por seudónimos u1, u2...
     """
@@ -425,6 +661,16 @@ def build_report(
             "gateway_ms_media": _round_or_none(row["gateway_avg"]),
             "chromium_max": row["chromium_max"],
             "node_max": row["node_max"],
+            "cpu_pct_max": _round_or_none(row.get("cpu_max")),
+            "cpu_pct_media": _round_or_none(row.get("cpu_avg")),
+            "db_mb_max": _round_or_none(row.get("db_max")),
+            "disco_libre_mb_min": _round_or_none(row.get("disk_min")),
+            "muestras": row.get("samples"),
+            "chromium_mb_max": _round_or_none(row.get("chromium_mb_max")),
+            "node_mb_max": _round_or_none(row.get("node_mb_max")),
+            "disco_leido_mb": _round_or_none(row.get("io_read")),
+            "disco_escrito_mb": _round_or_none(row.get("io_write")),
+            "tareas_max": row.get("tasks_max"),
         }
         for row in sorted(data.system, key=lambda r: r["day"])
     }
@@ -442,8 +688,12 @@ def build_report(
         }
         for row in sorted(data.casino, key=lambda r: r["game"])
     ]
+    starts: dict[str, dict[str, int]] = {}
+    for day, version, times in sorted(data.starts):
+        starts.setdefault(day, {})[version] = int(times)
     return {
         "version": REPORT_VERSION,
+        "version_bot": __version__,
         "generado": datetime.fromtimestamp(generated_at, TIMEZONE).isoformat(timespec="seconds"),
         "servidor": guild_id,
         "desde": since.isoformat(),
@@ -455,8 +705,14 @@ def build_report(
         "comandos_sin_uso": sorted(set(commands) - used),
         "actividad": _activity(data, since, channel_names),
         "sistema": system,
+        "arranques": starts,
         "casino": casino,
         "economia": _economy(data),
+        "economia_dia": _economy_days(data, until),
+        "nuevos": _newcomers(data),
+        "logros": _achievements(data, achievements or {}),
+        "tienda": _shop(data),
+        "mascotas": _pets(data),
     }
 
 
@@ -483,6 +739,8 @@ class TelemetryService:
         # id de interacción -> (ms, momento en que se guardó); el orden es la antigüedad.
         self._answers: OrderedDict[int, tuple[float, float]] = OrderedDict()
         self._flush_lock = asyncio.Lock()
+        # Lo que tardó el último volcado, para contarlo en el siguiente (`db`).
+        self._write_ms: float | None = None
 
     def count(
         self,
@@ -554,8 +812,19 @@ class TelemetryService:
             batch = self.drain()
             if batch.is_empty() or self.repository is None:
                 return
+            if self._write_ms is not None:
+                # Lo que tardó el volcado anterior va en este: mide el disco del NAS
+                # sin dejar nada pendiente al cerrar.
+                day, hour = local_moment(self.clock())
+                key = CounterKey(day, hour, 0, "db", "volcado")
+                batch.counters.setdefault(key, Counter()).add(
+                    events=1, error=False, ms=self._write_ms
+                )
+                self._write_ms = None
+            start = time.perf_counter()
             try:
                 await self.repository.write(batch)
+                self._write_ms = (time.perf_counter() - start) * 1000
             except Exception:
                 logger.exception(
                     "No se pudo volcar la telemetría: se pierden %d contadores",
@@ -566,6 +835,19 @@ class TelemetryService:
         """Aplica la retención del repositorio (pliegue y borrado de datos viejos)."""
         if self.repository is not None:
             await self.repository.prune(now=self.clock())
+
+    async def report_channel(self, guild_id: int) -> int | None:
+        """Canal del informe diario del servidor; `None` si no publica o no hay repositorio."""
+        if self.repository is None:
+            return None
+        return await self.repository.report_channel(guild_id)
+
+    async def set_report_channel(self, guild_id: int, channel_id: int | None) -> bool:
+        """Guarda el canal del informe diario (`None` lo quita); `False` sin repositorio."""
+        if self.repository is None:
+            return False
+        await self.repository.set_report_channel(guild_id, channel_id)
+        return True
 
     async def report(
         self,
@@ -594,4 +876,99 @@ class TelemetryService:
             commands=commands,
             channel_names=channel_names,
             guild_id=guild_id,
+            achievements={a.id: a.rarity.value[0] for a in AVAILABLE},
         )
+
+
+# --------------------------------------------------------------------------- avisos
+
+#: Lo que se avisa en el resumen diario: por tipo, campo del día (`eventos`,
+#: `errores` o `lentos`, que son los de 3 s o más) y el texto con `{n}`.
+DAY_ALERTS: tuple[tuple[str, str, str], ...] = (
+    ("button", "errores", "🖱️ {n} clics sin respuesta («Esta interacción ha fallado»)"),
+    ("10062", "eventos", "💥 {n} interacciones perdidas (10062)"),
+    ("button", "lentos", "🐢 {n} clics de 3 s o más"),
+    ("imagen", "lentos", "🖼️ {n} esperas de 3 s o más hasta ver la imagen"),
+    ("sql", "errores", "🗄️ {n} fallos de la base de datos («database is locked»)"),
+    ("sql", "lentos", "🗄️ {n} consultas de 3 s o más"),
+    ("candado", "lentos", "🔒 {n} esperas de 3 s o más en candados"),
+    ("plan_b", "eventos", "🎨 {n} dibujos con plan B (Node o Chromium no disponible)"),
+    ("oom", "eventos", "🧠 {n} procesos matados por falta de memoria"),
+    ("gateway", "errores", "📡 {n} cortes con Discord"),
+    ("ratelimit", "eventos", "🚦 {n} respuestas 429 (Discord frena al bot)"),
+    ("api", "errores", "🌐 {n} llamadas a Discord fallidas"),
+    ("tarea", "errores", "⏰ {n} vueltas de tareas programadas fallidas"),
+    ("excepcion", "eventos", "🐞 {n} errores con traza"),
+)
+#: Umbrales del sistema para avisar.
+ALERT_CPU_PCT = 85.0
+ALERT_MEMORY_SHARE = 0.85
+ALERT_DISK_FREE_MB = 2048.0
+ALERT_LAG_MS = 1000.0
+ALERT_MISSING_MIN = 30
+#: Minutos de un día: una muestra por minuto si el bot no se para.
+DAY_MINUTES = 1440
+#: Tope de caracteres de un mensaje de Discord.
+MESSAGE_LIMIT = 2000
+
+
+def alerts(report: Mapping[str, Any], *, memory_limit_mb: float | None = None) -> list[str]:
+    """Lo que hay que vigilar del último día entero del informe (el de antes de `hasta`).
+
+    Va por día (`por_dia`, `sistema`, `arranques`) para no repetir cada mañana lo
+    que pasó hace semanas. Vacío si no hay nada.
+    """
+    try:
+        day = (date.fromisoformat(str(report.get("hasta"))) - timedelta(days=1)).isoformat()
+    except ValueError:
+        return []
+    found: list[str] = []
+    per_kind = report.get("por_dia", {}).get(day, {})
+    for kind, field_name, text in DAY_ALERTS:
+        count = int(per_kind.get(kind, {}).get(field_name, 0) or 0)
+        if count:
+            found.append(text.format(n=count))
+    system = report.get("sistema", {}).get(day, {})
+    samples = system.get("muestras")
+    if isinstance(samples, int) and DAY_MINUTES - samples > ALERT_MISSING_MIN:
+        found.append(f"🔌 {DAY_MINUTES - samples} min sin datos (bot caído o parado)")
+    cpu = system.get("cpu_pct_max")
+    if isinstance(cpu, int | float) and cpu > ALERT_CPU_PCT:
+        found.append(f"🔥 CPU al {cpu:.0f} %")
+    memory = system.get("memoria_mb_max")
+    if (
+        isinstance(memory, int | float)
+        and memory_limit_mb
+        and memory > ALERT_MEMORY_SHARE * memory_limit_mb
+    ):
+        found.append(f"📈 Memoria al {100 * memory / memory_limit_mb:.0f} % del límite")
+    free = system.get("disco_libre_mb_min")
+    if isinstance(free, int | float) and free < ALERT_DISK_FREE_MB:
+        found.append(f"💾 Quedan {free / 1024:.1f} GB de disco")
+    lag = system.get("lag_ms_max")
+    if isinstance(lag, int | float) and lag > ALERT_LAG_MS:
+        found.append(f"⏳ El bucle de eventos se paró {lag / 1000:.1f} s")
+    starts = report.get("arranques", {}).get(day, {})
+    restarts = sum(int(times) for times in starts.values()) - len(starts)
+    if restarts > 0:
+        found.append(f"🔁 {restarts} reinicios sin despliegue (caída, memoria o a mano)")
+    return found
+
+
+def alerts_text(report: Mapping[str, Any], *, memory_limit_mb: float | None = None) -> str:
+    """El mensaje que acompaña al informe diario: versión, novedades y avisos del día."""
+    try:
+        day = (date.fromisoformat(str(report.get("hasta"))) - timedelta(days=1)).isoformat()
+    except ValueError:
+        day = "?"
+    lines = [f"📊 Informe hasta el {report.get('hasta')} · bot {report.get('version_bot')}"]
+    for version in sorted(report.get("arranques", {}).get(day, {})):
+        lines.append(f"🚀 Arrancó la versión {version}")
+    found = alerts(report, memory_limit_mb=memory_limit_mb)
+    if found:
+        lines.append(f"⚠️ Ayer ({day}):")
+        lines += [f"- {line}" for line in found]
+    else:
+        lines.append(f"✅ Ayer ({day}) no hubo nada que vigilar.")
+    text = "\n".join(lines)
+    return text if len(text) <= MESSAGE_LIMIT else text[: MESSAGE_LIMIT - 1] + "…"

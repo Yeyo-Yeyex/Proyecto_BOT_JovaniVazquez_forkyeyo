@@ -792,7 +792,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `tajo [canal] [todos]` | Canales donde se puede usar `pala`. Un canal lo añade o, si ya estaba, lo quita; `todos` (en `.tajo`, también `cualquiera`) vuelve a permitirla en cualquier canal. Sin argumentos enseña los actuales. Responde solo a ti en `/`. Ver sección 6 ter.7 quater. |
 | `niveles [acción] [canal] [segundos]` | Sin argumentos, enseña el estado de los niveles. Acciones: `importar` (lee el historial y, al acabar la primera vez, enciende los niveles), `activar`, `desactivar` (no borra XP) y `mismo` (avisos donde se sube). Un canal fija dónde se anuncian las subidas; unos segundos (10–3600), el enfriamiento del XP por mensaje. En `.niveles` van en cualquier orden. Ver sección 4.0. |
 | `cambios [acción] [canal]` | Configura el aviso de novedades de cada despliegue. Sin argumentos, enseña la configuración. Acciones: `activar`, `desactivar`, `detallado` (lista y una ficha por PR con su descripción, el de serie), `resumen` (solo la lista) y `defecto` (vuelve a `#chat-general`). Un canal o un hilo (aunque esté archivado) fija dónde se publica. En `.cambios` van en cualquier orden. |
-| `informe [días]` | Descarga el informe interno de uso de los últimos días (1–90, 30 por defecto) en un JSON: comandos y botones con su latencia y fallos, actividad por día y hora, canales, retención por seudónimos, sistema del NAS, casino y economía. Sin mensajes ni IDs de miembros. En `/` solo lo ves tú; en `.`, queda en el canal. Ver sección 6 quater.3. |
+| `informe [días] [canal] [quitar]` | Descarga el informe interno de uso de los últimos días (1–90, 30 por defecto) en un JSON: comandos y botones con su latencia y fallos, actividad por día y hora, canales, retención por seudónimos, sistema del NAS, casino y economía. Sin mensajes ni IDs de miembros. En `/` solo lo ves tú; en `.`, queda en el canal. Con `canal` (`.informe #canal`), el bot lo publica ahí cada día (30 días) y sube ya el de hoy; con `quitar`, deja de hacerlo. Ver sección 6 quater.3. |
 
 `reinicio` va aparte: no es de administración sino de mantenimiento, y solo
 lo pueden usar dos IDs (Yeyo y Dani, en `DEPLOYERS` de `bot.cogs.deploy`),
@@ -828,12 +828,29 @@ no sale en ningún mensaje del bot salvo en `informe`.
   Discord, los clics que acaban sin respuesta, mensajes por canal y su clase
   (adjunto, sticker, enlace, respuesta, corto, medio o largo), reacciones, minutos
   de voz por canal, altas y bajas, avisos y errores del log por plantilla, lo que
-  tarda cada dibujo de Node o Chromium y una muestra del sistema por minuto.
+  tarda cada dibujo de Node o Chromium, la espera del clic a la imagen, las vistas
+  que caducan a medias, cada arranque con su versión, los cortes con Discord y sus
+  429, los procesos matados por memoria, el tiempo de cada sentencia de la base de
+  datos, las esperas en candados, los procesos de Node y los dibujos con plan B, el
+  peso de cada imagen, las interacciones perdidas (10062), la vida de cada vista
+  (abierta, cerrada o abandonada), las opciones de los desplegables, los comandos mal
+  escritos o rechazados, los errores con traza, la música y una muestra del sistema
+  por minuto (memoria, CPU, base de datos y disco libre), las llamadas a Discord por
+  ruta, las tareas programadas, el tiempo de arranque, las reacciones a los mensajes
+  del bot, la memoria de Chromium y Node, el disco leído y escrito y las tareas vivas.
+  El informe añade logros por rareza, ventas de la tienda, mascotas por especie, la
+  economía de cada día (con impuestos, Gini y saldo del Estado) y los primeros pasos
+  de los miembros nuevos. En el canal, cada informe va con un resumen de lo que hay
+  que vigilar del día anterior.
 - **Qué no guarda:** el texto de los mensajes ni los argumentos de los avisos del
   log. El único dato por persona es quién hizo cada cosa cada día, que se borra a
   los 90 días y en el informe sale como u1, u2…
 - **Coste:** contar es una suma en memoria; se escribe una vez por minuto, así que
   ningún botón espera a la base de datos por la telemetría.
+- **Informe diario:** al arrancar y una vez al día, el bot lo deja en `informes/`
+  del NAS y, si un administrador eligió canal con `informe canal`, lo sube ahí
+  (un reinicio el mismo día no lo repite). El canal tiene que ser privado: el
+  informe lleva nombres de canales y cifras de uso.
 
 ### 6 quater.2. Autorización y seguridad
 

@@ -85,6 +85,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
+from bot.services.telemetry import TimedLock
 from bot.services.tower import (
     DEFAULT_DIFFICULTY,
     DIFFICULTIES,
@@ -215,7 +216,7 @@ class TowerBoard(ui.View):
         self.record_before = 0
         #: Cuándo empezó la partida en curso (para las porras).
         self.started_at = 0
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("tower:TowerBoard._lock")
         self._last_interaction: discord.Interaction | None = None
         #: El adjunto que se ve (`torre.png` o `torre.gif`); `None`, la torre de texto.
         self.image: str | None = None
