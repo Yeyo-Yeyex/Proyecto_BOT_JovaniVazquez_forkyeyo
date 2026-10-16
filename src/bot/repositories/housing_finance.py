@@ -19,6 +19,12 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   miembro). Es su vivienda habitual.
 - `housing_offers`: las ofertas del fondo buitre (fase 4).
 - `housing_socimi`: quién ha montado su SOCIMI (fase 4).
+- `housing_promotions`: la obra nueva de cada servidor (fase 5): las promociones que
+  levanta cada lunes quien está en la rama Ladrillo de `pala`, una por barrio. Son
+  inmuebles como los del catálogo, pero solo de ese servidor.
+- `housing_deposits`: la fianza (y la garantía adicional) que deja un miembro al
+  alquilar el piso de otro, mientras espera en el depósito de fianzas, y lo que se
+  queda el casero si lo desahucian debiendo meses (`forfeit`).
 
 Solo IDs de miembros, claves del catálogo, importes y fechas.
 """
@@ -30,6 +36,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from bot.services import housing as rules
+from bot.services.housing_catalog import Listing
 
 #: Tablas de este módulo, para crearlas y para borrarlas al salir de un servidor.
 TABLES = (
@@ -43,6 +50,8 @@ TABLES = (
     "housing_homes",
     "housing_offers",
     "housing_socimi",
+    "housing_deposits",
+    "housing_promotions",
 )
 
 SCHEMA = """
@@ -135,6 +144,32 @@ CREATE TABLE IF NOT EXISTS housing_socimi (
     user_id INTEGER NOT NULL,
     since REAL NOT NULL,
     PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS housing_promotions (
+    guild_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    barrio TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    m2 INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    blurb TEXT NOT NULL,
+    floor TEXT NOT NULL,
+    energy TEXT NOT NULL,
+    promoter_id INTEGER NOT NULL,
+    week TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (guild_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS housing_deposits (
+    guild_id INTEGER NOT NULL,
+    listing TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    forfeit INTEGER NOT NULL DEFAULT 0 CHECK (forfeit >= 0),
+    since REAL NOT NULL,
+    PRIMARY KEY (guild_id, listing, user_id)
 );
 """
 
@@ -433,3 +468,125 @@ def socimi_in(connection: sqlite3.Connection, guild_id: int) -> set[int]:
             "SELECT user_id FROM housing_socimi WHERE guild_id = ?", (guild_id,)
         )
     }
+
+
+@dataclass(frozen=True, slots=True)
+class Deposit:
+    """La fianza de un miembro de alquiler en el depósito de fianzas.
+
+    Attributes:
+        amount: Lo que dejó (fianza y garantía adicional).
+        forfeit: Lo que se queda el casero por los meses que debía al desahuciarlo.
+    """
+
+    listing: str
+    user_id: int
+    amount: int
+    forfeit: int
+
+
+def deposits_in(connection: sqlite3.Connection, guild_id: int) -> list[Deposit]:
+    """Las fianzas que esperan en el depósito."""
+    return [
+        Deposit(str(r["listing"]), int(r["user_id"]), int(r["amount"]), int(r["forfeit"]))
+        for r in connection.execute(
+            "SELECT listing, user_id, amount, forfeit FROM housing_deposits WHERE guild_id = ?",
+            (guild_id,),
+        )
+    ]
+
+
+def add_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int, amount: int,
+    now: float,
+) -> None:  # fmt: skip
+    """Apunta una fianza (se suma si quedaba otra del mismo piso sin devolver)."""
+    connection.execute(
+        """
+        INSERT INTO housing_deposits (guild_id, listing, user_id, amount, since)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (guild_id, listing, user_id) DO UPDATE SET amount = amount + excluded.amount
+        """,
+        (guild_id, listing, user_id, amount, now),
+    )
+
+
+def forfeit_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int, owed: int
+) -> None:
+    """Marca lo que se queda el casero de una fianza (nunca más de lo que hay)."""
+    connection.execute(
+        """
+        UPDATE housing_deposits SET forfeit = MIN(amount, forfeit + ?)
+        WHERE guild_id = ? AND listing = ? AND user_id = ?
+        """,
+        (max(0, owed), guild_id, listing, user_id),
+    )
+
+
+def delete_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int
+) -> None:
+    """Borra una fianza ya devuelta."""
+    connection.execute(
+        "DELETE FROM housing_deposits WHERE guild_id = ? AND listing = ? AND user_id = ?",
+        (guild_id, listing, user_id),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Promotion:
+    """Una promoción de obra nueva de un servidor.
+
+    Attributes:
+        listing: El inmueble, como los del catálogo (clave `obra_<n>`).
+        promoter: Quien la levantó desde la rama Ladrillo de `pala`: cobra la comisión del
+            promotor de lo que se venda.
+        week: El lunes en que salió.
+    """
+
+    listing: Listing
+    promoter: int
+    week: date
+
+
+def promotions_in(connection: sqlite3.Connection, guild_id: int) -> dict[str, Promotion]:
+    """La obra nueva del servidor, de la más vieja a la más nueva."""
+    return {
+        str(r["key"]): Promotion(
+            Listing(
+                str(r["key"]),
+                str(r["barrio"]),
+                str(r["kind"]),
+                int(r["m2"]),
+                str(r["title"]),
+                str(r["blurb"]),
+                str(r["floor"]),
+                str(r["energy"]),
+            ),
+            int(r["promoter_id"]),
+            date.fromisoformat(str(r["week"])),
+        )  # fmt: skip
+        for r in connection.execute(
+            "SELECT * FROM housing_promotions WHERE guild_id = ? ORDER BY created_at, key",
+            (guild_id,),
+        )
+    }
+
+
+def add_promotion_in(
+    connection: sqlite3.Connection, guild_id: int, promotion: Promotion, now: float
+) -> None:
+    """Apunta una promoción nueva."""
+    listing = promotion.listing
+    connection.execute(
+        """
+        INSERT INTO housing_promotions
+            (guild_id, key, barrio, kind, m2, title, blurb, floor, energy, promoter_id, week,
+             created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (guild_id, listing.key, listing.barrio, listing.kind, listing.m2, listing.title,
+         listing.blurb, listing.floor, listing.energy, promotion.promoter,
+         promotion.week.isoformat(), now),
+    )  # fmt: skip

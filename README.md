@@ -160,9 +160,12 @@ python -m bot
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
 - **Impuesto sobre el Patrimonio:** cada lunes se cobra lo que pase de
-  7.000.000 Y$ (los 700.000 € reales a 10 Y$ por euro) entre efectivo y pisos,
-  con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley 19/1991). `saldo` avisa
-  de lo que te tocaría y el bot anuncia quién ha pagado. La primera semana tras
+  7.000.000 Y$ (los 700.000 € reales a 10 Y$ por euro) entre efectivo, pisos y
+  objetos de la tienda, con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley
+  19/1991) y el límite conjunto con el IRPF de la semana (art. 31: nunca más del
+  60 % de la renta, pagando al menos el 20 %). Quien pasa de 37.000.000 Y$ declara
+  además las Grandes Fortunas, que en Canarias salen a cero. `saldo` avisa de lo
+  que te tocaría y el bot anuncia quién ha pagado. La primera semana tras
   desplegarlo no cobra.
 - **Pisos (`pisos`):** un panel que es solo imágenes con el mercado inmobiliario
   de 20 barrios de Gran Canaria y Tenerife (60 inmuebles, uno de cada en el
@@ -170,9 +173,12 @@ python -m bot
   entero) con su ITP del 6,5 %, los inquilinos ficticios pagan cada noche un mes
   de alquiler (un día del bot es un mes) con su IRPF, IBI y comunidad, y se vende
   al mercado con su plusvalía. Comprar sube el precio del barrio. También hay
-  hipoteca al Euríbor (con ejecución si no pagas), VPO por sorteo con aval del
-  Estado, vivir en tu piso, alquilárselo a otro miembro con Bono Alquiler Joven,
-  licencia vacacional con IGIC, la Ley de Vivienda, el fondo buitre y la SOCIMI.
+  hipoteca al Euríbor (con ejecución si no pagas, el aval de tus padres desde
+  `pala` y la frase del BCE cada lunes), VPO por sorteo con aval del Estado, vivir
+  en tu piso, alquilárselo a otro miembro con fianza, tasa de esfuerzo y Bono
+  Alquiler Joven, licencia vacacional con IGIC, la Ley de Vivienda, el fondo
+  buitre, la SOCIMI y la obra nueva que levanta cada lunes la rama Ladrillo de
+  `pala` (una promoción por barrio, con su comisión de promotor).
 - **Cuenta remunerada:** cada día el monedero paga intereses sobre el saldo
   medio del día anterior, por tramos: 2,5 % hasta 4.000 Y$, 1,25 % hasta 20.000
   y 0,4 % hasta 70.000 (500 Y$ brutos al día como mucho). Cobran también los
@@ -334,8 +340,9 @@ python -m bot
   crisis), la batería recarga más rápido o más lento y la barra sube más o
   menos. Se sube con los regalos del pasillo 🏠 Detalles para la familia, que
   el desplegable ❤️ del panel da si los tienes o compra y da en el acto si no, y se gasta pidiendo favores: el tupper de tu
-  madre, que te cubra el saliente, la excusa para librarte de un marrón o un
-  Bizum de mamá que se devuelve con la mitad de cada turno.
+  madre, que te cubra el saliente, la excusa para librarte de un marrón, un
+  Bizum de mamá que se devuelve con la mitad de cada turno o que tus padres te
+  avalen la hipoteca o el alquiler de `pisos`.
   Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,
   cunde como un IMV a racha máxima; ver `docs/economia-trabajo.md`).
   El IMV se reduce 1 Y$ por cada 20 Y$ netos de nómina que pasen de 11.506 a la semana

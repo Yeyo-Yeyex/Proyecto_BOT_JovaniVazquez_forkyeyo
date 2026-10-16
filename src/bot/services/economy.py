@@ -95,7 +95,7 @@ from bot.services.taxes import (
     gambling_day_tax,
     image_rights_withholding,
     wage_to_fiscal,
-    wealth_tax,
+    wealth_quote,
     weekly_refund,
 )
 
@@ -1039,28 +1039,53 @@ class EconomyService:
         guild_id: int,
         *,
         assets: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
+        goods: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
     ) -> tuple[date, WealthRun]:
         """Cobra el Impuesto sobre el Patrimonio de la semana que acaba de cerrar.
 
         Tratamiento fiscal: Impuesto sobre el Patrimonio (Ley 19/1991), escala
-        y mínimo en `bot.services.taxes.wealth_tax`, sobre el efectivo más los
-        inmuebles a su valor fiscal (`assets`, art. 10 de la Ley 19/1991). Lo
-        recaudado va al Estado. Es idempotente: si la semana ya se cobró, no hace
-        nada.
+        y mínimo en `bot.services.taxes.wealth_tax`, sobre el efectivo, los
+        inmuebles a su valor fiscal (`assets`, art. 10 de la Ley 19/1991) y los
+        objetos de la tienda (`goods`, arts. 18 y 19), con el límite conjunto con
+        el IRPF de la semana (art. 31, `taxes.wealth_quote`). Quien pasa de
+        37.000.000 Y$ declara además el Impuesto de Solidaridad de las Grandes
+        Fortunas (art. 3 de la Ley 38/2022), que descuenta el Patrimonio pagado y
+        en Canarias sale a cero. Lo recaudado va al Estado. Es idempotente: si la
+        semana ya se cobró, no hace nada.
 
         Args:
             assets: Valor fiscal de lo que tiene cada miembro además del efectivo,
                 leído en la misma transacción (`bot.repositories.housing.assets_in`).
+            goods: Valor de sus objetos de la tienda, leído en la misma transacción
+                (`bot.repositories.shop.wealth_goods_in`).
 
         Returns:
             `(lunes de la semana cobrada, resultado)`.
         """
         now = self._clock()
         week = week_start(local_day(now)) - timedelta(days=7)
+        start = monday_epoch(week)
         run = await self.repository.charge_wealth_tax(
-            guild_id, week=week.isoformat(), now=now, tax_for=wealth_tax, assets=assets
+            guild_id,
+            week=week.isoformat(),
+            now=now,
+            tax_for=lambda worth, unproductive, income: wealth_quote(
+                worth, unproductive=unproductive, weekly_income=income
+            ),
+            assets=assets,
+            goods=goods,
+            income_window=(start, monday_epoch(week + timedelta(days=7))),
         )
         return week, run
+
+    async def weekly_taxable(self, guild_id: int, user_id: int) -> int:
+        """Renta sujeta a IRPF de un miembro desde el lunes (lo que mira el límite conjunto)."""
+        now = self._clock()
+        return await self.repository.recent_taxable(guild_id, user_id, now - fiscal_window(now))
+
+    async def solidarity_summary(self, guild_id: int) -> tuple[int, int, int]:
+        """Grandes Fortunas del servidor: `(declaraciones, contribuyentes, lo pagado)`."""
+        return await self.repository.solidarity_summary(guild_id)
 
     async def pay_interest(self, guild_id: int) -> InterestCatchUp:
         """Paga los intereses de los días cerrados que falten y liquida la semana pasada.

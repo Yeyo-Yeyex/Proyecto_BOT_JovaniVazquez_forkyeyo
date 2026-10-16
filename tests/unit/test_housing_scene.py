@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import random
 import time
 from datetime import date
 from typing import Any
@@ -18,7 +19,7 @@ from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
 from bot.repositories.housing import Holding, Market, MemberDay, News
-from bot.repositories.housing_finance import Mortgage, VpoOwner
+from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
 from bot.services import housing_view as view
@@ -148,6 +149,15 @@ def money_market() -> Market:
     )  # fmt: skip
 
 
+def promotion_market() -> Market:
+    """Schamann con su obra nueva: cuatro tarjetas en el barrio."""
+    listing = rules.new_promotion(1, ["schamann"], random.Random(7))
+    return Market(
+        promotions={listing.key: Promotion(listing, 10, date(2026, 10, 19))},
+        holdings={listing.key: {10: Holding(listing.key, 10, 40, 1, 1, 0)}},
+    )
+
+
 def bubble_market() -> Market:
     """Un barrio en burbuja, otro a precio de fondo buitre, uno tensionado y un chollo."""
     return Market(
@@ -256,6 +266,9 @@ def samples() -> dict[str, dict[str, Any]]:
     out["ficha_muchos_duenos"] = view.listing_state(m, LISTINGS[0].key, 10, NAMES, NEWS)
     out["ficha_desahucio"] = view.listing_state(m, LISTINGS[3].key, 10, NAMES, [])
     out["barrio_isleta"] = view.barrio_state(m, "isleta", 10, NAMES)
+    obra = promotion_market()
+    out["barrio_obra_nueva"] = view.barrio_state(obra, "schamann", 10, NAMES)
+    out["ficha_obra_nueva"] = view.listing_state(obra, "obra_1", 10, NAMES, [])
     out["caja_hipoteca"] = checkout(
         "vegueta_edificio",
         selling=False,
@@ -354,6 +367,8 @@ def test_cada_pantalla_lleva_lo_que_la_escena_dibuja() -> None:
     assert states["caja_compra"]["key"] == "schamann_bajo"
     cartera = states["cartera_solo_vpo"]
     assert cartera["items"][0]["badges"] == ["vpo"]
+    assert len(states["barrio_obra_nueva"]["cards"]) == 4
+    assert states["ficha_obra_nueva"]["title"].startswith("Obra nueva")
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------

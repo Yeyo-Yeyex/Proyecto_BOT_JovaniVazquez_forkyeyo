@@ -51,13 +51,21 @@ from bot.services.work import (
     WISH_PAY,
     WISH_PERFORMANCE,
     Career,
+    Contract,
     ShiftKind,
+    ShiftRecord,
     Wish,
     follower_gain,
     rating_pay,
     shift_pay,
 )
-from bot.services.work_catalog import COFFEE_BY_KEY, JOB_BY_KEY
+from bot.services.work_catalog import (
+    AVAL_EXECUTION_FAMILY,
+    AVAL_SECONDS,
+    COFFEE_BY_KEY,
+    FAVOR_BY_KEY,
+    JOB_BY_KEY,
+)
 from bot.services.work_games import MiniGame
 
 GUILD = 1
@@ -1539,3 +1547,54 @@ async def test_cambiar_de_curro_conserva_la_familia_y_lo_que_le_debes(tmp_path: 
     assert status.contract.mom_debt == JOB_BY_KEY["obra"].position(1).base_pay
     assert "bizum" in status.contract.family_used
     assert status.family == pytest.approx(80)
+
+
+async def test_el_aval_de_tus_padres_dura_una_semana_y_avala_una_sola_vez(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await service.hire(GUILD, USER, "obra")
+    assert not await service.parents_aval(GUILD, USER)
+    result = await service.ask_favor(GUILD, USER, "aval")
+    assert result.family == pytest.approx(100 - FAVOR_BY_KEY["aval"].cost, abs=1)
+    assert await service.parents_aval(GUILD, USER)
+    clock.now += AVAL_SECONDS
+    assert not await service.parents_aval(GUILD, USER)  # caducado
+
+    clock.now += FAVOR_BY_KEY["aval"].cooldown
+    await service.ask_favor(GUILD, USER, "aval")
+    await service.spend_parents_aval(GUILD, USER)
+    assert not await service.parents_aval(GUILD, USER)  # ya avaló una hipoteca
+
+
+async def test_si_ejecutan_lo_avalado_la_familia_se_hunde(tmp_path: Path) -> None:
+    service = await make(tmp_path)
+    await service.hire(GUILD, USER, "obra")
+    await set_family(service, 80)
+    await service.parents_lose_home(GUILD, USER)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.contract.family == pytest.approx(80 - AVAL_EXECUTION_FAMILY, abs=1)
+    await service.parents_lose_home(GUILD, USER + 1)  # sin curro: no pasa nada
+
+
+async def test_la_obra_nueva_la_levantan_quienes_fichan_en_la_rama_ladrillo(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    repo = service.repository
+
+    async def worker(user: int, branch: str, level: int, days_ago: float) -> None:
+        await repo.save_contract(GUILD, user, Contract(job="obra", level=level, branch=branch))
+        when = clock.now - days_ago * 86_400
+        await repo.add_shift(
+            GUILD, user, ShiftRecord("obra", level, "2026-10-01", when, 80, "ordinario", 1, 1)
+        )
+
+    await worker(1, "ladrillo", 6, 1)
+    await worker(2, "ladrillo", 8, 2)
+    await worker(3, "publica", 8, 1)  # obra pública: no promueve
+    await worker(4, "ladrillo", 9, 10)  # hace diez días que no ficha
+    assert await service.ladrillo_builders(GUILD) == (2, 1)
