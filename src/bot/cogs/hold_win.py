@@ -4,8 +4,10 @@ No tiene comando propio: se abre desde `tragas`, que junta todas las máquinas
 (`bot.cogs.slots` llama a `open_theme`). Antes era `volcan`.
 
 Las reglas y los números viven en `bot.services.hold_win` (`THEMES` dice qué
-máquinas hay) y el dibujo en `bot.services.hold_win_render`. Cada jugador abre
-su propia máquina, un mensaje con botones que solo él puede pulsar.
+máquinas hay) y el dibujo en `bot.services.hold_win_scene` (una escena de Node con
+tensión, como la tragaperras clásica; si Node y el navegador fallan, cae al Pillow de
+`bot.services.hold_win_render`). Cada jugador abre su propia máquina, un mensaje con
+botones que solo él puede pulsar.
 
 **Juego base.** Botones:
 
@@ -15,11 +17,31 @@ su propia máquina, un mensaje con botones que solo él puede pulsar.
 - ⚡ **Turbo**: sin GIF, solo la imagen final (más rápido y casi sin datos).
 - **½**, **×2**, 💰 **All-in** cambian la apuesta; 📋 **Premios**, la tabla.
 
-**Bonus.** Cuando un maletín se llena, la máquina pasa al bonus: 🎰 **Girar**
-juega una tirada (el contador vuelve a 3 cada vez que cae algo) y ⏩ **Auto**
-juega todas las que queden seguidas. Si la máquina se cierra o el bot se apaga
-con un bonus a medias, se juega solo hasta el final y se paga: nadie pierde
-un bonus.
+**Bonus.** Cuando un maletín se llena, la máquina pasa al bonus con una entrada
+animada (los maletines destellan, la rejilla se vacía, caen las monedas del bonus y sale
+su nombre): 🎰 **Girar** juega una tirada (el contador vuelve a 3 cada vez que cae
+algo) y ⏩ **Auto** juega todas las que queden seguidas. Si la máquina se cierra o el
+bot se apaga con un bonus a medias, se juega solo hasta el final y se paga: nadie
+pierde un bonus.
+
+**Se pinta antes del clic** (`HoldWinView.prepare`, como `SlotMachineView` en la
+clásica): la próxima tirada ya está sorteada (`_upcoming`, solo en memoria y nunca a la
+vista) y mientras se ve la jugada actual se pintan, de una en una y de la más probable
+a la que menos (`_plans`), las imágenes de cada botón que se puede pulsar:
+
+- En el juego base: 🎰 Tirar a la apuesta de ahora, Tirar con la de ½, ×2 y All-in (las
+  monedas y los botes llevan su valor en Y$, así que la imagen depende de la apuesta) y
+  la imagen final de un 🔁 Auto ×10 (sus diez tiradas están sorteadas y los maletines se
+  llenan tirada a tirada sobre una copia).
+- En el bonus: la próxima tirada, jugada ya sobre una copia del bonus. Al pulsar 🎰 Girar
+  (o en cada paso de ⏩ Auto) esa copia pasa a ser el bonus, así lo pintado y lo jugado son
+  lo mismo.
+
+Una imagen pintada vale si coincide todo lo que la decide (`hold_win_scene.base_key` y
+`bonus_key`: la rejilla, la apuesta, los botes y maletines de antes y de después, el
+turbo): si no (otra máquina del mismo jugador movió los maletines, por ejemplo), se
+pinta en el momento. La entrada al bonus no se puede pintar antes (depende del bonus que
+sale): empieza a pintarse al jugar la tirada que llena el maletín, mientras se ve su GIF.
 
 **Dinero e impuestos.** Cada tirada base es una apuesta del casino
 (`EconomyService.settle_bet`) y el bonus se paga al acabar con
@@ -40,10 +62,11 @@ canales. Permisos del bot en el canal: enviar mensajes, insertar enlaces
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
 import logging
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -89,6 +112,7 @@ from bot.services.hold_win import (
     BonusKind,
     BonusResult,
     BonusStep,
+    Cell,
     Meters,
     Theme,
     Tier,
@@ -100,7 +124,14 @@ from bot.services.hold_win import (
     to_amount,
     win_tier,
 )
-from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Media, Panel
+from bot.services.hold_win_render import Banner, BonusPanel, Media, Panel
+from bot.services.hold_win_scene import (
+    BonusFinish,
+    HoldWinScene,
+    base_key,
+    bonus_key,
+    meta_state,
+)
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
@@ -120,6 +151,9 @@ DEFAULT_STAKE = 100
 MACHINE_TIMEOUT = 180
 #: Margen tras la animación: el cliente tarda un poco en empezar el GIF.
 REVEAL_MARGIN_SECONDS = 0.4
+#: Y un poco más cuanto más pesa el GIF (por MB), para que un móvil lento no se pierda el
+#: final: el último fotograma es igual que el PNG, así que esperar de más no se ve.
+REVEAL_SECONDS_PER_MB = 0.4
 #: Pausa entre tiradas del ⏩ Auto del bonus en turbo (sin GIF que esperar).
 BONUS_AUTO_PAUSE = 1.0
 #: Segundos que se ve la tirada que llena el maletín antes de la entrada al bonus.
@@ -238,6 +272,7 @@ class BasePlay:
     Attributes:
         payout: Lo cobrado en Y$ (ways más recogida).
         meters: Maletines y botes tras la tirada.
+        before: Botes y maletines que se veían antes de la tirada (a la apuesta).
         trigger: Bonus que se dispara, si alguno.
         bonus: Partida de bonus ya empezada, si se dispara.
     """
@@ -247,6 +282,7 @@ class BasePlay:
     payout: int
     settlement: BetSettlement
     meters: Meters
+    before: Panel
     trigger: Trigger | None
     bonus: BonusGame | None
     media: Media
@@ -307,6 +343,19 @@ def base_banner(spin: BaseSpin, payout: int) -> Banner | None:
         return None
     tier = win_tier(spin.points)
     return Banner(WIN_TITLES.get(tier), f"+{format_amount(payout)}", tier)
+
+
+def bonus_banner(result: BonusResult, amount: int) -> Banner:
+    """Cartel del último fotograma de un bonus que acaba (para el Pillow de reserva)."""
+    tier = win_tier(result.points)
+    return Banner(
+        WIN_TITLES.get(tier, "¡BONUS COBRADO!"), f"+{format_amount(amount)}", max(1, tier)
+    )
+
+
+def reveal_delay(media: Media) -> float:
+    """Lo que se espera tras subir el GIF antes de cambiarlo por el PNG final."""
+    return media.seconds + REVEAL_MARGIN_SECONDS + len(media.gif) / 2**20 * REVEAL_SECONDS_PER_MB
 
 
 def base_text(theme: Theme, play: BasePlay, rng: random.Random | None = None) -> str:
@@ -505,6 +554,30 @@ def tax_note(settlements: list[BetSettlement]) -> str | None:
 
 
 EditFn = Callable[..., Awaitable[Any]]
+#: Lo pintado por adelantado de una máquina, por su clave (ver `HoldWinView.prepare`).
+ReadyFn = Callable[[tuple[Any, ...]], "Awaitable[Any] | None"]
+
+
+@dataclass(frozen=True, slots=True)
+class BonusAhead:
+    """La próxima tirada de un bonus, ya jugada sobre una copia.
+
+    Attributes:
+        source: El bonus del que sale la copia.
+        spins: Tiradas que llevaba `source` al copiarlo (si ya no coinciden, no vale).
+        game: La copia, tras jugar la tirada.
+        step: Lo que ha pasado en ella.
+    """
+
+    source: BonusGame
+    spins: int
+    game: BonusGame
+    step: BonusStep
+
+
+def still_key(theme: str, spin: BaseSpin, stake: int, panel: Panel, lit: bool) -> tuple:
+    """Lo que decide la imagen quieta del final de un 🔁 Auto ×10."""
+    return ("still", theme, spin.grid, stake, panel, lit)
 
 
 # -- Máquina ------------------------------------------------------------------------
@@ -534,6 +607,16 @@ class HoldWinView(discord.ui.View):
         self.message: discord.Message | None = None
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        # Pintar antes del clic (`prepare`): lo ya sorteado, que solo vive en memoria y se
+        # gasta al jugarlo, y lo ya pintado (o pintándose) por su clave.
+        self._upcoming: BaseSpin | None = None
+        self._auto_next: list[BaseSpin] | None = None
+        self._bonus_next: BonusAhead | None = None
+        self._ahead: dict[tuple[Any, ...], asyncio.Future[Any]] = {}
+        self._painting: asyncio.Task[None] | None = None
+        # Entre gastar lo sorteado y enseñar la jugada, lo que se ve aún no es lo que
+        # queda: no se pinta nada por adelantado hasta el siguiente `prepare`.
+        self._changing = False
         self._build_buttons()
 
     # -- Botones --------------------------------------------------------------------
@@ -684,6 +767,198 @@ class HoldWinView(discord.ui.View):
         embed.set_footer(text=footer)
         return embed
 
+    # -- Pintar antes del clic ---------------------------------------------------------
+
+    def _next_spin(self) -> BaseSpin:
+        """La próxima tirada, sorteada la primera vez que hace falta."""
+        if self._upcoming is None:
+            self._upcoming = spin_base(self.cog.rng)
+        return self._upcoming
+
+    def _take_spin(self) -> BaseSpin | None:
+        """La tirada sorteada por adelantado, que se gasta al jugarla (`None` si no hay)."""
+        spin, self._upcoming = self._upcoming, None
+        self._changing = True
+        return spin
+
+    def _next_auto(self) -> list[BaseSpin]:
+        """Las diez tiradas del próximo 🔁 Auto, sorteadas la primera vez que hacen falta."""
+        if self._auto_next is None:
+            self._auto_next = [spin_base(self.cog.rng) for _ in range(AUTO_SPINS)]
+        return self._auto_next
+
+    def _take_auto(self) -> list[BaseSpin]:
+        """Las diez del Auto sorteadas por adelantado, que se gastan al jugarlas."""
+        spins, self._auto_next = self._auto_next, None
+        self._changing = True
+        return spins or []
+
+    def _next_bonus(self) -> BonusAhead:
+        """La próxima tirada del bonus, jugada sobre una copia la primera vez que hace falta."""
+        game = self.bonus
+        assert game is not None
+        ahead = self._bonus_next
+        if ahead is None or ahead.source is not game or ahead.spins != game.spins:
+            played = copy.deepcopy(game)
+            ahead = self._bonus_next = BonusAhead(
+                game, game.spins, played, played.step(self.cog.rng)
+            )
+        return ahead
+
+    def _take_bonus(self) -> BonusAhead | None:
+        """La tirada del bonus jugada por adelantado, si sigue valiendo para el bonus de ahora."""
+        ahead, self._bonus_next = self._bonus_next, None
+        self._changing = True
+        if ahead is not None and ahead.source is self.bonus and ahead.spins == self.bonus.spins:
+            return ahead
+        return None
+
+    def _ready(self, key: tuple[Any, ...]) -> asyncio.Future[Any] | None:
+        """Lo pintado (o pintándose) por adelantado para `key`; se gasta al usarlo."""
+        return self._ahead.pop(key, None)
+
+    async def _plans(self) -> list[tuple[tuple[Any, ...], Callable[[], Awaitable[Any]]]]:
+        """Cada botón que se puede pulsar ahora y su imagen, del más probable al que menos.
+
+        En el juego base: Tirar a la apuesta de ahora, Tirar con la de ½, ×2 y All-in (la
+        imagen depende de la apuesta: las monedas y los botes llevan su valor en Y$) y la
+        imagen final de un 🔁 Auto ×10. En el bonus, la próxima tirada.
+        """
+        if self.bonus is not None:
+            return self._bonus_plans()
+        scene, theme, turbo, current = self.cog.renderer, self.theme, self.turbo, self.stake
+        spin = self._next_spin()
+        auto = self._next_auto()
+        meters = await self.cog.meters(self.guild_id, self.owner.id, theme.key)
+        balance = await self.balance()
+
+        def tirada(
+            stake: int,
+        ) -> tuple[tuple[Any, ...], Callable[[], Awaitable[Media]]]:
+            # Los maletines de después salen de jugar `fill_cases` sobre una copia: el sorteo
+            # del gran bonus (la `Random` cualquiera) no cambia lo que se ve de la tirada.
+            filled = copy.deepcopy(meters)
+            fill_cases(filled, spin, stake, random.Random(0))
+            before, after = base_panel(meters, stake), base_panel(filled, stake)
+            payout = to_amount(spin.points, stake)
+            key = base_key(theme.key, spin, stake=stake, before=before, after=after, turbo=turbo)
+            return key, lambda: scene.base(
+                theme.key,
+                spin,
+                stake=stake,
+                before=before,
+                after=after,
+                banner=base_banner(spin, payout),
+                turbo=turbo,
+            )
+
+        stakes = (current, max(MIN_STAKE, current // 2), max(MIN_STAKE, min(current * 2, balance)))
+        plans = [tirada(s) for s in dict.fromkeys((*stakes, balance)) if MIN_STAKE <= s <= balance]
+        # El 🔁 Auto ×10: sus diez tiradas, con los maletines llenándose tirada a tirada, hasta
+        # que salga un bonus o no llegue el dinero. Solo se ve la imagen del final.
+        chain, odds, money, last = copy.deepcopy(meters), random.Random(0), balance, None
+        for each in auto:
+            if money < current:
+                break
+            money += to_amount(each.points, current) - current
+            last = each
+            if fill_cases(chain, each, current, odds) is not None:
+                break
+        if last is not None:
+            panel, lit = base_panel(chain, current), to_amount(last.points, current) > 0
+            plans.append(
+                (
+                    still_key(theme.key, last, current, panel, lit),
+                    lambda: scene.still(theme.key, last, stake=current, panel=panel, highlight=lit),
+                )
+            )
+        return plans
+
+    def _bonus_plans(self) -> list[tuple[tuple[Any, ...], Callable[[], Awaitable[Any]]]]:
+        """La próxima tirada del bonus, ya jugada sobre una copia, con su imagen."""
+        game = self.bonus
+        if game is None or game.finished:
+            return []
+        scene, theme, turbo = self.cog.renderer, self.theme, self.turbo
+        ahead = self._next_bonus()
+        played, step = ahead.game, ahead.step
+        before = list(game.board)
+        panel_before, panel_after = bonus_panel(theme, game), bonus_panel(theme, played)
+        finish = banner = None
+        if played.finished:
+            result = played.result()
+            amount = to_amount(result.points, played.stake)
+            finish, banner = BonusFinish(result, amount), bonus_banner(result, amount)
+        key = bonus_key(
+            theme.key,
+            before,
+            step,
+            stake=played.stake,
+            panel_before=panel_before,
+            panel_after=panel_after,
+            finish=finish,
+            turbo=turbo,
+        )
+        return [
+            (
+                key,
+                lambda: scene.bonus_step(
+                    theme.key,
+                    before,
+                    step,
+                    stake=played.stake,
+                    panel_before=panel_before,
+                    panel_after=panel_after,
+                    finish=finish,
+                    banner=banner,
+                    turbo=turbo,
+                ),
+            )
+        ]
+
+    def prepare(self) -> None:
+        """Pinta en segundo plano la imagen de cada botón que se puede pulsar ahora.
+
+        Se llama al enseñar una jugada (en cuanto la máquina queda como se va a ver), al
+        abrir la máquina, al cambiar la apuesta o el turbo y en cada camino de error que
+        gasta lo sorteado. Pinta de una en una, de la más probable a la menos (`_plans`), y
+        antes de cada una vuelve a mirar qué hace falta: lo que ya no vale se suelta y
+        nunca se corta un dibujo a medias.
+        """
+        self._changing = False
+        if not self.cog.ahead or self.is_finished():
+            return
+        if self._painting is None or self._painting.done():
+            self._painting = asyncio.create_task(
+                self._paint_ahead(), name=f"botes-ahead-{self.guild_id}-{self.owner.id}"
+            )
+
+    async def _paint_ahead(self) -> None:
+        while not self.is_finished() and not self._changing:
+            plans = await self._plans()
+            if self._changing:
+                return
+            wanted = {key for key, _ in plans}
+            for key in [k for k, f in self._ahead.items() if f.done() and k not in wanted]:
+                del self._ahead[key]
+            todo = next(((key, paint) for key, paint in plans if key not in self._ahead), None)
+            if todo is None:
+                return
+            key, paint = todo
+            future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            self._ahead[key] = future
+            result = None
+            try:
+                result = await paint()
+            except Exception:
+                logger.warning(
+                    "No se pudo pintar por adelantado la máquina de botes", exc_info=True
+                )
+            finally:
+                # Quien ya lo espera (un clic que llegó a mitad) no se queda colgado.
+                if not future.done():
+                    future.set_result(result)
+
     # -- Juego base -----------------------------------------------------------------
 
     async def _guarded_play(
@@ -699,11 +974,15 @@ class HoldWinView(discord.ui.View):
                 turbo=turbo,
                 render=render,
                 session_spins=self.session_spins + 1,
+                spin=self._take_spin(),
+                ready=self._ready,
             )
         except InsufficientFundsError as error:
+            self.prepare()
             await notify(interaction, insufficient_text(error.balance, self.stake))
             return None
         except BalanceLimitError:
+            self.prepare()
             await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
             return None
         self.session_spins += 1
@@ -744,6 +1023,14 @@ class HoldWinView(discord.ui.View):
 
     async def show_base(self, play: BasePlay, *, first_edit: EditFn, final_edit: EditFn) -> None:
         """Enseña la tirada (GIF y PNG, o solo PNG en turbo) y, si toca, la entrada al bonus."""
+        intro: asyncio.Task[Media] | None = None
+        if self.bonus is not None:
+            # La entrada al bonus se pinta mientras se ve la tirada que lo dispara; lo siguiente
+            # (la primera tirada del bonus) se pinta cuando sale ella.
+            intro = asyncio.create_task(self._paint_intro(play, self.bonus), name="botes-intro")
+        else:
+            # La máquina ya está como se va a ver: se pinta lo siguiente mientras se sube esto.
+            self.prepare()
         if play.media.gif:
             self._set_enabled(False)
             await first_edit(
@@ -751,7 +1038,7 @@ class HoldWinView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(play.media.gif), filename=GIF_NAME)],
                 view=self,
             )
-            await asyncio.sleep(play.media.seconds + REVEAL_MARGIN_SECONDS)
+            await asyncio.sleep(reveal_delay(play.media))
             edit = final_edit
         else:
             edit = first_edit
@@ -768,15 +1055,15 @@ class HoldWinView(discord.ui.View):
         self.last_text = text
         self.last_won = play.payout > 0
         png = play.media.png
-        if self.bonus is not None:
-            # La tirada que llena el maletín enseña ya la entrada al bonus.
+        if intro is not None:
+            # La tirada que llena el maletín se queda un momento y sigue la entrada al bonus.
             await edit(
                 embed=await self.current_embed(balance=play.balance, text=text),
                 attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
                 view=self,
             )
             await asyncio.sleep(BONUS_INTRO_PAUSE)
-            await self._show_bonus_intro(final_edit)
+            await self._show_bonus_intro(final_edit, intro)
             return
         self._set_enabled(True)
         await edit(
@@ -795,23 +1082,42 @@ class HoldWinView(discord.ui.View):
         embed.set_footer(text=f"Máquina de {self.owner.display_name}")
         return embed
 
-    async def _show_bonus_intro(self, edit: EditFn) -> None:
+    async def _paint_intro(self, play: BasePlay, game: BonusGame) -> Media:
+        """Pinta la entrada al bonus que dispara `play`: GIF y PNG (solo el PNG en turbo)."""
+        return await self.cog.renderer.bonus_intro(
+            self.theme.key,
+            play.spin,
+            base_stake=play.stake,
+            before=play.before,
+            after=base_panel(play.meters, play.stake),
+            game=game,
+            panel=bonus_panel(self.theme, game),
+            name=bonus_name(self.theme, game.kind),
+            banner=Banner(bonus_name(self.theme, game.kind), f"a {format_amount(game.stake)}", 2),
+            turbo=self.turbo,
+        )
+
+    async def _show_bonus_intro(self, edit: EditFn, intro: Awaitable[Media]) -> None:
+        """Enseña la entrada al bonus, ya pintada (o pintándose) desde la tirada que la dispara."""
         assert self.bonus is not None
         game = self.bonus
-        png = await asyncio.to_thread(
-            self.cog.renderer.bonus_still,
-            self.theme.key,
-            game.board,
-            stake=game.stake,
-            panel=bonus_panel(self.theme, game),
-            banner=Banner(bonus_name(self.theme, game.kind), f"a {format_amount(game.stake)}", 2),
-        )
+        media = await intro
         self.last_text = bonus_text(self.theme, game, None)
         self.last_won = None
+        # La máquina ya está como se va a ver: se pinta la primera tirada del bonus.
+        self.prepare()
+        if media.gif:
+            self._set_enabled(False)
+            await edit(
+                embed=await self.current_embed(image=GIF_NAME),
+                attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                view=self,
+            )
+            await asyncio.sleep(reveal_delay(media))
         self._set_enabled(True)
         await edit(
             embed=await self.current_embed(),
-            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+            attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
             view=self,
         )
 
@@ -865,7 +1171,8 @@ class HoldWinView(discord.ui.View):
         try:
             await ack(interaction)
             self._last_interaction = interaction
-            for _ in range(AUTO_SPINS):
+            spins = self._take_auto()
+            for index in range(AUTO_SPINS):
                 try:
                     play = await self.cog.play_base(
                         self.guild_id,
@@ -875,6 +1182,7 @@ class HoldWinView(discord.ui.View):
                         turbo=True,
                         render=False,
                         session_spins=self.session_spins + 1,
+                        spin=spins[index] if index < len(spins) else None,
                     )
                 except InsufficientFundsError:
                     stopped = "Parado: no te llega para otra tirada."
@@ -889,19 +1197,25 @@ class HoldWinView(discord.ui.View):
                     stopped = "Parado: ¡se ha llenado un maletín!"
                     break
             if not plays:
+                self.prepare()
                 await interaction.followup.send(
                     insufficient_text(await self.balance(), self.stake), ephemeral=True
                 )
                 return
             last = plays[-1]
-            png = await asyncio.to_thread(
-                self.cog.renderer.base_still,
-                self.theme.key,
-                last.spin,
-                stake=last.stake,
-                panel=base_panel(last.meters, last.stake),
-                highlight=last.payout > 0,
-            )
+            panel, lit = base_panel(last.meters, last.stake), last.payout > 0
+            ready = self._ready(still_key(self.theme.key, last.spin, last.stake, panel, lit))
+            png = await ready if ready is not None else None
+            if png is None:
+                png = await self.cog.renderer.still(
+                    self.theme.key, last.spin, stake=last.stake, panel=panel, highlight=lit
+                )
+            intro: asyncio.Task[Media] | None = None
+            if self.bonus is not None:
+                # Sale del Auto con un bonus: su entrada se pinta mientras se ve el resumen.
+                intro = asyncio.create_task(self._paint_intro(last, self.bonus), name="botes-intro")
+            else:
+                self.prepare()
             text = self.auto_text(plays, stopped)
             if note := tax_note([p.settlement for p in plays]):
                 text += f"\n{note}"
@@ -926,9 +1240,9 @@ class HoldWinView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
                 view=self,
             )
-            if self.bonus is not None:
+            if intro is not None:
                 await asyncio.sleep(BONUS_INTRO_PAUSE)
-                await self._show_bonus_intro(interaction.edit_original_response)
+                await self._show_bonus_intro(interaction.edit_original_response, intro)
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
@@ -1014,27 +1328,31 @@ class HoldWinView(discord.ui.View):
         assert game is not None
         before = list(game.board)
         panel_before = bonus_panel(self.theme, game)
-        step = game.step(self.cog.rng)
+        if planned := self._take_bonus():
+            # Lo pintado y lo jugado son lo mismo: la copia ya jugada pasa a ser el bonus.
+            game = self.bonus = planned.game
+            step = planned.step
+        else:
+            step = game.step(self.cog.rng)
         payout: BonusPayout | None = None
+        finish: BonusFinish | None = None
         banner: Banner | None = None
         if game.finished:
             self.bonus = None
             payout = await self.cog.pay_bonus(self.guild_id, self.owner.id, self.theme, game)
-            banner = Banner(
-                WIN_TITLES.get(win_tier(payout.result.points), "¡BONUS COBRADO!"),
-                f"+{format_amount(payout.amount)}",
-                max(1, win_tier(payout.result.points)),
-            )
-        media = await asyncio.to_thread(
-            self.cog.renderer.render_bonus_step,
+            finish = BonusFinish(payout.result, payout.amount)
+            banner = bonus_banner(payout.result, payout.amount)
+        media = await self.cog.bonus_media(
             self.theme.key,
             before,
             step,
             stake=game.stake,
             panel_before=panel_before,
             panel_after=bonus_panel(self.theme, game),
+            finish=finish,
             banner=banner,
             turbo=self.turbo,
+            ready=self._ready,
         )
         if payout is None:
             text = bonus_text(self.theme, game, step)
@@ -1055,6 +1373,8 @@ class HoldWinView(discord.ui.View):
             balance = payout.settlement.balance
         self.last_text = text
         self.last_won = won
+        # La máquina ya está como se va a ver: se pinta lo siguiente mientras se sube esto.
+        self.prepare()
         if media.gif:
             self._set_enabled(False)
             embed = await self.current_embed(
@@ -1065,7 +1385,7 @@ class HoldWinView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
                 view=self,
             )
-            await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+            await asyncio.sleep(reveal_delay(media))
             edit = final_edit
         else:
             edit = first_edit
@@ -1109,6 +1429,7 @@ class HoldWinView(discord.ui.View):
         El embed lee saldo y maletines de la base de datos: se acepta el clic antes.
         """
         await ack(interaction)
+        self.prepare()
         self._set_enabled(True)
         await edit(interaction, embed=await self.current_embed(balance=balance), view=self)
         self._last_interaction = interaction
@@ -1154,14 +1475,24 @@ class HoldWin(commands.Cog, name="Botes"):
         *,
         economy: EconomyService,
         repository: HoldWinRepository,
-        renderer: HoldWinRenderer | None = None,
+        renderer: HoldWinScene | None = None,
         rng: random.Random | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
+        ahead: bool | None = None,
     ) -> None:
+        """Monta el cog.
+
+        Args:
+            renderer: El dibujo (`HoldWinScene`); las pruebas pasan uno que no pinta.
+            ahead: Si las máquinas pintan antes del clic (`HoldWinView.prepare`). Por
+                defecto, solo con el dibujo de verdad: con uno de prueba, cada sorteo de
+                más gastaría las tiradas de guion de la prueba.
+        """
         self.bot = bot
         self.economy = economy
         self.repository = repository
-        self.renderer = renderer or HoldWinRenderer()
+        self.renderer = renderer or HoldWinScene()
+        self.ahead = renderer is None if ahead is None else ahead
         self.rng = rng or random.SystemRandom()
         self.casino_channel_ids = casino_channel_ids
         self._turbo: dict[tuple[int, int], bool] = {}
@@ -1172,19 +1503,20 @@ class HoldWin(commands.Cog, name="Botes"):
         self._warm_task: asyncio.Task[None] | None = None
 
     async def cog_load(self) -> None:
-        """Prepara fondos, símbolos y paletas en segundo plano."""
+        """Prepara en segundo plano lo fijo de cada máquina: fondo, casillas y símbolos.
+
+        Es lo que más tarda del primer dibujo (`meta_state`, con caché): el Node del bot ya
+        está abierto desde que arranca (`node_scene.warm`) y carga la escena al pintar.
+        """
 
         def warm() -> None:
-            spin = spin_base(random.Random(0))
             for key in THEMES:
-                self.renderer.base_still(
-                    key, spin, stake=DEFAULT_STAKE, panel=base_panel(Meters(), DEFAULT_STAKE)
-                )
+                meta_state(key)
 
         self._warm_task = asyncio.create_task(asyncio.to_thread(warm), name="botes-warm-up")
 
     async def cog_unload(self) -> None:
-        """Al apagar, juega y paga los bonus a medias."""
+        """Al apagar, juega y paga los bonus a medias y cierra el dibujo."""
         if self._warm_task is not None:
             self._warm_task.cancel()
         for view in list(self.machines):
@@ -1194,6 +1526,7 @@ class HoldWin(commands.Cog, name="Botes"):
                 logger.exception("No se pudo pagar un bonus al apagar")
             view.stop()
         self.machines.clear()
+        await self.renderer.close()
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
@@ -1231,11 +1564,19 @@ class HoldWin(commands.Cog, name="Botes"):
         turbo: bool,
         render: bool = True,
         session_spins: int = 1,
+        spin: BaseSpin | None = None,
+        ready: ReadyFn | None = None,
     ) -> BasePlay:
         """Juega una tirada base: cobra, paga, llena maletines y, si toca, empieza el bonus.
 
         La rejilla se decide antes de cobrar, pero los maletines solo cambian
         si el cobro sale bien.
+
+        Args:
+            render: `False` para no dibujar nada (Auto).
+            spin: La tirada ya sorteada por adelantado (`HoldWinView._take_spin`); si no,
+                se sortea aquí.
+            ready: Lo pintado por adelantado de la máquina (`HoldWinView._ready`).
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre la apuesta.
@@ -1243,13 +1584,16 @@ class HoldWin(commands.Cog, name="Botes"):
         """
         if stake < MIN_STAKE:
             raise ValueError(f"La apuesta mínima es {MIN_STAKE}.")
-        spin = spin_base(self.rng)
+        if spin is None:
+            spin = spin_base(self.rng)
         payout = to_amount(spin.points, stake)
         async with self._lock(guild_id, user_id, theme.key):
             settlement = await self.economy.settle_bet(
                 guild_id, user_id, game=theme.key, stake=stake, payout=payout
             )
             meters = await self.repository.load(guild_id, user_id, theme.key)
+            # `fill_cases` cambia `meters`: lo que se ve antes de la tirada se saca ahora.
+            before = base_panel(meters, stake)
             trigger = fill_cases(meters, spin, stake, self.rng)
             await self.repository.save(guild_id, user_id, theme.key, meters)
         bonus = None
@@ -1260,14 +1604,15 @@ class HoldWin(commands.Cog, name="Botes"):
                 trigger, mini=meters.mini, major=meters.major, rng=self.rng, seed_cells=seeds
             )
         if render:
-            media = await asyncio.to_thread(
-                self.renderer.render_base,
+            media = await self._base_media(
                 theme.key,
                 spin,
                 stake=stake,
-                panel=base_panel(meters, stake),
+                before=before,
+                after=base_panel(meters, stake),
                 banner=base_banner(spin, payout),
                 turbo=turbo,
+                ready=ready,
             )
         else:
             media = Media(gif=b"", png=b"", seconds=0.0)
@@ -1277,10 +1622,80 @@ class HoldWin(commands.Cog, name="Botes"):
             payout=payout,
             settlement=settlement,
             meters=meters,
+            before=before,
             trigger=trigger,
             bonus=bonus,
             media=media,
             session_spins=session_spins,
+        )
+
+    async def _base_media(
+        self,
+        theme: str,
+        spin: BaseSpin,
+        *,
+        stake: int,
+        before: Panel,
+        after: Panel,
+        banner: Banner | None,
+        turbo: bool,
+        ready: ReadyFn | None = None,
+    ) -> Media:
+        """GIF y PNG de una tirada base (solo el PNG en turbo).
+
+        Si la máquina ya la tenía pintada (o pintándose) por adelantado, se usa esa.
+        """
+        if ready is not None:
+            key = base_key(theme, spin, stake=stake, before=before, after=after, turbo=turbo)
+            planned = ready(key)
+            if planned is not None and (media := await planned) is not None:
+                return media
+        return await self.renderer.base(
+            theme, spin, stake=stake, before=before, after=after, banner=banner, turbo=turbo
+        )
+
+    async def bonus_media(
+        self,
+        theme: str,
+        before: Sequence[Cell | None],
+        step: BonusStep,
+        *,
+        stake: int,
+        panel_before: BonusPanel,
+        panel_after: BonusPanel,
+        finish: BonusFinish | None,
+        banner: Banner | None,
+        turbo: bool,
+        ready: ReadyFn | None = None,
+    ) -> Media:
+        """GIF y PNG de una tirada del bonus (solo el PNG en turbo).
+
+        Si la máquina ya la tenía pintada (o pintándose) por adelantado, se usa esa.
+        """
+        if ready is not None:
+            key = bonus_key(
+                theme,
+                before,
+                step,
+                stake=stake,
+                panel_before=panel_before,
+                panel_after=panel_after,
+                finish=finish,
+                turbo=turbo,
+            )
+            planned = ready(key)
+            if planned is not None and (media := await planned) is not None:
+                return media
+        return await self.renderer.bonus_step(
+            theme,
+            before,
+            step,
+            stake=stake,
+            panel_before=panel_before,
+            panel_after=panel_after,
+            finish=finish,
+            banner=banner,
+            turbo=turbo,
         )
 
     async def pay_bonus(
@@ -1389,12 +1804,8 @@ class HoldWin(commands.Cog, name="Botes"):
             return
         view = HoldWinView(self, theme=theme, guild_id=guild.id, owner=user, stake=stake)
         meters = await self.meters(guild.id, user.id, theme.key)
-        png = await asyncio.to_thread(
-            self.renderer.base_still,
-            theme.key,
-            spin_base(self.rng),
-            stake=stake,
-            panel=base_panel(meters, stake),
+        png = await self.renderer.still(
+            theme.key, spin_base(self.rng), stake=stake, panel=base_panel(meters, stake)
         )
         view.message = await send(
             embed=await view.current_embed(balance=balance),
@@ -1402,6 +1813,7 @@ class HoldWin(commands.Cog, name="Botes"):
             view=view,
         )
         self.machines.add(view)
+        view.prepare()
 
 
 async def open_theme(
