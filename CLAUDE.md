@@ -454,9 +454,11 @@ En Botes cambia: la rejilla es de 5 × 4 y no tiene tiras (cada casilla sale al 
 `spin_base`), así que los símbolos que pasan mientras gira se sacan con
 `random_filler` sembrado con el resultado. La anticipación ya existe
 (`BaseSpin.anticipation`). El bonus fija las monedas y solo giran las casillas vacías,
-con los misteriosos que se revelan. Los pintores comunes con la clásica (rodillos,
-luces, carteles, marcador, monedas) se sacan a un archivo compartido (como
-`assets/tapete.js`) al hacerlo, no antes.
+con los misteriosos que se revelan. Los pintores comunes con la clásica (luces,
+carteles, marcador, monedas, símbolos y la salida que reduce y recorta) ya están en
+`assets/tragas.js` (objeto `Tragas`, como `tapete.js`; la API, en su cabecera): cada
+máquina los tiñe con sus colores (`Tragas.TINT`). `Tragas.S` se fija una vez; con una
+escala no entera, el lienzo grande ha de medir un número par de píxeles.
 
 ## Notas para el agente en este repo
 
