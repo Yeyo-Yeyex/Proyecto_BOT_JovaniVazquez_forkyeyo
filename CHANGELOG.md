@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.12.0 · 2026-10-16
+
+- Informe de uso: mide la CPU del contenedor, lo que ocupa la base de datos y el disco libre, la espera del clic a la imagen, las vistas que caducan a medias, cada arranque con su versión, los cortes con Discord, sus respuestas 429 y los procesos matados por memoria
+- `docs/analisis_metricas.py` junta varios informes en una visión global y compara versiones del bot; `docs/descargar_informe.py` baja todos los del canal
+
 ### 7.11.0 · 2026-10-16
 
 - `informe`: con `canal`, el informe de uso se publica cada día en ese canal privado; con `quitar`, deja de publicarse

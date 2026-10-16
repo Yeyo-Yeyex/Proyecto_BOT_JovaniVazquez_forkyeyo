@@ -185,9 +185,13 @@ def test_secciones_salen_en_el_orden_pedido():
         "## Retención por funcionalidad",
         "## Canales",
         "## Sistema",
+        "## Versiones y reinicios",
         "## Dibujos",
         "## Subidas a Discord",
+        "## Del clic a la imagen",
         "## Bloqueos del bucle",
+        "## Conexión con Discord",
+        "## Vistas caducadas",
         "## Log",
         "## Casino",
         "## Economía",
@@ -361,3 +365,122 @@ def test_cada_seccion_acepta_un_informe_vacio(section):
     func = getattr(am, section)
     lines = func({}, 5)
     assert lines[0].startswith("## ")
+
+
+def _days(start: int, end: int, ms: float, slow: int) -> dict:
+    return {
+        f"2026-10-{day:02d}": {
+            "button": {
+                "eventos": 100,
+                "errores": 2,
+                "usuarios": 5,
+                "ms_medio": ms,
+                "ms_n": 100,
+                "lentos": slow,
+            }
+        }
+        for day in range(start, end + 1)
+    }
+
+
+def test_versiones_compara_latencia_y_cuenta_reinicios():
+    report = {
+        "por_dia": {**_days(1, 3, 900.0, 10), **_days(4, 5, 300.0, 0)},
+        "sistema": {"2026-10-02": {"cpu_pct_media": 40.0, "memoria_mb_max": 1500.0}},
+        "arranques": {
+            "2026-10-01": {"7.10.0": 1},
+            "2026-10-02": {"7.10.0": 2},
+            "2026-10-04": {"7.11.0": 1},
+        },
+    }
+    rows = {
+        line.split("|")[1].strip(): line
+        for line in am.section_versions(report, 10)
+        if line.startswith("| 7.")
+    }
+    assert (
+        "| 2026-10-01 a 2026-10-03 | 3 | 2 ⚠️ | 100 | 900 | 10.0 % | 2.0 % | 40 | 1500 |"
+        in rows["7.10.0"]
+    )
+    assert "| 2026-10-04 a 2026-10-05 | 2 | 0 | 100 | 300 | 0.0 % |" in rows["7.11.0"]
+
+
+def test_clic_a_imagen_resta_la_subida_y_marca_las_esperas_largas():
+    report = {
+        "uso": [
+            _entry("upload", "moneda.gif · <250 KB", 10, ms=400.0),
+            _entry("upload", "moneda.gif · 250 KB-1 MB", 10, ms=600.0),
+            _entry("imagen", "moneda.gif", 20, ms=700.0, buckets=(10, 9, 0, 1), ms_max=3200),
+        ]
+    }
+    text = _text(am.section_image(report, 10))
+    assert "| ⚠️ | moneda.gif | 20 | 700 | 500 | 200 | 5.0 % | 3200 |" in text
+
+
+def test_conexion_y_caducadas_resumen_lo_que_frena_al_bot():
+    report = {
+        "uso": [
+            _entry("gateway", "conectada", 2),
+            _entry("gateway", "desconexion", 1),
+            _entry("oom", "contenedor", 3),
+            _entry("db", "volcado", 1440, ms=12.0, ms_max=900),
+            _entry("ratelimit", "PATCH /channels/#/messages/#", 4),
+            _entry("caducada", "CoinView", 7),
+        ]
+    }
+    text = _text(am.section_discord(report, 10))
+    assert "2 conectada, 1 cortes, 0 reanudadas ⚠️" in text
+    assert "matados por falta de memoria: 3" in text
+    assert "1440, 12 ms de media, 900 de máximo" in text
+    assert "| PATCH /channels/#/messages/# | 4 |" in text
+    assert "| CoinView | 7 |" in _text(am.section_expired(report, 10))
+
+
+def test_sistema_enseña_cpu_base_de_datos_y_disco():
+    report = {
+        "sistema": {
+            "2026-10-01": {
+                "cpu_pct_media": 40.0,
+                "cpu_pct_max": 90.0,
+                "db_mb_max": 120.0,
+                "disco_libre_mb_min": 2048.0,
+            }
+        }
+    }
+    text = _text(am.section_system(report, 10))
+    assert "| 40 / 90 |" in text and "| 120 | 2.0 | ⚠️ CPU |" in text
+
+
+def test_varios_informes_se_juntan_por_dia_y_manda_el_mas_nuevo(tmp_path, capsys):
+    old = {
+        **_empty(),
+        "hasta": "2026-10-02",
+        "desde": "2026-09-03",
+        "por_dia": _days(1, 2, 900.0, 0),
+        "arranques": {"2026-10-01": {"7.10.0": 1}},
+        "uso": [_entry("slash", "viejo", 1)],
+    }
+    new = {
+        **_empty(),
+        "hasta": "2026-10-04",
+        "desde": "2026-09-05",
+        "por_dia": _days(2, 4, 300.0, 0),
+        "arranques": {"2026-10-03": {"7.11.0": 1}},
+        "uso": [_entry("slash", "nuevo", 1)],
+    }
+    merged = am.merge_reports([new, old])
+    assert list(merged["por_dia"]) == ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]
+    assert merged["por_dia"]["2026-10-02"]["button"]["ms_medio"] == 300.0
+    assert merged["uso"][0]["nombre"] == "nuevo"
+    assert (merged["informes"], merged["desde_global"]) == (2, "2026-09-03")
+
+    folder = tmp_path / "metricas"
+    folder.mkdir()
+    (folder / "informe-2026-10-02.json").write_text(json.dumps(old), encoding="utf-8")
+    (folder / "informe-2026-10-04.json").write_text(json.dumps(new), encoding="utf-8")
+    (folder / "README.md").write_text("no es un informe", encoding="utf-8")
+    assert am.main([str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert "Visión global de 2 informes, desde 2026-09-03" in out
+    assert "| 7.10.0 |" in out and "| 7.11.0 |" in out
+    assert am.main([str(tmp_path / "vacia")]) == 1

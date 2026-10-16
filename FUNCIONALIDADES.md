@@ -828,7 +828,10 @@ no sale en ningún mensaje del bot salvo en `informe`.
   Discord, los clics que acaban sin respuesta, mensajes por canal y su clase
   (adjunto, sticker, enlace, respuesta, corto, medio o largo), reacciones, minutos
   de voz por canal, altas y bajas, avisos y errores del log por plantilla, lo que
-  tarda cada dibujo de Node o Chromium y una muestra del sistema por minuto.
+  tarda cada dibujo de Node o Chromium, la espera del clic a la imagen, las vistas
+  que caducan a medias, cada arranque con su versión, los cortes con Discord y sus
+  429, los procesos matados por memoria y una muestra del sistema por minuto
+  (memoria, CPU, base de datos y disco libre).
 - **Qué no guarda:** el texto de los mensajes ni los argumentos de los avisos del
   log. El único dato por persona es quién hizo cada cosa cada día, que se borra a
   los 90 días y en el informe sale como u1, u2…
