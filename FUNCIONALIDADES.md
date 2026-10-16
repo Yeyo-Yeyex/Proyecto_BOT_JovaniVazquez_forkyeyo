@@ -794,7 +794,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 | `cambios [acción] [canal]` | Configura el aviso de novedades de cada despliegue. Sin argumentos, enseña la configuración. Acciones: `activar`, `desactivar`, `detallado` (lista y una ficha por PR con su descripción, el de serie), `resumen` (solo la lista) y `defecto` (vuelve a `#chat-general`). Un canal o un hilo (aunque esté archivado) fija dónde se publica. En `.cambios` van en cualquier orden. |
 | `informe [días] [canal] [quitar]` | Descarga el informe interno de uso de los últimos días (1–90, 30 por defecto) en un JSON: comandos y botones con su latencia y fallos, actividad por día y hora, canales, retención por seudónimos, sistema del NAS, casino y economía. Sin mensajes ni IDs de miembros. En `/` solo lo ves tú; en `.`, queda en el canal. Con `canal` (`.informe #canal`), el bot lo publica ahí cada día (30 días) y sube ya el de hoy; con `quitar`, deja de hacerlo. Ver sección 6 quater.3. |
 
-`reinicio` va aparte: no es de administración sino de mantenimiento, y solo
+`reinicio` (atajo de texto `.met`, sin versión `/`) va aparte: no es de administración sino de mantenimiento, y solo
 lo pueden usar dos IDs (Yeyo y Dani, en `DEPLOYERS` de `bot.cogs.deploy`),
 sean o no administradores. No sale en `ayuda`. Pide al NAS que baje lo último
 de `main`, reconstruya y reinicie el bot; el bot deja la petición en el buzón
