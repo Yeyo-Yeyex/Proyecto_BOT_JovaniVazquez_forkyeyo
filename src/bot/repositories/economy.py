@@ -26,6 +26,9 @@ Modelo de datos:
   y, en el futuro, para la declaración anual.
 - `economy_wealth_weeks` y `economy_wealth_tax`: semanas en las que ya se
   cobró el Impuesto sobre el Patrimonio y lo que pagó cada uno.
+- `economy_solidarity_tax`: cada declaración del Impuesto de Solidaridad de las
+  Grandes Fortunas (quien pasa de 37.000.000 Y$ un lunes), con lo que pagó (cero
+  mientras Canarias no bonifique el Patrimonio).
 - `economy_wallets` con `user_id = SLOTS_POT_ACCOUNT_ID`: el bote común de la
   tragaperras. Crece con una parte de cada apuesta y se lo lleva entero
   quien saque el jackpot; la casa lo vuelve a sembrar al vaciarse.
@@ -119,7 +122,7 @@ from bot.repositories import sqlite
 
 if TYPE_CHECKING:
     from bot.services.interest import DayOutcome, LedgerRow, SavingsSettlement, Streaks
-    from bot.services.taxes import ForeignPayslip, Payslip
+    from bot.services.taxes import ForeignPayslip, Payslip, WealthQuote
 
 T = TypeVar("T")
 
@@ -341,16 +344,24 @@ class WealthCharge:
     """Lo que pagó un miembro de Impuesto sobre el Patrimonio en una semana.
 
     Attributes:
-        balance: Su patrimonio ese lunes (efectivo más inmuebles), la base.
-        tax: Lo que pagó ese lunes con su efectivo.
+        balance: Su patrimonio ese lunes (efectivo, inmuebles y objetos), la base.
+        tax: Lo que pagó ese lunes con su efectivo (Patrimonio y Grandes Fortunas).
         debt: Lo que no le llegó: queda como deuda con Hacienda y se embarga de lo
             que cobre por sus pisos.
+        reduced: Lo que le rebajó el límite conjunto con el IRPF (art. 31).
+        goods: Lo que sumaron sus objetos de la tienda a la base.
+        solidarity_subject: Si pasó del umbral de Grandes Fortunas y lo declaró.
+        solidarity: Lo que pagó de Grandes Fortunas (cero en Canarias).
     """
 
     user_id: int
     balance: int
     tax: int
     debt: int = 0
+    reduced: int = 0
+    goods: int = 0
+    solidarity_subject: bool = False
+    solidarity: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -786,6 +797,16 @@ class EconomyRepository:
                     week_start TEXT NOT NULL,
                     balance INTEGER NOT NULL,
                     tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_solidarity_tax (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    base INTEGER NOT NULL,
+                    tax INTEGER NOT NULL CHECK (tax >= 0),
                     created_at REAL NOT NULL,
                     PRIMARY KEY (guild_id, user_id, week_start)
                 );
@@ -2570,6 +2591,9 @@ class EconomyRepository:
             SELECT user_id, 'patrimonio', amount, created_at
             FROM economy_debt_payments WHERE guild_id = :guild
             UNION ALL
+            SELECT user_id, 'grandes_fortunas', tax, created_at
+            FROM economy_solidarity_tax WHERE guild_id = :guild
+            UNION ALL
             SELECT user_id, 'loteria', tax, created_at
             FROM economy_lottery_tax WHERE guild_id = :guild
             UNION ALL
@@ -2665,6 +2689,35 @@ class EconomyRepository:
                 out.setdefault(int(user_id), {})[str(kind)] = int(total)
         return out
 
+    async def recent_taxable(self, guild_id: int, user_id: int, since: float) -> int:
+        """Renta sujeta a IRPF de un miembro desde `since` (ver `_recent_taxable_in`)."""
+        return await self._run(self._recent_taxable_sync, guild_id, user_id, since)
+
+    def _recent_taxable_sync(self, guild_id: int, user_id: int, since: float) -> int:
+        connection = self._connect()
+        try:
+            return self._recent_taxable_in(connection, guild_id, user_id, since)
+        finally:
+            connection.close()
+
+    async def solidarity_summary(self, guild_id: int) -> tuple[int, int, int]:
+        """`(declaraciones, contribuyentes, lo pagado)` de las Grandes Fortunas del servidor."""
+        return await self._run(self._solidarity_summary_sync, guild_id)
+
+    def _solidarity_summary_sync(self, guild_id: int) -> tuple[int, int, int]:
+        connection = self._connect()
+        try:
+            filed, people, paid = connection.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT user_id), COALESCE(SUM(tax), 0)
+                FROM economy_solidarity_tax WHERE guild_id = ?
+                """,
+                (guild_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(filed), int(people), int(paid)
+
     async def treasury(self, guild_id: int, since: float, top: int) -> Treasury:
         """Saldo y recaudación de la cuenta del Estado del servidor."""
         return await self._run(self._treasury_sync, guild_id, since, top)
@@ -2688,6 +2741,9 @@ class EconomyRepository:
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_wealth_tax
+                WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, tax AS withheld, created_at AS at FROM economy_solidarity_tax
                 WHERE guild_id = :guild
                 UNION ALL
                 SELECT user_id, tax AS withheld, created_at AS at FROM economy_consumption_tax
@@ -2758,32 +2814,44 @@ class EconomyRepository:
         *,
         week: str,
         now: float,
-        tax_for: Callable[[int], int],
+        tax_for: Callable[[int, int, int], WealthQuote],
         assets: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
+        goods: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
+        income_window: tuple[float, float] | None = None,
     ) -> WealthRun:
         """Cobra el Patrimonio de `week` a todos los miembros del servidor, una vez.
 
         Todo va en una transacción: o pagan todos o nadie, y la semana queda
         marcada. Lo cobrado va a la cuenta del Estado. Las cuentas especiales
         (Estado y ONGs, con `user_id` <= 0) no pagan. La base es el saldo más lo
-        que devuelva `assets`; se paga con el saldo y, si no llega, se cobra lo
-        que haya.
+        que devuelvan `assets` y `goods`; se paga con el saldo y lo que no llegue
+        queda como deuda. Quien pasa del umbral de Grandes Fortunas lo declara en
+        `economy_solidarity_tax`, pague o no.
 
         Args:
             week: Lunes ISO de la semana que se cierra.
-            tax_for: Cuota en Y$ para un patrimonio (regla en `bot.services.taxes`).
+            tax_for: Recibe `(patrimonio, parte que no da rentas, renta sujeta de la
+                semana)` y devuelve la cuenta (`bot.services.taxes.wealth_quote`).
             assets: Lee, en la misma transacción, el valor fiscal de lo que tiene
                 cada miembro además del efectivo (los inmuebles de `pisos`).
+            goods: Lee, en la misma transacción, lo que valen sus objetos de la tienda
+                (`repositories.shop.wealth_goods_in`): no dan rentas.
+            income_window: `(desde, hasta)` en epoch de la semana fiscal que se cierra,
+                para la renta del límite conjunto con el IRPF.
         """
-        return await self._run(self._charge_wealth_sync, guild_id, week, now, tax_for, assets)
+        return await self._run(
+            self._charge_wealth_sync, guild_id, week, now, tax_for, assets, goods, income_window
+        )
 
     def _charge_wealth_sync(
         self,
         guild_id: int,
         week: str,
         now: float,
-        tax_for: Callable[[int], int],
+        tax_for: Callable[[int, int, int], WealthQuote],
         assets: Callable[[sqlite3.Connection], dict[int, int]] | None,
+        goods: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
+        income_window: tuple[float, float] | None = None,
     ) -> WealthRun:
         with self._transaction() as connection:
             done = connection.execute(
@@ -2811,12 +2879,32 @@ class EconomyRepository:
             ).fetchall()
             cash = {int(row["user_id"]): int(row["balance"]) for row in wallets}
             extra = assets(connection) if assets is not None else {}
+            things = goods(connection) if goods is not None else {}
             charges = []
-            for user_id in sorted(set(cash) | {m for m, v in extra.items() if m > 0 and v > 0}):
+            members = set(cash) | {m for m, v in extra.items() if m > 0 and v > 0}
+            members |= {m for m, v in things.items() if m > 0 and v > 0}
+            for user_id in sorted(members):
                 balance = cash.get(user_id, 0)
+                owned = things.get(user_id, 0)
                 # Las deudas de los pisos (hipotecas, banco) restan también del efectivo.
-                worth = max(0, balance + extra.get(user_id, 0))
-                due = max(0, tax_for(worth))
+                worth = max(0, balance + extra.get(user_id, 0) + owned)
+                income = 0
+                if income_window is not None:
+                    start, end = income_window
+                    income = self._recent_taxable_in(
+                        connection, guild_id, user_id, start
+                    ) - self._recent_taxable_in(connection, guild_id, user_id, end)
+                quote = tax_for(worth, owned, income)
+                if quote.subject:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO economy_solidarity_tax
+                            (guild_id, user_id, week_start, base, tax, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (guild_id, user_id, week, worth, max(0, quote.solidarity), now),
+                    )
+                due = max(0, quote.due) + max(0, quote.solidarity)
                 tax = min(balance, due)
                 # Lo que no llega en efectivo se embarga de lo que cobre por sus pisos
                 # (art. 169 de la Ley 58/2003): tenerlo todo en ladrillo no libra del impuesto.
@@ -2846,7 +2934,12 @@ class EconomyRepository:
                         """,
                         (guild_id, user_id, debt),
                     )
-                charges.append(WealthCharge(user_id, worth, tax, debt))
+                charges.append(
+                    WealthCharge(
+                        user_id, worth, tax, debt, reduced=quote.reduced, goods=owned,
+                        solidarity_subject=quote.subject, solidarity=quote.solidarity,
+                    )
+                )  # fmt: skip
             charges.sort(key=lambda c: (-(c.tax + c.debt), c.user_id))
             return WealthRun(charges=tuple(charges))
 
@@ -4748,6 +4841,7 @@ class EconomyRepository:
                 "economy_declarations",
                 "economy_wealth_weeks",
                 "economy_wealth_tax",
+                "economy_solidarity_tax",
                 "economy_donations",
                 "economy_bizums",
                 "economy_slots_jackpots",

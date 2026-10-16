@@ -178,6 +178,7 @@ PRODUCED_STATS = {
     "beer_events_forced",
     # Patrimonio (cogs/patrimonio.py) y donativos (cogs/donations.py)
     "wealth_tax_paid", "wealth_tax_weeks", "wealth_embargo", "donated", "ongs_supported",
+    "wealth_joint_limit", "wealth_goods_taxed", "wealth_solidarity",
     # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
     "interest_earned", "interest_days", "interest_tax", "interest_capped", "interest_rounding",
     "interest_zero", "interest_grasshopper", "interest_gambled", "interest_beats_imv",

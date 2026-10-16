@@ -20,10 +20,13 @@ from bot.services.economy import STARTING_BALANCE, Declaration, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.taxes import (
     DONATION_FULL_LIMIT,
+    SOLIDARITY_WEALTH_THRESHOLD,
+    WEALTH_MAX_REDUCTION,
     WEALTH_MINIMUM,
     apply_scale,
     donation_deduction,
     igic,
+    wealth_quote,
     wealth_tax,
 )
 
@@ -32,6 +35,8 @@ USER = 10
 RICH = 20
 #: Un patrimonio que paga: el doble del mínimo exento.
 BIG = 2 * WEALTH_MINIMUM
+#: Lo que paga sin renta en la semana: el límite conjunto con el IRPF le rebaja el 80 %.
+DUE = wealth_quote(BIG).due
 
 
 class Clock:
@@ -143,20 +148,21 @@ async def test_la_primera_semana_solo_activa_y_la_siguiente_cobra(tmp_path: Path
     again = await service.charge_wealth_tax(GUILD)
 
     assert week == date(2026, 10, 5)
-    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [(RICH, BIG, wealth_tax(BIG))]
+    assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [(RICH, BIG, DUE)]
+    assert run.charges[0].reduced == wealth_tax(BIG) - DUE
     assert again[1].done_before
-    assert await service.balance(GUILD, RICH) == BIG - wealth_tax(BIG)
+    assert await service.balance(GUILD, RICH) == BIG - DUE
     assert ledger_sum(tmp_path, RICH) == await service.balance(GUILD, RICH)
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == wealth_tax(BIG)
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == DUE
     treasury = await service.treasury(GUILD, since=0)
-    assert treasury.collected_total == wealth_tax(BIG)
-    assert treasury.top_contributors == ((RICH, wealth_tax(BIG)),)
+    assert treasury.collected_total == DUE
+    assert treasury.top_contributors == ((RICH, DUE),)
 
 
 async def test_ni_el_estado_ni_las_ongs_pagan_patrimonio(tmp_path: Path) -> None:
     clock = Clock(day(6))
     service = await make_service(tmp_path, clock)
-    await service.repository.apply(GUILD, RICH, [_entry(3 * WEALTH_MINIMUM)])
+    await service.repository.apply(GUILD, RICH, [_entry(4 * WEALTH_MINIMUM)])
     await service.donate(
         GUILD,
         RICH,
@@ -309,7 +315,45 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
     embed = channel.send.await_args.kwargs["embed"]
     assert "Ricachón" in (embed.description or "")
     delta = note.call_args.args[3]
-    assert delta.add == {"wealth_tax_paid": wealth_tax(BIG), "wealth_tax_weeks": 1}
+    assert delta.add == {"wealth_tax_paid": DUE, "wealth_tax_weeks": 1, "wealth_joint_limit": 1}
+
+
+def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_el_80_por_ciento() -> None:
+    full = wealth_tax(BIG)
+    # Sin renta: Patrimonio + IRPF no pueden pasar del 60 % de nada, pero se paga el 20 %.
+    broke = wealth_quote(BIG)
+    assert broke.full == full and broke.due == full - round(full * WEALTH_MAX_REDUCTION)
+    # Con mucha renta, el límite no toca nada.
+    rich = wealth_quote(BIG, weekly_income=10_000_000)
+    assert rich.due == full and rich.reduced == 0
+    # Lo que no da rentas (los objetos de la tienda) no se rebaja.
+    goods = wealth_quote(BIG, unproductive=BIG)
+    assert goods.due == full
+    half = wealth_quote(BIG, unproductive=BIG // 2)
+    assert broke.due < half.due < full
+
+
+def test_las_grandes_fortunas_se_declaran_desde_37_millones_y_salen_a_cero() -> None:
+    assert SOLIDARITY_WEALTH_THRESHOLD == 37_000_000
+    assert not wealth_quote(SOLIDARITY_WEALTH_THRESHOLD).subject
+    for worth in (SOLIDARITY_WEALTH_THRESHOLD + 1, 60_000_000, 500_000_000):
+        for income in (0, 10_000_000):
+            quote = wealth_quote(worth, weekly_income=income)
+            assert quote.subject and quote.solidarity == 0  # se descuenta el Patrimonio
+
+
+async def test_quien_pasa_de_37_millones_declara_las_grandes_fortunas(tmp_path: Path) -> None:
+    clock = Clock(day(6))
+    service = await make_service(tmp_path, clock)
+    worth = SOLIDARITY_WEALTH_THRESHOLD + 1_000_000
+    await service.repository.apply(GUILD, RICH, [_entry(worth - STARTING_BALANCE)])
+    await service.charge_wealth_tax(GUILD)  # activación
+    clock.at(day(12))
+    _, run = await service.charge_wealth_tax(GUILD)
+    (charge,) = run.charges
+    assert charge.solidarity_subject and charge.solidarity == 0
+    assert charge.tax == wealth_quote(worth).due
+    assert await service.solidarity_summary(GUILD) == (1, 1, 0)
 
 
 def test_los_logros_de_un_donativo_con_cifras_y_fechas_con_guasa() -> None:

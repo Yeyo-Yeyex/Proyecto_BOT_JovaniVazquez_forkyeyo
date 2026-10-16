@@ -718,6 +718,15 @@ PISOS_SOCIMI_STORY = (
     "que usan los grandes tenedores. Ahora también la usas tú."
 )
 
+#: Discurso de la primera declaración de las Grandes Fortunas (`wealth_solidarity_1`).
+WEALTH_SOLIDARITY_STORY = (
+    "💎 **Declaras las Grandes Fortunas.** El Impuesto Temporal de Solidaridad de las "
+    "Grandes Fortunas (art. 3 de la Ley 38/2022) grava lo que pasa de 3.000.000 € netos "
+    "tras el mínimo exento, pero descuenta lo pagado de Patrimonio. Se inventó para las "
+    "comunidades que lo bonifican; Canarias no, así que lo declaras, rellenas el modelo y "
+    "pagas cero. Burocracia en estado puro."
+)
+
 #: Discurso del primer IBI de `pisos` (`pisos_ibi_1`).
 PISOS_IBI_STORY = (
     "🏘️ **El IBI no perdona.** El Impuesto sobre Bienes Inmuebles se paga por tener el "
@@ -6395,6 +6404,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "wealth_embargo_1", "Embargado como un futbolista",
          "No tener efectivo para el Patrimonio y que Hacienda te embargue los alquileres. "
          "Todo en ladrillo, nada en la cuenta.", E, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "wealth_joint_limit", [
+        (1, "wealth_joint_limit_1", "Rico de rentas bajas",
+         "Que el límite conjunto con el IRPF te rebaje el Patrimonio: mucho que tener, poco "
+         "que declarar.", E),
+        (10, "wealth_joint_limit_10", "Asesor fiscal en nómina",
+         "Que el límite conjunto te rebaje el Patrimonio 10 lunes.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "wealth_goods_taxed", [
+        (1, "wealth_goods_1", "El Sorolla también tributa",
+         "Paga Patrimonio con objetos de la tienda en la base: joyas, coches y cuadros "
+         "cuentan.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="wealth_solidarity_1", name="Grandes Fortunas a cero",
+        description="Declara el Impuesto de Solidaridad de las Grandes Fortunas: pasa de "
+        "37.000.000 Y$ de patrimonio un lunes.", category="economy", rarity=L,
+        conditions=(("wealth_solidarity", 1),), story=WEALTH_SOLIDARITY_STORY,
+    ))  # fmt: skip
+    a += _tiers("economy", "wealth_solidarity", [
+        (10, "wealth_solidarity_10", "Fortuna de las que salen en Forbes",
+         "Declara las Grandes Fortunas 10 lunes.", M),
     ])  # fmt: skip
     # Intereses de la cuenta (cogs/intereses.py: day_stats, savings_stats y hint_for)
     a += _tiers("bizum", "interest_earned", [

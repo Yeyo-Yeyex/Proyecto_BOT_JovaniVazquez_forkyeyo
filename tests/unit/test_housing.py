@@ -31,7 +31,7 @@ from bot.services.housing_catalog import (
 )
 from bot.services.housing_market import HousingService
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import WEALTH_MINIMUM, wealth_tax
+from bot.services.taxes import WEALTH_MINIMUM, wealth_quote, wealth_tax
 
 GUILD = 1
 ANA = 10
@@ -494,8 +494,9 @@ async def test_el_patrimonio_cuenta_los_inmuebles(tmp_path: Path) -> None:
     worth = cash + rules.fiscal_value(edificio, 100, rules.share_price(edificio) * 100)
     assert worth > WEALTH_MINIMUM
     assert [(c.user_id, c.balance, c.tax) for c in run.charges] == [
-        (ANA, worth, min(cash, wealth_tax(worth)))
+        (ANA, worth, min(cash, wealth_quote(worth).due))
     ]
+    assert wealth_quote(worth).due < wealth_tax(worth)  # sin renta: límite conjunto
 
 
 def test_todas_las_cifras_son_enteras() -> None:
@@ -573,7 +574,7 @@ async def test_quien_lo_tiene_todo_en_ladrillo_paga_el_patrimonio_con_un_embargo
     )
 
     (charge,) = run.charges
-    assert charge.tax == 0 and charge.debt == wealth_tax(charge.balance) > 0
+    assert charge.tax == 0 and charge.debt == wealth_quote(charge.balance).due > 0
     assert await economy.tax_debt(GUILD, ANA) == charge.debt
     with sqlite3.connect(tmp_path / "bot.db") as connection:
         connection.execute(

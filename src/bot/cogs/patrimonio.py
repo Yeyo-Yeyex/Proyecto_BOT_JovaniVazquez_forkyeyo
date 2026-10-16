@@ -1,16 +1,20 @@
 """Impuesto sobre el Patrimonio: cada lunes, Perro Sanxe cobra a quien tenga mucho.
 
 Una tarea cada 10 minutos mira si la semana anterior ya se cobró en cada
-servidor; si no, cobra la cuota (`bot.services.taxes.wealth_tax`) a todos los
-miembros cuyo patrimonio (efectivo más los inmuebles de `pisos` a su valor fiscal)
-pase del mínimo exento y lo anuncia en `#chat-general` (o en el canal del sistema).
+servidor; si no, cobra la cuota (`bot.services.taxes.wealth_quote`) a todos los
+miembros cuyo patrimonio (efectivo, los inmuebles de `pisos` a su valor fiscal y
+los objetos de la tienda) pase del mínimo exento, con el límite conjunto con el
+IRPF de la semana (art. 31 de la Ley 19/1991), y lo anuncia en `#chat-general` (o
+en el canal del sistema). Quien pasa de 37.000.000 Y$ declara también el Impuesto
+de Solidaridad de las Grandes Fortunas, que en Canarias sale a cero.
 La primera semana tras activarlo en un servidor no se cobra, para que nadie pague
 por sorpresa al desplegar.
 
 `saldo` avisa de lo que te tocaría pagar y `hacienda` suma lo recaudado. No
 es una interacción, así que el aviso de la Renta no aplica; el anuncio
-público hace de recordatorio. Logros: `wealth_tax_paid` y `wealth_tax_weeks`
-(categoría Economía y Hacienda).
+público hace de recordatorio. Logros: `wealth_tax_paid`, `wealth_tax_weeks`,
+`wealth_embargo`, `wealth_joint_limit`, `wealth_goods_taxed` y
+`wealth_solidarity` (categoría Economía y Hacienda).
 
 Consultas (no mueven dinero; ver `bot.services.net_worth`):
 
@@ -41,6 +45,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import shop as tienda
 from bot.repositories.housing import assets_in as housing_assets_in
+from bot.repositories.shop import wealth_goods_in
 from bot.services.achievements import StatDelta, patrimonio_stats
 from bot.services.economy import (
     EconomyService,
@@ -51,7 +56,13 @@ from bot.services.economy import (
 )
 from bot.services.levels import local_day
 from bot.services.net_worth import NetWorth, build, gini, holding_line, top_share, verdict
-from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
+from bot.services.shop import Kind
+from bot.services.taxes import (
+    SOLIDARITY_WEALTH_THRESHOLD,
+    TAX_COLLECTOR,
+    WEALTH_MINIMUM,
+    wealth_quote,
+)
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -89,10 +100,23 @@ def wealth_embed(
             if c.debt
             else ""
         )
+        + (
+            f". El límite con el IRPF le perdona {format_amount(c.reduced)}: rico de rentas bajas"
+            if c.reduced
+            else ""
+        )
         for i, c in enumerate(charges[:ANNOUNCE_TOP])
     ]
     if len(charges) > ANNOUNCE_TOP:
         lines.append(f"…y {len(charges) - ANNOUNCE_TOP} más.")
+    if fortunes := [c for c in charges if c.solidarity_subject]:
+        paid = sum(c.solidarity for c in fortunes)
+        who = "declara" if len(fortunes) == 1 else "declaran"
+        lines.append(
+            f"\n💎 {len(fortunes)} {who} el Impuesto de Solidaridad de las Grandes Fortunas "
+            f"y paga{'n' if len(fortunes) > 1 else ''} {format_amount(paid)}: se descuenta el "
+            "Patrimonio y Canarias no lo bonifica. Montero lo inventó para Madrid."
+        )
     who = "rico paga" if len(charges) == 1 else "ricos pagan"
     embed = discord.Embed(
         title=f"🐶 ¡Wepa! {TAX_COLLECTOR} pasó por el Patrimonio",
@@ -104,9 +128,9 @@ def wealth_embed(
     )
     embed.set_footer(
         text=(
-            f"Paga cada lunes por lo que tengas (efectivo y pisos) por encima de "
-            f"{format_amount(WEALTH_MINIMUM)}. El ladrillo también se lo come "
-            f"{TAX_COLLECTOR}, mi amor."
+            f"Paga cada lunes por lo que tengas (efectivo, pisos y objetos de la tienda) por "
+            f"encima de {format_amount(WEALTH_MINIMUM)}, con el límite del 60 % de tu renta. "
+            f"El ladrillo también se lo come {TAX_COLLECTOR}, mi amor."
         )
     )
     return embed
@@ -159,8 +183,13 @@ class Patrimonio(commands.Cog):
             if housing is not None
             else None
         )
+        goods = (
+            (lambda connection: wealth_goods_in(connection, guild.id, time.time()))
+            if self.shop is not None
+            else None
+        )
         try:
-            week, run = await self.economy.charge_wealth_tax(guild.id, assets=assets)
+            week, run = await self.economy.charge_wealth_tax(guild.id, assets=assets, goods=goods)
         except Exception:
             # Nunca lanza: si saliera la excepción, `tasks.loop` dejaría de cobrar el
             # Patrimonio para siempre (ahora lee también los pisos).
@@ -199,6 +228,9 @@ class Patrimonio(commands.Cog):
                         "wealth_tax_paid": charge.tax,
                         "wealth_tax_weeks": 1,
                         **({"wealth_embargo": 1} if charge.debt else {}),
+                        **({"wealth_joint_limit": 1} if charge.reduced else {}),
+                        **({"wealth_goods_taxed": 1} if charge.goods else {}),
+                        **({"wealth_solidarity": 1} if charge.solidarity_subject else {}),
                     }
                 ),
                 channel.id if channel is not None else None,
@@ -282,16 +314,35 @@ class Patrimonio(commands.Cog):
                 shown.append(f"-# Y {len(worth.goods) - 15} cosas más.")
             text = "\n".join(shown)
             embed.add_field(name="Bienes", value=text[:1_024], inline=False)
-        tax = wealth_tax(worth.cash + worth.homes_fiscal)
+        objects = sum(item.value for item in worth.goods if item.kind == Kind.TROPHY.value)
+        base = worth.cash + worth.homes_fiscal + objects
+        quote = wealth_quote(
+            base,
+            unproductive=objects,
+            weekly_income=await self.economy.weekly_taxable(guild.id, target.id),
+        )
         debt = await self.economy.tax_debt(guild.id, target.id)
         text = (
-            f"El lunes te cobraría {format_amount(tax)} de Patrimonio (efectivo y pisos "
-            f"a su valor fiscal, por lo que pase de {format_amount(WEALTH_MINIMUM)}). Lo que "
-            "no tengas en efectivo se embarga de tus alquileres."
-            if tax
+            f"El lunes te cobraría {format_amount(quote.due)} de Patrimonio (efectivo, pisos "
+            f"a su valor fiscal y objetos de la tienda, por lo que pase de "
+            f"{format_amount(WEALTH_MINIMUM)}). Lo que no tengas en efectivo se embarga de "
+            "tus alquileres."
+            if quote.due
             else f"No llegas al mínimo del Patrimonio ({format_amount(WEALTH_MINIMUM)} "
-            "entre efectivo y pisos). Sanxe te perdona esta semana."
+            "entre efectivo, pisos y objetos). Sanxe te perdona esta semana."
         )
+        if quote.reduced:
+            text += (
+                f"\nCon la renta de esta semana, el límite conjunto con el IRPF (art. 31) te "
+                f"rebaja {format_amount(quote.reduced)}: Patrimonio e IRPF no pasan del 60 % "
+                "de lo que ganas, y siempre pagas al menos el 20 %."
+            )
+        if quote.subject:
+            text += (
+                f"\n💎 Pasas de {format_amount(SOLIDARITY_WEALTH_THRESHOLD)}: declaras las "
+                f"Grandes Fortunas y pagas {format_amount(quote.solidarity)}. Se descuenta "
+                "el Patrimonio y Canarias no lo bonifica."
+            )
         if debt:
             text += (
                 f"\nDebes {format_amount(debt)} de semanas anteriores: se cobran de lo "
