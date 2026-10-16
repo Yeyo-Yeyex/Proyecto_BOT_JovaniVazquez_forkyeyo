@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from unittest.mock import AsyncMock
 
+from bot import __version__
 from bot.services.levels import TIMEZONE
 from bot.services.telemetry import (
     MAX_NAME,
@@ -321,7 +322,8 @@ def test_informe_es_json_y_no_contiene_user_ids() -> None:
     assert "4242" not in text
     assert '"99"' not in text and ": 99" not in text
     assert report["servidor"] == GUILD
-    assert report["version"] == 1
+    assert report["version"] == 2
+    assert report["version_bot"] == __version__
     assert report["generado"] == "2026-10-06T21:30:00+01:00"
 
 
@@ -421,3 +423,36 @@ def test_flush_concurrente_no_pierde_ni_duplica() -> None:
 
     asyncio.run(scenario())
     assert repository.write.await_count == 1
+
+
+def test_informe_lleva_latencia_por_dia_arranques_y_cpu() -> None:
+    data = sample_data()
+    data.daily_ms = [("2026-10-06", "slash", 4, 1000, 1)]
+    data.starts = [("2026-10-06", "7.11.0", 2), ("2026-10-05", "7.10.2", 1)]
+    data.system[0].update(cpu_max=80.0, cpu_avg=35.04, db_max=120.0, disk_min=5000.0)
+    report = build_report(data, generated_at=NOW, days=7, commands=[], channel_names={})
+    assert report["por_dia"]["2026-10-06"]["slash"]["ms_medio"] == 250.0
+    assert report["por_dia"]["2026-10-06"]["slash"]["lentos"] == 1
+    assert "ms_medio" not in report["por_dia"]["2026-10-05"]["slash"]
+    assert report["arranques"] == {"2026-10-05": {"7.10.2": 1}, "2026-10-06": {"7.11.0": 2}}
+    system = report["sistema"]["2026-10-06"]
+    assert (system["cpu_pct_max"], system["cpu_pct_media"]) == (80.0, 35.0)
+    assert (system["db_mb_max"], system["disco_libre_mb_min"]) == (120.0, 5000.0)
+
+
+def test_lo_que_tarda_un_volcado_se_cuenta_en_el_siguiente() -> None:
+    repository = FakeRepository()
+    service = TelemetryService(repository, clock=FakeClock())  # type: ignore[arg-type]
+
+    async def scenario() -> None:
+        service.count("slash", "x", guild_id=GUILD)
+        await service.flush()
+        await service.flush()  # vacío: no escribe solo por el tiempo del anterior
+        service.count("slash", "x", guild_id=GUILD)
+        await service.flush()
+
+    asyncio.run(scenario())
+    assert len(repository.batches) == 2
+    assert not any(key.kind == "db" for key in repository.batches[0].counters)
+    (db,) = [v for k, v in repository.batches[1].counters.items() if k.kind == "db"]
+    assert db.events == 1 and db.ms_count == 1

@@ -340,3 +340,43 @@ def test_report_data_lee_casino_y_economia_sin_escribirlas(tmp_path: Path) -> No
         for t in ("casino_plays", "economy_wallets", "economy_ledger")
     }
     assert after == before
+
+
+def test_una_base_de_datos_vieja_recibe_las_columnas_nuevas_del_sistema(tmp_path: Path) -> None:
+    path = tmp_path / "bot.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE telemetry_system (at REAL NOT NULL, day TEXT NOT NULL, memory_mb REAL, "
+            "rss_mb REAL NOT NULL, loop_lag_ms REAL NOT NULL, gateway_ms REAL, "
+            "chromium INTEGER NOT NULL, node INTEGER NOT NULL)"
+        )
+    repository = TelemetryRepository(path)
+    today = TODAY.isoformat()
+
+    async def scenario():
+        await repository.initialize()
+        await repository.write(
+            Batch(
+                {
+                    CounterKey(today, 21, 0, "arranque", "7.11.0"): counter(events=2),
+                    CounterKey(today, 21, GUILD, "button", "Mesa.tirar"): counter(
+                        events=3, ms_count=3, ms_total=900, ms_ge3000=1
+                    ),
+                },
+                set(),
+                [
+                    SystemSample(NOW, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 30.0, 10.0, 900.0),
+                    SystemSample(NOW + 60, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 50.0, 12.0, 800.0),
+                ],
+            )
+        )
+        return await repository.report_data(
+            guild_id=GUILD, since_day=day_ago(6), since_ts=NOW - 6 * 86400
+        )
+
+    data = asyncio.run(scenario())
+    (system,) = data.system
+    assert (system["cpu_max"], system["cpu_avg"]) == (50.0, 40.0)
+    assert (system["db_max"], system["disk_min"]) == (12.0, 800.0)
+    assert data.starts == [(today, "7.11.0", 2)]
+    assert data.daily_ms == [(today, "button", 3, 900, 1)]

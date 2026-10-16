@@ -49,7 +49,9 @@ Lo que más se olvida:
   (botones lentos, fallos, retención, memoria del NAS, bloqueos del bucle). El bot deja
   cada día el informe en `informes/` del NAS (README, «Telemetría interna») y lo sube
   al canal que eligió un administrador con `/informe canal:`; bájalo de ahí con
-  `docs/descargar_informe.py` (necesita `INFORME_TOKEN` e `INFORME_CANAL` en `.env`). Si no hay
+  `docs/descargar_informe.py` (necesita `INFORME_TOKEN` e `INFORME_CANAL` en `.env`) y
+  mira la visión global con `docs/analisis_metricas.py docs/metricas/` («Versiones y
+  reinicios» compara cada versión con las anteriores). Si no hay
   uno reciente, pídeselo: lo saca un administrador con `/informe`. La telemetría no lleva logros.
 - **Versión:** todo cambio que entra en `main` sube `__version__` (`src/bot/__init__.py`)
   y añade su entrada arriba en `CHANGELOG.md`. MAYOR si algo que la gente ya hacía deja

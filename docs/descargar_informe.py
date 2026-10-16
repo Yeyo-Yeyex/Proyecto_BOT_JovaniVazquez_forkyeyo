@@ -1,8 +1,10 @@
-"""Descarga el último informe diario que el bot publica en su canal (`/informe canal:`).
+"""Descarga los informes diarios que el bot publica en su canal (`/informe canal:`).
 
-Lo deja en `docs/metricas/` con su nombre (`informe-AAAA-MM-DD.json`) y escribe la
-ruta, lista para `docs/analisis_metricas.py`. Necesita dos variables, en el entorno
-o en el `.env` de la raíz del repo (que no se sube):
+Recorre el canal entero y deja en `docs/metricas/` cada informe que aún no esté,
+con su nombre (`informe-AAAA-MM-DD.json`). Escribe las rutas nuevas; la visión
+global de todos sale con `python docs/analisis_metricas.py docs/metricas/`.
+Necesita dos variables, en el entorno o en el `.env` de la raíz del repo (que no
+se sube):
 
 - `INFORME_TOKEN`: token de un bot que vea ese canal (Ver canal y Leer el historial).
 - `INFORME_CANAL`: ID del canal.
@@ -49,16 +51,29 @@ def get(url: str, token: str | None = None) -> bytes:
 
 def main() -> None:
     token, channel = setting("INFORME_TOKEN"), setting("INFORME_CANAL")
-    messages = json.loads(get(f"{API}/channels/{channel}/messages?limit=20", token))
-    for message in messages:  # del más nuevo al más viejo
-        for attachment in message["attachments"]:
-            name = attachment["filename"]
-            if name.startswith("informe") and name.endswith(".json"):
-                path = ROOT / "docs" / "metricas" / Path(name).name
-                path.write_bytes(get(attachment["url"]))
-                print(path.relative_to(ROOT).as_posix())
-                return
-    sys.exit("No hay ningún informe en los 20 últimos mensajes del canal.")
+    folder = ROOT / "docs" / "metricas"
+    found = new = 0
+    before = ""
+    while True:
+        url = f"{API}/channels/{channel}/messages?limit=100{before}"
+        messages = json.loads(get(url, token))  # del más nuevo al más viejo
+        for message in messages:
+            for attachment in message["attachments"]:
+                name = Path(attachment["filename"]).name
+                if not (name.startswith("informe") and name.endswith(".json")):
+                    continue
+                found += 1
+                path = folder / name
+                if not path.exists():
+                    path.write_bytes(get(attachment["url"]))
+                    new += 1
+                    print(path.relative_to(ROOT).as_posix())
+        if len(messages) < 100:
+            break
+        before = f"&before={messages[-1]['id']}"
+    if not found:
+        sys.exit("No hay ningún informe en el canal.")
+    print(f"{new} nuevos de {found} informes en el canal.")
 
 
 if __name__ == "__main__":

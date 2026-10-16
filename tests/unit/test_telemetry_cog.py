@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import os
 import sys
 import threading
@@ -13,18 +14,24 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from bot import __version__
 from bot.cogs import telemetry as telemetry_cog
 from bot.cogs.telemetry import (
     LONG_MESSAGE,
     SHORT_MESSAGE,
+    LogCounter,
     LoopWatchdog,
     Telemetry,
+    _image_uploaded,
+    _image_waits,
     _timed_upload,
     blocking_site,
     item_name,
     message_types,
     publish_report,
+    read_container_usage,
     read_system_usage,
+    route_name,
     save_report,
 )
 from bot.services import telemetry as telemetry_service
@@ -204,3 +211,126 @@ async def test_un_reinicio_el_mismo_dia_no_repite_el_informe() -> None:
     channel = report_channel(["informe-2026-10-16.json"])
     await publish_report(channel, "informe-2026-10-16.json", "{}")
     channel.send.assert_not_awaited()
+
+
+def test_route_name_quita_ids_y_tokens() -> None:
+    url = "https://discord.com/api/v10/channels/1384280704539562054/messages/123?x=1"
+    assert route_name("PATCH", url) == "PATCH /channels/#/messages/#"
+    token_url = (
+        "https://discord.com/api/v10/webhooks/99/aW50ZXJhY3Rpb246MTIzNDU2Nzg5/messages/@original"
+    )
+    assert route_name("PATCH", token_url) == "PATCH /webhooks/#/#/messages/@original"
+
+
+def test_los_429_del_log_se_cuentan_por_ruta() -> None:
+    async def scenario() -> MagicMock:
+        telemetry = MagicMock()
+        handler = LogCounter(telemetry, asyncio.get_running_loop())
+        record = logging.LogRecord(
+            "discord.http",
+            logging.WARNING,
+            "",
+            0,
+            "We are being rate limited. %s %s responded with 429. Retrying in %.2f seconds.",
+            ("PUT", "https://discord.com/api/v10/guilds/1/members/2/roles/3", 1.5),
+            None,
+        )
+        handler.emit(record)
+        return telemetry
+
+    telemetry = asyncio.run(scenario())
+    kinds = [call.args[:2] for call in telemetry.count.call_args_list]
+    assert ("ratelimit", "PUT /guilds/#/members/#/roles/#") in kinds
+    assert kinds[0][0] == "log"
+
+
+def test_la_primera_imagen_de_una_interaccion_cuenta_su_espera(monkeypatch) -> None:  # noqa: ANN001
+    seen: list[tuple[str, str, float | None]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append((kind, name, ms))
+
+    route = MagicMock(webhook_token="tok")
+    gif = discord.File(io.BytesIO(b"x"), filename="moneda123.gif")
+    data = discord.File(io.BytesIO(b"x"), filename="informe.json")
+    telemetry_service.event_observers.add(observer)
+    try:
+        _image_waits["tok"] = 10.0
+        _image_uploaded(route, [data], 10.5)  # sin imagen: no cuenta ni gasta el token
+        _image_uploaded(route, [gif], 11.25)
+        _image_uploaded(route, [gif], 12.0)  # la segunda imagen ya no cuenta
+        _image_uploaded("sin token", [gif], 12.0)
+    finally:
+        telemetry_service.event_observers.discard(observer)
+        _image_waits.pop("tok", None)
+    assert seen == [("imagen", "moneda#.gif", 1250.0)]
+
+
+def test_solo_cuentan_las_vistas_que_caducan_sin_pararse() -> None:
+    seen: list[str] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append(f"{kind}:{name}")
+
+    class Mesa(discord.ui.View):
+        pass
+
+    async def scenario() -> None:
+        telemetry_cog.install_hooks()
+        abierta, parada = Mesa(timeout=60), Mesa(timeout=60)
+        parada.stop()
+        abierta._dispatch_timeout()
+        parada._dispatch_timeout()
+
+    telemetry_service.event_observers.add(observer)
+    try:
+        asyncio.run(scenario())
+    finally:
+        telemetry_service.event_observers.discard(observer)
+    assert seen == ["caducada:Mesa"]
+
+
+def test_read_container_usage_lee_cgroup_base_de_datos_y_disco(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    (tmp_path / "cpu.stat").write_text("usage_usec 5000000\nuser_usec 1\n")
+    (tmp_path / "memory.events").write_text("low 0\noom 2\noom_kill 1\n")
+    monkeypatch.setattr(telemetry_cog, "CGROUP_CPU_FILE", tmp_path / "cpu.stat")
+    monkeypatch.setattr(telemetry_cog, "CGROUP_EVENTS_FILE", tmp_path / "memory.events")
+    database = tmp_path / "bot.sqlite3"
+    database.write_bytes(b"x" * 2**20)
+    (tmp_path / "bot.sqlite3-wal").write_bytes(b"x" * 2**19)
+    cpu_us, oom_kills, db_mb, disk_free_mb = read_container_usage(database)
+    assert (cpu_us, oom_kills, db_mb) == (5_000_000.0, 1, 1.5)
+    assert disk_free_mb is not None and disk_free_mb > 0
+    monkeypatch.setattr(telemetry_cog, "CGROUP_CPU_FILE", tmp_path / "no-existe")
+    assert read_container_usage(None)[0] is None
+
+
+def test_la_cpu_es_la_del_ultimo_minuto_sobre_todos_los_hilos(monkeypatch) -> None:  # noqa: ANN001
+    cog = Telemetry(MagicMock(), MagicMock())
+    moments = iter([100.0, 160.0, 220.0])
+    monkeypatch.setattr(telemetry_cog.time, "perf_counter", lambda: next(moments))
+    monkeypatch.setattr(telemetry_cog, "cpu_count", lambda: 4)
+    assert cog._cpu_pct(0.0) is None  # la primera lectura no tiene con qué comparar
+    # 120 s de CPU en 60 s con 4 hilos: la mitad.
+    assert cog._cpu_pct(120e6) == 50.0
+    assert cog._cpu_pct(None) is None
+
+
+async def test_el_arranque_se_cuenta_una_vez_con_la_version(monkeypatch) -> None:  # noqa: ANN001
+    bot = MagicMock(spec=[])
+    telemetry = MagicMock()
+    for _ in range(2):
+        cog = Telemetry(bot, telemetry)
+        for loop in (cog.flush_loop, cog.prune_loop, cog.export_loop):
+            monkeypatch.setattr(loop, "start", lambda: None)
+        monkeypatch.setattr(
+            telemetry_cog.asyncio, "create_task", lambda coro, name=None: coro.close()
+        )
+        monkeypatch.setattr(telemetry_cog, "LoopWatchdog", MagicMock())
+        await cog.cog_load()
+        logging.getLogger().removeHandler(cog._log_counter)
+        telemetry_service.render_observers.discard(cog._on_render)
+        telemetry_service.upload_observers.discard(cog._on_upload)
+        telemetry_service.event_observers.discard(cog._on_event)
+    starts = [c for c in telemetry.count.call_args_list if c.args[0] == "arranque"]
+    assert len(starts) == 1 and starts[0].args[1] == __version__

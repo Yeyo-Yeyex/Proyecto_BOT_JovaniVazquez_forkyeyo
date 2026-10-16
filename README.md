@@ -1076,9 +1076,12 @@ y botones (con lo que tardan en contestar, partido en llegada al bot, trabajo de
 y viaje de la respuesta, y si se quedaron sin respuesta), mensajes
 por canal, reacciones, minutos de voz, altas y bajas, avisos del log, lo que tarda
 cada dibujo y cada subida de archivos a Discord, dónde se para el bucle de eventos
-cuando se queda bloqueado más de 250 ms y, cada minuto, la memoria del contenedor,
-el retraso del bucle y los procesos de Chromium y Node. Nunca guarda el texto de un
-mensaje.
+cuando se queda bloqueado más de 250 ms, lo que espera cada miembro del clic a la
+imagen, las vistas que caducan a medias, cada arranque con su versión, los cortes con
+Discord, sus respuestas 429 por ruta, los procesos que el contenedor mata por memoria
+y, cada minuto, la memoria y la CPU del contenedor, el retraso del bucle, los procesos
+de Chromium y Node, lo que ocupa la base de datos y el disco libre. Nunca guarda el
+texto de un mensaje.
 
 Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
 `telemetry_*` del mismo archivo). Las horas sueltas se pliegan en días a los 90 días
@@ -1091,7 +1094,13 @@ guarda en `docs/metricas/` del fork y se resume con:
 
 ```bash
 python docs/analisis_metricas.py docs/metricas/informe-AAAA-MM-DD.json
+python docs/analisis_metricas.py docs/metricas/   # visión global de todos
 ```
+
+Con una carpeta (o varios JSON) junta todos los informes: lo que va por día (uso
+diario, sistema, arranques) cubre toda la historia y «Versiones y reinicios» compara
+cada versión del bot con las anteriores. Las muestras del sistema solo se guardan 14
+días en el bot, así que la historia de memoria y CPU sale de ir guardando informes.
 
 Además, al arrancar y una vez al día el bot deja ese mismo informe (30 días) en la
 carpeta `informes/`, junto a `docker-compose.yml`, y guarda los 14 últimos. La crea

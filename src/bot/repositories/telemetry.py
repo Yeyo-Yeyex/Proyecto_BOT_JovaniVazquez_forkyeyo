@@ -103,7 +103,10 @@ _SCHEMA = """
         loop_lag_ms REAL NOT NULL,
         gateway_ms REAL,
         chromium INTEGER NOT NULL,
-        node INTEGER NOT NULL
+        node INTEGER NOT NULL,
+        cpu_pct REAL,
+        db_mb REAL,
+        disk_free_mb REAL
     );
     CREATE INDEX IF NOT EXISTS telemetry_system_at ON telemetry_system (at);
 
@@ -112,6 +115,10 @@ _SCHEMA = """
         channel_id INTEGER NOT NULL
     );
 """
+
+# Columnas añadidas a `telemetry_system` después de crearla: las bases de datos de
+# antes las reciben con `ALTER TABLE` al arrancar.
+_SYSTEM_ADDED = ("cpu_pct", "db_mb", "disk_free_mb")
 
 # Suma de todas las columnas y MAX para ms_max: sirve para el upsert y para el pliegue.
 _SUM_SET = ", ".join(
@@ -147,6 +154,12 @@ class TelemetryRepository:
     def _initialize_sync(self) -> None:
         with closing(self._connect()) as connection, connection:
             connection.executescript(_SCHEMA)
+            present = {
+                row["name"] for row in connection.execute("PRAGMA table_info(telemetry_system)")
+            }
+            for column in _SYSTEM_ADDED:
+                if column not in present:
+                    connection.execute(f"ALTER TABLE telemetry_system ADD COLUMN {column} REAL")
         self._ready = True
 
     async def write(self, batch: Batch) -> None:
@@ -188,6 +201,9 @@ class TelemetryRepository:
                 s.gateway_ms,
                 s.chromium,
                 s.node,
+                s.cpu_pct,
+                s.db_mb,
+                s.disk_free_mb,
             )
             for s in batch.samples
         ]
@@ -200,8 +216,8 @@ class TelemetryRepository:
             )
             connection.executemany(
                 "INSERT INTO telemetry_system "
-                "(at, day, memory_mb, rss_mb, loop_lag_ms, gateway_ms, chromium, node) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(at, day, memory_mb, rss_mb, loop_lag_ms, gateway_ms, chromium, node, "
+                "cpu_pct, db_mb, disk_free_mb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 samples,
             )
 
@@ -308,6 +324,23 @@ class TelemetryRepository:
                     (guild_id, since_day),
                 )
             ]
+            data.daily_ms = [
+                (r["day"], r["kind"], r["ms_count"], r["ms_total"], r["slow"])
+                for r in connection.execute(
+                    "SELECT day, kind, SUM(ms_count) AS ms_count, SUM(ms_total) AS ms_total, "
+                    "SUM(ms_ge3000) AS slow FROM telemetry_counts "
+                    "WHERE guild_id IN (?, 0) AND day >= ? AND ms_count > 0 GROUP BY day, kind",
+                    (guild_id, since_day),
+                )
+            ]
+            data.starts = [
+                (r["day"], r["name"], r["times"])
+                for r in connection.execute(
+                    "SELECT day, name, SUM(events) AS times FROM telemetry_counts "
+                    "WHERE guild_id = 0 AND kind = 'arranque' AND day >= ? GROUP BY day, name",
+                    (since_day,),
+                )
+            ]
             data.hourly = [
                 (r["hour"], r["kind"], r["events"])
                 for r in connection.execute(
@@ -330,7 +363,9 @@ class TelemetryRepository:
                     "SELECT day, MAX(memory_mb) AS memory_max, AVG(memory_mb) AS memory_avg, "
                     "MAX(rss_mb) AS rss_max, MAX(loop_lag_ms) AS lag_max, "
                     "AVG(gateway_ms) AS gateway_avg, MAX(chromium) AS chromium_max, "
-                    "MAX(node) AS node_max FROM telemetry_system WHERE day >= ? GROUP BY day",
+                    "MAX(node) AS node_max, MAX(cpu_pct) AS cpu_max, AVG(cpu_pct) AS cpu_avg, "
+                    "MAX(db_mb) AS db_max, MIN(disk_free_mb) AS disk_min "
+                    "FROM telemetry_system WHERE day >= ? GROUP BY day",
                     (since_day,),
                 )
             ]

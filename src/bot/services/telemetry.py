@@ -28,6 +28,16 @@ son los acordados:
 - `lag`: bloqueos del bucle de eventos de más de 250 ms (con su duración en
   `ms`), por la función del bot que lo tenía parado
   (`bot/services/coin_scene.py:board`).
+- `arranque`: cada vez que arranca el bot, con su versión como nombre (`7.11.0`).
+- `imagen`: del clic (o del `/`) a que la primera imagen de su respuesta queda
+  subida a Discord, en `ms`, por archivo (`moneda.gif`). Es la espera que ve el
+  miembro; si el dibujo estaba hecho antes del clic, se acerca a la de `upload`.
+- `caducada`: vistas que caducan sin que nadie las cierre, por clase (`CoinView`).
+- `gateway`: conexión con Discord (`conectada`, `desconexion`, `reanudada`).
+- `ratelimit`: respuestas 429 de Discord, por método y ruta sin IDs ni tokens.
+- `oom`: procesos del contenedor matados por quedarse sin memoria (Chromium, Node).
+- `db`: lo que tarda en escribirse cada volcado de la telemetría (`volcado`), que
+  mide de paso cómo va el disco del NAS.
 
 Privacidad: el único dato por persona es el `user_id` en `UserKey`, que se
 borra a los 90 días y nunca sale en el informe (se seudonimiza como u1, u2...).
@@ -47,6 +57,7 @@ from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from typing import TYPE_CHECKING, Any
 
+from bot import __version__
 from bot.repositories.economy import (
     HK_ACCOUNT_ID,
     POKER_POT_ACCOUNT_ID,
@@ -82,7 +93,7 @@ si la vista lo contara, saldría siempre sin respuesta. Lo cuenta el listener co
 LATENCY_BUCKETS = (500, 1000, 3000)
 """Cortes de latencia en ms: `<500`, `<1000`, `<3000` y `>=3000`."""
 
-REPORT_VERSION = 1
+REPORT_VERSION = 2
 
 # Tipos cuyo nombre es un id de canal que se traduce a «#nombre» en el informe.
 CHANNEL_KINDS = frozenset({"message", "voice", "reaction"})
@@ -170,7 +181,12 @@ class UserKey:
 
 @dataclass(frozen=True)
 class SystemSample:
-    """Muestra del estado del proceso. `memory_mb` es la del contenedor (cgroup) y puede faltar."""
+    """Muestra del estado del proceso. `memory_mb` es la del contenedor (cgroup) y puede faltar.
+
+    `cpu_pct` es la CPU del contenedor en el último minuto sobre todos los hilos
+    (100 = todos ocupados); `db_mb`, lo que ocupa la base de datos con su WAL, y
+    `disk_free_mb`, lo que queda libre en su disco. Pueden faltar fuera de Linux.
+    """
 
     at: float
     day: str
@@ -180,6 +196,9 @@ class SystemSample:
     gateway_ms: float | None
     chromium: int
     node: int
+    cpu_pct: float | None = None
+    db_mb: float | None = None
+    disk_free_mb: float | None = None
 
 
 @dataclass
@@ -202,10 +221,12 @@ class ReportData:
     - `usage`: dicts con `kind, name, events, errors, ms_count, ms_total, ms_max,
       lt500, lt1000, lt3000, ge3000`.
     - `daily`: tuplas `(day, kind, events, errors)`.
+    - `daily_ms`: tuplas `(day, kind, ms_count, ms_total, ge3000)` de los tipos con latencia.
+    - `starts`: tuplas `(day, version, veces)` de los arranques del bot.
     - `hourly`: tuplas `(hour, kind, events)` solo de horas 0-23.
     - `users`: tuplas `(day, kind, name, user_id)`.
     - `system`: dicts con `day, memory_max, memory_avg, rss_max, lag_max,
-      gateway_avg, chromium_max, node_max`.
+      gateway_avg, chromium_max, node_max, cpu_max, cpu_avg, db_max, disk_min`.
     - `casino`: dicts con `game, plays, free, players, wagered, paid`.
     - `balances`: saldos de los miembros; `system_accounts`: `{user_id <= 0: saldo}`.
     - `ledger`: dicts con `reason, moves, inflow, outflow` (solo miembros).
@@ -213,6 +234,8 @@ class ReportData:
 
     usage: list[dict[str, Any]] = field(default_factory=list)
     daily: list[tuple[str, str, int, int]] = field(default_factory=list)
+    daily_ms: list[tuple[str, str, int, int, int]] = field(default_factory=list)
+    starts: list[tuple[str, str, int]] = field(default_factory=list)
     hourly: list[tuple[int, str, int]] = field(default_factory=list)
     users: list[tuple[str, str, str, int]] = field(default_factory=list)
     system: list[dict[str, Any]] = field(default_factory=list)
@@ -252,6 +275,17 @@ def report_upload(name: str, ms: float, *, error: bool = False) -> None:
     """Avisa de que la subida `name` (ver `upload_name`) ha tardado `ms` milisegundos."""
     for observer in tuple(upload_observers):
         observer(name, ms, error)
+
+
+#: Quien quiera contar lo que pasa lejos de un cliente (vistas que caducan, esperas
+#: de imagen) se apunta aquí con `(tipo, nombre, ms, error)`: el cog `Telemetry`.
+event_observers: set[Callable[[str, str, float | None, bool], None]] = set()
+
+
+def report_event(kind: str, name: str, ms: float | None = None, *, error: bool = False) -> None:
+    """Avisa de un evento `kind`/`name` sin servidor (con su duración en `ms`, si la tiene)."""
+    for observer in tuple(event_observers):
+        observer(kind, name, ms, error)
 
 
 def local_moment(at: float) -> tuple[str, int]:
@@ -329,6 +363,14 @@ def _daily_entries(data: ReportData) -> dict[str, dict[str, dict[str, int]]]:
             kind, {"eventos": 0, "errores": 0, "usuarios": 0}
         )
         entry["usuarios"] = len(ids)
+    for day, kind, ms_count, ms_total, slow in data.daily_ms:
+        if ms_count:
+            entry = per_day.setdefault(day, {}).setdefault(
+                kind, {"eventos": 0, "errores": 0, "usuarios": 0}
+            )
+            entry["ms_medio"] = round(int(ms_total) / int(ms_count), 1)
+            entry["ms_n"] = int(ms_count)
+            entry["lentos"] = int(slow)
     return dict(sorted(per_day.items()))
 
 
@@ -425,6 +467,10 @@ def build_report(
             "gateway_ms_media": _round_or_none(row["gateway_avg"]),
             "chromium_max": row["chromium_max"],
             "node_max": row["node_max"],
+            "cpu_pct_max": _round_or_none(row.get("cpu_max")),
+            "cpu_pct_media": _round_or_none(row.get("cpu_avg")),
+            "db_mb_max": _round_or_none(row.get("db_max")),
+            "disco_libre_mb_min": _round_or_none(row.get("disk_min")),
         }
         for row in sorted(data.system, key=lambda r: r["day"])
     }
@@ -442,8 +488,12 @@ def build_report(
         }
         for row in sorted(data.casino, key=lambda r: r["game"])
     ]
+    starts: dict[str, dict[str, int]] = {}
+    for day, version, times in sorted(data.starts):
+        starts.setdefault(day, {})[version] = int(times)
     return {
         "version": REPORT_VERSION,
+        "version_bot": __version__,
         "generado": datetime.fromtimestamp(generated_at, TIMEZONE).isoformat(timespec="seconds"),
         "servidor": guild_id,
         "desde": since.isoformat(),
@@ -455,6 +505,7 @@ def build_report(
         "comandos_sin_uso": sorted(set(commands) - used),
         "actividad": _activity(data, since, channel_names),
         "sistema": system,
+        "arranques": starts,
         "casino": casino,
         "economia": _economy(data),
     }
@@ -483,6 +534,8 @@ class TelemetryService:
         # id de interacción -> (ms, momento en que se guardó); el orden es la antigüedad.
         self._answers: OrderedDict[int, tuple[float, float]] = OrderedDict()
         self._flush_lock = asyncio.Lock()
+        # Lo que tardó el último volcado, para contarlo en el siguiente (`db`).
+        self._write_ms: float | None = None
 
     def count(
         self,
@@ -554,8 +607,19 @@ class TelemetryService:
             batch = self.drain()
             if batch.is_empty() or self.repository is None:
                 return
+            if self._write_ms is not None:
+                # Lo que tardó el volcado anterior va en este: mide el disco del NAS
+                # sin dejar nada pendiente al cerrar.
+                day, hour = local_moment(self.clock())
+                key = CounterKey(day, hour, 0, "db", "volcado")
+                batch.counters.setdefault(key, Counter()).add(
+                    events=1, error=False, ms=self._write_ms
+                )
+                self._write_ms = None
+            start = time.perf_counter()
             try:
                 await self.repository.write(batch)
+                self._write_ms = (time.perf_counter() - start) * 1000
             except Exception:
                 logger.exception(
                     "No se pudo volcar la telemetría: se pierden %d contadores",

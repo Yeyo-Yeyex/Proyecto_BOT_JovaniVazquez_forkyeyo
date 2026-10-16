@@ -4,20 +4,30 @@ Uso, desde la raíz del repo:
 
     python docs/analisis_metricas.py docs/metricas/informe-2026-10-11.json
     python docs/analisis_metricas.py informe.json --top 5 --limite-mb 2048
+    python docs/analisis_metricas.py docs/metricas/
 
 El informe lo genera el comando `informe` del bot (`build_report` en
 `bot/services/telemetry.py`). Entradas: la ruta del JSON, `--top N` (filas de cada
 ranking, 10 por defecto) y `--limite-mb` (memoria del contenedor, 2048 por defecto,
-para marcar los días cerca del límite). Salida: Markdown sencillo por pantalla, con
-una sección `## ...` por tema. No escribe archivos y solo usa la biblioteca estándar:
-no importa nada de `bot.*`, así que funciona con el JSON solo.
+para marcar los días cerca del límite).
+
+Visión global: con varios JSON o una carpeta, junta todos los informes
+(`merge_reports`). Lo que va por día (`por_dia`, `sistema`, `arranques`) se une y,
+si dos informes tienen el mismo día, manda el más nuevo; lo que es de la ventana
+entera (uso, actividad, casino, economía) sale del más nuevo. Así «Sistema» y
+«Versiones y reinicios» cubren toda la historia bajada y comparan versiones.
+
+Salida: Markdown sencillo por pantalla, con una sección `## ...` por tema. No escribe
+archivos y solo usa la biblioteca estándar: no importa nada de `bot.*`, así que
+funciona con el JSON solo.
 
 Cualquier sección cuyo dato falte o esté vacío se omite o dice «sin datos»; el
 script no debe reventar con un informe casi vacío.
 
 El signo ⚠️ marca lo que merece mirarse: latencias de 3 s o más, memoria por
 encima del 85 % del límite, bucle de eventos con más de 250 ms de retraso, RTP del
-casino por encima de 1 o juegos sin jugadas.
+casino por encima de 1, juegos sin jugadas, CPU por encima del 85 %, procesos
+matados por memoria, cortes con Discord y respuestas 429.
 """
 
 from __future__ import annotations
@@ -28,6 +38,7 @@ import math
 import sys
 from collections.abc import Sequence
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 Report = dict[str, Any]
@@ -43,6 +54,9 @@ MIN_RETENTION_USERS = 3
 TREND_KINDS = ("message", "slash", "button", "voice")
 FAIL_KINDS = ("button", "modal", "slash", "text")
 WARN = "⚠️"
+CPU_WARN = 85.0
+# Lo que va por día en el informe: al juntar varios, se une día a día.
+DAILY_KEYS = ("por_dia", "sistema", "arranques")
 
 
 # --------------------------------------------------------------------------- utilidades
@@ -429,19 +443,26 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
         memory = row.get("memoria_mb_max")
         lag = row.get("lag_ms_max")
         gateway = row.get("gateway_ms_media")
+        cpu_max, cpu_avg = row.get("cpu_pct_max"), row.get("cpu_pct_media")
+        database, free = row.get("db_mb_max"), row.get("disco_libre_mb_min")
         flags = []
         if isinstance(memory, int | float) and limit_mb > 0 and memory > MEMORY_WARN * limit_mb:
             flags.append(f"{WARN} memoria")
         if isinstance(lag, int | float) and lag > LAG_WARN_MS:
             flags.append(f"{WARN} bucle")
+        if isinstance(cpu_max, int | float) and cpu_max > CPU_WARN:
+            flags.append(f"{WARN} CPU")
         rows.append(
             (
                 day,
                 "-" if memory is None else f"{memory:.0f} ({_pct(memory, limit_mb)})",
+                "-" if cpu_avg is None else f"{cpu_avg:.0f} / {_num(cpu_max):.0f}",
                 "-" if lag is None else f"{lag:.0f}",
                 row.get("chromium_max", "-"),
                 row.get("node_max", "-"),
                 "-" if gateway is None else f"{gateway:.0f}",
+                "-" if database is None else f"{database:.0f}",
+                "-" if free is None else f"{free / 1024:.1f}",
                 " ".join(flags),
             )
         )
@@ -455,10 +476,13 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
             [
                 "Día",
                 "Memoria máx MB",
+                "CPU % media / máx",
                 "Retraso bucle ms",
                 "Chromium",
                 "Node",
                 "Discord ms",
+                "Base MB",
+                "Disco libre GB",
                 "Avisos",
             ],
             rows,
@@ -534,6 +558,211 @@ def section_lag(report: Report, top: int) -> list[str]:
             ],
         )
     return _section("Bloqueos del bucle", body)
+
+
+def _upload_base(name: Any) -> str:
+    """Archivo de una subida sin su tramo de tamaño (`moneda.gif · <250 KB` → `moneda.gif`)."""
+    return str(name).split(" · ", 1)[0]
+
+
+def section_image(report: Report, top: int) -> list[str]:
+    """Del clic a que la imagen está en Discord, frente a lo que tarda solo la subida.
+
+    Lo que sobra sobre la subida es lo que el miembro espera al dibujo: cerca de 0
+    si se pintó antes del clic.
+    """
+    uploads: dict[str, tuple[float, float]] = {}
+    for e in _entries(report, "upload"):
+        if e.get("ms_medio") is None:
+            continue
+        base = _upload_base(e.get("nombre"))
+        count, total = uploads.get(base, (0.0, 0.0))
+        weight = _num(e.get("eventos"))
+        uploads[base] = (count + weight, total + weight * _num(e.get("ms_medio")))
+    rows = sorted(
+        (e for e in _entries(report, "imagen") if e.get("ms_medio") is not None),
+        key=lambda e: (-_num(e.get("ms_medio")), str(e.get("nombre"))),
+    )
+    body: list[str] = []
+    if rows:
+        table = []
+        for e in rows[:top]:
+            count, total = uploads.get(str(e.get("nombre")), (0.0, 0.0))
+            upload = total / count if count else None
+            wait = _num(e.get("ms_medio"))
+            very_slow = int(_num(_dict(e.get("ms")).get(">=3000")))
+            table.append(
+                (
+                    WARN if very_slow else "",
+                    e.get("nombre"),
+                    int(_num(e.get("eventos"))),
+                    f"{wait:.0f}",
+                    "-" if upload is None else f"{upload:.0f}",
+                    "-" if upload is None else f"{max(0.0, wait - upload):.0f}",
+                    _pct(very_slow, _num(e.get("eventos"))),
+                    f"{_num(e.get('ms_max')):.0f}",
+                )
+            )
+        body = [
+            "Espera del miembro desde el clic hasta la primera imagen. «Sin la subida» es"
+            " lo que esperó al dibujo: alto quiere decir que no estaba pintado antes.",
+            "",
+        ]
+        body += _table(
+            ["", "Imagen", "Veces", "ms medio", "Subida ms", "Sin la subida", "≥3 s", "ms máx"],
+            table,
+        )
+    return _section("Del clic a la imagen", body)
+
+
+def section_discord(report: Report, top: int) -> list[str]:
+    """Cortes con Discord, respuestas 429, procesos matados por memoria y volcados a disco."""
+
+    def events(kind: str) -> list[dict[str, Any]]:
+        return sorted(
+            _entries(report, kind), key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre")))
+        )
+
+    body: list[str] = []
+    gateway = {str(e.get("nombre")): int(_num(e.get("eventos"))) for e in events("gateway")}
+    if gateway:
+        cuts = gateway.get("desconexion", 0)
+        body.append(
+            f"- Conexión: {gateway.get('conectada', 0)} conectada, {cuts} cortes, "
+            f"{gateway.get('reanudada', 0)} reanudadas" + (f" {WARN}" if cuts else "")
+        )
+    kills = sum(int(_num(e.get("eventos"))) for e in events("oom"))
+    if kills:
+        body.append(f"- {WARN} Procesos matados por falta de memoria: {kills}")
+    for e in events("db"):
+        if e.get("ms_medio") is not None:
+            body.append(
+                f"- Volcados a la base de datos: {int(_num(e.get('eventos')))}, "
+                f"{_num(e.get('ms_medio')):.0f} ms de media, {_num(e.get('ms_max')):.0f} de máximo"
+            )
+    limits = events("ratelimit")
+    if limits:
+        body += ["", f"{WARN} Respuestas 429 (Discord frena al bot) por ruta:", ""]
+        body += _table(
+            ["Ruta", "Veces"],
+            [(e.get("nombre"), int(_num(e.get("eventos")))) for e in limits[:top]],
+        )
+    return _section("Conexión con Discord", body)
+
+
+def section_expired(report: Report, top: int) -> list[str]:
+    """Vistas que caducan sin que nadie las pare: partidas o paneles abandonados."""
+    rows = sorted(
+        _entries(report, "caducada"),
+        key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre"))),
+    )
+    body: list[str] = []
+    if rows:
+        body = [
+            "Una vista que caduca sin pararse se quedó a medias: partida abandonada o panel"
+            " olvidado. Las vistas que no se paran al acabar también salen aquí.",
+            "",
+        ]
+        body += _table(
+            ["Vista", "Caducadas"],
+            [(e.get("nombre"), int(_num(e.get("eventos")))) for e in rows[:top]],
+        )
+    return _section("Vistas caducadas", body)
+
+
+def _day_versions(report: Report) -> dict[str, str]:
+    """Versión del bot de cada día con datos: la última que arrancó ese día o antes."""
+    starts = _dict(report.get("arranques"))
+    days = sorted(
+        set(_dict(report.get("por_dia"))) | set(_dict(report.get("sistema"))) | set(starts)
+    )
+    current: str | None = None
+    found: dict[str, str] = {}
+    for day in days:
+        versions = _dict(starts.get(day))
+        if versions:
+            # shortcut: con dos versiones el mismo día, el día entero va a la mayor.
+            current = max(versions, key=_version_key)
+        if current is not None:
+            found[day] = current
+    return found
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) if part.isdigit() else 0 for part in str(version).split("."))
+
+
+def section_versions(report: Report, top: int) -> list[str]:
+    """Cada versión del bot por días: reinicios, clics, latencia, fallos, CPU y memoria.
+
+    Con varios informes juntos es la comparación global de antes y después de cada
+    despliegue. Un reinicio es un arranque de una versión que ya estaba corriendo:
+    caída, contenedor matado por memoria o reinicio a mano.
+    """
+    per_version = _day_versions(report)
+    if not per_version:
+        return _section("Versiones y reinicios", [])
+    starts = _dict(report.get("arranques"))
+    per_day = _dict(report.get("por_dia"))
+    system = _dict(report.get("sistema"))
+    rows = []
+    for version in sorted(set(per_version.values()), key=_version_key):
+        days = [d for d, v in per_version.items() if v == version]
+        launched = sum(int(_num(_dict(starts.get(d)).get(version))) for d in days)
+        clicks = errors = measured = total_ms = slow = 0.0
+        for day in days:
+            button = _dict(_dict(per_day.get(day)).get("button"))
+            clicks += _num(button.get("eventos"))
+            errors += _num(button.get("errores"))
+            count = _num(button.get("ms_n"))
+            measured += count
+            total_ms += count * _num(button.get("ms_medio"))
+            slow += _num(button.get("lentos"))
+        cpu = [
+            _num(_dict(system.get(d)).get("cpu_pct_media"))
+            for d in days
+            if _dict(system.get(d)).get("cpu_pct_media") is not None
+        ]
+        memory = [
+            _num(_dict(system.get(d)).get("memoria_mb_max"))
+            for d in days
+            if _dict(system.get(d)).get("memoria_mb_max") is not None
+        ]
+        restarts = max(0, launched - 1)
+        rows.append(
+            (
+                version,
+                f"{min(days)} a {max(days)}",
+                len(days),
+                f"{restarts}{' ' + WARN if restarts else ''}",
+                f"{clicks / len(days):.0f}",
+                f"{total_ms / measured:.0f}" if measured else "-",
+                _pct(slow, measured),
+                _pct(errors, clicks),
+                f"{sum(cpu) / len(cpu):.0f}" if cpu else "-",
+                f"{max(memory):.0f}" if memory else "-",
+            )
+        )
+    body = [
+        "Clics de botones por día, su latencia media y su proporción ≥3 s y sin respuesta.",
+        "",
+    ]
+    body += _table(
+        [
+            "Versión",
+            "Días",
+            "N",
+            "Reinicios",
+            "Clics/día",
+            "ms medio",
+            "≥3 s",
+            "Fallos",
+            "CPU %",
+            "Memoria máx MB",
+        ],
+        rows,
+    )
+    return _section("Versiones y reinicios", body)
 
 
 def section_log(report: Report, top: int) -> list[str]:
@@ -635,9 +864,13 @@ def build_text(
         lines += section(report, top)
     lines += section_system(report, top, limit_mb)
     for section in (
+        section_versions,
         section_render,
         section_upload,
+        section_image,
         section_lag,
+        section_discord,
+        section_expired,
         section_log,
         section_casino,
         section_economy,
@@ -646,25 +879,67 @@ def build_text(
     return lines
 
 
+def merge_reports(reports: Sequence[Report]) -> Report:
+    """Junta varios informes en uno global (ver la cabecera del módulo)."""
+    ordered = sorted(reports, key=lambda r: (str(r.get("hasta")), str(r.get("generado"))))
+    merged = dict(ordered[-1])
+    for key in DAILY_KEYS:
+        days: dict[str, Any] = {}
+        for report in ordered:
+            days.update(_dict(report.get(key)))
+        merged[key] = dict(sorted(days.items()))
+    starts = [str(r.get("desde")) for r in ordered if r.get("desde")]
+    merged["informes"] = len(ordered)
+    if starts:
+        merged["desde_global"] = min(starts)
+    return merged
+
+
+def _report_paths(paths: Sequence[str]) -> list[Path]:
+    found: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        found += sorted(path.glob("informe*.json")) if path.is_dir() else [path]
+    return found
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Lee el informe indicado y escribe el resumen por la salida estándar."""
+    """Lee el informe (o los informes, juntos) y escribe el resumen por la salida estándar."""
     parser = argparse.ArgumentParser(description="Resume el informe JSON de uso del bot.")
-    parser.add_argument("informe", help="ruta del JSON que genera el comando `informe`")
+    parser.add_argument(
+        "informe",
+        nargs="+",
+        help="JSON que genera el comando `informe`; con varios o una carpeta, los junta",
+    )
     parser.add_argument("--top", type=int, default=DEFAULT_TOP, help="filas por ranking")
     parser.add_argument(
         "--limite-mb", type=float, default=DEFAULT_LIMIT_MB, help="límite de memoria en MB"
     )
     args = parser.parse_args(argv)
-    try:
-        with open(args.informe, encoding="utf-8") as handle:
-            report = json.load(handle)
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"No se pudo leer el informe: {error}", file=sys.stderr)
+    reports: list[Report] = []
+    for path in _report_paths(args.informe):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                report = json.load(handle)
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"No se pudo leer el informe: {error}", file=sys.stderr)
+            return 1
+        if not isinstance(report, dict):
+            print("El informe no es un objeto JSON.", file=sys.stderr)
+            return 1
+        reports.append(report)
+    if not reports:
+        print("No se pudo leer el informe: no hay ningún informe*.json.", file=sys.stderr)
         return 1
-    if not isinstance(report, dict):
-        print("El informe no es un objeto JSON.", file=sys.stderr)
-        return 1
-    print("\n".join(build_text(report, max(args.top, 1), args.limite_mb)))
+    report = reports[0] if len(reports) == 1 else merge_reports(reports)
+    lines = build_text(report, max(args.top, 1), args.limite_mb)
+    if len(reports) > 1:
+        lines[1:1] = [
+            f"Visión global de {len(reports)} informes, desde {report.get('desde_global')}:"
+            " lo que va por día cubre todos; lo demás es del más nuevo.",
+            "",
+        ]
+    print("\n".join(lines))
     return 0
 
 
