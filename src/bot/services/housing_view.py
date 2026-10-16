@@ -34,13 +34,11 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
-    LISTING_BY_KEY,
     RENT_LEVELS,
     TENANT_BY_KEY,
     VPO_BY_KEY,
     VPO_UNITS,
     Listing,
-    listings_of,
 )
 
 State = dict[str, Any]
@@ -78,6 +76,7 @@ NEWS_TEXT = {
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",
+    "obra_nueva": "{who} levanta la promoción: sale a {amount}",
     "fianza_devuelta": "{who} recupera la fianza: {amount}",
     "fianza_incautada": "El casero se queda {amount} de la fianza de {who}",
     "partida_agotada": "Partida agotada: {who} se queda sin el Bono Alquiler Joven",
@@ -160,11 +159,14 @@ def listing_status(market: Market, key: str, user_id: int) -> tuple[str, str]:
     return "Vendido", "ajeno"
 
 
-def news_line(item: News, names: dict[int, str], *, titled: bool = True) -> str:
+def news_line(
+    item: News, names: dict[int, str], *, titled: bool = True, market: Market | None = None
+) -> str:
     """Una noticia en una línea.
 
     Args:
         titled: Si empieza por el inmueble (en la cartera sí; en su propia ficha, no).
+        market: El mercado del servidor, para el título de su obra nueva.
     """
     tenant = TENANT_BY_KEY.get(item.tenant or "")
     text = NEWS_TEXT.get(item.kind, item.kind).format(
@@ -172,7 +174,7 @@ def news_line(item: News, names: dict[int, str], *, titled: bool = True) -> str:
         tenant=tenant.name if tenant else "El inquilino",
         amount=format_amount(item.amount),
     )
-    listing = LISTING_BY_KEY.get(item.listing)
+    listing = (market or Market()).listing(item.listing)
     vpo = VPO_BY_KEY.get(item.listing.removeprefix(VPO_PREFIX))
     title = listing.title if listing is not None else vpo.name if vpo is not None else ""
     where = f"{title}: " if titled and title else ""
@@ -187,7 +189,7 @@ def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
         for barrio in BARRIOS:
             if barrio.island != island:
                 continue
-            items = listings_of(barrio.key)
+            items = market.listings_of(barrio.key)
             index = market.index(barrio.key)
             pins.append(
                 {
@@ -255,10 +257,10 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
 
 
 def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int, str]) -> State:
-    """Un barrio con sus tres inmuebles."""
+    """Un barrio con sus tres inmuebles (y su obra nueva, si la tiene: cuatro tarjetas)."""
     barrio = BARRIO_BY_KEY[barrio_key]
     index = market.index(barrio_key)
-    cards = [_card(market, item, user_id, names) for item in listings_of(barrio_key)]
+    cards = [_card(market, item, user_id, names) for item in market.listings_of(barrio_key)]
     return {
         "screen": "barrio",
         "barrio": {
@@ -288,7 +290,9 @@ def listing_state(
     market: Market, key: str, user_id: int, names: dict[int, str], news: list[News]
 ) -> State:
     """La ficha de un inmueble: precio, renta, gastos, dueños, inquilino y noticias."""
-    listing = LISTING_BY_KEY[key]
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
     index = market.index(listing.barrio)
     card = _card(market, listing, user_id, names)
     lease = market.leases.get(key)
@@ -334,7 +338,7 @@ def listing_state(
         else "",
         "arrears": format_amount(lease.arrears) if lease and lease.arrears else "",
         "mine": None,
-        "news": [news_line(n, names, titled=False) for n in news[:4]],
+        "news": [news_line(n, names, titled=False, market=market) for n in news[:4]],
         "footer": "1 día del bot = 1 mes del contrato · ITP 6,5 % al comprar",
     }
     if holding is not None:
@@ -419,7 +423,9 @@ def portfolio_state(
     """
     items = []
     for holding in market.of_member(user_id):
-        listing = LISTING_BY_KEY[holding.listing]
+        listing = market.listing(holding.listing)
+        if listing is None:
+            continue
         lease = market.leases.get(holding.listing)
         items.append(
             {
@@ -472,7 +478,7 @@ def portfolio_state(
             "costs": format_amount(week.costs),
             "net": format_amount(week.rent - week.ibi - week.costs),
         },
-        "news": [news_line(n, names) for n in news[:6]],
+        "news": [news_line(n, names, market=market) for n in news[:6]],
         "empty": not items,
         "debt": format_amount(debt) if debt else "",
         "bank_debt": format_amount(market.bank_debts[user_id])
@@ -510,7 +516,8 @@ def _living(
     kind, ref = home
     if kind == "vpo":
         return f"Vives en tu {VPO_BY_KEY[ref].name}"
-    title = LISTING_BY_KEY[ref].title if ref in LISTING_BY_KEY else "un piso"
+    item = market.listing(ref)
+    title = item.title if item is not None else "un piso"
     if kind == "alquiler":
         owners = market.shares_of(ref)
         boss = max(owners, key=owners.get) if owners else None

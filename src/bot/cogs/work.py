@@ -57,8 +57,9 @@ Oficios.
 Canales: si un administrador elige canales con `tajo`, `pala` solo se abre
 en ellos. Permisos del bot: enviar mensajes en el canal.
 
-Funciones puente para `pisos` (el favor 👴 «Tus padres te avalan»): `parents_aval`,
-`spend_parents_aval` y `parents_lose_home`. No lanzan y no hacen nada sin el cog.
+Funciones puente para `pisos`: el favor 👴 «Tus padres te avalan» (`parents_aval`,
+`spend_parents_aval` y `parents_lose_home`) y quién levanta la obra nueva de los lunes
+desde la rama Ladrillo (`ladrillo_builders`). No lanzan y no hacen nada sin el cog.
 """
 
 from __future__ import annotations
@@ -2119,6 +2120,18 @@ async def parents_lose_home(bot: commands.Bot, guild_id: int, user_id: int) -> N
         await cog.service.parents_lose_home(guild_id, user_id)
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo bajar la familia de %s", user_id)
+
+
+async def ladrillo_builders(bot: commands.Bot, guild_id: int) -> tuple[int, ...]:
+    """Quienes fichan en la rama Ladrillo (levantan la obra nueva de `pisos`), o `()`."""
+    cog = find_cog(bot, Work)
+    if cog is None:
+        return ()
+    try:
+        return await cog.service.ladrillo_builders(guild_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo mirar quién está en la rama Ladrillo")
+        return ()
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

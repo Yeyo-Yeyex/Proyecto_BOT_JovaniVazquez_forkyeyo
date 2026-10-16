@@ -148,6 +148,9 @@ from bot.services.work_catalog import (
     AVAL_EXECUTION_FAMILY,
     AVAL_SECONDS,
     AVAL_SPENT,
+    BUILDER_BRANCH,
+    BUILDER_DAYS,
+    BUILDER_JOB,
     CAUGHT_SUSPENDS_IMV,
     COFFEE_BY_KEY,
     EVENT_BY_KEY,
@@ -1738,6 +1741,16 @@ class WorkService:
             contract.family_used[favor.key] = now
             await self.repository.save_contract(guild_id, user_id, contract)
             return FavorResult(favor, contract.family, amount, balance)
+
+    # -- La obra nueva de `pisos` ----------------------------------------------------
+
+    async def ladrillo_builders(self, guild_id: int) -> tuple[int, ...]:
+        """Quienes han fichado la última semana en la rama Ladrillo de la obra.
+
+        Son los que levantan la obra nueva de `pisos` cada lunes, por turnos.
+        """
+        since = self._clock() - BUILDER_DAYS * 86_400
+        return await self.repository.branch_workers(guild_id, BUILDER_JOB, BUILDER_BRANCH, since)
 
     # -- El aval de tus padres para `pisos` ------------------------------------------
 

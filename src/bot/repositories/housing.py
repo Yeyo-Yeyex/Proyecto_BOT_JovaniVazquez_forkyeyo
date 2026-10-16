@@ -59,16 +59,18 @@ from bot.repositories.economy import (
     HousingTax,
     LedgerEntry,
 )
-from bot.repositories.housing_finance import Mortgage, VpoOwner
+from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
 from bot.services import housing as rules
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
+    BARRIOS,
     DEFAULT_RENT_LEVEL,
     LISTING_BY_KEY,
     RENT_LEVELS,
     VPO_BY_KEY,
     VPO_UNITS,
     Listing,
+    listings_of,
 )
 from bot.services.levels import local_day
 
@@ -76,6 +78,8 @@ T = TypeVar("T")
 
 #: Días de noticias y de cobros que se guardan.
 NEWS_DAYS = 35
+#: Motivo del libro (y concepto del IRPF) de la comisión del promotor de la obra nueva.
+PROMOTER_CONCEPT = "pisos:promotor"
 
 
 class HousingError(ValueError):
@@ -150,6 +154,7 @@ class Market:
         bank_debts: Lo que se debe al banco tras una ejecución.
         offers: `{(inmueble, miembro): (precio, último día)}` del fondo buitre.
         socimi: Quién tiene SOCIMI.
+        promotions: La obra nueva del servidor (fase 5), por clave.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -164,6 +169,23 @@ class Market:
     bank_debts: dict[int, int] = field(default_factory=dict)
     offers: dict[tuple[str, int], tuple[int, date]] = field(default_factory=dict)
     socimi: frozenset[int] = frozenset()
+    promotions: dict[str, Promotion] = field(default_factory=dict)
+
+    def listing(self, key: str) -> Listing | None:
+        """El inmueble de una clave: del catálogo de siempre o de la obra nueva del servidor."""
+        listing = LISTING_BY_KEY.get(key)
+        if listing is None and (promotion := self.promotions.get(key)) is not None:
+            return promotion.listing
+        return listing
+
+    def keys(self) -> list[str]:
+        """Las claves de todos los inmuebles del servidor: el catálogo y luego la obra nueva."""
+        return [*LISTING_BY_KEY, *self.promotions]
+
+    def listings_of(self, barrio: str) -> tuple[Listing, ...]:
+        """Los inmuebles de un barrio: los tres del catálogo y su obra nueva, si la tiene."""
+        extra = tuple(p.listing for p in self.promotions.values() if p.listing.barrio == barrio)
+        return (*listings_of(barrio), *extra)
 
     def index(self, barrio: str) -> float:
         """Índice de un barrio (1 si nunca se ha movido)."""
@@ -180,7 +202,7 @@ class Market:
     def of_member(self, user_id: int) -> list[Holding]:
         """Lo que tiene un miembro, en el orden del catálogo."""
         out = []
-        for key in LISTING_BY_KEY:
+        for key in self.keys():
             holding = self.holdings.get(key, {}).get(user_id)  # solo inmuebles que existen
             if holding is not None:
                 out.append(holding)
@@ -188,7 +210,7 @@ class Market:
 
     def value(self, holding: Holding) -> int:
         """Valor de mercado de unas participaciones (0 si el inmueble ya no existe)."""
-        listing = LISTING_BY_KEY.get(holding.listing)
+        listing = self.listing(holding.listing)
         if listing is None:
             return 0
         return rules.price(listing, self.index(listing.barrio)) * holding.shares // rules.SHARES
@@ -206,16 +228,14 @@ class Market:
         return sum(
             1
             for h in self.of_member(user_id)
-            if h.shares == rules.SHARES and LISTING_BY_KEY[h.listing].kind in rules.HOME_KINDS
+            if h.shares == rules.SHARES and self.kind_of(h.listing) in rules.HOME_KINDS
         )
 
     def owns_home(self, user_id: int) -> bool:
         """Si tiene alguna participación de una vivienda o una VPO (para el sorteo)."""
         if any(owner.owner_id == user_id for owner in self.vpo.values()):
             return True
-        return any(
-            LISTING_BY_KEY[h.listing].kind in rules.HOME_KINDS for h in self.of_member(user_id)
-        )
+        return any(self.kind_of(h.listing) in rules.HOME_KINDS for h in self.of_member(user_id))
 
     def vpo_of(self, user_id: int) -> str | None:
         """La VPO de un miembro, si tiene."""
@@ -230,8 +250,13 @@ class Market:
         return sum(
             1
             for key, lease in self.leases.items()
-            if lease.license and LISTING_BY_KEY[key].barrio == barrio
+            if lease.license and (item := self.listing(key)) is not None and item.barrio == barrio
         )
+
+    def kind_of(self, key: str) -> str:
+        """El tipo de un inmueble del servidor (vacío si la clave ya no existe)."""
+        listing = self.listing(key)
+        return listing.kind if listing is not None else ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +273,9 @@ class Purchase:
         payment: La cuota de esa hipoteca.
         rate: Su tipo fijo (Euríbor de la semana más el diferencial).
         aval: Si el banco solo la ha dado con el aval de tus padres.
+        promoter: Si es obra nueva, quien la levantó.
+        promoter_fee: Lo que cobró el promotor de esta compra (0 si compra el propio
+            promotor, que no se paga comisión a sí mismo).
     """
 
     listing: str
@@ -260,6 +288,8 @@ class Purchase:
     payment: int = 0
     rate: float = 0.0
     aval: bool = False
+    promoter: int | None = None
+    promoter_fee: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +379,7 @@ class DayRun:
         installments: Cuotas de hipoteca pagadas enteras por cada miembro.
         aval_executions: Miembros a los que han ejecutado una hipoteca avalada por sus
             padres (la familia de `pala` lo paga).
+        promotions: `(promotor, inmueble)` de la obra nueva que ha salido hoy (los lunes).
         euribor: `(el de antes, el nuevo)` si hoy ha sido lunes y se ha movido el
             Euríbor (aunque se quede igual), para el anuncio del BCE.
     """
@@ -366,6 +397,7 @@ class DayRun:
     mortgage_unpaid: list[int] = field(default_factory=list)
     installments: dict[int, int] = field(default_factory=dict)
     aval_executions: list[int] = field(default_factory=list)
+    promotions: list[tuple[int, str]] = field(default_factory=list)
     euribor: tuple[float, float] | None = None
 
 
@@ -377,8 +409,8 @@ def _iso(day: date | None) -> str | None:
     return day.isoformat() if day else None
 
 
-def _listing(key: str) -> Listing:
-    listing = LISTING_BY_KEY.get(key)
+def _listing(market: Market, key: str) -> Listing:
+    listing = market.listing(key)
     if listing is None:
         raise HousingError("Ese inmueble no está en el mercado.")
     return listing
@@ -461,6 +493,7 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
         bank_debts=finance.bank_debts_in(connection, guild_id),
         offers=finance.offers_in(connection, guild_id),
         socimi=frozenset(finance.socimi_in(connection, guild_id)),
+        promotions=finance.promotions_in(connection, guild_id),
     )
 
 
@@ -497,12 +530,13 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
       de la vivienda habitual, que no son deducibles porque el bien está exento (art. 25.2).
     """
     homes = finance.homes_in(connection, guild_id)
+    market = Market(promotions=finance.promotions_in(connection, guild_id))
     out: dict[int, int] = {}
     for r in connection.execute(
         "SELECT listing, user_id, shares, paid FROM housing_holdings WHERE guild_id = ?",
         (guild_id,),
     ):
-        listing = LISTING_BY_KEY.get(str(r["listing"]))
+        listing = market.listing(str(r["listing"]))
         if listing is None:
             continue
         member = int(r["user_id"])
@@ -787,10 +821,10 @@ class HousingRepository:
                 presta (la cuota pasa del 35 % de lo que ingresa).
             PriceChanged: Si lo que sale del bolsillo ya no es `expected`.
         """
-        listing = _listing(key)
 
         def run(connection: sqlite3.Connection) -> tuple[Purchase, HousingMove]:
             market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
             free = market.free_shares(key)
             if shares < 1:
                 raise HousingError("Tienes que comprar al menos una participación.")
@@ -836,6 +870,9 @@ class HousingRepository:
                 raise PriceChanged(out_of_pocket)
             first = not any(user_id in h for h in market.holdings.values())
             held = market.holdings.get(key, {}).get(user_id)
+            promotion = market.promotions.get(key)
+            promoter = promotion.promoter if promotion is not None else None
+            fee = rules.promoter_fee(quote.price) if promoter not in (None, user_id) else 0
             connection.execute(
                 """
                 INSERT INTO housing_holdings (guild_id, listing, user_id, shares, paid, cost, since)
@@ -868,8 +905,18 @@ class HousingRepository:
                 payment=payment,
                 rate=rate,
                 aval=aval,
+                promoter=promoter,
+                promoter_fee=fee,
+            )
+            # La comisión del promotor sale del precio, que si no desaparecería: no crea
+            # dinero. Rendimiento de su actividad (art. 27 LIRPF), con retención a cuenta.
+            fees = (
+                (HousingRent(promoter, fee, fee, fee, concept=PROMOTER_CONCEPT),)
+                if promoter is not None and fee
+                else ()
             )
             move = HousingMove(
+                rents=fees,
                 entries=(
                     (user_id, LedgerEntry(-(quote.price - loan), "pisos:compra")),
                     (user_id, LedgerEntry(-quote.notary, "pisos:notaria")),
@@ -906,10 +953,10 @@ class HousingRepository:
             HousingError: Si no tiene tantas, o si la oferta no existe o caducó.
             PriceChanged: Si lo que cobraría ya no es `expected`.
         """
-        listing = _listing(key)
 
         def run(connection: sqlite3.Connection) -> tuple[Sale, HousingMove]:
             market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
             held = market.holdings.get(key, {}).get(user_id)
             if held is None:
                 raise HousingError("No tienes nada en este inmueble.")
@@ -1043,15 +1090,25 @@ class HousingRepository:
     # -- Cada noche ---------------------------------------------------------------------
 
     def close_day(
-        self, guild_id: int, day: date, now: float, rng: random.Random
+        self,
+        guild_id: int,
+        day: date,
+        now: float,
+        rng: random.Random,
+        builders: tuple[int, ...] = (),
     ) -> Callable[[sqlite3.Connection], tuple[DayRun, HousingMove]]:
         """Cierra un día (un mes del juego) entero.
 
         Primero cobra la renta a los miembros de alquiler (entera o nada) y luego, sabiendo
         quién pagó: ejecuciones hipotecarias, rentas, bono, IGIC vacacional, SOCIMI,
         recibos de cada inmueble y de cada VPO, cuotas de las hipotecas y deudas con el
-        banco. Los lunes, además, el Euríbor, el sorteo de VPO y las ofertas del fondo.
-        Es idempotente: si el día ya estaba cerrado, no mueve nada.
+        banco. Los lunes, además, el Euríbor, el sorteo de VPO, las ofertas del fondo y la
+        obra nueva. Es idempotente: si el día ya estaba cerrado, no mueve nada.
+
+        Args:
+            builders: Quienes han fichado esta semana en la rama Ladrillo de `pala`, del
+                puesto más alto al más bajo: el lunes, uno de ellos (por turnos) levanta
+                una promoción.
         """
 
         def run(connection: sqlite3.Connection) -> tuple[DayRun, HousingMove]:
@@ -1071,12 +1128,16 @@ class HousingRepository:
                 _set_index_in(connection, guild_id, barrio, rules.index_next_day(value))
             if day.weekday() == 0:
                 self._monday_in(connection, guild_id, day, now, rng, market, result)
+                if builders:
+                    builder = builders[day.toordinal() // 7 % len(builders)]
+                    self._promotion_in(connection, guild_id, day, now, rng, market, builder,
+                                       result)  # fmt: skip
             pulls = tuple(
                 HousingPull(lease.member, lease.rent, key, "pisos:alquiler")
                 for key, lease in market.leases.items()
                 if lease.member is not None
                 and lease.status in (rules.RENTED, rules.DEFAULTING)
-                and key in LISTING_BY_KEY
+                and market.listing(key) is not None
             )
 
             def then(conn: sqlite3.Connection, paid: frozenset[str]) -> HousingMove:
@@ -1148,7 +1209,7 @@ class HousingRepository:
         owners = {m for members in market.holdings.values() for m in members}
         for member in sorted(owners):
             wholes = [h for h in market.of_member(member) if h.shares == rules.SHARES]
-            edificio = any(LISTING_BY_KEY[h.listing].kind == "edificio" for h in wholes)
+            edificio = any(market.kind_of(h.listing) == "edificio" for h in wholes)
             if market.whole_homes(member) < rules.VULTURE_HOMES and not edificio:
                 continue
             target = rng.choice(wholes)
@@ -1167,6 +1228,33 @@ class HousingRepository:
             item = News(target.listing, day, "oferta_fondo", price, member, None)
             result.news.append(item)
             _news_in(connection, guild_id, item, now)
+
+    @staticmethod
+    def _promotion_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        now: float,
+        rng: random.Random,
+        market: Market,
+        builder: int,
+        result: DayRun,
+    ) -> None:
+        """La obra nueva del lunes: una promoción en un barrio que aún no tiene ninguna.
+
+        Cuando todos los barrios tienen la suya (20), no se construye más: es el tope de
+        «Nada crece sin tope» de la obra nueva.
+        """
+        taken = {p.listing.barrio for p in market.promotions.values()}
+        free = [b.key for b in BARRIOS if b.key not in taken]
+        if not free:
+            return
+        listing = rules.new_promotion(len(market.promotions) + 1, free, rng)
+        finance.add_promotion_in(connection, guild_id, Promotion(listing, builder, day), now)
+        result.promotions.append((builder, listing.key))
+        item = News(listing.key, day, "obra_nueva", rules.base_price(listing), builder, None)
+        result.news.append(item)
+        _news_in(connection, guild_id, item, now)
 
     def _execute_in(
         self,
@@ -1200,7 +1288,7 @@ class HousingRepository:
             finance.clear_home_in(connection, guild_id, user_id=member)
         else:
             held = market.holdings.get(mortgage.listing, {}).get(member)
-            listing = LISTING_BY_KEY.get(mortgage.listing)
+            listing = market.listing(mortgage.listing)
             if held is None or listing is None:
                 proceeds = debt_ibi = debt_other = 0
             else:
@@ -1308,7 +1396,7 @@ class HousingRepository:
                 )
             )  # fmt: skip
         self._deposits_in(connection, guild_id, day, now, market, rents, entries, result)
-        for key in LISTING_BY_KEY:
+        for key in market.keys():
             lease = market.leases.get(key)
             if lease is None or not market.shares_of(key):
                 continue
@@ -1407,7 +1495,7 @@ class HousingRepository:
         result: DayRun,
     ) -> None:
         """Un mes de un inmueble con dueño: estado, renta, impuestos y recibos."""
-        listing = LISTING_BY_KEY[key]
+        listing = _listing(market, key)
         index = market.index(listing.barrio)
         news: list[News] = []
         all_holders = market.shares_of(key)
@@ -1740,8 +1828,8 @@ class HousingRepository:
         connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
         now: float,
     ) -> None:  # fmt: skip
-        listing = _listing(key)
         market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
         if market.shares_of(key).get(user_id, 0) != rules.SHARES:
             raise HousingError("Solo puedes vivir en un piso que sea entero tuyo.")
         if listing.kind not in rules.HOME_KINDS:
@@ -1816,10 +1904,10 @@ class HousingRepository:
                 vive en otro sitio o es uno de los dueños.
             InsufficientFundsError: Si no le llega para la fianza. No se firma nada.
         """
-        listing = _listing(key)
 
         def run(connection: sqlite3.Connection) -> tuple[TenantDeal, HousingMove]:
             market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
             holders = market.shares_of(key)
             if rules.manager(holders) != owner_id:
                 raise HousingError("Lo alquila quien tiene más de la mitad del inmueble.")
@@ -1912,10 +2000,10 @@ class HousingRepository:
             HousingError: Si no lo decide él, no es vivienda, vive alguien o el barrio ya
                 no tiene plazas.
         """
-        listing = _listing(key)
 
         def run(connection: sqlite3.Connection) -> tuple[int, HousingMove]:
             market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
             if rules.manager(market.shares_of(key)) != user_id:
                 raise HousingError("La licencia la pide quien tiene más de la mitad del inmueble.")
             if listing.kind not in rules.HOME_KINDS:
@@ -1984,10 +2072,10 @@ class HousingRepository:
     def _set_level_in(
         connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, level: str
     ) -> rules.Lease:
-        listing = _listing(key)
         if level not in RENT_LEVELS:
             raise HousingError("Esa renta no existe.")
         market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
         if rules.manager(market.shares_of(key)) != user_id:
             raise HousingError(
                 "La renta la decide quien tiene más de la mitad del inmueble "
@@ -2026,8 +2114,8 @@ class HousingRepository:
         connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
         now: float, rng: random.Random,
     ) -> rules.Lease:  # fmt: skip
-        _listing(key)
         market = _market_in(connection, guild_id)
+        _listing(market, key)
         holders = market.shares_of(key)
         boss = rules.manager(holders)
         if user_id not in holders or (boss is not None and boss != user_id):

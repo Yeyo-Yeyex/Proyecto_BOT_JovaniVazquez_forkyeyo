@@ -446,6 +446,36 @@ class WorkRepository:
 
     # -- Ajustes -------------------------------------------------------------------------
 
+    async def branch_workers(
+        self, guild_id: int, job: str, branch: str, since: float
+    ) -> tuple[int, ...]:
+        """Quienes han fichado desde `since` en una rama de un oficio, del puesto más alto.
+
+        La rama es la de su contrato en ese oficio (`work_history`); el puesto, el más
+        alto con el que ficharon. A igual puesto, el que antes llegó a la base de datos.
+        """
+        return await self._run(self._branch_workers_sync, guild_id, job, branch, since)
+
+    def _branch_workers_sync(
+        self, guild_id: int, job: str, branch: str, since: float
+    ) -> tuple[int, ...]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT s.user_id, MAX(s.level) AS top FROM work_shifts s
+                JOIN work_history h
+                    ON h.guild_id = s.guild_id AND h.user_id = s.user_id AND h.job = s.job
+                WHERE s.guild_id = ? AND s.job = ? AND h.branch = ? AND s.created_at > ?
+                GROUP BY s.user_id
+                ORDER BY top DESC, s.user_id
+                """,
+                (guild_id, job, branch, since),
+            ).fetchall()
+        finally:
+            connection.close()
+        return tuple(int(row["user_id"]) for row in rows)
+
     async def channels(self, guild_id: int) -> frozenset[int]:
         """Canales donde se permite `pala` (vacío = cualquiera)."""
         return await self._run(self._channels_sync, guild_id)

@@ -46,7 +46,11 @@ from datetime import date, timedelta
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
     KINDS,
+    LISTING_BY_KEY,
     LISTINGS,
+    PROMOTION_BLURBS,
+    PROMOTION_FLOORS,
+    PROMOTION_NAMES,
     RENT_LEVELS,
     TENANTS,
     Listing,
@@ -349,8 +353,14 @@ def sale_quote(
 
 
 def barrio_weight(listing: Listing) -> float:
-    """Lo que pesa un inmueble en su barrio: su precio entre el de los tres juntos."""
+    """Lo que pesa un inmueble en su barrio: su precio entre el de todos los del barrio.
+
+    La obra nueva cuenta con los tres del catálogo y ella misma (cada barrio tiene una como
+    mucho), así que nunca pesa más que todo el barrio.
+    """
     total = sum(base_price(item) for item in LISTINGS if item.barrio == listing.barrio)
+    if listing.key not in LISTING_BY_KEY:
+        total += base_price(listing)
     return base_price(listing) / total
 
 
@@ -960,3 +970,58 @@ def level_allowed(level: str, *, index: float, whole_homes: int, license: bool) 
 def socimi_tax(profit: int) -> int:
     """El 19 % del dividendo que reparte la SOCIMI de un mes de alquiler."""
     return round(max(0, profit) * SOCIMI_RATE)
+
+
+# -- Fase 5: obra nueva de la rama Ladrillo --------------------------------------------
+
+#: Las claves de la obra nueva: `obra_1`, `obra_2`… (ningún barrio se llama así).
+PROMOTION_PREFIX = "obra_"
+#: Tipos de la obra nueva y sus metros, `(tipo, mínimo, máximo)`.
+PROMOTION_KINDS: tuple[tuple[str, int, int], ...] = (
+    ("piso2", 70, 90),
+    ("piso3", 90, 120),
+    ("atico", 85, 115),
+)
+#: Comisión del promotor: de cada participación de su promoción que se compra, el 5 % del
+#: precio va a quien la levantó en vez de desaparecer (el margen de la promotora). Es
+#: rendimiento de una actividad económica (art. 27 LIRPF, el promotor de `pala` es
+#: autónomo) y se retiene a cuenta como el resto de la renta general.
+PROMOTER_FEE = 0.05
+#: Días hacia atrás en que hay que haber fichado en la rama Ladrillo para levantar la
+#: promoción del lunes.
+BUILDER_DAYS = 7
+
+
+def is_promotion(key: str) -> bool:
+    """Si una clave es de la obra nueva."""
+    return key.startswith(PROMOTION_PREFIX)
+
+
+def new_promotion(number: int, free_barrios: list[str], rng: random.Random) -> Listing:
+    """La promoción número `number` del servidor, en uno de los barrios que no tienen.
+
+    Es un inmueble como los del catálogo: su precio y su renta salen de sus metros y del
+    barrio. Certificado A: es obra nueva (lo único nuevo de la burbuja).
+
+    Raises:
+        ValueError: Si no queda ningún barrio libre (el tope: una por barrio).
+    """
+    if not free_barrios:
+        raise ValueError("Ya hay obra nueva en todos los barrios.")
+    barrio = rng.choice(sorted(free_barrios))
+    kind, low, high = rng.choice(PROMOTION_KINDS)
+    return Listing(
+        key=f"{PROMOTION_PREFIX}{number}",
+        barrio=barrio,
+        kind=kind,
+        m2=rng.randint(low, high),
+        title=f"Obra nueva: {rng.choice(PROMOTION_NAMES)}",
+        blurb=rng.choice(PROMOTION_BLURBS),
+        floor=rng.choice(PROMOTION_FLOORS[kind]),
+        energy="A",
+    )
+
+
+def promoter_fee(price: int) -> int:
+    """Lo que se lleva el promotor de una compra en su promoción."""
+    return round(max(0, price) * PROMOTER_FEE)

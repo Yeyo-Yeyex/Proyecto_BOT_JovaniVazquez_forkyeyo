@@ -51,7 +51,9 @@ from bot.services.work import (
     WISH_PAY,
     WISH_PERFORMANCE,
     Career,
+    Contract,
     ShiftKind,
+    ShiftRecord,
     Wish,
     follower_gain,
     rating_pay,
@@ -1575,3 +1577,24 @@ async def test_si_ejecutan_lo_avalado_la_familia_se_hunde(tmp_path: Path) -> Non
     assert status is not None
     assert status.contract.family == pytest.approx(80 - AVAL_EXECUTION_FAMILY, abs=1)
     await service.parents_lose_home(GUILD, USER + 1)  # sin curro: no pasa nada
+
+
+async def test_la_obra_nueva_la_levantan_quienes_fichan_en_la_rama_ladrillo(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    repo = service.repository
+
+    async def worker(user: int, branch: str, level: int, days_ago: float) -> None:
+        await repo.save_contract(GUILD, user, Contract(job="obra", level=level, branch=branch))
+        when = clock.now - days_ago * 86_400
+        await repo.add_shift(
+            GUILD, user, ShiftRecord("obra", level, "2026-10-01", when, 80, "ordinario", 1, 1)
+        )
+
+    await worker(1, "ladrillo", 6, 1)
+    await worker(2, "ladrillo", 8, 2)
+    await worker(3, "publica", 8, 1)  # obra pública: no promueve
+    await worker(4, "ladrillo", 9, 10)  # hace diez días que no ficha
+    assert await service.ladrillo_builders(GUILD) == (2, 1)

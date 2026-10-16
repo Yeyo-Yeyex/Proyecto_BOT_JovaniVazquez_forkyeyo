@@ -6345,6 +6345,30 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_level_changes", [
         (10, "pisos_levels_10", "Reajuste de precios", "Cambia la renta que pides 10 veces.", R),
     ])  # fmt: skip
+    # Fase 5: obra nueva de la rama Ladrillo de `pala`.
+    a += _tiers("pisos", "pisos_promotions", [
+        (1, "pisos_promo_1", "Primera piedra (y primera comisión)",
+         "Levanta tu primera promoción de obra nueva desde la rama Ladrillo de `pala`.", E),
+        (5, "pisos_promo_5", "Promotor de la costa", "Levanta 5 promociones.", L),
+        (20, "pisos_promo_20", "Has recalificado Canarias entera",
+         "Levanta 20 promociones: una en cada barrio.", M),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_promoter_fees", [
+        (100_000, "pisos_promofee_100k", "El 5 % de la burbuja",
+         "Cobra 100.000 Y$ de comisión de promotor.", E),
+        (1_000_000, "pisos_promofee_1m", "Margen de promotora",
+         "Cobra 1.000.000 Y$ de comisión de promotor.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_new_build", [
+        (1, "pisos_newbuild_1", "Sobre plano",
+         "Compra participaciones de una promoción de obra nueva.", C),
+        (10, "pisos_newbuild_10", "Cliente fiel de la burbuja",
+         "Compra en obra nueva 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_own_build", [
+        (1, "pisos_ownbuild_1", "Me lo guiso, me lo como",
+         "Compra en tu propia promoción: sin comisión, que el promotor eres tú.", R, True),
+    ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [

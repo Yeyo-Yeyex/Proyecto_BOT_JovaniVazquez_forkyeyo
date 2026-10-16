@@ -17,11 +17,17 @@ from bot.repositories.economy import (
     InsufficientFundsError,
     LedgerEntry,
 )
-from bot.repositories.housing import HousingError, HousingRepository, assets_in
-from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, HOME_VPO
+from bot.repositories.housing import DayRun, HousingError, HousingRepository, Market, assets_in
+from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, HOME_VPO, Promotion
 from bot.services import housing as rules
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.housing_catalog import LISTING_BY_KEY, RENT_LEVELS, VPO_BY_KEY, VPO_UNITS
+from bot.services.housing_catalog import (
+    BARRIOS,
+    LISTING_BY_KEY,
+    RENT_LEVELS,
+    VPO_BY_KEY,
+    VPO_UNITS,
+)
 from bot.services.housing_market import HousingService
 from bot.services.levels import TIMEZONE
 from bot.services.work import Contract, battery_now
@@ -624,3 +630,81 @@ async def test_la_socimi_paga_el_19_del_dividendo_y_no_irpf_del_alquiler(tmp_pat
     taxes = await economy.housing_tax_breakdown(GUILD)
     assert taxes[ANA]["ganancia"] > 0  # el 19 % del dividendo
     assert "alquiler" not in taxes[ANA]
+
+
+# -- Obra nueva de la rama Ladrillo -----------------------------------------------------
+
+
+def test_la_obra_nueva_sale_en_un_barrio_libre_y_nunca_pesa_mas_que_su_barrio() -> None:
+    rng = random.Random(1)
+    listing = rules.new_promotion(3, ["taco", "vegueta"], rng)
+    assert listing.key == "obra_3" and rules.is_promotion(listing.key)
+    assert listing.barrio in ("taco", "vegueta") and listing.energy == "A"
+    assert listing.title.startswith("Obra nueva: ")
+    assert 0 < rules.barrio_weight(listing) < 1
+    assert rules.price(listing) > 0 and rules.reference_rent(listing) > 0
+    with pytest.raises(ValueError):
+        rules.new_promotion(4, [], rng)
+    assert rules.promoter_fee(1_000_000) == 50_000
+
+
+async def test_el_lunes_quien_esta_en_ladrillo_levanta_una_promocion(tmp_path: Path) -> None:
+    clock = Clock(at(11))
+    economy, service = await make(tmp_path, clock)
+    clock.to(13)  # cierra el domingo 11 y el lunes 12
+
+    async def builders() -> tuple[int, ...]:
+        return (ANA,)
+
+    runs = await service.close_days(GUILD, builders)
+    (monday,) = [run for run in runs if run.promotions]
+    ((builder, key),) = monday.promotions
+    assert builder == ANA and rules.is_promotion(key)
+    assert any(n.kind == "obra_nueva" and n.user_id == ANA for n in monday.news)
+    market = await service.market(GUILD)
+    listing = market.listing(key)
+    assert listing is not None and listing in market.listings_of(listing.barrio)
+    assert market.promotions[key].promoter == ANA
+
+    # Bea compra: el 5 % del precio va a Ana, con su IRPF retenido; Ana compra en la suya
+    # y no se paga comisión a sí misma.
+    await give(economy, BEA, 20_000_000)
+    before = await economy.balance(GUILD, ANA)
+    trade = await service.buy(GUILD, BEA, key, 10)
+    fee = rules.promoter_fee(trade.deal.quote.price)
+    assert trade.deal.promoter == ANA and trade.deal.promoter_fee == fee > 0
+    gained = await economy.balance(GUILD, ANA) - before
+    assert 0 < gained <= fee
+    await give(economy, ANA, 20_000_000)
+    own = await service.buy(GUILD, ANA, key, 10)
+    assert own.deal.promoter == ANA and own.deal.promoter_fee == 0
+    for member in (ANA, BEA, STATE_ACCOUNT_ID):
+        assert ledger_sum(tmp_path, member) == await economy.balance(GUILD, member)
+
+    # La obra nueva vive como cualquier otro inmueble: se cierra cada noche.
+    clock.to(14)
+    await service.close_days(GUILD)
+    assert key in (await service.market(GUILD)).leases
+
+
+async def test_sin_nadie_en_ladrillo_no_hay_obra_nueva_y_con_todo_el_mapa_lleno_tampoco(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(11))
+    _economy, service = await make(tmp_path, clock)
+    clock.to(13)
+    assert not any(run.promotions for run in await service.close_days(GUILD))
+    full = Market(
+        promotions={
+            f"obra_{i}": Promotion(
+                rules.new_promotion(i, [b.key], random.Random(i)), ANA, at(12).date()
+            )
+            for i, b in enumerate(BARRIOS, 1)
+        }
+    )
+    result = DayRun(at(19).date())
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        service.repository._promotion_in(
+            connection, GUILD, at(19).date(), 0.0, random.Random(1), full, ANA, result
+        )
+    assert result.promotions == []  # una por barrio: el tope

@@ -28,6 +28,7 @@ from bot.services.blackjack import Card
 from bot.services.coin import Outcome
 from bot.services.enraya import Board, Disc
 from bot.services.skins import SKIN_BY_KEY
+from bot.services.work import ShiftRecord
 
 GUILD_ID = 1
 GUILD = GUILD_ID
@@ -1927,6 +1928,15 @@ async def test_pisos_ve_el_aval_de_los_padres_de_pala_con_el_bot_real(tmp_path: 
         before = (await client.work.status(GUILD, OWNER_ID)).contract.family
         await curro.parents_lose_home(client, GUILD, OWNER_ID)
         assert (await client.work.status(GUILD, OWNER_ID)).contract.family < before
+        assert await curro.ladrillo_builders(client, GUILD) == ()  # peón, no promotor
+        contract = (await client.work.status(GUILD, OWNER_ID)).contract
+        contract.level, contract.branch = 6, "ladrillo"
+        await client.work.repository.save_contract(GUILD, OWNER_ID, contract)
+        await client.work.repository.add_shift(
+            GUILD, OWNER_ID,
+            ShiftRecord("obra", 6, "2026-10-19", client.work.now(), 80, "ordinario", 1, 1),
+        )  # fmt: skip
+        assert await curro.ladrillo_builders(client, GUILD) == (OWNER_ID,)
     finally:
         await client.close()
 

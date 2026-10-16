@@ -28,6 +28,7 @@ from bot.cogs.pisos import (
     TenantOffer,
     ecb_embed,
     effort_text,
+    promotion_embed,
     requirements_text,
 )
 from bot.repositories.economy import EconomyRepository, LedgerEntry
@@ -651,3 +652,41 @@ async def test_cada_noche_lo_personal_va_solo_a_su_miembro(
     assert f"{ev}ejecucion" not in noted[20].add
     assert noted[20].add[f"{ev}cuota_impagada"] == 1 and noted[20].add[f"{ev}impago"] == 1
     assert noted[30].add == {"pisos_bono": 500}
+
+
+async def test_la_obra_nueva_se_anuncia_y_apunta_el_logro_del_promotor(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from bot.cogs import pisos
+
+    cog, _scene, clock = await make(tmp_path)
+    clock.now = datetime(2026, 10, 20, 12, tzinfo=TIMEZONE).timestamp()  # martes
+    ana = member(10, "Ana")
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = guild_with(ana)
+    guild.text_channels = [channel]
+    cog.bot.get_guild = lambda _id: guild
+    asked: list[int] = []
+
+    async def builders(_bot: object, guild_id: int) -> tuple[int, ...]:
+        asked.append(guild_id)
+        return (ana.id,)
+
+    noted: list[tuple[int, Any]] = []
+
+    def note(_bot: object, _guild: int, who: int, delta: Any, *_rest: object) -> None:
+        noted.append((who, delta))
+
+    monkeypatch.setattr(pisos.curro, "ladrillo_builders", builders)
+    monkeypatch.setattr(pisos.logros, "note", note)
+    runs = await cog.close_guild(GUILD)  # cierra el lunes 19
+    assert asked == [GUILD]
+    (run,) = [r for r in runs if r.promotions]
+    embed = channel.send.await_args_list[-1].kwargs["embed"]
+    assert "Ana" in embed.description and "5 %" in embed.description
+    assert any(who == ana.id and d.add.get("pisos_promotions") == 1 for who, d in noted)
+    listing = (await cog.service.market(GUILD)).listing(run.promotions[0][1])
+    assert listing is not None
+    assert promotion_embed(listing, 1.0, "Ana").title.endswith(listing.title.split(": ")[1])

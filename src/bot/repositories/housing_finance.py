@@ -19,6 +19,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   miembro). Es su vivienda habitual.
 - `housing_offers`: las ofertas del fondo buitre (fase 4).
 - `housing_socimi`: quién ha montado su SOCIMI (fase 4).
+- `housing_promotions`: la obra nueva de cada servidor (fase 5): las promociones que
+  levanta cada lunes quien está en la rama Ladrillo de `pala`, una por barrio. Son
+  inmuebles como los del catálogo, pero solo de ese servidor.
 - `housing_deposits`: la fianza (y la garantía adicional) que deja un miembro al
   alquilar el piso de otro, mientras espera en el depósito de fianzas, y lo que se
   queda el casero si lo desahucian debiendo meses (`forfeit`).
@@ -33,6 +36,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from bot.services import housing as rules
+from bot.services.housing_catalog import Listing
 
 #: Tablas de este módulo, para crearlas y para borrarlas al salir de un servidor.
 TABLES = (
@@ -47,6 +51,7 @@ TABLES = (
     "housing_offers",
     "housing_socimi",
     "housing_deposits",
+    "housing_promotions",
 )
 
 SCHEMA = """
@@ -139,6 +144,22 @@ CREATE TABLE IF NOT EXISTS housing_socimi (
     user_id INTEGER NOT NULL,
     since REAL NOT NULL,
     PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS housing_promotions (
+    guild_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    barrio TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    m2 INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    blurb TEXT NOT NULL,
+    floor TEXT NOT NULL,
+    energy TEXT NOT NULL,
+    promoter_id INTEGER NOT NULL,
+    week TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (guild_id, key)
 );
 
 CREATE TABLE IF NOT EXISTS housing_deposits (
@@ -511,3 +532,61 @@ def delete_deposit_in(
         "DELETE FROM housing_deposits WHERE guild_id = ? AND listing = ? AND user_id = ?",
         (guild_id, listing, user_id),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class Promotion:
+    """Una promoción de obra nueva de un servidor.
+
+    Attributes:
+        listing: El inmueble, como los del catálogo (clave `obra_<n>`).
+        promoter: Quien la levantó desde la rama Ladrillo de `pala`: cobra la comisión del
+            promotor de lo que se venda.
+        week: El lunes en que salió.
+    """
+
+    listing: Listing
+    promoter: int
+    week: date
+
+
+def promotions_in(connection: sqlite3.Connection, guild_id: int) -> dict[str, Promotion]:
+    """La obra nueva del servidor, de la más vieja a la más nueva."""
+    return {
+        str(r["key"]): Promotion(
+            Listing(
+                str(r["key"]),
+                str(r["barrio"]),
+                str(r["kind"]),
+                int(r["m2"]),
+                str(r["title"]),
+                str(r["blurb"]),
+                str(r["floor"]),
+                str(r["energy"]),
+            ),
+            int(r["promoter_id"]),
+            date.fromisoformat(str(r["week"])),
+        )  # fmt: skip
+        for r in connection.execute(
+            "SELECT * FROM housing_promotions WHERE guild_id = ? ORDER BY created_at, key",
+            (guild_id,),
+        )
+    }
+
+
+def add_promotion_in(
+    connection: sqlite3.Connection, guild_id: int, promotion: Promotion, now: float
+) -> None:
+    """Apunta una promoción nueva."""
+    listing = promotion.listing
+    connection.execute(
+        """
+        INSERT INTO housing_promotions
+            (guild_id, key, barrio, kind, m2, title, blurb, floor, energy, promoter_id, week,
+             created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (guild_id, listing.key, listing.barrio, listing.kind, listing.m2, listing.title,
+         listing.blurb, listing.floor, listing.energy, promotion.promoter,
+         promotion.week.isoformat(), now),
+    )  # fmt: skip

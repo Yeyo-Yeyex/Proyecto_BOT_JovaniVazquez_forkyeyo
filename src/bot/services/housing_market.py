@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -270,11 +270,19 @@ class HousingService:
         now = self._clock()
         return await self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
 
-    async def close_days(self, guild_id: int) -> list[DayRun]:
+    async def close_days(
+        self,
+        guild_id: int,
+        builders: Callable[[], Awaitable[tuple[int, ...]]] | None = None,
+    ) -> list[DayRun]:
         """Cierra los días que falten hasta ayer (como mucho `CATCH_UP_DAYS`).
 
         La primera vez en un servidor solo se cierra ayer. Cada día va en su
         propia transacción; si uno falla, los anteriores quedan cerrados.
+
+        Args:
+            builders: Devuelve quienes fichan en la rama Ladrillo de `pala` (la obra nueva
+                del lunes). Solo se llama si hay que cerrar un lunes.
         """
         now = self._clock()
         today = local_day(now)
@@ -284,8 +292,9 @@ class HousingService:
         runs = []
         day = first
         while day < today:
+            who = await builders() if builders is not None and day.weekday() == 0 else ()
             run, _balances = await self.economy.housing(
-                guild_id, self.repository.close_day(guild_id, day, now, self.rng)
+                guild_id, self.repository.close_day(guild_id, day, now, self.rng, who)
             )
             if not run.done_before:
                 runs.append(run)
