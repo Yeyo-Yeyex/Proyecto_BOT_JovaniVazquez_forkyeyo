@@ -3407,7 +3407,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # en el bonus, la tirada que se salva en la última y la moneda que faltaba para un bote.
     # Rarezas de `docs/auditoria_logros.py --juego botes --todo`.
     a += _tiers("botes", "botes_rescue", [
-        (1, "botes_rescue", "Rescate bancario",
+        (1, "botes_rescue", "Rescate en el último rodillo",
          "Ve llegar el recogedor al quinto rodillo cuando ya no lo esperabas. Como el rescate "
          "de 2012, pero a tu favor.", C),
         (25, "botes_rescue_50", "Hombres de negro",
@@ -3415,7 +3415,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          E),
     ])  # fmt: skip
     a += _tiers("botes", "botes_rescue_big", [
-        (1, "botes_rescue_big", "Rescate de Bankia",
+        (1, "botes_rescue_big", "Rescate de las cajas de ahorros",
          "Ve llegar el recogedor con la máquina a oscuras y monedas de ×3 o más esperándolo.",
          R),
     ])  # fmt: skip
@@ -3441,7 +3441,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Salva 25 veces la última tirada del bonus. Más prórrogas que los Presupuestos.", E),
     ])  # fmt: skip
     a += _tiers("botes", "botes_chase_hit", [
-        (1, "botes_chase", "Por los pelos",
+        (1, "botes_chase", "Al filo del bote",
          "Llega a un bote del bonus con la moneda que faltaba.", C),
         (10, "botes_chase_25", "Cardiólogo de guardia",
          "Llega 10 veces a un bote del bonus con la moneda que faltaba.", E),

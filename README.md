@@ -499,9 +499,15 @@ python -m bot
   inmediatos, maximizador y misteriosos. Botes MINI (10 monedas), MAJOR (15) y
   GRAND (pantalla llena, ×1.000). Botones: 🎰 Tirar/Girar, 🔁 Auto ×10 o
   ⏩ Auto bonus, ⚡ Turbo, ½ / ×2 / 💰 All-in y 📋 Premios. Devuelve ~94 %, con
-  un bonus cada ~58 tiradas. GIF de 300-450 KB por tirada base y ~200 KB por
-  tirada del bonus; en turbo, solo el PNG (~120 KB). Tributan como el resto
-  del casino. Una máquina nueva sale sola en `tragas` al añadirla a `THEMES`; sus símbolos se
+  un bonus cada ~58 tiradas. La tirada tiene suspense, como la clásica: el
+  quinto rodillo se hace esperar si puede traer el recogedor que falta (el
+  **rescate**), doblar la recogida o completar el cinco de fila; cada moneda
+  vuela a su maletín, la recogida se cuenta moneda a moneda con lava, oro o
+  rayos y el cartel sube de GRAN PREMIO a ÉPICO. En el bonus las casillas paran
+  de una en una, la última tirada y la moneda que falta para un bote se hacen
+  esperar, y al final se cuenta todo moneda a moneda. Cada botón se pinta antes
+  del clic. GIF de ~750 KB sin nada a ~2,4 MB en un ÉPICO; en turbo, solo el
+  PNG. Tributan como el resto del casino. Una máquina nueva sale sola en `tragas` al añadirla a `THEMES`; sus símbolos se
   dibujan con `docs/dibujar_botes.py`.
 - **Crash** (`/cohete`, `.cohete [cantidad] [auto]`): un cohete compartido
   por canal. En el embarque (7-10 s) se entra con 🚀 o con `.cohete 500 2x`

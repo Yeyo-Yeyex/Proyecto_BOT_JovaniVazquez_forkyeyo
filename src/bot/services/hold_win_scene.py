@@ -65,10 +65,13 @@ from bot.services import browser_scene
 from bot.services.browser_scene import BrowserScene
 from bot.services.economy import format_amount
 from bot.services.hold_win import (
+    BIG_WIN,
     CASE_SIZE,
     CELLS,
+    EPIC_WIN,
     GRAND_COINS,
     MAJOR_COINS,
+    MEGA_WIN,
     MINI_COINS,
     POINTS_PER_STAKE,
     REELS,
@@ -837,11 +840,20 @@ class _Count:
         return state
 
     def roll(self, to: int, frames: int, **extra: Any) -> None:
-        """Sube el marcador hasta `to` en `frames` fotogramas."""
+        """Sube el marcador hasta `to` en `frames` fotogramas, frenando en cada umbral.
+
+        Como en la clásica: si cruza ×10, ×25 o ×50, cada tramo tiene sus fotogramas y el
+        cartel de cada nivel entra entero (`BANNER_POP`) antes de dar paso al siguiente.
+        """
         low = self.points
-        for k in range(1, frames + 1):
-            self.points = round(low + (to - low) * _smooth(k / frames))
-            self.add(ROLLUP_FRAME_MS, glow=1 - k / frames, **extra)
+        marks = [m * POINTS_PER_STAKE for m in (BIG_WIN, MEGA_WIN, EPIC_WIN)]
+        points = [low, *(m for m in marks if low < m < to), to]
+        for band in range(len(points) - 1):
+            start, end = points[band], points[band + 1]
+            count = frames if band == 0 else max(frames, len(BANNER_POP) + 1)
+            for k in range(1, count + 1):
+                self.points = round(start + (end - start) * _smooth(k / count))
+                self.add(ROLLUP_FRAME_MS, glow=1 - k / count, **extra)
 
     def settle(self, **extra: Any) -> None:
         """El cartel y las monedas se asientan (solo con cartel)."""

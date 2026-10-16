@@ -1,4 +1,9 @@
-"""Dibujo de las máquinas de Botes (el Volcán, la Mina y el Olimpo): GIF y PNG.
+"""Dibujo de las máquinas de Botes con Pillow: el fondo de la escena y el dibujo de reserva.
+
+Desde la 7.20 las tiradas las pinta la escena de Node (`bot.services.hold_win_scene`), con
+su ritmo y su tensión. De aquí sale el fondo de cada máquina que la escena pone debajo
+(`HoldWinRenderer.scene_backdrop`, al doble) y la casilla (`cell_tile_png`), y este dibujo
+es la reserva si no hay Node ni navegador: más pequeño y sin el ritmo nuevo.
 
 Estilo de tragaperras de casino ilustrada: todo dibujado, con piezas gordas,
 borde oscuro grueso y brillo. Cada máquina tiene su escenario:

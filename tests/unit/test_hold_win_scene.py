@@ -625,3 +625,11 @@ async def test_el_bonus_repartido_pinta_lo_mismo_que_de_un_tiron(
     finally:
         await sharing.close()
         await node_scene.shutdown()
+
+
+def test_en_el_recuento_cada_cartel_entra_entero_antes_del_siguiente() -> None:
+    case = bonus_step(lambda pb, st, fin: fin is not None and fin.result.points >= 5_000)
+    states, _ = run(case)
+    tiers = [s["banner"]["tier"] for s in states[:-1] if s["banner"]]
+    for tier in ("big", "mega", "epic"):
+        assert tiers.count(tier) >= 4, tiers

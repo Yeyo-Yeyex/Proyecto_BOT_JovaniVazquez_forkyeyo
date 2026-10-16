@@ -460,6 +460,35 @@ carteles, marcador, monedas, símbolos y la salida que reduce y recorta) ya est�
 máquina los tiñe con sus colores (`Tragas.TINT`). `Tragas.S` se fija una vez; con una
 escala no entera, el lienzo grande ha de medir un número par de píxeles.
 
+### Lo que salió en Botes (7.20)
+
+- **El fondo de Pillow se reusa:** `HoldWinRenderer.scene_backdrop` lo pinta al doble una vez
+  (los rótulos aceptan `k`, la escala) y la escena lo pone de fondo. Pesa 60-100 KB y viaja
+  en cada `setup` sin que se note.
+- **Medida lógica y salida que no cuadran:** la lógica es la de Pillow (382 × 469) y la salida,
+  408 × 501. La escena pinta a `2 × 408 / 382` (escala no entera: `Tragas.S`) y reduce a la
+  mitad justa; el lienzo grande tiene que medir un número par de píxeles.
+- **La imagen quieta no tiene tiras:** va en modo `board` (las 20 casillas). Un rodillo parado
+  en modo `reels` se pinta igual que `board`, sin recorte, o el último fotograma del GIF no
+  sería el PNG.
+- **El peso, por capas** (medido quitando una a una): las bombillas del marco eran lo más caro
+  (cada fila de píxeles que cruzan, ~20 bytes por fotograma; con halo, el 15 % del GIF): sin
+  halo y pequeñas. El halo difuminado de las casillas iluminadas, un 12 %: aros planos. El
+  oscurecido de la espera gorda cambia toda la pantalla en cada nivel: a saltos de 0,3.
+- **Las monedas que vuelan al maletín no alargan la tirada:** salen en cuanto para su rodillo,
+  mientras giran los demás; solo las del quinto alargan el final unos 300 ms.
+- **La cuenta frena en cada umbral** (`_Count.roll`): si una subida de golpe (el multiplicador
+  del bonus) cruza ×25, el cartel MEGA tiene sus fotogramas antes que el ÉPICO.
+- **Pintar antes del clic en un bonus:** la próxima tirada se juega sobre una copia del
+  `BonusGame` (`deepcopy`) y, al pulsar, la copia pasa a ser el bonus si sigue valiendo (mismo
+  bonus y mismas tiradas jugadas): lo pintado y lo jugado son lo mismo.
+- **Tiempos a 4 hilos** (`docs/medir_dibujos.py`, ms, 1 abierto / caliente): sin nada 510 / 240,
+  con espera 620 / 430 y el final del bonus con su recuento 680 / 510 (la clásica, 430 / 180).
+- **Muestras:** un script que pinta cada escenario (nada, cada espera, ÉPICO, entrada, cada
+  tipo de tirada del bonus y el recuento) y deja una hoja de fotogramas por escenario fue lo que
+  permitió delegar la escena y revisarla. Los escenarios se buscan con `spin_base` y una
+  condición (`tease_of`), sin fabricar rejillas a mano.
+
 ## Notas para el agente en este repo
 
 - Python del proyecto: `.venv/Scripts/python` (3.13, el mismo que la imagen del
