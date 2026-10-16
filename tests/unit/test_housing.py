@@ -25,8 +25,10 @@ from bot.services.housing_catalog import (
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
+    NOMAD_DEMAND,
     RENT_LEVELS,
     TENANT_BY_KEY,
+    THEMES,
     listings_of,
 )
 from bot.services.housing_market import HousingService
@@ -97,16 +99,17 @@ async def give(economy: EconomyService, user_id: int, amount: int) -> None:
 # -- Catálogo ----------------------------------------------------------------------------
 
 
-def test_hay_veinte_barrios_de_gran_canaria_y_tenerife_con_tres_inmuebles_cada_uno() -> None:
+def test_hay_veinte_barrios_de_gran_canaria_y_tenerife_con_nueve_inmuebles_cada_uno() -> None:
     assert len(BARRIOS) == 20
     assert {b.island for b in BARRIOS} == set(ISLANDS)
     assert sum(b.island == "gc" for b in BARRIOS) == 10
-    assert len(LISTINGS) == 60
-    assert len(LISTING_BY_KEY) == 60
+    assert len(LISTINGS) == 180
+    assert len(LISTING_BY_KEY) == 180
     assert len(BARRIO_BY_KEY) == 20
     for barrio in BARRIOS:
-        assert len(listings_of(barrio.key)) == 3, barrio.key
+        assert len(listings_of(barrio.key)) == 9, barrio.key
         assert 0 <= barrio.x <= 1 and 0 <= barrio.y <= 1
+        assert barrio.theme in THEMES and barrio.theme in NOMAD_DEMAND, barrio.key
     for listing in LISTINGS:
         assert listing.kind in KINDS
         assert listing.key.startswith(listing.barrio + "_")
@@ -114,9 +117,51 @@ def test_hay_veinte_barrios_de_gran_canaria_y_tenerife_con_tres_inmuebles_cada_u
         assert rules.reference_rent(listing) > 0
 
 
-def test_cada_nivel_de_renta_tiene_inquilinos_que_lo_aceptan() -> None:
-    for level in RENT_LEVELS:
-        assert any(level in tenant.levels for tenant in TENANT_BY_KEY.values()), level
+#: Los tres primeros de cada barrio, de antes de la ampliación (7.22). Sus claves guardan
+#: quién tiene qué y el botón de cada uno: ni se cambian ni se mueven de sitio.
+ORIGINAL = {
+    "isleta": "bajo piso2 piso3", "canteras": "estudio piso2 atico",
+    "schamann": "trastero bajo piso2", "triana": "garaje piso3 atico",
+    "vegueta": "trastero piso2 edificio", "tafira": "garaje piso3 chalet",
+    "telde": "bajo piso2 piso3", "arucas": "trastero piso2 chalet",
+    "maspalomas": "estudio piso2 chalet", "mogan": "garaje atico chalet",
+    "sanandres": "bajo piso2 chalet", "laguna": "estudio piso2 piso3",
+    "santacruz": "garaje piso3 edificio", "ofra": "trastero bajo piso2",
+    "taco": "trastero bajo piso3", "puertocruz": "estudio piso2 atico",
+    "orotava": "garaje piso3 chalet", "medano": "estudio piso2 piso3",
+    "cristianos": "estudio piso2 atico", "adeje": "garaje atico chalet",
+}  # fmt: skip
+
+
+def test_los_inmuebles_de_antes_siguen_con_su_clave_y_en_su_sitio() -> None:
+    for barrio, slugs in ORIGINAL.items():
+        first = [item.key for item in listings_of(barrio)[:3]]
+        assert first == [f"{barrio}_{slug}" for slug in slugs.split()], barrio
+
+
+def test_cada_tipo_y_cada_nivel_de_renta_tienen_quien_los_alquile() -> None:
+    for kind in KINDS:
+        for level in RENT_LEVELS:
+            if level == rules.VACATION_LEVEL and kind not in rules.HOME_KINDS:
+                continue  # sin licencia vacacional: solo las viviendas la piden
+            assert any(t.rents(level, kind) for t in TENANT_BY_KEY.values()), (kind, level)
+
+
+def test_los_negocios_los_alquilan_negocios_y_las_casas_personas() -> None:
+    rng = random.Random(3)
+    for _ in range(200):
+        tenant = TENANT_BY_KEY[rules._tenant_for("referencia", "nave", rng)]
+        assert "nave" in tenant.kinds
+        tenant = TENANT_BY_KEY[rules._tenant_for("referencia", "piso2", rng)]
+        assert not tenant.kinds
+
+
+def test_los_nomadas_buscan_playa_y_no_poligono() -> None:
+    level = RENT_LEVELS["nomadas"]
+    day = date(2026, 7, 1)
+    playa = rules.find_chance(LISTING_BY_KEY["canteras_estudio"], level, day)
+    obrero = rules.find_chance(LISTING_BY_KEY["taco_bajo"], level, day)
+    assert playa == level.find and obrero < playa
 
 
 def test_lo_barato_renta_mas_que_lo_caro() -> None:

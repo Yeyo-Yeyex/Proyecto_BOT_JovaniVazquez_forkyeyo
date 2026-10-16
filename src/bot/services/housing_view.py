@@ -36,12 +36,19 @@ from bot.services.housing_catalog import (
     KINDS,
     RENT_LEVELS,
     TENANT_BY_KEY,
+    THEMES,
     VPO_BY_KEY,
     VPO_UNITS,
     Listing,
 )
 
 State = dict[str, Any]
+
+#: Tarjetas de la pantalla de un barrio: sus nueve inmuebles y la obra nueva (o su solar),
+#: en dos filas de cinco, una por botón.
+BARRIO_SLOTS = 10
+#: Clave de la tarjeta del solar de un barrio sin obra nueva (`solar_<barrio>`).
+SOLAR_PREFIX = "solar_"
 
 #: Cómo se dice cada estado de un inmueble con dueño.
 STATUS_TEXT = {
@@ -195,6 +202,7 @@ def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
                 {
                     "key": barrio.key,
                     "name": barrio.name,
+                    "theme": barrio.theme,
                     "x": barrio.x,
                     "y": barrio.y,
                     "change": _change(index),
@@ -233,6 +241,8 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
     rent = rules.reference_rent(listing, index)
     return {
         "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
         "kind": listing.kind,
         "kind_name": KINDS[listing.kind].name,
         "title": listing.title,
@@ -256,11 +266,34 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
     }
 
 
+def solar_card(barrio_key: str) -> State:
+    """El hueco de la obra nueva de un barrio que aún no la tiene: un solar con su cartel.
+
+    Ocupa la última tarjeta para que el barrio salga siempre con `BARRIO_SLOTS`; no se
+    compra ni tiene botón.
+    """
+    return {
+        "key": f"{SOLAR_PREFIX}{barrio_key}",
+        "barrio_key": barrio_key,
+        "theme": BARRIO_BY_KEY[barrio_key].theme,
+        "kind": "solar",
+        "kind_name": "Solar",
+        "title": "Solar: próximamente obra nueva",
+        "sign": "Aquí levantará su promoción la rama Ladrillo de pala",
+    }
+
+
 def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int, str]) -> State:
-    """Un barrio con sus tres inmuebles (y su obra nueva, si la tiene: cuatro tarjetas)."""
+    """Un barrio con sus nueve inmuebles y su obra nueva (o el solar donde irá).
+
+    Siempre `BARRIO_SLOTS` tarjetas: la décima es la promoción o, si aún no la hay, el
+    solar (`solar_card`). Cada tarjeta corresponde a un botón, en el mismo orden.
+    """
     barrio = BARRIO_BY_KEY[barrio_key]
     index = market.index(barrio_key)
     cards = [_card(market, item, user_id, names) for item in market.listings_of(barrio_key)]
+    if len(cards) < BARRIO_SLOTS:
+        cards.append(solar_card(barrio_key))
     return {
         "screen": "barrio",
         "barrio": {
@@ -269,6 +302,8 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
             "town": barrio.town,
             "island": ISLANDS[barrio.island],
             "blurb": barrio.blurb,
+            "theme": barrio.theme,
+            "theme_name": THEMES[barrio.theme],
             "index": f"{index:.3f}".replace(".", ","),
             "change": _change(index),
             "up": index > 1.0005,
@@ -281,7 +316,11 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
         "fallback": [
             f"{barrio.name} ({barrio.town})",
             barrio.blurb,
-            *(f"{c['title']}: {c['price']} · {c['rent']} · {c['status']}" for c in cards),
+            *(
+                f"{c['title']}: {c['price']} · {c['rent']} · {c['status']}"
+                for c in cards
+                if c["kind"] != "solar"
+            ),
         ],
     }
 
@@ -430,6 +469,8 @@ def portfolio_state(
         items.append(
             {
                 "key": listing.key,
+                "barrio_key": listing.barrio,
+                "theme": BARRIO_BY_KEY[listing.barrio].theme,
                 "kind": listing.kind,
                 "title": listing.title,
                 "barrio": BARRIO_BY_KEY[listing.barrio].name,
@@ -634,6 +675,8 @@ def checkout_state(
         "screen": "caja",
         "selling": selling,
         "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
         "kind": listing.kind,
         "title": listing.title,
         "barrio": BARRIO_BY_KEY[listing.barrio].name,

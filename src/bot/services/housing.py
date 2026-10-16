@@ -48,6 +48,7 @@ from bot.services.housing_catalog import (
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
+    NOMAD_DEMAND,
     PROMOTION_BLURBS,
     PROMOTION_FLOORS,
     PROMOTION_NAMES,
@@ -452,8 +453,16 @@ class EventKind:
     kinds: frozenset[str] = frozenset()
 
 
-_HOMES = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio"})
-_BLOCKS = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "edificio"})
+#: Lo que tiene instalaciones que se rompen (las viviendas y los negocios con techo).
+_HOMES = frozenset(
+    {"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio", "terrera", "cueva"}
+    | {"finca", "casona", "bungalow", "duplex", "loft", "local", "nave"}
+)
+#: Lo que está en una comunidad de propietarios (derramas, ITE y vecinos).
+_BLOCKS = frozenset(
+    {"estudio", "bajo", "piso2", "piso3", "atico", "edificio", "duplex", "loft", "local"}
+    | {"bungalow"}
+)
 
 #: Imprevistos (los textos están en el cog). Una avería cada tres meses del juego
 #: y una derrama al año, más o menos.
@@ -488,9 +497,23 @@ class DayOutcome:
     events: tuple[Event, ...]
 
 
-def _tenant_for(level: str, rng: random.Random) -> str:
-    candidates = [t.key for t in TENANTS if level in t.levels]
+def _tenant_for(level: str, kind: str, rng: random.Random) -> str:
+    candidates = [t.key for t in TENANTS if t.rents(level, kind)]
     return rng.choice(candidates)
+
+
+def find_chance(listing: Listing, level: RentLevel, day: date) -> float:
+    """Probabilidad de que un inmueble vacío encuentre inquilino hoy.
+
+    La vacacional depende de la temporada (`season_factor`) y los nómadas, del tipo de
+    barrio (`NOMAD_DEMAND`): buscan playa y fibra, no un polígono.
+    """
+    find = level.find
+    if level.key == VACATION_LEVEL:
+        find *= season_factor(day)
+    elif level.key == NOMAD_LEVEL:
+        find *= NOMAD_DEMAND[BARRIO_BY_KEY[listing.barrio].theme]
+    return find
 
 
 def advance_day(
@@ -556,12 +579,11 @@ def advance_day(
             lease = replace(lease, unpaid=lease.unpaid + 1)
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
-        find = level.find * (season_factor(day) if level.key == VACATION_LEVEL else 1.0)
-        if rng.random() < find:
+        if rng.random() < find_chance(listing, level, day):
             lease = replace(
                 lease,
                 status=RENTED,
-                tenant=_tenant_for(level.key, rng),
+                tenant=_tenant_for(level.key, listing.kind, rng),
                 rent=asking_rent(listing, level, index),
                 until=day + timedelta(days=level.months),
                 since=day,
@@ -698,7 +720,10 @@ def manager(holders: dict[int, int]) -> int | None:
 #: Estado de un inmueble en el que vive su dueño: no se alquila, paga sus recibos.
 HABITUAL = "habitual"
 #: Tipos de inmueble que son vivienda (un trastero o un garaje no lo son).
-HOME_KINDS = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio"})
+HOME_KINDS = frozenset(
+    {"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio", "terrera", "cueva"}
+    | {"finca", "casona", "bungalow", "duplex", "loft"}
+)
 
 #: Lo que presta el banco sobre el precio (sin ITP ni notaría): el 80 %. Con el aval del
 #: Estado (la línea de avales del ICO para la primera vivienda de jóvenes y familias con
@@ -907,6 +932,8 @@ def bono_income_cap() -> int:
 
 #: Nivel de renta de la vivienda vacacional (solo con licencia).
 VACATION_LEVEL = "vacacional"
+#: Nivel de renta de los nómadas digitales (su demanda depende del barrio).
+NOMAD_LEVEL = "nomadas"
 #: Lo que cuesta la licencia (proyecto, cédula y tasas), en Y$. La tasa va al Estado.
 LICENSE_FEE = 30_000
 #: Plazas vacacionales por barrio: la ley canaria limita las viviendas vacacionales por
