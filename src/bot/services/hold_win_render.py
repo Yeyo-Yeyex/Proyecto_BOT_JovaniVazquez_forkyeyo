@@ -493,6 +493,17 @@ class HoldWinRenderer:
         TITLES[theme](image, THEMES[theme].title.upper(), style, self._assets / "fonts")
         return image.convert("RGB")
 
+    def scene_backdrop(self, theme: str) -> bytes:
+        """El mismo fondo, marco y rótulo, al doble (PNG): el de la escena de Node.
+
+        La escena (`hold_win_scene`) pinta encima los rodillos, los paneles y los efectos.
+        """
+        style = STYLES[theme]
+        big = _illustrated_backdrop(theme, style, (WIDTH * S, HEIGHT * S))
+        SCENES[theme](big, style, random.Random(theme))
+        TITLES[theme](big, THEMES[theme].title.upper(), style, self._assets / "fonts", k=S)
+        return self._png(big.convert("RGB"))
+
     # -- Casillas -------------------------------------------------------------------
 
     def _symbol_for(self, kit: _Kit, cell: Cell, stake: int) -> Image.Image:
@@ -1288,40 +1299,44 @@ def _title(
     fill: tuple[tuple[int, int, int], tuple[int, int, int]] = ((255, 246, 140), (255, 70, 10)),
     edge: tuple[int, int, int] = (46, 6, 40),
     crack: tuple[int, int, int] | None = (150, 20, 10),
+    k: int = 1,
 ) -> None:
     """Rótulo en letras gordas (Luckiest Guy): degradado `fill`, borde `edge`, halo y grietas.
 
-    Por defecto, el «VOLCÁN»: lava agrietada con borde morado.
+    Por defecto, el «VOLCÁN»: lava agrietada con borde morado. `k` es la escala de la imagen
+    (2 para el fondo de la escena de Node, que se pinta al doble).
     """
-    font = _title_font(fonts, "luckiest-guy.woff", 46)
-    cx, cy = WIDTH / 2, TITLE_Y + TITLE_H / 2 + 4
+    font = _title_font(fonts, "luckiest-guy.woff", 46 * k)
+    cx, cy = WIDTH * k / 2, (TITLE_Y + TITLE_H / 2 + 4) * k
     glow = Image.new("RGBA", image.size, (0, 0, 0, 0))
     ImageDraw.Draw(glow).text((cx, cy), text, font=font, anchor="mm", fill=style.title_glow,
-                              stroke_width=8, stroke_fill=style.title_glow)  # fmt: skip
-    image.alpha_composite(glow.filter(ImageFilter.GaussianBlur(7)))
+                              stroke_width=8 * k, stroke_fill=style.title_glow)  # fmt: skip
+    image.alpha_composite(glow.filter(ImageFilter.GaussianBlur(7 * k)))
     outline = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    ImageDraw.Draw(outline).text((cx, cy + 3), text, font=font, anchor="mm", fill=edge,
-                                 stroke_width=5, stroke_fill=edge)  # fmt: skip
+    ImageDraw.Draw(outline).text((cx, cy + 3 * k), text, font=font, anchor="mm", fill=edge,
+                                 stroke_width=5 * k, stroke_fill=edge)  # fmt: skip
     image.alpha_composite(outline)
     mask = Image.new("L", image.size, 0)
     ImageDraw.Draw(mask).text((cx, cy), text, font=font, anchor="mm", fill=255)
     lava = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    band = _gradient((WIDTH, TITLE_H), *fill).convert("RGBA")
-    lava.paste(band, (0, TITLE_Y))
+    band = _gradient((WIDTH * k, TITLE_H * k), *fill).convert("RGBA")
+    lava.paste(band, (0, TITLE_Y * k))
     # Grietas oscuras dentro de las letras.
     cracks = ImageDraw.Draw(lava)
     rng = random.Random("grietas")
     for _ in range(14 if crack else 0):
-        x = rng.uniform(cx - 120, cx + 120)
-        y = rng.uniform(TITLE_Y + 8, TITLE_Y + TITLE_H - 6)
+        x = rng.uniform(cx - 120 * k, cx + 120 * k)
+        y = rng.uniform((TITLE_Y + 8) * k, (TITLE_Y + TITLE_H - 6) * k)
         cracks.line(
-            [(x, y), (x + rng.uniform(-8, 8), y + rng.uniform(4, 10)),
-             (x + rng.uniform(-10, 10), y + rng.uniform(10, 18))],
-            fill=crack, width=1,
+            [(x, y), (x + rng.uniform(-8, 8) * k, y + rng.uniform(4, 10) * k),
+             (x + rng.uniform(-10, 10) * k, y + rng.uniform(10, 18) * k)],
+            fill=crack, width=k,
         )  # fmt: skip
     image.paste(lava, (0, 0), mask)
     shine = Image.new("L", image.size, 0)
-    ImageDraw.Draw(shine).rectangle((0, TITLE_Y, WIDTH, TITLE_Y + TITLE_H * 0.38), fill=90)
+    ImageDraw.Draw(shine).rectangle(
+        (0, TITLE_Y * k, WIDTH * k, (TITLE_Y + TITLE_H * 0.38) * k), fill=90
+    )
     image.paste(
         Image.new("RGBA", image.size, WHITE + (255,)), (0, 0), ImageChops.multiply(mask, shine)
     )
@@ -1660,20 +1675,21 @@ def _olympus_scene(image: Image.Image, style: Style, rng: random.Random) -> None
 
 def _veins(
     size: tuple[int, int], rng: random.Random, box: tuple[int, int, int, int], count: int,
-    colors: Sequence[tuple[int, int, int, int]],
+    colors: Sequence[tuple[int, int, int, int]], scale: int = 1,
 ) -> Image.Image:  # fmt: skip
-    """Capa con vetas que serpentean de lado a lado de `box` (oro, mármol)."""
+    """Capa con vetas que serpentean de lado a lado de `box` (oro, mármol), a escala `scale`."""
     layer = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
     x0, y0, x1, y1 = box
     for k in range(count):
-        x, y = rng.uniform(x0 - 10, x1), rng.uniform(y0, y1)
+        x, y = rng.uniform(x0 - 10 * scale, x1), rng.uniform(y0, y1)
         points = [(x, y)]
         for _ in range(rng.randint(4, 7)):
-            x += rng.uniform(6, 18)
-            y = min(y1, max(y0, y + rng.uniform(-9, 9)))
+            x += rng.uniform(6, 18) * scale
+            y = min(y1, max(y0, y + rng.uniform(-9, 9) * scale))
             points.append((x, y))
-        draw.line(points, fill=colors[k % len(colors)], width=rng.choice((1, 1, 2)), joint="curve")
+        width = rng.choice((1, 1, 2)) * scale
+        draw.line(points, fill=colors[k % len(colors)], width=width, joint="curve")
     return layer
 
 
@@ -1690,14 +1706,17 @@ def _stone_title(
     seed: str,
     size: int = 46,
     dy: int = 0,
+    k: int = 1,
 ) -> None:
     """Rótulo como el del Volcán: letras gordas con relieve, borde grueso, sombra y halo.
 
     El relleno es un degradado de varias paradas (`stops`) con vetas encima, un filo
-    de color (`rim`) entre el borde y la letra y un brillo en el tercio de arriba.
+    de color (`rim`) entre el borde y la letra y un brillo en el tercio de arriba. `k` es la
+    escala de la imagen, como en `_title`.
     """
+    size *= k
     font = _title_font(fonts, "luckiest-guy.woff", size)
-    cx, cy = WIDTH / 2, TITLE_Y + TITLE_H / 2 + 4 + dy
+    cx, cy = WIDTH * k / 2, (TITLE_Y + TITLE_H / 2 + 4 + dy) * k
     canvas = image.size
 
     def stamp(offset: float, width: int, fill: tuple[int, ...]) -> Image.Image:
@@ -1707,12 +1726,14 @@ def _stone_title(
         return layer
 
     image.alpha_composite(
-        stamp(0, 8, style.title_glow + (255,)).filter(ImageFilter.GaussianBlur(7))
+        stamp(0, 8 * k, style.title_glow + (255,)).filter(ImageFilter.GaussianBlur(7 * k))
     )
-    image.alpha_composite(stamp(7, 8, (0, 0, 0, 170)).filter(ImageFilter.GaussianBlur(1.5)))
-    image.alpha_composite(stamp(3, 7, edge + (255,)))
+    image.alpha_composite(
+        stamp(7 * k, 8 * k, (0, 0, 0, 170)).filter(ImageFilter.GaussianBlur(1.5 * k))
+    )
+    image.alpha_composite(stamp(3 * k, 7 * k, edge + (255,)))
     if rim is not None:
-        image.alpha_composite(stamp(0, 3, rim + (255,)))
+        image.alpha_composite(stamp(0, 3 * k, rim + (255,)))
     mask = Image.new("L", canvas, 0)
     ImageDraw.Draw(mask).text((cx, cy), text, font=font, anchor="mm", fill=255)
     top, bottom = int(cy - size * 0.72), int(cy + size * 0.5)
@@ -1727,41 +1748,42 @@ def _stone_title(
         _veins(
             canvas,
             rng,
-            (int(cx - size * 1.9), top + 4, int(cx + size * 1.9), bottom - 8),
+            (int(cx - size * 1.9), top + 4 * k, int(cx + size * 1.9), bottom - 8 * k),
             11,
             vein_colors,
+            k,
         )  # fmt: skip
     )
     image.paste(fill, (0, 0), mask)
     # Brillo arriba y una línea de luz en el borde de abajo de cada letra, para el relieve.
     shine = Image.new("L", canvas, 0)
-    ImageDraw.Draw(shine).rectangle((0, top, WIDTH, top + (bottom - top) * 0.4), fill=96)
+    ImageDraw.Draw(shine).rectangle((0, top, WIDTH * k, top + (bottom - top) * 0.4), fill=96)
     image.paste(Image.new("RGBA", canvas, WHITE + (255,)), (0, 0), ImageChops.multiply(mask, shine))
-    low = ImageChops.subtract(mask, ImageChops.offset(mask, 0, -3))
+    low = ImageChops.subtract(mask, ImageChops.offset(mask, 0, -3 * k))
     image.paste(
         Image.new("RGBA", canvas, (0, 0, 0, 255)), (0, 0), low.point(lambda v: v * 70 // 255)
     )
 
 
-def _mine_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
+def _mine_title(image: Image.Image, text: str, style: Style, fonts: Path, k: int = 1) -> None:
     """«MINA»: letras de oro con vetas y brillo, borde de madera oscura y filo de cobre."""
     _stone_title(
         image, text, style, fonts,
         stops=((0.0, (255, 252, 190)), (0.45, (255, 205, 60)), (1.0, (196, 104, 10))),
         edge=(38, 20, 8), rim=(150, 78, 20),
         vein_colors=((170, 96, 10, 200), (255, 255, 220, 190), (210, 130, 20, 170)),
-        seed="mina-rotulo", size=58, dy=2,
+        seed="mina-rotulo", size=58, dy=2, k=k,
     )  # fmt: skip
 
 
-def _olympus_title(image: Image.Image, text: str, style: Style, fonts: Path) -> None:
+def _olympus_title(image: Image.Image, text: str, style: Style, fonts: Path, k: int = 1) -> None:
     """«OLIMPO»: letras de mármol con vetas, borde azul noche y filo dorado."""
     _stone_title(
         image, text, style, fonts,
         stops=((0.0, (255, 255, 255)), (0.55, (226, 234, 250)), (1.0, (150, 170, 214))),
         edge=(10, 20, 70), rim=(255, 206, 80),
         vein_colors=((120, 140, 190, 120), (170, 186, 224, 130), (96, 112, 170, 100)),
-        seed="olimpo-rotulo", size=52, dy=1,
+        seed="olimpo-rotulo", size=52, dy=1, k=k,
     )  # fmt: skip
 
 
@@ -1781,12 +1803,13 @@ def rad_gradient(size: tuple[int, int], inner: tuple, outer: tuple) -> Image.Ima
     return Image.fromarray((a + (b - a) * t).astype(np.uint8), "RGB").convert("RGBA")
 
 
-def _cell_tile(style: Style, *, empty: bool) -> Image.Image:
+def _cell_tile(style: Style, *, empty: bool, big: bool = False) -> Image.Image:
     """Fondo de una casilla según el material de la máquina (llena o vacía en el bonus).
 
     `"reel"` es un rodillo de casino: un degradado con los colores de la máquina
     (`cell_full`, `cell_empty`) que oscurece hacia abajo, sin bordes marcados,
-    para que cada columna parezca una tira continua.
+    para que cada columna parezca una tira continua. Con `big`, al doble (para la
+    escena de Node).
     """
     if style.cells != "reel":
         raise ValueError(f"Material de casilla desconocido: {style.cells}")
@@ -1801,7 +1824,14 @@ def _cell_tile(style: Style, *, empty: bool) -> Image.Image:
     ImageDraw.Draw(tile).rounded_rectangle(
         (0, 0, size - 1, size - 1), radius=3 * S, outline=rim, width=S
     )
-    return tile.resize((CELL, CELL), Image.Resampling.LANCZOS)
+    return tile if big else tile.resize((CELL, CELL), Image.Resampling.LANCZOS)
+
+
+def cell_tile_png(theme: str, *, empty: bool) -> bytes:
+    """PNG de la casilla de `theme` al doble (llena o vacía), para la escena de Node."""
+    buffer = io.BytesIO()
+    _cell_tile(STYLES[theme], empty=empty, big=True).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _shown(landing) -> Cell:

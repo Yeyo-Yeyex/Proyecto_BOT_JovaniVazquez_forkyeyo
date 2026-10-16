@@ -98,6 +98,7 @@ from bot.services.hold_win import (
     reset_won_jackpots,
     spin_base,
     to_amount,
+    win_tier,
 )
 from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Media, Panel
 from bot.services.levels import TIMEZONE
@@ -126,8 +127,6 @@ BONUS_INTRO_PAUSE = 1.5
 AUTO_SPINS = 10
 #: A partir de cuántas veces la apuesta se anuncia el premio en el canal.
 SHOUT_MULTIPLIER = 50
-#: Cartel de premio grande, mega y épico (veces la apuesta).
-BIG_WIN, MEGA_WIN, EPIC_WIN = 10, 25, 50
 
 GIF_NAME = "botes.gif"
 PNG_NAME = "botes.png"
@@ -224,18 +223,6 @@ BONUS_INTRO = {
     "olimpo": "Truenan los cielos. Zeus reparte monedas y la troika mira desde abajo "
     "sin atreverse a pedirlas.",
 }
-
-
-def win_tier(points: int) -> int:
-    """0 normal, 1 grande, 2 mega o 3 épico, según las veces la apuesta."""
-    times = points / 100
-    if times >= EPIC_WIN:
-        return 3
-    if times >= MEGA_WIN:
-        return 2
-    if times >= BIG_WIN:
-        return 1
-    return 0
 
 
 def bonus_name(theme: Theme, kind: str) -> str:
