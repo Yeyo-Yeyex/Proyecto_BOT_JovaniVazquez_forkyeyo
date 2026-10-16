@@ -87,6 +87,7 @@ from bot.services.housing_catalog import (
     ISLANDS,
     KINDS,
     RENT_LEVELS,
+    TENANT_BY_KEY,
     Listing,
     listings_of,
 )
@@ -1563,8 +1564,12 @@ class Pisos(commands.Cog):
                     who: tuple[int, ...] = (item.user_id,) if item.user_id is not None else ()
                 else:
                     who = run.owners.get(item.listing, ())
+                tenant = TENANT_BY_KEY.get(item.tenant or "")
+                business = item.kind == "firma" and tenant is not None and bool(tenant.kinds)
                 for member in who:
                     events.setdefault(member, []).append(item.kind)
+                    if business:
+                        events[member].append("firma_negocio")
             for member in set(run.mortgage_unpaid):
                 events.setdefault(member, []).append("cuota_impagada")
             for member in run.aval_executions:
@@ -1683,6 +1688,11 @@ class Pisos(commands.Cog):
                 islands=len({BARRIO_BY_KEY[market.listing(h.listing).barrio].island for h in mine}),  # type: ignore[union-attr]
                 balance_after=balance,
                 when=when,
+                tensed=rules.tense(deal.index_after) and not rules.tense(deal.index_before),
+                barrio_whole=all(
+                    market.shares_of(item.key).get(member.id) == rules.SHARES
+                    for item in listings_of(listing.barrio)
+                ),
             )
         else:
             delta = housing_sale_stats(

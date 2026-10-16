@@ -105,7 +105,7 @@ VPO_PREFIX = "vpo:"
 #: partir de la cual un inmueble es un «chollo»; índice del barrio desde el que hay «burbuja» y
 #: por debajo del cual el precio es «de fondo buitre».
 CHOLLO_YIELD = 0.08
-BURBUJA_INDEX = 1.3
+BURBUJA_INDEX = 1.08
 BUITRE_INDEX = 0.88
 
 

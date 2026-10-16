@@ -252,6 +252,19 @@ def test_comprar_sube_el_indice_segun_lo_que_pesa_y_vender_lo_deja_igual() -> No
     assert rules.index_after(rules.INDEX_MAX, BAJO, 100, bought=True) == rules.INDEX_MAX
 
 
+def test_el_indice_tiende_a_lo_que_tienen_comprado_los_miembros_y_no_a_uno() -> None:
+    """Revisión 7.22: antes volvía a 1 y no pasaba de un ±1,5 %; la zona tensionada no saltaba."""
+    barrio = listings_of("schamann")
+    whole = rules.ownership_level((item, 100) for item in barrio)
+    assert 1 + rules.INDEX_STEP <= whole < 1 + rules.INDEX_STEP * 1.1
+    assert rules.ownership_level((item, 0) for item in barrio) == 1.0
+    half = rules.ownership_level((item, 60) for item in barrio)
+    assert rules.tense(half) and not rules.tense(rules.ownership_level((i, 40) for i in barrio))
+    assert 1.0 < rules.index_next_day(1.0, whole) < whole
+    assert rules.index_next_day(whole, whole) == whole
+    assert rules.index_next_day(1.2) < 1.2  # sin nada comprado, vuelve a 1
+
+
 def test_inflar_el_barrio_comprando_y_vendiendo_nunca_sale_a_cuenta() -> None:
     """Revisión: con el índice viejo, mil idas y vueltas de una participación lo subían un 30 %.
 
@@ -413,6 +426,22 @@ async def test_un_dia_alquilado_reparte_la_renta_y_hacienda_cobra_lo_suyo(tmp_pa
     breakdown = await economy.tax_breakdown(GUILD)
     assert breakdown[ANA]["ibi"] > 0 and "itp_pisos" in breakdown[ANA]
     assert breakdown[ANA]["irpf_alquiler"] > 0
+
+
+async def test_un_barrio_comprado_no_se_abarata_solo_al_pasar_los_dias(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    bought = (await service.market(GUILD)).index("schamann")
+    clock.now = at(15).timestamp()
+
+    await service.close_days(GUILD)
+
+    market = await service.market(GUILD)
+    assert bought > 1.0
+    assert market.index("schamann") == pytest.approx(bought)
+    assert market.index_level("schamann") == pytest.approx(bought)
 
 
 async def test_un_piso_vacio_paga_sus_recibos_del_monedero(tmp_path: Path) -> None:

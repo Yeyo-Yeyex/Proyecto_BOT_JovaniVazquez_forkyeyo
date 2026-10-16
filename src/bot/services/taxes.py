@@ -250,10 +250,13 @@ def wealth_tax(net_worth: int) -> int:
 
 #: Límite conjunto con el IRPF (art. 31 de la Ley 19/1991): la cuota del Patrimonio y la
 #: del IRPF juntas no pueden pasar del 60 % de la base imponible del IRPF. Si se pasan,
-#: el Patrimonio baja, pero como mucho un 80 %: siempre se paga al menos el 20 %. No
-#: cuenta la parte del Patrimonio de lo que no puede dar rentas (los objetos de la tienda).
+#: el Patrimonio baja. La ley deja bajarlo hasta un 80 %; aquí, como mucho un 50 %
+#: (decisión del proyecto, 7.22): la renta de los pisos llega al IRPF a un tercio de su
+#: escala (`housing.rent_to_fiscal`) y con su reducción del 50 %, así que el casero salía
+#: siempre por el suelo y pagaba un 20 % mientras el ahorrador de nómina lo pagaba entero.
+#: No cuenta la parte del Patrimonio de lo que no puede dar rentas (los objetos de la tienda).
 WEALTH_JOINT_LIMIT = 0.60
-WEALTH_MAX_REDUCTION = 0.80
+WEALTH_MAX_REDUCTION = 0.50
 
 #: Impuesto Temporal de Solidaridad de las Grandes Fortunas (art. 3 de la Ley 38/2022):
 #: mismo patrimonio neto y mismo mínimo exento que el Patrimonio, pero la escala empieza

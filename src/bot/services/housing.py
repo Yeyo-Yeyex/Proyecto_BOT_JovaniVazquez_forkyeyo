@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
@@ -92,12 +93,14 @@ RENT_REDUCTION = 0.5
 #: Lo que se mueve el índice del barrio si se compra (o se vende) todo el barrio de
 #: golpe. Cada operación lo mueve en proporción a lo que pesa en el barrio
 #: (`index_after`): comprar el trastero apenas lo toca y comprar la villa, mucho.
-#: Comprar encarece el barrio a los demás. Como es menor que lo que cuesta una ida y
-#: vuelta (ITP, notaría y agencia, ~11 %), inflarlo comprando y vendiendo nunca sale a
-#: cuenta.
-INDEX_STEP = 0.015
-#: Cada día el índice recorre esta parte de lo que le falta para volver a 1.
-INDEX_REVERSION = 0.01
+#: Comprar encarece el barrio a los demás. Tiene que quedarse por debajo de lo que cuesta
+#: una ida y vuelta (ITP, notaría y agencia, ~11 %): si no, comprar algo pequeño para
+#: inflar lo que ya se tiene en el barrio saldría a cuenta. Hasta la 7.22 era un 1,5 % y
+#: el índice no se movía: la zona tensionada y el gran tenedor no saltaban nunca.
+INDEX_STEP = 0.10
+#: Cada día el índice recorre esta parte de lo que le falta para llegar a lo que tienen
+#: comprado los miembros (`ownership_level`): media vida de unas tres semanas.
+INDEX_REVERSION = 0.03
 INDEX_MIN = 0.7
 INDEX_MAX = 2.5
 
@@ -377,9 +380,25 @@ def index_after(index: float, listing: Listing, shares: int, *, bought: bool) ->
     return min(INDEX_MAX, max(INDEX_MIN, moved))
 
 
-def index_next_day(index: float) -> float:
-    """El índice de mañana: vuelve poco a poco a 1 si nadie compra ni vende."""
-    return index + (1.0 - index) * INDEX_REVERSION
+def ownership_level(holdings: Iterable[tuple[Listing, int]]) -> float:
+    """El índice al que tiende un barrio: el de lo que tienen comprado los miembros.
+
+    Es el mismo producto que deja `index_after` comprando cada participación: si los
+    miembros tienen medio barrio, se queda alrededor de un 5 % por encima y no vuelve a 1
+    mientras lo sigan teniendo. Así un barrio acaparado se encarece y se tensiona.
+
+    Args:
+        holdings: `(inmueble, participaciones con dueño)` de cada inmueble del barrio.
+    """
+    level = 1.0
+    for listing, shares in holdings:
+        level *= 1 + INDEX_STEP * barrio_weight(listing) * shares / SHARES
+    return min(INDEX_MAX, max(INDEX_MIN, level))
+
+
+def index_next_day(index: float, level: float = 1.0) -> float:
+    """El índice de mañana: va poco a poco hacia `level` (`ownership_level`)."""
+    return index + (level - index) * INDEX_REVERSION
 
 
 # -- El día a día de un inmueble --------------------------------------------------------
@@ -945,8 +964,9 @@ VACATION_IGIC = 0.07
 #: Gran tenedor en zona tensionada: 5 viviendas o más (art. 3.k de la Ley 12/2023).
 BIG_HOLDER_HOMES = 5
 #: Un barrio está tensionado cuando su índice pasa de este valor (los precios subieron
-#: un 10 %): allí el gran tenedor no puede pedir más que la renta de referencia (art. 17.7).
-TENSE_INDEX = 1.10
+#: un 6 %, más o menos lo que pasa cuando los miembros tienen el 60 % del barrio): allí
+#: el gran tenedor no puede pedir más que la renta de referencia (art. 17.7).
+TENSE_INDEX = 1.06
 #: Niveles que el gran tenedor no puede pedir en zona tensionada.
 CAPPED_LEVELS = frozenset({"mercado", "nomadas", VACATION_LEVEL})
 #: Recargo del IBI de la vivienda vacía más de 2 años (24 días) de quien tiene 4 o más

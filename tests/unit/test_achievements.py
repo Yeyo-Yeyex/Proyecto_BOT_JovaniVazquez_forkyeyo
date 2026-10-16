@@ -60,6 +60,7 @@ from bot.services.achievements import (
     PISOS_KIND_PREFIX,
     PISOS_KINDS_STAT,
     PISOS_LEVEL_PREFIX,
+    PISOS_THEMES_STAT,
     POKER_MADE_PREFIX,
     PORRA_GAME_PREFIX,
     PORRA_GAMES,
@@ -81,6 +82,7 @@ from bot.services.achievements import (
     blackjack_stats,
     casino_stats,
     group_sections,
+    housing_purchase_stats,
     is_laugh,
     menu_entries,
     message_stats,
@@ -93,6 +95,7 @@ from bot.services.achievements import (
     slots_autoplay_stats,
     slots_stats,
     total_reward,
+    with_derived,
 )
 from bot.services.allatu import TABLES
 from bot.services.autoplay import StopReason
@@ -140,7 +143,7 @@ HOUSING_EVENT_KEYS = (
     "firma", "renueva", "se_va", "impago", "paga", "okupa", "desahucio",
     "cuota_impagada", "ejecucion", "sorteo_vpo", "vpo_caducada", "partida_agotada",
     "tope_ley", "recargo_ibi", "oferta_fondo", "ejecucion_aval", "fianza_devuelta",
-    "fianza_incautada",
+    "fianza_incautada", "firma_negocio",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -245,7 +248,8 @@ PRODUCED_STATS = {
     "pisos_night", "pisos_canarias_day", "pisos_broke", "pisos_buy_max", "pisos_holdings_max",
     "pisos_whole_max", "pisos_islands_max", "pisos_sold", "pisos_sold_y", "pisos_sold_whole",
     "pisos_flip", "pisos_loss", "pisos_arrears_paid", "pisos_gain_max", "pisos_rent",
-    "pisos_rent_days", "pisos_ibi", PISOS_BARRIOS_STAT, PISOS_KINDS_STAT,
+    "pisos_rent_days", "pisos_ibi", PISOS_BARRIOS_STAT, PISOS_KINDS_STAT, PISOS_THEMES_STAT,
+    "pisos_tensed", "pisos_barrio_whole",
     *(f"{PISOS_KIND_PREFIX}{kind}" for kind in HOUSING_KINDS),
     *(f"{PISOS_BARRIO_PREFIX}{barrio}" for barrio in HOUSING_BARRIOS),
     *(f"{PISOS_LEVEL_PREFIX}{level}" for level in HOUSING_LEVELS),
@@ -1648,3 +1652,17 @@ def test_los_logros_de_auto_del_pachinko_no_chocan_con_los_de_la_tragaperras() -
     assert all(a.category == "pachinko" for a in pachinko)
     secrets = sum(a.secret for a in pachinko)
     assert len(pachinko) / 8 <= secrets <= len(pachinko) / 3  # alrededor de uno de cada seis
+
+
+def test_pisos_cuenta_los_tipos_de_barrio_la_zona_tensionada_y_el_barrio_entero() -> None:
+    stats = {f"{PISOS_BARRIO_PREFIX}{key}": 1 for key in ("isleta", "sanandres", "taco")}
+    assert with_derived(stats)[PISOS_THEMES_STAT] == 2  # marinero y obrero
+    every = {f"{PISOS_BARRIO_PREFIX}{key}": 1 for key in HOUSING_BARRIOS}
+    assert with_derived(every)[PISOS_THEMES_STAT] == 7
+    delta = housing_purchase_stats(
+        kind="cueva", barrio="tafira", total=1, itp=0, shares=1, shares_now=1, holdings=1,
+        whole=0, islands=1, balance_after=5_000, when=datetime(2026, 10, 16, 12, tzinfo=TIMEZONE),
+        tensed=True, barrio_whole=True,
+    )  # fmt: skip
+    assert delta.add["pisos_tensed"] == delta.add["pisos_barrio_whole"] == 1
+    assert delta.add[f"{PISOS_KIND_PREFIX}cueva"] == 1
