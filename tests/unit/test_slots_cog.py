@@ -86,13 +86,27 @@ SEVENS = stops_where(lambda s: s.kind == Kind.THREE and s.symbol == SEVEN and no
 
 
 class FakeRenderer:
-    """Devuelve bytes fijos: las pruebas no necesitan dibujar los rodillos."""
+    """Devuelve bytes fijos y apunta lo que se le pide: las pruebas no miran la imagen."""
 
-    def render(self, spin, *, turbo: bool = False, won: int = 0, stake: int = 0) -> SlotsMedia:  # noqa: ANN001
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def spin(
+        self, spin, *, turbo: bool = False, won: int = 0, stake: int = 0, respin: bool = False
+    ) -> SlotsMedia:  # noqa: ANN001, E501
+        self.calls.append(("spin", {"stops": spin.stops, "won": won, "respin": respin}))
         return SlotsMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
 
-    def still_png(self, stops, *, highlight: bool = False) -> bytes:  # noqa: ANN001
+    async def still(self, spin, *, highlight: bool | None = None) -> bytes:  # noqa: ANN001
+        self.calls.append(("still", {"stops": spin.stops, "highlight": highlight}))
         return b"STILL"
+
+    async def double(self, **kwargs) -> SlotsMedia | None:  # noqa: ANN003
+        self.calls.append(("double", kwargs))
+        return SlotsMedia(gif=b"DOUBLE", png=b"CARD", seconds=0.0)
+
+    async def close(self) -> None:
+        return None
 
 
 class RiggedMachine(SlotMachine):
@@ -1123,3 +1137,128 @@ def test_tragas_lee_la_maquina_y_la_cantidad_en_cualquier_orden() -> None:
     assert parse_machine_args(("Mina", "50")) == ("mina", "50")
     assert parse_machine_args(("olimpo",)) == ("olimpo", None)
     assert {c.value for c in MACHINE_CHOICES} >= {CLASSIC, "volcan", "mina", "olimpo"}
+
+
+# -- Doble o nada pintado y pintar antes del clic ------------------------------------------
+
+
+def renderer_calls(cog: Slots, name: str, since: int = 0) -> list[dict]:
+    return [kw for call, kw in cog.renderer.calls[since:] if call == name]
+
+
+async def test_el_doble_o_nada_gira_la_carta_y_la_deja_destapada(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES], coin=lambda: False)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    interaction = make_interaction()
+
+    await view._double_black(interaction)
+
+    edits = interaction.edit_original_response.await_args_list
+    assert attachment_names(edits[0]) == [GIF_NAME]
+    assert "Doble o nada" in edits[0].kwargs["embed"].description
+    assert attachment_names(edits[-1]) == [PNG_NAME]
+    (call,) = renderer_calls(cog, "double")
+    assert call["fresh"] and call["stops"] == GRAPES
+    assert (call["pick"], call["won"], call["history"]) == ("black", False, [])
+    # Pierde eligiendo negro: la carta es roja y queda arriba, en las últimas cartas.
+    assert view.double_history in (["H"], ["D"])
+
+
+async def test_la_segunda_carta_no_vuelve_a_tapar_los_rodillos(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES], coin=lambda: True)
+    view = make_view(cog)
+    await view.play(make_interaction())
+    await view._double_red(make_interaction())
+    await view._double_red(make_interaction())
+
+    first, second = renderer_calls(cog, "double")
+    assert (first["fresh"], second["fresh"]) == (True, False)
+    assert second["history"] == view.double_history[:1]
+    # Una tirada nueva vuelve a enseñar los rodillos.
+    await view.play(make_interaction())
+    assert not view.gamble_shown
+
+
+async def test_el_regiro_solo_mueve_el_tercer_rodillo(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [NEAR_SEVEN, LOSS])
+    view = make_view(cog)
+    await view.play(make_interaction())
+    assert view.respin_offer is not None
+
+    await view._respin(make_interaction())
+
+    assert renderer_calls(cog, "spin")[-1]["respin"] is True
+
+
+async def test_la_proxima_tirada_se_sortea_y_se_pinta_antes_del_clic(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES])
+    cog.ahead = True
+    view = make_view(cog)
+    view.prepare()
+    await view._painting
+    # Lo primero que se pinta es Tirar; como paga, también ½, ×2 y All-in.
+    painted = renderer_calls(cog, "spin")
+    assert painted[0]["stops"] == GRAPES
+    assert len({call["won"] for call in painted if call["stops"] == GRAPES}) == 4
+    count = len(cog.renderer.calls)
+
+    await view.play(make_interaction())
+
+    # Se juega la tirada sorteada y su GIF no se vuelve a pintar.
+    assert view.last_stops == GRAPES
+    assert not [c for c in renderer_calls(cog, "spin", count) if c["stops"] == GRAPES]
+
+
+async def test_rojo_y_negro_se_pintan_antes_del_clic(tmp_path: Path) -> None:
+    flips = iter([False])  # una sola moneda: la sorteada por adelantado
+    cog = await make_cog(tmp_path, [GRAPES], coin=lambda: next(flips))
+    view = make_view(cog)
+    await view.play(make_interaction())
+    cog.ahead = True
+    view.prepare()
+    await view._painting
+    doubles = renderer_calls(cog, "double")
+    assert {d["pick"] for d in doubles} == {"red", "black"}
+    assert all(d["won"] is False for d in doubles)
+    count = len(cog.renderer.calls)
+
+    await view._double_red(make_interaction())
+
+    assert view.double_offer is None
+    assert not renderer_calls(cog, "double", count)
+
+
+async def test_la_rafaga_juega_sus_tiradas_y_su_imagen_pintadas_antes(tmp_path: Path) -> None:
+    # La primera es la de Tirar; las diez siguientes, las de la Ráfaga (acaba en 🍒).
+    cog = await make_cog(tmp_path, [LOSS] * BURST_SPINS + [CHERRY])
+    cog.ahead = True
+    view = make_view(cog)
+    view.prepare()
+    await view._painting
+    assert [c["stops"] for c in renderer_calls(cog, "still")] == [CHERRY]
+    count = len(cog.renderer.calls)
+
+    await view._burst(make_interaction())
+
+    assert view.session_spins == BURST_SPINS
+    assert view.last_stops == CHERRY
+    # Después solo se pinta la Ráfaga siguiente, no esta otra vez.
+    assert not [c for c in renderer_calls(cog, "still", count) if c["stops"] == CHERRY]
+
+
+async def test_sin_pintar_por_adelantado_no_se_sortea_nada_de_mas(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, [GRAPES, CHERRY])
+    view = make_view(cog)
+    view.prepare()
+    assert view._painting is None and view._upcoming is None
+    await view.play(make_interaction())
+    assert view.last_stops == GRAPES
+
+
+def test_un_gif_pesado_espera_un_poco_mas_antes_del_png() -> None:
+    light = SlotsMedia(gif=b"x" * 1024, png=b"", seconds=2.0)
+    heavy = SlotsMedia(gif=b"x" * 2**21, png=b"", seconds=2.0)
+    assert slots_module.reveal_delay(heavy) == pytest.approx(
+        slots_module.reveal_delay(light) + 2 * slots_module.REVEAL_SECONDS_PER_MB, abs=0.01
+    )

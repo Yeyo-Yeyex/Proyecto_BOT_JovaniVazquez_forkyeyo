@@ -421,6 +421,11 @@ PERFIL_SECTIONS = (
 SECRET_STAKES = (1, 23, 33, 44, 47, 69, 87, 176, 600, 777, 1975, 1978)
 #: Prefijo de los plenos acertados en cada número de la ruleta (`roulette_hit_17`).
 ROULETTE_HIT_PREFIX = "roulette_hit_"
+#: Contador de cada palo que ha salido en el doble o nada de la tragaperras
+#: (`slots_card_H`…) y cuántos palos distintos (`with_derived`).
+SLOTS_CARD_PREFIX = "slots_card_"
+SLOTS_CARD_SUITS_STAT = "slots_card_suits"
+SLOTS_CARD_SUITS = ("H", "D", "S", "C")
 #: Estadísticas virtuales: números distintos acertados a pleno y el más repetido.
 ROULETTE_NUMBERS_STAT = "roulette_numbers_hit"
 ROULETTE_FAVOURITE_STAT = "roulette_hit_max"
@@ -2801,6 +2806,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_scatter_tease", [
         (10, "tease_10", "Te faltó una entrada", "Saca dos 🎟️ y no el tercero 10 veces.", C, True),
     ])  # fmt: skip
+    # Camino del bote: 🃏 🃏 en la línea y la máquina a oscuras esperando el tercero (1 de
+    # cada ~540 tiradas, y solo cuenta si se ve: sin turbo). Unos 9 días el primero.
+    a += _tiers("slots", "slots_jackpot_tease", [
+        (1, "blackout_1", "Apagón",
+         "Ve la máquina a oscuras esperando el tercer 🃏… y que no llegue. Ni Red Eléctrica "
+         "lo vio venir.", R),
+        (10, "blackout_10", "Sin luz y sin bote",
+         "Diez apagones esperando el tercer 🃏. Ya puedes ir comprando velas.", L),
+    ])  # fmt: skip
+    # El símbolo gordo cruza la línea en el frenazo lento y se pasa (1 de cada ~9
+    # tiradas; solo cuenta si se ve).
+    a += _tiers("slots", "slots_slipped", [
+        (10, "slipped_10", "Se pasó de frenada",
+         "Ve el símbolo gordo cruzar la línea en el frenazo lento y pasarse, 10 veces.", C),
+        (300, "slipped_300", "Ni con el freno de mano",
+         "Ve 300 veces el símbolo gordo pasarse de la línea en el último momento.", E),
+    ])  # fmt: skip
     a += _tiers("slots", "slots_free_triggers", [
         (1, "free_1", "Entrada VIP", "Consigue giros gratis.", C),
         (10, "free_10", "Pase de temporada del Bernabéu de Florentino",
@@ -3054,6 +3076,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (50_000, "double_ouch_50k", "Y se fue en un rojo",
          "Pierde 50.000 Y$ o más en un solo doble.", E, True),
     ], unit="money")  # fmt: skip
+    # La carta del doble o nada: su palo y las cartas seguidas del mismo palo en la fila
+    # de las últimas cartas de la máquina. Rarezas de `docs/auditoria_logros.py`: el color
+    # de cinco, unos 12 días; la pica en Flandes (los cinco dobles y ♠), unos 140.
+    a += _tiers("slots", SLOTS_CARD_SUITS_STAT, [
+        (4, "card_suits", "Los cuatro palos", "Saca los cuatro palos (♥ ♦ ♠ ♣) en el doble o nada.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_heart_loss", [
+        (1, "card_heart", "Corazón partío",
+         "Pierde un doble o nada con un ♥ boca arriba. ¿Quién te va a entregar sus emociones?",
+         C),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_card_run", [
+        (3, "card_run_3", "De tal palo, tal astilla",
+         "Tres cartas seguidas del mismo palo en el doble o nada.", C),
+        (5, "card_run_5", "¡Color!",
+         "Cinco cartas seguidas del mismo palo en el doble o nada: un color de póker, "
+         "sin póker.", R, True),
+    ])  # fmt: skip
+    a += _tiers("slots", "slots_spade_five", [
+        (1, "card_spade_five", "Una pica en Flandes",
+         "Gana el quinto doble seguido con una ♠ boca arriba.", L),
+    ])  # fmt: skip
 
     # Bote misterioso: cada jugador se lo lleva más o menos cada 15.000 tiradas suyas
     # (depende del tope y de cuánto juegue el servidor): unos 75 días, como el 🃏🃏🃏.
@@ -13520,6 +13565,7 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     tenía el miembro en el historial importado antes de que existieran.
     `img_effects_tried` cuenta los efectos de imagen distintos usados;
     `roulette_numbers_hit` y `roulette_hit_max`, los plenos por número;
+    `slots_card_suits`, los palos distintos de la carta del doble o nada;
     `shop_use_kinds`, los objetos distintos usados de la tienda;
     `shop_aisles`, los pasillos del colmado en los que ha comprado;
     `perfil_sections`, las secciones distintas de `perfil` que ha mirado, y
@@ -13541,6 +13587,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[ROULETTE_NUMBERS_STAT] = len(hits)
     full[ROULETTE_FAVOURITE_STAT] = max(hits, default=0)
+    full[SLOTS_CARD_SUITS_STAT] = sum(
+        1 for suit in SLOTS_CARD_SUITS if stats.get(f"{SLOTS_CARD_PREFIX}{suit}", 0) > 0
+    )
     full[SHOP_USE_KINDS_STAT] = sum(
         1
         for stat, value in stats.items()
@@ -14731,6 +14780,15 @@ def slots_stats(
     bump("slots_near_miss", spin.near_miss)
     bump("slots_anticipation", spin.anticipation and not turbo)
     bump("slots_scatter_tease", spin.scatters == 2)
+    # Lo que solo se ve con animación: la máquina a oscuras camino del bote y el símbolo
+    # gordo que cruza la línea en el frenazo lento (los símbolos bajan: si se queda
+    # debajo, ha pasado por ella).
+    seen = not turbo
+    bump(
+        "slots_jackpot_tease",
+        seen and spin.line[:2] == (SLOT_WILD, SLOT_WILD) and not spin.is_jackpot,
+    )
+    bump("slots_slipped", seen and spin.teaser is not None and spin.grid[2][2] == spin.teaser)
     bump("slots_free_triggers", spin.triggers_free_spins)
     bump("slots_free_spins", free)
     bump("slots_free_retriggers", free and spin.triggers_free_spins)
@@ -14792,7 +14850,9 @@ def slots_respin_stats(*, price: int, payout: int, jackpot: int, chain: int) -> 
     return delta
 
 
-def slots_double_stats(*, amount: int, won: bool, chain: int) -> StatDelta:
+def slots_double_stats(
+    *, amount: int, won: bool, chain: int, suit: str | None = None, run: int = 0
+) -> StatDelta:
     """Contadores de un doble o nada (rojo o negro) tras un premio.
 
     Args:
@@ -14800,8 +14860,18 @@ def slots_double_stats(*, amount: int, won: bool, chain: int) -> StatDelta:
         won: Si ha acertado el color.
         chain: Dobles ganados seguidos tras este si ha ganado; si ha perdido, los
             que llevaba ganados antes de este.
+        suit: Palo de la carta que ha salido (`H`, `D`, `S` o `C`; ver
+            `slots_scene.double_suit`), si se ha pintado.
+        run: Cartas seguidas del mismo palo en la fila de la máquina, contando esta.
     """
     delta = StatDelta(add={"slots_doubles": 1})
+    if suit is not None:
+        delta.add[f"{SLOTS_CARD_PREFIX}{suit}"] = 1
+        delta.peak["slots_card_run"] = run
+        if not won and suit == "H":
+            delta.add["slots_heart_loss"] = 1
+        if won and chain >= SLOTS_DOUBLE_MAX and suit == "S":
+            delta.add["slots_spade_five"] = 1
     if won:
         delta.add["slots_double_wins"] = 1
         delta.peak["slots_double_chain"] = chain

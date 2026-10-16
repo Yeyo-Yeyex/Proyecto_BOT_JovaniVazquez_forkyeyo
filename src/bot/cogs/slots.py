@@ -2,7 +2,7 @@
 
 Cada jugador abre su propia máquina, un mensaje con botones que solo él puede
 pulsar. Las reglas (rodillos, premios, giros gratis, máquina caliente) viven
-en `bot.services.slots`; el dibujo, en `bot.services.slots_render`; el dinero,
+en `bot.services.slots`; el dibujo, en `bot.services.slots_scene`; el dinero,
 en `EconomyService.play_slots`. Este cog solo une las piezas y pinta.
 
 Botones:
@@ -23,7 +23,8 @@ Botones:
   solo ese rodillo. Se encadena mientras siga quedándose a uno.
 - 🔴 **Rojo** / ⚫ **Negro**: doble o nada con lo que acaba de cobrar, a cara o
   cruz, hasta `DOUBLE_MAX` veces seguidas. Elegir color no cambia nada: es la
-  ilusión de control de las máquinas de bar.
+  ilusión de control de las máquinas de bar. Se ve como en ellas: una carta
+  boca abajo que se gira y enseña un palo rojo o negro.
 - 🎁 **Giro del día**: un giro gratis al día cuya apuesta sube con la racha de
   días seguidos (`daily_stake`).
 
@@ -32,8 +33,18 @@ cartel de una máquina de bar; el bote con su tope («cae antes de 50.000») y
 las tiradas que lleva el servidor sin bote; y los premios cobrados en la
 sesión, en bruto. El neto de verdad sale en el ticket al cerrar la máquina.
 
-La animación es un GIF que se monta en cada tirada (~0,1 s de CPU fuera del
-event loop y ~150 KB). Al acabar se cambia por el PNG final, como en la ruleta.
+La animación es un GIF con su ritmo (corta si no hay nada en juego, lenta si
+el tercer rodillo puede dar algo gordo; ver `bot.services.slots_scene`). Al
+acabar se cambia por el PNG final, como en la ruleta.
+
+Se pinta antes del clic (`SlotMachineView.prepare`): la próxima tirada ya está
+sorteada (`_upcoming`, solo en memoria y nunca a la vista) y mientras se ve la
+tirada actual se pintan las imágenes de cada botón que se puede pulsar: Tirar
+(o el giro gratis), Rojo y Negro, el re-giro, el giro del día, Tirar con la
+apuesta de ½, ×2 y All-in si la próxima paga algo, y la imagen final de una
+Ráfaga. Al pulsar solo queda subirla. Una imagen pintada vale si coincide todo
+lo que la decide (`slots_scene.media_key`); si no (el bote ha cambiado, la
+máquina se ha enfriado), se pinta en el momento.
 
 El calor de la máquina (`bot.services.slots.next_heat`) se guarda por
 miembro en la base de datos (`SlotsRepository`) y se enfría un punto cada diez
@@ -126,7 +137,8 @@ from bot.services.slots import (
     respin_price,
     win_tier,
 )
-from bot.services.slots_render import SlotsMedia, SlotsRenderer
+from bot.services.slots_render import SlotsMedia
+from bot.services.slots_scene import DOUBLE_HISTORY, SlotsScene, double_suit, media_key
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
@@ -144,6 +156,9 @@ DEFAULT_STAKE = 100
 MACHINE_TIMEOUT = 180
 #: Margen tras la animación: el cliente tarda un poco en empezar el GIF.
 REVEAL_MARGIN_SECONDS = 0.4
+#: Y un poco más cuanto más pesa (por MB), para que un móvil lento no se pierda el final
+#: del frenazo: el último fotograma es igual que el PNG, así que esperar de más no se ve.
+REVEAL_SECONDS_PER_MB = 0.4
 #: Tiradas de Ráfaga.
 BURST_SPINS = 10
 #: A partir de cuántas veces la apuesta se anuncia el premio en el canal.
@@ -601,6 +616,18 @@ def spinning_embed(*, owner: str, stake: int, free: bool, hot: bool, pot: int) -
     return embed
 
 
+def double_embed(*, owner: str, amount: int, color: str) -> discord.Embed:
+    """Embed mientras se gira la carta del doble o nada (sin el resultado)."""
+    lines = [
+        "# 🃏 ¡Doble o nada!",
+        f"{COLOR_NAMES[color]} · {format_amount(amount)} → {format_amount(2 * amount)}",
+    ]
+    embed = discord.Embed(title="🎰 Tragaperras", description="\n".join(lines), color=COLOR_SPIN)
+    embed.set_image(url=f"attachment://{GIF_NAME}")
+    embed.set_footer(text=f"Máquina de {owner}")
+    return embed
+
+
 def paytable_embed() -> discord.Embed:
     """Tabla de premios (se manda en privado)."""
     return discord.Embed(
@@ -608,6 +635,11 @@ def paytable_embed() -> discord.Embed:
         description="Solo paga la fila del medio.\n\n" + "\n".join(paytable_lines()),
         color=COLOR_WIN,
     )
+
+
+def reveal_delay(media: SlotsMedia) -> float:
+    """Lo que se espera tras subir el GIF antes de cambiarlo por el PNG final."""
+    return media.seconds + REVEAL_MARGIN_SECONDS + len(media.gif) / 2**20 * REVEAL_SECONDS_PER_MB
 
 
 def parse_stake(amount_text: str | None, balance: int) -> int:
@@ -622,6 +654,8 @@ def parse_stake(amount_text: str | None, balance: int) -> int:
 
 
 EditFn = Callable[..., Awaitable[Any]]
+#: Lo pintado por adelantado de una máquina, por su `media_key` (ver `SlotMachineView`).
+ReadyFn = Callable[[tuple[Any, ...]], "Awaitable[SlotsMedia | None] | None"]
 
 
 # -- Máquina ------------------------------------------------------------------------
@@ -700,6 +734,22 @@ class SlotMachineView(discord.ui.View):
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
         self.autoplay: AutoplaySession | None = None
+        # Pintar antes del clic (`prepare`): lo ya sorteado, que solo vive en memoria y
+        # se gasta al jugarlo, y lo ya pintado (o pintándose) por su `media_key`.
+        self._upcoming: Spin | None = None
+        self._respin_next: tuple[Spin, Spin] | None = None
+        self._coin_next: bool | None = None
+        self._burst_next: list[Spin] | None = None
+        self._ahead: dict[tuple[Any, ...], asyncio.Future[Any]] = {}
+        self._painting: asyncio.Task[None] | None = None
+        # Entre gastar lo sorteado y enseñar la jugada, lo que se ve aún no es lo que
+        # queda: no se pinta nada por adelantado hasta el siguiente `prepare`.
+        self._changing = False
+        # Lo que enseña la imagen: los rodillos de la última tirada y, en el doble o
+        # nada, las últimas cartas y si ya se ve el panel de la carta.
+        self.last_stops: tuple[int, int, int] = (0, 0, 0)
+        self.double_history: list[str] = []
+        self.gamble_shown = False
         self._build_buttons()
 
     # -- Construcción ---------------------------------------------------------------
@@ -916,8 +966,14 @@ class SlotMachineView(discord.ui.View):
             bonus=self.cog.bonus(self.guild_id, self.owner.id).points,
         )
 
-    async def _play_one(self, *, turbo: bool, render: bool = True) -> SlotsPlay:
+    async def _play_one(
+        self, *, turbo: bool, render: bool = True, spin: Spin | None = None
+    ) -> SlotsPlay:
         """Una tirada: gratis si quedan giros gratis, pagada si no.
+
+        Args:
+            spin: Los rodillos ya sorteados (una Ráfaga trae los suyos); por defecto,
+                la próxima tirada sorteada por adelantado, si la hay.
 
         Raises:
             InsufficientFundsError, BalanceLimitError: Como `Slots.play`.
@@ -932,6 +988,8 @@ class SlotMachineView(discord.ui.View):
             turbo=turbo,
             render=render,
             session_spins=self.session_spins + 1,
+            spin=spin if spin is not None else self._take_spin(),
+            ready=self._ready,
         )
         self.session_spins += 1
         if free:
@@ -974,6 +1032,160 @@ class SlotMachineView(discord.ui.View):
         if play.won > 0:
             self.double_offer = (play.won, 0)
 
+    # -- Pintar antes del clic ---------------------------------------------------------
+
+    def _next_spin(self) -> Spin:
+        """La próxima tirada, sorteada la primera vez que hace falta."""
+        if self._upcoming is None:
+            self._upcoming = self.cog.machine.spin()
+        return self._upcoming
+
+    def _take_spin(self) -> Spin | None:
+        """La tirada sorteada por adelantado, que se gasta al jugarla (`None` si no hay)."""
+        spin, self._upcoming = self._upcoming, None
+        self._changing = True
+        return spin
+
+    def _next_coin(self) -> bool:
+        if self._coin_next is None:
+            self._coin_next = self.cog.coin()
+        return self._coin_next
+
+    def _take_coin(self) -> bool:
+        """El doble o nada sorteado por adelantado (o uno nuevo), que se gasta al jugarlo."""
+        won, self._coin_next = self._coin_next, None
+        self._changing = True
+        return self.cog.coin() if won is None else won
+
+    def _next_respin(self, spin: Spin) -> Spin:
+        if self._respin_next is None or self._respin_next[0] is not spin:
+            self._respin_next = (spin, self.cog.machine.respin(spin))
+        return self._respin_next[1]
+
+    def _take_respin(self, spin: Spin) -> Spin | None:
+        """El re-giro de `spin` sorteado por adelantado, si lo hay."""
+        ready, self._respin_next = self._respin_next, None
+        self._changing = True
+        return ready[1] if ready is not None and ready[0] is spin else None
+
+    def _next_burst(self) -> list[Spin]:
+        if self._burst_next is None:
+            self._burst_next = [self.cog.machine.spin() for _ in range(BURST_SPINS)]
+        return self._burst_next
+
+    def _take_burst(self) -> list[Spin] | None:
+        spins, self._burst_next = self._burst_next, None
+        self._changing = True
+        return spins
+
+    def _ready(self, key: tuple[Any, ...]) -> asyncio.Future[Any] | None:
+        """Lo pintado (o pintándose) por adelantado para `key`; se gasta al usarlo."""
+        return self._ahead.pop(key, None)
+
+    def _double_job(
+        self, amount: int, pick: str, won: bool
+    ) -> tuple[tuple[Any, ...], Callable[[], Awaitable[SlotsMedia | None]]]:
+        """La clave y el dibujo del doble o nada tal como está la máquina ahora."""
+        stops, history, fresh = self.last_stops, list(self.double_history), not self.gamble_shown
+        key = ("double", stops, amount, pick, won, tuple(history), fresh)
+
+        def paint() -> Awaitable[SlotsMedia | None]:
+            return self.cog.renderer.double(
+                stops=stops, amount=amount, pick=pick, won=won, history=history, fresh=fresh
+            )
+
+        return key, paint
+
+    async def _plans(self) -> list[tuple[tuple[Any, ...], Callable[[], Awaitable[Any]]]]:
+        """Cada botón que se puede pulsar ahora y su imagen, del más probable al que menos.
+
+        Tirar (o el giro gratis), Rojo y Negro, el re-giro, el giro del día, Tirar con la
+        apuesta de ½, ×2 y All-in (solo si la próxima tirada paga: sin premio, la imagen
+        es la misma con cualquier apuesta) y la imagen final de una Ráfaga.
+        """
+        scene = self.cog.renderer
+        turbo = self.turbo
+        hot = self.cog.heat(self.guild_id, self.owner.id) >= HEAT_MAX
+        spin = self._next_spin()
+        offer = self.respin_offer
+        again = self._next_respin(offer[0]) if offer is not None else None
+        pot = 0
+        if spin.is_jackpot or (again is not None and again.is_jackpot):
+            pot = await self.cog.pot(self.guild_id)
+
+        def tirada(
+            sp: Spin, stake: int, *, hot: bool, respin: bool = False
+        ) -> tuple[tuple[Any, ...], Callable[[], Awaitable[SlotsMedia]]]:
+            won = line_payout(sp, stake, hot=hot) + (pot if sp.is_jackpot else 0)
+            key = media_key(sp, won=won, stake=stake, turbo=turbo, respin=respin)
+            return key, lambda: scene.spin(sp, turbo=turbo, won=won, stake=stake, respin=respin)
+
+        free = self.free_spins > 0
+        stake = self.free_stake if free else self.stake
+        plans = [tirada(spin, stake, hot=hot)]
+        if self.double_offer is not None:
+            won = self._next_coin()
+            plans += [self._double_job(self.double_offer[0], pick, won) for pick in (RED, BLACK)]
+        if offer is not None and again is not None:
+            plans.append(tirada(again, offer[1], hot=False, respin=True))
+        if self.daily_streak:
+            plans.append(tirada(spin, daily_stake(self.daily_streak), hot=hot))
+        if not free and (spin.pay_halves or spin.is_jackpot):
+            balance = await self.balance()
+            for other in (max(1, stake // 2), max(1, min(stake * 2, balance)), balance):
+                if 0 < other <= balance:
+                    plans.append(tirada(spin, other, hot=hot))
+        burst = self._next_burst()
+        # La Ráfaga para en el bote: su imagen es la de esa tirada.
+        last = next((sp for sp in burst if sp.is_jackpot), burst[-1])
+        lit = last.pay_halves > 0 or last.is_jackpot
+        plans.append((("still", last.stops, lit), lambda: scene.still(last, highlight=lit)))
+        # Sin repetir (la apuesta del giro del día puede ser la misma): el primero manda.
+        unique: dict[tuple[Any, ...], Callable[[], Awaitable[Any]]] = {}
+        for key, paint in plans:
+            unique.setdefault(key, paint)
+        return list(unique.items())
+
+    def prepare(self) -> None:
+        """Pinta en segundo plano la imagen de cada botón que se puede pulsar ahora.
+
+        Se llama al enseñar una jugada (en cuanto la máquina queda como se va a ver), al
+        abrir la máquina y al cambiar la apuesta o el turbo. Pinta de una en una, de la
+        más probable a la menos (`_plans`), y antes de cada una vuelve a mirar qué hace
+        falta: lo que ya no vale se suelta y nunca se corta un dibujo a medias.
+        """
+        self._changing = False
+        if not self.cog.ahead or self.is_finished():
+            return
+        if self._painting is None or self._painting.done():
+            self._painting = asyncio.create_task(
+                self._paint_ahead(), name=f"slots-ahead-{self.guild_id}-{self.owner.id}"
+            )
+
+    async def _paint_ahead(self) -> None:
+        while not self.is_finished() and not self._changing:
+            plans = await self._plans()
+            if self._changing:
+                return
+            wanted = {key for key, _ in plans}
+            for key in [k for k, f in self._ahead.items() if f.done() and k not in wanted]:
+                del self._ahead[key]
+            todo = next(((key, paint) for key, paint in plans if key not in self._ahead), None)
+            if todo is None:
+                return
+            key, paint = todo
+            future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            self._ahead[key] = future
+            result = None
+            try:
+                result = await paint()
+            except Exception:
+                logger.warning("No se pudo pintar por adelantado la tragaperras", exc_info=True)
+            finally:
+                # Quien ya lo espera (un clic que llegó a mitad) no se queda colgado.
+                if not future.done():
+                    future.set_result(result)
+
     async def _guarded_play(
         self, interaction: discord.Interaction, *, turbo: bool, render: bool = True
     ) -> SlotsPlay | None:
@@ -981,8 +1193,10 @@ class SlotMachineView(discord.ui.View):
         try:
             return await self._play_one(turbo=turbo, render=render)
         except InsufficientFundsError as error:
+            self.prepare()
             await notify(interaction, insufficient_text(error.balance, self.stake))
         except BalanceLimitError:
+            self.prepare()
             await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
         return None
 
@@ -1026,6 +1240,10 @@ class SlotMachineView(discord.ui.View):
         Args:
             note: Línea pequeña bajo el resultado (el contador de ▶️ Auto).
         """
+        self.last_stops = play.spin.stops
+        self.gamble_shown = False
+        # La máquina ya está como se va a ver: se pinta lo siguiente mientras se sube esto.
+        self.prepare()
         if play.media.gif:
             self._set_enabled(False)
             await first_edit(
@@ -1039,7 +1257,7 @@ class SlotMachineView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(play.media.gif), filename=GIF_NAME)],
                 view=self,
             )
-            await asyncio.sleep(play.media.seconds + REVEAL_MARGIN_SECONDS)
+            await asyncio.sleep(reveal_delay(play.media))
             edit = final_edit
         else:
             edit = first_edit
@@ -1166,11 +1384,15 @@ class SlotMachineView(discord.ui.View):
                     turbo=self.turbo,
                     session_spins=self.session_spins + 1,
                     chain=chain,
+                    again=self._take_respin(spin),
+                    ready=self._ready,
                 )
             except InsufficientFundsError as error:
+                self.prepare()
                 await notify(interaction, insufficient_text(error.balance, price))
                 return
             except BalanceLimitError:
+                self.prepare()
                 await notify(interaction, "La banca no puede pagar tanto. Baja la apuesta.")
                 return
             self.session_spins += 1
@@ -1197,7 +1419,9 @@ class SlotMachineView(discord.ui.View):
         """🔴/⚫ Doble o nada con lo último cobrado: cara o cruz, el color da igual.
 
         Es una apuesta del casino como otra (`settle_bet`, juego en el IRPF):
-        lo cobrado ya está en el saldo y se vuelve a apostar.
+        lo cobrado ya está en el saldo y se vuelve a apostar. Se ve como una carta
+        que se gira (`SlotsScene.double`): primero el GIF y luego el PNG con la
+        carta destapada. Sin Node ni navegador, solo cambia el texto.
         """
         offer = self.double_offer
         if self._busy or offer is None:
@@ -1205,10 +1429,13 @@ class SlotMachineView(discord.ui.View):
             return
         self._busy = True
         bet = None
+        # La carta que se ha visto (solo si se ha pintado) y cuántas seguidas de su palo.
+        card: str | None = None
+        run = 0
         try:
             await ack(interaction)
             amount, chain = offer
-            won = self.cog.coin()
+            won = self._take_coin()
             try:
                 bet = await self.cog.economy.settle_bet(
                     self.guild_id,
@@ -1219,11 +1446,13 @@ class SlotMachineView(discord.ui.View):
                 )
             except InsufficientFundsError as error:
                 self.double_offer = None
+                self.prepare()
                 self._set_enabled(True)
                 await edit(interaction, view=self)
                 await notify(interaction, insufficient_text(error.balance, amount))
                 return
             except BalanceLimitError:
+                self.prepare()
                 await notify(interaction, "La banca no puede pagar tanto.")
                 return
             chain = chain + 1 if won else chain
@@ -1249,8 +1478,36 @@ class SlotMachineView(discord.ui.View):
                 lines.append(tax_line)
             self.last_text = "\n".join(lines)
             self.last_won = won
+            key, paint = self._double_job(amount, color, won)
+            ready = self._ready(key)
+            media = await ready if ready is not None else None
+            if media is None:
+                media = await paint()
+            if media is not None:
+                card = double_suit(amount=amount, pick=color, won=won, history=self.double_history)
+                self.double_history = [*self.double_history, card][-DOUBLE_HISTORY:]
+                run = len(self.double_history) - len("".join(self.double_history).rstrip(card))
+                self.gamble_shown = True
+            self.prepare()
+            if media is not None:
+                self._set_enabled(False)
+                await edit(
+                    interaction,
+                    embed=double_embed(owner=self.owner.display_name, amount=amount, color=color),
+                    attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                    view=self,
+                )
+                await asyncio.sleep(reveal_delay(media))
             self._set_enabled(True)
-            await edit(interaction, embed=await self.current_embed(balance=bet.balance), view=self)
+            final: dict[str, Any] = {}
+            if media is not None:
+                final["attachments"] = [discord.File(io.BytesIO(media.png), filename=PNG_NAME)]
+            await edit(
+                interaction,
+                embed=await self.current_embed(balance=bet.balance),
+                view=self,
+                **final,
+            )
             self._last_interaction = interaction
         finally:
             self._busy = False
@@ -1258,7 +1515,7 @@ class SlotMachineView(discord.ui.View):
             return
         net = amount if won else -amount
         await renta.remind(self.cog.bot, interaction)
-        delta = slots_double_stats(amount=amount, won=won, chain=chain)
+        delta = slots_double_stats(amount=amount, won=won, chain=chain, suit=card, run=run)
         delta.merge(
             casino_stats(stake=amount, net=net, balance_after=bet.balance, tax_delta=bet.tax_delta)
         )
@@ -1291,6 +1548,7 @@ class SlotMachineView(discord.ui.View):
             streak = await self.cog.claim_daily(self.guild_id, self.owner.id)
             self.daily_streak = 0
             if streak is None:
+                self.prepare()
                 self._set_enabled(True)
                 await edit(interaction, view=self)
                 await notify(interaction, "Ya has cobrado el giro de hoy. Vuelve mañana.")
@@ -1304,6 +1562,8 @@ class SlotMachineView(discord.ui.View):
                     turbo=self.turbo,
                     session_spins=self.session_spins + 1,
                     daily_streak=streak,
+                    spin=self._take_spin(),
+                    ready=self._ready,
                 )
             except BalanceLimitError:
                 await notify(interaction, "La banca no puede pagar tanto.")
@@ -1338,9 +1598,11 @@ class SlotMachineView(discord.ui.View):
         try:
             await ack(interaction)
             self._last_interaction = interaction
-            for _ in range(BURST_SPINS):
+            spins = self._take_burst() or []
+            for index in range(BURST_SPINS):
                 try:
-                    plays.append(await self._play_one(turbo=True, render=False))
+                    spin = spins[index] if index < len(spins) else None
+                    plays.append(await self._play_one(turbo=True, render=False, spin=spin))
                 except InsufficientFundsError:
                     stopped = "Parado: no te llega para otra tirada."
                     break
@@ -1351,14 +1613,18 @@ class SlotMachineView(discord.ui.View):
                     stopped = "Parado: ¡ha salido el bote!"
                     break
             if not plays:
+                self.prepare()
                 await notify(interaction, insufficient_text(await self.balance(), self.stake))
                 return
             last = plays[-1]
-            png = await asyncio.to_thread(
-                self.cog.renderer.still_png,
-                last.spin.stops,
-                highlight=last.spin.pay_halves > 0 or last.spin.is_jackpot,
-            )
+            self.last_stops = last.spin.stops
+            self.gamble_shown = False
+            lit = last.spin.pay_halves > 0 or last.spin.is_jackpot
+            ready = self._ready(("still", last.spin.stops, lit))
+            png = await ready if ready is not None else None
+            if png is None:
+                png = await self.cog.renderer.still(last.spin, highlight=lit)
+            self.prepare()
             text = auto_text(plays, stopped)
             if note := tax_note(sum(p.settlement.bet.tax_delta for p in plays), plays):
                 text += f"\n{note}"
@@ -1522,6 +1788,7 @@ class SlotMachineView(discord.ui.View):
         try:
             self.autoplay = None
             self.timeout = MACHINE_TIMEOUT
+            self.prepare()
             self._set_enabled(True)
             try:
                 if outcome.spins == 0:
@@ -1559,6 +1826,7 @@ class SlotMachineView(discord.ui.View):
         El embed lee saldo y bote de la base de datos: se acepta el clic antes.
         """
         await ack(interaction)
+        self.prepare()
         self._set_enabled(True)
         await edit(interaction, embed=await self.current_embed(balance=balance), view=self)
         self._last_interaction = interaction
@@ -1604,19 +1872,29 @@ class Slots(commands.Cog, name="Tragaperras"):
         bot: commands.Bot,
         *,
         economy: EconomyService,
-        renderer: SlotsRenderer | None = None,
+        renderer: SlotsScene | None = None,
         machine: SlotMachine | None = None,
         casino_channel_ids: frozenset[int] = frozenset(),
         repository: SlotsRepository | None = None,
         clock: Callable[[], float] = time.time,
         coin: Callable[[], bool] | None = None,
         randbelow: Callable[[int], int] | None = None,
+        ahead: bool | None = None,
     ) -> None:
+        """Monta el cog.
+
+        Args:
+            renderer: El dibujo (`SlotsScene`); las pruebas pasan uno que no pinta.
+            ahead: Si las máquinas pintan antes del clic (`SlotMachineView.prepare`). Por
+                defecto, solo con el dibujo de verdad: con uno de prueba, cada sorteo de
+                más gastaría las tiradas de guion de la prueba.
+        """
         self.bot = bot
         self.economy = economy
         # Calor y giro diario guardados; `None` en pruebas que no los usan.
         self.repository = repository
-        self.renderer = renderer or SlotsRenderer()
+        self.renderer = renderer or SlotsScene()
+        self.ahead = renderer is None if ahead is None else ahead
         self.machine = machine or SlotMachine()
         self.casino_channel_ids = casino_channel_ids
         self.clock = clock
@@ -1633,18 +1911,9 @@ class Slots(commands.Cog, name="Tragaperras"):
         self._turbo: dict[tuple[int, int], bool] = {}
         # Máquinas abiertas: para jugar sus giros gratis si el bot se apaga.
         self.machines: set[SlotMachineView] = set()
-        self._warm_task: asyncio.Task[bytes] | None = None
-
-    async def cog_load(self) -> None:
-        """Prepara las piezas del dibujo en segundo plano (~0,05 s de CPU)."""
-        self._warm_task = asyncio.create_task(
-            asyncio.to_thread(self.renderer.still_png, (0, 0, 0)), name="slots-warm-up"
-        )
 
     async def cog_unload(self) -> None:
-        """Al apagar, juega los giros gratis pendientes para no quedarse con ellos."""
-        if self._warm_task is not None:
-            self._warm_task.cancel()
+        """Al apagar, juega los giros gratis pendientes y cierra el dibujo."""
         for view in list(self.machines):
             try:
                 await view.close_autoplay()
@@ -1653,6 +1922,7 @@ class Slots(commands.Cog, name="Tragaperras"):
                 logger.exception("No se pudieron jugar los giros gratis al apagar")
             view.stop()
         self.machines.clear()
+        await self.renderer.close()
 
     # -- Estado por miembro ----------------------------------------------------------
 
@@ -1759,6 +2029,8 @@ class Slots(commands.Cog, name="Tragaperras"):
         render: bool = True,
         session_spins: int = 1,
         daily_streak: int = 0,
+        spin: Spin | None = None,
+        ready: ReadyFn | None = None,
     ) -> SlotsPlay:
         """Juega una tirada: decide los rodillos y mueve el dinero de forma atómica.
 
@@ -1770,6 +2042,8 @@ class Slots(commands.Cog, name="Tragaperras"):
             render: `False` para no dibujar nada (Auto y giros al cerrar).
             daily_streak: Si es el giro del día, la racha (no se cobra, pero
                 los 🎟️ cuentan); 0 en el resto.
+            spin: Los rodillos ya sorteados por adelantado; si no, se sortean aquí.
+            ready: Lo pintado por adelantado de la máquina (`SlotMachineView._ready`).
 
         Raises:
             InsufficientFundsError: Si el saldo no cubre la apuesta.
@@ -1780,7 +2054,8 @@ class Slots(commands.Cog, name="Tragaperras"):
         charged = not free and not daily
         await self.load_heat(guild_id, user_id)
         self.cool_down(guild_id, user_id)
-        spin = self.machine.spin()
+        if spin is None:
+            spin = self.machine.spin()
         hot = self.heat(guild_id, user_id) >= HEAT_MAX
         payout = line_payout(spin, stake, hot=hot)
         settlement = await self.economy.play_slots(
@@ -1805,7 +2080,12 @@ class Slots(commands.Cog, name="Tragaperras"):
             bonus_fill_spins = meter.spins + 1 if bonus_stake else 0
         await self._save_heat(guild_id, user_id)
         media = await self._media(
-            spin, turbo=turbo, render=render, won=payout + settlement.jackpot, stake=stake
+            spin,
+            turbo=turbo,
+            render=render,
+            won=payout + settlement.jackpot,
+            stake=stake,
+            ready=ready,
         )
         return SlotsPlay(
             spin=spin,
@@ -1824,14 +2104,28 @@ class Slots(commands.Cog, name="Tragaperras"):
         )
 
     async def _media(
-        self, spin: Spin, *, turbo: bool, render: bool, won: int, stake: int
+        self,
+        spin: Spin,
+        *,
+        turbo: bool,
+        render: bool,
+        won: int,
+        stake: int,
+        respin: bool = False,
+        ready: ReadyFn | None = None,
     ) -> SlotsMedia:
-        """Animación e imagen final de una tirada (nada si `render` es falso)."""
+        """Animación e imagen final de una tirada (nada si `render` es falso).
+
+        Si la máquina ya la tenía pintada (o pintándose) por adelantado, se usa esa.
+        """
         if not render:
             return SlotsMedia(gif=b"", png=b"", seconds=0.0)
-        return await asyncio.to_thread(
-            self.renderer.render, spin, turbo=turbo, won=won, stake=stake
-        )
+        if ready is not None:
+            key = media_key(spin, won=won, stake=stake, turbo=turbo, respin=respin)
+            planned = ready(key)
+            if planned is not None and (media := await planned) is not None:
+                return media
+        return await self.renderer.spin(spin, turbo=turbo, won=won, stake=stake, respin=respin)
 
     async def respin(
         self,
@@ -1844,6 +2138,8 @@ class Slots(commands.Cog, name="Tragaperras"):
         turbo: bool,
         session_spins: int,
         chain: int = 1,
+        again: Spin | None = None,
+        ready: ReadyFn | None = None,
     ) -> SlotsPlay:
         """Re-gira el tercer rodillo de `spin` cobrando `price`.
 
@@ -1851,11 +2147,16 @@ class Slots(commands.Cog, name="Tragaperras"):
         tirada): paga la línea a la apuesta original y, con 🃏 🃏 🃏, el bote.
         No aporta al bote, no calienta la máquina y no da giros gratis.
 
+        Args:
+            again: El re-giro ya sorteado por adelantado; si no, se sortea aquí.
+            ready: Lo pintado por adelantado de la máquina (`SlotMachineView._ready`).
+
         Raises:
             InsufficientFundsError: Si el saldo no cubre el precio.
             BalanceLimitError: Si el premio superaría el saldo máximo.
         """
-        again = self.machine.respin(spin)
+        if again is None:
+            again = self.machine.respin(spin)
         payout = line_payout(again, stake)
         settlement = await self.economy.play_slots(
             guild_id,
@@ -1869,7 +2170,13 @@ class Slots(commands.Cog, name="Tragaperras"):
             cap=POT_CAP,
         )
         media = await self._media(
-            again, turbo=turbo, render=True, won=payout + settlement.jackpot, stake=stake
+            again,
+            turbo=turbo,
+            render=True,
+            won=payout + settlement.jackpot,
+            stake=stake,
+            respin=True,
+            ready=ready,
         )
         return SlotsPlay(
             spin=again,
@@ -1950,14 +2257,16 @@ class Slots(commands.Cog, name="Tragaperras"):
         ready, streak = await self.daily_status(guild.id, user.id)
         view.daily_streak = streak if ready else 0
         view._set_enabled(True)
-        stops = self.machine.spin().stops
-        png = await asyncio.to_thread(self.renderer.still_png, stops)
+        opening = self.machine.spin()
+        view.last_stops = opening.stops
+        png = await self.renderer.still(opening, highlight=False)
         view.message = await send(
             embed=await view.current_embed(balance=balance),
             file=discord.File(io.BytesIO(png), filename=PNG_NAME),
             view=view,
         )
         self.machines.add(view)
+        view.prepare()
         if view.cooled:
             await logros.track(
                 self.bot, guild.id, user, channel, slots_cooled_stats(lost=view.cooled)

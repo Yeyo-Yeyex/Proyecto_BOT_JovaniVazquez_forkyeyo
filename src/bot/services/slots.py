@@ -327,7 +327,7 @@ def evaluate_line(line: tuple[str, str, str]) -> tuple[str, str | None, int]:
     return Kind.NONE, None, 0
 
 
-def _high_target(first: str, second: str) -> str | None:
+def high_target(first: str, second: str) -> str | None:
     """Símbolo que completaría un premio gordo con estos dos primeros, si lo hay."""
     if first not in HIGH_SYMBOLS or second not in HIGH_SYMBOLS:
         return None
@@ -376,7 +376,7 @@ def spin_at(stops: tuple[int, int, int], *, count_scatters: bool = True) -> Spin
     if count_scatters:
         scatters = sum(1 for reel in range(3) if any(row[reel] == SCATTER for row in grid))
 
-    target = _high_target(line[0], line[1])
+    target = high_target(line[0], line[1])
     teaser = _teaser(grid)
     big_on_line = kind == Kind.JACKPOT or (kind == Kind.THREE and symbol in HIGH_SYMBOLS)
     near_miss = teaser is not None or (

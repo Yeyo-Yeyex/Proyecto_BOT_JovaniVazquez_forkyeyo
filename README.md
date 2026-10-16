@@ -460,12 +460,13 @@ python -m bot
   sin saldo o al perder 10 veces la apuesta), ⚡ Turbo (sin animación),
   ½ / ×2 / 💰 All-in y 📋 Premios. Cuando tocan salen 🔁 Re-girar el 3º (tras
   un casi-premio, por lo que vale de media el re-giro), 🔴 Rojo / ⚫ Negro (doble
-  o nada con lo cobrado, hasta 5 veces) y 🎁 Giro del día (gratis, a 100 Y$ por
+  o nada con lo cobrado, hasta 5 veces, con una carta que se gira) y 🎁 Giro
+  del día (gratis, a 100 Y$ por
   día de racha, hasta 700 Y$). El embed enseña lo que paga cada combinación a
   tu apuesta y los premios cobrados en la sesión; al cerrarse sale el ticket
   con el neto. Premios:
   🍒 al principio devuelve la mitad, 🍒 🍒 ×2, tríos de ×4 a ×200, 🃏 comodín
-  y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 3 % de
+  y 🃏 🃏 🃏 se lleva el **bote común** del servidor, que crece con el 6 % de
   cada apuesta y vuelve a 5.000 Y$ al vaciarse; además cae solo antes de
   llegar a 50.000 Y$. Tres 🎟️ en cualquier fila dan 5 giros gratis, y cada 5
   tiradas con premio la máquina se calienta y la siguiente paga ×2 (el calor
@@ -474,9 +475,10 @@ python -m bot
   final) y, llena, da 3 giros gratis. Los rodillos
   tienen pesos por casilla, como las máquinas reales: el 7️⃣ roza la línea en
   una de cada cinco tiradas. Devuelve ~99,5 % de lo apostado contando el bote. El GIF
-  (~150 KB, ~0,1 s de CPU) se monta en cada tirada con piezas precalculadas:
-  los rodillos paran uno a uno y, si los dos primeros prometen algo gordo, el
-  tercero frena despacio. Los premios tributan como el resto del casino, el
+  se pinta con canvas en Node, antes de pulsar, y su ritmo depende de lo que hay
+  en juego: corto sin nada, y si los dos primeros prometen algo gordo, el tercero
+  frena despacio hasta que se ven pasar los símbolos por la línea; el marcador
+  cuenta por tramos y el cartel sube de nivel. Los premios tributan como el resto del casino, el
   bote incluido, y los de más de ×50 y los botes se anuncian en el canal.
 - **Botes** (`/tragas máquina:Volcán`, `.tragas volcan [cantidad]`; antes `volcan`): una tragaperras de 5×4 al
   estilo de las de casino, ilustrada, con tres máquinas que comparten reglas y
@@ -1254,7 +1256,8 @@ src/bot/
 │   ├── roulette_scene.py # Ruleta con canvas en Node o Chromium (assets/ruleta/escena.html)
 │   ├── slots.py         # Rodillos, premios, giros gratis y máquina caliente
 │   ├── autoplay.py      # Autoplay común: bucle, tope, límite de pérdidas y Parar
-│   ├── slots_render.py  # GIF de cada tirada con piezas precalculadas
+│   ├── slots_render.py  # Tragaperras con Pillow, de reserva si no hay Node ni navegador
+│   ├── slots_scene.py   # Tragaperras con canvas en Node o Chromium: ritmo y doble o nada
 │   ├── crash.py         # Punto de explosión, curva del cohete y ronda
 │   ├── crash_render.py  # Gráfica PNG de cada ronda de Crash
 │   ├── mines.py         # Multiplicadores exactos y partida de Minas
@@ -1317,7 +1320,7 @@ src/bot/
     ├── backgammon/     # escena.html: canvas del tablero del backgammon (con tapete)
     ├── enraya/         # escena.html: canvas del tablero del 4 en raya
     ├── memes/          # Plantillas y fuentes de los efectos (de imgen, MIT)
-    └── slots/          # Símbolos de la tragaperras (Noto Emoji, ver LICENSE.txt)
+    └── slots/          # escena.html de la tragaperras y sus símbolos (Noto Emoji, ver LICENSE.txt)
 ```
 
 En la raíz: `Dockerfile`, `docker-compose.yml`, `.env.example` y
