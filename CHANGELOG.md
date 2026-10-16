@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.10.1 · 2026-10-16
+
+- Torre del dragón: al acabar cada jugada ya no se repite un trozo del GIF anterior con fotogramas mezclados (el mensaje pasa a embed, como los demás juegos)
+
 ### 7.10.0 · 2026-10-16
 
 - Torre del dragón: subida entre pisos más larga por una escalera de caracol, el dragón sale del hueco sin saltos y al acabar la cámara se aleja hasta la torre entera

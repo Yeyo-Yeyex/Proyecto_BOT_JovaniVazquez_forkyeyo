@@ -1143,7 +1143,7 @@ src/bot/
 │   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
 │   ├── mines.py         # Minas: tablero de 5×5 con botones (componentes v2)
-│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones, animada (componentes v2)
+│   ├── tower.py         # Torre del dragón: pisos con puertas, huevos y dragones, animada
 │   ├── war.py           # Guerra: carta contra carta, rendirse o ir a la guerra, lateral de empate
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
