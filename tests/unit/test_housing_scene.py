@@ -166,7 +166,7 @@ def promotion_market() -> Market:
 def bubble_market() -> Market:
     """Un barrio en burbuja, otro a precio de fondo buitre, uno tensionado y un chollo."""
     return Market(
-        indexes={"vegueta": 1.45, "isleta": 0.8, "schamann": 1.12, "adeje": 1.31, "tafira": 0.86},
+        indexes={"vegueta": 1.45, "isleta": 0.8, "schamann": 1.07, "adeje": 1.31, "tafira": 0.86},
         holdings={"vegueta_edificio": {10: Holding("vegueta_edificio", 10, 50, 1, 1, 0)}},
         leases={"vegueta_edificio": rules.Lease(status="okupa")},
     )
