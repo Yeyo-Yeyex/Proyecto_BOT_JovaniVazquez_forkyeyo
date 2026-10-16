@@ -71,7 +71,7 @@ from bot.utils.gif import local_palette_gif
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "blackjack" / "escena.html"
 
 # Estas medidas las usa también la escena: si cambian aquí, cambian allí.
-W, H = 640, 420
+W, H = 640, 480
 #: Cartas de un zapato entero.
 SHOE_CARDS = DECKS * 52
 #: Por dónde salen las cartas del zapato (arriba a la derecha) y entran en la bandeja.
@@ -79,19 +79,21 @@ SHOE_XY = (556.0, 50.0)
 TRAY_XY = (84.0, 40.0)
 #: De dónde salen y adónde van las fichas de la banca.
 BANK_XY = (320.0, 24.0)
-DEALER_Y, PLAYER_Y = 104.0, 300.0
-DEALER_STEP = 28.0
-HAND_STEP = 24.0
+DEALER_Y, PLAYER_Y = 98.0, 342.0
+DEALER_STEP = 35.0
+HAND_STEP = 30.0
 #: Centro de cada mano: una sola, o dos tras separar (más pequeñas).
 HAND_X = {1: (320.0,), 2: (196.0, 444.0)}
 HAND_SCALE = {1: 1.0, 2: 0.9}
-DEALER_PILL_Y, HAND_PILL_Y = 178.0, 232.0
-CHIP_Y = 392.0
-CHIP_GAP = 38.0
-INSURANCE_XY = (482.0, 210.0)
+DEALER_PILL_Y, HAND_PILL_Y = 186.0, 254.0
+CHIP_Y = 444.0
+CHIP_GAP = 46.0
+INSURANCE_XY = (520.0, 214.0)
+#: El centro del cartel, de donde salen las chispas.
+BANNER_XY = (320.0, 220.0)
 #: Cuánto se aparta (x, y) la carta de doblar, que va de lado.
 SIDEWAYS = math.pi / 2
-SIDEWAYS_SHIFT = (14.0, 6.0)
+SIDEWAYS_SHIFT = (17.0, 8.0)
 
 FLY_FRAMES = 5
 FLIP_FRAMES = 3
@@ -136,15 +138,13 @@ def assemble(patches: list[dict[str, Any]]) -> list[Image.Image]:
     return browser_scene.assemble(patches, (W, H))
 
 
-def encode(frames: Sequence[Image.Image], frame_ms: Sequence[int], *, loop: bool) -> Media:
+def encode(frames: Sequence[Image.Image], frame_ms: Sequence[int]) -> Media:
     """GIF y PNG del último fotograma.
 
-    Args:
-        loop: Si el GIF se repite. Las jugadas que dejan la mano abierta no se repiten:
-            el GIF se queda en el mensaje (no se cambia por el PNG) y no debe volver a
-            empezar mientras el jugador piensa.
+    El GIF no se repite: si el PNG que lo sustituye tarda en llegar, se queda quieto en
+    el último fotograma, que es ese mismo PNG.
     """
-    gif = local_palette_gif(list(frames), list(frame_ms), loop=loop)
+    gif = local_palette_gif(list(frames), list(frame_ms), loop=False)
     png = io.BytesIO()
     frames[-1].save(png, format="PNG", compress_level=6)
     return Media(gif=gif, png=png.getvalue(), seconds=sum(frame_ms[:-1]) / 1000)
@@ -425,7 +425,8 @@ class _Reel:
             spots = [(x, CHIP_Y, look.bet_a)]
             if look.doubled:
                 drop = 40 * (1 - look.double_a)
-                spots.append((x + CHIP_GAP * 0.62, CHIP_Y + drop, look.double_a))
+                # Al lado, sin tapar la cifra de la primera.
+                spots.append((x + CHIP_GAP, CHIP_Y + drop, look.double_a))
             for sx, sy, a in spots:
                 if look.lost > 0:
                     t = _ease(look.lost)
@@ -435,7 +436,7 @@ class _Reel:
             won = look.prize - look.stake
             if look.prize_a > 0 and won > 0:
                 t = _ease(look.prize_a)
-                end = x + CHIP_GAP * (1.4 if look.doubled else 1.0)
+                end = x + CHIP_GAP * (2.0 if look.doubled else 1.0)
                 out.append(
                     _chip(
                         _lerp(BANK_XY[0], end, t),
@@ -513,7 +514,7 @@ class _Reel:
                 card,
                 _lerp(SHOE_XY[0], dest[0], e),
                 _lerp(SHOE_XY[1], dest[1], e) - 40 * math.sin(math.pi * e),
-                scale=_lerp(0.5, scale, e),
+                scale=_lerp(0.4, scale, e),
                 rot=_lerp(0.8, rot, e),
             )
             self.add(FLY_MS, [moving])
@@ -543,8 +544,8 @@ def _sparks(seed: int, k: int, n: int, *, gold: bool) -> list[list[float]]:
         speed = rng.uniform(40, 130)
         out.append(
             [
-                round(320 + math.cos(angle) * speed * t, 1),
-                round(205 + math.sin(angle) * speed * t * 0.7 + 22 * t * t, 1),
+                round(BANNER_XY[0] + math.cos(angle) * speed * t, 1),
+                round(BANNER_XY[1] + math.sin(angle) * speed * t * 0.7 + 22 * t * t, 1),
                 round(rng.uniform(3.5, 7.5) * (1 - 0.5 * t), 1),
                 round(1 - 0.85 * t, 2),
                 rng.choice((0, 0, 0, 2) if gold else (0, 0, 2, 1)),
@@ -742,7 +743,7 @@ def _sweep(reel: _Reel) -> None:
                     **c,
                     "x": round(_lerp(c["x"], TRAY_XY[0], lag), 2),
                     "y": round(_lerp(c["y"], TRAY_XY[1], lag), 2),
-                    "scale": round(_lerp(c["scale"], 0.4, lag), 3),
+                    "scale": round(_lerp(c["scale"], 0.32, lag), 3),
                     "rot": round(_lerp(c["rot"], -SIDEWAYS, lag), 4),
                     "flip": round(c["flip"] * (1 - min(1.0, lag * 2)), 3),
                     "glow": 0.0,
@@ -782,7 +783,7 @@ def _shuffle(reel: _Reel, why: str) -> None:
                         None,
                         _lerp(TRAY_XY[0], SHOE_XY[0], u),
                         _lerp(TRAY_XY[1], SHOE_XY[1], u) - 34 * math.sin(math.pi * u),
-                        scale=0.42,
+                        scale=0.34,
                         rot=-0.6 + 1.2 * u,
                     )
                 )
@@ -1111,18 +1112,14 @@ class BlackjackScene:
     ) -> Media:
         """El GIF de una jugada (ver `step_states`) y el PNG de cómo queda la mesa.
 
-        El GIF solo se repite si la mano acaba: entonces el cog lo cambia por el PNG
-        cuando termina. Si la mano sigue, el GIF se queda en el mensaje y no se repite.
+        El cog cambia el GIF por el PNG cuando termina.
         """
         states = step_states(before, after, shoe=shoe, streak=streak)
         patches = await self._frames(meta_state(skin), states)
         if patches is None:
             png = await asyncio.to_thread(render_table, self.fallback, after)
             return Media(gif=None, png=png, seconds=0.0)
-        loop = after.settled
-        return await asyncio.to_thread(
-            lambda: encode(assemble(patches), durations(states), loop=loop)
-        )
+        return await asyncio.to_thread(lambda: encode(assemble(patches), durations(states)))
 
     async def still(
         self, game: BlackjackGame, *, streak: int = 0, skin: dict[str, object] | None = None

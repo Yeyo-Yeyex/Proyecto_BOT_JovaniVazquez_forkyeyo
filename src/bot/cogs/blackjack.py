@@ -19,14 +19,10 @@ en esa mano se pierde (queda registrado en el libro de movimientos).
 La mesa se dibuja con canvas (`bot.services.blackjack_scene`, escena
 `assets/blackjack/escena.html`): tapete con skins (botón 🎨), el zapato y la bandeja de
 descartes que dejan ver cuánto se ha jugado del zapato, las cartas que vuelan y se
-voltean, las fichas, los totales y la racha. Cada jugada es un GIF:
-
-- Si la mano sigue (repartir, pedir, separar, el seguro), el GIF se queda en el
-  mensaje sin repetirse y los botones se encienden con él: no hay que esperar a que
-  acabe para la siguiente jugada.
-- Si la mano acaba, el GIF (con la banca robando y el resultado) suena con los botones
-  apagados y sin el resultado en el texto, y al acabar se cambia por el PNG con el
-  resultado, como en la Guerra.
+voltean, las fichas, los totales y la racha. Cada jugada es un GIF que suena con los
+botones apagados y sin el resultado en el texto, y al acabar se cambia por el PNG de cómo
+queda la mesa, con los botones encendidos (y el resultado, si la mano acabó), como en el
+resto del casino.
 
 Mientras se ve una jugada, la mesa pinta en segundo plano el GIF de cada botón que
 puede pulsar (`BlackjackTable.prepare`): el zapato es una lista y la mano siguiente
@@ -101,7 +97,7 @@ GIF_NAME = "blackjack.gif"
 #: en descargarlo (si se queda corto, el resultado sale antes de acabar la animación).
 REVEAL_MARGIN_SECONDS = 0.5
 
-#: Lo que dice la mesa mientras suena un GIF que acaba la mano (sin resultado ni saldo).
+#: Lo que dice la mesa mientras suena un GIF (sin resultado ni saldo).
 DEAL_BUSY = "## 🃏 Repartiendo…"
 DEALER_BUSY = "## 🃏 Juega la banca…"
 PLAYER_BUSY = "## 🃏 Carta para ti…"
@@ -305,8 +301,8 @@ def table_embed(
     Args:
         shoe_left: Cartas que quedan en el zapato de la mesa, para quien cuenta.
         note: Aviso de la mano (se ha barajado o el jefe de sala sospecha).
-        busy: Texto mientras suena un GIF que acaba la mano (repartiendo, juega la
-            banca…): no enseña saldo ni resultado, que se verían antes que las cartas.
+        busy: Texto mientras suena un GIF (repartiendo, juega la banca…): no enseña
+            saldo ni resultado, que se verían antes que las cartas.
         image: Nombre del archivo que lleva la imagen del mensaje (el GIF o el PNG).
         skin_label: El tapete que lleva el dueño, si no es el de serie.
     """
@@ -731,11 +727,10 @@ class BlackjackTable(discord.ui.View):
     ) -> None:
         """Enseña el GIF de la jugada (de `before` a la mano de ahora).
 
-        Si la mano sigue, el GIF se queda en el mensaje con los botones ya encendidos. Si
-        acaba (ya pagada), suena con los botones apagados y `busy` en el texto, y al
-        acabar se cambia por el PNG con el resultado y el saldo (`balance`). Mientras se
-        pinta (si no estaba pintado por adelantado, `ready`), la mesa ya apaga los
-        botones, en paralelo al dibujo.
+        El GIF suena con los botones apagados y `busy` en el texto, y al acabar se cambia
+        por el PNG de cómo queda la mesa, con los botones encendidos y, si la mano acabó,
+        el resultado y el saldo (`balance`). Mientras se pinta (si no estaba pintado por
+        adelantado, `ready`), la mesa ya apaga los botones, en paralelo al dibujo.
 
         Args:
             later: Cómo se cambia el mensaje después de la primera edición, si no es con
@@ -761,27 +756,18 @@ class BlackjackTable(discord.ui.View):
             )
         after = later or edit_fn
         send = after if shown else edit_fn
-        if media.gif is not None and game.settled:
+        if media.gif is not None:
             await send(
                 embed=await self.current_embed(busy=busy, image=GIF_NAME),
                 attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
                 view=self,
             )
             self._image = GIF_NAME
-            # Lo siguiente (repartir otra) se pinta mientras se ve esta animación.
+            # Lo siguiente (otra jugada o repartir otra) se pinta mientras se ve esta.
             self.prepare()
             await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
             send = after
         self._update_buttons()
-        if media.gif is not None and not game.settled:
-            await send(
-                embed=await self.current_embed(image=GIF_NAME),
-                attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
-                view=self,
-            )
-            self._image = GIF_NAME
-            self.prepare()
-            return
         await send(
             embed=await self.current_embed(balance, image=PNG_NAME),
             attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
