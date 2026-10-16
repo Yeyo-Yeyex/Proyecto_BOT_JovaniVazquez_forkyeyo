@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.9.2 · 2026-10-16
+
+- Torre del dragón: al subir de piso, la cámara entra por la puerta del huevo en vez de enseñar dos pisos a la vez
+
 ### 7.9.1 · 2026-10-16
 
 - Torre del dragón: al subir de piso ya no se mezclan los dos pisos, con un forjado de piedra entre ellos
