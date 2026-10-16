@@ -41,6 +41,10 @@ from enum import Enum
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
+from bot.services.allatu import ROUNDS as ALLATU_ROUNDS
+from bot.services.allatu import TABLES as ALLATU_TABLES
+from bot.services.allatu import AllatuGame
+from bot.services.allatu import Ending as AllatuEnding
 from bot.services.autoplay import StopReason
 from bot.services.bacara import BANKER_MIN_STAKE as BACCARAT_BANKER_MIN
 from bot.services.bacara import Coup as BaccaratCoup
@@ -286,6 +290,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("war", "⚔️ Guerra", group=_CG),
     Category("coin", "🪙 Cara o cruz", group=_CG),
     Category("bus", "🚌 Autobús", group=_CG),
+    Category("allatu", "📦 Allá tú", group=_CG),
     Category("poker", "♠️ Póker", group=_CG),
     Category("timba", "♣️ Timba", group=_CG),
     Category("dice", "🎲 Dados", group=_CG),
@@ -3771,6 +3776,212 @@ def _build_catalog() -> tuple[Achievement, ...]:
         )
     )
 
+    # 📦 Allá tú --------------------------------------------------------------------------
+    a += _tiers("allatu", "allatu_games", [
+        (1, "allatu_1", "¿Trato o no trato?", "Juega tu primera partida de Allá tú.", C),
+        (10, "allatu_10", "Concursante de la tarde", "Juega 10 partidas de Allá tú.", C),
+        (100, "allatu_100", "Fijo en el plató, como Jesús Vázquez",
+         "Juega 100 partidas de Allá tú.", R),
+        (1_000, "allatu_1k", "Más horas de plató que Ana Rosa",
+         "Juega 1.000 partidas de Allá tú.", E),
+        (5_000, "allatu_5k", "Mobiliario de Telecinco",
+         "Juega 5.000 partidas de Allá tú. Ya sales en los créditos.", L),
+        (10_000, "allatu_10k", "Concursante vitalicio, como Xi en el Partido",
+         "Juega 10.000 partidas de Allá tú.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_boxes", [
+        (100, "allatu_cajas_100", "Mozo de almacén de Amazon", "Abre 100 cajas en Allá tú.", C),
+        (1_000, "allatu_cajas_1k", "Cartero de Correos en campaña electoral",
+         "Abre 1.000 cajas en Allá tú. Votos por correo incluidos.", C),
+        (10_000, "allatu_cajas_10k", "Aduana del puerto de Algeciras",
+         "Abre 10.000 cajas. Ni la Guardia Civil revisa tanto.", E),
+        (100_000, "allatu_cajas_100k", "Almacén central de Temu", "Abre 100.000 cajas.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_deals", [
+        (1, "allatu_trato", "Trato con la banca", "Acepta una oferta de Perro Sanxe.", C),
+        (25, "allatu_trato_25", "Negociador de Moncloa", "Acepta 25 ofertas de Perro Sanxe.", R),
+        (250, "allatu_trato_250", "Mesa de diálogo permanente",
+         "Acepta 250 ofertas. Ni la mesa con Junts dura tanto.", E),
+        (2_500, "allatu_trato_2500", "Ministro de Hacienda en la sombra",
+         "Acepta 2.500 ofertas. Montoro te pide el número.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_no_deals", [
+        (10, "allatu_no_10", "No es no", "Di «no trato» 10 veces.", C),
+        (100, "allatu_no_100", "El noesnoísmo", "Di «no trato» 100 veces. Feijóo te ficha.", C),
+        (1_000, "allatu_no_1k", "Bloqueo del CGPJ",
+         "Di «no trato» 1.000 veces. Cinco años sin renovar nada.", E),
+        (10_000, "allatu_no_10k", "Veto ruso en la ONU", "Di «no trato» 10.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_finals", [
+        (1, "allatu_final", "Hasta el final, como Rajoy en el bar",
+         "Llega al final a dos cajas.", C),
+        (50, "allatu_final_50", "Superviviente del plató",
+         "Llega 50 veces al final a dos cajas.", R),
+        (500, "allatu_final_500", "Resistencia de manual",
+         "Llega 500 veces al final. Ni el Manual de resistencia aguanta tanto.", E),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_swaps", [
+        (1, "allatu_cambio", "Tránsfuga de caja", "Cambia tu caja en el final.", C),
+        (50, "allatu_cambio_50", "Chaquetero profesional, como Albert Rivera",
+         "Cambia tu caja en el final 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_keeps", [
+        (1, "allatu_quedo", "Fiel a mis siglas", "Quédate tu caja en el final.", C),
+        (50, "allatu_quedo_50", "Militante con carné desde el 82",
+         "Quédate tu caja en el final 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_swap_good", [
+        (10, "allatu_cambio_bien", "El cambio que España necesita",
+         "Cambia de caja en el final y llévate la mejor 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_swap_bad", [
+        (10, "allatu_cambio_mal", "Cambiar de caja como Tamames de partido",
+         "Cambia de caja en el final y deja la mejor 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_swap_gordo_lost", [
+        (1, "allatu_regalaste", "Regalaste el gordo",
+         "Cambia tu caja en el final y deja el gordo en la otra.", E, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_final_gordo", [
+        (1, "allatu_gordo", "¡EL GORDO!", "Llévate el gordo con tu caja en el final.", R),
+        (10, "allatu_gordo_10", "Abonado al Gordo de Navidad",
+         "Llévate el gordo en el final 10 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_own_gordo", [
+        (1, "allatu_tenias", "Lo tenías tú", "Ten el gordo en tu caja, te lo lleves o no.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_deal_gordo", [
+        (1, "allatu_me_cago", "Me cago en Perro Sanxe",
+         "Acepta un trato con el gordo en tu caja.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_visionary", [
+        (1, "allatu_vidente", "Vidente de Moncloa",
+         "Acepta un trato teniendo en tu caja el premio más bajo del plató.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_greedy", [
+        (1, "allatu_alla_tu", "Allá tú",
+         "Rechaza una oferta de ×5 o más y acaba perdiendo dinero.", R, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_all_no", [
+        (1, "allatu_cinco_noes", "Cinco noes seguidos, como en una investidura fallida",
+         "Rechaza las cinco ofertas de una partida.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_first_deal", [
+        (1, "allatu_gallina", "Gallina de plató", "Acepta la primera oferta de una partida.", C),
+        (50, "allatu_gallina_50", "Más vale pájaro en mano que gordo volando",
+         "Acepta la primera oferta en 50 partidas.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_haggles", [
+        (1, "allatu_regateo", "Regateo de Rastro", "Regatea con Perro Sanxe.", C),
+        (100, "allatu_regateo_100", "Zoco de Marrakech", "Regatea con Perro Sanxe 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_haggle_up", [
+        (10, "allatu_sube_10", "Le sacaste los cuartos",
+         "Consigue que Perro Sanxe suba la oferta 10 veces.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_haggle_hang", [
+        (1, "allatu_colgo", "Te ha colgado, como a Feijóo en el debate",
+         "Que Perro Sanxe te cuelgue al regatear.", C),
+        (10, "allatu_colgo_10", "Número bloqueado en Moncloa",
+         "Que Perro Sanxe te cuelgue 10 veces.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_gordo_first", [
+        (1, "allatu_pa_que", "¿Pa' qué?",
+         "Abre el gordo con la primera caja de la partida.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_gordo_max", [
+        (50, "allatu_vi_50", "Gordo con lorzas", "Que la ruleta saque un gordo de ×50 o más.", C),
+        (100, "allatu_vi_100", "Gordo de comunión",
+         "Que la ruleta saque un gordo de ×100 o más.", C),
+        (250, "allatu_vi_250", "Gordo de boda gitana",
+         "Que la ruleta saque un gordo de ×250 o más.", R),
+        (500, "allatu_vi_500", "Gordo de los fondos europeos",
+         "Que la ruleta saque un gordo de ×500 o más.", E),
+        (1_000, "allatu_vi_1000", "El Gordo de Navidad del plató",
+         "Que la ruleta saque el gordo de ×1.000 de la tabla Infierno.", E),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_mult_max", [
+        (200, "allatu_x2", "Duplicado, como un DNI perdido", "Cobra ×2 o más en Allá tú.", C),
+        (1_000, "allatu_x10", "Diez veces, como una mordida de la Gürtel",
+         "Cobra ×10 o más en Allá tú.", R),
+        (5_000, "allatu_x50", "Puerta giratoria a un consejo de administración",
+         "Cobra ×50 o más en Allá tú.", L),
+        (20_000, "allatu_x200", "Pelotazo urbanístico de los 2000",
+         "Cobra ×200 o más en Allá tú.", M),
+        (100_000, "allatu_x1000", "Ni Bárcenas en Suiza", "Cobra ×1.000 o más en Allá tú.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_win_max", [
+        (10_000, "allatu_rich", "Sobre de Bárcenas",
+         "Gana 10.000 Y$ en una partida de Allá tú.", E),
+        (100_000, "allatu_richer", "Caja B del plató",
+         "Gana 100.000 Y$ en una partida de Allá tú. La UCO quiere el número de tu caja.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("allatu", "allatu_offer_max", [
+        (500, "allatu_oferta_x5", "Perro Sanxe está asustado", "Recibe una oferta de ×5 o más.", C),
+        (2_500, "allatu_oferta_x25", "Perro Sanxe tira de Next Generation",
+         "Recibe una oferta de ×25 o más.", E),
+        (10_000, "allatu_oferta_x100", "Plan Marshall del plató",
+         "Recibe una oferta de ×100 o más.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_zero", [
+        (1, "allatu_cero", "Más vacía que el Senado en agosto",
+         "Llévate 0 Y$ de Allá tú.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_min_stake", [
+        (1, "allatu_1yd", "Concursante de bajo coste", "Juega Allá tú apostando 1 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_cash_666", [
+        (1, "allatu_666", "La caja de la bestia", "Cobra exactamente 666 Y$ en Allá tú.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_cash_69", [
+        (1, "allatu_69", "Caja con sorpresa", "Cobra exactamente 69 Y$ en Allá tú.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_cash_777", [
+        (1, "allatu_777", "Tres sietes en una caja",
+         "Cobra exactamente 777 Y$ en Allá tú.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_night", [
+        (1, "allatu_noche", "Teletienda de madrugada",
+         "Juega Allá tú entre las 2 y las 6 de la mañana.", C, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_friday13", [
+        (1, "allatu_viernes13", "Caja maldita",
+         "Pierde una partida de Allá tú un viernes 13.", R, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_inocentes", [
+        (1, "allatu_inocente", "La caja era de Mortadelo",
+         "Juega Allá tú el 28 de diciembre, día de los Inocentes.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_canarias", [
+        (1, "allatu_canarias", "Caja de gofio", "Juega Allá tú el Día de Canarias.", C),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_streak", [
+        (3, "allatu_racha_3", "Tres tardes de plató", "Juega Allá tú tres días seguidos.", C),
+        (7, "allatu_racha_7", "Semana fantástica del concurso",
+         "Juega Allá tú siete días seguidos.", R),
+        (30, "allatu_racha_30", "Temporada completa", "Juega Allá tú 30 días seguidos.", E),
+        (100, "allatu_racha_100", "Cien días de gracia, sin dimitir",
+         "Juega Allá tú 100 días seguidos.", L),
+        (365, "allatu_racha_365", "Parrilla fija de Telecinco",
+         "Juega Allá tú un año seguido sin faltar un día.", M),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_games_infierno", [
+        (100, "allatu_infierno_100", "Inquilino del Infierno",
+         "Juega 100 partidas con la tabla Infierno.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="allatu_tablas",
+        name="Las tres cadenas",
+        description="Juega una partida de Allá tú con cada tabla: Normal, Picante e Infierno.",
+        category="allatu",
+        rarity=C,
+        conditions=tuple((f"allatu_games_{t.key}", 1) for t in ALLATU_TABLES),
+    ))  # fmt: skip
+    a += _tiers("allatu", "allatu_random", [
+        (50, "allatu_dados", "Que elija el azar, como un sorteo de la ONCE",
+         "Abre 50 cajas con 🎲.", C),
+    ])  # fmt: skip
+
     # ⚔️ Guerra --------------------------------------------------------------------------
     a += _tiers("war", "war_hands", [
         (1, "war_1", "Declaración de guerra",
@@ -5412,6 +5623,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
             ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
             ("enraya_casino_duels", 1), ("backgammon_casino_duels", 1),
+        ),
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="casino_nineteen_games",
+        name="Diecinueve apellidos y una caja",
+        description="Juega a los diecinueve juegos del casino, Allá tú incluido.",
+        category="casino",
+        rarity=R,
+        conditions=(
+            ("roulette_spins", 1), ("bj_hands", 1), ("slots_spins", 1),
+            ("crash_rounds", 1), ("mines_games", 1), ("pachinko_volleys", 1),
+            ("botes_spins", 1), ("chicken_games", 1), ("coin_games", 1),
+            ("horse_bets", 1), ("dice_games", 1), ("bus_games", 1), ("bac_hands", 1),
+            ("gallos_fights", 1), ("poker_games", 1), ("timba_hands", 1),
+            ("enraya_casino_duels", 1), ("backgammon_casino_duels", 1), ("allatu_games", 1),
         ),
     ))  # fmt: skip
 
@@ -15393,6 +15619,96 @@ def tower_stats(game: TowerGame) -> StatDelta:
         )
         # Quemarse con ×10 o más ya ganado: lo que se llevaba se queda en la cueva.
         bump("tower_greedy", game.floor >= 1 and game.cents >= 1_000)
+    return delta
+
+
+def allatu_stats(
+    game: AllatuGame, *, when: datetime, day_start: int = 0, day_last: int = 0
+) -> StatDelta:
+    """Contadores de una partida de Allá tú terminada (sin lo común del casino).
+
+    Args:
+        game: La partida terminada.
+        when: Hora local.
+        day_start: Primer día (ordinal de fecha) de la racha de días seguidos
+            jugando, contando hoy (`Allatu.play_day`).
+        day_last: Último día de esa racha (hoy).
+    """
+    key = game.table.key
+    delta = StatDelta(
+        add={"allatu_games": 1, f"allatu_games_{key}": 1},
+        peak={"allatu_gordo_max": game.gordo},
+    )
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    if day_last:
+        delta.peak["allatu_day_start"] = day_start
+        delta.peak["allatu_day_last"] = day_last
+        delta.peak["allatu_streak"] = day_last - day_start + 1
+    final = game.ending in (AllatuEnding.KEPT, AllatuEnding.SWAPPED)
+    # En el final, la otra caja se abre sola: no la abre el jugador.
+    bump("allatu_boxes", amount=len(game.opened) - (1 if final else 0))
+    bump("allatu_random", amount=game.random_opens)
+    offers = game.offers
+    rejected = 0
+    for i, offer in enumerate(offers):
+        replaced = i + 1 < len(offers) and offers[i + 1].haggled
+        if not offer.accepted and not offer.hung_up and not replaced:
+            rejected += 1
+    bump("allatu_no_deals", amount=rejected)
+    haggled = [o for o in offers if o.haggled or o.hung_up]
+    bump("allatu_haggles", bool(haggled))
+    bump("allatu_haggle_up", any(o.haggled for o in offers))
+    bump("allatu_haggle_hang", any(o.hung_up for o in offers))
+    real = [o.amount for o in offers if not o.hung_up]
+    if real:
+        delta.peak["allatu_offer_max"] = max(real) * 100 // game.stake
+    own = game.own
+    gordo = game.gordo
+    own_gordo = own is not None and game.values[own] == gordo
+    first = game.opened[0] if game.opened else None
+    bump("allatu_gordo_first", first is not None and game.values[first] == gordo)
+    if game.ending is AllatuEnding.DEAL:
+        bump("allatu_deals")
+        bump("allatu_first_deal", offers[-1].round == 0)
+        # El trato se firma con tu caja de siempre: la que había al elegir.
+        bump("allatu_own_gordo", own_gordo)
+        bump("allatu_deal_gordo", own_gordo)
+        bump("allatu_visionary", own is not None and game.values[own] == min(game.values))
+    elif final:
+        assert own is not None
+        other = game.opened[-1]
+        mine, theirs = game.values[own], game.values[other]
+        bump("allatu_finals")
+        bump("allatu_all_no", rejected == len(offers) and len(offers) == len(ALLATU_ROUNDS))
+        swapped = game.ending is AllatuEnding.SWAPPED
+        bump("allatu_swaps", swapped)
+        bump("allatu_keeps", not swapped)
+        bump("allatu_swap_good", swapped and mine > theirs)
+        bump("allatu_swap_bad", swapped and mine < theirs)
+        bump("allatu_swap_gordo_lost", swapped and theirs == gordo)
+        bump("allatu_final_gordo", mine == gordo)
+        # Tu caja de siempre: la que te llevas o, si cambiaste, la otra.
+        bump("allatu_own_gordo", (theirs if swapped else mine) == gordo)
+        worst = max((o.amount for o in offers if not o.accepted and not o.hung_up), default=0)
+        bump("allatu_greedy", worst >= 5 * game.stake and game.net < 0)
+    if game.payout:
+        delta.peak["allatu_mult_max"] = game.payout * 100 // game.stake
+    if game.net > 0:
+        delta.peak["allatu_win_max"] = game.net
+    bump("allatu_zero", game.payout == 0)
+    bump("allatu_min_stake", game.stake == 1)
+    bump("allatu_cash_666", game.payout == 666)
+    bump("allatu_cash_69", game.payout == 69)
+    bump("allatu_cash_777", game.payout == 777)
+    bump("allatu_night", 2 <= when.hour < 6)
+    bump("allatu_friday13", game.net < 0 and when.weekday() == 4 and when.day == 13)
+    bump("allatu_inocentes", when.month == 12 and when.day == 28)
+    bump("allatu_canarias", when.month == 5 and when.day == 30)
     return delta
 
 

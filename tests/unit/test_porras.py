@@ -14,6 +14,7 @@ import discord
 import pytest
 from interaction_fakes import fake_interaction
 
+from bot.cogs import allatu as allatu_cog
 from bot.cogs import bacara as bacara_cog
 from bot.cogs import blackjack as blackjack_cog
 from bot.cogs import bus as bus_cog
@@ -196,6 +197,7 @@ def test_cada_propuesta_especifica_tiene_un_juego_que_manda_sus_datos() -> None:
         for m in (
             mines_cog,
             tower_cog,
+            allatu_cog,
             war_cog,
             chicken_cog,
             coin_cog,
