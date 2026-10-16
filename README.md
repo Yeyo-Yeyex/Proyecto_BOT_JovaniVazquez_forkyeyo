@@ -213,7 +213,8 @@ python -m bot
   - Las compras de 100.000 Y$ o más se anuncian con un pregón en el canal.
   - Skins (pestaña 🎨 Skins): cambian el aspecto de una mesa del casino sin
     tocar cómo se juega. Los tapetes valen para todas las mesas con fieltro
-    (ruleta, autobús, bacará, dados, moneda, pollo y póker) y cada mesa lleva el suyo:
+    (ruleta, autobús, bacará, dados, moneda, pollo, guerra, blackjack, póker y
+    backgammon) y cada mesa lleva el suyo:
     granate, de oro, rojigualda, de Israel, del Teide, monoestrellado y el
     🖼️ Tapete propio (100.000 Y$, nivel 10), que lleva la imagen que subas tú. Los
     gallos tienen las suyas. Se compran (también desde el 🎨 de la mesa), se
@@ -428,9 +429,15 @@ python -m bot
   (`.bj 500`, `.bj all`) y se juega con botones: 🃏 Pedir, ✋ Plantarse,
   ⏫ Doblar y ✂️ Separar. Si la banca enseña un as, antes salen 🛡️ Seguro y
   Sin seguro. Al terminar, 🃏 Repartir juega otra mano en el mismo
-  mensaje y ½ / ×2 / 💰 All-in cambian la apuesta. La mesa es una imagen
-  (tapete y cartas, ~5-10 KB por paso) y la banca roba carta a carta en
-  pantalla. Reglas: 6 barajas que duran entre manos hasta la carta de corte
+  mensaje y ½ / ×2 / 💰 All-in cambian la apuesta, y 🎨 elige el tapete. La mesa
+  se pinta con canvas en Node (`assets/blackjack/escena.html`): cada jugada es un
+  GIF con las cartas que salen del zapato y se voltean, la banca que destapa y
+  roba con suspense, las fichas que se van a la banca o llegan de ella, el cartel
+  con el importe que sube y la racha con su llama. Quien cuenta cartas ve lo de un
+  casino: la bandeja de descartes crece (con una muesca por baraja, sin números)
+  y el zapato mengua con la carta de corte dentro hasta que sale. Mientras miras
+  una jugada, la mesa ya ha pintado la de cada botón, así que al pulsar sale al
+  momento. Reglas: 6 barajas que duran entre manos hasta la carta de corte
   (se pueden contar cartas, y el jefe de sala baraja si subes la ficha más de
   ×4 con la cuenta alta), la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
@@ -1240,7 +1247,8 @@ src/bot/
 │   ├── roulette.py      # Reglas de la ruleta americana (apuestas y pagos)
 │   ├── blackjack.py     # Reglas del blackjack (zapato, manos, banca, pagos)
 │   ├── war.py           # Reglas de la Guerra: comparar cartas, rendición, guerra y lateral
-│   ├── cards_render.py  # Imagen de la mesa de blackjack (y plan C de la Guerra)
+│   ├── cards_render.py  # Mesa de cartas con Pillow: plan C del blackjack y la Guerra
+│   ├── blackjack_scene.py # Blackjack con canvas en Node o Chromium (assets/blackjack/escena.html)
 │   ├── war_scene.py     # Guerra con canvas en Node o Chromium (assets/guerra/escena.html)
 │   ├── roulette_render.py # Rueda de Pillow, de reserva si no hay navegador
 │   ├── roulette_scene.py # Ruleta con canvas en Node o Chromium (assets/ruleta/escena.html)

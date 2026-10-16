@@ -2405,6 +2405,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_bad_beat", [
         (1, "bad_beat", "Por los pelos", "Pierde con 20 contra 21 de la banca.", C, True),
     ])  # fmt: skip
+    a += _tiers("blackjack", "bj_streak_max", [
+        (3, "bjstreak_3", "Hat-trick en el tapete",
+         "Gana 3 manos seguidas en la misma mesa de blackjack (un empate no corta la racha).", C),
+        (5, "bjstreak_5", "Cinco seguidas, como los Presupuestos prorrogados",
+         "Gana 5 manos seguidas en la misma mesa de blackjack.", C),
+        (7, "bjstreak_7", "El jefe de sala te mira raro",
+         "Gana 7 manos seguidas en la misma mesa de blackjack.", R),
+        (9, "bjstreak_9", "La banca pide el rescate a Bruselas",
+         "Gana 9 manos seguidas en la misma mesa de blackjack.", E),
+        (11, "bjstreak_11", "Once seguidas: la UCO abre diligencias",
+         "Gana 11 manos seguidas en la misma mesa de blackjack.", L),
+        (13, "bjstreak_13", "Ni Felipe en el 82",
+         "Gana 13 manos seguidas en la misma mesa de blackjack. Mayoría absoluta.",
+         M, True),
+    ])  # fmt: skip
     a += _tiers("blackjack", "bj_kamikaze", [
         (1, "kamikaze", "Kamikaze con suerte", "Pide carta con 17 o más y no te pases.", E, True),
     ])  # fmt: skip
@@ -14562,9 +14577,16 @@ def blackjack_shoe_stats(
     return delta
 
 
-def blackjack_stats(game: BlackjackGame) -> StatDelta:
-    """Contadores de una mano de blackjack ya pagada (sin lo común del casino)."""
+def blackjack_stats(game: BlackjackGame, *, streak: int = 0) -> StatDelta:
+    """Contadores de una mano de blackjack ya pagada (sin lo común del casino).
+
+    Args:
+        streak: Manos seguidas ganadas en la mesa contando esta (la racha que enseña el
+            tapete: un empate no la corta).
+    """
     delta = StatDelta(add={"bj_hands": 1})
+    if streak:
+        delta.peak["bj_streak_max"] = streak
     add = delta.add
 
     def bump(stat: str, amount: int = 1) -> None:

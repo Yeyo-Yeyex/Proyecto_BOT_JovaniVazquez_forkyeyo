@@ -1,5 +1,5 @@
 // El tapete de las mesas del casino: lo comparten las escenas que tienen fieltro
-// (ruleta, autobús, bacará, dados, moneda, pollo, guerra, póker y backgammon) con un
+// (ruleta, autobús, bacará, dados, moneda, pollo, guerra, blackjack, póker y backgammon) con un
 // <script src="../tapete.js">.
 //
 // La skin llega en meta.skin (bot/services/skins.py, juego "tapete"):
