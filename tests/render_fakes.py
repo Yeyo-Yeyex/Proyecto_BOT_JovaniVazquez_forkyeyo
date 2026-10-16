@@ -7,7 +7,7 @@ de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los 
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia esas clases (y la de la Torre del dragón) en sus módulos de
+`use_fake_drawings` cambia esas clases (y las de la Torre del dragón y Allá tú) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsRenderer` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import pytest
 
+import bot.services.allatu_scene as allatu_scene
 import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
 import bot.services.slots_render as slots_render
 import bot.services.tower_scene as tower_scene
 import bot.services.war_scene as war_scene
+from bot.services.allatu_scene import Media as AllatuMedia
 from bot.services.bacara_render import Media as WarMedia
 from bot.services.tower_scene import Media as TowerMedia
 
@@ -151,6 +153,61 @@ class FakeTowerScene:
         return None
 
 
+class FakeAllatuScene:
+    """Allá tú sin dibujo: PNG y GIF de relleno que duran 0 s, y apunta cada dibujo.
+
+    Con `images=False` hace como si no hubiera Node ni navegador (todo `None`) y
+    el plató se queda con texto.
+    """
+
+    def __init__(self, *args: object, images: bool = True, **kwargs: object) -> None:
+        self.images = images
+        self.calls: list[tuple[object, ...]] = []
+
+    @property
+    def disabled(self) -> bool:
+        return not self.images
+
+    def _media(self, *call: object) -> AllatuMedia | None:
+        self.calls.append(call)
+        return AllatuMedia(gif=b"gif", png=b"png", seconds=0.0) if self.images else None
+
+    def _png(self, *call: object) -> bytes | None:
+        self.calls.append(call)
+        return b"png" if self.images else None
+
+    async def still(self, game: object) -> bytes | None:
+        return self._png("still")
+
+    async def picks(self, game: object) -> list[bytes] | None:
+        self.calls.append(("picks",))
+        return [b"png"] * 22 if self.images else None
+
+    async def opening(self, game: object) -> AllatuMedia | None:
+        return self._media("opening")
+
+    async def open_box(self, game: object, box: int) -> AllatuMedia | None:
+        return self._media("open_box", box)
+
+    async def call(self, game: object) -> AllatuMedia | None:
+        return self._media("call")
+
+    async def deal(self, game: object) -> AllatuMedia | None:
+        return self._media("deal")
+
+    async def haggle(self, game: object) -> AllatuMedia | None:
+        return self._media("haggle")
+
+    async def no_deal(self, game: object) -> bytes | None:
+        return self._png("no_deal")
+
+    async def final(self, game: object, *, swap: bool) -> AllatuMedia | None:
+        return self._media("final", swap)
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_render, "SlotsRenderer", FakeSlotsRenderer)
@@ -159,3 +216,4 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)
     monkeypatch.setattr(war_scene, "WarScene", FakeWarScene)
     monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)
+    monkeypatch.setattr(allatu_scene, "AllatuScene", FakeAllatuScene)
