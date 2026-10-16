@@ -557,14 +557,24 @@ async def test_en_tu_turno_se_pinta_cada_accion_y_pedir_sube_la_pintada(tmp_path
     assert await balance(cog) == STARTING_BALANCE - 100, "lo pintado no cobra nada"
 
     interaction = make_interaction()
+    stand_off: list[bool] = []
+
+    async def record(**kwargs: object) -> None:
+        stand_off.append(table.action_buttons[Action.STAND].disabled)
+
+    interaction.edit_original_response.side_effect = record
     await table.act(interaction, Action.HIT)
 
-    # Sube el GIF de pedir ya pintado, en una sola edición y con los botones encendidos.
+    # Sube el GIF de pedir ya pintado, con los botones apagados, y luego el PNG con ellos
+    # encendidos, como el resto del casino.
     assert uploaded(interaction) == b"GIF2"
-    assert interaction.edit_original_response.await_count == 1
+    assert stand_off == [True, False]
+    gif_edit, png_edit = interaction.edit_original_response.await_args_list
+    assert gif_edit.kwargs["embed"].description == blackjack_module.PLAYER_BUSY
+    assert png_edit.kwargs["attachments"][0].filename == PNG_NAME
     assert table.game.hands[0].cards == painted[0].hands[0].cards
     assert not table.action_buttons[Action.STAND].disabled
-    assert table._image == blackjack_module.GIF_NAME
+    assert table._image == PNG_NAME
     # Y se pinta ya lo siguiente: las acciones con 19.
     await settle_painting(table)
     assert scene.calls[-1][0].hands[0].cards == table.game.hands[0].cards
