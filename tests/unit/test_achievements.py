@@ -312,6 +312,8 @@ PRODUCED_STATS = {
     "botes_bonuses", *(f"botes_bonus_{kind}" for kind in ("green", "blue", "red", "grand")),
     "botes_mini", "botes_major", "botes_grand", "botes_almost_grand", "botes_mult_max",
     "botes_bonus_max", "botes_mystery", "botes_instant", "botes_maximizer", "botes_auto",
+    "botes_rescue", "botes_rescue_big", "botes_slipped", "botes_five_wait", "botes_epic",
+    "botes_last_save", "botes_chase_hit",
     # Crash (cogs/crash.py: crash_stats) y Minas (cogs/mines.py: mines_stats)
     "crash_rounds", "crash_cashouts", "crash_cashout_max", "crash_win_max", "crash_auto",
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",

@@ -181,6 +181,22 @@ GRAND = 100_000
 #: Monedas en el bonus que dan cada bote. Se ganan todos los alcanzados.
 MINI_COINS, MAJOR_COINS, GRAND_COINS = 10, 15, 20
 
+#: Premio grande, mega y épico (veces la apuesta): el cartel que sale y el texto.
+BIG_WIN, MEGA_WIN, EPIC_WIN = 10, 25, 50
+
+
+def win_tier(points: int) -> int:
+    """0 normal, 1 grande, 2 mega o 3 épico, según las veces la apuesta (`points` en puntos)."""
+    times = points / POINTS_PER_STAKE
+    if times >= EPIC_WIN:
+        return 3
+    if times >= MEGA_WIN:
+        return 2
+    if times >= BIG_WIN:
+        return 1
+    return 0
+
+
 # -- Rodillos del juego base ---------------------------------------------------------
 
 #: Peso de cada tipo de casilla en cada rodillo; cada casilla se elige por
