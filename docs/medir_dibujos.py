@@ -57,6 +57,7 @@ def pin(threads: int) -> None:
 def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]]]]:
     """Cada juego: cómo crear su escena (con Node, sin Chromium) y una jugada de prueba."""
     from craps_fakes import game_after, table_for
+    from test_allatu_scene import game_in
     from test_bacara_node import BEFORE, HEADER, THIRDS
     from test_backgammon_scene import META as BG_META
     from test_backgammon_scene import typical_turn
@@ -71,6 +72,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_war_scene import tied, war_of, won
 
     from bot.services import housing_view
+    from bot.services.allatu import Phase
+    from bot.services.allatu_scene import AllatuScene
     from bot.services.bacara_scene import BacaraScene
     from bot.services.backgammon_scene import BackgammonScene
     from bot.services.bus_scene import BusScene
@@ -119,6 +122,16 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
             lambda s: s.pick(game_at(Difficulty.EXPERT, 5), 0),
         ),
         "guerra_2": (lambda: WarScene(executable_path=no), tie_and_war),
+        # Allá tú: abrir una caja (se pinta antes del clic) y la llamada de la banca
+        # (se pinta mientras se ve la caja).
+        "allatu": (
+            lambda: AllatuScene(executable_path=no),
+            lambda s: s.open_box(game_in(Phase.OFFER), 21),
+        ),
+        "allatu_llamada": (
+            lambda: AllatuScene(executable_path=no),
+            lambda s: s.call(game_in(Phase.OFFER)),
+        ),
         "caballos": (
             lambda: SceneRenderer(executable_path=no),
             lambda s: s.race(card_of(), fixed_result((0, 1, 2, 3, 4, 5))),

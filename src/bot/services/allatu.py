@@ -291,9 +291,7 @@ class AllatuGame:
         values = [*table.base, Fraction(gordo)]
         rng.shuffle(values)
         luck = tuple(rng.random() < HAGGLE_CHANCE for _ in ROUNDS)
-        game = cls(
-            stake=stake, table=table, gordo=gordo, values=tuple(values), haggle_luck=luck
-        )
+        game = cls(stake=stake, table=table, gordo=gordo, values=tuple(values), haggle_luck=luck)
         game.dice = rng.randrange(BOXES)
         return game
 
@@ -531,9 +529,11 @@ class AllatuGame:
         return self.deal()
 
 
-#: Frases cuando la oferta es mala, normal o buena (según el factor y la media).
 def offer_mood(game: AllatuGame) -> str:
-    """`rata`, `normal` o `generosa`: cómo se presenta la oferta en juego."""
+    """`rata`, `normal` o `generosa`: cómo se presenta la oferta en juego.
+
+    Rata por debajo de la mitad de la apuesta; generosa desde el doble.
+    """
     offer = game.offer
     if offer is None:
         return "normal"

@@ -253,6 +253,23 @@ PROPOSITIONS: tuple[Proposition, ...] = (
         details=frozenset({"wins"}),
     ),
     Proposition(
+        "trato", "🤝", "¿Hace trato?",
+        "¿{who} acepta alguna oferta de Perro Sanxe en sus {n} partidas de Allá tú?",
+        ("🤝 Hace trato", "🙅 No trato, hasta el final"),
+        lambda plays, _stake: 0 if any(p.detail("deal") for p in plays) else 1,
+        favourable=None,
+        games=frozenset({"allatu"}),
+        details=frozenset({"deal"}),
+    ),
+    Proposition(
+        "caja_gordo", "🌟", "¿Le toca el gordo en su caja?",
+        "¿{who} tiene el gordo en su caja en alguna de sus {n} partidas de Allá tú?",
+        ("🌟 Lo tiene", "📦 Ni rastro"),
+        lambda plays, _stake: 0 if any(p.detail("gordo") for p in plays) else 1,
+        games=frozenset({"allatu"}),
+        details=frozenset({"gordo"}),
+    ),
+    Proposition(
         "poker_escalera", "♠️", "¿Liga escalera o más?",
         "¿{who} acaba con escalera o mejor en alguna de sus {n} manos de póker?",
         ("♠️ Liga escalera o más", "🃏 Ni una"),

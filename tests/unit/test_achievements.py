@@ -94,6 +94,7 @@ from bot.services.achievements import (
     slots_stats,
     total_reward,
 )
+from bot.services.allatu import TABLES
 from bot.services.autoplay import StopReason
 from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
 from bot.services.beernight import Reason as BeerReason
@@ -619,6 +620,16 @@ PRODUCED_STATS = {
     *(f"casino_bet_{n}" for n in SECRET_STAKES),
     "crash_cash_low", "crash_missed_moon",
     "mines_cash_one", "mines_greedy", *(f"mines_level_{n}" for n in range(1, 13)),
+    # cogs/allatu.py (`allatu_stats`)
+    "allatu_games", "allatu_boxes", "allatu_random", "allatu_no_deals", "allatu_haggles",
+    "allatu_haggle_up", "allatu_haggle_hang", "allatu_offer_max", "allatu_gordo_first",
+    "allatu_deals", "allatu_first_deal", "allatu_own_gordo", "allatu_deal_gordo",
+    "allatu_visionary", "allatu_finals", "allatu_all_no", "allatu_swaps", "allatu_keeps",
+    "allatu_swap_good", "allatu_swap_bad", "allatu_swap_gordo_lost", "allatu_final_gordo",
+    "allatu_greedy", "allatu_mult_max", "allatu_win_max", "allatu_zero", "allatu_min_stake",
+    "allatu_cash_666", "allatu_cash_69", "allatu_cash_777", "allatu_night", "allatu_friday13",
+    "allatu_inocentes", "allatu_canarias", "allatu_gordo_max", "allatu_streak",
+    *(f"allatu_games_{t.key}" for t in TABLES),
     # cogs/tower.py (`tower_stats`)
     "tower_games", "tower_floors", "tower_random", "tower_cashouts", "tower_mult_max",
     "tower_win_max", "tower_cash_one", "tower_cash_one_maestro", "tower_cash_eight",

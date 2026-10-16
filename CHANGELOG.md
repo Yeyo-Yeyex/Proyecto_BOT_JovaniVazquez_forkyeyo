@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.17.0 · 2026-10-16
+
+- Allá tú: `allatu`, 22 cajas, un gordo sorpresa y la banca al teléfono
+
 ### 7.16.0 · 2026-10-16
 
 - Pisos: obra nueva de la rama Ladrillo, aval de los padres, fianzas y frase del BCE

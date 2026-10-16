@@ -68,7 +68,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `allatu [cantidad] [tabla]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
   | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -584,6 +584,15 @@ python -m bot
   GIF dibujado con canvas en Node con Skia, sin navegador (si no hay Node, en
   Chromium y, si tampoco, con Pillow); las cartas se sortean antes de jugar y
   la animación de la mano siguiente se dibuja mientras piensas.
+- **Allá tú** (`/allatu`, `.allatu [cantidad] [tabla]`): 22 cajas, un gordo
+  sorpresa que sortea una ruleta al empezar (casi siempre ×10; con suerte, hasta
+  ×250, ×500 o ×1.000 según la tabla) y Perro Sanxe al teléfono. Eliges tu caja,
+  abres las demás por rondas y tras cada ronda la banca te ofrece dinero: ✅
+  Trato, ❌ No trato o, una vez, 🤝 Regatear (sube o cuelga). Al final, te
+  quedas tu caja o la cambias. Una caja vale de media el 99 % de lo apostado y
+  la oferta nunca lo supera, así que aceptar pronto sale caro. Todo se pinta
+  con canvas en Node antes del clic: la animación de cada caja, la del trato y
+  la del regateo.
 - **Póker** (`/poker [modo] [cantidad]`, `.poker banca 500`, `.poker timba 50`):
   un solo comando con dos modos; sin modo, el bot pregunta con dos botones.
   ♠️ **Contra la banca**: Casino Hold'em, el Texas Hold'em
@@ -731,7 +740,7 @@ python -m bot
   El bote no pasa de 5 veces lo que ella se juega, para que amañarla no
   salga tan a cuenta. Once propuestas: gana o pierde, si las gana todas,
   cuántas gana, si dobla, si se pega un palo, si saca un ×5, si acaba tieso
-  y las propias de minas, la torre, la guerra, pollo y blackjack. Vale en todos los juegos menos
+  y las propias de minas, la torre, la guerra, pollo, Allá tú y blackjack. Vale en todos los juegos menos
   el crash, y un juego nuevo las tiene sin hacer nada. Sin `miembro`, enseña
   las porras en marcha. En la tienda, los 🔭 Prismáticos de la UCO dejan ver
   quién apuesta qué y la 📓 Libreta de la porra, montar porras de 10 jugadas.
@@ -1189,6 +1198,7 @@ src/bot/
 │   ├── chicken.py       # Pollo: carretera con botones, GIF por paso y autocobro
 │   ├── coin.py          # moneda: cara o cruz con botones, doble o nada y canto
 │   ├── bus.py           # guagua: Ride the Bus con botones, cobro y precarga de los GIF
+│   ├── allatu.py        # allatu: 22 cajas, el gordo y la banca de Perro Sanxe
 │   ├── poker.py         # poker: mesa por canal, ir o retirarse, 💎 Bote y club
 │   ├── timba.py         # poker modo timba: Texas Hold'em entre miembros, turnos y botes
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano

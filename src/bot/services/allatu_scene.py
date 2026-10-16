@@ -50,6 +50,7 @@ import asyncio
 import io
 import math
 import random
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from fractions import Fraction
@@ -73,7 +74,7 @@ from bot.services.allatu import (
 from bot.services.browser_scene import BrowserScene
 from bot.services.economy import format_amount
 from bot.services.node_scene import NodeScene, patch_png
-from bot.utils.gif import local_palette_gif
+from bot.utils.gif import QUANTIZE_THREADS, local_palette_gif
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "allatu" / "escena.html"
 
@@ -300,7 +301,9 @@ def opening_states(game: AllatuGame) -> list[dict[str, Any]]:
                 **base,
                 "pos": end,
                 "glow": _r(1 - k / 12),
-                "banner": _banner(text, format_multiplier(game.gordo), "gordo" if big else "info", a),
+                "banner": _banner(
+                    text, format_multiplier(game.gordo), "gordo" if big else "info", a
+                ),
             },
         )
     _fade_to(tl, tl.states[-1], game)
@@ -357,7 +360,13 @@ def open_states(game: AllatuGame, box: int, *, own: bool = False) -> list[dict[s
     for k in range(6):
         tl.add(
             70,
-            {**base, "zoom": 1, "lid": 1, "rise": 1, "banner": _banner(text, sub, bkind, (k + 1) / 3)},
+            {
+                **base,
+                "zoom": 1,
+                "lid": 1,
+                "rise": 1,
+                "banner": _banner(text, sub, bkind, (k + 1) / 3),
+            },
         )
     last = {k: v for k, v in tl.states[-1].items() if k not in ("ms", "t")}
     tl.add(FINAL_FRAME_MS, last)
@@ -404,7 +413,13 @@ def _count_up(tl: _Timeline, base: dict[str, Any], start: int, end: int, frames:
     for k in range(frames):
         p = _ease_out((k + 1) / frames)
         tl.add(
-            55, {**base, "answer": 1, "count": _r(p), "amount": format_amount(round(start + (end - start) * p))}
+            55,
+            {
+                **base,
+                "answer": 1,
+                "count": _r(p),
+                "amount": format_amount(round(start + (end - start) * p)),
+            },
         )
 
 
@@ -483,7 +498,10 @@ def haggle_states(game: AllatuGame) -> list[dict[str, Any]]:
         for k in range(5):
             tl.add(
                 70,
-                {**final, "banner": _banner("¡SUBE LA OFERTA!", final["amount"], "good", (k + 1) / 2)},
+                {
+                    **final,
+                    "banner": _banner("¡SUBE LA OFERTA!", final["amount"], "good", (k + 1) / 2),
+                },
             )
         tl.rest(after)
         return tl.states
@@ -494,7 +512,10 @@ def haggle_states(game: AllatuGame) -> list[dict[str, Any]]:
     for k in range(6):
         tl.add(
             90,
-            {**hung, "banner": _banner("¡HA COLGADO!", "ESTA RONDA, SIN OFERTA", "hang", (k + 1) / 2)},
+            {
+                **hung,
+                "banner": _banner("¡HA COLGADO!", "ESTA RONDA, SIN OFERTA", "hang", (k + 1) / 2),
+            },
         )
     _fade_to(tl, tl.states[-1], after)
     return tl.states
@@ -572,7 +593,9 @@ def final_states(game: AllatuGame, *, swap: bool) -> list[dict[str, Any]]:
         lid = {"lid": _r(_ease_out(min(1, (k + 1) / 4))), "rise": _r(_clamp((k - 2) / 3))}
         tl.add(
             70,
-            scene(swap=s, banner=_banner(text, other_sub, bkind, 1), **boxes(mine=opened, other=lid)),
+            scene(
+                swap=s, banner=_banner(text, other_sub, bkind, 1), **boxes(mine=opened, other=lid)
+            ),
         )
     _fade_to(tl, tl.states[-1], after)
     return tl.states
@@ -640,6 +663,27 @@ class AllatuScene:
         if patches is None:
             return None
         return await asyncio.to_thread(patch_png, patches[0])
+
+    async def picks(self, game: AllatuGame) -> list[bytes] | None:
+        """El PNG del plató tras elegir cada caja (`game` en `Phase.PICK`), de la 1 a la 22.
+
+        Las 22 imágenes van en un solo dibujo, repartido entre todos los
+        procesos de Node, y cada PNG se comprime en su hilo.
+        """
+        states = []
+        for box in range(BOXES):
+            after = deepcopy(game)
+            after.choose(box)
+            states.append(rest_state(after))
+        patches = await self._frames(meta_state(game), states)
+        if patches is None:
+            return None
+
+        def compress() -> list[bytes]:
+            with ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) as pool:
+                return list(pool.map(patch_png, patches))
+
+        return await asyncio.to_thread(compress)
 
     async def opening(self, game: AllatuGame) -> Media | None:
         """La ruleta del gordo de una partida nueva y el plató para elegir caja."""

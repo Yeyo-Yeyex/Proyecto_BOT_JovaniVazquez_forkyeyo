@@ -46,9 +46,8 @@ import numpy as np
 
 sys.path.insert(0, "src")
 
-from bot.services import bacara as bacara_rules  # noqa: E402
-from bot.services import blackjack as bj  # noqa: E402
 from bot.services import (  # noqa: E402
+    allatu,
     bus,
     chicken,
     coin,
@@ -63,6 +62,8 @@ from bot.services import (  # noqa: E402
     tower,
     war,
 )
+from bot.services import bacara as bacara_rules  # noqa: E402
+from bot.services import blackjack as bj  # noqa: E402
 from bot.services import horses as caballos  # noqa: E402
 from bot.services.achievements import (  # noqa: E402
     AVAILABLE,
@@ -72,6 +73,7 @@ from bot.services.achievements import (  # noqa: E402
     Achievement,
     Rarity,
     StatDelta,
+    allatu_stats,
     baccarat_stats,
     blackjack_stats,
     bus_stats,
@@ -137,6 +139,7 @@ RITMO_CASINO = {
     "pachinko": 60,
     "horses": 30,
     "baccarat": 60,
+    "allatu": 20,
 }
 
 #: Cuánto suma al día cada contador para un miembro activo que hace esa cosa.
@@ -385,6 +388,37 @@ def _jugar_torre(j: Jugador) -> StatDelta:
         if alive and (game.crowned or game.cents >= target):  # type: ignore[operator]
             game.cash_out()
     return _con_casino(tower_stats(game), stake=APUESTA, net=game.net)
+
+
+#: Tabla que elige un jugador normal de Allá tú (Normal es la de serie).
+_TABLAS = (("normal", 60), ("picante", 25), ("infierno", 15))
+#: Lo que pide un jugador normal para aceptar una oferta (veces la apuesta).
+_PIDE = ((0.8, 20), (1.0, 30), (1.5, 25), (3.0, 15), (100.0, 10))
+
+
+def _jugar_allatu(j: Jugador) -> StatDelta:
+    """Una partida de Allá tú: acepta cuando la oferta llega a lo que pide, regatea a
+    veces y en el final cambia de caja la mitad de las veces."""
+    rng = j.rng
+    table = allatu.Table(_elegir(rng, _TABLAS))  # type: ignore[arg-type]
+    game = allatu.AllatuGame.new(APUESTA, table, rng)
+    wants = _elegir(rng, _PIDE)
+    game.choose(rng.randrange(allatu.BOXES))
+    while game.playing:
+        if game.phase is allatu.Phase.OPEN:
+            game.open(rng.choice(game.openable), random_pick=rng.random() < 0.1)
+        elif game.phase is allatu.Phase.OFFER:
+            offer = game.offer
+            assert offer is not None
+            if offer.amount >= wants * APUESTA:  # type: ignore[operator]
+                game.deal()
+            elif game.can_haggle and rng.random() < 0.2:
+                game.haggle()
+            else:
+                game.no_deal()
+        else:
+            game.finish(swap=rng.random() < 0.5)
+    return _con_casino(allatu_stats(game, when=NOON), stake=APUESTA, net=game.net)
 
 
 def _jugar_guerra(j: Jugador) -> StatDelta:
@@ -719,6 +753,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "blackjack": _jugar_blackjack,
     "horses": _jugar_caballos,
     "baccarat": _jugar_bacara,
+    "allatu": _jugar_allatu,
 }
 
 

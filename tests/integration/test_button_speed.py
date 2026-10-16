@@ -501,6 +501,63 @@ async def press_tower_burn(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def allatu_board(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Plató de Allá tú con 10 Y$ en la tabla Normal (de texto: construido a mano)."""
+    module = module_of(client, "Allá tú")
+    return module.AllatuBoard(
+        client.get_cog("Allá tú"),
+        guild_id=GUILD_ID,
+        owner=owner,
+        stake=10,
+        table=module.Table.NORMAL,
+    )
+
+
+async def press_allatu_again(client: BotClient, owner: MagicMock) -> Click:
+    board = allatu_board(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._again(interaction)
+
+    return click
+
+
+async def offered_allatu(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Plató con la apuesta cobrada (antes de medir) y la primera oferta de la banca."""
+    board = allatu_board(client, owner)
+    assert await board.start() is None
+    game = board.game
+    assert game is not None
+    game.choose(0)
+    while game.offer is None:
+        game.open(game.openable[0])
+    return board
+
+
+async def press_allatu_deal(client: BotClient, owner: MagicMock) -> Click:
+    board = await offered_allatu(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await board._deal(interaction)
+
+    return click
+
+
+async def press_allatu_keep(client: BotClient, owner: MagicMock) -> Click:
+    board = await offered_allatu(client, owner)
+    game = board.game
+    while game.other is None:
+        if game.offer is not None:
+            game.no_deal()
+        else:
+            game.open(game.openable[0])
+
+    async def click(interaction: MagicMock) -> None:
+        await board._keep(interaction)
+
+    return click
+
+
 def poker_table(client: BotClient):  # noqa: ANN201
     """Mesa del póker del canal con dibujo falso, sin esperas y sin bucle propio."""
     cog = client.get_cog("Póker")
@@ -1410,6 +1467,9 @@ CASES: dict[str, Press] = {
     "torre: jugar otra": press_tower_again,
     "torre: cobrar": press_tower_cash_out,
     "torre: quemarse": press_tower_burn,
+    "allatu: otra": press_allatu_again,
+    "allatu: trato": press_allatu_deal,
+    "allatu: quedarse": press_allatu_keep,
     "póker: sentarse": press_poker_sit,
     "póker: ir": press_poker_call,
     "póker: bote": press_poker_bonus,

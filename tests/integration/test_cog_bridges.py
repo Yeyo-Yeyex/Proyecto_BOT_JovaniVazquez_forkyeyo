@@ -1426,6 +1426,54 @@ async def test_la_torre_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: P
         await client.close()
 
 
+async def test_allatu_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: Path) -> None:
+    """Allá tú carga antes que los logros: sus partidas deben llegar a `logros` y al casino."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Allá tú")
+        cog.ahead = False
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        await cog._allatu_impl(
+            guild=MagicMock(id=GUILD_ID),
+            channel=None,
+            user=owner,
+            amount_text="100",
+            table=None,
+            send=AsyncMock(return_value=MagicMock(edit=AsyncMock())),
+            send_error=AsyncMock(),
+        )
+        (board,) = cog.boards
+        board.image = None  # el plató de texto: aquí no se mira ninguna imagen
+        game = board.game
+
+        def press() -> MagicMock:
+            interaction = fake_interaction()
+            interaction.user = owner
+            interaction.guild = None
+            return interaction
+
+        await board._press_box(press(), 0)
+        while game.offer is None:
+            await board._press_box(press(), game.openable[0])
+        await board._deal(press())
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["allatu_games"] == 1
+        assert profile.stats["allatu_deals"] == 1
+        assert profile.stats["allatu_day_last"] > 0
+        assert {"allatu_1", "allatu_trato", "allatu_gallina"} <= set(profile.unlocked)
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["allatu"].plays == 1
+    finally:
+        await client.close()
+
+
 async def test_la_guerra_apunta_sus_logros_y_su_libro_con_el_bot_real(tmp_path: Path) -> None:
     """La Guerra carga antes que los logros: sus manos deben llegar a `logros` y al casino."""
     client = await load_bot(tmp_path)
