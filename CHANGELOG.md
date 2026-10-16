@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.11.0 · 2026-10-16
+
+- `informe`: con `canal`, el informe de uso se publica cada día en ese canal privado; con `quitar`, deja de publicarse
+
 ### 7.10.1 · 2026-10-16
 
 - Torre del dragón: al acabar cada jugada ya no se repite un trozo del GIF anterior con fotogramas mezclados (el mensaje pasa a embed, como los demás juegos)

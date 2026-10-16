@@ -32,7 +32,9 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
 - `lag`: cada vez que el bucle de eventos se para más de `LAG_CULPRIT_MS`, dónde
   estaba parado (la función del bot, `LoopWatchdog`) y cuánto.
 - Al arrancar y una vez al día, el informe de `informe` se deja en `REPORTS_DIR`
-  (`informes/`, montada desde el NAS) para leerlo por la red.
+  (`informes/`, montada desde el NAS) y se publica en el canal que haya elegido
+  un administrador con `informe` (`publish_daily`), para que un agente lo lea
+  sin pedirlo.
 - Cada minuto, una muestra del sistema: memoria del contenedor (lo que vigila el
   `mem_limit` de `docker-compose.yml`), memoria del proceso, retraso del bucle
   de eventos, latencia con Discord y procesos de Chromium y Node abiertos.
@@ -42,7 +44,8 @@ así que contar un clic nunca abre la base de datos antes de contestar a Discord
 Al descargar el cog (también al cerrar el bot) se vuelca lo pendiente.
 
 Necesita los intents de miembros y de contenido de mensajes que ya pide el bot
-(`bot.app.build_intents`); no hace llamadas a la API de Discord.
+(`bot.app.build_intents`); solo llama a la API de Discord para publicar el
+informe diario.
 """
 
 from __future__ import annotations
@@ -70,6 +73,7 @@ from discord.ext import commands, tasks
 from discord.state import ConnectionState
 from discord.ui.view import BaseView, ViewStore
 
+from bot.cogs.deploy import NewsTarget, resolve_target
 from bot.services import telemetry as telemetry_service
 from bot.services.telemetry import LISTENER_ITEM, SystemSample, TelemetryService, local_moment
 
@@ -475,6 +479,22 @@ def save_report(folder: Path, name: str, data: str, *, keep: int = KEPT_REPORTS)
         old.unlink(missing_ok=True)
 
 
+async def publish_report(channel: NewsTarget, name: str, data: str) -> bool:
+    """Sube el informe `name` a `channel`, salvo que el último mensaje ya sea ese.
+
+    Así un reinicio el mismo día no lo repite. Devuelve si quedó publicado.
+    """
+    try:
+        async for last in channel.history(limit=1):
+            if any(attachment.filename == name for attachment in last.attachments):
+                return True
+        await channel.send(file=discord.File(io.BytesIO(data.encode()), filename=name))
+    except discord.HTTPException:
+        logger.warning("No se pudo publicar el informe diario", exc_info=True)
+        return False
+    return True
+
+
 class LogCounter(logging.Handler):
     """Cuenta los avisos y errores del log por plantilla, sin sus argumentos.
 
@@ -590,31 +610,42 @@ class Telemetry(commands.Cog):
 
     @tasks.loop(hours=24)
     async def export_loop(self) -> None:
-        """Al arrancar y una vez al día: deja el informe en `REPORTS_DIR`.
+        """Al arrancar y una vez al día: deja el informe en `REPORTS_DIR` y lo publica.
 
         Es el mismo de `informe` (`DAILY_REPORT_DAYS` días), para que un agente lo
-        lea desde la carpeta compartida del NAS sin pedirlo. Sin la carpeta (fuera
-        de Docker o sin montarla) no hace nada.
+        lea sin pedirlo: desde la carpeta compartida del NAS o desde el canal que
+        eligió un administrador con `informe`. Sin carpeta (fuera de Docker o sin
+        montarla) no lo guarda; sin canal, no lo publica.
         """
-        if not await asyncio.to_thread(REPORTS_DIR.is_dir):
-            return
-        guilds = self.bot.guilds
-        for guild in guilds:
-            names, channel_names = report_inputs(self.bot, guild)
-            report = await self.telemetry.report(
-                guild_id=guild.id,
-                days=DAILY_REPORT_DAYS,
-                commands=names,
-                channel_names=channel_names,
-            )
-            prefix = "informe" if len(guilds) == 1 else f"informe-{guild.id}"
-            data = json.dumps(report, ensure_ascii=False, separators=(",", ":"))
+        has_folder = await asyncio.to_thread(REPORTS_DIR.is_dir)
+        for guild in self.bot.guilds:
+            await self.publish_daily(guild, save=has_folder)
+
+    async def publish_daily(self, guild: discord.Guild, *, save: bool = False) -> bool:
+        """Saca el informe diario de `guild`, lo guarda si `save` y lo publica en su canal.
+
+        Devuelve si lo publicó (o ya estaba publicado).
+        """
+        channel_id = await self.telemetry.report_channel(guild.id)
+        channel = None if channel_id is None else await resolve_target(guild, channel_id)
+        if not save and channel is None:
+            return False
+        names, channel_names = report_inputs(self.bot, guild)
+        report = await self.telemetry.report(
+            guild_id=guild.id,
+            days=DAILY_REPORT_DAYS,
+            commands=names,
+            channel_names=channel_names,
+        )
+        prefix = "informe" if len(self.bot.guilds) == 1 else f"informe-{guild.id}"
+        name = f"{prefix}-{report['hasta']}.json"
+        data = json.dumps(report, ensure_ascii=False, separators=(",", ":"))
+        if save:
             try:
-                await asyncio.to_thread(
-                    save_report, REPORTS_DIR, f"{prefix}-{report['hasta']}.json", data
-                )
+                await asyncio.to_thread(save_report, REPORTS_DIR, name, data)
             except OSError:
                 logger.warning("No se pudo guardar el informe diario", exc_info=True)
+        return channel is not None and await publish_report(channel, name, data)
 
     @export_loop.before_loop
     async def _before_export(self) -> None:

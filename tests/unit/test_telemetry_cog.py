@@ -8,7 +8,7 @@ import os
 import sys
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -23,6 +23,7 @@ from bot.cogs.telemetry import (
     blocking_site,
     item_name,
     message_types,
+    publish_report,
     read_system_usage,
     save_report,
 )
@@ -176,3 +177,30 @@ async def test_sin_la_carpeta_de_informes_no_se_guarda_nada(tmp_path, monkeypatc
     monkeypatch.setattr(telemetry_cog, "REPORTS_DIR", tmp_path / "no-existe")
     await cog.export_loop.coro(cog)
     cog.telemetry.report.assert_not_called()
+
+
+def report_channel(last_files: list[str]) -> MagicMock:
+    """Canal de informes cuyo último mensaje lleva adjuntos con esos nombres."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock()
+    last = MagicMock(attachments=[MagicMock(filename=name) for name in last_files])
+
+    async def history(limit: int):  # noqa: ANN202, ARG001
+        yield last
+
+    channel.history = history
+    return channel
+
+
+async def test_el_informe_diario_se_publica_en_el_canal() -> None:
+    channel = report_channel(["informe-2026-10-15.json"])
+    await publish_report(channel, "informe-2026-10-16.json", '{"dia": 16}')
+    sent = channel.send.await_args.kwargs["file"]
+    assert sent.filename == "informe-2026-10-16.json"
+    assert sent.fp.read() == b'{"dia": 16}'
+
+
+async def test_un_reinicio_el_mismo_dia_no_repite_el_informe() -> None:
+    channel = report_channel(["informe-2026-10-16.json"])
+    await publish_report(channel, "informe-2026-10-16.json", "{}")
+    channel.send.assert_not_awaited()

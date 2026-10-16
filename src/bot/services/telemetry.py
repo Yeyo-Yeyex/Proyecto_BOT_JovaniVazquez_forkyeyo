@@ -567,6 +567,19 @@ class TelemetryService:
         if self.repository is not None:
             await self.repository.prune(now=self.clock())
 
+    async def report_channel(self, guild_id: int) -> int | None:
+        """Canal del informe diario del servidor; `None` si no publica o no hay repositorio."""
+        if self.repository is None:
+            return None
+        return await self.repository.report_channel(guild_id)
+
+    async def set_report_channel(self, guild_id: int, channel_id: int | None) -> bool:
+        """Guarda el canal del informe diario (`None` lo quita); `False` sin repositorio."""
+        if self.repository is None:
+            return False
+        await self.repository.set_report_channel(guild_id, channel_id)
+        return True
+
     async def report(
         self,
         *,

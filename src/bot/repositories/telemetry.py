@@ -7,6 +7,8 @@ Tablas (en el mismo archivo SQLite del bot):
 - `telemetry_users`: qué usuarios distintos hicieron algo cada día. Es el único
   dato por persona, por eso se borra pronto (`USER_RETENTION_DAYS`).
 - `telemetry_system`: muestras de memoria, retraso del bucle y navegadores.
+- `telemetry_report_channel`: en qué canal publica cada servidor el informe
+  diario (lo elige `informe`). Sin fila, no se publica.
 
 Retención (Biblia: «no guardar datos personales innecesarios»):
 
@@ -104,6 +106,11 @@ _SCHEMA = """
         node INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS telemetry_system_at ON telemetry_system (at);
+
+    CREATE TABLE IF NOT EXISTS telemetry_report_channel (
+        guild_id INTEGER PRIMARY KEY,
+        channel_id INTEGER NOT NULL
+    );
 """
 
 # Suma de todas las columnas y MAX para ms_max: sirve para el upsert y para el pliegue.
@@ -229,6 +236,38 @@ class TelemetryRepository:
             connection.execute("DELETE FROM telemetry_counts WHERE day < ?", (counts_before,))
             connection.execute("DELETE FROM telemetry_users WHERE day < ?", (users_before,))
             connection.execute("DELETE FROM telemetry_system WHERE at < ?", (system_before,))
+
+    async def report_channel(self, guild_id: int) -> int | None:
+        """Canal donde el servidor publica el informe diario; `None` si no publica."""
+        return await self._run(self._report_channel_sync, guild_id)
+
+    def _report_channel_sync(self, guild_id: int) -> int | None:
+        if not self._ready:
+            self._initialize_sync()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT channel_id FROM telemetry_report_channel WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+        return None if row is None else int(row["channel_id"])
+
+    async def set_report_channel(self, guild_id: int, channel_id: int | None) -> None:
+        """Guarda el canal del informe diario; `None` deja de publicarlo."""
+        await self._run(self._set_report_channel_sync, guild_id, channel_id)
+
+    def _set_report_channel_sync(self, guild_id: int, channel_id: int | None) -> None:
+        if not self._ready:
+            self._initialize_sync()
+        with closing(self._connect()) as connection, connection:
+            if channel_id is None:
+                connection.execute(
+                    "DELETE FROM telemetry_report_channel WHERE guild_id = ?", (guild_id,)
+                )
+            else:
+                connection.execute(
+                    "INSERT INTO telemetry_report_channel (guild_id, channel_id) VALUES (?, ?) "
+                    "ON CONFLICT(guild_id) DO UPDATE SET channel_id = excluded.channel_id",
+                    (guild_id, channel_id),
+                )
 
     async def report_data(self, *, guild_id: int, since_day: str, since_ts: float) -> ReportData:
         """Agrega en SQL lo que necesita `build_report` para un servidor desde `since_day`."""
