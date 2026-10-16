@@ -84,7 +84,7 @@ def market() -> Market:
     for owner, shares in ((40, 12), (50, 9), (60, 7)):
         crowded[owner] = Holding(LISTINGS[0].key, owner, shares, 1, 1, 0)
     return Market(
-        indexes={"schamann": 1.08, "adeje": 0.97, "vegueta": 1.0, "canteras": 1.0003},
+        indexes={"schamann": 1.04, "adeje": 0.97, "vegueta": 1.0, "canteras": 1.0003},
         holdings=holdings,
         leases=leases,
     )
