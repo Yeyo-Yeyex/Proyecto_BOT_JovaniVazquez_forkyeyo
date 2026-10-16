@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.15.0 · 2026-10-16
+
+- `.met`: atajo de texto de `reinicio` (sin versión `/`)
+
 ### 7.14.0 · 2026-10-16
 
 - Informe de uso: llamadas a Discord por ruta, tareas programadas, tiempo de arranque, memoria de Chromium y Node, disco leído y escrito, tareas vivas, primeros pasos de los miembros nuevos, reacciones a los mensajes del bot, y por día los impuestos, el Gini y el saldo del Estado

@@ -995,7 +995,7 @@ El registro de cada ejecución queda en `.despliegue/actualizar.log`.
 
 ### Reiniciar desde Discord: `reinicio`
 
-`.reinicio` (o `/reinicio`) actualiza el bot a lo último de `main` y lo
+`.reinicio` (o `.met`, o `/reinicio`) actualiza el bot a lo último de `main` y lo
 reinicia sin entrar al NAS, aunque no haya commits nuevos y aunque el último
 hubiera fallado. Solo lo pueden usar Yeyo y Dani (IDs en `DEPLOYERS`, en
 `src/bot/cogs/deploy.py`) y no sale en `ayuda`. El bot no se reinicia solo:
