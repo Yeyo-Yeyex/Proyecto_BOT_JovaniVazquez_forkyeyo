@@ -52,10 +52,15 @@ Las cartas son las del bacará y la guerra (mismos trazados y mismo dorso).
 "use strict";
 const S = 2;
 // Estas medidas salen de bot/services/blackjack_scene.py: si cambian allí, cambian aquí.
-const W = 640, H = 420;
-const CARD_W = 80, CARD_H = 112;
+const W = 640, H = 480;
+// Las cartas se dibujan con medidas de 80 × 112 y se pintan CARD_Z veces más grandes: en
+// Discord la imagen se ve encogida y así se leen mejor.
+const CARD_W = 80, CARD_H = 112, CARD_Z = 1.25;
 const SHOE_X = 556, SHOE_Y = 50, TRAY_X = 84, TRAY_Y = 40;
-const BET_X = 301, BET_Y = 392, INS_X = 482, INS_Y = 210;
+const BET_X = 297, BET_Y = 444, INS_X = 520, INS_Y = 214;
+const CHIP_R = 23;
+// El centro del cartel (y de las chispas, en Python), entre la etiqueta de la banca y la tuya.
+const BANNER_Y = 220;
 
 const GOLD = "#ffd65c";
 
@@ -168,8 +173,8 @@ function crown(g, kind) {   // corona o gorro centrado en (0, 0), de unos 26 de 
 function faceSprite(card, plain = false) {
   const key = (card.rank * 4 + card.suit) + (plain ? 100 : 0);
   if (SPRITES.has(key)) return SPRITES.get(key);
-  const c = document.createElement("canvas"); c.width = CARD_W * S; c.height = CARD_H * S;
-  const g = c.getContext("2d"); g.scale(S, S);
+  const c = document.createElement("canvas"); c.width = CARD_W * S * CARD_Z; c.height = CARD_H * S * CARD_Z;
+  const g = c.getContext("2d"); g.scale(S * CARD_Z, S * CARD_Z);
   const color = card.red ? "#c8232f" : "#1a1c22";
   roundRect(g, 0.5, 0.5, CARD_W - 1, CARD_H - 1, 7);
   const grad = g.createLinearGradient(0, 0, CARD_W, CARD_H);
@@ -189,7 +194,7 @@ function faceSprite(card, plain = false) {
   }
   const r = card.rank;
   if (r === 1) {                                         // as: un palo grande con un aro fino
-    g.save(); g.shadowColor = "rgba(0,0,0,0.25)"; g.shadowBlur = 4 * S; g.shadowOffsetY = 1.2 * S;
+    g.save(); g.shadowColor = "rgba(0,0,0,0.25)"; g.shadowBlur = 4 * S * CARD_Z; g.shadowOffsetY = 1.2 * S * CARD_Z;
     drawSuit(g, card.suit, CARD_W / 2, CARD_H / 2 + 1, card.suit === 0 ? 50 : 42, color); g.restore();
     g.beginPath(); g.arc(CARD_W / 2, CARD_H / 2, 29, 0, Math.PI * 2);
     g.strokeStyle = card.red ? "rgba(200,35,47,0.22)" : "rgba(26,28,34,0.2)"; g.lineWidth = 0.9; g.stroke();
@@ -227,8 +232,8 @@ function faceSprite(card, plain = false) {
 
 function backSprite() {
   if (SPRITES.has("back")) return SPRITES.get("back");
-  const c = document.createElement("canvas"); c.width = CARD_W * S; c.height = CARD_H * S;
-  const g = c.getContext("2d"); g.scale(S, S);
+  const c = document.createElement("canvas"); c.width = CARD_W * S * CARD_Z; c.height = CARD_H * S * CARD_Z;
+  const g = c.getContext("2d"); g.scale(S * CARD_Z, S * CARD_Z);
   roundRect(g, 0.5, 0.5, CARD_W - 1, CARD_H - 1, 7); g.fillStyle = "#f4f1e8"; g.fill();
   g.strokeStyle = "#9d998b"; g.lineWidth = 1; g.stroke();
   const x = 4.5, y = 4.5, w = CARD_W - 9, h = CARD_H - 9;
@@ -453,26 +458,26 @@ function paintBackground() {
   const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
   const g = c.getContext("2d"); g.scale(S, S);
   // Tapete con degradado radial y una textura de fieltro.
-  let grad = g.createRadialGradient(320, 200, 30, 320, 200, 470);
+  let grad = g.createRadialGradient(320, 230, 30, 320, 230, 500);
   const felt = Tapete.felt(META.skin, ["#1f7a5c", "#155340", "#0a2f24"]);
   grad.addColorStop(0, felt[0]); grad.addColorStop(0.55, felt[1]); grad.addColorStop(1, felt[2]);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
-  Tapete.pattern(g, 0, 0, W, H, META.skin, [118, 168, 0.42]);   // el escudo, entre la banca y tú: ahí no hay cartas
+  Tapete.pattern(g, 0, 0, W, H, META.skin, [118, 214, 0.37]);   // el escudo, entre la banca y tú: ahí no hay cartas
   const r = rng(31);
-  for (let k = 0; k < 2600; k++) {
+  for (let k = 0; k < 2970; k++) {
     g.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.06)";
     g.fillRect(r() * W, r() * H, 1, 1);
   }
   g.strokeStyle = "rgba(0,0,0,0.035)"; g.lineWidth = 1;
   for (let k = -H; k < W; k += 5) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + H, H); g.stroke(); }
-  grad = g.createRadialGradient(320, 210, 190, 320, 210, 430);
+  grad = g.createRadialGradient(320, 240, 210, 320, 240, 470);
   grad.addColorStop(0, "rgba(0,0,0,0)"); grad.addColorStop(1, "rgba(0,0,0,0.5)");
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
 
   // El arco del tapete: «BLACKJACK PAGA 3 A 2» y, debajo, la regla de la banca. Centro en
-  // (320, -260): la línea base del título pasa por y = 206 en medio y las dos líneas caben
-  // entre la etiqueta de la banca (y = 178) y la de las manos (y = 232).
-  const CX = 320, CY = -260, R1 = 466, R2 = 478;
+  // (320, -246): la línea base del título pasa por y = 220 en medio y las dos líneas caben
+  // entre la etiqueta de la banca (y = 186) y la de las manos (y = 254).
+  const CX = 320, CY = -246, R1 = 466, R2 = 478;
   g.save(); g.font = "19px Luckiest"; g.lineJoin = "round";
   const tg = g.createLinearGradient(0, -15, 0, 1); tg.addColorStop(0, "#fff1a8"); tg.addColorStop(1, "#e0a41c");
   arcText(g, "BLACKJACK PAGA 3 A 2", CX, CY, R1, 2.4, true, (ch) => {
@@ -491,19 +496,19 @@ function paintBackground() {
   g.restore();
 
   // El hueco de la apuesta (una mano) y el del seguro.
-  smallLabel(g, "APUESTA", BET_X, BET_Y + 23.5, "rgba(255,240,200,0.8)", 7, 1.6);
-  g.beginPath(); g.ellipse(BET_X, BET_Y + 5, 28, 13, 0, 0, Math.PI * 2);
+  smallLabel(g, "APUESTA", BET_X, BET_Y + 27, "rgba(255,240,200,0.8)", 7, 1.6);
+  g.beginPath(); g.ellipse(BET_X, BET_Y + 5, 33, 15, 0, 0, Math.PI * 2);
   g.fillStyle = "rgba(0,0,0,0.16)"; g.fill();
   g.strokeStyle = "rgba(255,214,110,0.6)"; g.lineWidth = 1.6; g.stroke();
-  g.beginPath(); g.ellipse(BET_X, BET_Y + 5, 24, 9.8, 0, 0, Math.PI * 2);
+  g.beginPath(); g.ellipse(BET_X, BET_Y + 5, 28.5, 11.5, 0, 0, Math.PI * 2);
   g.setLineDash([3, 5]); g.strokeStyle = "rgba(255,255,255,0.22)"; g.lineWidth = 0.9; g.stroke(); g.setLineDash([]);
-  g.beginPath(); g.arc(INS_X, INS_Y, 20, 0, Math.PI * 2);
+  g.beginPath(); g.arc(INS_X, INS_Y, 25, 0, Math.PI * 2);
   g.fillStyle = "rgba(0,0,0,0.16)"; g.fill();
   g.strokeStyle = "rgba(255,214,110,0.6)"; g.lineWidth = 1.6; g.stroke();
-  g.beginPath(); g.arc(INS_X, INS_Y, 16, 0, Math.PI * 2);
+  g.beginPath(); g.arc(INS_X, INS_Y, 21, 0, Math.PI * 2);
   g.setLineDash([2.4, 4]); g.strokeStyle = "rgba(255,255,255,0.22)"; g.lineWidth = 0.9; g.stroke(); g.setLineDash([]);
   g.save(); g.font = "700 6.8px Montserrat";
-  arcText(g, "SEGURO PAGA 2 A 1", INS_X, INS_Y, 29.5, 1.0, false, (ch) => {
+  arcText(g, "SEGURO PAGA 2 A 1", INS_X, INS_Y, 34.5, 1.0, false, (ch) => {
     Tapete.outline(g, META.skin, ch, 0, 0, 2.4);
     g.fillStyle = "rgba(255,214,110,0.95)"; g.fillText(ch, 0, 0);
   });
@@ -556,7 +561,7 @@ function chipStack(g, x, y, r, stake, label, alpha = 1, tier = tierOf(stake)) {
   g.beginPath(); g.ellipse(x, ty, r * 0.68, ry * 0.68, 0, 0, Math.PI * 2);
   g.strokeStyle = tier === 5 ? "rgba(255,214,92,0.8)" : "rgba(255,255,255,0.55)"; g.lineWidth = 0.9; g.setLineDash([2.4, 2.6]); g.stroke(); g.setLineDash([]);
   g.translate(x, ty); g.scale(1, 0.72);
-  g.font = `${r > 26 ? 15 : label.length > 3 ? 9.5 : 12}px Luckiest`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.font = `${label.length > 4 ? 12.5 : label.length > 3 ? 14.5 : 17}px Luckiest`; g.textAlign = "center"; g.textBaseline = "middle";
   g.lineJoin = "round"; g.lineWidth = 2.6; g.strokeStyle = "rgba(0,0,0,0.38)";
   g.strokeText(label, 0, 1); g.fillStyle = t[2]; g.fillText(label, 0, 1);
   g.restore();
@@ -569,12 +574,12 @@ function drawChips(chips) {
     if (!(a > 0)) continue;
     if (c.gold) {                                          // el premio de un blackjack: negra y dorada, con brillo
       g.save(); g.globalAlpha = a;
-      const rg = g.createRadialGradient(c.x, c.y - 4, 2, c.x, c.y - 4, 38);
+      const rg = g.createRadialGradient(c.x, c.y - 4, 2, c.x, c.y - 4, 46);
       rg.addColorStop(0, "rgba(255,214,90,0.75)"); rg.addColorStop(1, "rgba(255,214,90,0)");
-      g.fillStyle = rg; g.beginPath(); g.arc(c.x, c.y - 4, 38, 0, Math.PI * 2); g.fill(); g.restore();
-      chipStack(g, c.x, c.y, 18, c.stake, c.chip, a, 5);
-      spark(g, c.x + 13, c.y - 16, 5, 0.9 * a, 0);
-    } else chipStack(g, c.x, c.y, 18, c.stake, c.chip, a);
+      g.fillStyle = rg; g.beginPath(); g.arc(c.x, c.y - 4, 46, 0, Math.PI * 2); g.fill(); g.restore();
+      chipStack(g, c.x, c.y, CHIP_R, c.stake, c.chip, a, 5);
+      spark(g, c.x + 16, c.y - 20, 5, 0.9 * a, 0);
+    } else chipStack(g, c.x, c.y, CHIP_R, c.stake, c.chip, a);
   }
 }
 
@@ -596,12 +601,12 @@ function drawLabel(l) {
   const a = l.a;
   if (!(a > 0)) return;
   const g = bctx, look = LABEL_LOOK[l.kind] || LABEL_LOOK.dealer;
-  const sc = a > 1 ? a : 0.8 + 0.2 * a, hidden = l.kind === "hidden", h = 21;
+  const sc = a > 1 ? a : 0.8 + 0.2 * a, hidden = l.kind === "hidden", h = 29;
   g.save();
-  g.font = "14px Luckiest"; spaced(g, 0.8);
+  g.font = "21px Luckiest"; spaced(g, 1);
   let tw = g.measureText(l.text).width;
-  if (tw > 150) { g.font = "12px Luckiest"; tw = g.measureText(l.text).width; }
-  const extra = hidden ? 17 : 0, w = tw + 24 + extra;
+  if (tw > 200) { g.font = "17px Luckiest"; tw = g.measureText(l.text).width; }
+  const extra = hidden ? 24 : 0, w = tw + 30 + extra;
   g.translate(l.x, l.y); g.scale(sc, sc); g.globalAlpha = Math.min(1, a);
   if (look.glow) { g.shadowColor = look.glow; g.shadowBlur = 11 * S; }
   roundRect(g, -w / 2, -h / 2, w, h, h / 2);
@@ -610,12 +615,12 @@ function drawLabel(l) {
   g.strokeStyle = look.edge; g.lineWidth = look.ew || 1.3; g.stroke();
   g.fillStyle = "rgba(255,255,255,0.14)"; roundRect(g, -w / 2 + 3, -h / 2 + 2, w - 6, h / 2 - 2, h / 4); g.fill();
   g.textAlign = "center"; g.textBaseline = "middle";
-  inked(g, l.text, -extra / 2, 1.3, look.text, 3.4, look.line);
+  inked(g, l.text, -extra / 2, 1.8, look.text, 4.4, look.line);
   if (hidden) {                                            // la tapada: un «?» dorado
-    const qx = w / 2 - 15;
-    g.beginPath(); g.arc(qx, 0, 6.2, 0, Math.PI * 2); g.fillStyle = "#e9bd55"; g.fill();
-    g.strokeStyle = "#7a5206"; g.lineWidth = 0.9; g.stroke();
-    g.font = "10px Luckiest"; spaced(g, 0); g.fillStyle = "#4a2e04"; g.fillText("?", qx + 0.2, 0.9);
+    const qx = w / 2 - 20;
+    g.beginPath(); g.arc(qx, 0, 8.5, 0, Math.PI * 2); g.fillStyle = "#e9bd55"; g.fill();
+    g.strokeStyle = "#7a5206"; g.lineWidth = 1.1; g.stroke();
+    g.font = "14px Luckiest"; spaced(g, 0); g.fillStyle = "#4a2e04"; g.fillText("?", qx + 0.2, 1.2);
   }
   g.restore();
 }
@@ -631,7 +636,7 @@ function drawCard(c) {
   const ang = clamp(c.flip, 0, 1) * Math.PI;
   const faceUp = !!c.card && c.flip > 0.5;
   const sx = Math.max(Math.abs(Math.cos(ang)), 0.025);
-  const zoom = (c.scale == null ? 1 : c.scale) * (1 + lift / 300);
+  const zoom = (c.scale == null ? 1 : c.scale) * (1 + lift / 300) * CARD_Z;
   // Sombra sobre el tapete: más lejos y más difusa al levantar la carta.
   g.save();
   g.translate(c.x + 2 + lift * 0.28, c.y + 3 + lift * 0.42); g.rotate(c.rot || 0); g.scale(sx * zoom, zoom);
@@ -643,7 +648,7 @@ function drawCard(c) {
   g.save();
   g.translate(c.x, c.y - lift * 0.35); g.rotate(c.rot || 0); g.scale(sx * zoom, zoom);
   if (c.glow > 0) {                                           // brillo dorado detrás de la carta
-    g.save(); g.shadowColor = "#ffd24a"; g.shadowBlur = 26 * S * clamp(c.glow, 0, 1);
+    g.save(); g.shadowColor = "#ffd24a"; g.shadowBlur = 26 * S * CARD_Z * clamp(c.glow, 0, 1);
     g.fillStyle = "#ffd24a"; g.globalAlpha = 0.85 * clamp(c.glow, 0, 1); cardPath(g, 3); g.fill(); g.restore();
   }
   g.drawImage(faceUp ? faceSprite(c.card) : backSprite(), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H);
@@ -713,7 +718,7 @@ function drawBanner(b) {
   const sw = b.sub ? g.measureText(b.sub).width + 22 : 0;
   while (tw + sw + ic + (sw ? 52 : 40) > 330 && size > 16) { size -= 1; g.font = `${size}px Luckiest`; spaced(g, 1); tw = g.measureText(b.title).width; }
   const w = Math.max(190, tw + sw + ic + (sw ? 50 : 38)), h = 36;
-  g.translate(320, 205); const sc = 0.6 + 0.4 * a; g.scale(sc, sc); g.globalAlpha = clamp(a * 1.4, 0, 1);
+  g.translate(320, BANNER_Y); const sc = 0.6 + 0.4 * a; g.scale(sc, sc); g.globalAlpha = clamp(a * 1.4, 0, 1);
   if (look.glow) {                                           // el brillo de un blackjack
     const rg = g.createRadialGradient(0, 0, 10, 0, 0, w * 0.62);
     rg.addColorStop(0, "rgba(255,214,90,0.45)"); rg.addColorStop(1, "rgba(255,214,90,0)");
@@ -772,7 +777,7 @@ function drawStreak(s) {
   g.font = "700 6.4px Montserrat"; spaced(g, 1.2);
   const rw = g.measureText("RACHA").width;
   const tw = Math.max(nw, rw), w = 12 + 20 + 5 + tw + 9, h = 32;
-  g.translate(Math.min(588, 634 - w / 2), 392); g.scale(a, a); g.globalAlpha = Math.min(1, a);
+  g.translate(Math.min(588, 634 - w / 2), 448); g.scale(a, a); g.globalAlpha = Math.min(1, a);
   g.shadowColor = "rgba(255,140,40,0.75)"; g.shadowBlur = 9 * S;
   roundRect(g, -w / 2, -h / 2, w, h, 10);
   const grad = g.createLinearGradient(0, -h / 2, 0, h / 2); grad.addColorStop(0, "#5a1c10"); grad.addColorStop(1, "#1f0804");

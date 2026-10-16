@@ -297,9 +297,8 @@ async def test_con_node_cada_jugada_sale_con_su_gif(scene: BlackjackScene) -> No
         gif = Image.open(io.BytesIO(media.gif or b""))
         assert gif.format == "GIF" and gif.size == (W, H) and gif.n_frames > 3
         assert colors(media.png) > 100
-    # Solo se repite el GIF de una mano que acaba (luego el cog lo cambia por el PNG).
-    assert b"NETSCAPE2.0" in (stand.gif or b"")
-    assert b"NETSCAPE2.0" not in (deal.gif or b"") and b"NETSCAPE2.0" not in (hit_media.gif or b"")
+    # Ningún GIF se repite: si el PNG tarda, se queda quieto en el último fotograma.
+    assert not any(b"NETSCAPE2.0" in (m.gif or b"") for m in (deal, hit_media, stand))
     assert not scene.painter.disabled and not scene.browser.disabled
 
 

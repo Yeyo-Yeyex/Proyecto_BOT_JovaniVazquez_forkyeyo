@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.21.0 · 2026-10-16
+
+- Blackjack: mesa más grande y legible, y cada jugada acaba en su imagen fija
+
 ### 7.20.0 · 2026-10-16
 
 - Botes: el Volcán, la Mina y el Olimpo con suspense, rescates y recuento del bonus
