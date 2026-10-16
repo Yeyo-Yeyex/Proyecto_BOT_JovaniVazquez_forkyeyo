@@ -131,6 +131,9 @@ from bot.services.hold_win_scene import (
     base_key,
     bonus_key,
     meta_state,
+    shows_slip,
+    tease_hit,
+    tease_of,
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
@@ -221,6 +224,34 @@ NEAR_MISS_LINES = (
     "Más monedas sueltas que causas pendientes de Netanyahu.",
     "Ahí se quedan, como un groyper esperando que le devuelvan la cuenta de Twitter.",
 )
+#: Lo que se ve con animación (`bot.services.hold_win_scene`): el recogedor que llega al
+#: quinto rodillo tras la espera, el que pasa de largo y el cinco de fila que se hace esperar.
+RESCUE_LINES = (
+    "🛟 ¡Rescate en el último rodillo! Ni el FROB fue tan rápido.",
+    "🛟 ¡Llega in extremis, como los Presupuestos prorrogados!",
+    "🛟 ¡Rescatado! Y sin hombres de negro en Moncloa.",
+    "🛟 ¡Al rescate, como la UME, pero sin esperar al decreto!",
+    "🛟 ¡Llegó! Más puntual que Rodalies, que tampoco es mucho decir.",
+)
+SLIP_LINES = (
+    "Pasó de largo, como el AVE por Extremadura.",
+    "Ni paró: como Puigdemont cruzando la frontera en un maletero.",
+    "Visto y no visto, como el Falcon de Sánchez.",
+    "Se fue sin frenar, como la factura de la luz.",
+    "Saludó y siguió, como Trump en una cumbre de la OTAN.",
+)
+FIVE_WAIT_LINES = (
+    "¡Llega al quinto! Costó, como la investidura, pero llegó.",
+    "¡Cinco de fila tras la espera! Al quinto pino y de vuelta.",
+)
+#: En el bonus: algo cae en la última tirada, o cae la moneda que faltaba para un bote.
+LAST_SAVE_LINES = (
+    "¡Salvada en la última!",
+    "¡En el descuento, como el gol de Ramos en Lisboa!",
+    "¡Prórroga, como los Presupuestos!",
+    "¡Respiración asistida, como la legislatura!",
+)
+JACKPOT_GOALS = ((MINI_COINS, "MINI"), (MAJOR_COINS, "MAJOR"), (20, "GRAND"))
 LOSS_LINES = (
     "Ni una chispa, mi amor. Otra.",
     "Calentando…",
@@ -378,6 +409,16 @@ def base_text(theme: Theme, play: BasePlay, rng: random.Random | None = None) ->
             f"## -{format_amount(play.stake)} · "
             f"{rng.choice(LOSS_LINES + THEME_LOSS_LINES[theme.key])}"
         )
+    if play.media.gif:
+        # Lo que solo se ve con animación: la espera del quinto rodillo y cómo acaba.
+        tease = tease_of(spin)
+        if tease.kind is not None and tease_hit(spin, tease):
+            if tease.kind in ("rescue", "rescue_big"):
+                lines.append(f"### {rng.choice(RESCUE_LINES)}")
+            elif tease.kind == "ways":
+                lines.append(f"### {theme.symbols[-1][0]} {rng.choice(FIVE_WAIT_LINES)}")
+        elif shows_slip(theme.key, spin):
+            lines.append(f"-# {theme.collect[0]} {rng.choice(SLIP_LINES)}")
 
     if spin.collectors:
         times = " ×2" if spin.collectors == 2 else ""
@@ -404,8 +445,20 @@ def base_text(theme: Theme, play: BasePlay, rng: random.Random | None = None) ->
     return "\n".join(lines)
 
 
-def bonus_text(theme: Theme, game: BonusGame, step: BonusStep | None) -> str:
-    """Texto del bonus tras una tirada (o al empezar)."""
+def bonus_text(
+    theme: Theme,
+    game: BonusGame,
+    step: BonusStep | None,
+    *,
+    left_before: int | None = None,
+    rng: random.Random | None = None,
+) -> str:
+    """Texto del bonus tras una tirada (o al empezar).
+
+    Args:
+        left_before: Tiradas que quedaban antes de esta (si era la última y cae algo, se dice).
+    """
+    rng = rng or random.Random()
     lines = [f"# 🎁 {bonus_name(theme, game.kind)}"]
     if step is None:
         lines.append(BONUS_INTRO[theme.key])
@@ -428,7 +481,14 @@ def bonus_text(theme: Theme, game: BonusGame, step: BonusStep | None) -> str:
                 parts.append(f"¡las monedas ×{factor}!")
             if step.maximized:
                 parts.append("¡botes al máximo!")
-            lines.append(f"## ¡Cae {', '.join(parts)}! Vuelve a {game.respins_left}.")
+            saved = f"{rng.choice(LAST_SAVE_LINES)} " if left_before == 1 else ""
+            lines.append(f"## {saved}¡Cae {', '.join(parts)}! Vuelve a {game.respins_left}.")
+            before = game.coins - coins
+            for goal, name in JACKPOT_GOALS:
+                if before == goal - 1 and game.coins >= goal:
+                    lines.append(
+                        f"### 🏆 ¡Por los pelos! Cae la moneda que faltaba para el {name}."
+                    )
         else:
             left = game.respins_left
             if left == 1:
@@ -1125,6 +1185,7 @@ class HoldWinView(discord.ui.View):
         """Logros de la tirada, después de enseñarla."""
         if play is None:
             return
+        tease = tease_of(play.spin)
         delta = hold_win_stats(
             play.spin,
             theme=self.theme.key,
@@ -1134,6 +1195,9 @@ class HoldWinView(discord.ui.View):
             turbo=not play.media.gif,
             session_spins=play.session_spins,
             when=datetime.now(TIMEZONE),
+            tease=tease.kind,
+            tease_hit=tease_hit(play.spin, tease),
+            slipped=bool(play.media.gif) and shows_slip(self.theme.key, play.spin),
         )
         delta.merge(
             casino_stats(
@@ -1355,7 +1419,7 @@ class HoldWinView(discord.ui.View):
             ready=self._ready,
         )
         if payout is None:
-            text = bonus_text(self.theme, game, step)
+            text = bonus_text(self.theme, game, step, left_before=panel_before.respins_left)
             won: bool | None = None
             balance = None
         else:
@@ -1398,7 +1462,9 @@ class HoldWinView(discord.ui.View):
         return payout
 
     async def _track_bonus(self, payout: BonusPayout) -> None:
-        delta = hold_win_bonus_stats(payout.result, payout.steps, amount=payout.amount)
+        delta = hold_win_bonus_stats(
+            payout.result, payout.steps, amount=payout.amount, seen=not self.turbo
+        )
         delta.merge(
             casino_stats(
                 stake=0,

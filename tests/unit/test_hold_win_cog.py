@@ -52,8 +52,10 @@ from bot.services.hold_win import (
     THEMES,
     BonusGame,
     BonusKind,
+    BonusStep,
     Cell,
     Kind,
+    Landing,
     Meters,
     Tier,
     Trigger,
@@ -236,6 +238,62 @@ def test_el_texto_del_bonus_cuenta_lo_que_falta_para_el_mini() -> None:
     text = bonus_text(VOLCAN, game, None)
     assert "Bonus Lava" in text
     assert "9 para el MINI" in text
+
+
+def base_play(spin, *, gif: bool) -> BasePlay:  # noqa: ANN001
+    return BasePlay(
+        spin=spin,
+        stake=100,
+        payout=0,
+        settlement=MagicMock(balance=1_000),
+        meters=Meters(),
+        before=base_panel(Meters(), 100),
+        trigger=None,
+        bonus=None,
+        media=Media(b"GIF" if gif else b"", b"PNG", 1.0 if gif else 0.0),
+        session_spins=1,
+    )
+
+
+def find_spin(predicate):  # noqa: ANN001, ANN201
+    rng = random.Random(3)
+    while True:
+        spin = module.spin_base(rng)
+        if predicate(spin):
+            return spin
+
+
+def test_el_rescate_y_el_recogedor_que_pasa_de_largo_solo_se_cuentan_si_se_ven() -> None:
+    rescue = find_spin(
+        lambda s: module.tease_of(s).kind == "rescue" and module.tease_hit(s, module.tease_of(s))
+    )
+    text = base_text(VOLCAN, base_play(rescue, gif=True), random.Random(0))
+    assert any(line in text for line in module.RESCUE_LINES)
+    turbo = base_text(VOLCAN, base_play(rescue, gif=False), random.Random(0))
+    assert not any(line in turbo for line in module.RESCUE_LINES)
+    slip = find_spin(lambda s: module.shows_slip("volcan", s))
+    text = base_text(VOLCAN, base_play(slip, gif=True), random.Random(0))
+    assert any(line in text for line in module.SLIP_LINES)
+
+
+def test_el_bonus_dice_si_se_salva_en_la_ultima_y_si_cae_la_moneda_que_faltaba() -> None:
+    game = BonusGame(kind=BonusKind.RED, stake=100, mini=MINI_BASE, major=MAJOR_BASE)
+    for index in range(10):
+        game.board[index] = coin(200, Tier.RED)
+    step = BonusStep(
+        landings=(Landing(9, coin(200, Tier.RED)),),
+        multiplier_added=0,
+        instant=10,
+        extra=0,
+        maximized=False,
+        board=tuple(game.board),
+        respins_left=3,
+    )
+    text = bonus_text(VOLCAN, game, step, left_before=1, rng=random.Random(0))
+    assert any(line in text for line in module.LAST_SAVE_LINES)
+    assert "moneda que faltaba para el MINI" in text
+    calm = bonus_text(VOLCAN, game, step, left_before=3)
+    assert not any(line in calm for line in module.LAST_SAVE_LINES)
 
 
 # -- Juego base ---------------------------------------------------------------------
