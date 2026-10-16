@@ -54,6 +54,7 @@ from bot.services import (  # noqa: E402
     craps,
     crash,
     hold_win,
+    hold_win_scene,
     mines,
     pachinko,
     poker,
@@ -306,15 +307,22 @@ def _jugar_botes(j: Jugador) -> StatDelta:
     spin = hold_win.spin_base(rng)
     payout = hold_win.to_amount(spin.ways_points + spin.collect_points, APUESTA)
     trigger = hold_win.fill_cases(meters, spin, APUESTA, rng)  # type: ignore[arg-type]
+    turbo = rng.random() < 0.7
+    # Lo que se ve con animación (`hold_win_scene`): la espera del quinto rodillo, si llega
+    # y si se ve pasar el recogedor de largo.
+    tease = hold_win_scene.tease_of(spin)
     delta = hold_win_stats(
         spin,
         theme="volcan",
         stake=APUESTA,
         payout=payout,
         trigger=trigger,
-        turbo=rng.random() < 0.7,
+        turbo=turbo,
         session_spins=1,
         when=NOON,
+        tease=tease.kind,
+        tease_hit=hold_win_scene.tease_hit(spin, tease),
+        slipped=not turbo and hold_win_scene.shows_slip("volcan", spin),
     )
     delta.add["botes_auto"] = 1 if rng.random() < 0.05 else 0
     net = payout - APUESTA
@@ -331,7 +339,7 @@ def _jugar_botes(j: Jugador) -> StatDelta:
         result = game.result()
         hold_win.reset_won_jackpots(meters, result.jackpots)  # type: ignore[arg-type]
         amount = hold_win.to_amount(result.points, game.stake)
-        delta.merge(hold_win_bonus_stats(result, steps, amount=amount))
+        delta.merge(hold_win_bonus_stats(result, steps, amount=amount, seen=not turbo))
         net += amount
     return _con_casino(delta, stake=APUESTA, net=net)
 

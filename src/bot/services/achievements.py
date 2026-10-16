@@ -101,6 +101,12 @@ from bot.services.gallos import Corner as GallosCorner
 from bot.services.gallos import Fight as GallosFight
 from bot.services.gallos import Finish as GallosFinish
 from bot.services.gallos import RoosterRecord
+from bot.services.hold_win import EPIC_WIN as HOLD_WIN_EPIC
+from bot.services.hold_win import GRAND_COINS as HOLD_WIN_GRAND
+from bot.services.hold_win import MAJOR_COINS as HOLD_WIN_MAJOR
+from bot.services.hold_win import MINI_COINS as HOLD_WIN_MINI
+from bot.services.hold_win import POINTS_PER_STAKE as HOLD_WIN_POINTS
+from bot.services.hold_win import RESET_VALUE as HOLD_WIN_RESET
 from bot.services.hold_win import BaseSpin as HoldWinSpin
 from bot.services.hold_win import BonusResult as HoldWinBonusResult
 from bot.services.hold_win import BonusStep as HoldWinStep
@@ -3395,6 +3401,50 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("botes", "botes_night", [
         (1, "botes_night", "Erupción de madrugada", "Juega a los botes entre las 3 y las 6.", C,
          True),
+    ])  # fmt: skip
+    # Lo que solo se ve con animación (sin turbo; ver `bot.services.hold_win_scene`): el
+    # quinto rodillo que se hace esperar, el recogedor que pasa de largo, el cartel ÉPICO y,
+    # en el bonus, la tirada que se salva en la última y la moneda que faltaba para un bote.
+    # Rarezas de `docs/auditoria_logros.py --juego botes --todo`.
+    a += _tiers("botes", "botes_rescue", [
+        (1, "botes_rescue", "Rescate bancario",
+         "Ve llegar el recogedor al quinto rodillo cuando ya no lo esperabas. Como el rescate "
+         "de 2012, pero a tu favor.", C),
+        (25, "botes_rescue_50", "Hombres de negro",
+         "Veinticinco recogedores llegados en el último rodillo. Ni la troika rescató tanto.",
+         E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_rescue_big", [
+        (1, "botes_rescue_big", "Rescate de Bankia",
+         "Ve llegar el recogedor con la máquina a oscuras y monedas de ×3 o más esperándolo.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_slipped", [
+        (10, "botes_slipped", "El AVE de Extremadura",
+         "Ve pasar el recogedor por el quinto rodillo sin pararse, 10 veces.", C),
+        (100, "botes_slipped_300", "Andén vacío",
+         "Ve pasar de largo el recogedor 100 veces. Ya ni Renfe te pide perdón.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_five_wait", [
+        (1, "botes_five_wait", "Al quinto pino",
+         "Ve al quinto rodillo hacerse esperar con el símbolo más alto en los otros cuatro… y "
+         "que llegue.", C),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_epic", [
+        (1, "botes_epic", "Erupción épica",
+         "Ve el cartel de ÉPICO en una tirada de Botes (×50 la apuesta o más).", M),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_last_save", [
+        (1, "botes_last_save", "Salvado por la campana",
+         "Que caiga algo en la última tirada del bonus y vuelva el contador.", C),
+        (25, "botes_last_save_100", "Prórroga tras prórroga",
+         "Salva 25 veces la última tirada del bonus. Más prórrogas que los Presupuestos.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_chase_hit", [
+        (1, "botes_chase", "Por los pelos",
+         "Llega a un bote del bonus con la moneda que faltaba.", C),
+        (10, "botes_chase_25", "Cardiólogo de guardia",
+         "Llega 10 veces a un bote del bonus con la moneda que faltaba.", E),
     ])  # fmt: skip
 
     a += _tiers("botes", "botes_spins", [
@@ -14994,6 +15044,9 @@ def hold_win_stats(
     turbo: bool,
     session_spins: int,
     when: datetime,
+    tease: str | None = None,
+    tease_hit: bool = False,
+    slipped: bool = False,
 ) -> StatDelta:
     """Contadores de una tirada base de Botes (sin lo común del casino).
 
@@ -15003,6 +15056,9 @@ def hold_win_stats(
         trigger: Bonus que dispara la tirada, si alguno.
         session_spins: Tiradas en esta máquina, contando esta.
         when: Hora local de la tirada.
+        tease: Lo que esperaba el quinto rodillo (`hold_win_scene.tease_of`), si algo.
+        tease_hit: Si llegó (`hold_win_scene.tease_hit`).
+        slipped: Si se vio pasar el recogedor de largo (`hold_win_scene.shows_slip`).
     """
     del session_spins  # de momento sin logros de sesión larga
     delta = StatDelta(add={"botes_spins": 1, f"botes_spins_{theme}": 1})
@@ -15020,6 +15076,13 @@ def hold_win_stats(
     bump("botes_chips", amount=sum(spin.chips.values()))
     bump("botes_turbo", turbo)
     bump("botes_night", 3 <= when.hour < 6)
+    # Lo que solo se ve con animación.
+    seen = not turbo
+    bump("botes_rescue", seen and tease in ("rescue", "rescue_big") and tease_hit)
+    bump("botes_rescue_big", seen and tease == "rescue_big" and tease_hit)
+    bump("botes_slipped", seen and slipped)
+    bump("botes_five_wait", seen and tease == "ways" and tease_hit)
+    bump("botes_epic", seen and spin.points >= HOLD_WIN_EPIC * HOLD_WIN_POINTS)
     if payout - stake > 0:
         delta.peak["botes_win_max"] = payout - stake
     if trigger is not None:
@@ -15029,7 +15092,11 @@ def hold_win_stats(
 
 
 def hold_win_bonus_stats(
-    result: HoldWinBonusResult, steps: Iterable[HoldWinStep], *, amount: int
+    result: HoldWinBonusResult,
+    steps: Iterable[HoldWinStep],
+    *,
+    amount: int,
+    seen: bool = False,
 ) -> StatDelta:
     """Contadores de un bonus de Botes terminado.
 
@@ -15039,8 +15106,22 @@ def hold_win_bonus_stats(
     Args:
         steps: Tiradas del bonus, en orden.
         amount: Lo cobrado en Y$.
+        seen: Si se ha jugado con animación (sin turbo): cuentan la última tirada que se
+            salva y la moneda que faltaba para un bote.
     """
     delta = StatDelta(peak={"botes_mult_max": result.multiplier, "botes_bonus_max": amount})
+    steps = list(steps)
+    if seen:
+        # Las monedas no se van: las del principio son las del final menos las que caen.
+        coins = result.coins - sum(1 for st in steps for x in st.landings if x.cell.is_coin)
+        left = HOLD_WIN_RESET
+        for step in steps:
+            after = coins + sum(1 for x in step.landings if x.cell.is_coin)
+            if left == 1 and step.landings:
+                delta.add["botes_last_save"] = delta.add.get("botes_last_save", 0) + 1
+            if any(coins == goal - 1 and after >= goal for goal in HOLD_WIN_GOALS):
+                delta.add["botes_chase_hit"] = delta.add.get("botes_chase_hit", 0) + 1
+            coins, left = after, step.respins_left
     for step in steps:
         for landing in step.landings:
             if landing.mystery:
@@ -15054,6 +15135,10 @@ def hold_win_bonus_stats(
     if result.coins == 19:
         delta.add["botes_almost_grand"] = 1
     return delta
+
+
+#: Monedas del bonus de Botes que dan cada bote.
+HOLD_WIN_GOALS = (HOLD_WIN_MINI, HOLD_WIN_MAJOR, HOLD_WIN_GRAND)
 
 
 #: Todas las estadísticas que suman las porras (menos las de prefijo por juego y propuesta).

@@ -596,6 +596,18 @@ def base_strips(theme: str, spin: BaseSpin, tease: Tease, tracks: Sequence[Track
     return strips
 
 
+
+def shows_slip(theme: str, spin: BaseSpin) -> bool:
+    """Si el rescate o el doble no llegan y se ve pasar el recogedor de largo (para los logros).
+
+    No depende de la apuesta: las tiras salen siempre de la misma semilla.
+    """
+    tease = tease_of(spin)
+    if not tease.collect or tease_hit(spin, tease):
+        return False
+    strips = base_strips(theme, spin, tease, tracks_for(spin, tease), POINTS_PER_STAKE)
+    return strips[-1][ROWS + 1] == "c"
+
 # -- Juego base: los fotogramas --------------------------------------------------------------------
 
 
