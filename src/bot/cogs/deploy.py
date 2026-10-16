@@ -320,10 +320,10 @@ class Deploy(commands.Cog, name="Despliegue"):
         """
         await self.request_impl(InteractionResponder(interaction))
 
-    @commands.command(name="reinicio", hidden=True)
+    @commands.command(name="reinicio", aliases=["met"], hidden=True)
     @commands.guild_only()
     async def request_text(self, ctx: commands.Context) -> None:
-        """Versión de texto (`.reinicio`) de `/reinicio`."""
+        """Versión de texto (`.reinicio` o `.met`) de `/reinicio`."""
         await self.request_impl(ContextResponder(ctx))
 
     async def announce(self) -> bool:

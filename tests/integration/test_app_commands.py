@@ -125,9 +125,9 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
             assert effects == set(EFFECTS)
             assert all(isinstance(command, app_commands.Command) for command in slash)
-            # Única excepción acordada: `.blackjack` con su atajo `.bj`.
+            # Excepciones acordadas: `.bj` de `.blackjack` y `.met` de `.reinicio`.
             aliases = {c.name: c.aliases for c in client.commands if c.aliases}
-            assert aliases == {"blackjack": ["bj"]}
+            assert aliases == {"blackjack": ["bj"], "reinicio": ["met"]}
             # Nombres largos acordados (Biblia, «Cogs y comandos»).
             long_names = {"blackjack", "beernight", "backgammon"}
             assert all(
