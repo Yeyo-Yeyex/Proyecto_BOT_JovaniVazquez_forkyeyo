@@ -80,6 +80,7 @@ from bot.services.economy import (
 )
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -342,7 +343,7 @@ class CrashTable:
         self.last_png: bytes | None = None
         self.task: asyncio.Task[None] | None = None
         self._edit_task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("crash:CrashTable._lock")
         self._views: dict[Phase, CrashView] = {}
         #: El apagado pide parar; el bucle solo se corta mientras duerme,
         #: nunca a mitad de un pago.

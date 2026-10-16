@@ -152,3 +152,44 @@ async def test_la_tabla_de_impuestos_de_pisos_de_antes_pierde_su_check(tmp_path:
         connection.close()
     # Y una segunda vez no rehace nada.
     await Repo(path, starting_balance=0).initialize()
+
+
+def test_cada_sentencia_apunta_su_repositorio_operacion_y_tiempo(tmp_path: Path) -> None:
+    sqlite.drain_timings()
+    connection = sqlite.connect(tmp_path / "bot.sqlite3")
+    try:
+        with connection:
+            connection.execute("CREATE TABLE t (a INTEGER)")
+            connection.executemany("INSERT INTO t VALUES (?)", [(1,), (2,)])
+        assert connection.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 2
+    finally:
+        connection.close()
+    timings = sqlite.drain_timings()
+    # Los PRAGMA de cada conexión no cuentan; el repositorio es el módulo que conecta.
+    assert [(repo, op) for repo, op, _ms, _error in timings] == [
+        ("test_sqlite", "escritura"),
+        ("test_sqlite", "escritura"),
+        ("test_sqlite", "commit"),
+        ("test_sqlite", "lectura"),
+    ]
+    assert all(ms >= 0 and not error for _repo, _op, ms, error in timings)
+    assert sqlite.drain_timings() == []
+
+
+def test_un_database_is_locked_se_apunta_como_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sqlite, "BUSY_TIMEOUT_SECONDS", 0.05)
+    path = tmp_path / "bot.sqlite3"
+    first, second = sqlite.connect(path, isolation_level=None), sqlite.connect(path)
+    try:
+        first.execute("CREATE TABLE t (a INTEGER)")
+        first.execute("BEGIN IMMEDIATE")
+        sqlite.drain_timings()
+        with pytest.raises(sqlite3.OperationalError):
+            second.execute("INSERT INTO t VALUES (1)")
+        assert sqlite.drain_timings()[-1][1:][::2] == ("escritura", True)
+    finally:
+        first.execute("ROLLBACK")
+        first.close()
+        second.close()

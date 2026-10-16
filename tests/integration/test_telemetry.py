@@ -323,6 +323,28 @@ def test_informe_elige_el_canal_diario_publica_el_de_hoy_y_se_quita(tmp_path: Pa
     asyncio.run(scenario())
 
 
+def test_los_tiempos_de_la_base_de_datos_y_las_vistas_llegan_al_informe(tmp_path: Path) -> None:
+    async def scenario() -> dict:
+        client = await load_bot(tmp_path)
+        try:
+            await client.telemetry.set_report_channel(GUILD_ID, 77)
+            Panel(timeout=60).stop()
+            cog = client.get_cog("Telemetry")
+            # El minuto de la telemetría recoge los tiempos de SQLite de los hilos.
+            await cog.flush_loop.coro(cog)  # type: ignore[union-attr]
+            return await client.telemetry.report(
+                guild_id=GUILD_ID, days=1, commands=[], channel_names={}
+            )
+        finally:
+            await client.close()
+
+    report = asyncio.run(scenario())
+    assert usage(report, "sql")["telemetry · escritura"]["eventos"] >= 1
+    assert usage(report, "vista")["Panel"]["eventos"] == 1
+    assert usage(report, "vista_cerrada")["Panel"]["ms_medio"] is not None
+    assert report["version_bot"]
+
+
 def test_al_cerrar_el_bot_se_guarda_lo_pendiente_y_se_sueltan_los_enganches(
     tmp_path: Path,
 ) -> None:

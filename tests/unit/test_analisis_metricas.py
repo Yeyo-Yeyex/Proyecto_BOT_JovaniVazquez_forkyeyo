@@ -186,15 +186,27 @@ def test_secciones_salen_en_el_orden_pedido():
         "## Canales",
         "## Sistema",
         "## Versiones y reinicios",
+        "## Base de datos",
+        "## Esperas en candados",
         "## Dibujos",
+        "## Procesos de dibujo",
         "## Subidas a Discord",
+        "## Peso de las imágenes",
         "## Del clic a la imagen",
+        "## Interacciones perdidas (10062)",
         "## Bloqueos del bucle",
         "## Conexión con Discord",
-        "## Vistas caducadas",
+        "## Excepciones",
         "## Log",
+        "## Partidas y paneles",
+        "## Usos incorrectos y rechazos",
+        "## Menús y ayuda",
         "## Casino",
         "## Economía",
+        "## Economía por día",
+        "## Logros",
+        "## Tienda y mascotas",
+        "## Música",
     ]
 
 
@@ -433,7 +445,6 @@ def test_conexion_y_caducadas_resumen_lo_que_frena_al_bot():
     assert "matados por falta de memoria: 3" in text
     assert "1440, 12 ms de media, 900 de máximo" in text
     assert "| PATCH /channels/#/messages/# | 4 |" in text
-    assert "| CoinView | 7 |" in _text(am.section_expired(report, 10))
 
 
 def test_sistema_enseña_cpu_base_de_datos_y_disco():
@@ -448,7 +459,7 @@ def test_sistema_enseña_cpu_base_de_datos_y_disco():
         }
     }
     text = _text(am.section_system(report, 10))
-    assert "| 40 / 90 |" in text and "| 120 | 2.0 | ⚠️ CPU |" in text
+    assert "| 40 / 90 |" in text and "| 120 | 2.0 | - | ⚠️ CPU |" in text
 
 
 def test_varios_informes_se_juntan_por_dia_y_manda_el_mas_nuevo(tmp_path, capsys):
@@ -484,3 +495,181 @@ def test_varios_informes_se_juntan_por_dia_y_manda_el_mas_nuevo(tmp_path, capsys
     assert "Visión global de 2 informes, desde 2026-09-03" in out
     assert "| 7.10.0 |" in out and "| 7.11.0 |" in out
     assert am.main([str(tmp_path / "vacia")]) == 1
+
+
+def test_sistema_cuenta_los_minutos_sin_datos_salvo_el_dia_del_informe():
+    report = {
+        "hasta": "2026-10-03",
+        "sistema": {
+            "2026-10-01": {"muestras": 1435},
+            "2026-10-02": {"muestras": 1300},
+            "2026-10-03": {"muestras": 600},
+        },
+    }
+    lines = {
+        line.split("|")[1].strip(): line
+        for line in am.section_system(report, 10)
+        if line.startswith("| 2026")
+    }
+    assert "| 5 |" in lines["2026-10-01"] and "caído" not in lines["2026-10-01"]
+    assert "| 140 | ⚠️ caído |" in lines["2026-10-02"]
+    assert "| - |" in lines["2026-10-03"]
+
+
+def test_base_de_datos_y_candados_ordenan_por_tiempo_total_y_marcan_lo_lento():
+    report = {
+        "uso": [
+            _entry("sql", "economy · escritura", 100, ms=50.0, buckets=(95, 3, 1, 1), ms_max=4000),
+            _entry("sql", "levels · lectura", 1000, ms=1.0, buckets=(1000, 0, 0, 0), ms_max=3),
+            _entry("sql", "shop · commit", 2, errors=2, ms=10.0, buckets=(2, 0, 0, 0)),
+            _entry("candado", "coin:CoinView._lock", 4, ms=300.0, buckets=(3, 1, 0, 0)),
+        ]
+    }
+    lines = [line for line in am.section_database(report, 10) if line.startswith("| ")]
+    # lines[0] es la cabecera.
+    assert "economy · escritura" in lines[1] and "| 2.0 % | 0 |" in lines[1]
+    assert "levels · lectura" in lines[2] and lines[2].startswith("|  |")
+    assert "shop · commit" in lines[3] and lines[3].endswith("| 2 |")
+    assert "| coin:CoinView._lock | 4 | 300 |" in _text(am.section_locks(report, 10))
+
+
+def test_procesos_de_dibujo_peso_y_10062():
+    report = {
+        "uso": [
+            _entry("node", "proceso abierto", 3, ms=350.0),
+            _entry("node", "proceso cerrado", 2),
+            _entry("node", "proceso matado", 1),
+            _entry("node", "espera de proceso", 50, ms=40.0, ms_max=900),
+            _entry("plan_b", "El pintor de la moneda · Node", 12, errors=1),
+            _entry("peso", "moneda.gif", 10, ms=420.0, ms_max=900),
+            _entry("10062", "CoinView.heads", 3, ms=3500.0, ms_max=5000),
+        ]
+    }
+    text = _text(am.section_painters(report, 10))
+    assert "3 procesos abiertos (350 ms de media en arrancar), 2 cerrados por no usarse," in text
+    assert "1 matados a medias" in text and "40 ms de media, 900 de máximo, en 50" in text
+    assert "| El pintor de la moneda · Node | 12 | 1 |" in text
+    assert "| moneda.gif | 10 | 420 | 900 |" in _text(am.section_weight(report, 10))
+    assert "| CoinView.heads | 3 | 3500 | 5000 |" in _text(am.section_lost(report, 10))
+
+
+def test_partidas_y_paneles_calcula_abandono_y_duracion():
+    report = {
+        "uso": [
+            _entry("vista", "CoinView", 10),
+            _entry("vista_cerrada", "CoinView", 6, ms=120000.0),
+            _entry("caducada", "CoinView", 4, ms=600000.0),
+            _entry("caducada", "Huerfana", 1),
+        ]
+    }
+    text = _text(am.section_views(report, 10))
+    assert "| CoinView | 10 | 6 | 4 | 40.0 % | 2.0 | 10.0 |" in text
+    assert "| Huerfana | 0 | 0 | 1 | - | - | - |" in text
+
+
+def test_usos_incorrectos_menus_y_excepciones():
+    report = {
+        "uso": [
+            _entry("slash", "bizum", 18),
+            _entry("text", "bizum", 2),
+            _entry("rechazo", "bizum", 5),
+            _entry("uso_mal", "tajo", 3),
+            _entry("menu", "HelpView.callback → 🎰 Casino", 7),
+            _entry("menu", "ShopView.pick → artículo #", 4),
+            _entry("excepcion", "KeyError · bot/cogs/coin.py:_settle", 2),
+        ]
+    }
+    misuse = _text(am.section_misuse(report, 10))
+    assert "| bizum | 20 | 0 | 5 | 25.0 % |" in misuse
+    assert "| tajo | 0 | 3 | 0 | - |" in misuse
+    menus = _text(am.section_menus(report, 10))
+    assert "| 🎰 Casino | 7 |" in menus and "| ShopView.pick → artículo # | 4 |" in menus
+    assert "KeyError · bot/cogs/coin.py:_settle | 2 |" in _text(am.section_exceptions(report, 10))
+
+
+def test_logros_marcan_la_rareza_que_no_cuadra():
+    report = {
+        "logros": {
+            "miembros_con_logros": 20,
+            "por_logro": [
+                {
+                    "logro": "fácil",
+                    "rareza": "Común",
+                    "miembros": 18,
+                    "en_la_ventana": 5,
+                    "pct_miembros": 0.9,
+                },
+                {
+                    "logro": "imposible",
+                    "rareza": "Común",
+                    "miembros": 0,
+                    "en_la_ventana": 0,
+                    "pct_miembros": 0.0,
+                },
+                {
+                    "logro": "regalado",
+                    "rareza": "Mítico",
+                    "miembros": 4,
+                    "en_la_ventana": 1,
+                    "pct_miembros": 0.2,
+                },
+            ],
+            "sin_conseguir": ["x", "y"],
+        }
+    }
+    text = _text(am.section_achievements(report, 10))
+    assert "Miembros con algún logro: 20; logros que nadie tiene: 2" in text
+    assert "| Común | 2 | 45.0 % | 90.0 % |" in text
+    assert "| regalado | Mítico | 4 | 20.0 % |" in text
+    assert "| imposible | Común | 0 | 0.0 % |" in text
+    assert "| fácil | Común | 5 |" in text
+
+
+def test_economia_por_dia_tienda_mascotas_y_musica():
+    report = {
+        "economia_dia": {
+            "2026-10-01": {"entradas": 100, "salidas": 130, "movimientos": 4},
+            "2026-10-02": {"entradas": 50, "salidas": 0, "movimientos": 1, "masa": 9000},
+        },
+        "tienda": [
+            {
+                "articulo": "Rol VIP",
+                "tipo": "rol",
+                "ventas": 2,
+                "renovaciones": 1,
+                "compradores": 2,
+                "gastado": 203,
+            }
+        ],
+        "mascotas": {"gato": {"total": 3, "activas": 2}},
+        "uso": [
+            _entry("musica", "búsqueda", 4, ms=1500.0),
+            _entry("musica", "búsqueda sin resultado", 1, ms=900.0),
+            _entry("musica", "escuchada", 3, ms=180000.0),
+            _entry("musica", "saltada", 1, ms=30000.0),
+            _entry("musica", "fallo al sonar", 1, errors=1),
+            _entry("musica", "pistas en cola", 4, ms=1.5, ms_max=3),
+        ],
+    }
+    economy = _text(am.section_economy_days(report, 10))
+    assert "| 2026-10-01 | 100 | 130 | -30 | 4 | - |" in economy
+    assert "| 2026-10-02 | 50 | 0 | +50 | 1 | 9000 |" in economy
+    shop = _text(am.section_shop(report, 10))
+    assert "| Rol VIP | rol | 2 | 1 | 2 | 203 |" in shop and "| gato | 3 | 2 |" in shop
+    music = _text(am.section_music(report, 10))
+    assert "Búsquedas: 5 (1.5 s de media), 1 sin resultado" in music
+    assert "3 escuchadas (3.0 min de media), 1 saltadas (0.5 min antes de saltar)" in music
+    assert "1 fallos al sonar ⚠️" in music and "posición media 1.5, máxima 3" in music
+
+
+def test_al_juntar_informes_la_masa_de_cada_dia_no_se_pierde():
+    old = {"hasta": "2026-10-01", "economia_dia": {"2026-10-01": {"entradas": 5, "masa": 900}}}
+    new = {
+        "hasta": "2026-10-02",
+        "economia_dia": {"2026-10-01": {"entradas": 7}, "2026-10-02": {"entradas": 1, "masa": 950}},
+    }
+    merged = am.merge_reports([old, new])
+    assert merged["economia_dia"] == {
+        "2026-10-01": {"entradas": 7, "masa": 900},
+        "2026-10-02": {"entradas": 1, "masa": 950},
+    }

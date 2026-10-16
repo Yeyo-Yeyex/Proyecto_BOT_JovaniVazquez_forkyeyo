@@ -103,6 +103,7 @@ from bot.services.hold_win_render import Banner, BonusPanel, HoldWinRenderer, Me
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 
@@ -1224,7 +1225,7 @@ class HoldWin(commands.Cog, name="Botes"):
         key = (guild_id, user_id, theme)
         lock = self._locks.get(key)
         if lock is None:
-            lock = self._locks[key] = asyncio.Lock()
+            lock = self._locks[key] = TimedLock("hold_win:HoldWin._locks")
         return lock
 
     async def meters(self, guild_id: int, user_id: int, theme: str) -> Meters:

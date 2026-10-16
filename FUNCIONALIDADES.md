@@ -830,8 +830,13 @@ no sale en ningún mensaje del bot salvo en `informe`.
   de voz por canal, altas y bajas, avisos y errores del log por plantilla, lo que
   tarda cada dibujo de Node o Chromium, la espera del clic a la imagen, las vistas
   que caducan a medias, cada arranque con su versión, los cortes con Discord y sus
-  429, los procesos matados por memoria y una muestra del sistema por minuto
-  (memoria, CPU, base de datos y disco libre).
+  429, los procesos matados por memoria, el tiempo de cada sentencia de la base de
+  datos, las esperas en candados, los procesos de Node y los dibujos con plan B, el
+  peso de cada imagen, las interacciones perdidas (10062), la vida de cada vista
+  (abierta, cerrada o abandonada), las opciones de los desplegables, los comandos mal
+  escritos o rechazados, los errores con traza, la música y una muestra del sistema
+  por minuto (memoria, CPU, base de datos y disco libre). El informe añade logros por
+  rareza, ventas de la tienda, mascotas por especie y la economía de cada día.
 - **Qué no guarda:** el texto de los mensajes ni los argumentos de los avisos del
   log. El único dato por persona es quién hizo cada cosa cada día, que se borra a
   los 90 días y en el informe sale como u1, u2…

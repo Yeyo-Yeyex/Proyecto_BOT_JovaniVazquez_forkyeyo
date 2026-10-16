@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 import os
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from discord.ext import commands
 
 from bot import __version__
 from bot.cogs import telemetry as telemetry_cog
@@ -22,10 +25,13 @@ from bot.cogs.telemetry import (
     LogCounter,
     LoopWatchdog,
     Telemetry,
+    _count_choices,
     _image_uploaded,
     _image_waits,
+    _timed_response,
     _timed_upload,
     blocking_site,
+    exception_site,
     item_name,
     message_types,
     publish_report,
@@ -287,7 +293,7 @@ def test_solo_cuentan_las_vistas_que_caducan_sin_pararse() -> None:
         asyncio.run(scenario())
     finally:
         telemetry_service.event_observers.discard(observer)
-    assert seen == ["caducada:Mesa"]
+    assert [event for event in seen if event.startswith("caducada")] == ["caducada:Mesa"]
 
 
 def test_read_container_usage_lee_cgroup_base_de_datos_y_disco(tmp_path, monkeypatch) -> None:  # noqa: ANN001
@@ -334,3 +340,139 @@ async def test_el_arranque_se_cuenta_una_vez_con_la_version(monkeypatch) -> None
         telemetry_service.event_observers.discard(cog._on_event)
     starts = [c for c in telemetry.count.call_args_list if c.args[0] == "arranque"]
     assert len(starts) == 1 and starts[0].args[1] == __version__
+
+
+@contextlib.contextmanager
+def captured_events() -> Iterator[list[tuple[str, str, float | None, bool]]]:
+    """Lo que avisa `report_event` mientras dura el bloque."""
+    seen: list[tuple[str, str, float | None, bool]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append((kind, name, ms, error))
+
+    telemetry_service.event_observers.add(observer)
+    try:
+        yield seen
+    finally:
+        telemetry_service.event_observers.discard(observer)
+
+
+def test_cada_vista_cuenta_al_abrirse_al_pararse_y_lo_que_duro() -> None:
+    class Panel(discord.ui.View):
+        pass
+
+    async def scenario() -> None:
+        telemetry_cog.install_hooks()
+        panel = Panel(timeout=60)
+        panel.stop()
+        panel.stop()  # parar dos veces no cuenta dos cierres
+
+    with captured_events() as seen:
+        asyncio.run(scenario())
+    kinds = [(kind, name) for kind, name, _ms, _error in seen]
+    assert kinds == [("vista", "Panel"), ("vista_cerrada", "Panel")]
+    assert seen[1][2] is not None and seen[1][2] >= 0
+
+
+def test_un_10062_se_cuenta_con_el_boton_que_lo_pidio() -> None:
+    response = MagicMock(status=404, reason="Not Found")
+
+    async def original(self: object, *args: object, **kwargs: object) -> None:
+        raise discord.NotFound(response, {"code": 10062, "message": "Unknown interaction"})
+
+    respond = _timed_response(original)
+    interaction = MagicMock(id=77, command=None)
+    interaction.created_at = discord.utils.utcnow()
+    parent = MagicMock(_parent=interaction)
+    parent.is_done.return_value = False
+
+    async def scenario() -> None:
+        telemetry_cog._remember(interaction, "CoinView.heads")
+        with pytest.raises(discord.NotFound):
+            await respond(parent)
+
+    with captured_events() as seen:
+        asyncio.run(scenario())
+    telemetry_cog._item_names.pop(77, None)
+    assert [(kind, name) for kind, name, _ms, _error in seen] == [("10062", "CoinView.heads")]
+
+
+def test_cada_opcion_de_un_desplegable_se_cuenta_sin_cifras() -> None:
+    telemetry = telemetry_service.TelemetryService(None)
+    interaction = MagicMock(guild_id=1)
+    interaction.client = MagicMock(telemetry=telemetry)
+    _count_choices(interaction, "HelpView.callback", ["🎰 Casino", "artículo 12345"])
+    names = sorted(key.name for key in telemetry.drain().counters)
+    assert names == ["HelpView.callback → artículo #", "HelpView.callback → 🎰 Casino"]
+
+
+def test_las_imagenes_subidas_avisan_de_su_peso_en_kb() -> None:
+    async def original(self: object, route: object, **kwargs: object) -> str:
+        return "ok"
+
+    request = _timed_upload(original)
+    gif = discord.File(io.BytesIO(b"x" * 2048), filename="moneda123.gif")
+    data = discord.File(io.BytesIO(b"x" * 4096), filename="informe.json")
+
+    with captured_events() as seen:
+        asyncio.run(request(None, "ruta", files=[gif, data]))
+    assert [(k, n, ms) for k, n, ms, _e in seen if k == "peso"] == [("peso", "moneda#.gif", 2.0)]
+
+
+def test_las_excepciones_se_cuentan_por_tipo_y_funcion_del_bot() -> None:
+    space: dict = {"KeyError": KeyError}
+    code = "def settle():\n    raise KeyError('x')\n"
+    exec(compile(code, "/app/bot/cogs/coin.py", "exec"), space)  # noqa: S102
+    try:
+        space["settle"]()
+    except KeyError as error:
+        trace = error.__traceback__
+    assert exception_site(trace) == "bot/cogs/coin.py:settle"
+    try:
+        int("x")
+    except ValueError as error:
+        # Sin funciones del bot, la última de la traza.
+        assert exception_site(error.__traceback__).endswith(
+            ":test_las_excepciones_se_cuentan_por_tipo_y_funcion_del_bot"
+        )
+    # En el NAS el bot va instalado como paquete, dentro de `site-packages`.
+    installed = "/usr/local/lib/python3.13/site-packages/bot/cogs/coin.py"
+    exec(compile(code, installed, "exec"), space)  # noqa: S102
+    try:
+        space["settle"]()
+    except KeyError as error:
+        assert exception_site(error.__traceback__) == "bot/cogs/coin.py:settle"
+
+    async def scenario() -> MagicMock:
+        telemetry = MagicMock()
+        handler = LogCounter(telemetry, asyncio.get_running_loop())
+        try:
+            space["settle"]()
+        except KeyError:
+            record = logging.LogRecord(
+                "bot.cogs.coin", logging.ERROR, "", 0, "falló", (), sys.exc_info()
+            )
+        handler.emit(record)
+        return telemetry
+
+    telemetry = asyncio.run(scenario())
+    kinds = [call.args[:2] for call in telemetry.count.call_args_list]
+    assert ("excepcion", "KeyError · bot/cogs/coin.py:settle") in kinds
+
+
+async def test_comandos_mal_escritos_se_cuentan_como_uso_mal() -> None:
+    telemetry = MagicMock()
+    bot = MagicMock()
+    cog = Telemetry(bot, telemetry)
+    ctx = MagicMock()
+    ctx.command.qualified_name = "informe"
+    ctx.guild.id = 1
+    await cog.on_command_error(ctx, commands.BadArgument("no es un número"))
+    message = MagicMock(spec=discord.Message)
+    message.guild = MagicMock(id=1)
+    message.author = bot.user
+    message.author.bot = True
+    message.content = "Uso: `.tajo` (estado), `.tajo #canal` o `.tajo todos`."
+    await cog.on_message(message)
+    wrong = [call.args[1] for call in telemetry.count.call_args_list if call.args[0] == "uso_mal"]
+    assert wrong == ["informe", "tajo"]

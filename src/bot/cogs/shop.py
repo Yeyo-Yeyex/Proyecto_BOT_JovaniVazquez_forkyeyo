@@ -166,6 +166,7 @@ from bot.services.skins import (
 from bot.services.skins import params as skin_params_of
 from bot.services.skins import skins_of as game_skins
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.services.work_tools import TOOL_BY_KEY
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
@@ -821,7 +822,7 @@ class Checkout(ui.LayoutView):
         self.result: str | None = None
         self.failed = False
         self.done = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("shop:Checkout._lock")
         self.rebuild()
 
     def rebuild(self) -> None:

@@ -58,6 +58,7 @@ from bot.services.taxes import (
     Payslip,
     igic,
 )
+from bot.services.telemetry import TimedLock
 from bot.services.work import (
     ABROAD_PAY,
     BANKRUPT_CHANCE,
@@ -539,7 +540,7 @@ class WorkService:
             for other, value in list(self._locks.items()):
                 if not value.locked():
                     del self._locks[other]
-            lock = self._locks[key] = asyncio.Lock()
+            lock = self._locks[key] = TimedLock("pala:WorkService._locks")
         return lock
 
     # -- Consulta -----------------------------------------------------------------------

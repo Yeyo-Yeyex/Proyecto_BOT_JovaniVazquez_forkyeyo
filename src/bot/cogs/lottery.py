@@ -38,7 +38,6 @@ Permisos: enviar mensajes en el canal de los anuncios.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
 import secrets
@@ -92,6 +91,7 @@ from bot.services.lottery import (
 )
 from bot.services.pets import Event, Moment
 from bot.services.taxes import LOTTERY_EXEMPT, TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
@@ -571,7 +571,7 @@ class Loteria(commands.Cog):
         # Las bolas salen del generador del sistema operativo: nadie puede
         # predecir un sorteo mirando los anteriores.
         self.rng = rng or secrets.SystemRandom()
-        self._settling = asyncio.Lock()
+        self._settling = TimedLock("lottery:Loteria._settling")
 
     async def cog_load(self) -> None:
         """Crea las tablas (idempotente) y arranca los sorteos."""

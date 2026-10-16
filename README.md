@@ -1079,9 +1079,19 @@ cada dibujo y cada subida de archivos a Discord, dónde se para el bucle de even
 cuando se queda bloqueado más de 250 ms, lo que espera cada miembro del clic a la
 imagen, las vistas que caducan a medias, cada arranque con su versión, los cortes con
 Discord, sus respuestas 429 por ruta, los procesos que el contenedor mata por memoria
-y, cada minuto, la memoria y la CPU del contenedor, el retraso del bucle, los procesos
-de Chromium y Node, lo que ocupa la base de datos y el disco libre. Nunca guarda el
-texto de un mensaje.
+lo que tarda cada sentencia de cada repositorio en la base de datos (y sus «database
+is locked»), lo que se espera en cada candado, los procesos de Node que se abren y la
+espera hasta tener uno, los dibujos que salen con el plan B, lo que pesa cada imagen,
+las interacciones que Discord ya daba por perdidas (10062), cada vista abierta,
+cerrada o abandonada con lo que duró, la opción elegida en cada desplegable (las
+páginas de la ayuda, entre ellas), los comandos mal escritos o que contestan con un
+error, los errores con traza por tipo y función, la música (búsquedas, pistas
+escuchadas o saltadas, fallos y cola) y, cada minuto, la memoria y la CPU del
+contenedor, el retraso del bucle, los procesos de Chromium y Node, lo que ocupa la
+base de datos y el disco libre. Al sacar el informe lee también, sin escribir nada,
+cuántos miembros tienen cada logro (frente a su rareza), las ventas de la tienda por
+artículo, las mascotas por especie y el dinero que entra y sale cada día. Nunca guarda
+el texto de un mensaje.
 
 Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
 `telemetry_*` del mismo archivo). Las horas sueltas se pliegan en días a los 90 días

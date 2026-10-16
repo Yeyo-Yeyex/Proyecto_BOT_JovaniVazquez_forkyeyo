@@ -53,7 +53,7 @@ from typing import Any, TypeVar
 from PIL import Image
 
 from bot.services.browser_scene import IDLE_SECONDS, Patch, png_bytes
-from bot.services.telemetry import report_render
+from bot.services.telemetry import report_event, report_render
 from bot.utils.gif import QUANTIZE_THREADS, precode
 
 logger = logging.getLogger(__name__)
@@ -223,7 +223,9 @@ class _Pool:
             node = self.node or shutil.which("node")
             if node is None:
                 raise NodeSceneError("No hay `node` en el PATH")
+            opening = time.perf_counter()
             worker = await _Process.start(node)
+            report_event("node", "proceso abierto", (time.perf_counter() - opening) * 1000)
         finally:
             self.starting -= 1
         self.workers.append(worker)
@@ -266,7 +268,9 @@ class _Pool:
         """Apunta `draw` y le da los libres que le tocan (al menos uno, esperando si hace falta).
 
         Abre en segundo plano los que faltan para que se le unan a mitad (`recruit`).
+        Avisa (`node`, «espera de proceso») de lo que tarda en tener el primero.
         """
+        waiting = time.perf_counter()
         async with self._changed:
             self.draws.append(draw)
             try:
@@ -288,6 +292,7 @@ class _Pool:
                 worker.busy = True
             draw.workers.update(taken)
             self._grow()
+            report_event("node", "espera de proceso", (time.perf_counter() - waiting) * 1000)
             return taken
 
     async def recruit(self, draw: _Draw) -> _Process | None:
@@ -329,6 +334,7 @@ class _Pool:
     def drop(self, draw: _Draw) -> None:
         """Mata los procesos de `draw`, que pueden haber quedado con píxeles sin leer."""
         for worker in draw.workers:
+            report_event("node", "proceso matado")
             worker.kill()
             if worker in self.workers:
                 self.workers.remove(worker)
@@ -349,6 +355,7 @@ class _Pool:
             if len(self.workers) <= MIN_WORKERS:
                 break
             if worker.last_used <= limit:
+                report_event("node", "proceso cerrado")
                 self.workers.remove(worker)
                 self._in_background(worker.close())
         if len(self.workers) > MIN_WORKERS:
@@ -541,6 +548,7 @@ class NodeScene:
                 panel de `pisos`) pasan `False`: cada una acaba en su propio PNG.
         """
         if self.disabled:
+            report_event("plan_b", f"{self.name} · Node")
             return None
         if not states:
             return []
@@ -554,6 +562,7 @@ class NodeScene:
             first = await pool.start(draw)
         except Exception:
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            report_event("plan_b", f"{self.name} · Node", error=True)
             self.disabled = True
             return None
         start = time.perf_counter()
@@ -624,6 +633,7 @@ class NodeScene:
             if not isinstance(error, Exception):
                 raise
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            report_event("plan_b", f"{self.name} · Node", error=True)
             self.disabled = True
             return None
         report_render(self.name, (time.perf_counter() - start) * 1000)
@@ -649,6 +659,7 @@ class NodeScene:
     async def _run(self, work: Callable[[_Process], Awaitable[T]]) -> T | None:
         """Hace `work` con un proceso del grupo; `None` (y plan B) si Node falla."""
         if self.disabled:
+            report_event("plan_b", f"{self.name} · Node")
             return None
         pool = self._use_pool()
         draw = _Draw(1)
@@ -656,6 +667,7 @@ class NodeScene:
             workers = await pool.start(draw)
         except Exception:
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            report_event("plan_b", f"{self.name} · Node", error=True)
             self.disabled = True
             return None
         # Se mide con el proceso ya en la mano: lo que tarda pintar, no la cola.
@@ -669,6 +681,7 @@ class NodeScene:
             if not isinstance(error, Exception):
                 raise
             logger.warning("%s no está disponible; se usa el plan B", self.name, exc_info=True)
+            report_event("plan_b", f"{self.name} · Node", error=True)
             self.disabled = True
             return None
         await pool.finish(draw)

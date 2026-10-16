@@ -72,6 +72,7 @@ from bot.services.poker import evaluate
 from bot.services.poker_render import TimbaSeat, timba_meta, timba_state
 from bot.services.poker_scene import PokerScene
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.services.timba import (
     GAME,
     MAX_BUY_BB,
@@ -351,7 +352,7 @@ class Table:
         self.next_hand_at: float | None = None
         self.last_lines: list[str] = []
         self.task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("timba:Table._lock")
         self._edit_task: asyncio.Task[None] | None = None
         self._dirty = False
         self.seated = asyncio.Event()

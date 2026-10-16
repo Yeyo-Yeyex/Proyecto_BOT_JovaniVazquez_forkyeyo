@@ -32,7 +32,6 @@ Permisos del bot en el canal: enviar mensajes.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
 import secrets
@@ -71,6 +70,7 @@ from bot.services.mines import (
     risk_summary,
 )
 from bot.services.pets import bet_moment
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -154,7 +154,7 @@ class MinesBoard(ui.LayoutView):
         self.channel: object = None
         #: Récord de casillas del dueño al empezar la partida en curso.
         self.record_before = 0
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("mines:MinesBoard._lock")
         self._last_interaction: discord.Interaction | None = None
 
     # -- Dibujo -----------------------------------------------------------------------

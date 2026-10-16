@@ -44,7 +44,20 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   429 que avisa discord.py en el log, por ruta sin IDs ni tokens).
 - `imagen`: del clic a que la primera imagen de la respuesta queda subida. Se
   saca del token de la interacción, que va en la ruta de la subida.
-- `caducada`: vistas que llegan a su `timeout` sin que nadie las pare.
+- `vista`, `vista_cerrada` y `caducada`: cada vista (partida, panel, menú) que se
+  abre, la que se para (con lo que duró) y la que llega a su `timeout` sin que
+  nadie la pare (abandonada, con lo que duró).
+- `menu`: la opción elegida en cada desplegable (`HelpSelect → 🎰 Casino`), con
+  las cifras cambiadas por `#` para que nunca salga un id.
+- `peso`: lo que pesa cada imagen subida, en KB (va en los campos de `ms`).
+- `10062`: interacciones que Discord ya había dado por perdidas al contestar.
+- `uso_mal`: comandos de texto mal escritos (falta o sobra un argumento, o el
+  bot contesta «Uso: …»). `rechazo` (en `bot.utils.responder`): comandos que
+  contestan con un error.
+- `excepcion`: errores del log con traza, por tipo y por la función del bot
+  donde saltaron (`KeyError · bot/cogs/coin.py:_settle`).
+- `sql`: lo que tarda cada sentencia de cada repositorio (`economy · escritura`),
+  recogido cada minuto de `bot.repositories.sqlite`.
 
 Todo se suma en memoria y se escribe una vez por minuto (`TelemetryService.flush`),
 así que contar un clic nunca abre la base de datos antes de contestar a Discord.
@@ -83,6 +96,7 @@ from discord.ui.view import BaseView, ViewStore
 
 from bot import __version__
 from bot.cogs.deploy import NewsTarget, resolve_target
+from bot.repositories import sqlite
 from bot.services import telemetry as telemetry_service
 from bot.services.telemetry import LISTENER_ITEM, SystemSample, TelemetryService, local_moment
 
@@ -121,6 +135,11 @@ CGROUP_CPU_FILE = Path("/sys/fs/cgroup/cpu.stat")
 CGROUP_EVENTS_FILE = Path("/sys/fs/cgroup/memory.events")
 # Archivos que se suben como imagen: los que cuentan para `imagen`.
 IMAGE_SUFFIXES = (".gif", ".png", ".webp", ".jpg", ".jpeg")
+# Error de Discord al contestar una interacción que ya ha caducado (3 s sin respuesta).
+UNKNOWN_INTERACTION = 10062
+# Respuesta del bot a un comando de texto mal escrito: «Uso: `.informe [días]`…».
+USAGE_PREFIX = "Uso:"
+USAGE_COMMAND = re.compile(r"`[./](\w+)")
 # Aviso de discord.py al recibir un 429 (`discord.http`): se cuenta por ruta.
 RATE_LIMITED = "We are being rate limited. %s %s responded with 429."
 # Trozos de una ruta que son IDs o tokens: no salen en el nombre.
@@ -140,6 +159,11 @@ TRIP = "3 viaje de la respuesta"
 # Cuándo llegó al bot cada interacción por id: (`time.time()`, `perf_counter()`).
 _arrivals: dict[int, tuple[float, float]] = {}
 MAX_ARRIVALS = 500
+# Nombre del botón, formulario o comando de cada interacción en curso, para
+# ponérselo a un `10062` (la respuesta no sabe qué botón la pidió).
+_item_names: dict[int, str] = {}
+# Atributo con el `perf_counter()` de cuando se creó cada vista.
+_BORN = "_telemetry_born"
 # Cuándo llegó cada interacción por su token, hasta que sube su primera imagen
 # (`imagen`). El token va en la ruta de las respuestas; el id, no siempre.
 _image_waits: dict[str, float] = {}
@@ -196,6 +220,16 @@ def _count_interaction(interaction: discord.Interaction, kind: str, name: str) -
     )
 
 
+def _count_choices(interaction: Any, name: str, values: list[str]) -> None:
+    """Cuenta cada opción elegida en un desplegable de texto, sin cifras (nunca un id)."""
+    telemetry = _telemetry_of(getattr(interaction, "client", None))
+    if telemetry is None:
+        return
+    for value in values:
+        choice = re.sub(r"[0-9]+", "#", str(value))[:60]
+        telemetry.count("menu", f"{name} → {choice}", guild_id=interaction.guild_id)
+
+
 def item_name(view: object, item: discord.ui.Item[Any]) -> str:
     """Nombre estable de un botón o menú: `Vista.método` (`CoinView.heads`).
 
@@ -229,12 +263,36 @@ def _timed_response(original: Callable[..., Awaitable[Any]]) -> Callable[..., Aw
     async def respond(self: discord.InteractionResponse, *args: Any, **kwargs: Any) -> Any:
         first = not self.is_done()
         sent = time.perf_counter()
-        result = await original(self, *args, **kwargs)
+        try:
+            result = await original(self, *args, **kwargs)
+        except discord.NotFound as error:
+            if first and error.code == UNKNOWN_INTERACTION:
+                _lost(self._parent)
+            raise
         if first:
             _answered(self._parent, sent, time.perf_counter())
         return result
 
     return respond
+
+
+def _lost(interaction: discord.Interaction) -> None:
+    """Cuenta un `10062`: la interacción llegó a contestarse tarde, con su nombre y retraso."""
+    command = getattr(interaction, "command", None)
+    name = _item_names.get(interaction.id) or (
+        command.qualified_name if command is not None else "?"
+    )
+    elapsed = (discord.utils.utcnow() - interaction.created_at).total_seconds() * 1000
+    telemetry_service.report_event("10062", name, max(0.0, elapsed))
+
+
+def _remember(interaction: Any, name: str) -> None:
+    """Apunta qué botón o formulario atiende `interaction` mientras corre su callback."""
+    interaction_id = getattr(interaction, "id", None)
+    if isinstance(interaction_id, int):
+        _item_names[interaction_id] = name
+        while len(_item_names) > MAX_ARRIVALS:
+            del _item_names[next(iter(_item_names))]
 
 
 def _arrival(original: Callable[..., None]) -> Callable[..., None]:
@@ -256,11 +314,16 @@ def _arrival(original: Callable[..., None]) -> Callable[..., None]:
 def _counted_view_task(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     @functools.wraps(original)
     async def run(self: BaseView, item: discord.ui.Item[Any], interaction: Any) -> Any:
+        name = item_name(self, item)
+        _remember(interaction, name)
         try:
             return await original(self, item, interaction)
         finally:
+            _item_names.pop(getattr(interaction, "id", None), None)
             if not getattr(item, LISTENER_ITEM, False):
-                _count_interaction(interaction, "button", item_name(self, item))
+                _count_interaction(interaction, "button", name)
+            if isinstance(item, discord.ui.Select):
+                _count_choices(interaction, name, item.values)
 
     return run
 
@@ -268,9 +331,11 @@ def _counted_view_task(original: Callable[..., Awaitable[Any]]) -> Callable[...,
 def _counted_modal_task(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     @functools.wraps(original)
     async def run(self: discord.ui.Modal, interaction: Any, *args: Any, **kwargs: Any) -> Any:
+        _remember(interaction, type(self).__name__)
         try:
             return await original(self, interaction, *args, **kwargs)
         finally:
+            _item_names.pop(getattr(interaction, "id", None), None)
             _count_interaction(interaction, "modal", type(self).__name__)
 
     return run
@@ -283,9 +348,11 @@ def _counted_dynamic_task(
     async def run(
         self: ViewStore, component_type: int, factory: type, interaction: Any, *args: Any
     ) -> Any:
+        _remember(interaction, factory.__name__)
         try:
             return await original(self, component_type, factory, interaction, *args)
         finally:
+            _item_names.pop(getattr(interaction, "id", None), None)
             _count_interaction(interaction, "button", factory.__name__)
 
     return run
@@ -308,9 +375,8 @@ def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awai
         files = kwargs.get("files") or ()
         if not files:
             return await original(self, *args, **kwargs)
-        name = telemetry_service.upload_name(
-            files[0].filename or "archivo", sum(_upload_size(file) for file in files)
-        )
+        sizes = [_upload_size(file) for file in files]
+        name = telemetry_service.upload_name(files[0].filename or "archivo", sum(sizes))
         start = time.perf_counter()
         failed = True
         try:
@@ -322,6 +388,11 @@ def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awai
             telemetry_service.report_upload(name, (done - start) * 1000, error=failed)
             if not failed:
                 _image_uploaded(args[0] if args else kwargs.get("route"), files, done)
+                for file, size in zip(files, sizes, strict=True):
+                    if (file.filename or "").lower().endswith(IMAGE_SUFFIXES):
+                        # Los KB van en el campo de los ms: así salen la media y el máximo.
+                        image = re.sub(r"[0-9]+", "#", file.filename or "")
+                        telemetry_service.report_event("peso", image, size / 1024)
 
     return request
 
@@ -340,14 +411,39 @@ def _image_uploaded(route: Any, files: Any, done: float) -> None:
         telemetry_service.report_event("imagen", name, (done - arrived) * 1000)
 
 
+def _lifetime(view: BaseView) -> float | None:
+    born = getattr(view, _BORN, None)
+    return None if born is None else (time.perf_counter() - born) * 1000
+
+
 def _counted_timeout(original: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(original)
     def dispatch(self: BaseView) -> Any:
         if not self.is_finished():
-            telemetry_service.report_event("caducada", type(self).__name__)
+            telemetry_service.report_event("caducada", type(self).__name__, _lifetime(self))
         return original(self)
 
     return dispatch
+
+
+def _counted_init(original: Callable[..., None]) -> Callable[..., None]:
+    @functools.wraps(original)
+    def init(self: BaseView, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        setattr(self, _BORN, time.perf_counter())
+        telemetry_service.report_event("vista", type(self).__name__)
+
+    return init
+
+
+def _counted_stop(original: Callable[..., None]) -> Callable[..., None]:
+    @functools.wraps(original)
+    def stop(self: BaseView) -> None:
+        if not self.is_finished():
+            telemetry_service.report_event("vista_cerrada", type(self).__name__, _lifetime(self))
+        original(self)
+
+    return stop
 
 
 def route_name(method: str, url: str) -> str:
@@ -374,7 +470,9 @@ def install_hooks() -> None:
       los mensajes con archivos (los de las interacciones, por el segundo) y se
       mide lo que tarda la subida y, si es la primera imagen de una interacción,
       lo que ha esperado el miembro desde el clic (`imagen`);
-    - `BaseView._dispatch_timeout`: una vista que caduca sin pararse (`caducada`).
+    - `BaseView.__init__`, `stop` y `_dispatch_timeout`: cada vista que se abre
+      (`vista`), se para (`vista_cerrada`) o caduca sin pararse (`caducada`), con
+      lo que duró.
 
     Salvo los de `InteractionResponse`, son métodos internos: si discord.py los cambia, la prueba de
     integración de la telemetría falla. Los envoltorios no cambian lo que hace el
@@ -390,6 +488,8 @@ def install_hooks() -> None:
     _wrap(discord.http.HTTPClient, "request", _timed_upload)
     _wrap(discord.webhook.async_.AsyncWebhookAdapter, "request", _timed_upload)
     _wrap(BaseView, "_dispatch_timeout", _counted_timeout)
+    _wrap(BaseView, "__init__", _counted_init)
+    _wrap(BaseView, "stop", _counted_stop)
 
 
 def message_types(message: discord.Message) -> list[str]:
@@ -487,6 +587,39 @@ def cpu_count() -> int:
     if hasattr(os, "sched_getaffinity"):
         return len(os.sched_getaffinity(0)) or 1
     return os.cpu_count() or 1
+
+
+def exception_site(trace: Any) -> str:
+    """La función del bot más interna de una traza (`bot/cogs/coin.py:_settle`).
+
+    Si la traza no pasa por el bot (un error de discord.py o de la red), la última
+    función de la traza.
+    """
+    last = None
+    found = None
+    while trace is not None:
+        code = trace.tb_frame.f_code
+        last = code
+        if _bot_path(code.co_filename) is not None:
+            found = code
+        trace = trace.tb_next
+    code = found or last
+    if code is None:
+        return "?"
+    where = _bot_path(code.co_filename) or Path(code.co_filename).name
+    return f"{where}:{code.co_name}"
+
+
+def _bot_path(filename: str) -> str | None:
+    """`bot/...` de un archivo del bot (con `/`), o `None` si es de fuera.
+
+    En el NAS el bot está instalado en `site-packages/bot`: vale igual.
+    """
+    parts = Path(filename).parts
+    if "bot" not in parts:
+        return None
+    index = len(parts) - 1 - parts[::-1].index("bot")
+    return "/".join(parts[index:])
 
 
 def blocking_site(frame: Any) -> str:
@@ -610,6 +743,9 @@ class LogCounter(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         name = f"{record.levelname} {record.name}: {str(record.msg)[:LOG_TEMPLATE_LENGTH]}"
         self._count("log", name)
+        if record.exc_info and record.exc_info[0] is not None:
+            error_type, _error, trace = record.exc_info
+            self._count("excepcion", f"{error_type.__name__} · {exception_site(trace)}")
         args = record.args if isinstance(record.args, tuple) else ()
         if str(record.msg).startswith(RATE_LIMITED) and len(args) >= 2:
             self._count("ratelimit", route_name(str(args[0]), str(args[1])))
@@ -708,6 +844,10 @@ class Telemetry(commands.Cog):
         """Cada minuto: minutos de voz, muestra del sistema y volcado a SQLite."""
         self._count_voice()
         await self._sample_system()
+        for repository, operation, ms, error in sqlite.drain_timings():
+            self.telemetry.count(
+                "sql", f"{repository} · {operation}", guild_id=None, ms=ms, error=error
+            )
         await self.telemetry.flush()
 
     @flush_loop.before_loop
@@ -853,6 +993,10 @@ class Telemetry(commands.Cog):
         """Cuenta un comando de texto fallido (no los que no existen)."""
         if ctx.command is None or isinstance(error, commands.CommandNotFound):
             return
+        if isinstance(error, commands.UserInputError):
+            self.telemetry.count(
+                "uso_mal", ctx.command.qualified_name, guild_id=ctx.guild.id if ctx.guild else None
+            )
         self.telemetry.count(
             "text",
             ctx.command.qualified_name,
@@ -864,7 +1008,14 @@ class Telemetry(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Cuenta el mensaje por canal y sus clases; nunca guarda el texto."""
-        if message.guild is None or message.author.bot:
+        if message.guild is None:
+            return
+        if message.author.bot:
+            # «Uso: `.comando …`» del propio bot: alguien escribió mal ese comando.
+            if message.author == self.bot.user and message.content.startswith(USAGE_PREFIX):
+                found = USAGE_COMMAND.search(message.content)
+                name = found.group(1) if found else "?"
+                self.telemetry.count("uso_mal", name, guild_id=message.guild.id)
             return
         guild_id = message.guild.id
         self.telemetry.count(

@@ -541,3 +541,29 @@ async def test_comando_de_texto_volumen_valida_rango_antes_de_delegar() -> None:
 
     ctx.send.assert_awaited_once()
     assert "entre" in ctx.send.await_args.args[0]
+
+
+async def test_la_musica_cuenta_busquedas_cola_y_lo_que_se_escucha(
+    player: SimpleNamespace,
+) -> None:
+    from bot.services import telemetry as telemetry_service
+
+    seen: list[tuple[str, str, float | None, bool]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        if kind == "musica":
+            seen.append((kind, name, ms, error))
+
+    telemetry_service.event_observers.add(observer)
+    try:
+        await poner(player, "uno")
+        await poner(player, "dos")
+        await player.cog.skip.callback(player.cog, make_interaction(member=player.member))
+        await settle()
+    finally:
+        telemetry_service.event_observers.discard(observer)
+    names = [name for _kind, name, _ms, _error in seen]
+    assert names.count("búsqueda") == 2
+    queued = [ms for _kind, name, ms, _error in seen if name == "pistas en cola"]
+    assert queued == [0.0, 1.0]
+    assert "saltada" in names

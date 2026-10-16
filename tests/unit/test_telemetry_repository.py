@@ -380,3 +380,91 @@ def test_una_base_de_datos_vieja_recibe_las_columnas_nuevas_del_sistema(tmp_path
     assert (system["db_max"], system["disk_min"]) == (12.0, 800.0)
     assert data.starts == [(today, "7.11.0", 2)]
     assert data.daily_ms == [(today, "button", 3, 900, 1)]
+
+
+def test_report_data_lee_logros_tienda_mascotas_y_economia_por_dia(tmp_path: Path) -> None:
+    path = tmp_path / "bot.db"
+    # Domingo 25 de octubre de 2026: en Canarias se atrasa la hora a las 2:00 (UTC+1 a UTC).
+    before_change = datetime(2026, 10, 24, 23, 30, tzinfo=TIMEZONE).timestamp()
+    after_change = datetime(2026, 10, 25, 23, 30, tzinfo=TIMEZONE).timestamp()
+    now = datetime(2026, 10, 26, 12, 0, tzinfo=TIMEZONE).timestamp()
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE achievement_unlocks (guild_id INTEGER, user_id INTEGER,
+                achievement_id TEXT, unlocked_at REAL);
+            CREATE TABLE shop_purchases (guild_id INTEGER, user_id INTEGER, item_name TEXT,
+                kind TEXT, base INTEGER, tax INTEGER, discount INTEGER, renewal INTEGER,
+                created_at REAL, refunded INTEGER);
+            CREATE TABLE pets (id INTEGER, guild_id INTEGER, user_id INTEGER, species TEXT);
+            CREATE TABLE pet_owners (guild_id INTEGER, user_id INTEGER, active_id INTEGER);
+            CREATE TABLE economy_ledger (guild_id INTEGER, user_id INTEGER, delta INTEGER,
+                reason TEXT, created_at REAL);
+            """
+        )
+        connection.executemany(
+            "INSERT INTO achievement_unlocks VALUES (?, ?, ?, ?)",
+            [
+                (GUILD, 1, "a", now),
+                (GUILD, 2, "a", now - 90 * 86400),
+                (GUILD, 1, "b", now),
+                (OTHER_GUILD, 3, "a", now),
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO shop_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (GUILD, 1, "Rol VIP", "rol", 90, 6, 10, 0, now, 0),
+                (GUILD, 2, "Rol VIP", "rol", 100, 7, 0, 1, now, 0),
+                (GUILD, 2, "Rol VIP", "rol", 100, 7, 0, 0, now, 1),
+                (GUILD, 3, "Viejo", "objeto", 5, 0, 0, 0, now - 90 * 86400, 0),
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO pets VALUES (?, ?, ?, ?)",
+            [(1, GUILD, 1, "gato"), (2, GUILD, 1, "perro"), (3, GUILD, 2, "gato")],
+        )
+        connection.executemany(
+            "INSERT INTO pet_owners VALUES (?, ?, ?)", [(GUILD, 1, 1), (GUILD, 2, None)]
+        )
+        connection.executemany(
+            "INSERT INTO economy_ledger VALUES (?, ?, ?, ?, ?)",
+            [
+                (GUILD, 1, 100, "sueldo", before_change),
+                (GUILD, 1, -30, "casino", before_change),
+                (GUILD, 1, 50, "sueldo", after_change),
+                (GUILD, 0, 999, "estado", after_change),
+            ],
+        )
+    repository = TelemetryRepository(path)
+    data = asyncio.run(
+        repository.report_data(guild_id=GUILD, since_day="2026-10-01", since_ts=now - 30 * 86400)
+    )
+    assert sorted(data.achievements) == [("a", 2, 1), ("b", 1, 1)]
+    assert data.achievement_members == 2
+    (vip,) = data.shop
+    # Lo pagado es base + IGIC (la rebaja ya va restada en la base); sin las devueltas.
+    assert (vip["name"], vip["sales"], vip["renewals"], vip["buyers"], vip["spent"]) == (
+        "Rol VIP",
+        2,
+        1,
+        2,
+        203,
+    )
+    assert sorted((p["species"], p["total"], p["active"]) for p in data.pets) == [
+        ("gato", 2, 1),
+        ("perro", 1, 0),
+    ]
+    # Los movimientos de las 23:30 van a su día canario aunque cambie la hora.
+    assert data.ledger_daily == [("2026-10-24", 100, 30, 2), ("2026-10-25", 50, 0, 1)]
+
+
+def test_report_data_cuenta_las_muestras_de_cada_dia(tmp_path: Path) -> None:
+    async def scenario():
+        repository = await seed_report(tmp_path / "bot.db")
+        return await repository.report_data(
+            guild_id=GUILD, since_day=day_ago(6), since_ts=NOW - 6 * 86400
+        )
+
+    (system,) = asyncio.run(scenario()).system
+    assert system["samples"] == 2
