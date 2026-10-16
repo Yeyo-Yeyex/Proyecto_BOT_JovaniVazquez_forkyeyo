@@ -497,6 +497,7 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
             f"Límite de memoria: {limit_mb:.0f} MB; aviso por encima del {MEMORY_WARN:.0%}.",
             "",
         ]
+        extra = _system_extra(report)
         body += _table(
             [
                 "Día",
@@ -513,7 +514,34 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
             ],
             rows,
         )
+        if extra:
+            body += ["", "Procesos de dibujo, disco y tareas del bucle:", ""]
+            body += _table(
+                [
+                    "Día",
+                    "Chromium MB",
+                    "Node MB",
+                    "Disco leído MB",
+                    "Disco escrito MB",
+                    "Tareas máx",
+                ],
+                extra,
+            )
     return _section("Sistema", body)
+
+
+def _system_extra(report: Report) -> list[tuple]:
+    """Filas de memoria de Chromium y Node, disco leído y escrito y tareas vivas por día."""
+    keys = ("chromium_mb_max", "node_mb_max", "disco_leido_mb", "disco_escrito_mb", "tareas_max")
+    rows = []
+    for day, raw in sorted(_dict(report.get("sistema")).items()):
+        row = _dict(raw)
+        if all(row.get(key) is None for key in keys):
+            continue
+        rows.append(
+            (day, *("-" if row.get(key) is None else f"{_num(row.get(key)):.0f}" for key in keys))
+        )
+    return rows
 
 
 def section_render(report: Report, top: int) -> list[str]:
@@ -657,6 +685,13 @@ def section_discord(report: Report, top: int) -> list[str]:
             f"- Conexión: {gateway.get('conectada', 0)} conectada, {cuts} cortes, "
             f"{gateway.get('reanudada', 0)} reanudadas" + (f" {WARN}" if cuts else "")
         )
+    for e in events("conexion_inicial"):
+        if e.get("ms_medio") is not None:
+            body.append(
+                f"- Del arranque a conectar: {_num(e.get('ms_medio')) / 1000:.1f} s de media,"
+                f" {_num(e.get('ms_max')) / 1000:.1f} de máximo, en {int(_num(e.get('eventos')))}"
+                " arranques"
+            )
     kills = sum(int(_num(e.get("eventos"))) for e in events("oom"))
     if kills:
         body.append(f"- {WARN} Procesos matados por falta de memoria: {kills}")
@@ -722,6 +757,92 @@ def section_database(report: Report, top: int) -> list[str]:
             ["", "Repositorio · operación", "Veces", "ms medio", "ms máx", "≥1 s", "Errores"], rows
         )
     return _section("Base de datos", body)
+
+
+def section_api(report: Report, top: int) -> list[str]:
+    """Lo que tarda cada llamada a Discord por ruta, de más a menos tiempo total."""
+    rows = _timed_rows(report, "api", top)
+    body: list[str] = []
+    if rows:
+        body = [
+            "Por método y plantilla de la ruta (sin IDs). Incluye lo que discord.py espera"
+            " cuando Discord le frena (429). Un error es una llamada que falló.",
+            "",
+        ]
+        body += _table(["", "Llamada", "Veces", "ms medio", "ms máx", "≥1 s", "Errores"], rows)
+    return _section("Llamadas a Discord", body)
+
+
+def section_tasks(report: Report, top: int) -> list[str]:
+    """Cada tarea programada: vueltas, lo que tarda y si falla."""
+    rows = _timed_rows(report, "tarea", max(top, 50))
+    body: list[str] = []
+    if rows:
+        body = [
+            "El nombre lleva cuántas vueltas le tocan al día; cada arranque del bot suma una.",
+            "",
+        ]
+        body += _table(["", "Tarea", "Vueltas", "ms medio", "ms máx", "≥1 s", "Fallos"], rows)
+    return _section("Tareas programadas", body)
+
+
+def section_newcomers(report: Report, top: int) -> list[str]:
+    """Primeros pasos de los miembros que entraron en la ventana."""
+    data = _dict(report.get("nuevos"))
+    joined = int(_num(data.get("altas")))
+    if not joined:
+        return _section("Nuevos miembros", [])
+
+    def days(key: str) -> str:
+        value = data.get(key)
+        return "-" if value is None else f"{_num(value):.1f}"
+
+    def step(label: str, count_key: str, days_key: str) -> tuple:
+        count = _num(data.get(count_key))
+        return (label, int(count), _pct(count, joined), days(days_key))
+
+    body = [f"- Altas en la ventana: {joined}", ""]
+    body += _table(
+        ["Paso", "Miembros", "De las altas", "Días hasta (mediana)"],
+        [
+            step("Escribió un mensaje", "escribieron", "dias_hasta_escribir_mediana"),
+            step("Usó un comando", "usaron_comandos", "dias_hasta_comando_mediana"),
+            step("Pulsó un botón (jugó)", "usaron_botones", "dias_hasta_boton_mediana"),
+            (
+                "Volvió tras 7 días",
+                int(_num(data.get("volvieron_tras_7_dias"))),
+                _pct(_num(data.get("volvieron_tras_7_dias")), joined),
+                "-",
+            ),
+        ],
+    )
+    return _section("Nuevos miembros", body)
+
+
+def section_bot_messages(report: Report, top: int) -> list[str]:
+    """Mensajes del bot por canal y reacciones que reciben: qué avisos se leen."""
+    sent = {str(e.get("nombre")): _num(e.get("eventos")) for e in _entries(report, "bot_mensaje")}
+    reacted = {
+        str(e.get("nombre")): (_num(e.get("eventos")), int(_num(e.get("usuarios"))))
+        for e in _entries(report, "reaccion_bot")
+    }
+    names = sorted(set(sent) | set(reacted), key=lambda n: (-sent.get(n, 0), n))
+    body: list[str] = []
+    if names:
+        body = _table(
+            ["Canal", "Mensajes del bot", "Reacciones", "Personas", "Reacciones por mensaje"],
+            [
+                (
+                    name,
+                    int(sent.get(name, 0)),
+                    int(reacted.get(name, (0, 0))[0]),
+                    reacted.get(name, (0, 0))[1],
+                    f"{reacted.get(name, (0, 0))[0] / sent[name]:.2f}" if sent.get(name) else "-",
+                )
+                for name in names[:top]
+            ],
+        )
+    return _section("Avisos del bot", body)
 
 
 def section_locks(report: Report, top: int) -> list[str]:
@@ -1046,7 +1167,8 @@ def section_economy_days(report: Report, top: int) -> list[str]:
         for day, raw in sorted(days.items()):
             row = _dict(raw)
             inflow, outflow = _num(row.get("entradas")), _num(row.get("salidas"))
-            mass = row.get("masa")
+            mass, inequality, state = row.get("masa"), row.get("gini"), row.get("estado")
+            taxes = _dict(row.get("impuestos"))
             rows.append(
                 (
                     day,
@@ -1054,15 +1176,34 @@ def section_economy_days(report: Report, top: int) -> list[str]:
                     int(outflow),
                     f"{int(inflow - outflow):+d}",
                     int(_num(row.get("movimientos"))),
+                    ", ".join(f"{k} {int(_num(v))}" for k, v in sorted(taxes.items())) or "-",
+                    int(_num(row.get("estado_gasto"))),
                     "-" if mass is None else int(_num(mass)),
+                    "-" if inequality is None else f"{_num(inequality):.3f}",
+                    "-" if state is None else int(_num(state)),
                 )
             )
         body = [
-            "Dinero que entra y sale de los monederos de los miembros. La masa monetaria"
-            " (miembros y cuentas del sistema) sale los días en que se sacó un informe.",
+            "Dinero que entra y sale de los monederos de los miembros, lo que recauda el"
+            " Estado por impuesto y lo que gasta. La masa monetaria, el Gini y el saldo del"
+            " Estado salen los días en que se sacó un informe.",
             "",
         ]
-        body += _table(["Día", "Entradas", "Salidas", "Neto", "Movimientos", "Masa"], rows)
+        body += _table(
+            [
+                "Día",
+                "Entradas",
+                "Salidas",
+                "Neto",
+                "Movimientos",
+                "Impuestos",
+                "Gasto Estado",
+                "Masa",
+                "Gini",
+                "Estado",
+            ],
+            rows,
+        )
     return _section("Economía por día", body)
 
 
@@ -1289,14 +1430,18 @@ def build_text(
         section_trend,
         section_peak_hours,
         section_retention,
+        section_newcomers,
         section_channels,
+        section_bot_messages,
     ):
         lines += section(report, top)
     lines += section_system(report, top, limit_mb)
     for section in (
         section_versions,
         section_database,
+        section_api,
         section_locks,
+        section_tasks,
         section_render,
         section_painters,
         section_upload,

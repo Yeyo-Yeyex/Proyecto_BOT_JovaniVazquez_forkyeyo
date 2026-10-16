@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
+from bot.repositories.economy import STATE_ACCOUNT_ID
 from bot.services.levels import TIMEZONE
 from bot.services.telemetry import Batch, ReportData
 
@@ -107,7 +108,12 @@ _SCHEMA = """
         node INTEGER NOT NULL,
         cpu_pct REAL,
         db_mb REAL,
-        disk_free_mb REAL
+        disk_free_mb REAL,
+        chromium_mb REAL,
+        node_mb REAL,
+        io_read_mb REAL,
+        io_write_mb REAL,
+        tasks INTEGER
     );
     CREATE INDEX IF NOT EXISTS telemetry_system_at ON telemetry_system (at);
 
@@ -119,7 +125,16 @@ _SCHEMA = """
 
 # Columnas añadidas a `telemetry_system` después de crearla: las bases de datos de
 # antes las reciben con `ALTER TABLE` al arrancar.
-_SYSTEM_ADDED = ("cpu_pct", "db_mb", "disk_free_mb")
+_SYSTEM_ADDED = {
+    "cpu_pct": "REAL",
+    "db_mb": "REAL",
+    "disk_free_mb": "REAL",
+    "chromium_mb": "REAL",
+    "node_mb": "REAL",
+    "io_read_mb": "REAL",
+    "io_write_mb": "REAL",
+    "tasks": "INTEGER",
+}
 
 # Suma de todas las columnas y MAX para ms_max: sirve para el upsert y para el pliegue.
 _SUM_SET = ", ".join(
@@ -158,9 +173,11 @@ class TelemetryRepository:
             present = {
                 row["name"] for row in connection.execute("PRAGMA table_info(telemetry_system)")
             }
-            for column in _SYSTEM_ADDED:
+            for column, sql_type in _SYSTEM_ADDED.items():
                 if column not in present:
-                    connection.execute(f"ALTER TABLE telemetry_system ADD COLUMN {column} REAL")
+                    connection.execute(
+                        f"ALTER TABLE telemetry_system ADD COLUMN {column} {sql_type}"
+                    )
         self._ready = True
 
     async def write(self, batch: Batch) -> None:
@@ -205,6 +222,11 @@ class TelemetryRepository:
                 s.cpu_pct,
                 s.db_mb,
                 s.disk_free_mb,
+                s.chromium_mb,
+                s.node_mb,
+                s.io_read_mb,
+                s.io_write_mb,
+                s.tasks,
             )
             for s in batch.samples
         ]
@@ -218,7 +240,8 @@ class TelemetryRepository:
             connection.executemany(
                 "INSERT INTO telemetry_system "
                 "(at, day, memory_mb, rss_mb, loop_lag_ms, gateway_ms, chromium, node, "
-                "cpu_pct, db_mb, disk_free_mb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cpu_pct, db_mb, disk_free_mb, chromium_mb, node_mb, io_read_mb, io_write_mb, "
+                "tasks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 samples,
             )
 
@@ -366,7 +389,9 @@ class TelemetryRepository:
                     "AVG(gateway_ms) AS gateway_avg, MAX(chromium) AS chromium_max, "
                     "MAX(node) AS node_max, MAX(cpu_pct) AS cpu_max, AVG(cpu_pct) AS cpu_avg, "
                     "MAX(db_mb) AS db_max, MIN(disk_free_mb) AS disk_min, "
-                    "COUNT(*) AS samples "
+                    "COUNT(*) AS samples, MAX(chromium_mb) AS chromium_mb_max, "
+                    "MAX(node_mb) AS node_mb_max, SUM(io_read_mb) AS io_read, "
+                    "SUM(io_write_mb) AS io_write, MAX(tasks) AS tasks_max "
                     "FROM telemetry_system WHERE day >= ? GROUP BY day",
                     (since_day,),
                 )
@@ -408,6 +433,22 @@ class TelemetryRepository:
                     totals[0 if delta > 0 else 1] += abs(delta)
                     totals[2] += 1
                 data.ledger_daily = [(day, *totals) for day, totals in sorted(per_day.items())]
+                # La cuenta del Estado: lo que recauda por impuesto y lo que gasta.
+                state: dict[tuple[str, str], list[int]] = {}
+                for row in connection.execute(
+                    "SELECT created_at, delta, reason FROM economy_ledger "
+                    "WHERE guild_id = ? AND created_at >= ? AND user_id = ?",
+                    (guild_id, since_ts, STATE_ACCOUNT_ID),
+                ):
+                    day = datetime.fromtimestamp(row["created_at"], TIMEZONE).date().isoformat()
+                    reason = str(row["reason"]).split(":", 1)[0]
+                    totals = state.setdefault((day, reason), [0, 0])
+                    delta = int(row["delta"])
+                    totals[0 if delta > 0 else 1] += abs(delta)
+                data.state_daily = [
+                    (day, reason, inflow, outflow)
+                    for (day, reason), (inflow, outflow) in sorted(state.items())
+                ]
                 data.ledger = [
                     dict(row)
                     for row in connection.execute(

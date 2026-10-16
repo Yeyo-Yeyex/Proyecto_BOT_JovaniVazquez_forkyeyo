@@ -1086,11 +1086,15 @@ las interacciones que Discord ya daba por perdidas (10062), cada vista abierta,
 cerrada o abandonada con lo que duró, la opción elegida en cada desplegable (las
 páginas de la ayuda, entre ellas), los comandos mal escritos o que contestan con un
 error, los errores con traza por tipo y función, la música (búsquedas, pistas
-escuchadas o saltadas, fallos y cola) y, cada minuto, la memoria y la CPU del
-contenedor, el retraso del bucle, los procesos de Chromium y Node, lo que ocupa la
-base de datos y el disco libre. Al sacar el informe lee también, sin escribir nada,
+escuchadas o saltadas, fallos y cola), lo que tarda cada llamada a Discord por ruta,
+cada vuelta de cada tarea programada, lo que tarda en arrancar, los mensajes del bot
+y las reacciones que reciben, y, cada minuto, la memoria y la CPU del contenedor, el
+retraso del bucle, los procesos de Chromium y Node y su memoria, lo leído y escrito en
+disco, las tareas vivas del bucle, lo que ocupa la base de datos y el disco libre. Al sacar el informe lee también, sin escribir nada,
 cuántos miembros tienen cada logro (frente a su rareza), las ventas de la tienda por
-artículo, las mascotas por especie y el dinero que entra y sale cada día. Nunca guarda
+artículo, las mascotas por especie, el dinero que entra y sale cada día (con lo que
+recauda el Estado por impuesto, el Gini y su saldo) y los primeros pasos de los
+miembros nuevos. Nunca guarda
 el texto de un mensaje.
 
 Todo se suma en memoria y se escribe en SQLite una vez por minuto (tablas
@@ -1117,6 +1121,11 @@ carpeta `informes/`, junto a `docker-compose.yml`, y guarda los 14 últimos. La 
 `actualizar.sh` con permisos para el contenedor. Para que un agente lo lea sin
 pedirlo, comparte esa carpeta por SMB desde el panel del NAS (solo lectura basta).
 Sin la carpeta montada, el bot no guarda nada.
+
+Junto a cada informe del canal va un mensaje corto con la versión del bot y lo que
+hay que vigilar del día anterior (clics sin respuesta, interacciones perdidas, bot
+caído, CPU, memoria o disco al límite, base de datos bloqueada, reinicios…), o «nada
+que vigilar».
 
 Para no depender del NAS, un administrador elige un canal con `/informe canal:#canal`
 (o `.informe #canal`): el bot sube ahí el informe cada día y, en ese momento, el de

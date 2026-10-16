@@ -11,11 +11,12 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
+from datetime import time as dt_time
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot import __version__
 from bot.cogs import telemetry as telemetry_cog
@@ -30,12 +31,16 @@ from bot.cogs.telemetry import (
     _image_waits,
     _timed_response,
     _timed_upload,
+    api_name,
     blocking_site,
     exception_site,
     item_name,
     message_types,
+    process_age_seconds,
     publish_report,
     read_container_usage,
+    read_io_bytes,
+    read_memory_limit_mb,
     read_system_usage,
     route_name,
     save_report,
@@ -100,10 +105,11 @@ def test_item_name_usa_vista_y_metodo_aunque_el_custom_id_sea_al_azar() -> None:
 
 
 def test_read_system_usage_devuelve_cifras_validas() -> None:
-    memory_mb, rss_mb, chromium, node = read_system_usage()
+    memory_mb, rss_mb, chromium, node, chromium_mb, node_mb = read_system_usage()
     assert memory_mb is None or memory_mb > 0
     assert rss_mb >= 0
     assert chromium >= 0 and node >= 0
+    assert chromium_mb >= 0 and node_mb >= 0
 
 
 def test_upload_name_quita_las_cifras_y_pone_el_tramo_de_tamano() -> None:
@@ -476,3 +482,138 @@ async def test_comandos_mal_escritos_se_cuentan_como_uso_mal() -> None:
     await cog.on_message(message)
     wrong = [call.args[1] for call in telemetry.count.call_args_list if call.args[0] == "uso_mal"]
     assert wrong == ["informe", "tajo"]
+
+
+def test_api_name_usa_la_plantilla_de_la_ruta_sin_ids() -> None:
+    route = discord.http.Route(
+        "PUT",
+        "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+        guild_id=1,
+        user_id=2,
+        role_id=3,
+    )
+    assert api_name(route) == "PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id}"
+    assert api_name("sin ruta") == "?"
+
+
+def test_cada_llamada_a_discord_se_mide_aunque_no_lleve_archivos() -> None:
+    async def original(self: object, route: object, **kwargs: object) -> str:
+        if kwargs.get("fail"):
+            raise discord.DiscordException("caída")
+        return "ok"
+
+    request = _timed_upload(original)
+    route = discord.http.Route(
+        "PATCH", "/channels/{channel_id}/messages/{message_id}", channel_id=1, message_id=2
+    )
+
+    async def scenario() -> None:
+        await request(None, route)
+        with pytest.raises(discord.DiscordException):
+            await request(None, route, fail=True)
+
+    with captured_events() as seen:
+        asyncio.run(scenario())
+    api = [(name, error) for kind, name, _ms, error in seen if kind == "api"]
+    assert api == [("PATCH /channels/{channel_id}/messages/{message_id}", False)] + [
+        ("PATCH /channels/{channel_id}/messages/{message_id}", True)
+    ]
+
+
+def test_las_tareas_programadas_se_miden_por_vuelta_con_su_frecuencia() -> None:
+    class Cog:
+        runs = 0
+
+        @tasks.loop(hours=1)
+        async def cada_hora(self) -> None:
+            Cog.runs += 1
+            if Cog.runs == 2:
+                raise RuntimeError("falla")
+
+        @tasks.loop(time=[dt_time(9), dt_time(21)])
+        async def dos_veces(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        telemetry_cog.install_hooks()
+        cog = Cog()
+        loop = cog.cada_hora
+        loop.start()
+        loop.cancel()
+        await loop.coro(cog)
+        with pytest.raises(RuntimeError):
+            await loop.coro(cog)
+        other = cog.dos_veces
+        other.start()
+        other.cancel()
+        await other.coro(cog)
+
+    with captured_events() as seen:
+        asyncio.run(scenario())
+    runs = [(name, error) for kind, name, _ms, error in seen if kind == "tarea"]
+    assert (
+        "test_las_tareas_programadas_se_miden_por_vuelta_con_su_frecuencia.<locals>.Cog"
+        ".cada_hora · 24/día",
+        False,
+    ) in runs
+    assert any(name.endswith("cada_hora · 24/día") and error for name, error in runs)
+    assert any(name.endswith("dos_veces · 2/día") for name, _error in runs)
+
+
+def test_disco_limite_de_memoria_y_edad_del_proceso(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    (tmp_path / "io.stat").write_text(
+        "8:0 rbytes=1048576 wbytes=2097152 rios=1 wios=2\n8:16 rbytes=1048576 wbytes=0\n"
+    )
+    (tmp_path / "memory.max").write_text("2147483648\n")
+    monkeypatch.setattr(telemetry_cog, "CGROUP_IO_FILE", tmp_path / "io.stat")
+    monkeypatch.setattr(telemetry_cog, "CGROUP_MEMORY_MAX_FILE", tmp_path / "memory.max")
+    assert read_io_bytes() == (2 * 2**20, 2 * 2**20)
+    assert read_memory_limit_mb() == 2048.0
+    (tmp_path / "memory.max").write_text("max\n")
+    assert read_memory_limit_mb() is None
+    monkeypatch.setattr(telemetry_cog, "CGROUP_IO_FILE", tmp_path / "no-existe")
+    assert read_io_bytes() is None
+    assert process_age_seconds() >= 0
+
+
+def test_el_disco_es_lo_de_cada_minuto() -> None:
+    cog = Telemetry(MagicMock(), MagicMock())
+    assert cog._io_mb(None) == (None, None)
+    assert cog._io_mb((2**20, 2**20)) == (None, None)  # la primera no tiene con qué comparar
+    assert cog._io_mb((3 * 2**20, 2**20)) == (2.0, 0.0)
+
+
+async def test_arranque_altas_y_mensajes_del_bot() -> None:
+    telemetry = MagicMock()
+    bot = MagicMock()
+    bot.user.id = 999
+    cog = Telemetry(bot, telemetry)
+    await cog.on_ready()
+    await cog.on_ready()  # una reconexión no es otro arranque
+    member = MagicMock(id=5)
+    member.guild.id = 1
+    await cog.on_member_join(member)
+    message = MagicMock(spec=discord.Message)
+    message.guild = MagicMock(id=1)
+    message.channel = MagicMock(id=42)
+    message.author = bot.user
+    message.author.bot = True
+    message.content = "🎂 ¡Feliz cumpleaños!"
+    await cog.on_message(message)
+    payload = MagicMock(guild_id=1, channel_id=42, user_id=5, message_author_id=999, member=None)
+    await cog.on_raw_reaction_add(payload)
+    calls = [
+        (c.args[0], c.args[1], c.kwargs.get("user_id")) for c in telemetry.count.call_args_list
+    ]
+    assert [c for c in calls if c[0] == "conexion_inicial"] == [
+        ("conexion_inicial", "hasta conectar", None)
+    ]
+    assert ("member", "alta", 5) in calls
+    assert ("bot_mensaje", "42", None) in calls
+    assert ("reaccion_bot", "42", 5) in calls
+
+
+async def test_el_informe_diario_se_publica_con_su_resumen() -> None:
+    channel = report_channel([])
+    await publish_report(channel, "informe-2026-10-16.json", "{}", "📊 Informe")
+    assert channel.send.await_args.args == ("📊 Informe",)

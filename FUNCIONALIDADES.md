@@ -835,8 +835,13 @@ no sale en ningún mensaje del bot salvo en `informe`.
   peso de cada imagen, las interacciones perdidas (10062), la vida de cada vista
   (abierta, cerrada o abandonada), las opciones de los desplegables, los comandos mal
   escritos o rechazados, los errores con traza, la música y una muestra del sistema
-  por minuto (memoria, CPU, base de datos y disco libre). El informe añade logros por
-  rareza, ventas de la tienda, mascotas por especie y la economía de cada día.
+  por minuto (memoria, CPU, base de datos y disco libre), las llamadas a Discord por
+  ruta, las tareas programadas, el tiempo de arranque, las reacciones a los mensajes
+  del bot, la memoria de Chromium y Node, el disco leído y escrito y las tareas vivas.
+  El informe añade logros por rareza, ventas de la tienda, mascotas por especie, la
+  economía de cada día (con impuestos, Gini y saldo del Estado) y los primeros pasos
+  de los miembros nuevos. En el canal, cada informe va con un resumen de lo que hay
+  que vigilar del día anterior.
 - **Qué no guarda:** el texto de los mensajes ni los argumentos de los avisos del
   log. El único dato por persona es quién hizo cada cosa cada día, que se borra a
   los 90 días y en el informe sale como u1, u2…

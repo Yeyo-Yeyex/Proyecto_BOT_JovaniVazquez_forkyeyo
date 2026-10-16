@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.14.0 · 2026-10-16
+
+- Informe de uso: llamadas a Discord por ruta, tareas programadas, tiempo de arranque, memoria de Chromium y Node, disco leído y escrito, tareas vivas, primeros pasos de los miembros nuevos, reacciones a los mensajes del bot, y por día los impuestos, el Gini y el saldo del Estado
+- El informe del canal llega con un resumen de lo que hay que vigilar del día anterior
+
 ### 7.13.0 · 2026-10-16
 
 - Informe de uso: tiempo de cada consulta a la base de datos por repositorio, esperas en candados, procesos de Node y dibujos con plan B, peso de las imágenes, interacciones perdidas (10062), partidas y paneles abiertos, cerrados o abandonados, opciones de los menús y páginas de la ayuda, comandos mal escritos o rechazados, errores por tipo y función, música, minutos sin datos (bot caído), logros por rareza, ventas de la tienda, mascotas y economía por día
