@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.9.1 · 2026-10-16
+
+- Torre del dragón: al subir de piso ya no se mezclan los dos pisos, con un forjado de piedra entre ellos
+
 ### 7.9.0 · 2026-10-15
 
 - Torre del dragón: dibujo rehecho con sombreado, luces y un dragón nuevo
