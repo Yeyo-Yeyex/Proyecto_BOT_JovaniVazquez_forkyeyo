@@ -19,7 +19,7 @@ Tres vistas:
             puertas de frente bajo su arco de dovelas (madera, hierro, runas y
             bronce, con su número en la clave), dos ventanas con vidriera y haz
             de luz y dos antorchas. Al subir (`climb`), el piso baja y entra el
-            de arriba (o la cima).
+            de arriba (o la cima), con el forjado de piedra entre los dos.
 - "summit": la cima al coronar: el dragón con las alas abiertas que se
             inclina, la corona que baja entre rayos y la lluvia de monedas.
 - "tower":  la torre entera al acabar, en relieve, con los dragones
@@ -55,6 +55,7 @@ const PX = 454, PY = 8, PW = 178, PH = 344;
 const GROUND_Y = 290;                    // donde la pared toca el suelo
 const HORIZON = 150;                     // altura del punto de fuga del suelo
 const DOOR_Y = 124;                      // lo alto del hueco de las puertas, que llegan al suelo
+const SLAB = 44;                         // el forjado que se ve entre dos pisos al subir
 const RING = 13;                         // grosor del arco de piedra de cada puerta
 const REVEAL = 4;                        // el grosor del muro que se ve alrededor de la hoja
 const WINDOWS = [[18, 50, 46, 72], [LW - 64, 50, 46, 72]];
@@ -1179,12 +1180,35 @@ function drawDragonAttack(x, st, rects, oy) {
   if (dr.fire > 0) drawBreath(x, cx, cy + size * 0.4, dr.fire, t);
 }
 
+// El forjado entre dos pisos: el canto del suelo de arriba, la cornisa con
+// dentículos, la sillería y la viga del techo de abajo, con su sombra.
+function slabSprite() {
+  return cached("slab", () => {
+    const [c, x] = layer(LW, SLAB + 26), st = TH.stone;
+    x.fillStyle = linear(x, 0, 0, 0, 4, [[0, shade(st[0], 0.35)], [1, shade(st[0], 0.1)]]); x.fillRect(0, 0, LW, 4);
+    x.fillStyle = linear(x, 0, 4, 0, 12, [[0, shade(st[0], 0.05)], [0.5, mix(st[0], st[1], 0.5)], [1, shade(st[1], -0.45)]]); x.fillRect(0, 4, LW, 8);
+    x.fillStyle = "rgba(255,255,255,0.3)"; x.fillRect(0, 4, LW, 1);
+    x.fillStyle = shade(st[1], -0.6); x.fillRect(0, 12, LW, 5);
+    for (let dx = 3; dx < LW; dx += 12) {
+      x.fillStyle = linear(x, 0, 12, 0, 17, [[0, shade(st[0], -0.05)], [1, shade(st[1], -0.25)]]); x.fillRect(dx, 12, 7, 5);
+      x.fillStyle = "rgba(255,255,255,0.18)"; x.fillRect(dx, 12, 7, 0.8);
+    }
+    paintWall(x, 0, 17, LW, 21, 97, 21, [44, 90]);
+    x.fillStyle = linear(x, 0, 17, 0, 38, [[0, "rgba(0,0,0,0.5)"], [1, "rgba(0,0,0,0.15)"]]); x.fillRect(0, 17, LW, 21);
+    x.fillStyle = linear(x, 0, 38, 0, SLAB, [[0, shade(TH.floor[1], -0.2)], [1, shade(TH.floor[1], -0.55)]]); x.fillRect(0, 38, LW, SLAB - 38);
+    x.fillStyle = rgba(TH.flame[1], 0.3); x.fillRect(0, SLAB - 1, LW, 1);   // la luz de las antorchas en el canto
+    x.fillStyle = linear(x, 0, SLAB, 0, SLAB + 26, [[0, "rgba(0,0,0,0.5)"], [1, "rgba(0,0,0,0)"]]); x.fillRect(0, SLAB, LW, 26);
+    return c;
+  });
+}
+
 function drawFloorView(x, st) {
-  const c = st.climb || 0, oy = ease(c) * H;
+  const c = st.climb || 0, oy = ease(c) * (H + SLAB);
   drawFloorAt(x, st, st.floor, oy, true);
   if (c > 0) {
-    if (st.floor >= 8) drawSummitAt(x, st, oy - H);
-    else drawFloorAt(x, st, st.floor + 1, oy - H, false);
+    if (st.floor >= 8) drawSummitAt(x, st, oy - SLAB - H);
+    else drawFloorAt(x, st, st.floor + 1, oy - SLAB - H, false);
+    x.drawImage(slabSprite(), 0, oy - SLAB, LW, SLAB + 26);
   }
   if (st.char) {   // todo chamuscado: hollín, humo y brasas
     x.fillStyle = `rgba(36,14,4,${0.5 * st.char})`; x.fillRect(0, 0, LW, H);
