@@ -133,7 +133,7 @@ async def test_el_patrimonio_cuenta_los_objetos_de_la_tienda_y_no_los_potenciado
     economy, shop, _lottery = await stores(tmp_path)
     await economy.grant(GUILD, ANA, amount=20_000_000, reason="prueba")
     sorolla = await shop.create_item(
-        GUILD, kind=Kind.TROPHY, name="Sorolla", emoji="🖼️", description="", price=8_000_000,
+        GUILD, kind=Kind.TROPHY, name="Sorolla", emoji="🖼️", description="", price=12_000_000,
         igic="lujo", now=NOW,
     )  # fmt: skip
     boost = await shop.create_item(
@@ -144,7 +144,7 @@ async def test_el_patrimonio_cuenta_los_objetos_de_la_tienda_y_no_los_potenciado
     await buy(economy, shop, boost.id, ANA)
     with sqlite3.connect(tmp_path / "bot.db") as connection:
         connection.row_factory = sqlite3.Row
-        assert wealth_goods_in(connection, GUILD, NOW) == {ANA: 8_000_000}
+        assert wealth_goods_in(connection, GUILD, NOW) == {ANA: 12_000_000}
 
     economy._clock = Clock(datetime(2026, 10, 5, 12, tzinfo=TIMEZONE).timestamp())
     await economy.charge_wealth_tax(GUILD)  # activación
@@ -154,9 +154,9 @@ async def test_el_patrimonio_cuenta_los_objetos_de_la_tienda_y_no_los_potenciado
     )
     (charge,) = run.charges
     cash = await economy.balance(GUILD, ANA) + charge.tax
-    assert charge.goods == 8_000_000 and charge.balance == cash + 8_000_000
+    assert charge.goods == 12_000_000 and charge.balance == cash + 12_000_000
     # El cuadro no da rentas: su parte de la cuota no la rebaja el límite con el IRPF.
-    assert charge.tax == wealth_quote(charge.balance, unproductive=8_000_000).due
+    assert charge.tax == wealth_quote(charge.balance, unproductive=12_000_000).due
     assert charge.tax > wealth_quote(charge.balance).due
 
 

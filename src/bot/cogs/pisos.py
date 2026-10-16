@@ -3,7 +3,8 @@
 `/pisos` (o `.pisos`) abre en el canal el panel de quien lo pide. Todo se ve en una
 imagen (`bot.services.housing_view` decide qué sale y `bot.services.housing_scene`
 lo pinta) y se navega con el desplegable de barrios y los botones de cada pantalla:
-el mapa de Gran Canaria y Tenerife, cada barrio con sus tres inmuebles, la ficha de
+el mapa de Gran Canaria y Tenerife, cada barrio con sus diez inmuebles (nueve, y la obra
+nueva o el solar donde irá, en una rejilla de 5 × 2 con un botón por tarjeta), la ficha de
 cada uno, tus pisos, las VPO y la caja de cada compra o venta. Solo lo toca quien lo
 abrió; a los demás se les dice que abran el suyo.
 
@@ -24,7 +25,7 @@ recupera hasta 7 días si el bot ha estado apagado.
 Rapidez: cada clic contesta antes de leer la base de datos o pintar (`ack`), una
 imagen que ya se ve no se vuelve a subir, las imágenes se guardan por su contenido
 (`Painter`) y, mientras miras una pantalla, se pintan por adelantado las que se abren
-desde sus botones (los 20 barrios desde el mapa, los tres inmuebles desde un barrio,
+desde sus botones (los 20 barrios desde el mapa, los diez inmuebles desde un barrio,
 la caja de comprar entero o vender todo desde una ficha, el mapa y la cartera desde
 casi todas, la ficha desde la caja…). Van de una en una, la más probable primero, y
 cada una comprueba antes de empezar que el panel sigue donde estaba.
@@ -87,6 +88,7 @@ from bot.services.housing_catalog import (
     ISLANDS,
     KINDS,
     RENT_LEVELS,
+    TENANT_BY_KEY,
     Listing,
     listings_of,
 )
@@ -107,8 +109,13 @@ GAME = "pisos"
 PNG_NAME = "pisos.png"
 #: El panel caduca tras este rato sin tocarlo.
 VIEW_TIMEOUT = 15 * 60
-#: Imágenes pintadas que se guardan (unos 200-400 KB cada una).
-CACHE_SIZE = 48
+#: Imágenes pintadas que se guardan (unos 200-400 KB cada una, ~25 MB en total). Desde el mapa se
+#: pintan por adelantado los 20 barrios (más la cartera y las VPO) y desde un barrio sus 10
+#: fichas, el mapa y la cartera (13 con el propio barrio): con 80 caben a la vez, y los barrios
+#: ya vistos aguantan al ir y volver del mapa, sin que unas echen a otras.
+CACHE_SIZE = 80
+#: Botones de inmuebles por fila de la pantalla de un barrio (el máximo de Discord).
+BARRIO_COLS = 5
 #: Inmuebles de tu cartera que salen en su desplegable (el máximo de Discord).
 MAX_OPTIONS = 25
 
@@ -667,18 +674,29 @@ class Panel(ui.View):
         select.callback = self._pick_barrio  # type: ignore[method-assign]
         self.add_item(select)
         if self.screen == BARRIO:
-            for slot, item in enumerate(self.market.listings_of(self.barrio)):
-                price = rules.price(item, self.market.index(item.barrio))
+            # Una rejilla de 5 × 2 que cuadra con las tarjetas de la imagen: el botón N abre la
+            # tarjeta N (el precio ya sale en la imagen, aquí solo el número y el tipo).
+            items = self.market.listings_of(self.barrio)
+            for slot, item in enumerate(items):
                 new = "🏗️ " if item.key in self.market.promotions else ""
                 self._button(
-                    f"{new}{KINDS[item.kind].name} · {format_amount(price)}",
+                    f"{new}{slot + 1} · {KINDS[item.kind].name}",
                     f"ver:{slot}",
                     self._open_listing,
-                    row=1,
+                    row=1 + slot // BARRIO_COLS,
                     style=discord.ButtonStyle.primary,
                 )
-            self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
-            self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+            if len(items) < view.BARRIO_SLOTS:  # el solar de la imagen: sin nada que abrir
+                slot = len(items)
+                self._button(
+                    f"🚧 {slot + 1} · Solar",
+                    f"ver:{slot}",
+                    self._open_listing,
+                    row=1 + slot // BARRIO_COLS,
+                    disabled=True,
+                )
+            self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+            self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
         elif self.screen == FICHA:
             self._ficha_buttons()
         elif self.screen == CARTERA:
@@ -874,9 +892,14 @@ class Panel(ui.View):
         *,
         row: int,
         style: discord.ButtonStyle = discord.ButtonStyle.secondary,
+        disabled: bool = False,
     ) -> None:
         button: ui.Button = ui.Button(
-            label=label[:80], style=style, custom_id=f"{GAME}:{custom_id}", row=row
+            label=label[:80],
+            style=style,
+            custom_id=f"{GAME}:{custom_id}",
+            row=row,
+            disabled=disabled,
         )
         button.callback = callback  # type: ignore[method-assign]
         self.add_item(button)
@@ -1563,8 +1586,12 @@ class Pisos(commands.Cog):
                     who: tuple[int, ...] = (item.user_id,) if item.user_id is not None else ()
                 else:
                     who = run.owners.get(item.listing, ())
+                tenant = TENANT_BY_KEY.get(item.tenant or "")
+                business = item.kind == "firma" and tenant is not None and bool(tenant.kinds)
                 for member in who:
                     events.setdefault(member, []).append(item.kind)
+                    if business:
+                        events[member].append("firma_negocio")
             for member in set(run.mortgage_unpaid):
                 events.setdefault(member, []).append("cuota_impagada")
             for member in run.aval_executions:
@@ -1683,6 +1710,11 @@ class Pisos(commands.Cog):
                 islands=len({BARRIO_BY_KEY[market.listing(h.listing).barrio].island for h in mine}),  # type: ignore[union-attr]
                 balance_after=balance,
                 when=when,
+                tensed=rules.tense(deal.index_after) and not rules.tense(deal.index_before),
+                barrio_whole=all(
+                    market.shares_of(item.key).get(member.id) == rules.SHARES
+                    for item in listings_of(listing.barrio)
+                ),
             )
         else:
             delta = housing_sale_stats(

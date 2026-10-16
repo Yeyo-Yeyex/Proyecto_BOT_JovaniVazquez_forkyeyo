@@ -335,7 +335,7 @@ class Patrimonio(commands.Cog):
             text += (
                 f"\nCon la renta de esta semana, el límite conjunto con el IRPF (art. 31) te "
                 f"rebaja {format_amount(quote.reduced)}: Patrimonio e IRPF no pasan del 60 % "
-                "de lo que ganas, y siempre pagas al menos el 20 %."
+                "de lo que ganas, y siempre pagas al menos la mitad."
             )
         if quote.subject:
             text += (

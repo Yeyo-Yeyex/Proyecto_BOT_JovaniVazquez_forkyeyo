@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -16,6 +16,7 @@ from interaction_fakes import fake_interaction
 
 from bot.cogs.pisos import (
     BARRIO,
+    CACHE_SIZE,
     CAJA,
     CARTERA,
     FICHA,
@@ -32,12 +33,12 @@ from bot.cogs.pisos import (
     requirements_text,
 )
 from bot.repositories.economy import EconomyRepository, LedgerEntry
-from bot.repositories.housing import DayRun, HousingRepository, MemberDay, News
-from bot.repositories.housing_finance import HOME_RENTED
+from bot.repositories.housing import DayRun, HousingRepository, Market, MemberDay, News
+from bot.repositories.housing_finance import HOME_RENTED, Promotion
 from bot.services import housing as rules
 from bot.services.achievements import PISOS_EVENT_PREFIX
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.housing_catalog import BARRIOS, listings_of
+from bot.services.housing_catalog import BARRIOS, KINDS, listings_of
 from bot.services.housing_market import HousingService
 from bot.services.levels import TIMEZONE
 
@@ -204,12 +205,137 @@ async def test_desde_la_ficha_y_la_caja_se_pinta_antes_el_mapa_la_cartera_y_la_f
     assert (MAPA, {}) in panel._neighbours() and (CARTERA, {}) in panel._neighbours()
     panel.screen = BARRIO
     panel.barrio = "taco"
-    assert [s for s, _ in panel._neighbours()].count(FICHA) == 3 and (
+    # Los nueve inmuebles de Taco (el solar de la décima tarjeta no tiene ficha).
+    assert [s for s, _ in panel._neighbours()].count(FICHA) == 9 and (
         CARTERA,
         {},
     ) in panel._neighbours()
     panel.screen = CAJA
     assert panel._neighbours() == [(FICHA, {"listing": "taco_bajo"}), (CARTERA, {}), (MAPA, {})]
+
+
+def promotion_in(barrio: str) -> Market:
+    """Un mercado con la obra nueva de `barrio` (la décima tarjeta, en lugar del solar)."""
+    listing = rules.new_promotion(1, [barrio], random.Random(7))
+    return Market(promotions={listing.key: Promotion(listing, 10, date(2026, 10, 19))})
+
+
+def barrio_buttons(panel: Panel) -> dict[str, discord.ui.Button]:
+    """Los botones de la pantalla del barrio por su `custom_id`."""
+    return {b.custom_id: b for b in panel.children if isinstance(b, discord.ui.Button)}
+
+
+async def test_el_barrio_pone_sus_botones_en_dos_filas_de_cinco_como_las_tarjetas(
+    tmp_path: Path,
+) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.screen, panel.barrio = BARRIO, "taco"
+    panel.rebuild()
+    buttons = barrio_buttons(panel)
+
+    for slot, item in enumerate(listings_of("taco")):  # los 9 del catálogo
+        button = buttons[f"pisos:ver:{slot}"]
+        assert button.label == f"{slot + 1} · {KINDS[item.kind].name}"
+        assert button.row == 1 + slot // 5 and not button.disabled
+    # La décima tarjeta de la imagen es el solar: su hueco en la rejilla, apagado.
+    solar = buttons["pisos:ver:9"]
+    assert solar.label == "🚧 10 · Solar" and solar.disabled and solar.row == 2
+    assert buttons["pisos:mapa"].row == buttons["pisos:cartera"].row == 3
+    rows = [b.row for b in buttons.values()]
+    assert [rows.count(r) for r in (1, 2, 3)] == [5, 5, 2]
+    assert len(panel.children) == 1 + 12 <= 25  # el desplegable y los doce botones
+    # Un clic atrasado en el hueco del solar no abre nada.
+    await panel._open_listing(clicked(ana, [], custom_id="pisos:ver:9"))
+    assert panel.screen == BARRIO
+
+
+async def test_con_obra_nueva_la_decima_tarjeta_es_un_boton_que_abre_su_ficha(
+    tmp_path: Path,
+) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.market = promotion_in("taco")
+    panel.screen, panel.barrio = BARRIO, "taco"
+    panel.rebuild()
+    buttons = barrio_buttons(panel)
+
+    obra = buttons["pisos:ver:9"]
+    kind = KINDS[panel.market.promotions["obra_1"].listing.kind].name
+    assert obra.label == f"🏗️ 10 · {kind}" and not obra.disabled and obra.row == 2
+    assert not any("Solar" in (b.label or "") for b in buttons.values())
+    assert len(panel.children) == 1 + 12 <= 25
+    panel._go = AsyncMock()  # type: ignore[method-assign]  # sin base de datos: el mercado es de mentira
+    click = clicked(ana, [], custom_id="pisos:ver:9")
+    await panel._open_listing(click)
+    panel._go.assert_awaited_once_with(click, FICHA)
+    assert panel.listing == "obra_1"
+
+
+async def test_desde_un_barrio_se_precargan_las_fichas_una_a_una_el_mapa_y_la_cartera(
+    tmp_path: Path,
+) -> None:
+    cog, scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await cog.painter._worker
+    sizes: list[int] = []
+    paint = scene.paint
+
+    async def counted(states: list[dict[str, Any]]) -> list[bytes]:
+        sizes.append(len(states))
+        await asyncio.sleep(0)
+        return await paint(states)
+
+    scene.paint = counted  # type: ignore[method-assign]
+    for market, fichas in ((Market(), 9), (promotion_in("taco"), 10)):
+        cog.painter.cache.clear()
+        scene.painted.clear()
+        panel.market = market
+        panel.screen, panel.barrio = BARRIO, "taco"
+        await panel._prefetch()
+        await cog.painter._worker
+        painted = [(s["screen"], s.get("key")) for s in scene.painted]
+        # Cada inmueble en el orden de sus botones; el solar no tiene ficha que pintar.
+        keys = [key for screen, key in painted if screen == "ficha"]
+        assert keys == [item.key for item in market.listings_of("taco")] and len(keys) == fichas
+        assert sorted(screen for screen, _ in painted) == sorted(
+            ["cartera", "mapa"] + ["ficha"] * fichas
+        )
+    assert set(sizes) == {1}  # de una en una, nunca varias a la vez
+
+
+async def test_el_adelanto_de_un_barrio_se_suelta_si_se_cambia_de_pantalla(tmp_path: Path) -> None:
+    cog, scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await cog.painter._worker
+    cog.painter.cache.clear()
+    scene.painted.clear()
+    panel.screen, panel.barrio = BARRIO, "taco"
+    paint = scene.paint
+
+    async def leaving(states: list[dict[str, Any]]) -> list[bytes]:
+        panel.screen = MAPA  # se va al mapa mientras se pinta la primera ficha
+        return await paint(states)
+
+    scene.paint = leaving  # type: ignore[method-assign]
+    await panel._prefetch()
+    await cog.painter._worker
+    assert [s["screen"] for s in scene.painted] == ["ficha"]  # el resto ya no vale
+
+
+async def test_la_cache_aguanta_los_20_barrios_y_lo_que_se_precarga_desde_un_barrio() -> None:
+    assert CACHE_SIZE >= len(BARRIOS) + 13  # los 20 barrios del mapa y los 13 de un barrio
+    painter = Painter(FakeScene())  # type: ignore[arg-type]
+    states = [{"screen": "ficha", "n": n} for n in range(CACHE_SIZE + 5)]
+    for state in states:
+        await painter.paint([state])
+    assert len(painter.cache) == CACHE_SIZE
+    assert painter.key(states[0]) not in painter.cache  # la más vieja se suelta
+    assert painter.key(states[-1]) in painter.cache
 
 
 async def test_navegar_contesta_antes_de_pintar_y_no_resube_lo_que_ya_se_ve(
@@ -355,7 +481,8 @@ async def test_si_otro_compra_en_el_barrio_la_caja_se_actualiza_y_no_cobra(
         await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(5_000_000, "prueba")])
     panel = await open_panel(cog, ana, guild_with(ana, bea))
     await panel.refresh()
-    panel.listing, panel.screen, panel.pending = "taco_trastero", CAJA, (False, 10)
+    # (Un trastero de 52.000 Y$ no se nota: el precio se redondea y no cambiaría.)
+    panel.listing, panel.screen, panel.pending = "taco_bajo", CAJA, (False, 10)
     await cog.service.buy(GUILD, bea.id, "taco_piso3", 100)  # sube el índice de Taco
     before = await cog.economy.balance(GUILD, ana.id)
     pay = clicked(ana, [])

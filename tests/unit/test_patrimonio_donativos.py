@@ -318,9 +318,10 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
     assert delta.add == {"wealth_tax_paid": DUE, "wealth_tax_weeks": 1, "wealth_joint_limit": 1}
 
 
-def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_el_80_por_ciento() -> None:
+def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_la_mitad() -> None:
+    assert WEALTH_MAX_REDUCTION == 0.5  # la ley dice 80 %; el proyecto, 50 % (7.22)
     full = wealth_tax(BIG)
-    # Sin renta: Patrimonio + IRPF no pueden pasar del 60 % de nada, pero se paga el 20 %.
+    # Sin renta: Patrimonio + IRPF no pueden pasar del 60 % de nada, pero se paga la mitad.
     broke = wealth_quote(BIG)
     assert broke.full == full and broke.due == full - round(full * WEALTH_MAX_REDUCTION)
     # Con mucha renta, el límite no toca nada.
@@ -329,8 +330,8 @@ def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_el_80_por_ciento() -> None:
     # Lo que no da rentas (los objetos de la tienda) no se rebaja.
     goods = wealth_quote(BIG, unproductive=BIG)
     assert goods.due == full
-    half = wealth_quote(BIG, unproductive=BIG // 2)
-    assert broke.due < half.due < full
+    mostly = wealth_quote(BIG, unproductive=BIG * 3 // 4)
+    assert broke.due < mostly.due < full
 
 
 def test_las_grandes_fortunas_se_declaran_desde_37_millones_y_salen_a_cero() -> None:

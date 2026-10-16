@@ -454,8 +454,9 @@ class _Assembler:
                     patch = waiting.pop(len(frames))
                     image = _open(patch)
                     before = frames[-1] if frames else None
-                    # Un recuadro que no es entero va encima del fotograma anterior.
-                    if before is not None and image.size != before.size:
+                    # Un recuadro que no es entero va encima del fotograma anterior (sin GIF, cada
+                    # estado es una imagen suelta y entera, aunque mida distinto).
+                    if self.gif and before is not None and image.size != before.size:
                         frame = before.copy()
                         frame.paste(image, (patch["x"], patch["y"]))
                         image = frame
@@ -545,7 +546,9 @@ class NodeScene:
         Args:
             gif: Si los fotogramas van a un GIF y conviene ir codificándolos mientras
                 se pintan. Por defecto, si hay más de uno. Las pantallas sueltas (el
-                panel de `pisos`) pasan `False`: cada una acaba en su propio PNG.
+                panel de `pisos`) pasan `False`: cada una acaba en su propio PNG y viene
+                entera, con su tamaño (el barrio mide más que el resto), sin pegarse
+                sobre la anterior.
         """
         if self.disabled:
             report_event("plan_b", f"{self.name} · Node")

@@ -122,6 +122,7 @@ from bot.services.horses import RaceResult as HorseResult
 from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
 from bot.services.housing_catalog import BARRIO_BY_KEY
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
+from bot.services.housing_catalog import THEMES as HOUSING_THEMES
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
     INTEREST_TIERS,
@@ -560,6 +561,7 @@ PISOS_EVENT_PREFIX = "pisos_ev_"
 PISOS_LEVEL_PREFIX = "pisos_level_"
 PISOS_BARRIOS_STAT = "pisos_barrios"
 PISOS_KINDS_STAT = "pisos_kinds"
+PISOS_THEMES_STAT = "pisos_themes"
 #: Saldo por debajo del cual comprar te deja «todo en ladrillo».
 PISOS_BROKE_BELOW = 1_000
 
@@ -6324,10 +6326,103 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "ladrillo.", R),
     ])  # fmt: skip
     a += _tiers("pisos", PISOS_KINDS_STAT, [
-        (9, "pisos_kinds_9", "Catálogo completo",
-         "Compra de todos los tipos: trastero, garaje, estudio, bajo, pisos, ático, chalet y "
-         "edificio.", L),
+        (9, "pisos_kinds_9", "Inmobiliaria de las de antes",
+         "Compra 9 tipos distintos de inmueble.", L),
+        (19, "pisos_kinds_19", "Catálogo completo",
+         "Compra de los 19 tipos: del trastero al amarre, pasando por la cueva y la finca.", L),
     ])  # fmt: skip
+    a += _tiers("pisos", PISOS_THEMES_STAT, [
+        (7, "pisos_themes_7", "Las siete Canarias",
+         "Compra en un barrio de cada tipo: marinero, histórico, céntrico, obrero, de playa, "
+         "de lujo y rural.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_tensed", [
+        (1, "pisos_tensed_1", "Zona tensionada por mis santos ladrillos",
+         "Compra tanto en un barrio que el Gobierno lo declara zona tensionada (Ley 12/2023).",
+         E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_barrio_whole", [
+        (1, "pisos_barrio_whole_1", "El barrio es mío",
+         "Ten enteros los nueve inmuebles de un barrio. Ya puedes cambiarle el nombre.", L),
+    ])  # fmt: skip
+    for kind, key, name, text, rarity, secret in (
+        (
+            "local",
+            "pisos_local_1",
+            "Se traspasa por jubilación",
+            "Compra participaciones de un local comercial.",
+            C,
+            False,
+        ),
+        (
+            "nave",
+            "pisos_nave_1",
+            "Tu propio polígono",
+            "Compra participaciones de una nave industrial.",
+            C,
+            False,
+        ),
+        (
+            "amarre",
+            "pisos_amarre_1",
+            "Capitán de secano",
+            "Compra un amarre. El barco ya, otro día.",
+            C,
+            True,
+        ),
+        (
+            "terrera",
+            "pisos_terrera_1",
+            "Azotea con varillas al aire",
+            "Compra una casa terrera.",
+            C,
+            False,
+        ),
+        (
+            "cueva",
+            "pisos_cueva_1",
+            "Los Picapiedra de Bandama",
+            "Compra una casa cueva: certificado A sin una sola placa solar.",
+            C,
+            True,
+        ),
+        (
+            "finca",
+            "pisos_finca_1",
+            "Señorito de las plataneras",
+            "Compra una finca rústica. La subvención de Bruselas, aparte.",
+            C,
+            False,
+        ),
+        (
+            "casona",
+            "pisos_casona_1",
+            "Escudo nobiliario de segunda mano",
+            "Compra una casa señorial con su patio de tea.",
+            C,
+            False,
+        ),
+        (
+            "bungalow",
+            "pisos_bungalow_1",
+            "Tumbona reservada desde las siete",
+            "Compra un bungalow de complejo turístico.",
+            C,
+            False,
+        ),
+        ("duplex", "pisos_duplex_1", "Dos plantas y una hipoteca", "Compra un dúplex.", C, False),
+        (
+            "loft",
+            "pisos_loft_1",
+            "Coworking con cama",
+            "Compra un loft: antes fábrica, ahora salón.",
+            C,
+            False,
+        ),
+    ):
+        a += _tiers("pisos", f"{PISOS_KIND_PREFIX}{kind}", [
+            (1, key, name, text, rarity, secret),
+        ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_KIND_PREFIX}trastero", [
         (1, "pisos_trastero_1", "Trastero apto para vivir",
          "Compra un trastero. Sin ventana, sin cédula y sin vergüenza.", C, True),
@@ -6422,6 +6517,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}firma", [
         (1, "pisos_sign_1", "Firmado ante la inmobiliaria", "Alquila un piso a un inquilino.", C),
         (10, "pisos_sign_10", "Casero en serie", "Firma 10 contratos de alquiler.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}firma_negocio", [
+        (1, "pisos_business_1", "Arrendador de franquicias",
+         "Alquila un local, una nave o un amarre a un negocio.", C),
+        (10, "pisos_business_10", "Polígono industrial con patas",
+         "Firma 10 contratos con negocios.", R),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}renueva", [
         (1, "pisos_renew_1", "Prórroga tácita",
@@ -13673,6 +13774,14 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     full[PISOS_KINDS_STAT] = sum(
         1 for key in HOUSING_KINDS if stats.get(f"{PISOS_KIND_PREFIX}{key}", 0) > 0
     )
+    full[PISOS_THEMES_STAT] = len(
+        {
+            barrio.theme
+            for key, barrio in BARRIO_BY_KEY.items()
+            if stats.get(f"{PISOS_BARRIO_PREFIX}{key}", 0) > 0
+        }
+        & set(HOUSING_THEMES)
+    )
     return full
 
 
@@ -17380,6 +17489,8 @@ def housing_purchase_stats(
     islands: int,
     balance_after: int,
     when: datetime,
+    tensed: bool = False,
+    barrio_whole: bool = False,
 ) -> StatDelta:
     """Estadísticas de una compra en `pisos`.
 
@@ -17394,6 +17505,8 @@ def housing_purchase_stats(
         whole: Inmuebles que tiene enteros.
         islands: Islas en las que tiene algo.
         balance_after: Saldo tras pagar.
+        tensed: Si con esta compra el barrio ha pasado a zona tensionada.
+        barrio_whole: Si ahora tiene enteros todos los inmuebles del catálogo del barrio.
     """
     add = {
         "pisos_bought": 1,
@@ -17408,6 +17521,8 @@ def housing_purchase_stats(
         ("pisos_night", 0 <= when.hour < 6),
         ("pisos_canarias_day", (when.month, when.day) == (5, 30)),
         ("pisos_broke", balance_after < PISOS_BROKE_BELOW),
+        ("pisos_tensed", tensed),
+        ("pisos_barrio_whole", barrio_whole),
     ):
         if hit:
             add[stat] = 1
