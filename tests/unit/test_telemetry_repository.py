@@ -365,8 +365,21 @@ def test_una_base_de_datos_vieja_recibe_las_columnas_nuevas_del_sistema(tmp_path
                 },
                 set(),
                 [
-                    SystemSample(NOW, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 30.0, 10.0, 900.0),
-                    SystemSample(NOW + 60, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 50.0, 12.0, 800.0),
+                    SystemSample(
+                        *(NOW, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 30.0, 10.0, 900.0),
+                        chromium_mb=170.0,
+                        node_mb=80.0,
+                        io_read_mb=1.0,
+                        io_write_mb=2.0,
+                        tasks=30,
+                    ),
+                    SystemSample(
+                        *(NOW + 60, today, 400.0, 200.0, 5.0, 40.0, 1, 2, 50.0, 12.0, 800.0),
+                        node_mb=120.0,
+                        io_read_mb=0.5,
+                        io_write_mb=3.0,
+                        tasks=45,
+                    ),
                 ],
             )
         )
@@ -378,6 +391,8 @@ def test_una_base_de_datos_vieja_recibe_las_columnas_nuevas_del_sistema(tmp_path
     (system,) = data.system
     assert (system["cpu_max"], system["cpu_avg"]) == (50.0, 40.0)
     assert (system["db_max"], system["disk_min"]) == (12.0, 800.0)
+    assert (system["chromium_mb_max"], system["node_mb_max"]) == (170.0, 120.0)
+    assert (system["io_read"], system["io_write"], system["tasks_max"]) == (1.5, 5.0, 45)
     assert data.starts == [(today, "7.11.0", 2)]
     assert data.daily_ms == [(today, "button", 3, 900, 1)]
 
@@ -434,6 +449,8 @@ def test_report_data_lee_logros_tienda_mascotas_y_economia_por_dia(tmp_path: Pat
                 (GUILD, 1, -30, "casino", before_change),
                 (GUILD, 1, 50, "sueldo", after_change),
                 (GUILD, 0, 999, "estado", after_change),
+                (GUILD, 0, 12, "irpf:juego", before_change),
+                (GUILD, 0, -5, "devolucion:renta", after_change),
             ],
         )
     repository = TelemetryRepository(path)
@@ -457,6 +474,12 @@ def test_report_data_lee_logros_tienda_mascotas_y_economia_por_dia(tmp_path: Pat
     ]
     # Los movimientos de las 23:30 van a su día canario aunque cambie la hora.
     assert data.ledger_daily == [("2026-10-24", 100, 30, 2), ("2026-10-25", 50, 0, 1)]
+    # El Estado (user_id 0): lo que recauda y gasta, por la primera parte del motivo.
+    assert data.state_daily == [
+        ("2026-10-24", "irpf", 12, 0),
+        ("2026-10-25", "devolucion", 0, 5),
+        ("2026-10-25", "estado", 999, 0),
+    ]
 
 
 def test_report_data_cuenta_las_muestras_de_cada_dia(tmp_path: Path) -> None:

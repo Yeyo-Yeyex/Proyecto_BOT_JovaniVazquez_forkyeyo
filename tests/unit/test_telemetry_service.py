@@ -324,7 +324,7 @@ def test_informe_es_json_y_no_contiene_user_ids() -> None:
     assert "4242" not in text
     assert '"99"' not in text and ": 99" not in text
     assert report["servidor"] == GUILD
-    assert report["version"] == 3
+    assert report["version"] == 4
     assert report["version_bot"] == __version__
     assert report["generado"] == "2026-10-06T21:30:00+01:00"
 
@@ -506,7 +506,14 @@ def test_informe_lleva_economia_por_dia_logros_tienda_y_mascotas() -> None:
     # La masa (miembros y cuentas del sistema) va el día del informe.
     assert report["economia_dia"] == {
         "2026-10-05": {"entradas": 100, "salidas": 30, "movimientos": 2},
-        "2026-10-06": {"entradas": 0, "salidas": 0, "movimientos": 0, "masa": 5450},
+        "2026-10-06": {
+            "entradas": 0,
+            "salidas": 0,
+            "movimientos": 0,
+            "masa": 5450,
+            "gini": report["economia_dia"]["2026-10-06"]["gini"],
+            "estado": 5000,
+        },
     }
     logros = report["logros"]
     assert logros["miembros_con_logros"] == 4
@@ -538,3 +545,105 @@ def test_el_servicio_pasa_el_catalogo_de_logros_al_informe() -> None:
     service = TelemetryService(None, clock=FakeClock())
     report = asyncio.run(service.report(guild_id=GUILD, days=7, commands=[], channel_names={}))
     assert len(report["logros"]["sin_conseguir"]) == len(AVAILABLE)
+
+
+def test_informe_lleva_impuestos_por_dia_y_procesos_del_sistema() -> None:
+    data = sample_data()
+    data.state_daily = [
+        ("2026-10-05", "irpf", 40, 0),
+        ("2026-10-05", "igic", 7, 0),
+        ("2026-10-05", "devolucion", 0, 15),
+    ]
+    data.system[0].update(
+        chromium_mb_max=170.0, node_mb_max=120.0, io_read=3.0, io_write=9.5, tasks_max=40
+    )
+    report = build_report(data, generated_at=NOW, days=7, commands=[], channel_names={})
+    day = report["economia_dia"]["2026-10-05"]
+    assert day["impuestos"] == {"irpf": 40, "igic": 7} and day["estado_gasto"] == 15
+    system = report["sistema"]["2026-10-06"]
+    assert (system["chromium_mb_max"], system["node_mb_max"]) == (170.0, 120.0)
+    assert (system["disco_leido_mb"], system["disco_escrito_mb"], system["tareas_max"]) == (
+        3.0,
+        9.5,
+        40,
+    )
+
+
+def test_nuevos_cuenta_los_primeros_pasos_de_quien_entra() -> None:
+    data = ReportData(
+        users=[
+            ("2026-09-01", "member", "alta", 1),
+            ("2026-09-01", "message", "555", 1),
+            ("2026-09-03", "slash", "moneda", 1),
+            ("2026-09-03", "button", "CoinView.heads", 1),
+            ("2026-09-20", "message", "555", 1),
+            ("2026-09-10", "member", "alta", 2),
+            ("2026-09-12", "message", "555", 2),
+            ("2026-09-15", "member", "alta", 3),
+            ("2026-09-01", "message", "555", 4),  # de antes: no es nuevo
+        ]
+    )
+    report = build_report(data, generated_at=NOW, days=30, commands=[], channel_names={})
+    assert report["nuevos"] == {
+        "altas": 3,
+        "escribieron": 2,
+        "usaron_comandos": 1,
+        "usaron_botones": 1,
+        "volvieron_tras_7_dias": 1,
+        "dias_hasta_escribir_mediana": 1.0,
+        "dias_hasta_comando_mediana": 2.0,
+        "dias_hasta_boton_mediana": 2.0,
+    }
+
+
+def _alert_report(**per_kind: dict) -> dict:
+    return {
+        "hasta": "2026-10-06",
+        "version_bot": "7.14.0",
+        "por_dia": {"2026-10-05": per_kind, "2026-09-01": {"oom": {"eventos": 9}}},
+        "sistema": {
+            "2026-10-05": {
+                "muestras": 1300,
+                "cpu_pct_max": 95.0,
+                "memoria_mb_max": 1900.0,
+                "disco_libre_mb_min": 1024.0,
+                "lag_ms_max": 1500.0,
+            }
+        },
+        "arranques": {"2026-10-05": {"7.14.0": 2}},
+    }
+
+
+def test_los_avisos_son_del_ultimo_dia_entero_y_no_repiten_lo_viejo() -> None:
+    report = _alert_report(
+        button={"eventos": 100, "errores": 2, "lentos": 3},
+        **{"10062": {"eventos": 1}, "gateway": {"eventos": 3, "errores": 1}},
+    )
+    found = telemetry_service.alerts(report, memory_limit_mb=2048)
+    assert found == [
+        "🖱️ 2 clics sin respuesta («Esta interacción ha fallado»)",
+        "💥 1 interacciones perdidas (10062)",
+        "🐢 3 clics de 3 s o más",
+        "📡 1 cortes con Discord",
+        "🔌 140 min sin datos (bot caído o parado)",
+        "🔥 CPU al 95 %",
+        "📈 Memoria al 93 % del límite",
+        "💾 Quedan 1.0 GB de disco",
+        "⏳ El bucle de eventos se paró 1.5 s",
+        "🔁 1 reinicios sin despliegue (caída, memoria o a mano)",
+    ]
+    text = telemetry_service.alerts_text(report, memory_limit_mb=2048)
+    assert text.startswith(
+        "📊 Informe hasta el 2026-10-06 · bot 7.14.0\n🚀 Arrancó la versión 7.14.0"
+    )
+    assert "⚠️ Ayer (2026-10-05):\n- 🖱️ 2 clics" in text
+
+
+def test_sin_nada_que_vigilar_lo_dice() -> None:
+    report = {"hasta": "2026-10-06", "version_bot": "7.14.0", "por_dia": {}, "sistema": {}}
+    assert telemetry_service.alerts(report) == []
+    assert telemetry_service.alerts_text(report).endswith(
+        "✅ Ayer (2026-10-05) no hubo nada que vigilar."
+    )
+    many = _alert_report(**{f"k{i}": {"eventos": 1} for i in range(3)})
+    assert len(telemetry_service.alerts_text(many)) <= telemetry_service.MESSAGE_LIMIT

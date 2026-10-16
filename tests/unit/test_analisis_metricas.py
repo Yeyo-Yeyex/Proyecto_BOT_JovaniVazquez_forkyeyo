@@ -183,11 +183,15 @@ def test_secciones_salen_en_el_orden_pedido():
         "## Tendencia",
         "## Horas punta",
         "## Retención por funcionalidad",
+        "## Nuevos miembros",
         "## Canales",
+        "## Avisos del bot",
         "## Sistema",
         "## Versiones y reinicios",
         "## Base de datos",
+        "## Llamadas a Discord",
         "## Esperas en candados",
+        "## Tareas programadas",
         "## Dibujos",
         "## Procesos de dibujo",
         "## Subidas a Discord",
@@ -629,7 +633,16 @@ def test_economia_por_dia_tienda_mascotas_y_musica():
     report = {
         "economia_dia": {
             "2026-10-01": {"entradas": 100, "salidas": 130, "movimientos": 4},
-            "2026-10-02": {"entradas": 50, "salidas": 0, "movimientos": 1, "masa": 9000},
+            "2026-10-02": {
+                "entradas": 50,
+                "salidas": 0,
+                "movimientos": 1,
+                "masa": 9000,
+                "gini": 0.42,
+                "estado": 5000,
+                "impuestos": {"irpf": 40, "igic": 7},
+                "estado_gasto": 15,
+            },
         },
         "tienda": [
             {
@@ -652,8 +665,10 @@ def test_economia_por_dia_tienda_mascotas_y_musica():
         ],
     }
     economy = _text(am.section_economy_days(report, 10))
-    assert "| 2026-10-01 | 100 | 130 | -30 | 4 | - |" in economy
-    assert "| 2026-10-02 | 50 | 0 | +50 | 1 | 9000 |" in economy
+    assert "| 2026-10-01 | 100 | 130 | -30 | 4 | - | 0 | - | - | - |" in economy
+    assert (
+        "| 2026-10-02 | 50 | 0 | +50 | 1 | igic 7, irpf 40 | 15 | 9000 | 0.420 | 5000 |" in economy
+    )
     shop = _text(am.section_shop(report, 10))
     assert "| Rol VIP | rol | 2 | 1 | 2 | 203 |" in shop and "| gato | 3 | 2 |" in shop
     music = _text(am.section_music(report, 10))
@@ -673,3 +688,82 @@ def test_al_juntar_informes_la_masa_de_cada_dia_no_se_pierde():
         "2026-10-01": {"entradas": 7, "masa": 900},
         "2026-10-02": {"entradas": 1, "masa": 950},
     }
+
+
+def test_llamadas_a_discord_y_tareas_programadas():
+    report = {
+        "uso": [
+            _entry(
+                "api",
+                "PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+                20,
+                ms=800.0,
+                buckets=(5, 10, 4, 1),
+                ms_max=3500,
+            ),
+            _entry("api", "GET /users/@me", 5, ms=50.0, buckets=(5, 0, 0, 0)),
+            _entry(
+                "tarea",
+                "Intereses.pay · 1/día",
+                3,
+                errors=1,
+                ms=2000.0,
+                buckets=(0, 0, 3, 0),
+                ms_max=2000,
+            ),
+        ]
+    }
+    api = _text(am.section_api(report, 10))
+    assert (
+        "| ⚠️ | PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} | 20 | 800 | 3500 "
+        "| 25.0 % | 0 |" in api
+    )
+    tasks = _text(am.section_tasks(report, 10))
+    assert "| ⚠️ | Intereses.pay · 1/día | 3 | 2000 | 2000 | 100.0 % | 1 |" in tasks
+
+
+def test_nuevos_miembros_y_avisos_del_bot():
+    report = {
+        "nuevos": {
+            "altas": 4,
+            "escribieron": 3,
+            "usaron_comandos": 2,
+            "usaron_botones": 1,
+            "volvieron_tras_7_dias": 2,
+            "dias_hasta_escribir_mediana": 0.5,
+            "dias_hasta_comando_mediana": 2.0,
+            "dias_hasta_boton_mediana": None,
+        },
+        "uso": [
+            _entry("bot_mensaje", "#novedades", 4),
+            _entry("reaccion_bot", "#novedades", 10, users=6),
+            _entry("bot_mensaje", "#casino", 300),
+        ],
+    }
+    new = _text(am.section_newcomers(report, 10))
+    assert "Altas en la ventana: 4" in new
+    assert "| Escribió un mensaje | 3 | 75.0 % | 0.5 |" in new
+    assert "| Pulsó un botón (jugó) | 1 | 25.0 % | - |" in new
+    assert "| Volvió tras 7 días | 2 | 50.0 % | - |" in new
+    bot = _text(am.section_bot_messages(report, 10))
+    assert "| #casino | 300 | 0 | 0 | 0.00 |" in bot
+    assert "| #novedades | 4 | 10 | 6 | 2.50 |" in bot
+
+
+def test_sistema_enseña_procesos_disco_y_tareas_y_el_arranque():
+    report = {
+        "sistema": {
+            "2026-10-01": {
+                "chromium_mb_max": 170.4,
+                "node_mb_max": 320.0,
+                "disco_leido_mb": 12.0,
+                "disco_escrito_mb": 340.0,
+                "tareas_max": 55,
+            }
+        },
+        "uso": [_entry("conexion_inicial", "hasta conectar", 2, ms=8500.0, ms_max=12000)],
+    }
+    assert "| 2026-10-01 | 170 | 320 | 12 | 340 | 55 |" in _text(am.section_system(report, 10))
+    assert "Del arranque a conectar: 8.5 s de media, 12.0 de máximo, en 2 arranques" in _text(
+        am.section_discord(report, 10)
+    )

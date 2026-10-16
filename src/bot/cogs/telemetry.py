@@ -1210,9 +1210,7 @@ class Telemetry(commands.Cog):
         if not self._connected_once:
             self._connected_once = True
             age = await asyncio.to_thread(process_age_seconds)
-            self.telemetry.count(
-                "conexion_inicial", "hasta conectar", guild_id=None, ms=age * 1000
-            )
+            self.telemetry.count("conexion_inicial", "hasta conectar", guild_id=None, ms=age * 1000)
 
     @commands.Cog.listener()
     async def on_disconnect(self) -> None:
