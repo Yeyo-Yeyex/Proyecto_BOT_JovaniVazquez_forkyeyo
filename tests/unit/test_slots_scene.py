@@ -34,13 +34,13 @@ from bot.services.slots import (
 from bot.services.slots_scene import (
     BLACK_SUITS,
     FRAME_MS,
+    OUT_H,
+    OUT_W,
     RED_SUITS,
     SCENE,
     SLOW_FRAME_MS,
     SMALL_ROLLUP_MS,
-    H,
     SlotsScene,
-    W,
     double_states,
     double_still,
     durations,
@@ -254,11 +254,11 @@ async def test_con_node_cada_tirada_sale_con_su_gif(scene: SlotsScene) -> None:
         states = spin_states(spin, won=won, stake=100)
         media = await scene.spin(spin, won=won, stake=100)
         gif = Image.open(io.BytesIO(media.gif))
-        assert gif.format == "GIF" and gif.size == (W, H)
+        assert gif.format == "GIF" and gif.size == (OUT_W, OUT_H)
         assert frames_of(media.gif) == len(states)
         assert media.seconds == pytest.approx(seconds(states))
         png = Image.open(io.BytesIO(media.png))
-        assert png.size == (W, H) and len(png.convert("RGB").getcolors(1 << 20) or []) > 200
+        assert png.size == (OUT_W, OUT_H) and len(png.convert("RGB").getcolors(1 << 20) or []) > 200
     assert not scene.painter.disabled
 
 
@@ -318,8 +318,8 @@ async def test_node_y_chromium_pintan_lo_mismo_la_tragaperras() -> None:
         pytest.skip("Chromium no arranca en esta máquina")
     assert from_node is not None
     a, b = await asyncio.gather(
-        asyncio.to_thread(browser_scene.assemble, from_browser, (W, H)),
-        asyncio.to_thread(browser_scene.assemble, from_node, (W, H)),
+        asyncio.to_thread(browser_scene.assemble, from_browser, (OUT_W, OUT_H)),
+        asyncio.to_thread(browser_scene.assemble, from_node, (OUT_W, OUT_H)),
     )
     assert len(a) == len(b) == len(states)
     for x, y in zip(a, b, strict=True):

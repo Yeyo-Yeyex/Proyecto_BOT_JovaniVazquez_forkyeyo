@@ -430,10 +430,25 @@ Mina, Olimpo, `hold_win_render.py`). Por orden:
    del premio gordo, el símbolo que se pasa de la línea en el frenazo… Rarezas con
    `docs/auditoria_logros.py --juego <juego> --todo`, que ya cuenta las estadísticas
    derivadas (`with_derived`).
-9. **Delegar la escena** a Sonnet en su worktree funciona con el contrato ya fijado
+9. **El peso del GIF manda.** Con los rodillos girando cambian ~130.000 píxeles por
+   fotograma: a 544 × 412 una tirada sin premio pesaba ~920 KB y un ÉPICO ~3,3 MB (la de
+   Pillow de antes, 115 y 260 KB). Medido quitando capas, ninguna pesaba más de un 15 %
+   (reflejo, sombreado de cilindro, sombras de símbolos); menos colores por fotograma o
+   menos fotogramas, un 12-25 %. Lo que más rinde es el tamaño de salida: la escena pinta
+   a su medida lógica al doble y reduce al final (`OUT_W`, `meta.out`), y a 3/4 pesa un
+   tercio menos sin que se note en Discord. En la cuenta del premio, que todo lata en cada
+   fotograma (símbolos, rayos, brillos) costaba 39 KB por fotograma: latidos a saltos.
+   El cog espera más cuanto más pesa el GIF (`reveal_delay`) antes de cambiarlo por el PNG.
+10. **Reducir a menos de la mitad de una vez rompe el reparto.** `drawImage` con calidad
+   alta usa mipmaps y Skia saca el primer fotograma tras `setup` con otro redondeo: el
+   dibujo repartido entre procesos ya no da los mismos bytes. Se reduce en dos pasos (a la
+   mitad justa con calidad alta y de ahí bilineal). Lo destapó la prueba de repartido
+   contra un proceso, que la escena de Sonnet no había pasado.
+11. **Delegar la escena** a Sonnet en su worktree funciona con el contrato ya fijado
    (los estados de Python) y un script de muestras con hojas de fotogramas. El
    worktree no trae `.venv` ni `node_modules`: Python del repo con
-   `PYTHONPATH=<worktree>/src` delante y `NODE_PATH=<repo>/node_modules`.
+   `PYTHONPATH=<worktree>/src` delante y `NODE_PATH=<repo>/node_modules`. Se le pide un
+   objetivo de peso y que pase la prueba de repartido, no solo que se vea bien.
 
 En Botes cambia: la rejilla es de 5 × 4 y no tiene tiras (cada casilla sale al azar,
 `spin_base`), así que los símbolos que pasan mientras gira se sacan con

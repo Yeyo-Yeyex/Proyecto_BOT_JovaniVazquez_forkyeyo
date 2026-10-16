@@ -97,6 +97,13 @@ LEFT = SIDE + MARGIN
 WINDOW_H = CELL_H * ROWS
 W = LEFT * 2 + CELL_W * 3 + GAP * 2
 H = MARGIN * 2 + WINDOW_H
+#: Tamaño de la imagen que se manda: la escena pinta a W × H (al doble) y reduce a 3/4.
+#: Es lo que más mueve el peso del GIF, porque los rodillos cambian enteros en cada
+#: fotograma: a 544 × 412, una tirada sin premio pesaba ~920 KB y un ÉPICO ~3,3 MB; a
+#: 408 × 309, ~620 KB y ~2,1 MB (la de Pillow de antes, 115 y 260). En Discord se ve
+#: igual de nítida. Menos colores o menos fotogramas por segundo ahorraban mucho menos.
+OUT_SCALE = 0.75
+OUT_W, OUT_H = round(W * OUT_SCALE), round(H * OUT_SCALE)
 #: Bombillas de cada columna de luces (la 0 es la de abajo).
 BULBS = 12
 
@@ -104,6 +111,8 @@ BULBS = 12
 
 #: Fotograma normal: 20 por segundo bastan con los rodillos desenfocados.
 FRAME_MS = 50
+#: Con todos los que giran a toda velocidad no se ve forma, solo estela: menos fotogramas.
+CRUISE_FRAME_MS = 70
 #: Fotograma más largo del frenazo lento.
 SLOW_FRAME_MS = 120
 #: Lo que se quiere que avance el tercer rodillo en cada fotograma del frenazo lento.
@@ -142,7 +151,8 @@ RESPIN_LAND_MS = 900
 #: Luces: la persecución sube una bombilla cada `CHASE_MS`; la de tensión, cada `TENSION_MS`.
 CHASE_MS = 90
 TENSION_MS = 50
-#: Latido de la ventana del tercero y de los símbolos que prometen.
+#: Latido de la ventana del tercero y de los símbolos que prometen: a saltos (encendido y
+#: medio), no en una onda continua. Cada cambio vuelve a escribir esas zonas en el GIF.
 PULSE_MS = 360
 #: Oscuridad del resto de la máquina camino del bote, y lo que tarda en apagarse.
 JACKPOT_DIM = 0.62
@@ -156,7 +166,7 @@ BLINKS = 3
 #: Cuenta del marcador: un fotograma cada `ROLLUP_FRAME_MS`; el primer tramo dura
 #: `FIRST_BAND_MS` (o `SMALL_ROLLUP_MS` si se cobra menos de lo apostado) y cada tramo de
 #: nivel, `BAND_MS`.
-ROLLUP_FRAME_MS = 60
+ROLLUP_FRAME_MS = 80
 FIRST_BAND_MS = 600
 SMALL_ROLLUP_MS = 420
 BAND_MS = 860
@@ -168,6 +178,8 @@ BANNER_POP = (0.5, 0.86, 1.1, 1.0)
 #: giran por milisegundo.
 EPIC_RAYS = 18
 RAY_SPIN = 0.06
+#: Los rayos giran a saltos: girarlos en cada fotograma reescribe el cartel entero.
+RAY_STEP_MS = 160
 #: Parpadeo de las luces durante la cuenta, por nivel (`None`: premio sin nivel).
 WIN_BLINK_MS: dict[str | None, int] = {
     None: 240,
@@ -411,7 +423,8 @@ def tracks_for(spin: Spin, *, respin: bool = False) -> tuple[Track, Track, Track
 def frame_times(tracks: Sequence[Track]) -> list[int]:
     """Cuándo empieza cada fotograma del giro; el último, con todo parado.
 
-    A 20 por segundo mientras algo va deprisa. En el frenazo lento del tercero, cada
+    A 20 por segundo mientras algo va deprisa, y a `CRUISE_FRAME_MS` mientras todos los
+    que giran van a tope (solo se ve la estela). En el frenazo lento del tercero, cada
     fotograma dura lo que tarda en avanzar `SLOW_STEP_CELLS` (hasta `SLOW_FRAME_MS`).
     """
     end = _round10(max(track.end for track in tracks))
@@ -421,6 +434,11 @@ def frame_times(tracks: Sequence[Track]) -> list[int]:
     while t < end:
         times.append(t)
         step = FRAME_MS
+        spinning = [track for track in tracks if track.moving and t < track.land]
+        if spinning and all(track.speed(t) >= SPEED for track in spinning):
+            # Sin pasarse del momento en que alguno empieza a frenar.
+            brake = min(track.braking_from for track in spinning)
+            step = max(FRAME_MS, min(CRUISE_FRAME_MS, _round10(brake - t)))
         if slow and t >= tracks[2].braking_from:
             speed = tracks[2].speed(t)
             step = SLOW_FRAME_MS if speed <= 0 else SLOW_STEP_CELLS / speed
@@ -530,7 +548,7 @@ def _spin_frames(spin: Spin, *, respin: bool) -> list[dict[str, Any]]:
             bulbs = tension_bulbs(t, color)
         else:
             bulbs = chase_bulbs(t)
-        wave = 0.5 + 0.5 * math.sin(2 * math.pi * (t - tease_from) / PULSE_MS)
+        beat = int((t - tease_from) // (PULSE_MS / 2)) % 2 == 0
         dim = 0.0
         if teasing and tease.kind == "jackpot":
             dim = JACKPOT_DIM * min(1.0, (t - tease_from) / DIM_MS)
@@ -544,11 +562,11 @@ def _spin_frames(spin: Spin, *, respin: bool) -> list[dict[str, Any]]:
                 for track in tracks
             ],
             bulbs=bulbs,
-            glow=round(0.45 + 0.55 * wave, 3) if teasing else 0.0,
+            glow=(1.0 if beat else 0.55) if teasing else 0.0,
             glowColor=BLUE if tease.kind == "scatter" else RED,
             dim=round(dim, 3),
             hits=[list(cell) for cell in tease.cells] if teasing else [],
-            pulse=round(wave, 3) if teasing else 0.0,
+            pulse=(1.0 if beat else 0.5) if teasing else 0.0,
         )
         state["reels"] = [round(p, 4) for p in state["reels"]]
         if index + 1 < len(times):
@@ -612,14 +630,14 @@ def _celebration(spin: Spin, won: int, stake: int, start: int) -> list[dict[str,
             spin.stops,
             line=1.0 if _line_pays(spin) else 0.0,
             hits=win_cells(spin),
-            pulse=round(0.75 + 0.25 * math.cos(2 * math.pi * t / PULSE_MS), 3),
+            pulse=1.0,
             # Las luces suben de nivel con el cartel.
             bulbs=blink_bulbs(tier, start + t),
-            meter=_meter(amount, won, glow=shine if index < count_end else 0.0),
+            meter=_meter(amount, won, glow=round(shine * 2) / 2 if index < count_end else 0.0),
         )
         if tier is not None:
             age = index - tier_since[tier]
-            spin_deg = RAY_SPIN * t
+            spin_deg = RAY_SPIN * (t // RAY_STEP_MS * RAY_STEP_MS)
             if index >= count_end:
                 # Los rayos acaban en una posición igual a la de la imagen quieta.
                 if not rays_end:
@@ -648,7 +666,11 @@ def _celebration(spin: Spin, won: int, stake: int, start: int) -> list[dict[str,
             ]
             if tier == WinTier.EPIC:
                 state["sparkles"] = [
-                    [round(x, 1), round(y, 1), round(abs(math.sin(math.pi * (p + t / 500))), 3)]
+                    [
+                        round(x, 1),
+                        round(y, 1),
+                        round(abs(math.sin(math.pi * (p + t / 500))) * 2) / 2,
+                    ]
                     for x, y, p in sparkles
                 ]
         state["ms"] = ms
@@ -893,12 +915,17 @@ def meta_state() -> dict[str, Any]:
         + base64.b64encode((ASSETS / name).read_bytes()).decode("ascii")
         for key, name in SYMBOL_FILES.items()
     }
-    return {"strips": list(REEL_STRIPS), "symbols": symbols, "symbolsKey": "200px-v1"}
+    return {
+        "strips": list(REEL_STRIPS),
+        "symbols": symbols,
+        "symbolsKey": "200px-v1",
+        "out": [OUT_W, OUT_H],
+    }
 
 
 def assemble(patches: list[dict[str, Any]]) -> list[Image.Image]:
     """Fotogramas enteros a partir de los recuadros de la escena (`browser_scene.assemble`)."""
-    return browser_scene.assemble(patches, (W, H))
+    return browser_scene.assemble(patches, (OUT_W, OUT_H))
 
 
 def encode(frames: Sequence[Image.Image], frame_ms: Sequence[int]) -> SlotsMedia:

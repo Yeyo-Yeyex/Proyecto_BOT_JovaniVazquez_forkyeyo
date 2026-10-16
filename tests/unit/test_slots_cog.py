@@ -1254,3 +1254,11 @@ async def test_sin_pintar_por_adelantado_no_se_sortea_nada_de_mas(tmp_path: Path
     assert view._painting is None and view._upcoming is None
     await view.play(make_interaction())
     assert view.last_stops == GRAPES
+
+
+def test_un_gif_pesado_espera_un_poco_mas_antes_del_png() -> None:
+    light = SlotsMedia(gif=b"x" * 1024, png=b"", seconds=2.0)
+    heavy = SlotsMedia(gif=b"x" * 2**21, png=b"", seconds=2.0)
+    assert slots_module.reveal_delay(heavy) == pytest.approx(
+        slots_module.reveal_delay(light) + 2 * slots_module.REVEAL_SECONDS_PER_MB, abs=0.01
+    )

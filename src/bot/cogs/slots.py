@@ -156,6 +156,9 @@ DEFAULT_STAKE = 100
 MACHINE_TIMEOUT = 180
 #: Margen tras la animación: el cliente tarda un poco en empezar el GIF.
 REVEAL_MARGIN_SECONDS = 0.4
+#: Y un poco más cuanto más pesa (por MB), para que un móvil lento no se pierda el final
+#: del frenazo: el último fotograma es igual que el PNG, así que esperar de más no se ve.
+REVEAL_SECONDS_PER_MB = 0.4
 #: Tiradas de Ráfaga.
 BURST_SPINS = 10
 #: A partir de cuántas veces la apuesta se anuncia el premio en el canal.
@@ -632,6 +635,11 @@ def paytable_embed() -> discord.Embed:
         description="Solo paga la fila del medio.\n\n" + "\n".join(paytable_lines()),
         color=COLOR_WIN,
     )
+
+
+def reveal_delay(media: SlotsMedia) -> float:
+    """Lo que se espera tras subir el GIF antes de cambiarlo por el PNG final."""
+    return media.seconds + REVEAL_MARGIN_SECONDS + len(media.gif) / 2**20 * REVEAL_SECONDS_PER_MB
 
 
 def parse_stake(amount_text: str | None, balance: int) -> int:
@@ -1249,7 +1257,7 @@ class SlotMachineView(discord.ui.View):
                 attachments=[discord.File(io.BytesIO(play.media.gif), filename=GIF_NAME)],
                 view=self,
             )
-            await asyncio.sleep(play.media.seconds + REVEAL_MARGIN_SECONDS)
+            await asyncio.sleep(reveal_delay(play.media))
             edit = final_edit
         else:
             edit = first_edit
@@ -1489,7 +1497,7 @@ class SlotMachineView(discord.ui.View):
                     attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
                     view=self,
                 )
-                await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+                await asyncio.sleep(reveal_delay(media))
             self._set_enabled(True)
             final: dict[str, Any] = {}
             if media is not None:

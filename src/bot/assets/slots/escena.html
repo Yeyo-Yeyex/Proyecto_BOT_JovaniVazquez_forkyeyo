@@ -66,9 +66,11 @@ const GCX = GP.x + GP.w / 2;
 
 const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
 const out = document.createElement("canvas"); out.width = W; out.height = H;
+const half = document.createElement("canvas"); half.width = W; half.height = H;   // paso intermedio
 const crop = document.createElement("canvas");
 const bctx = big.getContext("2d");
 const octx = out.getContext("2d", { willReadFrequently: true });
+const hctx = half.getContext("2d");
 const cctx = crop.getContext("2d");
 
 let META = { strips: ["", "", ""] };
@@ -994,16 +996,28 @@ function paint(st) {
 
 // -- Salida: solo el recuadro que cambia ------------------------------------------------------------
 
+// Se pinta a la medida lógica (W × H) al doble y se reduce al tamaño de salida que pide Python
+// (`meta.out`, el de `out`): así cambiar lo que pesa el GIF no mueve nada del dibujo. Se reduce
+// en dos pasos: a la mitad justa con calidad alta y de ahí a la salida, bilineal. Reducir de una
+// vez a menos de la mitad usa mipmaps, y Skia saca distinto el primer fotograma que los demás.
 function snapshot(full) {
-  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
-  octx.drawImage(big, 0, 0, W, H);
-  const cur = new Uint32Array(octx.getImageData(0, 0, W, H).data.buffer);
-  let x0 = 0, y0 = 0, x1 = W, y1 = H;
+  const OW = out.width, OH = out.height;
+  if (OW === W && OH === H) {
+    octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+    octx.drawImage(big, 0, 0, OW, OH);
+  } else {
+    hctx.imageSmoothingEnabled = true; hctx.imageSmoothingQuality = "high";
+    hctx.drawImage(big, 0, 0, W, H);
+    octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "low";
+    octx.drawImage(half, 0, 0, OW, OH);
+  }
+  const cur = new Uint32Array(octx.getImageData(0, 0, OW, OH).data.buffer);
+  let x0 = 0, y0 = 0, x1 = OW, y1 = OH;
   if (!full && PREV) {
-    x0 = W; y0 = H; x1 = 0; y1 = 0;
-    for (let y = 0; y < H; y++) {
-      const row = y * W;
-      for (let x = 0; x < W; x++) {
+    x0 = OW; y0 = OH; x1 = 0; y1 = 0;
+    for (let y = 0; y < OH; y++) {
+      const row = y * OW;
+      for (let x = 0; x < OW; x++) {
         if (cur[row + x] !== PREV[row + x]) {
           if (x < x0) x0 = x; if (x >= x1) x1 = x + 1;
           if (y < y0) y0 = y; if (y >= y1) y1 = y + 1;
@@ -1032,6 +1046,8 @@ window.setup = async (meta) => {
   await window.loadFonts();
   META = { strips: meta?.strips || ["", "", ""] };
   PREV = null;
+  const [ow, oh] = meta?.out || [W, H];
+  if (out.width !== ow || out.height !== oh) { out.width = ow; out.height = oh; }
   if (!BG) buildStatics();
   if (SYMBOLS_KEY === null || SYMBOLS_KEY !== meta?.symbolsKey) {        // los símbolos llegan en cada setup: solo se leen si cambian
     const loaded = {};
