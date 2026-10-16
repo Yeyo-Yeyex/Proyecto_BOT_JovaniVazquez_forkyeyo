@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import io
 import json
 import random
+import time
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+from PIL import Image, ImageChops, ImageStat
+from test_node_scene import needs_node, node_ready, own_node
 
 from bot.cogs.hold_win import base_panel, bonus_panel
+from bot.services import browser_scene, node_scene
+from bot.services.browser_scene import BrowserScene
 from bot.services.hold_win import (
     CASE_SIZE,
     REELS,
@@ -23,20 +34,33 @@ from bot.services.hold_win import (
     spin_base,
     to_amount,
 )
+from bot.services.hold_win_render import Banner
 from bot.services.hold_win_scene import (
+    OUT_H,
+    OUT_W,
+    SCENE,
     BonusFinish,
+    HoldWinScene,
     base_states,
     base_strips,
     bonus_end_state,
     bonus_intro_states,
     bonus_step_states,
     bonus_still_state,
+    durations,
     filled_cases,
+    meta_state,
     still_state,
     tease_hit,
     tease_of,
     tracks_for,
 )
+from bot.services.node_scene import NodeScene
+
+module_loop = pytest.mark.asyncio(loop_scope="module")
+LOCAL_CHROMIUM = Path("/opt/pw-browsers/chromium")
+NO_CHROMIUM = "/no/existe/chromium"
+NO_NODE = "/no/existe/node"
 
 STAKE = 100
 VOLCAN = THEMES["volcan"]
@@ -303,3 +327,301 @@ def test_la_entrada_al_bonus_empieza_donde_acaba_la_tirada() -> None:
     assert states[0]["board"] == still["board"]
     assert states[-1]["banner"]["text"] == "BONUS CENIZA"
     assert seconds(states) < 3
+
+
+# -- La escena de canvas ---------------------------------------------------------------------------
+
+
+def panels(spin, meters: Meters | None = None):  # noqa: ANN001, ANN201
+    """Botes y maletines (antes, después) de `spin`."""
+    meters = meters or Meters()
+    before = base_panel(meters, STAKE)
+    fill_cases(meters, spin, STAKE, random.Random(0))
+    return before, base_panel(meters, STAKE)
+
+
+def test_la_escena_no_usa_math_random_y_deja_que_el_pintor_ponga_su_exportframe() -> None:
+    html = SCENE.read_text(encoding="utf-8")
+    assert "Math.random" not in html
+    assert "window.exportFrame ??=" in html
+    assert "toDataURL" not in html.split("window.exportFrame ??=")[0]
+
+
+def test_la_meta_lleva_lo_que_la_escena_necesita_de_cada_maquina() -> None:
+    for theme in THEMES:
+        meta = meta_state(theme)
+        assert meta["theme"] == theme and meta["out"] == [OUT_W, OUT_H]
+        assert {"p0", "p5", "w", "c", "ticket", "extra", "instant", "max", "mystery"} <= set(
+            meta["symbols"]
+        )
+        assert meta["style"]["effect"] in ("lava", "gold", "lightning")
+        json.dumps(meta)
+    assert len({meta_state(t)["symbolsKey"] for t in THEMES}) == 3
+
+
+async def test_sin_node_ni_chromium_se_dibuja_con_el_pillow_de_antes() -> None:
+    scene = HoldWinScene(executable_path=NO_CHROMIUM, node=NO_NODE)
+    spin = find_spin(lambda s: s.collectors and s.wins)
+    before, after = panels(spin)
+    media = await scene.base("volcan", spin, stake=STAKE, before=before, after=after)
+    assert scene.disabled
+    assert Image.open(io.BytesIO(media.gif)).format == "GIF" and media.seconds > 0
+    assert Image.open(io.BytesIO(media.png)).format == "PNG"
+    still = await scene.still("volcan", spin, stake=STAKE, panel=after)
+    assert Image.open(io.BytesIO(still)).format == "PNG"
+    await scene.close()
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def scene() -> HoldWinScene:
+    """Las máquinas de Botes con Node (y sin Chromium), compartidas por el módulo."""
+    if not node_ready():
+        pytest.skip("No hay Node con @napi-rs/canvas")
+    escena = HoldWinScene(executable_path=NO_CHROMIUM)
+    yield escena
+    await escena.close()
+
+
+def check_media(media, states: list[dict]) -> None:  # noqa: ANN001
+    gif = Image.open(io.BytesIO(media.gif))
+    assert gif.format == "GIF" and gif.size == (OUT_W, OUT_H)
+    assert gif.n_frames <= len(states)  # el GIF junta los fotogramas seguidos que no cambian nada
+    assert media.seconds == pytest.approx(sum(durations(states)[:-1]) / 1000)
+    png = Image.open(io.BytesIO(media.png))
+    assert png.size == (OUT_W, OUT_H) and len(png.convert("RGB").getcolors(1 << 20) or []) > 200
+
+
+@needs_node
+@module_loop
+async def test_con_node_cada_jugada_de_cada_maquina_sale_con_su_gif(scene: HoldWinScene) -> None:
+    nothing = find_spin(lambda s: not s.points and tease_of(s).kind is None)
+    rescue = find_spin(is_rescue_miss)
+    for theme, spin in (("volcan", nothing), ("mina", epic_spin()), ("olimpo", rescue)):
+        before, after = panels(spin)
+        states, *_ = base_states(theme, spin, stake=STAKE, before=before, after=after)
+        media = await scene.base(theme, spin, stake=STAKE, before=before, after=after)
+        check_media(media, states)
+    case = bonus_step(lambda pb, st, fin: st.landings and fin is None)
+    game, board, step, pb, pa, finish = case
+    states, _ = run(case)
+    media = await scene.bonus_step(
+        "mina", board, step, stake=game.stake, panel_before=pb, panel_after=pa, finish=finish
+    )
+    check_media(media, states)
+    case = bonus_step(lambda pb, st, fin: fin is not None and fin.result.coins >= 6)
+    game, board, step, pb, pa, finish = case
+    states, _ = run(case)
+    media = await scene.bonus_step(
+        "olimpo", board, step, stake=game.stake, panel_before=pb, panel_after=pa, finish=finish
+    )
+    check_media(media, states)
+    assert not scene.painter.disabled
+
+
+@needs_node
+@module_loop
+async def test_la_entrada_al_bonus_se_pinta_con_node(scene: HoldWinScene) -> None:
+    spin = find_spin(lambda s: s.coins_by_tier()[Tier.GREEN] >= 1)
+    meters = Meters()
+    meters.cases[Tier.GREEN].coins = CASE_SIZE[Tier.GREEN] - 1
+    before = base_panel(meters, STAKE)
+    trigger = fill_cases(meters, spin, STAKE, random.Random(1))
+    after = base_panel(meters, STAKE)
+    assert trigger is not None
+    game = BonusGame.start(trigger, mini=meters.mini, major=meters.major, rng=random.Random(2))
+    panel = bonus_panel(VOLCAN, game)
+    media = await scene.bonus_intro(
+        "volcan",
+        spin,
+        base_stake=STAKE,
+        before=before,
+        after=after,
+        game=game,
+        panel=panel,
+        name="BONUS CENIZA",
+        banner=Banner("BONUS CENIZA", "", 2),
+    )
+    states = bonus_intro_states(
+        spin,
+        base_stake=STAKE,
+        base_panel=after,
+        full=filled_cases(before, spin),
+        game=game,
+        panel=panel,
+        name="BONUS CENIZA",
+    )
+    check_media(media, states)
+
+
+@needs_node
+@module_loop
+async def test_el_png_final_es_el_ultimo_fotograma_y_la_maquina_quieta(
+    scene: HoldWinScene,
+) -> None:
+    spin = find_spin(lambda s: s.collectors and s.wins)
+    before, after = panels(spin)
+    assert not any(filled_cases(before, spin))
+    media = await scene.base("mina", spin, stake=STAKE, before=before, after=after)
+    gif = Image.open(io.BytesIO(media.gif))
+    gif.seek(gif.n_frames - 1)
+    png = Image.open(io.BytesIO(media.png)).convert("RGB")
+    assert sum(ImageStat.Stat(ImageChops.difference(gif.convert("RGB"), png)).mean) / 3 < 12
+    still = Image.open(
+        io.BytesIO(await scene.still("mina", spin, stake=STAKE, panel=after, highlight=True))
+    ).convert("RGB")
+    assert ImageChops.difference(still, png).getbbox() is None
+    turbo = await scene.base("mina", spin, stake=STAKE, before=before, after=after, turbo=True)
+    assert turbo.gif == b"" and turbo.png == media.png
+
+
+@needs_node
+@module_loop
+async def test_un_rodillo_parado_se_pinta_igual_que_una_casilla_quieta(
+    scene: HoldWinScene,
+) -> None:
+    """El último fotograma del giro tiene que ser idéntico al PNG quieto (modo `board`)."""
+    spin = find_spin(lambda s: s.wins and s.collectors)
+    states, extra, _before, after = play(spin)
+    parked = [s for s in states if s["reels"] is not None][-1]
+    assert parked["reels"] == [1.0] * REELS and parked["blur"] == [0.0] * REELS
+    quiet = still_state(spin, stake=STAKE, panel=after)["board"]
+    board = {**parked, "reels": None, "board": quiet}
+    meta = {**meta_state("volcan"), "strips": extra["strips"], "cells": None}
+    a = await scene.painter.render(meta, [parked], procs=1)
+    b = await scene.painter.render(meta, [board], procs=1)
+    assert a is not None and b is not None
+    assert a[0]["image"].tobytes() == b[0]["image"].tobytes()
+
+
+@needs_node
+@module_loop
+async def test_cada_maquina_pinta_con_su_estilo(scene: HoldWinScene) -> None:
+    spin = find_spin(lambda s: s.collectors and s.wins)
+    before, after = panels(spin)
+    states, *_ = base_states("volcan", spin, stake=STAKE, before=before, after=after)
+    beams = [s for s in states if s["beam"]]
+    assert beams
+    shots = {}
+    for theme in THEMES:
+        meta = {**meta_state(theme), "strips": None, "cells": None}
+        patches = await scene.painter.render(meta, [beams[len(beams) // 2]], procs=1)
+        assert patches is not None
+        shots[theme] = patches[0]["image"].convert("RGB")
+    for a, b in (("volcan", "mina"), ("mina", "olimpo"), ("volcan", "olimpo")):
+        assert sum(ImageStat.Stat(ImageChops.difference(shots[a], shots[b])).mean) / 3 > 12
+
+
+@needs_node
+@module_loop
+async def test_el_gif_no_pesa_mas_de_lo_acordado(scene: HoldWinScene) -> None:
+    """Lo que más pesa es lo que cambia en cada fotograma: si sube, que se note aquí."""
+    nothing = find_spin(lambda s: not s.points and tease_of(s).kind is None)
+    before, after = panels(nothing)
+    media = await scene.base("volcan", nothing, stake=STAKE, before=before, after=after)
+    assert len(media.gif) < 1000 * 1024
+    before, after = panels(epic_spin())
+    media = await scene.base("olimpo", epic_spin(), stake=STAKE, before=before, after=after)
+    assert len(media.gif) < 2800 * 1024
+    case = bonus_step(lambda pb, st, fin: st.landings and fin is None and pb.respins_left == 3)
+    game, board, step, pb, pa, finish = case
+    media = await scene.bonus_step(
+        "mina", board, step, stake=game.stake, panel_before=pb, panel_after=pa, finish=finish
+    )
+    assert len(media.gif) < 700 * 1024
+
+
+@needs_node
+@module_loop
+async def test_node_y_chromium_pintan_lo_mismo_los_botes() -> None:
+    """Mismo motor (Skia): solo cambia algún borde de letra, no colores ni posiciones."""
+    if not LOCAL_CHROMIUM.exists():
+        pytest.skip("No hay Chromium en esta máquina")
+    painter = NodeScene(SCENE, name="El pintor de los Botes")
+    browser = BrowserScene(
+        SCENE, name="chromium", ready="loadFonts()", executable_path=str(LOCAL_CHROMIUM)
+    )
+    spin = epic_spin()
+    before, after = panels(spin)
+    states, extra, *_ = base_states("olimpo", spin, stake=STAKE, before=before, after=after)
+    states = states[::5]
+    meta = {**meta_state("olimpo"), "strips": None, "cells": None, **extra}
+    try:
+        from_browser = await browser.render(meta, states)
+        from_node = await painter.render(meta, states)
+    finally:
+        await browser.close()
+        await painter.close()
+    if from_browser is None:
+        pytest.skip("Chromium no arranca en esta máquina")
+    assert from_node is not None
+    a, b = await asyncio.gather(
+        asyncio.to_thread(browser_scene.assemble, from_browser, (OUT_W, OUT_H)),
+        asyncio.to_thread(browser_scene.assemble, from_node, (OUT_W, OUT_H)),
+    )
+    assert len(a) == len(b) == len(states)
+    for x, y in zip(a, b, strict=True):
+        assert sum(ImageStat.Stat(ImageChops.difference(x, y)).mean) / 3 < 4
+
+
+async def split_and_whole(
+    sharing: HoldWinScene, meta: dict, states: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pinta `states` repartido entre procesos y de un tirón: tienen que dar los mismos bytes."""
+    pool = node_scene._pool(own_node())
+    deadline = time.monotonic() + 20
+    while len([w for w in pool.workers if w.alive and not w.busy]) < 3:
+        assert time.monotonic() < deadline, "No se han abierto los procesos de refuerzo"
+        await asyncio.sleep(0.05)
+    whole = await sharing.painter.render(meta, states, procs=1)
+    assert whole is not None
+    setups: list[str] = []
+    call = node_scene._Process.call
+
+    async def counted(self: node_scene._Process, request: dict, **kw: bool):  # noqa: ANN202
+        setups.extend(["setup"] if request["call"] == "setup" else [])
+        return await call(self, request, **kw)
+
+    monkeypatch.setattr(node_scene._Process, "call", counted)
+    split = await sharing.painter.render(meta, states)
+    assert split is not None
+    assert len(setups) > 1, "El dibujo no se ha repartido"
+    assert len(split) == len(whole) == len(states)
+    for a, b in zip(split, whole, strict=True):
+        assert a["image"].tobytes() == b["image"].tobytes()
+
+
+@needs_node
+@module_loop
+async def test_la_tirada_repartida_pinta_lo_mismo_que_de_un_tiron(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cada tramo empieza con su `setup` y su primer fotograma entero: sale idéntico."""
+    sharing = HoldWinScene(executable_path=NO_CHROMIUM, node=own_node())
+    spin = epic_spin()
+    before, after = panels(spin)
+    states, extra, *_ = base_states("mina", spin, stake=STAKE, before=before, after=after)
+    meta = {**meta_state("mina"), "strips": None, "cells": None, **extra}
+    try:
+        # Abre los procesos de refuerzo: sin ellos, el primero lo pintaría todo.
+        assert await sharing.painter.render(meta, states[:8]) is not None
+        await split_and_whole(sharing, meta, states, monkeypatch)
+    finally:
+        await sharing.close()
+        await node_scene.shutdown()
+
+
+@needs_node
+@module_loop
+async def test_el_bonus_repartido_pinta_lo_mismo_que_de_un_tiron(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sharing = HoldWinScene(executable_path=NO_CHROMIUM, node=own_node())
+    case = bonus_step(lambda pb, st, fin: fin is not None and fin.result.coins >= 6)
+    states, extra = run(case)
+    meta = {**meta_state("volcan"), "strips": None, "cells": None, **extra}
+    try:
+        assert await sharing.painter.render(meta, states[:8]) is not None
+        await split_and_whole(sharing, meta, states, monkeypatch)
+    finally:
+        await sharing.close()
+        await node_scene.shutdown()
