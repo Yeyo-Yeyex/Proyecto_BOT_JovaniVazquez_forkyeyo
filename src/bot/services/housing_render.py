@@ -14,6 +14,9 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1000, 640
+#: Pantallas que miden más de `H` (el barrio, con sus diez tarjetas en dos filas); la escena
+#: (`SCREEN_H` de `assets/pisos/escena.html`) y el dibujo de reserva tienen que coincidir.
+SCREEN_H = {"barrio": 760}
 
 FONTS = Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts"
 TITLE_FONT = FONTS / "MontserratBold.ttf"
@@ -49,16 +52,17 @@ class HousingRenderer:
     """Pinta cualquier pantalla de `pisos` como una tarjeta de texto."""
 
     def paint(self, state: dict[str, Any]) -> bytes:
-        """PNG de `W`x`H` con las líneas de `state["fallback"]`."""
+        """PNG de `W` x `SCREEN_H[pantalla]` (o `H`) con las líneas de `state["fallback"]`."""
         lines = [str(line) for line in state.get("fallback") or ["Pisos de Jovani"]]
-        image = Image.new("RGB", (W, H), BACKGROUND)
+        h = SCREEN_H.get(state.get("screen", ""), H)
+        image = Image.new("RGB", (W, h), BACKGROUND)
         draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle((24, 24, W - 24, H - 24), radius=14, fill=CARD)
-        draw.rectangle((24, 24, 38, H - 24), fill=ACCENT)
+        draw.rounded_rectangle((24, 24, W - 24, h - 24), radius=14, fill=CARD)
+        draw.rectangle((24, 24, 38, h - 24), fill=ACCENT)
         title_font = ImageFont.truetype(str(TITLE_FONT), 40)
         body_font = ImageFont.truetype(str(TEXT_FONT), 24)
         width = W - 2 * MARGIN - 24
-        limit = H - MARGIN - 30
+        limit = h - MARGIN - 30
         y = MARGIN
         for text in _wrap(draw, lines[0], title_font, width)[:2]:
             draw.text((MARGIN + 14, y), text, font=title_font, fill=INK)

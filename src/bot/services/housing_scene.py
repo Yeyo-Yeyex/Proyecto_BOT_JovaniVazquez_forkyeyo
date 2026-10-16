@@ -23,12 +23,12 @@ from pathlib import Path
 from typing import Any
 
 from bot.services.browser_scene import BrowserScene
-from bot.services.housing_render import H, HousingRenderer, W
+from bot.services.housing_render import SCREEN_H, H, HousingRenderer, W
 from bot.services.node_scene import NodeScene, patch_png
 
 SCENE = Path(__file__).resolve().parent.parent / "assets" / "pisos" / "escena.html"
 
-__all__ = ["H", "SCENE", "W", "HousingScene"]
+__all__ = ["H", "SCENE", "SCREEN_H", "W", "HousingScene"]
 
 #: Nivel de compresión del PNG de Node. Con las ilustraciones, el 6 de `patch_png` tarda un 35 %
 #: más que el 3 (~24 frente a ~17 ms por pantalla) y solo ahorra un 3-8 % de peso (~260 KB).
