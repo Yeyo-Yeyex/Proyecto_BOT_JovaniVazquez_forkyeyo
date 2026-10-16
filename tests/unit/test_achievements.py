@@ -138,7 +138,8 @@ HOUSING_EVENT_KEYS = (
     *(event.key for event in _HOUSING_EVENTS),
     "firma", "renueva", "se_va", "impago", "paga", "okupa", "desahucio",
     "cuota_impagada", "ejecucion", "sorteo_vpo", "vpo_caducada", "partida_agotada",
-    "tope_ley", "recargo_ibi", "oferta_fondo",
+    "tope_ley", "recargo_ibi", "oferta_fondo", "ejecucion_aval", "fianza_devuelta",
+    "fianza_incautada",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -231,6 +232,9 @@ PRODUCED_STATS = {
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
     "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",
     "pisos_installments", "pisos_bono", *HOUSING_ACTIONS_STATS, "pisos_tax_total",
+    "pisos_mortgage_floor", "pisos_mortgage_ceiling", "pisos_aval_mortgage",
+    "pisos_overburden", "pisos_effort_peak", "pisos_unicorn", "pisos_guarantee",
+    "pisos_aval_rent",
     "pisos_tax_alquiler",
     "pisos_tax_ganancia", "pisos_tax_over_rent", "pisos_level_changes", "pisos_evictions",
     "pisos_squatters_evicted",
@@ -463,6 +467,7 @@ PRODUCED_STATS = {
     "work_mayday", "work_black", "work_past_limit", "work_caught_inspeccion", "work_zombie",
     "work_accidents", "work_family_zero", "work_happy_shifts", "work_gifts", "work_gift_finde_sur",
     "work_favors", "work_favor_bizum", "work_favor_excusa", "work_favor_cubre", "work_favor_tupper",
+    "work_favor_aval",
     "work_fee", "work_pipes", "work_slackers",
     "work_overruns", "work_perfect_orders", "work_perfect_votes", "work_happy_clients",
     "work_dodged", "work_no_recuerdo", "work_payslips", "work_taxes", "work_irpf_pct_max",

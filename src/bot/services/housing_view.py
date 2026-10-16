@@ -78,6 +78,8 @@ NEWS_TEXT = {
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",
+    "fianza_devuelta": "{who} recupera la fianza: {amount}",
+    "fianza_incautada": "El casero se queda {amount} de la fianza de {who}",
     "partida_agotada": "Partida agotada: {who} se queda sin el Bono Alquiler Joven",
     "licencia": "Licencia vacacional concedida (tasa de {amount})",
     "tope_ley": "La Ley de Vivienda topa la renta: zona tensionada",
@@ -407,8 +409,14 @@ def portfolio_state(
     week: MemberDay,
     news: list[News],
     names: dict[int, str],
+    effort: float | None = None,
 ) -> State:
-    """Lo que tiene un miembro: cada inmueble, lo cobrado en 7 días y las noticias."""
+    """Lo que tiene un miembro: cada inmueble, lo cobrado en 7 días y las noticias.
+
+    Args:
+        effort: Si vive de alquiler en el piso de otro miembro, la parte de su sueldo que
+            se le va en la renta (`housing.effort`), para la línea de dónde vive.
+    """
     items = []
     for holding in market.of_member(user_id):
         listing = LISTING_BY_KEY[holding.listing]
@@ -471,7 +479,7 @@ def portfolio_state(
         if market.bank_debts.get(user_id)
         else "",
         "euribor": "Euríbor " + _pct(market.euribor, 2),
-        "living": _living(market, home, names),
+        "living": _living(market, home, names, effort),
         "socimi": user_id in market.socimi,
         "footer": "Lo cobrado es antes del IRPF, que se retiene al cobrar",
     }
@@ -491,7 +499,12 @@ def _mortgage_line(mortgages: list) -> str:
     return f"Hipoteca {box['owed']} · {box['payment']}{late}"
 
 
-def _living(market: Market, home: tuple[str, str] | None, names: dict[int, str]) -> str:
+def _living(
+    market: Market,
+    home: tuple[str, str] | None,
+    names: dict[int, str],
+    effort: float | None = None,
+) -> str:
     if home is None:
         return "Vives con tus padres"
     kind, ref = home
@@ -502,7 +515,12 @@ def _living(market: Market, home: tuple[str, str] | None, names: dict[int, str])
         owners = market.shares_of(ref)
         boss = max(owners, key=owners.get) if owners else None
         landlord = _name(names, boss) if boss is not None else "el mercado"
-        return f"De alquiler en «{title}» (casero: {landlord})"
+        burden = ""
+        if effort is not None:
+            # La tasa de esfuerzo, como la mide el Banco de España (sobreesfuerzo del 30 %).
+            alarm = " (sobreesfuerzo)" if effort > rules.OVERBURDEN else ""
+            burden = f" · el {round(effort * 100)} % de tu sueldo{alarm}"
+        return f"De alquiler en «{title}» (casero: {landlord}){burden}"
     return f"Vives en «{title}»"
 
 

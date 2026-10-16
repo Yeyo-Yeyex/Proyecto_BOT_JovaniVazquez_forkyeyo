@@ -56,6 +56,9 @@ Oficios.
 
 Canales: si un administrador elige canales con `tajo`, `pala` solo se abre
 en ellos. Permisos del bot: enviar mensajes en el canal.
+
+Funciones puente para `pisos` (el favor 👴 «Tus padres te avalan»): `parents_aval`,
+`spend_parents_aval` y `parents_lose_home`. No lanzan y no hacen nada sin el cog.
 """
 
 from __future__ import annotations
@@ -64,6 +67,7 @@ import asyncio
 import contextlib
 import logging
 import random
+import sqlite3
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -140,6 +144,7 @@ from bot.services.work_catalog import (
 )
 from bot.services.work_games import GRACE_SECONDS
 from bot.services.work_tools import TOOL_KEYS
+from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, claim_custom_ids, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -2077,6 +2082,43 @@ class Work(commands.Cog, name="Trabajo"):
     async def on_guild_remove(self, guild: discord.Guild) -> None:
         """Borra el trabajo del servidor cuando el bot deja de pertenecer a él."""
         await self.service.repository.delete_guild_data(guild.id)
+
+
+# -- Funciones puente ---------------------------------------------------------------
+
+
+async def parents_aval(bot: commands.Bot, guild_id: int, user_id: int) -> bool:
+    """Si tus padres te avalan ahora (favor `aval` en vigor y sin gastar), o `False`."""
+    cog = find_cog(bot, Work)
+    if cog is None:
+        return False
+    try:
+        return await cog.service.parents_aval(guild_id, user_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo mirar el aval de %s", user_id)
+        return False
+
+
+async def spend_parents_aval(bot: commands.Bot, guild_id: int, user_id: int) -> None:
+    """Gasta el aval de tus padres tras avalar una hipoteca o un alquiler."""
+    cog = find_cog(bot, Work)
+    if cog is None:
+        return
+    try:
+        await cog.service.spend_parents_aval(guild_id, user_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo gastar el aval de %s", user_id)
+
+
+async def parents_lose_home(bot: commands.Bot, guild_id: int, user_id: int) -> None:
+    """Baja la familia de quien pierde en una ejecución el piso que avalaron sus padres."""
+    cog = find_cog(bot, Work)
+    if cog is None:
+        return
+    try:
+        await cog.service.parents_lose_home(guild_id, user_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo bajar la familia de %s", user_id)
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

@@ -23,6 +23,7 @@ from bot.repositories.housing import (
     News,
     Purchase,
     Sale,
+    TenantDeal,
     VpoDeal,
 )
 from bot.services import housing as rules
@@ -104,12 +105,16 @@ class HousingService:
         *,
         expected: int | None = None,
         financed: bool = False,
+        aval: bool = False,
     ) -> Trade:
         """Compra participaciones, al contado o con hipoteca (ver `EconomyService.housing`).
 
         Args:
             expected: Lo que sale del bolsillo según la caja; si sube, no se compra.
             financed: Con hipoteca del 80 % (el banco mira `income`).
+            aval: Si tus padres te avalan (`pala`): el banco suma
+                `housing.parents_income` si sin ella no llega. `Purchase.aval` dice si
+                hizo falta, y entonces quien llama gasta el favor.
 
         Raises:
             HousingError: Si no se puede (quedan menos libres, el banco no presta…).
@@ -121,6 +126,7 @@ class HousingService:
         run = self.repository.buy(
             guild_id, user_id, key, shares, local_day(now), now, expected=expected,
             financed=financed, income=income,
+            aval_income=rules.parents_income() if financed and aval else 0,
         )  # fmt: skip
         purchase, balances = await self.economy.housing(guild_id, run)
         return Trade(purchase, balances[user_id])
@@ -206,13 +212,27 @@ class HousingService:
         now = self._clock()
         return await self.repository.leave_home(guild_id, user_id, local_day(now), now)
 
-    async def rent_to_member(self, guild_id: int, owner_id: int, key: str, member_id: int) -> Lease:
-        """Alquila un piso a un miembro; si gana poco, cobra el Bono Alquiler Joven."""
+    async def rent_to_member(
+        self, guild_id: int, owner_id: int, key: str, member_id: int, *, aval: bool = False
+    ) -> TenantDeal:
+        """Alquila un piso a un miembro, que deja la fianza; si gana poco, cobra el Bono.
+
+        Args:
+            aval: Si sus padres le avalan (`pala`): no se le pide la garantía adicional.
+                `TenantDeal.aval` dice si hizo falta, y entonces quien llama gasta el favor.
+
+        Raises:
+            HousingError: Si no se puede firmar.
+            InsufficientFundsError: Si no le llega para la fianza.
+        """
         now = self._clock()
-        bono = await self.work_income(guild_id, member_id) <= rules.bono_income_cap()
-        return await self.repository.rent_to_member(
-            guild_id, owner_id, key, member_id, local_day(now), now, bono=bono
-        )
+        income = await self.work_income(guild_id, member_id)
+        run = self.repository.rent_to_member(
+            guild_id, owner_id, key, member_id, local_day(now), now,
+            bono=income <= rules.bono_income_cap(), income=income, aval=aval,
+        )  # fmt: skip
+        deal, _balances = await self.economy.housing(guild_id, run)
+        return deal
 
     async def buy_license(self, guild_id: int, user_id: int, key: str) -> tuple[int, int]:
         """Pide la licencia vacacional. Devuelve `(tasa, saldo)`."""

@@ -19,6 +19,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   miembro). Es su vivienda habitual.
 - `housing_offers`: las ofertas del fondo buitre (fase 4).
 - `housing_socimi`: quién ha montado su SOCIMI (fase 4).
+- `housing_deposits`: la fianza (y la garantía adicional) que deja un miembro al
+  alquilar el piso de otro, mientras espera en el depósito de fianzas, y lo que se
+  queda el casero si lo desahucian debiendo meses (`forfeit`).
 
 Solo IDs de miembros, claves del catálogo, importes y fechas.
 """
@@ -43,6 +46,7 @@ TABLES = (
     "housing_homes",
     "housing_offers",
     "housing_socimi",
+    "housing_deposits",
 )
 
 SCHEMA = """
@@ -135,6 +139,16 @@ CREATE TABLE IF NOT EXISTS housing_socimi (
     user_id INTEGER NOT NULL,
     since REAL NOT NULL,
     PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS housing_deposits (
+    guild_id INTEGER NOT NULL,
+    listing TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    forfeit INTEGER NOT NULL DEFAULT 0 CHECK (forfeit >= 0),
+    since REAL NOT NULL,
+    PRIMARY KEY (guild_id, listing, user_id)
 );
 """
 
@@ -433,3 +447,67 @@ def socimi_in(connection: sqlite3.Connection, guild_id: int) -> set[int]:
             "SELECT user_id FROM housing_socimi WHERE guild_id = ?", (guild_id,)
         )
     }
+
+
+@dataclass(frozen=True, slots=True)
+class Deposit:
+    """La fianza de un miembro de alquiler en el depósito de fianzas.
+
+    Attributes:
+        amount: Lo que dejó (fianza y garantía adicional).
+        forfeit: Lo que se queda el casero por los meses que debía al desahuciarlo.
+    """
+
+    listing: str
+    user_id: int
+    amount: int
+    forfeit: int
+
+
+def deposits_in(connection: sqlite3.Connection, guild_id: int) -> list[Deposit]:
+    """Las fianzas que esperan en el depósito."""
+    return [
+        Deposit(str(r["listing"]), int(r["user_id"]), int(r["amount"]), int(r["forfeit"]))
+        for r in connection.execute(
+            "SELECT listing, user_id, amount, forfeit FROM housing_deposits WHERE guild_id = ?",
+            (guild_id,),
+        )
+    ]
+
+
+def add_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int, amount: int,
+    now: float,
+) -> None:  # fmt: skip
+    """Apunta una fianza (se suma si quedaba otra del mismo piso sin devolver)."""
+    connection.execute(
+        """
+        INSERT INTO housing_deposits (guild_id, listing, user_id, amount, since)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (guild_id, listing, user_id) DO UPDATE SET amount = amount + excluded.amount
+        """,
+        (guild_id, listing, user_id, amount, now),
+    )
+
+
+def forfeit_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int, owed: int
+) -> None:
+    """Marca lo que se queda el casero de una fianza (nunca más de lo que hay)."""
+    connection.execute(
+        """
+        UPDATE housing_deposits SET forfeit = MIN(amount, forfeit + ?)
+        WHERE guild_id = ? AND listing = ? AND user_id = ?
+        """,
+        (max(0, owed), guild_id, listing, user_id),
+    )
+
+
+def delete_deposit_in(
+    connection: sqlite3.Connection, guild_id: int, listing: str, user_id: int
+) -> None:
+    """Borra una fianza ya devuelta."""
+    connection.execute(
+        "DELETE FROM housing_deposits WHERE guild_id = ? AND listing = ? AND user_id = ?",
+        (guild_id, listing, user_id),
+    )

@@ -82,6 +82,8 @@ Modelo de datos:
 - `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra
   (y, con `porra_id = 0`, la comisión de cada bote de la `timba`),
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
+- `economy_wallets` con `user_id = HOUSING_DEPOSIT_ACCOUNT_ID`: el depósito de
+  fianzas de `pisos`. Guarda la fianza de cada miembro de alquiler hasta que se va.
 - `economy_wallets` con `user_id = MARKET_ACCOUNT_ID`: el depósito del Rastro.
   Guarda la puja más alta de cada subasta (con su ITP) hasta que se adjudica, o
   hasta devolverla entera a quien es superado.
@@ -152,6 +154,11 @@ POKER_POT_ACCOUNT_ID = -500
 #: `user_id` del depósito del Rastro: la puja más alta de cada subasta espera aquí.
 #: La mochila usa el mismo id para los objetos que están en un puesto.
 MARKET_ACCOUNT_ID = -600
+
+#: `user_id` del depósito de fianzas de `pisos`: la fianza (y la garantía adicional) de un
+#: miembro que alquila el piso de otro espera aquí hasta que se va, como el depósito que
+#: llevan las comunidades autónomas (disposición adicional 3.ª de la LAU).
+HOUSING_DEPOSIT_ACCOUNT_ID = -700
 
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"
@@ -3883,6 +3890,9 @@ class EconomyRepository:
 
         def touch(member: int) -> int:
             if member not in before:
+                if member < 0:
+                    # Una cuenta del sistema (el depósito de fianzas) se abre sin bienvenida.
+                    self._open_empty_wallet(connection, guild_id, member)
                 before[member] = self._ensure_wallet(connection, guild_id, member)
             return balances.get(member, before[member])
 

@@ -1913,6 +1913,24 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         await client.close()
 
 
+async def test_pisos_ve_el_aval_de_los_padres_de_pala_con_el_bot_real(tmp_path: Path) -> None:
+    """`pisos` carga antes que `pala`: sus puentes del aval tienen que encontrar el trabajo."""
+    client = await load_bot(tmp_path)
+    try:
+        curro = importer("Pisos", client).curro
+        await client.work.hire(GUILD, OWNER_ID, "obra")
+        assert not await curro.parents_aval(client, GUILD, OWNER_ID)
+        await client.work.ask_favor(GUILD, OWNER_ID, "aval")
+        assert await curro.parents_aval(client, GUILD, OWNER_ID)
+        await curro.spend_parents_aval(client, GUILD, OWNER_ID)
+        assert not await curro.parents_aval(client, GUILD, OWNER_ID)
+        before = (await client.work.status(GUILD, OWNER_ID)).contract.family
+        await curro.parents_lose_home(client, GUILD, OWNER_ID)
+        assert (await client.work.status(GUILD, OWNER_ID)).contract.family < before
+    finally:
+        await client.close()
+
+
 async def test_cada_100_jugadas_del_casino_dan_una_caja_de_carton_con_el_bot_real(
     tmp_path: Path,
 ) -> None:

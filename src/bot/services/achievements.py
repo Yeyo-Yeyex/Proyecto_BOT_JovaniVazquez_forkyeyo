@@ -109,6 +109,7 @@ from bot.services.horses import Going as HorseGoing
 from bot.services.horses import Pick as HorsePick
 from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
+from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
 from bot.services.housing_catalog import BARRIO_BY_KEY
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.interest import (
@@ -6179,6 +6180,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10_000_000, "pisos_loan_10m", "Préstamo de la burbuja",
          "Que el banco te preste 10.000.000 Y$ de una vez.", E),
     ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_mortgage_floor", [
+        (1, "pisos_bce_floor", "Whatever it takes",
+         "Firma una hipoteca con el Euríbor al 0 %. Draghi te manda un abrazo.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_mortgage_ceiling", [
+        (1, "pisos_bce_ceiling", "Firmaste en 2008",
+         "Firma una hipoteca con el Euríbor al 5 %. En Fráncfort brindan por ti.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_aval_mortgage", [
+        (1, "pisos_aval_mortgage_1", "Con el piso del pueblo de garantía",
+         "Firma una hipoteca que el banco solo te da con el aval de tus padres.", C),
+        (3, "pisos_aval_mortgage_3", "Tus padres ya no duermen",
+         "Firma 3 hipotecas avaladas por tus padres.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}ejecucion_aval", [
+        (1, "pisos_aval_executed", "Y se llevaron el piso del pueblo",
+         "Que el banco ejecute una hipoteca que avalaron tus padres. La cena de Nochebuena "
+         "va a estar tensa.", E, True),
+    ])  # fmt: skip
     a += _tiers("pisos", "pisos_installments", [
         (30, "pisos_inst_30", "Treinta cuotas sin fallar",
          "Paga 30 cuotas de hipoteca enteras.", R),
@@ -6232,6 +6252,38 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_mlandlord_1", "Casero de un colega", "Alquílale un piso a otro miembro.", C),
         (5, "pisos_mlandlord_5", "Inmobiliaria de colegas",
          "Alquila pisos a otros miembros 5 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_overburden", [
+        (1, "pisos_overburden_1", "Sobreesfuerzo, dice el Banco de España",
+         "Alquila el piso de un miembro que se lleve más del 30 % de tu sueldo.", C),
+        (3, "pisos_overburden_3", "Generación sobreesforzada",
+         "Alquila 3 veces pisos que se lleven más del 30 % de tu sueldo.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_effort_peak", [
+        (100, "pisos_effort_100", "Trabajo para mi casero",
+         "Alquila un piso cuya renta sea todo tu sueldo o más.", R, True),
+        (300, "pisos_effort_300", "Ni con tres sueldos de ministro",
+         "Alquila un piso que se lleve el triple de tu sueldo.", E, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_unicorn", [
+        (1, "pisos_unicorn_1", "Unicornio del alquiler",
+         "Alquila un piso que se lleve menos del 30 % de tu sueldo.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_guarantee", [
+        (1, "pisos_guarantee_1", "Tres meses por adelantado y la vida laboral",
+         "Deja fianza y garantía adicional por no tener una nómina de 3 veces la renta.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_aval_rent", [
+        (1, "pisos_aval_rent_1", "Mi padre me firma el contrato",
+         "Que el aval de tus padres te libre de la garantía adicional al alquilar.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}fianza_devuelta", [
+        (1, "pisos_deposit_back_1", "Me han devuelto la fianza (milagro)",
+         "Recupera la fianza al dejar un piso de alquiler. Sin descontarte la pintura.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}fianza_incautada", [
+        (1, "pisos_deposit_lost_1", "La fianza, para el casero",
+         "Que el casero se quede parte de tu fianza por los meses que debías.", R, True),
     ])  # fmt: skip
     a.append(Achievement(
         id="pisos_bono_1", name="Bono Alquiler Joven",
@@ -7597,6 +7649,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("work", "work_favor_tupper", [
         (10, "lentejas", "Lentejas de los lunes", "Cómete 10 tuppers de tu madre.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_favor_aval", [
+        (1, "papa_firma", "Papá, firma aquí", "Pide a tus padres que te avalen para `pisos`.", C),
+        (5, "aval_fasciculos", "Hipotecando a la familia por fascículos",
+         "Pídeles el aval a tus padres 5 veces.", R),
     ])  # fmt: skip
     a.append(Achievement(
         id="ochenta_horas", name="80 horas al año, ja",
@@ -16881,16 +16938,52 @@ HOUSING_ACTIONS = {
 }
 
 
-def housing_action_stats(action: str, *, loan: int = 0) -> StatDelta:
+def housing_action_stats(
+    action: str,
+    *,
+    loan: int = 0,
+    floor: bool = False,
+    ceiling: bool = False,
+    aval: bool = False,
+    effort: float | None = None,
+    guarantee: bool = False,
+) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
 
     Args:
         loan: Lo prestado, con `hipoteca`.
+        floor: Con `hipoteca`, si se firmó con el Euríbor en el mínimo (0 %).
+        ceiling: Con `hipoteca`, si se firmó con el Euríbor en el máximo (5 %).
+        aval: Con `hipoteca`, si solo se dio con el aval de los padres; con
+            `inquilino_miembro`, si el aval le libró de la garantía adicional.
+        effort: Con `inquilino_miembro`, la parte del sueldo que se lleva la renta
+            (`housing.effort`; `None` sin nómina).
+        guarantee: Con `inquilino_miembro`, si dejó la garantía adicional.
     """
     if action == "hipoteca":
-        return StatDelta(add={"pisos_mortgages": 1}, peak={"pisos_loan_max": loan})
+        add = {"pisos_mortgages": 1}
+        for stat, hit in (
+            ("pisos_mortgage_floor", floor),
+            ("pisos_mortgage_ceiling", ceiling),
+            ("pisos_aval_mortgage", aval),
+        ):
+            if hit:
+                add[stat] = 1
+        return StatDelta(add=add, peak={"pisos_loan_max": loan})
     stat = HOUSING_ACTIONS.get(action)
-    return StatDelta(add={stat: 1}) if stat else StatDelta()
+    if stat is None:
+        return StatDelta()
+    delta = StatDelta(add={stat: 1})
+    if action == "inquilino_miembro":
+        if effort is not None:
+            overburden = effort > HOUSING_OVERBURDEN
+            delta.add["pisos_overburden" if overburden else "pisos_unicorn"] = 1
+            delta.peak["pisos_effort_peak"] = round(effort * 100)
+        if guarantee:
+            delta.add["pisos_guarantee"] = 1
+        if aval:
+            delta.add["pisos_aval_rent"] = 1
+    return delta
 
 
 def housing_day_stats(

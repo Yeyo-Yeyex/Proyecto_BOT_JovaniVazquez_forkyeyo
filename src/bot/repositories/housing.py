@@ -22,10 +22,14 @@ están en `bot.repositories.housing_finance`, con funciones que corren dentro de
 mismas transacciones.
 
 El dinero no se toca aquí. Lo que mueve dinero (`buy`, `sell`, `close_day`,
-`amortize`, `vpo_buy`, `vpo_return`, `buy_license`, `found_socimi`) devuelve una
-función que corre dentro de la transacción de `EconomyRepository.housing`. Lo que no
-mueve dinero (la renta que se pide, desahucios, apuntarse al sorteo, vivir en un piso,
-alquilárselo a un miembro) va en su propia transacción.
+`amortize`, `vpo_buy`, `vpo_return`, `buy_license`, `found_socimi`,
+`rent_to_member`, que cobra la fianza) devuelve una función que corre dentro de la
+transacción de `EconomyRepository.housing`. Lo que no mueve dinero (la renta que se
+pide, desahucios, apuntarse al sorteo, vivir en un piso) va en su propia transacción.
+
+La fianza de un miembro de alquiler se devuelve sola la noche después de que se vaya,
+por el camino que sea (se muda, lo desahucian, venden el piso, lo ejecutan): el cierre
+de cada día mira las fianzas cuyo inquilino ya no vive en el piso (`_deposits_in`).
 
 Solo se guardan IDs de miembros, claves del catálogo, importes y fechas. Todo se
 borra cuando el bot sale del servidor.
@@ -46,6 +50,7 @@ from typing import TypeVar
 from bot.repositories import housing_finance as finance
 from bot.repositories import sqlite
 from bot.repositories.economy import (
+    HOUSING_DEPOSIT_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     HousingDebit,
     HousingMove,
@@ -241,6 +246,8 @@ class Purchase:
         first: Si es lo primero que tiene en todo el mercado.
         loan: Lo que prestó el banco (0 al contado).
         payment: La cuota de esa hipoteca.
+        rate: Su tipo fijo (Euríbor de la semana más el diferencial).
+        aval: Si el banco solo la ha dado con el aval de tus padres.
     """
 
     listing: str
@@ -251,6 +258,8 @@ class Purchase:
     first: bool
     loan: int = 0
     payment: int = 0
+    rate: float = 0.0
+    aval: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,6 +306,23 @@ class VpoDeal:
 
 
 @dataclass(frozen=True, slots=True)
+class TenantDeal:
+    """Un alquiler firmado con un miembro.
+
+    Attributes:
+        lease: El contrato.
+        deposit: Lo que dejó en el depósito de fianzas (fianza y garantía).
+        guarantee: Si el casero le pidió la garantía adicional.
+        aval: Si se libró de la garantía gracias al aval de sus padres.
+    """
+
+    lease: rules.Lease
+    deposit: int
+    guarantee: bool
+    aval: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class MemberDay:
     """Lo que un miembro cobró y pagó un día por todos sus inmuebles (antes del IRPF)."""
 
@@ -321,6 +347,10 @@ class DayRun:
         bono_unpaid: Miembros a los que no se pudo pagar el bono (partida agotada).
         mortgage_unpaid: Miembros que no pudieron pagar entera la cuota.
         installments: Cuotas de hipoteca pagadas enteras por cada miembro.
+        aval_executions: Miembros a los que han ejecutado una hipoteca avalada por sus
+            padres (la familia de `pala` lo paga).
+        euribor: `(el de antes, el nuevo)` si hoy ha sido lunes y se ha movido el
+            Euríbor (aunque se quede igual), para el anuncio del BCE.
     """
 
     day: date
@@ -335,6 +365,8 @@ class DayRun:
     bono_unpaid: list[int] = field(default_factory=list)
     mortgage_unpaid: list[int] = field(default_factory=list)
     installments: dict[int, int] = field(default_factory=dict)
+    aval_executions: list[int] = field(default_factory=list)
+    euribor: tuple[float, float] | None = None
 
 
 def _date(text: str | None) -> date | None:
@@ -736,6 +768,7 @@ class HousingRepository:
         expected: int | None = None,
         financed: bool = False,
         income: int = 0,
+        aval_income: int = 0,
     ) -> Callable[[sqlite3.Connection], tuple[Purchase, HousingMove]]:
         """Compra participaciones de un inmueble al índice de hoy, al contado o con hipoteca.
 
@@ -745,6 +778,9 @@ class HousingRepository:
             financed: Con hipoteca: el banco presta el 80 % del precio al Euríbor de la
                 semana más el diferencial, a 360 meses.
             income: Ingresos diarios que mira el banco (`housing.daily_income`).
+            aval_income: Lo que suma el aval de tus padres si lo tienes
+                (`housing.parents_income`). Solo se usa si sin él no llega: entonces la
+                hipoteca queda avalada.
 
         Raises (dentro de la transacción):
             HousingError: Si no quedan tantas libres, el número no vale o el banco no
@@ -765,21 +801,34 @@ class HousingRepository:
             index = market.index(listing.barrio)
             quote = rules.purchase_quote(listing, shares, index)
             loan = payment = 0
+            rate = 0.0
+            aval = False
             if financed:
                 loan = round(quote.price * rules.MORTGAGE_LTV)
                 rate = market.euribor + rules.MORTGAGE_SPREAD
                 payment = rules.installment(loan, rate)
                 current = sum(m.payment for m in market.mortgages_of(user_id))
                 if not rules.affordable(income, current + payment):
-                    raise HousingError(
-                        f"El banco te dice que no: la cuota ({format_amount(payment)} al mes) "
-                        f"más las que ya pagas ({format_amount(current)}) pasa del 35 % de lo "
-                        f"que ingresas ({format_amount(income)} al día, nóminas y el 70 % de "
-                        "tus alquileres). Trabaja más o pide menos."
+                    aval = aval_income > 0 and rules.affordable(
+                        income + aval_income, current + payment
                     )
+                    if not aval:
+                        tip = (
+                            " Ni con el aval de tus padres."
+                            if aval_income
+                            else " Trabaja más, pide menos o pide a tus padres que te avalen "
+                            "(un favor de `pala`)."
+                        )
+                        raise HousingError(
+                            f"El banco te dice que no: la cuota ({format_amount(payment)} al "
+                            f"mes) más las que ya pagas ({format_amount(current)}) pasa del 35 % "
+                            f"de lo que ingresas ({format_amount(income)} al día, nóminas y el "
+                            f"70 % de tus alquileres).{tip}"
+                        )
                 finance.add_mortgage_in(
-                    connection, guild_id, user_id, key, loan, rate, payment, now
-                )
+                    connection, guild_id, user_id, key, loan, rate, payment, now,
+                    aval=rules.PARENTS_AVAL if aval else None,
+                )  # fmt: skip
             out_of_pocket = quote.total - loan
             # Si sale más barato que en la caja se cobra (mejor para quien compra);
             # si sale más caro, no.
@@ -817,6 +866,8 @@ class HousingRepository:
                 first=first,
                 loan=loan,
                 payment=payment,
+                rate=rate,
+                aval=aval,
             )
             move = HousingMove(
                 entries=(
@@ -1046,7 +1097,9 @@ class HousingRepository:
         result: DayRun,
     ) -> None:
         """Lo de cada lunes: Euríbor, sorteo de VPO y ofertas del fondo buitre."""
-        finance.set_euribor_in(connection, guild_id, day, rules.next_euribor(market.euribor, rng))
+        euribor = rules.next_euribor(market.euribor, rng)
+        if finance.set_euribor_in(connection, guild_id, day, euribor):
+            result.euribor = (market.euribor, euribor)
         # VPO: caducan las reservas que nadie compró y se sortean las libres.
         for unit, (member, until) in market.reservations.items():
             if until < day:
@@ -1195,6 +1248,8 @@ class HousingRepository:
         if mortgage.owed > to_bank:
             finance.add_bank_debt_in(connection, guild_id, member, mortgage.owed - to_bank)
         result.executions.append((member, mortgage.listing))
+        if mortgage.aval == rules.PARENTS_AVAL:
+            result.aval_executions.append(member)
         item = News(mortgage.listing, day, "ejecucion", proceeds, member, None)
         result.news.append(item)
         _news_in(connection, guild_id, item, now)
@@ -1252,6 +1307,7 @@ class HousingRepository:
                     costs.community + owner.arrears - owner.arrears_ibi,
                 )
             )  # fmt: skip
+        self._deposits_in(connection, guild_id, day, now, market, rents, entries, result)
         for key in LISTING_BY_KEY:
             lease = market.leases.get(key)
             if lease is None or not market.shares_of(key):
@@ -1372,6 +1428,13 @@ class HousingRepository:
         }
         if lease.member is not None:
             outcome = self._member_month(listing, lease, key, day, rng, paid, news)
+            if outcome.lease.member is None:
+                # Desahuciado: deja de vivir aquí y el casero se queda de la fianza lo que
+                # debía (art. 36 LAU); el resto se le devuelve mañana.
+                finance.clear_home_in(connection, guild_id, user_id=lease.member)
+                finance.forfeit_deposit_in(
+                    connection, guild_id, key, lease.member, lease.unpaid * lease.rent
+                )
         else:
             outcome = rules.advance_day(listing, lease, day, index, rng)
         lease_after = outcome.lease
@@ -1725,7 +1788,7 @@ class HousingRepository:
         _news_in(connection, guild_id, News(ref, day, "se_va", 0, user_id, None), now)
         return kind
 
-    async def rent_to_member(
+    def rent_to_member(
         self,
         guild_id: int,
         owner_id: int,
@@ -1735,45 +1798,108 @@ class HousingRepository:
         now: float,
         *,
         bono: bool,
-    ) -> rules.Lease:
+        income: int,
+        aval: bool = False,
+    ) -> Callable[[sqlite3.Connection], tuple[TenantDeal, HousingMove]]:
         """Alquila un piso a un miembro con la renta que pide el inmueble, 5 años (60 días).
 
-        Raises:
+        El miembro deja la fianza de un mes y, si su nómina no llega a 3 veces la renta y
+        no le avalan sus padres, la garantía adicional de dos meses más
+        (`housing.deposit_for`). Va al depósito de fianzas y vuelve cuando se va.
+
+        Args:
+            income: Neto medio de nómina al día del miembro (`work_income`).
+            aval: Si sus padres le avalan (el favor de `pala`): no se pide la garantía.
+
+        Raises (dentro de la transacción):
             HousingError: Si no lo decide quien lo ofrece, no está vacío, el miembro ya
                 vive en otro sitio o es uno de los dueños.
+            InsufficientFundsError: Si no le llega para la fianza. No se firma nada.
         """
-        return await self._run(
-            self._write, self._rent_to_member_in, guild_id, owner_id, key, member_id, day, now,
-            bono,
-        )  # fmt: skip
-
-    @staticmethod
-    def _rent_to_member_in(
-        connection: sqlite3.Connection, guild_id: int, owner_id: int, key: str, member_id: int,
-        day: date, now: float, bono: bool,
-    ) -> rules.Lease:  # fmt: skip
         listing = _listing(key)
-        market = _market_in(connection, guild_id)
-        holders = market.shares_of(key)
-        if rules.manager(holders) != owner_id:
-            raise HousingError("Lo alquila quien tiene más de la mitad del inmueble.")
-        if listing.kind not in rules.HOME_KINDS:
-            raise HousingError("Eso no es una vivienda.")
-        if member_id in holders:
-            raise HousingError("No puedes alquilarle el piso a uno de sus dueños.")
-        if member_id in market.homes:
-            raise HousingError("Ya vive en otro sitio.")
-        lease = market.leases[key]
-        if lease.status != rules.VACANT:
-            raise HousingError("Tiene que estar vacío para firmar con otro inquilino.")
-        level = RENT_LEVELS["referencia" if lease.level == rules.VACATION_LEVEL else lease.level]
-        rent = rules.asking_rent(listing, level, market.index(listing.barrio))
-        lease = replace(lease, status=rules.RENTED, tenant=None, member=member_id, bono=bono,
-                        rent=rent, until=day + timedelta(days=60), since=day, unpaid=0)  # fmt: skip
-        _save_lease_in(connection, guild_id, key, lease)
-        finance.set_home_in(connection, guild_id, member_id, finance.HOME_RENTED, key, now)
-        _news_in(connection, guild_id, News(key, day, "firma_miembro", rent, member_id, None), now)
-        return lease
+
+        def run(connection: sqlite3.Connection) -> tuple[TenantDeal, HousingMove]:
+            market = _market_in(connection, guild_id)
+            holders = market.shares_of(key)
+            if rules.manager(holders) != owner_id:
+                raise HousingError("Lo alquila quien tiene más de la mitad del inmueble.")
+            if listing.kind not in rules.HOME_KINDS:
+                raise HousingError("Eso no es una vivienda.")
+            if member_id in holders:
+                raise HousingError("No puedes alquilarle el piso a uno de sus dueños.")
+            if member_id in market.homes:
+                raise HousingError("Ya vive en otro sitio.")
+            lease = market.leases[key]
+            if lease.status != rules.VACANT:
+                raise HousingError("Tiene que estar vacío para firmar con otro inquilino.")
+            level = RENT_LEVELS[
+                "referencia" if lease.level == rules.VACATION_LEVEL else lease.level
+            ]
+            rent = rules.asking_rent(listing, level, market.index(listing.barrio))
+            short = rules.needs_guarantee(rent, income, aval=False)
+            guarantee = short and not aval
+            deposit = rules.deposit_for(rent, guarantee=guarantee)
+            lease = replace(lease, status=rules.RENTED, tenant=None, member=member_id,
+                            bono=bono, rent=rent, until=day + timedelta(days=60), since=day,
+                            unpaid=0)  # fmt: skip
+            _save_lease_in(connection, guild_id, key, lease)
+            finance.set_home_in(connection, guild_id, member_id, finance.HOME_RENTED, key, now)
+            finance.add_deposit_in(connection, guild_id, key, member_id, deposit, now)
+            _news_in(connection, guild_id, News(key, day, "firma_miembro", rent, member_id,
+                                                None), now)  # fmt: skip
+            move = HousingMove(
+                entries=(
+                    (member_id, LedgerEntry(-deposit, "pisos:fianza")),
+                    (HOUSING_DEPOSIT_ACCOUNT_ID, LedgerEntry(deposit, "pisos:fianza")),
+                )
+            )
+            return TenantDeal(lease, deposit, guarantee, short and aval), move
+
+        return run
+
+    def _deposits_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        now: float,
+        market: Market,
+        rents: list[HousingRent],
+        entries: list[tuple[int, LedgerEntry]],
+        result: DayRun,
+    ) -> None:
+        """Devuelve las fianzas de quien ya no vive de alquiler en el piso (art. 36.4 LAU).
+
+        Lo que se queda el casero por los meses que debía (`forfeit`) es renta del
+        alquiler para los dueños de hoy, con su IRPF; si ya no tiene dueños, vuelve
+        entera al inquilino. Sale todo del depósito de fianzas: no se crea dinero.
+        """
+        for deposit in finance.deposits_in(connection, guild_id):
+            lease = market.leases.get(deposit.listing)
+            if lease is not None and lease.member == deposit.user_id:
+                continue
+            holders = market.shares_of(deposit.listing)
+            kept = deposit.forfeit if holders else 0
+            for member, part in rules.split(kept, holders).items():
+                if part > 0:
+                    taxable = rules.taxable_rent(part, 0)
+                    rents.append(HousingRent(member, part, taxable, rules.rent_to_fiscal(taxable)))
+            refund = deposit.amount - kept
+            entries.append(
+                (HOUSING_DEPOSIT_ACCOUNT_ID, LedgerEntry(-deposit.amount, "pisos:fianza"))
+            )
+            entries.append((deposit.user_id, LedgerEntry(refund, "pisos:fianza")))
+            finance.delete_deposit_in(connection, guild_id, deposit.listing, deposit.user_id)
+            items = []
+            if refund:
+                items.append(
+                    News(deposit.listing, day, "fianza_devuelta", refund, deposit.user_id, None)
+                )
+            if kept:
+                items.append(
+                    News(deposit.listing, day, "fianza_incautada", kept, deposit.user_id, None)
+                )
+            self._log_news(connection, guild_id, now, items, result)
 
     # -- Fase 4: licencias, SOCIMI ------------------------------------------------------
 

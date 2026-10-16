@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from bot.repositories.economy import (
+    HOUSING_DEPOSIT_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     EconomyRepository,
     InsufficientFundsError,
@@ -20,7 +21,7 @@ from bot.repositories.housing import HousingError, HousingRepository, assets_in
 from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, HOME_VPO
 from bot.services import housing as rules
 from bot.services.economy import STARTING_BALANCE, EconomyService
-from bot.services.housing_catalog import LISTING_BY_KEY, VPO_BY_KEY, VPO_UNITS
+from bot.services.housing_catalog import LISTING_BY_KEY, RENT_LEVELS, VPO_BY_KEY, VPO_UNITS
 from bot.services.housing_market import HousingService
 from bot.services.levels import TIMEZONE
 from bot.services.work import Contract, battery_now
@@ -345,7 +346,8 @@ async def test_un_miembro_de_alquiler_paga_al_casero_y_cobra_el_bono(tmp_path: P
     await give(economy, BEA, 1_000_000)
     await give(economy, STATE_ACCOUNT_ID, 1_000_000)
     await service.buy(GUILD, ANA, BAJO.key, 100)
-    lease = await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    deal = await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    lease = deal.lease
     assert lease.member == BEA and lease.bono
     assert (await service.market(GUILD)).homes[BEA] == (HOME_RENTED, BAJO.key)
     ana = await economy.balance(GUILD, ANA)
@@ -370,6 +372,7 @@ async def test_sin_dinero_el_miembro_deja_de_pagar_y_sin_partida_no_hay_bono(
     clock = Clock(at(14))
     economy, service = await make(tmp_path, clock)
     await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 100_000)  # para la fianza
     await service.buy(GUILD, ANA, BAJO.key, 100)
     await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
     balance = await economy.balance(GUILD, BEA)
@@ -386,6 +389,167 @@ async def test_sin_dinero_el_miembro_deja_de_pagar_y_sin_partida_no_hay_bono(
     (run,) = await service.close_days(GUILD)
     assert (await service.market(GUILD)).leases[BAJO.key].status == rules.RENTED
     assert run.bono_unpaid == [BEA]
+
+
+def test_tasa_de_esfuerzo_fianza_y_garantia() -> None:
+    assert rules.effort(4_290, 6_000) == pytest.approx(0.715)
+    assert rules.effort(4_290, 0) is None
+    assert rules.needs_guarantee(4_290, 12_869, aval=False)
+    assert not rules.needs_guarantee(4_290, 12_870, aval=False)
+    assert not rules.needs_guarantee(4_290, 0, aval=True)
+    assert rules.deposit_for(4_290, guarantee=False) == 4_290
+    assert rules.deposit_for(4_290, guarantee=True) == 4_290 * 3
+
+
+async def test_la_fianza_va_al_deposito_y_vuelve_la_noche_que_se_va(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 1_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    index = (await service.market(GUILD)).index(BAJO.barrio)  # comprar lo ha subido
+    rent = rules.asking_rent(BAJO, RENT_LEVELS["referencia"], index)
+    salary(tmp_path, BEA, rent * rules.INCOME_RENT_MULTIPLE, clock)
+    deal = await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    assert not deal.guarantee and deal.deposit == rent
+    assert await economy.balance(GUILD, HOUSING_DEPOSIT_ACCOUNT_ID) == rent
+    assert await service.leave_home(GUILD, BEA) == HOME_RENTED
+    before = await economy.balance(GUILD, BEA)
+    clock.to(15)
+    (run,) = await service.close_days(GUILD)
+    assert await economy.balance(GUILD, BEA) == before + rent
+    assert await economy.balance(GUILD, HOUSING_DEPOSIT_ACCOUNT_ID) == 0
+    assert [n.kind for n in run.news if n.user_id == BEA] == ["fianza_devuelta"]
+    assert sql(tmp_path, "SELECT * FROM housing_deposits") == []
+    for account in (ANA, BEA, HOUSING_DEPOSIT_ACCOUNT_ID):
+        assert ledger_sum(tmp_path, account) == await economy.balance(GUILD, account)
+
+
+async def test_sin_nomina_de_tres_rentas_se_pide_garantia_salvo_que_avalen_los_padres(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 1_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    await service.buy(GUILD, ANA, "schamann_piso2", 100)
+    deal = await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    assert deal.guarantee and not deal.aval
+    assert deal.deposit == rules.deposit_for(deal.lease.rent, guarantee=True)
+    await service.leave_home(GUILD, BEA)
+    deal = await service.rent_to_member(GUILD, ANA, "schamann_piso2", BEA, aval=True)
+    assert not deal.guarantee and deal.aval
+    assert deal.deposit == deal.lease.rent
+
+
+async def test_sin_dinero_para_la_fianza_no_se_firma(tmp_path: Path) -> None:
+    economy, service = await make(tmp_path, Clock(at(14)))
+    await give(economy, ANA, 10_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    balance = await economy.balance(GUILD, BEA)
+    await economy.repository.apply(GUILD, BEA, [LedgerEntry(-balance, "prueba")])
+    with pytest.raises(InsufficientFundsError):
+        await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    market = await service.market(GUILD)
+    assert BEA not in market.homes and market.leases[BAJO.key].member is None
+
+
+async def test_al_desahuciar_al_miembro_el_casero_se_queda_lo_que_debia(tmp_path: Path) -> None:
+    clock = Clock(at(1))
+    economy, service = await make(tmp_path, clock)
+    await give(economy, ANA, 10_000_000)
+    await give(economy, BEA, 100_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    deal = await service.rent_to_member(GUILD, ANA, BAJO.key, BEA)
+    balance = await economy.balance(GUILD, BEA)
+    await economy.repository.apply(GUILD, BEA, [LedgerEntry(-balance, "prueba")])
+    clock.to(2)
+    await service.close_days(GUILD)  # no paga: impago
+    await service.evict(GUILD, ANA, BAJO.key)
+    unpaid = (await service.market(GUILD)).leases[BAJO.key].unpaid
+    day, news = 3, []
+    while BEA in (await service.market(GUILD)).homes:
+        clock.to(day)
+        for run in await service.close_days(GUILD):
+            news += run.news
+        day += 1
+        assert day < 30, "el juzgado no da nunca fecha"
+    assert (await service.market(GUILD)).leases[BAJO.key].member is None
+    ana = await economy.balance(GUILD, ANA)
+    clock.to(day)
+    (run,) = await service.close_days(GUILD)
+    kept = min(deal.deposit, unpaid * deal.lease.rent)
+    kinds = {n.kind: n.amount for n in run.news if n.user_id == BEA}
+    assert kinds.get("fianza_incautada") == kept
+    assert kinds.get("fianza_devuelta", 0) == deal.deposit - kept
+    assert await economy.balance(GUILD, ANA) > ana  # cobra la fianza como renta
+    assert await economy.balance(GUILD, HOUSING_DEPOSIT_ACCOUNT_ID) == 0
+    for account in (ANA, BEA, HOUSING_DEPOSIT_ACCOUNT_ID):
+        assert ledger_sum(tmp_path, account) == await economy.balance(GUILD, account)
+
+
+# -- El aval de tus padres y el BCE ----------------------------------------------------
+
+
+async def test_con_el_aval_de_tus_padres_el_banco_presta_lo_que_no_te_daba(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    salary(tmp_path, ANA, 2_500, clock)
+    await give(economy, ANA, 200_000)
+    with pytest.raises(HousingError, match="padres"):
+        await service.buy(GUILD, ANA, BAJO.key, 100, financed=True)
+    trade = await service.buy(GUILD, ANA, BAJO.key, 100, financed=True, aval=True)
+    assert trade.deal.aval
+    assert sql(tmp_path, "SELECT aval FROM housing_mortgages") == [(rules.PARENTS_AVAL,)]
+    assert rules.parents_income() == 2_500  # media pensión de 1.500 € a la escala de nóminas
+
+
+async def test_si_tu_nomina_basta_no_se_gasta_el_aval(tmp_path: Path) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    salary(tmp_path, ANA, 6_000, clock)
+    await give(economy, ANA, 200_000)
+    trade = await service.buy(GUILD, ANA, BAJO.key, 100, financed=True, aval=True)
+    assert not trade.deal.aval
+    assert sql(tmp_path, "SELECT aval FROM housing_mortgages") == [(None,)]
+
+
+async def test_ejecutar_una_hipoteca_avalada_lo_paga_la_familia(tmp_path: Path) -> None:
+    clock = Clock(at(1))
+    economy, service = await make(tmp_path, clock)
+    salary(tmp_path, ANA, 2_500, clock)
+    await give(economy, ANA, 200_000)
+    await service.buy(GUILD, ANA, BAJO.key, 100, financed=True, aval=True)
+    balance = await economy.balance(GUILD, ANA)
+    await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
+    executed = []
+    for d in range(2, 17):
+        clock.to(d)
+        for run in await service.close_days(GUILD):
+            executed += run.aval_executions
+    assert executed == [ANA]
+
+
+def test_la_frase_del_bce_sigue_al_euribor_y_no_cambia_en_la_semana() -> None:
+    monday = datetime(2026, 10, 12).date()
+    assert rules.ecb_phrase(0.02, 0.0225, monday) in rules.ECB_UP
+    assert rules.ecb_phrase(0.02, 0.0175, monday) in rules.ECB_DOWN
+    assert rules.ecb_phrase(0.02, 0.02, monday) in rules.ECB_HOLD
+    assert rules.ecb_phrase(0.02, 0.0225, monday) == rules.ecb_phrase(0.0, 0.01, monday)
+
+
+async def test_el_lunes_el_cierre_trae_el_euribor_de_antes_y_el_nuevo(tmp_path: Path) -> None:
+    clock = Clock(at(11))
+    _economy, service = await make(tmp_path, clock)
+    clock.to(13)  # cierra el domingo 11 (no) y el lunes 12 (sí)
+    runs = await service.close_days(GUILD)
+    (monday,) = [run for run in runs if run.euribor is not None]
+    assert monday.day.weekday() == 0
+    before, after = monday.euribor
+    assert before == rules.EURIBOR_START and abs(after - before) <= rules.EURIBOR_STEP
 
 
 # -- Vacacional, gran tenedor, fondo buitre y SOCIMI ------------------------------------
