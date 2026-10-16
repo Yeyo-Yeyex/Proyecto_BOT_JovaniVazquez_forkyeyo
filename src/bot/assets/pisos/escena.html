@@ -13,8 +13,9 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja y vpo. Como no hay estado entre
-fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja y vpo. Miden 1000 × 640, salvo el barrio
+(diez tarjetas en dos filas), que mide 1000 × 760 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
+lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
 El estilo es el de «Idealjovani», un portal de pisos parodiado: paleta canaria (atlántico,
 turquesa, arena, picón, laurisilva, buganvilla y atardecer), rótulos en Luckiest Guy y cifras en
@@ -40,12 +41,25 @@ trae su fuente, así que los iconos son trazos de canvas.
 <script>
 "use strict";
 const S = 2;
-const W = 1000, H = 640;
+// Todas miden 1000 de ancho. De alto, 640 salvo las de `SCREEN_H` (el barrio, con sus diez tarjetas en
+// dos filas, mide más): cada alto tiene sus lienzos y `paintScreen` pone `H` y `g` de la pantalla que toca.
+const W = 1000;
+const SCREEN_H = { barrio: 760 };
+let H = 640;
 
-const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
-const out = document.createElement("canvas"); out.width = W; out.height = H;
-let g = big.getContext("2d");
-const octx = out.getContext("2d");
+const SURFACES = new Map();
+function surface(h) {
+  let s = SURFACES.get(h);
+  if (!s) {
+    const big = document.createElement("canvas"); big.width = W * S; big.height = h * S;
+    const out = document.createElement("canvas"); out.width = W; out.height = h;
+    s = { big, out, g: big.getContext("2d"), octx: out.getContext("2d") };
+    SURFACES.set(h, s);
+  }
+  return s;
+}
+let cur = surface(H);
+let g = cur.g;
 
 // La paleta canaria: azul atlántico, turquesa, arena volcánica, negro de picón, verde de laurisilva,
 // buganvilla y naranja de atardecer.
@@ -320,8 +334,8 @@ function header(title, sub, o = {}) {
   }
 }
 function footer(text) {
-  TX("idealjovani", 20, 624, { font: F.t(19), color: C.sunDk, k: 0.34 });
-  if (text) fitText(text, W / 2 + 40, 624, W - 340, F.r, 17, 13, { color: C.mute, align: "center" });
+  TX("idealjovani", 20, H - 16, { font: F.t(19), color: C.sunDk, k: 0.34 });
+  if (text) fitText(text, W / 2 + 40, H - 16, W - 340, F.r, 17, 13, { color: C.mute, align: "center" });
 }
 
 // -- Pegatinas y sellos con guasa ---------------------------------------------------------
@@ -1537,54 +1551,57 @@ function paintMapa(st) {
 
 // BARRIO --------------------------------------------------------------------------------
 
-function ownersLine(owners, free, x, y, w, size = 18) {
-  ownersBar(x, y, w, 10, owners, free);
-  const parts = owners.map((o) => `${o.name} ${o.shares} %`);
-  if (free > 0) parts.push(`libre ${free} %`);
-  fitText(parts.join(" · "), x, y + 24, w, F.m, size, 14, { color: C.mute });
+// Diez tarjetas en dos filas de cinco: una por botón, con su mismo número (`pisos:ver:N`). Discord encoge la
+// imagen a ~0,55 en el escritorio y ~0,36 en el móvil: lo que hay que leer va a 19 px o más y el resto
+// (título, rentabilidad, dueños…) se queda en la ficha. La décima es la obra nueva o, si el barrio aún no la
+// tiene, el solar (`kind: "solar"`, sin botón).
+const BARRIO_COLS = 5, CARD_W = 186, CARD_H = 278, CARD_GAP = 10, GRID_TOP = 162, FACADE_H = 138;
+
+// Lo que no cabe a 19 px se dice más corto (la ficha lo lleva entero).
+const shortStatus = (s) => s.replace(/^Tienes el (\d+) %$/, "Tienes $1 %").replace(/^Queda el (\d+) % libre$/, "$1 % libre");
+const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar" };
+function kindLabel(name, maxW) { return width(name, F.m(20)) > maxW ? name.replace("dormitorios", "dorm.") : name; }
+
+// El número de la tarjeta, el mismo que el de su botón (apagado si es un solar).
+function slotNumber(n, x, y, off) {
+  dot(x, y + 1.5, 18, "rgba(0,0,0,0.25)"); dot(x, y, 18, "#fff"); dot(x, y, 15.5, off ? C.grey : C.sun);
+  T(String(n), x, y + 0.5, { font: F.d(n > 9 ? 19 : 22), color: "#fff", align: "center" });
 }
 
-function listingCard(c, x, y, w, h) {
-  card(x, y, w, h, { top: 4, topColor: styleOf(c.key).trim });
+function listingCard(c, n, x, y) {
+  const w = CARD_W, h = CARD_H, solar = c.kind === "solar", px = x + 10, pw = w - 20;
+  card(x, y, w, h, { r: 12, top: 4, topColor: styleOf(c.key).trim, ...(solar ? { fill: "#f6eed8", stroke: "#c9b27a" } : {}) });
   // la fachada ocupa lo de arriba de la tarjeta, con sus esquinas redondeadas
-  g.save(); rr(x, y, w, h, 14); g.clip();
-  facade(c.kind, x, y + 4, w, 168, { key: c.key, floor: c.floor, status: c.lease_kind, ribbon: c.free <= 0 });
+  g.save(); rr(x, y, w, h, 12); g.clip();
+  facade(c.kind, x, y + 4, w, FACADE_H, { key: c.key, floor: c.floor, status: c.lease_kind, theme: c.theme, barrio: c.barrio_key });
   g.restore();
-  if (c.free > 0) signBoard(x + 14, y + 22, false);
-  (c.badges || []).filter((b) => b === "chollo").forEach((b) => sticker(b, x + w - 46, y + 172 - 42, -0.12, 0.92));
-  const tag = `${c.m2} · ${c.floor}`, [t, z] = fit(tag, w - 130, F.d, 18, 13), tw = width(t, F.d(z)) + 20;
-  fillRR(x + 10, y + 172 - 34, tw, 26, 13, "rgba(27,42,53,0.84)"); T(t, x + 20, y + 172 - 20, { font: F.d(z), color: "#fff" });
-  let cy = y + 184;
-  const n = paragraph(c.title, x + 14, cy + 11, w - 28, F.m(23), 27, 2, { color: C.ink });
-  cy += n * 27 + 10;
-  fitText(c.price, x + 14, cy + 20, w - 28, F.d, 36, 22, { color: C.ink });
-  cy += 44;
-  fitText(`${c.rent} · ${c.yield} al año`, x + 14, cy + 11, w - 28, F.m, 22, 15, { color: C.mute });
-  cy += 30;
-  chip(c.status, x + 14, cy, c.status_kind, { size: 20, maxW: w - 28 });
-  cy += 36;
-  if (c.lease) { const kind = c.lease === "Alquilado" ? "green" : c.lease === "Vive su dueño" ? "blue" : /no paga|Okupado|Desahucio/.test(c.lease) ? "red" : "grey"; chip(c.lease, x + 14, cy, kind, { size: 17, maxW: w - 28 }); cy += 34; }
-  const room = y + h - (c.owners.length ? 50 : 14) - (cy + 4);
-  if (room >= 56) { const pool = KIND_TAGS[c.kind] || KIND_TAGS.bajo; hangTag(pool[hash(c.key) % pool.length], x + 14, cy + 6, w - 28, Math.min(room, 84), hash(c.key + "r") % 2 ? 0.012 : -0.012); }
-  if (c.owners.length) ownersLine(c.owners, c.free, x + 14, y + h - 36, w - 28, 17);
+  slotNumber(n, x + 24, y + 28, solar);
+  if (c.lease_kind) chip(LEASE_SHORT[c.lease_kind] || c.lease, x + w - 8, y + 12, c.lease_kind, { size: 19, align: "right", maxW: w - 60 });
+  if (c.key.startsWith("obra_")) tag("Obra nueva", x + 8, y + 4 + FACADE_H - 37, "orange", null, 19, w - 16);
+  if ((c.badges || []).includes("chollo")) sticker("chollo", x + w - 34, y + 4 + FACADE_H - 30, -0.12, 0.76);
+  const cy = y + 4 + FACADE_H + 16;
+  fitText(solar ? "Solar" : kindLabel(c.kind_name, pw), px, cy, pw, F.m, 20, 19, { color: C.ink });
+  if (solar) { paragraph(c.sign, px, cy + 28, pw, F.m(19), 24, 4, { color: C.mute }); return; }
+  fitText(c.price, px, cy + 30, pw, F.d, 30, 22, { color: C.ink });
+  chip(shortStatus(c.status), px, cy + 44, c.status_kind, { size: 19, maxW: pw });
+  if (c.owners.length) ownersBar(px, y + h - 22, pw, 9, c.owners, c.free);
 }
 
 function paintBarrio(st) {
   const b = st.barrio;
-  header(b.name, `${b.town} · ${b.island}`, { rightW: 250, right() {
+  header(b.name, [b.town, b.island, b.theme_name].filter(Boolean).join(" · "), { rightW: 250, right() {
     fillRR(W - 270, 14, 250, 60, 12, "rgba(255,255,255,0.14)"); rr(W - 270, 14, 250, 60, 12); g.strokeStyle = "rgba(255,255,255,0.3)"; g.lineWidth = 1.2; g.stroke();
-    T("Índice", W - 258, 32, { font: F.m(18), color: "#d6ecf5" });
+    T("Índice", W - 258, 32, { font: F.m(19), color: "#d6ecf5" });
     T(b.index, W - 258, 56, { font: F.d(26), color: "#fff" });
     T(b.change, W - 32, 52, { font: F.d(28), color: b.up ? "#7df0ac" : b.down ? "#ffa09a" : "#e3eaf0", align: "right" });
   } });
-  paragraph(b.blurb, 20, 118, 570, F.m(23), 29, 2, { color: C.ink });
-  card(678, 100, 306, 62, { r: 12, fill: "#e9f3f4" });
-  T("Precio medio", 694, 120, { font: F.m(18), color: C.mute });
-  fitText(b.price_m2, 694, 144, 280, F.d, 28, 18, { color: C.ink });
-  if (b.badge) sticker(b.badge, b.badge === "buitre" ? 612 : 634, 132, -0.1, 0.95);
-  // Tres del catálogo y, si el barrio tiene obra nueva, una cuarta más estrecha.
-  const cw = st.cards.length > 3 ? 230 : 312, ch = 430;
-  st.cards.forEach((c, i) => listingCard(c, 16 + i * (cw + 16), 174, cw, ch));
+  paragraph(b.blurb, 20, 112, 545, F.m(21), 26, 2, { color: C.ink });
+  card(678, 98, 306, 56, { r: 12, fill: "#e9f3f4" });
+  T("Precio medio", 694, 114, { font: F.m(19), color: C.mute });
+  fitText(b.price_m2, 694, 138, 280, F.d, 28, 22, { color: C.ink });
+  if (b.badge) sticker(b.badge, b.badge === "buitre" ? 626 : 634, 126, -0.1, 0.85);
+  const x0 = (W - BARRIO_COLS * CARD_W - (BARRIO_COLS - 1) * CARD_GAP) / 2;
+  st.cards.forEach((c, i) => listingCard(c, i + 1, x0 + (i % BARRIO_COLS) * (CARD_W + CARD_GAP), GRID_TOP + Math.floor(i / BARRIO_COLS) * (CARD_H + CARD_GAP)));
 }
 
 // FICHA ---------------------------------------------------------------------------------
@@ -2130,16 +2147,19 @@ const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, carte
 function paintScreen(st) {
   const draw = SCREENS[st.screen];
   if (!draw) throw new Error(`Pantalla desconocida: ${st.screen}`);
+  H = SCREEN_H[st.screen] ?? 640;
+  cur = surface(H); g = cur.g;
   g.setTransform(S, 0, 0, S, 0, 0);
   g.clearRect(0, 0, W, H);
   g.lineCap = "butt"; g.lineJoin = "miter"; g.globalAlpha = 1; g.setLineDash([]);
-  blit(cached("fondo", W, H, background), 0, 0, W, H);
+  blit(cached(`fondo:${H}`, W, H, background), 0, 0, W, H);
   draw(st);
   footer(st.footer);
 }
 
 function frame(st) {
   paintScreen(st);
+  const { big, out, octx } = cur;
   octx.clearRect(0, 0, W, H);
   octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
   octx.drawImage(big, 0, 0, W * S, H * S, 0, 0, W, H);
