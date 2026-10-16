@@ -58,6 +58,18 @@ Qué cuenta y dónde lo engancha (tipos de `bot.services.telemetry`):
   donde saltaron (`KeyError · bot/cogs/coin.py:_settle`).
 - `sql`: lo que tarda cada sentencia de cada repositorio (`economy · escritura`),
   recogido cada minuto de `bot.repositories.sqlite`.
+- `api`: lo que tarda cada llamada a Discord por ruta (`PUT /guilds/{guild_id}/members/
+  {user_id}/roles/{role_id}`: la plantilla de la ruta, sin IDs), con sus fallos.
+- `tarea`: cada vuelta de cada tarea programada (`tasks.loop`), con lo que tardó, si
+  falló y cuántas veces al día le toca (`Intereses.pay · 1/día`).
+- `conexion_inicial`: lo que tarda el bot desde que arranca el proceso hasta que
+  Discord le da paso (el primer `on_ready`).
+- `bot_mensaje` y `reaccion_bot`: mensajes del bot y reacciones a ellos, por canal:
+  qué avisos se leen.
+- Cada alta (`member`) guarda quién entra, para ver sus primeros pasos en el
+  informe (`nuevos`), con seudónimos como el resto.
+- Al publicar el informe diario, un resumen con lo que hay que vigilar del día
+  anterior (`telemetry.alerts`).
 
 Todo se suma en memoria y se escribe una vez por minuto (`TelemetryService.flush`),
 así que contar un clic nunca abre la base de datos antes de contestar a Discord.
@@ -133,6 +145,9 @@ CGROUP_MEMORY_FILES = (
 # CPU usada por el contenedor (cgroup v2, en µs) y matanzas por memoria (`oom_kill`).
 CGROUP_CPU_FILE = Path("/sys/fs/cgroup/cpu.stat")
 CGROUP_EVENTS_FILE = Path("/sys/fs/cgroup/memory.events")
+# Bytes leídos y escritos en disco por el contenedor y su límite de memoria.
+CGROUP_IO_FILE = Path("/sys/fs/cgroup/io.stat")
+CGROUP_MEMORY_MAX_FILE = Path("/sys/fs/cgroup/memory.max")
 # Archivos que se suben como imagen: los que cuentan para `imagen`.
 IMAGE_SUFFIXES = (".gif", ".png", ".webp", ".jpg", ".jpeg")
 # Error de Discord al contestar una interacción que ya ha caducado (3 s sin respuesta).
@@ -164,6 +179,9 @@ MAX_ARRIVALS = 500
 _item_names: dict[int, str] = {}
 # Atributo con el `perf_counter()` de cuando se creó cada vista.
 _BORN = "_telemetry_born"
+# Momento en que se importó este módulo: si no se puede leer la edad del proceso
+# (fuera de Linux), el arranque se cuenta desde aquí.
+_IMPORTED = time.monotonic()
 # Cuándo llegó cada interacción por su token, hasta que sube su primera imagen
 # (`imagen`). El token va en la ruta de las respuestas; el id, no siempre.
 _image_waits: dict[str, float] = {}
@@ -372,11 +390,9 @@ def _upload_size(file: discord.File) -> int:
 def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     @functools.wraps(original)
     async def request(self: Any, *args: Any, **kwargs: Any) -> Any:
+        route = args[0] if args else kwargs.get("route")
         files = kwargs.get("files") or ()
-        if not files:
-            return await original(self, *args, **kwargs)
         sizes = [_upload_size(file) for file in files]
-        name = telemetry_service.upload_name(files[0].filename or "archivo", sum(sizes))
         start = time.perf_counter()
         failed = True
         try:
@@ -385,9 +401,14 @@ def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awai
             return result
         finally:
             done = time.perf_counter()
-            telemetry_service.report_upload(name, (done - start) * 1000, error=failed)
-            if not failed:
-                _image_uploaded(args[0] if args else kwargs.get("route"), files, done)
+            telemetry_service.report_event(
+                "api", api_name(route), (done - start) * 1000, error=failed
+            )
+            if files:
+                name = telemetry_service.upload_name(files[0].filename or "archivo", sum(sizes))
+                telemetry_service.report_upload(name, (done - start) * 1000, error=failed)
+            if files and not failed:
+                _image_uploaded(route, files, done)
                 for file, size in zip(files, sizes, strict=True):
                     if (file.filename or "").lower().endswith(IMAGE_SUFFIXES):
                         # Los KB van en el campo de los ms: así salen la media y el máximo.
@@ -395,6 +416,18 @@ def _timed_upload(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awai
                         telemetry_service.report_event("peso", image, size / 1024)
 
     return request
+
+
+def api_name(route: Any) -> str:
+    """`PATCH /channels/{channel_id}/messages/{message_id}`: método y plantilla de la ruta.
+
+    La plantilla nunca lleva IDs ni tokens: discord.py los pone aparte.
+    """
+    method = getattr(route, "method", None)
+    path = getattr(route, "path", None)
+    if not isinstance(method, str) or not isinstance(path, str):
+        return "?"
+    return f"{method} {path}"
 
 
 def _image_uploaded(route: Any, files: Any, done: float) -> None:
@@ -409,6 +442,43 @@ def _image_uploaded(route: Any, files: Any, done: float) -> None:
     if arrived is not None:
         name = re.sub(r"[0-9]+", "#", image)
         telemetry_service.report_event("imagen", name, (done - arrived) * 1000)
+
+
+def _per_day(loop: tasks.Loop[Any]) -> str:
+    """Cuántas vueltas al día le tocan a `loop` (`24/día`), según su intervalo u horas."""
+    times = getattr(loop, "_time", None)
+    if isinstance(times, list) and times:
+        return f"{len(times)}/día"
+    seconds = (loop.seconds or 0) + (loop.minutes or 0) * 60 + (loop.hours or 0) * 3600
+    return f"{86400 / seconds:g}/día" if seconds else "?"
+
+
+def _counted_start(original: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(original)
+    def start(self: tasks.Loop[Any], *args: Any, **kwargs: Any) -> Any:
+        if not getattr(self.coro, _WRAPPED, False):
+            self.coro = _timed_task(self.coro, f"{self.coro.__qualname__} · {_per_day(self)}")
+        return original(self, *args, **kwargs)
+
+    return start
+
+
+def _timed_task(coro: Callable[..., Awaitable[Any]], name: str) -> Callable[..., Awaitable[Any]]:
+    @functools.wraps(coro)
+    async def run(*args: Any, **kwargs: Any) -> Any:
+        start = time.perf_counter()
+        failed = True
+        try:
+            result = await coro(*args, **kwargs)
+            failed = False
+            return result
+        finally:
+            telemetry_service.report_event(
+                "tarea", name, (time.perf_counter() - start) * 1000, error=failed
+            )
+
+    setattr(run, _WRAPPED, True)
+    return run
 
 
 def _lifetime(view: BaseView) -> float | None:
@@ -470,6 +540,8 @@ def install_hooks() -> None:
       los mensajes con archivos (los de las interacciones, por el segundo) y se
       mide lo que tarda la subida y, si es la primera imagen de una interacción,
       lo que ha esperado el miembro desde el clic (`imagen`);
+    - `tasks.Loop.start`: envuelve la función de cada tarea programada para medir
+      cada vuelta (`tarea`). Las que arrancan antes que este cog no se miden.
     - `BaseView.__init__`, `stop` y `_dispatch_timeout`: cada vista que se abre
       (`vista`), se para (`vista_cerrada`) o caduca sin pararse (`caducada`), con
       lo que duró.
@@ -490,6 +562,7 @@ def install_hooks() -> None:
     _wrap(BaseView, "_dispatch_timeout", _counted_timeout)
     _wrap(BaseView, "__init__", _counted_init)
     _wrap(BaseView, "stop", _counted_stop)
+    _wrap(tasks.Loop, "start", _counted_start)
 
 
 def message_types(message: discord.Message) -> list[str]:
@@ -514,8 +587,10 @@ def message_types(message: discord.Message) -> list[str]:
     return kinds
 
 
-def read_system_usage() -> tuple[float | None, float, int, int]:
-    """Memoria del contenedor y del proceso (MB) y procesos de Chromium y Node.
+def read_system_usage() -> tuple[float | None, float, int, int, float, float]:
+    """Memoria del contenedor y del proceso (MB), procesos de Chromium y Node y su memoria.
+
+    Devuelve `(contenedor, proceso, chromium, node, chromium_mb, node_mb)`.
 
     Lee `/sys` y `/proc`, así que es bloqueante: se llama con `asyncio.to_thread`.
     Fuera de Linux devuelve ceros y `None`.
@@ -535,6 +610,7 @@ def read_system_usage() -> tuple[float | None, float, int, int]:
                 rss_mb = int(line.split()[1]) / 1024
                 break
     chromium = node = 0
+    chromium_mb = node_mb = 0.0
     try:
         pids = [entry for entry in os.listdir("/proc") if entry.isdigit()]
     except OSError:
@@ -542,14 +618,27 @@ def read_system_usage() -> tuple[float | None, float, int, int]:
     for pid in pids:
         try:
             command = Path(f"/proc/{pid}/comm").read_text().strip()
+            if command not in CHROMIUM_NAMES and command not in NODE_NAMES:
+                continue
+            resident = _rss_mb(Path(f"/proc/{pid}/status").read_text())
         except OSError:
             # El proceso ha terminado entre listar y leer.
             continue
         if command in CHROMIUM_NAMES:
             chromium += 1
-        elif command in NODE_NAMES:
+            chromium_mb += resident
+        else:
             node += 1
-    return memory_mb, rss_mb, chromium, node
+            node_mb += resident
+    return memory_mb, rss_mb, chromium, node, chromium_mb, node_mb
+
+
+def _rss_mb(status: str) -> float:
+    """`VmRSS` de un `/proc/<pid>/status`, en MB (0 si no viene)."""
+    for line in status.splitlines():
+        if line.startswith("VmRSS:"):
+            return int(line.split()[1]) / 1024
+    return 0.0
 
 
 def read_container_usage(
@@ -559,7 +648,7 @@ def read_container_usage(
 
     Devuelve `(cpu_us, oom_kills, db_mb, disk_free_mb)`; lo que no se pueda leer
     (fuera de Linux, sin base de datos) sale `None`. Bloqueante: va en
-    `asyncio.to_thread`.
+    `asyncio.to_thread`. Lo leído y escrito en disco va aparte (`read_io_bytes`).
     """
     cpu_us: float | None = None
     oom_kills: int | None = None
@@ -579,6 +668,45 @@ def read_container_usage(
             db_mb = sum(path.stat().st_size for path in files if path.exists()) / 2**20
             disk_free_mb = shutil.disk_usage(database.parent).free / 2**20
     return cpu_us, oom_kills, db_mb, disk_free_mb
+
+
+def read_io_bytes() -> tuple[int, int] | None:
+    """Bytes leídos y escritos en disco por el contenedor desde que arrancó (`io.stat`).
+
+    Suma todos los discos. `None` fuera de Linux o sin cgroup v2. Bloqueante.
+    """
+    try:
+        text = CGROUP_IO_FILE.read_text()
+    except OSError:
+        return None
+    read = written = 0
+    for line in text.splitlines():
+        for field in line.split()[1:]:
+            key, _, value = field.partition("=")
+            if key == "rbytes" and value.isdigit():
+                read += int(value)
+            elif key == "wbytes" and value.isdigit():
+                written += int(value)
+    return read, written
+
+
+def read_memory_limit_mb() -> float | None:
+    """El `mem_limit` del contenedor en MB (`memory.max`); `None` si no hay o no se lee."""
+    try:
+        value = CGROUP_MEMORY_MAX_FILE.read_text().strip()
+    except OSError:
+        return None
+    return int(value) / 2**20 if value.isdigit() else None
+
+
+def process_age_seconds() -> float:
+    """Segundos desde que arrancó el proceso (`/proc/self/stat`), o desde que se importó esto."""
+    try:
+        start_ticks = int(Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()[19])
+        uptime = float(Path("/proc/uptime").read_text().split()[0])
+        return max(0.0, uptime - start_ticks / os.sysconf("SC_CLK_TCK"))
+    except (OSError, ValueError, IndexError, AttributeError):
+        return time.monotonic() - _IMPORTED
 
 
 def cpu_count() -> int:
@@ -709,8 +837,10 @@ def save_report(folder: Path, name: str, data: str, *, keep: int = KEPT_REPORTS)
         old.unlink(missing_ok=True)
 
 
-async def publish_report(channel: NewsTarget, name: str, data: str) -> bool:
-    """Sube el informe `name` a `channel`, salvo que el último mensaje ya sea ese.
+async def publish_report(
+    channel: NewsTarget, name: str, data: str, summary: str | None = None
+) -> bool:
+    """Sube el informe `name` a `channel` con su resumen, salvo que el último mensaje ya sea ese.
 
     Así un reinicio el mismo día no lo repite. Devuelve si quedó publicado.
     """
@@ -718,7 +848,11 @@ async def publish_report(channel: NewsTarget, name: str, data: str) -> bool:
         async for last in channel.history(limit=1):
             if any(attachment.filename == name for attachment in last.attachments):
                 return True
-        await channel.send(file=discord.File(io.BytesIO(data.encode()), filename=name))
+        await channel.send(
+            summary,
+            file=discord.File(io.BytesIO(data.encode()), filename=name),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
     except discord.HTTPException:
         logger.warning("No se pudo publicar el informe diario", exc_info=True)
         return False
@@ -772,6 +906,9 @@ class Telemetry(commands.Cog):
         # Última lectura de CPU del contenedor (µs, `perf_counter`) y de `oom_kill`.
         self._last_cpu: tuple[float, float] | None = None
         self._last_oom: int | None = None
+        # Última lectura de bytes de disco del contenedor, para sacar lo de cada minuto.
+        self._last_io: tuple[int, int] | None = None
+        self._connected_once = False
 
     async def cog_load(self) -> None:
         """Engancha discord.py, el log y las escenas, y arranca los volcados."""
@@ -900,7 +1037,11 @@ class Telemetry(commands.Cog):
                 await asyncio.to_thread(save_report, REPORTS_DIR, name, data)
             except OSError:
                 logger.warning("No se pudo guardar el informe diario", exc_info=True)
-        return channel is not None and await publish_report(channel, name, data)
+        if channel is None:
+            return False
+        limit = await asyncio.to_thread(read_memory_limit_mb)
+        summary = telemetry_service.alerts_text(report, memory_limit_mb=limit)
+        return await publish_report(channel, name, data, summary)
 
     @export_loop.before_loop
     async def _before_export(self) -> None:
@@ -917,7 +1058,10 @@ class Telemetry(commands.Cog):
                         )
 
     async def _sample_system(self) -> None:
-        memory_mb, rss_mb, chromium, node = await asyncio.to_thread(read_system_usage)
+        memory_mb, rss_mb, chromium, node, chromium_mb, node_mb = await asyncio.to_thread(
+            read_system_usage
+        )
+        io_read_mb, io_write_mb = self._io_mb(await asyncio.to_thread(read_io_bytes))
         repository = self.telemetry.repository
         database = repository.database_path if repository is not None else None
         cpu_us, oom_kills, db_mb, disk_free_mb = await asyncio.to_thread(
@@ -944,9 +1088,23 @@ class Telemetry(commands.Cog):
                 cpu_pct=self._cpu_pct(cpu_us),
                 db_mb=db_mb,
                 disk_free_mb=disk_free_mb,
+                chromium_mb=chromium_mb if chromium else None,
+                node_mb=node_mb if node else None,
+                io_read_mb=io_read_mb,
+                io_write_mb=io_write_mb,
+                tasks=len(asyncio.all_tasks()),
             )
         )
         self._max_lag_ms = 0.0
+
+    def _io_mb(self, totals: tuple[int, int] | None) -> tuple[float | None, float | None]:
+        """MB leídos y escritos en disco desde la lectura anterior."""
+        if totals is None:
+            return None, None
+        last, self._last_io = self._last_io, totals
+        if last is None or totals[0] < last[0] or totals[1] < last[1]:
+            return None, None
+        return (totals[0] - last[0]) / 2**20, (totals[1] - last[1]) / 2**20
 
     def _cpu_pct(self, cpu_us: float | None) -> float | None:
         """CPU del contenedor desde la lectura anterior, sobre todos los hilos (0-100)."""
@@ -1011,6 +1169,10 @@ class Telemetry(commands.Cog):
         if message.guild is None:
             return
         if message.author.bot:
+            if message.author == self.bot.user:
+                self.telemetry.count(
+                    "bot_mensaje", str(message.channel.id), guild_id=message.guild.id
+                )
             # «Uso: `.comando …`» del propio bot: alguien escribió mal ese comando.
             if message.author == self.bot.user and message.content.startswith(USAGE_PREFIX):
                 found = USAGE_COMMAND.search(message.content)
@@ -1032,16 +1194,30 @@ class Telemetry(commands.Cog):
         self.telemetry.count(
             "reaction", str(payload.channel_id), guild_id=payload.guild_id, user_id=payload.user_id
         )
+        me = self.bot.user
+        if me is not None and payload.message_author_id == me.id:
+            self.telemetry.count(
+                "reaccion_bot",
+                str(payload.channel_id),
+                guild_id=payload.guild_id,
+                user_id=payload.user_id,
+            )
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        """Cuenta una conexión con Discord (al arrancar y tras perder la sesión)."""
+        """Cuenta una conexión con Discord; la primera, con lo que tardó el arranque."""
         self.telemetry.count("gateway", "conectada", guild_id=None)
+        if not self._connected_once:
+            self._connected_once = True
+            age = await asyncio.to_thread(process_age_seconds)
+            self.telemetry.count(
+                "conexion_inicial", "hasta conectar", guild_id=None, ms=age * 1000
+            )
 
     @commands.Cog.listener()
     async def on_disconnect(self) -> None:
-        """Cuenta un corte de la conexión con Discord."""
-        self.telemetry.count("gateway", "desconexion", guild_id=None)
+        """Cuenta un corte de la conexión con Discord (como error: así sale por día)."""
+        self.telemetry.count("gateway", "desconexion", guild_id=None, error=True)
 
     @commands.Cog.listener()
     async def on_resumed(self) -> None:
@@ -1050,8 +1226,8 @@ class Telemetry(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
-        """Cuenta un alta en el servidor."""
-        self.telemetry.count("member", "alta", guild_id=member.guild.id)
+        """Cuenta un alta en el servidor, con quién: sus primeros pasos salen en `nuevos`."""
+        self.telemetry.count("member", "alta", guild_id=member.guild.id, user_id=member.id)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
