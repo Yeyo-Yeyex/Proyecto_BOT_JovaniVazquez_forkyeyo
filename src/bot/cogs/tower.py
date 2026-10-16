@@ -36,10 +36,13 @@ apuesta (½, ×2, 💰 All-in) y la dificultad. Si no hay Node ni navegador para
 pintar, la torre vuelve a dibujarse con texto (`TowerBoard.tower_text`): cada
 clic es entonces una edición de texto y botones, instantánea.
 
-El mensaje usa los componentes nuevos de Discord (`LayoutView`): un bloque con
-el texto, la imagen y una sola fila de puertas (las del piso actual), una fila
-de controles y el menú de dificultad. Ancho de banda: cada jugada sube un GIF
-(~0,5-1,5 MB) y un PNG.
+El mensaje es un embed con el texto y la imagen, como los demás juegos del
+casino, y debajo una fila de puertas (las del piso actual), una de controles y
+el menú de dificultad. No usa los componentes nuevos (`LayoutView` con
+`MediaGallery`): con ellos, al cambiar del GIF al PNG, Discord de PC volvía a
+reproducir el GIF viejo desde el principio hasta cargar el PNG y se veían
+fotogramas mezclados. Ancho de banda: cada jugada sube un GIF (~0,5-1,5 MB) y
+un PNG.
 
 Reglas en `bot.services.tower`. Dinero: la apuesta se cobra al empezar
 (`place_bet`) y se paga al cobrar o al quemarse (`pay_winnings`, con 0 si te
@@ -181,7 +184,7 @@ def percent(chance: float) -> str:
     return f"{round(chance * 100)} %"
 
 
-class TowerBoard(ui.LayoutView):
+class TowerBoard(ui.View):
     """La torre de un jugador: el texto con los pisos, las puertas y los controles.
 
     Guarda la partida en curso (o la última), la apuesta y la dificultad. No
@@ -220,8 +223,8 @@ class TowerBoard(ui.LayoutView):
         self.waiting: str | None = None
         #: Mientras se enseña una jugada, los clics se aceptan sin hacer nada.
         self._busy = False
-        self._text: ui.TextDisplay | None = None
-        self._gallery: ui.MediaGallery | None = None
+        #: Lo que enseña el mensaje: se monta en `rebuild` y `_hold` lo retoca.
+        self.embed = discord.Embed()
         #: Lo pintado por adelantado: la clave (`_plan_key`) y una imagen por botón.
         self._plan: tuple[tuple[Any, ...], dict[str, asyncio.Future[Any]]] | None = None
         self._painting: asyncio.Task[None] | None = None
@@ -350,6 +353,7 @@ class TowerBoard(ui.LayoutView):
             style=discord.ButtonStyle.secondary,
             disabled=game is None or not game.playing,
             custom_id=f"{GAME}:pick:{door}",
+            row=0,
         )
         button.callback = self._door_callback(door)  # type: ignore[method-assign]
         return button
@@ -365,7 +369,7 @@ class TowerBoard(ui.LayoutView):
     ) -> ui.Button:
         """Un botón de la fila de controles."""
         button: ui.Button = ui.Button(
-            label=label, style=style, disabled=disabled, custom_id=f"{GAME}:{custom_id}"
+            label=label, style=style, disabled=disabled, custom_id=f"{GAME}:{custom_id}", row=1
         )
         button.callback = callback  # type: ignore[method-assign]
         return button
@@ -375,44 +379,32 @@ class TowerBoard(ui.LayoutView):
         self.clear_items()
         game = self.game
         shown = game.difficulty if game is not None else self.difficulty
-        container = ui.Container(accent_colour=self.color())
-        self._text = ui.TextDisplay(self.header())
-        container.add_item(self._text)
-        self._gallery = None
+        self.embed = discord.Embed(description=self.header(), color=self.color())
         if self.image is not None:
-            self._gallery = ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{self.image}"))
-            container.add_item(self._gallery)
-        container.add_item(ui.Separator())
-        doors: ui.ActionRow = ui.ActionRow()
+            self.embed.set_image(url=f"attachment://{self.image}")
         for door in range(shown.width):
-            doors.add_item(self.door_button(door))
-        container.add_item(doors)
-        self.add_item(container)
+            self.add_item(self.door_button(door))
 
-        controls: ui.ActionRow = ui.ActionRow()
         green, blue = discord.ButtonStyle.success, discord.ButtonStyle.primary
         if game is not None and game.playing:
             label = f"💰 Cobrar {format_amount(game.cashout_value)}" if game.floor else "💰 Cobrar"
-            controls.add_item(
+            self.add_item(
                 self.control_button(
                     label, "cashout", self._cash_out, style=green, disabled=not game.floor
                 )
             )
-            controls.add_item(self.control_button("🎲 Al azar", "random", self._random, style=blue))
+            self.add_item(self.control_button("🎲 Al azar", "random", self._random, style=blue))
         else:
-            controls.add_item(
+            self.add_item(
                 self.control_button(
                     f"🔁 Jugar · {format_amount(self.stake)}", "again", self._again, style=green
                 )
             )
-            controls.add_item(self.control_button("½", "half", self._halve))
-            controls.add_item(self.control_button("×2", "x2", self._double))
-            controls.add_item(self.control_button("💰 All-in", "allin", self._all_in))
-        self.add_item(controls)
+            self.add_item(self.control_button("½", "half", self._halve))
+            self.add_item(self.control_button("×2", "x2", self._double))
+            self.add_item(self.control_button("💰 All-in", "allin", self._all_in))
         if self._level_editable():
-            level_row: ui.ActionRow = ui.ActionRow()
-            level_row.add_item(self.level_select())
-            self.add_item(level_row)
+            self.add_item(self.level_select())
 
     def level_select(self) -> ui.Select:
         """Menú de dificultad, con puertas, dragones y el premio de coronar en cada opción."""
@@ -426,7 +418,7 @@ class TowerBoard(ui.LayoutView):
             for d in DIFFICULTIES
         ]
         select: ui.Select = ui.Select(
-            custom_id=f"{GAME}:nivel", options=options, placeholder="Elige la dificultad"
+            custom_id=f"{GAME}:nivel", options=options, placeholder="Elige la dificultad", row=2
         )
 
         async def callback(interaction: discord.Interaction) -> None:
@@ -469,9 +461,11 @@ class TowerBoard(ui.LayoutView):
         self.disable_all()
         try:
             if self._last_interaction is not None:
-                await self._last_interaction.edit_original_response(view=self, **files)
+                await self._last_interaction.edit_original_response(
+                    embed=self.embed, view=self, **files
+                )
             elif self.message is not None:
-                await self.message.edit(view=self, **files)
+                await self.message.edit(embed=self.embed, view=self, **files)
         except discord.HTTPException:
             logger.debug("No se pudo cerrar la torre del dragón", exc_info=True)
 
@@ -668,7 +662,7 @@ class TowerBoard(ui.LayoutView):
                 self.note = None
             self._last_interaction = interaction
             self.rebuild()
-            await edit(interaction, view=self)
+            await edit(interaction, embed=self.embed, view=self)
         if not game.playing:
             await self._after_game(interaction, game, settlement)
 
@@ -702,7 +696,7 @@ class TowerBoard(ui.LayoutView):
                 self._last_interaction = interaction
                 if self.image is None:
                     self.rebuild()
-                    await edit(interaction, view=self)
+                    await edit(interaction, embed=self.embed, view=self)
             if self.image is not None:
                 await self._show(
                     interaction, ready, lambda: self.cog.renderer.cashout(before), "# 💰 Cobrando…"
@@ -754,7 +748,7 @@ class TowerBoard(ui.LayoutView):
             await self._present(interaction, ready, paint)
             return
         self.rebuild()
-        await edit(interaction, view=self)
+        await edit(interaction, embed=self.embed, view=self)
         # La apuesta o la dificultad de 🔁 han cambiado: se pinta la partida nueva.
         self.prepare()
 
@@ -844,13 +838,13 @@ class TowerBoard(ui.LayoutView):
         """Apaga los controles sin rehacerlos y pone el texto de espera (y `image`).
 
         Rehacerlos delataría el resultado: las etiquetas nuevas (💰 Cobrar 840 Y$,
-        🔁 Jugar) saldrían antes que el GIF.
+        🔁 Jugar) saldrían antes que el GIF. Por lo mismo, el embed conserva el
+        color de antes de jugar (el rojo de quemarse delataría el dragón).
         """
         self.waiting = waiting
-        if self._text is not None:
-            self._text.content = self.header()
-        if image is not None and self._gallery is not None:
-            self._gallery.items = [discord.MediaGalleryItem(f"attachment://{image}")]
+        self.embed.description = self.header()
+        if image is not None and self.embed.image.url is not None:
+            self.embed.set_image(url=f"attachment://{image}")
         self.disable_all()
 
     async def _show(
@@ -872,7 +866,7 @@ class TowerBoard(ui.LayoutView):
 
             async def show_waiting() -> None:
                 try:
-                    await edit(interaction, view=self)
+                    await edit(interaction, embed=self.embed, view=self)
                 except discord.HTTPException:
                     logger.warning("No se pudo apagar la Torre del dragón", exc_info=True)
 
@@ -886,11 +880,12 @@ class TowerBoard(ui.LayoutView):
             self.waiting = None
             self.image = None
             self.rebuild()
-            await edit(interaction, view=self, attachments=[])
+            await edit(interaction, embed=self.embed, view=self, attachments=[])
             return
         self._hold(waiting, image=GIF_NAME)
         await edit(
             interaction,
+            embed=self.embed,
             view=self,
             attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
         )
@@ -903,6 +898,7 @@ class TowerBoard(ui.LayoutView):
         self.rebuild()
         await edit(
             interaction,
+            embed=self.embed,
             view=self,
             attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
         )
@@ -916,14 +912,14 @@ class TowerBoard(ui.LayoutView):
         """Pone la imagen quieta de la partida nueva (la pintada por adelantado, si está)."""
         if self.image is None:
             self.rebuild()
-            await edit(interaction, view=self)
+            await edit(interaction, embed=self.embed, view=self)
             return
         png = await ready if ready is not None else None
         png = png or await paint()
         self.image = PNG_NAME if png is not None else None
         self.rebuild()
         files = [discord.File(io.BytesIO(png), filename=PNG_NAME)] if png is not None else []
-        await edit(interaction, view=self, attachments=files)
+        await edit(interaction, embed=self.embed, view=self, attachments=files)
         self.prepare()
 
     def _plan_key(self) -> tuple[Any, ...]:
@@ -1170,7 +1166,7 @@ class Tower(commands.Cog, name="Torre"):
         # llega tarde), se devuelve en el acto en vez de quedarse sin mesa que la cierre.
         self.boards.add(board)
         try:
-            board.message = await send(view=board, **extra)
+            board.message = await send(embed=board.embed, view=board, **extra)
         except discord.HTTPException:
             self.boards.discard(board)
             await board.force_settle()

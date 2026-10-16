@@ -20,6 +20,8 @@ from bot.cogs.tower import (
     BOOM,
     BURN_LINES,
     CASH_LINES,
+    COLOR_BURNED,
+    COLOR_PLAYING,
     DRAGON,
     EGG,
     TOP_LINES,
@@ -547,8 +549,10 @@ async def test_con_imagen_la_torre_sale_con_su_png_y_sin_la_torre_de_texto(
     (board,) = cog.boards
     assert send.await_args.kwargs["file"].filename == "torre.png"
     assert board.image == "torre.png"
-    galleries = [i for i in board.walk_children() if isinstance(i, ui.MediaGallery)]
-    assert [g.items[0].media.url for g in galleries] == ["attachment://torre.png"]
+    # Embed como los demás juegos: con `MediaGallery`, Discord de PC repetía el GIF
+    # viejo al cambiar al PNG y se mezclaban fotogramas.
+    assert send.await_args.kwargs["embed"].image.url == "attachment://torre.png"
+    assert not isinstance(board, ui.LayoutView)
     # La imagen ya enseña la torre: el texto no la repite.
     assert not [ln for ln in board.header().splitlines() if "`" in ln]
 
@@ -578,6 +582,28 @@ async def test_subir_un_piso_ensena_el_gif_y_despues_el_png_sin_delatar_nada(
     assert "Saldo" in seen[2]
     assert board.game is not None and board.game.floor == 1
     assert not board._busy and board.image == "torre.png"
+
+
+async def test_el_embed_del_gif_no_delata_el_dragon_y_el_png_si(tmp_path: Path) -> None:
+    cog = await image_cog(tmp_path)
+    board = await open_board(cog)
+    place(board, {0})
+    interaction = make_interaction()
+    seen: list[tuple[str | None, object]] = []
+
+    async def spy(**kwargs: object) -> None:
+        embed = kwargs["embed"]
+        assert isinstance(embed, discord.Embed)
+        seen.append((embed.image.url, embed.color))
+
+    interaction.edit_original_response = AsyncMock(side_effect=spy)
+    await board._climb(interaction, 0)  # dragón
+    # Mientras se ve el GIF, el color de antes de jugar; el rojo, con el PNG.
+    assert seen == [
+        ("attachment://torre.png", COLOR_PLAYING),
+        ("attachment://torre.gif", COLOR_PLAYING),
+        ("attachment://torre.png", COLOR_BURNED),
+    ]
 
 
 async def test_quemarse_cobra_y_acaba_con_el_png_de_la_torre_destapada(tmp_path: Path) -> None:
