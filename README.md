@@ -163,12 +163,13 @@ python -m bot
   7.000.000 Y$ (los 700.000 € reales a 10 Y$ por euro) entre efectivo, pisos y
   objetos de la tienda, con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley
   19/1991) y el límite conjunto con el IRPF de la semana (art. 31: nunca más del
-  60 % de la renta, pagando al menos el 20 %). Quien pasa de 37.000.000 Y$ declara
+  60 % de la renta, pagando al menos la mitad). Quien pasa de 37.000.000 Y$ declara
   además las Grandes Fortunas, que en Canarias salen a cero. `saldo` avisa de lo
   que te tocaría y el bot anuncia quién ha pagado. La primera semana tras
   desplegarlo no cobra.
 - **Pisos (`pisos`):** un panel que es solo imágenes con el mercado inmobiliario
-  de 20 barrios de Gran Canaria y Tenerife (60 inmuebles, uno de cada en el
+  de 20 barrios de Gran Canaria y Tenerife, cada uno con su carácter (180
+  inmuebles de 19 tipos, del trastero a la cueva o el amarre, uno de cada en el
   servidor, a precio real × 10). Se compran participaciones (del 1 % al inmueble
   entero) con su ITP del 6,5 %, los inquilinos ficticios pagan cada noche un mes
   de alquiler (un día del bot es un mes) con su IRPF, IBI y comunidad, y se vende

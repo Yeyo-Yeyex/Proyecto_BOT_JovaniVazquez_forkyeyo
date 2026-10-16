@@ -7,7 +7,10 @@ raíz). La comparación con Chromium se salta también si no hay navegador.
 from __future__ import annotations
 
 import asyncio
+import copy
 import io
+import itertools
+import json
 import random
 import time
 from datetime import date
@@ -24,14 +27,26 @@ from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.browser_scene import BrowserScene
-from bot.services.housing_catalog import LISTING_BY_KEY, LISTINGS
-from bot.services.housing_scene import SCENE, H, HousingScene, W
+from bot.services.housing_catalog import (
+    BARRIO_BY_KEY,
+    BARRIOS,
+    KINDS,
+    LISTING_BY_KEY,
+    LISTINGS,
+    THEMES,
+)
+from bot.services.housing_scene import SCENE, SCREEN_H, H, HousingScene, W
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
 NO_CHROMIUM = "/no/existe/chromium"
 NO_NODE = "/no/existe/node"
-SIZE = (W, H)
 META = {"w": W, "h": H}
+
+
+def size_of(state: dict[str, Any]) -> tuple[int, int]:
+    """Lo que mide una pantalla: 1000 × 640, salvo el barrio (1000 × 760, diez tarjetas)."""
+    return W, SCREEN_H.get(state["screen"], H)
+
 
 #: Un inmueble de cada tipo, para que se dibujen todas las fachadas.
 BY_KIND = {
@@ -79,7 +94,7 @@ def market() -> Market:
     for owner, shares in ((40, 12), (50, 9), (60, 7)):
         crowded[owner] = Holding(LISTINGS[0].key, owner, shares, 1, 1, 0)
     return Market(
-        indexes={"schamann": 1.08, "adeje": 0.97, "vegueta": 1.0, "canteras": 1.0003},
+        indexes={"schamann": 1.04, "adeje": 0.97, "vegueta": 1.0, "canteras": 1.0003},
         holdings=holdings,
         leases=leases,
     )
@@ -150,7 +165,7 @@ def money_market() -> Market:
 
 
 def promotion_market() -> Market:
-    """Schamann con su obra nueva: cuatro tarjetas en el barrio."""
+    """Schamann con su obra nueva: sus nueve inmuebles y la promoción en la décima tarjeta."""
     listing = rules.new_promotion(1, ["schamann"], random.Random(7))
     return Market(
         promotions={listing.key: Promotion(listing, 10, date(2026, 10, 19))},
@@ -161,7 +176,7 @@ def promotion_market() -> Market:
 def bubble_market() -> Market:
     """Un barrio en burbuja, otro a precio de fondo buitre, uno tensionado y un chollo."""
     return Market(
-        indexes={"vegueta": 1.45, "isleta": 0.8, "schamann": 1.12, "adeje": 1.31, "tafira": 0.86},
+        indexes={"vegueta": 1.45, "isleta": 0.8, "schamann": 1.07, "adeje": 1.31, "tafira": 0.86},
         holdings={"vegueta_edificio": {10: Holding("vegueta_edificio", 10, 50, 1, 1, 0)}},
         leases={"vegueta_edificio": rules.Lease(status="okupa")},
     )
@@ -215,6 +230,45 @@ def money_samples() -> dict[str, dict[str, Any]]:
     }  # fmt: skip
 
 
+#: Un barrio de cada tema, para ver todos los tipos de inmueble con el paisaje de cada uno.
+THEME_BARRIO = {
+    "marinero": "isleta",
+    "historico": "vegueta",
+    "centro": "triana",
+    "obrero": "schamann",
+    "playa": "canteras",
+    "lujo": "mogan",
+    "rural": "tafira",
+}
+#: Los 19 tipos de inmueble y el solar de la obra nueva.
+FACADE_KINDS = (*KINDS, "solar")
+#: Dónde pinta la ficha la fachada (columna A): (izquierda, arriba, derecha, abajo).
+FACADE_BOX = (16, 100, 16 + 296, 100 + 168)
+
+
+def facade_state(kind: str, barrio: str, key: str | None = None) -> dict[str, Any]:
+    """Una ficha con la fachada de `kind` en `barrio`, sin el cartel de «Se vende»."""
+    base = view.listing_state(Market(), "schamann_bajo", 10, NAMES, [])
+    return {
+        **base,
+        "kind": kind,
+        "key": key or (f"solar_{barrio}" if kind == "solar" else f"{barrio}_{kind}"),
+        "barrio_key": barrio,
+        "theme": BARRIO_BY_KEY[barrio].theme,
+        "free": 0,
+        "owners": [],
+    }
+
+
+def facade_samples() -> dict[str, dict[str, Any]]:
+    """Cada tipo en un tema distinto (dándoles la vuelta): para Node contra Chromium."""
+    themes = list(THEME_BARRIO.values())
+    return {
+        f"fachada_{kind}": facade_state(kind, themes[n % len(themes)])
+        for n, kind in enumerate(FACADE_KINDS)
+    }
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
@@ -266,6 +320,8 @@ def samples() -> dict[str, dict[str, Any]]:
     out["ficha_muchos_duenos"] = view.listing_state(m, LISTINGS[0].key, 10, NAMES, NEWS)
     out["ficha_desahucio"] = view.listing_state(m, LISTINGS[3].key, 10, NAMES, [])
     out["barrio_isleta"] = view.barrio_state(m, "isleta", 10, NAMES)
+    # El peor caso de los precios: el barrio más caro con el índice por las nubes (8 dígitos).
+    out["barrio_caro"] = view.barrio_state(Market(indexes={"adeje": 3.0}), "adeje", 10, NAMES)
     obra = promotion_market()
     out["barrio_obra_nueva"] = view.barrio_state(obra, "schamann", 10, NAMES)
     out["ficha_obra_nueva"] = view.listing_state(obra, "obra_1", 10, NAMES, [])
@@ -300,6 +356,7 @@ def samples() -> dict[str, dict[str, Any]]:
     )
     out.update(money_samples())
     out.update(mood_samples())
+    out.update(facade_samples())
     return out
 
 
@@ -325,14 +382,17 @@ CORE = [
 ]
 
 
-def png_image(png: bytes) -> Image.Image:
+def png_image(png: bytes, state: dict[str, Any]) -> Image.Image:
+    """Abre el PNG de la pantalla `state` y comprueba que mide lo que le toca (`size_of`)."""
     image = Image.open(io.BytesIO(png))
-    assert image.format == "PNG" and image.size == SIZE
+    assert image.format == "PNG" and image.size == size_of(state)
     return image.convert("RGB")
 
 
 def difference(a: Image.Image, b: Image.Image) -> float:
-    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+    """Diferencia media por canal (0-255) en el recuadro que tienen en común."""
+    box = (0, 0, min(a.width, b.width), min(a.height, b.height))
+    return sum(ImageStat.Stat(ImageChops.difference(a.crop(box), b.crop(box))).mean) / 3
 
 
 # -- Lo que decide la vista para las pegatinas --------------------------------------------
@@ -359,7 +419,7 @@ def test_cada_pantalla_lleva_lo_que_la_escena_dibuja() -> None:
     assert states["barrio_buitre"]["barrio"]["badge"] == "buitre"
     assert states["barrio_tensionada"]["barrio"]["badge"] == "tensionada"
     assert states["barrio_schamann"]["barrio"]["badge"] is None
-    assert {c["lease_kind"] for c in states["barrio_burbuja"]["cards"]} >= {"okupa", ""}
+    assert {c.get("lease_kind") for c in states["barrio_burbuja"]["cards"]} >= {"okupa", ""}
     pins = {p["key"]: p for isl in states["mapa_mercado"]["islands"] for p in isl["barrios"]}
     assert pins["schamann"]["tense"] and pins["vegueta"]["tense"] and not pins["isleta"]["tense"]
     assert states["ficha_burbuja"]["badges"] == ["burbuja"]
@@ -367,8 +427,32 @@ def test_cada_pantalla_lleva_lo_que_la_escena_dibuja() -> None:
     assert states["caja_compra"]["key"] == "schamann_bajo"
     cartera = states["cartera_solo_vpo"]
     assert cartera["items"][0]["badges"] == ["vpo"]
-    assert len(states["barrio_obra_nueva"]["cards"]) == 4
     assert states["ficha_obra_nueva"]["title"].startswith("Obra nueva")
+
+
+def test_cada_barrio_lleva_diez_tarjetas_con_la_obra_nueva_o_el_solar_la_ultima() -> None:
+    """La imagen es una rejilla de 5 × 2 y cada tarjeta tiene su botón (`pisos:ver:N`)."""
+    states = samples()
+    barrios = {name: state for name, state in states.items() if state["screen"] == "barrio"}
+    assert len(barrios) >= 8
+    for name, state in barrios.items():
+        cards = state["cards"]
+        assert len(cards) == view.BARRIO_SLOTS == 10, name
+        assert all(card["kind"] != "solar" for card in cards[:9]), name
+        assert all({"kind_name", "barrio_key", "theme", "key"} <= card.keys() for card in cards)
+        assert state["barrio"]["theme_name"], name
+    obra, sin_obra = states["barrio_obra_nueva"]["cards"], states["barrio_isleta"]["cards"]
+    assert obra[9]["key"] == "obra_1" and obra[9]["kind"] != "solar" and obra[9]["price"]
+    # El solar no se compra: sin precio, sin estado ni dueños, solo su cartel.
+    assert sin_obra[9]["kind"] == "solar" and sin_obra[9]["kind_name"] == "Solar"
+    assert sin_obra[9]["sign"] and not {"price", "status", "owners"} & sin_obra[9].keys()
+
+
+def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
+    """1000 × 760 para el barrio (10 tarjetas) y 1000 × 640 para las demás pantallas."""
+    assert (W, H) == (1000, 640) and SCREEN_H == {"barrio": 760}
+    assert size_of({"screen": "barrio"}) == (1000, 760)
+    assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------
@@ -383,8 +467,8 @@ async def test_sin_node_ni_chromium_cada_pantalla_cae_a_pillow() -> None:
         await scene.close()
     assert scene.disabled
     assert len(pngs) == len(samples())
-    for png in [*pngs, still]:
-        assert len(png_image(png).getcolors(1 << 20) or []) > 20
+    for state, png in zip([*samples().values(), CORE[0]], [*pngs, still], strict=True):
+        assert len(png_image(png, state).getcolors(1 << 20) or []) > 20
 
 
 async def test_sin_estados_no_se_pinta_nada() -> None:
@@ -414,7 +498,7 @@ async def test_con_node_cada_pantalla_es_un_png_del_tamano_y_distinta(scene: Hou
     states = list(samples().values())
     pngs = await scene.paint(states)
     assert not scene.painter.disabled and len(pngs) == len(states)
-    images = [png_image(png) for png in pngs]
+    images = [png_image(png, state) for png, state in zip(pngs, states, strict=True)]
     for image in images:
         assert len(image.getcolors(1 << 20) or []) > 1000
     for first, other in zip(images, images[1:], strict=False):
@@ -431,7 +515,7 @@ async def test_con_node_una_pantalla_desconocida_desactiva_el_pintor() -> None:
     finally:
         await other.close()
     assert other.painter.disabled
-    png_image(png)  # cae a Pillow
+    png_image(png, {"screen": "nada"})  # cae a Pillow, con las medidas de una pantalla corriente
 
 
 @needs_node
@@ -440,18 +524,18 @@ async def test_las_pantallas_repartidas_pintan_lo_mismo_que_con_un_proceso(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cada pantalla es entera: repartir el dibujo entre procesos no cambia ni un byte."""
-    states = CORE * 4
+    states = CORE * 4 + list(facade_samples().values())
     node = own_node()
     sharing = HousingScene(executable_path=NO_CHROMIUM, node=node)
     try:
         # Abre los procesos de refuerzo: sin ellos, el primero lo pintaría todo.
-        assert await sharing.painter.render(META, states[:8]) is not None
+        assert await sharing.painter.render(META, states[:8], gif=False) is not None
         pool = node_scene._pool(node)
         deadline = time.monotonic() + 20
         while len([w for w in pool.workers if w.alive and not w.busy]) < 3:
             assert time.monotonic() < deadline, "No se han abierto los procesos de refuerzo"
             await asyncio.sleep(0.05)
-        alone = await sharing.painter.render(META, states, procs=1)
+        alone = await sharing.painter.render(META, states, procs=1, gif=False)
         assert alone is not None
         setups: list[str] = []
         call = node_scene._Process.call
@@ -461,18 +545,183 @@ async def test_las_pantallas_repartidas_pintan_lo_mismo_que_con_un_proceso(
             return await call(self, request, **kw)
 
         monkeypatch.setattr(node_scene._Process, "call", counted)
-        split = await sharing.painter.render(META, states)
+        split = await sharing.painter.render(META, states, gif=False)
         assert split is not None
         # Cada tramo empieza con su `setup`: con uno solo no se habría repartido.
         assert len(setups) > 1, "El dibujo no se ha repartido"
         pngs = await sharing.paint(states)
         assert len(split) == len(alone) == len(pngs) == len(states)
-        for a, b, png in zip(split, alone, pngs, strict=True):
+        for a, b, png, state in zip(split, alone, pngs, states, strict=True):
             assert a["image"].tobytes() == b["image"].tobytes()
-            assert png_image(png).tobytes() == a["image"].tobytes()
+            assert png_image(png, state).tobytes() == a["image"].tobytes()
     finally:
         await sharing.close()
         await node_scene.shutdown()
+
+
+# -- Personalidad: el paisaje de cada tema y los dibujos de cada tipo --------------------------
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def looks() -> HousingScene:
+    """Otra escena de Node, solo para estas pruebas: no depende de si otra deja `scene` apagada."""
+    if not node_ready():
+        pytest.skip("No hay Node con @napi-rs/canvas")
+    escena = HousingScene(executable_path=NO_CHROMIUM)
+    yield escena
+    await escena.close()
+
+
+def facade_crop(patch: dict[str, Any]) -> Image.Image:
+    return patch["image"].convert("RGB").crop(FACADE_BOX)
+
+
+#: Lo mínimo que tiene que cambiar (diferencia media sobre 255) una fachada al cambiar de tipo, de
+#: tema o de semilla. Lo medido: 8,7 entre temas, 11,6 entre tipos y 6 entre dos del mismo tipo.
+MIN_KIND_DIFF, MIN_THEME_DIFF, MIN_SEED_DIFF = 5.0, 4.0, 5.0
+
+
+def test_los_tipos_y_los_temas_son_los_del_catalogo() -> None:
+    assert len(KINDS) == 19 and len(FACADE_KINDS) == 20
+    assert set(THEME_BARRIO) == set(THEMES) and len(THEMES) == 7
+    for theme, barrio in THEME_BARRIO.items():
+        assert BARRIO_BY_KEY[barrio].theme == theme
+    # Las pantallas con fachada traen el barrio y el tema que la escena usa para pintarla.
+    states = samples()
+    assert states["ficha_schamann_bajo"]["theme"] == "obrero"
+    assert states["ficha_schamann_bajo"]["barrio_key"] == "schamann"
+    assert all(
+        "theme" in card and "barrio_key" in card for card in states["barrio_schamann"]["cards"]
+    )
+    assert states["barrio_schamann"]["cards"][-1]["kind"] == "solar"
+    assert states["caja_compra"]["theme"] == "obrero"
+    assert all("theme" in item for item in states["cartera"]["items"] if item["kind"] != "vpo")
+
+
+@needs_node
+@module_loop
+async def test_cada_tipo_se_pinta_en_cada_tema_y_ninguno_sale_igual(looks: HousingScene) -> None:
+    """Los 19 tipos y el solar en los 7 temas: 140 fachadas sin error y todas distintas."""
+    combos = [(theme, kind) for theme in THEME_BARRIO for kind in FACADE_KINDS]
+    states = [facade_state(kind, THEME_BARRIO[theme]) for theme, kind in combos]
+    patches = await looks.painter.render(META, states, gif=False)
+    assert patches is not None and not looks.painter.disabled and len(patches) == len(states)
+    crops = {combo: facade_crop(patch) for combo, patch in zip(combos, patches, strict=True)}
+    for theme in THEME_BARRIO:  # en un mismo barrio, cada tipo tiene su silueta
+        for a, b in itertools.combinations(FACADE_KINDS, 2):
+            assert difference(crops[theme, a], crops[theme, b]) > MIN_KIND_DIFF, (theme, a, b)
+    for kind in FACADE_KINDS:  # y un mismo tipo se tiñe con el carácter de cada barrio
+        for a, b in itertools.combinations(THEME_BARRIO, 2):
+            assert difference(crops[a, kind], crops[b, kind]) > MIN_THEME_DIFF, (kind, a, b)
+
+
+@needs_node
+@module_loop
+async def test_dos_inmuebles_del_mismo_tipo_en_un_barrio_no_salen_clavados(
+    looks: HousingScene,
+) -> None:
+    groups: dict[tuple[str, str], list[str]] = {}
+    for item in LISTINGS:
+        groups.setdefault((item.barrio, item.kind), []).append(item.key)
+    pairs = [keys for keys in groups.values() if len(keys) > 1]
+    assert pairs, "El catálogo ya no repite ningún tipo en un barrio: la prueba no mira nada"
+    keys = [key for group in pairs for key in group]
+    states = [
+        facade_state(LISTING_BY_KEY[key].kind, LISTING_BY_KEY[key].barrio, key) for key in keys
+    ]
+    patches = await looks.painter.render(META, states, gif=False)
+    assert patches is not None
+    crops = dict(zip(keys, map(facade_crop, patches), strict=True))
+    for group in pairs:
+        for a, b in itertools.combinations(group, 2):
+            assert difference(crops[a], crops[b]) > MIN_SEED_DIFF, (a, b)
+
+
+@needs_node
+@module_loop
+async def test_la_obra_nueva_usa_el_estilo_de_su_barrio(looks: HousingScene) -> None:
+    """`obra_N` no dice su barrio: lo da el estado (`barrio_key`), no un color al azar."""
+    obra = view.listing_state(promotion_market(), "obra_1", 10, NAMES, [])
+    assert obra["barrio_key"] == "schamann" and obra["theme"] == "obrero"
+
+    async def style(key: str, barrio: str | None = None) -> dict[str, Any]:
+        found = await looks.painter.evaluate(f"styleOf({json.dumps(key)}, {json.dumps(barrio)})")
+        assert isinstance(found, dict)
+        return found
+
+    schamann = await style("schamann_bajo")
+    assert await style(obra["key"], obra["barrio_key"]) == schamann
+    assert (await style(obra["key"]))["wall"] != schamann["wall"]  # sin el dato, sale otro color
+    assert (await style(obra["key"], "mogan"))["wall"] != schamann["wall"]
+    # Las que sí dicen su barrio siguen valiendo: el solar, las VPO y lo que trae `barrio_key`.
+    assert (await style("solar_vegueta"))["base"] == "vegueta"
+    assert (await style("vpo:jinamar"))["t"] == "vpo"
+    assert (await style("vegueta_piso2", "orotava"))["base"] == "orotava"
+    # Y se ve: la misma ficha en otro barrio cambia la fachada.
+    states = [
+        facade_state("edificio", "schamann", obra["key"]),
+        facade_state("edificio", "mogan", obra["key"]),
+    ]
+    patches = await looks.painter.render(META, states, gif=False)
+    assert patches is not None
+    assert difference(*map(facade_crop, patches)) > MIN_THEME_DIFF
+
+
+@needs_node
+@module_loop
+async def test_la_escena_sabe_el_tema_de_cada_barrio_y_tiene_bromas_de_cada_tipo(
+    looks: HousingScene,
+) -> None:
+    themes = await looks.painter.evaluate(
+        "Object.fromEntries(Object.entries(STYLE).map(([k, a]) => [k, a[5]]))"
+    )
+    assert themes is not None
+    for barrio in BARRIOS:
+        assert themes[barrio.key] == barrio.theme, barrio.key
+    assert await looks.painter.evaluate("THEME_NAME") == THEMES
+    tags = await looks.painter.evaluate("KIND_TAGS")
+    assert isinstance(tags, dict)
+    assert set(tags) >= {*KINDS, "solar"}
+    jokes = [joke for pool in tags.values() for joke in pool]
+    assert all(len(pool) >= 2 for pool in tags.values())
+    assert len(jokes) == len(set(jokes)), "Hay una broma repetida"
+    assert all(5 < len(joke) <= 80 for joke in jokes)
+
+
+@needs_node
+@module_loop
+async def test_cada_chincheta_del_mapa_enseña_el_tema_de_su_barrio(looks: HousingScene) -> None:
+    state = view.map_state(Market(), 10, "Ana", 1000)
+    pins = [pin for island in state["islands"] for pin in island["barrios"]]
+    assert {pin["theme"] for pin in pins} == set(THEMES)
+    other = copy.deepcopy(state)
+    for island in other["islands"]:
+        for pin in island["barrios"]:
+            pin["theme"] = "playa"
+    patches = await looks.painter.render(META, [state, other], gif=False)
+    assert patches is not None
+    a, b = (patch["image"].convert("RGB") for patch in patches)
+    sq, size = 354, 476
+    for n, island in enumerate(state["islands"]):
+        left = 16 + n * (size + 16) + (size - sq) / 2
+        for pin in island["barrios"]:
+            x, y = left + pin["x"] * sq, 98 + pin["y"] * sq
+            box = (
+                int(x + 4),
+                int(y + 4),
+                int(x + 17),
+                int(y + 17),
+            )  # el disco de abajo a la derecha
+            if pin["theme"] != "playa":
+                assert difference(a.crop(box), b.crop(box)) > 3, pin["key"]
+    # La clave de abajo trae los siete discos, cada uno de su color.
+    colors = await looks.painter.evaluate("THEME_PIN")
+    assert isinstance(colors, dict) and set(colors) == set(THEMES)
+    strip = list(a.crop((16, 586, 984, 614)).getdata())
+    for theme, (color, _icon) in colors.items():
+        want = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
+        near = sum(1 for px in strip if max(abs(p - w) for p, w in zip(px, want, strict=True)) < 12)
+        assert near > 20, theme
 
 
 @needs_node
@@ -491,11 +740,11 @@ async def test_node_y_chromium_pintan_lo_mismo(scene: HousingScene) -> None:
         await browser.close()
     if from_browser is None:
         pytest.skip("Chromium no arranca en esta máquina")
-    from_node = await scene.painter.render(META, states)
+    from_node = await scene.painter.render(META, states, gif=False)
     assert from_node is not None
-    a, b = await asyncio.gather(
-        asyncio.to_thread(browser_scene.assemble, from_browser, SIZE),
-        asyncio.to_thread(browser_scene.assemble, from_node, SIZE),
-    )
-    for name, x, y in zip(samples(), a, b, strict=True):
+    # Cada pantalla entera y de su tamaño (`assemble` falla si no mide lo que toca).
+    for (name, state), patch_b, patch_n in zip(
+        samples().items(), from_browser, from_node, strict=True
+    ):
+        x, y = (browser_scene.assemble([patch], size_of(state))[0] for patch in (patch_b, patch_n))
         assert difference(x.convert("RGB"), y.convert("RGB")) < 4, name

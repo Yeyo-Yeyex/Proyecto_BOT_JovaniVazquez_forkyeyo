@@ -183,13 +183,19 @@ class Market:
         return [*LISTING_BY_KEY, *self.promotions]
 
     def listings_of(self, barrio: str) -> tuple[Listing, ...]:
-        """Los inmuebles de un barrio: los tres del catálogo y su obra nueva, si la tiene."""
+        """Los inmuebles de un barrio: los nueve del catálogo y su obra nueva, si la tiene."""
         extra = tuple(p.listing for p in self.promotions.values() if p.listing.barrio == barrio)
         return (*listings_of(barrio), *extra)
 
     def index(self, barrio: str) -> float:
         """Índice de un barrio (1 si nunca se ha movido)."""
         return self.indexes.get(barrio, 1.0)
+
+    def index_level(self, barrio: str) -> float:
+        """El índice al que tiende un barrio con lo que tienen comprado los miembros."""
+        return rules.ownership_level(
+            (item, sum(self.shares_of(item.key).values())) for item in self.listings_of(barrio)
+        )
 
     def shares_of(self, listing: str) -> dict[int, int]:
         """Participaciones de cada dueño de un inmueble."""
@@ -690,7 +696,7 @@ class HousingRepository:
     # -- Lecturas ---------------------------------------------------------------------
 
     async def market(self, guild_id: int) -> Market:
-        """Todo el mercado del servidor (60 inmuebles y 6 VPO como mucho: de una vez)."""
+        """Todo el mercado del servidor (200 inmuebles y 6 VPO como mucho: de una vez)."""
         return await self._run(self._market_sync, guild_id)
 
     def _market_sync(self, guild_id: int) -> Market:
@@ -1124,8 +1130,10 @@ class HousingRepository:
             )
             result = DayRun(day)
             market = _market_in(connection, guild_id)
-            for barrio, value in market.indexes.items():
-                _set_index_in(connection, guild_id, barrio, rules.index_next_day(value))
+            for barrio in (b.key for b in BARRIOS):
+                value, level = market.index(barrio), market.index_level(barrio)
+                if barrio in market.indexes or value != level:
+                    _set_index_in(connection, guild_id, barrio, rules.index_next_day(value, level))
             if day.weekday() == 0:
                 self._monday_in(connection, guild_id, day, now, rng, market, result)
                 if builders:

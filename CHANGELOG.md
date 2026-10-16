@@ -8,6 +8,12 @@ criterio.
 
 ## 7.x
 
+### 7.22.0 · 2026-10-17
+
+- Pisos: nueve inmuebles por barrio (180), cada barrio con su carácter y 10 tipos nuevos
+- Pisos: el índice del barrio sigue a lo que compran los miembros y los nómadas buscan playa
+- Patrimonio: el límite con el IRPF rebaja como mucho la mitad
+
 ### 7.21.0 · 2026-10-16
 
 - Blackjack: mesa más grande y legible, y cada jugada acaba en su imagen fija
