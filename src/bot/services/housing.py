@@ -32,8 +32,8 @@ Impuesto sobre el Patrimonio cuenta los inmuebles a su valor fiscal
 **De dónde sale el dinero.** Los inquilinos y los compradores son ficticios: la
 renta y lo cobrado al vender se crean de la nada, y lo pagado al comprar y los
 gastos desaparecen. El tope que pide la Biblia («Nada crece sin tope») es que solo
-hay un inmueble de cada en el servidor (60 en total): la renta del servidor no
-puede crecer sin fin aunque se reinvierta.
+hay un inmueble de cada en el servidor (los 180 del catálogo y hasta 20 de obra
+nueva): la renta del servidor no puede crecer sin fin aunque se reinvierta.
 """
 
 from __future__ import annotations
@@ -359,7 +359,7 @@ def sale_quote(
 def barrio_weight(listing: Listing) -> float:
     """Lo que pesa un inmueble en su barrio: su precio entre el de todos los del barrio.
 
-    La obra nueva cuenta con los tres del catálogo y ella misma (cada barrio tiene una como
+    La obra nueva cuenta con los nueve del catálogo y ella misma (cada barrio tiene una como
     mucho), así que nunca pesa más que todo el barrio.
     """
     total = sum(base_price(item) for item in LISTINGS if item.barrio == listing.barrio)

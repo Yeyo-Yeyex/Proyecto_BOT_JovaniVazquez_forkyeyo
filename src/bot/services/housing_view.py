@@ -12,7 +12,7 @@ manda su clave y la escena dibuja el icono.
 Pantallas (`screen`):
 
 - `mapa`: Gran Canaria y Tenerife con una chincheta por barrio.
-- `barrio`: los tres inmuebles de un barrio.
+- `barrio`: los nueve inmuebles de un barrio y su obra nueva (o el solar donde irá).
 - `ficha`: un inmueble con todas sus cuentas.
 - `cartera`: lo que tiene un miembro.
 - `caja`: la cuenta de una compra o una venta, antes o después de pagar.

@@ -183,7 +183,7 @@ class Market:
         return [*LISTING_BY_KEY, *self.promotions]
 
     def listings_of(self, barrio: str) -> tuple[Listing, ...]:
-        """Los inmuebles de un barrio: los tres del catálogo y su obra nueva, si la tiene."""
+        """Los inmuebles de un barrio: los nueve del catálogo y su obra nueva, si la tiene."""
         extra = tuple(p.listing for p in self.promotions.values() if p.listing.barrio == barrio)
         return (*listings_of(barrio), *extra)
 
@@ -696,7 +696,7 @@ class HousingRepository:
     # -- Lecturas ---------------------------------------------------------------------
 
     async def market(self, guild_id: int) -> Market:
-        """Todo el mercado del servidor (60 inmuebles y 6 VPO como mucho: de una vez)."""
+        """Todo el mercado del servidor (200 inmuebles y 6 VPO como mucho: de una vez)."""
         return await self._run(self._market_sync, guild_id)
 
     def _market_sync(self, guild_id: int) -> Market:

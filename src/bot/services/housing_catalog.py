@@ -2267,17 +2267,19 @@ class RentLevel:
 
 
 #: De la más barata a la más cara. El contrato de vivienda dura 5 años (art. 9 LAU),
-#: que a 1 día = 1 mes son 60 días; el de temporada de los nómadas, medio año (art. 3 LAU).
+#: que a 1 día = 1 mes son 60 días; el de temporada de los nómadas, unos meses (art. 3 LAU).
 #: Los nómadas pagan más pero se van antes y tardan en llegar, y en un barrio sin playa ni
-#: fibra apenas aparecen (`NOMAD_DEMAND`): en el mejor barrio rinden como «de mercado» con
-#: más vaivén, y en uno obrero o rural, menos que la de referencia (`docs/pisos_sim.py`).
+#: fibra apenas aparecen (`NOMAD_DEMAND`). Cobrado de media frente a la renta de
+#: referencia (`docs/pisos_sim.py --niveles`): referencia 0,92, mercado 1,11 y nómadas
+#: 1,23 en la playa o el centro, 1,18 en uno histórico o marinero, 1,07 en el de lujo,
+#: 1,01 en el obrero y 0,94 en el rural. Hasta la 7.22 daban 1,28 en cualquier barrio.
 RENT_LEVELS: dict[str, RentLevel] = {
     r.key: r
     for r in (
         RentLevel("social", "Asequible", "🤝", 0.8, 0.9, 0.002, 60),
         RentLevel("referencia", "De referencia", "📊", 1.0, 0.6, 0.004, 60),
         RentLevel("mercado", "De mercado", "📈", 1.25, 0.35, 0.006, 60),
-        RentLevel("nomadas", "Para nómadas digitales", "💻", 1.5, 0.15, 0.001, 6),
+        RentLevel("nomadas", "Para nómadas digitales", "💻", 1.6, 0.15, 0.001, 8),
         # Vivienda vacacional: solo con licencia (`housing.VACATION_LEVEL`). Cada «mes» es
         # una estancia corta, se cobra por adelantado (no hay impago) y la ocupación
         # depende de la temporada (`housing.season_factor`).

@@ -12,10 +12,15 @@ inmuebles más baratos, para compararlo con lo que pagan las nóminas de `pala` 
 «Vigilar el dinero que se crea de la nada»), y lo que pide el banco por la hipoteca de
 cada vivienda: la entrada, la cuota y el neto de nómina al día con que cabe en el 35 %.
 
+Con `--niveles` dice, para un inmueble de cada tipo de barrio, cuánto se cobra de media
+con cada nivel de renta frente a la de referencia: los nómadas dependen del barrio
+(`housing_catalog.NOMAD_DEMAND`).
+
 Uso (desde la raíz del repo):
 
     python docs/pisos_sim.py              # todos los inmuebles, 3 semillas
     python docs/pisos_sim.py --seeds 10   # más semillas, cifras más estables
+    python docs/pisos_sim.py --niveles    # renta cobrada por nivel y tipo de barrio
 
 En la consola de Windows hace falta `PYTHONIOENCODING=utf-8`.
 """
@@ -33,7 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from bot.services import housing  # noqa: E402
-from bot.services.housing_catalog import LISTINGS, Listing  # noqa: E402
+from bot.services.housing_catalog import BARRIOS, LISTINGS, Listing  # noqa: E402
 from bot.services.taxes import compute_withholding  # noqa: E402
 
 #: Días simulados (meses del juego): dos años y medio de alquiler.
@@ -57,8 +62,7 @@ def simulate(listing: Listing, seed: int) -> float:
         payout = housing.settle_day(out.rent, out.costs, out.extra, lease.arrears,
                                     lease.arrears_ibi)  # fmt: skip
         lease = replace(out.lease, arrears=payout.arrears, arrears_ibi=payout.arrears_ibi)
-        if lease.status == housing.DEFAULTING and lease.unpaid >= 3:
-            lease = housing.start_eviction(lease, day, rng)
+        lease = _evict(lease, day, rng)
         gross = payout.net + payout.ibi + payout.costs
         taxable = housing.taxable_rent(
             gross, payout.ibi + payout.costs + housing.amortization(paid)
@@ -71,10 +75,56 @@ def simulate(listing: Listing, seed: int) -> float:
     return total / DAYS
 
 
+def _evict(lease: housing.Lease, day: date, rng: random.Random) -> housing.Lease:
+    """Lo que hace un dueño atento: pide el desahucio de okupas y de quien debe tres meses.
+
+    Sin esto los okupas se quedan para siempre y la renta sale muy por debajo de la real.
+    """
+    if lease.status == housing.SQUATTED or (
+        lease.status == housing.DEFAULTING and lease.unpaid >= 3
+    ):
+        return housing.start_eviction(lease, day, rng)
+    return lease
+
+
+def collected(listing: Listing, level: str, seeds: int, days: int = 3_000) -> float:
+    """Renta cobrada media al día con un nivel, entre la renta de referencia."""
+    total = 0
+    start = date(2026, 1, 1)
+    for seed in range(seeds):
+        rng = random.Random(seed)
+        lease = housing.Lease(level=level, since=start)
+        for offset in range(days):
+            day = start + timedelta(days=offset)
+            out = housing.advance_day(listing, lease, day, 1.0, rng)
+            lease = _evict(out.lease, day, rng)
+            total += out.rent
+    return total / (days * seeds) / housing.reference_rent(listing)
+
+
+def levels(seeds: int) -> None:
+    """Renta cobrada por nivel en una vivienda de cada tipo de barrio."""
+    print(f"{'barrio':10} {'referencia':>11} {'mercado':>8} {'nómadas':>8}")
+    seen: set[str] = set()
+    for barrio in BARRIOS:
+        if barrio.theme in seen:
+            continue
+        seen.add(barrio.theme)
+        listing = next(
+            i for i in LISTINGS if i.barrio == barrio.key and i.kind in housing.HOME_KINDS
+        )
+        row = [collected(listing, level, seeds) for level in ("referencia", "mercado", "nomadas")]
+        print(f"{barrio.theme:10} {row[0]:>11.2f} {row[1]:>8.2f} {row[2]:>8.2f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--seeds", type=int, default=3)
+    parser.add_argument("--niveles", action="store_true")
     args = parser.parse_args()
+    if args.niveles:
+        levels(args.seeds)
+        return
     rows = []
     for listing in LISTINGS:
         nets = [simulate(listing, seed) for seed in range(args.seeds)]
@@ -89,6 +139,8 @@ def main() -> None:
     created = sum(rent for _p, _k, rent, _n, _m in cheap)
     print()
     print(f"Los 10 más baratos alquilados crean {created:,} Y$ al día de la nada;")
+    every = sum(rent for _p, _k, rent, _n, _m in rows)
+    print(f"los {len(rows)} del catálogo alquilados, {every:,} Y$ al día;")
     print(f"las nóminas de pala pagan unos {PALA_PER_DAY:,} Y$ brutos al día.")
     print()
     print("Hipoteca del 80 % al Euríbor de partida + 1 % y el neto de nómina que pide el banco:")
@@ -103,8 +155,10 @@ def main() -> None:
         need = round(payment / housing.DTI_MAX)
         print(f"{key:24} {price:>12,} entrada {quote.total - loan:>10,}"
               f" cuota {payment:>7,} nómina {need:>7,}/día")  # fmt: skip
-    print(f"VPO: hasta {housing.vpo_income_cap():,}/día de nómina; bono: hasta "
-          f"{housing.bono_income_cap():,}/día.")
+    print(
+        f"VPO: hasta {housing.vpo_income_cap():,}/día de nómina; bono: hasta "
+        f"{housing.bono_income_cap():,}/día."
+    )
 
 
 if __name__ == "__main__":
