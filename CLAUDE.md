@@ -206,7 +206,10 @@ ruleta, que pasó de 4-7 s a ~2 s por tirada:
   a 0 (`CrapsView.prepare`). La ruleta ya precargaba la jugada más probable
   (repetir la última apuesta) y con Node el giro bajó de 1,8 a 1,1 s. La timba pinta
   durante cada turno la mesa de cada botón y la de dormirse, y durante la espera
-  entre manos reparte y pinta la siguiente (`Table.prepare_turn`, `Table.plan_deal`). Los dibujos por adelantado no se cancelan a medias:
+  entre manos reparte y pinta la siguiente (`Table.prepare_turn`, `Table.plan_deal`). El
+  blackjack juega cada botón sobre una copia de la mano (el zapato es una lista, así que lo
+  que sale se conoce) y, entre manos, reparte con cada ficha de ½, ×2 y All-in y con el
+  zapato ya barajado por si toca barajar (`BlackjackTable.prepare`). Los dibujos por adelantado no se cancelan a medias:
   van de uno en uno y cada uno comprueba antes de empezar si sigue valiendo. Si
   aun así se corta uno, `NodeScene` mata los procesos de ese dibujo y el grupo
   abre otros (~0,2 s), porque quedarían píxeles sin leer en la tubería.

@@ -1,13 +1,16 @@
 """Pruebas de bot.cogs.blackjack: mesa con botones y movimiento de dinero.
 
 Se usa la economía real sobre un SQLite temporal, un zapato preparado (las
-cartas salen en el orden indicado) y un renderizador falso.
+cartas salen en el orden indicado) y una escena falsa que apunta qué se le pide
+dibujar (sin GIF, así que cada jugada acaba en un PNG de relleno).
 """
 
 from __future__ import annotations
 
+import asyncio
 import random
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -15,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from interaction_fakes import fake_interaction
+from render_fakes import FakeBlackjackScene
 
 import bot.cogs.blackjack as blackjack_module
 from bot.cogs.blackjack import PNG_NAME, Blackjack, BlackjackTable
@@ -25,9 +29,11 @@ from bot.services.blackjack import (
     INSURANCE_PAYS,
     PIT_BOSS_SPREAD,
     Action,
+    BlackjackGame,
     Card,
     new_shoe,
 )
+from bot.services.blackjack_scene import Media
 from bot.services.economy import STARTING_BALANCE, EconomyService
 
 GUILD_ID = 1
@@ -51,14 +57,13 @@ def stacked(*cards: Card) -> Callable[[], list[Card]]:
     return factory
 
 
-class FakeRenderer:
-    def render(self, **kwargs) -> bytes:  # noqa: ANN003
-        return b"PNG"
+#: Lo usan también otras pruebas (`test_achievements`) para montar el cog.
+FakeRenderer = FakeBlackjackScene
 
 
 @pytest.fixture(autouse=True)
-def no_dealer_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(blackjack_module, "DEALER_STEP_SECONDS", 0)
+def no_reveal_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(blackjack_module, "REVEAL_MARGIN_SECONDS", 0)
 
 
 async def make_cog(tmp_path: Path, *cards: Card, channels=frozenset()) -> Blackjack:
@@ -108,10 +113,12 @@ async def balance(cog: Blackjack) -> int:
 async def test_bj_reparte_al_momento_y_cobra_la_apuesta(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, c(10), c(9), c(6), c(8))
 
-    table, send, send_error, _ = await open_table(cog)
+    table, send, send_error, message = await open_table(cog)
 
     send_error.assert_not_awaited()
-    assert [f.filename for f in send.await_args.kwargs["files"]] == [PNG_NAME]
+    # Primero la mesa «repartiendo…» (Discord da 3 s) y luego la imagen.
+    assert "files" not in send.await_args.kwargs
+    assert [f.filename for f in message.edit.await_args.kwargs["attachments"]] == [PNG_NAME]
     assert isinstance(table, BlackjackTable)
     assert table.game.player_turn
     assert table in cog.tables
@@ -251,13 +258,13 @@ async def test_mesa_caducada_con_la_mano_ya_pagada_solo_apaga_los_botones(
     table, _, _, message = await open_table(cog)
     await table.force_settle()
     assert table.game.settled
-    render = AsyncMock(return_value=b"PNG")
-    monkeypatch.setattr(cog, "render", render)
+    still = AsyncMock(return_value=b"PNG")
+    monkeypatch.setattr(cog.renderer, "still", still)
     message.edit.reset_mock()
 
     await table.on_timeout()
 
-    render.assert_not_awaited()
+    still.assert_not_awaited()
     kwargs = message.edit.await_args.kwargs
     assert "attachments" not in kwargs
     assert all(b.disabled for b in table.children if isinstance(b, discord.ui.Button))
@@ -470,3 +477,197 @@ async def test_el_jefe_de_sala_baraja_si_subes_mucho_con_la_cuenta_alta(tmp_path
     assert table.shoe_note in blackjack_module.PIT_BOSS_LINES
     assert table.lowest == PIT_BOSS_SPREAD * 100 + 1
     assert table._shoe_event[0] is True
+
+
+# -- GIF por adelantado ----------------------------------------------------------------
+
+
+class RecordingScene:
+    """Escena falsa con GIF: apunta cada jugada pintada (la mano de antes y la de después)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[BlackjackGame | None, BlackjackGame, object, str]] = []
+
+    async def step(
+        self,
+        before: BlackjackGame | None,
+        after: BlackjackGame,
+        *,
+        shoe: object = None,
+        streak: object = (0, 0),
+        skin: object = None,
+    ) -> Media:
+        key = (skin or {}).get("key", "serie")  # type: ignore[attr-defined]
+        self.calls.append((deepcopy(before), deepcopy(after), shoe, key))
+        return Media(gif=f"GIF{len(self.calls)}".encode(), png=b"png", seconds=0.0)
+
+    async def still(self, game: BlackjackGame, *, streak: int = 0, skin: object = None) -> bytes:
+        return b"png"
+
+    async def close(self) -> None:
+        return None
+
+
+async def ahead_cog(tmp_path: Path, *shoes: list[Card]) -> tuple[Blackjack, RecordingScene]:
+    """Cog que pinta por adelantado; cada zapato barajado es el siguiente de `shoes`."""
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    scene = RecordingScene()
+    queue = list(shoes)
+    cog = Blackjack(
+        MagicMock(),
+        economy=EconomyService(repository),
+        renderer=scene,  # type: ignore[arg-type]
+        shoe_factory=lambda: list(queue.pop(0) if len(queue) > 1 else queue[0]),
+        ahead=True,
+    )
+    return cog, scene
+
+
+def shoe(*cards: Card, filler: int = 200) -> list[Card]:
+    """Zapato que reparte `cards` en ese orden, con `filler` sietes debajo."""
+    return [c(7)] * filler + list(reversed(cards))
+
+
+async def settle_painting(table: BlackjackTable) -> None:
+    """Espera a que la mesa acabe de pintar por adelantado."""
+    while table.ahead.task is not None and not table.ahead.task.done():
+        await asyncio.sleep(0)
+
+
+def uploaded(interaction: MagicMock, index: int = 0) -> bytes:
+    """Los bytes del archivo que subió la edición `index` del mensaje."""
+    edits = interaction.edit_original_response.await_args_list
+    return edits[index].kwargs["attachments"][0].fp.read()
+
+
+def deals(scene: RecordingScene) -> list[tuple[BlackjackGame | None, BlackjackGame, object, str]]:
+    """Lo pintado para repartir otra mano (tras una ya pagada)."""
+    return [call for call in scene.calls if call[0] is not None and call[0].settled]
+
+
+async def test_en_tu_turno_se_pinta_cada_accion_y_pedir_sube_la_pintada(tmp_path: Path) -> None:
+    # Tú 10+6 = 16 contra un 9 de la banca: lo probable es pedir.
+    cog, scene = await ahead_cog(tmp_path, shoe(c(10), c(9), c(6), c(8), c(3)))
+    table, *_ = await open_table(cog)
+    await settle_painting(table)
+    painted = [call[1] for call in scene.calls[1:]]
+    assert [len(g.hands[0].cards) for g in painted] == [3, 2, 3]  # pedir, plantarse, doblar
+    assert painted[0].player_turn and painted[1].settled and painted[2].hands[0].doubled
+    assert await balance(cog) == STARTING_BALANCE - 100, "lo pintado no cobra nada"
+
+    interaction = make_interaction()
+    await table.act(interaction, Action.HIT)
+
+    # Sube el GIF de pedir ya pintado, en una sola edición y con los botones encendidos.
+    assert uploaded(interaction) == b"GIF2"
+    assert interaction.edit_original_response.await_count == 1
+    assert table.game.hands[0].cards == painted[0].hands[0].cards
+    assert not table.action_buttons[Action.STAND].disabled
+    assert table._image == blackjack_module.GIF_NAME
+    # Y se pinta ya lo siguiente: las acciones con 19.
+    await settle_painting(table)
+    assert scene.calls[-1][0].hands[0].cards == table.game.hands[0].cards
+
+
+async def test_plantarse_sube_el_gif_de_la_banca_y_luego_el_resultado(tmp_path: Path) -> None:
+    # Tú 10+8 = 18; la banca 10+6 = 16 roba un 10 y se pasa.
+    cog, scene = await ahead_cog(tmp_path, shoe(c(10), c(10), c(8), c(6), c(10)))
+    table, *_ = await open_table(cog)
+    await settle_painting(table)
+    interaction = make_interaction()
+
+    await table.act(interaction, Action.STAND)
+
+    assert uploaded(interaction, 0) == b"GIF2"  # con 18, plantarse va primero
+    gif_edit, png_edit = interaction.edit_original_response.await_args_list
+    assert "Saldo" not in [f.name for f in gif_edit.kwargs["embed"].fields]
+    assert "Saldo" in [f.name for f in png_edit.kwargs["embed"].fields]
+    assert png_edit.kwargs["attachments"][0].filename == PNG_NAME
+    assert len(table.game.dealer) == 3 and table.streak == 1
+    assert await balance(cog) == STARTING_BALANCE + 100
+
+
+async def test_entre_manos_se_pinta_repartir_con_cada_ficha_y_la_mitad_ya_esta(
+    tmp_path: Path,
+) -> None:
+    # Blackjack al repartir (la mano acaba sola) y la siguiente: tú 9+9, banca 5+10.
+    cog, scene = await ahead_cog(
+        tmp_path, shoe(c(1), c(9), c(13), c(8), c(9), c(5), c(9, 1), c(10))
+    )
+    table, *_ = await open_table(cog)
+    await settle_painting(table)
+    assert [g.stake for _, g, _, _ in deals(scene)] == [100, 50, 200, STARTING_BALANCE + 150]
+
+    await table._halve(make_interaction())
+    await settle_painting(table)
+    painted = len(scene.calls)
+    interaction = make_interaction()
+    await table._deal_again(interaction)
+
+    assert uploaded(interaction) == b"GIF3"  # el de ½, pintado antes de cambiar la ficha
+    assert table.game.hands[0].cards == [c(9), c(9, 1)] and table.game.stake == 50
+    repainted = [call for call in scene.calls[painted:] if call[0] is not None and call[0].settled]
+    assert not repainted, "no se ha vuelto a pintar el reparto"
+
+
+async def test_la_carta_de_corte_reparte_del_zapato_barajado_que_ya_estaba_pintado(
+    tmp_path: Path,
+) -> None:
+    # El primer zapato llega a la carta de corte en esta mano: la siguiente sale del otro.
+    first = shoe(c(10), c(10), c(8), c(9), filler=CUT_CARD - 2)
+    second = shoe(c(1), c(5), c(6), c(10))
+    cog, scene = await ahead_cog(tmp_path, first, second)
+    table, *_ = await open_table(cog)
+    await table.act(make_interaction(), Action.STAND)
+    await settle_painting(table)
+    deal = next(call for call in deals(scene) if call[1].stake == 100)
+    assert deal[2] == blackjack_module.Shoe(left=CUT_CARD - 2, shuffle="cut")
+
+    await table._deal_again(make_interaction())
+
+    assert table.shoe_note == blackjack_module.SHUFFLE_LINE
+    assert table.game.hands[0].cards == deal[1].hands[0].cards == [c(1), c(6)]
+    assert table.game.dealer == deal[1].dealer
+
+
+async def test_con_un_as_de_la_banca_se_pintan_los_dos_seguros(tmp_path: Path) -> None:
+    cog, scene = await ahead_cog(tmp_path, shoe(c(10), c(1), c(9), c(13)))
+    table, *_ = await open_table(cog)
+    await settle_painting(table)
+    assert [call[1].insurance for call in scene.calls[1:3]] == [0, 50]  # sin seguro primero
+
+    interaction = make_interaction()
+    await table.insure(interaction, take=True)
+
+    assert uploaded(interaction) == b"GIF3"
+    assert table.game.insurance_paid
+    assert await balance(cog) == STARTING_BALANCE, "el seguro cubre justo la mano perdida"
+
+
+async def test_cambiar_de_tapete_vuelve_a_pintar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog, scene = await ahead_cog(tmp_path, shoe(c(10), c(9), c(6), c(8), c(3)))
+    table, *_ = await open_table(cog)
+    await settle_painting(table)
+    before = len(scene.calls)
+
+    monkeypatch.setattr(table, "skin", lambda: {"key": "tapete_oro"})
+    table.prepare()
+    await settle_painting(table)
+
+    assert [call[3] for call in scene.calls[before:]] == ["tapete_oro"] * 3
+
+
+async def test_cambiar_la_ficha_no_vuelve_a_subir_la_imagen(tmp_path: Path) -> None:
+    cog, _ = await ahead_cog(tmp_path, shoe(c(1), c(9), c(13), c(8)))
+    table, *_ = await open_table(cog)
+    interaction = make_interaction()
+
+    await table._halve(interaction)
+
+    kwargs = interaction.edit_original_response.await_args.kwargs
+    assert "attachments" not in kwargs
+    # La mano acabó en el PNG: el embed sigue apuntando a él.
+    assert kwargs["embed"].image.url == f"attachment://{PNG_NAME}"

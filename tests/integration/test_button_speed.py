@@ -784,8 +784,16 @@ async def press_roulette(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def blackjack_module(client: BotClient):  # noqa: ANN201
+    """El módulo del blackjack, sin esperar al final del GIF ni pintar por adelantado."""
+    module = module_of(client, "Blackjack")
+    module.REVEAL_MARGIN_SECONDS = 0
+    client.get_cog("Blackjack").ahead = False  # no es lo que se mide
+    return module
+
+
 async def press_blackjack(client: BotClient, owner: MagicMock) -> Click:
-    table = module_of(client, "Blackjack").BlackjackTable(
+    table = blackjack_module(client).BlackjackTable(
         client.get_cog("Blackjack"), guild_id=GUILD_ID, owner=owner, stake=1
     )
 
@@ -796,7 +804,7 @@ async def press_blackjack(client: BotClient, owner: MagicMock) -> Click:
 
 
 async def press_blackjack_insurance(client: BotClient, owner: MagicMock) -> Click:
-    table = module_of(client, "Blackjack").BlackjackTable(
+    table = blackjack_module(client).BlackjackTable(
         client.get_cog("Blackjack"), guild_id=GUILD_ID, owner=owner, stake=2
     )
     # Banca con un as a la vista: la mano espera a que se decida el seguro.

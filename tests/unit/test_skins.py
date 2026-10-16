@@ -62,6 +62,7 @@ def test_un_tapete_vale_en_todas_las_mesas_con_fieltro_y_uno_de_mesa_solo_en_la_
         "moneda",
         "pollo",
         "guerra",
+        "blackjack",
         "poker",
         "backgammon",
     }
@@ -169,7 +170,8 @@ async def test_cambiar_de_skin_desde_la_mochila(tmp_path: Path) -> None:
     backpack = await cog.backpack_view(guild, member, member)
     select = skin_select(backpack)
     assert [o.value for o in select.options] == [
-        "ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "guerra", "poker", "backgammon"
+        "ruleta", "autobus", "bacara", "dados", "moneda", "pollo", "guerra", "blackjack", "poker",
+        "backgammon",
     ]  # fmt: skip
 
     # Elegir una mesa abre su selector; cada mesa lleva su tapete.

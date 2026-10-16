@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.18.0 · 2026-10-16
+
+- Blackjack: mesa animada con tapetes, zapato para contar y rachas
+
 ### 7.17.0 · 2026-10-16
 
 - Allá tú: `allatu`, 22 cajas, un gordo sorpresa y la banca al teléfono

@@ -633,7 +633,12 @@ def _jugar_blackjack(j: Jugador) -> StatDelta:
     while game.dealer_should_draw():
         game.dealer_draw()
     game.settle()
-    return _con_casino(blackjack_stats(game), stake=game.total_stake, net=game.net)
+    # La racha de la mesa, como el cog: sube al ganar, se corta al perder y aguanta al empatar.
+    streak = int(j.extra.get("bj_streak", 0))  # type: ignore[call-overload]
+    streak = streak + 1 if game.net > 0 else (0 if game.net < 0 else streak)
+    j.extra["bj_streak"] = streak
+    delta = blackjack_stats(game, streak=streak)
+    return _con_casino(delta, stake=game.total_stake, net=game.net)
 
 
 #: Carreras ya preparadas (parrilla y cuotas): estimar las cuotas es lo caro y

@@ -16,8 +16,27 @@ mano abierta se resuelve plantándose si la mesa caduca o si el bot se apaga
 de forma ordenada. Si el proceso muere de golpe a mitad de mano, lo apostado
 en esa mano se pierde (queda registrado en el libro de movimientos).
 
+La mesa se dibuja con canvas (`bot.services.blackjack_scene`, escena
+`assets/blackjack/escena.html`): tapete con skins (botón 🎨), el zapato y la bandeja de
+descartes que dejan ver cuánto se ha jugado del zapato, las cartas que vuelan y se
+voltean, las fichas, los totales y la racha. Cada jugada es un GIF:
+
+- Si la mano sigue (repartir, pedir, separar, el seguro), el GIF se queda en el
+  mensaje sin repetirse y los botones se encienden con él: no hay que esperar a que
+  acabe para la siguiente jugada.
+- Si la mano acaba, el GIF (con la banca robando y el resultado) suena con los botones
+  apagados y sin el resultado en el texto, y al acabar se cambia por el PNG con el
+  resultado, como en la Guerra.
+
+Mientras se ve una jugada, la mesa pinta en segundo plano el GIF de cada botón que
+puede pulsar (`BlackjackTable.prepare`): el zapato es una lista y la mano siguiente
+se conoce, así que se juega sobre una copia sin enseñarla. Entre manos, «Repartir»
+con la ficha de ahora y con la de ½, ×2 y All-in, y con el zapato que toque (el
+barajado de antes, si sale la carta de corte o el jefe de sala baraja). Al pulsar
+solo queda subirlo.
+
 Permisos del bot en el canal: enviar mensajes, insertar enlaces y adjuntar
-archivos (la imagen de la mesa).
+archivos (el GIF y la imagen de la mesa).
 """
 
 from __future__ import annotations
@@ -28,6 +47,7 @@ import logging
 import random
 import time
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -36,6 +56,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.services.achievements import blackjack_shoe_stats, blackjack_stats, casino_stats
 from bot.services.blackjack import (
@@ -46,12 +67,13 @@ from bot.services.blackjack import (
     Card,
     Result,
     blackjack_prize,
+    hand_total,
     needs_shuffle,
     new_shoe,
     pit_boss_shuffles,
     true_count,
 )
-from bot.services.cards_render import CardRenderer, HandView
+from bot.services.blackjack_scene import BlackjackScene, Media, Shoe
 from bot.services.economy import (
     BalanceLimitError,
     EconomyService,
@@ -61,6 +83,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
+from bot.utils.ahead import Ahead
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -72,9 +95,17 @@ logger = logging.getLogger(__name__)
 GAME = "blackjack"
 DEFAULT_STAKE = 100
 TABLE_TIMEOUT = 180
-#: Pausa entre cartas de la banca: lo justo para que se vea robar sin aburrir.
-DEALER_STEP_SECONDS = 0.6
 PNG_NAME = "blackjack.png"
+GIF_NAME = "blackjack.gif"
+#: Lo que se deja pasar tras el GIF antes de enseñar el resultado: lo que tarda el cliente
+#: en descargarlo (si se queda corto, el resultado sale antes de acabar la animación).
+REVEAL_MARGIN_SECONDS = 0.5
+
+#: Lo que dice la mesa mientras suena un GIF que acaba la mano (sin resultado ni saldo).
+DEAL_BUSY = "## 🃏 Repartiendo…"
+DEALER_BUSY = "## 🃏 Juega la banca…"
+PLAYER_BUSY = "## 🃏 Carta para ti…"
+INSURE_BUSY = "## 🛡️ La banca mira su carta…"
 
 COLOR_PLAYING = discord.Color.from_rgb(21, 83, 64)
 COLOR_WIN = discord.Color.from_rgb(255, 196, 0)
@@ -156,57 +187,53 @@ BUST_LINES = (
     "Te pasas. La UCO ya tiene el informe.",
 )
 
-RESULT_BADGES = {
-    Result.BLACKJACK: "BLACKJACK",
-    Result.WIN: "GANA",
-    Result.PUSH: "EMPATE",
-    Result.LOSE: "PIERDE",
-    Result.BUST: "SE PASA",
-}
-
 EditFn = Callable[..., Awaitable[Any]]
 
 
+# -- La mano sin dinero (también sobre copias, para pintar antes del clic) -----------
+
+
+def hand_over(game: BlackjackGame) -> bool:
+    """Si ya no queda nada que decidir: ni turno del jugador ni seguro."""
+    return not game.player_turn and not game.insurance_pending
+
+
+def resolve(game: BlackjackGame) -> None:
+    """Si se acabó tu turno, la banca destapa y roba de un tirón (lo anima el GIF)."""
+    if not hand_over(game) or game.settled:
+        return
+    game.reveal_hole()
+    while game.dealer_should_draw():
+        game.dealer_draw()
+
+
+def next_streak(streak: int, game: BlackjackGame) -> int:
+    """La racha tras una mano pagada: sube al ganar, se corta al perder y aguanta al empatar."""
+    if game.net > 0:
+        return streak + 1
+    if game.net < 0:
+        return 0
+    return streak
+
+
+def likely_actions(game: BlackjackGame) -> list[Action]:
+    """Las acciones legales de la mano activa, la más probable primero (para pintarlas).
+
+    Lo de siempre en una mesa: plantarse con 17 o más, doblar con 10 u 11, separar ases
+    y ochos y, si no, pedir.
+    """
+    hand = game.current
+    total = hand_total(hand.cards)[0]
+    legal = [a for a in (Action.HIT, Action.STAND, Action.DOUBLE, Action.SPLIT) if game.can(a)]
+    first = Action.STAND if total >= 17 else Action.HIT
+    if total in (10, 11) and Action.DOUBLE in legal:
+        first = Action.DOUBLE
+    if Action.SPLIT in legal and hand.cards[0].rank in (1, 8):
+        first = Action.SPLIT
+    return [first, *(a for a in legal if a is not first)]
+
+
 # -- Presentación -------------------------------------------------------------------
-
-
-def hand_views(game: BlackjackGame) -> list[HandView]:
-    """Manos del jugador listas para dibujar."""
-    views = []
-    several = len(game.hands) > 1
-    for index, hand in enumerate(game.hands):
-        name = f"MANO {index + 1}" if several else "TÚ"
-        doubled = " ×2" if hand.doubled else ""
-        badge = None
-        good = False
-        if hand.result is not None:
-            net = hand.payout() - hand.stake
-            badge = RESULT_BADGES[hand.result]
-            if net > 0:
-                badge += " +" + f"{net:,}".replace(",", ".")
-            good = net > 0
-        views.append(
-            HandView(
-                cards=hand.cards,
-                title=f"{name} · {hand.total}{doubled}",
-                active=game.player_turn and index == game.active,
-                badge=badge,
-                badge_good=good,
-            )
-        )
-    return views
-
-
-def render_table(renderer: CardRenderer, game: BlackjackGame) -> bytes:
-    """PNG de la mesa en el estado actual de la partida."""
-    hidden = not game.hole_revealed
-    total = game.visible_dealer_total
-    return renderer.render(
-        dealer=game.dealer,
-        hide_hole=hidden,
-        dealer_title=f"BANCA · {total}{' + ?' if hidden else ''}",
-        hands=hand_views(game),
-    )
 
 
 def result_headline(game: BlackjackGame, rng: random.Random | None = None) -> str:
@@ -269,14 +296,24 @@ def table_embed(
     headline: str | None = None,
     shoe_left: int | None = None,
     note: str | None = None,
+    busy: str | None = None,
+    image: str = PNG_NAME,
+    skin_label: str | None = None,
 ) -> discord.Embed:
     """Embed de la mesa. `headline` es el resultado de la última mano, si acabó.
 
     Args:
         shoe_left: Cartas que quedan en el zapato de la mesa, para quien cuenta.
         note: Aviso de la mano (se ha barajado o el jefe de sala sospecha).
+        busy: Texto mientras suena un GIF que acaba la mano (repartiendo, juega la
+            banca…): no enseña saldo ni resultado, que se verían antes que las cartas.
+        image: Nombre del archivo que lleva la imagen del mensaje (el GIF o el PNG).
+        skin_label: El tapete que lleva el dueño, si no es el de serie.
     """
-    if game is None:
+    if busy is not None:
+        description = busy
+        color = COLOR_PLAYING
+    elif game is None:
         description = "Pulsa 🃏 **Repartir** para empezar."
         color = COLOR_PLAYING
     elif game.insurance_pending:
@@ -307,20 +344,25 @@ def table_embed(
         color = COLOR_WIN if game.net > 0 else COLOR_PUSH if game.net == 0 else COLOR_LOSS
     if note:
         description += f"\n-# {note}"
-    if balance == 0 and (game is None or game.settled):
+    if busy is None and balance == 0 and (game is None or game.settled):
         description += "\n\n**Estás a cero.** `imv` te recarga."
     embed = discord.Embed(title="🃏 Blackjack", description=description, color=color)
-    embed.add_field(name="Saldo", value=format_amount(balance))
-    playing = game is not None and not game.settled
+    if busy is None:
+        embed.add_field(name="Saldo", value=format_amount(balance))
+    playing = game is not None and (busy is not None or not game.settled)
     embed.add_field(
         name="En juego" if playing else "Ficha",
         value=format_amount(game.total_stake if playing else stake),  # type: ignore[union-attr]
     )
-    embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
+    if busy is None:
+        embed.add_field(name="Racha", value=f"🔥 {streak}" if streak >= 2 else "—")
     if shoe_left is not None:
         embed.add_field(name="Zapato", value=f"🂠 {shoe_left} cartas · corte en {CUT_CARD}")
-    embed.set_image(url=f"attachment://{PNG_NAME}")
-    embed.set_footer(text=f"Mesa de {owner} · {RULES_FOOTER}")
+    embed.set_image(url=f"attachment://{image}")
+    footer = f"Mesa de {owner} · {RULES_FOOTER}"
+    if skin_label:
+        footer += f" · Tapete: {skin_label}"
+    embed.set_footer(text=footer)
     return embed
 
 
@@ -330,7 +372,7 @@ def table_embed(
 class BlackjackTable(discord.ui.View):
     """Mesa de blackjack de un jugador: un mensaje con botones.
 
-    Guarda la partida en curso, la ficha y la racha. Solo su dueño puede
+    Guarda la partida en curso, la ficha, la racha y el zapato. Solo su dueño puede
     pulsarla.
     """
 
@@ -345,6 +387,9 @@ class BlackjackTable(discord.ui.View):
         self.game: BlackjackGame | None = None
         #: Zapato de la mesa: dura entre manos hasta la carta de corte (se cuentan cartas).
         self.shoe: list[Card] = []
+        #: Zapato ya barajado para cuando toque barajar, sorteado antes sin enseñarlo: así
+        #: se pinta antes del clic la mano que sale de él. Solo con `cog.ahead`.
+        self._next_shoe: list[Card] | None = None
         #: Apuesta más baja jugada con este zapato, para el jefe de sala.
         self.lowest: int | None = None
         #: Aviso de la mano en curso: se ha barajado o el jefe de sala ha sospechado.
@@ -355,10 +400,21 @@ class BlackjackTable(discord.ui.View):
         self.streak = 0
         self.headline: str | None = None
         self.message: discord.Message | None = None
+        self.started_at = 0.0
         self._last_interaction: discord.Interaction | None = None
         self._busy = False
+        #: El archivo que lleva ahora el mensaje (el GIF de una jugada que deja la mano
+        #: abierta, o el PNG): lo que se edita sin subir imagen sigue apuntando a él.
+        self._image = PNG_NAME
         #: Mano ya pagada que falta contar para los logros, con su saldo e IRPF.
         self._to_track: tuple[BlackjackGame, int, int] | None = None
+        #: Último saldo conocido (al pagar o cambiar la ficha): las fichas de ×2 y All-in
+        #: que se pintan antes del clic.
+        self._balance: int | None = None
+        #: Sube cuando la ficha se sale de lo pintado para repartir: hay que repintar.
+        self._deal_round = 0
+        #: GIF pintados por adelantado para cada botón de la jugada en curso (`prepare`).
+        self.ahead = Ahead(cog.ahead, name="el blackjack")
         self._build_buttons()
 
     # -- Botones --------------------------------------------------------------------
@@ -414,6 +470,10 @@ class BlackjackTable(discord.ui.View):
             self._add("×2", 1, self._double_stake, custom_id="x2"),
             self._add("💰 All-in", 1, self._all_in, custom_id="allin"),
         ]
+        # El 🎨: elegir o comprar el tapete de esta mesa.
+        self.paint_button = tienda.skin_button(self.cog.bot, GAME, row=1)
+        if self.paint_button is not None:
+            self.add_item(self.paint_button)
         self._update_buttons()
 
     def _update_buttons(self, *, locked: bool = False) -> None:
@@ -428,6 +488,8 @@ class BlackjackTable(discord.ui.View):
             button.disabled = locked or not (in_hand and game.can(action))  # type: ignore[union-attr]
         for button in (self.deal_button, *self.stake_buttons):
             button.disabled = locked or in_hand
+        if self.paint_button is not None:
+            self.paint_button.disabled = locked
         for take, button in self.insurance_buttons.items():
             if insuring and button not in self.children:
                 self.add_item(button)
@@ -450,6 +512,7 @@ class BlackjackTable(discord.ui.View):
     async def on_timeout(self) -> None:
         """Cierra la mesa; si quedaba una mano a medias, se planta y se paga."""
         self.cog.tables.discard(self)
+        self.ahead.drop()  # lo que quede por pintar ya no lo verá nadie
         # Una mano ya pagada se ve tal cual: solo hay que apagar los botones, sin
         # volver a subir la mesa (~1 s).
         unsettled = self.game is not None and not self.game.settled
@@ -459,11 +522,12 @@ class BlackjackTable(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
         try:
-            embed = await self.current_embed()
-            png = await self.cog.render(self.game) if self.game and unsettled else None
-            kwargs: dict[str, Any] = {"embed": embed, "view": self}
-            if png is not None:
+            kwargs: dict[str, Any] = {"view": self}
+            if self.game is not None and unsettled:
+                png = await self.cog.renderer.still(self.game, streak=self.streak, skin=self.skin())
                 kwargs["attachments"] = [discord.File(io.BytesIO(png), filename=PNG_NAME)]
+                self._image = PNG_NAME
+            kwargs["embed"] = await self.current_embed()
             if self._last_interaction is not None:
                 await self._last_interaction.edit_original_response(**kwargs)
             elif self.message is not None:
@@ -477,9 +541,7 @@ class BlackjackTable(discord.ui.View):
         if game is None or game.settled:
             return
         game.stand_all()
-        game.reveal_hole()
-        while game.dealer_should_draw():
-            game.dealer_draw()
+        resolve(game)
         await self._settle(game)
         await self._track()
 
@@ -489,34 +551,252 @@ class BlackjackTable(discord.ui.View):
         """Saldo actual del dueño."""
         return await self.cog.economy.balance(self.guild_id, self.owner.id)
 
-    async def current_embed(self, balance: int | None = None) -> discord.Embed:
-        """Embed con el estado actual de la mesa."""
-        if balance is None:
+    def skin(self) -> dict[str, object]:
+        """El tapete que lleva ahora el dueño de la mesa (`tienda.skin_params`)."""
+        return tienda.skin_params(self.cog.bot, self.guild_id, self.owner.id, GAME)
+
+    async def current_embed(
+        self, balance: int | None = None, *, busy: str | None = None, image: str | None = None
+    ) -> discord.Embed:
+        """Embed con el estado actual de la mesa (sin saldo mientras suena un GIF, `busy`).
+
+        Args:
+            image: El archivo que se sube con esta edición; si no se sube ninguno, el que
+                ya lleva el mensaje.
+        """
+        if balance is None and busy is None:
             balance = await self.balance()
+        worn = tienda.skin_of(self.cog.bot, self.guild_id, self.owner.id, GAME)
         return table_embed(
             owner=self.owner.display_name,
             game=self.game,
-            balance=balance,
+            balance=balance or 0,
             stake=self.stake,
             streak=self.streak,
             headline=self.headline,
             shoe_left=len(self.shoe) if self.shoe else None,
             note=self.shoe_note,
+            busy=busy,
+            image=image or self._image,
+            skin_label=worn.label if worn else None,
         )
 
-    async def _show(self, edit: EditFn, *, locked: bool = False) -> None:
-        """Dibuja la mesa y la envía con `edit` (editar o enviar, según el caso)."""
-        assert self.game is not None
-        self._update_buttons(locked=locked)
-        png = await self.cog.render(self.game)
-        await edit(
-            embed=await self.current_embed(),
-            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
+    # -- El zapato --------------------------------------------------------------------
+
+    def _shoe_plan(self, stake: int) -> tuple[bool, bool, float, int | None, bool]:
+        """Qué pasa con el zapato si se reparte con `stake`, sin tocar nada.
+
+        Returns:
+            `(jefe de sala, carta de corte, cuenta verdadera, veces la apuesta más baja,
+            se baraja)`.
+        """
+        caught = pit_boss_shuffles(self.shoe, stake=stake, lowest=self.lowest)
+        cut = bool(self.shoe) and needs_shuffle(self.shoe)
+        spread = None if self.lowest is None else stake // max(1, self.lowest)
+        return caught, cut, true_count(self.shoe), spread, caught or needs_shuffle(self.shoe)
+
+    def _shoe_for(self, stake: int) -> list[Card]:
+        """El zapato con el que se reparte la mano: el de la mesa o uno recién barajado.
+
+        Se baraja al llegar a la carta de corte o si el jefe de sala sospecha
+        (`pit_boss_shuffles`). La mano reparte de esta misma lista, así que lo que
+        sale se queda fuera para las siguientes.
+        """
+        caught, cut, count, spread, fresh = self._shoe_plan(stake)
+        if fresh:
+            self.shoe, self._next_shoe = self._next_shoe or self.cog.new_shoe(), None
+            self.lowest, count = None, 0.0
+        self.shoe_note = random.choice(PIT_BOSS_LINES) if caught else SHUFFLE_LINE if cut else None
+        self._shoe_event = (caught, cut, count, None if caught else spread)
+        self.lowest = stake if self.lowest is None else min(self.lowest, stake)
+        return self.shoe
+
+    @staticmethod
+    def _shoe_change(caught: bool, cut: bool) -> str | None:
+        """Lo que la escena anima antes de repartir: el jefe de sala, la carta de corte o nada."""
+        return "boss" if caught else "cut" if cut else None
+
+    # -- GIF por adelantado -----------------------------------------------------------
+
+    def _deal_stakes(self) -> list[int]:
+        """Las fichas con las que se puede repartir ahora: la puesta y las de ½, ×2 y All-in."""
+        stakes = [self.stake, max(1, self.stake // 2)]
+        if (balance := self._balance) is not None:
+            stakes += [max(1, min(self.stake * 2, balance)), balance]
+        seen: list[int] = []
+        for stake in stakes:
+            if stake > 0 and stake not in seen and (balance is None or stake <= balance):
+                seen.append(stake)
+        return seen
+
+    def _key(self) -> tuple[Any, ...]:
+        """Lo que decide los GIF que se pintan: la jugada en curso y el tapete.
+
+        Durante la mano, su estado; entre manos, el zapato, la racha y las fichas
+        pintadas (`_deal_round`). El tapete va al final: si el dueño lo cambia, lo
+        pintado ya no vale.
+        """
+        skin = self.skin()["key"]
+        game = self.game
+        if game is not None and not game.settled:
+            cards = len(game.dealer) + sum(len(h.cards) for h in game.hands)
+            return ("turn", id(game), game.insurance_pending, game.active, cards, skin)
+        return (
+            "deal",
+            id(game),
+            id(self._next_shoe),
+            len(self.shoe),
+            self.lowest,
+            self.streak,
+            self._deal_round,
+            skin,
+        )
+
+    def prepare(self) -> None:
+        """Pinta en segundo plano el GIF de cada botón que puede pulsar el jugador.
+
+        Con el seguro por decidir, «Sin seguro» y «Seguro»; en tu turno, cada acción
+        legal (la más probable primero, `likely_actions`); entre manos, «Repartir» con
+        cada ficha de `_deal_stakes`. Cada jugada se hace sobre una copia de la mano
+        (o con una copia del zapato), sin tocar el dinero. Va de uno en uno y cada dibujo
+        comprueba antes de empezar que la mesa sigue igual (`Ahead`).
+        """
+        game = self.game
+        if not self.cog.ahead or self.is_finished() or game is None:
+            return
+        scene, skin, streak = self.cog.renderer, self.skin(), self.streak
+
+        async def paint_turn(item: Any) -> Media:
+            kind, choice = item
+            before, future = deepcopy(game), deepcopy(game)
+            if kind == "insure":
+                future.decide_insurance(choice)
+            else:
+                future.act(choice)
+            resolve(future)
+            after = streak
+            if hand_over(future):
+                future.settle()
+                after = next_streak(streak, future)
+            return await scene.step(before, future, streak=(streak, after), skin=skin)
+
+        if game.insurance_pending:
+            order: list[Any] = [("insure", False)]
+            if game.can_insure():
+                order.append(("insure", True))
+            self.ahead.plan(self._key(), order, paint_turn)
+            return
+        if game.player_turn:
+            order = [("act", action) for action in likely_actions(game)]
+            self.ahead.plan(self._key(), order, paint_turn)
+            return
+        if not game.settled:
+            return
+        if self._next_shoe is None:
+            self._next_shoe = self.cog.new_shoe()
+        if self.ahead.key == self._key() and ("deal", self.stake) not in self.ahead.futures:
+            # La ficha nueva no estaba entre las pintadas: se vuelve a planear con ella.
+            self._deal_round += 1
+        fresh_shoe, old_shoe, old_left = self._next_shoe, list(self.shoe), len(self.shoe)
+
+        async def paint_deal(item: Any) -> Media:
+            stake = item[1]
+            caught, cut, _, _, fresh = self._shoe_plan(stake)
+            future = BlackjackGame(stake=stake, shoe=list(fresh_shoe if fresh else old_shoe))
+            future.deal()
+            resolve(future)
+            after = streak
+            if hand_over(future):
+                future.settle()
+                after = next_streak(streak, future)
+            shoe = Shoe(left=old_left, shuffle=self._shoe_change(caught, cut))
+            return await scene.step(game, future, shoe=shoe, streak=(streak, after), skin=skin)
+
+        order = [("deal", stake) for stake in self._deal_stakes()]
+        self.ahead.plan(self._key(), order, paint_deal)
+
+    # -- Dibujo ---------------------------------------------------------------------------
+
+    async def _show(
+        self,
+        before: BlackjackGame | None,
+        edit_fn: EditFn,
+        *,
+        ready: Media | None,
+        streak: tuple[int, int],
+        busy: str,
+        shoe: Shoe | None = None,
+        later: EditFn | None = None,
+        balance: int | None = None,
+    ) -> None:
+        """Enseña el GIF de la jugada (de `before` a la mano de ahora).
+
+        Si la mano sigue, el GIF se queda en el mensaje con los botones ya encendidos. Si
+        acaba (ya pagada), suena con los botones apagados y `busy` en el texto, y al
+        acabar se cambia por el PNG con el resultado y el saldo (`balance`). Mientras se
+        pinta (si no estaba pintado por adelantado, `ready`), la mesa ya apaga los
+        botones, en paralelo al dibujo.
+
+        Args:
+            later: Cómo se cambia el mensaje después de la primera edición, si no es con
+                `edit_fn` (el primer envío de `.bj` crea el mensaje y luego se edita).
+        """
+        game = self.game
+        assert game is not None
+        self._update_buttons(locked=True)
+
+        async def show_waiting() -> bool:
+            try:
+                await edit_fn(embed=await self.current_embed(busy=busy), view=self)
+            except discord.HTTPException:
+                logger.warning("No se pudo apagar la mesa de blackjack", exc_info=True)
+                return False
+            return True
+
+        media, shown = ready, False
+        if media is None:
+            media, shown = await asyncio.gather(
+                self.cog.renderer.step(before, game, shoe=shoe, streak=streak, skin=self.skin()),
+                show_waiting(),
+            )
+        after = later or edit_fn
+        send = after if shown else edit_fn
+        if media.gif is not None and game.settled:
+            await send(
+                embed=await self.current_embed(busy=busy, image=GIF_NAME),
+                attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                view=self,
+            )
+            self._image = GIF_NAME
+            # Lo siguiente (repartir otra) se pinta mientras se ve esta animación.
+            self.prepare()
+            await asyncio.sleep(media.seconds + REVEAL_MARGIN_SECONDS)
+            send = after
+        self._update_buttons()
+        if media.gif is not None and not game.settled:
+            await send(
+                embed=await self.current_embed(image=GIF_NAME),
+                attachments=[discord.File(io.BytesIO(media.gif), filename=GIF_NAME)],
+                view=self,
+            )
+            self._image = GIF_NAME
+            self.prepare()
+            return
+        await send(
+            embed=await self.current_embed(balance, image=PNG_NAME),
+            attachments=[discord.File(io.BytesIO(media.png), filename=PNG_NAME)],
             view=self,
         )
+        self._image = PNG_NAME
+        if media.gif is None:
+            self.prepare()
 
-    async def start(self, first_edit: EditFn, next_edit: EditFn) -> str | None:
+    async def start(self, first_edit: EditFn, later: EditFn | None = None) -> str | None:
         """Cobra la ficha y reparte una mano nueva.
+
+        Args:
+            first_edit: Cómo se enseña la jugada (enviar el mensaje o editarlo).
+            later: Cómo se cambia el mensaje después, si no es con `first_edit`.
 
         Returns:
             Un mensaje de error para el usuario si no se pudo repartir, o `None`.
@@ -529,33 +809,26 @@ class BlackjackTable(discord.ui.View):
             return insufficient_text(error.balance)
         # Para las porras: una mano repartida antes del cierre no cuenta.
         self.started_at = time.time()
+        ready = await self.ahead.take(self._key(), ("deal", self.stake))
+        self.ahead.drop()
+        prev, old_left = self.game, len(self.shoe)
         self.game = BlackjackGame(stake=self.stake, shoe=self._shoe_for(self.stake))
+        caught, cut = self._shoe_event[:2]  # type: ignore[index]
+        shoe = None if prev is None else Shoe(left=old_left, shuffle=self._shoe_change(caught, cut))
         self.headline = None
         self.game.deal()
-        if self.game.player_turn or self.game.insurance_pending:
-            await self._show(first_edit)
-        else:
-            # Blackjack de alguien en el reparto: se resuelve sin turno.
-            await self._finish(first_edit, next_edit)
+        await self._play(prev, first_edit, ready=ready, busy=DEAL_BUSY, shoe=shoe, later=later)
         return None
 
-    def _shoe_for(self, stake: int) -> list[Card]:
-        """El zapato con el que se reparte la mano: el de la mesa o uno recién barajado.
-
-        Se baraja al llegar a la carta de corte o si el jefe de sala sospecha
-        (`pit_boss_shuffles`). La mano reparte de esta misma lista, así que lo que
-        sale se queda fuera para las siguientes.
-        """
-        caught = pit_boss_shuffles(self.shoe, stake=stake, lowest=self.lowest)
-        cut = bool(self.shoe) and needs_shuffle(self.shoe)
-        count = true_count(self.shoe)
-        spread = None if self.lowest is None else stake // max(1, self.lowest)
-        if caught or needs_shuffle(self.shoe):
-            self.shoe, self.lowest, count = self.cog.new_shoe(), None, 0.0
-        self.shoe_note = random.choice(PIT_BOSS_LINES) if caught else SHUFFLE_LINE if cut else None
-        self._shoe_event = (caught, cut, count, None if caught else spread)
-        self.lowest = stake if self.lowest is None else min(self.lowest, stake)
-        return self.shoe
+    async def _play(self, before: BlackjackGame | None, edit_fn: EditFn, **kwargs: Any) -> None:
+        """Juega la banca si toca, paga la mano si acabó (sin enseñarla) y enseña el GIF."""
+        game = self.game
+        assert game is not None
+        resolve(game)
+        streak = self.streak
+        balance = await self._settle(game) if hand_over(game) else None
+        await self._show(before, edit_fn, streak=(streak, self.streak), balance=balance, **kwargs)
+        await self._track()
 
     async def act(self, interaction: discord.Interaction, action: Action) -> None:
         """Aplica una acción del jugador; si termina su turno, juega la banca."""
@@ -581,14 +854,13 @@ class BlackjackTable(discord.ui.View):
                         f"{format_amount(error.balance)}.",
                     )
                     return
+            ready = await self.ahead.take(self._key(), ("act", action))
+            self.ahead.drop()
+            before = deepcopy(game)
             game.act(action)
             self._last_interaction = interaction
-            if game.player_turn:
-                await self._show(interaction.edit_original_response)
-            else:
-                await self._finish(
-                    interaction.edit_original_response, interaction.edit_original_response
-                )
+            busy = DEALER_BUSY if hand_over(game) else PLAYER_BUSY
+            await self._play(before, interaction.edit_original_response, ready=ready, busy=busy)
         finally:
             self._busy = False
         if game.settled:
@@ -631,48 +903,24 @@ class BlackjackTable(discord.ui.View):
                         f"{format_amount(error.balance)}.",
                     )
                     return
+            ready = await self.ahead.take(self._key(), ("insure", take))
+            self.ahead.drop()
+            before = deepcopy(game)
             game.decide_insurance(take)
             self._last_interaction = interaction
-            if game.player_turn:
-                await self._show(interaction.edit_original_response)
-            else:
-                await self._finish(
-                    interaction.edit_original_response, interaction.edit_original_response
-                )
+            await self._play(
+                before, interaction.edit_original_response, ready=ready, busy=INSURE_BUSY
+            )
         finally:
             self._busy = False
         if take or game.settled:
             await renta.remind(self.cog.bot, interaction)
 
-    async def _finish(self, first_edit: EditFn, next_edit: EditFn) -> None:
-        """Turno de la banca carta a carta y pago final."""
-        game = self.game
-        assert game is not None
-        edit = first_edit
-        if game.dealer_should_draw() or not game.hole_revealed:
-            game.reveal_hole()
-            await self._show(edit, locked=True)
-            edit = next_edit
-            while game.dealer_should_draw():
-                await asyncio.sleep(DEALER_STEP_SECONDS)
-                game.dealer_draw()
-                await self._show(edit, locked=True)
-            await asyncio.sleep(DEALER_STEP_SECONDS)
-        balance = await self._settle(game)
-        self._update_buttons()
-        png = await self.cog.render(game)
-        await edit(
-            embed=await self.current_embed(balance),
-            attachments=[discord.File(io.BytesIO(png), filename=PNG_NAME)],
-            view=self,
-        )
-        await self._track()
-
     async def _settle(self, game: BlackjackGame) -> int:
         """Decide la mano, paga y actualiza la racha. Devuelve el saldo final.
 
-        Si la mano ya se pagó (p. ej. el apagado la cerró mientras la banca
-        robaba en pantalla) no se vuelve a pagar.
+        Si la mano ya se pagó (p. ej. el apagado la cerró mientras sonaba el GIF)
+        no se vuelve a pagar.
         """
         if game.settled:
             return await self.balance()
@@ -690,10 +938,8 @@ class BlackjackTable(discord.ui.View):
             logger.warning("Premio de blackjack por encima del saldo máximo; no se paga.")
             balance = await self.balance()
         self._to_track = (game, balance, tax_delta)
-        if game.net > 0:
-            self.streak += 1
-        elif game.net < 0:
-            self.streak = 0
+        self._balance = balance
+        self.streak = next_streak(self.streak, game)
         self.headline = result_headline(game)
         if tax_note:
             self.headline += f"\n{tax_note}"
@@ -716,7 +962,7 @@ class BlackjackTable(discord.ui.View):
             return
         game, balance, tax_delta = self._to_track
         self._to_track = None
-        delta = blackjack_stats(game)
+        delta = blackjack_stats(game, streak=self.streak)
         if self._shoe_event is not None:
             caught, cut, count, spread = self._shoe_event
             delta.merge(
@@ -756,9 +1002,13 @@ class BlackjackTable(discord.ui.View):
     async def _refresh(self, interaction: discord.Interaction, balance: int | None = None) -> None:
         # El embed lee el saldo de la base de datos: se acepta el clic antes.
         await ack(interaction)
+        if balance is not None:
+            self._balance = balance
         self._update_buttons()
         await edit(interaction, embed=await self.current_embed(balance), view=self)
         self._last_interaction = interaction
+        # La ficha sale en la imagen de repartir: si no estaba pintada, se pinta ya.
+        self.prepare()
 
     async def _halve(self, interaction: discord.Interaction) -> None:
         self.stake = max(1, self.stake // 2)
@@ -787,12 +1037,9 @@ class BlackjackTable(discord.ui.View):
         try:
             await ack(interaction)
             self._last_interaction = interaction
-            error = await self.start(
-                interaction.edit_original_response, interaction.edit_original_response
-            )
+            error = await self.start(interaction.edit_original_response)
             if error is not None:
                 await notify(interaction, error)
-
         finally:
             self._busy = False
         await renta.remind(self.cog.bot, interaction)
@@ -809,13 +1056,22 @@ class Blackjack(commands.Cog):
         bot: commands.Bot,
         *,
         economy: EconomyService,
-        renderer: CardRenderer | None = None,
+        renderer: BlackjackScene | None = None,
         shoe_factory: Callable[[], list[Card]] = new_shoe,
         casino_channel_ids: frozenset[int] = frozenset(),
+        ahead: bool | None = None,
     ) -> None:
+        """Prepara el cog; el dibujo por defecto es `BlackjackScene`.
+
+        Args:
+            ahead: Si las mesas pintan por adelantado el GIF de cada botón
+                (`BlackjackTable.prepare`). Por defecto, solo con el dibujo de verdad:
+                con un `renderer` de prueba, cada dibujo de más gastaría el azar de guion.
+        """
         self.bot = bot
         self.economy = economy
-        self.renderer = renderer or CardRenderer()
+        self.ahead = renderer is None if ahead is None else ahead
+        self.renderer = renderer or BlackjackScene()
         self.new_shoe = shoe_factory
         self.casino_channel_ids = casino_channel_ids
         # Mesas abiertas: para resolver sus manos si el bot se apaga. Cada
@@ -831,10 +1087,7 @@ class Blackjack(commands.Cog):
                 logger.exception("No se pudo cerrar una mano de blackjack al apagar")
             table.stop()
         self.tables.clear()
-
-    async def render(self, game: BlackjackGame) -> bytes:
-        """PNG de la mesa, dibujado fuera del event loop."""
-        return await asyncio.to_thread(render_table, self.renderer, game)
+        await self.renderer.close()
 
     async def _bj_impl(
         self,
@@ -870,18 +1123,29 @@ class Blackjack(commands.Cog):
         table = BlackjackTable(self, guild_id=guild.id, owner=user, stake=stake)
 
         async def first_edit(**kwargs: Any) -> None:
-            attachments = kwargs.pop("attachments")
-            table.message = await send(files=attachments, **kwargs)
+            # Lo primero que se envía es la mesa «repartiendo…» (Discord da 3 s) o, si el
+            # GIF ya está, con él. Lo siguiente, ya con mensaje, se edita.
+            if attachments := kwargs.pop("attachments", None):
+                kwargs["files"] = attachments
+            table.message = await send(**kwargs)
 
-        async def next_edit(**kwargs: Any) -> None:
+        async def later(**kwargs: Any) -> None:
             assert table.message is not None
             await table.message.edit(**kwargs)
 
-        error = await table.start(first_edit, next_edit)
-        if error is not None:
-            await send_error(error)
-            return
+        # La mesa se apunta antes de cobrar: si Discord no deja enseñarla (la respuesta
+        # llega tarde), la mano se cierra en el acto y nadie se queda con dinero colgado.
         self.tables.add(table)
+        try:
+            error = await table.start(first_edit, later)
+        except discord.HTTPException:
+            self.tables.discard(table)
+            table.stop()  # que no pinte por adelantado una mesa que nadie ve
+            await table.force_settle()
+            raise
+        if error is not None:
+            self.tables.discard(table)
+            await send_error(error)
 
     @app_commands.command(
         name="blackjack", description="Blackjack con tus yapdollars: reparte al momento."

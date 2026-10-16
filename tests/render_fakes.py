@@ -7,7 +7,8 @@ de la ruleta o las piezas de cada tablero en segundo plano). Las pruebas de los 
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia esas clases (y las de la Torre del dragón y Allá tú) en sus módulos de
+`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra y el
+blackjack) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsRenderer` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
@@ -24,6 +25,7 @@ from __future__ import annotations
 import pytest
 
 import bot.services.allatu_scene as allatu_scene
+import bot.services.blackjack_scene as blackjack_scene
 import bot.services.pachinko_render as pachinko_render
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
@@ -32,6 +34,7 @@ import bot.services.tower_scene as tower_scene
 import bot.services.war_scene as war_scene
 from bot.services.allatu_scene import Media as AllatuMedia
 from bot.services.bacara_render import Media as WarMedia
+from bot.services.blackjack_scene import Media as BlackjackMedia
 from bot.services.tower_scene import Media as TowerMedia
 
 
@@ -88,6 +91,35 @@ class FakePachinkoRenderer:
         self, volley: object, *, turbo: bool = False, motion: object = None
     ) -> pachinko_render.PachinkoMedia:
         return pachinko_render.PachinkoMedia(gif=b"" if turbo else b"GIF", png=b"PNG", seconds=0.0)
+
+
+class FakeBlackjackScene:
+    """`BlackjackScene` sin dibujar: apunta lo que se le pide y devuelve un PNG de relleno.
+
+    Sin GIF (`gif=None`, como el plan B de Pillow): cada jugada acaba en una sola edición
+    con el PNG, sin esperar al final de una animación.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.calls: list[tuple[object, object]] = []
+
+    async def step(
+        self,
+        before: object,
+        after: object,
+        *,
+        shoe: object = None,
+        streak: object = (0, 0),
+        skin: object = None,
+    ) -> BlackjackMedia:
+        self.calls.append((before, after))
+        return BlackjackMedia(gif=None, png=b"PNG", seconds=0.0)
+
+    async def still(self, game: object, *, streak: int = 0, skin: object = None) -> bytes:
+        return b"PNG"
+
+    async def close(self) -> None:
+        return None
 
 
 class FakeWarScene:
@@ -215,5 +247,6 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)
     monkeypatch.setattr(war_scene, "WarScene", FakeWarScene)
+    monkeypatch.setattr(blackjack_scene, "BlackjackScene", FakeBlackjackScene)
     monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)
     monkeypatch.setattr(allatu_scene, "AllatuScene", FakeAllatuScene)

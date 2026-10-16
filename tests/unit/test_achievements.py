@@ -264,6 +264,7 @@ PRODUCED_STATS = {
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",
     "roulette_streak_max", "roulette_repeat_pocket",
     "bj_hands", "bj_wins", "bj_naturals", "bj_double_wins", "bj_splits", "bj_split_sweeps",
+    "bj_streak_max",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
     "bj_dealer_bj_saved", "bj_max_stake", "bj_cut_cards", "bj_hot_wins", "bj_spread_max",
     "bj_pit_boss", "bj_cold_shoe", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
@@ -899,6 +900,12 @@ def test_blackjack_natural() -> None:
     assert delta.add["bj_hands"] == 1
     assert delta.add["bj_naturals"] == 1
     assert delta.add["bj_wins"] == 1
+
+
+def test_blackjack_racha_de_la_mesa_cuenta_como_maximo() -> None:
+    game = settled_game([[1, 13]], [9, 8])
+    assert blackjack_stats(game, streak=4).peak["bj_streak_max"] == 4
+    assert "bj_streak_max" not in blackjack_stats(game).peak
 
 
 def test_blackjack_de_la_banca_sin_seguro_se_pierde_y_no_cuenta_como_rescate() -> None:

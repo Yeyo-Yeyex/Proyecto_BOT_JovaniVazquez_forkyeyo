@@ -61,6 +61,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_bacara_node import BEFORE, HEADER, THIRDS
     from test_backgammon_scene import META as BG_META
     from test_backgammon_scene import typical_turn
+    from test_blackjack_scene import c, dealt, standing
     from test_bus_scene import CARDS
     from test_coin_scene import lost_game
     from test_horses_cog import fixed_result
@@ -76,6 +77,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.allatu_scene import AllatuScene
     from bot.services.bacara_scene import BacaraScene
     from bot.services.backgammon_scene import BackgammonScene
+    from bot.services.blackjack_scene import BlackjackScene
     from bot.services.bus_scene import BusScene
     from bot.services.coin import Side
     from bot.services.coin_scene import CoinScene
@@ -122,6 +124,16 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
             lambda s: s.pick(game_at(Difficulty.EXPERT, 5), 0),
         ),
         "guerra_2": (lambda: WarScene(executable_path=no), tie_and_war),
+        # Blackjack: repartir (se pinta antes del clic) y plantarse con la banca robando
+        # y el resultado (lo más largo de una mano sin barajar).
+        "blackjack": (
+            lambda: BlackjackScene(executable_path=no),
+            lambda s: s.step(None, dealt(c(10), c(9, 1), c(6, 2), c(8, 3))),
+        ),
+        "blackjack_banca": (
+            lambda: BlackjackScene(executable_path=no),
+            lambda s: s.step(*standing(), streak=(1, 2)),
+        ),
         # Allá tú: abrir una caja (se pinta antes del clic) y la llamada de la banca
         # (se pinta mientras se ve la caja).
         "allatu": (

@@ -39,7 +39,7 @@ caballos, los duelos de backgammon), la de quien abre la mesa, y el mensaje lo
 dice (`Game.shared`).
 
 **Tapetes.** Las mesas con fieltro (ruleta, autobús, bacará, dados, moneda,
-pollo, guerra, póker y backgammon) son un juego cada una, del grupo `TAPETE`
+pollo, guerra, blackjack, póker y backgammon) son un juego cada una, del grupo `TAPETE`
 (`Game.group`). Una skin del
 grupo se compra una vez y se lleva en las mesas que quieras, cada una con la
 suya; una skin con la clave de una mesa (`moneda`) es un tapete solo de esa
@@ -225,6 +225,7 @@ GAMES: dict[str, Game] = {g.key: g for g in (
     Game("moneda", "Cara o cruz", "🪙", "tapete", FELT, group=TAPETE),
     Game("pollo", "Pollo", "🐔", "tapete", FELT, group=TAPETE),
     Game("guerra", "Guerra", "⚔️", "tapete", FELT, group=TAPETE),
+    Game("blackjack", "Blackjack", "🃏", "tapete", FELT, group=TAPETE),
     Game("poker", "Póker", "♠️", "tapete", FELT, shared=True, group=TAPETE),
     # En un duelo se ve el tapete de quien reta; en la mesa contra Jovani, el del dueño.
     Game("backgammon", "Backgammon", "♟️", "tapete", FELT, shared=True, group=TAPETE),
