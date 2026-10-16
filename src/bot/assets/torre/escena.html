@@ -19,11 +19,13 @@ Tres vistas:
             puertas de frente bajo su arco de dovelas (madera, hierro, runas y
             bronce, con su número en la clave), dos ventanas con vidriera y haz
             de luz y dos antorchas. Al subir (`climb`), la cámara entra por la puerta
-            del huevo, funde a negro y sale el piso de arriba (o la cima).
+            del huevo, sube a oscuras por la escalera de caracol y llega
+            al piso de arriba (o a la cima).
 - "summit": la cima al coronar: el dragón con las alas abiertas que se
             inclina, la corona que baja entre rayos y la lluvia de monedas.
 - "tower":  la torre entera al acabar, en relieve, con los dragones
-            encendiéndose de abajo arriba (`tour`).
+            encendiéndose de abajo arriba (`tour`). Con `zoom` (de 1 a 0),
+            la cámara se aleja del piso `focus` hasta verla entera.
 
 A la derecha va siempre el panel: lo que se cobra y la torre en miniatura.
 Cada dificultad tiene su tema (THEMES): de día, al atardecer, de noche, en
@@ -1169,8 +1171,11 @@ function drawDragonAttack(x, st, rects, oy) {
   const cx = lerp(d.x + d.w / 2, LW / 2, rise), cy = lerp(d.y + d.h * 0.5 + oy, 150, rise);
   const size = lerp(d.w * 0.95, 310, rise);
   x.save();
-  if (rise < 0.25) { archPath(x, d.x, d.y + oy, d.w, d.h); x.clip(); }
-  else {   // sombra del dragón sobre la sala
+  if (rise < 0.3) {   // dentro del hueco, que se le va quedando pequeño
+    const m = Math.pow(rise / 0.3, 2) * 300;
+    archPath(x, d.x - m, d.y + oy - m, d.w + 2 * m, d.h + 2 * m); x.clip();
+  }
+  if (rise > 0) {   // sombra del dragón sobre la sala
     x.fillStyle = radial(x, cx, cy + size * 0.1, size * 0.2, size * 0.9, [[0, `rgba(0,0,0,${0.5 * rise})`], [1, "rgba(0,0,0,0)"]]);
     x.fillRect(0, 0, LW, H);
   }
@@ -1179,29 +1184,76 @@ function drawDragonAttack(x, st, rects, oy) {
   if (dr.fire > 0) drawBreath(x, cx, cy + size * 0.4, dr.fire, t);
 }
 
-// Al subir (`climb` de 0 a 1), la cámara entra por la puerta del huevo hasta
-// quedarse a oscuras y del negro sale el piso de arriba (o la cima): nunca se
-// ven dos pisos a la vez.
-const THROUGH = 0.55;
+// La escalera de caracol entre dos pisos: la pared curva que se pierde en la
+// sombra a los lados, el machón del centro y los peldaños a su alrededor.
+function stairSprite() {
+  return cached("stairs", () => {
+    const [c, y] = layer(LW, 2 * H);
+    paintWall(y, 0, 0, LW, 2 * H, 131, 24, [36, 72]);
+    y.fillStyle = linear(y, 0, 0, LW, 0, [[0, "rgba(0,0,0,0.93)"], [0.28, "rgba(0,0,0,0.5)"], [0.5, "rgba(0,0,0,0.35)"], [0.72, "rgba(0,0,0,0.5)"], [1, "rgba(0,0,0,0.93)"]]);
+    y.fillRect(0, 0, LW, 2 * H);
+    return c;
+  });
+}
+function drawStairwell(x, q, t) {
+  const off = ease(q) * H * 0.9;   // la cámara sube: todo pasa hacia abajo
+  x.drawImage(stairSprite(), 0, off - H, LW, 2 * H);
+  for (const [j, tx] of [[0, 92], [1, LW - 92], [2, 92]]) {   // antorchas que se quedan atrás
+    const ty = 210 - j * 230 + off * 1.15;
+    if (ty < -60 || ty > H + 60) continue;
+    x.save(); x.globalCompositeOperation = "lighter";
+    x.fillStyle = radial(x, tx, ty - 12, 4, 130, [[0, rgba(TH.flame[1], 0.35)], [1, rgba(TH.flame[2], 0)]]);
+    x.fillRect(tx - 130, ty - 142, 260, 260); x.restore();
+    paintSconce(x, tx, ty); drawFlame(x, tx, ty - 5, t + j * 3);
+  }
+  const col = LW / 2, stone = TH.stone;
+  for (let k = -4; k < 30; k++) {   // peldaños: dan la vuelta al machón
+    const a = k * 0.6, co = Math.cos(a), sy = 318 - k * 24 + off;
+    if (co < -0.15 || sy < -40 || sy > H + 10) continue;
+    const xo = col + Math.sin(a) * 210, lit = 0.55 + 0.45 * co;
+    x.fillStyle = "rgba(0,0,0,0.4)";   // sombra del peldaño en la pared
+    x.beginPath(); x.moveTo(col, sy + 30); x.lineTo(xo, sy + 26); x.lineTo(xo, sy + 44); x.lineTo(col, sy + 40); x.closePath(); x.fill();
+    x.fillStyle = linear(x, 0, sy - 6, 0, sy + 9, [[0, shade(stone[0], -0.2 + 0.25 * lit)], [1, shade(mix(stone[0], stone[1], 0.5), -0.4 + 0.3 * lit)]]);
+    x.beginPath(); x.moveTo(col, sy - 2); x.lineTo(xo, sy - 6); x.lineTo(xo, sy + 6); x.lineTo(col, sy + 9); x.closePath(); x.fill();
+    x.fillStyle = linear(x, 0, sy + 8, 0, sy + 30, [[0, shade(stone[1], -0.45 + 0.3 * lit)], [1, shade(stone[1], -0.8 + 0.2 * lit)]]);
+    x.beginPath(); x.moveTo(col, sy + 9); x.lineTo(xo, sy + 6); x.lineTo(xo, sy + 26); x.lineTo(col, sy + 30); x.closePath(); x.fill();
+    x.strokeStyle = `rgba(255,230,190,${0.35 * lit})`; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(col, sy + 9); x.lineTo(xo, sy + 6); x.stroke();
+  }
+  x.fillStyle = linear(x, col - 20, 0, col + 20, 0, [[0, shade(stone[1], -0.7)], [0.45, shade(stone[0], -0.35)], [1, shade(stone[1], -0.8)]]);
+  x.fillRect(col - 20, 0, 40, H);
+  x.fillStyle = radial(x, LW / 2, H / 2, 60, 280, [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.8)"]]); x.fillRect(0, 0, LW, H);
+}
+
+// Al subir (`climb` de 0 a 1), la cámara entra por la puerta del huevo, sube
+// a oscuras por la escalera de caracol y llega al piso de arriba (o a la cima),
+// que se asienta desde arriba: nunca se ven dos pisos a la vez.
+const INTO = 0.28, STAIRS = 0.7;
 function drawFloorView(x, st) {
   const c = st.climb || 0;
-  if (c >= THROUGH) {
-    const p = (c - THROUGH) / (1 - THROUGH), z = 1 + 0.08 * (1 - easeOut(p));
-    x.save(); x.translate(LW / 2, H / 2); x.scale(z, z); x.translate(-LW / 2, -H / 2);
+  if (c >= STAIRS) {
+    const e = easeOut((c - STAIRS) / (1 - STAIRS)), z = 1 + 0.1 * (1 - e);
+    x.save(); x.translate(LW / 2, H / 2); x.scale(z, z); x.translate(-LW / 2, -H / 2 - 14 * (1 - e));
     if (st.floor >= 8) drawSummitAt(x, st, 0);
     else drawFloorAt(x, st, st.floor + 1, 0, false);
     x.restore();
-    if (p < 1) { x.fillStyle = `rgba(0,0,0,${1 - easeOut(p)})`; x.fillRect(0, 0, LW, H); }
+    if (e < 1) { x.fillStyle = `rgba(0,0,0,${Math.pow(1 - e, 1.3)})`; x.fillRect(0, 0, LW, H); }
+    return;
+  }
+  if (c >= INTO) {
+    const q = (c - INTO) / (STAIRS - INTO);
+    drawStairwell(x, q, st.t || 0);
+    x.fillStyle = `rgba(0,0,0,${1 - 0.85 * Math.pow(Math.sin(Math.PI * q), 0.6)})`; x.fillRect(0, 0, LW, H);
     return;
   }
   if (c > 0) {
     const i = Math.max(0, (st.doors || []).findIndex((d) => d.open));
-    const d = doorRects(META.width)[i], p = c / THROUGH, z = 1 + 3.2 * p * p;
+    const d = doorRects(META.width)[i], p = c / INTO, z = 1 + 3.2 * p * p;
     const cx = d.x + d.w / 2, cy = d.y + d.h * 0.62;
     x.save(); x.translate(cx, cy); x.scale(z, z); x.translate(-cx, -cy);
     drawFloorAt(x, st, st.floor, 0, true);
     x.restore();
-    x.fillStyle = `rgba(0,0,0,${0.95 * p * p})`; x.fillRect(0, 0, LW, H);
+    x.fillStyle = `rgba(0,0,0,${0.97 * p * p})`; x.fillRect(0, 0, LW, H);
     return;
   }
   drawFloorAt(x, st, st.floor, 0, true);
@@ -1507,7 +1559,15 @@ function paintFrame(st) {
   g.save(); g.beginPath(); g.rect(0, 0, LW, H); g.clip();
   const [sx, sy] = st.shake || [0, 0];
   g.translate(sx, sy);
-  if (st.view === "tower") drawTowerView(g, st);
+  if (st.view === "tower") {
+    if (st.zoom) {   // la cámara se aleja del piso donde acabó la partida
+      const z = 1 + 2.2 * st.zoom * st.zoom, f = clamp(st.focus ?? 0, 0, 8);
+      const cx = lerp(LW / 2, TOWER.x + TOWER.w / 2, st.zoom);
+      const cy = clamp(lerp(H / 2, towerFloorY(f) + TOWER.fh / 2, st.zoom), H / (2 * z), H - H / (2 * z));
+      g.translate(LW / 2, H / 2); g.scale(z, z); g.translate(-cx, -cy);
+    }
+    drawTowerView(g, st);
+  }
   else if (st.view === "summit") drawSummitAt(g, st, 0);
   else drawFloorView(g, st);
   g.setTransform(S, 0, 0, S, 0, 0);
