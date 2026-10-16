@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.16.0 · 2026-10-16
+
+- Pisos: obra nueva de la rama Ladrillo, aval de los padres, fianzas y frase del BCE
+- Patrimonio: cuentan los objetos de la tienda, límite con el IRPF y Grandes Fortunas
+
 ### 7.15.0 · 2026-10-16
 
 - `.met`: atajo de texto de `reinicio` (sin versión `/`)

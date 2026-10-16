@@ -171,7 +171,8 @@ OBRA = Job(
             "Ladrillo",
             "🏖️",
             "Promotora en la costa: pisos sobre plano, recalificaciones y la burbuja "
-            "que siempre vuelve. Autónomo. Cobra más, se jubila peor.",
+            "que siempre vuelve. Autónomo. Cobra más, se jubila peor. Cada lunes levanta "
+            "una promoción de obra nueva en `pisos` y se lleva el 5 % de lo que se venda.",
             (
                 Position(
                     6,
@@ -12263,9 +12264,31 @@ FAVORS: tuple[Favor, ...] = (
         "Te adelanta un sueldo base; se devuelve con media nómina",
         "💸 Tu madre te manda un Bizum con el concepto «para que no pases fatigas».",
     ),
+    Favor(
+        "aval",
+        "👴",
+        "Tus padres te avalan",
+        40,
+        7 * DAY,
+        "Avalan tu próxima hipoteca o alquiler de `pisos` (7 días)",
+        "👴 Tus padres firman como avalistas «porque eres tú». Ponen el piso del pueblo de "
+        "garantía. Durante 7 días el banco cuenta media pensión de tu padre y los caseros "
+        "dejan de pedirte la garantía extra.",
+    ),
 )
 FAVOR_BY_KEY: dict[str, Favor] = {favor.key: favor for favor in FAVORS}
 #: Lo que sube la batería el tupper.
 TUPPER_BATTERY = 30
 #: Lo que da de tiempo «Lo hago por los niños», en tanto por uno.
 MOTIVATED_TIME = 0.15
+#: Lo que dura el aval de tus padres (el favor `aval`) y la marca de que ya se usó: avala
+#: una sola operación de `pisos` (una hipoteca o un alquiler).
+AVAL_SECONDS = 7 * DAY
+AVAL_SPENT = "aval_gastado"
+#: Lo que baja la familia si el banco ejecuta una hipoteca que avalaron tus padres.
+AVAL_EXECUTION_FAMILY = 60
+#: La rama que levanta la obra nueva de `pisos` cada lunes: quien haya fichado en ella en
+#: los últimos `BUILDER_DAYS` días.
+BUILDER_JOB = "obra"
+BUILDER_BRANCH = "ladrillo"
+BUILDER_DAYS = 7

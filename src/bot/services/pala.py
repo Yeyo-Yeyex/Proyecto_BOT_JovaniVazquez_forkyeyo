@@ -145,6 +145,12 @@ from bot.services.work import (
     wish_streak,
 )
 from bot.services.work_catalog import (
+    AVAL_EXECUTION_FAMILY,
+    AVAL_SECONDS,
+    AVAL_SPENT,
+    BUILDER_BRANCH,
+    BUILDER_DAYS,
+    BUILDER_JOB,
     CAUGHT_SUSPENDS_IMV,
     COFFEE_BY_KEY,
     EVENT_BY_KEY,
@@ -172,6 +178,14 @@ logger = logging.getLogger(__name__)
 #: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
 #: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
 OPTIONS_EXEMPT = 50_000 * WAGE_YAPDOLLARS_PER_EURO
+
+
+def aval_active(contract: Contract, now: float) -> bool:
+    """Si el favor del aval sigue en vigor: pedido hace menos de `AVAL_SECONDS` y sin gastar."""
+    asked = contract.family_used.get("aval")
+    if asked is None or now - asked >= AVAL_SECONDS:
+        return False
+    return contract.family_used.get(AVAL_SPENT, 0.0) < asked
 
 
 class WorkError(Exception):
@@ -1722,10 +1736,51 @@ class WorkService:
                 amount = status.position.base_pay
                 balance = await self.economy.mom_bizum(guild_id, user_id, amount=amount)
                 contract.mom_debt = amount
+            # El aval (`aval`) no hace nada aquí: `pisos` lo mira con `parents_aval`.
             change_family(contract, -favor.cost, now)
             contract.family_used[favor.key] = now
             await self.repository.save_contract(guild_id, user_id, contract)
             return FavorResult(favor, contract.family, amount, balance)
+
+    # -- La obra nueva de `pisos` ----------------------------------------------------
+
+    async def ladrillo_builders(self, guild_id: int) -> tuple[int, ...]:
+        """Quienes han fichado la última semana en la rama Ladrillo de la obra.
+
+        Son los que levantan la obra nueva de `pisos` cada lunes, por turnos.
+        """
+        since = self._clock() - BUILDER_DAYS * 86_400
+        return await self.repository.branch_workers(guild_id, BUILDER_JOB, BUILDER_BRANCH, since)
+
+    # -- El aval de tus padres para `pisos` ------------------------------------------
+
+    async def parents_aval(self, guild_id: int, user_id: int) -> bool:
+        """Si tus padres te avalan ahora: pediste el favor hace menos de 7 días y no lo usaste."""
+        contract = await self.repository.contract(guild_id, user_id)
+        return contract is not None and aval_active(contract, self._clock())
+
+    async def spend_parents_aval(self, guild_id: int, user_id: int) -> None:
+        """Gasta el aval: ya ha avalado una hipoteca o un alquiler y no vale para otro."""
+        async with self._lock(guild_id, user_id):
+            contract = await self.repository.contract(guild_id, user_id)
+            now = self._clock()
+            if contract is None or not aval_active(contract, now):
+                return
+            contract.family_used[AVAL_SPENT] = now
+            await self.repository.save_contract(guild_id, user_id, contract)
+
+    async def parents_lose_home(self, guild_id: int, user_id: int) -> None:
+        """El banco ejecuta una hipoteca que avalaron tus padres: la familia se hunde.
+
+        No mueve dinero (los padres no son miembros: lo que pierden es el piso del
+        pueblo, que no existe en el juego), solo la familia de `pala`.
+        """
+        async with self._lock(guild_id, user_id):
+            contract = await self.repository.contract(guild_id, user_id)
+            if contract is None:
+                return
+            change_family(contract, -AVAL_EXECUTION_FAMILY, self._clock())
+            await self.repository.save_contract(guild_id, user_id, contract)
 
     async def dodge_event(self, guild_id: int, user_id: int, event_key: str) -> FavorResult:
         """La excusa familiar: te libras de un marrón sin elegir ninguna opción.

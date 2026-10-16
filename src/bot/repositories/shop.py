@@ -141,6 +141,52 @@ def _item(row: sqlite3.Row) -> ShopItem:
     )
 
 
+def _holding_values(rows: Sequence[sqlite3.Row], now: float) -> list[tuple[sqlite3.Row, int]]:
+    """Lo que vale cada bien: lo pagado sin IGIC, o el precio de hoy si no se compró; lo que
+    caduca, la parte de vida que le queda."""
+    out = []
+    for row in rows:
+        value = int(row["paid"] if row["paid"] is not None else row["price"] or 0)
+        expires = row["expires_at"]
+        if expires is not None:
+            life = float(expires) - float(row["starts_at"])
+            left = max(0.0, float(expires) - now)
+            value = round(value * left / life) if life > 0 else 0
+        out.append((row, value))
+    return out
+
+
+_HOLDINGS_SQL = """
+    SELECT i.user_id, i.name, i.emoji, i.kind, i.starts_at, i.expires_at,
+        (SELECT SUM(p.base) FROM shop_purchases p
+         WHERE p.guild_id = i.guild_id AND p.inventory_id = i.id
+           AND p.refunded = 0) AS paid,
+        (SELECT it.price FROM shop_items it
+         WHERE it.guild_id = i.guild_id AND it.id = i.item_id) AS price
+    FROM shop_inventory i
+    WHERE i.guild_id = ? AND i.status = 'active' AND (i.expires_at IS NULL OR i.expires_at > ?)
+"""
+
+
+def wealth_goods_in(connection: sqlite3.Connection, guild_id: int, now: float) -> dict[int, int]:
+    """Valor de los objetos de la tienda de cada miembro para el Impuesto sobre el Patrimonio.
+
+    Solo los objetos (coleccionables y títulos: joyas, coches, cuadros, arts. 18 y 19 de la
+    Ley 19/1991), al mismo valor que el patrimonio de `perfil`. Roles, potenciadores y
+    mascotas no cuentan (ajuar doméstico y derechos que caducan, art. 4.Cuatro). Lo que está
+    en un puesto del Rastro es de una cuenta con id negativo y no cuenta. Corre dentro de la
+    transacción de `EconomyRepository.charge_wealth_tax`.
+    """
+    rows = connection.execute(
+        _HOLDINGS_SQL + " AND i.user_id > 0 AND i.kind = ?", (guild_id, now, Kind.TROPHY.value)
+    ).fetchall()
+    out: dict[int, int] = {}
+    for row, value in _holding_values(rows, now):
+        member = int(row["user_id"])
+        out[member] = out.get(member, 0) + value
+    return out
+
+
 def _collection_count(connection: sqlite3.Connection, guild_id: int, user_id: int) -> int:
     """Coleccionables distintos del miembro: lo que la mochila enseña como tales.
 
@@ -836,41 +882,24 @@ class ShopRepository:
     def _holdings_sync(
         self, guild_id: int, user_id: int | None, now: float
     ) -> list[tuple[int, str, str, str, int, float | None]]:
-        where = (
-            "i.guild_id = ? AND i.status = 'active' AND (i.expires_at IS NULL OR i.expires_at > ?)"
-        )
+        where = ""
         args: tuple[object, ...] = (guild_id, now)
         if user_id is not None:
-            where += " AND i.user_id = ?"
+            where = " AND i.user_id = ?"
             args = (*args, user_id)
         else:
             # Lo que está en un puesto del Rastro lo guarda una cuenta con id negativo.
-            where += " AND i.user_id > 0"
+            where = " AND i.user_id > 0"
         connection = self._connect()
         try:
             rows = connection.execute(
-                f"""
-                SELECT i.user_id, i.name, i.emoji, i.kind, i.starts_at, i.expires_at,
-                    (SELECT SUM(p.base) FROM shop_purchases p
-                     WHERE p.guild_id = i.guild_id AND p.inventory_id = i.id
-                       AND p.refunded = 0) AS paid,
-                    (SELECT it.price FROM shop_items it
-                     WHERE it.guild_id = i.guild_id AND it.id = i.item_id) AS price
-                FROM shop_inventory i WHERE {where}
-                ORDER BY i.user_id, i.id
-                """,
-                args,
+                _HOLDINGS_SQL + where + " ORDER BY i.user_id, i.id", args
             ).fetchall()
         finally:
             connection.close()
         out = []
-        for row in rows:
-            value = int(row["paid"] if row["paid"] is not None else row["price"] or 0)
+        for row, value in _holding_values(rows, now):
             expires = row["expires_at"]
-            if expires is not None:
-                life = float(expires) - float(row["starts_at"])
-                left = max(0.0, float(expires) - now)
-                value = round(value * left / life) if life > 0 else 0
             out.append(
                 (
                     int(row["user_id"]),

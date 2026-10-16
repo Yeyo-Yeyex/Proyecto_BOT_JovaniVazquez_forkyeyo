@@ -47,7 +47,7 @@ import logging
 import sqlite3
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -56,6 +56,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import renta
+from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
 from bot.repositories.housing import (
     DayRun,
@@ -65,6 +66,7 @@ from bot.repositories.housing import (
     PriceChanged,
     Purchase,
     Sale,
+    TenantDeal,
 )
 from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, vpo_ref
 from bot.services import housing as rules
@@ -84,8 +86,8 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
-    LISTING_BY_KEY,
     RENT_LEVELS,
+    Listing,
     listings_of,
 )
 from bot.services.housing_market import HousingService
@@ -115,8 +117,107 @@ MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", 
 OFFER_TIMEOUT = 30 * 60
 #: Lo que le pasa a un miembro y no al inmueble: sus logros van solo a él, no a los dueños.
 PERSONAL_EVENTS = frozenset(
-    {"ejecucion", "sorteo_vpo", "vpo_caducada", "partida_agotada", "oferta_fondo"}
+    {
+        "ejecucion",
+        "sorteo_vpo",
+        "vpo_caducada",
+        "partida_agotada",
+        "oferta_fondo",
+        "fianza_devuelta",
+        "fianza_incautada",
+    }
 )
+#: Canal del anuncio del BCE de los lunes (el mismo que el del Patrimonio).
+ANNOUNCE_CHANNEL_NAME = "chat-general"
+
+
+def _pct(value: float) -> str:
+    """`0.0225` → `2,25 %`."""
+    return f"{value * 100:.2f}".replace(".", ",") + " %"
+
+
+def effort_text(rent: int, income: int) -> str:
+    """«Destinarías el 58 % de tu sueldo al alquiler», con la vara del Banco de España."""
+    rate = rules.effort(rent, income)
+    if rate is None:
+        return (
+            "📉 Sin nómina de `pala` en 30 días: la renta te comería el 100 % de nada. El "
+            "Banco de España no tiene palabra para eso."
+        )
+    pct = round(rate * 100)
+    if rate > 1:
+        return (
+            f"📉 La renta se lleva el {pct} % de tu sueldo: trabajas para pagar el piso y "
+            "el piso para pagar a tu casero."
+        )
+    if rate > rules.OVERBURDEN:
+        return (
+            f"📉 Destinarías el {pct} % de tu sueldo al alquiler. El Banco de España llama "
+            f"sobreesfuerzo a pasar del {round(rules.OVERBURDEN * 100)} %."
+        )
+    return f"📈 Destinarías el {pct} % de tu sueldo al alquiler. Eres un unicornio."
+
+
+def requirements_text(rent: int, income: int) -> str:
+    """Lo que pide el casero: fianza y, sin nómina de 3 veces la renta, garantía extra."""
+    deposit = format_amount(rules.deposit_for(rent, guarantee=False))
+    if not rules.needs_guarantee(rent, income, aval=False):
+        return f"🧾 Fianza de un mes: {deposit}. Tu nómina pasa de 3 veces la renta: ni aval."
+    extra = format_amount(rules.deposit_for(rent, guarantee=True))
+    return (
+        f"🧾 Tu nómina no llega a 3 veces la renta: fianza y garantía adicional de dos "
+        f"meses ({extra} en total) salvo que te avalen tus padres (favor de `pala`), y "
+        f"entonces solo la fianza ({deposit}). Vuelve cuando te vayas."
+    )
+
+
+def signed_text(deal: TenantDeal) -> str:
+    """Lo que dejó en el depósito de fianzas al firmar."""
+    if deal.aval:
+        return f"👴 Sus padres le avalan: solo deja la fianza ({format_amount(deal.deposit)})."
+    if deal.guarantee:
+        return f"🧾 Deja fianza y garantía adicional: {format_amount(deal.deposit)}."
+    return f"🧾 Deja la fianza: {format_amount(deal.deposit)}."
+
+
+def promotion_embed(listing: Listing, index: float, builder: str) -> discord.Embed:
+    """Anuncio de la obra nueva del lunes: qué se ha levantado, dónde y quién se lo lleva."""
+    barrio = BARRIO_BY_KEY[listing.barrio]
+    embed = discord.Embed(
+        title=f"🏗️ {listing.title.removeprefix('Obra nueva: ')}",
+        description=(
+            f"**{builder}** levanta en **{barrio.name}** ({barrio.town}) un "
+            f"{KINDS[listing.kind].name.lower()} de {listing.m2} m²: "
+            f"**{format_amount(rules.price(listing, index))}**.\n*{listing.blurb}*\n\n"
+            f"Se compra en `pisos`, en su barrio. De cada participación que se venda, el "
+            f"{round(rules.PROMOTER_FEE * 100)} % va al promotor."
+        ),
+        color=discord.Color.orange(),
+    )
+    embed.set_footer(text="Obra nueva de la rama Ladrillo de pala: una por barrio, cada lunes.")
+    return embed
+
+
+def ecb_embed(before: float, after: float, week: date) -> discord.Embed:
+    """Anuncio de los lunes: lo que hace el Euríbor y la frase del BCE."""
+    if after > before:
+        move = "sube"
+    elif after < before:
+        move = "baja"
+    else:
+        move = "se queda"
+    embed = discord.Embed(
+        title="🏦 Fráncfort ha hablado",
+        description=(
+            f"*«{rules.ecb_phrase(before, after, week)}»*\n\n"
+            f"El Euríbor {move}: **{_pct(before)} → {_pct(after)}**. Las hipotecas que se "
+            f"firmen esta semana van al **{_pct(after + rules.MORTGAGE_SPREAD)} fijo**; las "
+            "que ya tienes no cambian."
+        ),
+        color=discord.Color.dark_blue(),
+    )
+    embed.set_footer(text="Euríbor simulado: se mueve un cuarto de punto cada lunes, del 0 al 5 %.")
+    return embed
 
 
 def _name(guild: discord.Guild | None, user_id: int) -> str:
@@ -276,6 +377,13 @@ class Panel(ui.View):
 
     # -- Pantallas ------------------------------------------------------------------
 
+    def _at(self, key: str) -> Listing:
+        """El inmueble de una clave del mercado de este servidor (la obra nueva incluida)."""
+        listing = self.market.listing(key)
+        if listing is None:
+            raise KeyError(key)
+        return listing
+
     def _names(self, market: Market) -> dict[int, str]:
         members = {m for holders in market.holdings.values() for m in holders}
         members |= {owner.owner_id for owner in market.vpo.values()}
@@ -304,8 +412,13 @@ class Panel(ui.View):
             mine = tuple(h.listing for h in market.of_member(me))
             news = await self.cog.service.news(self.guild.id, mine, 6)
             week = await self.cog.service.week_income(self.guild.id, me)
+            effort = None
+            home = market.homes.get(me)
+            if home is not None and home[0] == HOME_RENTED and home[1] in market.leases:
+                income = await self.cog.service.work_income(self.guild.id, me)
+                effort = rules.effort(market.leases[home[1]].rent, income)
             return view.portfolio_state(
-                market, me, self.owner.display_name, self.cash, week, news, names
+                market, me, self.owner.display_name, self.cash, week, news, names, effort
             )
         if screen == CAJA:
             return self._checkout_state()
@@ -333,7 +446,7 @@ class Panel(ui.View):
         )  # fmt: skip
 
     def _checkout_state(self, stamp: str | None = None) -> dict[str, Any]:
-        listing = LISTING_BY_KEY[self.listing]
+        listing = self._at(self.listing)
         index = self.market.index(listing.barrio)
         selling, shares = self.pending or (False, 1)
         if self.done is not None:
@@ -433,15 +546,15 @@ class Panel(ui.View):
         """
         me = self.owner.id
         if self.screen == MAPA:
-            mine = {LISTING_BY_KEY[h.listing].barrio for h in self.market.of_member(me)}
+            mine = {self._at(h.listing).barrio for h in self.market.of_member(me)}
             # Los barrios donde ya tienes algo van primero (`sorted` es estable).
             barrios = sorted(BARRIOS, key=lambda b: b.key not in mine)
             return [(CARTERA, {}), (VPO, {})] + [(BARRIO, {"barrio": b.key}) for b in barrios]
         if self.screen == BARRIO:
-            fichas = [(FICHA, {"listing": i.key}) for i in listings_of(self.barrio)]
+            fichas = [(FICHA, {"listing": i.key}) for i in self.market.listings_of(self.barrio)]
             return [*fichas, (MAPA, {}), (CARTERA, {})]
         if self.screen == FICHA:
-            barrio = LISTING_BY_KEY[self.listing].barrio
+            barrio = self._at(self.listing).barrio
             return [(BARRIO, {"barrio": barrio}), (CARTERA, {}), (MAPA, {})]
         if self.screen == CARTERA:
             mine = self.market.of_member(me)[:6]
@@ -554,10 +667,11 @@ class Panel(ui.View):
         select.callback = self._pick_barrio  # type: ignore[method-assign]
         self.add_item(select)
         if self.screen == BARRIO:
-            for slot, item in enumerate(listings_of(self.barrio)):
+            for slot, item in enumerate(self.market.listings_of(self.barrio)):
                 price = rules.price(item, self.market.index(item.barrio))
+                new = "🏗️ " if item.key in self.market.promotions else ""
                 self._button(
-                    f"{KINDS[item.kind].name} · {format_amount(price)}",
+                    f"{new}{KINDS[item.kind].name} · {format_amount(price)}",
                     f"ver:{slot}",
                     self._open_listing,
                     row=1,
@@ -576,9 +690,9 @@ class Panel(ui.View):
                     row=1,
                     options=[
                         discord.SelectOption(
-                            label=LISTING_BY_KEY[h.listing].title[:100],
+                            label=self._at(h.listing).title[:100],
                             value=h.listing,
-                            description=f"{BARRIO_BY_KEY[LISTING_BY_KEY[h.listing].barrio].name}"
+                            description=f"{BARRIO_BY_KEY[self._at(h.listing).barrio].name}"
                             f" · {h.shares} %",
                         )
                         for h in mine
@@ -645,7 +759,7 @@ class Panel(ui.View):
     def _owner_buttons(self) -> None:
         """Lo que puede hacer el dueño con su inmueble (fila de abajo de la ficha)."""
         key, me, market = self.listing, self.owner.id, self.market
-        listing = LISTING_BY_KEY[key]
+        listing = self._at(key)
         holders = market.shares_of(key)
         lease = market.leases.get(key)
         if not holders.get(me) or lease is None:
@@ -695,7 +809,7 @@ class Panel(ui.View):
         if can_decide and lease is not None and lease.status in (rules.DEFAULTING, rules.SQUATTED):
             self._button("⚖️ Desahuciar", "desahuciar", self._evict, row=1)
         if boss == self.owner.id and lease is not None:
-            listing = LISTING_BY_KEY[key]
+            listing = self._at(key)
             index = self.market.index(listing.barrio)
             levels: ui.Select = ui.Select(
                 placeholder="Renta que pides",
@@ -717,7 +831,7 @@ class Panel(ui.View):
             )
             levels.callback = self._pick_level  # type: ignore[method-assign]
             self.add_item(levels)
-        barrio = BARRIO_BY_KEY[LISTING_BY_KEY[key].barrio].name
+        barrio = BARRIO_BY_KEY[self._at(key).barrio].name
         self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
@@ -822,7 +936,7 @@ class Panel(ui.View):
         await interaction.response.edit_message(view=self)
 
     async def _go_barrio(self, interaction: discord.Interaction) -> None:
-        self.barrio = LISTING_BY_KEY[self.listing].barrio
+        self.barrio = self._at(self.listing).barrio
         await self._go(interaction, BARRIO)
 
     async def _back_to_listing(self, interaction: discord.Interaction) -> None:
@@ -839,7 +953,7 @@ class Panel(ui.View):
     async def _open_listing(self, interaction: discord.Interaction) -> None:
         custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
         slot = custom_id.rsplit(":", 1)[-1]
-        items = listings_of(self.barrio)
+        items = self.market.listings_of(self.barrio)
         if not slot.isdigit() or int(slot) >= len(items):
             await ack(interaction)
             return
@@ -848,11 +962,11 @@ class Panel(ui.View):
 
     async def _pick_mine(self, interaction: discord.Interaction) -> None:
         values = interaction.data.get("values", []) if interaction.data else []
-        if not values or values[0] not in LISTING_BY_KEY:
+        if not values or self.market.listing(values[0]) is None:
             await ack(interaction)
             return
         self.listing = values[0]
-        self.barrio = LISTING_BY_KEY[self.listing].barrio
+        self.barrio = self._at(self.listing).barrio
         await self._go(interaction, FICHA)
 
     # -- Dinero ---------------------------------------------------------------------
@@ -890,7 +1004,7 @@ class Panel(ui.View):
 
     def _expected(self) -> int:
         """Lo que dice la caja que se ve ahora: el total de la compra o lo que se cobra."""
-        listing = LISTING_BY_KEY[self.listing]
+        listing = self._at(self.listing)
         index = self.market.index(listing.barrio)
         selling, shares = self.pending or (False, 1)
         if not selling:
@@ -925,9 +1039,12 @@ class Panel(ui.View):
                     self.guild.id, self.owner.id, self.listing, shares, expected=expected
                 )
             else:
+                aval = self.financed and await curro.parents_aval(
+                    self.cog.bot, self.guild.id, self.owner.id
+                )
                 trade = await self.cog.service.buy(
                     self.guild.id, self.owner.id, self.listing, shares, expected=expected,
-                    financed=self.financed,
+                    financed=self.financed, aval=aval,
                 )  # fmt: skip
         except BalanceLimitError:
             await notify(interaction, "No te cabe más dinero en el monedero. Ni a Amancio.")
@@ -963,10 +1080,25 @@ class Panel(ui.View):
         moment = Moment(Event.TRADE if selling else Event.BUY)
         hint = await renta.hint(self.cog.bot, self.guild.id, self.owner.id, moment)
         await self.show(interaction, content=hint)
+        if isinstance(trade.deal, Purchase) and trade.deal.aval:
+            await curro.spend_parents_aval(self.cog.bot, self.guild.id, self.owner.id)
+            await notify(
+                interaction,
+                "👴 El banco solo firma con el aval de tus padres: el piso del pueblo queda de "
+                "garantía. Si dejas de pagar, van a por ellos (y tu familia de `pala` lo notará).",
+            )
         await renta.remind(self.cog.bot, interaction)
         await self.cog.track_trade(
             self.guild.id, self.owner, interaction.channel, trade.deal, trade.balance
         )
+        deal = trade.deal
+        if isinstance(deal, Purchase) and deal.promoter is not None and deal.promoter_fee:
+            logros.note(
+                self.cog.bot,
+                self.guild.id,
+                deal.promoter,
+                StatDelta(add={"pisos_promoter_fees": deal.promoter_fee}),
+            )
 
     async def _money(
         self,
@@ -1153,11 +1285,12 @@ class Panel(ui.View):
         if member.id in market.homes:
             await notify(interaction, f"{member.display_name} ya vive en otro sitio.")
             return
-        listing = LISTING_BY_KEY[key]
+        listing = self._at(key)
         lease = market.leases.get(key, rules.Lease())
         level = RENT_LEVELS["referencia" if lease.level == rules.VACATION_LEVEL else lease.level]
         rent = rules.asking_rent(listing, level, market.index(listing.barrio))
-        offer = TenantOffer(self.cog, self.guild, self.owner, member, key, rent)
+        income = await self.cog.service.work_income(self.guild.id, member.id)
+        offer = TenantOffer(self.cog, self.guild, self.owner, member, listing, rent, income)
         offer.message = await interaction.followup.send(
             content=member.mention,
             embed=offer.embed(),
@@ -1205,8 +1338,10 @@ class Panel(ui.View):
 class TenantOffer(ui.View):
     """Oferta pública de alquiler de un piso a otro miembro: él acepta o rechaza.
 
-    Al aceptar firma 5 años (60 días) con la renta que pide el piso ese día y la paga
-    cada noche de su monedero. Si gana poco, cobra el Bono Alquiler Joven.
+    Al aceptar firma 5 años (60 días) con la renta que pide el piso ese día, deja la
+    fianza (y la garantía adicional si su nómina no llega a 3 veces la renta y no le
+    avalan sus padres) y la paga cada noche de su monedero. Si gana poco, cobra el Bono
+    Alquiler Joven. La oferta enseña cuánto de su sueldo se le iría en la renta.
     """
 
     def __init__(
@@ -1215,22 +1350,26 @@ class TenantOffer(ui.View):
         guild: discord.Guild,
         owner: discord.abc.User,
         tenant: discord.abc.User,
-        key: str,
+        listing: Listing,
         rent: int,
+        income: int = 0,
     ) -> None:
         super().__init__(timeout=OFFER_TIMEOUT)
         self.cog = cog
         self.guild = guild
         self.owner = owner
         self.tenant = tenant
-        self.key = key
+        self.listing = listing
+        self.key = listing.key
         self.rent = rent
+        #: Neto medio de nómina al día de quien alquila (para la tasa de esfuerzo).
+        self.income = income
         self.message: discord.Message | None = None
         #: Hay una firma en marcha: un segundo clic no firma dos veces.
         self.busy = False
 
     def embed(self, text: str | None = None) -> discord.Embed:
-        listing = LISTING_BY_KEY[self.key]
+        listing = self.listing
         barrio = BARRIO_BY_KEY[listing.barrio].name
         return discord.Embed(
             title="🔑 Se alquila (a un colega)",
@@ -1240,7 +1379,10 @@ class TenantOffer(ui.View):
                 f"«{listing.title}» ({barrio}) por unos **{format_amount(self.rent)} al mes**, "
                 "5 años (60 días del bot). La renta se paga cada noche de tu monedero; si "
                 "ganas poco, el Estado te pone el Bono Alquiler Joven. Vivir en casa propia "
-                "(aunque sea alquilada) recarga más rápido la batería de `pala`."
+                "(aunque sea alquilada) recarga más rápido la batería de `pala`.\n\n"
+                + effort_text(self.rent, self.income)
+                + "\n"
+                + requirements_text(self.rent, self.income)
             ),
             color=discord.Color.teal(),
         )
@@ -1267,11 +1409,22 @@ class TenantOffer(ui.View):
         self.busy = True
         await ack(interaction)
         try:
-            lease = await self.cog.service.rent_to_member(
-                self.guild.id, self.owner.id, self.key, self.tenant.id
+            aval = await curro.parents_aval(self.cog.bot, self.guild.id, self.tenant.id)
+            deal = await self.cog.service.rent_to_member(
+                self.guild.id, self.owner.id, self.key, self.tenant.id, aval=aval
             )
         except HousingError as error:
             await notify(interaction, str(error))
+            return
+        except InsufficientFundsError as error:
+            await notify(
+                interaction,
+                f"No te llega para la fianza: tienes {format_amount(error.balance)}. Sin "
+                "fianza no hay llaves, ni en Canarias.",
+            )
+            return
+        except BalanceLimitError:
+            await notify(interaction, "Se ha atascado el depósito de fianzas. Prueba otra vez.")
             return
         except (OSError, sqlite3.Error):
             logger.exception("No se pudo firmar un alquiler entre miembros")
@@ -1280,18 +1433,27 @@ class TenantOffer(ui.View):
         finally:
             self.busy = False
         self.stop()
+        lease = deal.lease
         bono = " Cobra el Bono Alquiler Joven." if lease.bono else ""
-        title = LISTING_BY_KEY[self.key].title
+        title = self.listing.title
         await edit(
             interaction, content=None, view=None,
             embed=self.embed(
                 f"🤝 **{self.tenant.display_name}** firma con **{self.owner.display_name}**: "
-                f"«{title}» por {format_amount(lease.rent)} al mes.{bono} Bienvenido a la "
-                "generación inquilina."
+                f"«{title}» por {format_amount(lease.rent)} al mes.{bono} "
+                + signed_text(deal)
+                + " Bienvenido a la generación inquilina."
             ),
         )  # fmt: skip
-        await logros.track(self.cog.bot, self.guild.id, self.tenant, interaction.channel,
-                           housing_action_stats("inquilino_miembro"))  # fmt: skip
+        if deal.aval:
+            await curro.spend_parents_aval(self.cog.bot, self.guild.id, self.tenant.id)
+        rate = rules.effort(lease.rent, self.income)
+        await logros.track(
+            self.cog.bot, self.guild.id, self.tenant, interaction.channel,
+            housing_action_stats(
+                "inquilino_miembro", effort=rate, guarantee=deal.guarantee, aval=deal.aval
+            ),
+        )  # fmt: skip
         await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
                            housing_action_stats("casero_miembro"))  # fmt: skip
 
@@ -1380,7 +1542,9 @@ class Pisos(commands.Cog):
     async def close_guild(self, guild_id: int) -> list[DayRun]:
         """Cierra los días que falten en un servidor y apunta sus logros. Nunca lanza."""
         try:
-            runs = await self.service.close_days(guild_id)
+            runs = await self.service.close_days(
+                guild_id, lambda: curro.ladrillo_builders(self.bot, guild_id)
+            )
         except (OSError, sqlite3.Error):
             logger.exception("No se pudieron cerrar los días de pisos en %s", guild_id)
             return []
@@ -1388,6 +1552,11 @@ class Pisos(commands.Cog):
             for member, delta in (await self.tax_stats(guild_id)).items():
                 logros.note(self.bot, guild_id, member, delta)
         for run in runs:
+            if run.euribor is not None:
+                await self._announce_ecb(guild_id, run.day, *run.euribor)
+            for builder, key in run.promotions:
+                await self._announce_promotion(guild_id, builder, key)
+                logros.note(self.bot, guild_id, builder, StatDelta(add={"pisos_promotions": 1}))
             events: dict[int, list[str]] = {}
             for item in run.news:
                 if item.kind in PERSONAL_EVENTS:
@@ -1398,6 +1567,9 @@ class Pisos(commands.Cog):
                     events.setdefault(member, []).append(item.kind)
             for member in set(run.mortgage_unpaid):
                 events.setdefault(member, []).append("cuota_impagada")
+            for member in run.aval_executions:
+                await curro.parents_lose_home(self.bot, guild_id, member)
+                events.setdefault(member, []).append("ejecucion_aval")
             for member in set(run.members) | set(events) | set(run.bono) | set(run.installments):
                 day = run.members.get(member)
                 logros.note(
@@ -1413,6 +1585,60 @@ class Pisos(commands.Cog):
                     ),
                 )
         return runs
+
+    async def _announce_ecb(self, guild_id: int, week: date, before: float, after: float) -> None:
+        """Publica la frase del BCE del lunes si en el servidor alguien tiene pisos. Nunca lanza.
+
+        Sin nadie en el mercado sería un mensaje semanal que no le importa a nadie.
+        """
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return
+        try:
+            market = await self.service.market(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo leer el mercado para el anuncio del BCE")
+            return
+        if not market.holdings and not market.mortgages:
+            return
+        channel = (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+        if channel is None:
+            return
+        try:
+            await channel.send(
+                embed=ecb_embed(before, after, week),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning("No se pudo anunciar el Euríbor en %s", guild_id, exc_info=True)
+
+    async def _announce_promotion(self, guild_id: int, builder: int, key: str) -> None:
+        """Publica la obra nueva del lunes con su promotor. Nunca lanza."""
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return
+        try:
+            market = await self.service.market(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo leer el mercado para la obra nueva")
+            return
+        listing = market.listing(key)
+        channel = (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+        if listing is None or channel is None:
+            return
+        try:
+            await channel.send(
+                embed=promotion_embed(listing, market.index(listing.barrio), _name(guild, builder)),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning("No se pudo anunciar la obra nueva en %s", guild_id, exc_info=True)
 
     # -- Logros de compras y ventas ------------------------------------------------
 
@@ -1441,7 +1667,9 @@ class Pisos(commands.Cog):
         when = datetime.now(TIMEZONE)
         market = await self.service.market(guild_id)
         mine = market.of_member(member.id)
-        listing = LISTING_BY_KEY[deal.listing]
+        listing = market.listing(deal.listing)
+        if listing is None:
+            return
         if isinstance(deal, Purchase):
             delta = housing_purchase_stats(
                 kind=listing.kind,
@@ -1452,7 +1680,7 @@ class Pisos(commands.Cog):
                 shares_now=deal.shares,
                 holdings=len(mine),
                 whole=sum(h.shares == rules.SHARES for h in mine),
-                islands=len({BARRIO_BY_KEY[LISTING_BY_KEY[h.listing].barrio].island for h in mine}),
+                islands=len({BARRIO_BY_KEY[market.listing(h.listing).barrio].island for h in mine}),  # type: ignore[union-attr]
                 balance_after=balance,
                 when=when,
             )
@@ -1466,9 +1694,23 @@ class Pisos(commands.Cog):
                 holdings_left=len(mine),
             )
         if isinstance(deal, Purchase) and deal.loan:
-            delta.merge(housing_action_stats("hipoteca", loan=deal.loan))
+            euribor = deal.rate - rules.MORTGAGE_SPREAD
+            delta.merge(
+                housing_action_stats(
+                    "hipoteca",
+                    loan=deal.loan,
+                    floor=euribor <= rules.EURIBOR_MIN + 1e-9,
+                    ceiling=euribor >= rules.EURIBOR_MAX - 1e-9,
+                    aval=deal.aval,
+                )
+            )
         if isinstance(deal, Sale) and deal.vulture:
             delta.merge(housing_action_stats("venta_fondo"))
+        if isinstance(deal, Purchase) and deal.promoter is not None:
+            own = deal.promoter == member.id
+            delta.merge(
+                StatDelta(add={"pisos_new_build": 1, **({"pisos_own_build": 1} if own else {})})
+            )
         if (taxes := (await self.tax_stats(guild_id)).get(member.id)) is not None:
             delta.merge(taxes)
         await logros.track(self.bot, guild_id, member, channel, delta)

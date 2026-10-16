@@ -105,6 +105,7 @@ from bot.services.tax_report import (
     housing_lines,
     member_bill_embed,
     server_bill,
+    solidarity_line,
 )
 from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
@@ -1415,6 +1416,13 @@ class Casino(commands.Cog):
             add_bill_fields(embed, all_bills, server, names)
             housing = await self.economy.housing_tax_breakdown(guild.id)
             add_housing_fields(embed, housing, {m: self._display_name(guild, m) for m in housing})
+            filed, people, paid = await self.economy.solidarity_summary(guild.id)
+            if filed:
+                embed.add_field(
+                    name="💎 Grandes Fortunas",
+                    value=solidarity_line(filed, people, paid),
+                    inline=False,
+                )
             for name, value in explained:
                 embed.add_field(name=name, value=value, inline=False)
         else:

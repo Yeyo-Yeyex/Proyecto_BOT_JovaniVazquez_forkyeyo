@@ -26,6 +26,10 @@ from bot.cogs.pisos import (
     Pisos,
     SharesModal,
     TenantOffer,
+    ecb_embed,
+    effort_text,
+    promotion_embed,
+    requirements_text,
 )
 from bot.repositories.economy import EconomyRepository, LedgerEntry
 from bot.repositories.housing import DayRun, HousingRepository, MemberDay, News
@@ -530,6 +534,7 @@ async def test_alquilar_a_un_miembro_le_pide_que_acepte(tmp_path: Path) -> None:
     ana, bea = member(10, "Ana"), member(20, "Bea")
     bea.mention = "<@20>"
     await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.economy.repository.apply(GUILD, bea.id, [LedgerEntry(100_000, "fianza")])
     await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
     panel = await open_panel(cog, ana, guild_with(ana, bea))
     panel.barrio, panel.listing = "taco", "taco_bajo"
@@ -542,6 +547,8 @@ async def test_alquilar_a_un_miembro_le_pide_que_acepte(tmp_path: Path) -> None:
     await panel._pick_tenant(pick)
     offer = pick.followup.send.await_args.kwargs["view"]
     assert isinstance(offer, TenantOffer) and offer.tenant is bea
+    text = pick.followup.send.await_args.kwargs["embed"].description
+    assert "nómina" in text and "garantía adicional" in text  # Bea no cobra nómina
 
     stranger = fake_interaction(ana)
     await offer.accept.callback(stranger)  # type: ignore[attr-defined]
@@ -553,6 +560,66 @@ async def test_alquilar_a_un_miembro_le_pide_que_acepte(tmp_path: Path) -> None:
     assert market.leases["taco_bajo"].member == bea.id
     assert market.homes[bea.id] == (HOME_RENTED, "taco_bajo")
     assert offer.is_finished()
+    rent = market.leases["taco_bajo"].rent
+    deposit = rules.deposit_for(rent, guarantee=True)
+    assert await cog.economy.balance(GUILD, bea.id) == STARTING_BALANCE + 100_000 - deposit
+
+
+def test_la_tasa_de_esfuerzo_habla_como_el_banco_de_espana() -> None:
+    assert "sobreesfuerzo" in effort_text(4_000, 6_000)
+    assert "unicornio" in effort_text(1_000, 6_000)
+    assert "casero" in effort_text(9_000, 6_000)
+    assert "nada" in effort_text(4_000, 0)
+    assert "ni aval" in requirements_text(1_000, 6_000)
+    assert "padres" in requirements_text(4_000, 6_000)
+
+
+async def test_el_lunes_francfort_habla_en_el_canal_si_hay_mercado(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = guild_with(ana)
+    guild.text_channels = [channel]
+    cog.bot.get_guild = lambda _id: guild
+    monday = datetime(2026, 10, 19).date()
+    await cog._announce_ecb(GUILD, monday, 0.02, 0.0225)
+    channel.send.assert_not_awaited()  # nadie tiene pisos: no se molesta a nadie
+
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    await cog._announce_ecb(GUILD, monday, 0.02, 0.0225)
+    embed = channel.send.await_args.kwargs["embed"]
+    assert rules.ecb_phrase(0.02, 0.0225, monday) in embed.description
+    assert "2,00 % → 2,25 %" in embed.description and "3,25 % fijo" in embed.description
+    assert isinstance(ecb_embed(0.02, 0.02, monday), discord.Embed)
+
+
+async def test_si_ejecutan_lo_que_avalaron_tus_padres_lo_paga_la_familia(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from bot.cogs import pisos
+
+    cog, _scene, _clock = await make(tmp_path)
+    run = DayRun(day=datetime(2026, 10, 20).date())
+    run.aval_executions = [10]
+    cog.service.close_days = AsyncMock(return_value=[run])  # type: ignore[method-assign]
+    cog.tax_stats = AsyncMock(return_value={})  # type: ignore[method-assign]
+    lost: list[int] = []
+    noted: dict[int, Any] = {}
+
+    async def lose(_bot: object, _guild: int, who: int) -> None:
+        lost.append(who)
+
+    def note(_bot: object, _guild: int, who: int, delta: Any, *_rest: object) -> None:
+        noted[who] = delta
+
+    monkeypatch.setattr(pisos.curro, "parents_lose_home", lose)
+    monkeypatch.setattr(pisos.logros, "note", note)
+    await cog.close_guild(GUILD)
+    assert lost == [10]
+    assert noted[10].add[f"{PISOS_EVENT_PREFIX}ejecucion_aval"] == 1
 
 
 async def test_cada_noche_lo_personal_va_solo_a_su_miembro(
@@ -585,3 +652,41 @@ async def test_cada_noche_lo_personal_va_solo_a_su_miembro(
     assert f"{ev}ejecucion" not in noted[20].add
     assert noted[20].add[f"{ev}cuota_impagada"] == 1 and noted[20].add[f"{ev}impago"] == 1
     assert noted[30].add == {"pisos_bono": 500}
+
+
+async def test_la_obra_nueva_se_anuncia_y_apunta_el_logro_del_promotor(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from bot.cogs import pisos
+
+    cog, _scene, clock = await make(tmp_path)
+    clock.now = datetime(2026, 10, 20, 12, tzinfo=TIMEZONE).timestamp()  # martes
+    ana = member(10, "Ana")
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = guild_with(ana)
+    guild.text_channels = [channel]
+    cog.bot.get_guild = lambda _id: guild
+    asked: list[int] = []
+
+    async def builders(_bot: object, guild_id: int) -> tuple[int, ...]:
+        asked.append(guild_id)
+        return (ana.id,)
+
+    noted: list[tuple[int, Any]] = []
+
+    def note(_bot: object, _guild: int, who: int, delta: Any, *_rest: object) -> None:
+        noted.append((who, delta))
+
+    monkeypatch.setattr(pisos.curro, "ladrillo_builders", builders)
+    monkeypatch.setattr(pisos.logros, "note", note)
+    runs = await cog.close_guild(GUILD)  # cierra el lunes 19
+    assert asked == [GUILD]
+    (run,) = [r for r in runs if r.promotions]
+    embed = channel.send.await_args_list[-1].kwargs["embed"]
+    assert "Ana" in embed.description and "5 %" in embed.description
+    assert any(who == ana.id and d.add.get("pisos_promotions") == 1 for who, d in noted)
+    listing = (await cog.service.market(GUILD)).listing(run.promotions[0][1])
+    assert listing is not None
+    assert promotion_embed(listing, 1.0, "Ana").title.endswith(listing.title.split(": ")[1])

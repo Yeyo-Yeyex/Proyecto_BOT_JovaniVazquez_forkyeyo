@@ -1202,3 +1202,61 @@ VPO_UNITS: tuple[VpoUnit, ...] = (
 )  # fmt: skip
 
 VPO_BY_KEY: dict[str, VpoUnit] = {unit.key: unit for unit in VPO_UNITS}
+
+
+# -- Obra nueva (fase 5) -------------------------------------------------------------------
+#
+# Cada lunes, quien está en la rama Ladrillo de `pala` levanta una promoción en un barrio
+# que aún no tiene (`housing.new_promotion`). Los nombres, la letra pequeña y las plantas
+# salen de aquí; el precio, de los metros y del barrio, como cualquier otro inmueble.
+
+#: Nombres de las promociones, con la sorna de los folletos de la burbuja.
+PROMOTION_NAMES: tuple[str, ...] = (
+    "Residencial Brisas del Atlántico",
+    "Residencial Mirador del Teide",
+    "Torre Burbuja 2007",
+    "Edificio Pelotazo",
+    "Jardines de Moncloa",
+    "Residencial Recalificado",
+    "Las Terrazas del Falcon",
+    "Marina Blackstone",
+    "Villa Manual de Resistencia",
+    "Mirador de Galapagar",
+    "Bahía Next Generation",
+    "Lomo Especulativo",
+    "Atalaya del IBEX",
+    "Costa Sobres de Génova",
+    "Residencial Ladrillazo",
+    "Edificio Vaso es un Vaso",
+    "Las Dunas del Pelotazo",
+    "Residencial Puerta Giratoria",
+    "Altos de la Motosierra",
+    "Residencial Atado y Bien Atado",
+    "Torre Mesa Larguísima",
+    "Residencial Make Canarias Great",
+    "Edificio Waterloo",
+    "Residencial Gofio Premium",
+)
+
+#: La letra pequeña de cada promoción.
+PROMOTION_BLURBS: tuple[str, ...] = (
+    "Sobre plano. Entrega prevista: cuando el Cabildo dé la licencia.",
+    "Piscina comunitaria con vistas al mar (en el render).",
+    "Domótica: la persiana sube con el móvil y el precio con el Euríbor.",
+    "Zonas verdes de césped artificial y certificado A de la propia promotora.",
+    "Llave en mano en 2029, en 2031 como muy tarde, palabra de promotor.",
+    "Reserva con 6.000 € y el resto, a treinta años y un aval de tus padres.",
+    "Vistas al mar garantizadas hasta que construyan delante.",
+    "Recalificado en un pleno de madrugada. Todo legal, de momento.",
+    "Gimnasio, coworking y conserje. El conserje es un holograma.",
+    "Firmado por un arquitecto estrella que no ha pisado Canarias.",
+    "Calidades premium: el folleto es de papel satinado.",
+    "Últimas unidades desde el primer día. Siempre son las últimas.",
+)
+
+#: Plantas de la obra nueva por tipo de inmueble.
+PROMOTION_FLOORS: dict[str, tuple[str, ...]] = {
+    "piso2": ("1.º con ascensor", "3.º con ascensor", "5.º con ascensor"),
+    "piso3": ("2.º con ascensor", "4.º con ascensor", "Bajo con jardín"),
+    "atico": ("Ático con solárium", "Ático dúplex"),
+}

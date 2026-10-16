@@ -200,10 +200,13 @@ def format_rate(rate: float) -> str:
 # comía su renta (y ponía un techo al ahorro que hacía imposible comprar lo más
 # caro de la tienda). Los tipos son los reales.
 #
-# La base es el patrimonio neto: el efectivo más los inmuebles a su valor fiscal
-# (`housing.fiscal_value`, art. 10 de la Ley 19/1991). Simplificación: los bienes
-# de la tienda no cuentan (serían el art. 18; el ajuar doméstico está exento por
-# el art. 4.Cuatro) y no se aplica el límite conjunto con el IRPF del art. 31.
+# La base es el patrimonio neto: el efectivo, los inmuebles a su valor fiscal
+# (`housing.fiscal_value`, art. 10 de la Ley 19/1991) y los objetos de la tienda
+# (coleccionables y títulos: joyas, coches, cuadros) a lo que costaron sin IGIC
+# (arts. 18 y 19). Roles, potenciadores y mascotas no cuentan: son derechos que
+# caducan o ajuar doméstico, exento por el art. 4.Cuatro. Se aplica el límite
+# conjunto con el IRPF del art. 31 (`wealth_quote`) y, por encima de 3.000.000 € de
+# base, se declara el Impuesto de Solidaridad de las Grandes Fortunas.
 #
 # El ejercicio dura una semana, como la renta del casino: cada lunes se cobra la
 # cuota anual completa sobre lo que se tiene en ese momento. Se paga con el
@@ -243,6 +246,85 @@ def wealth_tax(net_worth: int) -> int:
     if base <= 0:
         return 0
     return round(apply_scale(base / WEALTH_SCALE, WEALTH_BRACKETS) * WEALTH_SCALE)
+
+
+#: Límite conjunto con el IRPF (art. 31 de la Ley 19/1991): la cuota del Patrimonio y la
+#: del IRPF juntas no pueden pasar del 60 % de la base imponible del IRPF. Si se pasan,
+#: el Patrimonio baja, pero como mucho un 80 %: siempre se paga al menos el 20 %. No
+#: cuenta la parte del Patrimonio de lo que no puede dar rentas (los objetos de la tienda).
+WEALTH_JOINT_LIMIT = 0.60
+WEALTH_MAX_REDUCTION = 0.80
+
+#: Impuesto Temporal de Solidaridad de las Grandes Fortunas (art. 3 de la Ley 38/2022):
+#: mismo patrimonio neto y mismo mínimo exento que el Patrimonio, pero la escala empieza
+#: al 0 % hasta 3.000.000 € de base. Se descuenta el Patrimonio pagado y aplica el mismo
+#: límite conjunto. Canarias no bonifica el Patrimonio, así que sale a cero: se declara y
+#: no se paga. Escala: (desde €, tipo marginal).
+SOLIDARITY_WEALTH_BRACKETS: tuple[tuple[float, float], ...] = (
+    (0.0, 0.0),
+    (3_000_000.0, 0.017),
+    (5_347_998.03, 0.021),
+    (10_695_996.06, 0.035),
+)
+#: Patrimonio neto desde el que se declara: el mínimo exento más los 3.000.000 € al 0 %
+#: (37.000.000 Y$ a la escala general).
+SOLIDARITY_WEALTH_THRESHOLD = round(
+    (WEALTH_MINIMUM_EUR + SOLIDARITY_WEALTH_BRACKETS[1][0]) * WEALTH_SCALE
+)
+
+
+@dataclass(frozen=True, slots=True)
+class WealthQuote:
+    """La cuenta del Patrimonio de un lunes.
+
+    Attributes:
+        full: Cuota íntegra (`wealth_tax`).
+        due: Lo que se paga tras el límite conjunto con el IRPF.
+        solidarity: Lo que se paga de Grandes Fortunas (cero en Canarias).
+        subject: Si pasa del umbral de Grandes Fortunas y tiene que declararlo.
+    """
+
+    full: int
+    due: int
+    solidarity: int = 0
+    subject: bool = False
+
+    @property
+    def reduced(self) -> int:
+        """Lo que le ahorra el límite conjunto."""
+        return self.full - self.due
+
+
+def wealth_quote(net_worth: int, *, unproductive: int = 0, weekly_income: int = 0) -> WealthQuote:
+    """Patrimonio con el límite conjunto del art. 31 y las Grandes Fortunas.
+
+    El año fiscal del bot es la semana: la base del IRPF es la renta sujeta de la semana
+    × 365/7 (la misma proyección que las retenciones) y su cuota, la escala de siempre.
+
+    Args:
+        net_worth: Base: efectivo, pisos y objetos.
+        unproductive: La parte de la base que no da rentas (objetos de la tienda): su
+            parte de la cuota no se rebaja con el límite conjunto.
+        weekly_income: Renta sujeta a IRPF de la semana, en la escala general.
+    """
+    full = wealth_tax(net_worth)
+    due = full
+    if full > 0:
+        annual = max(0, weekly_income) * _DAYS_PER_YEAR // _WINDOW_DAYS
+        irpf = round(annual_tax(annual / YAPDOLLARS_PER_EURO) * YAPDOLLARS_PER_EURO)
+        share = 1 - min(1.0, max(0, unproductive) / net_worth) if net_worth > 0 else 0.0
+        productive = round(full * share)
+        excess = irpf + productive - round(annual * WEALTH_JOINT_LIMIT)
+        if excess > 0:
+            due = full - min(excess, productive, round(full * WEALTH_MAX_REDUCTION))
+    subject = net_worth > SOLIDARITY_WEALTH_THRESHOLD
+    solidarity = 0
+    if subject and full > 0:
+        base = (net_worth - WEALTH_MINIMUM) / WEALTH_SCALE
+        raw = round(apply_scale(base, SOLIDARITY_WEALTH_BRACKETS) * WEALTH_SCALE)
+        # El mismo límite conjunto, en la misma proporción, y se descuenta el Patrimonio.
+        solidarity = max(0, raw * due // full - due)
+    return WealthQuote(full=full, due=due, solidarity=solidarity, subject=subject)
 
 
 # -- IGIC: el impuesto al consumo ---------------------------------------------------

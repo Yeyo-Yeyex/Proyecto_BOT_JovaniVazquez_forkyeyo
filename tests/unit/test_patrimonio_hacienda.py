@@ -20,7 +20,7 @@ from bot.cogs import patrimonio as patrimonio_cog
 from bot.cogs.patrimonio import Patrimonio
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.lottery import LotteryRepository
-from bot.repositories.shop import ShopRepository
+from bot.repositories.shop import ShopRepository, wealth_goods_in
 from bot.services.achievements import hacienda_stats, patrimonio_stats
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
@@ -35,7 +35,9 @@ from bot.services.tax_report import (
     bills,
     member_bill_embed,
     server_bill,
+    solidarity_line,
 )
+from bot.services.taxes import wealth_quote
 
 GUILD = 1
 ANA = 10
@@ -123,6 +125,46 @@ async def test_los_bienes_valen_lo_pagado_sin_igic_y_lo_que_caduca_se_deprecia(
     assert full == {"Yate": 500, "Doble XP": 1_000}
     assert half["Doble XP"] == 500
     assert gone == {"Yate": 500}
+
+
+async def test_el_patrimonio_cuenta_los_objetos_de_la_tienda_y_no_los_potenciadores(
+    tmp_path: Path,
+) -> None:
+    economy, shop, _lottery = await stores(tmp_path)
+    await economy.grant(GUILD, ANA, amount=20_000_000, reason="prueba")
+    sorolla = await shop.create_item(
+        GUILD, kind=Kind.TROPHY, name="Sorolla", emoji="🖼️", description="", price=8_000_000,
+        igic="lujo", now=NOW,
+    )  # fmt: skip
+    boost = await shop.create_item(
+        GUILD, kind=Kind.BOOST, name="Doble XP", emoji="⚡", description="", price=1_000,
+        igic="general", duration=3_600, multiplier=2, now=NOW,
+    )  # fmt: skip
+    await buy(economy, shop, sorolla.id, ANA)
+    await buy(economy, shop, boost.id, ANA)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.row_factory = sqlite3.Row
+        assert wealth_goods_in(connection, GUILD, NOW) == {ANA: 8_000_000}
+
+    economy._clock = Clock(datetime(2026, 10, 5, 12, tzinfo=TIMEZONE).timestamp())
+    await economy.charge_wealth_tax(GUILD)  # activación
+    economy._clock = Clock(datetime(2026, 10, 12, 12, tzinfo=TIMEZONE).timestamp())
+    _, run = await economy.charge_wealth_tax(
+        GUILD, goods=lambda connection: wealth_goods_in(connection, GUILD, NOW)
+    )
+    (charge,) = run.charges
+    cash = await economy.balance(GUILD, ANA) + charge.tax
+    assert charge.goods == 8_000_000 and charge.balance == cash + 8_000_000
+    # El cuadro no da rentas: su parte de la cuota no la rebaja el límite con el IRPF.
+    assert charge.tax == wealth_quote(charge.balance, unproductive=8_000_000).due
+    assert charge.tax > wealth_quote(charge.balance).due
+
+
+def test_la_linea_de_las_grandes_fortunas_dice_que_sale_a_cero() -> None:
+    text = solidarity_line(3, 1, 0)
+    assert "3 declaraciones" in text and "1 fortuna " in text and "0 Y$" in text
+    assert "Ley 38/2022" in text
+    assert any(kind.key == "grandes_fortunas" for kind in TAX_KINDS)
 
 
 async def test_boletos_de_sorteos_abiertos_cuentan_y_los_celebrados_no(tmp_path: Path) -> None:

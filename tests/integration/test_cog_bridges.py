@@ -28,6 +28,7 @@ from bot.services.blackjack import Card
 from bot.services.coin import Outcome
 from bot.services.enraya import Board, Disc
 from bot.services.skins import SKIN_BY_KEY
+from bot.services.work import ShiftRecord
 
 GUILD_ID = 1
 GUILD = GUILD_ID
@@ -1909,6 +1910,33 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         housing = [f for f in embed.fields if f.name.startswith("🏠 Lo que pagan los pisos")]
         assert housing and "ITP" in housing[0].value
         assert len(embed) <= 6_000
+    finally:
+        await client.close()
+
+
+async def test_pisos_ve_el_aval_de_los_padres_de_pala_con_el_bot_real(tmp_path: Path) -> None:
+    """`pisos` carga antes que `pala`: sus puentes del aval tienen que encontrar el trabajo."""
+    client = await load_bot(tmp_path)
+    try:
+        curro = importer("Pisos", client).curro
+        await client.work.hire(GUILD, OWNER_ID, "obra")
+        assert not await curro.parents_aval(client, GUILD, OWNER_ID)
+        await client.work.ask_favor(GUILD, OWNER_ID, "aval")
+        assert await curro.parents_aval(client, GUILD, OWNER_ID)
+        await curro.spend_parents_aval(client, GUILD, OWNER_ID)
+        assert not await curro.parents_aval(client, GUILD, OWNER_ID)
+        before = (await client.work.status(GUILD, OWNER_ID)).contract.family
+        await curro.parents_lose_home(client, GUILD, OWNER_ID)
+        assert (await client.work.status(GUILD, OWNER_ID)).contract.family < before
+        assert await curro.ladrillo_builders(client, GUILD) == ()  # peón, no promotor
+        contract = (await client.work.status(GUILD, OWNER_ID)).contract
+        contract.level, contract.branch = 6, "ladrillo"
+        await client.work.repository.save_contract(GUILD, OWNER_ID, contract)
+        await client.work.repository.add_shift(
+            GUILD, OWNER_ID,
+            ShiftRecord("obra", 6, "2026-10-19", client.work.now(), 80, "ordinario", 1, 1),
+        )  # fmt: skip
+        assert await curro.ladrillo_builders(client, GUILD) == (OWNER_ID,)
     finally:
         await client.close()
 

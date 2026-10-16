@@ -28,7 +28,7 @@ from enum import Enum
 import discord
 
 from bot.services.economy import format_amount
-from bot.services.taxes import TAX_COLLECTOR
+from bot.services.taxes import SOLIDARITY_WEALTH_THRESHOLD, TAX_COLLECTOR
 
 
 class Group(Enum):
@@ -70,6 +70,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.DIRECT, "LGSS"),
     TaxKind("patrimonio", "🏰", "Impuesto sobre el Patrimonio", "Patrim.", Group.DIRECT,
             "Ley 19/1991"),
+    TaxKind("grandes_fortunas", "💎", "Impuesto de Solidaridad de las Grandes Fortunas",
+            "Grandes F.", Group.DIRECT, "art. 3 Ley 38/2022"),
     TaxKind("loteria", "🎟️", "Gravamen especial de loterías", "Lotería", Group.DIRECT,
             "DA 33ª LIRPF"),
     TaxKind("igic", "🛒", "IGIC de las compras", "IGIC", Group.INDIRECT, "Ley 4/2012"),
@@ -283,6 +285,17 @@ HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
     ("igic", "🏖️", "IGIC de las estancias vacacionales", "art. 51 Ley 4/2012"),
     ("licencia", "📜", "Tasas de licencias vacacionales", "ley canaria de vivienda vacacional"),
 )
+
+
+def solidarity_line(filed: int, people: int, paid: int) -> str:
+    """La línea de las Grandes Fortunas de `hacienda`: se declaran aunque salgan a cero."""
+    who = "fortuna" if people == 1 else "fortunas"
+    return (
+        f"{filed} declaraciones de {people} {who} de más de "
+        f"{format_amount(SOLIDARITY_WEALTH_THRESHOLD)}: **{format_amount(paid)}**. Se "
+        "descuenta el Patrimonio pagado y Canarias no lo bonifica, así que sale a cero "
+        "· art. 3 Ley 38/2022"
+    )
 
 
 def housing_lines(amounts: dict[str, int]) -> list[str]:

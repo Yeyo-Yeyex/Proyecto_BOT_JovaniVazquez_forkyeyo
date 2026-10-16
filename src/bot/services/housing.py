@@ -46,7 +46,11 @@ from datetime import date, timedelta
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
     KINDS,
+    LISTING_BY_KEY,
     LISTINGS,
+    PROMOTION_BLURBS,
+    PROMOTION_FLOORS,
+    PROMOTION_NAMES,
     RENT_LEVELS,
     TENANTS,
     Listing,
@@ -349,8 +353,14 @@ def sale_quote(
 
 
 def barrio_weight(listing: Listing) -> float:
-    """Lo que pesa un inmueble en su barrio: su precio entre el de los tres juntos."""
+    """Lo que pesa un inmueble en su barrio: su precio entre el de todos los del barrio.
+
+    La obra nueva cuenta con los tres del catálogo y ella misma (cada barrio tiene una como
+    mucho), así que nunca pesa más que todo el barrio.
+    """
     total = sum(base_price(item) for item in LISTINGS if item.barrio == listing.barrio)
+    if listing.key not in LISTING_BY_KEY:
+        total += base_price(listing)
     return base_price(listing) / total
 
 
@@ -721,6 +731,14 @@ AUCTION_SHARE = 0.7
 HOME_WEALTH_EXEMPT = 3_000_000
 #: Emanciparse: la batería de `pala` recarga un 20 % más rápido en tu casa.
 HOME_REGEN = 1.2
+#: El aval de tus padres (favor `aval` de `pala`): el banco suma a tus ingresos la mitad
+#: de la pensión de tu padre, la media de jubilación (unos 1.500 € al mes), porque la otra
+#: mitad la necesitan para vivir. Va a la escala de las nóminas (`WAGE_YAPDOLLARS_PER_EURO`),
+#: como lo que mira el banco. La hipoteca queda avalada (`PARENTS_AVAL`): si la ejecutan,
+#: tus padres pierden el piso del pueblo y la familia de `pala` se hunde.
+PARENTS_PENSION_EUR = 1_500
+PARENTS_SHARE = 0.5
+PARENTS_AVAL = "padres"
 #: IPREM en euros al año (600 € × 14 pagas, el de 2025 prorrogado). La VPO pide no
 #: pasar de 3,5 veces el IPREM de ingresos.
 IPREM_EUR_YEAR = 8_400
@@ -749,9 +767,63 @@ def next_euribor(value: float, rng: random.Random) -> float:
     return round(min(EURIBOR_MAX, max(EURIBOR_MIN, moved)), 4)
 
 
+#: Lo que dice el BCE desde Fráncfort cuando el Euríbor sube, baja o se queda quieto. El
+#: Euríbor no lo fija el BCE (es lo que se prestan los bancos), pero lo sigue de cerca:
+#: aquí cada lunes sale una frase de su presidencia con el movimiento.
+ECB_UP: tuple[str, ...] = (
+    "Lagarde sube tipos «para domar la inflación»; tu cuota no tiene quién la dome",
+    "Los halcones de Fráncfort ganan la votación: la paloma acaba en paella",
+    "El BCE endurece la política monetaria. Tu nevera ya la había endurecido antes",
+    "«La inflación es transitoria», dijeron. Lo transitorio era tu poder adquisitivo",
+    "Fráncfort sube un cuarto de punto y el Bundesbank lo celebra con salchichas",
+    "Subida de tipos: los bancos aplauden, los hipotecados rezan, Sánchez culpa a Putin",
+    "Lagarde avisa: «Haremos lo que haga falta». Esta vez, lo que haga falta es cobrarte",
+    "El BCE sube tipos y Feijóo dice que con él no pasaría. Con él gobierna Fráncfort igual",
+)
+ECB_DOWN: tuple[str, ...] = (
+    "Lagarde baja tipos: los fondos buitre ya están mirando tu barrio",
+    "Whatever it takes, versión rebajas: el BCE abarata el dinero (para quien ya lo tiene)",
+    "Fráncfort baja un cuarto de punto. El precio de los pisos lo sube medio",
+    "El BCE recorta tipos y las inmobiliarias reimprimen los carteles con otro cero",
+    "Bajada de tipos: Bruselas lo celebra, Alemania protesta y tu casero sube la renta",
+    "Dinero más barato: lo justo para que el ático suba otro 10 %",
+    "Lagarde abre el grifo. El agua llega antes a Blackstone que a tu cuenta",
+    "El BCE baja tipos y el Gobierno se lo apunta en el Manual de resistencia",
+)
+ECB_HOLD: tuple[str, ...] = (
+    "El BCE mantiene los tipos «atado y bien atado» hasta nueva orden",
+    "Lagarde no toca nada: reunión de seis horas para decir que todo sigue igual",
+    "Tipos congelados. Lo único que se mueve en Fráncfort es el canapé",
+    "Fráncfort espera «a tener más datos». Los datos esperan a tener más Fráncfort",
+    "El BCE no mueve ficha: ni halcones ni palomas, gaviotas de Las Canteras",
+    "Política monetaria en pausa, como la reforma de la financiación autonómica",
+    "Tipos quietos: el BCE vigila la inflación desde una mesa larguísima, como Putin",
+)
+
+
+def ecb_phrase(before: float, after: float, week: date) -> str:
+    """La frase del BCE de un lunes: según el Euríbor suba, baje o se quede quieto.
+
+    Sale siempre la misma para la misma semana y el mismo movimiento (la elige el
+    número del lunes), así que no hace falta guardarla para enseñarla otra vez.
+    """
+    if after > before:
+        pool = ECB_UP
+    elif after < before:
+        pool = ECB_DOWN
+    else:
+        pool = ECB_HOLD
+    return pool[week.toordinal() // 7 % len(pool)]
+
+
 def vpo_income_cap() -> int:
     """Neto diario de nómina máximo para la VPO, en Y$ de nómina (escala de `pala`)."""
     return round(IPREM_EUR_YEAR * VPO_INCOME_IPREM * WAGE_YAPDOLLARS_PER_EURO / 365)
+
+
+def parents_income() -> int:
+    """Lo que suma al día el aval de tus padres a lo que mira el banco, en Y$ de nómina."""
+    return round(PARENTS_PENSION_EUR * PARENTS_SHARE * WAGE_YAPDOLLARS_PER_EURO / INCOME_DAYS)
 
 
 def daily_income(work_net: int, rent: int) -> int:
@@ -789,6 +861,36 @@ BONO_MAX = BONO_EUR * YAPDOLLARS_PER_EURO
 BONO_SHARE = 0.5
 #: Ingresos máximos para el bono: 3 veces el IPREM (RD 42/2022, art. 4).
 BONO_INCOME_IPREM = 3.0
+
+
+#: Sobreesfuerzo: el Banco de España habla de sobreesfuerzo cuando el alquiler se come
+#: más del 30 % de lo que se gana.
+OVERBURDEN = 0.30
+#: Lo que piden los caseros para alquilar: una nómina de 3 veces la renta.
+INCOME_RENT_MULTIPLE = 3
+#: Fianza de un mes de renta en la vivienda (art. 36.1 LAU) y, si la nómina no llega a
+#: 3 veces la renta, la garantía adicional de dos meses más, el máximo que permite el
+#: art. 36.5 LAU. Con el aval de tus padres (`pala`) no se pide la garantía.
+DEPOSIT_MONTHS = 1
+GUARANTEE_MONTHS = 2
+
+
+def effort(rent: int, daily_net: int) -> float | None:
+    """Parte del sueldo que se va en el alquiler: la renta de un mes (un día) entre el neto de
+    nómina de un día (`work_income`). `None` si no cobra nómina."""
+    if daily_net <= 0:
+        return None
+    return rent / daily_net
+
+
+def needs_guarantee(rent: int, daily_net: int, *, aval: bool) -> bool:
+    """Si el casero pide la garantía adicional: nómina por debajo de 3 veces la renta y sin aval."""
+    return not aval and daily_net < rent * INCOME_RENT_MULTIPLE
+
+
+def deposit_for(rent: int, *, guarantee: bool) -> int:
+    """Lo que se deja al firmar: la fianza y, si se pide, la garantía adicional."""
+    return rent * (DEPOSIT_MONTHS + (GUARANTEE_MONTHS if guarantee else 0))
 
 
 def bono_amount(rent: int) -> int:
@@ -868,3 +970,58 @@ def level_allowed(level: str, *, index: float, whole_homes: int, license: bool) 
 def socimi_tax(profit: int) -> int:
     """El 19 % del dividendo que reparte la SOCIMI de un mes de alquiler."""
     return round(max(0, profit) * SOCIMI_RATE)
+
+
+# -- Fase 5: obra nueva de la rama Ladrillo --------------------------------------------
+
+#: Las claves de la obra nueva: `obra_1`, `obra_2`… (ningún barrio se llama así).
+PROMOTION_PREFIX = "obra_"
+#: Tipos de la obra nueva y sus metros, `(tipo, mínimo, máximo)`.
+PROMOTION_KINDS: tuple[tuple[str, int, int], ...] = (
+    ("piso2", 70, 90),
+    ("piso3", 90, 120),
+    ("atico", 85, 115),
+)
+#: Comisión del promotor: de cada participación de su promoción que se compra, el 5 % del
+#: precio va a quien la levantó en vez de desaparecer (el margen de la promotora). Es
+#: rendimiento de una actividad económica (art. 27 LIRPF, el promotor de `pala` es
+#: autónomo) y se retiene a cuenta como el resto de la renta general.
+PROMOTER_FEE = 0.05
+#: Días hacia atrás en que hay que haber fichado en la rama Ladrillo para levantar la
+#: promoción del lunes.
+BUILDER_DAYS = 7
+
+
+def is_promotion(key: str) -> bool:
+    """Si una clave es de la obra nueva."""
+    return key.startswith(PROMOTION_PREFIX)
+
+
+def new_promotion(number: int, free_barrios: list[str], rng: random.Random) -> Listing:
+    """La promoción número `number` del servidor, en uno de los barrios que no tienen.
+
+    Es un inmueble como los del catálogo: su precio y su renta salen de sus metros y del
+    barrio. Certificado A: es obra nueva (lo único nuevo de la burbuja).
+
+    Raises:
+        ValueError: Si no queda ningún barrio libre (el tope: una por barrio).
+    """
+    if not free_barrios:
+        raise ValueError("Ya hay obra nueva en todos los barrios.")
+    barrio = rng.choice(sorted(free_barrios))
+    kind, low, high = rng.choice(PROMOTION_KINDS)
+    return Listing(
+        key=f"{PROMOTION_PREFIX}{number}",
+        barrio=barrio,
+        kind=kind,
+        m2=rng.randint(low, high),
+        title=f"Obra nueva: {rng.choice(PROMOTION_NAMES)}",
+        blurb=rng.choice(PROMOTION_BLURBS),
+        floor=rng.choice(PROMOTION_FLOORS[kind]),
+        energy="A",
+    )
+
+
+def promoter_fee(price: int) -> int:
+    """Lo que se lleva el promotor de una compra en su promoción."""
+    return round(max(0, price) * PROMOTER_FEE)

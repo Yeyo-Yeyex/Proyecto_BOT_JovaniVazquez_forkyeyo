@@ -1582,7 +1582,8 @@ function paintBarrio(st) {
   T("Precio medio", 694, 120, { font: F.m(18), color: C.mute });
   fitText(b.price_m2, 694, 144, 280, F.d, 28, 18, { color: C.ink });
   if (b.badge) sticker(b.badge, b.badge === "buitre" ? 612 : 634, 132, -0.1, 0.95);
-  const cw = 312, ch = 430;
+  // Tres del catálogo y, si el barrio tiene obra nueva, una cuarta más estrecha.
+  const cw = st.cards.length > 3 ? 230 : 312, ch = 430;
   st.cards.forEach((c, i) => listingCard(c, 16 + i * (cw + 16), 174, cw, ch));
 }
 
