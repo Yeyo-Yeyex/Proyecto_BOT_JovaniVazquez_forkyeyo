@@ -364,6 +364,100 @@ dados, caballos). Cada paso trae su comprobación; la Biblia (sección 5) lo exi
    va a `asyncio.to_thread`. `selectors.py:select` quiere decir que faltó CPU, no
    que algo bloquee.
 
+## Pasar una tragaperras a Node: receta de la clásica
+
+La clásica (7.19, `services/slots_scene.py`) pasó de un GIF de Pillow con ritmo de
+metrónomo a una escena de Node con suspense. Lo mismo vale para las de Botes (Volcán,
+Mina, Olimpo, `hold_win_render.py`). Por orden:
+
+1. **Antes, datos.** La tragaperras es ~70 % de las jugadas del casino pero ~12 % del
+   dinero (informe del 14/10/2026): se juega mucho y barato, a menudo en ⚡ Turbo o
+   Ráfaga, que no ven el GIF. El informe no separa tiradas con y sin animación.
+2. **Símbolos a resolución de escena.** La escena se pinta al doble (S = 2): un
+   símbolo que se ve a 100 px necesita 200. Los de 50 px se veían borrosos. Los emojis
+   de Noto se bajan a 512 px de `googlefonts/noto-emoji`, carpeta `2D/png/512` (la
+   antigua `png/` da 404), se recortan a su contorno y se guardan a 200. El Pillow de
+   reserva los reduce solo (`_load`), así que se pueden cambiar sin romperlo. Los de
+   Botes salen de `docs/dibujar_botes.py`: se vuelven a sacar al doble.
+3. **El ritmo vive en Python** (`spin_states`), con la duración de cada fotograma en
+   `ms` (múltiplos de 10: la unidad del GIF son centésimas):
+   - Cada rodillo es un viaje (`Track`): tirón hacia arriba, arranque, velocidad
+     fija, frenazo con curva y rebote. La posición es una función del tiempo, y los
+     fotogramas se toman a 20 por segundo. En el frenazo lento, cada fotograma dura
+     lo que tarda el rodillo en avanzar ~0,3 casillas (hasta 120 ms): cámara lenta
+     con fotogramas largos, no con más fotogramas.
+   - **Tensión según lo que hay en juego.** Sin nada, corta (~1,5 s, como antes: no
+     baja el ritmo de tiradas). Con anticipación, el último rodillo sigue a tope
+     ~0,7 s y frena despacio (~3,5 s en total). Camino del premio gordo, más largo y
+     con el resto apagado. Cada espera tiene su luz y su forma (daltonismo).
+   - Paradas que cambian un poco de una tirada a otra (`JITTER_MS`), sacadas de la
+     propia tirada: no suena a metrónomo y sigue siendo repetible.
+   - Cuenta del premio por tramos (×5, ×15, ×50, final) y cartel que sube de nivel
+     al cruzar cada umbral. El último estado sale de la misma función que la imagen
+     quieta (`still_state`): el GIF acaba igual que el PNG.
+4. **Todo determinista.** Lo que parece azar (paradas movidas, monedas, el palo de la
+   carta) sale del resultado, nunca de `Math.random` ni de un `random` sin semilla. Así
+   pintar antes y pintar al pulsar dan los mismos bytes, y una clave (`media_key`)
+   dice si lo pintado vale: sin premio, la imagen no depende de la apuesta (una sola
+   pintura); con premio, sí (el marcador y los tramos).
+5. **Imágenes a la escena por `meta`** como data URL, y la escena las decodifica solo
+   si cambia su clave (`symbolsKey`): la `meta` viaja en cada `setup` (~180 KB con 8
+   símbolos de 200 px), pero decodificar es lo caro. Los fondos fijos y grandes (los
+   escenarios de Botes) pueden pintarse una vez con el Pillow que ya existe y mandarse
+   igual, en vez de reescribirlos en canvas.
+6. **Pintar antes del clic, botón a botón** (`SlotMachineView.prepare` y `_plans`):
+   - Lo sorteado por adelantado vive solo en memoria (`_upcoming`, la moneda del doble,
+     el re-giro, las diez de una Ráfaga) y se gasta al jugarlo (`_take_*`). Al gastarlo
+     se congela el pintor (`_changing`) hasta el siguiente `prepare`: entre el clic y
+     enseñar la jugada, lo que se ve aún no es lo que queda.
+   - `_plans` da cada botón posible y su imagen, del más probable al que menos. Un solo
+     bucle pinta de uno en uno, vuelve a pedir el plan antes de cada dibujo, suelta lo
+     que ya no vale y nunca corta un dibujo a medias.
+   - El cog recibe lo sorteado y una función `ready(key)` (`play(spin=…, ready=…)`), y
+     `_media` usa lo pintado si la clave coincide. Si no (cayó el bote misterioso, se
+     enfrió la máquina), pinta en el momento.
+   - Cada camino de error que gasta algo sorteado llama a `prepare()`, o el pintor se
+     queda congelado hasta la siguiente jugada.
+   - `ahead` vale `False` con un dibujo de prueba (cada sorteo de más gastaría las
+     tiradas de guion), y las pruebas de integración lo apagan a mano.
+7. **Lo que hay que tocar en las pruebas:** el doble de `render_fakes` (se cambia la
+   clase de la escena en su módulo), su par en `test_render_fakes.py`, los `MagicMock`
+   del dibujo en `test_cog_bridges.py` (los métodos son `AsyncMock` y hace falta
+   `close`) y `cog.ahead = False` en `test_button_speed.py`. Más las de la escena
+   (`test_slots_scene.py`: ritmo, último fotograma igual al quieto, Node contra
+   Chromium y repartido contra un proceso) y las del cog con lo pintado por adelantado.
+8. **Logros de lo que ahora se ve**, contados solo con animación (sin turbo): la espera
+   del premio gordo, el símbolo que se pasa de la línea en el frenazo… Rarezas con
+   `docs/auditoria_logros.py --juego <juego> --todo`, que ya cuenta las estadísticas
+   derivadas (`with_derived`).
+9. **El peso del GIF manda.** Con los rodillos girando cambian ~130.000 píxeles por
+   fotograma: a 544 × 412 una tirada sin premio pesaba ~920 KB y un ÉPICO ~3,3 MB (la de
+   Pillow de antes, 115 y 260 KB). Medido quitando capas, ninguna pesaba más de un 15 %
+   (reflejo, sombreado de cilindro, sombras de símbolos); menos colores por fotograma o
+   menos fotogramas, un 12-25 %. Lo que más rinde es el tamaño de salida: la escena pinta
+   a su medida lógica al doble y reduce al final (`OUT_W`, `meta.out`), y a 3/4 pesa un
+   tercio menos sin que se note en Discord. En la cuenta del premio, que todo lata en cada
+   fotograma (símbolos, rayos, brillos) costaba 39 KB por fotograma: latidos a saltos.
+   El cog espera más cuanto más pesa el GIF (`reveal_delay`) antes de cambiarlo por el PNG.
+10. **Reducir a menos de la mitad de una vez rompe el reparto.** `drawImage` con calidad
+   alta usa mipmaps y Skia saca el primer fotograma tras `setup` con otro redondeo: el
+   dibujo repartido entre procesos ya no da los mismos bytes. Se reduce en dos pasos (a la
+   mitad justa con calidad alta y de ahí bilineal). Lo destapó la prueba de repartido
+   contra un proceso, que la escena de Sonnet no había pasado.
+11. **Delegar la escena** a Sonnet en su worktree funciona con el contrato ya fijado
+   (los estados de Python) y un script de muestras con hojas de fotogramas. El
+   worktree no trae `.venv` ni `node_modules`: Python del repo con
+   `PYTHONPATH=<worktree>/src` delante y `NODE_PATH=<repo>/node_modules`. Se le pide un
+   objetivo de peso y que pase la prueba de repartido, no solo que se vea bien.
+
+En Botes cambia: la rejilla es de 5 × 4 y no tiene tiras (cada casilla sale al azar,
+`spin_base`), así que los símbolos que pasan mientras gira se sacan con
+`random_filler` sembrado con el resultado. La anticipación ya existe
+(`BaseSpin.anticipation`). El bonus fija las monedas y solo giran las casillas vacías,
+con los misteriosos que se revelan. Los pintores comunes con la clásica (rodillos,
+luces, carteles, marcador, monedas) se sacan a un archivo compartido (como
+`assets/tapete.js`) al hacerlo, no antes.
+
 ## Notas para el agente en este repo
 
 - Python del proyecto: `.venv/Scripts/python` (3.13, el mismo que la imagen del

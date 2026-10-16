@@ -111,6 +111,7 @@ def make_owner() -> MagicMock:
 
 async def press_slots(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Tragaperras")
+    cog.ahead = False  # pintar por adelantado no es lo que se mide
     module_of(client, "Tragaperras").REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
     view = module_of(client, "Tragaperras").SlotMachineView(
         cog, guild_id=GUILD_ID, owner=owner, stake=1
@@ -124,6 +125,7 @@ async def press_slots(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_slots_double(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Tragaperras")
+    cog.ahead = False
     view = module_of(client, "Tragaperras").SlotMachineView(
         cog, guild_id=GUILD_ID, owner=owner, stake=1
     )
@@ -136,6 +138,7 @@ async def press_slots_double(client: BotClient, owner: MagicMock) -> Click:
 
 def slots_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
     cog = client.get_cog("Tragaperras")
+    cog.ahead = False
     module = module_of(client, "Tragaperras")
     module.REVEAL_MARGIN_SECONDS = 0
     return module.SlotMachineView(cog, guild_id=GUILD_ID, owner=owner, stake=1)
@@ -181,6 +184,7 @@ async def press_slots_daily(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_slots_autoplay(client: BotClient, owner: MagicMock) -> Click:
     cog = client.get_cog("Tragaperras")
+    cog.ahead = False
     module = module_of(client, "Tragaperras")
     # Una sola tirada y sin esperas: lo que se mide es la respuesta al clic.
     module.AUTOPLAY_MAX = 1

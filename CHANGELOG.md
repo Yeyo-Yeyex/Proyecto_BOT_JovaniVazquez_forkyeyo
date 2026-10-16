@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.19.0 · 2026-10-16
+
+- Tragaperras: máquina más bonita, tirada con suspense y doble o nada con carta
+
 ### 7.18.0 · 2026-10-16
 
 - Blackjack: mesa animada con tapetes, zapato para contar y rachas
