@@ -11,13 +11,15 @@ Python decide todo lo que se ve (`pick_states`, `cashout_states`,
 
 - **Puerta** (`pick_states`): la tensión (la puerta brilla y tiembla y late el
   borde; más larga cuanto más alto es el piso), y después el huevo, que abre la
-  puerta y sube al piso de arriba (o a la cima, que corona: corona, dragón que
-  se inclina y lluvia de monedas), o el dragón, que sale, escupe fuego y lo
-  chamusca todo. Con 🎲 va antes una ruleta sobre las puertas.
+  puerta, entra por ella y sube por la escalera de caracol al piso de arriba (o
+  a la cima, que corona: corona, dragón que se inclina y lluvia de monedas), o
+  el dragón, que sale del hueco, escupe fuego y lo chamusca todo. Con 🎲 va
+  antes una ruleta sobre las puertas.
 - **Cobrar** (`cashout_states`): se abren en fantasma las puertas del piso
   siguiente (lo que había detrás) y llueven monedas hacia el panel.
-- Al acabar (quemado, cobrado o coronado), la torre entera con los dragones
-  encendiéndose de abajo arriba (`_ending`).
+- Al acabar (quemado, cobrado o coronado), fundido a negro y la cámara se aleja
+  del piso hasta la torre entera, con los dragones encendiéndose de abajo
+  arriba (`_ending`).
 
 El último fotograma de cada GIF es el PNG que queda después
 (`rest_state` de la partida resultante).
@@ -74,6 +76,11 @@ TENSION_FRAMES = 3
 TENSION_PER_FLOOR = 1
 #: La tensión va a menos fotogramas y más largos: no se nota y el GIF pesa menos.
 TENSION_MS = 90
+#: La subida entre pisos (entrar por la puerta, la escalera y llegar): ~1,1 s.
+CLIMB_FRAMES = 18
+CLIMB_MS = 60
+#: Al acabar, la cámara se aleja del piso hasta ver la torre entera.
+PULL_FRAMES = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,10 +289,10 @@ def _egg(tl: _Timeline, scene: Any, after: TowerGame, door: int, width: int) -> 
     for _ in range(3):
         tl.add(80, scene(doors=_doors(width, {door: {**shown, "sparkle": True}})))
     later = panel_state(after)
-    for k in range(7):
-        c = (k + 1) / 8
+    for k in range(CLIMB_FRAMES):
+        c = (k + 1) / (CLIMB_FRAMES + 1)
         panel = {"panel": later} if c >= 0.5 else {}
-        tl.add(45, scene(doors=_doors(width, {door: shown}), climb=round(c, 3), **panel))
+        tl.add(CLIMB_MS, scene(doors=_doors(width, {door: shown}), climb=round(c, 3), **panel))
     if not after.crowned:
         tl.add(FINAL_FRAME_MS, rest_state(after))
         return
@@ -323,10 +330,10 @@ def _burn(tl: _Timeline, scene: Any, after: TowerGame, door: int, width: int) ->
             ),
         )
     opened = _doors(width, {door: {"open": 1}})
-    for k in range(5):
-        r = (k + 1) / 5
+    for k in range(8):
+        r = (k + 1) / 8
         dragon = {"door": door, "rise": round(0.12 + 0.88 * r, 3), "mouth": round(0.9 * r, 3)}
-        tl.add(50, scene(doors=opened, dragon=dragon, shake=_shake(k, 1.5 * r)))
+        tl.add(45, scene(doors=opened, dragon=dragon, shake=_shake(k, 1.5 * r)))
     for k in range(5):
         fire = (k + 1) / 5
         tl.add(
@@ -412,12 +419,16 @@ def cashout_states(game: TowerGame) -> list[dict[str, Any]]:
 
 
 def _ending(tl: _Timeline, after: TowerGame) -> None:
-    """Fundido a negro y la torre entera, encendiendo los dragones de abajo arriba."""
+    """Fundido a negro, la cámara que se aleja del piso hasta ver la torre entera
+    y los dragones encendiéndose de abajo arriba."""
     last = {k: v for k, v in tl.states[-1].items() if k not in ("ms", "t")}
-    for k in range(3):
-        tl.add(50, {**last, "fade": round((k + 1) / 3, 3)})
-    for fade in (0.66, 0.33):
-        tl.add(50, {**tower_state(after, 0), "fade": fade})
+    for k in range(4):
+        tl.add(60, {**last, "fade": round((k + 1) / 4, 3)})
+    focus = min(after.floor, FLOORS - 1)
+    for k in range(PULL_FRAMES):
+        p = (k + 1) / (PULL_FRAMES + 1)
+        pull = {"zoom": round(1 - _ease(p), 3), "focus": focus, "fade": round((1 - p) ** 1.5, 3)}
+        tl.add(60, {**tower_state(after, 0), **pull})
     for k in range(FLOORS):
         tl.add(70, tower_state(after, k + 0.5))
     tl.add(FINAL_FRAME_MS, rest_state(after))
