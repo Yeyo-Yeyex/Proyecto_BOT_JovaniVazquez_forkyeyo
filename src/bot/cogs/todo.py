@@ -36,6 +36,7 @@ from discord.ext import commands
 from bot.cogs import achievements as logros
 from bot.repositories.todo import TodoRepository
 from bot.services.achievements import StatDelta
+from bot.services.telemetry import TimedLock
 from bot.services.todo import (
     DEFAULT_PRIORITY,
     MAX_TASK_LENGTH,
@@ -291,7 +292,7 @@ class Lista(commands.Cog):
         self.bot.remove_dynamic_items(DoneSelect, PageButton)
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
-        return self._locks.setdefault(guild_id, asyncio.Lock())
+        return self._locks.setdefault(guild_id, TimedLock("todo:Lista._locks"))
 
     async def _delete_old_board(self, guild_id: int, keep: int | None = None) -> None:
         """Borra el mensaje de la lista anterior, si sigue ahí."""

@@ -360,3 +360,22 @@ async def test_los_que_se_unen_a_mitad_pintan_lo_mismo_que_uno_solo(
     finally:
         await scene.close()
         await node_scene.shutdown()
+
+
+async def test_cada_dibujo_sin_node_cuenta_un_plan_b() -> None:
+    from bot.services import telemetry as telemetry_service
+
+    seen: list[tuple[str, str, bool]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append((kind, name, error))
+
+    scene = NodeScene(SCENE, name="prueba", node="/no/existe/node")
+    telemetry_service.event_observers.add(observer)
+    try:
+        await scene.render({}, [{}])  # se apaga
+        await scene.render({}, [{}])  # ya apagado
+    finally:
+        telemetry_service.event_observers.discard(observer)
+        await scene.close()
+    assert seen == [("plan_b", "prueba · Node", True), ("plan_b", "prueba · Node", False)]

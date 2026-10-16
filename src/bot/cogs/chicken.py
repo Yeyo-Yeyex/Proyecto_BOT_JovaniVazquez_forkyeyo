@@ -93,6 +93,7 @@ from bot.services.economy import (
     parse_amount,
 )
 from bot.services.pets import bet_moment
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
 
@@ -255,7 +256,7 @@ class ChickenView(ui.View):
         self.channel: object = None
         self.record_before = 0
         self._busy = False
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("chicken:ChickenView._lock")
         self._last_interaction: discord.Interaction | None = None
         #: GIF pintados por adelantado: para qué estado valen y uno por botón que
         #: cruza (`"cross"` es 🐔 Cruzar; `"auto"`, 🎯 Hasta…).

@@ -96,6 +96,7 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, notify
 from bot.utils.responder import ContextResponder
 
@@ -444,7 +445,7 @@ class Table:
         #: La mano siguiente ya pintada (`prepare`).
         self.prepared: asyncio.Task[tuple[Coup, Media]] | None = None
         self.task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("bacara:Table._lock")
         self._edit_task: asyncio.Task[None] | None = None
         self._dirty = False
         #: Se activa con la primera apuesta y cuando todos están listos.

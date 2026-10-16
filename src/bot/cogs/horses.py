@@ -134,6 +134,7 @@ from bot.services.horses_scene import SceneRenderer
 from bot.services.levels import TIMEZONE
 from bot.services.pets import bet_moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder
 
@@ -509,7 +510,7 @@ class Race:
         self.prepared: asyncio.Task[tuple[RaceResult, Media]] | None = None
         self.task: asyncio.Task[None] | None = None
         self._edit_task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("horses:Race._lock")
         #: Se activa cuando todos los que han apostado han pulsado ✅ Listo.
         self.go = asyncio.Event()
         #: Quién dio el último ✅ Listo y cuándo salieron por ello (para los logros).

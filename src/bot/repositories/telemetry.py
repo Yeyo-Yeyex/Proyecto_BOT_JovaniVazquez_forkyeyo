@@ -18,8 +18,9 @@ Retención (Biblia: «no guardar datos personales innecesarios»):
 - muestras del sistema: `SYSTEM_RETENTION_DAYS` (14).
 
 Guarda solo cantidades, nunca contenido de mensajes. Las tablas de otros
-repositorios (`casino_plays`, `economy_wallets`, `economy_ledger`) solo se
-leen, para el informe; nunca se escriben. Todas las cuentas del informe son
+repositorios (`casino_plays`, `economy_wallets`, `economy_ledger`,
+`achievement_unlocks`, `shop_purchases`, `pets`, `pet_owners`) solo se leen,
+para el informe; nunca se escriben. Todas las cuentas del informe son
 agregados de SQL, salvo los usuarios, que se cargan para seudonimizarlos.
 """
 
@@ -364,7 +365,8 @@ class TelemetryRepository:
                     "MAX(rss_mb) AS rss_max, MAX(loop_lag_ms) AS lag_max, "
                     "AVG(gateway_ms) AS gateway_avg, MAX(chromium) AS chromium_max, "
                     "MAX(node) AS node_max, MAX(cpu_pct) AS cpu_max, AVG(cpu_pct) AS cpu_avg, "
-                    "MAX(db_mb) AS db_max, MIN(disk_free_mb) AS disk_min "
+                    "MAX(db_mb) AS db_max, MIN(disk_free_mb) AS disk_min, "
+                    "COUNT(*) AS samples "
                     "FROM telemetry_system WHERE day >= ? GROUP BY day",
                     (since_day,),
                 )
@@ -392,6 +394,20 @@ class TelemetryRepository:
                     else:
                         data.system_accounts[int(row["user_id"])] = int(row["balance"])
             if self._has_table(connection, "economy_ledger"):
+                # Por día canario en Python: con el cambio de hora, un desfase fijo
+                # en SQL pasaría una hora de movimientos al día de al lado.
+                per_day: dict[str, list[int]] = {}
+                for row in connection.execute(
+                    "SELECT created_at, delta FROM economy_ledger "
+                    "WHERE guild_id = ? AND created_at >= ? AND user_id > 0",
+                    (guild_id, since_ts),
+                ):
+                    day = datetime.fromtimestamp(row["created_at"], TIMEZONE).date().isoformat()
+                    totals = per_day.setdefault(day, [0, 0, 0])
+                    delta = int(row["delta"])
+                    totals[0 if delta > 0 else 1] += abs(delta)
+                    totals[2] += 1
+                data.ledger_daily = [(day, *totals) for day, totals in sorted(per_day.items())]
                 data.ledger = [
                     dict(row)
                     for row in connection.execute(
@@ -401,6 +417,46 @@ class TelemetryRepository:
                         "FROM economy_ledger WHERE guild_id = ? AND created_at >= ? "
                         "AND user_id > 0 GROUP BY reason",
                         (guild_id, since_ts),
+                    )
+                ]
+            if self._has_table(connection, "achievement_unlocks"):
+                data.achievements = [
+                    (row["achievement_id"], int(row["total"]), int(row["recent"] or 0))
+                    for row in connection.execute(
+                        "SELECT achievement_id, COUNT(*) AS total, "
+                        "SUM(unlocked_at >= ?) AS recent FROM achievement_unlocks "
+                        "WHERE guild_id = ? GROUP BY achievement_id",
+                        (since_ts, guild_id),
+                    )
+                ]
+                row = connection.execute(
+                    "SELECT COUNT(DISTINCT user_id) AS members FROM achievement_unlocks "
+                    "WHERE guild_id = ?",
+                    (guild_id,),
+                ).fetchone()
+                data.achievement_members = int(row["members"])
+            if self._has_table(connection, "shop_purchases"):
+                data.shop = [
+                    dict(row)
+                    for row in connection.execute(
+                        "SELECT item_name AS name, kind, COUNT(*) AS sales, "
+                        "SUM(renewal) AS renewals, COUNT(DISTINCT user_id) AS buyers, "
+                        "SUM(base + tax) AS spent FROM shop_purchases "
+                        "WHERE guild_id = ? AND created_at >= ? AND refunded = 0 "
+                        "GROUP BY item_name, kind",
+                        (guild_id, since_ts),
+                    )
+                ]
+            if self._has_table(connection, "pets") and self._has_table(connection, "pet_owners"):
+                data.pets = [
+                    dict(row)
+                    for row in connection.execute(
+                        "SELECT pets.species AS species, COUNT(*) AS total, "
+                        "SUM(pet_owners.active_id = pets.id) AS active FROM pets "
+                        "LEFT JOIN pet_owners ON pet_owners.guild_id = pets.guild_id "
+                        "AND pet_owners.user_id = pets.user_id "
+                        "WHERE pets.guild_id = ? GROUP BY pets.species",
+                        (guild_id,),
                     )
                 ]
         return data

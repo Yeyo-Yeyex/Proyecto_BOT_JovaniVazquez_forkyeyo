@@ -38,7 +38,7 @@ from typing import Any, TypeVar
 
 from PIL import Image
 
-from bot.services.telemetry import report_render
+from bot.services.telemetry import TimedLock, report_event, report_render
 from bot.utils.gif import QUANTIZE_THREADS
 
 logger = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ class BrowserScene:
         self._page: Any = None
         #: Pestañas de más para `run_tabs`, con la escena ya cargada.
         self._extra: list[Any] = []
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("browser_scene:BrowserScene._lock")
         self._idle: asyncio.TimerHandle | None = None
         #: Tras un fallo no se reintenta en cada dibujo: se usa Pillow.
         self.disabled = False
@@ -245,6 +245,7 @@ class BrowserScene:
         self, open_: Callable[[], Awaitable[Any]], work: Callable[[Any], Awaitable[T]]
     ) -> T | None:
         if self.disabled:
+            report_event("plan_b", f"{self.name} · Chromium")
             return None
         async with self._lock:
             # Se mide dentro del candado: lo que tarda pintar, no la cola de espera.
@@ -256,6 +257,7 @@ class BrowserScene:
                 logger.warning(
                     "%s no está disponible; se dibuja con Pillow", self.name, exc_info=True
                 )
+                report_event("plan_b", f"{self.name} · Chromium", error=True)
                 self.disabled = True
                 self._page = None
                 return None

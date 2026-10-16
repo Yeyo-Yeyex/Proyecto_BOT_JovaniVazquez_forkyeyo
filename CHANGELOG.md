@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.13.0 · 2026-10-16
+
+- Informe de uso: tiempo de cada consulta a la base de datos por repositorio, esperas en candados, procesos de Node y dibujos con plan B, peso de las imágenes, interacciones perdidas (10062), partidas y paneles abiertos, cerrados o abandonados, opciones de los menús y páginas de la ayuda, comandos mal escritos o rechazados, errores por tipo y función, música, minutos sin datos (bot caído), logros por rareza, ventas de la tienda, mascotas y economía por día
+
 ### 7.12.0 · 2026-10-16
 
 - Informe de uso: mide la CPU del contenedor, lo que ocupa la base de datos y el disco libre, la espera del clic a la imagen, las vistas que caducan a medias, cada arranque con su versión, los cortes con Discord, sus respuestas 429 y los procesos matados por memoria

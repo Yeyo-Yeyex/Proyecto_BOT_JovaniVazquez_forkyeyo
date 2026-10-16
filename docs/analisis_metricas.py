@@ -27,7 +27,10 @@ script no debe reventar con un informe casi vacío.
 El signo ⚠️ marca lo que merece mirarse: latencias de 3 s o más, memoria por
 encima del 85 % del límite, bucle de eventos con más de 250 ms de retraso, RTP del
 casino por encima de 1, juegos sin jugadas, CPU por encima del 85 %, procesos
-matados por memoria, cortes con Discord y respuestas 429.
+matados por memoria, cortes con Discord, respuestas 429, días con más de media hora
+sin datos (bot caído), esperas de base de datos o candados de 1 s o más, dibujos con
+plan B, interacciones perdidas (10062) y logros cuya rareza no cuadra con cuántos
+miembros lo tienen.
 """
 
 from __future__ import annotations
@@ -55,8 +58,19 @@ TREND_KINDS = ("message", "slash", "button", "voice")
 FAIL_KINDS = ("button", "modal", "slash", "text")
 WARN = "⚠️"
 CPU_WARN = 85.0
-# Lo que va por día en el informe: al juntar varios, se une día a día.
-DAILY_KEYS = ("por_dia", "sistema", "arranques")
+# Minutos de un día y los que pueden faltar sin aviso (la muestra es cada minuto,
+# y el bucle se retrasa algún segundo).
+DAY_MINUTES = 1440
+DOWNTIME_WARN_MIN = 30
+SLOW_MS = 1000
+# Rareza que no cuadra: un logro legendario o mítico que tiene mucha gente, o uno
+# común que casi nadie consigue (proporción de miembros con algún logro).
+RARITY_TOO_COMMON = {"Legendario": 0.10, "Mítico": 0.03}
+RARITY_TOO_RARE = {"Común": 0.02}
+RARITY_ORDER = ("Común", "Raro", "Épico", "Legendario", "Mítico")
+# Lo que va por día en el informe: al juntar varios, se une día a día (y dentro de
+# cada día, campo a campo: la masa monetaria solo viene en el informe de ese día).
+DAILY_KEYS = ("por_dia", "sistema", "arranques", "economia_dia")
 
 
 # --------------------------------------------------------------------------- utilidades
@@ -438,8 +452,16 @@ def section_channels(report: Report, top: int) -> list[str]:
 def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB) -> list[str]:
     """Memoria, retraso del bucle, procesos de dibujo y latencia con Discord por día."""
     rows = []
+    today = str(report.get("hasta"))
     for day, raw in sorted(_dict(report.get("sistema")).items()):
         row = _dict(raw)
+        samples = row.get("muestras")
+        # El día del informe aún no ha acabado: sus minutos sin datos no dicen nada.
+        missing = (
+            max(0, DAY_MINUTES - int(samples))
+            if isinstance(samples, int | float) and day != today
+            else None
+        )
         memory = row.get("memoria_mb_max")
         lag = row.get("lag_ms_max")
         gateway = row.get("gateway_ms_media")
@@ -452,6 +474,8 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
             flags.append(f"{WARN} bucle")
         if isinstance(cpu_max, int | float) and cpu_max > CPU_WARN:
             flags.append(f"{WARN} CPU")
+        if missing is not None and missing > DOWNTIME_WARN_MIN:
+            flags.append(f"{WARN} caído")
         rows.append(
             (
                 day,
@@ -463,6 +487,7 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
                 "-" if gateway is None else f"{gateway:.0f}",
                 "-" if database is None else f"{database:.0f}",
                 "-" if free is None else f"{free / 1024:.1f}",
+                "-" if missing is None else missing,
                 " ".join(flags),
             )
         )
@@ -483,6 +508,7 @@ def section_system(report: Report, top: int, limit_mb: float = DEFAULT_LIMIT_MB)
                 "Discord ms",
                 "Base MB",
                 "Disco libre GB",
+                "Min sin datos",
                 "Avisos",
             ],
             rows,
@@ -650,24 +676,428 @@ def section_discord(report: Report, top: int) -> list[str]:
     return _section("Conexión con Discord", body)
 
 
-def section_expired(report: Report, top: int) -> list[str]:
-    """Vistas que caducan sin que nadie las pare: partidas o paneles abandonados."""
+def _timed_rows(report: Report, kind: str, top: int, *, by_total: bool = True) -> list[tuple]:
+    """Filas `(aviso, nombre, veces, ms medio, ms máx, ≥1 s, errores)` de un tipo medido."""
+    entries = [e for e in _entries(report, kind) if e.get("ms_medio") is not None]
+    entries.sort(
+        key=lambda e: (
+            -(
+                _num(e.get("eventos")) * _num(e.get("ms_medio"))
+                if by_total
+                else _num(e.get("ms_medio"))
+            ),
+            str(e.get("nombre")),
+        )
+    )
+    rows = []
+    for e in entries[:top]:
+        ms = _dict(e.get("ms"))
+        measured = sum(int(_num(ms.get(k))) for k in ("<500", "<1000", "<3000", ">=3000"))
+        slow = int(_num(ms.get("<3000"))) + int(_num(ms.get(">=3000")))
+        rows.append(
+            (
+                WARN if slow or _num(e.get("errores")) else "",
+                e.get("nombre"),
+                int(_num(e.get("eventos"))),
+                f"{_num(e.get('ms_medio')):.0f}",
+                f"{_num(e.get('ms_max')):.0f}",
+                _pct(slow, measured),
+                int(_num(e.get("errores"))),
+            )
+        )
+    return rows
+
+
+def section_database(report: Report, top: int) -> list[str]:
+    """Lo que tarda cada repositorio en la base de datos, de más a menos tiempo total."""
+    rows = _timed_rows(report, "sql", top)
+    body: list[str] = []
+    if rows:
+        body = [
+            "Por repositorio y operación, ordenado por tiempo total. Un error es un «database"
+            " is locked» o parecido. En las lecturas solo se mide hasta la primera fila.",
+            "",
+        ]
+        body += _table(
+            ["", "Repositorio · operación", "Veces", "ms medio", "ms máx", "≥1 s", "Errores"], rows
+        )
+    return _section("Base de datos", body)
+
+
+def section_locks(report: Report, top: int) -> list[str]:
+    """Candados que hacen esperar a un clic porque otro ya los tenía."""
+    rows = _timed_rows(report, "candado", top)
+    body: list[str] = []
+    if rows:
+        body = ["Solo cuenta las veces que el candado ya estaba cogido.", ""]
+        body += _table(["", "Candado", "Esperas", "ms medio", "ms máx", "≥1 s", "-"], rows)
+    return _section("Esperas en candados", body)
+
+
+def section_painters(report: Report, top: int) -> list[str]:
+    """Procesos de Node (abiertos, cerrados, matados, espera) y dibujos con plan B."""
+    node = {str(e.get("nombre")): e for e in _entries(report, "node")}
+    body: list[str] = []
+    if node:
+        waiting = _dict(node.get("espera de proceso"))
+        opening = _dict(node.get("proceso abierto"))
+        closed = int(_num(_dict(node.get("proceso cerrado")).get("eventos")))
+        killed = int(_num(_dict(node.get("proceso matado")).get("eventos")))
+        body.append(
+            f"- Node: {int(_num(opening.get('eventos')))} procesos abiertos"
+            f" ({_num(opening.get('ms_medio')):.0f} ms de media en arrancar),"
+            f" {closed} cerrados por no usarse, {killed} matados a medias"
+        )
+        if waiting:
+            wait_mean, wait_max = _num(waiting.get("ms_medio")), _num(waiting.get("ms_max"))
+            body.append(
+                f"- Espera hasta tener un proceso: {wait_mean:.0f} ms de media,"
+                f" {wait_max:.0f} de máximo, en {int(_num(waiting.get('eventos')))} dibujos"
+            )
+    fallbacks = sorted(
+        _entries(report, "plan_b"), key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre")))
+    )
+    if fallbacks:
+        body += ["", f"{WARN} Dibujos con plan B (el motor no estaba disponible):", ""]
+        body += _table(
+            ["Pintor · motor", "Dibujos", "Veces que se apagó"],
+            [
+                (e.get("nombre"), int(_num(e.get("eventos"))), int(_num(e.get("errores"))))
+                for e in fallbacks[:top]
+            ],
+        )
+    return _section("Procesos de dibujo", body)
+
+
+def section_weight(report: Report, top: int) -> list[str]:
+    """Lo que pesa cada imagen subida a Discord (KB medio y máximo)."""
     rows = sorted(
-        _entries(report, "caducada"),
-        key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre"))),
+        (e for e in _entries(report, "peso") if e.get("ms_medio") is not None),
+        key=lambda e: (-_num(e.get("ms_medio")), str(e.get("nombre"))),
+    )
+    body: list[str] = []
+    if rows:
+        body = _table(
+            ["Imagen", "Subidas", "KB medio", "KB máx"],
+            [
+                (
+                    e.get("nombre"),
+                    int(_num(e.get("eventos"))),
+                    f"{_num(e.get('ms_medio')):.0f}",
+                    f"{_num(e.get('ms_max')):.0f}",
+                )
+                for e in rows[:top]
+            ],
+        )
+    return _section("Peso de las imágenes", body)
+
+
+def section_lost(report: Report, top: int) -> list[str]:
+    """Interacciones que Discord ya daba por perdidas al contestar (error 10062)."""
+    rows = sorted(
+        _entries(report, "10062"), key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre")))
     )
     body: list[str] = []
     if rows:
         body = [
-            "Una vista que caduca sin pararse se quedó a medias: partida abandonada o panel"
-            " olvidado. Las vistas que no se paran al acabar también salen aquí.",
+            f"{WARN} El miembro vio «Esta interacción ha fallado». Retraso desde el clic.",
             "",
         ]
         body += _table(
-            ["Vista", "Caducadas"],
-            [(e.get("nombre"), int(_num(e.get("eventos")))) for e in rows[:top]],
+            ["Botón o comando", "Veces", "ms medio", "ms máx"],
+            [
+                (
+                    e.get("nombre"),
+                    int(_num(e.get("eventos"))),
+                    f"{_num(e.get('ms_medio')):.0f}",
+                    f"{_num(e.get('ms_max')):.0f}",
+                )
+                for e in rows[:top]
+            ],
         )
-    return _section("Vistas caducadas", body)
+    return _section("Interacciones perdidas (10062)", body)
+
+
+def section_views(report: Report, top: int) -> list[str]:
+    """Partidas, paneles y menús: abiertos, cerrados, abandonados y lo que duran."""
+
+    def by_name(kind: str) -> dict[str, dict[str, Any]]:
+        return {str(e.get("nombre")): e for e in _entries(report, kind)}
+
+    opened, closed, expired = by_name("vista"), by_name("vista_cerrada"), by_name("caducada")
+    names = sorted(
+        set(opened) | set(closed) | set(expired),
+        key=lambda n: (-_num(_dict(opened.get(n)).get("eventos")), n),
+    )
+    body: list[str] = []
+    if names:
+        rows = []
+        for name in names[:top]:
+            started = _num(_dict(opened.get(name)).get("eventos"))
+            ended = _dict(closed.get(name))
+            lost = _dict(expired.get(name))
+            lost_count = _num(lost.get("eventos"))
+            rows.append(
+                (
+                    name,
+                    int(started),
+                    int(_num(ended.get("eventos"))),
+                    int(lost_count),
+                    _pct(lost_count, started),
+                    "-"
+                    if ended.get("ms_medio") is None
+                    else f"{_num(ended.get('ms_medio')) / 60000:.1f}",
+                    "-"
+                    if lost.get("ms_medio") is None
+                    else f"{_num(lost.get('ms_medio')) / 60000:.1f}",
+                )
+            )
+        body = [
+            "Abiertas cuenta cada vista creada (una partida que rehace su vista cuenta varias)."
+            " Caducada: nadie la cerró antes de su tiempo, es decir, abandonada o sin cierre.",
+            "",
+        ]
+        body += _table(
+            [
+                "Vista",
+                "Abiertas",
+                "Cerradas",
+                "Caducadas",
+                "Abandono",
+                "Min hasta cerrar",
+                "Min hasta caducar",
+            ],
+            rows,
+        )
+    return _section("Partidas y paneles", body)
+
+
+def section_menus(report: Report, top: int) -> list[str]:
+    """Opciones más elegidas en los desplegables; la ayuda aparte, entera."""
+    entries = sorted(
+        _entries(report, "menu"), key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre")))
+    )
+    help_pages = [e for e in entries if str(e.get("nombre")).startswith("HelpView.")]
+    others = [e for e in entries if e not in help_pages]
+    body: list[str] = []
+    if help_pages:
+        body += ["Páginas de `ayuda` que se abren:", ""]
+        body += _table(
+            ["Página", "Veces"],
+            [
+                (str(e.get("nombre")).split(" → ", 1)[-1], int(_num(e.get("eventos"))))
+                for e in help_pages
+            ],
+        )
+    if others:
+        body += ["", f"Otros desplegables (top {top}):", ""] if body else []
+        body += _table(
+            ["Desplegable → opción", "Veces"],
+            [(e.get("nombre"), int(_num(e.get("eventos")))) for e in others[:top]],
+        )
+    return _section("Menús y ayuda", body)
+
+
+def section_misuse(report: Report, top: int) -> list[str]:
+    """Comandos mal escritos y comandos que contestan con error, frente a sus usos."""
+    uses: dict[str, float] = {}
+    for e in _entries(report, "slash", "text"):
+        uses[str(e.get("nombre"))] = uses.get(str(e.get("nombre")), 0) + _num(e.get("eventos"))
+    wrong = {str(e.get("nombre")): _num(e.get("eventos")) for e in _entries(report, "uso_mal")}
+    rejected = {str(e.get("nombre")): _num(e.get("eventos")) for e in _entries(report, "rechazo")}
+    names = sorted(
+        set(wrong) | set(rejected), key=lambda n: (-(wrong.get(n, 0) + rejected.get(n, 0)), n)
+    )
+    body: list[str] = []
+    if names:
+        body = [
+            "Mal escritos: falta o sobra algo, o el bot contestó «Uso: …». Rechazos: el"
+            " comando contestó con un error (sin saldo, sin permiso, no disponible…).",
+            "",
+        ]
+        body += _table(
+            ["Comando", "Usos", "Mal escritos", "Rechazos", "Rechazo %"],
+            [
+                (
+                    n,
+                    int(uses.get(n, 0)),
+                    int(wrong.get(n, 0)),
+                    int(rejected.get(n, 0)),
+                    _pct(rejected.get(n, 0), uses.get(n, 0)),
+                )
+                for n in names[:top]
+            ],
+        )
+    return _section("Usos incorrectos y rechazos", body)
+
+
+def section_exceptions(report: Report, top: int) -> list[str]:
+    """Errores con traza por tipo y función del bot donde saltaron."""
+    rows = sorted(
+        _entries(report, "excepcion"), key=lambda e: (-_num(e.get("eventos")), str(e.get("nombre")))
+    )
+    body: list[str] = []
+    if rows:
+        body = _table(
+            ["", "Error · dónde", "Veces"],
+            [(WARN, e.get("nombre"), int(_num(e.get("eventos")))) for e in rows[:top]],
+        )
+    return _section("Excepciones", body)
+
+
+def section_music(report: Report, top: int) -> list[str]:
+    """Búsquedas, pistas escuchadas o saltadas, fallos y cola."""
+    music = {str(e.get("nombre")): e for e in _entries(report, "musica")}
+    body: list[str] = []
+    if music:
+
+        def count(name: str) -> int:
+            return int(_num(_dict(music.get(name)).get("eventos")))
+
+        def mean(name: str, scale: float = 1.0) -> str:
+            value = _dict(music.get(name)).get("ms_medio")
+            return "-" if value is None else f"{_num(value) / scale:.1f}"
+
+        searches = count("búsqueda") + count("búsqueda sin resultado") + count("búsqueda sin audio")
+        body = [
+            f"- Búsquedas: {searches} ({mean('búsqueda', 1000)} s de media),"
+            f" {count('búsqueda sin resultado')} sin resultado, {count('búsqueda sin audio')} sin"
+            f" audio, {count('pista demasiado larga')} demasiado largas",
+            f"- Pistas: {count('escuchada')} escuchadas ({mean('escuchada', 60000)} min de media),"
+            f" {count('saltada')} saltadas ({mean('saltada', 60000)} min antes de saltar),"
+            f" {count('fallo al sonar')} fallos al sonar"
+            + (f" {WARN}" if count("fallo al sonar") else ""),
+            f"- Cola: posición media {mean('pistas en cola')}, máxima"
+            f" {_num(_dict(music.get('pistas en cola')).get('ms_max')):.0f};"
+            f" {count('cola llena')} veces llena",
+        ]
+    return _section("Música", body)
+
+
+def section_achievements(report: Report, top: int) -> list[str]:
+    """Logros por rareza: cuánta gente tiene cada uno y los que no cuadran con su rareza."""
+    data = _dict(report.get("logros"))
+    rows = [r for r in _list(data.get("por_logro")) if isinstance(r, dict)]
+    members = int(_num(data.get("miembros_con_logros")))
+    missing = _list(data.get("sin_conseguir"))
+    if not rows and not missing:
+        return _section("Logros", [])
+    body = [
+        f"- Miembros con algún logro: {members}; logros que nadie tiene: {len(missing)}",
+        "",
+    ]
+    per_rarity: dict[str, list[float]] = {}
+    for r in rows:
+        per_rarity.setdefault(str(r.get("rareza")), []).append(_num(r.get("pct_miembros")))
+    body += _table(
+        ["Rareza", "Logros conseguidos", "% medio de miembros", "% máx"],
+        [
+            (rarity, len(values), _pct(sum(values) / len(values), 1), _pct(max(values), 1))
+            for rarity in sorted(
+                per_rarity, key=lambda r: (RARITY_ORDER.index(r) if r in RARITY_ORDER else 99, r)
+            )
+            for values in [per_rarity[rarity]]
+        ],
+    )
+    odd = [
+        r
+        for r in rows
+        if _num(r.get("pct_miembros")) > RARITY_TOO_COMMON.get(str(r.get("rareza")), 2)
+        or (
+            str(r.get("rareza")) in RARITY_TOO_RARE
+            and members >= 10
+            and _num(r.get("pct_miembros")) < RARITY_TOO_RARE[str(r.get("rareza"))]
+        )
+    ]
+    if odd:
+        body += ["", f"{WARN} Rareza a revisar (demasiada o muy poca gente lo tiene):", ""]
+        body += _table(
+            ["Logro", "Rareza", "Miembros", "% de miembros"],
+            [
+                (
+                    r.get("logro"),
+                    r.get("rareza"),
+                    int(_num(r.get("miembros"))),
+                    _pct(_num(r.get("pct_miembros")), 1),
+                )
+                for r in odd[:top]
+            ],
+        )
+    recent = sorted(rows, key=lambda r: (-_num(r.get("en_la_ventana")), str(r.get("logro"))))
+    recent = [r for r in recent if _num(r.get("en_la_ventana"))]
+    if recent:
+        body += ["", f"Más conseguidos en la ventana (top {top}):", ""]
+        body += _table(
+            ["Logro", "Rareza", "En la ventana"],
+            [
+                (r.get("logro"), r.get("rareza"), int(_num(r.get("en_la_ventana"))))
+                for r in recent[:top]
+            ],
+        )
+    return _section("Logros", body)
+
+
+def section_economy_days(report: Report, top: int) -> list[str]:
+    """Entradas y salidas de dinero de los miembros por día y masa monetaria."""
+    days = _dict(report.get("economia_dia"))
+    body: list[str] = []
+    if days:
+        rows = []
+        for day, raw in sorted(days.items()):
+            row = _dict(raw)
+            inflow, outflow = _num(row.get("entradas")), _num(row.get("salidas"))
+            mass = row.get("masa")
+            rows.append(
+                (
+                    day,
+                    int(inflow),
+                    int(outflow),
+                    f"{int(inflow - outflow):+d}",
+                    int(_num(row.get("movimientos"))),
+                    "-" if mass is None else int(_num(mass)),
+                )
+            )
+        body = [
+            "Dinero que entra y sale de los monederos de los miembros. La masa monetaria"
+            " (miembros y cuentas del sistema) sale los días en que se sacó un informe.",
+            "",
+        ]
+        body += _table(["Día", "Entradas", "Salidas", "Neto", "Movimientos", "Masa"], rows)
+    return _section("Economía por día", body)
+
+
+def section_shop(report: Report, top: int) -> list[str]:
+    """Ventas de la tienda por artículo y mascotas por especie."""
+    sales = [r for r in _list(report.get("tienda")) if isinstance(r, dict)]
+    pets = _dict(report.get("mascotas"))
+    body: list[str] = []
+    if sales:
+        body += _table(
+            ["Artículo", "Tipo", "Ventas", "Renovaciones", "Compradores", "Gastado"],
+            [
+                (
+                    r.get("articulo"),
+                    r.get("tipo"),
+                    int(_num(r.get("ventas"))),
+                    int(_num(r.get("renovaciones"))),
+                    int(_num(r.get("compradores"))),
+                    int(_num(r.get("gastado"))),
+                )
+                for r in sales[:top]
+            ],
+        )
+    if pets:
+        body += ["", "Mascotas por especie:", ""] if body else ["Mascotas por especie:", ""]
+        body += _table(
+            ["Especie", "Adoptadas", "Activas"],
+            [
+                (species, int(_num(_dict(v).get("total"))), int(_num(_dict(v).get("activas"))))
+                for species, v in sorted(
+                    pets.items(), key=lambda kv: -_num(_dict(kv[1]).get("total"))
+                )
+            ],
+        )
+    return _section("Tienda y mascotas", body)
 
 
 def _day_versions(report: Report) -> dict[str, str]:
@@ -865,15 +1295,27 @@ def build_text(
     lines += section_system(report, top, limit_mb)
     for section in (
         section_versions,
+        section_database,
+        section_locks,
         section_render,
+        section_painters,
         section_upload,
+        section_weight,
         section_image,
+        section_lost,
         section_lag,
         section_discord,
-        section_expired,
+        section_exceptions,
         section_log,
+        section_views,
+        section_misuse,
+        section_menus,
         section_casino,
         section_economy,
+        section_economy_days,
+        section_achievements,
+        section_shop,
+        section_music,
     ):
         lines += section(report, top)
     return lines
@@ -886,7 +1328,9 @@ def merge_reports(reports: Sequence[Report]) -> Report:
     for key in DAILY_KEYS:
         days: dict[str, Any] = {}
         for report in ordered:
-            days.update(_dict(report.get(key)))
+            for day, value in _dict(report.get(key)).items():
+                # Campo a campo: un informe más nuevo no borra lo que solo traía otro.
+                days[day] = {**_dict(days.get(day)), **_dict(value)}
         merged[key] = dict(sorted(days.items()))
     starts = [str(r.get("desde")) for r in ordered if r.get("desde")]
     merged["informes"] = len(ordered)

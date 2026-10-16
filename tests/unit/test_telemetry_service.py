@@ -13,6 +13,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock
 
 from bot import __version__
+from bot.services import telemetry as telemetry_service
 from bot.services.levels import TIMEZONE
 from bot.services.telemetry import (
     MAX_NAME,
@@ -24,6 +25,7 @@ from bot.services.telemetry import (
     ReportData,
     SystemSample,
     TelemetryService,
+    TimedLock,
     build_report,
     gini,
     local_moment,
@@ -322,7 +324,7 @@ def test_informe_es_json_y_no_contiene_user_ids() -> None:
     assert "4242" not in text
     assert '"99"' not in text and ": 99" not in text
     assert report["servidor"] == GUILD
-    assert report["version"] == 2
+    assert report["version"] == 3
     assert report["version_bot"] == __version__
     assert report["generado"] == "2026-10-06T21:30:00+01:00"
 
@@ -456,3 +458,83 @@ def test_lo_que_tarda_un_volcado_se_cuenta_en_el_siguiente() -> None:
     assert not any(key.kind == "db" for key in repository.batches[0].counters)
     (db,) = [v for k, v in repository.batches[1].counters.items() if k.kind == "db"]
     assert db.events == 1 and db.ms_count == 1
+
+
+def test_el_candado_solo_avisa_cuando_hay_que_esperar() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append((kind, name))
+
+    async def scenario() -> None:
+        lock = TimedLock("coin:CoinView._lock")
+        async with lock:
+            pass  # libre: no cuenta
+        await lock.acquire()
+        waiting = asyncio.ensure_future(lock.acquire())
+        await asyncio.sleep(0)
+        lock.release()
+        await waiting
+        lock.release()
+
+    telemetry_service.event_observers.add(observer)
+    try:
+        asyncio.run(scenario())
+    finally:
+        telemetry_service.event_observers.discard(observer)
+    assert seen == [("candado", "coin:CoinView._lock")]
+
+
+def test_informe_lleva_economia_por_dia_logros_tienda_y_mascotas() -> None:
+    data = sample_data()
+    data.ledger_daily = [("2026-10-05", 100, 30, 2)]
+    data.achievements = [("a", 2, 1), ("b", 1, 0)]
+    data.achievement_members = 4
+    data.shop = [
+        {"name": "Rol VIP", "kind": "rol", "sales": 2, "renewals": None, "buyers": 2, "spent": 203}
+    ]
+    data.pets = [{"species": "gato", "total": 2, "active": None}]
+    data.system[0]["samples"] = 1430
+    report = build_report(
+        data,
+        generated_at=NOW,
+        days=7,
+        commands=[],
+        channel_names={},
+        achievements={"a": "Común", "b": "Mítico", "c": "Raro"},
+    )
+    # La masa (miembros y cuentas del sistema) va el día del informe.
+    assert report["economia_dia"] == {
+        "2026-10-05": {"entradas": 100, "salidas": 30, "movimientos": 2},
+        "2026-10-06": {"entradas": 0, "salidas": 0, "movimientos": 0, "masa": 5450},
+    }
+    logros = report["logros"]
+    assert logros["miembros_con_logros"] == 4
+    assert logros["por_logro"][0] == {
+        "logro": "a",
+        "rareza": "Común",
+        "miembros": 2,
+        "en_la_ventana": 1,
+        "pct_miembros": 0.5,
+    }
+    assert logros["sin_conseguir"] == ["c"]
+    assert report["tienda"] == [
+        {
+            "articulo": "Rol VIP",
+            "tipo": "rol",
+            "ventas": 2,
+            "renovaciones": 0,
+            "compradores": 2,
+            "gastado": 203,
+        }
+    ]
+    assert report["mascotas"] == {"gato": {"total": 2, "activas": 0}}
+    assert report["sistema"]["2026-10-06"]["muestras"] == 1430
+
+
+def test_el_servicio_pasa_el_catalogo_de_logros_al_informe() -> None:
+    from bot.services.achievements import AVAILABLE
+
+    service = TelemetryService(None, clock=FakeClock())
+    report = asyncio.run(service.report(guild_id=GUILD, days=7, commands=[], channel_names={}))
+    assert len(report["logros"]["sin_conseguir"]) == len(AVAILABLE)

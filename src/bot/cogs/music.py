@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 
 import discord
 import yt_dlp
@@ -49,9 +50,16 @@ from bot.services.music import (
     volume_percent_to_factor,
 )
 from bot.services.music_source import extract_track_info
+from bot.services.telemetry import TimedLock, report_event
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
+
+
+def _since(start: float) -> float:
+    """Milisegundos desde `start` (`perf_counter`), para la telemetría."""
+    return (time.perf_counter() - start) * 1000
+
 
 # Tiempo sin reproducir nada antes de abandonar el canal de voz. Evita que
 # el bot ocupe un canal indefinidamente tras vaciarse la cola.
@@ -80,7 +88,7 @@ class GuildMusicState:
         # Despierta al bucle cuando llega una pista con la cola vacía.
         self.wakeup = asyncio.Event()
         # Dos `poner` a la vez con el bot fuera del canal conectarían dos veces.
-        self.connect_lock = asyncio.Lock()
+        self.connect_lock = TimedLock("music:GuildMusicState.connect_lock")
         # `saltar` lo marca para que el corte no se avise como fallo.
         self.skip_requested = False
         # Canal donde se pidió la última pista, para poder avisar de
@@ -166,15 +174,18 @@ class Music(commands.Cog):
         await responder.start_progress()
 
         # Se busca antes de entrar al canal: si no hay pista, el bot no entra.
+        searching = time.perf_counter()
         try:
             track = await self._resolve(consulta, member.display_name)
         except yt_dlp.utils.DownloadError as error:
             logger.info("No se pudo resolver la consulta de música %r: %s", consulta, error)
+            report_event("musica", "búsqueda sin resultado", _since(searching))
             await responder.finish(
                 "No se encontró ninguna pista reproducible para esa búsqueda o enlace."
             )
             return
         except TrackTooLongError as error:
+            report_event("musica", "pista demasiado larga", _since(searching))
             await responder.finish(
                 f"Esa pista dura demasiado o es un directo sin duración conocida "
                 f"(límite: {format_duration(MAX_TRACK_DURATION_SECONDS)}). Duración detectada: "
@@ -182,8 +193,10 @@ class Music(commands.Cog):
             )
             return
         except TrackUnavailableError:
+            report_event("musica", "búsqueda sin audio", _since(searching))
             await responder.finish("La fuente no proporcionó audio reproducible para esa consulta.")
             return
+        report_event("musica", "búsqueda", _since(searching))
 
         if not await self._ensure_connected(state, guild, member.voice.channel):
             await responder.finish("No se pudo conectar al canal de voz. Inténtalo de nuevo.")
@@ -193,11 +206,15 @@ class Music(commands.Cog):
         try:
             state.queue.add(track)
         except QueueFullError:
+            report_event("musica", "cola llena")
             await responder.finish(
                 "La cola de este servidor está llena; espera a que avancen pistas."
             )
             return
         position = len(state.queue)
+        # La posición va en el campo de los ms: así salen la media y el máximo de la
+        # cola. 0 es que suena ya.
+        report_event("musica", "pistas en cola", 0.0 if starting_now else float(position))
         state.text_channel = responder.channel
         state.wakeup.set()
         if state.player is None:
@@ -325,9 +342,14 @@ class Music(commands.Cog):
             started = loop.time()
             state.voice_client.play(source, after=_after_playback)
             await finished.wait()
+            # Lo que sonó, en ms: con `saltada` se ve cuánto aguanta la gente una pista.
+            played = (loop.time() - started) * 1000
             if not state.skip_requested and loop.time() - started < FAILED_START_SECONDS:
                 logger.warning("La pista %r terminó nada más empezar", track.webpage_url)
+                report_event("musica", "fallo al sonar", error=True)
                 await self._notify(state, f"⚠️ No se pudo reproducir **{track.title}**.")
+            else:
+                report_event("musica", "saltada" if state.skip_requested else "escuchada", played)
         except (
             yt_dlp.utils.DownloadError,
             TrackUnavailableError,
@@ -335,6 +357,7 @@ class Music(commands.Cog):
             discord.ClientException,
         ):
             logger.warning("No se pudo reproducir %r", track.webpage_url, exc_info=True)
+            report_event("musica", "fallo al sonar", error=True)
             await self._notify(state, f"⚠️ No se pudo reproducir **{track.title}**.")
         finally:
             state.current = None

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from bot.services import telemetry as telemetry_service
 from bot.utils.responder import ContextResponder, InteractionResponder
 
 
@@ -100,3 +101,26 @@ async def test_context_finish_sin_progreso_envia_el_archivo_como_mensaje_nuevo()
     await ContextResponder(ctx).finish(file=file)
 
     assert ctx.send.await_args.kwargs["file"] is file
+
+
+@pytest.mark.asyncio
+async def test_cada_error_cuenta_un_rechazo_del_comando() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def observer(kind: str, name: str, ms: float | None, error: bool) -> None:
+        seen.append((kind, name))
+
+    interaction = MagicMock()
+    interaction.command.qualified_name = "bizum"
+    interaction.response.is_done.return_value = False
+    interaction.response.send_message = AsyncMock()
+    ctx = MagicMock()
+    ctx.command.qualified_name = "pala"
+    ctx.send = AsyncMock()
+    telemetry_service.event_observers.add(observer)
+    try:
+        await InteractionResponder(interaction).send_error("Sin saldo.")
+        await ContextResponder(ctx).send_error("No puedes.")
+    finally:
+        telemetry_service.event_observers.discard(observer)
+    assert seen == [("rechazo", "bizum"), ("rechazo", "pala")]

@@ -127,6 +127,7 @@ from bot.services.poker_club import (
 from bot.services.poker_render import Media, SeatView
 from bot.services.poker_scene import PokerScene
 from bot.services.taxes import TAX_COLLECTOR
+from bot.services.telemetry import TimedLock
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder
@@ -557,7 +558,7 @@ class Table:
         self.last_round: Round | None = None
         self.current: TableDeal | None = None
         self.task: asyncio.Task[None] | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("poker:Table._lock")
         self._edit_task: asyncio.Task[None] | None = None
         self._dirty = False
         #: Se activan con el primero que se sienta, cuando están todos listos y

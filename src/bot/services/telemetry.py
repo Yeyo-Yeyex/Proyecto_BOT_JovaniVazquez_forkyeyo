@@ -38,6 +38,18 @@ son los acordados:
 - `oom`: procesos del contenedor matados por quedarse sin memoria (Chromium, Node).
 - `db`: lo que tarda en escribirse cada volcado de la telemetría (`volcado`), que
   mide de paso cómo va el disco del NAS.
+- `sql`: lo que tarda cada sentencia de cada repositorio (`economy · escritura`).
+- `candado`: lo que espera un `TimedLock` que ya estaba cogido, por su nombre.
+- `node` (procesos que se abren, se cierran, se matan y la espera hasta tener uno)
+  y `plan_b`: dibujos que no pudo hacer Node o Chromium y salieron con el plan B.
+- `peso`: KB de cada imagen subida (en los campos de `ms`).
+- `10062`: interacciones contestadas cuando Discord ya las daba por perdidas.
+- `vista`, `vista_cerrada`: vistas abiertas y paradas (con lo que duraron).
+- `menu`: opción elegida en cada desplegable.
+- `uso_mal` y `rechazo`: comandos mal escritos y comandos que contestan con error.
+- `excepcion`: errores con traza, por tipo y función del bot.
+- `musica`: búsquedas (con su duración), pistas escuchadas o saltadas (con lo que
+  sonaron), fallos, cola llena y posición en la cola (en los campos de `ms`).
 
 Privacidad: el único dato por persona es el `user_id` en `UserKey`, que se
 borra a los 90 días y nunca sale en el informe (se seudonimiza como u1, u2...).
@@ -66,6 +78,7 @@ from bot.repositories.economy import (
     SLOTS_POT_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
 )
+from bot.services.achievements import AVAILABLE
 from bot.services.levels import TIMEZONE
 
 if TYPE_CHECKING:
@@ -93,7 +106,7 @@ si la vista lo contara, saldría siempre sin respuesta. Lo cuenta el listener co
 LATENCY_BUCKETS = (500, 1000, 3000)
 """Cortes de latencia en ms: `<500`, `<1000`, `<3000` y `>=3000`."""
 
-REPORT_VERSION = 2
+REPORT_VERSION = 3
 
 # Tipos cuyo nombre es un id de canal que se traduce a «#nombre» en el informe.
 CHANNEL_KINDS = frozenset({"message", "voice", "reaction"})
@@ -230,6 +243,11 @@ class ReportData:
     - `casino`: dicts con `game, plays, free, players, wagered, paid`.
     - `balances`: saldos de los miembros; `system_accounts`: `{user_id <= 0: saldo}`.
     - `ledger`: dicts con `reason, moves, inflow, outflow` (solo miembros).
+    - `ledger_daily`: tuplas `(day, inflow, outflow, moves)` de los miembros.
+    - `achievements`: tuplas `(logro, total, en la ventana)`; `achievement_members`,
+      miembros con algún logro.
+    - `shop`: dicts con `name, kind, sales, renewals, buyers, spent`.
+    - `pets`: dicts con `species, total, active`.
     """
 
     usage: list[dict[str, Any]] = field(default_factory=list)
@@ -243,6 +261,11 @@ class ReportData:
     balances: list[int] = field(default_factory=list)
     system_accounts: dict[int, int] = field(default_factory=dict)
     ledger: list[dict[str, Any]] = field(default_factory=list)
+    ledger_daily: list[tuple[str, int, int, int]] = field(default_factory=list)
+    achievements: list[tuple[str, int, int]] = field(default_factory=list)
+    achievement_members: int = 0
+    shop: list[dict[str, Any]] = field(default_factory=list)
+    pets: list[dict[str, Any]] = field(default_factory=list)
 
 
 #: Quien quiera saber lo que tarda cada dibujo se apunta aquí (el cog `Telemetry`).
@@ -286,6 +309,29 @@ def report_event(kind: str, name: str, ms: float | None = None, *, error: bool =
     """Avisa de un evento `kind`/`name` sin servidor (con su duración en `ms`, si la tiene)."""
     for observer in tuple(event_observers):
         observer(kind, name, ms, error)
+
+
+class TimedLock(asyncio.Lock):
+    """`asyncio.Lock` que avisa (`candado`) de lo que se espera cuando ya estaba cogido.
+
+    Si estaba libre no cuenta nada: solo interesan los clics que esperan a otro.
+
+    Args:
+        name: Nombre estable en el informe (`CoinView._lock`).
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self.name = name
+
+    async def acquire(self) -> bool:
+        if not self.locked():
+            return await super().acquire()
+        start = time.perf_counter()
+        try:
+            return await super().acquire()
+        finally:
+            report_event("candado", self.name, (time.perf_counter() - start) * 1000)
 
 
 def local_moment(at: float) -> tuple[str, int]:
@@ -427,6 +473,65 @@ def _economy(data: ReportData) -> dict[str, Any]:
     }
 
 
+def _economy_days(data: ReportData, until: date) -> dict[str, dict[str, int]]:
+    """Entradas, salidas y movimientos de los miembros por día; el último día, la masa.
+
+    La masa monetaria solo se sabe el día del informe: al juntar informes de días
+    distintos sale la serie entera.
+    """
+    days = {
+        day: {"entradas": int(inflow), "salidas": int(outflow), "movimientos": int(moves)}
+        for day, inflow, outflow, moves in data.ledger_daily
+    }
+    if data.balances or data.system_accounts:
+        days.setdefault(until.isoformat(), {"entradas": 0, "salidas": 0, "movimientos": 0})[
+            "masa"
+        ] = int(sum(data.balances) + sum(data.system_accounts.values()))
+    return dict(sorted(days.items()))
+
+
+def _achievements(data: ReportData, catalog: Mapping[str, str]) -> dict[str, Any]:
+    """Cuántos miembros tienen cada logro, frente a su rareza; y los que nadie tiene."""
+    members = data.achievement_members
+    rows = [
+        {
+            "logro": achievement,
+            "rareza": catalog.get(achievement),
+            "miembros": total,
+            "en_la_ventana": recent,
+            "pct_miembros": round(total / members, 4) if members else None,
+        }
+        for achievement, total, recent in sorted(data.achievements, key=lambda r: (-r[1], r[0]))
+    ]
+    owned = {achievement for achievement, _total, _recent in data.achievements}
+    return {
+        "miembros_con_logros": members,
+        "por_logro": rows,
+        "sin_conseguir": sorted(set(catalog) - owned),
+    }
+
+
+def _shop(data: ReportData) -> list[dict[str, Any]]:
+    return [
+        {
+            "articulo": row["name"],
+            "tipo": row["kind"],
+            "ventas": int(row["sales"]),
+            "renovaciones": int(row["renewals"] or 0),
+            "compradores": int(row["buyers"]),
+            "gastado": int(row["spent"] or 0),
+        }
+        for row in sorted(data.shop, key=lambda r: (-int(r["sales"]), str(r["name"])))
+    ]
+
+
+def _pets(data: ReportData) -> dict[str, dict[str, int]]:
+    return {
+        str(row["species"]): {"total": int(row["total"]), "activas": int(row["active"] or 0)}
+        for row in sorted(data.pets, key=lambda r: str(r["species"]))
+    }
+
+
 def build_report(
     data: ReportData,
     *,
@@ -435,6 +540,7 @@ def build_report(
     commands: Iterable[str],
     channel_names: Mapping[int, str],
     guild_id: int = 0,
+    achievements: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Convierte los agregados en el informe JSON (claves en español, serializable tal cual).
 
@@ -445,6 +551,7 @@ def build_report(
         commands: Nombres de todos los comandos del bot, para `comandos_sin_uso`.
         channel_names: Nombres de canal por id, para traducir `message`, `voice`, `reaction`.
         guild_id: Servidor del informe (solo se copia a `servidor`).
+        achievements: Rareza de cada logro del catálogo por id, para `logros`.
 
     El `user_id` nunca aparece: la actividad va por seudónimos u1, u2...
     """
@@ -471,6 +578,7 @@ def build_report(
             "cpu_pct_media": _round_or_none(row.get("cpu_avg")),
             "db_mb_max": _round_or_none(row.get("db_max")),
             "disco_libre_mb_min": _round_or_none(row.get("disk_min")),
+            "muestras": row.get("samples"),
         }
         for row in sorted(data.system, key=lambda r: r["day"])
     }
@@ -508,6 +616,10 @@ def build_report(
         "arranques": starts,
         "casino": casino,
         "economia": _economy(data),
+        "economia_dia": _economy_days(data, until),
+        "logros": _achievements(data, achievements or {}),
+        "tienda": _shop(data),
+        "mascotas": _pets(data),
     }
 
 
@@ -671,4 +783,5 @@ class TelemetryService:
             commands=commands,
             channel_names=channel_names,
             guild_id=guild_id,
+            achievements={a.id: a.rarity.value[0] for a in AVAILABLE},
         )

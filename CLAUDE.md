@@ -99,9 +99,12 @@ Todo botón nuevo, o que se toque, sigue estas reglas. Las funciones están en
 7. **Clics en ráfaga contra un mismo candado** (como el minijuego de `pala`): el
    clic que llega tarde se acepta fuera del candado. Si se acepta dentro, cada
    clic espera a que el anterior termine de hablar con Discord y los últimos pasan
-   de 3 segundos.
+   de 3 segundos. Los candados se crean con `TimedLock("modulo:Clase._lock")`
+   (`bot.services.telemetry`), no con `asyncio.Lock()`: así el informe dice qué
+   candado hace esperar y cuánto («Esperas en candados»).
 8. **La base de datos se abre siempre con `bot.repositories.sqlite.connect`**, que
-   activa el modo WAL. Una escritura no sincroniza el disco del NAS y una lectura
+   activa el modo WAL (y mide cada sentencia para el informe, «Base de datos»). Una
+   escritura no sincroniza el disco del NAS y una lectura
    no espera a una escritura. Un repositorio nuevo no llama a `sqlite3.connect` a
    mano.
 

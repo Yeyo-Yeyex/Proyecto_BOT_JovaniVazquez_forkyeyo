@@ -33,7 +33,6 @@ edita cada pocas vueltas, no en todas, por el límite de ediciones de Discord.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import time
@@ -64,6 +63,7 @@ from bot.services.babel import (
     split_decoration,
 )
 from bot.services.hong_kong import clock_text, clocks_at
+from bot.services.telemetry import TimedLock
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -283,7 +283,7 @@ class Fun(commands.Cog):
         self._pace = translator is None
         self._limiter = limiter or ChannelRenameLimiter()
         self._session: aiohttp.ClientSession | None = None
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("fun:Fun._lock")
 
     async def cog_load(self) -> None:
         """Abre la sesión HTTP del traductor real (una para todo el cog)."""

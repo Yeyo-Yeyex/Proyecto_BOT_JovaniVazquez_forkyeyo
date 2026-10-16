@@ -122,6 +122,7 @@ from bot.services.entrance_sound import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pets import Event, Moment
+from bot.services.telemetry import TimedLock
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 
@@ -1089,7 +1090,7 @@ class Beernight(commands.Cog):
         # Abrir la noche guarda a cada persona de la llamada en la base de datos:
         # se acepta el clic antes.
         await ack(interaction)
-        lock = self._start_locks.setdefault(guild.id, asyncio.Lock())
+        lock = self._start_locks.setdefault(guild.id, TimedLock("beernight:Beernight._start_locks"))
         async with lock:
             if guild.id in self.nights:
                 await notify(
@@ -2087,7 +2088,7 @@ class Beernight(commands.Cog):
         guild = self.bot.get_guild(guild_id)
         if guild is None:
             return
-        lock = self._voice_locks.setdefault(guild_id, asyncio.Lock())
+        lock = self._voice_locks.setdefault(guild_id, TimedLock("beernight:Beernight._voice_locks"))
         if lock.locked():
             return  # Ya está sonando otro: mejor uno que dos pisándose.
         async with lock:

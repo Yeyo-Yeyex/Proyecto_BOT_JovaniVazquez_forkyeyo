@@ -116,6 +116,7 @@ from bot.services.gallos import DUEL_CUT, POOL_CUT, PoolBet, duel_prize, format_
 from bot.services.levels import TIMEZONE
 from bot.services.pets import Event, Moment, bet_moment
 from bot.services.poker_club import streak_multiplier_pct
+from bot.services.telemetry import TimedLock
 from bot.utils.ahead import Ahead
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import ContextResponder, InteractionResponder
@@ -1026,7 +1027,7 @@ class Duel:
         self.seed = cog.rng.randrange(1, 2**31)
         self.timer: asyncio.Task[None] | None = None
         self.ahead = Ahead(cog.ahead, name="el 4 en raya")
-        self._lock = asyncio.Lock()
+        self._lock = TimedLock("enraya:Duel._lock")
         self._busy = False
         self.note: str | None = None
 
