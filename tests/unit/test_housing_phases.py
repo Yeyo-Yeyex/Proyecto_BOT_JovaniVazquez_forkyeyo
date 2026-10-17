@@ -372,6 +372,14 @@ async def test_un_miembro_de_alquiler_paga_al_casero_y_cobra_el_bono(tmp_path: P
     assert await economy.balance(GUILD, STATE_ACCOUNT_ID) < state + 1  # pagó el bono
     for member in (ANA, BEA, STATE_ACCOUNT_ID):
         assert ledger_sum(tmp_path, member) == await economy.balance(GUILD, member)
+    # Lo que paga el inquilino queda para su deducción canaria (art. 15 del DL 1/2009).
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (paid,) = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras "
+            "WHERE user_id = ? AND kind = 'alquiler'",
+            (BEA,),
+        ).fetchone()
+    assert paid == lease.rent
 
 
 async def test_sin_dinero_el_miembro_deja_de_pagar_y_sin_partida_no_hay_bono(

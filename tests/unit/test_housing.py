@@ -749,3 +749,67 @@ async def test_al_salir_del_servidor_se_borran_sus_pisos(tmp_path: Path) -> None
     await service.repository.delete_guild_data(GUILD)
     market = await service.market(GUILD)
     assert market.holdings == {} and market.leases == {} and market.indexes == {}
+
+
+async def test_los_pisos_declaran_por_inmueble_imputan_los_vacios_y_la_casa_desgrava(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await economy.close_irpf_weeks(GUILD)  # el servidor entra en la 8.0.0 esta semana
+    await give(economy, ANA, 10_000_000)
+    await economy.pay_salary(GUILD, ANA, gross=400_000, concept="pala:obra")  # para el banco
+    homes = sorted(
+        (x for x in listings_of(BAJO.barrio) if x.key != BAJO.key and x.kind in rules.HOME_KINDS),
+        key=rules.price,
+    )
+    empty, home = homes[-1], homes[0]
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    await service.buy(GUILD, ANA, empty.key, 100)
+    trade = await service.buy(GUILD, ANA, home.key, 100, financed=True)
+    assert trade.deal.loan > 0
+    await service.set_home(GUILD, ANA, home.key)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01' WHERE listing = ?",
+            (BAJO.key,),
+        )
+    clock.now = at(15).timestamp()
+    await service.close_days(GUILD)
+
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        rows = {
+            ref: (kind, gross, costs, reduction)
+            for ref, kind, gross, costs, reduction in connection.execute(
+                "SELECT ref, kind, gross, costs, reduction FROM economy_tax_records "
+                "WHERE user_id = ? AND kind IN ('inmueble', 'imputacion')",
+                (ANA,),
+            )
+        }
+        home_paid = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras WHERE user_id = ? "
+            "AND kind = 'vivienda'",
+            (ANA,),
+        ).fetchone()[0]
+    # El alquilado, por inmueble: la renta entera, sus gastos y la reducción de vivienda.
+    kind, gross, costs, reduction = rows[BAJO.key]
+    month = rules.monthly_costs(BAJO)
+    assert (kind, gross, reduction) == ("inmueble", 8000, rules.RENT_REDUCTION)
+    assert costs >= month.ibi + month.community + month.insurance
+    # El vacío imputa el 1,1 % del catastral; la casa en la que vive, nada.
+    assert rows[empty.key][:2] == ("imputacion", rules.imputed_rent(empty, 100))
+    assert home.key not in rows
+    # La cuota de la hipoteca de la vivienda habitual queda para la deducción canaria.
+    assert home_paid == trade.deal.payment
+
+    clock.now = at(19, hour=0).timestamp()
+    await economy.close_irpf_weeks(GUILD)
+    statement = await economy.irpf_statement(GUILD, ANA)
+
+    assert statement is not None and statement.detail is not None
+    (item,) = statement.income.properties
+    assert (item.ref, item.income, item.reduction) == (BAJO.key, 8000, rules.RENT_REDUCTION)
+    assert statement.income.imputed == rules.imputed_rent(empty, 100)
+    assert statement.detail.tax.base == statement.filed.base
+    assert statement.detail.result == statement.filed.result
