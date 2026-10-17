@@ -208,9 +208,26 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
   Las frases que van en un titular (`# … +500 Y$`) son cortas para que quepan en una línea y se leen bien con la cifra detrás.
 
-#### Auditoría de tono (pendiente)
+#### La actualización Aguafiestas (auditoría de tono, pendiente)
 
-Los textos escritos antes de octubre de 2026 siguen la norma antigua («todo es jocoso») y hay que repasarlos. La auditoría se hace por partes, una por PR, y cada parte se apunta aquí como hecha. Orden recomendado:
+La norma de tono de arriba y el repaso de los textos que la siguen forman la **actualización Aguafiestas**. Los textos escritos antes de octubre de 2026 siguen la norma antigua («todo es jocoso») y hay que repasarlos. Es un cambio grande y puede dividir a los miembros, así que se hace de forma que se pueda deshacer entero o por partes:
+
+- **Punto de partida:** la etiqueta de git `pre-aguafiestas` marca `main` justo antes (el commit `e4ecfac`). El primer commit de la actualización es `33b3311` (la norma en la Biblia y en `CLAUDE.md`).
+- **Commits solo de texto y con prefijo.** Cada commit de la actualización empieza por `Aguafiestas:` (así sale también en el aviso de novedades, «Aguafiestas: logros con nombres más claros») y solo cambia textos: frases, nombres y descripciones, y las pruebas que comparan esos textos. Nada de funcionalidades, arreglos, cifras ni reglas de juego mezclados: eso va en commits aparte, para que revertir la actualización no se los lleve.
+- **Una parte por commit** (o por PR), en el orden de abajo, y cada parte se apunta aquí como hecha con su commit.
+- **Las claves no se tocan.** Un logro, un artículo o una especie cambia nombre y descripción, nunca su `key`: así revertir no pierde logros ni objetos de nadie.
+- **Versión:** cada parte es PARCHE (no cambia lo que se puede hacer) y su entrada de `CHANGELOG.md` empieza por «Aguafiestas:».
+
+Para revertirla entera, desde `main` actualizado:
+
+```
+git log --oneline --grep '^Aguafiestas' pre-aguafiestas..main    # repasar qué entra
+git revert --no-edit $(git log --format=%H --grep '^Aguafiestas' pre-aguafiestas..main) 33b3311
+```
+
+`git log` da los commits del más nuevo al más viejo, que es el orden en que hay que revertirlos; `33b3311` va al final porque es el más viejo. Si un commit posterior (no de la actualización) tocó el mismo texto, el revert da conflicto: se resuelve a mano quedándose con el texto de antes de la actualización. Para revertir solo una parte (por ejemplo, los logros), se revierte solo su commit. Después, como cualquier cambio: subir la versión, entrada en `CHANGELOG.md` («Aguafiestas revertida: …»), comprobaciones y push. Si se revierte entera, esta sección y la norma de tono se quedan revertidas también, y vuelve a mandar la norma antigua.
+
+Orden recomendado:
 
 1. **Logros** (`services/achievements*`, el catálogo): es lo que más se lee. Por cada categoría: nombres que no se entienden sin saber la referencia, descripciones que no dicen qué hay que hacer, bromas repetidas entre logros y referencias políticas por encima de una de cada cuatro. Se rebautiza nombre y descripción, nunca la `key`.
 2. **Frases de los juegos del casino** (ganar, perder, esperar, quedarse a cero): al menos la mitad normales, las bromas espaciadas y de fuentes variadas.
