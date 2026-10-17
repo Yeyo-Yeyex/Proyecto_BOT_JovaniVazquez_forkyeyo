@@ -8,15 +8,15 @@ la economía.
 Reglas (las habituales de un casino):
 
 - Zapato de 6 barajas que dura entre manos (y entre mesas) de cada jugador: se
-  baraja de nuevo al llegar a la carta de corte (`CUT_CARD`, a tres cuartos del
-  zapato), así que **se pueden contar cartas**, como en un casino. Y como en un
+  baraja de nuevo al llegar a la carta de corte (`CUT_CARD`, a una baraja del
+  final), así que **se pueden contar cartas**, como en un casino. Y como en un
   casino, el jefe de sala vigila: si la apuesta pasa de `PIT_BOSS_SPREAD` veces la
   más baja de ese zapato con la cuenta Hi-Lo verdadera en `PIT_BOSS_COUNT` o más,
   baraja antes de repartir (`pit_boss_shuffles`). Contar bien da para ganar, pero
   hay que currárselo (`docs/rtp_blackjack.py --contar`, 2 millones de manos): sin
   contar se devuelve ≈ 99,6 %; contando Hi-Lo con estrategia básica y subiendo de 1
-  a 8, ≈ 100,2 % (casi empate); con los desvíos de la cuenta (seguro con +3 y los
-  de Illustrious 18), ≈ 100,4 %. Subir más con el zapato caliente, no. Abrir otra
+  a 8, ≈ 100,4 %; con los desvíos de la cuenta (seguro con +3 y los de
+  Illustrious 18), ≈ 100,5 %. Subir más con el zapato caliente, no. Abrir otra
   mesa no da zapato nuevo: si lo diera, bastaría levantarse cada vez que la cuenta
   se pone en contra.
 - La banca se planta en 17, también en 17 blando.
@@ -57,10 +57,11 @@ from enum import Enum
 
 DECKS = 6
 #: Cartas que quedan cuando sale la carta de corte: a partir de aquí se baraja antes
-#: de la mano siguiente (penetración del 75 %, la de una mesa de casino normal).
-CUT_CARD = DECKS * 52 // 4
+#: de la mano siguiente. Una baraja: se reparten 5 de las 6 (penetración del 83 %, la
+#: de una buena mesa; con el 75 % la cuenta casi nunca llegaba a calentarse).
+CUT_CARD = 52
 #: El jefe de sala baraja si la apuesta pasa de tantas veces la más baja del zapato…
-#: (con 4, contar perfecto apenas empataba; con 8 se gana si se cuenta con desvíos).
+#: (con 4, contar perfecto apenas empataba; con 8 se gana contando).
 PIT_BOSS_SPREAD = 8
 #: …y la cuenta verdadera Hi-Lo (por baraja que queda) llega a esto.
 PIT_BOSS_COUNT = 2

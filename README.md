@@ -438,9 +438,9 @@ python -m bot
   casino: la bandeja de descartes crece (con una muesca por baraja, sin números)
   y el zapato mengua con la carta de corte dentro hasta que sale. Mientras miras
   una jugada, la mesa ya ha pintado la de cada botón, así que al pulsar sale al
-  momento. Reglas: 6 barajas que duran entre manos hasta la carta de corte
-  (se pueden contar cartas, y el jefe de sala baraja si subes la ficha más de
-  ×4 con la cuenta alta), la banca se planta
+  momento. Reglas: 6 barajas que duran entre manos hasta la carta de corte,
+  a una baraja del final (se pueden contar cartas, y el jefe de sala baraja si
+  subes la ficha más de ×8 con la cuenta alta), la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
   apuesta (empate si tú también lo tienes). Seguro con un as de la banca,
   también si tienes blackjack: cuesta media apuesta y paga 2:1 si ella lo
