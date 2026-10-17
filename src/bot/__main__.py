@@ -49,6 +49,8 @@ def main() -> int:
                 command_prefix=config.command_prefix,
                 database_path=Path.cwd() / ".data" / "message_stats.sqlite3",
                 casino_channel_ids=config.casino_channel_ids,
+                activity_secret=config.activity_secret,
+                activity_guild_id=config.activity_guild_id,
             )
         )
     except KeyboardInterrupt:

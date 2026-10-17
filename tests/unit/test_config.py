@@ -69,3 +69,24 @@ def test_load_config_lee_canales_de_casino_separados_por_comas() -> None:
 def test_load_config_rechaza_canales_de_casino_no_numericos() -> None:
     with pytest.raises(ConfigError, match="CASINO_CHANNEL_IDS"):
         load_config({"DISCORD_TOKEN": "t", "CASINO_CHANNEL_IDS": "#casino"})
+
+
+def test_load_config_sin_secreto_no_hay_activity() -> None:
+    config = load_config({"DISCORD_TOKEN": "t"})
+
+    assert config.activity_secret == ""
+    assert config.activity_guild_id is None
+
+
+def test_load_config_lee_el_secreto_y_el_servidor_de_la_activity() -> None:
+    config = load_config(
+        {"DISCORD_TOKEN": "t", "DISCORD_CLIENT_SECRET": " s3cr3t ", "ACTIVITY_GUILD_ID": "123"}
+    )
+
+    assert config.activity_secret == "s3cr3t"
+    assert config.activity_guild_id == 123
+
+
+def test_load_config_rechaza_un_servidor_de_activity_no_numerico() -> None:
+    with pytest.raises(ConfigError, match="ACTIVITY_GUILD_ID"):
+        load_config({"DISCORD_TOKEN": "t", "ACTIVITY_GUILD_ID": "el-servidor"})

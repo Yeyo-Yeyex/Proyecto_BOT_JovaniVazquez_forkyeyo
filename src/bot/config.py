@@ -39,12 +39,20 @@ class BotConfig:
             aplicación (`/poner`).
         casino_channel_ids: Canales donde se permiten los juegos del casino.
             Vacío significa "cualquier canal".
+        activity_secret: Secreto de la app (portal de Discord > OAuth2 > Client
+            Secret), para la Activity (`bot.cogs.actividad`). Es secreto como el
+            token. Vacío significa "sin Activity".
+        activity_guild_id: Servidor cuya economía usa la Activity cuando se abre
+            fuera de un servidor con el bot (un mensaje directo, un servidor
+            pequeño de pruebas). `None` significa "solo donde esté el bot".
     """
 
     token: str
     log_level: str = DEFAULT_LOG_LEVEL
     command_prefix: str = DEFAULT_COMMAND_PREFIX
     casino_channel_ids: frozenset[int] = frozenset()
+    activity_secret: str = ""
+    activity_guild_id: int | None = None
 
 
 def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConfig:
@@ -59,7 +67,8 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
 
     Raises:
         ConfigError: Si falta ``DISCORD_TOKEN``, si ``LOG_LEVEL`` no es un
-            nivel de log válido o si ``CASINO_CHANNEL_IDS`` no son IDs.
+            nivel de log válido o si ``CASINO_CHANNEL_IDS`` o
+            ``ACTIVITY_GUILD_ID`` no son IDs.
     """
     source = env if env is not None else os.environ
 
@@ -85,11 +94,19 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
         "CASINO_CHANNEL_IDS", source.get("CASINO_CHANNEL_IDS", "")
     )
 
+    activity_guild = source.get("ACTIVITY_GUILD_ID", "").strip()
+    if activity_guild and not activity_guild.isdigit():
+        raise ConfigError(
+            f"ACTIVITY_GUILD_ID inválido: '{activity_guild}' no es un ID de servidor."
+        )
+
     return BotConfig(
         token=token,
         log_level=log_level,
         command_prefix=command_prefix,
         casino_channel_ids=casino_channel_ids,
+        activity_secret=source.get("DISCORD_CLIENT_SECRET", "").strip(),
+        activity_guild_id=int(activity_guild) if activity_guild else None,
     )
 
 

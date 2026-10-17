@@ -81,6 +81,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.war",
     "bot.cogs.chicken",
     "bot.cogs.coin",
+    "bot.cogs.actividad",
     "bot.cogs.bus",
     "bot.cogs.allatu",
     "bot.cogs.poker",
@@ -117,6 +118,19 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
 )
 
 
+#: Tipo del comando de entrada de una Activity (`PRIMARY_ENTRY_POINT`), que discord.py
+#: aún no conoce.
+ENTRY_POINT_TYPE = 4
+#: Nombre y descripción del comando de entrada. Discord lo crea como «Launch» y los
+#: comandos van en español (Biblia, «Cogs y comandos»).
+ENTRY_POINT = {
+    "name": "jugar",
+    "description": "Abre el casino de Jovani en pantalla grande, con tus yapdollars.",
+}
+#: Lo que se reenvía del comando de entrada al sincronizar (lo demás lo pone Discord).
+ENTRY_POINT_FIELDS = ("name", "description", "type", "handler", "integration_types", "contexts")
+
+
 def build_intents() -> discord.Intents:
     """Crea los intents requeridos por las funciones actuales.
 
@@ -145,8 +159,13 @@ class BotClient(commands.Bot):
         command_prefix: str,
         database_path: Path,
         casino_channel_ids: frozenset[int] = frozenset(),
+        activity_secret: str = "",
+        activity_guild_id: int | None = None,
     ) -> None:
         self.database_path = database_path
+        # La Activity (`bot.cogs.actividad`): sin secreto no abre su servidor web.
+        self.activity_secret = activity_secret
+        self.activity_guild_id = activity_guild_id
         self.message_stats = MessageStatsRepository(database_path)
         # Única puerta al dinero del bot: el casino y cualquier sistema futuro
         # que dé o quite yapdollars deben pasar por aquí (ver services/economy).
@@ -290,10 +309,42 @@ class BotClient(commands.Bot):
         # El pintor de Node que siempre queda abierto: el primer dibujo no arranca en frío.
         await node_scene.warm()
 
-        synced = await self.tree.sync()
-        logger.info("Comandos de aplicación sincronizados: %d", len(synced))
+        synced = await self.sync_commands()
+        logger.info("Comandos de aplicación sincronizados: %d", synced)
         self._keep_warm_task = asyncio.create_task(self._keep_warm(), name="http-caliente")
         self._checkpoint_task = asyncio.create_task(self._checkpoint_loop(), name="sqlite-wal")
+
+    async def sync_commands(self) -> int:
+        """Sincroniza los comandos de aplicación como `tree.sync()`, sin quitar el de la Activity.
+
+        Con las Activities activadas en el portal, Discord crea un comando global de
+        entrada (tipo 4) que discord.py no conoce. `tree.sync()` sustituye la lista
+        entera y Discord rechaza (error 50240) una lista que lo deje fuera: el bot no
+        arrancaría. Si existe, se le pone el nombre en español de `ENTRY_POINT` (una
+        vez) y se manda con los demás, con su `handler` (quién abre la Activity).
+
+        Returns:
+            Cuántos comandos quedan sincronizados.
+        """
+        assert self.application_id is not None
+        current = await self.http.get_global_commands(self.application_id)
+        entry = next((c for c in current if c["type"] == ENTRY_POINT_TYPE), None)
+        if entry is None:
+            return len(await self.tree.sync())
+        if entry["name"] != ENTRY_POINT["name"]:
+            # El nombre es estético: si Discord no lo acepta, se arranca con el que tenga.
+            try:
+                entry = await self.http.edit_global_command(
+                    self.application_id, entry["id"], ENTRY_POINT
+                )
+            except discord.HTTPException:
+                logger.warning("No se pudo renombrar el comando de la Activity", exc_info=True)
+        kept = {key: entry[key] for key in ENTRY_POINT_FIELDS if entry.get(key) is not None}
+        payload = [command.to_dict(self.tree) for command in self.tree.get_commands()]
+        data = await self.http.bulk_upsert_global_commands(
+            self.application_id, payload=[*payload, kept]
+        )
+        return len(data)
 
     async def close(self) -> None:
         """Cierra la conexión, descarga los cogs y luego los procesos de Node."""
@@ -318,6 +369,8 @@ async def start_bot(
     command_prefix: str,
     database_path: Path,
     casino_channel_ids: frozenset[int] = frozenset(),
+    activity_secret: str = "",
+    activity_guild_id: int | None = None,
 ) -> None:
     """Crea el cliente y lo ejecuta hasta que se detenga o falle.
 
@@ -327,6 +380,9 @@ async def start_bot(
         database_path: Ubicación de la base de datos persistente del bot.
         casino_channel_ids: Canales donde se permiten los juegos del casino
             (vacío = cualquiera).
+        activity_secret: Secreto de la app para la Activity (vacío = sin Activity).
+        activity_guild_id: Servidor cuya economía usa la Activity fuera de los
+            servidores del bot (`None` = ninguno).
 
     Raises:
         discord.LoginFailure: Si el token es inválido.
@@ -335,6 +391,8 @@ async def start_bot(
         command_prefix=command_prefix,
         database_path=database_path,
         casino_channel_ids=casino_channel_ids,
+        activity_secret=activity_secret,
+        activity_guild_id=activity_guild_id,
     )
     async with client:
         await client.start(token)

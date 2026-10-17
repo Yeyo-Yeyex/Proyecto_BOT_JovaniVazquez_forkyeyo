@@ -1,0 +1,60 @@
+/* Estilos de la Activity (index.html): los colores del tema oscuro de Discord, donde se abre. */
+:root {
+  color-scheme: dark;
+  --fondo: #313338;
+  --hundido: #1e1f22;
+  --texto: #dbdee1;
+  --suave: #949ba4;
+  --primario: #5865f2;
+  --exito: #248046;
+  --boton: #4e5058;
+  --aviso: #fa777c;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 16px/1.4 "gg sans", "Noto Sans", system-ui, sans-serif;
+}
+main { max-width: 680px; margin: 0 auto; padding: 12px 16px 24px; }
+h1 { font-size: 1.1rem; margin: 0 0 8px; }
+canvas { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--hundido); }
+#texto h2 { font-size: 1.5rem; margin: 12px 0 4px; }
+#texto p { margin: 4px 0; }
+#texto small { display: block; color: var(--suave); font-size: 0.8rem; margin: 2px 0; }
+code { background: var(--hundido); padding: 0 4px; border-radius: 4px; }
+#aviso { color: var(--aviso); min-height: 1.4em; margin: 4px 0; }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+button {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--boton);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primario { background: var(--primario); }
+button.exito { background: var(--exito); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid #00a8fc; outline-offset: 2px; }
+form { display: flex; gap: 8px; flex: 1 1 220px; }
+form button { flex: 0 0 auto; }
+input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--hundido);
+  color: var(--texto);
+  font: inherit;
+}
+[hidden] { display: none !important; }
+/* El marco de la escena pinta fuera de la vista: solo se copian sus recuadros al lienzo. */
+.escena { position: absolute; width: 0; height: 0; border: 0; visibility: hidden; }

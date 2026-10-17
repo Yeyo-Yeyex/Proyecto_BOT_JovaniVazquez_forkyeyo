@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+Página de la Activity de Discord. La sirve el bot (bot/cogs/actividad.py), que cambia
+%CLIENT_ID% por el ID de la app para el SDK de Discord. Todo lo que hace está en
+actividad.js; la escena de la moneda la carga ese script en un marco oculto.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="client-id" content="%CLIENT_ID%">
+<title>Casino de Jovani</title>
+<link rel="stylesheet" href="/assets/actividad/actividad.css">
+<script type="module" src="/assets/actividad/actividad.js"></script>
+</head>
+<body>
+<main>
+  <h1 id="titulo">🪙 Cara o cruz</h1>
+  <canvas id="mesa" width="640" height="360" role="img" aria-label="Mesa de cara o cruz"></canvas>
+  <div id="texto" aria-live="polite"><p>Pidiendo permiso a Discord…</p></div>
+  <p id="aviso" role="alert"></p>
+  <div id="botones" hidden>
+    <div class="fila">
+      <button id="cara" class="primario" type="button"></button>
+      <button id="cruz" class="primario" type="button"></button>
+      <button id="cobrar" class="exito" type="button" hidden></button>
+    </div>
+    <div class="fila" id="apuestas">
+      <button id="mitad" type="button" aria-label="Apuesta a la mitad">½</button>
+      <button id="doble" type="button" aria-label="Apuesta al doble">×2</button>
+      <button id="todo" type="button">💰 All-in</button>
+      <form id="cantidad">
+        <input name="cantidad" placeholder="500, 2k, all…" maxlength="20" autocomplete="off"
+               aria-label="Apuesta">
+        <button type="submit">Apostar</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>

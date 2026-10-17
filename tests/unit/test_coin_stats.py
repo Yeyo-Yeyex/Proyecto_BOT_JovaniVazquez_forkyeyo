@@ -203,3 +203,10 @@ def test_viernes_13_pierde_solo_si_se_pierde_dinero() -> None:
     monday = datetime(2026, 4, 13, 12)
     assert monday.weekday() == 0
     assert "coin_friday13" not in stats(game_after([Side.CARA], [CRUZ]), monday)
+
+
+def test_las_partidas_de_la_activity_cuentan_aparte() -> None:
+    game = cashed([Side.CARA], [CARA])
+
+    assert coin_stats(game, when=NOON, activity=True).add["coin_activity_games"] == 1
+    assert "coin_activity_games" not in stats(game)

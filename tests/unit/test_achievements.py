@@ -431,7 +431,7 @@ PRODUCED_STATS = {
     "coin_finish", "coin_win_max", "coin_lost_big", "coin_edge_big", "coin_gallina",
     "coin_first_fail", "coin_next_edge", "coin_loyal_cara", "coin_loyal_cruz", "coin_flipflop",
     "coin_edge_lost", "coin_night", "coin_hispanidad", "coin_nochevieja", "coin_friday13",
-    "coin_cash_666", "coin_first_edge",
+    "coin_cash_666", "coin_first_edge", "coin_activity_games",
     # cogs/bus.py (`bus_stats`)
     "bus_games", "bus_hands", "bus_wins", "bus_cashouts", "bus_losses", "bus_complete",
     "bus_turned", "bus_turn_lost", "bus_mult_max", "bus_win_max", "bus_suit_wins",

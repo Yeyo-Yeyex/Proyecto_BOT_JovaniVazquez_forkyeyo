@@ -9,6 +9,7 @@ con `INITIAL_EXTENSIONS`, en el mismo orden que en producción.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sys
 from datetime import date
@@ -2144,5 +2145,56 @@ async def test_abrir_una_caja_apunta_logros_y_la_mascota_habla_con_el_bot_real(
         assert profile.stats[collection.stat] == 1
         assert {"box_open_1", "box_first_carton", "use_1"} <= set(profile.unlocked)
         assert "**Toby**" in message.edit.await_args.kwargs["content"]
+    finally:
+        await client.close()
+
+
+async def test_la_activity_juega_con_la_moneda_y_los_logros_del_bot_real(
+    tmp_path: Path,
+) -> None:
+    """La Activity busca la moneda con `find_cog` y sus partidas llegan a logros y apuestas."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    client = await load_bot(tmp_path)
+    try:
+        actividad = importer("Actividad", client)
+        actividad.toss_seconds = lambda states: 0.0
+        actividad.FINISH_MARGIN_SECONDS = 0
+        cog = client.get_cog("Moneda")
+        cog.renderer = MagicMock()
+        cog.renderer.close = AsyncMock()
+        cog.ahead = False
+        cog.rng = Scripted(Outcome.CRUZ, Outcome.CARA)  # pide cara, sale cruz
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        guild.get_member = lambda user_id: owner if user_id == OWNER_ID else None
+        client.get_guild = lambda guild_id: guild if guild_id == GUILD_ID else None
+        web = client.get_cog("Actividad")
+        web._exchange = AsyncMock(return_value="token")
+        web._whoami = AsyncMock(return_value=OWNER_ID)
+        web._instance = AsyncMock(
+            return_value={"location": {"guild_id": str(GUILD_ID)}, "users": [str(OWNER_ID)]}
+        )
+
+        async with TestClient(TestServer(web.build_app())) as http:
+            await http.post("/api/token", json={"code": "c", "instance_id": "i"})
+            headers = {"Authorization": "Bearer token"}
+            response = await http.post("/api/moneda", headers=headers, json={"accion": "cara"})
+            assert response.status == 200, await response.text()
+            await asyncio.gather(*web._finishing)
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["coin_games"] == 1
+        assert profile.stats["coin_activity_games"] == 1
+        assert {"moneda_1", "monedaa_1"} <= set(profile.unlocked)
+        report = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert report.by_game["moneda"].plays == 1
     finally:
         await client.close()

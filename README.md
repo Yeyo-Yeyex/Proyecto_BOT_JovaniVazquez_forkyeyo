@@ -47,6 +47,9 @@ pip install -e ".[dev]"
    blackjack, tragaperras, pachinko, lotería y porras) a esos canales: IDs
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
+5. `DISCORD_CLIENT_SECRET` y `ACTIVITY_GUILD_ID` (opcionales) encienden la
+   Activity de Discord (`/jugar`). Cómo se monta, en «La Activity de Discord:
+   `/jugar`», más abajo.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo
@@ -1024,6 +1027,48 @@ cron usa la hora del NAS. Si `date` no da la de Canarias (los NAS suelen ir en
 UTC), ajústala con `sudo timedatectl set-timezone Atlantic/Canary` o asume
 el desfase en la hora del crontab.
 El registro de cada ejecución queda en `.despliegue/actualizar.log`.
+
+### La Activity de Discord: `/jugar`
+
+Una Activity es una página web que Discord abre dentro de un canal (de voz o de
+texto) o de un mensaje directo. La del bot trae cara o cruz en pantalla grande:
+la misma mesa, el mismo dinero, los mismos textos y logros que `moneda`, pero la
+animación la pinta el navegador de cada jugador en vez de un GIF. La sirve el
+propio bot (`bot/cogs/actividad.py`) en el puerto 8765, solo si hay
+`DISCORD_CLIENT_SECRET`.
+
+Para montarla:
+
+1. **Portal de desarrolladores de Discord**, en la app del bot:
+   - OAuth2: copia el *Client Secret* a `DISCORD_CLIENT_SECRET` en el `.env`
+     (secreto, como el token) y añade `https://127.0.0.1` como *Redirect*.
+   - Activities > Settings: activa *Enable Activities*. Discord crea el comando
+     de entrada; al arrancar, el bot lo renombra a `/jugar`
+     (`BotClient.sync_commands`, que además impide que el sync de comandos lo
+     borre: Discord no lo permite y el bot no arrancaría).
+   - Activities > URL Mappings: `/` → la dirección pública del túnel (paso 2),
+     sin `https://`.
+2. **Un túnel HTTPS hasta el NAS.** Discord solo carga la Activity desde una
+   dirección pública con HTTPS, y el `docker-compose.yml` publica el puerto
+   8765 solo para el propio NAS (`127.0.0.1`). Sin abrir puertos del router:
+   Cloudflare Tunnel (`cloudflared`, con un dominio en Cloudflare) o Tailscale
+   Funnel (`tailscale funnel 8765`, con una dirección fija `*.ts.net`). Para
+   probar sin dominio vale `cloudflared tunnel --url http://localhost:8765`,
+   pero la dirección cambia en cada arranque y hay que volver a ponerla en el
+   portal.
+3. **Quién puede abrirla.** Mientras Discord no verifique la app, solo la abren
+   el equipo de desarrolladores de la app y sus *App Testers* (hasta 50, en
+   App Testers del portal; cada uno acepta la invitación y activa *Application
+   Test Mode* en Ajustes > Avanzado), y solo en servidores de menos de 25
+   miembros o en mensajes directos. Para jugar desde ahí con el dinero del
+   servidor del bot, pon su ID en `ACTIVITY_GUILD_ID`: la Activity usa la
+   economía del servidor donde se abre si el bot está en él y, si no, la de
+   `ACTIVITY_GUILD_ID`. Hay que ser miembro de ese servidor.
+
+Seguridad: la página nunca dice quién juega. El bot cambia el código de Discord
+por un token con el secreto, pregunta a Discord quién es y comprueba con la API
+de instancias que esa persona está dentro de esa Activity. El azar y el dinero
+se deciden en el bot, como en `moneda`.
 
 ### Reiniciar desde Discord: `reinicio`
 

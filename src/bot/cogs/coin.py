@@ -47,7 +47,9 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -73,7 +75,7 @@ from bot.services.coin import (
     toss,
     win_chance,
 )
-from bot.services.coin_render import Media
+from bot.services.coin_render import FRAME_MS, Media, board_state, meta_state, toss_states
 from bot.services.coin_scene import CoinScene
 from bot.services.economy import (
     BalanceLimitError,
@@ -169,6 +171,29 @@ FLYING_LINES = (
     "🪙 Trump dice que la moneda es suya…",
     "☕ Quiero café… y que salga…",
 )
+#: Aviso de la Activity cuando llega un clic con la moneda aún en el aire.
+BUSY_TEXT = "La moneda aún está en el aire."
+
+#: Lo que la Activity hace cuando el jugador ya ha visto el final (logros, `apuestas`, anuncio).
+Finish = Callable[[], Awaitable[None]]
+
+
+@dataclass(frozen=True, slots=True)
+class Throw:
+    """Un lanzamiento ya sorteado y cobrado, con lo que hace falta para enseñarlo.
+
+    Attributes:
+        start: La cara que había arriba, de donde despega la animación.
+        waiting: El texto de mientras vuela, escrito antes de lanzar (no delata nada).
+        seed: La semilla del vuelo.
+        settlement: El pago, si la partida ha terminado con este lanzamiento.
+    """
+
+    game: CoinGame
+    start: Side
+    waiting: str
+    seed: int
+    settlement: BetSettlement | None
 
 
 def percent(chance: float) -> str:
@@ -207,6 +232,8 @@ class CoinView(ui.View):
         #: GIF pintados por adelantado: para qué estado valen y uno por lado pedido.
         self._plan: tuple[tuple[Any, ...], dict[Side, asyncio.Future[Media | None]]] | None = None
         self._painting: asyncio.Task[None] | None = None
+        #: Última vez que se tocó la mesa desde la Activity (`Coin.web_table`).
+        self.web_seen = 0.0
 
     # -- Texto ------------------------------------------------------------------------
 
@@ -314,29 +341,35 @@ class CoinView(ui.View):
 
     # -- Componentes ------------------------------------------------------------------
 
+    def side_label(self, side: Side) -> str:
+        """La etiqueta del botón de `side`: a por cuánto va o cuánto se apuesta."""
+        game = self.game
+        if game is not None and game.playing:
+            return f"{side.emoji} {side.label} · {format_multiplier(game.multiplier * 2)}"
+        return f"{side.emoji} {side.label} · {format_amount(self.stake)}"
+
+    def cash_label(self) -> str | None:
+        """La etiqueta de 💰 Cobrar, o `None` si no hay racha que cobrar."""
+        game = self.game
+        if game is None or not game.playing:
+            return None
+        return f"💰 Cobrar {format_amount(game.pot)}"
+
     def rebuild(self, *, busy: bool = False) -> None:
         """Vuelve a montar los botones con el estado actual."""
         self.clear_items()
-        game = self.game
-        playing = game is not None and game.playing
         for side in Side:
-            if playing:
-                assert game is not None
-                label = f"{side.emoji} {side.label} · {format_multiplier(game.multiplier * 2)}"
-            else:
-                label = f"{side.emoji} {side.label} · {format_amount(self.stake)}"
             self._button(
-                label,
+                self.side_label(side),
                 side.key,
                 self._flip_cara if side is Side.CARA else self._flip_cruz,
                 style=discord.ButtonStyle.primary,
                 row=0,
                 disabled=busy,
             )
-        if playing:
-            assert game is not None
+        if (cash := self.cash_label()) is not None:
             self._button(
-                f"💰 Cobrar {format_amount(game.pot)}",
+                cash,
                 "cashout",
                 self._cash_out,
                 style=discord.ButtonStyle.success,
@@ -553,13 +586,19 @@ class CoinView(ui.View):
         interaction: discord.Interaction | None,
         game: CoinGame,
         settlement: BetSettlement | None,
+        *,
+        activity: bool = False,
     ) -> None:
-        """Lo que va después de enseñar el final: renta, logros, estadísticas y anuncio."""
+        """Lo que va después de enseñar el final: renta, logros, estadísticas y anuncio.
+
+        Args:
+            activity: Si la partida se ha jugado desde la Activity (sus logros propios).
+        """
         if interaction is not None:
             await renta.remind(self.cog.bot, interaction)
         balance = settlement.balance if settlement else self.balance
         tax = settlement.tax_delta if settlement else 0
-        delta = coin_stats(game, when=datetime.now(TIMEZONE))
+        delta = coin_stats(game, when=datetime.now(TIMEZONE), activity=activity)
         delta.merge(
             casino_stats(stake=game.stake, net=game.net, balance_after=balance, tax_delta=tax)
         )
@@ -642,6 +681,41 @@ class CoinView(ui.View):
             view=self,
         )
 
+    async def throw(self, pick: Side) -> Throw | str | None:
+        """Lanza pidiendo `pick`, con el candado ya cogido: empieza partida si no la hay y liquida.
+
+        Lo comparten el botón (`play`, que luego enseña el GIF) y la Activity
+        (`web_flip`, que manda los fotogramas al navegador).
+
+        Returns:
+            La tirada; un error para el usuario si no se pudo empezar (sin saldo);
+            o `None` si la partida no admitía otro lanzamiento.
+        """
+        if self.game is None or not self.game.playing:
+            if error := await self._start():
+                return error
+        game = self.game
+        assert game is not None
+        start = self.resting_side()
+        waiting = self.flying_text(pick)
+        seed = self._seed if self._seed is not None else self.cog.rng.randrange(1, 2**31)
+        self._seed = None
+        try:
+            game.flip(pick, self.cog.rng)
+        except CoinError:
+            return None
+        last = game.last
+        assert last is not None
+        self.face = last.outcome
+        if game.playing and game.maxed:
+            game.cash_out()
+        settlement: BetSettlement | None = None
+        if not game.playing:
+            settlement = await self._settle(game)
+        else:
+            self.note = None
+        return Throw(game, start, waiting, seed, settlement)
+
     async def play(
         self,
         pick: Side,
@@ -661,43 +735,29 @@ class CoinView(ui.View):
         if self._busy:
             return None
         self._busy = True
-        settlement: BetSettlement | None = None
-        game: CoinGame | None = None
+        thrown: Throw | None = None
         try:
             async with self._lock:
                 ready = self._take_plan(pick)
-                if self.game is None or not self.game.playing:
-                    if error := await self._start():
-                        return error
-                game = self.game
-                assert game is not None
-                start = self.resting_side()
-                waiting = self.flying_text(pick)
-                seed = self._seed if self._seed is not None else self.cog.rng.randrange(1, 2**31)
-                self._seed = None
-                try:
-                    game.flip(pick, self.cog.rng)
-                except CoinError:
-                    return None
-                last = game.last
-                assert last is not None
-                self.face = last.outcome
-                if game.playing and game.maxed:
-                    game.cash_out()
-                if not game.playing:
-                    settlement = await self._settle(game)
-                else:
-                    self.note = None
+                result = await self.throw(pick)
+                if not isinstance(result, Throw):
+                    return result
+                thrown = result
                 if interaction is not None:
                     self._last_interaction = interaction
-            await self._show_toss(editor, start=start, waiting=waiting, seed=seed, ready=ready)
+            await self._show_toss(
+                editor, start=thrown.start, waiting=thrown.waiting, seed=thrown.seed, ready=ready
+            )
         except discord.HTTPException:
             logger.warning("No se pudo enseñar un lanzamiento de la moneda", exc_info=True)
         finally:
             self._busy = False
-        if game is not None and not game.playing:
-            await self._after_game(interaction, game, settlement)
-        elif interaction is not None and game is not None and len(game.flips) == 1:
+        if thrown is None:
+            return None
+        game = thrown.game
+        if not game.playing:
+            await self._after_game(interaction, game, thrown.settlement)
+        elif interaction is not None and len(game.flips) == 1:
             # Primera tirada: ya se ha cobrado la apuesta.
             await renta.remind(self.cog.bot, interaction)
         return None
@@ -788,6 +848,99 @@ class CoinView(ui.View):
             return
         await self._restake(interaction, self.balance)
 
+    # -- Activity (`bot.cogs.actividad`) ----------------------------------------------
+
+    def web_state(
+        self, states: list[dict[str, Any]], *, stake: int, flying: str | None = None
+    ) -> dict[str, Any]:
+        """Lo que pinta y escribe la Activity: los fotogramas de la escena y los mismos
+        textos y botones que la mesa de Discord.
+
+        Args:
+            states: Fotogramas de `assets/moneda/escena.html` (uno si la mesa está quieta).
+            stake: La apuesta de la escalera de la escena (la de la partida en un lanzamiento).
+            flying: El texto de mientras vuela la moneda. El navegador enseña `texto` y
+                los botones al acabar la animación, porque delatan el resultado.
+        """
+        return {
+            "meta": {**meta_state(stake), "skin": self.skin()},
+            "states": states,
+            "ms": FRAME_MS,
+            "titulo": f"🪙 Cara o cruz · {self.owner.display_name}",
+            "texto": self.description(),
+            "volando": flying,
+            "botones": {
+                "cara": self.side_label(Side.CARA),
+                "cruz": self.side_label(Side.CRUZ),
+                "cobrar": self.cash_label(),
+            },
+            "apuesta": self.stake,
+            "saldo": self.balance,
+        }
+
+    async def web_open(self) -> dict[str, Any]:
+        """La mesa tal como está, al abrir la Activity o volver a ella."""
+        if self._idle():
+            self.balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
+        return self.web_state([board_state(self.game, face=self.face)], stake=self.stake)
+
+    async def web_flip(self, pick: Side) -> tuple[dict[str, Any], Finish | None] | str:
+        """Lanza desde la Activity: lo mismo que el botón (`play`), pero en vez de pintar
+        el GIF devuelve los fotogramas para que los anime el navegador del jugador.
+
+        Returns:
+            Lo que se enseña y lo que queda por hacer cuando el jugador vea el final
+            (`None` si la racha sigue), o un aviso para el jugador.
+        """
+        if self._busy:
+            return BUSY_TEXT
+        self._busy = True
+        try:
+            async with self._lock:
+                thrown = await self.throw(pick)
+        finally:
+            self._busy = False
+        if not isinstance(thrown, Throw):
+            return thrown or BUSY_TEXT
+        game = thrown.game
+        states = toss_states(game, start=thrown.start, seed=thrown.seed)
+        finish = (
+            None
+            if game.playing
+            else partial(self._after_game, None, game, thrown.settlement, activity=True)
+        )
+        return self.web_state(states, stake=game.stake, flying=thrown.waiting), finish
+
+    async def web_cash_out(self) -> tuple[dict[str, Any], Finish] | str:
+        """💰 Cobrar desde la Activity, como `_cash_out`."""
+        game = self.game
+        if self._busy or game is None or not game.playing:
+            return "No hay nada que cobrar."
+        self._busy = True
+        try:
+            async with self._lock:
+                game.cash_out()
+                settlement = await self._settle(game)
+        finally:
+            self._busy = False
+        state = self.web_state([board_state(game, face=self.face)], stake=self.stake)
+        return state, partial(self._after_game, None, game, settlement, activity=True)
+
+    async def web_restake(self, amount: str) -> dict[str, Any] | str:
+        """Cambia la apuesta desde la Activity (`500`, `2k`, `all`…, como en `moneda`)."""
+        if not self._idle():
+            return BUSY_TEXT
+        self.balance = await self.cog.economy.balance(self.guild_id, self.owner.id)
+        try:
+            stake = parse_amount(amount, self.balance)
+        except ValueError as error:
+            return str(error)
+        if stake > self.balance:
+            return insufficient_text(self.balance, stake)
+        self.stake = stake
+        self.note = None
+        return self.web_state([board_state(self.game, face=self.face)], stake=self.stake)
+
 
 # -- Cog -------------------------------------------------------------------------------
 
@@ -821,9 +974,16 @@ class Coin(commands.Cog, name="Moneda"):
         self.renderer = renderer or CoinScene()
         # Mesas abiertas: para cobrar sus rachas si el bot se apaga.
         self.views: set[CoinView] = set()
+        # Mesas de la Activity, una por (servidor, miembro), y la tarea que cierra cada una.
+        self.web_tables: dict[tuple[int, int], CoinView] = {}
+        self._web_watchers: dict[tuple[int, int], asyncio.Task[None]] = {}
 
     async def cog_unload(self) -> None:
         """Al apagar, cobra las rachas a medias y cierra el navegador."""
+        for task in self._web_watchers.values():
+            task.cancel()
+        self._web_watchers.clear()
+        self.web_tables.clear()
         for view in list(self.views):
             try:
                 await view.force_settle()
@@ -832,6 +992,46 @@ class Coin(commands.Cog, name="Moneda"):
             view.stop()
         self.views.clear()
         await self.renderer.close()
+
+    async def web_table(self, guild_id: int, owner: discord.abc.User, channel: object) -> CoinView:
+        """La mesa de la Activity de este miembro, la misma mientras juegue (`bot.cogs.actividad`).
+
+        Es una `CoinView` que no se manda a Discord: dinero, textos y logros son los de
+        `moneda`. Como no está en Discord, discord.py no la caduca: la cierra
+        `_web_watch` tras `VIEW_TIMEOUT` sin tocarla, cobrando la racha a medias.
+
+        Args:
+            channel: Donde está abierta la Activity, para los avisos de logros y los
+                anuncios (`None` si es un mensaje directo o un servidor sin el bot).
+        """
+        key = (guild_id, owner.id)
+        view = self.web_tables.get(key)
+        if view is None:
+            # Sin `await` entre mirar y guardar: dos peticiones a la vez no abren dos mesas.
+            view = CoinView(self, guild_id=guild_id, owner=owner, stake=DEFAULT_STAKE)
+            self.web_tables[key] = view
+            self.views.add(view)
+            self._web_watchers[key] = asyncio.create_task(
+                self._web_watch(key, view), name=f"moneda-actividad-{owner.id}"
+            )
+            view.web_seen = time.monotonic()
+            view.balance = await self.economy.balance(guild_id, owner.id)
+            view.stake = max(1, min(DEFAULT_STAKE, view.balance))
+        view.channel = channel
+        view.web_seen = time.monotonic()
+        return view
+
+    async def _web_watch(self, key: tuple[int, int], view: CoinView) -> None:
+        """Cierra la mesa de la Activity tras `VIEW_TIMEOUT` sin tocarla, como la de Discord."""
+        while (left := view.web_seen + VIEW_TIMEOUT - time.monotonic()) > 0:
+            await asyncio.sleep(left)
+        self.web_tables.pop(key, None)
+        self._web_watchers.pop(key, None)
+        self.views.discard(view)
+        try:
+            await view.force_settle()
+        except Exception:
+            logger.exception("No se pudo cerrar una mesa de la moneda de la Activity")
 
     async def shout(self, game: CoinGame, user: discord.abc.User, channel: object) -> None:
         """Anuncia en el canal los cobros gordos y los cantos, para que se vean."""

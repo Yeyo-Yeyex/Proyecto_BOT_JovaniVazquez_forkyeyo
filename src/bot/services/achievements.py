@@ -4495,6 +4495,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "moneda_canto_primera", "Ni empezar",
          "Que la moneda caiga de canto en el primer lanzamiento de la partida.", C, True),
     ])  # fmt: skip
+    a += _tiers("coin", "coin_activity_games", [
+        (1, "monedaa_1", "Comparecencia en plasma",
+         "Juega tu primera partida a cara o cruz desde la Activity de Discord (`/jugar`).", C),
+        (100, "monedaa_100", "Consejo de Ministros por Zoom",
+         "Juega 100 partidas a cara o cruz desde la Activity.", C),
+        (1_000, "monedaa_1k", "Teletrabajo en Moncloa",
+         "Juega 1.000 partidas a cara o cruz desde la Activity.", E),
+        (5_000, "monedaa_5k", "Ni Rajoy salió tanto en plasma",
+         "Juega 5.000 partidas a cara o cruz desde la Activity.", L),
+    ])  # fmt: skip
 
     # 🚌 Autobús --------------------------------------------------------------------------
     a += _tiers("bus", "bus_games", [
@@ -16205,18 +16215,21 @@ def chicken_stats(game: ChickenGame, *, vehicle: str | None = None) -> StatDelta
     return delta
 
 
-def coin_stats(game: CoinGame, *, when: datetime) -> StatDelta:
+def coin_stats(game: CoinGame, *, when: datetime, activity: bool = False) -> StatDelta:
     """Contadores de una partida de cara o cruz terminada (sin lo común del casino).
 
     Args:
         game: La partida terminada.
         when: Hora local.
+        activity: Si se ha jugado desde la Activity de Discord (`bot.cogs.actividad`).
     """
     delta = StatDelta(
         add={"coin_games": 1, "coin_flips": len(game.flips)},
         peak={"coin_streak_max": game.wins},
     )
     add = delta.add
+    if activity:
+        add["coin_activity_games"] = 1
 
     def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
         if condition and amount:
