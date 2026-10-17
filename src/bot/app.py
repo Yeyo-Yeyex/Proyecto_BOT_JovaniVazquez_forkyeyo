@@ -21,6 +21,7 @@ from discord.ext import commands
 
 from bot.repositories import sqlite
 from bot.repositories.achievements import AchievementRepository
+from bot.repositories.activity import ActivityRepository
 from bot.repositories.backgammon import BackgammonRepository
 from bot.repositories.beernight import BeernightRepository
 from bot.repositories.beernight_sounds import BeernightSoundStore
@@ -35,6 +36,7 @@ from bot.repositories.horses import HorseRepository
 from bot.repositories.housing import HousingRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
+from bot.repositories.moderation import ModerationRepository
 from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
 from bot.repositories.poker import PokerRepository
@@ -114,6 +116,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.perfil",
     "bot.cogs.fun",
     "bot.cogs.admin",
+    "bot.cogs.moderation",
     "bot.cogs.deploy",
 )
 
@@ -131,7 +134,7 @@ ENTRY_POINT = {
 ENTRY_POINT_FIELDS = ("name", "description", "type", "handler", "integration_types", "contexts")
 
 
-def build_intents() -> discord.Intents:
+def build_intents(*, presences: bool = True) -> discord.Intents:
     """Crea los intents requeridos por las funciones actuales.
 
     El intent privilegiado de miembros permite recibir eventos de entrada
@@ -139,10 +142,14 @@ def build_intents() -> discord.Intents:
     El intent privilegiado de contenido de mensajes es necesario para que
     el bot pueda leer comandos de texto con prefijo (p. ej. ".poner"); debe
     habilitarse igualmente como "Message Content Intent" en el portal.
+    El de presencias (`presences`) dice cuándo se conecta cada miembro, para
+    la «última vez conectado» del panel `admin`; es el «Presence Intent» del
+    portal. Si no está activado allí, `start_bot` arranca sin él.
     """
     intents = discord.Intents.default()
     intents.members = True
     intents.message_content = True
+    intents.presences = presences
     return intents
 
 
@@ -161,6 +168,7 @@ class BotClient(commands.Bot):
         casino_channel_ids: frozenset[int] = frozenset(),
         activity_secret: str = "",
         activity_guild_id: int | None = None,
+        presences: bool = True,
     ) -> None:
         self.database_path = database_path
         # La Activity (`bot.cogs.actividad`): sin secreto no abre su servidor web.
@@ -223,11 +231,14 @@ class BotClient(commands.Bot):
         # mensajes. Cuenta en memoria y la vuelca cada minuto el cog `Telemetry`.
         self.telemetry_repository = TelemetryRepository(database_path)
         self.telemetry = TelemetryService(self.telemetry_repository)
+        # Panel `admin`: última actividad de cada miembro, sanciones y notas de moderador.
+        self.last_seen = ActivityRepository(database_path)
+        self.moderation = ModerationRepository(database_path)
         self._keep_warm_task: asyncio.Task[None] | None = None
         self._checkpoint_task: asyncio.Task[None] | None = None
         super().__init__(
             command_prefix=command_prefix,
-            intents=build_intents(),
+            intents=build_intents(presences=presences),
             # El texto de ayuda por defecto de discord.py no está en
             # español ni pensado para slash commands; se desactiva.
             help_command=None,
@@ -301,6 +312,8 @@ class BotClient(commands.Bot):
         await self.work.repository.initialize()
         await self.beernight.initialize()
         await self.telemetry_repository.initialize()
+        await self.last_seen.initialize()
+        await self.moderation.initialize()
 
         for extension in INITIAL_EXTENSIONS:
             await self.load_extension(extension)
@@ -384,15 +397,29 @@ async def start_bot(
         activity_guild_id: Servidor cuya economía usa la Activity fuera de los
             servidores del bot (`None` = ninguno).
 
+    Si el «Presence Intent» no está activado en el portal, vuelve a arrancar
+    sin él en vez de caerse: solo se pierde la «última vez conectado» de `admin`.
+
     Raises:
         discord.LoginFailure: Si el token es inválido.
     """
-    client = BotClient(
-        command_prefix=command_prefix,
-        database_path=database_path,
-        casino_channel_ids=casino_channel_ids,
-        activity_secret=activity_secret,
-        activity_guild_id=activity_guild_id,
-    )
-    async with client:
-        await client.start(token)
+    for presences in (True, False):
+        client = BotClient(
+            command_prefix=command_prefix,
+            database_path=database_path,
+            casino_channel_ids=casino_channel_ids,
+            activity_secret=activity_secret,
+            activity_guild_id=activity_guild_id,
+            presences=presences,
+        )
+        try:
+            async with client:
+                await client.start(token)
+            return
+        except discord.PrivilegedIntentsRequired:
+            if not presences:
+                raise
+            logger.warning(
+                "El «Presence Intent» no está activado en el portal de Discord: "
+                "se arranca sin él y `admin` no sabrá cuándo se conectó cada miembro."
+            )

@@ -795,6 +795,7 @@ Todos funcionan con `/` y con `.`, con el mismo nombre:
 
 | Comando | Qué hace |
 |---|---|
+| `admin [miembro]` | Panel de moderación privado (ver 6 quater.3). Con `.` deja un botón que lo abre en privado. |
 | `borrar <cantidad> [miembro]` | Borra hasta 100 mensajes del canal (solo los de ese miembro, si se indica). Ignora los de más de 14 días. |
 | `callar <miembro> <duración> [motivo]` | Aislamiento temporal de Discord. Duración: `10m`, `2h`, `1d`, `1h30m`; sin unidad, minutos; máximo 28 días. |
 | `hablar <miembro>` | Quita el aislamiento. |
@@ -877,6 +878,16 @@ no sale en ningún mensaje del bot salvo en `informe`.
 - Se replica la jerarquía de Discord antes de llamar a la API: nadie actúa sobre sí mismo (salvo `apodo`), sobre el bot ni sobre el dueño, ni sobre alguien con un rol igual o superior al suyo o al del bot. El dueño del servidor está por encima de esa regla.
 - Cada acción queda en el registro de auditoría con el motivo y quién la pidió.
 - El bot necesita, según el comando: Gestionar mensajes, Aislar temporalmente a miembros, Expulsar, Banear, Gestionar canales, Gestionar apodos y Gestionar roles (también para dar los roles de la tienda). Si le falta alguno, responde que no tiene permiso en vez de fallar en silencio.
+
+### 6 quater.3. Panel `admin`
+
+- Junta en un menú privado (efímero) la actividad de los miembros y las herramientas de moderación. Los comandos sueltos siguen existiendo; el panel usa su misma lógica, con las mismas comprobaciones de jerarquía y el mismo motivo en la auditoría.
+- **Servidor:** personas, bots, conectados, en voz y aislados ahora, y las listas 💤 más inactivos, 💬 últimos en escribir, 🎙️ últimos en voz, 🆕 recién llegados, 🔇 aislados ahora y 📜 últimas sanciones (15 por lista). Botones sobre el canal donde se abrió: cerrar, abrir, modo lento, borrar mensajes e indultar por ID.
+- **Ficha de un miembro** (elegido en el desplegable o con `admin @miembro`): cuenta creada, entrada al servidor, si está conectado o la última vez que se le vio, mensajes contados, último mensaje y en qué canal, voz (ahora o la última vez y dónde), aislamiento, roles, sanciones y notas de moderador. Botones para callar (duración y motivo), hablar, echar, banear, apodo, dar o quitar un rol, borrar sus mensajes recientes en ese canal, apuntar o borrar una nota y ver el historial completo (25 últimas).
+- **Última actividad:** se apunta cuándo escribe cada miembro (y el canal, nunca el contenido), cuándo entra, sale o cambia de canal de voz y cuándo se le ve conectado o cambia de estado. Se junta en memoria y se guarda cada minuto. Solo se sabe desde que el bot lo apunta: lo anterior sale como «sin rastro». La «última vez conectado» necesita **Presence Intent**; quien se pone invisible cuenta como desconectado.
+- **Historial de sanciones:** cada `callar`, `hablar`, `echar`, `banear` e `indultar` hecho con el bot (comando o panel) queda con quién, a quién, cuándo, el motivo y la duración. Lo que se haga a mano desde Discord no entra.
+- **Notas de moderador:** texto libre de hasta 500 caracteres; solo se ven en el panel. Cada una tiene un número para borrarla.
+- El panel lo maneja solo quien lo abrió y solo mientras sea administrador (se comprueba en cada clic). Caduca a los 14 minutos. No tiene logros (excepción de los comandos de administración).
 
 ## 6 quinquies. Diversión: `babel` y `hongkong`
 
