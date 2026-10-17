@@ -682,7 +682,8 @@ class HousingTax:
 
     Attributes:
         user_id: Quien paga.
-        kind: `itp`, `ibi` o `plusvalia`.
+        kind: `itp`, `ibi`, `plusvalia`, `socimi`, `licencia`, `igic` (estancias
+            vacacionales) o `igic_gastos` (IGIC de la notaría y de la agencia).
         base: Base imponible.
         tax: Cuota; positiva.
     """
@@ -3089,7 +3090,8 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'itp' THEN 'itp_pisos' WHEN 'ibi' THEN 'ibi'
-                        WHEN 'igic' THEN 'igic' WHEN 'licencia' THEN 'tasas'
+                        WHEN 'igic' THEN 'igic' WHEN 'igic_gastos' THEN 'igic'
+                        WHEN 'licencia' THEN 'tasas'
                         ELSE 'irpf_ahorro' END,
                    tax, created_at
             FROM economy_housing_tax WHERE guild_id = :guild

@@ -281,8 +281,10 @@ async def test_la_vpo_se_sortea_se_compra_con_aval_y_se_devuelve_al_estado(tmp_p
     deal, balance = await service.vpo_buy(GUILD, ANA, unit)
 
     price = VPO_BY_KEY[unit].price
-    assert deal.loan == price and balance == STARTING_BALANCE + 50_000 - deal.notary
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == price
+    notary_igic = round(deal.notary * rules.SERVICES_IGIC)
+    assert deal.loan == price
+    assert balance == STARTING_BALANCE + 50_000 - deal.notary - notary_igic
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == price + notary_igic
     market = await service.market(GUILD)
     assert market.vpo_of(ANA) == unit and market.homes[ANA] == (HOME_VPO, unit)
     assert market.mortgages_of(ANA)[0].aval == "ico"

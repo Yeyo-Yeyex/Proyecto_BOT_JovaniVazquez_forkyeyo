@@ -296,6 +296,7 @@ HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
     ("alquiler", "🔑", "IRPF de las rentas", "arts. 22 y 23 LIRPF"),
     ("ganancia", "📈", "IRPF de lo ganado al vender y de la SOCIMI", "arts. 33 y 66 LIRPF"),
     ("igic", "🏖️", "IGIC de las estancias vacacionales", "art. 51 Ley 4/2012"),
+    ("igic_gastos", "🧾", "IGIC de la notaría y la agencia", "art. 51 Ley 4/2012"),
     ("licencia", "📜", "Tasas de licencias vacacionales", "ley canaria de vivienda vacacional"),
 )
 

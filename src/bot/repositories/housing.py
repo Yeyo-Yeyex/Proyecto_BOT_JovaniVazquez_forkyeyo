@@ -73,7 +73,7 @@ from bot.services.housing_catalog import (
     listings_of,
 )
 from bot.services.levels import local_day
-from bot.services.taxes import INCOME_BUSINESS, INCOME_PRIZE
+from bot.services.taxes import INCOME_BUSINESS, INCOME_PRIZE, igic
 
 T = TypeVar("T")
 
@@ -935,7 +935,10 @@ class HousingRepository:
                     (user_id, LedgerEntry(-(quote.price - loan), "pisos:compra")),
                     (user_id, LedgerEntry(-quote.notary, "pisos:notaria")),
                 ),
-                taxes=(HousingTax(user_id, "itp", quote.price, quote.itp),),
+                taxes=(
+                    HousingTax(user_id, "itp", quote.price, quote.itp),
+                    HousingTax(user_id, "igic_gastos", quote.notary, quote.notary_igic),
+                ),
             )
             return purchase, move
 
@@ -1065,6 +1068,7 @@ class HousingRepository:
             ]
             taxes = (
                 HousingTax(user_id, "ibi", quote.arrears_ibi, quote.arrears_ibi),
+                HousingTax(user_id, "igic_gastos", quote.fee, quote.fee_igic),
                 HousingTax(user_id, "plusvalia", max(0, quote.gain), quote.gain_tax),
             )
             sale = Sale(key, quote, left, held_days, payoff=payoff, vulture=vulture)
@@ -1805,11 +1809,13 @@ class HousingRepository:
                 News(finance.vpo_ref(unit), day, "compra_vpo", spec.price, user_id, None), now,
             )  # fmt: skip
             deal = VpoDeal(unit, spec.price, notary=notary, loan=loan, payment=payment)
+            notary_igic = igic(notary, rules.SERVICES_IGIC)
             return deal, HousingMove(
                 entries=(
                     (user_id, LedgerEntry(-notary, "pisos:notaria")),
                     (STATE_ACCOUNT_ID, LedgerEntry(spec.price, "vpo:venta")),
-                )
+                ),
+                taxes=(HousingTax(user_id, "igic_gastos", notary, notary_igic),),
             )
 
         return run

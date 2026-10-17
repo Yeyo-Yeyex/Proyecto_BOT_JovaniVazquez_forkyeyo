@@ -88,7 +88,7 @@ FALCON = FALCON_ENTRY.price + igic(FALCON_ENTRY.price)
 #: vacíos e impagos incluidos; `docs/pisos_sim.py`).
 RENT_LEVEL_FACTOR = {"referencia": 0.925, "mercado": 1.068}
 MORTGAGE_RATE = h.EURIBOR_START + h.MORTGAGE_SPREAD
-BUY_COST = 1 + h.ITP_RATE + h.NOTARY_RATE
+BUY_COST = 1 + h.ITP_RATE + h.NOTARY_RATE * (1 + h.SERVICES_IGIC)
 #: Lo que se guarda el jugador antes de invertir (formación, cuotas, Patrimonio).
 CASH_BUFFER = 20_000
 
@@ -459,7 +459,7 @@ class Simulation:
 
     def liquid(self) -> float:
         homes = sum(
-            self.market[k].price * hold.shares / h.SHARES * (1 - h.SALE_FEE_RATE) - hold.balance
+            self.market[k].price * hold.shares / h.SHARES * (1 - h.SALE_FEE_RATE * (1 + h.SERVICES_IGIC)) - hold.balance
             for k, hold in self.holdings.items()
         )
         return self.cash - self.debt + homes

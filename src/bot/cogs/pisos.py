@@ -479,6 +479,7 @@ class Panel(ui.View):
             lines = [
                 (f"Precio ({quote.shares} participaciones)", quote.price, "normal"),
                 ("Agencia 3 %", -quote.fee, "normal"),
+                ("IGIC de la agencia 7 %", -quote.fee_igic, "tax"),
             ]
             if quote.arrears:
                 lines.append(("Deudas del piso (comunidad e IBI)", -quote.arrears, "normal"))
@@ -518,6 +519,7 @@ class Panel(ui.View):
             ),
             ("ITP 6,5 %", quote_b.itp, "tax"),
             ("Notaría, registro y gestoría", quote_b.notary, "normal"),
+            ("IGIC de la notaría 7 %", quote_b.notary_igic, "tax"),
             ("Total", quote_b.total, "normal" if loan else "total"),
         ]
         if loan:

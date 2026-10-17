@@ -25,7 +25,8 @@ mayoría (art. 398 CC); si nadie la tiene, la gestora pide la de referencia.
 
 **Impuestos y gastos** (cada uno con su norma, en el comentario de su constante):
 ITP al comprar, notaría y comisión de la agencia (no son impuestos: el dinero
-desaparece), IBI cada mes, IRPF de la renta y de la ganancia al vender. El
+desaparece, salvo su IGIC, que va al Estado), IBI cada mes, IRPF de la renta y de la
+ganancia al vender. El
 Impuesto sobre el Patrimonio cuenta los inmuebles a su valor fiscal
 (`fiscal_value`).
 
@@ -59,10 +60,12 @@ from bot.services.housing_catalog import (
     RentLevel,
 )
 from bot.services.taxes import (
+    IGIC_GENERAL_RATE,
     IMPUTED_RATE,
     WAGE_YAPDOLLARS_PER_EURO,
     YAPDOLLARS_PER_EURO,
     capital_gain_tax,
+    igic,
 )
 
 #: Participaciones en que se divide cada inmueble.
@@ -77,6 +80,9 @@ ITP_RATE = 0.065
 NOTARY_RATE = 0.015
 #: Comisión de la agencia al vender, a cargo de quien vende: un 3 %.
 SALE_FEE_RATE = 0.03
+#: Notaría, registro, gestoría y agencia son servicios profesionales: pagan el IGIC
+#: general (art. 51 de la Ley 4/2012), que va al Estado (desde la 8.0.0).
+SERVICES_IGIC = IGIC_GENERAL_RATE
 #: Valor catastral: la mitad del valor de mercado (coeficiente de referencia al
 #: mercado RM de 0,5, Orden EHA/1213/2005). No sigue al índice del barrio: el
 #: catastro va siempre años por detrás.
@@ -281,17 +287,19 @@ class PurchaseQuote:
         price: Su valor de mercado.
         itp: ITP (al Estado).
         notary: Notaría, registro y gestoría (desaparece).
+        notary_igic: IGIC de la notaría (al Estado, `SERVICES_IGIC`).
     """
 
     shares: int
     price: int
     itp: int
     notary: int
+    notary_igic: int = 0
 
     @property
     def total(self) -> int:
         """Todo lo que sale del bolsillo."""
-        return self.price + self.itp + self.notary
+        return self.price + self.itp + self.notary + self.notary_igic
 
 
 def purchase_quote(listing: Listing, shares: int, index: float = 1.0) -> PurchaseQuote:
@@ -299,11 +307,13 @@ def purchase_quote(listing: Listing, shares: int, index: float = 1.0) -> Purchas
     if not 1 <= shares <= SHARES:
         raise ValueError("Las participaciones van de 1 a 100.")
     value = share_price(listing, index) * shares
+    notary = round(value * NOTARY_RATE)
     return PurchaseQuote(
         shares=shares,
         price=value,
         itp=round(value * ITP_RATE),
-        notary=round(value * NOTARY_RATE),
+        notary=notary,
+        notary_igic=igic(notary, SERVICES_IGIC),
     )
 
 
@@ -322,6 +332,7 @@ class SaleQuote:
         cost: Lo que le costaron (precio, ITP y gastos: art. 35.1 LIRPF).
         gain: Ganancia patrimonial (puede ser negativa).
         gain_tax: IRPF de la ganancia, base del ahorro al 19 % (`capital_gain_tax`).
+        fee_igic: IGIC de la comisión de la agencia (al Estado, `SERVICES_IGIC`).
     """
 
     shares: int
@@ -332,11 +343,12 @@ class SaleQuote:
     cost: int
     gain: int
     gain_tax: int
+    fee_igic: int = 0
 
     @property
     def received(self) -> int:
         """Lo que llega al bolsillo."""
-        return max(0, self.price - self.fee - self.arrears - self.gain_tax)
+        return max(0, self.price - self.fee - self.fee_igic - self.arrears - self.gain_tax)
 
 
 def sale_quote(
@@ -370,12 +382,14 @@ def sale_quote(
     pool = max(owned, pool or owned)
     value = share_price(listing, index) * shares if value is None else value
     fee = round(value * SALE_FEE_RATE)
+    fee_igic = igic(fee, SERVICES_IGIC)
+    selling = fee + fee_igic
     debt = arrears * shares // pool
     debt_ibi = min(debt, arrears_ibi * shares // pool)
-    debt = min(debt, value - fee)
+    debt = min(debt, value - selling)
     debt_ibi = min(debt_ibi, debt)
     part_cost = cost * shares // owned
-    gain = value - fee - debt - part_cost
+    gain = value - selling - debt - part_cost
     return SaleQuote(
         shares=shares,
         price=value,
@@ -384,7 +398,8 @@ def sale_quote(
         arrears_ibi=debt_ibi,
         cost=part_cost,
         gain=gain,
-        gain_tax=min(capital_gain_tax(gain), value - fee - debt),
+        gain_tax=min(capital_gain_tax(gain), value - selling - debt),
+        fee_igic=fee_igic,
     )
 
 

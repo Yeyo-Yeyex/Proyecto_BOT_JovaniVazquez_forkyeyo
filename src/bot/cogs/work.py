@@ -1078,7 +1078,7 @@ class PalaPanel(ui.LayoutView):
             )
         if (pension := self._pension_button()) is not None:
             more.add_item(pension)
-        flight = format_amount(FLIGHT_PRICE + igic(FLIGHT_PRICE))
+        flight = format_amount(FLIGHT_PRICE)  # exento de IGIC: transporte internacional
         if status.can_go_abroad:
             more.add_item(self._button(f"🌏 Irse a Hong Kong · {flight}", self._go_abroad))
         elif status.contract.abroad:

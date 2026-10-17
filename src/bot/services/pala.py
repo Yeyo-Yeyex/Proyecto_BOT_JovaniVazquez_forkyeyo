@@ -14,7 +14,8 @@ Todo el dinero pasa por `EconomyService`:
 - Cuota de autónomos: `charge_self_employed_fee`, una vez por semana.
 - Baja por accidente: `pay_salary` con la prestación (tributa como
   rendimiento del trabajo, art. 17.1.b LIRPF).
-- Café, formación y billetes de avión: `purchase`, con IGIC general.
+- Café y formación: `purchase`, con IGIC general. Billetes de avión a Hong Kong:
+  `purchase` exento (transporte internacional).
 - Turnos desde Hong Kong: `pay_foreign_salary` (MPF y salaries tax a Hong
   Kong; IRPF español solo mientras sigue siendo residente, con la exención del
   art. 7.p LIRPF). Al irse, `set_residence` (sin IMV); al volver con 5 «años»
@@ -1362,9 +1363,9 @@ class WorkService:
     async def move_abroad(self, guild_id: int, user_id: int) -> Status:
         """Se va a trabajar a Hong Kong: billete, jet lag y adiós al IMV.
 
-        Tratamiento fiscal del billete: una compra con IGIC general
-        (simplificación: en la realidad la parte del vuelo fuera de Canarias no
-        lo pagaría).
+        Tratamiento fiscal del billete: una compra exenta de IGIC (el transporte aéreo
+        internacional lo está, art. 12.13 de la Ley 20/1991). Todo va a la caja de la
+        tienda; al Estado, nada.
 
         Raises:
             WorkError: Si su puesto no puede, ya está fuera o no le llega.
@@ -1415,20 +1416,17 @@ class WorkService:
             return await self._status(guild_id, user_id, contract), beckham, days
 
     async def _fly(self, guild_id: int, user_id: int, concept: str) -> None:
-        tax = igic(FLIGHT_PRICE, IGIC_GENERAL_RATE)
         try:
             await self.economy.purchase(
                 guild_id,
                 user_id,
                 base=FLIGHT_PRICE,
-                tax=tax,
+                tax=0,
                 concept=concept,
                 reserve=lambda _connection: None,
             )
         except InsufficientFundsError as error:
-            raise WorkError(
-                f"No te llega para el billete: {FLIGHT_PRICE + tax} Y$ con IGIC."
-            ) from error
+            raise WorkError(f"No te llega para el billete: {FLIGHT_PRICE} Y$.") from error
 
     # -- Eventos ------------------------------------------------------------------------
 

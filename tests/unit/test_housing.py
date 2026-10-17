@@ -188,7 +188,9 @@ def test_la_compra_paga_el_itp_de_inmuebles_y_la_notaria() -> None:
     assert quote.price == rules.share_price(BAJO) * 10
     assert quote.itp == round(quote.price * rules.ITP_RATE)
     assert quote.notary == round(quote.price * rules.NOTARY_RATE)
-    assert quote.total == quote.price + quote.itp + quote.notary
+    # La notaría es un servicio: paga el IGIC general, que va al Estado.
+    assert quote.notary_igic == round(quote.notary * rules.SERVICES_IGIC) > 0
+    assert quote.total == quote.price + quote.itp + quote.notary + quote.notary_igic
     with pytest.raises(ValueError):
         rules.purchase_quote(BAJO, 0)
     with pytest.raises(ValueError):
@@ -201,10 +203,13 @@ def test_vender_con_ganancia_paga_el_19_por_ciento_y_la_deuda_va_con_el_piso() -
         BAJO, 50, 50, cost, index=1.5, arrears=10_000, arrears_ibi=2_000, pool=100
     )
     assert quote.arrears == 5_000 and quote.arrears_ibi == 1_000
-    assert quote.gain == quote.price - quote.fee - quote.arrears - cost
+    # La comisión de la agencia paga el IGIC general y es gasto de la venta.
+    assert quote.fee_igic == round(quote.fee * rules.SERVICES_IGIC) > 0
+    selling = quote.fee + quote.fee_igic
+    assert quote.gain == quote.price - selling - quote.arrears - cost
     assert quote.gain > 0
     assert quote.gain_tax == rules.capital_gain_tax(quote.gain)
-    assert quote.received == quote.price - quote.fee - quote.arrears - quote.gain_tax
+    assert quote.received == quote.price - selling - quote.arrears - quote.gain_tax
 
 
 def test_vender_con_perdidas_no_paga_irpf() -> None:
@@ -400,8 +405,9 @@ async def test_comprar_cobra_precio_itp_y_notaria_y_el_libro_cuadra(tmp_path: Pa
 
     assert trade.balance == STARTING_BALANCE + 1_000_000 - quote.total
     assert ledger_sum(tmp_path, ANA) == trade.balance
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == quote.itp
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == quote.itp + quote.notary_igic
     assert housing_taxes(tmp_path, "itp") == quote.itp
+    assert housing_taxes(tmp_path, "igic_gastos") == quote.notary_igic
     market = await service.market(GUILD)
     assert market.shares_of(BAJO.key) == {ANA: 40}
     assert market.free_shares(BAJO.key) == 60
@@ -560,7 +566,8 @@ async def test_un_dia_vacio_sin_dinero_deja_la_deuda_en_el_piso_y_se_descuenta_a
     assert quote.arrears == lease.arrears and quote.arrears_ibi == lease.arrears_ibi
     assert trade.balance == balance + quote.received
     assert ledger_sum(tmp_path, ANA) == trade.balance
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == quote.arrears_ibi + quote.gain_tax
+    state_gets = quote.arrears_ibi + quote.gain_tax + quote.fee_igic
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == state_gets
     market = await service.market(GUILD)
     assert BAJO.key not in market.leases and market.holdings == {}
 
@@ -659,7 +666,8 @@ async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> No
     assert taxes["ibi"] == rules.monthly_costs(BAJO).ibi
     assert taxes["alquiler"] > 0
     assert taxes["ganancia"] == sale.deal.quote.gain_tax
-    assert len(housing_lines(taxes)) == 4
+    assert taxes["igic_gastos"] == buy.deal.quote.notary_igic + sale.deal.quote.fee_igic
+    assert len(housing_lines(taxes)) == 5
     embed = discord.Embed()
     add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
     assert format_total(sum(taxes.values())) in embed.fields[0].name
