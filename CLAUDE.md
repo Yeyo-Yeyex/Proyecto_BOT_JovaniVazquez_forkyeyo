@@ -22,8 +22,10 @@ Lo que más se olvida:
   qué pide un logro) va normal y claro. En las listas de frases, al menos la mitad son
   normales y las bromas se espacian. La política (sobre todo Sánchez, el PSOE y Hacienda)
   está sobrerrepresentada: como mucho una de cada cuatro bromas nuevas, y se tira antes de
-  las demás fuentes (vida cotidiana, deporte, cultura popular, videojuegos, tecnología,
-  comida, Canarias y Puerto Rico, historia, el propio bot, el absurdo). Las coletillas de
+  las demás fuentes (vida cotidiana, deporte, cine y series, cultura popular y friki,
+  videojuegos, tecnología, comida, Canarias y Puerto Rico, historia, el propio bot, el
+  absurdo). Los nombres de los logros son siempre un juego de palabras o una broma ligada
+  al logro, nunca literales; su descripción, neutral. Las coletillas de
   Jovani salen de vez en cuando. Las herramientas de administración (`admin`) van sin
   bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
   auditoría de tono pendiente (commits solo de texto y sin tocar claves, para poder

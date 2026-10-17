@@ -1396,7 +1396,7 @@ def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
 def test_resumen_sugiere_los_logros_mas_cercanos() -> None:
     embed = summary_embed("Diego", None, Profile({"messages": 95}, {}), {}, 3)
     near = next(f for f in embed.fields if f.name == "Casi lo tienes")
-    assert "Ya se te oye" in near.value
+    assert "Ya no hay quien te calle" in near.value
 
 
 # -- Ganchos en los juegos -------------------------------------------------------------

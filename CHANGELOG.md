@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.25.5 · 2026-10-18
+
+- Logros: descripciones neutras que dicen qué hay que hacer, sin broma detrás
+- Logros: nombres con bromas de cine, series, deporte y cultura friki en vez de tanta política
+
 ### 7.25.4 · 2026-10-18
 
 - Logros: el aviso pone la retención de Hacienda en la misma línea que el premio
