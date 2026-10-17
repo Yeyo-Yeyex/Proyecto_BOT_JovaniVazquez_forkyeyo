@@ -6,10 +6,11 @@ Repaso de `bot.services.donations`, `bot.cogs.donations` y la deducción de
 ## Lo que está bien
 
 - **Fiscalidad real.** La deducción es la del art. 19.1 de la Ley 49/2002 tras la
-  reforma de 2024: el 80 % de los primeros 250 € (2.500 Y$) y el 40 % del resto, con
-  el límite del 10 % de la base (art. 69.1 LIRPF) y nunca más del IRPF pagado esa
-  semana. El donativo no paga IGIC (no hay contraprestación, art. 4 de la Ley
-  20/1991) ni Donaciones (la ONG no es persona física, art. 3 de la Ley 29/1987). No
+  reforma de 2024: el 80 % de los primeros 250 € al año (desde la 8.0.0, unos
+  1.202 Y$ a la semana con la vara del IRPF; antes, 2.500 Y$) y el 40 % del resto,
+  con el límite del 10 % de la base (art. 69.1 LIRPF). La deducción rebaja la cuota
+  de la declaración del lunes y nunca la deja en negativo. El donativo no paga IGIC
+  (no hay contraprestación, art. 4 de la Ley 20/1991) ni Donaciones (la ONG no es persona física, art. 3 de la Ley 29/1987). No
   se modela el 45 % de los donativos recurrentes (tres años a la misma entidad): con
   la renta semanal del bot no tendría sentido.
 - **Es un sumidero limpio.** Lo donado se queda en el monedero de la ONG (ids
