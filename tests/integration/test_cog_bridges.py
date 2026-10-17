@@ -2146,3 +2146,42 @@ async def test_abrir_una_caja_apunta_logros_y_la_mascota_habla_con_el_bot_real(
         assert "**Toby**" in message.edit.await_args.kwargs["content"]
     finally:
         await client.close()
+
+
+async def test_las_sanciones_de_admin_llegan_al_historial_del_panel_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`Admin` importa el panel antes de que cargue: `record` tiene que encontrarlo."""
+    from types import SimpleNamespace
+
+    from bot.utils.responder import CommandResponder
+
+    client = await load_bot(tmp_path)
+    await client.moderation.initialize()
+    try:
+
+        def member(member_id: int, position: int) -> MagicMock:
+            fake = MagicMock(spec=discord.Member)
+            fake.id = member_id
+            fake.top_role = SimpleNamespace(position=position)
+            fake.kick = AsyncMock()
+            return fake
+
+        guild = SimpleNamespace(id=GUILD_ID, owner_id=OWNER_ID, me=member(3, 10))
+        target = member(20, 1)
+        target.guild = guild
+        responder = MagicMock(spec=CommandResponder)
+        responder.guild = guild
+        responder.member = member(OWNER_ID, 9)
+        responder.send = AsyncMock()
+
+        await client.get_cog("Admin")._kick_impl(responder, target, "por spam")
+
+        [sanction] = await client.moderation.sanctions(GUILD_ID, 20)
+        assert (sanction.kind, sanction.actor_id, sanction.reason) == (
+            "echar",
+            OWNER_ID,
+            "por spam",
+        )
+    finally:
+        await client.close()

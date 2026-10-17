@@ -19,7 +19,9 @@ que se venden con `catalogo`). Si falta
 alguno, el comando lo dice en vez de fallar en silencio.
 
 Cada acción queda en el registro de auditoría de Discord con el motivo y
-quién la pidió.
+quién la pidió. Las sanciones (`mute`, `unmute`, `kick`, `ban`, `unban`) se
+apuntan además en el historial del panel `admin` (`bot.cogs.moderation.record`),
+que junta estas mismas acciones en un menú.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import moderation as historial
 from bot.cogs.deploy import can_post, news_channel, resolve_target
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
@@ -191,6 +194,20 @@ class Admin(commands.Cog):
             return False
         return True
 
+    async def _log(
+        self,
+        responder: CommandResponder,
+        user_id: int,
+        kind: str,
+        reason: str | None,
+        seconds: int | None = None,
+    ) -> None:
+        """Apunta la sanción en el historial del panel `admin` (tras contestar)."""
+        if responder.guild is not None and responder.member is not None:
+            await historial.record(
+                self.bot, responder.guild.id, user_id, responder.member.id, kind, reason, seconds
+            )
+
     # --- purge ------------------------------------------------------------
 
     async def _purge(
@@ -325,6 +342,7 @@ class Admin(commands.Cog):
             await responder.send(
                 f"🔇 {member.mention} aislado durante {format_duration(duration)}."
             )
+            await self._log(responder, member.id, "callar", reason, int(duration.total_seconds()))
 
     @app_commands.command(name="hablar", description="Quita el aislamiento a un miembro.")
     @app_commands.guild_only()
@@ -349,6 +367,7 @@ class Admin(commands.Cog):
             responder, member.timeout(None, reason=_audit_reason(responder.member, None))
         ):
             await responder.send(f"🔊 {member.mention} ya puede hablar.")
+            await self._log(responder, member.id, "hablar", None)
 
     # --- kick / ban / unban -----------------------------------------------
 
@@ -378,6 +397,7 @@ class Admin(commands.Cog):
             responder, member.kick(reason=_audit_reason(responder.member, reason))
         ):
             await responder.send(f"👢 {member} expulsado.")
+            await self._log(responder, member.id, "echar", reason)
 
     @app_commands.command(name="banear", description="Banea a un miembro del servidor.")
     @app_commands.guild_only()
@@ -406,6 +426,7 @@ class Admin(commands.Cog):
             member.ban(reason=_audit_reason(responder.member, reason), delete_message_seconds=0),
         ):
             await responder.send(f"🔨 {member} baneado.")
+            await self._log(responder, member.id, "banear", reason)
 
     @app_commands.command(name="indultar", description="Levanta el baneo de un usuario.")
     @app_commands.guild_only()
@@ -439,6 +460,7 @@ class Admin(commands.Cog):
         await responder.send(
             f"✅ Baneo levantado a <@{user_id}>.", allowed_mentions=discord.AllowedMentions.none()
         )
+        await self._log(responder, user_id, "indultar", None)
 
     # --- lock / unlock / slow ---------------------------------------------
 

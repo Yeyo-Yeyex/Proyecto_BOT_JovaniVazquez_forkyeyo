@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.24.0 · 2026-10-18
+
+- Admin: `admin`, panel de moderación con la actividad de cada miembro, sanciones, historial y notas
+
 ### 7.23.0 · 2026-10-17
 
 - Blackjack: contar cartas da para ganar si te lo curras: el jefe de sala deja subir de 1 a 8

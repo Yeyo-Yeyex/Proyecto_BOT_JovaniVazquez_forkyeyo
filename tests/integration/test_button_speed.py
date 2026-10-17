@@ -1386,6 +1386,44 @@ async def press_todo_priority(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def admin_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    await client.moderation.initialize()
+    await client.last_seen.initialize()
+    module = module_of(client, "Moderation")
+    return module.AdminPanel(client.get_cog("Moderation"), owner.guild, owner, None)
+
+
+async def press_admin_list(client: BotClient, owner: MagicMock) -> Click:
+    panel = await admin_panel(client, owner)
+    select = panel.children[1]
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["sanciones"]  # lo que Discord rellena al elegir
+        interaction.data = {"values": ["sanciones"]}
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_admin_note(client: BotClient, owner: MagicMock) -> Click:
+    panel = await admin_panel(client, owner)
+    panel.member = owner
+    owner.guild.get_member.return_value = None  # se ha ido: el panel vuelve al servidor
+    module = module_of(client, "Moderation")
+    captured: list[discord.ui.Modal] = []
+    opener = fake_interaction(owner)
+    opener.response.send_modal = AsyncMock(side_effect=captured.append)
+    await panel._add_note(opener)
+
+    async def click(interaction: MagicMock) -> None:
+        form = captured[0]
+        assert isinstance(form, module._Form)
+        form.fields[0]._value = "Sospechoso"
+        await form.on_submit(interaction)
+
+    return click
+
+
 def perfil_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
     module = module_of(client, "Perfil")
     return module.PerfilView(
@@ -1539,6 +1577,8 @@ CASES: dict[str, Press] = {
     "apuestas: cambiar de página": press_casino_stats,
     "logros: ranking": press_ranking,
     "perfil: cambiar de sección": press_perfil_section,
+    "admin: elegir lista": press_admin_list,
+    "admin: apuntar nota": press_admin_note,
     "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
     "lista: tachar": press_todo,

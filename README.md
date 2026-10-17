@@ -75,7 +75,7 @@ python -m bot
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | ⚙️ General | `ayuda` · `latencia` |
-  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
 
   La ayuda es un menú desplegable, como el de `perfil`: una portada con las
   categorías y una página por categoría con cada comando y lo que hace (la
@@ -922,7 +922,9 @@ Para que funcionen los comandos de texto con prefijo `.` (o el prefijo
 configurado), habilita también **Message Content Intent** en esa misma
 sección: sin él, el bot no puede leer el contenido de mensajes normales y
 esos comandos simplemente no se dispararán (los comandos de aplicación `/`
-no lo necesitan). El bot también necesita ver `#chat-general` y tener permiso
+no lo necesitan). Para la «última vez conectado» del panel `admin`, habilita
+**Presence Intent**: sin él el bot arranca igual (lo avisa en el log) y el
+panel no sabe cuándo se conectó cada miembro. El bot también necesita ver `#chat-general` y tener permiso
 para enviar mensajes y adjuntar archivos, además de permisos de **Conectar**
 y **Hablar** en los canales de voz donde se vaya a usar la música. Para los
 comandos de administración necesita además Gestionar mensajes, Aislar
