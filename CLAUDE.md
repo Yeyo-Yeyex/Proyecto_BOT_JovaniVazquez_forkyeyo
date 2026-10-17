@@ -506,6 +506,49 @@ escala no entera, el lienzo grande ha de medir un número par de píxeles.
   y dar trabajo a un proceso antes de que cargue la escena, porque el que ya
   pintaba se queda esperándolo (los dados empeoraban 100 ms).
 
+## Añadir un oficio a `pala`
+
+Los sueldos, los días y las pensiones salen de reglas comunes (8.0.0): un oficio nuevo no
+obliga a recalibrar nada si sigue estos pasos.
+
+1. **Catálogo** (`work_catalog.py`): un `Job` más en `JOBS`.
+   - Fija a mano P1-P3. P1 tiene que dejar algo más que el IMV máximo por turno; lo
+     mira la prueba.
+   - Crea su curva con `_OFICIO = PayCurve(p3)`. De ahí salen el resto de sueldos:
+     `_OFICIO.pay(4)` y `_OFICIO.pay(5)` en el tronco, y `_OFICIO.pay(nivel, _SAFE)` o
+     `_OFICIO.pay(nivel, _RISKY)` en cada puesto de rama.
+   - Días de los puestos de rama: `days=BRANCH_DAYS[nivel]`.
+   - Formaciones: `_OFICIO.course(nivel, turnos, clase)`, de 2 a 4 turnos.
+   - Cada rama declara su clase (`kind=BranchKind.RISKY`; si no dice nada, es segura).
+     Su `pension` es `0`: el campo solo guarda el suelo de quien se jubiló antes de la
+     8.0.0, y la pensión de verdad sale de la fórmula (`work.pension_amount`).
+   - Funciona con dos ramas o más.
+   - Un puesto se puede fijar a mano, pero tiene que pasar las mismas pruebas.
+2. **Pruebas** (`tests/unit/test_work_career.py`): las invariantes recorren todos los
+   `JOBS` y fallan si un oficio las incumple. Miran:
+   - el neto que deja cada ascenso;
+   - lo más alto de cada rama dentro de su banda;
+   - las formaciones, de 2 a 4 turnos;
+   - los días de la carrera;
+   - P1 frente al IMV;
+   - que el texto de cada tarea lleve su número (la experiencia lo cambia);
+   - que cambiar a él desde otro oficio igual de pagado se recupere pronto.
+
+   Un oficio inventado solo con su P3 las pasa: si el tuyo no, revisa lo fijado a mano.
+3. **Ritmo** (si sus tareas o su minijuego son nuevos): ejecuta
+   `python docs/ritmo_pala.py --json docs/ritmo_pala.json`, que mide los días de cada
+   puesto con las partidas reales.
+4. **Simulador**:
+   - `python docs/economia_sim.py --oficio <clave>`: el Falcon con pisos tiene que salir
+     entre los días 350 y 380 y el primer P10, hacia el día 100.
+   - Con `--solo cambio`, cuánto tarda en compensar cambiar a él.
+   - Las cifras y el porqué están en `docs/economia-trabajo.md`.
+5. **Lo de siempre de un oficio**:
+   - su contenido de minijuego y sus eventos;
+   - sus logros (`work_retired_<oficio>`, lo más alto de cada rama…);
+   - su línea en FUNCIONALIDADES;
+   - una versión MENOR.
+
 ## Dos repositorios
 
 - `godzilin/Proyecto_BOT_JovaniVazquez` es el del bot: su `main` es lo que se despliega.

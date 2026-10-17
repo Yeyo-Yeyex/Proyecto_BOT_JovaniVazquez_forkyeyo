@@ -301,9 +301,9 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             f"{format_amount(LOTTERY_EXEMPT)}"
             " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
             " (se apunta a quien cobra) · Multas de la Inspección"
-            " · Intereses diarios del monedero: retención del 19% en cada pago y cada lunes"
-            f" la escala del ahorro (19% a 30%); hasta {format_amount(INTEREST_DAILY_MAX)}"
-            " brutos al día"
+            " · Intereses diarios del monedero: retención del 19% en cada pago (con el tope"
+            f" de {format_amount(INTEREST_DAILY_MAX)} brutos al día, nunca se sale de ese"
+            " tramo del ahorro)"
         ).replace("%", " %"),
         inline=False,
     )
@@ -1349,7 +1349,8 @@ class EconomyService:
           Donaciones por decisión del proyecto, como el Bizum.
         - **Quien vende** tributa por la ganancia patrimonial (art. 33.1 LIRPF)
           en la base del ahorro, al 19 % y en el momento (`taxes.capital_gain_tax`;
-          el bot no tiene declaración anual). Se le descuenta de lo que cobra.
+          la declaración de los lunes es de la base general). Se le descuenta de lo
+          que cobra.
 
         Lo pujado espera en el depósito del Rastro (`MARKET_ACCOUNT_ID`) y los
         dos impuestos van al Estado en la misma transacción. Ver

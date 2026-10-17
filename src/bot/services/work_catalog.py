@@ -4,20 +4,20 @@ Solo datos. Añadir un oficio es añadir un `Job` a `JOBS` con sus puestos (el
 código admite los que haya), su contenido de minijuego (si usa uno nuevo) y, si
 se quiere, sus eventos. Para la carrera larga, un oficio lleva un tronco de
 puestos y sus ramas (`Branch`): todas con los mismos puestos, la primera sin
-formación y cada una con su pensión; los puestos pueden dar una ventaja
+formación y cada una con su clase (`BranchKind`); los puestos pueden dar una ventaja
 (`Perk`) y los eventos pueden ser de una rama (`Event.branches`). Los `key`
 (oficios, ramas, formaciones, tareas, eventos) no se cambian nunca: son lo que
-se guarda en la base de datos.
+se guarda en la base de datos. Receta: «Añadir un oficio a `pala`» de `CLAUDE.md`.
 
-Sueldos, en Y$ de nómina (100 Y$ por euro, ver
-`taxes.WAGE_YAPDOLLARS_PER_EURO`): el puesto 1 de cada oficio paga entre 1.600 y
-1.800 Y$ por turno con nota media, un poco más que un IMV entero (1.500 Y$), y
-el puesto 5 entre 13.000 y 18.000 y lo más alto de una rama, entre 18.000 y
-45.000. Un turno son unas dos horas: la jornada completa (4 turnos) de un
-celador equivale a unos 25.000 € al año y la de un comisario europeo, a
-438.000 €, con la retención que toca a cada uno. Las
-formaciones cuestan de 2 a 4 turnos del puesto al que dan acceso. El análisis
-que fija estas cifras está en `docs/economia-trabajo.md`.
+Sueldos (base del turno): cada oficio fija sus tres primeros puestos (el 1, entre
+1.650 y 1.800 Y$, un poco más que un IMV entero de 1.500) y el resto sale de su curva
+(`work.PayCurve`): el puesto 5 entre 9.600 y 12.000 y lo más alto de una rama, entre
+28.100 y 35.200 en las seguras y entre 41.500 y 51.800 en las arriesgadas. Con la vara
+del IRPF (`taxes.IRPF_YAPDOLLARS_PER_EURO`, la semana es el año), la jornada completa
+(4 turnos) de un celador equivale a unos 10.000 € al año y la de un comisario europeo,
+a unos 300.000 €, con la retención que toca a cada uno. Las formaciones cuestan de 2 a 4
+turnos del puesto al que dan acceso (`PayCurve.course`). El análisis que fija estas
+cifras está en `docs/economia-trabajo.md`.
 
 La política es una sátira del PSOE, el partido del Gobierno, y de sus
 tópicos (sobres, enchufes, comisiones, puertas giratorias, el Falcon, la

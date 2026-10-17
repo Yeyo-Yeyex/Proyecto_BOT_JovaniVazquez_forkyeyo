@@ -1367,8 +1367,10 @@ def compute_hk_payslip(
 # Como en la vida real, cada pago lleva una retención fija del 19 % (art. 101.4
 # LIRPF) y la diferencia con la escala se ajusta después. En el bot ese ajuste es
 # semanal: cada lunes se liquida la semana con `savings_tax`, con la misma vara que
-# la base general (`annual_eur`). Es la única renta que no se suma a las demás: la ley
-# separa la base del ahorro de la general (arts. 45 a 49 LIRPF).
+# la base general (`annual_eur`). Con el tope diario de los intereses, una semana entera
+# no pasa de ~730 € al año: siempre en el primer tramo, así que la liquidación sale a
+# cero y lo retenido es lo que se paga. Es la única renta que no se suma a las demás:
+# la ley separa la base del ahorro de la general (arts. 45 a 49 LIRPF).
 
 #: Escala del ahorro, estatal + autonómica (arts. 66.1 y 76 LIRPF): (desde €, tipo).
 SAVINGS_BRACKETS: tuple[tuple[float, float], ...] = (

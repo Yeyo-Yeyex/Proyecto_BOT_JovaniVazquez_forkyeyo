@@ -124,7 +124,9 @@ def test_las_ramas_salen_del_final_del_tronco_sin_formacion_y_con_pension() -> N
             # Al elegir rama no se puede comprar antes su formación: la entrada es gratis.
             assert branch.positions[0].training is None, (job.key, branch.key)
             assert branch.positions[0].level == job.trunk_top + 1
-            assert branch.pension > 0 and branch.retired_as
+            # La pensión de la rama solo es el suelo de quien se jubiló antes de la 8.0.0:
+            # un oficio nuevo pone 0 (la de verdad sale de `work.pension_amount`).
+            assert branch.pension >= 0 and branch.retired_as
     keys = [p.training.key for j in JOBS for p in j.all_positions if p.training]
     assert len(keys) == len(set(keys))  # una formación no sirve para dos puestos
 

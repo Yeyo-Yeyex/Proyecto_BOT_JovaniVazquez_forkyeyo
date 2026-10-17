@@ -136,7 +136,7 @@ def invented_job() -> Job:
             "x",
             "x",
             tuple(position(lvl, curve.pay(lvl, kind), kind, lvl % 2 == 1) for lvl in range(6, 11)),
-            pension=1,
+            pension=0,
             retired_as="x",
             kind=kind,
         )
