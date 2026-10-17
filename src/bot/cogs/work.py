@@ -110,6 +110,7 @@ from bot.services.taxes import (
 )
 from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.services.work import (
+    ACTIVE_SHARES,
     BATTERY_MAX,
     BATTERY_MIN,
     FAMILY_REGEN_PER_HOUR,
@@ -119,6 +120,8 @@ from bot.services.work import (
     MAX_COFFEES,
     MOM_REPAY_SHARE,
     ORDINARY_SHIFTS,
+    PENSION_CAP,
+    PENSION_WEIGHTS,
     RAIN_PAY,
     SELF_EMPLOYED_FEE,
     TRIENNIUM_PAY,
@@ -469,6 +472,12 @@ def status_text(status: Status, notes: list[str]) -> str:
             f"🦄 Stock options acumuladas: **{format_amount(contract.options)}** (en papel)"
         )
     lines.extend(job_lines(status))
+    if status.veteran:
+        plural = "s" if status.veteran > 1 else ""
+        lines.append(
+            f"🎖️ Veteranía: {status.veteran} rama{plural} de otros oficios · "
+            f"+{round(status.veteran_bonus * 100)} % de sueldo y menos días y tareas para ascender"
+        )
     perks = job.perks(contract.level, contract.branch)
     if perks:
         lines.append("🏅 Ventajas del puesto: " + " · ".join(p.text for p in perks))
@@ -500,8 +509,8 @@ def status_text(status: Status, notes: list[str]) -> str:
             branch = status.branch
             assert branch is not None
             lines.append(
-                f"🏖️ Puedes jubilarte de {branch.emoji} {branch.name}: "
-                f"{format_amount(branch.pension)} brutos de pensión al día, para siempre."
+                f"🏖️ Puedes jubilarte de {branch.emoji} {branch.name}: tu pensión pasaría a "
+                f"{format_amount(status.pension_after)} brutos al día, para siempre."
             )
     elif status.promotion_ready:
         lines.append(f"\n📈 **¡Te ofrecen el ascenso a {following.title}!** Pulsa 📈 Ascender.")
@@ -554,13 +563,45 @@ def branch_offer_text(status: Status) -> str:
     ]
     for branch in status.fork:
         first, last = branch.positions[0], branch.positions[-1]
+        weight = round(PENSION_WEIGHTS[branch.kind] * 100)
         lines.append(
             f"\n### {branch.emoji} {branch.name}\n{branch.blurb}\n"
             f"- Empiezas de **{first.title}** ({format_amount(first.base_pay)} por turno)\n"
             f"- Llegas a **{last.title}** ({format_amount(last.base_pay)} por turno)\n"
-            f"- Te jubilas con **{format_amount(branch.pension)}** brutos al día"
+            f"- Al jubilarte, tu pensión suma el **{weight} %** de lo que le falte hasta el "
+            f"tope ({format_amount(PENSION_CAP)} al día)"
         )
     return "\n".join(lines)
+
+
+def outlook_text(outlook: dict[str, tuple[int, float] | None], job_key: str) -> str:
+    """Lo que costaría cambiar a un oficio sin probar, para el menú (`""` si no se sabe)."""
+    if job_key not in outlook:
+        return ""
+    found = outlook[job_key]
+    if found is None:
+        return "Ni arriba cobrarías lo de ahora (con más veteranía, sí)"
+    days, gain = found
+    top = f"luego, arriba, un {round(gain * 100)} % más" if gain > 0 else "arriba, lo mismo"
+    if days == 0:
+        return f"Cobras lo de ahora desde el primer día; {top}"
+    return f"Unos {days} días fichando cobras menos; {top}"
+
+
+def share_text(pension: Pension) -> str:
+    """Cómo se cobra la pensión: entera, en jubilación activa o con el suelo de antes."""
+    if pension.floor and pension.amount == pension.floor and pension.floor > pension.full:
+        return (
+            f"Cobras lo de antes de la 8.0.0 ({format_amount(pension.floor)}): nadie cobra "
+            "menos que entonces."
+        )
+    if pension.share < 1:
+        steps = ", ".join(f"{round(s * 100)} %" for s in ACTIVE_SHARES)
+        return (
+            f"Jubilación activa: mientras sigas fichando cobras el {round(pension.share * 100)} % "
+            f"de {format_amount(pension.full)}; sube cada semana ({steps}) y, si lo dejas, entera."
+        )
+    return f"Pensión entera: {format_amount(pension.full)} al día."
 
 
 def pension_text(slip: Payslip, pension: Pension) -> str:
@@ -569,7 +610,7 @@ def pension_text(slip: Payslip, pension: Pension) -> str:
     lines.extend(
         f"- {job.emoji} {branch.emoji} {branch.retired_as}" for job, branch in pension.branches
     )
-    lines.append(f"Bruto: **{format_amount(slip.gross)}**")
+    lines.append(f"Bruto: **{format_amount(slip.gross)}** · {share_text(pension)}")
     if slip.irpf:
         lines.append(
             f"IRPF: −{format_amount(slip.irpf)} (tu tipo esta semana: {_pct(slip.rates.irpf)})"
@@ -595,13 +636,13 @@ def promotion_announcement(name: str, status: Status) -> str | None:
     return f"📣 **{name}** asciende a **{position.title}** ({job.emoji} {where})."
 
 
-def retirement_announcement(name: str, retirement: Retirement) -> str:
+def retirement_announcement(name: str, retirement: Retirement, pension: Pension) -> str:
     """Anuncio de una jubilación."""
     branch = retirement.branch
     text = (
         f"🏖️ **{name}** se jubila de {retirement.title} ({retirement.job.emoji} "
-        f"{branch.emoji} {branch.name}). Ahora es {branch.retired_as}, con "
-        f"{format_amount(branch.pension)} brutos al día."
+        f"{branch.emoji} {branch.name}). Ahora es {branch.retired_as}, con una pensión de "
+        f"{format_amount(pension.full)} brutos al día."
     )
     following = retirement.following
     if following is not None:
@@ -827,6 +868,8 @@ class PalaPanel(ui.LayoutView):
         self._tools_owned = 0
         #: La pensión, leída al abrir o refrescar el panel (botón 💰).
         self.pension: Pension | None = None
+        #: Lo que costaría empezar cada oficio sin probar (`WorkService.switch_outlook`).
+        self.outlook: dict[str, tuple[int, float] | None] = {}
         #: Regalos para la familia que tiene en la mochila (claves de la tienda).
         self.gifts: frozenset[str] = frozenset()
         #: Caja de la tienda del regalo que está a punto de comprar y dar.
@@ -922,7 +965,10 @@ class PalaPanel(ui.LayoutView):
     def _job_select(self, current: str | None) -> ui.Select:
         options = [
             discord.SelectOption(
-                label=job.name, value=job.key, emoji=job.emoji, description=job.blurb[:100]
+                label=job.name,
+                value=job.key,
+                emoji=job.emoji,
+                description=outlook_text(self.outlook, job.key) or job.blurb[:100],
             )
             for job in JOBS
             if job.key != current
@@ -1193,6 +1239,7 @@ class PalaPanel(ui.LayoutView):
             notes, self.notes = self.notes, []
             self.show_hiring(history, notes)
         else:
+            self.outlook = await self.service.switch_outlook(self.guild_id, self.owner.id, status)
             self.show_status(status)
         await self._edit(interaction)
 
@@ -1218,6 +1265,12 @@ class PalaPanel(ui.LayoutView):
             f"✍️ Firmas de **{status.position.title}** en {status.job.emoji} {status.job.name}. "
             "¡A currar, mi amor!"
         )
+        if status.veteran:
+            self.notes.append(
+                f"🎖️ Llegas con veteranía: +{round(status.veteran_bonus * 100)} % de sueldo y los "
+                "ascensos piden menos días y tareas. Aquí no empieza nadie de cero dos veces."
+            )
+        self.outlook = await self.service.switch_outlook(self.guild_id, self.owner.id, status)
         self.show_status(status)
         await self._edit(interaction)
         if had_job:
@@ -1521,11 +1574,14 @@ class PalaPanel(ui.LayoutView):
             if others
             else "Ya no te queda otra rama: te quedas donde estás, pero con pensión."
         )
+        first = round(ACTIVE_SHARES[0] * 100)
         text = (
             f"## 🏖️ Jubilarse de {branch.emoji} {branch.name}\n"
             f"Dejas de ser {status.position.title} y pasas a ser {branch.retired_as}. "
-            f"Cobrarás **{format_amount(branch.pension)}** brutos al día, para siempre, "
-            f"con el botón 💰 del panel.\n{then}\n-# No tiene vuelta atrás."
+            f"Tu pensión pasa a **{format_amount(status.pension_after)}** brutos al día, para "
+            "siempre, con el botón 💰 del panel: crece con cada rama que completes y con lo "
+            f"que cotizaste en ella. Mientras sigas fichando cobras una parte (el {first} % la "
+            f"primera semana, entera desde la quinta).\n{then}\n-# No tiene vuelta atrás."
         )
         row: ui.ActionRow = ui.ActionRow()
         row.add_item(self._button("✅ Me jubilo", self._retire, style=discord.ButtonStyle.success))
@@ -1548,7 +1604,7 @@ class PalaPanel(ui.LayoutView):
         self.pension = await self.service.pension(self.guild_id, self.owner.id)
         self.show_status(retirement.status)
         await self._edit(interaction)
-        await self._announce(retirement_announcement(self._name, retirement))
+        await self._announce(retirement_announcement(self._name, retirement, self.pension))
         retired_here = len(retirement.status.retired)
         delta = StatDelta(
             add={"work_retired": 1}, peak={f"work_retired_{retirement.job.key}": retired_here}
@@ -1961,10 +2017,13 @@ class Work(commands.Cog, name="Trabajo"):
             )
         pension = await self.service.pension(guild_id, user_id)
         lines.extend(
-            f"🏖️ Jubilado de {job.emoji} {branch.emoji} {branch.name}: {branch.retired_as} "
-            f"({format_amount(branch.pension)} al día)"
+            f"🏖️ Jubilado de {job.emoji} {branch.emoji} {branch.name}: {branch.retired_as}"
             for job, branch in pension.branches
         )
+        if pension.branches:
+            lines.append(
+                f"💰 Pensión: {format_amount(pension.amount)} al día. {share_text(pension)}"
+            )
         return lines
 
     async def job_line(self, guild_id: int, user_id: int) -> str:

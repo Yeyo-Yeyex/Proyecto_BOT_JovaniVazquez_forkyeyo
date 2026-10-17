@@ -43,9 +43,15 @@ Carrera larga, también al estilo de los Sims:
   (más tiempo, un fallo gratis, una respuesta tachada, menos batería) que se
   conserva mientras sigas en ese oficio en ese puesto o más arriba
   (`Job.perks`). Se suman a las herramientas de la tienda.
-- **Jubilación** (`Branch.pension`): en lo más alto de una rama te puedes
+- **Jubilación** (`pension_amount`): en lo más alto de una rama te puedes
   jubilar de ella. Desde entonces cobras una pensión diaria (con su botón) y
-  sigues en la otra rama, desde su primer puesto. La pensión es para siempre.
+  sigues en la otra rama, desde su primer puesto. Es una sola pensión, para siempre,
+  que crece con cada rama completada (en cualquier oficio) hasta un tope; mientras
+  sigues trabajando cobras una parte (jubilación activa, `active_share`). Y cada rama
+  completada te da experiencia y veteranía en los demás oficios: piden menos días y
+  tareas (`required_days`, `required_tasks`) y pagan más (`veteran_bonus`).
+- **Sueldos** (`PayCurve`): cada oficio fija sus tres primeros puestos y el resto sale
+  de una curva por clase de rama, igual para todos los oficios.
 - **Deseo del día** (`wish_for`, `wish_met`): cada día, un objetivo pequeño
   al azar (estable para cada miembro y día). El turno que lo cumple paga
   `WISH_PAY` veces más y sube `WISH_PERFORMANCE` la barra. Cumplirlo días
@@ -103,6 +109,7 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from bot.services.levels import TIMEZONE, local_day
+from bot.services.taxes import IRPF_YAPDOLLARS_PER_EURO, SS_MAX_BASE_EUR
 
 # -- Batería ---------------------------------------------------------------------------
 
@@ -432,6 +439,15 @@ class Position:
     perk: Perk | None = None
 
 
+class BranchKind(StrEnum):
+    """Clase de una rama: su carácter y lo que pesa en la pensión (`PENSION_WEIGHTS`)."""
+
+    #: Pública, estable, con plaza: menos sueldo y más pensión.
+    SAFE = "segura"
+    #: Privada, de riesgo o de pelotazo: más sueldo, menos pensión y más varianza.
+    RISKY = "arriesgada"
+
+
 @dataclass(frozen=True, slots=True)
 class Branch:
     """Una rama de un oficio: los puestos que siguen al tronco común.
@@ -442,9 +458,12 @@ class Branch:
         emoji: Su emoji.
         blurb: Una línea para elegirla.
         positions: Sus puestos, del siguiente al tronco hasta `Job.top`.
-        pension: Bruto de la pensión diaria al jubilarse de ella (Y$ de nómina).
+        pension: Pensión diaria que daba esta rama antes de la 8.0.0: el suelo de quien
+            ya se había jubilado de ella (nadie cobra menos que antes). La de ahora sale
+            de la fórmula (`pension_amount`).
         retired_as: Cómo se llama al jubilado de esta rama («consejero de una
             eléctrica»), para el panel y el anuncio.
+        kind: Su clase (`BranchKind`).
     """
 
     key: str
@@ -454,6 +473,7 @@ class Branch:
     positions: tuple[Position, ...]
     pension: int
     retired_as: str
+    kind: str = BranchKind.SAFE
 
 
 @dataclass(frozen=True, slots=True)
@@ -713,6 +733,14 @@ class Contract:
     mom_debt: int = 0
     #: «Lo hago por los niños»: el próximo turno trae más tiempo.
     motivated: bool = False
+    #: Si el puesto en el que está se empezó antes de la 8.0.0: pide los días de antes
+    #: (`LEGACY_DAYS`) si son menos. Lo pone el repositorio al leer un contrato guardado
+    #: sin este campo; cualquier puesto nuevo lo deja en `False`.
+    legacy_days: bool = False
+    #: Lo cotizado en la rama en curso (bruto declarado) y los días fichados en ella: la
+    #: calidad de la pensión al jubilarse (`contribution_quality`).
+    branch_gross: int = 0
+    branch_days: int = 0
 
 
 def family_now(contract: Contract, now: float) -> float:
@@ -1046,7 +1074,191 @@ def apply_performance(contract: Contract, delta: int, *, tenured: bool = False) 
     contract.performance = PERFORMANCE_START
     contract.warned = False
     contract.progress = {}
+    contract.legacy_days = False
     return "demoted"
+
+
+# -- Sueldos y días (8.0.0) -------------------------------------------------------------
+#
+# Cada oficio fija los sueldos de sus tres primeros puestos (rápido al principio: cada
+# ascenso casi duplica el neto) y el resto sale de una curva (`PayCurve`): P4 y P5 suben lo
+# justo para que el neto crezca entre un 35 % y un 55 % por ascenso, y cada puesto de rama
+# crece sobre el anterior según la clase de la rama (`BRANCH_GROWTH`: la segura deja un
+# 15 % más de neto por ascenso; la arriesgada, un 23 %). Las ramas piden más días
+# (`BRANCH_DAYS`): la primera rama se completa hacia el día 100 y la segunda, hacia el 165,
+# al ritmo del Falcon (`docs/economia_sim.py`, `docs/economia-trabajo.md`). Un oficio nuevo
+# solo pone su P3 y la clase de cada rama; un puesto se puede fijar a mano y las pruebas
+# lo miden igual.
+
+#: P4 / P3 y P5 / P4 (bruto del turno).
+TRUNK_STEPS: tuple[float, ...] = (1.6, 1.5)
+#: Lo que crece la base de cada puesto de rama sobre el anterior, por clase de rama.
+BRANCH_GROWTH: dict[str, float] = {BranchKind.SAFE: 1.24, BranchKind.RISKY: 1.34}
+#: Días distintos que piden los puestos de rama (el último no pide: no se asciende).
+BRANCH_DAYS: dict[int, int] = {6: 13, 7: 15, 8: 18, 9: 21}
+#: Días que pedía cada puesto antes de la 8.0.0: los conserva quien ya estaba en él (los
+#: días nuevos valen desde el siguiente ascenso). Nivel → días.
+LEGACY_DAYS: dict[int, int] = {1: 2, 2: 3, 3: 4, 4: 5, 5: 4, 6: 5, 7: 5, 8: 6, 9: 6}
+
+
+@dataclass(frozen=True, slots=True)
+class PayCurve:
+    """Sueldos de un oficio a partir de la base de su P3.
+
+    Attributes:
+        p3: Base del turno del tercer puesto (los dos primeros los fija el oficio).
+    """
+
+    p3: int
+
+    def pay(self, level: int, kind: str = "") -> int:
+        """Base del turno del puesto `level` (de 4 en adelante), redondeada a 100.
+
+        Args:
+            kind: Clase de la rama (`BranchKind`) para los puestos pasado el tronco.
+
+        Raises:
+            ValueError: Si el puesto es de los que fija el oficio o falta la clase.
+        """
+        trunk_top = 3 + len(TRUNK_STEPS)
+        if level <= 3:
+            raise ValueError("Los tres primeros puestos los fija cada oficio.")
+        if level > trunk_top and kind not in BRANCH_GROWTH:
+            raise ValueError(f"El puesto {level} es de rama: hace falta su clase.")
+        base = float(self.p3)
+        for step in TRUNK_STEPS[: min(level, trunk_top) - 3]:
+            base = round(base * step, -2)
+        if level > trunk_top:
+            base *= BRANCH_GROWTH[kind] ** (level - trunk_top)
+        return int(round(base, -2))
+
+    def course(self, level: int, turns: float, kind: str = "") -> int:
+        """Precio de la formación del puesto `level`: `turns` bases suyas (a cientos, como
+        la base, para que dos turnos sean dos turnos)."""
+        return int(round(turns * self.pay(level, kind), -2))
+
+
+# -- Pensión, experiencia y veteranía (8.0.0) -------------------------------------------
+#
+# Una sola pensión que crece con cada rama completada, con rendimientos decrecientes y un
+# techo real: `PENSION_CAP × (1 − ∏(1 − peso × calidad))`. Cada rama suma siempre algo, el
+# orden da igual y nunca se pasa del tope. El peso es el de su clase (`PENSION_WEIGHTS`) y la
+# calidad, lo que se cotizó en ella frente a la base máxima (`contribution_quality`): a media
+# jornada se gana menos pensión. Mientras se sigue trabajando se cobra solo una parte
+# (jubilación activa, `active_share`).
+#
+# La pensión sola no compensa volver a empezar en otro oficio (su tope son ~42.000 Y$ al día
+# frente a los ~150.000 de un P10), así que cada rama completada en otro oficio da también
+# experiencia y veteranía. La experiencia acorta los días y las tareas de los puestos
+# (`experience_factor`), mucho en el tronco y menos en las ramas: un veterano pasa rápido la
+# parte mal pagada. La veteranía sube el sueldo del turno (`veteran_bonus`), como a quien
+# llega con años de oficio. Así, cambiar de oficio recupera el neto diario en unos 70 días
+# y acumular oficios siempre acaba cobrando más.
+
+#: Tope de la pensión: la base máxima de cotización de 2026 (61.214,40 € al año, RDL
+#: 3/2026), que es lo más que suman la pensión máxima y el complemento por demora (art.
+#: 210.2 TRLGSS), en Y$ por día con la vara del IRPF.
+PENSION_CAP = round(SS_MAX_BASE_EUR * IRPF_YAPDOLLARS_PER_EURO / 365)
+#: Pensión máxima de 2026 (3.359,60 € × 14 pagas, art. 1 del RDL 3/2026): lo que pasa de
+#: aquí hasta el tope se enseña como complemento por demora.
+PENSION_MAX = round(47_034.40 * IRPF_YAPDOLLARS_PER_EURO / 365)
+#: Lo que pesa en la pensión cada rama completada, por clase.
+PENSION_WEIGHTS: dict[str, float] = {BranchKind.SAFE: 0.30, BranchKind.RISKY: 0.20}
+#: Jubilación activa (art. 214 TRLGSS, redacción del RDL 11/2024): parte de la pensión que
+#: se cobra trabajando, por años de demora; aquí, semanas desde la primera jubilación.
+ACTIVE_SHARES: tuple[float, ...] = (0.45, 0.55, 0.65, 0.80, 1.0)
+#: Experiencia: lo que se multiplican los días y las tareas de un puesto por cada rama
+#: completada en otro oficio, y lo menos que pueden quedar: `(factor, mínimo)`.
+EXPERIENCE_TRUNK: tuple[float, float] = (0.4, 0.2)
+EXPERIENCE_BRANCH: tuple[float, float] = (0.6, 0.3)
+#: Veteranía: lo que sube el sueldo del turno cada rama completada en otro oficio, y su tope.
+VETERAN_PAY = 0.10
+VETERAN_MAX = 0.50
+
+
+def contribution_quality(daily_gross: float) -> float:
+    """Calidad de lo cotizado en una rama (0–1): su bruto medio diario frente a la base máxima."""
+    return max(0.0, min(1.0, daily_gross / PENSION_CAP))
+
+
+def pension_amount(completed: Collection[tuple[str, float]]) -> int:
+    """Pensión diaria (bruta) por las ramas completadas: `(clase, calidad)` de cada una."""
+    keep = 1.0
+    for kind, quality in completed:
+        keep *= 1 - PENSION_WEIGHTS.get(kind, PENSION_WEIGHTS[BranchKind.RISKY]) * max(
+            0.0, min(1.0, quality)
+        )
+    return round(PENSION_CAP * (1 - keep))
+
+
+def active_share(weeks_retired: int) -> float:
+    """Parte de la pensión que se cobra trabajando, por semanas desde la primera jubilación."""
+    return ACTIVE_SHARES[max(0, min(weeks_retired, len(ACTIVE_SHARES) - 1))]
+
+
+def experience_factor(completed_elsewhere: int, *, trunk: bool) -> float:
+    """Lo que se multiplican los días y las tareas de un puesto con ramas de otros oficios."""
+    factor, floor = EXPERIENCE_TRUNK if trunk else EXPERIENCE_BRANCH
+    return max(floor, factor ** max(0, completed_elsewhere))
+
+
+def veteran_bonus(completed_elsewhere: int) -> float:
+    """Lo que sube el sueldo del turno por las ramas completadas en otros oficios (0–0,5)."""
+    return min(VETERAN_MAX, VETERAN_PAY * max(0, completed_elsewhere))
+
+
+def required_days(
+    position: Position, job: Job, completed_elsewhere: int = 0, *, legacy: bool = False
+) -> int:
+    """Días distintos que pide un puesto, con la experiencia de otros oficios.
+
+    Args:
+        legacy: Si el puesto se empezó antes de la 8.0.0 (`Contract.legacy_days`): pide
+            los días de antes si eran menos.
+    """
+    days = position.days
+    if legacy:
+        days = min(days, LEGACY_DAYS.get(position.level, days))
+    factor = experience_factor(completed_elsewhere, trunk=position.level <= job.trunk_top)
+    return math.ceil(days * factor)
+
+
+def required_tasks(position: Position, job: Job, completed_elsewhere: int = 0) -> tuple[Task, ...]:
+    """Las tareas del puesto, con la experiencia: menos de cada (al menos una).
+
+    El número del texto («Haz 5 turnos de 90 o más») cambia con el objetivo.
+    """
+    factor = experience_factor(completed_elsewhere, trunk=position.level <= job.trunk_top)
+    if factor >= 1:
+        return position.tasks
+    tasks = []
+    for task in position.tasks:
+        goal = max(1, math.ceil(task.goal * factor))
+        text = task.text.replace(str(task.goal), str(goal), 1)
+        tasks.append(Task(task.key, text, task.stat, goal))
+    return tuple(tasks)
+
+
+def catch_up(job: Job, current_pay: int, completed_elsewhere: int) -> tuple[int, float] | None:
+    """Lo que cuesta empezar `job` desde abajo frente a cobrar `current_pay` (base del turno).
+
+    Con la veteranía y la experiencia que tendría en `job`. Es una cuenta para avisar al
+    elegir oficio: solo mira los días que piden los puestos (no las tareas ni la barra).
+
+    Returns:
+        `(días de fichar hasta volver a cobrar lo mismo, lo que sube lo más alto de su
+        mejor rama frente a lo de ahora)`, o `None` si nunca se iguala.
+    """
+    if current_pay <= 0:
+        return None
+    bonus = 1 + veteran_bonus(completed_elsewhere)
+    _branch, ladder = max(job.ladders, key=lambda item: item[1][-1].base_pay)
+    days = 0
+    for position in ladder:
+        if position.base_pay * bonus >= current_pay:
+            return days, ladder[-1].base_pay * bonus / current_pay - 1
+        days += required_days(position, job, completed_elsewhere)
+    return None
 
 
 def promotion_blockers(
@@ -1057,6 +1269,7 @@ def promotion_blockers(
     trainings: set[str],
     today: str,
     retired: Collection[str] = (),
+    completed_elsewhere: int = 0,
 ) -> list[str]:
     """Lo que falta para que te ofrezcan el ascenso (vacío = ya toca).
 
@@ -1068,6 +1281,7 @@ def promotion_blockers(
         trainings: Formaciones que ya tiene el miembro.
         today: Día de hoy (ISO); si rechazó una oferta hoy, no se repite.
         retired: Ramas de este oficio de las que ya se jubiló.
+        completed_elsewhere: Ramas completadas en otros oficios (la experiencia).
     """
     if contract.level >= job.top:
         return ["Ya estás en lo más alto. Más arriba solo hay una puerta giratoria."]
@@ -1077,9 +1291,10 @@ def promotion_blockers(
     missing: list[str] = []
     if contract.performance < PERFORMANCE_MAX:
         missing.append(f"Llenar la barra de rendimiento ({contract.performance}/100)")
-    if days_in_position < position.days:
-        missing.append(f"Fichar {position.days} días distintos en el puesto ({days_in_position})")
-    for task in position.tasks:
+    days = required_days(position, job, completed_elsewhere, legacy=contract.legacy_days)
+    if days_in_position < days:
+        missing.append(f"Fichar {days} días distintos en el puesto ({days_in_position})")
+    for task in required_tasks(position, job, completed_elsewhere):
         done = contract.progress.get(task.stat, 0)
         if done < task.goal:
             missing.append(f"{task.text} ({done}/{task.goal})")
@@ -1121,11 +1336,13 @@ def promote(contract: Contract, now: float, branch: str = "") -> None:
     """
     if branch:
         contract.branch = branch
+        contract.branch_gross = contract.branch_days = 0
     contract.level += 1
     contract.performance = PERFORMANCE_START
     contract.warned = False
     contract.progress = {}
     contract.position_since = now
+    contract.legacy_days = False
     contract.declined_day = ""
 
 
