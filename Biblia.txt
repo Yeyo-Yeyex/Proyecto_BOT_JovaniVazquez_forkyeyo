@@ -175,6 +175,8 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
 Todo lo que dice el bot (las frases de Jovani en cada juego y comando, los anuncios, los nombres y descripciones de los logros) tiene que notar esfuerzo y cariño: variado, con gracia y sin repetir la misma broma con otras palabras. Una lista de frases no tiene cupo ni mínimo; se mira al revés: **de cuántas cosas me puedo reír en este momento**. Ganar, perder, quedarse a cero o esperar a que caiga la bola dan para muchas bromas distintas, y cada una que se pueda hacer bien se mete. Si un texto que se repite a menudo sale siempre igual, se convierte en una lista de frases y se elige al azar.
 
+Excepción: el panel de moderación `admin` (cog `Moderation`) es una herramienta seria; sus textos son sobrios, sin bromas ni coletillas.
+
 Todo, en última instancia, es jocoso. El campo de la ironía es amplio:
   - **España**, la de Pedro Sánchez: Perro Sanxe, Hacienda que cobra antes que tú, el PSOE, el Falcon, la paguita, el «Manual de resistencia», la máquina del fango, la UCO, Pegasus, la burocracia.
   - **La oposición española**: el PP (Feijóo, Ayuso y la fruta, Rajoy y sus frases —«un vaso es un vaso», «es el vecino el que elige al alcalde»—, los sobres de Bárcenas, el «sé fuerte»), Vox (Abascal a caballo, la Reconquista desde un plató), Podemos y Sumar (el chalet de Galapagar, los cielos que no se asaltaron, Yolanda y su sonrisa), Junts (Puigdemont en el maletero, Waterloo, la amnistía).

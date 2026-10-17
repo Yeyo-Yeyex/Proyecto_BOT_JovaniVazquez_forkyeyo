@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.25.0 · 2026-10-18
+
+- Admin: las listas de `admin` incluyen a todos los miembros, en páginas con ◀ y ▶
+- Admin: el panel `admin` usa textos serios, sin bromas
+
 ### 7.24.0 · 2026-10-18
 
 - Admin: `admin`, panel de moderación con la actividad de cada miembro, sanciones, historial y notas
