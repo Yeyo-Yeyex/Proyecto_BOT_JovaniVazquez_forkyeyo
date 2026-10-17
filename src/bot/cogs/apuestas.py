@@ -80,7 +80,7 @@ from bot.services.casino_stats import (
 from bot.services.economy import EconomyService, day_bounds, format_amount
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.lootboxes import FREE_BOX_PLAYS
-from bot.services.taxes import CLAIM_WEEKS, TAX_COLLECTOR
+from bot.services.taxes import CLAIM_WEEKS, GAMBLING_EXEMPT, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
@@ -471,7 +471,9 @@ class Panel:
         embed.description = (
             "**Cómo te cobra Hacienda el casino**\n"
             "1. Cada día se mira tu resultado neto del casino (premios menos apuestas). "
-            "Si vas arriba, se retiene el 19 % de esa ganancia, al momento.\n"
+            f"Si vas más de {format_amount(GAMBLING_EXEMPT)} arriba, se retiene el 19 % de "
+            "toda esa ganancia, al momento; si no llegas, nada (como los premios de hasta "
+            "300 €, art. 75.3.f RIRPF): tributa igual en la declaración.\n"
             "2. Si después pierdes ese mismo día, la retención se recalcula y te devuelve "
             "lo que sobra en la misma jugada.\n"
             "3. El lunes sale la declaración de la semana, con toda tu renta: las pérdidas "

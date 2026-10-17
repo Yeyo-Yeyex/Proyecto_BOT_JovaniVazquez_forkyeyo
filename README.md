@@ -143,7 +143,8 @@ python -m bot
   año) y se aplican la escala estatal y la canaria (Ley 9/2025). Cada cobro
   retiene con el mayor entre el tipo de la semana anterior y el de esta
   (arts. 82 a 87 RIRPF), así que el tipo no baja a mitad de semana. En el
-  casino se retiene un 19 % fijo de lo ganado en el día: si pierdes después
+  casino se retiene un 19 % fijo de lo ganado en el día si pasa de unos 1.442
+  Y$ (los 300 € del art. 75.3.f RIRPF; si no, nada): si pierdes después
   de ganar, Hacienda te devuelve parte en la misma jugada.
 - **Campaña de la Renta:** cada lunes se cierra la declaración de toda la
   renta de la semana anterior: trabajo, pisos (inmueble a inmueble), juego

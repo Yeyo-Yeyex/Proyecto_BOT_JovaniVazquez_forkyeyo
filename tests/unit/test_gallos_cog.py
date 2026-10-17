@@ -159,6 +159,11 @@ async def open_panel(cog: Gallos, amount: str = "100") -> HousePanel:
     return panel
 
 
+def irpf_juego(tax: int) -> list[tuple[str, int]]:
+    """El apunte de la retención del juego, si la hay (los días que se gana poco no hay)."""
+    return [("irpf:juego", -tax)] if tax else []
+
+
 async def test_ganar_a_la_casa_cobra_la_cuota_y_apunta_la_victoria(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, WIN)
     panel = await open_panel(cog)
@@ -169,7 +174,7 @@ async def test_ganar_a_la_casa_cobra_la_cuota_y_apunta_la_victoria(tmp_path: Pat
     assert ledger(tmp_path, OWNER_ID) == [
         ("gallos:apuesta", -100),
         ("gallos:premio", house_payout(100, rival)),
-        ("irpf:juego", -gambling_day_tax(house_payout(100, rival) - 100)),
+        *irpf_juego(gambling_day_tax(house_payout(100, rival) - 100)),
     ]
     assert panel.record.wins == 1 and panel.record.fights == 1
     assert (await cog.repository.get(GUILD_ID, OWNER_ID)).wins == 1
@@ -302,10 +307,11 @@ async def test_un_duelo_cobra_a_los_dos_y_paga_al_ganador(tmp_path: Path) -> Non
     winner = duel.fight.winner
     loser_id = RIVAL_ID if winner is Corner.RED else OWNER_ID
     winner_id = OWNER_ID if winner is Corner.RED else RIVAL_ID
-    assert ledger(tmp_path, winner_id)[-2:] == [
+    won = [
         ("gallos:premio", duel_prize(500)),
-        ("irpf:juego", -gambling_day_tax(duel_prize(500) - 500)),
+        *irpf_juego(gambling_day_tax(duel_prize(500) - 500)),
     ]
+    assert ledger(tmp_path, winner_id)[-len(won) :] == won
     assert ledger(tmp_path, loser_id) == [("gallos:apuesta", -500)]
     payouts = pool_payouts({k: s.bet for k, s in duel.crowd.items()}, winner)
     paid = 0

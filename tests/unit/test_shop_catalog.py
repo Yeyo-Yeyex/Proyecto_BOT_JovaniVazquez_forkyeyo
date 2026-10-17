@@ -70,6 +70,7 @@ from bot.services.shop_catalog import (
     RETIRED_AISLES,
     RETIRED_ITEMS,
     REVISED_PRICES,
+    REVISED_TAXES,
     Aisle,
     aisle_of,
     use_of,
@@ -448,6 +449,33 @@ async def test_un_precio_revisado_llega_a_los_servidores_que_ya_tenian_el_articu
     assert revised.description == entry.description
     (kept,) = await shop.items(2)
     assert (kept.price, kept.min_level, kept.stock) == (1_234, 0, None)
+
+
+async def test_un_impuesto_revisado_llega_a_los_servidores_que_ya_tenian_el_articulo(
+    tmp_path: Path,
+) -> None:
+    _economy, shop = await make_stores(tmp_path, Clock())
+    entry = CATALOG_BY_KEY["seguro_rc"]
+    assert entry.igic == "primas" and REVISED_TAXES[entry.key] == "cero"
+    old = replace(entry, igic=REVISED_TAXES[entry.key], description="Exento de IGIC.")
+    await shop.stock_catalog(GUILD, [old], NOW)
+    await shop.stock_catalog(2, [old], NOW)
+    # En el servidor 2 un administrador le puso otro tipo a mano: se respeta.
+    (custom,) = await shop.items(2)
+    await shop.update_item(2, custom.id, igic="general")
+
+    for guild in (GUILD, 2):
+        assert await shop.stock_catalog(guild, [entry], NOW, retaxed=REVISED_TAXES) == 0
+    (retaxed,) = await shop.items(GUILD)
+    assert (retaxed.igic_key, retaxed.description) == ("primas", entry.description)
+    assert retaxed.igic_rate.tax == "IPS"
+    (kept,) = await shop.items(2)
+    assert kept.igic_key == "general"
+
+
+def test_los_impuestos_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:
+    for key, old in REVISED_TAXES.items():
+        assert CATALOG_BY_KEY[key].igic != old and old in IGIC_BY_KEY
 
 
 def test_los_precios_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:

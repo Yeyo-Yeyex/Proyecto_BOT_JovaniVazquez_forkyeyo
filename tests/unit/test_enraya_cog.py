@@ -218,6 +218,15 @@ async def click(panel: SoloTable, custom_id: str, user: MagicMock | None = None)
     return interaction
 
 
+def irpf_juego(tax: int) -> list[tuple[str, int]]:
+    """El apunte de la retención del juego, si la hay (los días que se gana poco no hay)."""
+    return [("irpf:juego", -tax)] if tax else []
+
+
+#: Lo que cobra quien gana un duelo de 500: el premio y, si la hay, su retención.
+PRIZE_MOVES = [("enraya:premio", duel_prize(500)), *irpf_juego(PRIZE_TAX)]
+
+
 async def test_abrir_la_mesa_manda_el_tablero_vacio_con_sus_botones(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     panel = await open_panel(cog)
@@ -784,7 +793,7 @@ async def test_ganar_un_duelo_paga_el_premio_al_ganador_y_nada_al_otro(tmp_path:
     assert ledger(tmp_path, red.id) == [
         ("enraya:apuesta", -500),
         ("enraya:premio", duel_prize(500)),
-        ("irpf:juego", -PRIZE_TAX),
+        *irpf_juego(PRIZE_TAX),
     ]
     assert ledger(tmp_path, yellow.id) == [("enraya:apuesta", -500)]
     assert await net(cog, red.id) == duel_prize(500) - 500 - PRIZE_TAX
@@ -805,10 +814,7 @@ async def test_ganan_las_amarillas_si_las_rojas_se_equivocan(tmp_path: Path) -> 
     red, yellow = duel.member(Disc.RED), duel.member(Disc.YELLOW)
     await play(duel, [6, 0, 6, 1, 5, 2, 5, 3])
     assert duel.board.winner is Disc.YELLOW
-    assert ledger(tmp_path, yellow.id)[-2:] == [
-        ("enraya:premio", duel_prize(500)),
-        ("irpf:juego", -PRIZE_TAX),
-    ]
+    assert ledger(tmp_path, yellow.id)[-len(PRIZE_MOVES) :] == PRIZE_MOVES
     assert ledger(tmp_path, red.id) == [("enraya:apuesta", -500)]
 
 
@@ -833,10 +839,7 @@ async def test_rendirse_en_un_duelo_da_el_premio_al_otro(tmp_path: Path, resigne
     quitter, other = duel.member(resigner), duel.member(resigner.other)
     await duel.resign(fake_interaction(quitter))
     assert duel.phase is Phase.DONE
-    assert ledger(tmp_path, other.id)[-2:] == [
-        ("enraya:premio", duel_prize(500)),
-        ("irpf:juego", -PRIZE_TAX),
-    ]
+    assert ledger(tmp_path, other.id)[-len(PRIZE_MOVES) :] == PRIZE_MOVES
     assert ledger(tmp_path, quitter.id) == [("enraya:apuesta", -500)]
     assert (await cog.repository.get(GUILD_ID, quitter.id)).losses == 1
     assert (await cog.repository.get(GUILD_ID, other.id)).wins == 1
@@ -863,10 +866,7 @@ async def test_quien_se_duerme_pierde_y_el_otro_cobra(tmp_path: Path) -> None:
     duel.deadline = cog.wall_clock() - 1
     await duel._turn_timeout(len(duel.board.moves))
     assert duel.phase is Phase.DONE
-    assert ledger(tmp_path, winner.id)[-2:] == [
-        ("enraya:premio", duel_prize(500)),
-        ("irpf:juego", -PRIZE_TAX),
-    ]
+    assert ledger(tmp_path, winner.id)[-len(PRIZE_MOVES) :] == PRIZE_MOVES
     assert ledger(tmp_path, sleeper.id) == [("enraya:apuesta", -500)]
     assert "por tiempo" in last_edit(duel)["embed"].description
     assert (await cog.repository.get(GUILD_ID, sleeper.id)).losses == 1

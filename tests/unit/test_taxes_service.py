@@ -6,6 +6,7 @@ import pytest
 
 from bot.services.taxes import (
     DONATION_FULL_LIMIT,
+    GAMBLING_EXEMPT,
     GAMBLING_WITHHOLDING_RATE,
     HOME_DEDUCTION_BASE_EUR,
     HOME_DEDUCTION_QUOTA_SHARE,
@@ -182,8 +183,17 @@ def test_un_premio_retiene_con_el_tipo_estable() -> None:
 
 
 def test_el_casino_retiene_el_19_por_ciento_de_lo_ganado_en_el_dia() -> None:
-    assert gambling_day_tax(1_000) == round(1_000 * GAMBLING_WITHHOLDING_RATE)
+    big = GAMBLING_EXEMPT + 1
+    assert gambling_day_tax(big) == round(big * GAMBLING_WITHHOLDING_RATE)
     assert gambling_day_tax(0) == gambling_day_tax(-500) == 0
+
+
+def test_los_dias_que_se_gana_poco_no_retienen_como_los_premios_de_300_euros() -> None:
+    # Art. 75.3.f RIRPF: sin retención hasta 300 € (con la vara del IRPF); si pasa,
+    # retiene todo, no solo lo que pasa.
+    assert GAMBLING_EXEMPT == round(weekly_yd(300))
+    assert gambling_day_tax(GAMBLING_EXEMPT) == 0
+    assert gambling_day_tax(GAMBLING_EXEMPT + 1) == round((GAMBLING_EXEMPT + 1) * 0.19)
 
 
 def test_la_renta_del_piso_retiene_sobre_su_neto_reducido() -> None:

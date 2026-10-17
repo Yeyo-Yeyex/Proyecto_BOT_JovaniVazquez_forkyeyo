@@ -13,7 +13,8 @@ criterio.
 - Renta: una declaración cada lunes con toda la renta, que sale a pagar o a devolver
 - Renta: `renta` con sobre cerrado, resumen y detalle paso a paso con los artículos
 - IRPF: una sola vara para toda la renta y un tipo estable que no baja a mitad de semana
-- Casino: retención fija del 19 % del día; el lunes la declaración ajusta
+- Casino: retención del 19 % de lo ganado en el día si pasa de 300 €; el lunes ajusta
+- Tienda: los seguros pagan el impuesto de primas (8 %) en vez de ir sin impuesto
 - Pisos: la hipoteca desgrava, tope de intereses con arrastre, reducción del 50 o el 90 %
 - Pisos: los vacíos imputan renta y la notaría y la agencia pagan IGIC
 - Patrimonio: el límite con el IRPF de la semana rebaja hasta el 80 % de la ley

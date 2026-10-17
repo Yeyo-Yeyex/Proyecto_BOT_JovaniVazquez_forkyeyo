@@ -516,6 +516,9 @@ def compute_withholding(gross: int, pace: Pace) -> Withholding:
 #: y concursos (art. 101.7 LIRPF). La declaración del lunes lo ajusta al tipo de cada uno:
 #: quien gana mucho paga allí lo que falte y quien gana poco recupera lo de más.
 GAMBLING_WITHHOLDING_RATE = 0.19
+#: Los premios de hasta 300 € no tienen retención (art. 75.3.f RIRPF): aquí, la ganancia
+#: neta de un día que no pase de 300 € con la vara del IRPF. Si pasa, retiene todo.
+GAMBLING_EXEMPT = round(weekly_yd(300))
 
 
 def gambling_day_tax(net_gain: int) -> int:
@@ -523,12 +526,15 @@ def gambling_day_tax(net_gain: int) -> int:
 
     Las ganancias de juego tributan en la base general y las pérdidas solo compensan
     ganancias de juego (art. 33.5.d LIRPF): un día con pérdidas no retiene, y la
-    declaración del lunes junta los días de la semana y ajusta lo retenido.
+    declaración del lunes junta los días de la semana y ajusta lo retenido. Un día que
+    gana poco (`GAMBLING_EXEMPT`) tampoco retiene: tributa igual, en la declaración.
 
     Args:
         net_gain: Premios menos apuestas del día, ya sin negativos.
     """
-    return round(max(0, net_gain) * GAMBLING_WITHHOLDING_RATE)
+    if net_gain <= GAMBLING_EXEMPT:
+        return 0
+    return round(net_gain * GAMBLING_WITHHOLDING_RATE)
 
 
 def property_withholding(item: PropertyWeek, pace: Pace) -> Withholding:
@@ -919,6 +925,7 @@ class IgicRate:
         rate: Tipo (0–1).
         law: Artículo que lo fija.
         example: Qué paga ese tipo en la vida real, para elegir con criterio.
+        tax: El impuesto que se enseña en el tique («IGIC» o, en los seguros, «IPS»).
     """
 
     key: str
@@ -926,6 +933,7 @@ class IgicRate:
     rate: float
     law: str
     example: str
+    tax: str = "IGIC"
 
 
 IGIC_RATES: tuple[IgicRate, ...] = (
@@ -936,6 +944,17 @@ IGIC_RATES: tuple[IgicRate, ...] = (
         "incrementado", "Incrementado", 0.095, "art. 59.3 de la Ley 4/2012", "coches de hasta 11 CV"
     ),
     IgicRate("lujo", "Lujo", 0.15, "arts. 56.1 y 59.4 de la Ley 4/2012", "joyas y yates"),
+    # Los seguros no llevan IGIC (art. 50.Uno.16º de la Ley 4/2012) sino el Impuesto sobre
+    # las Primas de Seguros, que también se paga en Canarias y lo repercute la aseguradora
+    # entero al tomador. Va al Estado como cualquier impuesto de una compra.
+    IgicRate(
+        "primas",
+        "Primas de seguros",
+        0.08,
+        "art. 12 de la Ley 13/1996",
+        "seguros (no llevan IGIC)",
+        tax="IPS",
+    ),
 )
 IGIC_BY_KEY: dict[str, IgicRate] = {r.key: r for r in IGIC_RATES}
 #: Tipo por defecto de cualquier compra.

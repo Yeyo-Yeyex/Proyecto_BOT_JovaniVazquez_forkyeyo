@@ -77,6 +77,7 @@ from bot.services.interest import (
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     CLAIM_WEEKS,
+    GAMBLING_EXEMPT,
     IGIC_GENERAL_RATE,
     INCOME_BECKHAM,
     INCOME_BUSINESS,
@@ -290,7 +291,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
         name="Qué se cobra",
         value=(
             "IRPF con una sola vara para toda la renta: retención con tu tipo de la semana "
-            "en nóminas, premios y alquileres, el 19 % de lo ganado cada día en el casino y "
+            "en nóminas, premios y alquileres, el 19 % de lo ganado cada día en el casino "
+            f"(si pasa de {format_amount(GAMBLING_EXEMPT)}) y "
             "declaración cada lunes (a pagar se cobra sola; a devolver, con la Renta) · "
             "Patrimonio cada lunes por lo que pase "
             f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
