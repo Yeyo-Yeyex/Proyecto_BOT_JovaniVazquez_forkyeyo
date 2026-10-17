@@ -23,9 +23,12 @@ from bot.services.taxes import (
     SOLIDARITY_WEALTH_THRESHOLD,
     WEALTH_MAX_REDUCTION,
     WEALTH_MINIMUM,
+    WEALTH_SCALE,
+    annual_eur,
     apply_scale,
     donation_deduction,
     igic,
+    legacy_donation_deduction,
     wealth_quote,
     wealth_tax,
     weekly_yd,
@@ -213,7 +216,8 @@ async def test_donativo_desgrava_en_la_renta_si_se_pago_irpf(tmp_path: Path) -> 
 
     clock.at(day(12, hour=9))
     pending = await service.pending_declarations(GUILD, USER)
-    expected = donation_deduction(3_000, 50_000, income.tax)
+    # El servidor pasa a la 8.0.0 el 12: la semana del 5 sigue la regla y el límite de antes.
+    expected = legacy_donation_deduction(3_000, 50_000, income.tax)
     assert pending == [Declaration(date(2026, 10, 5), expected)]
 
     state_before = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
@@ -339,6 +343,20 @@ def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_el_80_por_ciento() -> None:
     assert goods.due == full
     mostly = wealth_quote(BIG, unproductive=BIG * 3 // 4)
     assert broke.due < mostly.due < full
+
+
+def test_el_limite_conjunto_compara_irpf_y_patrimonio_en_euros_del_ano() -> None:
+    # El IRPF de la semana va a 250 Y$ por euro con la semana como año; el Patrimonio, a
+    # 10 Y$ por euro. Antes de compararlos se pasan los dos a euros del año.
+    worth, base, quota = 40_000_000, 364_385, 100_000
+    full = wealth_tax(worth)
+    base_eur = annual_eur(base) * WEALTH_SCALE
+    quota_eur = annual_eur(quota) * WEALTH_SCALE
+    excess = round(quota_eur) + full - round(base_eur * 0.60)
+    expected = full - min(max(0, excess), full, round(full * WEALTH_MAX_REDUCTION))
+    assert wealth_quote(worth, irpf_base=base, irpf_quota=quota).due == expected
+    # Con las cifras sin pasar, el límite rebajaba de más.
+    assert expected > full - min(quota + full - round(base * 0.60), round(full * 0.8))
 
 
 def test_las_grandes_fortunas_se_declaran_desde_37_millones_y_salen_a_cero() -> None:

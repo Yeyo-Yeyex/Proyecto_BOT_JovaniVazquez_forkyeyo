@@ -55,9 +55,9 @@ con hipoteca a renta de referencia (`--solo referencia`, 450 días):
 
 | Oficio | Primer P10 | Segunda rama | Falcon con pisos | Falcon solo con sueldo |
 |---|---|---|---|---|
-| Obra | día 94 | día 161 | día 360 | no llega |
-| Oficina | día 104 | día 171 | día 352 | no llega |
-| Hostelería | día 96 | día 163 | día 379 | no llega |
+| Obra | día 93 | día 160 | día 366 | no llega |
+| Oficina | día 105 | día 172 | día 359 | no llega |
+| Hostelería | día 96 | día 163 | día 388 | no llega |
 
 Lo que se va en impuestos, a jornada completa, P1 → P5 → P10 (`--solo escala`):
 
@@ -78,15 +78,18 @@ Cambiar de oficio después de acabar el primero (obra, día 161), solo con sueld
 - **El plan pedía a la vez una carrera lenta y un Falcon hacia el día 300.** Con el
   primer P10 hacia el día 110 y las subidas mínimas, el Falcon salía hacia el día 400.
   Se eligió la carrera media con lo más alto de cada rama a ~1,4 veces lo de antes:
-  Falcon entre los días 350 y 380. Llegar al 300 pedía multiplicar por 1,8 los sueldos de
+  Falcon entre los días 359 y 388. Llegar al 300 pedía multiplicar por 1,8 los sueldos de
   arriba. El simulador no cuenta casino, extras, Hong Kong ni premios: quien hace las 2
   extras legales de la semana cobra un 9 % más.
 - **La pensión sola no compensa volver a empezar.** Fiel a la ley, su tope son unos
   42.000 Y$ al día, frente a los ~150.000 brutos de un P10. Con solo pensión y la
   experiencia del plan, igualar el neto diario tardaba unos 136 días y recuperar lo
   perdido, 475. Por eso hay veteranía en el sueldo y una experiencia más fuerte.
-- **El Patrimonio se queda con la rebaja del 80 % de la ley.** Con el 50 % de antes, el
-  Falcon sale el mismo día (en 480 días se pagan 10,9 M de Patrimonio frente a 9,6 M).
+- **El Patrimonio se queda con la rebaja del 80 % de la ley.** Con el límite conjunto
+  calculado en euros del año (IRPF y Patrimonio en la misma escala), al rico que va a por
+  el Falcon la rebaja ni se acerca al tope: con el 50 % de antes sale igual. El
+  Patrimonio es un sumidero fuerte: unos 20 M en 480 días, porque cada semana (un año)
+  cobra un año entero sobre una riqueza que crece con siete «meses» de alquiler.
 - **Sin bucles:**
   - la pensión depende de lo cotizado de verdad y de llegar arriba, y tiene tope;
   - la veteranía también tiene tope;

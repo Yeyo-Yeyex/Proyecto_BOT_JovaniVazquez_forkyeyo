@@ -110,9 +110,8 @@ def load_pace(nota: float) -> dict[str, float]:
 def task_days(pace: dict[str, float]) -> dict[str, float]:
     """Días que piden las tareas de cada puesto del catálogo, cuando mandan más que los días.
 
-    Lo medido (con los días de antes de la 8.0.0, `LEGACY_DAYS`) es el máximo entre los días
-    pedidos y lo que se tarda en las tareas: si pasa de esos días, es lo de las tareas (que la
-    curva no cambia); si no, no se sabe y se cuenta 0.
+    `docs/ritmo_pala.py` mide lo que se tarda en llenar la barra y cumplir las tareas, sin
+    los días que pide el puesto (los pone `days_needed`, con la experiencia).
     """
     out = {}
     for job in JOBS:
@@ -120,9 +119,7 @@ def task_days(pace: dict[str, float]) -> dict[str, float]:
             for pos in ladder:
                 trunk = pos.level <= job.trunk_top
                 key = f"{job.key}/{'' if trunk else branch}/{pos.level}"
-                measured = pace.get(key, 0.0)
-                old_days = LEGACY_DAYS.get(pos.level, pos.days)
-                out[key] = measured if measured > old_days * 1.05 else 0.0
+                out[key] = pace.get(key, 0.0)
     return out
 
 

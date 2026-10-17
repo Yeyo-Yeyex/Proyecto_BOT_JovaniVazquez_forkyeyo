@@ -711,6 +711,9 @@ class Contract:
     beckham_until: float = 0.0
     #: Stock options acumuladas (valor nominal en Y$).
     options: int = 0
+    #: Exención de las stock options (Ley 28/2022) usada la semana `options_week`.
+    options_week: str = ""
+    options_exempt: int = 0
     #: Exención del art. 7.p LIRPF usada el día `exempt_day`.
     exempt_day: str = ""
     exempt_used: int = 0

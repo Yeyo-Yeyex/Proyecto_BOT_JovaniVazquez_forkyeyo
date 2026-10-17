@@ -1271,6 +1271,9 @@ class EconomyRepository:
                     "credit": "INTEGER NOT NULL DEFAULT 0",
                 },
             )
+            # Semana (lunes ISO) en que se cerró la declaración: el plazo para presentarla
+            # cuenta desde ahí. NULL en las de antes de la 8.0.0 (ver `_sync_declarations_in`).
+            self._add_columns(connection, "economy_declarations", {"filed_week": "TEXT"})
             # Bases de datos de antes del bote misterioso: los jackpots de
             # entonces cayeron todos por la combinación.
             columns = {
@@ -1543,13 +1546,15 @@ class EconomyRepository:
             """,
             (guild_id, user_id, start, end),
         ).fetchall()
-        work = social = wages = other = prizes = image = 0
+        work = social = wages = other = prizes = image = business = 0
         for row in rows:
             gross = int(row["gross"])
             concept = str(row["concept"])
             if row["wage"] is not None:
                 if (row["country"] or "es") != "es":
                     work += gross * 10  # la parte sujeta de fuera, de 10 a 100 Y$ por euro
+                elif not int(row["ss_worker"]) and concept != "pala:pension":
+                    business += int(row["wage"])  # un autónomo no cotiza por turno
                 else:
                     work += int(row["wage"])
                     social += int(row["ss_worker"])
@@ -1560,7 +1565,9 @@ class EconomyRepository:
                 image += gross
             else:
                 prizes += gross
-        income = WeekIncome(work=work, social=social, other=other, prizes=prizes, image=image)
+        income = WeekIncome(
+            work=work, social=social, business=business, other=other, prizes=prizes, image=image
+        )
         return income, wages
 
     @staticmethod
@@ -2783,14 +2790,19 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, week, refund, "pending" if refund else "none"),
             )
-        # La de una semana se presenta en las `claim_weeks` siguientes; después prescribe.
+        # Una declaración se presenta en las `claim_weeks` semanas que empiezan con la de su
+        # cierre; después prescribe. El cierre es `filed_week` (lo apunta el cierre del lunes,
+        # aunque llegue tarde porque el bot estuvo apagado). Las de antes de la 8.0.0 no lo tienen:
+        # cuentan desde la semana siguiente a la suya, y nunca desde antes del cambio, para
+        # que desplegar no deje caducar de golpe las que seguían vivas con la regla vieja.
         cutoff = (date.fromisoformat(current_week) - timedelta(weeks=claim_weeks)).isoformat()
         connection.execute(
             """
             UPDATE economy_declarations SET status = 'expired'
-            WHERE guild_id = ? AND user_id = ? AND status = 'pending' AND week_start < ?
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending'
+              AND COALESCE(filed_week, MAX(date(week_start, '+7 days'), ?)) <= ?
             """,
-            (guild_id, user_id, cutoff),
+            (guild_id, user_id, since, cutoff),
         )
 
     @staticmethod
@@ -2878,17 +2890,28 @@ class EconomyRepository:
     ) -> tuple[list[tuple[str, int]], int, int]:
         with self._transaction() as connection:
             self._sync_declarations_in(connection, guild_id, user_id, **rules)  # type: ignore[arg-type]
-            pending = self._pending_in(connection, guild_id, user_id)
-            total = min(
-                sum(refund for _, refund in pending), self._state_balance_in(connection, guild_id)
-            )
-            connection.execute(
-                """
-                UPDATE economy_declarations SET status = 'claimed', claimed_at = ?
-                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
-                """,
-                (now, guild_id, user_id),
-            )
+            # Lo que no pueda pagar el Estado (no crea dinero) sigue pendiente: se presentan
+            # las semanas más viejas primero y de la que no llegue entera se baja lo pagado.
+            available = self._state_balance_in(connection, guild_id)
+            claimed: list[tuple[str, int]] = []
+            for week, refund in self._pending_in(connection, guild_id, user_id):
+                take = min(refund, available)
+                if take <= 0:
+                    break
+                available -= take
+                claimed.append((week, take))
+                connection.execute(
+                    """
+                    UPDATE economy_declarations
+                    SET status = CASE WHEN refund = ? THEN 'claimed' ELSE status END,
+                        claimed_at = CASE WHEN refund = ? THEN ? ELSE claimed_at END,
+                        refund = CASE WHEN refund = ? THEN refund ELSE refund - ? END
+                    WHERE guild_id = ? AND user_id = ? AND week_start = ?
+                    """,
+                    (take, take, now, take, take, guild_id, user_id, week),
+                )
+            pending = claimed
+            total = sum(take for _week, take in claimed)
             if total:
                 self._apply_in_transaction(
                     connection,
@@ -3550,8 +3573,15 @@ class EconomyRepository:
             ).fetchall()
             filed = [
                 self._file_return_in(
-                    connection, guild_id, int(row[0]), week, now, returns, savings_tax
-                )
+                    connection,
+                    guild_id,
+                    int(row[0]),
+                    week,
+                    now,
+                    returns,
+                    savings_tax,
+                    filed_week=current_week,
+                )  # fmt: skip
                 for row in members
                 if int(row[0]) > 0
             ]
@@ -3582,8 +3612,15 @@ class EconomyRepository:
         now: float,
         returns: Callable[..., WeekReturn],
         savings_tax: Callable[[int], int],
+        *,
+        filed_week: str,
     ) -> IrpfReturn:
-        """La declaración de un miembro (ver `close_irpf_week`), dentro de la transacción."""
+        """La declaración de un miembro (ver `close_irpf_week`), dentro de la transacción.
+
+        Args:
+            filed_week: Lunes ISO de la semana en que se cierra (desde ahí cuenta el plazo
+                para presentar lo que salga a devolver).
+        """
         income, _wages = self._week_income_in(connection, guild_id, user_id, week)
         withheld, credit, foreign = connection.execute(
             """
@@ -3669,12 +3706,9 @@ class EconomyRepository:
             compensated = min(-result, owed)
             refund = -result - compensated
             owed -= compensated
-        if compensated:
-            connection.execute(
-                "INSERT INTO economy_debt_payments (guild_id, user_id, amount, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (guild_id, user_id, compensated, now),
-            )
+        # Lo compensado no se apunta en `economy_debt_payments`: ese dinero ya estaba en el
+        # Estado (es lo retenido de más) y Hacienda ya lo contó al retenerlo. Queda en
+        # `economy_irpf_returns.compensated`.
         if row is not None:
             connection.execute(
                 "UPDATE economy_tax_debts SET amount = ? WHERE guild_id = ? AND user_id = ?",
@@ -3695,10 +3729,10 @@ class EconomyRepository:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO economy_declarations
-                    (guild_id, user_id, week_start, refund, status)
-                VALUES (?, ?, ?, ?, 'pending')
+                    (guild_id, user_id, week_start, refund, status, filed_week)
+                VALUES (?, ?, ?, ?, 'pending', ?)
                 """,
-                (guild_id, user_id, week.monday, refund),
+                (guild_id, user_id, week.monday, refund, filed_week),
             )
         connection.execute(
             """
@@ -4888,7 +4922,7 @@ class EconomyRepository:
         return paid
 
     async def tax_debt(self, guild_id: int, user_id: int) -> int:
-        """Lo que un miembro debe todavía a Hacienda del Patrimonio (0 si nada)."""
+        """Lo que un miembro debe todavía a Hacienda: Patrimonio o IRPF (0 si nada)."""
         return await self._run(self._tax_debt_sync, guild_id, user_id)
 
     def _tax_debt_sync(self, guild_id: int, user_id: int) -> int:

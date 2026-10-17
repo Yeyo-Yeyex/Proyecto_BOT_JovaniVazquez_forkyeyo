@@ -17,9 +17,11 @@ Modelo (lo usa `docs/economia_sim.py`):
   el primer día si la tarea pide extras.
 - Sin deseo del día ni barra de los eventos, sin accidentes ni herramientas de la tienda.
 
-Para cada puesto juega `RUNS` carreras día a día hasta cumplir todas las condiciones de
-`work.promotion_blockers` (barra, días, tareas) y da la media de días. Las tareas de minijuego
-casi nunca mandan; a nota 75 suele mandar `good` (turnos de 90 o más) y a nota 85, `days`.
+Para cada puesto juega `RUNS` carreras día a día hasta llenar la barra y cumplir las tareas
+de `work.promotion_blockers` y da la media de días. Los días que pide el puesto no cuentan
+aquí: los pone el simulador (`work.required_days`, con la experiencia), que se queda con el
+mayor de los dos. Las tareas de minijuego casi nunca mandan; a nota 75 suele mandar `good`
+(turnos de 90 o más). El resumen por carrera sí suma los días pedidos.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from bot.services.work import (  # noqa: E402
     Position,
     ShiftKind,
     performance_delta,
+    required_days,
 )
 from bot.services.work_catalog import JOBS, events_for  # noqa: E402
 from bot.services.work_games import new_game  # noqa: E402
@@ -149,11 +152,7 @@ def position_days(
                 for _ in range(2):
                     smooth = play(study_pos(job, pos.level), sq, rng)[1]["smooth"]
                     prog["temario"] = prog.get("temario", 0) + smooth
-            done = (
-                perf >= PERFORMANCE_MAX
-                and day >= pos.days
-                and all(prog.get(k, 0) >= g for k, g in goals.items())
-            )
+            done = perf >= PERFORMANCE_MAX and all(prog.get(k, 0) >= g for k, g in goals.items())
             if done or day > 400:
                 break
         total += day
@@ -179,10 +178,15 @@ def table(target: float = 75, runs: int = 120, seed: int = 1) -> dict[str, float
 
 
 def career_days(days: dict[str, float], job: Job, branch: str) -> tuple[float, float]:
-    """`(días del tronco, días de la rama)` de una carrera con una tabla de `table`."""
-    trunk = sum(days.get(f"{job.key}//{p.level}", 0.0) for p in job.positions)
+    """`(días del tronco, días de la rama)` de una carrera con una tabla de `table`: en cada
+    puesto, el mayor entre lo medido (barra y tareas) y los días que pide."""
+
+    def need(pos: Position, key: str) -> float:
+        return max(days.get(key, 0.0), float(required_days(pos, job))) if pos.tasks else 0.0
+
+    trunk = sum(need(p, f"{job.key}//{p.level}") for p in job.positions)
     rama = sum(
-        days.get(f"{job.key}/{branch}/{p.level}", 0.0)
+        need(p, f"{job.key}/{branch}/{p.level}")
         for p in job.ladder(branch)
         if p.level > job.trunk_top
     )

@@ -540,7 +540,7 @@ obliga a recalibrar nada si sigue estos pasos.
    puesto con las partidas reales.
 4. **Simulador**:
    - `python docs/economia_sim.py --oficio <clave>`: el Falcon con pisos tiene que salir
-     entre los días 350 y 380 y el primer P10, hacia el día 100.
+     entre los días 350 y 390 y el primer P10, hacia el día 100.
    - Con `--solo cambio`, cuánto tarda en compensar cambiar a él.
    - Las cifras y el porqué están en `docs/economia-trabajo.md`.
 5. **Lo de siempre de un oficio**:

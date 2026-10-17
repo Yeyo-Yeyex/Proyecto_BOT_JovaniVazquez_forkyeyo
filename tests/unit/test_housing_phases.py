@@ -290,9 +290,22 @@ async def test_la_vpo_se_sortea_se_compra_con_aval_y_se_devuelve_al_estado(tmp_p
     assert market.mortgages_of(ANA)[0].aval == "ico"
     with pytest.raises(HousingError):
         await service.vpo_signup(GUILD, ANA)  # ya tiene casa
+    # La cuota de la hipoteca de la VPO cuenta para la deducción por vivienda habitual.
+    await give(economy, ANA, 100_000)
+    clock.to(14)
+    await service.close_days(GUILD)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (home_paid,) = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras "
+            "WHERE user_id = ? AND kind = 'vivienda'",
+            (ANA,),
+        ).fetchone()
+    assert home_paid == deal.payment
+    (mortgage,) = (await service.market(GUILD)).mortgages_of(ANA)
+    assert mortgage.owed < deal.loan  # ya ha pagado una cuota
 
     back, balance = await service.vpo_return(GUILD, ANA)
-    assert back.payoff == deal.loan
+    assert back.payoff == mortgage.owed
     market = await service.market(GUILD)
     assert market.vpo_of(ANA) is None and ANA not in market.homes
     assert ledger_sum(tmp_path, ANA) == balance

@@ -1357,6 +1357,24 @@ async def press_renta(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_renta_open(client: BotClient, owner: MagicMock) -> Click:
+    # Una declaración cerrada y sin abrir: `renta` la enseña en un sobre.
+    with client.economy.repository._transaction() as connection:  # noqa: SLF001
+        connection.execute(
+            "INSERT INTO economy_irpf_returns (guild_id, user_id, week_start, base, quota, "
+            "deductions, withheld, result, created_at) VALUES (?, ?, '2026-10-05', 0, 0, 0, 0, "
+            "0, 0)",
+            (GUILD_ID, OWNER_ID),
+        )
+    view = await client.get_cog("Renta")._view(owner.guild, owner)  # noqa: SLF001
+    (button,) = [c for c in view.children if getattr(c, "custom_id", "") == "renta:abrir"]
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def press_todo(client: BotClient, owner: MagicMock) -> Click:
     task = await client.todo.add_task(GUILD_ID, OWNER_ID, "probar los botones", Priority.ALTA)
 
@@ -1541,6 +1559,7 @@ CASES: dict[str, Press] = {
     "perfil: cambiar de sección": press_perfil_section,
     "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
+    "renta: abrir el sobre": press_renta_open,
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,

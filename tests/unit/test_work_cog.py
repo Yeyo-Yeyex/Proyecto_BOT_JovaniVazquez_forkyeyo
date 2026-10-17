@@ -34,6 +34,7 @@ from bot.services.work import (
     PENSION_CAP,
     Contract,
     Mechanic,
+    ShiftRecord,
     battery_eta,
     rested_at,
 )
@@ -645,6 +646,12 @@ async def test_jubilarse_cobrar_y_fichar_en_otro_oficio_alimentan_los_logros(
         "work_jobs_done": 0,
         "work_veteran_max": 0,
     }
+    # Ha fichado hace nada: la pensión va en jubilación activa.
+    await cog.service.repository.add_shift(
+        panel.guild_id,
+        panel.owner.id,
+        ShiftRecord("politica", 10, "2026-10-06", cog.service.now(), 80, "ordinario", 1, 1),
+    )
     await button(panel, "💰 Cobrar pensión").callback(make_interaction())
     claimed = track.await_args.args[4]
     assert claimed.add["work_pensions"] == 1

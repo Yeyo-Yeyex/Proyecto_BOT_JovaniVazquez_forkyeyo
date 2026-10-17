@@ -102,10 +102,10 @@ from bot.services.taxes import (
     compute_pension_payslip,
     compute_self_employed_payslip,
     compute_withholding,
-    donation_deduction,
     format_rate,
     gambling_day_tax,
     image_rights_withholding,
+    legacy_donation_deduction,
     legacy_weekly_refund,
     property_withholding,
     savings_tax,
@@ -1031,7 +1031,7 @@ class EconomyService:
             "refund_for": legacy_weekly_refund,
             "window_seconds": PROJECTION_WINDOW_SECONDS,
             "claim_weeks": CLAIM_WEEKS,
-            "deduction_for": donation_deduction,
+            "deduction_for": legacy_donation_deduction,
         }
 
     async def pending_declarations(self, guild_id: int, user_id: int) -> list[Declaration]:
@@ -1613,7 +1613,10 @@ class EconomyService:
         return await self.repository.tax_breakdown(guild_id, since=since)
 
     async def tax_debt(self, guild_id: int, user_id: int) -> int:
-        """Patrimonio que un miembro aún debe y se le embargará de lo que cobre por sus pisos."""
+        """Lo que un miembro aún debe a Hacienda (Patrimonio o la declaración del IRPF).
+
+        Se cobra del monedero el lunes y se embarga de lo que cobre por sus pisos.
+        """
         return await self.repository.tax_debt(guild_id, user_id)
 
     async def housing_rent_totals(self, guild_id: int) -> dict[int, int]:

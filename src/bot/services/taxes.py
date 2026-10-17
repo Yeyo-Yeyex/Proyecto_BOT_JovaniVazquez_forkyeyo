@@ -474,7 +474,8 @@ def stable_rate(pace: Pace, income: WeekIncome) -> float:
     """Tipo con el que retiene un cobro: el de la semana anterior o, si ya es mayor, el de esta.
 
     `income` es la renta de esta semana con el cobro dentro. Como la escala es progresiva,
-    el tipo de esta semana solo crece al sumar renta: nunca baja a mitad de semana.
+    el tipo de esta semana crece al sumar renta: no baja a mitad de semana, salvo si entra
+    un inmueble con rendimiento negativo (ese cobro no retiene nada).
     """
     return max(pace.previous_rate, week_tax(income).rate)
 
@@ -567,29 +568,40 @@ DONATION_FULL_RATE = 0.80
 DONATION_FULL_LIMIT = round(weekly_yd(250))
 DONATION_REST_RATE = 0.40
 DONATION_BASE_LIMIT = 0.10
+#: Los 250 € a 10 Y$ por euro, como antes de la 8.0.0 (para las semanas de entonces).
+LEGACY_DONATION_FULL_LIMIT = 250 * YAPDOLLARS_PER_EURO
 
 
-def donation_deduction(donated: int, base: int, tax_paid: int) -> int:
+def donation_deduction(
+    donated: int, base: int, tax_paid: int, *, full_limit: int = DONATION_FULL_LIMIT
+) -> int:
     """Lo que se deduce de la cuota por los donativos de una semana.
 
     Args:
         donated: Donado en la semana.
         base: Base liquidable de la semana, para el límite del 10 %.
         tax_paid: Cuota de la que se deduce (no puede quedar negativa).
+        full_limit: Lo donado que deduce el 80 % (los 250 € del año).
     """
     eligible = min(donated, int(base * DONATION_BASE_LIMIT))
     if eligible <= 0 or tax_paid <= 0:
         return 0
-    first = min(eligible, DONATION_FULL_LIMIT)
+    first = min(eligible, full_limit)
     deduction = first * DONATION_FULL_RATE + (eligible - first) * DONATION_REST_RATE
     return min(round(deduction), tax_paid)
 
 
+def legacy_donation_deduction(donated: int, base: int, tax_paid: int) -> int:
+    """`donation_deduction` de las semanas de antes de la 8.0.0, con el límite de entonces."""
+    return donation_deduction(donated, base, tax_paid, full_limit=LEGACY_DONATION_FULL_LIMIT)
+
+
 # Deducción autonómica de Canarias por inversión en vivienda habitual (Decreto
 # Legislativo 1/2009): un porcentaje de lo pagado en la semana por comprar la vivienda
-# habitual (entrada, cuotas de la hipoteca y gastos), con una base máxima anual y solo
-# por debajo de un nivel de renta (base general + ahorro). Con las de rehabilitación,
-# no pasa del 15 % de la cuota íntegra autonómica. La estatal se suprimió en 2013.
+# habitual, con una base máxima anual y solo por debajo de un nivel de renta (base
+# general + ahorro). Con las de rehabilitación, no pasa del 15 % de la cuota íntegra
+# autonómica. La estatal se suprimió en 2013. Simplificación: en el bot cuentan las
+# cuotas de la hipoteca (también la de una VPO), no la entrada ni los gastos de compra.
 
 #: `(base general + ahorro anual por debajo de, porcentaje)`.
 HOME_DEDUCTION_RATES: tuple[tuple[float, float], ...] = ((26_035.0, 0.05), (46_455.0, 0.035))
@@ -710,14 +722,15 @@ def week_return(
         home_invested: Pagado en la semana por la vivienda habitual.
         foreign_credit: Impuesto pagado fuera por la parte de la renta que tributa aquí.
         foreign_income: Esa renta de fuera: la deducción del art. 80 no pasa de lo que
-            pagaría aquí con el tipo medio.
+            pagaría aquí con el tipo medio efectivo (cuota entre base liquidable, art. 80.2).
         savings: Base del ahorro de la semana (los intereses), para el nivel de renta
             de las deducciones canarias.
         rent_paid: Lo pagado en la semana por el alquiler de la vivienda habitual.
     """
     tax = week_tax(income)
     total = tax.base + max(0, savings)
-    foreign = min(max(0, foreign_credit), round(max(0, foreign_income) * tax.rate), tax.quota)
+    average = tax.quota / tax.base if tax.base > 0 else 0.0
+    foreign = min(max(0, foreign_credit), round(max(0, foreign_income) * average), tax.quota)
     # Las autonómicas, juntas, no pasan de la cuota autonómica (art. 18).
     home = home_deduction(home_invested, income=total, regional=tax.regional)
     rental = tenant_deduction(rent_paid, income=total) + landlord_deduction(income.properties)
@@ -876,15 +889,20 @@ def wealth_quote(
         net_worth: Base: efectivo, pisos y objetos.
         unproductive: La parte de la base que no da rentas (objetos de la tienda): su
             parte de la cuota no se rebaja con el límite conjunto.
-        irpf_base: Suma de las bases imponibles del IRPF de la semana (general y ahorro).
-        irpf_quota: Suma de sus cuotas íntegras.
+        irpf_base: Suma de las bases imponibles del IRPF de la semana (general y ahorro),
+            en Y$ de la vara del IRPF.
+        irpf_quota: Suma de sus cuotas íntegras, en esa misma vara.
     """
     full = wealth_tax(net_worth)
     due = full
     if full > 0:
         share = 1 - min(1.0, max(0, unproductive) / net_worth) if net_worth > 0 else 0.0
         productive = round(full * share)
-        excess = max(0, irpf_quota) + productive - round(max(0, irpf_base) * WEALTH_JOINT_LIMIT)
+        # El IRPF va a 250 Y$ por euro con la semana como año y el Patrimonio, a 10 Y$ por
+        # euro: se comparan en euros del año, pasados a la escala del Patrimonio.
+        base = annual_eur(max(0, irpf_base)) * WEALTH_SCALE
+        quota = annual_eur(max(0, irpf_quota)) * WEALTH_SCALE
+        excess = round(quota) + productive - round(base * WEALTH_JOINT_LIMIT)
         if excess > 0:
             due = full - min(excess, productive, round(full * WEALTH_MAX_REDUCTION))
     subject = net_worth > SOLIDARITY_WEALTH_THRESHOLD

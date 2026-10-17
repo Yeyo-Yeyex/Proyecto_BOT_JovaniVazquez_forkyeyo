@@ -1242,6 +1242,7 @@ async def test_jubilado_de_todas_las_ramas_se_queda_arriba(tmp_path: Path, dice:
     assert retirement.following is None
     contract = retirement.status.contract
     assert (contract.level, contract.branch) == (POLITICA.top, "bruselas")
+    await worked(service, START)
     pension = await service.pension(GUILD, USER)
     # Sin turnos apuntados en las ramas, la calidad es entera; trabajando, la primera
     # semana se cobra la primera parte de la jubilación activa.
@@ -1262,6 +1263,7 @@ async def test_la_pension_se_cobra_una_vez_al_dia_con_irpf_y_sin_cotizar(
         await service.claim_pension(GUILD, USER)
     await at_level(service, POLITICA.top, "moncloa")
     await service.retire(GUILD, USER)
+    await worked(service, clock.now)
     pension = await service.pension(GUILD, USER)
     expected = round(pension_amount([(BranchKind.SAFE, 1.0)]) * ACTIVE_SHARES[0])
     assert pension.due and pension.amount == expected
@@ -1297,6 +1299,12 @@ async def test_si_el_pago_de_la_pension_falla_se_puede_volver_a_cobrar(
     assert (await service.pension(GUILD, USER)).due
 
 
+async def worked(service: WorkService, now: float) -> None:
+    """Un turno apuntado en `now`: la jubilación activa mira si ha fichado hace poco."""
+    record = ShiftRecord("politica", 10, "2026-10-06", now, 80, ShiftKind.ORDINARY.value, 1, 1)
+    await service.repository.add_shift(GUILD, USER, record)
+
+
 def old_retirement(tmp_path: Path, job: str, branch: str, *, legacy: bool = True) -> None:
     """Una jubilación apuntada a mano; sin `legacy`, como las de antes de la 8.0.0."""
     with sqlite3.connect(tmp_path / "bot.db") as connection:
@@ -1324,15 +1332,12 @@ async def test_la_jubilacion_activa_sube_cada_semana_y_sin_trabajar_es_entera(
     full = pension_amount([(BranchKind.SAFE, 1.0)])
     for week, share in enumerate(ACTIVE_SHARES):
         clock.now = START + week * 7 * DAY
+        await worked(service, clock.now)
         pension = await service.pension(GUILD, USER)
         assert (pension.full, pension.share) == (full, share)
         assert pension.amount == round(full * share)
-    # De excedencia (una semana sin fichar) cobra la pensión entera desde el principio.
-    clock.now = START + 3 * DAY
-    contract = await service.repository.contract(GUILD, USER)
-    assert contract is not None
-    contract.last_shift_at = clock.now - 8 * DAY
-    await service.repository.save_contract(GUILD, USER, contract)
+    # Una semana sin fichar (de excedencia o sin contrato): la pensión entera.
+    clock.now += 8 * DAY
     pension = await service.pension(GUILD, USER)
     assert pension.share == 1.0 and pension.amount == full
 
@@ -1356,6 +1361,9 @@ async def test_quien_se_jubilo_antes_de_la_8_nunca_cobra_menos_que_entonces(
     floor = sum(branch.pension for _job, branch in every)
     assert pension.floor == floor > PENSION_CAP
     assert pension.full <= PENSION_CAP and pension.amount == floor
+    # Aunque siga fichando (jubilación activa), tampoco baja del suelo.
+    await worked(service, START)
+    assert (await service.pension(GUILD, USER)).amount == floor
 
 
 async def test_la_calidad_de_la_pension_sale_de_lo_cotizado_en_la_rama(

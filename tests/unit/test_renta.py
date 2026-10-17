@@ -173,6 +173,9 @@ async def test_una_devolucion_paga_primero_lo_que_se_debe(tmp_path: Path) -> Non
     assert filed.compensated == min(-filed.result, 1_000)
     assert filed.refund == -filed.result - filed.compensated
     assert await service.tax_debt(GUILD, USER) == 1_000 - filed.compensated
+    # Lo compensado ya estaba en el Estado (retenido): Hacienda no lo cuenta otra vez.
+    taxes = (await service.tax_breakdown(GUILD)).get(USER, {})
+    assert taxes.get("deudas", 0) == 0
 
 
 async def test_presentar_cobra_del_estado_una_sola_vez(tmp_path: Path) -> None:
@@ -203,6 +206,69 @@ async def test_una_devolucion_caduca_a_las_cuatro_semanas(tmp_path: Path) -> Non
     assert [d.week_start for d in await service.pending_declarations(GUILD, USER)] == [week]
     clock.at(day(9, month=11))
     assert CLAIM_WEEKS == 4
+    assert await service.pending_declarations(GUILD, USER) == []
+
+
+async def test_desplegar_no_deja_caducar_las_devoluciones_de_la_regla_vieja(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(day(10, month=8))
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    service = EconomyService(repository, clock=clock)
+    # Agosto, con la regla vieja: gana un día y pierde casi todo otro; queda algo a devolver.
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    clock.at(day(11, month=8))
+    await put(service, USER, 50_000)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=30_000, payout=0)
+    # El servidor pasa a la 8.0.0 el 12 de octubre, mucho más de 4 semanas después.
+    clock.at(day(14))
+    await service.close_irpf_weeks(GUILD)
+
+    pending = await service.pending_declarations(GUILD, USER)
+    assert [d.week_start for d in pending] == [date(2026, 8, 10)]
+    # Tiene las 4 semanas del plazo contadas desde el cambio.
+    clock.at(day(4, month=11))
+    assert await service.pending_declarations(GUILD, USER)
+    clock.at(day(10, month=11))
+    assert await service.pending_declarations(GUILD, USER) == []
+
+
+async def test_si_el_bot_estuvo_apagado_el_plazo_cuenta_desde_el_cierre(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    # El bot vuelve el 9 de noviembre: la semana del 5 de octubre se cierra entonces.
+    clock.at(day(9, month=11, hour=0))
+    await service.close_irpf_weeks(GUILD)
+
+    assert [d.week_start for d in await service.pending_declarations(GUILD, USER)] == [
+        date(2026, 10, 5)
+    ]
+    clock.at(day(30, month=11))
+    assert await service.pending_declarations(GUILD, USER)
+    clock.at(day(7, month=12))
+    assert await service.pending_declarations(GUILD, USER) == []
+
+
+async def test_lo_que_el_estado_no_puede_devolver_sigue_pendiente(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    filed = await close(service, clock, 12)
+    # El Estado se queda con 10 Y$ (lo ha gastado todo en premios de lotería).
+    state = await service.balance(GUILD, STATE_ACCOUNT_ID)
+    await put(service, STATE_ACCOUNT_ID, 10 - state)
+
+    claim = await service.claim_declarations(GUILD, USER)
+
+    assert claim.refunded == 10
+    assert await service.pending_declarations(GUILD, USER) == [
+        Declaration(date(2026, 10, 5), filed.refund - 10)
+    ]
+    await put(service, STATE_ACCOUNT_ID, 1_000_000)
+    rest = await service.claim_declarations(GUILD, USER)
+    assert rest.refunded == filed.refund - 10
     assert await service.pending_declarations(GUILD, USER) == []
 
 

@@ -677,7 +677,7 @@ def retirement_announcement(name: str, retirement: Retirement, pension: Pension)
     text = (
         f"🏖️ **{name}** se jubila de {retirement.title} ({retirement.job.emoji} "
         f"{branch.emoji} {branch.name}). Ahora es {branch.retired_as}, con una pensión de "
-        f"{format_amount(pension.full)} brutos al día."
+        f"{format_amount(max(pension.full, pension.floor))} brutos al día."
     )
     following = retirement.following
     if following is not None:
@@ -1646,7 +1646,8 @@ class PalaPanel(ui.LayoutView):
         except WorkError as error:
             await notify(interaction, str(error))
             return
-        pension = self.pension or await self.service.pension(self.guild_id, self.owner.id)
+        # La de este momento (la del panel puede ser de antes del último turno).
+        pension = await self.service.pension(self.guild_id, self.owner.id)
         self.notes.append(pension_text(slip, pension))
         extra = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.MONEY))
         if extra:

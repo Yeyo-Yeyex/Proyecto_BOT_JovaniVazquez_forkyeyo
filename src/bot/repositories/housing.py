@@ -1405,7 +1405,13 @@ class HousingRepository:
             if due:
                 # La cuota de la hipoteca de la vivienda habitual cuenta para la deducción
                 # canaria por inversión en vivienda habitual (art. 14 del DL 1/2009).
-                home = market.homes.get(mortgage.user_id) == (finance.HOME_OWN, mortgage.listing)
+                # También la de una VPO (`vpo:<unidad>`), que es vivienda habitual a la fuerza.
+                place = market.homes.get(mortgage.user_id)
+                home = place == (finance.HOME_OWN, mortgage.listing) or (
+                    place is not None
+                    and place[0] == finance.HOME_VPO
+                    and finance.vpo_ref(place[1]) == mortgage.listing
+                )
                 debits.append(HousingDebit(mortgage.user_id, f"hipoteca:{mortgage.id}", 0, due,
                                            "pisos:hipoteca", home=home))  # fmt: skip
         for member, amount in market.bank_debts.items():

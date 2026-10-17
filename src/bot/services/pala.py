@@ -83,6 +83,7 @@ from bot.services.work import (
     INSPECTION_CHANCE,
     INSPECTION_SURCHARGE,
     JET_LAG,
+    LEAVE_AFTER_DAYS,
     MAX_COFFEES,
     MISSED_GUARD_PENALTY,
     MOM_REPAY_SHARE,
@@ -213,6 +214,17 @@ def branch_quality(contract: Contract) -> float:
     return contribution_quality(contract.branch_gross / contract.branch_days)
 
 
+def _legacy_floor(records: Collection[RetiredBranch]) -> int:
+    """Lo que cobraba antes de la 8.0.0 por las ramas de entonces (el suelo de su pensión)."""
+    floor = 0
+    for record in records:
+        job = JOB_BY_KEY.get(record.job)
+        branch = job.branch(record.branch) if job is not None else None
+        if branch is not None and record.legacy:
+            floor += branch.pension
+    return floor
+
+
 def _completed(records: Collection[RetiredBranch]) -> list[tuple[str, float]]:
     """`(clase, calidad)` de las ramas jubiladas que siguen en el catálogo."""
     out = []
@@ -241,7 +253,8 @@ class Status:
         wish: El deseo del día (`None` si ya lo cumplió hoy).
         family: Familia ahora mismo (con lo que se ha recuperado sola).
         veteran: Ramas completadas en otros oficios (experiencia y veteranía).
-        pension_after: Si puede jubilarse, la pensión entera que tendría al hacerlo (0 si no).
+        pension_after: Si puede jubilarse, la pensión entera que tendría al hacerlo (0 si no;
+            nunca menos que el suelo de sus jubilaciones de antes de la 8.0.0).
     """
 
     contract: Contract
@@ -633,7 +646,7 @@ class WorkService:
         pension_after = 0
         if branch is not None and contract.level >= job.top and branch.key not in retired:
             completed = [*_completed(records), (branch.kind, branch_quality(contract))]
-            pension_after = pension_amount(completed)
+            pension_after = max(pension_amount(completed), _legacy_floor(records))
         today = local_day(now).isoformat()
         blockers = promotion_blockers(
             contract,
@@ -1064,7 +1077,7 @@ class WorkService:
                 low, high = EXIT_MULTIPLIER
                 exit_payout = round(contract.options * self.rng.uniform(low, high))
                 contract.options = 0
-                balance = await self._cash_options(guild_id, user_id, exit_payout)
+                balance = await self._cash_options(guild_id, user_id, exit_payout, contract, week)
             elif roll(self.rng, BANKRUPT_CHANCE):
                 bankrupt = True
                 contract.options = 0
@@ -1322,22 +1335,29 @@ class WorkService:
             family_parts=family_parts,
         )
 
-    async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
+    async def _cash_options(
+        self, guild_id: int, user_id: int, payout: int, contract: Contract, week: str
+    ) -> int:
         """Cobra un exit: exento hasta `OPTIONS_EXEMPT` y el resto como nómina.
 
         Tratamiento fiscal: rendimiento del trabajo en especie, con la exención
         de la Ley 28/2022 para las acciones de empresas emergentes entregadas a
-        sus empleados (50.000 € al año). La parte exenta va por `grant`; el
-        resto, por `pay_salary` (IRPF y cotización, como cualquier retribución
-        en especie).
+        sus empleados (50.000 € al año: aquí, por semana, y la lleva el contrato en
+        `options_exempt`). La parte exenta va por `grant`; el resto, por `pay_salary`
+        (IRPF y cotización, como cualquier retribución en especie).
 
         Returns:
             El saldo final.
         """
-        exempt = min(payout, OPTIONS_EXEMPT)
-        balance = await self.economy.grant(
-            guild_id, user_id, amount=exempt, reason="pala:opciones_exentas"
-        )
+        if contract.options_week != week:
+            contract.options_week, contract.options_exempt = week, 0
+        exempt = min(payout, max(0, OPTIONS_EXEMPT - contract.options_exempt))
+        contract.options_exempt += exempt
+        balance = await self.economy.balance(guild_id, user_id)
+        if exempt:
+            balance = await self.economy.grant(
+                guild_id, user_id, amount=exempt, reason="pala:opciones_exentas"
+            )
         if payout > exempt:
             balance = (
                 await self.economy.pay_salary(
@@ -1587,26 +1607,25 @@ class WorkService:
         """La pensión de un miembro (con o sin contrato).
 
         Una sola pensión por todas las ramas (`work.pension_amount`). Mientras trabaja
-        (tiene contrato y no está de excedencia) cobra la parte de la jubilación activa,
+        (ha fichado en los últimos `LEAVE_AFTER_DAYS` días) cobra la parte de la jubilación activa,
         que sube cada semana desde la primera jubilación (`work.active_share`). Quien se
         jubiló antes de la 8.0.0 cobra al menos la suma de las pensiones de entonces.
         """
         now = self._clock()
         records = await self.repository.retired_branches(guild_id, user_id)
         branches: list[tuple[Job, Branch]] = []
-        floor = 0
         for record in records:
             job = JOB_BY_KEY.get(record.job)
             branch = job.branch(record.branch) if job is not None else None
-            if job is None or branch is None:
-                continue
-            branches.append((job, branch))
-            if record.legacy:
-                floor += branch.pension
+            if job is not None and branch is not None:
+                branches.append((job, branch))
+        floor = _legacy_floor(records)
         full = pension_amount(_completed(records))
         share = 1.0
-        contract = await self.repository.contract(guild_id, user_id)
-        if records and contract is not None and not on_leave(contract, now):
+        # Trabaja quien ha fichado en los últimos días, tenga contrato o no: dimitir justo
+        # antes de cobrar no da la pensión entera.
+        last = await self.repository.last_shift_at(guild_id, user_id) if records else None
+        if last is not None and now - last < LEAVE_AFTER_DAYS * 86_400:
             first = min(record.retired_at for record in records)
             share = active_share(int(max(0.0, now - first) // (7 * 86_400)))
         amount = max(floor, round(full * share))

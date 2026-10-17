@@ -477,6 +477,21 @@ class WorkRepository:
         finally:
             connection.close()
 
+    async def last_shift_at(self, guild_id: int, user_id: int) -> float | None:
+        """Cuándo fichó por última vez (epoch), en cualquier oficio; `None` si no consta."""
+        return await self._run(self._last_shift_sync, guild_id, user_id)
+
+    def _last_shift_sync(self, guild_id: int, user_id: int) -> float | None:
+        connection = self._connect()
+        try:
+            (last,) = connection.execute(
+                "SELECT MAX(created_at) FROM work_shifts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return float(last) if last is not None else None
+        finally:
+            connection.close()
+
     async def days_in_position(
         self, guild_id: int, user_id: int, job: str, level: int, since: float
     ) -> int:
