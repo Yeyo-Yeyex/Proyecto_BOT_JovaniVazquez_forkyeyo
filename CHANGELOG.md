@@ -8,13 +8,17 @@ criterio.
 
 ## 7.x
 
+### 7.25.3 · 2026-10-18
+
+- Interno: la auditoría de tono sin prefijos obligatorios en commits ni changelog
+
 ### 7.25.2 · 2026-10-18
 
-- Aguafiestas: la actualización de tono se puede revertir entera o por partes
+- Interno: la nueva norma de tono se puede revertir entera o por partes
 
 ### 7.25.1 · 2026-10-18
 
-- Aguafiestas: nueva norma de tono: menos bromas, más espaciadas y de temas variados, y menos política
+- Interno: nueva norma de tono: menos bromas, más espaciadas y de temas variados, y menos política
 
 ### 7.25.0 · 2026-10-18
 

@@ -25,10 +25,9 @@ Lo que más se olvida:
   las demás fuentes (vida cotidiana, deporte, cultura popular, videojuegos, tecnología,
   comida, Canarias y Puerto Rico, historia, el propio bot, el absurdo). Las coletillas de
   Jovani salen de vez en cuando. Las herramientas de administración (`admin`) van sin
-  bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`. El repaso de
-  los textos viejos es la **actualización Aguafiestas**: commits solo de texto, con el
-  prefijo `Aguafiestas:` y sin tocar claves, para poder revertirla (procedimiento y
-  etiqueta `pre-aguafiestas` en la Biblia).
+  bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
+  auditoría de tono pendiente (commits solo de texto y sin tocar claves, para poder
+  revertirla).
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
   pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»
