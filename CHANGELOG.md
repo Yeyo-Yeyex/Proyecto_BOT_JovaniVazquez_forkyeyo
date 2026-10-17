@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.1 · 2026-10-18
+
+- Interno: nueva norma de tono: menos bromas, más espaciadas y de temas variados, y menos política
+
 ### 7.25.0 · 2026-10-18
 
 - Admin: las listas de `admin` incluyen a todos los miembros, en páginas con ◀ y ▶
