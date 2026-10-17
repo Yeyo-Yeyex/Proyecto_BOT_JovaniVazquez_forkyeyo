@@ -18,6 +18,7 @@ from bot.repositories.economy import (
     InterestNotice,
     LedgerEntry,
 )
+from bot.services.achievements import BY_ID
 from bot.services.donations import BY_KEY
 from bot.services.economy import (
     INTEREST_CATCH_UP_DAYS,
@@ -397,8 +398,17 @@ def test_la_liquidacion_apunta_el_tramo_y_lo_cobrado() -> None:
     big = round(weekly_yd(7_000))
     settlement = savings_settlement(SAVER, big, round(big * 0.19), balance=10**6)
     stats = savings_stats(settlement)
-    assert stats.peak == {"savings_rate_max": 21}
+    assert stats.peak == {"savings_rate_max": 21, "savings_week_max": big}
     assert stats.add == {"interest_tax": settlement.charged}
+
+
+def test_una_semana_a_tope_sigue_en_el_19_y_tiene_logro() -> None:
+    week = 7 * INTEREST_DAILY_MAX
+    settlement = savings_settlement(SAVER, week, 7 * withholding(INTEREST_DAILY_MAX), 10**6)
+    stats = savings_stats(settlement)
+    assert stats.peak == {"savings_rate_max": 19, "savings_week_max": week}
+    assert stats.add == {}  # lo retenido cada día ya es la cuota entera
+    assert BY_ID["savings_bracket"].conditions == (("savings_week_max", week),)
 
 
 def test_el_aviso_dice_ayer_o_mientras_no_mirabas() -> None:
@@ -408,7 +418,7 @@ def test_el_aviso_dice_ayer_o_mientras_no_mirabas() -> None:
     [fuera] = notice_lines(InterestNotice(9, 900, 171, "2026-09-07"), today)
     assert "Mientras no mirabas" in fuera and "9 días" in fuera
     [liquidacion] = notice_lines(InterestNotice(savings=(("2026-09-07", 41, 21),)), today)
-    assert "tramo del 21 %" in liquidacion
+    assert "41" in liquidacion and "redondeo" in liquidacion
     assert notice_lines(InterestNotice(), today) == []
     assert tiers_label().startswith("2,5 % hasta 4.000")
 

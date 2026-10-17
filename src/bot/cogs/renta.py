@@ -311,6 +311,14 @@ class RentaView(discord.ui.View):
         self.mode = DETAIL
         self._rebuild()
         await interaction.response.edit_message(embed=self.embed(), view=self)
+        if interaction.guild is not None:
+            logros.note(
+                self.cog.bot,
+                interaction.guild.id,
+                self.owner_id,
+                StatDelta(add={"renta_detail": 1}),
+                interaction.channel_id,
+            )
 
     async def _summary(self, interaction: discord.Interaction) -> None:
         self.mode = SUMMARY

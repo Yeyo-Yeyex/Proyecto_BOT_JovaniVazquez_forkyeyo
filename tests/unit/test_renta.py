@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from bot.cogs.renta import (
     DETAIL,
     SEALED,
@@ -281,7 +283,11 @@ async def test_el_aviso_no_dice_la_cifra_y_sale_una_vez(tmp_path: Path) -> None:
     assert second is None
 
 
-async def test_el_sobre_se_abre_y_pasa_del_resumen_al_detalle(tmp_path: Path) -> None:
+async def test_el_sobre_se_abre_y_pasa_del_resumen_al_detalle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = MagicMock()
+    monkeypatch.setattr("bot.cogs.renta.logros.note", note)
     clock = Clock(day(5))
     service = await make_service(tmp_path, clock)
     await service.pay_income(GUILD, USER, gross=50_000, concept="nivel:10")
@@ -309,9 +315,13 @@ async def test_el_sobre_se_abre_y_pasa_del_resumen_al_detalle(tmp_path: Path) ->
     assert view.mode == SUMMARY
     statement = await service.irpf_statement(GUILD, USER)
     assert statement is not None and statement.opened
+    opened = note.call_args.args[3].add
+    assert opened["renta_opened"] == 1
+    assert opened["renta_opened_refund"] == int(statement.filed.result < 0)
 
     await view._detail(interaction)  # type: ignore[arg-type]  # noqa: SLF001
     assert view.mode == DETAIL
+    assert note.call_args.args[3].add == {"renta_detail": 1}
     text = view.embed().description or ""
     assert "paso a paso" in text and "Casino" in text and "Premios" in text
     await view._summary(interaction)  # type: ignore[arg-type]  # noqa: SLF001

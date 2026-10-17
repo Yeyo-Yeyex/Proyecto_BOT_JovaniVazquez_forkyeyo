@@ -162,6 +162,9 @@ PRODUCED_STATS = {
     "greetings_sent", "greetings_received", "level_max", "activity_streak_max",
     "imv_claims", "imv_streak_max", "imv_midnight", "renta_filed", "renta_refunded", "tax_paid",
     "balance_max",
+    # La declaración semanal (cogs/renta.py: track_opened, _detail y _close_weeks)
+    "renta_opened", "renta_opened_pay", "renta_opened_refund", "renta_detail", "renta_closed",
+    "renta_paid", "renta_debt", "renta_rate_max",
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
     # Lista de tareas (cogs/todo.py)
@@ -189,6 +192,7 @@ PRODUCED_STATS = {
     "interest_zero", "interest_grasshopper", "interest_gambled", "interest_beats_imv",
     "interest_bizum_trick", "interest_avg_max", "interest_capped_streak", "interest_floor_streak",
     "interest_resist_streak", "interest_still_streak", "interest_ant_streak", "savings_rate_max",
+    "savings_week_max",
     "interest_comeback",
     # Tienda (cogs/shop.py: shop_stats)
     "shop_purchases", "shop_spent", "shop_igic", "shop_roles", "shop_renewals", "shop_boosts",
@@ -516,6 +520,8 @@ PRODUCED_STATS = {
     "work_wishes", "work_wish_streak_max", "work_wish_perfecto", "work_wish_nocturno",
     *(f"work_wish_{wish.key}" for wish in WISHES),
     "work_branch_chosen", "work_retired", "work_pensions", "work_pension_irpf",
+    "work_jobs_done", "work_veteran_max", "work_pension_pct", "work_pension_active",
+    "work_pension_whole", "work_retired_low_quality",
     "work_top_politica_moncloa", "work_top_politica_bruselas", "work_retired_politica",
     "work_spokes", "work_decrees", "work_ministry", "work_partners", "work_control",
     "work_plenary", "work_amendments", "work_lobbies", "work_trilogues", "work_commission",

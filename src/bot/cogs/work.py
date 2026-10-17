@@ -636,6 +636,41 @@ def promotion_announcement(name: str, status: Status) -> str | None:
     return f"📣 **{name}** asciende a **{position.title}** ({job.emoji} {where})."
 
 
+#: Calidad de lo cotizado por debajo de la cual jubilarse de una rama tiene logro oculto.
+LOW_QUALITY = 0.5
+
+
+def jobs_completed(pension: Pension) -> int:
+    """Oficios de los que se ha jubilado de todas las ramas."""
+    jobs = {job.key: job for job, _branch in pension.branches}
+    done = [job.key for job, _branch in pension.branches]
+    return sum(1 for key, job in jobs.items() if done.count(key) >= len(job.branches))
+
+
+def retire_stats(retirement: Retirement, pension: Pension) -> StatDelta:
+    """Estadísticas de logros de una jubilación: ramas, oficios, veteranía y calidad."""
+    delta = StatDelta(
+        add={"work_retired": 1},
+        peak={
+            f"work_retired_{retirement.job.key}": len(retirement.status.retired),
+            "work_jobs_done": jobs_completed(pension),
+            "work_veteran_max": retirement.status.veteran,
+        },
+    )
+    if retirement.quality < LOW_QUALITY:
+        delta.add["work_retired_low_quality"] = 1
+    return delta
+
+
+def pension_stats(pension: Pension) -> StatDelta:
+    """Estadísticas de logros de cobrar la pensión: cuánto del tope y si va entera."""
+    whole = pension.share >= 1
+    return StatDelta(
+        add={"work_pensions": 1, "work_pension_whole" if whole else "work_pension_active": 1},
+        peak={"work_pension_pct": pension.full * 100 // PENSION_CAP},
+    )
+
+
 def retirement_announcement(name: str, retirement: Retirement, pension: Pension) -> str:
     """Anuncio de una jubilación."""
     branch = retirement.branch
@@ -1273,14 +1308,10 @@ class PalaPanel(ui.LayoutView):
         self.outlook = await self.service.switch_outlook(self.guild_id, self.owner.id, status)
         self.show_status(status)
         await self._edit(interaction)
+        hired = StatDelta(peak={"work_veteran_max": status.veteran})
         if had_job:
-            await logros.track(
-                self.cog.bot,
-                self.guild_id,
-                self.owner,
-                self.channel,
-                StatDelta(add={"work_job_changes": 1}),
-            )
+            hired.add["work_job_changes"] = 1
+        await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, hired)
 
     async def _coffee(self, interaction: discord.Interaction, key: str) -> None:
         await ack(interaction)
@@ -1605,10 +1636,7 @@ class PalaPanel(ui.LayoutView):
         self.show_status(retirement.status)
         await self._edit(interaction)
         await self._announce(retirement_announcement(self._name, retirement, self.pension))
-        retired_here = len(retirement.status.retired)
-        delta = StatDelta(
-            add={"work_retired": 1}, peak={f"work_retired_{retirement.job.key}": retired_here}
-        )
+        delta = retire_stats(retirement, self.pension)
         await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
 
     async def _claim_pension(self, interaction: discord.Interaction) -> None:
@@ -1625,7 +1653,7 @@ class PalaPanel(ui.LayoutView):
             self.notes.append(extra)
         await self.refresh(interaction)
         await renta.remind(self.cog.bot, interaction)
-        delta = StatDelta(add={"work_pensions": 1})
+        delta = pension_stats(pension)
         if slip.irpf:
             delta.add["tax_paid"] = slip.irpf
             delta.add["work_pension_irpf"] = 1

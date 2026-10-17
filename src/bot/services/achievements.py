@@ -175,12 +175,17 @@ from bot.services.work import (
     FLOP_BELOW,
     MAX_COFFEES,
     MEGAVIRAL,
+    PENSION_CAP,
+    PENSION_MAX,
     RATING_MAX,
     SELF_EMPLOYED_FEE,
+    VETERAN_MAX,
+    VETERAN_PAY,
     VIRAL_AT,
     WISHES,
     Mechanic,
 )
+from bot.services.work_catalog import JOBS as WORK_JOBS
 from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
@@ -190,6 +195,7 @@ from bot.services.taxes import (
     LOTTERY_EXEMPT,
     STATE_PERSONAL_MINIMUM,
     TAX_COLLECTOR,
+    annual_eur,
     weekly_yd,
 )
 
@@ -670,8 +676,8 @@ RASTRO_ITP_STORY = (
 #: Discurso de la primera plusvalía del Rastro (`rastro_gain_1`).
 RASTRO_GAIN_STORY = (
     "📈 **Pelotazo detectado.** Has vendido por más de lo que te costó, y eso es una "
-    "ganancia patrimonial: tributa en la base del ahorro. Como aquí no hay declaración "
-    "anual, Hacienda se queda el 19 % de lo que has ganado en el momento. Gil y Gil lo "
+    "ganancia patrimonial: tributa en la base del ahorro. La Renta de los lunes no la "
+    "espera: Hacienda se queda el 19 % de lo que has ganado en el momento. Gil y Gil lo "
     "hacía con solares; tú, con coleccionables. Mismo espíritu, menos Marbella."
 )
 
@@ -679,19 +685,21 @@ RASTRO_GAIN_STORY = (
 PISOS_RENT_STORY = (
     "🔑 **Ya eres casero, mi amor.** Lo que te paga el inquilino es rendimiento del "
     "capital inmobiliario: ingresos menos gastos (comunidad, seguro, IBI, reparaciones y "
-    "la amortización del 3 % de lo construido) y, encima, la ley te perdona la mitad por "
-    "alquilar vivienda (art. 23.2 LIRPF). Entre particulares no hay retención, pero aquí "
-    "no hay declaración anual: Perro Sanxe se lo cobra al momento, con toda tu renta de "
-    "la semana. Y el inquilino paga el 60 % de su sueldo, pero eso no sale en tu nómina."
+    "la amortización del 3 % de lo construido) y, si sale positivo, la ley te reduce el 50 % "
+    "por alquilar vivienda, o el 90 % en zona tensionada con contrato nuevo que baje la renta "
+    "más de un 5 % (art. 23.2 LIRPF). Perro Sanxe retiene a cuenta con tu tipo de la semana "
+    "y el lunes llega la declaración con toda tu renta: a pagar o a devolver. Y el "
+    "inquilino paga el 60 % de su sueldo, pero eso no sale en tu nómina."
 )
 
 #: Discurso de la primera retención del alquiler (`pisos_taxrent_1`).
 PISOS_TAX_RENT_STORY = (
     "🐶 **Perro Sanxe también es tu inquilino.** Si alquilas a un particular, en la vida "
-    "real nadie te retiene nada: lo declaras en la renta del año. Pero el bot no tiene "
-    "declaración anual, así que Hacienda se cobra a cuenta cada mes, mirando toda tu renta "
-    "de la semana (nóminas, premios, casino y alquileres juntos). Ojo: solo tributa la "
-    "mitad del rendimiento neto, que alquilar vivienda tiene reducción (art. 23.2 LIRPF)."
+    "real nadie te retiene nada: lo declaras en la renta del año. Aquí el año es la semana: "
+    "cada cobro retiene a cuenta con tu tipo de la semana y el lunes la declaración junta "
+    "nóminas, premios, casino y alquileres, y sale a pagar o a devolver. Ojo: solo tributa "
+    "el neto positivo reducido un 50 % (un 90 % en zona tensionada con contrato nuevo que "
+    "baje la renta más de un 5 %), que alquilar vivienda tiene reducción (art. 23.2 LIRPF)."
 )
 
 #: Discurso de la primera hipoteca (`pisos_mortgage_1`).
@@ -808,9 +816,9 @@ PENSION_STORY = (
 #: Discurso del logro `rama_1`: elegir rama en un oficio.
 BRANCH_STORY = (
     "🔀 **Has elegido rama.** Como en los Sims: el tronco es igual para todos y al final "
-    "toca decidir. Cada rama tiene sus puestos, sus minijuegos, sus marrones y su "
-    "pensión. Si llegas a lo más alto, te puedes jubilar de ella y empezar la otra "
-    "desde abajo, con la pensión de la primera en el bolsillo."
+    "toca decidir. Cada rama tiene sus puestos, sus minijuegos y sus marrones. Si llegas "
+    "a lo más alto, te puedes jubilar de ella y empezar la otra desde abajo. La pensión es "
+    "una sola y crece con cada rama que completes, en este oficio o en cualquier otro."
 )
 
 #: Discurso del logro `ochenta_horas`: pasar del límite legal de horas extra.
@@ -824,9 +832,10 @@ OVERTIME_STORY = (
 #: Discurso del logro `primera_nomina`.
 FIRST_PAYSLIP_STORY = (
     "📄 **Tu primera nómina.** Arriba, el bruto. Luego te quitan la Seguridad Social "
-    "(6,5 %: pensiones, paro, formación y el MEI) y la retención de IRPF, que sale de "
-    "proyectar lo que cobras al año. Abajo, lo que te llega. Y en letra pequeña, lo que "
-    "paga la empresa por ti: otro 32 % que no ves nunca. Todo eso, para Perro Sanxe."
+    "(6,5 %: pensiones, paro, formación y el MEI) y la retención de IRPF con tu tipo de "
+    "esta semana, que no baja a mitad de semana. Abajo, lo que te llega. Y en letra "
+    "pequeña, lo que paga la empresa por ti: otro 32 % que no ves nunca. Todo eso, para "
+    "Perro Sanxe."
 )
 
 #: Discurso del logro `tramo`.
@@ -895,17 +904,25 @@ INTEREST_TAX_STORY = (
     "El banco te ha pagado intereses y, antes de que los vieras, Perro Sanxe ya se había "
     "quedado el 19 %. Es la retención a cuenta de los rendimientos del capital mobiliario "
     "(art. 101.4 LIRPF): el banco se la quita y se la manda a Hacienda por ti. Cada lunes la "
-    "semana se liquida con la escala del ahorro y, si te toca más, te cobra la diferencia. "
-    "Devolver, no te devuelve nada: el 19 % es el tramo más bajo."
+    "semana se liquida con la escala del ahorro, pero con el tope de la cuenta nunca pasas del "
+    "primer tramo: lo retenido ya es la cuota entera (salvo algún Y$ de redondeo). Devolver, no "
+    "te devuelve nada: el 19 % es el tramo más bajo."
 )
 
-#: Discurso de «Me suben de tramo del ahorro»: el mito del tramo, versión ahorro.
+#: Intereses brutos de una semana entera cobrando el máximo de la cuenta.
+SAVINGS_WEEK_MAX = 7 * INTEREST_DAILY_MAX
+#: Discurso de `savings_bracket`: el tramo del ahorro al que nunca se llega.
 SAVINGS_BRACKET_STORY = (
-    "Tus intereses de la semana, proyectados a un año, pasan de 6.000 € y entras en el tramo "
-    "del 21 % de la base del ahorro (arts. 66.1 y 76 LIRPF). Tranquilo: el 21 % solo se aplica "
-    "a lo que pasa de ese límite, el resto sigue al 19 %. Subir de tramo nunca te deja con "
-    "menos dinero. Eso sí, Sanxe te lo cobra el lunes sin preguntar."
+    "Has cobrado el máximo de la cuenta toda la semana y la liquidación del lunes sigue en el "
+    "19 %. La semana es el año fiscal y, con la vara del IRPF, el tope de la cuenta "
+    f"({_thousands(SAVINGS_WEEK_MAX)} Y$ a la semana) son unos "
+    f"{_thousands(round(annual_eur(SAVINGS_WEEK_MAX)))} € al año: muy lejos de los 6.000 € donde "
+    "empieza el tramo del 21 % de la base del ahorro (arts. 66.1 y 76 LIRPF). Para subir de "
+    "tramo hacen falta rentas de verdad, y para eso están los pisos."
 )
+#: Ramas de todos los oficios y veteranía máxima, en ramas de otros oficios.
+WORK_BRANCHES = sum(len(job.branches) for job in WORK_JOBS)
+VETERAN_TOP = round(VETERAN_MAX / VETERAN_PAY)
 
 
 #: Páginas de `apuestas` (las claves de su menú). Ver `bot.cogs.apuestas`.
@@ -6907,8 +6924,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         rarity=C, conditions=(("interest_tax", 1),), unit="money", story=INTEREST_TAX_STORY,
     ))  # fmt: skip
     a += _tiers("bizum", "interest_tax", [
-        (10_000, "interest_tax_10k", "Perro Sanxe se fuma un puro con tus ahorros",
-         "Paga 10.000 Y$ de IRPF por tus intereses.", E),
+        (5_000, "interest_tax_10k", "Perro Sanxe se fuma un puro con tus ahorros",
+         "Que te retengan 5.000 Y$ de tus intereses, a 19 % cada día.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "interest_avg_max", [
         (INTEREST_TIERS[0][0], "interest_tier_2", "He leído la letra pequeña",
@@ -6972,9 +6989,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Haz un Bizum que deje tu saldo justo por debajo de un tramo de la cuenta.", R, True),
     ])  # fmt: skip
     a.append(Achievement(
-        id="savings_bracket", name="Me suben de tramo del ahorro",
-        description="Que la liquidación semanal de tus intereses llegue al tramo del 21 %.",
-        category="bizum", rarity=R, conditions=(("savings_rate_max", 21),),
+        id="savings_bracket", name="¿Tramo del ahorro? Un vaso es un vaso",
+        description=(
+            f"Cobra el máximo de la cuenta una semana entera ({_thousands(SAVINGS_WEEK_MAX)} Y$ "
+            "brutos) y que la liquidación del lunes siga en el 19 %."
+        ),
+        category="bizum", rarity=R, conditions=(("savings_week_max", SAVINGS_WEEK_MAX),),
         story=SAVINGS_BRACKET_STORY,
     ))  # fmt: skip
     a += _tiers("economy", "donated", [
@@ -7024,12 +7044,68 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "refund_day", "Desgravación", "Recupera IRPF del casino perdiendo el mismo día.", C),
     ])  # fmt: skip
     a += _tiers("economy", "renta_filed", [
-        (1, "renta_1", "Declarante, como Shakira (al final)", "Presenta la renta.", C),
+        (1, "renta_1", "Declarante, como Shakira (al final)",
+         "Presenta una declaración que sale a devolver.", C),
         (10, "renta_10", "Asesor fiscal", "Presenta la renta 10 veces.", L),
     ])  # fmt: skip
     a += _tiers("economy", "renta_refunded", [
         (10_000, "renta_10k", "Devolución gorda", "Recupera 10.000 Y$ con la renta.", R),
         (100_000, "renta_100k", "Hacienda somos todos", "Recupera 100.000 Y$ con la renta.", E),
+    ], unit="money")  # fmt: skip
+    # La declaración semanal (cogs/renta.py: track_opened, _detail y _close_weeks)
+    a += _tiers("economy", "renta_closed", [
+        (1, "renta_cerrada", "Contribuyente censado",
+         "Que Hacienda te cierre la primera declaración de la semana. Ya existes para el Estado.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_opened", [
+        (1, "renta_sobre_1", "Abre el sobre, que no muerde", "Abre tu declaración de la Renta.", C),
+        (4, "renta_sobre_4", "El cartero ya te tutea",
+         "Abre 4 declaraciones. Las cartas del banco ni las abres, estas sí.", E),
+        (26, "renta_sobre_26", "Los sobres de Génova",
+         "Abre 26 declaraciones. Tú los sobres los abres; otros los repartían.", L),
+        (52, "renta_sobre_52", "Cincuenta y dos años fiscales en un año",
+         "Abre 52 declaraciones: un año entero de lunes con Perro Sanxe.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_opened_pay", [
+        (1, "renta_a_pagar", "Sale a pagar (sorpresa ninguna)",
+         "Abre una declaración que sale a pagar.", R),
+        (10, "renta_a_pagar_10", "Contribuyente neto, como Alemania en Bruselas",
+         "Abre 10 declaraciones que salen a pagar.", E),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_opened_refund", [
+        (1, "renta_a_devolver", "Hacienda te debe algo (apúntalo)",
+         "Abre una declaración que sale a devolver.", C),
+        (10, "renta_a_devolver_10", "Receptor neto de fondos Next Generation",
+         "Abre 10 declaraciones que salen a devolver.", E),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_detail", [
+        (1, "renta_detalle", "Lectura del BOE en voz alta",
+         "Mira el detalle de tu declaración, artículo a artículo.", C),
+        (25, "renta_detalle_25", "Asesor fiscal de YouTube",
+         "Mira el detalle de la Renta 25 veces. Ya podrías abrir un canal.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_rate_max", [
+        (20, "renta_tipo_20", "Clase media según el Gobierno",
+         "Que tu declaración de una semana salga a un tipo del 20 % o más.", R),
+        (35, "renta_tipo_35", "Rico según Podemos",
+         "Que tu declaración de una semana salga a un tipo del 35 % o más.", E),
+        (45, "renta_tipo_45", "Mitad para ti, mitad para el Falcon",
+         "Que tu declaración de una semana salga a un tipo del 45 % o más.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_paid", [
+        (10_000, "renta_paga_10k", "Lunes de cuota",
+         "Paga 10.000 Y$ en las declaraciones que salen a pagar.", R),
+        (100_000, "renta_paga_100k", "Patrocinador oficial del Falcon",
+         "Paga 100.000 Y$ en las declaraciones que salen a pagar.", E),
+        (1_000_000, "renta_paga_1m", "Un AVE a ninguna parte lleva tu nombre",
+         "Paga 1.000.000 Y$ en las declaraciones que salen a pagar.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "renta_debt", [
+        (1, "renta_moroso", "Moroso con la Agencia Tributaria",
+         "Que la Renta del lunes salga a pagar y no tengas con qué: deuda con Hacienda.", R, True),
+        (100_000, "renta_moroso_100k", "En la lista de morosos, entre futbolistas y folclóricas",
+         "Acumula 100.000 Y$ de deuda con Hacienda en tus declaraciones.", E, True),
     ], unit="money")  # fmt: skip
 
     a += _tiers("economy", "tax_paid", [
@@ -7065,8 +7141,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cobra 1.000.000 Y$ netos de intereses.", M, True),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "interest_tax", [
-        (100_000, "interest_tax_100k", "Sanxe se fuma tus ahorros",
-         "Paga 100.000 Y$ de IRPF por tus intereses.", L),
+        (20_000, "interest_tax_100k", "Tus intereses vuelan en Falcon",
+         "Que te retengan 20.000 Y$ de tus intereses: más de medio año con la cuenta a tope.",
+         L),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "interest_capped", [
         (100, "interest_capped_100", "Tope de la casa", "Cobra el máximo diario 100 días.", L),
@@ -12876,10 +12953,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5, "rama_5", "Indeciso con carrera", "Elige rama 5 veces.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_retired", [
-        (1, "jubilado_1", "Jubilación anticipada (a los dos meses)",
+        (1, "jubilado_1", "Jubilación anticipada (a los cien días)",
          "Jubílate de una rama.", E),
+        (2, "jubilado_2", "Jubilado por partida doble", "Jubílate de 2 ramas.", E),
         (3, "jubilado_3", "Pensionista profesional", "Jubílate de 3 ramas.", L),
+        (4, "jubilado_4", "Cuatro pensiones y un Seiscientos", "Jubílate de 4 ramas.", L),
         (8, "jubilado_8", "El sistema de pensiones no aguanta", "Jubílate de 8 ramas.", M),
+        (WORK_BRANCHES, "jubilado_todas", "La hucha de las pensiones eres tú",
+         f"Jubílate de las {WORK_BRANCHES} ramas: todas las de todos los oficios. No queda "
+         "puesto sin tu foto.", M),
     ])  # fmt: skip
     a += _tiers("work", "work_pensions", [
         (1, "pension_1", "Pensión cobrada", "Cobra tu pensión por primera vez.", E),
@@ -12892,6 +12974,48 @@ def _build_catalog() -> tuple[Achievement, ...]:
         description="Paga IRPF por tu pensión.", category="work", rarity=E,
         conditions=(("work_pension_irpf", 1),), story=PENSION_STORY,
     ))  # fmt: skip
+    # Coleccionista de oficios (8.0.0, cogs/work.py: retire_stats, pension_stats y _hire)
+    a += _tiers("work", "work_jobs_done", [
+        (1, "oficio_completo_1", "Me sé el oficio de arriba abajo",
+         "Jubílate de todas las ramas de un oficio.", L),
+        (2, "oficio_completo_2", "Pluriempleado de carrera",
+         "Jubílate de todas las ramas de 2 oficios.", L),
+        (4, "oficio_completo_4", "Cuatro oficios y ninguna vocación",
+         "Jubílate de todas las ramas de 4 oficios.", M),
+    ])  # fmt: skip
+    a += _tiers("work", "work_veteran_max", [
+        (1, "veterano_1", "Esto ya lo he vivido",
+         "Ficha en un oficio con veteranía de otro: llegas cobrando más y aprendiendo antes.", E),
+        (VETERAN_TOP, "veterano_max", "Veterano de mil guerras (y cinco ramas)",
+         f"Llega a la veteranía máxima: +{round(VETERAN_MAX * 100)} % de sueldo por ramas de "
+         "otros oficios.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_pension_pct", [
+        (30, "pension_tope_30", "La paguita de la jubilación",
+         "Que tu pensión entera llegue al 30 % del tope.", E),
+        (50, "pension_tope_50", "Media pensión, como en el comedor del cole",
+         "Que tu pensión entera llegue a la mitad del tope.", L),
+        (PENSION_MAX * 100 // PENSION_CAP, "pension_maxima",
+         "Pensión máxima y complemento de regalo",
+         "Que tu pensión entera llegue a la pensión máxima: lo demás es complemento por demora.",
+         L),
+        (90, "pension_tope_90", "El Pacto de Toledo pide la hoja de reclamaciones",
+         "Que tu pensión entera llegue al 90 % del tope.", M),
+    ])  # fmt: skip
+    a += _tiers("work", "work_pension_active", [
+        (1, "pension_activa", "Jubilado, pero de los que fichan",
+         "Cobra la pensión mientras sigues trabajando (jubilación activa).", E),
+        (30, "pension_activa_30", "Ni jubilarse le dejan a uno",
+         "Cobra la pensión 30 días en jubilación activa.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_pension_whole", [
+        (1, "pension_entera", "La pensión entera, ni un Y$ menos",
+         "Cobra la pensión entera: sin trabajar o tras un mes de jubilación activa.", E),
+    ])  # fmt: skip
+    a += _tiers("work", "work_retired_low_quality", [
+        (1, "jubilado_en_b", "Cotizando en B",
+         "Jubílate de una rama habiendo cotizado menos de la mitad de la base máxima.", E, True),
+    ])  # fmt: skip
 
     # 🌹 Política: las ramas Moncloa y Bruselas -------------------------------------------
     a += _tiers("jobs", "work_top_politica_bruselas", [

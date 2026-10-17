@@ -537,6 +537,7 @@ class Retirement:
         following: La rama en la que sigue, desde su primer puesto (`None` si ya
             se jubiló de todas y se queda donde está).
         status: El contrato después.
+        quality: Calidad de lo cotizado en la rama (`work.contribution_quality`).
     """
 
     job: Job
@@ -544,6 +545,7 @@ class Retirement:
     title: str
     following: Branch | None
     status: Status
+    quality: float = 1.0
 
 
 class WorkService:
@@ -1579,7 +1581,7 @@ class WorkService:
             except ValueError as error:
                 raise WorkError(str(error)) from error
             after = await self._status(guild_id, user_id, contract)
-            return Retirement(job, branch, title, following, after)
+            return Retirement(job, branch, title, following, after, quality)
 
     async def pension(self, guild_id: int, user_id: int) -> Pension:
         """La pensión de un miembro (con o sin contrato).
