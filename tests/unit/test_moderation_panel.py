@@ -256,4 +256,41 @@ async def test_todas_las_vistas_del_panel_se_pintan_dentro_de_los_limites(
     ficha = (await cog.embed(panel)).to_dict()
 
     text = str(ficha)
-    assert "<#5>" in text and "ojo" in text and "Callado" in text
+    assert "<#5>" in text and "ojo" in text and "Aislamiento" in text
+
+
+async def test_las_listas_incluyen_a_todos_los_miembros_en_paginas(
+    activity: ActivityRepository, moderation: ModerationRepository
+) -> None:
+    from bot.cogs.moderation import PAGE_SIZE, SERVER_VIEWS
+
+    bot = SimpleNamespace(last_seen=activity, moderation=moderation)
+    cog = Moderation(bot)  # type: ignore[arg-type]
+    members = [fake_member(i % 28 + 1) for i in range(PAGE_SIZE * 2 + 5)]
+    for index, member in enumerate(members):
+        member.id = 100 + index
+        member.mention = f"<@{member.id}>"
+    guild = SimpleNamespace(
+        id=GUILD_ID, name="Servidor", members=[*members, fake_member(1, bot=True)]
+    )
+    # Solo uno tiene registro: los demás también salen, detrás.
+    await activity.save({(GUILD_ID, 100): {"message_at": 50.0, "message_channel": 5}})
+    panel = AdminPanel(cog, guild, members[0], None)  # type: ignore[arg-type]
+
+    for key in ("inactivos", "escritos", "voz", "nuevos"):
+        lines = await cog.server_lines(guild, key)  # type: ignore[arg-type]
+        assert lines is not None and len(lines) == len(members), key
+    assert (await cog.server_lines(guild, "escritos"))[0].startswith("<@100>")  # type: ignore[arg-type,index]
+
+    panel.key = "escritos"
+    seen_ids: set[str] = set()
+    for page in range(3):
+        panel.page = page
+        embed = await cog.embed(panel)
+        seen_ids.update(line.split(" ")[0] for line in (embed.description or "").splitlines())
+    panel.rebuild()
+
+    assert panel.pages == 3
+    assert seen_ids == {m.mention for m in members}
+    assert any(getattr(item, "custom_id", "") == "admin:siguiente" for item in panel.children)
+    assert {key for key, *_ in SERVER_VIEWS} >= {"escritos"}

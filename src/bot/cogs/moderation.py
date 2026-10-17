@@ -23,9 +23,13 @@ miembro y en qué canal, cuándo entra o sale de voz y cuándo se le ve conectad
 arranca igual y esa línea dice «sin datos»). Lo junta en memoria y lo vuelca a
 `ActivityRepository` cada minuto. Solo sabe lo que ha visto desde que existe.
 
+Las listas del servidor incluyen a todas las personas (sin bots), en páginas de
+`PAGE_SIZE` con ◀ y ▶; quien no tiene registro sale al final.
+
 Historial: cada sanción del cog `Admin` se apunta con `record` (función puente) en
 `ModerationRepository`. Las notas solo se ven aquí. Comando de administración: sin
-logros (excepción de la Biblia, «Logros»).
+logros (excepción de la Biblia, «Logros») y con textos serios, sin bromas (excepción
+de la Biblia, «Personalidad»).
 
 Permisos del bot: los de cada acción (ver `bot.cogs.admin`).
 """
@@ -59,8 +63,10 @@ logger = logging.getLogger(__name__)
 VIEW_TIMEOUT = 14 * 60
 #: Cada cuánto se vuelca a la base la actividad juntada en memoria.
 FLUSH_SECONDS = 60
-#: Filas de cada lista del servidor.
-LIST_SIZE = 15
+#: Filas por página de cada lista del servidor (caben de sobra en los 4.096 de un embed).
+PAGE_SIZE = 20
+#: Sanciones del servidor que se pueden recorrer en la lista 📜.
+SERVER_SANCTIONS = 500
 #: Sanciones y notas que se ven en la ficha de un miembro.
 FICHA_ITEMS = 5
 #: Sanciones del botón 📜 Historial.
@@ -74,21 +80,21 @@ NO_ADMIN_COG = "Las herramientas de moderación no están disponibles ahora mism
 #: Vistas del servidor: clave, emoji, nombre y descripción del desplegable.
 SERVER_VIEWS: tuple[tuple[str, str, str, str], ...] = (
     ("resumen", "📋", "Resumen", "Cifras del servidor y últimas sanciones"),
-    ("inactivos", "💤", "Más inactivos", "Quien lleva más tiempo sin dar señales"),
-    ("escritos", "💬", "Últimos en escribir", "Quién ha escrito hace menos"),
-    ("voz", "🎙️", "Últimos en voz", "Quién está o ha estado en voz"),
-    ("nuevos", "🆕", "Recién llegados", "Las últimas entradas al servidor"),
-    ("aislados", "🔇", "Aislados ahora", "Quién está callado y hasta cuándo"),
-    ("sanciones", "📜", "Últimas sanciones", "Lo último que han hecho los admins"),
+    ("inactivos", "💤", "Más inactivos", "De la actividad más antigua a la más reciente"),
+    ("escritos", "💬", "Últimos en escribir", "Del mensaje más reciente al más antiguo"),
+    ("voz", "🎙️", "Últimos en voz", "En voz ahora y después por la última vez"),
+    ("nuevos", "🆕", "Recién llegados", "Por fecha de entrada al servidor"),
+    ("aislados", "🔇", "Aislados ahora", "Aislamientos en curso y su fin"),
+    ("sanciones", "📜", "Últimas sanciones", "Historial de sanciones del servidor"),
 )
 
 #: Cómo se lee cada tipo de sanción del historial.
 KIND_LABELS = {
-    "callar": "🔇 Callado",
-    "hablar": "🔊 Descallado",
-    "echar": "👢 Echado",
-    "banear": "🔨 Baneado",
-    "indultar": "✅ Indultado",
+    "callar": "🔇 Aislamiento",
+    "hablar": "🔊 Fin de aislamiento",
+    "echar": "👢 Expulsión",
+    "banear": "🔨 Baneo",
+    "indultar": "✅ Baneo levantado",
 }
 
 STATUS_LABELS = {
@@ -97,19 +103,20 @@ STATUS_LABELS = {
     discord.Status.dnd: "⛔ No molestar",
 }
 
-#: Frases de pie del panel, por variar: la moderación también tiene su gracia.
-FOOTERS = (
-    "Ni el CNI de Sánchez sabe tanto. Actividad desde que el bot la apunta.",
-    "Más vigilado que un tuit de Musk. Actividad desde que el bot la apunta.",
-    "Expediente X, versión Jovani. Actividad desde que el bot la apunta.",
-)
+FOOTER = "La actividad cuenta desde que el bot empezó a registrarla."
 
 
 def _when(stamp: float | None) -> str:
-    """`hace 3 días` (en el idioma del cliente) o «sin rastro»."""
+    """`hace 3 días` (en el idioma del cliente) o «sin registro»."""
     if stamp is None:
-        return "sin rastro"
+        return "sin registro"
     return discord.utils.format_dt(datetime.fromtimestamp(stamp, UTC), "R")
+
+
+def _where(stamp: float | None, channel_id: int | None) -> str:
+    """`hace 3 días en #canal`, o «sin registro» si nunca se vio."""
+    when = _when(stamp)
+    return f"{when} en <#{channel_id}>" if stamp is not None and channel_id else when
 
 
 def _clip(text: str, limit: int = FIELD_LIMIT) -> str:
@@ -247,6 +254,7 @@ class ServerViewSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         self.panel.key = self.values[0]
+        self.panel.page = 0
         await self.panel.redraw(interaction)
 
 
@@ -283,6 +291,9 @@ class AdminPanel(discord.ui.View):
         self.owner = owner
         self.member = member
         self.key = "resumen"
+        self.page = 0
+        #: Páginas de la lista actual; la fija `Moderation.embed` al pintarla.
+        self.pages = 1
         self.rebuild()
 
     def rebuild(self) -> None:
@@ -296,6 +307,16 @@ class AdminPanel(discord.ui.View):
             self._button("🐢 Modo lento", self._slow, "admin:lento", row=2)
             self._button("🧹 Borrar mensajes", self._purge, "admin:borrar", row=2)
             self._button("✅ Indultar", self._unban, "admin:indultar", row=2)
+            if self.pages > 1:
+                self._button("◀", self._previous, "admin:anterior", row=3)
+                counter = discord.ui.Button(
+                    label=f"Página {self.page + 1} de {self.pages}",
+                    row=3,
+                    disabled=True,
+                    custom_id="admin:pagina",
+                )
+                self.add_item(counter)
+                self._button("▶", self._next, "admin:siguiente", row=3)
             return
         danger = discord.ButtonStyle.danger
         self._button("🔇 Callar", self._mute, "admin:callar", row=1)
@@ -340,8 +361,8 @@ class AdminPanel(discord.ui.View):
         if self.member is not None:
             # El miembro puede haber cambiado (roles, apodo, aislamiento) o haberse ido.
             self.member = self.guild.get_member(self.member.id)
-        self.rebuild()
         embed = await self.cog.embed(self)
+        self.rebuild()
         await edit(interaction, embed=embed, view=self)
 
     async def run(
@@ -461,13 +482,21 @@ class AdminPanel(discord.ui.View):
         sanctions = await self.cog.bot.moderation.sanctions(
             self.guild.id, self.member.id, limit=HISTORY_ITEMS
         )
-        lines = [sanction_line(s) for s in sanctions] or ["Expediente limpio como el de un santo."]
+        lines = [sanction_line(s) for s in sanctions] or ["Sin sanciones registradas."]
         embed = discord.Embed(
             title=f"📜 Historial de {self.member.display_name}",
             description=_clip("\n".join(lines), 4096),
             color=COLOR,
         )
         await notify(interaction, embed=embed)
+
+    async def _previous(self, interaction: discord.Interaction) -> None:
+        self.page = (self.page - 1) % self.pages
+        await self.redraw(interaction)
+
+    async def _next(self, interaction: discord.Interaction) -> None:
+        self.page = (self.page + 1) % self.pages
+        await self.redraw(interaction)
 
     async def _back(self, interaction: discord.Interaction) -> None:
         self.member = None
@@ -647,8 +676,25 @@ class Moderation(commands.Cog):
         if panel.member is not None:
             embed = await self.member_embed(panel.member)
         else:
-            embed = await self.server_embed(panel.guild, panel.key)
-        embed.set_footer(text=FOOTERS[int(time.time()) % len(FOOTERS)])
+            lines = await self.server_lines(panel.guild, panel.key)
+            if lines is None:
+                embed = await self.summary_embed(panel.guild)
+                panel.pages = 1
+            else:
+                panel.pages = max(1, -(-len(lines) // PAGE_SIZE))
+                panel.page = min(panel.page, panel.pages - 1)
+                start = panel.page * PAGE_SIZE
+                title = next(f"{e} {label}" for k, e, label, _ in SERVER_VIEWS if k == panel.key)
+                embed = discord.Embed(
+                    title=f"🛡️ {panel.guild.name} · {title}",
+                    description=_clip(
+                        "\n".join(lines[start : start + PAGE_SIZE]) or "Sin resultados.", 4096
+                    ),
+                    color=COLOR,
+                )
+                embed.set_footer(text=f"{len(lines)} en total · {FOOTER}")
+                return embed
+        embed.set_footer(text=FOOTER)
         return embed
 
     async def member_embed(self, member: discord.Member) -> discord.Embed:
@@ -703,7 +749,7 @@ class Moderation(commands.Cog):
         history = "\n".join(sanction_line(s) for s in sanctions)
         embed.add_field(
             name="📜 Sanciones",
-            value=_clip(f"{summary}\n{history}" if counts else "Expediente limpio."),
+            value=_clip(f"{summary}\n{history}" if counts else "Sin sanciones registradas."),
             inline=False,
         )
         embed.add_field(
@@ -713,81 +759,81 @@ class Moderation(commands.Cog):
         )
         return embed
 
-    async def server_embed(self, guild: discord.Guild, key: str) -> discord.Embed:
-        """Resumen del servidor o una de sus listas (`SERVER_VIEWS`)."""
+    async def summary_embed(self, guild: discord.Guild) -> discord.Embed:
+        """Portada del panel: cifras del servidor y últimas sanciones."""
+        humans = [m for m in guild.members if not m.bot]
+        embed = discord.Embed(title=f"🛡️ {guild.name} · 📋 Resumen", color=COLOR)
+        online = sum(m.status is not discord.Status.offline for m in humans)
+        voice = sum(m.voice is not None for m in humans)
+        muted = sum(m.is_timed_out() for m in humans)
+        embed.description = (
+            f"👥 **{len(humans)}** personas y **{len(guild.members) - len(humans)}** bots\n"
+            f"🟢 **{online}** conectadas · 🎙️ **{voice}** en voz · 🔇 **{muted}** aisladas"
+        )
+        sanctions = await self.bot.moderation.sanctions(guild.id, limit=FICHA_ITEMS)
+        embed.add_field(
+            name="📜 Últimas sanciones",
+            value=_clip("\n".join(sanction_line(s) for s in sanctions) or "Ninguna."),
+            inline=False,
+        )
+        embed.add_field(
+            name="Cómo se usa",
+            value="Elige un miembro para ver su ficha y sancionarle, "
+            "o una lista en el segundo menú. Los botones de canal "
+            "actúan donde abriste el panel.",
+            inline=False,
+        )
+        return embed
+
+    async def server_lines(self, guild: discord.Guild, key: str) -> list[str] | None:
+        """Todas las filas de una lista del servidor (`SERVER_VIEWS`); `None` en el resumen.
+
+        Las listas de actividad incluyen a todas las personas del servidor: quien no
+        tiene registro sale al final como «sin registro».
+        """
+        if key == "resumen":
+            return None
+        if key == "sanciones":
+            sanctions = await self.bot.moderation.sanctions(guild.id, limit=SERVER_SANCTIONS)
+            return [sanction_line(s) for s in sanctions]
         now = time.time()
         humans = [m for m in guild.members if not m.bot]
-        title = next(f"{emoji} {label}" for k, emoji, label, _ in SERVER_VIEWS if k == key)
-        embed = discord.Embed(title=f"🛡️ {guild.name} · {title}", color=COLOR)
-        if key == "sanciones":
-            sanctions = await self.bot.moderation.sanctions(guild.id, limit=LIST_SIZE)
-            embed.description = (
-                "\n".join(sanction_line(s) for s in sanctions) or "Ninguna todavía. Paz social."
-            )
-            return embed
-        if key == "resumen":
-            online = sum(m.status is not discord.Status.offline for m in humans)
-            voice = sum(m.voice is not None for m in humans)
-            muted = sum(m.is_timed_out() for m in humans)
-            embed.description = (
-                f"👥 **{len(humans)}** personas y **{len(guild.members) - len(humans)}** bots\n"
-                f"🟢 **{online}** conectadas · 🎙️ **{voice}** en voz · 🔇 **{muted}** aisladas"
-            )
-            sanctions = await self.bot.moderation.sanctions(guild.id, limit=FICHA_ITEMS)
-            embed.add_field(
-                name="📜 Últimas sanciones",
-                value=_clip("\n".join(sanction_line(s) for s in sanctions) or "Ninguna todavía."),
-                inline=False,
-            )
-            embed.add_field(
-                name="Cómo se usa",
-                value="Elige un miembro para ver su ficha y sancionarle, "
-                "o una lista en el segundo menú. Los botones de canal "
-                "actúan donde abriste el panel.",
-                inline=False,
-            )
-            return embed
-
-        seen = await self.last_seen(guild.id)
-        blank = LastSeen()
-        if key == "inactivos":
-            ranked = sorted(humans, key=lambda m: last_active(m, seen.get(m.id, blank), now) or 0)
-            lines = [
-                f"{m.mention} — {_when(last_active(m, seen.get(m.id, blank), now))}" for m in ranked
+        if key == "nuevos":
+            humans.sort(key=lambda m: m.joined_at.timestamp() if m.joined_at else 0, reverse=True)
+            return [
+                f"{m.mention} — entró {_when(m.joined_at.timestamp() if m.joined_at else None)}"
+                for m in humans
             ]
-        elif key == "escritos":
-            wrote = [m for m in humans if seen.get(m.id, blank).message_at is not None]
-            wrote.sort(key=lambda m: seen[m.id].message_at or 0, reverse=True)
-            lines = [
-                f"{m.mention} — {_when(seen[m.id].message_at)} en <#{seen[m.id].message_channel}>"
-                for m in wrote
-            ]
-        elif key == "voz":
-            live = [m for m in humans if m.voice is not None and m.voice.channel is not None]
-            lines = [f"{m.mention} — 🔴 ahora en <#{m.voice.channel.id}>" for m in live]  # type: ignore[union-attr]
-            past = [
-                m for m in humans if m not in live and seen.get(m.id, blank).voice_at is not None
-            ]
-            past.sort(key=lambda m: seen[m.id].voice_at or 0, reverse=True)
-            lines += [
-                f"{m.mention} — {_when(seen[m.id].voice_at)} en <#{seen[m.id].voice_channel}>"
-                for m in past
-            ]
-        elif key == "nuevos":
-            joined = sorted(
-                (m for m in humans if m.joined_at),
-                key=lambda m: m.joined_at,
-                reverse=True,  # type: ignore[arg-type,return-value]
-            )
-            lines = [f"{m.mention} — entró {_when(m.joined_at.timestamp())}" for m in joined]  # type: ignore[union-attr]
-        else:  # aislados
-            lines = [
+        if key == "aislados":
+            return [
                 f"{m.mention} — hasta {discord.utils.format_dt(m.timed_out_until, 'R')}"
                 for m in humans
                 if m.is_timed_out() and m.timed_out_until
             ]
-        embed.description = _clip("\n".join(lines[:LIST_SIZE]) or "Nadie por aquí.", 4096)
-        return embed
+        seen = await self.last_seen(guild.id)
+        blank = LastSeen()
+        if key == "inactivos":
+            stamps = {m.id: last_active(m, seen.get(m.id, blank), now) for m in humans}
+            humans.sort(key=lambda m: stamps[m.id] or 0)
+            return [f"{m.mention} — {_when(stamps[m.id])}" for m in humans]
+        if key == "escritos":
+            humans.sort(key=lambda m: seen.get(m.id, blank).message_at or 0, reverse=True)
+            rows = [(m, seen.get(m.id, blank)) for m in humans]
+            return [f"{m.mention} — {_where(r.message_at, r.message_channel)}" for m, r in rows]
+
+        # voz: primero quien está ahora, luego por la última vez.
+        def voice_key(m: discord.Member) -> float:
+            return now if m.voice and m.voice.channel else seen.get(m.id, blank).voice_at or 0
+
+        humans.sort(key=voice_key, reverse=True)
+        lines = []
+        for m in humans:
+            if m.voice is not None and m.voice.channel is not None:
+                lines.append(f"{m.mention} — 🔴 ahora en <#{m.voice.channel.id}>")
+            else:
+                last = seen.get(m.id, blank)
+                lines.append(f"{m.mention} — {_where(last.voice_at, last.voice_channel)}")
+        return lines
 
     # -- Comando --------------------------------------------------------------------
 

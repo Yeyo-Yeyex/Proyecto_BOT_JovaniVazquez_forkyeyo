@@ -8,9 +8,14 @@ criterio.
 
 ## 7.x
 
-### 7.25.0 · 2026-10-18
+### 7.26.0 · 2026-10-18
 
 - Activity de Discord: `/jovani` abre cara o cruz en pantalla grande, con tus yapdollars
+
+### 7.25.0 · 2026-10-18
+
+- Admin: las listas de `admin` incluyen a todos los miembros, en páginas con ◀ y ▶
+- Admin: el panel `admin` usa textos serios, sin bromas
 
 ### 7.24.0 · 2026-10-18
 
