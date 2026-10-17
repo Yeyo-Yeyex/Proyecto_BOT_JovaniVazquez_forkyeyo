@@ -453,6 +453,41 @@ async def test_el_zapato_dura_entre_manos_y_se_pueden_contar_cartas(tmp_path: Pa
     assert any(f.name == "Zapato" and str(left) in f.value for f in embed.fields)
 
 
+async def test_abrir_otra_mesa_sigue_con_el_mismo_zapato_y_cierra_la_anterior(
+    tmp_path: Path,
+) -> None:
+    # Levantarse con la cuenta en contra no da zapato nuevo, ni olvida la ficha más baja.
+    cog = await make_cog(tmp_path)
+    cog.new_shoe = lambda: new_shoe(random.Random(7).shuffle)
+    first, *_ = await open_table(cog)
+    first.game.stand_all()
+    first.game.settled = True
+    shoe, left = first.shoe, len(first.shoe)
+
+    second, _, send_error, _ = await open_table(cog, amount="200")
+
+    send_error.assert_not_awaited()
+    assert second.shoe is shoe
+    assert len(shoe) < left, "la mano nueva sale de lo que quedaba"
+    assert second.lowest == 100
+    assert first.is_finished()
+    assert cog.tables == {second}
+
+
+async def test_con_la_mano_a_medias_no_se_abre_otra_mesa(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, c(10), c(9), c(6), c(8))
+    first, *_ = await open_table(cog)
+    assert first.game.player_turn
+
+    second, _, send_error, _ = await open_table(cog)
+
+    assert second is None
+    assert "otra mesa" in send_error.await_args.args[0]
+    assert not first.is_finished()
+    assert cog.tables == {first}
+    assert await balance(cog) == STARTING_BALANCE - 100
+
+
 async def test_la_carta_de_corte_baraja_un_zapato_nuevo(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     cog.new_shoe = lambda: new_shoe(random.Random(7).shuffle)
@@ -470,7 +505,7 @@ async def test_el_jefe_de_sala_baraja_si_subes_mucho_con_la_cuenta_alta(tmp_path
     table = BlackjackTable(cog, guild_id=GUILD_ID, owner=make_user(), stake=100)
     # Solo quedan dieces: ya han salido las cartas bajas y la cuenta está por las nubes.
     table.shoe, table.lowest = [c(10)] * 104, 100
-    assert table._shoe_for(PIT_BOSS_SPREAD * 100) is table.shoe, "una subida de 1 a 4 vale"
+    assert table._shoe_for(PIT_BOSS_SPREAD * 100) is table.shoe, "una subida hasta el tope vale"
     table.shoe, table.lowest = [c(10)] * 104, 100
     shoe = table._shoe_for(PIT_BOSS_SPREAD * 100 + 1)
     assert len(shoe) == DECKS * 52
