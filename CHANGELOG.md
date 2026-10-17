@@ -8,6 +8,11 @@ criterio.
 
 ## 7.x
 
+### 7.22.1 · 2026-10-17
+
+- Blackjack: contar cartas da para ganar si te lo curras: el jefe de sala deja subir de 1 a 8
+- Blackjack: el zapato es de cada jugador y sigue al abrir otra mesa (una mesa por jugador)
+
 ### 7.22.0 · 2026-10-17
 
 - Pisos: nueve inmuebles por barrio (180), cada barrio con su carácter y 10 tipos nuevos

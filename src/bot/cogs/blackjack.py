@@ -5,10 +5,12 @@ que solo pulsa su dueño, dinero siempre a través de `EconomyService`,
 mismo control de canales (`CASINO_CHANNEL_IDS`) y fichas con ½ / ×2 /
 All-in. `.bj 500` reparte al momento.
 
-El zapato (6 barajas) dura entre manos en cada mesa y se baraja al llegar a la
-carta de corte, así que se pueden contar cartas; la mesa enseña cuántas quedan.
-Si la apuesta pasa de `PIT_BOSS_SPREAD` veces la más baja del zapato con la cuenta
-alta, el jefe de sala baraja antes de repartir (`bot.services.blackjack`).
+El zapato (6 barajas) es de cada jugador: dura entre manos, y entre mesas, y se
+baraja al llegar a la carta de corte, así que se pueden contar cartas; la mesa enseña
+cuántas quedan. Cada jugador tiene una mesa abierta: abrir otra cierra la anterior y
+sigue con el mismo zapato (si no, bastaría levantarse con la cuenta en contra para
+estrenar uno). Si la apuesta pasa de `PIT_BOSS_SPREAD` veces la más baja del zapato
+con la cuenta alta, el jefe de sala baraja antes de repartir (`bot.services.blackjack`).
 
 El dinero en juego se cobra al repartir (y al doblar o separar), y el premio
 se paga al terminar la mano. Para que nunca se quede dinero colgado, una
@@ -381,13 +383,15 @@ class BlackjackTable(discord.ui.View):
         self.owner = owner
         self.stake = stake
         self.game: BlackjackGame | None = None
-        #: Zapato de la mesa: dura entre manos hasta la carta de corte (se cuentan cartas).
-        self.shoe: list[Card] = []
+        #: Zapato del jugador: dura entre manos hasta la carta de corte (se cuentan cartas)
+        #: y sigue en la próxima mesa que abra (`Blackjack.shoes`).
+        self.shoe: list[Card]
+        #: Apuesta más baja jugada con este zapato, para el jefe de sala.
+        self.lowest: int | None
+        self.shoe, self.lowest = cog.shoes.get((guild_id, owner.id), ([], None))
         #: Zapato ya barajado para cuando toque barajar, sorteado antes sin enseñarlo: así
         #: se pinta antes del clic la mano que sale de él. Solo con `cog.ahead`.
         self._next_shoe: list[Card] | None = None
-        #: Apuesta más baja jugada con este zapato, para el jefe de sala.
-        self.lowest: int | None = None
         #: Aviso de la mano en curso: se ha barajado o el jefe de sala ha sospechado.
         self.shoe_note: str | None = None
         #: Lo que pasó con el zapato al repartir la última mano, para los logros:
@@ -605,6 +609,7 @@ class BlackjackTable(discord.ui.View):
         self.shoe_note = random.choice(PIT_BOSS_LINES) if caught else SHUFFLE_LINE if cut else None
         self._shoe_event = (caught, cut, count, None if caught else spread)
         self.lowest = stake if self.lowest is None else min(self.lowest, stake)
+        self.cog.shoes[self.guild_id, self.owner.id] = (self.shoe, self.lowest)
         return self.shoe
 
     @staticmethod
@@ -1063,6 +1068,9 @@ class Blackjack(commands.Cog):
         # Mesas abiertas: para resolver sus manos si el bot se apaga. Cada
         # mesa sale de aquí al caducar, así que el tamaño está acotado.
         self.tables: set[BlackjackTable] = set()
+        #: Zapato de cada jugador `(servidor, miembro)` y su apuesta más baja: pasa de una
+        #: mesa a la siguiente. Vive en memoria (un reinicio baraja) y es uno por jugador.
+        self.shoes: dict[tuple[int, int], tuple[list[Card], int | None]] = {}
 
     async def cog_unload(self) -> None:
         """Al apagar, planta y paga las manos a medias para no quedarse con el dinero."""
@@ -1105,6 +1113,16 @@ class Blackjack(commands.Cog):
         if stake > balance:
             await send_error(insufficient_text(balance))
             return
+        # Una mesa por jugador: dos con el mismo zapato estropearían lo pintado por adelantado.
+        for old in [t for t in self.tables if (t.guild_id, t.owner.id) == (guild.id, user.id)]:
+            if old._busy or (old.game is not None and not old.game.settled):
+                where = getattr(old.message, "jump_url", None)
+                await send_error(
+                    "Acaba antes la mano de tu otra mesa" + (f": {where}" if where else ".")
+                )
+                return
+            old.stop()  # que no atienda más clics mientras se cierra
+            await old.on_timeout()
 
         table = BlackjackTable(self, guild_id=guild.id, owner=user, stake=stake)
 
@@ -1122,6 +1140,7 @@ class Blackjack(commands.Cog):
         # La mesa se apunta antes de cobrar: si Discord no deja enseñarla (la respuesta
         # llega tarde), la mano se cierra en el acto y nadie se queda con dinero colgado.
         self.tables.add(table)
+        table._busy = True  # otra mesa que se abra mientras reparte no puede cerrarla
         try:
             error = await table.start(first_edit, later)
         except discord.HTTPException:
@@ -1129,6 +1148,8 @@ class Blackjack(commands.Cog):
             table.stop()  # que no pinte por adelantado una mesa que nadie ve
             await table.force_settle()
             raise
+        finally:
+            table._busy = False
         if error is not None:
             self.tables.discard(table)
             await send_error(error)

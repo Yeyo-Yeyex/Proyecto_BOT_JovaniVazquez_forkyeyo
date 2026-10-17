@@ -19,11 +19,15 @@ docstring de `bot.services.blackjack` citan: al cambiar una regla o un pago, se
 vuelve a pasar y se actualizan las cifras.
 
 Con `--contar` juega además con el zapato que dura entre manos, como la mesa del
-bot (`CUT_CARD`, `needs_shuffle`), dos jugadores: el que no cuenta (siempre la
-misma apuesta) y uno que cuenta Hi-Lo perfecto y sube de 1 a `--subida` unidades
-según la cuenta verdadera (`true_count`). El jefe de sala del bot
-(`pit_boss_shuffles`) baraja si se pasa: con la subida de 1 a 4 no lo ve nunca.
-Salida: RTP de cada uno y cuántas veces barajó el jefe de sala.
+bot (`CUT_CARD`, `needs_shuffle`), tres jugadores: el que no cuenta (siempre la
+misma apuesta), uno que cuenta Hi-Lo perfecto con estrategia básica y otro que
+además juega los desvíos de la cuenta (seguro con +3 y los de Illustrious 18).
+Los que cuentan suben la ficha con la cuenta verdadera (`true_count`, sin la carta
+tapada de la banca, que no se ve): una unidad por debajo de +2 y desde ahí dos
+por punto de cuenta por encima de +1, hasta `--subida`. El jefe de sala del bot
+(`pit_boss_shuffles`) baraja si se pasa: con la subida de 1 a `PIT_BOSS_SPREAD` no
+lo ve nunca. Salida: RTP de cada uno, lo que gana o pierde por cada 100 manos en
+unidades y cuántas veces barajó el jefe de sala.
 """
 
 from __future__ import annotations
@@ -110,6 +114,35 @@ def basic_action(game: bj.BlackjackGame) -> bj.Action:
     return bj.Action.HIT if move == H else bj.Action.STAND
 
 
+def _seen_count(game: bj.BlackjackGame) -> float:
+    """Cuenta verdadera de lo que se ha visto: la carta tapada de la banca vuelve al zapato."""
+    hidden = [] if game.hole_revealed else game.dealer[1:2]
+    return bj.true_count([*game.shoe, *hidden])
+
+
+def index_action(game: bj.BlackjackGame, count: float) -> bj.Action:
+    """Estrategia básica con los desvíos de Illustrious 18 (6 barajas, 17 blando)."""
+    hand = game.current
+    total, soft = bj.hand_total(hand.cards)
+    up = _up(game)
+    if game.can(bj.Action.SPLIT) and hand.cards[0].value == 10:
+        if (up == 5 and count >= 5) or (up == 6 and count >= 4):
+            return bj.Action.SPLIT
+    if not soft:
+        stand = {
+            (16, 10): 0, (15, 10): 4, (16, 9): 5, (12, 2): 3, (12, 3): 2,
+            (12, 4): 0, (12, 5): -2, (12, 6): -1, (13, 2): -1, (13, 3): -2,
+        }  # fmt: skip
+        if (total, up) in stand:
+            return bj.Action.STAND if count >= stand[total, up] else bj.Action.HIT
+        double = {(11, 11): 1, (10, 10): 4, (10, 11): 4, (9, 2): 1, (9, 7): 3}
+        if (total, up) in double and game.can(bj.Action.DOUBLE):
+            if count >= double[total, up]:
+                return bj.Action.DOUBLE
+            return bj.Action.HIT
+    return basic_action(game)
+
+
 def _play(hands: int, seed: int) -> dict[str, float]:
     rng = random.Random(seed)
     totals = dict.fromkeys(
@@ -153,19 +186,25 @@ def _play(hands: int, seed: int) -> dict[str, float]:
     return totals
 
 
-def _count(hands: int, seed: int, spread: int, counting: bool) -> dict[str, float]:
-    """Manos seguidas con el zapato de la mesa; `counting` sube la apuesta con la cuenta."""
+def _count(hands: int, seed: int, spread: int, player: str) -> dict[str, float]:
+    """Manos seguidas con el zapato de la mesa.
+
+    `player`: `"plano"` (no cuenta), `"basica"` (sube con la cuenta) o `"desvios"`
+    (sube con la cuenta y juega sus desvíos).
+    """
     rng = random.Random(seed)
     shoe = bj.new_shoe(rng.shuffle)
     lowest: int | None = None
-    totals = dict.fromkeys(("staked", "returned", "boss"), 0.0)
+    deviations = player == "desvios"
+    totals = dict.fromkeys(("staked", "returned", "net", "boss"), 0.0)
     for _ in range(hands):
         if bj.needs_shuffle(shoe):
             shoe, lowest = bj.new_shoe(rng.shuffle), None
-        # Una unidad con la cuenta verdadera por debajo de 2; con 2 o más, tantas
-        # unidades como la cuenta, hasta la subida.
+        # Una unidad con la cuenta verdadera por debajo de 2; desde ahí, dos por punto
+        # de cuenta por encima de 1 (+2 → 2, +3 → 4, +4 → 6…), hasta la subida.
         count = bj.true_count(shoe)
-        units = max(1, min(spread, math.floor(count))) if counting and count >= 2 else 1
+        steep = math.floor(2 * (count - 1))
+        units = max(1, min(spread, steep)) if player != "plano" and count >= 2 else 1
         stake = 100 * units
         if bj.pit_boss_shuffles(shoe, stake=stake, lowest=lowest):
             totals["boss"] += 1
@@ -174,15 +213,21 @@ def _count(hands: int, seed: int, spread: int, counting: bool) -> dict[str, floa
         game = bj.BlackjackGame(stake=stake, shoe=shoe)
         game.deal()
         if game.insurance_pending:
-            game.decide_insurance(False)
+            insure = deviations and game.can_insure() and _seen_count(game) >= 3
+            game.decide_insurance(insure)
         while game.player_turn:
-            game.act(basic_action(game))
+            if deviations:
+                game.act(index_action(game, _seen_count(game)))
+            else:
+                game.act(basic_action(game))
         game.reveal_hole()
         while game.dealer_should_draw():
             game.dealer_draw()
         game.settle()
         totals["staked"] += game.total_stake
         totals["returned"] += game.total_return
+        totals["net"] += game.net
+    totals["hands"] = hands
     return totals
 
 
@@ -233,7 +278,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.contar:
         seeds = range(args.semilla, args.semilla + args.procesos)
-        for counting, label in ((False, "Sin contar, zapato de mesa"), (True, "Contando Hi-Lo")):
+        players = (
+            ("plano", "Sin contar, zapato de mesa"),
+            ("basica", "Contando Hi-Lo con estrategia básica"),
+            ("desvios", "Contando Hi-Lo con desvíos (seguro e I18)"),
+        )
+        for player, label in players:
             with ProcessPoolExecutor(args.procesos) as pool:
                 parts = list(
                     pool.map(
@@ -241,12 +291,14 @@ def main(argv: list[str] | None = None) -> int:
                         [share] * args.procesos,
                         seeds,
                         [args.subida] * args.procesos,
-                        [counting] * args.procesos,
+                        [player] * args.procesos,
                     )
                 )
             c = {key: sum(part[key] for part in parts) for key in parts[0]}
+            per_100 = c["net"] / 100 / c["hands"] * 100
             print(
                 f"{label} (subida 1-{args.subida}): RTP {c['returned'] / c['staked']:.4%} · "
+                f"{per_100:+.2f} unidades por cada 100 manos · "
                 f"el jefe de sala baraja {c['boss']:.0f} veces"
             )
     return 0
