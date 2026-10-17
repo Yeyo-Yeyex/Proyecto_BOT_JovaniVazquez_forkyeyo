@@ -51,7 +51,6 @@ from bot.services.taxes import (  # noqa: E402
     IGIC_GENERAL_RATE,
     IRPF_YAPDOLLARS_PER_EURO,
     SS_WORKER_RATE,
-    WEALTH_MAX_REDUCTION,
     Pace,
     PropertyWeek,
     WeekIncome,
@@ -66,7 +65,6 @@ from bot.services.taxes import (  # noqa: E402
 from bot.services.work import (  # noqa: E402
     BRANCH_DAYS,
     BRANCH_GROWTH,
-    LEGACY_DAYS,
     TRUNK_STEPS,
     VETERAN_MAX,
     VETERAN_PAY,
@@ -79,7 +77,7 @@ from bot.services.work import (  # noqa: E402
     pension_amount,
     required_days,
 )
-from bot.services.work_catalog import JOB_BY_KEY, JOBS  # noqa: E402
+from bot.services.work_catalog import JOBS  # noqa: E402
 
 #: El Falcon de Moncloa, con su IGIC (lo que hay que tener líquido para comprarlo).
 FALCON_ENTRY = max(CATALOG, key=lambda e: e.price)
@@ -456,7 +454,11 @@ class Simulation:
 
     def liquid(self) -> float:
         homes = sum(
-            self.market[k].price * hold.shares / h.SHARES * (1 - h.SALE_FEE_RATE * (1 + h.SERVICES_IGIC)) - hold.balance
+            self.market[k].price
+            * hold.shares
+            / h.SHARES
+            * (1 - h.SALE_FEE_RATE * (1 + h.SERVICES_IGIC))
+            - hold.balance
             for k, hold in self.holdings.items()
         )
         return self.cash - self.debt + homes
@@ -525,7 +527,9 @@ class Simulation:
         if self.invest == "none":
             return
         pos = self.c.position()
-        avail = self.cash - CASH_BUFFER - (pos.fee if pos.self_employed else 0) - self.next_training()
+        avail = (
+            self.cash - CASH_BUFFER - (pos.fee if pos.self_employed else 0) - self.next_training()
+        )
         if avail <= 0:
             return
         recent = self.daily[-h.INCOME_DAYS :]
@@ -586,8 +590,6 @@ class Simulation:
         return self
 
 
-
-
 def reference_plan(job: Job, risky_first: bool = False) -> list[tuple[Job, str]]:
     order = sorted(job.branches, key=lambda b: (b.kind == BranchKind.SAFE) == risky_first)
     return [(job, b.key) for b in order]
@@ -621,7 +623,9 @@ def ladder_report(jobs: list[Job], nota: float) -> list[str]:
     return out
 
 
-def recovery(job1: Job, job2: Job, *, days: int = 700, **opts: object) -> tuple[int, int | None, int | None]:
+def recovery(
+    job1: Job, job2: Job, *, days: int = 700, **opts: object
+) -> tuple[int, int | None, int | None]:
     """Cambiar de oficio frente a quedarse en P10: `(día del cambio, días hasta igualar el neto
     diario, días hasta igualar el neto acumulado)`, solo con sueldo y pensión."""
     stay = Simulation(reference_plan(job1), invest="none", **opts).run(days)  # type: ignore[arg-type]
@@ -632,7 +636,9 @@ def recovery(job1: Job, job2: Job, *, days: int = 700, **opts: object) -> tuple[
     daily = next(
         (d - start for d in range(start + 7, days) if sum(b[d - 7 : d]) >= sum(a[d - 7 : d])), None
     )
-    total = next((d - start for d in range(start + 1, days) if sum(b[start:d]) >= sum(a[start:d])), None)
+    total = next(
+        (d - start for d in range(start + 1, days) if sum(b[start:d]) >= sum(a[start:d])), None
+    )
     return start, daily, total
 
 
@@ -702,7 +708,10 @@ def main() -> None:
                 sum(w + p for w, p, _r in sim.daily[i : i + step]) / step
                 for i in range(0, len(sim.daily), step)
             ]
-            print("Neto al día (sueldo + pensión), cada 4 semanas: " + " ".join(f"{n / 1000:.0f}k" for n in nets))
+            print(
+                "Neto al día (sueldo + pensión), cada 4 semanas: "
+                + " ".join(f"{n / 1000:.0f}k" for n in nets)
+            )
     if args.solo in (None, "cambio"):
         print("\n== Cambiar de oficio tras acabar el primero (solo sueldo y pensión) ==")
         first = by_key[args.oficio]
