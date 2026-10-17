@@ -28,6 +28,7 @@ from bot.services.taxes import (
     igic,
     wealth_quote,
     wealth_tax,
+    weekly_yd,
 )
 
 GUILD = 1
@@ -104,15 +105,18 @@ def test_igic_es_el_siete_por_ciento() -> None:
 
 
 def test_deduccion_80_y_40_con_los_limites() -> None:
-    # 80 % de los primeros 2.500 Y$ y 40 % del resto.
-    assert donation_deduction(5_000, 1_000_000, 10_000) == 2_000 + 1_000
+    # 80 % de los primeros 250 € del año (los de una semana con la vara) y 40 % del resto.
+    assert DONATION_FULL_LIMIT == round(weekly_yd(250))
+    gift = DONATION_FULL_LIMIT * 2
+    assert donation_deduction(gift, 1_000_000, 10**6) == round(
+        DONATION_FULL_LIMIT * 0.8 + DONATION_FULL_LIMIT * 0.4
+    )
     # No pasa del 10 % de la base…
     assert donation_deduction(5_000, 10_000, 10_000) == 800
-    # …ni del IRPF pagado.
+    # …ni de la cuota.
     assert donation_deduction(5_000, 1_000_000, 300) == 300
-    # Sin IRPF no se recupera nada.
+    # Sin cuota no se recupera nada.
     assert donation_deduction(5_000, 1_000_000, 0) == 0
-    assert DONATION_FULL_LIMIT == 2_500
 
 
 def test_las_ongs_tienen_cuentas_negativas_y_distintas() -> None:
@@ -318,15 +322,18 @@ async def test_el_patrimonio_se_anuncia_y_suma_logros(
     assert delta.add == {"wealth_tax_paid": DUE, "wealth_tax_weeks": 1, "wealth_joint_limit": 1}
 
 
-def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_la_mitad() -> None:
-    assert WEALTH_MAX_REDUCTION == 0.5  # la ley dice 80 %; el proyecto, 50 % (7.22)
+def test_el_limite_conjunto_con_el_irpf_rebaja_hasta_el_80_por_ciento() -> None:
+    assert WEALTH_MAX_REDUCTION == 0.8  # el de la ley (art. 31.c de la Ley 19/1991)
     full = wealth_tax(BIG)
-    # Sin renta: Patrimonio + IRPF no pueden pasar del 60 % de nada, pero se paga la mitad.
+    # Sin renta: Patrimonio + IRPF no pueden pasar del 60 % de nada; se paga lo mínimo.
     broke = wealth_quote(BIG)
     assert broke.full == full and broke.due == full - round(full * WEALTH_MAX_REDUCTION)
-    # Con mucha renta, el límite no toca nada.
-    rich = wealth_quote(BIG, weekly_income=10_000_000)
+    # Con mucha renta en la semana, el límite no toca nada.
+    rich = wealth_quote(BIG, irpf_base=10_000_000, irpf_quota=1_000_000)
     assert rich.due == full and rich.reduced == 0
+    # Se compara con la cuota del IRPF de la misma semana: si es alta, rebaja más.
+    taxed = wealth_quote(BIG, irpf_base=10_000_000, irpf_quota=6_000_000)
+    assert taxed.due == full - round(full * WEALTH_MAX_REDUCTION)
     # Lo que no da rentas (los objetos de la tienda) no se rebaja.
     goods = wealth_quote(BIG, unproductive=BIG)
     assert goods.due == full
@@ -339,7 +346,7 @@ def test_las_grandes_fortunas_se_declaran_desde_37_millones_y_salen_a_cero() -> 
     assert not wealth_quote(SOLIDARITY_WEALTH_THRESHOLD).subject
     for worth in (SOLIDARITY_WEALTH_THRESHOLD + 1, 60_000_000, 500_000_000):
         for income in (0, 10_000_000):
-            quote = wealth_quote(worth, weekly_income=income)
+            quote = wealth_quote(worth, irpf_base=income, irpf_quota=income // 10)
             assert quote.subject and quote.solidarity == 0  # se descuenta el Patrimonio
 
 

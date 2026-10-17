@@ -38,6 +38,7 @@ from bot.services.achievements import (
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
     ENRAYA_BEAT_PREFIX,
+    FIRST_TAX_WEEKLY,
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
@@ -1123,7 +1124,8 @@ async def test_la_primera_retencion_dispara_el_discurso_de_perro_sanxe(tmp_path:
     small = await economy.pay_income(GUILD, USER, gross=1_000, concept="nivel:1")
     assert small.tax == 0  # por debajo del mínimo, Perro Sanxe no toca nada
 
-    big = await economy.pay_income(GUILD, USER, gross=10_000, concept="nivel:10")
+    # Pasar de largo el mínimo personal de la semana (`FIRST_TAX_WEEKLY`) ya retiene.
+    big = await economy.pay_income(GUILD, USER, gross=FIRST_TAX_WEEKLY * 2, concept="nivel:10")
     assert big.tax > 0
     ids = await cog.apply(GUILD, USER, StatDelta(add={"tax_paid": big.tax}), channel)
 

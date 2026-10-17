@@ -233,11 +233,58 @@ def test_la_renta_paga_primero_el_ibi_y_lo_que_falta_queda_a_deber() -> None:
     assert (short.ibi, short.costs, short.net, short.arrears_ibi) == (200, 50, 0, 0)
 
 
-def test_la_renta_se_pasa_a_la_escala_de_la_retencion() -> None:
-    assert rules.rent_to_fiscal(365) == 12
-    assert rules.rent_to_fiscal(-5) == 0
-    assert rules.taxable_rent(1_000, 400) == 300
-    assert rules.taxable_rent(100, 400) == 0
+def test_solo_el_alquiler_de_vivienda_tiene_la_reduccion_del_23_2() -> None:
+    local = next(item for item in LISTINGS if item.kind not in rules.HOME_KINDS)
+    assert rules.is_dwelling(BAJO, "referencia")
+    assert not rules.is_dwelling(BAJO, rules.NOMAD_LEVEL)  # temporada (art. 3 LAU)
+    assert not rules.is_dwelling(BAJO, rules.VACATION_LEVEL)  # turístico
+    assert not rules.is_dwelling(local, "referencia")
+    calm = rules.contract_reduction(BAJO, "referencia", index=1.0, rent=900, last_rent=1_000)
+    assert calm == rules.RENT_REDUCTION
+    assert rules.contract_reduction(local, "referencia", index=1.0, rent=900, last_rent=0) == 0
+
+
+def test_el_90_es_para_quien_rebaja_mas_de_un_5_en_zona_tensionada() -> None:
+    tense = rules.TENSE_INDEX
+    cut = rules.contract_reduction(BAJO, "referencia", index=tense, rent=940, last_rent=1_000)
+    small = rules.contract_reduction(BAJO, "referencia", index=tense, rent=950, last_rent=1_000)
+    first = rules.contract_reduction(BAJO, "referencia", index=tense, rent=500, last_rent=0)
+    assert cut == rules.TENSE_RENT_REDUCTION
+    assert small == first == rules.RENT_REDUCTION
+
+
+def test_los_contratos_de_antes_de_la_8_tienen_la_reduccion_general() -> None:
+    old = rules.Lease(status=rules.RENTED, level="referencia", rent=1_000)
+    assert rules.lease_reduction(BAJO, old) == rules.RENT_REDUCTION
+    signed = rules.Lease(status=rules.RENTED, level="referencia", rent=1_000, reduction=0.9)
+    assert rules.lease_reduction(BAJO, signed) == 0.9
+
+
+def test_un_piso_vacio_imputa_el_1_1_por_ciento_del_catastral_al_ano() -> None:
+    monthly = rules.imputed_rent(BAJO, rules.SHARES)
+    assert monthly == round(rules.cadastral_value(BAJO) * 0.011 / 12)
+    assert rules.imputed_rent(BAJO, rules.SHARES // 2) == pytest.approx(monthly / 2, abs=1)
+
+
+def test_al_irse_el_inquilino_se_guarda_su_renta_para_el_siguiente_contrato() -> None:
+    lease = rules.Lease(
+        status=rules.RENTED, level="referencia", tenant="familia", rent=1_234,
+        until=date(2026, 10, 1), since=date(2026, 8, 1),
+    )  # fmt: skip
+
+    class NoRenew:
+        def random(self) -> float:
+            return 0.99
+
+        def choice(self, items):  # type: ignore[no-untyped-def]
+            return items[0]
+
+        def randint(self, low: int, high: int) -> int:
+            return low
+
+    outcome = rules.advance_day(BAJO, lease, date(2026, 10, 2), 1.0, NoRenew())  # type: ignore[arg-type]
+    assert outcome.lease.status == rules.VACANT
+    assert outcome.lease.last_rent == 1_234
 
 
 def test_comprar_sube_el_indice_segun_lo_que_pesa_y_vender_lo_deja_igual() -> None:
@@ -664,7 +711,7 @@ async def test_quien_lo_tiene_todo_en_ladrillo_paga_el_patrimonio_con_un_embargo
     assert embargoed > 0
     assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
     breakdown = await economy.tax_breakdown(GUILD)
-    assert breakdown[ANA]["patrimonio"] == embargoed
+    assert breakdown[ANA]["deudas"] == embargoed
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state >= embargoed
 
 

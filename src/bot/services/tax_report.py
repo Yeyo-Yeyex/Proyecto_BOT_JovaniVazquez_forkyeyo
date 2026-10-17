@@ -216,8 +216,12 @@ def verdict(bill: TaxBill, share: float) -> str:
 # -- Embeds de `hacienda` ------------------------------------------------------------------
 
 COLOR = discord.Color.from_rgb(170, 21, 27)
-#: Miembros que salen con su desglose en la tarjeta pública.
+#: Miembros que salen con su desglose en la tarjeta pública (menos si no caben).
 TOP_BILLS = 10
+#: Límite de Discord para todo el texto de un embed.
+EMBED_TOTAL_LIMIT = 6_000
+#: Lo que se guarda para los nombres de los campos y el «y N más» de la lista.
+FIELD_NAMES_RESERVE = 160
 _MEDALS = ("🥇", "🥈", "🥉")
 
 
@@ -268,9 +272,14 @@ def add_bill_fields(
             f"{rank} {names.get(bill.user_id, f'<@{bill.user_id}>')} · "
             f"**{format_amount(bill.total)}**\n-# {compact_line(bill)}"
         )
-    if len(paying) > TOP_BILLS:
+    # El embed entero no puede pasar de 6.000 caracteres: si no caben todos, se quitan
+    # los últimos de la lista (los que menos pagan) y se dice cuántos faltan.
+    budget = EMBED_TOTAL_LIMIT - len(embed) - FIELD_NAMES_RESERVE
+    while len(lines) > 1 and len("\n".join(lines)) > budget:
+        lines.pop()
+    if len(paying) > len(lines):
         lines.append(
-            f"-# Y {len(paying) - TOP_BILLS} más. `hacienda @miembro` para ver a cualquiera."
+            f"-# Y {len(paying) - len(lines)} más. `hacienda @miembro` para ver a cualquiera."
         )
     for i, block in enumerate(_chunks(lines)):
         embed.add_field(
@@ -345,6 +354,12 @@ def add_housing_fields(
             f"{rank} {names.get(user_id, f'<@{user_id}>')} · "
             f"**{format_amount(sum(amounts.values()))}**\n-# {parts}"
         )
+    # Como en la lista de facturas: si no cabe en el embed, fuera los que menos pagan.
+    budget = EMBED_TOTAL_LIMIT - len(embed) - FIELD_NAMES_RESERVE
+    while len(lines) > 1 and len("\n".join(lines)) > budget:
+        lines.pop()
+    if len(ranked) > len(lines) and len(lines) < TOP_BILLS:
+        lines.append(f"-# Y {len(ranked) - len(lines)} caseros más.")
     for i, block in enumerate(_chunks(lines)):
         embed.add_field(
             name="Los caseros que más pagan" if i == 0 else "​", value=block, inline=False

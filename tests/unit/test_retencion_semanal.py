@@ -1,8 +1,9 @@
-"""Una sola renta y una sola semana para todas las retenciones.
+"""Una sola renta y una sola vara para todas las retenciones.
 
-La nómina de `pala` proyecta con toda la renta sujeta de los últimos 7 días
-(premios, casino en positivo y nóminas), igual que los premios y el casino.
-Antes solo miraba las nóminas: quien ganaba eventos al 30 % trabajaba al 0 %.
+La nómina de `pala` retiene con toda la renta sujeta de la semana (premios, casino en
+positivo y nóminas), igual que los premios: antes solo miraba las nóminas y quien
+ganaba eventos al 30 % trabajaba al 0 %. Y todo con la misma vara: un Y$ de nómina
+cuenta lo mismo que uno de premio.
 """
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyServ
 from bot.services.levels import TIMEZONE
 from bot.services.taxes import (
     PROJECTION_WINDOW_SECONDS,
+    Pace,
+    WeekIncome,
     compute_hk_payslip,
-    fiscal_to_wage,
-    wage_to_fiscal,
 )
 
 GUILD = 1
@@ -26,8 +27,8 @@ BEA = 20
 NOW = datetime(2026, 10, 6, 18, tzinfo=TIMEZONE).timestamp()
 #: Bruto de un turno del puesto 1: solo, no llega al mínimo.
 TURNO = 1_700
-#: Un premio gordo de la semana (escala general).
-PREMIO = 30_000
+#: Un premio gordo de la semana.
+PREMIO = 300_000
 
 
 class Clock:
@@ -47,13 +48,8 @@ async def economy_with(tmp_path: Path) -> tuple[EconomyService, Clock]:
     return EconomyService(repo, clock=clock), clock
 
 
-def test_la_ventana_es_la_semana_de_la_renta() -> None:
+def test_hong_kong_proyecta_con_una_semana() -> None:
     assert PROJECTION_WINDOW_SECONDS == 7 * 24 * 3600
-
-
-def test_pasar_de_escala_y_volver_apenas_pierde() -> None:
-    assert fiscal_to_wage(170) == 1_700
-    assert abs(fiscal_to_wage(wage_to_fiscal(1_755)) - 1_755) <= 5
 
 
 async def test_un_turno_suelto_sin_mas_renta_no_paga_irpf(tmp_path: Path) -> None:
@@ -91,10 +87,10 @@ async def test_el_casino_en_positivo_tambien_cuenta(tmp_path: Path) -> None:
     assert salary.payslip.irpf > 0
 
 
-async def test_lo_de_hace_mas_de_una_semana_ya_no_cuenta(tmp_path: Path) -> None:
+async def test_lo_de_hace_dos_semanas_ya_no_cuenta(tmp_path: Path) -> None:
     economy, clock = await economy_with(tmp_path)
     await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
-    clock.now += PROJECTION_WINDOW_SECONDS + 60
+    clock.now += 2 * PROJECTION_WINDOW_SECONDS
 
     salary = await economy.pay_salary(GUILD, ANA, gross=TURNO, concept="pala:obra")
 
@@ -129,9 +125,15 @@ async def test_los_premios_siguen_viendo_la_nomina(tmp_path: Path) -> None:
 def test_hong_kong_residente_suma_la_renta_espanola() -> None:
     sin = compute_hk_payslip(TURNO * 10, recent_hk=0, resident=True, exempt_left=0)
     con = compute_hk_payslip(
-        TURNO * 10, recent_hk=0, resident=True, exempt_left=0, recent_es=fiscal_to_wage(PREMIO)
+        TURNO * 10,
+        recent_hk=0,
+        resident=True,
+        exempt_left=0,
+        pace=Pace(current=WeekIncome(prizes=PREMIO)),
     )
 
     assert con.irpf > sin.irpf
     # Hong Kong solo mira lo de Hong Kong.
     assert con.hk_tax == sin.hk_tax
+    # Lo pagado allí por la parte que tributa aquí es deducible en la declaración.
+    assert con.credit == round(con.hk_tax * con.taxable / con.gross)

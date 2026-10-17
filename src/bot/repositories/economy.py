@@ -3553,6 +3553,16 @@ class EconomyRepository:
                 for row in members
                 if int(row[0]) > 0
             ]
+            # Quien debe a Hacienda y no ha tenido renta esta semana también paga del
+            # monedero (los que declaran ya lo hicieron en `_file_return_in`).
+            declared = {r.user_id for r in filed}
+            debtors = connection.execute(
+                "SELECT user_id FROM economy_tax_debts WHERE guild_id = ? AND amount > 0",
+                (guild_id,),
+            ).fetchall()
+            for (debtor,) in debtors:
+                if int(debtor) > 0 and int(debtor) not in declared:
+                    self._collect_debt_in(connection, guild_id, int(debtor), now)
             oldest = (date.fromisoformat(week.monday) - timedelta(days=7 * CARRY_WEEKS)).isoformat()
             connection.execute(
                 "DELETE FROM economy_irpf_carry WHERE guild_id = ? AND week_start < ?",
@@ -3657,25 +3667,27 @@ class EconomyRepository:
             compensated = min(-result, owed)
             refund = -result - compensated
             owed -= compensated
-        collected = min(owed, self._ensure_wallet(connection, guild_id, user_id))
-        if collected:
-            self._apply_in_transaction(
-                connection, guild_id, user_id, (LedgerEntry(-collected, "embargo:deuda"),)
-            )
-            self._credit_state_in(connection, guild_id, collected, "embargo:deuda")
-        if compensated + collected:
+        if compensated:
             connection.execute(
                 "INSERT INTO economy_debt_payments (guild_id, user_id, amount, created_at) "
                 "VALUES (?, ?, ?, ?)",
-                (guild_id, user_id, compensated + collected, now),
+                (guild_id, user_id, compensated, now),
             )
-        if row is not None or debt:
+        if row is not None:
+            connection.execute(
+                "UPDATE economy_tax_debts SET amount = ? WHERE guild_id = ? AND user_id = ?",
+                (owed, guild_id, user_id),
+            )
+        # Lo que debía de antes se cobra del monedero; la deuda nueva de hoy, no (si
+        # quedó deuda es porque el monedero ya está a cero).
+        collected = self._collect_debt_in(connection, guild_id, user_id, now)
+        if debt:
             connection.execute(
                 """
                 INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, ?)
-                ON CONFLICT (guild_id, user_id) DO UPDATE SET amount = excluded.amount
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET amount = amount + excluded.amount
                 """,
-                (guild_id, user_id, owed - collected + debt),
+                (guild_id, user_id, debt),
             )
         if refund:
             connection.execute(
@@ -3714,6 +3726,40 @@ class EconomyRepository:
             collected=collected,
             rate=filed.tax.rate,
         )
+
+    def _collect_debt_in(
+        self, connection: sqlite3.Connection, guild_id: int, user_id: int, now: float
+    ) -> int:
+        """Cobra del monedero lo que un miembro debe a Hacienda, hasta donde llegue.
+
+        El dinero es lo primero que se embarga (art. 169.2.a de la Ley 58/2003). Va al
+        Estado y queda en `economy_debt_payments`.
+
+        Returns:
+            Lo cobrado.
+        """
+        row = connection.execute(
+            "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        ).fetchone()
+        owed = int(row["amount"]) if row else 0
+        paid = min(owed, self._ensure_wallet(connection, guild_id, user_id)) if owed else 0
+        if paid <= 0:
+            return 0
+        self._apply_in_transaction(
+            connection, guild_id, user_id, (LedgerEntry(-paid, "embargo:deuda"),)
+        )
+        self._credit_state_in(connection, guild_id, paid, "embargo:deuda")
+        connection.execute(
+            "UPDATE economy_tax_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
+            (paid, guild_id, user_id),
+        )
+        connection.execute(
+            "INSERT INTO economy_debt_payments (guild_id, user_id, amount, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (guild_id, user_id, paid, now),
+        )
+        return paid
 
     @staticmethod
     def _apply_carries_in(

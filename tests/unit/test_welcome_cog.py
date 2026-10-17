@@ -17,6 +17,7 @@ from bot.cogs.welcome import GreetButton, Welcome, load_farewell_insults
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.welcome import WelcomeRepository, WelcomeSettings
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
+from bot.services.taxes import STATE_PERSONAL_MINIMUM, weekly_yd
 from bot.services.welcome import GREETER_GIFT, WELCOMED_GIFT
 
 GUILD = 456
@@ -234,7 +235,9 @@ async def test_saludar_por_encima_del_minimo_retiene_irpf_para_el_estado(
     economy_repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await economy_repository.initialize()
     economy = EconomyService(economy_repository)
-    await economy.pay_income(GUILD, 1, gross=20_000, concept="nivel:20")
+    # Con una semana bien por encima del mínimo personal, el saludo ya retiene.
+    above = round(weekly_yd(STATE_PERSONAL_MINIMUM * 4))
+    await economy.pay_income(GUILD, 1, gross=above, concept="nivel:20")
     state_before = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
     cog = await greet_cog(tmp_path, now=JOINED + 60)
     cog.economy = economy

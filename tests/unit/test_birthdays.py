@@ -30,7 +30,7 @@ from bot.services.birthdays import (
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import compute_withholding
+from bot.services.taxes import STATE_PERSONAL_MINIMUM, Pace, compute_withholding, weekly_yd
 
 GUILD = 1
 TODAY = date(2026, 10, 4)
@@ -210,8 +210,8 @@ async def test_el_cumpleanero_cobra_el_regalo_y_se_anuncia_una_sola_vez(
 
     cog._announce.assert_awaited_once()
     assert cog._announce.await_args.args[:3] == (guild, member, 2026)
-    # Retención proyectando el regalo solo, con la ventana de 7 días de la Renta.
-    gift = compute_withholding(BIRTHDAY_GIFT, recent_income=0)
+    # Retención con el tipo estable de quien no ha cobrado nada más en la semana.
+    gift = compute_withholding(BIRTHDAY_GIFT, Pace())
     assert await economy.balance(GUILD, 10) == STARTING_BALANCE + gift.net
     assert await economy.balance(GUILD, 11) == STARTING_BALANCE
     assert cog._today[GUILD] == (TODAY, frozenset({10}))
@@ -264,7 +264,9 @@ async def test_felicitar_por_encima_del_minimo_retiene_irpf_para_el_estado(
     """El regalo lo pone el bot: es ganancia patrimonial (art. 33.1 LIRPF), no donación."""
     cog, repository, economy = await make_cog(tmp_path)
     await repository.set_birthday(GUILD, 10, 4, 10, overwrite=False)
-    await economy.pay_income(GUILD, 20, gross=20_000, concept="nivel:20")
+    # Con una semana bien por encima del mínimo personal, el regalo ya retiene.
+    above = round(weekly_yd(STATE_PERSONAL_MINIMUM * 4))
+    await economy.pay_income(GUILD, 20, gross=above, concept="nivel:20")
     collected = (await economy.treasury(GUILD, since=0)).collected_total
     guild = SimpleNamespace(id=GUILD)
 
