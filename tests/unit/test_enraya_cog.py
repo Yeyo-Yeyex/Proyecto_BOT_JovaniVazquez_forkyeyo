@@ -43,11 +43,14 @@ from bot.services.enraya import (
 from bot.services.enraya_render import Media
 from bot.services.gallos import duel_prize
 from bot.services.levels import TIMEZONE
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
 RIVAL_ID = 11
 FAN_IDS = (20, 21, 22)
+#: Lo que retiene el casino al que gana un duelo de 500 Y$.
+PRIZE_TAX = gambling_day_tax(duel_prize(500) - 500)
 #: El primer `random()` del azar: por encima de 0.5 no se cambian los colores del duelo.
 KEEP_COLORS, SWAP_COLORS = 0.9, 0.1
 NOON = datetime(2026, 10, 14, 12, 0, tzinfo=TIMEZONE).timestamp()
@@ -781,9 +784,10 @@ async def test_ganar_un_duelo_paga_el_premio_al_ganador_y_nada_al_otro(tmp_path:
     assert ledger(tmp_path, red.id) == [
         ("enraya:apuesta", -500),
         ("enraya:premio", duel_prize(500)),
+        ("irpf:juego", -PRIZE_TAX),
     ]
     assert ledger(tmp_path, yellow.id) == [("enraya:apuesta", -500)]
-    assert await net(cog, red.id) == duel_prize(500) - 500
+    assert await net(cog, red.id) == duel_prize(500) - 500 - PRIZE_TAX
     assert await net(cog, yellow.id) == -500
     assert not cog.busy and not cog.duels
     assert last_edit(duel)["view"] is None
@@ -801,7 +805,10 @@ async def test_ganan_las_amarillas_si_las_rojas_se_equivocan(tmp_path: Path) -> 
     red, yellow = duel.member(Disc.RED), duel.member(Disc.YELLOW)
     await play(duel, [6, 0, 6, 1, 5, 2, 5, 3])
     assert duel.board.winner is Disc.YELLOW
-    assert ledger(tmp_path, yellow.id)[-1] == ("enraya:premio", duel_prize(500))
+    assert ledger(tmp_path, yellow.id)[-2:] == [
+        ("enraya:premio", duel_prize(500)),
+        ("irpf:juego", -PRIZE_TAX),
+    ]
     assert ledger(tmp_path, red.id) == [("enraya:apuesta", -500)]
 
 
@@ -826,7 +833,10 @@ async def test_rendirse_en_un_duelo_da_el_premio_al_otro(tmp_path: Path, resigne
     quitter, other = duel.member(resigner), duel.member(resigner.other)
     await duel.resign(fake_interaction(quitter))
     assert duel.phase is Phase.DONE
-    assert ledger(tmp_path, other.id)[-1] == ("enraya:premio", duel_prize(500))
+    assert ledger(tmp_path, other.id)[-2:] == [
+        ("enraya:premio", duel_prize(500)),
+        ("irpf:juego", -PRIZE_TAX),
+    ]
     assert ledger(tmp_path, quitter.id) == [("enraya:apuesta", -500)]
     assert (await cog.repository.get(GUILD_ID, quitter.id)).losses == 1
     assert (await cog.repository.get(GUILD_ID, other.id)).wins == 1
@@ -853,7 +863,10 @@ async def test_quien_se_duerme_pierde_y_el_otro_cobra(tmp_path: Path) -> None:
     duel.deadline = cog.wall_clock() - 1
     await duel._turn_timeout(len(duel.board.moves))
     assert duel.phase is Phase.DONE
-    assert ledger(tmp_path, winner.id)[-1] == ("enraya:premio", duel_prize(500))
+    assert ledger(tmp_path, winner.id)[-2:] == [
+        ("enraya:premio", duel_prize(500)),
+        ("irpf:juego", -PRIZE_TAX),
+    ]
     assert ledger(tmp_path, sleeper.id) == [("enraya:apuesta", -500)]
     assert "por tiempo" in last_edit(duel)["embed"].description
     assert (await cog.repository.get(GUILD_ID, sleeper.id)).losses == 1
@@ -975,18 +988,23 @@ async def test_la_grada_paga_segun_el_reparto_de_la_porra(tmp_path: Path) -> Non
     await play(duel, HORIZONTAL)  # ganan las rojas
     payouts = grada_payouts({k: s.bet for k, s in duel.crowd.items()}, Disc.RED)
     paid = 0
+    withheld = PRIZE_TAX
     for fan in FAN_IDS:
         moves = ledger(tmp_path, fan)
         assert moves[0] == ("enraya:apuesta", -200)
-        assert sum(amount for _reason, amount in moves[1:]) == payouts[fan]
+        prizes = [amount for reason, amount in moves[1:] if reason != "irpf:juego"]
+        assert sum(prizes) == payouts[fan]
         paid += payouts[fan]
-        assert await net(cog, fan) == payouts[fan] - 200
+        tax = gambling_day_tax(payouts[fan] - 200)
+        withheld += tax
+        assert await net(cog, fan) == payouts[fan] - 200 - tax
     assert payouts[FAN_IDS[1]] == 0 and payouts[FAN_IDS[0]] > 200
     # La grada no crea dinero: se reparte lo apostado menos la comisión.
     assert paid <= 600
-    # Y en todo el duelo no se crea dinero: lo que falta es la comisión de la casa.
+    # Y en todo el duelo no se crea dinero: lo que falta es la comisión de la casa y lo
+    # que retiene el casino a los que ganan.
     total = sum([await net(cog, uid) for uid in (red.id, yellow.id, *FAN_IDS)])
-    assert total == -(2 * 500 - duel_prize(500)) - (600 - paid)
+    assert total == -(2 * 500 - duel_prize(500)) - (600 - paid) - withheld
     assert "grada" in last_edit(duel)["embed"].description.lower()
 
 

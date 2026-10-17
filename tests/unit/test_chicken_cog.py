@@ -170,7 +170,8 @@ async def test_cobrar_paga_y_dice_donde_estaba_el_coche(tmp_path: Path) -> None:
     await view._cash_out(interaction)
     assert view.game is not None and view.game.status is Status.CASHED
     prize = payout(1_000, MEDIA, 3)
-    assert await balance(cog) == STARTING_BALANCE - 1_000 + prize
+    withheld = gambling_day_tax(prize - 1_000)
+    assert await balance(cog) == STARTING_BALANCE - 1_000 + prize - withheld
     embed = interaction.edit_original_response.await_args.kwargs["embed"]
     assert "carril 6" in (embed.description or "")
     # Al acabar vuelven 🔁, la apuesta y los dos menús.
@@ -187,7 +188,7 @@ async def test_autocobro_cruza_y_cobra_solo(tmp_path: Path) -> None:
     assert game is not None and game.status is Status.CASHED
     assert game.crossed == lanes_for_target(MEDIA, 300)
     assert game.cents >= 300
-    withheld = gambling_day_tax(game.payout - 1_000, 0)
+    withheld = gambling_day_tax(game.payout - 1_000)
     assert await balance(cog) == STARTING_BALANCE - 1_000 + game.payout - withheld
     cog.renderer.hops.assert_awaited_once()
     assert cog.renderer.hops.call_args.kwargs["start"] == 0
@@ -229,7 +230,8 @@ async def test_caducar_a_medias_cobra(tmp_path: Path) -> None:
     view = await open_road(cog, amount="1000", hit=None)
     await view._cross(make_interaction())
     await cog.cog_unload()
-    assert await balance(cog) == STARTING_BALANCE - 1_000 + payout(1_000, MEDIA, 1)
+    prize = payout(1_000, MEDIA, 1)
+    assert await balance(cog) == STARTING_BALANCE - 1_000 + prize - gambling_day_tax(prize - 1_000)
 
 
 async def test_solo_el_dueno_juega(tmp_path: Path) -> None:

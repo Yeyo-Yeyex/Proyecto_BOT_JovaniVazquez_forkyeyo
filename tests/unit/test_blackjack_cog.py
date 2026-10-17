@@ -35,6 +35,7 @@ from bot.services.blackjack import (
 )
 from bot.services.blackjack_scene import Media
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -131,7 +132,7 @@ async def test_blackjack_al_repartir_paga_3_a_2(tmp_path: Path) -> None:
     table, *_ = await open_table(cog)
 
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 150
+    assert await balance(cog) == STARTING_BALANCE + 150 - gambling_day_tax(150)
     assert not table.deal_button.disabled
 
 
@@ -158,7 +159,7 @@ async def test_plantarse_y_la_banca_roba_hasta_pasarse(tmp_path: Path) -> None:
     await table.act(make_interaction(), Action.STAND)
 
     assert len(table.game.dealer) == 3
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
     assert table.streak == 1
 
 
@@ -170,7 +171,7 @@ async def test_doblar_cobra_el_doble_y_da_una_carta(tmp_path: Path) -> None:
     await table.act(make_interaction(), Action.DOUBLE)
 
     assert table.game.hands[0].doubled
-    assert await balance(cog) == STARTING_BALANCE + 200
+    assert await balance(cog) == STARTING_BALANCE + 200 - gambling_day_tax(200)
 
 
 async def test_doblar_sin_saldo_avisa_y_no_cambia_la_mano(tmp_path: Path) -> None:
@@ -246,7 +247,7 @@ async def test_mesa_caducada_planta_y_paga_la_mano(tmp_path: Path) -> None:
     await table.on_timeout()
 
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
     assert table not in cog.tables
     message.edit.assert_awaited()
 
@@ -292,7 +293,7 @@ async def test_apagar_el_bot_paga_las_manos_abiertas(tmp_path: Path) -> None:
     await cog.cog_unload()
 
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
     assert not cog.tables
 
 
@@ -389,7 +390,9 @@ async def test_con_blackjack_y_as_de_la_banca_se_ofrece_el_seguro_con_sus_cifras
 
     # La banca también tenía blackjack: la mano empata y el seguro paga 2:1.
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 50 * INSURANCE_PAYS
+    assert await balance(cog) == (
+        STARTING_BALANCE + 50 * INSURANCE_PAYS - gambling_day_tax(50 * INSURANCE_PAYS)
+    )
 
 
 async def test_blackjack_sin_asegurar_y_banca_sin_blackjack_cobra_3_a_2(tmp_path: Path) -> None:
@@ -399,7 +402,7 @@ async def test_blackjack_sin_asegurar_y_banca_sin_blackjack_cobra_3_a_2(tmp_path
     await table.insure(make_interaction(), take=False)
 
     assert table.game.settled
-    assert await balance(cog) == STARTING_BALANCE + 150
+    assert await balance(cog) == STARTING_BALANCE + 150 - gambling_day_tax(150)
 
 
 async def test_la_mesa_no_tiene_tope_de_apuesta(tmp_path: Path) -> None:
@@ -595,7 +598,7 @@ async def test_plantarse_sube_el_gif_de_la_banca_y_luego_el_resultado(tmp_path: 
     assert "Saldo" in [f.name for f in png_edit.kwargs["embed"].fields]
     assert png_edit.kwargs["attachments"][0].filename == PNG_NAME
     assert len(table.game.dealer) == 3 and table.streak == 1
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
 
 
 async def test_entre_manos_se_pinta_repartir_con_cada_ficha_y_la_mitad_ya_esta(
@@ -607,7 +610,12 @@ async def test_entre_manos_se_pinta_repartir_con_cada_ficha_y_la_mitad_ya_esta(
     )
     table, *_ = await open_table(cog)
     await settle_painting(table)
-    assert [g.stake for _, g, _, _ in deals(scene)] == [100, 50, 200, STARTING_BALANCE + 150]
+    assert [g.stake for _, g, _, _ in deals(scene)] == [
+        100,
+        50,
+        200,
+        STARTING_BALANCE + 150 - gambling_day_tax(150),
+    ]
 
     await table._halve(make_interaction())
     await settle_painting(table)

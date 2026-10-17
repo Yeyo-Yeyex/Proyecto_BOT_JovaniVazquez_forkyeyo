@@ -42,7 +42,7 @@ from bot.services.gallos import (
     train_price,
 )
 from bot.services.gallos_render import Media
-from bot.services.taxes import igic
+from bot.services.taxes import gambling_day_tax, igic
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -169,6 +169,7 @@ async def test_ganar_a_la_casa_cobra_la_cuota_y_apunta_la_victoria(tmp_path: Pat
     assert ledger(tmp_path, OWNER_ID) == [
         ("gallos:apuesta", -100),
         ("gallos:premio", house_payout(100, rival)),
+        ("irpf:juego", -gambling_day_tax(house_payout(100, rival) - 100)),
     ]
     assert panel.record.wins == 1 and panel.record.fights == 1
     assert (await cog.repository.get(GUILD_ID, OWNER_ID)).wins == 1
@@ -301,15 +302,21 @@ async def test_un_duelo_cobra_a_los_dos_y_paga_al_ganador(tmp_path: Path) -> Non
     winner = duel.fight.winner
     loser_id = RIVAL_ID if winner is Corner.RED else OWNER_ID
     winner_id = OWNER_ID if winner is Corner.RED else RIVAL_ID
-    assert ledger(tmp_path, winner_id)[-1] == ("gallos:premio", duel_prize(500))
+    assert ledger(tmp_path, winner_id)[-2:] == [
+        ("gallos:premio", duel_prize(500)),
+        ("irpf:juego", -gambling_day_tax(duel_prize(500) - 500)),
+    ]
     assert ledger(tmp_path, loser_id) == [("gallos:apuesta", -500)]
     payouts = pool_payouts({k: s.bet for k, s in duel.crowd.items()}, winner)
     paid = 0
     for fan in FAN_IDS:
         moves = ledger(tmp_path, fan)
         assert moves[0] == ("gallos:apuesta", -200)
-        paid += sum(amount for reason, amount in moves[1:])
-        assert sum(amount for reason, amount in moves[1:]) == payouts[fan]
+        prizes = sum(amount for reason, amount in moves[1:] if reason != "irpf:juego")
+        withheld = -sum(amount for reason, amount in moves[1:] if reason == "irpf:juego")
+        paid += prizes
+        assert prizes == payouts[fan]
+        assert withheld == gambling_day_tax(payouts[fan] - 200)
     # La grada no crea dinero: se reparte lo apostado menos la comisión.
     assert paid <= 600
     assert (await cog.repository.get(GUILD_ID, winner_id)).wins == 1

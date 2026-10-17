@@ -72,7 +72,7 @@ async def test_apuesta_ganada_cobra_y_paga_en_la_misma_operacion(tmp_path: Path)
 
     balance = (await service.settle_bet(GUILD, USER, game="ruleta", stake=100, payout=200)).balance
 
-    assert balance == STARTING_BALANCE + 100
+    assert balance == STARTING_BALANCE + 100 - gambling_day_tax(100)
     assert ledger_sum(tmp_path) == balance
 
 
@@ -271,7 +271,7 @@ async def test_place_bet_cobra_y_pay_winnings_paga_despues(tmp_path: Path) -> No
     after_pay = (await service.pay_winnings(GUILD, USER, game="blackjack", amount=750)).balance
 
     assert after_bet == STARTING_BALANCE - 300
-    assert after_pay == STARTING_BALANCE + 450
+    assert after_pay == STARTING_BALANCE + 450 - gambling_day_tax(450)
     assert ledger_sum(tmp_path) == after_pay
 
 
@@ -399,7 +399,7 @@ async def test_perder_despues_devuelve_lo_retenido(tmp_path: Path) -> None:
 
     assert loss.day_net == 15_000
     assert loss.tax_delta < 0
-    assert loss.day_withheld == win.tax_delta + loss.tax_delta == gambling_day_tax(15_000, 0)
+    assert loss.day_withheld == win.tax_delta + loss.tax_delta == gambling_day_tax(15_000)
     treasury = await service.treasury(GUILD, since=0)
     assert treasury.balance == treasury.collected_total == loss.day_withheld
     assert ledger_sum(tmp_path) == loss.balance
@@ -436,4 +436,4 @@ async def test_blackjack_ajusta_al_pagar_no_al_apostar(tmp_path: Path) -> None:
 
     assert bet.tax_delta == 0
     assert paid.day_net == 29_000
-    assert paid.tax_delta == gambling_day_tax(29_000, 0) > 0
+    assert paid.tax_delta == gambling_day_tax(29_000) > 0
