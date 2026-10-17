@@ -208,6 +208,11 @@ IMV_WAGE_RATIO = WAGE_YAPDOLLARS_PER_EURO // YAPDOLLARS_PER_EURO
 #: proyecto: trabajar mucho lo reduce, pero no lo quita).
 IMV_FLOOR_SHARE = 0.20
 
+#: Primera semana (lunes) de la Renta de la 8.0.0 en producción: aunque el bot nuevo se
+#: despliegue antes (el NAS se actualiza cada día a las 5:00), la semana que ya se ha
+#: vivido con las reglas de antes se liquida con ellas. Lo pasa `bot.app` al repositorio.
+IRPF_START = date(2026, 10, 19)
+
 
 def format_amount(amount: int) -> str:
     """Formatea una cantidad al estilo español: `1.250 Y$`."""

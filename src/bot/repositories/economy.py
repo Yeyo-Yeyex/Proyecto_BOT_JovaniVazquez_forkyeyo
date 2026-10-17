@@ -827,13 +827,19 @@ class EconomyRepository:
         database_path: Ruta del archivo SQLite persistente.
         starting_balance: Saldo con el que se abre un monedero nuevo. Se
             registra como un movimiento `"bienvenida"` para que el libro cuadre.
+        irpf_start: Primera semana (lunes ISO) que se puede declarar con las reglas de
+            la 8.0.0 (`_regime_in`). Si el bot nuevo arranca antes, las semanas
+            anteriores siguen con la regla vieja. `None`: la semana en que arranque.
     """
 
-    def __init__(self, database_path: Path, *, starting_balance: int) -> None:
+    def __init__(
+        self, database_path: Path, *, starting_balance: int, irpf_start: str | None = None
+    ) -> None:
         if starting_balance < 0:
             raise ValueError("El saldo inicial no puede ser negativo.")
         self.database_path = database_path
         self.starting_balance = starting_balance
+        self.irpf_start = irpf_start
 
     def _connect(self) -> sqlite3.Connection:
         """Abre una conexión en modo autocommit; las transacciones son explícitas."""
@@ -1503,17 +1509,19 @@ class EconomyRepository:
             ),
         )  # fmt: skip
 
-    @staticmethod
-    def _regime_in(connection: sqlite3.Connection, guild_id: int, current_week: str) -> str:
+    def _regime_in(self, connection: sqlite3.Connection, guild_id: int, current_week: str) -> str:
         """Primera semana (lunes ISO) que el servidor declara con las reglas de la 8.0.0.
 
-        La primera vez que se pregunta queda fijada a la semana en curso: las anteriores
-        se siguen declarando con la regla vieja y la de ahora ya con la nueva, aunque haya
-        empezado antes del cambio (sus filas viejas se leen con `_legacy_income_in`).
+        La primera vez que se pregunta queda fijada a la semana en curso (o a
+        `irpf_start`, si es posterior: desplegar el sábado no cambia las reglas de la
+        semana que ya se ha vivido). Las anteriores se siguen declarando con la regla
+        vieja y la primera ya con la nueva, aunque haya empezado antes del cambio (sus
+        filas viejas se leen con `_legacy_income_in`).
         """
+        first = max(current_week, self.irpf_start or current_week)
         connection.execute(
             "INSERT OR IGNORE INTO economy_irpf_regime (guild_id, since_week) VALUES (?, ?)",
-            (guild_id, current_week),
+            (guild_id, first),
         )
         (since,) = connection.execute(
             "SELECT since_week FROM economy_irpf_regime WHERE guild_id = ?", (guild_id,)
@@ -2763,13 +2771,26 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, week),
             ).fetchone()
+            # La regla vieja mira las otras rentas a su escala: las filas de antes ya lo
+            # están; las nuevas (si el bot nuevo cobró algo antes de su primera semana) se
+            # pasan: las nóminas de 100 a 10 Y$ por euro y la renta de los pisos, a × 12 / 365.
             (others,) = connection.execute(
                 """
-                SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
+                SELECT COALESCE(SUM(CASE
+                    WHEN kind IS NULL THEN gross
+                    WHEN kind IN (?, ?, ?, ?) THEN gross / 10
+                    WHEN kind = ? THEN gross * 12 / 365
+                    WHEN kind = ? THEN 0
+                    ELSE gross END), 0)
+                FROM economy_tax_records
                 WHERE guild_id = ? AND user_id = ? AND created_at > ? AND created_at <= ?
                 """,
-                (guild_id, user_id, end - window_seconds, end),
-            ).fetchone()
+                (
+                    INCOME_WORK, INCOME_FOREIGN, INCOME_PENSION, INCOME_BUSINESS,
+                    INCOME_PROPERTY, INCOME_IMPUTED,
+                    guild_id, user_id, end - window_seconds, end,
+                ),
+            ).fetchone()  # fmt: skip
             refund = max(0, refund_for(int(net), int(withheld), int(others)))
             if deduction_for is not None:
                 refund += self._donation_refund_in(

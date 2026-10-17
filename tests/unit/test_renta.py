@@ -234,6 +234,36 @@ async def test_desplegar_no_deja_caducar_las_devoluciones_de_la_regla_vieja(
     assert await service.pending_declarations(GUILD, USER) == []
 
 
+async def test_desplegar_antes_del_arranque_deja_la_semana_con_la_regla_vieja(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(day(14))
+    repository = EconomyRepository(
+        tmp_path / "bot.db", starting_balance=STARTING_BALANCE, irpf_start="2026-10-19"
+    )
+    await repository.initialize()
+    service = EconomyService(repository, clock=clock)
+    # El bot nuevo entra el miércoles 14; la Renta nueva arranca el lunes 19.
+    assert await service.close_irpf_weeks(GUILD) == []
+    win = await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    clock.at(day(15))
+    await put(service, USER, 50_000)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=30_000, payout=0)
+
+    # El lunes 19, la semana del 12 no se cierra con las reglas nuevas: va con la vieja.
+    clock.at(day(19, hour=0))
+    closed = await service.close_irpf_weeks(GUILD)
+    assert all(run.legacy or not run.returns for _week, run in closed)
+    pending = await service.pending_declarations(GUILD, USER)
+    assert [d.week_start for d in pending] == [date(2026, 10, 12)]
+    assert 0 < pending[0].refund <= win.tax_delta
+
+    # La primera semana con las reglas nuevas es la del 19.
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    filed = await close(service, clock, 26)
+    assert filed.quota == week_tax(WeekIncome(gambling=35_000)).quota
+
+
 async def test_si_el_bot_estuvo_apagado_el_plazo_cuenta_desde_el_cierre(tmp_path: Path) -> None:
     clock = Clock(day(5))
     service = await make_service(tmp_path, clock)

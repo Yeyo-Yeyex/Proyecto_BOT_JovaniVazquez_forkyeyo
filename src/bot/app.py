@@ -47,7 +47,7 @@ from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
 from bot.services import node_scene
-from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.economy import IRPF_START, STARTING_BALANCE, EconomyService
 from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
 
@@ -151,7 +151,11 @@ class BotClient(commands.Bot):
         # Única puerta al dinero del bot: el casino y cualquier sistema futuro
         # que dé o quite yapdollars deben pasar por aquí (ver services/economy).
         self.economy = EconomyService(
-            EconomyRepository(database_path, starting_balance=STARTING_BALANCE)
+            EconomyRepository(
+                database_path,
+                starting_balance=STARTING_BALANCE,
+                irpf_start=IRPF_START.isoformat(),
+            )
         )
         self.casino_channel_ids = casino_channel_ids
         # Una fila por jugada terminada del casino, para `apuestas`. No mueve dinero.
