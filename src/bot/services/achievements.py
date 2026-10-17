@@ -4497,7 +4497,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("coin", "coin_activity_games", [
         (1, "monedaa_1", "Comparecencia en plasma",
-         "Juega tu primera partida a cara o cruz desde la Activity de Discord (`/jugar`).", C),
+         "Juega tu primera partida a cara o cruz desde la Activity de Discord (`/jovani`).", C),
         (100, "monedaa_100", "Consejo de Ministros por Zoom",
          "Juega 100 partidas a cara o cruz desde la Activity.", C),
         (1_000, "monedaa_1k", "Teletrabajo en Moncloa",

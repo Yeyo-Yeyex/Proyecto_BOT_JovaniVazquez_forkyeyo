@@ -10,7 +10,7 @@ criterio.
 
 ### 7.24.0 · 2026-10-17
 
-- Activity de Discord: `/jugar` abre cara o cruz en pantalla grande, con tus yapdollars
+- Activity de Discord: `/jovani` abre cara o cruz en pantalla grande, con tus yapdollars
 
 ### 7.23.0 · 2026-10-17
 

@@ -124,7 +124,7 @@ ENTRY_POINT_TYPE = 4
 #: Nombre y descripción del comando de entrada. Discord lo crea como «Launch» y los
 #: comandos van en español (Biblia, «Cogs y comandos»).
 ENTRY_POINT = {
-    "name": "jugar",
+    "name": "jovani",
     "description": "Abre el casino de Jovani en pantalla grande, con tus yapdollars.",
 }
 #: Lo que se reenvía del comando de entrada al sincronizar (lo demás lo pone Discord).

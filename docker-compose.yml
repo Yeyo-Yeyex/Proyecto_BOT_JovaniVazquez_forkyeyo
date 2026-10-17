@@ -8,7 +8,7 @@ services:
     # Arranca con el NAS y se reinicia solo si falla; no si lo paras a mano.
     restart: unless-stopped
     env_file: .env
-    # La Activity de Discord (`/jugar`, ver README): el bot la sirve en el 8765 si hay
+    # La Activity de Discord (`/jovani`, ver README): el bot la sirve en el 8765 si hay
     # DISCORD_CLIENT_SECRET. Solo para el propio NAS (127.0.0.1), donde la recoge el
     # túnel que la publica por HTTPS. Sin secreto no escucha nadie.
     ports:

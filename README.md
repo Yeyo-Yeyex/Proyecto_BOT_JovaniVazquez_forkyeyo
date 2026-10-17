@@ -48,8 +48,8 @@ pip install -e ".[dev]"
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
 5. `DISCORD_CLIENT_SECRET` y `ACTIVITY_GUILD_ID` (opcionales) encienden la
-   Activity de Discord (`/jugar`). Cómo se monta, en «La Activity de Discord:
-   `/jugar`», más abajo.
+   Activity de Discord (`/jovani`). Cómo se monta, en «La Activity de Discord:
+   `/jovani`», más abajo.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo
@@ -1028,7 +1028,7 @@ UTC), ajústala con `sudo timedatectl set-timezone Atlantic/Canary` o asume
 el desfase en la hora del crontab.
 El registro de cada ejecución queda en `.despliegue/actualizar.log`.
 
-### La Activity de Discord: `/jugar`
+### La Activity de Discord: `/jovani`
 
 Una Activity es una página web que Discord abre dentro de un canal (de voz o de
 texto) o de un mensaje directo. La del bot trae cara o cruz en pantalla grande:
@@ -1043,7 +1043,7 @@ Para montarla:
    - OAuth2: copia el *Client Secret* a `DISCORD_CLIENT_SECRET` en el `.env`
      (secreto, como el token) y añade `https://127.0.0.1` como *Redirect*.
    - Activities > Settings: activa *Enable Activities*. Discord crea el comando
-     de entrada; al arrancar, el bot lo renombra a `/jugar`
+     de entrada; al arrancar, el bot lo renombra a `/jovani`
      (`BotClient.sync_commands`, que además impide que el sync de comandos lo
      borre: Discord no lo permite y el bot no arrancaría).
    - Activities > URL Mappings: `/` → la dirección pública del túnel (paso 2),

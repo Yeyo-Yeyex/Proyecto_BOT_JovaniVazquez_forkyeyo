@@ -1,7 +1,7 @@
 """La Activity de Discord: el casino de Jovani en pantalla grande, dentro de Discord.
 
 Una Activity es una página web que Discord abre en un recuadro dentro de un canal
-(de voz o de texto) o de un mensaje directo, desde el comando de entrada `/jugar`
+(de voz o de texto) o de un mensaje directo, desde el comando de entrada `/jovani`
 (ver `BotClient.sync_commands`). Este cog la sirve desde el propio bot con el
 servidor web de `aiohttp`, que ya trae discord.py: juega con la misma economía, los
 mismos candados y la misma base de datos que los comandos, sin otro servicio.
