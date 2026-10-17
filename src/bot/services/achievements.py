@@ -936,6 +936,16 @@ APUESTAS_PERIODS = ("hoy", "semana", "mes", "siempre")
 SLOTS_BONUS_QUICK = 60
 
 
+#: Los desvíos de la cuenta que tienen logro (`_deviation_wins`).
+BJ_DEVIATIONS = (
+    "bj_dev_insurance",
+    "bj_dev_stand_16",
+    "bj_dev_stand_12",
+    "bj_dev_double_ten",
+    "bj_dev_split_tens",
+)
+
+
 def _build_catalog() -> tuple[Achievement, ...]:
     a: list[Achievement] = []
 
@@ -2571,6 +2581,64 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bj_zapato_helado", "Zapato más frío que Bruselas en enero",
          "Juega una mano con la cuenta a −4 o menos.", C, True),
     ])  # fmt: skip
+    a += _tiers("blackjack", "bj_hot_shoe", [
+        (1, "bj_zapato_hirviendo", "Zapato más caliente que Sevilla en agosto",
+         "Juega una mano con la cuenta a +6 o más.", C, True),
+    ])  # fmt: skip
+    # La ficha a tope de lo que tolera el jefe de sala y los desvíos de la cuenta.
+    # Rarezas medidas con el código real: un contador que sube de 1 a 8 con la cuenta,
+    # juega los desvíos y hace 40 manos al día. Sin contar no salen.
+    a += _tiers("blackjack", "bj_whale_wins", [
+        (1, "bj_pelotazo", "Cultura del pelotazo",
+         f"Gana una mano a {PIT_BOSS_SPREAD} veces tu ficha más baja del zapato con la "
+         "cuenta a +4 o más.", C),
+        (10, "bj_caja_b", "Caja B de Génova",
+         f"Gana 10 manos a {PIT_BOSS_SPREAD} veces tu ficha más baja con la cuenta a +4 o más.", R),
+        (100, "bj_rato", "Ni Rato en Bankia",
+         f"Gana 100 manos a {PIT_BOSS_SPREAD} veces tu ficha más baja con la cuenta a +4 o "
+         "más.", L),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_whale_natural", [
+        (1, "bj_abuelo_florenci", "La herencia del abuelo Florenci",
+         f"Saca blackjack con la ficha a {PIT_BOSS_SPREAD} veces la más baja del zapato. "
+         "Dinero que aparece de la nada, como en Andorra.", R),
+    ])  # fmt: skip
+    # Los desvíos de la cuenta (los de Illustrious 18), jugados y ganados. Secretos: el
+    # bot no enseña a contar, y la descripción solo se ve cuando ya lo has hecho.
+    a += _tiers("blackjack", "bj_dev_insurance", [
+        (1, "bj_info_privilegiada", "Buen momento para comprar",
+         "Paga el seguro con la cuenta a +3 o más y que la banca tenga blackjack. Como "
+         "Trump antes de pausar los aranceles.", R, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dev_stand_16", [
+        (1, "bj_manual_resistencia", "Aquí no dimite nadie",
+         "Plántate con 16 duro contra un 10 de la banca con la cuenta a 0 o más y gana. Cinco "
+         "días de reflexión y te quedas.", R, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dev_stand_12", [
+        (1, "bj_gobierno_minoria", "Gobernar en minoría",
+         "Plántate con 12 duro contra un 2 o un 3 de la banca con la cuenta a +3 o más y "
+         "gana. Sin presupuestos y a aguantar.", E, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dev_double_ten", [
+        (1, "bj_cinco_por_ciento", "El 5 % que pide Trump",
+         "Dobla con 10 contra un 10 o un as de la banca con la cuenta a +4 o más y gana.",
+         L, True),
+    ])  # fmt: skip
+    a += _tiers("blackjack", "bj_dev_split_tens", [
+        (1, "bj_dui", "Declaración unilateral de independencia",
+         "Separa dos cartas de 10 contra un 5 o un 6 de la banca con la cuenta a +4 o más "
+         "y gana las dos manos. Esta vez dura más de ocho segundos.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="bj_ilustrisimo",
+        name="Ilustrísimo señor contador",
+        description="Gana con los cinco desvíos de la cuenta, del seguro a separar dieces.",
+        category="blackjack",
+        rarity=L,
+        conditions=tuple((stat, 1) for stat in BJ_DEVIATIONS),
+        secret=True,
+    ))  # fmt: skip
 
     # 💰 Casino ---------------------------------------------------------------------------
     a += _tiers("casino", "casino_wagered", [
@@ -14778,11 +14846,54 @@ def blackjack_shoe_stats(
         delta.add["bj_cut_cards"] = 1
     if count <= -4:
         delta.add["bj_cold_shoe"] = 1
+    if count >= 6:
+        delta.add["bj_hot_shoe"] = 1
     if spread is not None and spread >= 2:
         delta.peak["bj_spread_max"] = spread
         if count >= 3 and game.net > 0:
             delta.add["bj_hot_wins"] = 1
+        if spread >= PIT_BOSS_SPREAD:
+            if count >= 4 and game.net > 0:
+                delta.add["bj_whale_wins"] = 1
+            if game.hands[0].natural:
+                delta.add["bj_whale_natural"] = 1
+    for stat in _deviation_wins(game, count):
+        delta.add[stat] = 1
     return delta
+
+
+def _deviation_wins(game: BlackjackGame, count: float) -> set[str]:
+    """Desvíos de la estrategia básica que pide la cuenta, jugados y ganados.
+
+    La cuenta es la de antes de repartir: la de cada decisión cambia poco con las
+    cartas de la propia mano.
+    """
+    up = game.dealer[0].value
+    found = set()
+    if game.insurance_paid and count >= 3:
+        found.add("bj_dev_insurance")
+    if (
+        len(game.hands) > 1
+        and game.hands[0].cards[0].value == 10
+        and up in (5, 6)
+        and count >= 4
+        and all(h.result is Result.WIN for h in game.hands)
+    ):
+        found.add("bj_dev_split_tens")
+    for hand in game.hands:
+        if hand.result is not Result.WIN:
+            continue
+        if hand.doubled:
+            if hand_total(hand.cards[:2]) == (10, False) and up in (1, 10) and count >= 4:
+                found.add("bj_dev_double_ten")
+            continue
+        # Acabó sin pasarse ni doblar con ese total: se plantó con él.
+        total, soft = hand_total(hand.cards)
+        if not soft and total == 16 and up == 10 and count >= 0:
+            found.add("bj_dev_stand_16")
+        if not soft and total == 12 and up in (2, 3) and count >= 3:
+            found.add("bj_dev_stand_12")
+    return found
 
 
 def blackjack_stats(game: BlackjackGame, *, streak: int = 0) -> StatDelta:

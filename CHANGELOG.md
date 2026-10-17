@@ -8,11 +8,12 @@ criterio.
 
 ## 7.x
 
-### 7.22.1 · 2026-10-17
+### 7.23.0 · 2026-10-17
 
 - Blackjack: contar cartas da para ganar si te lo curras: el jefe de sala deja subir de 1 a 8
 - Blackjack: el zapato es de cada jugador y sigue al abrir otra mesa (una mesa por jugador)
 - Blackjack: la carta de corte va a una baraja del final: se reparten 5 de las 6
+- Blackjack: logros por contar cartas: la ficha a tope y, secretos, los desvíos de la cuenta
 
 ### 7.22.0 · 2026-10-17
 

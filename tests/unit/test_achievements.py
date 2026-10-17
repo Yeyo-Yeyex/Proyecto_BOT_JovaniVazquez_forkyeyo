@@ -79,6 +79,7 @@ from bot.services.achievements import (
     StatDelta,
     beernight_close_stats,
     beernight_drink_stats,
+    blackjack_shoe_stats,
     blackjack_stats,
     casino_stats,
     group_sections,
@@ -101,7 +102,7 @@ from bot.services.allatu import TABLES
 from bot.services.autoplay import StopReason
 from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
 from bot.services.beernight import Reason as BeerReason
-from bot.services.blackjack import BlackjackGame, Card, Hand
+from bot.services.blackjack import PIT_BOSS_SPREAD, BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
@@ -271,7 +272,9 @@ PRODUCED_STATS = {
     "bj_streak_max",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
     "bj_dealer_bj_saved", "bj_max_stake", "bj_cut_cards", "bj_hot_wins", "bj_spread_max",
-    "bj_pit_boss", "bj_cold_shoe", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
+    "bj_pit_boss", "bj_cold_shoe", "bj_hot_shoe", "bj_whale_wins", "bj_whale_natural",
+    "bj_dev_insurance", "bj_dev_stand_16", "bj_dev_stand_12", "bj_dev_double_ten",
+    "bj_dev_split_tens", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
     "bj_natural_insured", "bj_natural_insured_saved", "bj_natural_greed",
     "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
@@ -995,6 +998,40 @@ def test_blackjack_separar_y_ganar_las_dos() -> None:
     delta = blackjack_stats(settled_game([[10, 9], [10, 8]], [10, 7], from_split=True))
     assert delta.add["bj_splits"] == 1
     assert delta.add["bj_split_sweeps"] == 1
+
+
+def shoe_stats(game: BlackjackGame, count: float, spread: int | None = 2) -> StatDelta:
+    return blackjack_shoe_stats(game, caught=False, cut=False, count=count, spread=spread)
+
+
+def test_blackjack_desvios_de_la_cuenta_jugados_y_ganados() -> None:
+    stand_16 = settled_game([[10, 6]], [10, 6, 10])
+    assert "bj_dev_stand_16" in shoe_stats(stand_16, 0).add
+    assert "bj_dev_stand_16" not in shoe_stats(stand_16, -1).add
+    assert "bj_dev_stand_16" not in shoe_stats(settled_game([[1, 5]], [10, 6, 10]), 0).add
+    stand_12 = settled_game([[10, 2]], [3, 9, 10])
+    assert "bj_dev_stand_12" in shoe_stats(stand_12, 3).add
+    assert "bj_dev_stand_12" not in shoe_stats(stand_12, 2).add
+    double_ten = settled_game([[6, 4, 10]], [13, 9], doubled=True)
+    assert "bj_dev_double_ten" in shoe_stats(double_ten, 4).add
+    assert "bj_dev_double_ten" not in shoe_stats(double_ten, 3).add
+    split_tens = settled_game([[13, 9], [12, 10]], [6, 10, 10], from_split=True)
+    assert "bj_dev_split_tens" in shoe_stats(split_tens, 4).add
+    insured = insured_game([10, 9], [1, 13])
+    assert "bj_dev_insurance" in shoe_stats(insured, 3).add
+    assert "bj_dev_insurance" not in shoe_stats(insured, 2).add
+    # Con la cuenta a favor, perder la mano no cuenta.
+    assert "bj_dev_stand_16" not in shoe_stats(settled_game([[10, 6]], [10, 8]), 5).add
+
+
+def test_blackjack_ficha_a_tope_y_zapato_hirviendo() -> None:
+    win = settled_game([[10, 9]], [10, 8])
+    assert shoe_stats(win, 4, PIT_BOSS_SPREAD).add["bj_whale_wins"] == 1
+    assert "bj_whale_wins" not in shoe_stats(win, 3, PIT_BOSS_SPREAD).add
+    assert "bj_whale_wins" not in shoe_stats(win, 4, PIT_BOSS_SPREAD - 1).add
+    natural = settled_game([[1, 13]], [9, 8])
+    assert shoe_stats(natural, 0, PIT_BOSS_SPREAD).add["bj_whale_natural"] == 1
+    assert shoe_stats(win, 6, None).add["bj_hot_shoe"] == 1
 
 
 # -- Repositorio -----------------------------------------------------------------------
