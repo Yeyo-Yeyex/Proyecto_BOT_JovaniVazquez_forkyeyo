@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.4 · 2026-10-18
+
+- Logros: el aviso pone la retención de Hacienda en la misma línea que el premio
+
 ### 7.25.3 · 2026-10-18
 
 - Interno: la auditoría de tono sin prefijos obligatorios en commits ni changelog

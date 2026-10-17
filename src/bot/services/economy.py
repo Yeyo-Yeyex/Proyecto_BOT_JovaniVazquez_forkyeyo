@@ -146,7 +146,7 @@ __all__ = [
     "gambling_tax_line",
     "is_all_in",
     "parse_amount",
-    "short_tax_note",
+    "tax_tag",
     "tax_line",
     "treasury_embed",
 ]
@@ -208,17 +208,14 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     )
 
 
-def short_tax_note(gross: int, tax: int, rate: float) -> str:
-    """Lo mismo que `tax_line` en media línea y sin el `-# `, para avisos compactos.
+def tax_tag(tax: int, rate: float) -> str:
+    """La retención en pocas letras (`🐶 −38 Y$ (19,00 %)`), o vacío si no hay.
 
-    La usa el aviso de logros, que la pega detrás de la descripción.
+    La usa el aviso de logros, en la misma línea que el premio.
     """
     if tax <= 0:
-        return f"🐶 {TAX_COLLECTOR} no te retiene nada: no llegas al mínimo."
-    return (
-        f"🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} "
-        f"({format_rate(rate)} de {format_amount(gross)})."
-    )
+        return ""
+    return f"🐶 −{format_amount(tax)} ({format_rate(rate)})"
 
 
 def gambling_tax_line(settlement: BetSettlement) -> str | None:

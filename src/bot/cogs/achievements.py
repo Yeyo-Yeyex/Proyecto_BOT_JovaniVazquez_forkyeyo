@@ -83,7 +83,7 @@ from bot.services.economy import (
     EconomyService,
     IncomeResult,
     format_amount,
-    short_tax_note,
+    tax_tag,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.pets import Event, Moment
@@ -156,13 +156,13 @@ def unlock_embed(
 ) -> discord.Embed:
     """Aviso público de logros recién desbloqueados, con el premio cobrado.
 
-    Compacto para no llenar el chat: el trofeo va junto al nombre, el premio en la
-    línea del logro y Hacienda detrás de la descripción. Con un logro son tres
-    líneas:
+    Compacto para no llenar el chat: el trofeo va junto al nombre y el premio, con
+    la retención de Hacienda si la hay, en la línea del logro. Con un logro son
+    tres líneas:
 
         Diego · 🏆 ¡Logro desbloqueado!
-        ▫️ **Cinco veces** · Común · 🪙 **+50 Y$**
-        -# Cobra en ×5 o más. · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.
+        ▫️ **Cinco veces** · Raro · 🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)
+        -# Cobra en ×5 o más.
     """
     achievements = [BY_ID[i] for i in achievement_ids if i in BY_ID]
     best = max(achievements, key=lambda a: list(Rarity).index(a.rarity))
@@ -172,15 +172,15 @@ def unlock_embed(
         if len(achievements) == 1
         else f"🏆 ¡{len(achievements)} logros desbloqueados!"
     )
-    money = f"{CURRENCY_EMOJI} **+{format_amount(income.net)}**" if income else ""
-    tax = short_tax_note(income.gross, income.tax, income.rate) if income else ""
+    money = ""
+    if income is not None:
+        tax = tax_tag(income.tax, income.rate)
+        money = f"{CURRENCY_EMOJI} **+{format_amount(income.net)}**" + (f" · {tax}" if tax else "")
     if len(achievements) == 1:
         a = achievements[0]
         head = f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}"
         lines = [
-            f"{head} · {money}\n-# {a.description} · {tax}"
-            if income
-            else f"{head}\n-# {a.description}"
+            f"{head} · {money}\n-# {a.description}" if money else f"{head}\n-# {a.description}"
         ]
     else:
         lines = [
@@ -188,8 +188,8 @@ def unlock_embed(
         ]
         if len(achievements) > ANNOUNCE_LIMIT:
             lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos en `perfil`.")
-        if income is not None:
-            lines.append(f"{money}\n-# {tax}")
+        if money:
+            lines.append(money)
     lines += [f"\n{a.story}" for a in shown if a.story]
     embed = discord.Embed(
         description="\n".join(lines), color=discord.Color.from_rgb(*best.rarity.rgb)

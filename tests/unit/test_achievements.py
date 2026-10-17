@@ -1147,7 +1147,7 @@ async def test_desbloquear_paga_con_irpf_y_el_libro_cuadra(tmp_path: Path) -> No
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == treasury.balance
     embed = channel.send.await_args.kwargs["embed"]
     assert "logros desbloqueados" in embed.author.name
-    assert "Perro Sanxe" in embed.description
+    assert "🐶 −" in embed.description
     # La retención cuenta para "Contribuyente" y compañía en la siguiente escritura.
     assert cog._pending[GUILD][USER].add["tax_paid"] == treasury.collected_total
 
@@ -1373,7 +1373,7 @@ def test_aviso_de_un_logro_cabe_en_tres_lineas() -> None:
     lines = (embed.description or "").splitlines()
     assert lines == [
         f"{achievement.rarity.emoji} **{achievement.name}** · Común · 🪙 **+50 Y$**",
-        f"-# {achievement.description} · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.",
+        f"-# {achievement.description}",
     ]
 
 
@@ -1381,8 +1381,8 @@ def test_aviso_con_retencion_dice_cuanto_se_lleva_hacienda() -> None:
     achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.RARE)
     income = IncomeResult(gross=200, tax=38, rate=0.19, balance=5_162)
     description = unlock_embed("Diego", None, [achievement.id], income).description or ""
-    assert "🪙 **+162 Y$**" in description.splitlines()[0]
-    assert "se lleva 38 Y$ (19,00 % de 200 Y$)" in description.splitlines()[1]
+    assert "🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)" in description.splitlines()[0]
+    assert description.splitlines()[1] == f"-# {achievement.description}"
 
 
 def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
