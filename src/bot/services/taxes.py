@@ -1,54 +1,80 @@
 """Hacienda del bot: IRPF a la española sobre los ingresos en yapdollars.
 
-Primer bloque del sistema de impuestos. De momento solo calcula la retención
-de IRPF que se aplica a los premios por subir de nivel (el
-IMV está exento, como el real, por el art. 7.y LIRPF) y sobre la ganancia
-neta diaria del casino (`gambling_day_tax`). Lo retenido va a la
-cuenta del Estado (`STATE_ACCOUNT_ID` en `bot.repositories.economy`).
+Desde la 8.0.0 el IRPF mide toda la renta con **una sola vara**: todo ingreso
+sujeto, venga de una nómina, de un piso, del casino o de un premio, se pasa a
+euros con el mismo tipo de cambio, `IRPF_YAPDOLLARS_PER_EURO` (`W`), y paga la
+escala real. Antes había tres (las nóminas a 100 Y$ por euro, el resto a 10 y
+la renta de los pisos a un treintavo), así que el mismo dinero tributaba
+distinto según de dónde viniera.
 
-Está pensado para crecer: la tabla `economy_tax_records` guarda cada
-ingreso con su retención, así que más adelante se puede hacer la declaración
-anual (cuota real del ejercicio frente a lo ya retenido) sin migrar datos.
+Cómo funciona, imitando el sistema real:
 
-Cómo se calcula, imitando el sistema real:
+1. **El año fiscal del bot es la semana.** La renta de una semana se pasa a
+   euros de un año con `annual_eur` (× 52 / `W`), se le aplica la escala estatal
+   (art. 63.1 de la Ley 35/2006 del IRPF) y la de Canarias (Ley 9/2025), con el
+   mínimo personal (art. 57 LIRPF y art. 18 quater del Decreto Legislativo
+   1/2009) restado como manda el art. 56, y la cuota vuelve a Y$ de la semana con
+   `weekly_yd`. Cualquier cifra anual en euros de la ley (los 2.000 € de gastos
+   del trabajo, la base máxima de cotización, el límite de los donativos) se
+   pasa igual: la semana es el año.
+2. **La renta se guarda por clases** (`WeekIncome`): trabajo (con su Seguridad
+   Social), actividad, inmuebles (uno por uno, art. 23 LIRPF), premios, juego,
+   capital mobiliario y la Ley Beckham. `week_tax` las integra como el art. 48:
+   el trabajo con los gastos del art. 19.2.f y la reducción del art. 20, los
+   inmuebles con el tope de intereses y reparaciones y la reducción del art.
+   23.2, el juego sin que sus pérdidas toquen nada más (art. 33.5.d) y el negativo
+   de los pisos rebajando el resto de la base.
+3. **Tipo estable** (`stable_rate`). En la vida real la empresa retiene con el
+   sueldo previsto del año (arts. 82 a 87 del Reglamento del IRPF). Aquí cada
+   cobro retiene con el tipo que dio la semana anterior y, si lo que va de esta
+   ya da uno mayor, con ese: el tipo sube si se gana más deprisa y nunca baja a
+   mitad de semana.
+4. **Declaración de los lunes** (`week_return`). Cada lunes se calcula la cuota
+   exacta de la semana cerrada, se le restan las deducciones (donativos, la
+   canaria por inversión en vivienda habitual y la doble imposición del art. 80)
+   y lo retenido. Si sale a pagar, se cobra sola; si sale a devolver, se presenta
+   con el botón de la Renta.
 
-1. Los yapdollars se convierten a euros con `YAPDOLLARS_PER_EURO`. Con 10 Y$
-   por euro, un ingreso diario del orden del IMV a racha máxima (1.500 Y$)
-   equivaldría a unos 55.000 € al año, así que las rentas del juego caen en
-   los tramos donde la escala real tiene sentido. Ajustar este valor cuando
-   haya más fuentes de ingresos sujetos.
-2. Se proyecta la renta anual a partir de **toda** la renta sujeta desde el
-   lunes (incluido el cobro actual): nóminas, premios, niveles, regalos y días
-   de casino en positivo, todo junto. Es la misma idea que las retenciones de
-   una nómina (Hacienda estima tu renta del año y te retiene a cuenta). En el
-   bot el año fiscal es la semana de la campaña de la Renta: la renta se
-   reinicia cada lunes, el día de la declaración, y la retención va subiendo a
-   lo largo de la semana. La ventana la calcula `economy.fiscal_window`.
-3. A esa base se le aplican la escala estatal (art. 63.1 de la Ley 35/2006
-   del IRPF) y la autonómica de Canarias (Ley 9/2025 de Presupuestos de
-   Canarias para 2026), descontando en cada una el mínimo personal (art. 57
-   LIRPF: 5.550 €; art. 18 quater del Decreto Legislativo 1/2009 de
-   Canarias: 5.606 €), tal y como hace el art. 56 LIRPF.
-4. Tipo de retención = cuota / base, redondeado a dos decimales como pide el
-   art. 86 del Reglamento del IRPF. Se aplica al cobro y se redondea a Y$.
+La base del ahorro (los intereses) va aparte, con su escala y la misma vara
+(`savings_tax`). La lotería y el Patrimonio usan la escala de los precios
+(`YAPDOLLARS_PER_EURO`, 10 Y$ por euro), porque gravan premios y bienes que
+cuestan lo que cuestan en la tienda y en `pisos`.
 
-Simplificaciones conocidas: no hay reducción por rendimientos del trabajo,
-ni mínimos familiares, ni límite excluyente de retención (art. 81 RIRPF).
+Simplificaciones conocidas: no hay mínimos familiares ni tributación conjunta,
+y el Beckham paga su tipo fijo solo por el trabajo.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields, replace
 
-#: Tipo de cambio de juego. Ver punto 1 del docstring del módulo.
+#: Tipo de cambio de los precios del juego (tienda, pisos, Patrimonio, loterías).
 YAPDOLLARS_PER_EURO = 10
 
-#: Duración del año fiscal del bot. Las retenciones proyectan con la renta desde
-#: el lunes (`economy.fiscal_window`) multiplicada por 365/7; la ventana entera
-#: la usan la declaración de la semana y lo cobrado en Hong Kong.
-_WINDOW_DAYS = 7
-PROJECTION_WINDOW_SECONDS = _WINDOW_DAYS * 24 * 3600
+#: Vara única del IRPF (`W`): yapdollars por euro de toda la renta sujeta, de la base
+#: general y de la del ahorro. Fija cómo se siente el impuesto: con 250, la jornada
+#: completa del puesto 1 de `pala` no paga IRPF y la de lo más alto de una rama paga
+#: alrededor de un 35-42 % (calibrado con `docs/economia_sim.py`).
+IRPF_YAPDOLLARS_PER_EURO = 250
+
+#: Semanas de un año: la renta de una semana × 52 es la del año (la semana es el año).
+WEEKS_PER_YEAR = 52
+
+#: Ventana de lo cobrado en Hong Kong para proyectar su salaries tax, que tiene su
+#: propio año fiscal y no se reinicia los lunes.
+PROJECTION_WINDOW_SECONDS = 7 * 24 * 3600
 _DAYS_PER_YEAR = 365
+
+
+def annual_eur(weekly: float) -> float:
+    """Pasa Y$ de una semana a euros de un año con la vara del IRPF."""
+    return weekly * WEEKS_PER_YEAR / IRPF_YAPDOLLARS_PER_EURO
+
+
+def weekly_yd(annual: float) -> float:
+    """Pasa euros de un año a Y$ de una semana con la vara del IRPF."""
+    return annual * IRPF_YAPDOLLARS_PER_EURO / WEEKS_PER_YEAR
+
 
 #: Escala estatal, art. 63.1 LIRPF: (desde €, tipo marginal).
 STATE_BRACKETS: tuple[tuple[float, float], ...] = (
@@ -89,6 +115,14 @@ def apply_scale(base: float, brackets: tuple[tuple[float, float], ...]) -> float
     return tax
 
 
+def regional_tax(base_eur: float) -> float:
+    """Cuota íntegra autonómica (Canarias) de una base liquidable en euros."""
+    base = max(0.0, base_eur)
+    return apply_scale(base, CANARIAS_BRACKETS) - apply_scale(
+        min(base, CANARIAS_PERSONAL_MINIMUM), CANARIAS_BRACKETS
+    )
+
+
 def annual_tax(base_eur: float) -> float:
     """Cuota íntegra anual (estatal + Canarias) de una base liquidable en euros.
 
@@ -99,18 +133,350 @@ def annual_tax(base_eur: float) -> float:
     state = apply_scale(base, STATE_BRACKETS) - apply_scale(
         min(base, STATE_PERSONAL_MINIMUM), STATE_BRACKETS
     )
-    regional = apply_scale(base, CANARIAS_BRACKETS) - apply_scale(
-        min(base, CANARIAS_PERSONAL_MINIMUM), CANARIAS_BRACKETS
+    return state + regional_tax(base)
+
+
+def format_rate(rate: float) -> str:
+    """`0.1934` → `19,34 %`."""
+    return f"{rate * 100:.2f}".replace(".", ",") + " %"
+
+
+# -- La renta de la semana, por clases --------------------------------------------------
+#
+# Cada ingreso sujeto se apunta en `economy_tax_records` con su clase (`kind`) y su
+# íntegro en Y$, sin conversiones: la vara se aplica aquí, al integrar la semana.
+
+#: Rendimientos del trabajo (art. 17.1 LIRPF): las nóminas de `pala`.
+INCOME_WORK = "trabajo"
+#: Trabajo hecho en el extranjero: la parte de Hong Kong que tributa en España.
+INCOME_FOREIGN = "extranjero"
+#: Pensiones (art. 17.2.a.1ª LIRPF): trabajo sin cotización.
+INCOME_PENSION = "pension"
+#: Actividades económicas (art. 27 LIRPF): autónomos y la comisión del promotor.
+INCOME_BUSINESS = "actividad"
+#: Capital inmobiliario (art. 22 LIRPF): las rentas de `pisos`, inmueble por inmueble.
+INCOME_PROPERTY = "inmueble"
+#: Ganancias patrimoniales sin transmisión (art. 33.1 LIRPF): premios, logros, el bono.
+INCOME_PRIZE = "premio"
+#: Capital mobiliario de la base general (art. 25.4.d LIRPF): derechos de imagen.
+INCOME_IMAGE = "mobiliario"
+#: Trabajo bajo la Ley Beckham (art. 93 LIRPF): tipo fijo, fuera de la escala.
+INCOME_BECKHAM = "beckham"
+#: Imputación de rentas inmobiliarias (art. 85 LIRPF): los pisos vacíos que no son la
+#: vivienda habitual. No retienen: se liquidan en la declaración.
+INCOME_IMPUTED = "imputacion"
+
+#: Imputación de rentas del art. 85 LIRPF: el 1,1 % anual del valor catastral (el de los
+#: municipios con valores revisados; el general es el 2 %).
+IMPUTED_RATE = 0.011
+
+#: Gastos que el art. 19.2.f LIRPF deja restar a cualquier rendimiento del trabajo.
+WORK_OTHER_EXPENSES_EUR = 2_000.0
+#: Rentas distintas del trabajo por encima de las cuales no hay reducción del art. 20.
+WORK_REDUCTION_OTHER_INCOME_EUR = 6_500.0
+
+
+def work_income_reduction(net_eur: float) -> float:
+    """Reducción por obtención de rendimientos del trabajo (art. 20 LIRPF), en euros.
+
+    `net_eur` es el íntegro menos la Seguridad Social (los gastos del art. 19.2.a a e,
+    sin los 2.000 € de la letra f). Redacción del RDL 4/2024: 7.302 € hasta 14.852 €;
+    de ahí baja 1,75 € por euro hasta 17.673,52 €, luego 1,14 € por euro
+    hasta 19.747,5 € y a partir de ahí es cero.
+    """
+    if net_eur <= 14_852:
+        return 7_302.0
+    if net_eur <= 17_673.52:
+        return max(0.0, 7_302 - 1.75 * (net_eur - 14_852))
+    if net_eur <= 19_747.5:
+        return max(0.0, 2_364.34 - 1.14 * (net_eur - 17_673.52))
+    return 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class PropertySettlement:
+    """Cómo queda un inmueble en una semana (`PropertyWeek.settle`).
+
+    Attributes:
+        net: Rendimiento neto reducido (negativo si los gastos pasan de la renta).
+        carry_used: Intereses y reparaciones de semanas anteriores deducidos ahora.
+        finance_left: Intereses y reparaciones de esta semana que no caben y pasan
+            a las cuatro siguientes.
+    """
+
+    net: int
+    carry_used: int
+    finance_left: int
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyWeek:
+    """Un inmueble alquilado, para un copropietario, en una semana (art. 23 LIRPF).
+
+    Attributes:
+        ref: El inmueble (`Listing.key`).
+        income: Rentas íntegras cobradas.
+        finance: Intereses de la hipoteca y gastos de reparación y conservación. Juntos
+            no pueden pasar de lo que renta el inmueble (art. 23.1.a); lo que sobra se
+            deduce en las cuatro semanas siguientes con el mismo tope.
+        costs: El resto de gastos deducibles (IBI, comunidad, seguro y amortización):
+            pueden dejar el rendimiento en negativo, y ese negativo rebaja el resto de
+            la base general (art. 48). Solo de los días alquilados.
+        reduction: Reducción del art. 23.2 sobre el rendimiento neto positivo. Solo la
+            tiene el alquiler de vivienda: 50 %, o 90 % en zona tensionada si el contrato
+            nuevo rebaja la renta más de un 5 %.
+        carry: Intereses y reparaciones de las cuatro semanas anteriores que no cupieron.
+        upkeep: Reparaciones y seguro de una vivienda alquilada (ya dentro de `finance` y
+            `costs`): la base de la deducción canaria del casero (art. 15 ter del Decreto
+            Legislativo 1/2009).
+    """
+
+    ref: str
+    income: int = 0
+    finance: int = 0
+    costs: int = 0
+    reduction: float = 0.0
+    carry: int = 0
+    upkeep: int = 0
+
+    def merged(self, other: PropertyWeek) -> PropertyWeek:
+        """Suma dos tramos del mismo inmueble; la reducción, ponderada por la renta."""
+        income = self.income + other.income
+        if income > 0:
+            reduction = (self.reduction * self.income + other.reduction * other.income) / income
+        else:
+            reduction = max(self.reduction, other.reduction)
+        return PropertyWeek(
+            ref=self.ref,
+            income=income,
+            finance=self.finance + other.finance,
+            costs=self.costs + other.costs,
+            reduction=reduction,
+            carry=max(self.carry, other.carry),
+            upkeep=self.upkeep + other.upkeep,
+        )
+
+    def settle(self) -> PropertySettlement:
+        """Rendimiento neto reducido, con el tope y el arrastre del art. 23.1.a.
+
+        Primero se deduce lo arrastrado (lo más viejo caduca antes) y luego lo de esta
+        semana, sin pasar entre los dos de la renta del inmueble.
+        """
+        room = max(0, self.income)
+        carry_used = min(max(0, self.carry), room)
+        finance_now = min(max(0, self.finance), room - carry_used)
+        net = self.income - carry_used - finance_now - max(0, self.costs)
+        if net > 0:
+            net = round(net * (1 - self.reduction))
+        return PropertySettlement(
+            net=net, carry_used=carry_used, finance_left=max(0, self.finance) - finance_now
+        )
+
+
+def _with_property(
+    properties: tuple[PropertyWeek, ...], item: PropertyWeek
+) -> tuple[PropertyWeek, ...]:
+    for index, current in enumerate(properties):
+        if current.ref == item.ref:
+            return properties[:index] + (current.merged(item),) + properties[index + 1 :]
+    return (*properties, item)
+
+
+@dataclass(frozen=True, slots=True)
+class WeekIncome:
+    """La renta sujeta a la base general de un miembro en una semana, en Y$.
+
+    Attributes:
+        work: Íntegros del trabajo y de las pensiones.
+        social: Seguridad Social del trabajador de esas nóminas (gasto deducible).
+        business: Rendimiento de actividades económicas, ya sin la cuota de autónomo.
+        properties: Cada inmueble alquilado (`PropertyWeek`).
+        other: Rendimientos que ya llegan netos (las filas de antes de la 8.0.0).
+        prizes: Ganancias patrimoniales sin transmisión (premios, logros, el bono).
+        gambling: Neto del juego de la semana: los días con pérdidas compensan a los
+            que ganan, y si sale negativo no rebaja nada más (art. 33.5.d LIRPF).
+        image: Capital mobiliario de la base general (derechos de imagen).
+        beckham: Trabajo por la Ley Beckham: su tipo fijo, fuera de la escala.
+        imputed: Imputación de rentas de los pisos vacíos (art. 85 LIRPF).
+        negative: Base liquidable general negativa de las cuatro semanas anteriores
+            que aún se puede compensar (art. 50 LIRPF).
+    """
+
+    work: int = 0
+    social: int = 0
+    business: int = 0
+    properties: tuple[PropertyWeek, ...] = ()
+    other: int = 0
+    prizes: int = 0
+    gambling: int = 0
+    image: int = 0
+    beckham: int = 0
+    imputed: int = 0
+    negative: int = 0
+
+    def plus(self, prop: PropertyWeek | None = None, **amounts: int) -> WeekIncome:
+        """La misma renta con `amounts` sumados (por campo) y, si hay, otro tramo de piso."""
+        changes: dict[str, object] = {
+            name: getattr(self, name) + value for name, value in amounts.items()
+        }
+        if prop is not None:
+            changes["properties"] = _with_property(self.properties, prop)
+        return replace(self, **changes)  # type: ignore[arg-type]
+
+    def to_dict(self) -> dict[str, object]:
+        """La renta como diccionario (para guardarla en JSON con su declaración)."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> WeekIncome:
+        """La renta guardada con `to_dict`; ignora campos que ya no existan."""
+        names = {f.name for f in fields(cls)} - {"properties"}
+        known = {f.name for f in fields(PropertyWeek)}
+        properties = tuple(
+            PropertyWeek(**{k: v for k, v in item.items() if k in known})  # type: ignore[arg-type]
+            for item in data.get("properties", ())  # type: ignore[union-attr]
+        )
+        values = {k: v for k, v in data.items() if k in names}
+        return cls(properties=properties, **values)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
+class WeekTax:
+    """La cuota de una semana, en Y$ (`week_tax`).
+
+    Attributes:
+        work: Rendimiento neto reducido del trabajo.
+        properties: Suma de los rendimientos netos reducidos de los inmuebles.
+        rest: Actividad, capital mobiliario, imputaciones y rendimientos que ya llegaban
+            netos.
+        gains: Premios y juego en positivo.
+        base: Base liquidable general (nunca negativa).
+        negative_used: Base negativa de semanas anteriores compensada ahora.
+        negative: Base negativa de esta semana, que pasa a las cuatro siguientes.
+        quota: Cuota íntegra (estatal + autonómica, más la de la Ley Beckham).
+        regional: La parte autonómica de la cuota (límite de las deducciones canarias).
+        contributions: Lo que retiene: íntegros del trabajo, actividad, premios, juego
+            positivo, capital mobiliario y la parte positiva de cada inmueble.
+        settlements: `(inmueble, arrastre usado, sobrante que se arrastra)`.
+        expenses: Los 2.000 € de otros gastos del trabajo aplicados (art. 19.2.f).
+        reduction: La reducción por rendimientos del trabajo aplicada (art. 20).
+        state: La parte estatal de la cuota (escala del art. 63).
+        beckham: La parte de la cuota de la Ley Beckham (art. 93).
+        nets: `(inmueble, rendimiento neto reducido)` de cada inmueble.
+    """
+
+    work: int
+    properties: int
+    rest: int
+    gains: int
+    base: int
+    negative_used: int
+    negative: int
+    quota: int
+    regional: int
+    contributions: int
+    settlements: tuple[tuple[str, int, int], ...] = ()
+    expenses: int = 0
+    reduction: int = 0
+    state: int = 0
+    beckham: int = 0
+    nets: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def rate(self) -> float:
+        """Tipo de la semana (0–1, dos decimales en %, como el art. 86 RIRPF)."""
+        if self.contributions <= 0 or self.quota <= 0:
+            return 0.0
+        return round(self.quota / self.contributions * 100, 2) / 100
+
+
+def week_tax(income: WeekIncome) -> WeekTax:
+    """Integra una semana como el art. 48 LIRPF y calcula su cuota íntegra.
+
+    Trabajo: íntegros menos Seguridad Social y los 2.000 € del art. 19.2.f, y la
+    reducción del art. 20 si las demás rentas no pasan de 6.500 €; nada lo deja en
+    negativo.
+    Inmuebles: cada uno con su tope y su reducción (`PropertyWeek.settle`). El saldo de
+    los rendimientos puede ser negativo y rebaja las ganancias; si la base sale negativa,
+    pasa a las cuatro semanas siguientes (art. 50).
+    """
+    settled = [(p.ref, p.settle()) for p in income.properties]
+    properties = sum(s.net for _, s in settled)
+    positive_properties = sum(max(0, s.net) for _, s in settled)
+    gambling = max(0, income.gambling)
+    rest = income.business + income.other + income.image + income.imputed
+    gains = income.prizes + gambling
+    net = max(0.0, annual_eur(income.work) - annual_eur(income.social))
+    # El tramo de la reducción del art. 20 se mira sin los 2.000 € de la letra f.
+    reduction = 0.0
+    if annual_eur(rest + positive_properties + gains) <= WORK_REDUCTION_OTHER_INCOME_EUR:
+        reduction = work_income_reduction(net)
+    expenses = min(WORK_OTHER_EXPENSES_EUR, net)
+    net -= expenses
+    reduction = min(reduction, net)
+    net -= reduction
+    base = net + annual_eur(rest + properties + gains)
+    negative = negative_used = 0
+    if base < 0:
+        negative = round(weekly_yd(-base))
+        base = 0.0
+    else:
+        used = min(base, annual_eur(max(0, income.negative)))
+        negative_used = round(weekly_yd(used))
+        base -= used
+    beckham = annual_eur(income.beckham)
+    beckham_quota = beckham_rate(beckham) * beckham if beckham > 0 else 0.0
+    quota = annual_tax(base) + beckham_quota
+    return WeekTax(
+        work=round(weekly_yd(net)),
+        properties=properties,
+        rest=rest,
+        gains=gains,
+        base=round(weekly_yd(base)),
+        negative_used=negative_used,
+        negative=negative,
+        quota=round(weekly_yd(quota)),
+        regional=round(weekly_yd(regional_tax(base))),
+        # La imputación no retiene (no hay quien pague): no entra en lo que retiene.
+        contributions=(
+            income.work + rest - income.imputed + positive_properties + gains + income.beckham
+        ),
+        settlements=tuple((ref, s.carry_used, s.finance_left) for ref, s in settled),
+        expenses=round(weekly_yd(expenses)),
+        reduction=round(weekly_yd(reduction)),
+        state=round(weekly_yd(annual_tax(base) - regional_tax(base))),
+        beckham=round(weekly_yd(beckham_quota)),
+        nets=tuple((ref, s.net) for ref, s in settled),
     )
-    return state + regional
 
 
-def withholding_rate(projected_annual_yd: int) -> float:
-    """Tipo de retención (0–1, dos decimales en %) para una renta anual en Y$."""
-    base_eur = projected_annual_yd / YAPDOLLARS_PER_EURO
-    if base_eur <= 0:
-        return 0.0
-    return round(annual_tax(base_eur) / base_eur * 100, 2) / 100
+# -- Retenciones: el tipo estable ----------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Pace:
+    """Lo que mira la retención de un cobro.
+
+    Attributes:
+        previous_rate: Tipo de la semana anterior (`WeekTax.rate`): el suelo de esta.
+        previous_wages: Nóminas de la semana anterior, para la Seguridad Social.
+        wages: Nóminas de esta semana hasta ahora, sin el cobro.
+        current: Toda la renta de esta semana hasta ahora, sin el cobro.
+    """
+
+    previous_rate: float = 0.0
+    previous_wages: int = 0
+    wages: int = 0
+    current: WeekIncome = WeekIncome()
+
+
+def stable_rate(pace: Pace, income: WeekIncome) -> float:
+    """Tipo con el que retiene un cobro: el de la semana anterior o, si ya es mayor, el de esta.
+
+    `income` es la renta de esta semana con el cobro dentro. Como la escala es progresiva,
+    el tipo de esta semana solo crece al sumar renta: nunca baja a mitad de semana.
+    """
+    return max(pace.previous_rate, week_tax(income).rate)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,57 +499,256 @@ class Withholding:
         return self.gross - self.tax
 
 
-def compute_withholding(gross: int, recent_income: int) -> Withholding:
-    """Retención de un cobro, dados los ingresos de la semana fiscal.
+def compute_withholding(gross: int, pace: Pace) -> Withholding:
+    """Retención de un premio (ganancia patrimonial de la base general) con el tipo estable.
 
-    Args:
-        gross: Cantidad bruta del cobro, en Y$.
-        recent_income: Ingresos brutos sujetos a IRPF desde el lunes, sin
-            contar este cobro.
+    En la vida real los premios en metálico retienen un 19 % fijo (art. 101.7 LIRPF); en
+    el bot retienen con el tipo de cada uno, para que la declaración del lunes no dé
+    sustos (decisión del proyecto).
     """
     if gross <= 0:
         return Withholding(gross=max(0, gross), tax=0, rate=0.0)
-    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
-    rate = withholding_rate(projected)
+    rate = stable_rate(pace, pace.current.plus(prizes=gross))
     return Withholding(gross=gross, tax=round(gross * rate), rate=rate)
 
 
-def gambling_day_tax(net_gain: int, other_recent_income: int) -> int:
+#: Retención de lo ganado en el casino: el 19 % fijo, como la de los premios de juegos
+#: y concursos (art. 101.7 LIRPF). La declaración del lunes lo ajusta al tipo de cada uno:
+#: quien gana mucho paga allí lo que falte y quien gana poco recupera lo de más.
+GAMBLING_WITHHOLDING_RATE = 0.19
+
+
+def gambling_day_tax(net_gain: int) -> int:
     """Retención total que corresponde a la ganancia neta del casino de un día.
 
-    Las ganancias de juego tributan en la base general y las pérdidas solo
-    compensan ganancias de juego (art. 33.5.d LIRPF). En la ley la
-    compensación es por año; aquí es por día, para que perder una tarde no
-    arrastre semanas.
+    Las ganancias de juego tributan en la base general y las pérdidas solo compensan
+    ganancias de juego (art. 33.5.d LIRPF): un día con pérdidas no retiene, y la
+    declaración del lunes junta los días de la semana y ajusta lo retenido.
 
     Args:
         net_gain: Premios menos apuestas del día, ya sin negativos.
-        other_recent_income: Renta sujeta del resto de los últimos 7 días.
     """
+    return round(max(0, net_gain) * GAMBLING_WITHHOLDING_RATE)
+
+
+def property_withholding(item: PropertyWeek, pace: Pace) -> Withholding:
+    """Retención a cuenta de un cobro de renta de un inmueble.
+
+    Retiene sobre el rendimiento neto reducido de este cobro (sin el arrastre, que se
+    aplica en la declaración) con el tipo estable de toda la renta de la semana.
+    """
+    net = item.settle().net
+    rate = stable_rate(pace, pace.current.plus(prop=item))
+    return Withholding(gross=item.income, tax=round(max(0, net) * rate), rate=rate)
+
+
+# -- La declaración de los lunes -------------------------------------------------------
+
+#: Semanas que hay para presentar una declaración que sale a devolver: el plazo de cuatro
+#: años para pedir una devolución (art. 66 de la Ley 58/2003) son cuatro semanas. La de
+#: una semana se puede presentar las cuatro siguientes; después caduca y el dinero se
+#: queda en el Estado.
+CLAIM_WEEKS = 4
+
+# Deducción por donativos: art. 19.1 de la Ley 49/2002 (redacción del Real
+# Decreto-ley 6/2023). Se deduce de la cuota el 80 % de los primeros 250 € donados y el
+# 40 % del resto. La base de la deducción no pasa del 10 % de la base liquidable (art.
+# 69.1 LIRPF) y la deducción no puede dejar la cuota en negativo: si no has pagado
+# IRPF, no recuperas nada. No se aplica el 45 % de quien dona a la misma entidad tres
+# años seguidos. Los 250 € son de un año: en Y$, los de una semana con la vara del IRPF.
+
+DONATION_FULL_RATE = 0.80
+DONATION_FULL_LIMIT = round(weekly_yd(250))
+DONATION_REST_RATE = 0.40
+DONATION_BASE_LIMIT = 0.10
+
+
+def donation_deduction(donated: int, base: int, tax_paid: int) -> int:
+    """Lo que se deduce de la cuota por los donativos de una semana.
+
+    Args:
+        donated: Donado en la semana.
+        base: Base liquidable de la semana, para el límite del 10 %.
+        tax_paid: Cuota de la que se deduce (no puede quedar negativa).
+    """
+    eligible = min(donated, int(base * DONATION_BASE_LIMIT))
+    if eligible <= 0 or tax_paid <= 0:
+        return 0
+    first = min(eligible, DONATION_FULL_LIMIT)
+    deduction = first * DONATION_FULL_RATE + (eligible - first) * DONATION_REST_RATE
+    return min(round(deduction), tax_paid)
+
+
+# Deducción autonómica de Canarias por inversión en vivienda habitual (Decreto
+# Legislativo 1/2009): un porcentaje de lo pagado en la semana por comprar la vivienda
+# habitual (entrada, cuotas de la hipoteca y gastos), con una base máxima anual y solo
+# por debajo de un nivel de renta (base general + ahorro). Con las de rehabilitación,
+# no pasa del 15 % de la cuota íntegra autonómica. La estatal se suprimió en 2013.
+
+#: `(base general + ahorro anual por debajo de, porcentaje)`.
+HOME_DEDUCTION_RATES: tuple[tuple[float, float], ...] = ((26_035.0, 0.05), (46_455.0, 0.035))
+#: Base máxima anual de la deducción, en euros.
+HOME_DEDUCTION_BASE_EUR = 6_000.0
+#: Tope de las deducciones canarias de vivienda sobre la cuota íntegra autonómica.
+HOME_DEDUCTION_QUOTA_SHARE = 0.15
+
+
+def home_deduction(invested: int, *, income: int, regional: int) -> int:
+    """Deducción canaria por lo invertido en la vivienda habitual en una semana.
+
+    Args:
+        invested: Lo pagado en la semana por la vivienda habitual (Y$).
+        income: Base imponible general más la del ahorro de la semana (Y$).
+        regional: Cuota íntegra autonómica de la semana (Y$), para su tope.
+    """
+    if invested <= 0 or regional <= 0:
+        return 0
+    yearly = annual_eur(income)
+    rate = next((r for limit, r in HOME_DEDUCTION_RATES if yearly < limit), 0.0)
+    base = min(invested, round(weekly_yd(HOME_DEDUCTION_BASE_EUR)))
+    return min(round(base * rate), round(regional * HOME_DEDUCTION_QUOTA_SHARE))
+
+
+# Deducciones canarias del alquiler (Decreto Legislativo 1/2009, campaña 2025):
+#
+# - Inquilino (art. 15): el 24 % de lo pagado por el alquiler de la vivienda habitual,
+#   hasta 740 € al año, si la renta (base general + ahorro) no pasa de 46.455 € y el
+#   alquiler se lleva más del 10 % de ella. El bot no sabe edades: sin los 760 € de los
+#   menores de 40 y los mayores de 75.
+# - Casero (art. 15 ter): el 10 % de lo que se gasta en una vivienda alquilada en
+#   reparaciones, conservación y seguros, hasta 150 € por inmueble y año.
+#
+# Todas las autonómicas juntas no pasan de la cuota íntegra autonómica (art. 18).
+
+TENANT_DEDUCTION_RATE = 0.24
+TENANT_DEDUCTION_MAX_EUR = 740.0
+TENANT_INCOME_MAX_EUR = 46_455.0
+TENANT_RENT_SHARE = 0.10
+LANDLORD_DEDUCTION_RATE = 0.10
+LANDLORD_DEDUCTION_MAX_EUR = 150.0
+
+
+def tenant_deduction(rent_paid: int, *, income: int) -> int:
+    """Deducción canaria del inquilino por el alquiler de una semana (art. 15).
+
+    Args:
+        rent_paid: Lo pagado en la semana por el alquiler de la vivienda habitual.
+        income: Base imponible general más la del ahorro de la semana.
+    """
+    if rent_paid <= 0 or annual_eur(income) > TENANT_INCOME_MAX_EUR:
+        return 0
+    if rent_paid <= income * TENANT_RENT_SHARE:
+        return 0
+    return min(round(rent_paid * TENANT_DEDUCTION_RATE), round(weekly_yd(TENANT_DEDUCTION_MAX_EUR)))
+
+
+def landlord_deduction(properties: tuple[PropertyWeek, ...]) -> int:
+    """Deducción canaria del casero por reparaciones y seguros de una semana (art. 15 ter)."""
+    cap = round(weekly_yd(LANDLORD_DEDUCTION_MAX_EUR))
+    return sum(min(round(p.upkeep * LANDLORD_DEDUCTION_RATE), cap) for p in properties)
+
+
+@dataclass(frozen=True, slots=True)
+class WeekReturn:
+    """La declaración de una semana (`week_return`), en Y$.
+
+    Attributes:
+        tax: La cuota íntegra y cómo se ha integrado la renta.
+        donations: Deducción por donativos.
+        home: Deducción canaria por inversión en vivienda habitual.
+        foreign: Deducción por doble imposición internacional (art. 80 LIRPF).
+        withheld: Lo retenido durante la semana.
+        rental: Deducciones canarias del alquiler (inquilino y casero).
+    """
+
+    tax: WeekTax
+    donations: int
+    home: int
+    foreign: int
+    withheld: int
+    rental: int = 0
+
+    @property
+    def deductions(self) -> int:
+        """Todas las deducciones de la cuota."""
+        return self.donations + self.home + self.foreign + self.rental
+
+    @property
+    def due(self) -> int:
+        """Cuota líquida: la íntegra menos las deducciones."""
+        return max(0, self.tax.quota - self.deductions)
+
+    @property
+    def result(self) -> int:
+        """Lo que sale: positivo, a pagar; negativo, a devolver."""
+        return self.due - self.withheld
+
+
+def week_return(
+    income: WeekIncome,
+    *,
+    withheld: int,
+    donated: int = 0,
+    home_invested: int = 0,
+    foreign_credit: int = 0,
+    foreign_income: int = 0,
+    savings: int = 0,
+    rent_paid: int = 0,
+) -> WeekReturn:
+    """La declaración de una semana cerrada.
+
+    Args:
+        income: Toda la renta de la semana, con los arrastres de las anteriores.
+        withheld: Retenciones de la semana (ingresos y días de casino).
+        donated: Donado a ONGs en la semana.
+        home_invested: Pagado en la semana por la vivienda habitual.
+        foreign_credit: Impuesto pagado fuera por la parte de la renta que tributa aquí.
+        foreign_income: Esa renta de fuera: la deducción del art. 80 no pasa de lo que
+            pagaría aquí con el tipo medio.
+        savings: Base del ahorro de la semana (los intereses), para el nivel de renta
+            de las deducciones canarias.
+        rent_paid: Lo pagado en la semana por el alquiler de la vivienda habitual.
+    """
+    tax = week_tax(income)
+    total = tax.base + max(0, savings)
+    foreign = min(max(0, foreign_credit), round(max(0, foreign_income) * tax.rate), tax.quota)
+    # Las autonómicas, juntas, no pasan de la cuota autonómica (art. 18).
+    home = home_deduction(home_invested, income=total, regional=tax.regional)
+    rental = tenant_deduction(rent_paid, income=total) + landlord_deduction(income.properties)
+    regional = min(home + rental, tax.regional, tax.quota - foreign)
+    home = min(home, regional)
+    rental = regional - home
+    donations = donation_deduction(donated, tax.base, tax.quota - foreign - regional)
+    return WeekReturn(
+        tax=tax,
+        donations=donations,
+        home=home,
+        foreign=foreign,
+        withheld=max(0, withheld),
+        rental=rental,
+    )
+
+
+# -- Las semanas de antes de la 8.0.0 ----------------------------------------------------
+#
+# Hasta la 8.0.0 cada retención proyectaba con la renta desde el lunes × 365/7 a 10 Y$
+# por euro y la declaración solo devolvía lo del casino y los donativos. Las semanas de
+# antes del cambio se cierran con esa regla (`legacy_weekly_refund`): nadie paga de más
+# ni de menos por una semana que ya había empezado con otras reglas.
+
+
+def legacy_gambling_day_tax(net_gain: int, other_recent_income: int) -> int:
+    """Retención de un día de casino con la regla de antes de la 8.0.0."""
     if net_gain <= 0:
         return 0
-    return compute_withholding(net_gain, other_recent_income).tax
+    base_eur = (other_recent_income + net_gain) * _DAYS_PER_YEAR // 7 / YAPDOLLARS_PER_EURO
+    rate = round(annual_tax(base_eur) / base_eur * 100, 2) / 100 if base_eur > 0 else 0.0
+    return round(net_gain * rate)
 
 
-#: Declaraciones pendientes que se guardan como máximo. Cuando sale a devolver
-#: una semana más, la más antigua caduca y el dinero se queda en el Estado.
-MAX_PENDING_DECLARATIONS = 2
-
-
-def weekly_refund(net: int, withheld: int, other_recent_income: int) -> int:
-    """Lo que sale a devolver en la declaración semanal del casino.
-
-    Durante la semana se retiene día a día (`gambling_day_tax`). Al cerrarla,
-    las pérdidas de un día compensan las ganancias de otro: se calcula la
-    retención que tocaría sobre el neto de la semana y se devuelve lo que se
-    retuvo de más. Nunca sale a pagar.
-    """
-    return max(0, withheld - gambling_day_tax(max(net, 0), other_recent_income))
-
-
-def format_rate(rate: float) -> str:
-    """`0.1934` → `19,34 %`."""
-    return f"{rate * 100:.2f}".replace(".", ",") + " %"
+def legacy_weekly_refund(net: int, withheld: int, other_recent_income: int) -> int:
+    """Lo que sale a devolver del casino en una semana de antes de la 8.0.0 (nunca a pagar)."""
+    return max(0, withheld - legacy_gambling_day_tax(max(net, 0), other_recent_income))
 
 
 # -- Impuesto sobre el Patrimonio -------------------------------------------------------
@@ -208,10 +773,10 @@ def format_rate(rate: float) -> str:
 # conjunto con el IRPF del art. 31 (`wealth_quote`) y, por encima de 3.000.000 € de
 # base, se declara el Impuesto de Solidaridad de las Grandes Fortunas.
 #
-# El ejercicio dura una semana, como la renta del casino: cada lunes se cobra la
-# cuota anual completa sobre lo que se tiene en ese momento. Se paga con el
-# efectivo; lo que no llega queda como deuda y se embarga de lo que cobre por sus
-# pisos (`EconomyRepository._collect_tax_debt_in`, art. 169 de la Ley 58/2003).
+# El ejercicio dura una semana, como el del IRPF: cada lunes se cobra la cuota anual
+# completa sobre lo que se tiene en ese momento. Se paga con el efectivo; lo que no
+# llega queda como deuda, que se cobra del monedero el lunes siguiente y se embarga
+# de lo que cobre por sus pisos (art. 169 de la Ley 58/2003).
 
 #: Mínimo exento real, en euros.
 WEALTH_MINIMUM_EUR = 700_000.0
@@ -248,15 +813,13 @@ def wealth_tax(net_worth: int) -> int:
     return round(apply_scale(base / WEALTH_SCALE, WEALTH_BRACKETS) * WEALTH_SCALE)
 
 
-#: Límite conjunto con el IRPF (art. 31 de la Ley 19/1991): la cuota del Patrimonio y la
-#: del IRPF juntas no pueden pasar del 60 % de la base imponible del IRPF. Si se pasan,
-#: el Patrimonio baja. La ley deja bajarlo hasta un 80 %; aquí, como mucho un 50 %
-#: (decisión del proyecto, 7.22): la renta de los pisos llega al IRPF a un tercio de su
-#: escala (`housing.rent_to_fiscal`) y con su reducción del 50 %, así que el casero salía
-#: siempre por el suelo y pagaba un 20 % mientras el ahorrador de nómina lo pagaba entero.
-#: No cuenta la parte del Patrimonio de lo que no puede dar rentas (los objetos de la tienda).
+#: Límite conjunto con el IRPF (art. 31 de la Ley 19/1991): la cuota del Patrimonio y las
+#: del IRPF juntas no pueden pasar del 60 % de la suma de las bases imponibles del IRPF.
+#: Si se pasan, el Patrimonio baja, como mucho un 80 %, como en la ley. Todo con las cifras
+#: de la misma semana (la semana es el año). No cuenta la parte del Patrimonio de lo que
+#: no puede dar rentas (los objetos de la tienda).
 WEALTH_JOINT_LIMIT = 0.60
-WEALTH_MAX_REDUCTION = 0.50
+WEALTH_MAX_REDUCTION = 0.80
 
 #: Impuesto Temporal de Solidaridad de las Grandes Fortunas (art. 3 de la Ley 38/2022):
 #: mismo patrimonio neto y mismo mínimo exento que el Patrimonio, pero la escala empieza
@@ -298,26 +861,24 @@ class WealthQuote:
         return self.full - self.due
 
 
-def wealth_quote(net_worth: int, *, unproductive: int = 0, weekly_income: int = 0) -> WealthQuote:
+def wealth_quote(
+    net_worth: int, *, unproductive: int = 0, irpf_base: int = 0, irpf_quota: int = 0
+) -> WealthQuote:
     """Patrimonio con el límite conjunto del art. 31 y las Grandes Fortunas.
-
-    El año fiscal del bot es la semana: la base del IRPF es la renta sujeta de la semana
-    × 365/7 (la misma proyección que las retenciones) y su cuota, la escala de siempre.
 
     Args:
         net_worth: Base: efectivo, pisos y objetos.
         unproductive: La parte de la base que no da rentas (objetos de la tienda): su
             parte de la cuota no se rebaja con el límite conjunto.
-        weekly_income: Renta sujeta a IRPF de la semana, en la escala general.
+        irpf_base: Suma de las bases imponibles del IRPF de la semana (general y ahorro).
+        irpf_quota: Suma de sus cuotas íntegras.
     """
     full = wealth_tax(net_worth)
     due = full
     if full > 0:
-        annual = max(0, weekly_income) * _DAYS_PER_YEAR // _WINDOW_DAYS
-        irpf = round(annual_tax(annual / YAPDOLLARS_PER_EURO) * YAPDOLLARS_PER_EURO)
         share = 1 - min(1.0, max(0, unproductive) / net_worth) if net_worth > 0 else 0.0
         productive = round(full * share)
-        excess = irpf + productive - round(annual * WEALTH_JOINT_LIMIT)
+        excess = max(0, irpf_quota) + productive - round(max(0, irpf_base) * WEALTH_JOINT_LIMIT)
         if excess > 0:
             due = full - min(excess, productive, round(full * WEALTH_MAX_REDUCTION))
     subject = net_worth > SOLIDARITY_WEALTH_THRESHOLD
@@ -390,41 +951,6 @@ def igic(base: int, rate: float = IGIC_GENERAL_RATE) -> int:
     return round(base * rate)
 
 
-# -- Deducción por donativos ---------------------------------------------------------
-#
-# Art. 19.1 de la Ley 49/2002 (redacción del Real Decreto-ley 6/2023): se
-# deduce de la cuota del IRPF el 80 % de los primeros 250 € donados y el 40 %
-# del resto. La base de la deducción no puede pasar del 10 % de la base
-# liquidable (art. 69.1 LIRPF) y la deducción no puede dejar la cuota en
-# negativo: si no has pagado IRPF, no recuperas nada. No se aplica el 45 % por
-# donar tres años seguidos a la misma entidad.
-#
-# En el bot la cuota es el IRPF retenido en la semana, y la deducción sale a
-# devolver en la renta del lunes junto con lo del casino.
-
-DONATION_FULL_RATE = 0.80
-DONATION_FULL_LIMIT = 250 * YAPDOLLARS_PER_EURO
-DONATION_REST_RATE = 0.40
-DONATION_BASE_LIMIT = 0.10
-
-
-def donation_deduction(donated: int, base: int, tax_paid: int) -> int:
-    """Lo que se recupera en la renta por los donativos de una semana.
-
-    Args:
-        donated: Donado en la semana.
-        base: Renta sujeta de la semana (ingresos brutos más ganancia neta
-            del casino), para el límite del 10 %.
-        tax_paid: IRPF pagado en la semana y no devuelto por otra vía.
-    """
-    eligible = min(donated, int(base * DONATION_BASE_LIMIT))
-    if eligible <= 0 or tax_paid <= 0:
-        return 0
-    first = min(eligible, DONATION_FULL_LIMIT)
-    deduction = first * DONATION_FULL_RATE + (eligible - first) * DONATION_REST_RATE
-    return min(round(deduction), tax_paid)
-
-
 # -- Gravamen especial sobre premios de lotería -----------------------------------------
 #
 # Disposición adicional 33ª de la Ley 35/2006 del IRPF: los premios de las
@@ -472,14 +998,11 @@ def lottery_tax(prize: int) -> int:
 #    RDL 3/2026) por lo que pase de la base máxima: 1,15 % hasta un 10 % más,
 #    1,25 % hasta un 50 % más y 1,46 % por encima. El trabajador paga el 16,6 %
 #    y la empresa el resto.
-# 4. IRPF con la escala de siempre (`annual_tax`), pero sobre el rendimiento
-#    neto: bruto − cotizaciones del trabajador − 2.000 € de otros gastos
-#    (art. 19.2.f LIRPF) − la reducción por obtención de rendimientos del
-#    trabajo (art. 20 LIRPF, redacción de la Ley 7/2024).
+# 4. IRPF con el tipo estable de toda la renta del miembro (`stable_rate`); los
+#    gastos del art. 19.2.f y la reducción del art. 20 entran en `week_tax`.
 #
-# Como en `compute_withholding`, la renta anual se proyecta con toda la renta
-# sujeta de los últimos 7 días (no solo las nóminas) y el tipo de cada concepto
-# se aplica al bruto del turno.
+# La base de cotización del año se proyecta con las nóminas de la semana (las de la
+# anterior si eran más), pasadas a euros con la vara del IRPF.
 
 #: Cotización del trabajador (fracción del bruto).
 SS_WORKER_RATE = 0.0470 + 0.0155 + 0.0010 + 0.0015
@@ -495,55 +1018,13 @@ SOLIDARITY_BRACKETS: tuple[tuple[float, float], ...] = (
 )
 #: Parte de la cotización de solidaridad que paga el trabajador.
 SOLIDARITY_WORKER_SHARE = 0.166
-#: Otros gastos deducibles de los rendimientos del trabajo (art. 19.2.f LIRPF).
-WORK_OTHER_EXPENSES_EUR = 2_000.0
 
-#: Escala de las nóminas: 100 Y$ por euro, diez veces la del resto del bot.
-#:
-#: El resto de la economía (casino, IMV, loterías) usa `YAPDOLLARS_PER_EURO` (10
-#: Y$ por euro), y a esa escala el IMV a racha máxima ya equivale a 55.000 € al
-#: año. Para que trabajar compense frente al IMV, un turno del puesto más bajo
-#: tiene que pagar más que un IMV entero (unos 1.700 Y$); a la escala general
-#: eso serían 233.000 € al año a jornada completa y un celador pagaría un 40 %
-#: de IRPF. A 100 Y$ por euro, un turno de celador son 17 € (un turno son unas
-#: dos horas: el salario mínimo por hora) y la jornada completa, unos 25.000 € al
-#: año, con la retención de un sueldo así. Todo lo que es renta del trabajo
-#: (nómina, Seguridad Social, IRPF de la nómina, Hong Kong, Ley Beckham,
-#: exenciones) se mide en esta escala. Lo que pasa de una escala a otra (la
-#: renta que ven el casino y la declaración, y lo que el trabajo quita del IMV)
-#: se convierte con `wage_to_fiscal`.
+#: Escala de las cifras de juego del trabajo: 100 Y$ por euro. Ya no es una escala
+#: fiscal (el IRPF usa `IRPF_YAPDOLLARS_PER_EURO`): solo sirve para escribir en euros las
+#: cifras que se inventa el juego y que no salen de ninguna ley, como el precio de las
+#: formaciones, la cuota de autónomo, el billete a Hong Kong o lo que mira el banco de
+#: `pisos`. Un turno de celador son 17 € a esta escala.
 WAGE_YAPDOLLARS_PER_EURO = 100
-
-
-def wage_to_fiscal(amount: int) -> int:
-    """Pasa Y$ de nómina (100 Y$/€) a la escala general del bot (10 Y$/€)."""
-    return round(amount * YAPDOLLARS_PER_EURO / WAGE_YAPDOLLARS_PER_EURO)
-
-
-def fiscal_to_wage(amount: int) -> int:
-    """Pasa Y$ de la escala general (10 Y$/€) a la de nóminas (100 Y$/€).
-
-    La usa la nómina para sumar a su base de retención el resto de la renta del
-    miembro, que se guarda en la escala general. Las nóminas ya guardadas en esa
-    escala vuelven con un error de redondeo de unos pocos Y$ por turno.
-    """
-    return amount * WAGE_YAPDOLLARS_PER_EURO // YAPDOLLARS_PER_EURO
-
-
-def work_income_reduction(net_eur: float) -> float:
-    """Reducción por obtención de rendimientos del trabajo (art. 20 LIRPF), en euros.
-
-    Redacción de la Ley 7/2024: 7.302 € hasta 14.852 € de rendimiento neto;
-    de ahí baja 1,75 € por euro hasta 17.673,52 €, luego 1,14 € por euro
-    hasta 19.747,5 € y a partir de ahí es cero.
-    """
-    if net_eur <= 14_852:
-        return 7_302.0
-    if net_eur <= 17_673.52:
-        return max(0.0, 7_302 - 1.75 * (net_eur - 14_852))
-    if net_eur <= 19_747.5:
-        return max(0.0, 2_364.34 - 1.14 * (net_eur - 17_673.52))
-    return 0.0
 
 
 def solidarity_contribution(annual_eur: float) -> float:
@@ -560,14 +1041,14 @@ def solidarity_contribution(annual_eur: float) -> float:
 
 @dataclass(frozen=True, slots=True)
 class PayrollRates:
-    """Tipos efectivos de una nómina (fracciones del bruto), para una renta anual.
+    """Tipos efectivos de una nómina (fracciones del bruto).
 
     Attributes:
         ss_worker: Seguridad Social del trabajador, solidaridad incluida.
         ss_employer: Seguridad Social de la empresa, solidaridad incluida.
-        irpf: Retención de IRPF, redondeada a dos decimales en % (art. 86 RIRPF).
-        over_max_base: Si la renta pasa de la base máxima de cotización (y,
-            por tanto, paga cotización de solidaridad).
+        irpf: Retención de IRPF: el tipo estable de la semana.
+        over_max_base: Si las nóminas del año pasan de la base máxima de cotización
+            (y, por tanto, pagan cotización de solidaridad).
     """
 
     ss_worker: float
@@ -581,23 +1062,19 @@ class PayrollRates:
         return self.over_max_base
 
 
-def payroll_rates(annual_yd: int) -> PayrollRates:
-    """Tipos efectivos de cotización e IRPF para un sueldo anual en Y$ de nómina."""
-    annual = annual_yd / WAGE_YAPDOLLARS_PER_EURO
-    if annual <= 0:
-        return PayrollRates(SS_WORKER_RATE, SS_EMPLOYER_RATE, 0.0, False)
-    base = min(annual, SS_MAX_BASE_EUR)
-    solidarity = solidarity_contribution(annual)
+def payroll_rates(annual_eur: float, irpf: float = 0.0) -> PayrollRates:
+    """Tipos de cotización para unas nóminas de `annual_eur` euros al año."""
+    if annual_eur <= 0:
+        return PayrollRates(SS_WORKER_RATE, SS_EMPLOYER_RATE, irpf, False)
+    base = min(annual_eur, SS_MAX_BASE_EUR)
+    solidarity = solidarity_contribution(annual_eur)
     worker = base * SS_WORKER_RATE + solidarity * SOLIDARITY_WORKER_SHARE
     employer = base * SS_EMPLOYER_RATE + solidarity * (1 - SOLIDARITY_WORKER_SHARE)
-    net = max(0.0, annual - worker - WORK_OTHER_EXPENSES_EUR)
-    taxable = max(0.0, net - work_income_reduction(net))
-    irpf = round(annual_tax(taxable) / annual * 100, 2) / 100
     return PayrollRates(
-        ss_worker=worker / annual,
-        ss_employer=employer / annual,
+        ss_worker=worker / annual_eur,
+        ss_employer=employer / annual_eur,
         irpf=irpf,
-        over_max_base=annual > SS_MAX_BASE_EUR,
+        over_max_base=annual_eur > SS_MAX_BASE_EUR,
     )
 
 
@@ -626,11 +1103,6 @@ class Payslip:
         return self.gross - self.ss_worker - self.irpf
 
     @property
-    def fiscal_gross(self) -> int:
-        """El bruto en la escala general (lo que cuenta como renta fuera de la nómina)."""
-        return wage_to_fiscal(self.gross)
-
-    @property
     def employer_cost(self) -> int:
         """Lo que le cuesta el turno a la empresa."""
         return self.gross + self.ss_employer
@@ -649,98 +1121,88 @@ BECKHAM_TOP_RATE = 0.47
 BECKHAM_LIMIT_EUR = 600_000.0
 
 
-def beckham_rate(annual_yd: int) -> float:
-    """Tipo medio de la Ley Beckham para un sueldo anual en Y$ de nómina."""
-    annual = annual_yd / WAGE_YAPDOLLARS_PER_EURO
-    if annual <= BECKHAM_LIMIT_EUR:
+def beckham_rate(annual_eur: float) -> float:
+    """Tipo medio de la Ley Beckham para un sueldo de `annual_eur` euros al año."""
+    if annual_eur <= BECKHAM_LIMIT_EUR:
         return BECKHAM_RATE
-    tax = BECKHAM_LIMIT_EUR * BECKHAM_RATE + (annual - BECKHAM_LIMIT_EUR) * BECKHAM_TOP_RATE
-    return tax / annual
+    tax = BECKHAM_LIMIT_EUR * BECKHAM_RATE + (annual_eur - BECKHAM_LIMIT_EUR) * BECKHAM_TOP_RATE
+    return tax / annual_eur
 
 
-def compute_payslip(gross: int, recent_income: int, *, beckham: bool = False) -> Payslip:
-    """Nómina de un turno dados los ingresos sujetos de los últimos 7 días.
+def compute_payslip(gross: int, pace: Pace, *, beckham: bool = False) -> Payslip:
+    """Nómina de un turno con el tipo estable de la semana.
 
     Args:
         gross: Bruto del turno, en Y$; positivo.
-        recent_income: Toda la renta sujeta de los últimos 7 días sin este
-            turno (nóminas, premios, casino en positivo…), en la escala de
-            nóminas (`fiscal_to_wage`). En la vida real la empresa retiene solo
-            según el sueldo que paga (art. 82 RIRPF) y el resto se ajusta en la
-            declaración anual; el bot no tiene declaración anual, así que la
-            retención de cada nómina ya mira toda la renta (decisión del
-            proyecto, ver la Biblia).
+        pace: Tipo de la semana anterior y renta de esta, sin el turno. En la vida
+            real la empresa retiene solo según el sueldo que paga (art. 82 RIRPF);
+            aquí la retención ya mira toda la renta del miembro (decisión del
+            proyecto, ver la Biblia) y la declaración del lunes ajusta el resto.
         beckham: Si tributa por la Ley Beckham (24 % fijo en vez de la escala).
             La Seguridad Social no cambia.
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
-    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
-    rates = payroll_rates(projected)
-    if beckham:
-        rates = PayrollRates(
-            rates.ss_worker, rates.ss_employer, beckham_rate(projected), rates.over_max_base
-        )
+    wages = max(pace.previous_wages, pace.wages + gross)
+    rates = payroll_rates(annual_eur(wages))
     ss_worker = round(gross * rates.ss_worker)
-    irpf = min(round(gross * rates.irpf), gross - ss_worker)
+    income = (
+        pace.current.plus(beckham=gross)
+        if beckham
+        else pace.current.plus(work=gross, social=ss_worker)
+    )
+    rate = stable_rate(pace, income)
     return Payslip(
         gross=gross,
         ss_worker=ss_worker,
-        irpf=irpf,
+        irpf=min(round(gross * rate), gross - ss_worker),
         ss_employer=round(gross * rates.ss_employer),
-        rates=rates,
+        rates=replace(rates, irpf=rate),
     )
 
 
-def compute_self_employed_payslip(gross: int, recent_income: int) -> Payslip:
-    """«Nómina» de un autónomo: sin cotización por turno, IRPF por la escala.
+def compute_self_employed_payslip(gross: int, pace: Pace) -> Payslip:
+    """«Nómina» de un autónomo: sin cotización por turno y con el tipo estable.
 
     Los autónomos no cotizan por cada ingreso: pagan su cuota aparte (ver
-    `EconomyService.charge_self_employed_fee`). El IRPF es la escala sobre lo
-    proyectado, sin la reducción del art. 20 LIRPF (que es solo para
-    rendimientos del trabajo), en la escala de las nóminas.
+    `EconomyService.charge_self_employed_fee`), que la declaración resta como gasto.
+    Su rendimiento es de actividad económica (art. 27 LIRPF): sin la reducción del
+    art. 20, que es solo para el trabajo.
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
-    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
-    annual = projected / WAGE_YAPDOLLARS_PER_EURO
-    rate = round(annual_tax(annual) / annual * 100, 2) / 100 if annual else 0.0
+    rate = stable_rate(pace, pace.current.plus(business=gross))
     return Payslip(
         gross=gross,
         ss_worker=0,
-        irpf=round(gross * rate),
+        irpf=min(round(gross * rate), gross),
         ss_employer=0,
         rates=PayrollRates(0.0, 0.0, rate, False),
     )
 
 
-def compute_pension_payslip(gross: int, recent_income: int) -> Payslip:
+def compute_pension_payslip(gross: int, pace: Pace) -> Payslip:
     """«Nómina» de una pensión de jubilación: IRPF sin cotización.
 
-    Las pensiones son rendimientos del trabajo (art. 17.2.a.1ª LIRPF): llevan
-    retención por la escala, con los gastos deducibles y la reducción del art.
-    20 LIRPF como cualquier sueldo, pero el pensionista ya no cotiza a la
-    Seguridad Social y no hay empresa que cotice por él.
+    Las pensiones son rendimientos del trabajo (art. 17.2.a.1ª LIRPF): los gastos del
+    art. 19.2.f y la reducción del art. 20 cuentan como en cualquier sueldo, pero el
+    pensionista ya no cotiza y no hay empresa que cotice por él.
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
-    projected = (recent_income + gross) * _DAYS_PER_YEAR // _WINDOW_DAYS
-    annual = projected / WAGE_YAPDOLLARS_PER_EURO
-    net = max(0.0, annual - WORK_OTHER_EXPENSES_EUR)
-    taxable = max(0.0, net - work_income_reduction(net))
-    rate = round(annual_tax(taxable) / annual * 100, 2) / 100 if annual else 0.0
+    rate = stable_rate(pace, pace.current.plus(work=gross))
     return Payslip(
         gross=gross,
         ss_worker=0,
-        irpf=round(gross * rate),
+        irpf=min(round(gross * rate), gross),
         ss_employer=0,
         rates=PayrollRates(0.0, 0.0, rate, False),
     )
 
 
-def compute_beckham_payslip(gross: int, recent_income: int) -> Payslip:
+def compute_beckham_payslip(gross: int, pace: Pace) -> Payslip:
     """`compute_payslip` con la Ley Beckham (para pasarla como función)."""
-    return compute_payslip(gross, recent_income, beckham=True)
+    return compute_payslip(gross, pace, beckham=True)
 
 
 # -- Trabajar desde Hong Kong ------------------------------------------------------------
@@ -766,7 +1228,8 @@ def compute_beckham_payslip(gross: int, recent_income: int) -> Payslip:
 #   parte (deducción por doble imposición internacional, art. 80 LIRPF).
 # - Cuando deja de ser residente, España ya no le cobra nada por ese sueldo.
 #
-# El tipo de cambio es de juego: 9 HK$ por euro.
+# Los euros salen con la vara del IRPF y los dólares de Hong Kong, a un cambio de
+# juego: 9 HK$ por euro.
 
 HKD_PER_EUR = 9.0
 MPF_RATE = 0.05
@@ -782,8 +1245,8 @@ HK_BANDS: tuple[tuple[float, float], ...] = (
 HK_STANDARD_RATE = 0.15
 HK_STANDARD_TOP_RATE = 0.16
 HK_STANDARD_LIMIT_HKD = 5_000_000.0
-#: Exención del art. 7.p LIRPF, en Y$ de nómina por día (60.100 € al año).
-EXEMPT_7P_PER_DAY = round(60_100 * WAGE_YAPDOLLARS_PER_EURO / 365)
+#: Exención del art. 7.p LIRPF, en Y$ por día (60.100 € al año con la vara del IRPF).
+EXEMPT_7P_PER_DAY = round(60_100 * IRPF_YAPDOLLARS_PER_EURO / _DAYS_PER_YEAR)
 
 
 def hk_salaries_tax(annual_hkd: float) -> float:
@@ -810,6 +1273,8 @@ class ForeignPayslip:
         irpf: IRPF español después de la deducción por doble imposición.
         double_tax_relief: Deducción por doble imposición (art. 80 LIRPF).
         resident: Si sigue siendo residente fiscal en España.
+        credit: Salaries tax que corresponde a la parte que tributa en España: lo que
+            la declaración puede deducir por doble imposición.
     """
 
     gross: int
@@ -820,6 +1285,7 @@ class ForeignPayslip:
     irpf: int
     double_tax_relief: int
     resident: bool
+    credit: int = 0
 
     @property
     def net(self) -> int:
@@ -827,9 +1293,9 @@ class ForeignPayslip:
         return self.gross - self.mpf_worker - self.hk_tax - self.irpf
 
     @property
-    def fiscal_taxable(self) -> int:
-        """Lo sujeto en España, en la escala general (0 si no es residente)."""
-        return wage_to_fiscal(self.gross - self.exempt) if self.resident else 0
+    def taxable(self) -> int:
+        """Lo que tributa en España (0 si ya no es residente)."""
+        return self.gross - self.exempt if self.resident else 0
 
     @property
     def foreign(self) -> int:
@@ -843,9 +1309,9 @@ def compute_hk_payslip(
     recent_hk: int,
     resident: bool,
     exempt_left: int,
-    recent_es: int = 0,
+    pace: Pace | None = None,
 ) -> ForeignPayslip:
-    """Nómina de un turno trabajado desde Hong Kong (en Y$ de nómina).
+    """Nómina de un turno trabajado desde Hong Kong.
 
     Args:
         gross: Bruto del turno.
@@ -853,33 +1319,29 @@ def compute_hk_payslip(
             proyectar el salaries tax, que solo ve lo de Hong Kong).
         resident: Si sigue siendo residente fiscal en España.
         exempt_left: Exención del art. 7.p que queda hoy.
-        recent_es: Renta sujeta en España de los últimos 7 días, en la escala
-            de nóminas, para proyectar el IRPF del residente. Ya incluye la
-            parte no exenta de los turnos anteriores en Hong Kong. Un residente
-            tributa por su renta mundial (art. 2 LIRPF).
+        pace: Renta española de la semana, para el tipo estable del residente,
+            que tributa por su renta mundial (art. 2 LIRPF).
     """
     if gross <= 0:
         raise ValueError("El bruto de una nómina debe ser positivo.")
-    annual_yd = (recent_hk + gross) * _DAYS_PER_YEAR / _WINDOW_DAYS
-    annual_hkd = annual_yd / WAGE_YAPDOLLARS_PER_EURO * HKD_PER_EUR
+    annual_yd = (recent_hk + gross) * _DAYS_PER_YEAR / 7
+    annual_hkd = annual_yd / IRPF_YAPDOLLARS_PER_EURO * HKD_PER_EUR
     mpf_rate = min(MPF_RATE, MPF_MAX_HKD / annual_hkd) if annual_hkd else MPF_RATE
     hk_rate = hk_salaries_tax(annual_hkd) / annual_hkd if annual_hkd else 0.0
     mpf = round(gross * mpf_rate)
     hk_tax = round(gross * hk_rate)
-    exempt = irpf = relief = 0
+    exempt = irpf = relief = credit = 0
     if resident:
         exempt = min(gross, max(0, exempt_left))
         taxable = gross - exempt
         if taxable > 0:
-            projected = (recent_es + taxable) * _DAYS_PER_YEAR // _WINDOW_DAYS
-            # Sin cotización española: el rendimiento neto es el bruto menos los
-            # otros gastos, con la reducción del art. 20 LIRPF.
-            annual = projected / WAGE_YAPDOLLARS_PER_EURO
-            net = max(0.0, annual - WORK_OTHER_EXPENSES_EUR)
-            base = max(0.0, net - work_income_reduction(net))
-            rate = round(annual_tax(base) / annual * 100, 2) / 100
+            current = pace or Pace()
+            # Sin cotización española: los gastos y la reducción del trabajo van en
+            # `week_tax`, como en cualquier sueldo.
+            rate = stable_rate(current, current.current.plus(work=taxable))
             gross_irpf = round(taxable * rate)
-            relief = min(gross_irpf, round(hk_tax * taxable / gross))
+            credit = round(hk_tax * taxable / gross)
+            relief = min(gross_irpf, credit)
             irpf = gross_irpf - relief
     return ForeignPayslip(
         gross=gross,
@@ -890,6 +1352,7 @@ def compute_hk_payslip(
         irpf=min(irpf, gross - mpf - hk_tax),
         double_tax_relief=relief,
         resident=resident,
+        credit=credit,
     )
 
 
@@ -903,12 +1366,9 @@ def compute_hk_payslip(
 #
 # Como en la vida real, cada pago lleva una retención fija del 19 % (art. 101.4
 # LIRPF) y la diferencia con la escala se ajusta después. En el bot ese ajuste es
-# semanal: cada lunes se liquida la semana con `savings_tax`. La renta anual se
-# proyecta con los intereses de esa semana × 52 y se pasa a euros con
-# `YAPDOLLARS_PER_EURO`. Es la única renta que no se suma a las demás: la ley
-# separa la base del ahorro de la general (arts. 45 a 49 LIRPF). Con el tope de
-# 500 Y$ diarios, el máximo son 3.500 a la semana (18.200 € al año): se llega al
-# tramo del 21 %, no más.
+# semanal: cada lunes se liquida la semana con `savings_tax`, con la misma vara que
+# la base general (`annual_eur`). Es la única renta que no se suma a las demás: la ley
+# separa la base del ahorro de la general (arts. 45 a 49 LIRPF).
 
 #: Escala del ahorro, estatal + autonómica (arts. 66.1 y 76 LIRPF): (desde €, tipo).
 SAVINGS_BRACKETS: tuple[tuple[float, float], ...] = (
@@ -918,11 +1378,6 @@ SAVINGS_BRACKETS: tuple[tuple[float, float], ...] = (
     (200_000.0, 0.27),
     (300_000.0, 0.30),
 )
-_WEEKS_PER_YEAR = 52
-
-
-def _savings_annual_eur(weekly_gross: int) -> float:
-    return weekly_gross * _WEEKS_PER_YEAR / YAPDOLLARS_PER_EURO
 
 
 def savings_tax(weekly_gross: int) -> int:
@@ -933,17 +1388,17 @@ def savings_tax(weekly_gross: int) -> int:
     """
     if weekly_gross <= 0:
         return 0
-    annual_eur = _savings_annual_eur(weekly_gross)
-    rate = apply_scale(annual_eur, SAVINGS_BRACKETS) / annual_eur
+    annual = annual_eur(weekly_gross)
+    rate = apply_scale(annual, SAVINGS_BRACKETS) / annual
     return round(weekly_gross * rate)
 
 
 def savings_marginal_rate(weekly_gross: int) -> float:
     """Tipo del tramo más alto de la escala del ahorro al que llega una semana."""
-    annual_eur = _savings_annual_eur(max(0, weekly_gross))
+    annual = annual_eur(max(0, weekly_gross))
     rate = SAVINGS_BRACKETS[0][1]
     for start, bracket_rate in SAVINGS_BRACKETS:
-        if annual_eur > start:
+        if annual > start:
             rate = bracket_rate
     return rate
 
@@ -961,8 +1416,9 @@ def savings_marginal_rate(weekly_gross: int) -> float:
 #
 # El protagonista de la porra cobra un 2 % del bote por prestar su imagen. Es un
 # rendimiento del capital mobiliario por la cesión del derecho de imagen (art.
-# 25.4.d LIRPF) y retiene un tipo fijo del 24 % (art. 101 LIRPF), no la escala
-# proyectada de los premios: por eso no usa `compute_withholding`.
+# 25.4.d LIRPF) y retiene un tipo fijo del 24 % (art. 101 LIRPF), no el tipo
+# estable de los premios: por eso no usa `compute_withholding`. En la declaración
+# entra en la base general como cualquier otra renta.
 
 #: Comisión de las porras que va al Estado como IAJ, en tanto por uno.
 GAMING_TAX_RATE = 0.10
@@ -999,9 +1455,9 @@ def image_rights_withholding(gross: int) -> int:
 # `bot.services.bizum`).
 #
 # Quien vende por más de lo que le costó tiene una ganancia patrimonial (art. 33.1
-# LIRPF) de la base del ahorro (art. 46 LIRPF). El bot no tiene declaración anual,
-# así que la cobra en el momento al primer tipo de la escala del ahorro, el 19 %
-# (arts. 66.1 y 76 LIRPF), sin liquidación posterior.
+# LIRPF) de la base del ahorro (art. 46 LIRPF), que el bot cobra en el momento al
+# primer tipo de la escala del ahorro, el 19 % (arts. 66.1 y 76 LIRPF), sin
+# liquidación posterior.
 
 #: ITP de los bienes muebles en Canarias, en tanto por uno.
 ITP_RATE = 0.055

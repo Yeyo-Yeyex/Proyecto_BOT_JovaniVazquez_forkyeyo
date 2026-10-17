@@ -53,10 +53,10 @@ from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     EXEMPT_7P_PER_DAY,
     IGIC_GENERAL_RATE,
-    WAGE_YAPDOLLARS_PER_EURO,
     ForeignPayslip,
     Payslip,
     igic,
+    weekly_yd,
 )
 from bot.services.telemetry import TimedLock
 from bot.services.work import (
@@ -175,9 +175,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
-#: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
-OPTIONS_EXEMPT = 50_000 * WAGE_YAPDOLLARS_PER_EURO
+#: Exención de las acciones de empresas emergentes entregadas a empleados (art. 42.3.f
+#: LIRPF, redacción de la Ley 28/2022): 50.000 € por trabajador y año. La semana es el año
+#: fiscal: en Y$, los de una semana con la vara del IRPF, por cada exit.
+OPTIONS_EXEMPT = round(weekly_yd(50_000))
 
 
 def aval_active(contract: Contract, now: float) -> bool:

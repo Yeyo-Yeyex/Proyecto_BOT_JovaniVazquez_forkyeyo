@@ -12,10 +12,10 @@ inquilinos) están en `bot.services.housing_catalog`; el dinero lo mueve
 - **Un día del bot es un mes del contrato:** cada noche el inquilino paga el mes y
   se paga el mes de comunidad, seguro e IBI. Así un piso se paga solo en unos
   meses de verdad y no en veinte años.
-- El IRPF del bot proyecta la renta de la semana × 52 (`taxes.compute_withholding`),
-  así que una semana de alquileres (siete «meses») no se le puede pasar tal cual: se
-  le pasa lo que daría un año real con `rent_to_fiscal`, igual que la nómina de
-  `pala` pasa por `wage_to_fiscal` (Biblia, «Equilibrio»).
+- El IRPF no mira la etiqueta: cada Y$ de renta cuenta igual que uno de nómina o de
+  premio (la vara única de `bot.services.taxes`), y la semana es el año fiscal. Cada
+  cobro de renta se apunta con lo que la declaración necesita (ingresos, intereses y
+  reparaciones, el resto de gastos y la reducción del contrato).
 
 **Participaciones.** Cada inmueble se divide en `SHARES` participaciones: quien
 tiene las 100 tiene el piso entero; quien compra 3, el 3 % de todo (lo que vale,
@@ -58,7 +58,12 @@ from bot.services.housing_catalog import (
     Listing,
     RentLevel,
 )
-from bot.services.taxes import WAGE_YAPDOLLARS_PER_EURO, YAPDOLLARS_PER_EURO, capital_gain_tax
+from bot.services.taxes import (
+    IMPUTED_RATE,
+    WAGE_YAPDOLLARS_PER_EURO,
+    YAPDOLLARS_PER_EURO,
+    capital_gain_tax,
+)
 
 #: Participaciones en que se divide cada inmueble.
 SHARES = 100
@@ -85,10 +90,12 @@ INSURANCE_SHARE = 0.03
 #: del RIRPF), que se toma como el 60 % de lo pagado (el resto es suelo).
 AMORTIZATION_RATE = 0.03
 CONSTRUCTION_SHARE = 0.6
-#: Reducción del rendimiento neto del alquiler de vivienda: el 50 % general
-#: (art. 23.2 LIRPF, redacción de la Ley 12/2023). Las del 60 %, 70 % y 90 % piden
-#: rebajar la renta en zona tensionada, alquilar a jóvenes o rehabilitar.
+#: Reducción del rendimiento neto positivo del alquiler de vivienda (art. 23.2 LIRPF,
+#: redacción de la Ley 12/2023): el 50 % general y el 90 % si, en zona tensionada, un
+#: contrato nuevo baja la renta más de un 5 % respecto al anterior (`contract_reduction`).
 RENT_REDUCTION = 0.5
+TENSE_RENT_REDUCTION = 0.9
+TENSE_RENT_CUT = 0.05
 
 #: Lo que se mueve el índice del barrio si se compra (o se vende) todo el barrio de
 #: golpe. Cada operación lo mueve en proporción a lo que pesa en el barrio
@@ -214,25 +221,50 @@ def fiscal_value(listing: Listing, shares: int, paid: int) -> int:
     return max(cadastral_value(listing) * shares // SHARES, paid)
 
 
-def rent_to_fiscal(amount: int) -> int:
-    """Pasa renta de alquiler (un día = un mes) a la escala de la retención.
+def is_dwelling(listing: Listing, level: str) -> bool:
+    """Si un alquiler es de vivienda (art. 2 LAU): solo ese tiene la reducción del art. 23.2.
 
-    La retención proyecta la renta de la semana a un año multiplicando por 365/7
-    (`taxes.compute_withholding`). Un día de alquiler es un mes, así que un año
-    real de alquiler son 12 días: se le pasa `amount × 12 / 365` para que la
-    proyección dé la renta real del año (Biblia, «Equilibrio», escalas propias).
+    No lo son los locales, garajes y trasteros, ni el alquiler de temporada de los
+    nómadas digitales (art. 3 LAU), ni el vacacional (un alquiler turístico).
     """
-    return max(0, amount) * 12 // 365
+    return listing.kind in HOME_KINDS and level not in (VACATION_LEVEL, NOMAD_LEVEL)
 
 
-def taxable_rent(rent: int, deductible: int) -> int:
-    """Rendimiento neto reducido de un mes de alquiler, en Y$.
+def contract_reduction(
+    listing: Listing, level: str, *, index: float, rent: int, last_rent: int
+) -> float:
+    """Reducción del art. 23.2 LIRPF de un contrato, fijada al firmarlo (Ley 12/2023).
 
-    Ingresos menos gastos deducibles (comunidad, seguro, IBI, reparaciones y
-    amortización, arts. 23.1 LIRPF y 13 y 14 RIRPF), con la reducción del 50 %
-    (art. 23.2 LIRPF). Un rendimiento negativo no se compensa aquí: cuenta como 0.
+    - 90 %: vivienda en zona de mercado residencial tensionado con un contrato nuevo
+      cuya renta baja más de un 5 % de la última del anterior (`TENSE_RENT_CUT`).
+    - 50 %: cualquier otro alquiler de vivienda.
+    - 0: lo que no es vivienda (`is_dwelling`).
+
+    El 70 % (primer alquiler en zona tensionada a un inquilino de 18 a 35 años) y el 60 %
+    (vivienda rehabilitada en los dos años anteriores) llegarán con las fases de `pisos`
+    que traigan elegir inquilino y las reformas. Simplificación: no se mira si el casero
+    del contrato anterior era el mismo.
     """
-    return round(max(0, rent - deductible) * (1 - RENT_REDUCTION))
+    if not is_dwelling(listing, level):
+        return 0.0
+    if tense(index) and last_rent > 0 and rent < last_rent * (1 - TENSE_RENT_CUT):
+        return TENSE_RENT_REDUCTION
+    return RENT_REDUCTION
+
+
+def lease_reduction(listing: Listing, lease: Lease) -> float:
+    """Reducción del contrato en vigor: la que se fijó al firmar, o la general si es de antes."""
+    if lease.reduction is not None:
+        return lease.reduction
+    return RENT_REDUCTION if is_dwelling(listing, lease.level) else 0.0
+
+
+def imputed_rent(listing: Listing, shares: int) -> int:
+    """Renta imputada de un mes vacío (un día del bot) de unas participaciones (art. 85 LIRPF).
+
+    El 1,1 % anual del valor catastral (`taxes.IMPUTED_RATE`), repartido en doce meses.
+    """
+    return round(cadastral_value(listing) * IMPUTED_RATE / 12 * shares / SHARES)
 
 
 def amortization(paid: int) -> int:
@@ -423,6 +455,10 @@ class Lease:
         member: El miembro que vive de alquiler, si el inquilino es del servidor.
         bono: Si ese miembro cobra el Bono Alquiler Joven.
         license: Si tiene licencia de vivienda vacacional.
+        last_rent: Última renta del contrato anterior (0 si no lo hubo): para la
+            reducción del 90 % de quien la rebaja en zona tensionada.
+        reduction: Reducción del art. 23.2 del contrato en vigor, fijada al firmarlo;
+            `None` en los de antes de la 8.0.0 (la general, `contract_reduction`).
     """
 
     status: str = VACANT
@@ -438,6 +474,8 @@ class Lease:
     member: int | None = None
     bono: bool = False
     license: bool = False
+    last_rent: int = 0
+    reduction: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,6 +609,7 @@ def advance_day(
             since=day,
             unpaid=0,
             eviction_at=None,
+            last_rent=lease.rent,
         )
         events.append(Event("desahucio"))
     elif status == RENTED:
@@ -580,14 +619,20 @@ def advance_day(
                 lease = replace(lease, until=day + timedelta(days=level.months))
                 events.append(Event("renueva"))
             else:
-                lease = replace(lease, status=VACANT, tenant=None, rent=0, until=None, since=day)
+                lease = replace(
+                    lease, status=VACANT, tenant=None, rent=0, until=None, since=day,
+                    last_rent=lease.rent,
+                )  # fmt: skip
                 events.append(Event("se_va"))
         elif rng.random() < level.default:
             lease = replace(lease, status=DEFAULTING, since=day, unpaid=1)
             rent = 0
             events.append(Event("impago"))
         elif rng.random() < EARLY_LEAVE:
-            lease = replace(lease, status=VACANT, tenant=None, rent=0, until=None, since=day)
+            lease = replace(
+                lease, status=VACANT, tenant=None, rent=0, until=None, since=day,
+                last_rent=lease.rent,
+            )  # fmt: skip
             events.append(Event("se_va"))
     elif status == DEFAULTING:
         if rng.random() < PAY_BACK:
@@ -599,14 +644,18 @@ def advance_day(
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
         if rng.random() < find_chance(listing, level, day):
+            new_rent = asking_rent(listing, level, index)
             lease = replace(
                 lease,
                 status=RENTED,
                 tenant=_tenant_for(level.key, listing.kind, rng),
-                rent=asking_rent(listing, level, index),
+                rent=new_rent,
                 until=day + timedelta(days=level.months),
                 since=day,
                 unpaid=0,
+                reduction=contract_reduction(
+                    listing, level.key, index=index, rent=new_rent, last_rent=lease.last_rent
+                ),
             )
             events.append(Event("firma"))
         elif vacant_for >= SQUAT_AFTER_DAYS and rng.random() < SQUAT:

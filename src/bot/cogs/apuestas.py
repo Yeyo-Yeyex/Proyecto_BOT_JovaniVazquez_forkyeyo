@@ -80,7 +80,7 @@ from bot.services.casino_stats import (
 from bot.services.economy import EconomyService, day_bounds, format_amount
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.lootboxes import FREE_BOX_PLAYS
-from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
+from bot.services.taxes import CLAIM_WEEKS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
@@ -471,15 +471,14 @@ class Panel:
         embed.description = (
             "**Cómo te cobra Hacienda el casino**\n"
             "1. Cada día se mira tu resultado neto del casino (premios menos apuestas). "
-            "Si vas arriba, se retiene el IRPF que toca a esa ganancia, al momento.\n"
+            "Si vas arriba, se retiene el 19 % de esa ganancia, al momento.\n"
             "2. Si después pierdes ese mismo día, la retención se recalcula y te devuelve "
             "lo que sobra en la misma jugada.\n"
-            "3. El lunes sale la renta de la semana: se suman todos los días, las pérdidas "
-            "de unos compensan las ganancias de otros y te devuelve lo retenido de más. "
-            "Hay que presentarla con `renta` (se guardan las "
-            f"{MAX_PENDING_DECLARATIONS} últimas semanas).\n"
-            "Si la semana acaba en positivo, lo que corresponde a esa ganancia no vuelve: "
-            "es el impuesto de verdad, no un adelanto."
+            "3. El lunes sale la declaración de la semana, con toda tu renta: las pérdidas "
+            "de unos días compensan las ganancias de otros (nunca tu nómina) y el casino "
+            "paga tu tipo de verdad. Si te tocaba más del 19 %, el lunes se cobra lo que "
+            "falta; si te tocaba menos, sale a devolver y se presenta con `renta` "
+            f"(tienes {CLAIM_WEEKS} semanas)."
         )
         embed.add_field(
             name=f"🧾 En este periodo ({self.period.label.lower()})",

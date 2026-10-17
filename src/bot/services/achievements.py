@@ -190,7 +190,7 @@ from bot.services.taxes import (
     LOTTERY_EXEMPT,
     STATE_PERSONAL_MINIMUM,
     TAX_COLLECTOR,
-    YAPDOLLARS_PER_EURO,
+    weekly_yd,
 )
 
 # -- Rarezas ---------------------------------------------------------------------------
@@ -546,12 +546,10 @@ def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -
     return built
 
 
-#: Renta anual en Y$ a partir de la cual empieza la retención: el mínimo
-#: personal estatal (art. 57 LIRPF) al cambio del juego. El autonómico de
+#: Renta de una semana (el año fiscal del bot) a partir de la cual se paga IRPF: el
+#: mínimo personal estatal (art. 57 LIRPF) con la vara del IRPF. El autonómico de
 #: Canarias es algo mayor, así que la primera mordida siempre es la estatal.
-FIRST_TAX_YEARLY = int(STATE_PERSONAL_MINIMUM * YAPDOLLARS_PER_EURO)
-#: Lo mismo en la ventana de 7 días que usa la retención (`compute_withholding`).
-FIRST_TAX_WEEKLY = FIRST_TAX_YEARLY * 7 // 365
+FIRST_TAX_WEEKLY = round(weekly_yd(STATE_PERSONAL_MINIMUM))
 
 #: `pisos`: un contador por barrio, tipo de inmueble, imprevisto y renta pedida
 #: (`housing_*_stats`). Los recuentos de barrios y tipos salen en `with_derived`.
@@ -620,12 +618,13 @@ def _thousands(value: int) -> str:
 #: premios de logros), porque todos esos caminos suman `tax_paid`.
 FIRST_TAX_STORY = (
     f"🐶 **¡Ay, bendito! {TAX_COLLECTOR} te encontró.** Hasta hoy cobrabas limpito "
-    f"porque no llegabas al mínimo personal: {_thousands(FIRST_TAX_YEARLY)} Y$ al año, "
-    f"unos {_thousands(FIRST_TAX_WEEKLY)} Y$ a la semana, sumando todo lo que cobras. "
+    f"porque no llegabas al mínimo personal: unos {_thousands(FIRST_TAX_WEEKLY)} Y$ a la "
+    "semana (aquí la semana es el año fiscal), sumando todo lo que cobras. "
     "Te pasaste, mi amor, y desde hoy cada premio, cada nivel, cada nómina y cada "
     "pelotazo del casino pasa antes por su cartera. Cuanto más ganas, más se lleva.\n"
-    "Lo que el casino te retenga de más te lo devuelve en la renta del lunes, si te "
-    "acuerdas de presentarla (`renta`). Bienvenido a España: aquí hasta el café paga."
+    "Cada lunes Hacienda hace tus cuentas de la semana: si te retuvo de menos, te lo "
+    "cobra; si te retuvo de más, te lo devuelve si presentas la renta (`renta`). "
+    "Bienvenido a España: aquí hasta el café paga."
 )
 
 

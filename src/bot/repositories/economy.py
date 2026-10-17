@@ -16,14 +16,24 @@ Modelo de datos:
 - `economy_wallets` con `user_id = STATE_ACCOUNT_ID`: la cuenta del Estado,
   donde acaba todo lo recaudado. Empieza en 0, no con el saldo de bienvenida.
 - `economy_gambling_days`: resultado neto del casino por usuario y día
-  (premios menos apuestas) y lo retenido sobre él. La retención siempre
-  corresponde a la ganancia neta del día: si después se pierde, se devuelve.
-- `economy_declarations`: declaración semanal del casino por usuario y
-  semana (lunes ISO): lo que sale a devolver y si está pendiente,
-  presentada, caducada o sin nada que devolver (`none`).
-- `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo
-  retenido. Sirve para proyectar la renta anual (ver `bot.services.taxes`)
-  y, en el futuro, para la declaración anual.
+  (premios menos apuestas) y lo retenido sobre él (el 19 % de la ganancia
+  neta del día: si después se pierde, se devuelve).
+- `economy_declarations`: lo que sale a devolver de cada semana (lunes ISO) y si
+  está pendiente de presentar con la Renta, presentado, caducado o sin nada que
+  devolver (`none`). Las de antes de la 8.0.0 solo eran del casino y los donativos.
+- `economy_tax_records`: un registro por ingreso sujeto a IRPF, con lo retenido,
+  su clase de renta (`kind`: trabajo, pensión, actividad, inmueble, premio…) y lo
+  que la declaración necesita de él (Seguridad Social, gastos del inmueble, impuesto
+  pagado fuera). Las filas de antes de la 8.0.0 no tienen clase.
+- `economy_irpf_regime`, `economy_irpf_weeks` y `economy_irpf_returns`: la primera
+  semana con las reglas de la 8.0.0 en cada servidor, las semanas ya cerradas y la
+  declaración de cada miembro cada lunes (cuota, deducciones, retenciones, lo
+  cobrado, lo que quedó a deber o a devolver y el tipo, que es el suelo de la
+  retención de la semana siguiente).
+- `economy_irpf_carry`: lo que una declaración pasa a las cuatro siguientes
+  (intereses y reparaciones de un inmueble que no cupieron, bases negativas).
+- `economy_irpf_extras`: lo pagado por el alquiler y la hipoteca de la vivienda
+  habitual, para las deducciones canarias.
 - `economy_wealth_weeks` y `economy_wealth_tax`: semanas en las que ya se
   cobró el Impuesto sobre el Patrimonio y lo que pagó cada uno.
 - `economy_solidarity_tax`: cada declaración del Impuesto de Solidaridad de las
@@ -96,12 +106,12 @@ Modelo de datos:
   el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
   `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
   (concepto `pisos:renta`).
-- `economy_tax_debts` y `economy_debt_payments`: el Patrimonio que no llegó a pagarse
-  en efectivo (quien lo tiene todo en ladrillo) y lo que se ha ido embargando de lo
-  que cobra por sus pisos. `hacienda` cuenta los embargos como Patrimonio.
-- `economy_irpf_regularizations`: servidores a los que ya se devolvió el IRPF
-  cobrado de más antes de que la renta de las retenciones se reiniciara cada
-  lunes (`regularize_irpf`). Se hace una sola vez.
+- `economy_tax_debts` y `economy_debt_payments`: lo que se debe a Hacienda porque no
+  llegó en efectivo (el Patrimonio de quien lo tiene todo en ladrillo, la declaración
+  que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, de lo que
+  cobra por sus pisos o de lo que le salía a devolver.
+- `economy_irpf_regularizations`: servidores a los que se devolvió una vez el IRPF de
+  la ventana vieja de 7 días (7.x). Ya no se usa; queda por las bases antiguas.
 
 Los saldos son enteros y nunca negativos. Cada operación abre su propia
 transacción `BEGIN IMMEDIATE`, así dos botones pulsados a la vez no pueden
@@ -111,18 +121,35 @@ gastar el mismo dinero dos veces.
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from bot.repositories import sqlite
+from bot.services.taxes import (
+    INCOME_BECKHAM,
+    INCOME_BUSINESS,
+    INCOME_FOREIGN,
+    INCOME_IMAGE,
+    INCOME_IMPUTED,
+    INCOME_PENSION,
+    INCOME_PRIZE,
+    INCOME_PROPERTY,
+    INCOME_WORK,
+    Pace,
+    PropertyWeek,
+    WeekIncome,
+    week_tax,
+)
 
 if TYPE_CHECKING:
     from bot.services.interest import DayOutcome, LedgerRow, SavingsSettlement, Streaks
-    from bot.services.taxes import ForeignPayslip, Payslip, WealthQuote
+    from bot.services.taxes import ForeignPayslip, Payslip, WealthQuote, WeekReturn, WeekTax
 
 T = TypeVar("T")
 
@@ -165,6 +192,130 @@ HOUSING_DEPOSIT_ACCOUNT_ID = -700
 
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"
+#: Conceptos de las filas de antes de la 8.0.0 que guardaban la renta de `pisos` a la
+#: escala de la retención de entonces (`rent_to_fiscal`, × 12 / 365).
+_LEGACY_RENT_CONCEPTS = (HOUSING_RENT_CONCEPT, "pisos:bono")
+
+#: Lo que la declaración arrastra a las semanas siguientes (`economy_irpf_carry`):
+#: intereses y reparaciones de un inmueble que no cupieron (art. 23.1.a LIRPF) y bases
+#: liquidables generales negativas (art. 50 LIRPF). Los cuatro años de la ley son cuatro
+#: semanas.
+CARRY_FINANCE = "finance"
+CARRY_BASE = "base"
+CARRY_WEEKS = 4
+
+#: Lo que la declaración necesita además de la renta (`economy_irpf_extras`): lo pagado
+#: por la vivienda habitual (deducción canaria por inversión) y por el alquiler de la
+#: vivienda habitual (deducción canaria del inquilino).
+EXTRA_HOME = "vivienda"
+EXTRA_RENT = "alquiler"
+
+
+@dataclass(frozen=True, slots=True)
+class FiscalWeek:
+    """Una semana fiscal: de lunes a lunes, a las 00:00 en hora canaria.
+
+    La construye el servicio (`economy.fiscal_week`), que sabe de husos y cambios de hora;
+    aquí solo se usa para leer las filas de la semana.
+
+    Attributes:
+        monday: Lunes ISO.
+        start: Ese lunes a las 00:00, en epoch.
+        end: El lunes siguiente a las 00:00, en epoch.
+        previous_start: El lunes anterior a las 00:00, en epoch (la semana anterior
+            acaba en `start`).
+    """
+
+    monday: str
+    start: float
+    end: float
+    previous_start: float
+
+    @property
+    def next_monday(self) -> str:
+        """Lunes ISO de la semana siguiente."""
+        return (date.fromisoformat(self.monday) + timedelta(days=7)).isoformat()
+
+    @property
+    def previous_monday(self) -> str:
+        """Lunes ISO de la semana anterior."""
+        return (date.fromisoformat(self.monday) - timedelta(days=7)).isoformat()
+
+    @property
+    def previous(self) -> FiscalWeek:
+        """La semana anterior (su `previous_start` es aproximado: una semana antes)."""
+        return FiscalWeek(
+            self.previous_monday,
+            self.previous_start,
+            self.start,
+            self.previous_start - (self.start - self.previous_start),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class IrpfReturn:
+    """La declaración de un miembro en el cierre del lunes.
+
+    Attributes:
+        user_id: El miembro.
+        base: Base liquidable general de la semana.
+        quota: Cuota íntegra.
+        deductions: Deducciones de la cuota.
+        withheld: Retenciones de la semana.
+        result: Cuota líquida menos retenciones: positivo a pagar, negativo a devolver.
+        charged: Lo cobrado del monedero (si salía a pagar).
+        debt: Lo que no llegó y queda como deuda con Hacienda.
+        refund: Lo que queda pendiente de devolver (se presenta con la Renta).
+        compensated: Devolución que se quedó Hacienda para pagar deudas.
+        collected: Deuda de semanas anteriores cobrada del monedero.
+        rate: Tipo de la semana (el suelo de la retención de la siguiente).
+    """
+
+    user_id: int
+    base: int
+    quota: int
+    deductions: int
+    withheld: int
+    result: int
+    charged: int = 0
+    debt: int = 0
+    refund: int = 0
+    compensated: int = 0
+    collected: int = 0
+    rate: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class IrpfRun:
+    """Resultado de cerrar el IRPF de una semana en un servidor.
+
+    Attributes:
+        done_before: La semana ya estaba cerrada; no se ha tocado nada.
+        legacy: La semana es de antes de la 8.0.0 en este servidor: no se cierra así.
+        returns: Una declaración por miembro con renta, de más a pagar a más a devolver.
+    """
+
+    done_before: bool = False
+    legacy: bool = False
+    returns: tuple[IrpfReturn, ...] = ()
+
+
+def _irpf_return_of(row: sqlite3.Row) -> IrpfReturn:
+    """Una fila de `economy_irpf_returns` como `IrpfReturn`."""
+    return IrpfReturn(
+        user_id=int(row["user_id"]),
+        base=int(row["base"]),
+        quota=int(row["quota"]),
+        deductions=int(row["deductions"]),
+        withheld=int(row["withheld"]),
+        result=int(row["result"]),
+        charged=int(row["charged"]),
+        debt=int(row["debt"]),
+        refund=int(row["refund"]),
+        compensated=int(row["compensated"]),
+        collected=int(row["collected"]),
+        rate=float(row["rate"]),
+    )
 
 
 class InsufficientFundsError(Exception):
@@ -381,27 +532,6 @@ class WealthRun:
 
 
 @dataclass(frozen=True, slots=True)
-class IrpfRecord:
-    """Un ingreso con retención, tal como se cobró, para volver a calcularla.
-
-    Attributes:
-        concept: Motivo del libro.
-        gross: Bruto sujeto en la escala general (`economy_tax_records`).
-        withheld: IRPF que se retuvo.
-        wage_gross: Bruto de la nómina en su escala, o `None` si no es nómina.
-        ss_worker: Cotización del trabajador de la nómina (0 si no es nómina).
-        country: País de la nómina (`"es"` o el de fuera).
-    """
-
-    concept: str
-    gross: int
-    withheld: int
-    wage_gross: int | None
-    ss_worker: int
-    country: str
-
-
-@dataclass(frozen=True, slots=True)
 class InterestRun:
     """Resultado de pagar los intereses de un día en un servidor.
 
@@ -565,27 +695,49 @@ class HousingTax:
 
 @dataclass(frozen=True, slots=True)
 class HousingRent:
-    """La renta de un mes que cobra un copropietario, con su IRPF.
+    """Un cobro de `pisos` (la renta de un mes, el bono, la comisión), con su IRPF.
 
     Attributes:
         user_id: Quien cobra.
         gross: Lo que entra en el monedero antes del IRPF.
-        taxable: Rendimiento neto reducido (`housing.taxable_rent`): sobre esto
-            se aplica el tipo de retención.
-        fiscal: `taxable` pasado a la escala de la retención
-            (`housing.rent_to_fiscal`): es lo que se apunta como renta sujeta.
-        concept: Motivo del libro y concepto en `economy_tax_records` (la renta de un
-            alquiler, o el Bono Alquiler Joven si lo paga el Estado).
+        kind: Clase de renta (`taxes.INCOME_*`): la del alquiler es capital inmobiliario;
+            el bono, una ganancia patrimonial; la comisión del promotor, actividad.
+            `None` si no tributa en el IRPF (la SOCIMI paga su 19 % aparte).
+        ref: El inmueble, para la renta de un alquiler.
+        income: Rentas íntegras, si no son todo `gross` (el IGIC del vacacional va dentro
+            de lo cobrado y no es renta).
+        finance: Intereses de la hipoteca y reparaciones del mes (con tope en la declaración).
+        costs: IBI, comunidad, seguro y amortización del mes.
+        upkeep: Reparaciones y seguro de una vivienda alquilada (deducción del casero).
+        reduction: Reducción del art. 23.2 de este contrato (0 si no es vivienda).
+        concept: Motivo del libro y concepto en `economy_tax_records`.
         tag: Para qué es (un inmueble); si un pago del Estado no se hace, se avisa
             con esta etiqueta en `settle`.
     """
 
     user_id: int
     gross: int
-    taxable: int
-    fiscal: int
+    kind: str | None = INCOME_PROPERTY
+    ref: str = ""
+    income: int | None = None
+    finance: int = 0
+    costs: int = 0
+    upkeep: int = 0
+    reduction: float = 0.0
     concept: str = HOUSING_RENT_CONCEPT
     tag: str = ""
+
+    @property
+    def property_week(self) -> PropertyWeek:
+        """Este cobro como tramo de su inmueble en la semana."""
+        return PropertyWeek(
+            ref=self.ref,
+            income=self.gross if self.income is None else self.income,
+            finance=self.finance,
+            costs=self.costs,
+            reduction=self.reduction,
+            upkeep=self.upkeep,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -598,12 +750,14 @@ class HousingPull:
             los pagados (el inquilino deja de pagar).
         tag: Para qué es (el inmueble).
         reason: Motivo del libro.
+        home: Si es el alquiler de su vivienda habitual (deducción canaria del inquilino).
     """
 
     user_id: int
     amount: int
     tag: str
     reason: str
+    home: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,6 +774,8 @@ class HousingDebit:
         other: Comunidad, seguro e imprevistos que le tocan (desaparecen), o la cuota de
             la hipoteca (el banco no existe: también desaparece).
         reason: Motivo del libro de `other`.
+        home: Si es la cuota de la hipoteca de su vivienda habitual: lo pagado cuenta
+            para la deducción canaria por inversión en vivienda habitual.
     """
 
     user_id: int
@@ -627,6 +783,7 @@ class HousingDebit:
     ibi: int
     other: int
     reason: str = "pisos:comunidad"
+    home: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -647,6 +804,8 @@ class HousingMove:
             después (la renta que reciben los caseros solo si el inquilino pagó).
         grants: Pagos del Estado con su IRPF (el Bono Alquiler Joven): solo si la
             cuenta del Estado llega; si no, «partida agotada».
+        imputations: `(miembro, inmueble, renta imputada)` de los pisos vacíos (art. 85
+            LIRPF): no mueven dinero, solo suman a su base de la semana.
     """
 
     rents: tuple[HousingRent, ...] = ()
@@ -657,6 +816,7 @@ class HousingMove:
     pulls: tuple[HousingPull, ...] = ()
     then: Callable[[sqlite3.Connection, frozenset[str]], HousingMove] | None = None
     grants: tuple[HousingRent, ...] = ()
+    imputations: tuple[tuple[int, str, int], ...] = ()
 
 
 class EconomyRepository:
@@ -1034,7 +1194,81 @@ class EconomyRepository:
                     claimed_at REAL,
                     PRIMARY KEY (guild_id, user_id, week_start)
                 );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_regime (
+                    guild_id INTEGER PRIMARY KEY,
+                    since_week TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_weeks (
+                    guild_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    processed_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_returns (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    week_start TEXT NOT NULL,
+                    base INTEGER NOT NULL,
+                    quota INTEGER NOT NULL,
+                    deductions INTEGER NOT NULL,
+                    withheld INTEGER NOT NULL,
+                    result INTEGER NOT NULL,
+                    charged INTEGER NOT NULL DEFAULT 0 CHECK (charged >= 0),
+                    debt INTEGER NOT NULL DEFAULT 0 CHECK (debt >= 0),
+                    refund INTEGER NOT NULL DEFAULT 0 CHECK (refund >= 0),
+                    compensated INTEGER NOT NULL DEFAULT 0 CHECK (compensated >= 0),
+                    collected INTEGER NOT NULL DEFAULT 0 CHECK (collected >= 0),
+                    rate REAL NOT NULL DEFAULT 0,
+                    savings INTEGER NOT NULL DEFAULT 0,
+                    savings_quota INTEGER NOT NULL DEFAULT 0,
+                    inputs TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    notified INTEGER NOT NULL DEFAULT 0,
+                    opened INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_carry (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    ref TEXT NOT NULL DEFAULT '',
+                    week_start TEXT NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount >= 0),
+                    PRIMARY KEY (guild_id, user_id, kind, ref, week_start)
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_irpf_extras (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    amount INTEGER NOT NULL CHECK (amount > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_irpf_extras_member
+                    ON economy_irpf_extras (guild_id, user_id, created_at);
                 """
+            )
+            # Bases de antes de la 8.0.0: cada ingreso se apunta ahora con su clase de
+            # renta y lo que la declaración necesita de él. Las filas viejas quedan con
+            # `kind` a NULL y se leen con la regla de entonces (`_legacy_income_in`).
+            self._add_columns(
+                connection,
+                "economy_tax_records",
+                {
+                    "kind": "TEXT",
+                    "costs": "INTEGER NOT NULL DEFAULT 0",
+                    "finance": "INTEGER NOT NULL DEFAULT 0",
+                    "upkeep": "INTEGER NOT NULL DEFAULT 0",
+                    "ref": "TEXT NOT NULL DEFAULT ''",
+                    "reduction": "REAL NOT NULL DEFAULT 0",
+                    "credit": "INTEGER NOT NULL DEFAULT 0",
+                },
             )
             # Bases de datos de antes del bote misterioso: los jackpots de
             # entonces cayeron todos por la combinación.
@@ -1049,6 +1283,19 @@ class EconomyRepository:
             self._drop_housing_tax_check(connection)
         finally:
             connection.close()
+
+    @staticmethod
+    def _add_columns(connection: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+        """Añade a `table` las columnas que le falten (`ALTER TABLE ADD COLUMN`).
+
+        Solo añade, con valor por defecto: una versión anterior del bot sigue leyendo la
+        tabla sin problemas si hubiera que volver atrás.
+        """
+        have = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        with connection:
+            for name, ddl in columns.items():
+                if name not in have:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
     @staticmethod
     def _drop_housing_tax_check(connection: sqlite3.Connection) -> None:
@@ -1214,7 +1461,241 @@ class EconomyRepository:
         )
         return balance
 
-    # -- Ingresos con retención -----------------------------------------------------
+    # -- Renta de la semana y retenciones --------------------------------------------
+
+    @staticmethod
+    def _record_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        *,
+        now: float,
+        concept: str,
+        kind: str,
+        gross: int,
+        withheld: int,
+        costs: int = 0,
+        finance: int = 0,
+        upkeep: int = 0,
+        ref: str = "",
+        reduction: float = 0.0,
+        credit: int = 0,
+    ) -> None:
+        """Apunta un ingreso sujeto con su clase de renta en `economy_tax_records`.
+
+        `gross` es el íntegro en Y$, sin pasar a ninguna escala: la vara del IRPF se
+        aplica al integrar la semana (`bot.services.taxes.week_tax`).
+        """
+        connection.execute(
+            """
+            INSERT INTO economy_tax_records
+                (guild_id, user_id, created_at, concept, gross, withheld, kind, costs,
+                 finance, upkeep, ref, reduction, credit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                guild_id, user_id, now, concept, gross, withheld, kind, costs, finance,
+                upkeep, ref, reduction, credit,
+            ),
+        )  # fmt: skip
+
+    @staticmethod
+    def _regime_in(connection: sqlite3.Connection, guild_id: int, current_week: str) -> str:
+        """Primera semana (lunes ISO) que el servidor declara con las reglas de la 8.0.0.
+
+        La primera vez que se pregunta queda fijada a la semana en curso: las anteriores
+        se siguen declarando con la regla vieja y la de ahora ya con la nueva, aunque haya
+        empezado antes del cambio (sus filas viejas se leen con `_legacy_income_in`).
+        """
+        connection.execute(
+            "INSERT OR IGNORE INTO economy_irpf_regime (guild_id, since_week) VALUES (?, ?)",
+            (guild_id, current_week),
+        )
+        (since,) = connection.execute(
+            "SELECT since_week FROM economy_irpf_regime WHERE guild_id = ?", (guild_id,)
+        ).fetchone()
+        return str(since)
+
+    @staticmethod
+    def _legacy_income_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, start: float, end: float
+    ) -> tuple[WeekIncome, int]:
+        """Las filas de antes de la 8.0.0 de una semana, como renta de la vara nueva.
+
+        Entonces `gross` iba a la escala de la retención de cada fuente: las nóminas, a 10
+        Y$ por euro (la de verdad está en `economy_payroll`); la renta de los pisos, a ×
+        12 / 365 (`rent_to_fiscal`); el resto, tal cual. Solo hace falta para la semana del
+        cambio y el tipo de la siguiente.
+
+        Returns:
+            `(renta, nóminas de la semana)`.
+        """
+        rows = connection.execute(
+            """
+            SELECT r.concept, r.gross, p.gross AS wage, p.ss_worker, p.country
+            FROM economy_tax_records r
+            LEFT JOIN economy_payroll p
+                ON p.guild_id = r.guild_id AND p.user_id = r.user_id
+               AND p.created_at = r.created_at AND p.concept = r.concept
+            WHERE r.guild_id = ? AND r.user_id = ? AND r.kind IS NULL
+              AND r.created_at >= ? AND r.created_at < ?
+            """,
+            (guild_id, user_id, start, end),
+        ).fetchall()
+        work = social = wages = other = prizes = image = 0
+        for row in rows:
+            gross = int(row["gross"])
+            concept = str(row["concept"])
+            if row["wage"] is not None:
+                if (row["country"] or "es") != "es":
+                    work += gross * 10  # la parte sujeta de fuera, de 10 a 100 Y$ por euro
+                else:
+                    work += int(row["wage"])
+                    social += int(row["ss_worker"])
+                    wages += int(row["wage"]) if int(row["ss_worker"]) else 0
+            elif concept in _LEGACY_RENT_CONCEPTS:
+                other += gross * 365 // 12
+            elif concept.endswith(":imagen"):
+                image += gross
+            else:
+                prizes += gross
+        income = WeekIncome(work=work, social=social, other=other, prizes=prizes, image=image)
+        return income, wages
+
+    @staticmethod
+    def _carries_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, week: str
+    ) -> tuple[dict[str, int], int]:
+        """Lo arrastrado de las cuatro semanas anteriores a `week` que sigue vivo.
+
+        Returns:
+            `(intereses y reparaciones por inmueble, base negativa)`.
+        """
+        oldest = (date.fromisoformat(week) - timedelta(days=7 * CARRY_WEEKS)).isoformat()
+        rows = connection.execute(
+            """
+            SELECT kind, ref, SUM(amount) AS amount FROM economy_irpf_carry
+            WHERE guild_id = ? AND user_id = ? AND week_start >= ? AND week_start < ?
+              AND amount > 0
+            GROUP BY kind, ref
+            """,
+            (guild_id, user_id, oldest, week),
+        ).fetchall()
+        finance = {str(r["ref"]): int(r["amount"]) for r in rows if r["kind"] == CARRY_FINANCE}
+        base = sum(int(r["amount"]) for r in rows if r["kind"] == CARRY_BASE)
+        return finance, base
+
+    def _week_income_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        week: FiscalWeek,
+        *,
+        exclude_day: str | None = None,
+    ) -> tuple[WeekIncome, int]:
+        """Toda la renta de la base general de un miembro en una semana, por clases.
+
+        Lee los ingresos con retención, los días de casino (sin `exclude_day`, el que se
+        está ajustando), la cuota de autónomo (gasto de la actividad) y lo arrastrado de
+        las semanas anteriores.
+
+        Returns:
+            `(renta, nóminas de la semana)`; las nóminas, para la base de cotización.
+        """
+        income, wages = self._legacy_income_in(connection, guild_id, user_id, week.start, week.end)
+        rows = connection.execute(
+            """
+            SELECT kind, ref, SUM(gross) AS gross, SUM(costs) AS costs,
+                   SUM(finance) AS finance, SUM(upkeep) AS upkeep,
+                   SUM(gross * reduction) AS reduced
+            FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND kind IS NOT NULL
+              AND created_at >= ? AND created_at < ?
+            GROUP BY kind, ref
+            """,
+            (guild_id, user_id, week.start, week.end),
+        ).fetchall()
+        carry, negative = self._carries_in(connection, guild_id, user_id, week.monday)
+        amounts: dict[str, int] = {}
+        for row in rows:
+            kind, gross = str(row["kind"]), int(row["gross"])
+            if kind == INCOME_PROPERTY:
+                ref = str(row["ref"])
+                income = income.plus(
+                    prop=PropertyWeek(
+                        ref=ref,
+                        income=gross,
+                        finance=int(row["finance"]),
+                        costs=int(row["costs"]),
+                        reduction=float(row["reduced"]) / gross if gross > 0 else 0.0,
+                        carry=carry.get(ref, 0),
+                        upkeep=int(row["upkeep"]),
+                    )
+                )
+                continue
+            if kind == INCOME_WORK:
+                wages += gross
+                amounts["social"] = amounts.get("social", 0) + int(row["costs"])
+            field = {
+                INCOME_WORK: "work",
+                INCOME_FOREIGN: "work",
+                INCOME_PENSION: "work",
+                INCOME_BUSINESS: "business",
+                INCOME_PRIZE: "prizes",
+                INCOME_IMAGE: "image",
+                INCOME_BECKHAM: "beckham",
+                INCOME_IMPUTED: "imputed",
+            }.get(kind, "prizes")
+            amounts[field] = amounts.get(field, 0) + gross
+        (fees,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(ss_worker), 0) FROM economy_payroll
+            WHERE guild_id = ? AND user_id = ? AND gross = 0 AND country = 'es'
+              AND created_at >= ? AND created_at < ?
+            """,
+            (guild_id, user_id, week.start, week.end),
+        ).fetchone()
+        (gambling,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(net), 0) FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND day >= ? AND day < ? AND day != ?
+            """,
+            (guild_id, user_id, week.monday, week.next_monday, exclude_day or ""),
+        ).fetchone()
+        amounts["business"] = amounts.get("business", 0) - int(fees)
+        amounts["gambling"] = int(gambling)
+        amounts["negative"] = negative
+        return income.plus(**amounts), wages
+
+    def _pace_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        week: FiscalWeek,
+        *,
+        exclude_day: str | None = None,
+    ) -> Pace:
+        """Lo que mira la retención de un cobro: el tipo de la semana pasada y la renta de esta.
+
+        El tipo de la semana pasada es el de su declaración, si ya se cerró; si no (las
+        primeras horas del lunes, o la semana del cambio a la 8.0.0), el que da su renta.
+        """
+        current, wages = self._week_income_in(
+            connection, guild_id, user_id, week, exclude_day=exclude_day
+        )
+        previous = week.previous
+        row = connection.execute(
+            """
+            SELECT rate FROM economy_irpf_returns
+            WHERE guild_id = ? AND user_id = ? AND week_start = ?
+            """,
+            (guild_id, user_id, previous.monday),
+        ).fetchone()
+        last, last_wages = self._week_income_in(connection, guild_id, user_id, previous)
+        rate = float(row["rate"]) if row is not None else week_tax(last).rate
+        return Pace(previous_rate=rate, previous_wages=last_wages, wages=wages, current=current)
 
     def _credit_income_in(
         self,
@@ -1225,8 +1706,9 @@ class EconomyRepository:
         gross: int,
         concept: str,
         now: float,
-        withhold: Callable[[int, int], int],
-        window_seconds: float,
+        withhold: Callable[[int, Pace], int],
+        week: FiscalWeek,
+        kind: str = INCOME_PRIZE,
     ) -> tuple[int, int]:
         """Ingresa `gross`, retiene lo que diga `withhold` y lo registra.
 
@@ -1235,30 +1717,26 @@ class EconomyRepository:
         cuenta del Estado en la misma transacción.
 
         Args:
-            withhold: Recibe `(bruto, ingresos de la ventana)` y devuelve la
-                retención en Y$. La regla vive en `bot.services.taxes`.
-            window_seconds: Ventana hacia atrás cuyos ingresos se pasan a
-                `withhold`.
+            withhold: Recibe `(bruto, renta de la semana)` y devuelve la retención en Y$.
+                La regla vive en `bot.services.taxes`.
+            week: Semana fiscal en curso.
+            kind: Clase de renta (`taxes.INCOME_*`); por defecto, un premio.
 
         Returns:
             `(retención, saldo_final)`.
         """
-        recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
-        tax = max(0, min(gross, withhold(gross, recent)))
+        pace = self._pace_in(connection, guild_id, user_id, week)
+        tax = max(0, min(gross, withhold(gross, pace)))
         entries = [LedgerEntry(gross, concept)]
         if tax:
             entries.append(LedgerEntry(-tax, f"irpf:{concept}"))
         balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
         if tax:
             self._credit_state_in(connection, guild_id, tax, f"irpf:{concept}")
-        connection.execute(
-            """
-            INSERT INTO economy_tax_records
-                (guild_id, user_id, created_at, concept, gross, withheld)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (guild_id, user_id, now, concept, gross, tax),
-        )
+        self._record_in(
+            connection, guild_id, user_id, now=now, concept=concept, kind=kind, gross=gross,
+            withheld=tax,
+        )  # fmt: skip
         return tax, balance
 
     async def credit_income(
@@ -1269,8 +1747,9 @@ class EconomyRepository:
         gross: int,
         concept: str,
         now: float,
-        withhold: Callable[[int, int], int],
-        window_seconds: float,
+        withhold: Callable[[int, Pace], int],
+        week: FiscalWeek,
+        kind: str = INCOME_PRIZE,
     ) -> tuple[int, int]:
         """Versión atómica e independiente de `_credit_income_in`.
 
@@ -1278,14 +1757,7 @@ class EconomyRepository:
             `(retención, saldo_final)`.
         """
         return await self._run(
-            self._credit_income_sync,
-            guild_id,
-            user_id,
-            gross,
-            concept,
-            now,
-            withhold,
-            window_seconds,
+            self._credit_income_sync, guild_id, user_id, gross, concept, now, withhold, week, kind
         )
 
     def _credit_income_sync(
@@ -1295,8 +1767,9 @@ class EconomyRepository:
         gross: int,
         concept: str,
         now: float,
-        withhold: Callable[[int, int], int],
-        window_seconds: float,
+        withhold: Callable[[int, Pace], int],
+        week: FiscalWeek,
+        kind: str,
     ) -> tuple[int, int]:
         with self._transaction() as connection:
             return self._credit_income_in(
@@ -1307,34 +1780,61 @@ class EconomyRepository:
                 concept=concept,
                 now=now,
                 withhold=withhold,
-                window_seconds=window_seconds,
+                week=week,
+                kind=kind,
             )
 
-    @staticmethod
-    def _recent_taxable_in(
-        connection: sqlite3.Connection,
-        guild_id: int,
-        user_id: int,
-        since: float,
-        *,
-        exclude_day: str | None = None,
-    ) -> int:
-        """Renta sujeta desde `since`: ingresos con retención más días de casino en positivo."""
-        (income,) = connection.execute(
-            """
-            SELECT COALESCE(SUM(gross), 0) FROM economy_tax_records
-            WHERE guild_id = ? AND user_id = ? AND created_at > ?
-            """,
-            (guild_id, user_id, since),
-        ).fetchone()
-        (gambling,) = connection.execute(
-            """
-            SELECT COALESCE(SUM(MAX(net, 0)), 0) FROM economy_gambling_days
-            WHERE guild_id = ? AND user_id = ? AND updated_at > ? AND day != ?
-            """,
-            (guild_id, user_id, since, exclude_day or ""),
-        ).fetchone()
-        return int(income) + int(gambling)
+    async def week_income(
+        self, guild_id: int, user_id: int, week: FiscalWeek
+    ) -> tuple[WeekIncome, Pace]:
+        """La renta de un miembro en una semana y lo que miraría su próxima retención."""
+        return await self._run(self._week_income_sync, guild_id, user_id, week)
+
+    def _week_income_sync(
+        self, guild_id: int, user_id: int, week: FiscalWeek
+    ) -> tuple[WeekIncome, Pace]:
+        connection = self._connect()
+        try:
+            pace = self._pace_in(connection, guild_id, user_id, week)
+            return pace.current, pace
+        finally:
+            connection.close()
+
+    async def week_withheld(self, guild_id: int, user_id: int, week: FiscalWeek) -> int:
+        """Todo lo retenido a un miembro en una semana (ingresos y días de casino)."""
+        return await self._run(self._week_withheld_sync, guild_id, user_id, week)
+
+    def _week_withheld_sync(self, guild_id: int, user_id: int, week: FiscalWeek) -> int:
+        connection = self._connect()
+        try:
+            (income,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(withheld), 0) FROM economy_tax_records
+                WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+                """,
+                (guild_id, user_id, week.start, week.end),
+            ).fetchone()
+            (gambling,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(withheld), 0) FROM economy_gambling_days
+                WHERE guild_id = ? AND user_id = ? AND day >= ? AND day < ?
+                """,
+                (guild_id, user_id, week.monday, week.next_monday),
+            ).fetchone()
+            return int(income) + int(gambling)
+        finally:
+            connection.close()
+
+    async def week_savings(self, guild_id: int, user_id: int, week: FiscalWeek) -> int:
+        """Intereses brutos de un miembro en una semana (la base del ahorro)."""
+        return await self._run(self._week_savings_sync, guild_id, user_id, week)
+
+    def _week_savings_sync(self, guild_id: int, user_id: int, week: FiscalWeek) -> int:
+        connection = self._connect()
+        try:
+            return self._week_savings_in(connection, guild_id, user_id, week)
+        finally:
+            connection.close()
 
     # -- Casino con IRPF -----------------------------------------------------------
 
@@ -1347,8 +1847,7 @@ class EconomyRepository:
         day: str,
         now: float,
         adjust_tax: bool,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> BetSettlement:
         """Mueve el dinero de una apuesta y ajusta el IRPF del día, todo atómico.
 
@@ -1361,8 +1860,8 @@ class EconomyRepository:
             day: Día (ISO, hora canaria) al que se imputa el movimiento.
             adjust_tax: `False` para cobrar una apuesta cuyo resultado llega
                 después (blackjack): la retención se ajusta al pagar.
-            day_tax: Recibe `(ganancia neta del día ≥ 0, renta de los otros
-                días de la ventana)` y devuelve la retención total del día.
+            day_tax: Recibe la ganancia neta del día (≥ 0) y devuelve la retención
+                total del día (el 19 % fijo: la declaración del lunes la ajusta).
 
         Raises:
             InsufficientFundsError: Si el jugador no cubre la apuesta.
@@ -1377,7 +1876,6 @@ class EconomyRepository:
             now,
             adjust_tax,
             day_tax,
-            window_seconds,
         )
 
     def _settle_gamble_sync(
@@ -1388,8 +1886,7 @@ class EconomyRepository:
         day: str,
         now: float,
         adjust_tax: bool,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> BetSettlement:
         with self._transaction() as connection:
             return self._settle_gamble_in(
@@ -1401,7 +1898,6 @@ class EconomyRepository:
                 now=now,
                 adjust_tax=adjust_tax,
                 day_tax=day_tax,
-                window_seconds=window_seconds,
             )
 
     def _settle_gamble_in(
@@ -1414,8 +1910,7 @@ class EconomyRepository:
         day: str,
         now: float,
         adjust_tax: bool,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> BetSettlement:
         """Cuerpo de `settle_gamble` dentro de una transacción ya abierta."""
         balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
@@ -1439,10 +1934,7 @@ class EconomyRepository:
         if not adjust_tax:
             return BetSettlement(balance, 0, net, withheld)
 
-        others = self._recent_taxable_in(
-            connection, guild_id, user_id, now - window_seconds, exclude_day=day
-        )
-        delta = max(0, day_tax(max(net, 0), others)) - withheld
+        delta = max(0, day_tax(max(net, 0))) - withheld
         if delta > 0:
             # Nunca deja al jugador en negativo; lo que falte se cobra en
             # el siguiente ajuste, porque el objetivo se recalcula siempre.
@@ -1548,8 +2040,7 @@ class EconomyRepository:
         seed: int,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
         cap: int = 0,
         draw_hit: Callable[[int, int], int] | None = None,
     ) -> SlotsSettlement:
@@ -1599,7 +2090,6 @@ class EconomyRepository:
             day,
             now,
             day_tax,
-            window_seconds,
             cap,
             draw_hit,
         )
@@ -1616,8 +2106,7 @@ class EconomyRepository:
         seed: int,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
         cap: int,
         draw_hit: Callable[[int, int], int] | None,
     ) -> SlotsSettlement:
@@ -1650,7 +2139,6 @@ class EconomyRepository:
                 now=now,
                 adjust_tax=True,
                 day_tax=day_tax,
-                window_seconds=window_seconds,
             )
             pot_moves = []
             if share:
@@ -1700,8 +2188,7 @@ class EconomyRepository:
         rakes: dict[int, int],
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> dict[int, BetSettlement]:
         """Paga una mano de la timba a todos los que la jugaron, en una sola transacción.
 
@@ -1723,7 +2210,6 @@ class EconomyRepository:
             day,
             now,
             day_tax,
-            window_seconds,
         )
 
     def _settle_timba_sync(
@@ -1734,8 +2220,7 @@ class EconomyRepository:
         rakes: dict[int, int],
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> dict[int, BetSettlement]:
         if any(v < 0 for v in (*payouts.values(), *rakes.values())):
             raise ValueError("Pago de timba inválido.")
@@ -1753,7 +2238,6 @@ class EconomyRepository:
                     now=now,
                     adjust_tax=True,
                     day_tax=day_tax,
-                    window_seconds=window_seconds,
                 )
             total = sum(rakes.values())
             if total:
@@ -1789,8 +2273,7 @@ class EconomyRepository:
         seed: int,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> PokerSettlement:
         """Paga una mano de póker ya cobrada y mueve el 💎 Bote, todo en una transacción.
 
@@ -1816,7 +2299,6 @@ class EconomyRepository:
             day,
             now,
             day_tax,
-            window_seconds,
         )
 
     def _settle_poker_sync(
@@ -1830,8 +2312,7 @@ class EconomyRepository:
         seed: int,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> PokerSettlement:
         if payout < 0 or share < 0 or not 0 <= pot_permille <= 1000:
             raise ValueError("Pago de póker inválido.")
@@ -1854,7 +2335,6 @@ class EconomyRepository:
                 now=now,
                 adjust_tax=True,
                 day_tax=day_tax,
-                window_seconds=window_seconds,
             )
             pot_moves = []
             if share:
@@ -1957,8 +2437,7 @@ class EconomyRepository:
         game: str,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> PorraBetReceipt:
         """Cobra una apuesta a una porra y la deja en el depósito, todo atómico.
 
@@ -1987,7 +2466,6 @@ class EconomyRepository:
             day,
             now,
             day_tax,
-            window_seconds,
         )
 
     def _porra_bet_sync(
@@ -2001,8 +2479,7 @@ class EconomyRepository:
         game: str,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
+        day_tax: Callable[[int], int],
     ) -> PorraBetReceipt:
         if stake <= 0 or outcome < 0:
             raise ValueError("Apuesta de porra inválida.")
@@ -2025,7 +2502,6 @@ class EconomyRepository:
                 now=now,
                 adjust_tax=False,
                 day_tax=day_tax,
-                window_seconds=window_seconds,
             )
             connection.execute(
                 """
@@ -2086,9 +2562,9 @@ class EconomyRepository:
         game: str,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
-        image_withhold: Callable[[int, int], int],
+        day_tax: Callable[[int], int],
+        week: FiscalWeek,
+        image_withhold: Callable[[int, Pace], int],
     ) -> PorraPayment:
         """Vacía el depósito de una porra: premios, IAJ, imagen o devoluciones.
 
@@ -2102,6 +2578,7 @@ class EconomyRepository:
                 deshace la apuesta (`<juego>:apuesta` en positivo) en vez de
                 pagar un premio.
             image: Derechos de imagen brutos del protagonista.
+            week: Semana fiscal en curso (para apuntar los derechos de imagen).
             image_withhold: Retención de los derechos de imagen, con la firma de
                 `_credit_income_in`.
 
@@ -2122,7 +2599,7 @@ class EconomyRepository:
             day,
             now,
             day_tax,
-            window_seconds,
+            week,
             image_withhold,
         )
 
@@ -2138,9 +2615,9 @@ class EconomyRepository:
         game: str,
         day: str,
         now: float,
-        day_tax: Callable[[int, int], int],
-        window_seconds: float,
-        image_withhold: Callable[[int, int], int],
+        day_tax: Callable[[int], int],
+        week: FiscalWeek,
+        image_withhold: Callable[[int, Pace], int],
     ) -> PorraPayment:
         with self._transaction() as connection:
             if self._porra_settled_in(connection, guild_id, porra_id):
@@ -2175,7 +2652,6 @@ class EconomyRepository:
                     now=now,
                     adjust_tax=True,
                     day_tax=day_tax,
-                    window_seconds=window_seconds,
                 )
             tax_total = sum(taxes.values())
             if tax_total:
@@ -2201,7 +2677,8 @@ class EconomyRepository:
                     concept=f"{game}:imagen",
                     now=now,
                     withhold=image_withhold,
-                    window_seconds=window_seconds,
+                    week=week,
+                    kind=INCOME_IMAGE,
                 )
             connection.execute(
                 """
@@ -2224,28 +2701,31 @@ class EconomyRepository:
         week_end: Callable[[str], float],
         refund_for: Callable[[int, int, int], int],
         window_seconds: float,
-        keep: int,
+        claim_weeks: int,
         deduction_for: Callable[[int, int, int], int] | None = None,
     ) -> None:
-        """Crea las declaraciones de semanas cerradas que falten y caduca las viejas.
+        """Crea las declaraciones de semanas viejas que falten y caduca las que sobran.
 
-        Se calcula al vuelo cuando el usuario juega o pregunta, así no hace
-        falta ninguna tarea que recorra a todo el mundo cada lunes. Hay
-        declaración en las semanas con casino o con donativos.
+        Es la regla de antes de la 8.0.0, solo para las semanas anteriores al cambio en
+        el servidor (`_regime_in`): se calcula al vuelo cuando el usuario juega o
+        pregunta, y hay declaración en las semanas con casino o con donativos. Las de
+        después las crea el cierre de los lunes (`close_irpf_week`). Lo que caduca vale
+        para todas.
 
         Args:
-            current_week: Lunes (ISO) de la semana en curso; solo se declaran
-                las anteriores.
+            current_week: Lunes (ISO) de la semana en curso.
             week_end: Fin (epoch) de una semana dado su lunes ISO.
             refund_for: Recibe `(neto, retenido, renta de otros ingresos en los
                 7 días previos al cierre)` y devuelve lo que sale a devolver
                 del casino.
-            keep: Cuántas declaraciones pendientes se guardan como máximo; las
-                más antiguas caducan y el dinero se queda en el Estado.
+            window_seconds: Ventana con la que la regla vieja miraba las otras rentas.
+            claim_weeks: Semanas que hay para presentar una declaración a devolver;
+                después caduca y el dinero se queda en el Estado.
             deduction_for: Recibe `(donado, base de la semana, IRPF pagado y no
                 devuelto)` y devuelve la deducción por donativos. `None`, sin
                 deducción.
         """
+        since = self._regime_in(connection, guild_id, current_week)
         # `date(day, '-6 days', 'weekday 1')` es el lunes de la semana de `day`.
         weeks = connection.execute(
             """
@@ -2262,7 +2742,7 @@ class EconomyRepository:
             )
             ORDER BY week
             """,
-            {"guild": guild_id, "user": user_id, "current": current_week},
+            {"guild": guild_id, "user": user_id, "current": min(current_week, since)},
         ).fetchall()
         for (week,) in weeks:
             end = week_end(week)
@@ -2302,16 +2782,14 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, week, refund, "pending" if refund else "none"),
             )
+        # La de una semana se presenta en las `claim_weeks` siguientes; después prescribe.
+        cutoff = (date.fromisoformat(current_week) - timedelta(weeks=claim_weeks)).isoformat()
         connection.execute(
             """
             UPDATE economy_declarations SET status = 'expired'
-            WHERE guild_id = ? AND user_id = ? AND status = 'pending' AND week_start NOT IN (
-                SELECT week_start FROM economy_declarations
-                WHERE guild_id = ? AND user_id = ? AND status = 'pending'
-                ORDER BY week_start DESC LIMIT ?
-            )
+            WHERE guild_id = ? AND user_id = ? AND status = 'pending' AND week_start < ?
             """,
-            (guild_id, user_id, guild_id, user_id, keep),
+            (guild_id, user_id, cutoff),
         )
 
     @staticmethod
@@ -2588,8 +3066,11 @@ class EconomyRepository:
             SELECT user_id, 'patrimonio', tax, created_at
             FROM economy_wealth_tax WHERE guild_id = :guild
             UNION ALL
-            SELECT user_id, 'patrimonio', amount, created_at
+            SELECT user_id, 'deudas', amount, created_at
             FROM economy_debt_payments WHERE guild_id = :guild
+            UNION ALL
+            SELECT user_id, 'irpf_renta', charged, created_at
+            FROM economy_irpf_returns WHERE guild_id = :guild
             UNION ALL
             SELECT user_id, 'grandes_fortunas', tax, created_at
             FROM economy_solidarity_tax WHERE guild_id = :guild
@@ -2689,17 +3170,6 @@ class EconomyRepository:
                 out.setdefault(int(user_id), {})[str(kind)] = int(total)
         return out
 
-    async def recent_taxable(self, guild_id: int, user_id: int, since: float) -> int:
-        """Renta sujeta a IRPF de un miembro desde `since` (ver `_recent_taxable_in`)."""
-        return await self._run(self._recent_taxable_sync, guild_id, user_id, since)
-
-    def _recent_taxable_sync(self, guild_id: int, user_id: int, since: float) -> int:
-        connection = self._connect()
-        try:
-            return self._recent_taxable_in(connection, guild_id, user_id, since)
-        finally:
-            connection.close()
-
     async def solidarity_summary(self, guild_id: int) -> tuple[int, int, int]:
         """`(declaraciones, contribuyentes, lo pagado)` de las Grandes Fortunas del servidor."""
         return await self._run(self._solidarity_summary_sync, guild_id)
@@ -2775,6 +3245,9 @@ class EconomyRepository:
                 UNION ALL
                 SELECT user_id, amount AS withheld, created_at AS at FROM economy_debt_payments
                 WHERE guild_id = :guild
+                UNION ALL
+                SELECT user_id, charged AS withheld, created_at AS at FROM economy_irpf_returns
+                WHERE guild_id = :guild
             """
             total, recent = connection.execute(
                 f"""
@@ -2814,10 +3287,11 @@ class EconomyRepository:
         *,
         week: str,
         now: float,
-        tax_for: Callable[[int, int, int], WealthQuote],
+        tax_for: Callable[[int, int, int, int], WealthQuote],
         assets: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
         goods: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
-        income_window: tuple[float, float] | None = None,
+        fiscal: FiscalWeek | None = None,
+        irpf_of: Callable[[WeekIncome, int], tuple[int, int]] | None = None,
     ) -> WealthRun:
         """Cobra el Patrimonio de `week` a todos los miembros del servidor, una vez.
 
@@ -2830,28 +3304,67 @@ class EconomyRepository:
 
         Args:
             week: Lunes ISO de la semana que se cierra.
-            tax_for: Recibe `(patrimonio, parte que no da rentas, renta sujeta de la
-                semana)` y devuelve la cuenta (`bot.services.taxes.wealth_quote`).
+            tax_for: Recibe `(patrimonio, parte que no da rentas, bases del IRPF de la
+                semana, cuotas del IRPF de la semana)` y devuelve la cuenta
+                (`bot.services.taxes.wealth_quote`).
             assets: Lee, en la misma transacción, el valor fiscal de lo que tiene
                 cada miembro además del efectivo (los inmuebles de `pisos`).
             goods: Lee, en la misma transacción, lo que valen sus objetos de la tienda
                 (`repositories.shop.wealth_goods_in`): no dan rentas.
-            income_window: `(desde, hasta)` en epoch de la semana fiscal que se cierra,
-                para la renta del límite conjunto con el IRPF.
+            fiscal: La semana fiscal que se cierra, para el IRPF del límite conjunto.
+            irpf_of: Recibe `(renta de la semana, intereses de la semana)` y devuelve
+                `(suma de bases, suma de cuotas)` del IRPF, general y del ahorro. Si la
+                declaración de la semana ya se cerró, se usa la suya.
         """
         return await self._run(
-            self._charge_wealth_sync, guild_id, week, now, tax_for, assets, goods, income_window
+            self._charge_wealth_sync, guild_id, week, now, tax_for, assets, goods, fiscal, irpf_of
         )
+
+    def _irpf_totals_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        fiscal: FiscalWeek,
+        irpf_of: Callable[[WeekIncome, int], tuple[int, int]],
+    ) -> tuple[int, int]:
+        """`(bases, cuotas)` del IRPF de un miembro en una semana, para el límite conjunto."""
+        row = connection.execute(
+            """
+            SELECT base + savings AS base, quota + savings_quota AS quota
+            FROM economy_irpf_returns WHERE guild_id = ? AND user_id = ? AND week_start = ?
+            """,
+            (guild_id, user_id, fiscal.monday),
+        ).fetchone()
+        if row is not None:
+            return int(row["base"]), int(row["quota"])
+        income, _wages = self._week_income_in(connection, guild_id, user_id, fiscal)
+        return irpf_of(income, self._week_savings_in(connection, guild_id, user_id, fiscal))
+
+    @staticmethod
+    def _week_savings_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, fiscal: FiscalWeek
+    ) -> int:
+        """Intereses brutos de un miembro en una semana (la base del ahorro)."""
+        (gross,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(gross), 0) FROM economy_interest
+            WHERE guild_id = ? AND user_id = ? AND day >= ? AND day < ?
+            """,
+            (guild_id, user_id, fiscal.monday, fiscal.next_monday),
+        ).fetchone()
+        return int(gross)
 
     def _charge_wealth_sync(
         self,
         guild_id: int,
         week: str,
         now: float,
-        tax_for: Callable[[int, int, int], WealthQuote],
+        tax_for: Callable[[int, int, int, int], WealthQuote],
         assets: Callable[[sqlite3.Connection], dict[int, int]] | None,
         goods: Callable[[sqlite3.Connection], dict[int, int]] | None = None,
-        income_window: tuple[float, float] | None = None,
+        fiscal: FiscalWeek | None = None,
+        irpf_of: Callable[[WeekIncome, int], tuple[int, int]] | None = None,
     ) -> WealthRun:
         with self._transaction() as connection:
             done = connection.execute(
@@ -2888,13 +3401,12 @@ class EconomyRepository:
                 owned = things.get(user_id, 0)
                 # Las deudas de los pisos (hipotecas, banco) restan también del efectivo.
                 worth = max(0, balance + extra.get(user_id, 0) + owned)
-                income = 0
-                if income_window is not None:
-                    start, end = income_window
-                    income = self._recent_taxable_in(
-                        connection, guild_id, user_id, start
-                    ) - self._recent_taxable_in(connection, guild_id, user_id, end)
-                quote = tax_for(worth, owned, income)
+                base = quota = 0
+                if fiscal is not None and irpf_of is not None:
+                    base, quota = self._irpf_totals_in(
+                        connection, guild_id, user_id, fiscal, irpf_of
+                    )
+                quote = tax_for(worth, owned, base, quota)
                 if quote.subject:
                     connection.execute(
                         """
@@ -2943,236 +3455,411 @@ class EconomyRepository:
             charges.sort(key=lambda c: (-(c.tax + c.debt), c.user_id))
             return WealthRun(charges=tuple(charges))
 
-    # -- Regularización del IRPF al reiniciar la renta cada lunes --------------------
+    # -- Cierre del IRPF de los lunes --------------------------------------------------
 
-    async def regularize_irpf(
+    async def close_irpf_week(
         self,
         guild_id: int,
         *,
+        week: FiscalWeek,
+        current_week: str,
         now: float,
-        day_of: Callable[[float], str],
-        monday_of: Callable[[str], tuple[str, float]],
-        week_end: Callable[[str], float],
-        rewithhold: Callable[[IrpfRecord, int, int], int],
-        day_tax: Callable[[int, int], int],
-        foreign_window_seconds: float,
-        declaration_window_seconds: float,
-    ) -> list[tuple[int, int]] | None:
-        """Devuelve, una sola vez por servidor, el IRPF retenido de más con la ventana vieja.
+        returns: Callable[..., WeekReturn],
+        savings_tax: Callable[[int], int],
+    ) -> IrpfRun:
+        """Cierra el IRPF de una semana: la declaración de cada miembro con renta, una vez.
 
-        Antes cada retención proyectaba con la renta de los últimos 7 días; ahora,
-        con la del lunes en adelante. Se vuelve a calcular cada retención de la
-        historia con la renta de su semana y se devuelve la diferencia desde la
-        cuenta del Estado (`devolucion:irpf:semana`), todo en una transacción.
-        Las filas (`economy_tax_records`, `economy_payroll` y
-        `economy_gambling_days`) quedan con lo que se habría retenido, para que
-        `hacienda` cuadre. Nunca se cobra de más: si la regla nueva saliera
-        más alta, se deja lo que se retuvo.
+        Todo en una transacción y por orden, para cada miembro:
 
-        Casino: lo retenido de un día se rehace con la renta de la semana hasta
-        ese día. Si la semana ya tiene declaración, esta ya devolvió lo que
-        pasaba de su cuota (`weekly_refund`): solo se devuelve lo que baja la
-        parte que se quedó el Estado, `min(antes, cuota) - min(ahora, cuota)`.
-        Si aún no la tiene, se devuelve toda la diferencia y la declaración saldrá
-        con lo nuevo.
+        1. La declaración (`returns`, `bot.services.taxes.week_return`) con su renta de la
+           semana, lo retenido, los donativos, lo pagado por la vivienda habitual y el
+           alquiler, el impuesto pagado fuera y los intereses (para el nivel de renta).
+        2. Los arrastres: lo usado de semanas anteriores se gasta (lo más viejo primero) y
+           lo que no cupo (intereses y reparaciones de cada inmueble, base negativa) pasa
+           a las cuatro siguientes.
+        3. Si sale a pagar, se cobra del monedero en el acto (`irpf:declaracion`, al
+           Estado) y lo que no llegue queda como deuda con Hacienda.
+        4. Si sale a devolver, primero paga lo que debiera (compensación de oficio, art.
+           73 de la Ley 58/2003) y el resto queda pendiente para presentarlo con la Renta
+           (`economy_declarations`), donde caduca a las cuatro semanas.
+        5. Lo que debiera de antes (IRPF o Patrimonio) se cobra del monedero: el dinero es
+           lo primero que se embarga (art. 169.2.a de la Ley 58/2003).
+
+        Las semanas de antes de la 8.0.0 en el servidor no se cierran así (`legacy`).
 
         Args:
-            day_of: Día ISO (hora canaria) de un instante.
-            monday_of: `(lunes ISO, lunes en epoch)` de la semana de un día ISO.
-            week_end: Fin (epoch) de una semana dado su lunes ISO.
-            rewithhold: Recibe `(ingreso, renta de la semana antes de él, bruto de
-                fuera de su ventana)` y devuelve la retención con la regla nueva.
-            day_tax: Retención de un día de casino, `(neto, otras rentas)`.
-            foreign_window_seconds: Ventana de lo cobrado fuera, que no cambia.
-            declaration_window_seconds: Ventana con la que la declaración mira
-                las otras rentas (`pending_declarations`).
-
-        Returns:
-            `(miembro, devuelto)` de más a menos, o `None` si ya se había hecho.
+            week: La semana que se cierra (ya acabada).
+            current_week: Lunes ISO de la semana en curso, por si es la primera vez que el
+                servidor pasa por aquí (`_regime_in`).
+            returns: Calcula la declaración (`taxes.week_return`, con sus argumentos).
+            savings_tax: Cuota del ahorro de unos intereses semanales, para el límite
+                conjunto del Patrimonio.
         """
         return await self._run(
-            self._regularize_irpf_sync,
-            guild_id,
-            now,
-            day_of,
-            monday_of,
-            week_end,
-            rewithhold,
-            day_tax,
-            foreign_window_seconds,
-            declaration_window_seconds,
+            self._close_irpf_sync, guild_id, week, current_week, now, returns, savings_tax
         )
 
-    def _regularize_irpf_sync(
+    def _close_irpf_sync(
         self,
         guild_id: int,
+        week: FiscalWeek,
+        current_week: str,
         now: float,
-        day_of: Callable[[float], str],
-        monday_of: Callable[[str], tuple[str, float]],
-        week_end: Callable[[str], float],
-        rewithhold: Callable[[IrpfRecord, int, int], int],
-        day_tax: Callable[[int, int], int],
-        foreign_window_seconds: float,
-        declaration_window_seconds: float,
-    ) -> list[tuple[int, int]] | None:
+        returns: Callable[..., WeekReturn],
+        savings_tax: Callable[[int], int],
+    ) -> IrpfRun:
         with self._transaction() as connection:
+            since = self._regime_in(connection, guild_id, current_week)
+            if week.monday < since:
+                return IrpfRun(legacy=True)
             done = connection.execute(
-                "SELECT 1 FROM economy_irpf_regularizations WHERE guild_id = ?", (guild_id,)
+                "SELECT 1 FROM economy_irpf_weeks WHERE guild_id = ? AND week_start = ?",
+                (guild_id, week.monday),
             ).fetchone()
             if done is not None:
-                return None
+                return IrpfRun(done_before=True)
             connection.execute(
-                "INSERT INTO economy_irpf_regularizations (guild_id, done_at) VALUES (?, ?)",
-                (guild_id, now),
+                "INSERT INTO economy_irpf_weeks (guild_id, week_start, processed_at) "
+                "VALUES (?, ?, ?)",
+                (guild_id, week.monday, now),
             )
-            records = connection.execute(
+            window = {
+                "guild": guild_id,
+                "start": week.start,
+                "end": week.end,
+                "monday": week.monday,
+                "next": week.next_monday,
+            }
+            members = connection.execute(
                 """
-                SELECT r.id, r.user_id, r.created_at, r.concept, r.gross, r.withheld,
-                       p.id AS payroll_id, p.gross AS wage_gross, p.ss_worker, p.country
-                FROM economy_tax_records r
-                LEFT JOIN economy_payroll p
-                    ON p.guild_id = r.guild_id AND p.user_id = r.user_id
-                   AND p.created_at = r.created_at AND p.concept = r.concept
-                WHERE r.guild_id = ? AND r.user_id > 0
-                ORDER BY r.created_at, r.id
+                SELECT user_id FROM economy_tax_records
+                WHERE guild_id = :guild AND created_at >= :start AND created_at < :end
+                UNION
+                SELECT user_id FROM economy_gambling_days
+                WHERE guild_id = :guild AND day >= :monday AND day < :next
+                UNION
+                SELECT user_id FROM economy_donations
+                WHERE guild_id = :guild AND week_start = :monday
+                UNION
+                SELECT user_id FROM economy_irpf_extras
+                WHERE guild_id = :guild AND created_at >= :start AND created_at < :end
                 """,
-                (guild_id,),
+                window,
             ).fetchall()
-            days = connection.execute(
+            filed = [
+                self._file_return_in(
+                    connection, guild_id, int(row[0]), week, now, returns, savings_tax
+                )
+                for row in members
+                if int(row[0]) > 0
+            ]
+            oldest = (date.fromisoformat(week.monday) - timedelta(days=7 * CARRY_WEEKS)).isoformat()
+            connection.execute(
+                "DELETE FROM economy_irpf_carry WHERE guild_id = ? AND week_start < ?",
+                (guild_id, oldest),
+            )
+            filed.sort(key=lambda r: (-r.result, r.user_id))
+            return IrpfRun(returns=tuple(filed))
+
+    def _file_return_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        week: FiscalWeek,
+        now: float,
+        returns: Callable[..., WeekReturn],
+        savings_tax: Callable[[int], int],
+    ) -> IrpfReturn:
+        """La declaración de un miembro (ver `close_irpf_week`), dentro de la transacción."""
+        income, _wages = self._week_income_in(connection, guild_id, user_id, week)
+        withheld, credit, foreign = connection.execute(
+            """
+            SELECT COALESCE(SUM(withheld), 0), COALESCE(SUM(credit), 0),
+                   COALESCE(SUM(CASE WHEN kind = ? THEN gross ELSE 0 END), 0)
+            FROM economy_tax_records
+            WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+            """,
+            (INCOME_FOREIGN, guild_id, user_id, week.start, week.end),
+        ).fetchone()
+        (gambling_withheld,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(withheld), 0) FROM economy_gambling_days
+            WHERE guild_id = ? AND user_id = ? AND day >= ? AND day < ?
+            """,
+            (guild_id, user_id, week.monday, week.next_monday),
+        ).fetchone()
+        (donated,) = connection.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) FROM economy_donations
+            WHERE guild_id = ? AND user_id = ? AND week_start = ?
+            """,
+            (guild_id, user_id, week.monday),
+        ).fetchone()
+        extras = {
+            str(kind): int(amount)
+            for kind, amount in connection.execute(
                 """
-                SELECT user_id, day, net, withheld, updated_at FROM economy_gambling_days
-                WHERE guild_id = ? AND user_id > 0 ORDER BY day
+                SELECT kind, SUM(amount) FROM economy_irpf_extras
+                WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+                GROUP BY kind
                 """,
-                (guild_id,),
+                (guild_id, user_id, week.start, week.end),
             ).fetchall()
-            income: dict[int, list[tuple[float, int]]] = {}
-            for r in records:
-                income.setdefault(int(r["user_id"]), []).append(
-                    (float(r["created_at"]), int(r["gross"]))
+        }
+        savings = self._week_savings_in(connection, guild_id, user_id, week)
+        arguments = {
+            "withheld": int(withheld) + int(gambling_withheld),
+            "donated": int(donated),
+            "home_invested": extras.get(EXTRA_HOME, 0),
+            "foreign_credit": int(credit),
+            "foreign_income": int(foreign),
+            "savings": savings,
+            "rent_paid": extras.get(EXTRA_RENT, 0),
+        }
+        filed = returns(income, **arguments)
+        # Lo retenido por fuente, para explicar la declaración (`/renta`, modo detallado).
+        by_source = {
+            str(kind or "antes"): int(amount)
+            for kind, amount in connection.execute(
+                """
+                SELECT kind, SUM(withheld) FROM economy_tax_records
+                WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+                GROUP BY kind
+                """,
+                (guild_id, user_id, week.start, week.end),
+            ).fetchall()
+            if amount
+        }
+        if gambling_withheld:
+            by_source["juego"] = int(gambling_withheld)
+        inputs = json.dumps(
+            {"income": income.to_dict(), "arguments": arguments, "withheld_by": by_source},
+            ensure_ascii=False,
+        )
+        self._apply_carries_in(connection, guild_id, user_id, week.monday, filed.tax)
+        row = connection.execute(
+            "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        ).fetchone()
+        owed = int(row["amount"]) if row else 0
+        result = filed.result
+        charged = debt = refund = compensated = 0
+        if result > 0:
+            charged = min(self._ensure_wallet(connection, guild_id, user_id), result)
+            if charged:
+                self._apply_in_transaction(
+                    connection, guild_id, user_id, (LedgerEntry(-charged, "irpf:declaracion"),)
                 )
-            gambling: dict[int, list[tuple[str, int]]] = {}
-            for d in days:
-                gambling.setdefault(int(d["user_id"]), []).append(
-                    (str(d["day"]), max(int(d["net"]), 0))
-                )
+                self._credit_state_in(connection, guild_id, charged, "irpf:declaracion")
+            debt = result - charged
+        elif result < 0:
+            compensated = min(-result, owed)
+            refund = -result - compensated
+            owed -= compensated
+        collected = min(owed, self._ensure_wallet(connection, guild_id, user_id))
+        if collected:
+            self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-collected, "embargo:deuda"),)
+            )
+            self._credit_state_in(connection, guild_id, collected, "embargo:deuda")
+        if compensated + collected:
+            connection.execute(
+                "INSERT INTO economy_debt_payments (guild_id, user_id, amount, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (guild_id, user_id, compensated + collected, now),
+            )
+        if row is not None or debt:
+            connection.execute(
+                """
+                INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, ?)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET amount = excluded.amount
+                """,
+                (guild_id, user_id, owed - collected + debt),
+            )
+        if refund:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO economy_declarations
+                    (guild_id, user_id, week_start, refund, status)
+                VALUES (?, ?, ?, ?, 'pending')
+                """,
+                (guild_id, user_id, week.monday, refund),
+            )
+        connection.execute(
+            """
+            INSERT INTO economy_irpf_returns
+                (guild_id, user_id, week_start, base, quota, deductions, withheld, result,
+                 charged, debt, refund, compensated, collected, rate, savings, savings_quota,
+                 inputs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                guild_id, user_id, week.monday, filed.tax.base, filed.tax.quota,
+                filed.deductions, filed.withheld, result, charged, debt, refund, compensated,
+                collected, filed.tax.rate, savings, savings_tax(savings), inputs, now,
+            ),
+        )  # fmt: skip
+        return IrpfReturn(
+            user_id=user_id,
+            base=filed.tax.base,
+            quota=filed.tax.quota,
+            deductions=filed.deductions,
+            withheld=filed.withheld,
+            result=result,
+            charged=charged,
+            debt=debt,
+            refund=refund,
+            compensated=compensated,
+            collected=collected,
+            rate=filed.tax.rate,
+        )
 
-            def income_between(user: int, after: float, until: float) -> int:
-                """Renta con retención de `user` en `(after, until]`."""
-                return sum(g for at, g in income.get(user, ()) if after < at <= until)
+    @staticmethod
+    def _apply_carries_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, week: str, tax: WeekTax
+    ) -> None:
+        """Gasta lo arrastrado que ha usado la semana y apunta lo que pasa a las siguientes.
 
-            def gambling_before(user: int, monday: str, day: str) -> int:
-                """Días de casino en positivo de la semana anteriores a `day`."""
-                return sum(net for d, net in gambling.get(user, ()) if monday <= d < day)
+        `tax` es la `WeekTax` de la declaración: sus `settlements` (por inmueble, lo usado
+        y lo que sobra) y su base negativa (la usada y la nueva).
+        """
+        oldest = (date.fromisoformat(week) - timedelta(days=7 * CARRY_WEEKS)).isoformat()
 
-            owed: dict[int, int] = {}
-            seen: dict[int, int] = {}
-            for r in records:
-                user, at = int(r["user_id"]), float(r["created_at"])
-                day = day_of(at)
-                monday, start = monday_of(day)
-                # Lo cobrado antes en la semana, también en el mismo instante.
-                before = sum(g for t, g in income[user][: seen.get(user, 0)] if t >= start)
-                seen[user] = seen.get(user, 0) + 1
-                withheld = int(r["withheld"])
-                if withheld <= 0:
-                    continue
-                recent = before + gambling_before(user, monday, day)
-                country = str(r["country"] or "es")
-                recent_foreign = 0
-                if country != "es":
-                    (recent_foreign,) = connection.execute(
-                        """
-                        SELECT COALESCE(SUM(gross), 0) FROM economy_payroll
-                        WHERE guild_id = ? AND user_id = ? AND country = ?
-                          AND created_at > ? AND created_at < ?
-                        """,
-                        (guild_id, user, country, at - foreign_window_seconds, at),
-                    ).fetchone()
-                record = IrpfRecord(
-                    concept=str(r["concept"]),
-                    gross=int(r["gross"]),
-                    withheld=withheld,
-                    wage_gross=None if r["wage_gross"] is None else int(r["wage_gross"]),
-                    ss_worker=int(r["ss_worker"] or 0),
-                    country=country,
-                )
-                new = min(withheld, max(0, rewithhold(record, recent, int(recent_foreign))))
-                if new == withheld:
-                    continue
-                connection.execute(
-                    "UPDATE economy_tax_records SET withheld = ? WHERE id = ?", (new, r["id"])
-                )
-                if r["payroll_id"] is not None:
-                    connection.execute(
-                        "UPDATE economy_payroll SET irpf = ?, net = net + ? WHERE id = ?",
-                        (new, withheld - new, r["payroll_id"]),
-                    )
-                owed[user] = owed.get(user, 0) + withheld - new
-
-            weeks: dict[tuple[int, str], list[tuple[str, int, int, int]]] = {}
-            for d in days:
-                user, day = int(d["user_id"]), str(d["day"])
-                net, withheld = int(d["net"]), int(d["withheld"])
-                monday, start = monday_of(day)
-                new = withheld
-                if withheld > 0:
-                    others = sum(
-                        g for at, g in income.get(user, ()) if start <= at <= d["updated_at"]
-                    ) + gambling_before(user, monday, day)
-                    new = min(withheld, max(0, day_tax(max(net, 0), others)))
-                weeks.setdefault((user, monday), []).append((day, net, withheld, new))
-            for (user, monday), rows in weeks.items():
-                old_total = sum(w for _, _, w, _ in rows)
-                new_total = sum(n for _, _, _, n in rows)
-                if new_total == old_total:
-                    continue
-                declared = connection.execute(
-                    """
-                    SELECT 1 FROM economy_declarations
-                    WHERE guild_id = ? AND user_id = ? AND week_start = ?
-                    """,
-                    (guild_id, user, monday),
-                ).fetchone()
-                refund = old_total - new_total
-                if declared is not None:
-                    end = week_end(monday)
-                    others = income_between(user, end - declaration_window_seconds, end)
-                    quota = day_tax(max(sum(n for _, n, _, _ in rows), 0), others)
-                    refund = min(old_total, quota) - min(new_total, quota)
-                left = refund
-                for day, _, withheld, new in rows:
-                    cut = min(left, withheld - new)
-                    if cut <= 0:
-                        continue
-                    connection.execute(
-                        """
-                        UPDATE economy_gambling_days SET withheld = withheld - ?
-                        WHERE guild_id = ? AND user_id = ? AND day = ?
-                        """,
-                        (cut, guild_id, user, day),
-                    )
-                    left -= cut
-                if refund > 0:
-                    owed[user] = owed.get(user, 0) + refund
-
-            state = self._state_balance_in(connection, guild_id)
-            paid = []
-            for user, amount in sorted(owed.items(), key=lambda item: (-item[1], item[0])):
-                amount = min(amount, state)
+        def spend(kind: str, ref: str, amount: int) -> None:
+            rows = connection.execute(
+                """
+                SELECT week_start, amount FROM economy_irpf_carry
+                WHERE guild_id = ? AND user_id = ? AND kind = ? AND ref = ?
+                  AND week_start >= ? AND week_start < ? AND amount > 0
+                ORDER BY week_start
+                """,
+                (guild_id, user_id, kind, ref, oldest, week),
+            ).fetchall()
+            for row in rows:
                 if amount <= 0:
-                    continue
-                state -= amount
-                self._apply_in_transaction(
-                    connection,
-                    guild_id,
-                    STATE_ACCOUNT_ID,
-                    (LedgerEntry(-amount, "devolucion:irpf:semana"),),
+                    break
+                take = min(amount, int(row["amount"]))
+                connection.execute(
+                    """
+                    UPDATE economy_irpf_carry SET amount = amount - ?
+                    WHERE guild_id = ? AND user_id = ? AND kind = ? AND ref = ? AND week_start = ?
+                    """,
+                    (take, guild_id, user_id, kind, ref, row["week_start"]),
                 )
-                self._apply_in_transaction(
-                    connection, guild_id, user, (LedgerEntry(amount, "devolucion:irpf:semana"),)
+                amount -= take
+
+        def keep(kind: str, ref: str, amount: int) -> None:
+            if amount <= 0:
+                return
+            connection.execute(
+                """
+                INSERT INTO economy_irpf_carry (guild_id, user_id, kind, ref, week_start, amount)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (guild_id, user_id, kind, ref, week_start)
+                    DO UPDATE SET amount = amount + excluded.amount
+                """,
+                (guild_id, user_id, kind, ref, week, amount),
+            )
+
+        for ref, used, left in tax.settlements:
+            spend(CARRY_FINANCE, ref, used)
+            keep(CARRY_FINANCE, ref, left)
+        spend(CARRY_BASE, "", tax.negative_used)
+        keep(CARRY_BASE, "", tax.negative)
+
+    async def irpf_statement(
+        self, guild_id: int, user_id: int, week: str | None = None
+    ) -> tuple[str, IrpfReturn, dict[str, object], bool] | None:
+        """Una declaración cerrada: `(lunes ISO, declaración, entradas, abierta)`.
+
+        Sin `week`, la última. Las entradas son lo que se le pasó a la declaración (la
+        renta por clases, lo retenido por fuente…), para rehacerla y explicarla.
+        """
+        return await self._run(self._irpf_statement_sync, guild_id, user_id, week)
+
+    def _irpf_statement_sync(
+        self, guild_id: int, user_id: int, week: str | None
+    ) -> tuple[str, IrpfReturn, dict[str, object], bool] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT * FROM economy_irpf_returns
+                WHERE guild_id = ? AND user_id = ? AND (? IS NULL OR week_start = ?)
+                ORDER BY week_start DESC LIMIT 1
+                """,
+                (guild_id, user_id, week, week),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        inputs = json.loads(str(row["inputs"]) or "{}")
+        return str(row["week_start"]), _irpf_return_of(row), inputs, bool(row["opened"])
+
+    async def open_irpf_return(self, guild_id: int, user_id: int, week: str) -> None:
+        """Marca como abierta una declaración (ya se ha visto su resultado)."""
+        await self._run(self._open_irpf_return_sync, guild_id, user_id, week)
+
+    def _open_irpf_return_sync(self, guild_id: int, user_id: int, week: str) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                "UPDATE economy_irpf_returns SET opened = 1, notified = 1 "
+                "WHERE guild_id = ? AND user_id = ? AND week_start = ?",
+                (guild_id, user_id, week),
+            )
+
+    async def take_irpf_notices(self, guild_id: int, user_id: int) -> list[str]:
+        """Semanas (lunes ISO) con declaración cerrada de las que no se ha avisado al miembro.
+
+        Quedan como avisadas: el aviso sale una vez (`renta.hint`) y no dice el resultado,
+        que se ve al abrirla con `renta`.
+        """
+        return await self._run(self._take_irpf_notices_sync, guild_id, user_id)
+
+    def _take_irpf_notices_sync(self, guild_id: int, user_id: int) -> list[str]:
+        with self._transaction() as connection:
+            rows = connection.execute(
+                """
+                SELECT week_start FROM economy_irpf_returns
+                WHERE guild_id = ? AND user_id = ? AND notified = 0 AND opened = 0
+                ORDER BY week_start
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+            if rows:
+                connection.execute(
+                    "UPDATE economy_irpf_returns SET notified = 1 "
+                    "WHERE guild_id = ? AND user_id = ? AND notified = 0",
+                    (guild_id, user_id),
                 )
-                paid.append((user, amount))
-            return paid
+            return [str(row["week_start"]) for row in rows]
+
+    async def irpf_weeks_closed(self, guild_id: int) -> tuple[str | None, str | None]:
+        """`(primera semana de la 8.0.0, última semana cerrada)` del servidor, en lunes ISO."""
+        return await self._run(self._irpf_weeks_closed_sync, guild_id)
+
+    def _irpf_weeks_closed_sync(self, guild_id: int) -> tuple[str | None, str | None]:
+        connection = self._connect()
+        try:
+            regime = connection.execute(
+                "SELECT since_week FROM economy_irpf_regime WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+            (last,) = connection.execute(
+                "SELECT MAX(week_start) FROM economy_irpf_weeks WHERE guild_id = ?", (guild_id,)
+            ).fetchone()
+        finally:
+            connection.close()
+        return (str(regime[0]) if regime else None, str(last) if last else None)
+
+    async def irpf_regime(self, guild_id: int, current_week: str) -> str:
+        """Primera semana con las reglas de la 8.0.0 (la fija si aún no lo está)."""
+        return await self._run(self._irpf_regime_sync, guild_id, current_week)
+
+    def _irpf_regime_sync(self, guild_id: int, current_week: str) -> str:
+        with self._transaction() as connection:
+            return self._regime_in(connection, guild_id, current_week)
 
     # -- Intereses de la cuenta ---------------------------------------------------------
 
@@ -3908,8 +4595,8 @@ class EconomyRepository:
         guild_id: int,
         *,
         now: float,
-        window_seconds: float,
-        rate_for: Callable[[int, int], float],
+        week: FiscalWeek,
+        withhold: Callable[[HousingRent, Pace], int],
         prepare: Callable[[sqlite3.Connection], tuple[T, HousingMove]],
     ) -> tuple[T, dict[int, int]]:
         """Mueve el dinero de una operación de `pisos` (compra, venta o un día de rentas).
@@ -3919,17 +4606,17 @@ class EconomyRepository:
         qué dinero se mueve. Si lanza, o si a alguien no le llega, no se guarda nada
         (tampoco lo de `prepare`).
 
-        En orden: se cobran las rentas (cada una con su retención, que va al Estado
-        y a `economy_tax_records` con su base en la escala fiscal), se aplican los
-        movimientos sin impuesto y se cobran los impuestos (al Estado y a
-        `economy_housing_tax`).
+        En orden: se cobran las rentas (cada una con su retención, que va al Estado,
+        y con su clase de renta en `economy_tax_records`), se aplican los movimientos
+        sin impuesto y se cobran los impuestos (al Estado y a `economy_housing_tax`).
+        Las imputaciones de los pisos vacíos solo se apuntan, y lo pagado por el
+        alquiler y la hipoteca de la vivienda habitual queda en `economy_irpf_extras`
+        para las deducciones canarias de la declaración.
 
         Args:
-            window_seconds: Ventana de la renta sujeta que mira la retención
-                (`economy.fiscal_window`).
-            rate_for: Recibe `(renta fiscal de este cobro, renta sujeta de la
-                ventana)` y devuelve el tipo de retención (regla en
-                `bot.services.taxes`).
+            week: Semana fiscal en curso.
+            withhold: Recibe `(cobro, renta de la semana)` y devuelve la retención
+                (regla en `bot.services.taxes`).
 
         Returns:
             `(lo que devuelva prepare, saldo final de cada miembro tocado)`.
@@ -3938,23 +4625,21 @@ class EconomyRepository:
             InsufficientFundsError: Si a quien compra no le llega.
             BalanceLimitError: Si a alguien no le cabe lo que cobra.
         """
-        return await self._run(self._housing_sync, guild_id, now, window_seconds, rate_for, prepare)
+        return await self._run(self._housing_sync, guild_id, now, week, withhold, prepare)
 
     def _housing_sync(
         self,
         guild_id: int,
         now: float,
-        window_seconds: float,
-        rate_for: Callable[[int, int], float],
+        week: FiscalWeek,
+        withhold: Callable[[HousingRent, Pace], int],
         prepare: Callable[[sqlite3.Connection], tuple[T, HousingMove]],
     ) -> tuple[T, dict[int, int]]:
         with self._transaction() as connection:
             result, move = prepare(connection)
             balances: dict[int, int] = {}
             before: dict[int, int] = {}
-            self._housing_move_in(
-                connection, guild_id, now, window_seconds, rate_for, move, balances, before
-            )
+            self._housing_move_in(connection, guild_id, now, week, withhold, move, balances, before)
             for member in sorted(before):
                 gained = balances.get(member, before[member]) - before[member]
                 if gained > 0 and (paid := self._collect_tax_debt_in(
@@ -3968,8 +4653,8 @@ class EconomyRepository:
         connection: sqlite3.Connection,
         guild_id: int,
         now: float,
-        window_seconds: float,
-        rate_for: Callable[[int, int], float],
+        week: FiscalWeek,
+        withhold: Callable[[HousingRent, Pace], int],
         move: HousingMove,
         balances: dict[int, int],
         before: dict[int, int],
@@ -3989,13 +4674,20 @@ class EconomyRepository:
                 before[member] = self._ensure_wallet(connection, guild_id, member)
             return balances.get(member, before[member])
 
+        def extra(member: int, kind: str, amount: int) -> None:
+            if amount > 0:
+                connection.execute(
+                    "INSERT INTO economy_irpf_extras (guild_id, user_id, kind, amount, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (guild_id, member, kind, amount, now),
+                )
+
         def credit(rent: HousingRent) -> None:
             touch(rent.user_id)
-            recent = self._recent_taxable_in(
-                connection, guild_id, rent.user_id, now - window_seconds
-            )
-            rate = rate_for(rent.fiscal, recent) if rent.fiscal > 0 else 0.0
-            tax = max(0, min(rent.gross, round(rent.taxable * rate)))
+            tax = 0
+            if rent.kind is not None:
+                pace = self._pace_in(connection, guild_id, rent.user_id, week)
+                tax = max(0, min(rent.gross, withhold(rent, pace)))
             entries = [LedgerEntry(rent.gross, rent.concept)]
             if tax:
                 entries.append(LedgerEntry(-tax, f"irpf:{rent.concept}"))
@@ -4004,16 +4696,21 @@ class EconomyRepository:
             )
             if tax:
                 self._credit_state_in(connection, guild_id, tax, f"irpf:{rent.concept}")
-            if rent.fiscal > 0 or tax:
-                connection.execute(
-                    """
-                    INSERT INTO economy_tax_records
-                        (guild_id, user_id, created_at, concept, gross, withheld)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (guild_id, rent.user_id, now, rent.concept, rent.fiscal, tax),
-                )
+            if rent.kind is not None:
+                item = rent.property_week
+                self._record_in(
+                    connection, guild_id, rent.user_id, now=now, concept=rent.concept,
+                    kind=rent.kind, gross=item.income, withheld=tax, costs=rent.costs,
+                    finance=rent.finance, upkeep=rent.upkeep, ref=rent.ref,
+                    reduction=rent.reduction,
+                )  # fmt: skip
 
+        for member, ref, amount in move.imputations:
+            if amount > 0:
+                self._record_in(
+                    connection, guild_id, member, now=now, concept="pisos:imputacion",
+                    kind=INCOME_IMPUTED, gross=amount, withheld=0, ref=ref,
+                )  # fmt: skip
         paid_tags: set[str] = set()
         for pull in move.pulls:
             if pull.amount <= 0:
@@ -4024,6 +4721,8 @@ class EconomyRepository:
             balances[pull.user_id] = self._apply_in_transaction(
                 connection, guild_id, pull.user_id, (LedgerEntry(-pull.amount, pull.reason),)
             )
+            if pull.home:
+                extra(pull.user_id, EXTRA_RENT, pull.amount)
             paid_tags.add(pull.tag)
         unpaid: dict[str, tuple[int, int]] = {}
         for rent in move.rents:
@@ -4084,6 +4783,8 @@ class EconomyRepository:
                     """,
                     (guild_id, debit.user_id, ibi, now),
                 )
+            if debit.home:
+                extra(debit.user_id, EXTRA_HOME, other)
             left = unpaid.get(debit.tag, (0, 0))
             unpaid[debit.tag] = (
                 left[0] + max(0, debit.ibi) - ibi,
@@ -4096,8 +4797,8 @@ class EconomyRepository:
                 connection,
                 guild_id,
                 now,
-                window_seconds,
-                rate_for,
+                week,
+                withhold,
                 move.then(connection, frozenset(paid_tags)),
                 balances,
                 before,
@@ -4106,11 +4807,11 @@ class EconomyRepository:
     def _collect_tax_debt_in(
         self, connection: sqlite3.Connection, guild_id: int, user_id: int, most: int, now: float
     ) -> int:
-        """Embarga de lo que acaba de cobrar un miembro su deuda del Patrimonio.
+        """Embarga de lo que acaba de cobrar un miembro su deuda con Hacienda.
 
         Embargo de créditos y rentas (art. 169 de la Ley 58/2003): lo que cobra por sus
-        pisos paga primero lo que debe del Patrimonio que no le llegó en efectivo. Va al
-        Estado y `hacienda` lo cuenta como Patrimonio.
+        pisos paga primero lo que debe (el Patrimonio o la declaración que no le llegó en
+        efectivo). Va al Estado y `hacienda` lo cuenta como deudas cobradas.
 
         Returns:
             Lo embargado (0 si no debe nada).
@@ -4357,8 +5058,9 @@ class EconomyRepository:
         gross: int,
         concept: str,
         now: float,
-        payslip_for: Callable[[int, int], Payslip],
-        window_seconds: float,
+        payslip_for: Callable[[int, Pace], Payslip],
+        week: FiscalWeek,
+        kind: str = INCOME_WORK,
     ) -> tuple[Payslip, int]:
         """Paga una nómina: bruto, cotización, IRPF y lo de la empresa, todo junto.
 
@@ -4366,18 +5068,15 @@ class EconomyRepository:
         (`concept`), la Seguridad Social (`ss:concept`) y la retención
         (`irpf:concept`). Al Estado le entran la retención, la cotización del
         trabajador y la de la empresa; esta última es dinero nuevo, porque la
-        empresa no existe. El desglose queda en `economy_payroll` y el bruto, en
-        la escala general (`Payslip.fiscal_gross`), en `economy_tax_records`,
-        que es la renta que ven el casino y la declaración.
+        empresa no existe. El desglose queda en `economy_payroll` y el bruto, con
+        su clase de renta y su Seguridad Social, en `economy_tax_records`, que es la
+        renta que ven las demás retenciones y la declaración.
 
         Args:
-            payslip_for: Recibe `(bruto, renta sujeta de la ventana)` y
-                devuelve la nómina. La renta es toda la del miembro (nóminas,
-                premios, casino en positivo), la misma que ven los premios y el
-                casino (`_recent_taxable_in`), en la escala general; pasarla a
-                la de nóminas es cosa de quien la recibe. La regla vive en
-                `bot.services.taxes`.
-            window_seconds: Ventana de la renta que se pasa a `payslip_for`.
+            payslip_for: Recibe `(bruto, renta de la semana)` y devuelve la nómina.
+                La regla vive en `bot.services.taxes`.
+            week: Semana fiscal en curso.
+            kind: Clase de renta: trabajo, pensión, actividad (autónomos) o Beckham.
 
         Returns:
             `(nómina, saldo_final)`.
@@ -4390,7 +5089,8 @@ class EconomyRepository:
             concept,
             now,
             payslip_for,
-            window_seconds,
+            week,
+            kind,
         )
 
     def _credit_salary_sync(
@@ -4400,12 +5100,12 @@ class EconomyRepository:
         gross: int,
         concept: str,
         now: float,
-        payslip_for: Callable[[int, int], Payslip],
-        window_seconds: float,
+        payslip_for: Callable[[int, Pace], Payslip],
+        week: FiscalWeek,
+        kind: str,
     ) -> tuple[Payslip, int]:
         with self._transaction() as connection:
-            recent = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
-            slip = payslip_for(gross, recent)
+            slip = payslip_for(gross, self._pace_in(connection, guild_id, user_id, week))
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.ss_worker:
                 entries.append(LedgerEntry(-slip.ss_worker, f"ss:{concept}"))
@@ -4420,14 +5120,10 @@ class EconomyRepository:
                 self._credit_state_in(
                     connection, guild_id, slip.ss_employer, f"ss_empresa:{concept}"
                 )
-            connection.execute(
-                """
-                INSERT INTO economy_tax_records
-                    (guild_id, user_id, created_at, concept, gross, withheld)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (guild_id, user_id, now, concept, slip.fiscal_gross, slip.irpf),
-            )
+            self._record_in(
+                connection, guild_id, user_id, now=now, concept=concept, kind=kind,
+                gross=slip.gross, withheld=slip.irpf, costs=slip.ss_worker,
+            )  # fmt: skip
             connection.execute(
                 """
                 INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker,
@@ -4529,7 +5225,8 @@ class EconomyRepository:
             connection.close()
 
     async def other_taxes(self, guild_id: int, user_id: int, since: float) -> int:
-        """IGIC, Patrimonio, IRPF de los intereses y lo del Rastro desde `since`.
+        """IGIC, Patrimonio, IRPF de los intereses, lo del Rastro y lo pagado en la
+        declaración desde `since`.
 
         Para el logro «Socio de Hacienda».
         """
@@ -4573,7 +5270,16 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
-            return int(igic) + int(wealth) + int(interest) + int(savings) + int(market)
+            (declared,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(charged), 0) FROM economy_irpf_returns
+                WHERE guild_id = ? AND user_id = ? AND created_at > ?
+                """,
+                (guild_id, user_id, since),
+            ).fetchone()
+            return (
+                int(igic) + int(wealth) + int(interest) + int(savings) + int(market) + int(declared)
+            )
         finally:
             connection.close()
 
@@ -4649,8 +5355,8 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int, int], ForeignPayslip],
-        window_seconds: float,
+        payslip_for: Callable[[int, int, Pace], ForeignPayslip],
+        week: FiscalWeek,
         foreign_window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         """Paga una nómina cobrada fuera de España.
@@ -4658,13 +5364,13 @@ class EconomyRepository:
         En el libro: el bruto, la cotización del otro país (`mpf:concept`), su
         impuesto (`impuesto_ext:concept`) y, si hay, el IRPF español. Lo del otro
         país (las dos cotizaciones y el impuesto) va a `account_id`; el IRPF, al
-        Estado. La parte sujeta en España queda en `economy_tax_records`.
+        Estado. La parte sujeta en España queda en `economy_tax_records` como trabajo
+        en el extranjero, con lo pagado allí que la declaración puede deducir.
 
         Args:
-            payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta
-                sujeta en España de la ventana en la escala general)` y devuelve
-                la nómina.
-            window_seconds: Ventana de la renta española.
+            payslip_for: Recibe `(bruto, bruto de fuera de la ventana, renta española
+                de la semana)` y devuelve la nómina.
+            week: Semana fiscal en curso.
             foreign_window_seconds: Ventana de lo cobrado en el otro país, que
                 tiene su propio año fiscal.
 
@@ -4681,7 +5387,7 @@ class EconomyRepository:
             account_id,
             now,
             payslip_for,
-            window_seconds,
+            week,
             foreign_window_seconds,
         )
 
@@ -4694,8 +5400,8 @@ class EconomyRepository:
         country: str,
         account_id: int,
         now: float,
-        payslip_for: Callable[[int, int, int], ForeignPayslip],
-        window_seconds: float,
+        payslip_for: Callable[[int, int, Pace], ForeignPayslip],
+        week: FiscalWeek,
         foreign_window_seconds: float,
     ) -> tuple[ForeignPayslip, int]:
         with self._transaction() as connection:
@@ -4706,8 +5412,8 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, now - foreign_window_seconds, country),
             ).fetchone()
-            recent_es = self._recent_taxable_in(connection, guild_id, user_id, now - window_seconds)
-            slip = payslip_for(gross, int(recent_foreign), recent_es)
+            pace = self._pace_in(connection, guild_id, user_id, week)
+            slip = payslip_for(gross, int(recent_foreign), pace)
             entries = [LedgerEntry(slip.gross, concept)]
             if slip.mpf_worker:
                 entries.append(LedgerEntry(-slip.mpf_worker, f"mpf:{concept}"))
@@ -4732,16 +5438,12 @@ class EconomyRepository:
                 )
             if slip.irpf:
                 self._credit_state_in(connection, guild_id, slip.irpf, f"irpf:{concept}")
-            taxable = slip.fiscal_taxable
-            if taxable > 0:
-                connection.execute(
-                    """
-                    INSERT INTO economy_tax_records
-                        (guild_id, user_id, created_at, concept, gross, withheld)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (guild_id, user_id, now, concept, taxable, slip.irpf),
-                )
+            if slip.taxable > 0:
+                self._record_in(
+                    connection, guild_id, user_id, now=now, concept=concept,
+                    kind=INCOME_FOREIGN, gross=slip.taxable, withheld=slip.irpf,
+                    credit=slip.credit,
+                )  # fmt: skip
             connection.execute(
                 """
                 INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker,

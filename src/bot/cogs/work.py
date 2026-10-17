@@ -85,6 +85,7 @@ from bot.services.achievements import StatDelta, work_stats
 from bot.services.economy import CURRENCY_EMOJI, format_amount
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import (
+    OPTIONS_EXEMPT,
     EventResult,
     FavorResult,
     NeedsBlack,
@@ -99,7 +100,14 @@ from bot.services.pala import (
 )
 from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment
-from bot.services.taxes import TAX_COLLECTOR, ForeignPayslip, Payslip, format_rate, igic
+from bot.services.taxes import (
+    EXEMPT_7P_PER_DAY,
+    TAX_COLLECTOR,
+    ForeignPayslip,
+    Payslip,
+    format_rate,
+    igic,
+)
 from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.services.work import (
     BATTERY_MAX,
@@ -224,7 +232,7 @@ def parse_game_id(custom_id: str) -> tuple[int, int, int | str] | None:
 
 PHASE_TEXT = {
     "residente": "sigues siendo residente fiscal en España (art. 7.p LIRPF: exento hasta "
-    "60.100 € al año)",
+    f"{format_amount(EXEMPT_7P_PER_DAY)} al día, los 60.100 € al año)",
     "no_residente": "ya no eres residente fiscal en España: solo paga Hong Kong",
 }
 
@@ -248,9 +256,11 @@ def payslip_text(
             f"Seguridad Social: −{format_amount(slip.ss_worker)} ({_pct(slip.rates.ss_worker)})"
         )
     if slip.irpf:
-        lines.append(f"IRPF: −{format_amount(slip.irpf)} ({_pct(slip.rates.irpf)})")
+        lines.append(
+            f"IRPF: −{format_amount(slip.irpf)} (tu tipo esta semana: {_pct(slip.rates.irpf)})"
+        )
     else:
-        lines.append("IRPF: 0 Y$ (con toda tu renta desde el lunes, aún no llegas al mínimo)")
+        lines.append("IRPF: 0 Y$ (con tu renta de la semana aún no llegas al mínimo)")
     lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
     if self_employed:
         lines.append(
@@ -561,9 +571,11 @@ def pension_text(slip: Payslip, pension: Pension) -> str:
     )
     lines.append(f"Bruto: **{format_amount(slip.gross)}**")
     if slip.irpf:
-        lines.append(f"IRPF: −{format_amount(slip.irpf)} ({_pct(slip.rates.irpf)})")
+        lines.append(
+            f"IRPF: −{format_amount(slip.irpf)} (tu tipo esta semana: {_pct(slip.rates.irpf)})"
+        )
     else:
-        lines.append("IRPF: 0 Y$ (con toda tu renta desde el lunes, aún no llegas al mínimo)")
+        lines.append("IRPF: 0 Y$ (con tu renta de la semana aún no llegas al mínimo)")
     lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
     lines.append(
         "-# Las pensiones son rendimientos del trabajo (art. 17.2.a LIRPF): IRPF sí, "
@@ -685,7 +697,10 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         )
     if outcome.exit_payout:
         lines.append(f"## 🚀 ¡EXIT! Tus opciones valen {format_amount(outcome.exit_payout)}")
-        lines.append("-# Exentas hasta 5.000.000 Y$ (Ley 28/2022); el resto, con IRPF.")
+        lines.append(
+            f"-# Exentas hasta {format_amount(OPTIONS_EXEMPT)} (art. 42.3.f LIRPF, Ley "
+            "28/2022); el resto, con IRPF."
+        )
     if outcome.bankrupt:
         lines.append("💀 **La startup quiebra.** Tus stock options valen lo que el papel.")
     if outcome.kind is ShiftKind.GUARD:
