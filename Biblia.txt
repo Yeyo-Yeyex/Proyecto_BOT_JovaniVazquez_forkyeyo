@@ -180,9 +180,9 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 - **Calidad antes que cantidad.** Una lista de frases no tiene cupo ni mínimo. Se mete la broma que sea buena y se deja fuera la que solo cambia el nombre de otra. Variado, con cariño y sin repetir la misma broma con otras palabras. Si un texto que se repite a menudo sale siempre igual, se convierte en una lista de frases (con frases normales y alguna broma) y se elige al azar.
 - **Herramientas serias, sin bromas.** El panel de moderación `admin` (cog `Moderation`) y el resto de comandos de administración, la telemetría y los avisos de novedades son sobrios: ni bromas ni coletillas.
 
-**Variedad de temas.** La política (Sánchez, Hacienda, la oposición, los líderes extranjeros) está sobrerrepresentada: en octubre de 2026, `docs/auditoria_frases.py` contaba 576 menciones de Sánchez y el PSOE, más de tres veces que la siguiente fuente, y todas las fuentes contadas eran políticas. Cansa. A partir de ahora:
+**Variedad de temas.** En octubre de 2026, `docs/auditoria_frases.py` contaba 576 menciones de Sánchez y el PSOE, más de tres veces que la siguiente fuente, y todas las fuentes contadas eran políticas. Cansa, y no por la política: por tirar siempre de lo mismo. A partir de ahora:
 
-- **La política es una fuente más, no la principal.** Como mucho, una de cada cuatro bromas nuevas es política, y Sánchez, el PSOE y Hacienda no reciben bromas nuevas mientras sigan por encima del resto. Una broma política que se puede contar con otro tema se cuenta con otro tema.
+- **Todas las fuentes tienen el mismo protagonismo.** La política es una más, al mismo nivel que el cine, el deporte o la cultura friki: ni la principal ni apartada. Encaja mejor en unos sitios (Hacienda, el oficio de político) que en otros, pero manda la broma: una buena broma se hace aunque su tema no tenga mucho que ver con lo que pasa, y una floja no se salva por venir a cuento. Lo que se evita es que un mismo tema (o una misma figura, como Sánchez) se repita hasta cansar.
 - **Hacienda y los impuestos** existen como mecánica (sección «Dinero, impuestos y la Renta»), pero sus textos explican la cuenta en normal; no todo cobro de Hacienda lleva una broma de Perro Sanxe.
 - **Al escribir textos para algo nuevo, se miran antes las fuentes menos usadas** del informe de `docs/auditoria_frases.py` y se tira de ellas.
 
@@ -202,7 +202,7 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
   - **Animales y naturaleza:** las mascotas del bot, los gatos que tiran cosas, las palomas, la lagartija de Jovani, los perros que se comen los deberes.
   - **El propio bot y el servidor:** la autoironía de Jovani, el casino que siempre gana, los logros imposibles, los miembros más pesados (sin señalar a nadie en concreto), el bot que se reinicia.
   - **El absurdo:** situaciones sin sentido, exageraciones, cifras con guasa (666, 69, 42, 13:37), el juego por el juego.
-  - **Política y actualidad, con moderación:** gobiernos, partidos, regímenes, instituciones y figuras públicas de España y del mundo (la España de Sánchez y la oposición, la España de Franco —el régimen y su propaganda, nunca la apología ni las víctimas—, Bruselas y Europa, Estados Unidos, Putin, Kim Jong-un, el Sahel, Sudamérica, Xi, Netanyahu…). Nick Fuentes y sus groypers, solo contra él y su movimiento, sin repetir sus lemas.
+  - **Política y actualidad:** gobiernos, partidos, regímenes, instituciones y figuras públicas de España y del mundo (la España de Sánchez y la oposición, la España de Franco —el régimen y su propaganda, nunca la apología ni las víctimas—, Bruselas y Europa, Estados Unidos, Putin, Kim Jong-un, el Sahel, Sudamérica, Xi, Netanyahu…). Nick Fuentes y sus groypers, solo contra él y su movimiento, sin repetir sus lemas.
 
   **Jovani y sus coletillas.** El tono boricua de Jovani Vázquez y Canarias (canarismos, el Pino, el gofio) son parte de la voz del bot. Las coletillas de Jovani son una fuente más de ironía y se cuelan **de vez en cuando**, no en cada frase: si todo es «¡Wepa!», ya no hace gracia. Además de ¡Wepa!, ¡Ay, bendito! y «mi amor», estas son las suyas: «¿Qué? ¿Qué? ¡Toma mangó!» y «Everybody want mango, American people want mango»; «Desayuna con huevo, jugo de china de el bueno», «¿Con pulpa? ¡Sin pulpa!» y «Hazme café… ¡Quiero café!»; «Lagartijo, iguana, lagarto» y «Quisiera ser una mosca…»; la motora de Víctor y Joel («Y Víctor le dijo a Joel: móntate en mi motora»); «Yo soy yo… y así me tienes que soportar», «¡Jota Uve! ¡Pre!», «Estoy destruido, pero por fuera… por dentro estoy nuevo», «¡Azul, azul, como el mar azul!» y «Sofía, cállate». Se citan como guiño, retocadas para el momento (la motora puede ser una guagua o un cohete), nunca como letra entera de una canción. La sátira apunta a gobiernos, partidos, regímenes, instituciones, empresas y figuras públicas, nunca a un pueblo, una etnia o una religión: la broma es Netanyahu, no los judíos; Xi, no los chinos; Putin, no los rusos; el golpista del Sahel, no los africanos. Sin nombrar a personas reales que no sean figuras públicas.
 
@@ -223,11 +223,14 @@ Para revertir, se revierten los commits apuntados aquí del más nuevo al más v
 Partes hechas:
 
 - Aviso de logros: la retención de Hacienda va en la línea del premio, sin frase de Perro Sanxe (`8d65d12`).
-- Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). Quedan por revisar los nombres de oficios, economía, tienda, pisos y lengua, donde la política es el tema.
+- Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). Pendiente de los logros:
+  - Los 1.365 de oficios (obra, política, hostelería, sanidad, oficina, reparto, funcionariado, influencer), economía, tienda, pisos, Hong Kong y lengua: nombres sin revisar.
+  - Los nombres que no se tocaron en la primera pasada (no eran políticos), leídos uno a uno: los literales o sosos («Mil veces», «Un año entero») pasan a broma.
+  - Unas 60 descripciones con «: …» o «, como …»: casi todas informan, pero alguna lleva broma pegada.
 
 Orden recomendado:
 
-1. **Logros** (`services/achievements*`, el catálogo): es lo que más se lee. Por cada categoría: nombres que no se entienden sin saber la referencia, descripciones que no dicen qué hay que hacer, bromas repetidas entre logros y referencias políticas por encima de una de cada cuatro. Se rebautiza nombre y descripción, nunca la `key`.
+1. **Logros** (`services/achievements*`, el catálogo): es lo que más se lee. Por cada categoría: nombres que no se entienden sin saber la referencia, descripciones que no dicen qué hay que hacer, bromas repetidas entre logros y un mismo tema que se repite hasta cansar. Se rebautiza nombre y descripción, nunca la `key`.
 2. **Frases de los juegos del casino** (ganar, perder, esperar, quedarse a cero): al menos la mitad normales, las bromas espaciadas y de fuentes variadas.
 3. **Tienda y mascotas:** las descripciones dicen qué hace cada artículo; la gracia, si la hay, en el nombre o en una frase de uso. Los pasillos (`AISLES`) se revisan por si alguno solo existe por la broma política (la Moncloa).
 4. **Trabajo (`pala`), Renta, Hacienda y dinero:** las cuentas e impuestos se explican en normal; Perro Sanxe aparece de vez en cuando, no en cada cobro.
@@ -236,7 +239,7 @@ Orden recomendado:
 Criterios para dar una parte por buena:
 
 - Al menos la mitad de cada lista de frases son frases normales, sin referencia graciosa.
-- Ninguna fuente pasa de una de cada cuatro bromas de la parte revisada; Sánchez, el PSOE y Hacienda, ni eso mientras sigan sobrerrepresentados.
+- Las fuentes están repartidas: ningún tema ni figura se come al resto en la parte revisada.
 - Lo que informa (reglas, cifras, qué hacer) se entiende sin conocer ninguna referencia.
 - Ninguna broma sale repetida con otras palabras.
 
@@ -246,7 +249,7 @@ Herramienta: `docs/auditoria_frases.py` cuenta coletillas, repeticiones y fuente
 
 **Cada funcionalidad del bot tiene logros asociados.** Una funcionalidad nueva no está terminada hasta que tiene los suyos en el catálogo (en su propia categoría o en una existente) y los alimenta. Si se cambia una funcionalidad, se revisan sus logros en el mismo cambio. Excepciones: los comandos de administración y las utilidades internas (`ayuda`, `latencia`).
 
-**Muchos logros.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. **Nombre con gracia, descripción neutral.** El nombre de un logro es siempre un juego de palabras o una broma ligada a lo que pide («Ícaro y el sol» por perder un Crash que iba a ×10, «Rocky Balboa del corral» por 250 KO): nunca literal ni soso («Cien partidas», «Diez victorias»). La descripción, debajo, dice en claro y en neutro qué hay que hacer y cuánto, sin broma ni coletilla detrás. Las referencias de los nombres se reparten entre todas las fuentes de «Personalidad» (cine, series, cultura friki, deporte, refranes…); la política, como mucho una de cada cuatro, y solo donde el logro ya va de eso (el oficio de político, Hacienda, los rivales y caballos con nombre político). Un logro que no se entiende o que repite la broma de otro se rebautiza: se cambian el nombre y la descripción, nunca la clave (`key`), que es lo que guarda quién lo tiene.
+**Muchos logros.** Nunca hay que cortarse: cuantos más, mejor. Una funcionalidad con tres logros se queda corta; ninguna categoría baja de una docena y los juegos y sistemas grandes (cada juego del casino, trabajo, tienda, banco, loterías) pasan de cuarenta. **Nombre con gracia, descripción neutral.** El nombre de un logro es siempre un juego de palabras o una broma ligada a lo que pide («Ícaro y el sol» por perder un Crash que iba a ×10, «Rocky Balboa del corral» por 250 KO): nunca literal ni soso («Cien partidas», «Diez victorias»). La descripción, debajo, dice en claro y en neutro qué hay que hacer y cuánto, sin broma ni coletilla detrás. Las referencias de los nombres se reparten entre todas las fuentes de «Personalidad» (cine, series, cultura friki, deporte, política, refranes…), todas al mismo nivel, y manda la gracia del nombre: puede tirar de un tema que no tenga mucho que ver con el logro. Un logro que no se entiende o que repite la broma de otro se rebautiza: se cambian el nombre y la descripción, nunca la clave (`key`), que es lo que guarda quién lo tiene.
 
 **Qué logros tiene que tener cada funcionalidad.** Al diseñar los de algo nuevo, o al repasar los de algo que ya existe, se piensa en todas estas familias y se meten todas las que encajen:
 

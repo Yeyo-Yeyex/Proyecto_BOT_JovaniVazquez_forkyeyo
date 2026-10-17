@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.6 · 2026-10-18
+
+- Interno: la política vuelve a ser una fuente de bromas como las demás, al mismo nivel
+
 ### 7.25.5 · 2026-10-18
 
 - Logros: descripciones neutras que dicen qué hay que hacer, sin broma detrás

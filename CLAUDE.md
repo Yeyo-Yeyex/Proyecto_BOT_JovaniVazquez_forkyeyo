@@ -20,11 +20,11 @@ Lo que más se olvida:
 - **Personalidad:** no todo lo que escribe el bot es una broma, en ningún sitio (menús,
   tienda, juegos, logros). Lo que informa (reglas, cifras, errores, qué hace un artículo o
   qué pide un logro) va normal y claro. En las listas de frases, al menos la mitad son
-  normales y las bromas se espacian. La política (sobre todo Sánchez, el PSOE y Hacienda)
-  está sobrerrepresentada: como mucho una de cada cuatro bromas nuevas, y se tira antes de
-  las demás fuentes (vida cotidiana, deporte, cine y series, cultura popular y friki,
-  videojuegos, tecnología, comida, Canarias y Puerto Rico, historia, el propio bot, el
-  absurdo). Los nombres de los logros son siempre un juego de palabras o una broma ligada
+  normales y las bromas se espacian. Todas las fuentes tienen el mismo protagonismo
+  (política, vida cotidiana, deporte, cine y series, cultura popular y friki, videojuegos,
+  tecnología, comida, Canarias y Puerto Rico, historia, el propio bot, el absurdo): ninguna
+  manda ni se aparta, y una buena broma se hace aunque su tema no venga muy a cuento. Lo
+  que cansa es repetir el mismo tema o la misma figura (Sánchez). Los nombres de los logros son siempre un juego de palabras o una broma ligada
   al logro, nunca literales; su descripción, neutral. Las coletillas de
   Jovani salen de vez en cuando. Las herramientas de administración (`admin`) van sin
   bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
