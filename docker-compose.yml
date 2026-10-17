@@ -8,11 +8,8 @@ services:
     # Arranca con el NAS y se reinicia solo si falla; no si lo paras a mano.
     restart: unless-stopped
     env_file: .env
-    # La Activity de Discord (`/jovani`, ver README): el bot la sirve en el 8765 si hay
-    # DISCORD_CLIENT_SECRET. Solo para el propio NAS (127.0.0.1), donde la recoge el
-    # túnel que la publica por HTTPS. Sin secreto no escucha nadie.
-    ports:
-      - "127.0.0.1:8765:8765"
+    # La Activity de Discord (`/jovani`, ver README) la sirve el bot en su puerto 8765
+    # si hay DISCORD_CLIENT_SECRET. No se publica en el NAS: solo la ve `tailscale`.
     # tini como PID 1: reenvía señales y recoge los procesos ffmpeg huérfanos.
     init: true
     # SIGINT = el mismo apagado ordenado que Ctrl+C.
@@ -52,6 +49,39 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Túnel de la Activity de Discord (`/jovani`, ver README): Tailscale Funnel publica el
+  # 8765 del bot por HTTPS en https://jovani.<tailnet>.ts.net, gratis, sin dominio y sin
+  # abrir puertos del router. Solo arranca con COMPOSE_PROFILES=actividad en el .env, que
+  # también lleva TS_AUTHKEY (la clave para dar de alta el NAS en Tailscale la primera vez).
+  # Lo que publica está en tailscale-serve.json.
+  tailscale:
+    image: tailscale/tailscale:v1.102.5
+    container_name: bot-jovani-vazquez-tailscale
+    profiles: ["actividad"]
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: jovani
+      # Sin dispositivo de red del sistema ni permisos: basta para hacer de proxy.
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      # El alta en Tailscale: sin él, cada arranque pediría una clave nueva.
+      - tailscale-data:/var/lib/tailscale
+      - ./tailscale-serve.json:/config/serve.json:ro
+    # Unos 30-60 MB en uso; aparte del límite del bot.
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   bot-data:
     name: bot-jovani-vazquez-data
+  tailscale-data:
+    name: bot-jovani-vazquez-tailscale

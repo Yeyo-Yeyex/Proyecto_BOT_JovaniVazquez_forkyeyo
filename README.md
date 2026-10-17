@@ -1049,13 +1049,22 @@ Para montarla:
    - Activities > URL Mappings: `/` → la dirección pública del túnel (paso 2),
      sin `https://`.
 2. **Un túnel HTTPS hasta el NAS.** Discord solo carga la Activity desde una
-   dirección pública con HTTPS, y el `docker-compose.yml` publica el puerto
-   8765 solo para el propio NAS (`127.0.0.1`). Sin abrir puertos del router:
-   Cloudflare Tunnel (`cloudflared`, con un dominio en Cloudflare) o Tailscale
-   Funnel (`tailscale funnel 8765`, con una dirección fija `*.ts.net`). Para
-   probar sin dominio vale `cloudflared tunnel --url http://localhost:8765`,
-   pero la dirección cambia en cada arranque y hay que volver a ponerla en el
-   portal.
+   dirección pública con HTTPS. El `docker-compose.yml` trae uno gratuito, sin
+   dominio y sin abrir puertos del router: el servicio `tailscale` (Tailscale
+   Funnel, lo que publica está en `tailscale-serve.json`), que solo arranca si
+   se enciende en el `.env`. Una sola vez:
+   - Crea una cuenta en tailscale.com (el plan Personal es gratis). En la
+     consola: DNS > activa *MagicDNS* y *HTTPS Certificates*; en Access
+     controls, comprueba que la política lleva el atributo `funnel` para
+     `autogroup:member` (viene así de serie); en Settings > Keys, genera una
+     *auth key* (de un solo uso).
+   - En el `.env` del NAS: `COMPOSE_PROFILES=actividad` y `TS_AUTHKEY=` con esa
+     clave. Luego `docker compose up -d --force-recreate`.
+   - En Machines aparece `jovani`: en su menú, *Disable key expiry* (si no, el
+     túnel se cae a los 180 días). Su dirección, `jovani.<tailnet>.ts.net`, es
+     la que va en URL Mappings. Abierta desde el móvil fuera de casa, tiene que
+     enseñar la página (pone «Pidiendo permiso a Discord…» porque no está
+     dentro de Discord).
 3. **Quién puede abrirla.** Mientras Discord no verifique la app, solo la abren
    el equipo de desarrolladores de la app y sus *App Testers* (hasta 50, en
    App Testers del portal; cada uno acepta la invitación y activa *Application

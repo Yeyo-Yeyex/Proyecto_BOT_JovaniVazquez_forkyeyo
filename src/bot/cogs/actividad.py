@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Puerto del servidor web dentro del contenedor (`docker-compose.yml` lo publica).
+#: Puerto del servidor web dentro del contenedor (el túnel de `docker-compose.yml` lo publica).
 PORT = 8765
 DISCORD_API = "https://discord.com/api/v10"
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
