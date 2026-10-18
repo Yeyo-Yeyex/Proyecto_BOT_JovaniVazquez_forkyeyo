@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.9 · 2026-10-18
+
+- Logros: fuera las coletillas entre paréntesis y los «X, versión Y» en los nombres
+
 ### 7.25.8 · 2026-10-18
 
 - Logros: fuera los nombres «X, como [referencia]»: 152 pasan a juegos de palabras
