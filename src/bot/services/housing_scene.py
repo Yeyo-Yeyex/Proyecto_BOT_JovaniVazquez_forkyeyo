@@ -1,7 +1,8 @@
 """El panel de `pisos` con canvas: en Node, si no en Chromium y, si no, con Pillow.
 
-La escena (`assets/pisos/escena.html`) pinta las doce pantallas del panel (mapa,
-barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos y resenas)
+La escena (`assets/pisos/escena.html`) pinta las trece pantallas del panel (mapa,
+barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas
+y junta)
 a partir de lo que decide `bot.services.housing_view`: ella no calcula nada. Cada
 estado es una pantalla entera e independiente, así que el dibujo se reparte entre procesos
 sin que se note.
