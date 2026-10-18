@@ -129,71 +129,71 @@ COLOR_LOST = discord.Color.from_rgb(180, 60, 40)
 # Textos en el tono de Jovani Vázquez y de Perro Sanxe, el de la banca.
 RATA_LINES = (
     "Perro Sanxe te ofrece las sobras del Falcon.",
-    "Oferta rata: ni el IMV es tan tacaño.",
-    "La banca dice que es lo que hay, como la vivienda en Madrid.",
-    "Te lo ofrece con la sonrisa de un ministro en rueda de prensa.",
-    "Es una oferta de Bruselas: poca y con formulario.",
-    "Ni Montoro te dejaba tan tieso.",
+    "Oferta rata.",
+    "Esto es lo que hay. Tómalo o déjalo.",
+    "Una oferta de risa.",
+    "Ni para pipas.",
     "Perro Sanxe lo llama «escudo social». Tú, limosna.",
-    "Más rácano que un presupuesto prorrogado.",
+    "Te está tomando el pelo.",
+    "Oferta de chiste: ¿qué? ¿qué? ¡toma mangó!",
 )
 NORMAL_LINES = (
-    "Una oferta de centro, como las de Feijóo: ni fu ni fa.",
+    "Una oferta normalita.",
     "Perro Sanxe te mira por encima de las gafas. Es su oferta seria.",
-    "Ni regalo ni timo: oferta de funcionario.",
+    "Ni regalo ni timo.",
     "La banca juega a la contra. ¿Te fías?",
-    "Una oferta con IGIC canario: razonable.",
-    "Ni Yolanda la mejora sonriendo.",
-    "Perro Sanxe consulta el manual de resistencia y te la suelta.",
+    "Una oferta razonable.",
+    "Piénsalo bien.",
     "Oferta de consenso: no le gusta a nadie, pero se firma.",
+    "Hazme café… que esto hay que pensarlo. ¡Quiero café!",
 )
 GENEROSA_LINES = (
     "¡Oferta generosa! A Perro Sanxe se le ha caído la cartera.",
-    "Esto huele a fondos Next Generation.",
     "La banca está asustada. ¡Toma mangó!",
-    "Te ofrece más que una puerta giratoria a un exministro.",
-    "Perro Sanxe suda como Rajoy delante de un plasma.",
-    "¡Wepa! La banca tiene miedo del gordo.",
+    "¡Esto ya es una oferta de verdad!",
+    "Perro Sanxe suda la gota gorda.",
+    "La banca tiene miedo del gordo.",
     "Oferta con aroma a indulto: tómala antes de que la recurran.",
-    "Esto es más dinero del que vio Bárcenas en un sobre.",
+    "¡No te lo vuelve a dar!",
+    "Cógelo y corre.",
 )
 DEAL_LINES = (
-    "¡Trato hecho, mi amor!",
+    "¡Trato hecho!",
     "¡Trato! Firmado más rápido que un decreto ley.",
     "¡Trato! Perro Sanxe guarda el teléfono y suspira.",
-    "¡Trato! Ni el pacto de investidura salió tan rápido.",
     "¡Trato! Hacienda ya te está mirando.",
     "¡Trato! ¿Con pulpa? ¡Sin pulpa!",
-    "¡Trato! Como el de Junts: nadie sabe qué hay dentro.",
-    "¡Trato! Te bajas del plató como Puigdemont: con la maleta.",
+    "¡Trato! Y la caja, sin abrir.",
+    "¡Trato! Más vale pájaro en mano.",
+    "¡Trato! Te bajas del plató con la maleta.",
 )
 WIN_LINES = (
-    "¡Wepa!",
     "¡Toma mangó!",
-    "¡Tu caja valía oro, como un escaño en Teruel!",
+    "¡Tu caja valía oro!",
     "¡Ni el Gordo de Navidad reparte así!",
     "¡Hasta Jesús Vázquez aplaude!",
-    "¡La caja tenía más que el chalet de Galapagar!",
-    "¡Perro Sanxe tiene que pedir un rescate a Bruselas!",
+    "¡Lo tenías tú!",
+    "¡La caja era la buena!",
+    "¡Perro Sanxe tiene que pedir un rescate!",
 )
 LOSE_LINES = (
-    "¡Ay, bendito!",
     "Allá tú.",
     "Te lo dijo Perro Sanxe y no le hiciste caso.",
     "¡Caja vacía, como las promesas electorales!",
     "Estás destruido… pero por dentro estás nuevo.",
-    "Ni Maduro amaña unas actas tan mal.",
-    "¡Te has comido el cartón, como un aval de la Sareb!",
+    "La caja no era.",
+    "Te la jugaste y salió mal.",
+    "Sofía, cállate, que no quiero oírlo.",
 )
 GORDO_ALIVE = (
     "🔥 El gordo sigue vivo: **{gordo}**.",
     "🔥 El {gordo} sigue en alguna caja. Perro Sanxe suda.",
-    "🔥 Aún queda el {gordo}. Ni el CIS lo ve venir.",
+    "🔥 Aún queda el {gordo}.",
 )
 GORDO_DEAD = (
     "💀 El gordo ya salió. Ahora se juega por la dignidad.",
-    "💀 El {gordo} se fue a otra caja. Como los fondos europeos.",
-    "💀 Sin gordo: queda lo que queda, como en el BOE de agosto.",
+    "💀 El {gordo} se fue a otra caja.",
+    "💀 Sin gordo: queda lo que queda.",
 )
 HANG_LINES = (
     "📵 Perro Sanxe ha colgado. Esta ronda, sin oferta.",
@@ -203,7 +203,7 @@ HANG_LINES = (
 UP_LINES = (
     "🤝 ¡Sube la oferta! Perro Sanxe la saca del Falcon.",
     "🤝 ¡Regateo ganado! Ni en el Rastro te lo dejan así.",
-    "🤝 La banca cede. Como en una negociación con Junts.",
+    "🤝 La banca cede.",
 )
 SHOUT_DEAL = "📣 📦 ¡{who} ha cerrado un trato de **{amount}** ({mult}) en Allá tú!"
 SHOUT_BOX = "📣 📦 ¡{who} se lleva **{amount}** ({mult}) con su caja en Allá tú!"

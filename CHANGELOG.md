@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.18 · 2026-10-18
+
+- Allá tú: frases nuevas; Perro Sanxe sigue de presentador, con menos política alrededor
+
 ### 7.25.17 · 2026-10-18
 
 - Guerra, Cara o cruz y Autobús: frases nuevas, más normales y con Jovani
