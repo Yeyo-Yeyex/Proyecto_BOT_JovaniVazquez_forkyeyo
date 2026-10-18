@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.28 · 2026-10-18
+
+- Interno: repaso de errores y avisos (casi todos ya iban en claro) y la auditoría deja de confundir «administrador» con «ministro»
+
 ### 7.25.27 · 2026-10-18
 
 - Comunidad: bienvenidas, despedidas, cumpleaños y subidas de nivel con menos política y sin lo boricua; los errores, en claro

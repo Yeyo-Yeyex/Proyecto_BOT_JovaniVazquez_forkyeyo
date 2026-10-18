@@ -81,7 +81,7 @@ SOURCES: dict[str, str] = {
 #: detector perfecto: una broma sin palabra clave cuenta como frase normal.
 FAMILIES: dict[str, str] = {
     "Política": "|".join(SOURCES.values())
-    + r"|congreso|senado|\bboe\b|\buco\b|\bcis\b|tezanos|moci[oó]n|esca[ñn]o|decreto|ministr"
+    + r"|congreso|senado|\bboe\b|\buco\b|\bcis\b|tezanos|moci[oó]n|esca[ñn]o|decreto|\bministr"
     r"|diputad|gobierno|elecci|presupuest|legislatura|oposici[oó]n|hacienda|irpf|rescate"
     r"|bankia|indult|investidura|mayor[ií]a absoluta|next generation|fondos europeos",
     "Cine y series": r"pel[ií]cula|\bcine\b|serie\b|netflix|hollywood|ocean'?s|rain man"
