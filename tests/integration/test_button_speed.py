@@ -1339,6 +1339,54 @@ async def press_pisos_decide(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def pisos_shared(client: BotClient) -> None:
+    """`taco_bajo` a medias entre el dueño del panel (60) y otro miembro (40): hay junta."""
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Pisos")
+    for member, shares in ((OWNER_ID, 60), (OWNER_ID + 1, 40)):
+        await client.economy.repository.apply(GUILD_ID, member, [LedgerEntry(10_000_000, "t")])
+        await cog.service.buy(GUILD_ID, member, "taco_bajo", shares)
+
+
+async def press_pisos_vote(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    vote = await client.get_cog("Pisos").service.propose(
+        GUILD_ID, OWNER_ID + 1, "taco_bajo", "renta", "mercado"
+    )
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "junta"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": f"pisos:junta:si:{vote.id}"}
+        await panel._vote(interaction)
+
+    return click
+
+
+async def press_pisos_propose(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "junta"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["seguro:1"]}
+        await panel._propose(interaction)
+
+    return click
+
+
+async def press_pisos_divide(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "junta", "division"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._divide(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1685,6 +1733,9 @@ CASES: dict[str, Press] = {
     "pisos: pujar en una subasta": press_pisos_bid,
     "pisos: empezar una reforma": press_pisos_reform,
     "pisos: decidir un imprevisto": press_pisos_decide,
+    "pisos: votar en la junta": press_pisos_vote,
+    "pisos: proponer a la junta": press_pisos_propose,
+    "pisos: pedir la acción de división": press_pisos_divide,
     "tienda: lucir un título": press_wear_title,
     "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,

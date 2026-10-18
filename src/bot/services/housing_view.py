@@ -117,6 +117,14 @@ NEWS_TEXT = {
     "licencia_caduca": "Caduca la licencia vacacional: en zona tensionada no se renueva",
     "licencia_denegada": "La comunidad vota que no a la licencia vacacional",
     "superanfitrion": "Superanfitrión: 4,8 de media, cobra un 10 % más",
+    "junta": "{who} propone algo a la junta",
+    "junta_aprueba": "La junta aprueba la propuesta de {who}",
+    "junta_rechaza": "La junta rechaza la propuesta de {who}",
+    "junta_falla": "La junta aprueba lo de {who}, pero no se puede hacer",
+    "fondo_reserva": "El fondo de reserva paga {amount}",
+    "division": "{who} pide la división: subasta desde {amount}",
+    "division_adjudicada": "{who} se queda el inmueble entero por {amount}",
+    "division_mercado": "Nadie puja en la división: se vende al mercado",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -861,8 +869,7 @@ def gestion_state(
         raise KeyError(key)
     index = market.index(listing.barrio)
     lease = market.leases.get(key, rules.Lease())
-    holders = market.shares_of(key)
-    boss = rules.manager(holders)
+    boss = market.manager(key)
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
     rent = lease.rent or rules.asking_rent(listing, level, index)
     premium = round(rent * rules.premium_rate(lease.level))
@@ -1005,7 +1012,8 @@ def auctions_state(
                 "shares": auction.shares,
                 "judicial": auction.judicial,
                 "seller": _name(names, auction.seller),
-                "mine": auction.seller == user_id,
+                "mine": auction.seller == user_id and not auction.division,
+                "division": auction.division,
                 "value": format_amount(value),
                 "min_bid": format_amount(auction.min_bid),
                 "next_bid": format_amount(least),
@@ -1120,7 +1128,7 @@ def decisions_state(market: Market, key: str, user_id: int) -> State:
     lease = market.leases.get(key, rules.Lease())
     tenant = TENANT_BY_KEY.get(lease.tenant or "")
     holders = market.shares_of(key)
-    boss = rules.manager(holders)
+    boss = market.manager(key)
     items = []
     for slot, decision in enumerate(market.decisions.get(key, ())[:3], start=1):
         options = []
@@ -1249,4 +1257,108 @@ def reviews_state(market: Market, key: str, furniture: frozenset[str]) -> State:
         state["rating"] or "Aún sin reseñas.",
         *(f"{'★' * r['stars']} {r['guest']}: {r['line']}" for r in reviews),
     ]
+    return state
+
+
+# -- Fase 6: junta de copropietarios -------------------------------------------------------
+
+#: Cómo se dice cada mayoría.
+THRESHOLD_TEXT = {
+    rules.MAJORITY: "Mayoría",
+    rules.THREE_FIFTHS: "3/5",
+    rules.UNANIMITY: "Unanimidad",
+}
+
+
+def motion_text(kind: str, value: str, amount: int, names: dict[int, str]) -> str:
+    """Lo que propone una votación, en una frase («Pedir la renta de mercado»)."""
+    if kind == "renta":
+        level = RENT_LEVELS.get(value)
+        return f"Pedir la renta {level.name.lower()}" if level else "Cambiar la renta"
+    if kind == "seguro":
+        return "Contratar el seguro de impago" if value == "1" else "Quitar el seguro de impago"
+    if kind == "eleccion":
+        return (
+            "Elegir nosotros al inquilino" if value == rules.PICK_SELF else "Que elija la gestora"
+        )
+    if kind == "administra":
+        return f"Que administre {_name(names, int(value))}" if value.isdigit() else "Administrar"
+    if kind == "derrama":
+        return f"Derrama de {format_amount(amount)} al fondo de reserva"
+    if kind == "reforma":
+        reform = next((r for r in REFORMS if r.key == value), None)
+        return f"Reforma: {reform.name}" if reform else "Una reforma"
+    if kind == "licencia":
+        return f"Pedir la licencia vacacional ({format_amount(rules.LICENSE_FEE)})"
+    return "Vender el inmueble entero al mercado"
+
+
+def junta_state(market: Market, key: str, user_id: int, names: dict[int, str], now: float) -> State:
+    """🗳️ Junta: los dueños, quién administra, el fondo de reserva y lo que se vota."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    holders = market.shares_of(key)
+    total = sum(holders.values())
+    boss = market.manager(key)
+    votes = []
+    for slot, vote in enumerate(market.votes_of(key)[:4], start=1):
+        motion = rules.MOTION_BY_KEY[vote.kind]
+        against = sum(s for m, s in holders.items() if vote.ballots.get(m) is False)
+        yes = sum(s for m, s in holders.items() if vote.ballots.get(m) is True)
+        votes.append(
+            {
+                "slot": slot,
+                "id": vote.id,
+                "kind": vote.kind,
+                "name": motion.name,
+                "what": motion_text(vote.kind, vote.value, vote.amount, names),
+                "proposer": _name(names, vote.proposer),
+                "threshold": THRESHOLD_TEXT[motion.threshold],
+                "law": motion.law,
+                "yes": yes,
+                "no": against,
+                "silent": max(0, total - yes - against),
+                "total": total,
+                "passing": rules.passes(motion.threshold, total, against),
+                "mine": vote.ballots.get(user_id),
+                "left": _remaining(vote.ends_at - now),
+            }
+        )
+    division = market.division_of(key)
+    state: State = {
+        "screen": "junta",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "owners": [
+            {"name": _name(names, m), "shares": s, "admin": m == boss, "me": m == user_id}
+            for m, s in sorted(holders.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "admin": _name(names, boss) if boss is not None else "Nadie: no hay mayoría",
+        "elected": market.admins.get(key) == boss and boss is not None,
+        "reserve": format_amount(market.reserves.get(key, 0)),
+        "votes": votes,
+        "more": max(0, len(market.votes_of(key)) - 4),
+        "empty": not votes,
+        "division": {
+            "min_bid": format_amount(division.min_bid),
+            "best_bid": format_amount(division.best_bid) if division.best_bid else "",
+            "left": _remaining(division.ends_at - now),
+        }
+        if division is not None
+        else None,
+        "footer": "24 horas por votación · quien no vota cuenta a favor (art. 17.8 LPH)",
+    }
+    state["fallback"] = [
+        f"Junta: {listing.title} · administra {state['admin']} · fondo {state['reserve']}",
+        *(
+            f"{v['slot']}. {v['what']} ({v['threshold']}): sí {v['yes']} · no {v['no']} · "
+            f"sin votar {v['silent']} · quedan {v['left']}"
+            for v in votes
+        ),
+    ] if votes else ["No hay nada que votar. Propón algo en el desplegable."]  # fmt: skip
     return state

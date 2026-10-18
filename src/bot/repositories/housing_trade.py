@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS housing_auctions (
     escrow INTEGER NOT NULL DEFAULT 0,
     bids INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'abierta',
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    division INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS housing_auctions_open ON housing_auctions (guild_id, status);
@@ -82,6 +83,8 @@ class Auction:
         escrow: Lo que espera de esa persona en el depósito (la puja, el ITP y la notaría).
         bids: Cuántas pujas lleva.
         created_at: Cuándo empezó.
+        division: Si es la de una acción de división (arts. 400 y 404 CC): se subasta el
+            inmueble entero, `seller` es quien la pidió y `shares`, lo de todos los dueños.
     """
 
     id: int
@@ -97,6 +100,7 @@ class Auction:
     escrow: int
     bids: int
     created_at: float
+    division: bool = False
 
 
 def _auction_from(row: sqlite3.Row) -> Auction:
@@ -114,6 +118,7 @@ def _auction_from(row: sqlite3.Row) -> Auction:
         escrow=int(row["escrow"]),
         bids=int(row["bids"]),
         created_at=float(row["created_at"]),
+        division=bool(row["division"]),
     )
 
 
@@ -137,17 +142,18 @@ def add_auction_in(
     ends_at: float,
     now: float,
     mortgage_id: int | None = None,
+    division: bool = False,
 ) -> int:
     """Abre una subasta (judicial si lleva `mortgage_id`). Devuelve su número."""
     cursor = connection.execute(
         """
         INSERT INTO housing_auctions
             (guild_id, listing, seller, shares, min_bid, ends_at, judicial, mortgage_id,
-             status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             status, created_at, division)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (guild_id, listing, seller, shares, min_bid, ends_at, int(mortgage_id is not None),
-         mortgage_id, OPEN, now),
+         mortgage_id, OPEN, now, int(division)),
     )  # fmt: skip
     return int(cursor.lastrowid or 0)
 

@@ -85,6 +85,7 @@ from bot.repositories.housing import (
     Purchase,
     Sale,
     TenantDeal,
+    VoteResult,
 )
 from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, vpo_ref
 from bot.services import housing as rules
@@ -141,7 +142,7 @@ MAX_OPTIONS = 25
 
 MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", "caja", "vpo"
 GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
-REFORMAS, IMPREVISTOS, RESENAS = "reformas", "imprevistos", "resenas"
+REFORMAS, IMPREVISTOS, RESENAS, JUNTA = "reformas", "imprevistos", "resenas", "junta"
 #: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
 #: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
 PREFERENCE_SECONDS = 10 * 60
@@ -439,6 +440,32 @@ class TradeModal(ui.Modal):
             await self.panel.choose_buyer(interaction, shares, price)
 
 
+class LevyModal(ui.Modal):
+    """Cuánto se propone de derrama al fondo de reserva."""
+
+    def __init__(self, panel: Panel) -> None:
+        super().__init__(title="Derrama al fondo de reserva")
+        self.panel = panel
+        self.amount: ui.TextInput = ui.TextInput(
+            label="Derrama total (Y$)",
+            placeholder=(
+                f"De {format_amount(rules.LEVY_MIN)} a {format_amount(rules.LEVY_MAX)}; "
+                "cada dueño paga su parte"
+            ),
+            min_length=1,
+            max_length=15,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Valida la cifra y la propone."""
+        amount = _number(self.amount.value)
+        if amount is None or amount < 1:
+            await notify(interaction, "Pon la derrama en Y$.")
+            return
+        await self.panel.propose(interaction, "derrama", "", amount)
+
+
 class BidModal(ui.Modal):
     """Cuánto se puja en una subasta."""
 
@@ -539,6 +566,10 @@ class Panel(ui.View):
         if screen == RESENAS:
             owned = await tienda.owned_keys(self.cog.bot, self.guild.id, me)
             return view.reviews_state(market, listing or self.listing, owned)
+        if screen == JUNTA:
+            return view.junta_state(
+                market, listing or self.listing, me, names, self.cog.service.now()
+            )
         if screen == SUBASTAS:
             return view.auctions_state(market, me, names, self.cog.service.now(), self.auction_id)
         if screen == CARTERA:
@@ -702,7 +733,7 @@ class Panel(ui.View):
             ]
         if self.screen == CANDIDATOS:
             return [(GESTION, {"listing": self.listing}), (FICHA, {"listing": self.listing})]
-        if self.screen in (REFORMAS, IMPREVISTOS, RESENAS):
+        if self.screen in (REFORMAS, IMPREVISTOS, RESENAS, JUNTA):
             return [(FICHA, {"listing": self.listing}), (GESTION, {"listing": self.listing})]
         if self.screen == CARTERA:
             mine = self.market.of_member(me)[:6]
@@ -877,6 +908,8 @@ class Panel(ui.View):
             self._reform_buttons()
         elif self.screen == IMPREVISTOS:
             self._decision_buttons()
+        elif self.screen == JUNTA:
+            self._junta_buttons()
         elif self.screen == RESENAS:
             self._button("◀ La ficha", "ficha", self._back_to_listing, row=1)
             self._button("🧰 Gestionar", "gestion", self._go_gestion, row=1)
@@ -949,7 +982,7 @@ class Panel(ui.View):
             self.add_item(pick)
             return
         is_home = listing.kind in rules.HOME_KINDS
-        boss = rules.manager(holders) == me
+        boss = market.manager(key) == me
         if market.mortgages_of(me, key):
             self._confirmable("🏦 Amortizar", "amortizar", self._amortize, row=4)
         if market.homes.get(me) == (HOME_OWN, key):
@@ -981,7 +1014,7 @@ class Panel(ui.View):
             self._button(label, "comprar", self._buy, row=1, style=discord.ButtonStyle.success)
         if mine:
             self._button("💰 Vender", "vender", self._sell, row=1, style=discord.ButtonStyle.danger)
-        boss = rules.manager(holders)
+        boss = self.market.manager(key)
         can_decide = mine and (boss is None or boss == self.owner.id)
         if can_decide and lease is not None and lease.status in (rules.DEFAULTING, rules.SQUATTED):
             self._button("⚖️ Desahuciar", "desahuciar", self._evict, row=1)
@@ -1028,7 +1061,7 @@ class Panel(ui.View):
         key, me, market = self.listing, self.owner.id, self.market
         listing = self._at(key)
         lease = market.leases.get(key)
-        boss = rules.manager(market.shares_of(key)) == me
+        boss = market.manager(key) == me
         if boss and lease is not None:
             if lease.pick == rules.PICK_SELF:
                 self._button("🤖 Que elija la gestora", "elegir", self._toggle_pick, row=1)
@@ -1055,6 +1088,12 @@ class Panel(ui.View):
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
         if lease is not None and (lease.license or market.reviews.get(key)):
             self._button("⭐ Reseñas", "resenas", self._go_reviews, row=2)
+        if len(market.shares_of(key)) > 1:
+            count = len(market.votes_of(key))
+            self._button(
+                f"🗳️ Junta ({count})" if count else "🗳️ Junta", "junta", self._go_junta, row=2,
+                style=discord.ButtonStyle.primary if count else discord.ButtonStyle.secondary,
+            )  # fmt: skip
         held = market.holdings.get(key, {}).get(me)
         if held is not None and market.auction_of(key, me) is None:
             if self.confirm == "comprador":
@@ -1094,7 +1133,7 @@ class Panel(ui.View):
         """⚠️ Imprevistos: una fila por imprevisto con sus formas de arreglarlo."""
         key, me, market = self.listing, self.owner.id, self.market
         holders = market.shares_of(key)
-        boss = rules.manager(holders)
+        boss = self.market.manager(key)
         decides = me in holders and (boss is None or boss == me)
         for row, decision in enumerate(market.decisions.get(key, ())[:3], start=1):
             for choice in rules.DECISIONS[decision.event]:
@@ -1153,7 +1192,7 @@ class Panel(ui.View):
     def _candidate_buttons(self) -> None:
         """👥 Candidatos: firmar con uno o descartarlo (lo decide quien tiene la mayoría)."""
         key, me, market = self.listing, self.owner.id, self.market
-        boss = rules.manager(market.shares_of(key)) == me
+        boss = market.manager(key) == me
         waiting = market.candidates_of(key, self.cog.service.today())
         for slot, _tenant in enumerate(waiting, start=1):
             self._button(
@@ -1275,6 +1314,182 @@ class Panel(ui.View):
 
     async def _go_reviews(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, RESENAS)
+
+    async def _go_junta(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, JUNTA)
+
+    def _junta_buttons(self) -> None:
+        """🗳️ Junta: sí o no a cada votación (dos por fila), proponer y la acción de división."""
+        key, me, market = self.listing, self.owner.id, self.market
+        holders = market.shares_of(key)
+        owner = me in holders
+        plain = discord.ButtonStyle.secondary
+        for slot, vote in enumerate(market.votes_of(key)[:4], start=1):
+            mine = vote.ballots.get(me)
+            row = 1 + (slot - 1) // 2
+            self._button(
+                f"{slot} · ✅ Sí", f"junta:si:{vote.id}", self._vote, row=row, disabled=not owner,
+                style=discord.ButtonStyle.success if mine is True else plain,
+            )  # fmt: skip
+            self._button(
+                f"{slot} · ❌ No", f"junta:no:{vote.id}", self._vote, row=row, disabled=not owner,
+                style=discord.ButtonStyle.danger if mine is False else plain,
+            )  # fmt: skip
+        free = owner and len(holders) > 1 and market.division_of(key) is None
+        options = self._motions() if free else []
+        if options:
+            pick: ui.Select = ui.Select(
+                placeholder="Proponer a la junta…", custom_id=f"{GAME}:proponer", row=3,
+                options=options,
+            )  # fmt: skip
+            pick.callback = self._propose  # type: ignore[method-assign]
+            self.add_item(pick)
+        self._button("◀ Gestionar", "gestion", self._go_gestion, row=4)
+        self._button("◀ La ficha", "ficha", self._back_to_listing, row=4)
+        if free:
+            self._confirmable("⚖️ Acción de división", "division", self._divide, row=4)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=4)
+
+    def _motions(self) -> list[discord.SelectOption]:
+        """Lo que se puede proponer ahora (sin repetir lo que ya se vota)."""
+        key, me, market = self.listing, self.owner.id, self.market
+        listing = self._at(key)
+        lease = market.leases.get(key, rules.Lease())
+        busy = {v.kind for v in market.votes_of(key)}
+        options: list[discord.SelectOption] = []
+
+        def add(value: str, label: str, emoji: str, description: str) -> None:
+            options.append(
+                discord.SelectOption(
+                    label=label[:100], value=value, emoji=emoji, description=description[:100]
+                )
+            )
+
+        if "renta" not in busy:
+            for level in RENT_LEVELS.values():
+                if level.key == lease.level or (
+                    level.key == rules.VACATION_LEVEL and not lease.license
+                ):
+                    continue
+                add(f"renta:{level.key}", f"Renta: {level.name}", level.emoji,
+                    "Mayoría de participaciones (art. 398 CC)")  # fmt: skip
+        if "seguro" not in busy and listing.kind in rules.HOME_KINDS:
+            on = not lease.insured
+            add(f"seguro:{int(on)}",
+                "Contratar el seguro de impago" if on else "Quitar el seguro de impago", "🛡️",
+                "Mayoría de participaciones")  # fmt: skip
+        if "eleccion" not in busy:
+            other = rules.PICK_AGENCY if lease.pick == rules.PICK_SELF else rules.PICK_SELF
+            label = (
+                "Elegir nosotros al inquilino"
+                if other == rules.PICK_SELF
+                else "Que elija la gestora al inquilino"
+            )
+            add(f"eleccion:{other}", label, "✋", "Mayoría de participaciones")
+        if "administra" not in busy and market.manager(key) != me:
+            add(f"administra:{me}", "Administrar yo el inmueble", "🧑‍💼",
+                "Mayoría: la renta, el inquilino y los imprevistos")  # fmt: skip
+        if "derrama" not in busy:
+            add("derrama", "Derrama al fondo de reserva…", "🏦",
+                "Mayoría: cada uno paga su parte")  # fmt: skip
+        if "reforma" not in busy:
+            for reform in REFORMS:
+                if listing.kind in reform.kinds and reform.key not in market.reforms.get(key, {}):
+                    add(f"reforma:{reform.key}", f"Reforma: {reform.name}", reform.emoji,
+                        "3/5 de participaciones (art. 17.4 LPH)")  # fmt: skip
+        if "licencia" not in busy and listing.kind in rules.HOME_KINDS and not lease.license:
+            add("licencia", f"Licencia vacacional ({format_amount(rules.LICENSE_FEE)})", "🏖️",
+                "3/5 de participaciones (art. 17.12 LPH)")  # fmt: skip
+        if "venta" not in busy:
+            add("venta", "Vender el inmueble entero al mercado", "🤝",
+                "Unanimidad (art. 397 CC)")  # fmt: skip
+        return options[:MAX_OPTIONS]
+
+    async def _propose(self, interaction: discord.Interaction) -> None:
+        """Elige qué proponer; la derrama abre antes un formulario con la cifra."""
+        values = interaction.data.get("values", []) if interaction.data else []
+        choice = str(values[0]) if values else ""
+        if choice == "derrama":
+            await interaction.response.send_modal(LevyModal(self))
+            return
+        kind, _sep, value = choice.partition(":")
+        await self.propose(interaction, kind, value, 0)
+
+    async def propose(
+        self, interaction: discord.Interaction, kind: str, value: str, amount: int
+    ) -> None:
+        """Lleva una propuesta a la junta y avisa a los demás dueños en el canal."""
+        await ack(interaction)
+        try:
+            vote = await self.cog.service.propose(
+                self.guild.id, self.owner.id, self.listing, kind, value, amount
+            )
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo proponer a la junta de pisos")
+            await notify(interaction, "Se ha caído el administrador de fincas. Prueba otra vez.")
+            return
+        await self.show(interaction)
+        others = [m for m in self.market.shares_of(self.listing) if m != self.owner.id]
+        motion = rules.MOTION_BY_KEY[vote.kind]
+        await notify(
+            interaction,
+            f"🗳️ **Junta de {self._at(self.listing).title}**: {self.owner.mention} propone "
+            f"«{view.motion_text(vote.kind, vote.value, vote.amount, {})}» "
+            f"({view.THRESHOLD_TEXT[motion.threshold].lower()}, {motion.law}). "
+            + " ".join(f"<@{m}>" for m in others)
+            + f": votad en `/pisos` → 🧰 Gestionar → 🗳️ Junta antes de <t:{int(vote.ends_at)}:t>. "
+            "Quien no vote, cuenta a favor.",
+            ephemeral=False,
+        )
+        logros.note(self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("propone"),
+                    getattr(interaction.channel, "id", None))  # fmt: skip
+
+    async def _vote(self, interaction: discord.Interaction) -> None:
+        """Vota sí o no; si ya han votado todos, se cierra y se hace lo aprobado."""
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        parts = custom_id.split(":")
+        if len(parts) != 4 or not parts[3].isdigit():
+            await ack(interaction)
+            return
+        yes, vote_id = parts[2] == "si", int(parts[3])
+
+        async def run() -> Any:
+            return await self.cog.service.vote(self.guild.id, self.owner.id, vote_id, yes)
+
+        result = await self._money(interaction, run, broke="No llega el dinero para lo aprobado.")
+        if result is None:
+            return
+        await self.show(interaction)
+        logros.note(self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("vota"),
+                    getattr(interaction.channel, "id", None))  # fmt: skip
+        if result.vote.status != "abierta":
+            await notify(interaction, self.cog.vote_text(result, self.guild), ephemeral=False)
+            await renta.remind(self.cog.bot, interaction)
+            self.cog.track_vote(self.guild.id, result)
+
+    async def _divide(self, interaction: discord.Interaction) -> None:
+        """Acción de división (segundo clic): saca el inmueble entero a subasta."""
+        await ack(interaction)
+        self.confirm = None
+        try:
+            auction = await self.cog.service.divide(self.guild.id, self.owner.id, self.listing)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            await self.show(interaction)
+            return
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo pedir la división de un inmueble")
+            await notify(interaction, "Se ha caído el juzgado. Prueba otra vez en un momento.")
+            return
+        self.market = await self.cog.service.market(self.guild.id)
+        self.cog.market_cache[self.guild.id] = self.market
+        await self.show(interaction)
+        await self.cog.announce_auction(self.guild.id, auction)
+        logros.note(self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("division"),
+                    getattr(interaction.channel, "id", None))  # fmt: skip
 
     async def _reform(self, interaction: discord.Interaction) -> None:
         """Empieza una reforma (segundo clic): paga la obra y el piso entra en obras."""
@@ -2407,6 +2622,7 @@ class Pisos(commands.Cog):
             try:
                 await self.close_guild(guild.id)
                 await self.close_auctions(guild.id)
+                await self.close_votes(guild.id)
             except Exception:
                 # Un servidor roto no para la tarea: si saliera la excepción, `tasks.loop`
                 # se pararía para siempre y nadie cobraría más alquileres.
@@ -2574,6 +2790,67 @@ class Pisos(commands.Cog):
                         housing_day_stats(rent=0, ibi=0, events=("ejecucion_aval",)))  # fmt: skip
         return run
 
+    async def close_votes(self, guild_id: int) -> list[VoteResult]:
+        """Cierra las votaciones de la junta que han acabado, lo anuncia y apunta los logros.
+
+        Nunca lanza.
+        """
+        try:
+            results = await self.service.close_votes(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron cerrar las votaciones de pisos en %s", guild_id)
+            return []
+        guild = self.bot.get_guild(guild_id)
+        channel = self._channel(guild_id)
+        for result in results:
+            self.track_vote(guild_id, result)
+            if channel is None or guild is None:
+                continue
+            try:
+                await channel.send(
+                    self.vote_text(result, guild)
+                    + " "
+                    + " ".join(f"<@{m}>" for m in result.owners),
+                    allowed_mentions=discord.AllowedMentions(users=True),
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                logger.warning("No se pudo anunciar una votación en %s", guild_id, exc_info=True)
+        return results
+
+    def vote_text(self, result: VoteResult, guild: discord.Guild) -> str:
+        """Cómo ha acabado una votación de la junta, en una frase para el canal."""
+        vote = result.vote
+        listing = (self.market_cache.get(guild.id) or Market()).listing(vote.listing)
+        listing = listing or LISTING_BY_KEY.get(vote.listing)
+        title = listing.title if listing else vote.listing
+        names = {vote.proposer: _name(guild, vote.proposer)}
+        if vote.kind == "administra" and vote.value.isdigit():
+            names[int(vote.value)] = _name(guild, int(vote.value))
+        what = view.motion_text(vote.kind, vote.value, vote.amount, names)
+        if vote.status == "aprobada":
+            return f"🗳️ **Junta de {title}**: aprobado «{what}»."
+        if vote.status == "fallida":
+            return f"🗳️ **Junta de {title}**: se aprobó «{what}», pero no se puede: {vote.note}"
+        return f"🗳️ **Junta de {title}**: rechazado «{what}»."
+
+    def track_vote(self, guild_id: int, result: VoteResult) -> None:
+        """Logros de una votación que se cierra (de quien propuso y de los dueños)."""
+        vote = result.vote
+        if vote.status == "rechazada":
+            logros.note(self.bot, guild_id, vote.proposer,
+                        housing_action_stats("junta_rechazada"))  # fmt: skip
+            return
+        if vote.status != "aprobada":
+            return
+        silent = set(vote.ballots) == {vote.proposer}
+        logros.note(self.bot, guild_id, vote.proposer,
+                    housing_action_stats("junta_aprobada", silent=silent))  # fmt: skip
+        if vote.kind == "administra" and vote.value.isdigit():
+            logros.note(self.bot, guild_id, int(vote.value), housing_action_stats("administra"))
+        if vote.kind == "derrama":
+            for member in result.owners:
+                logros.note(self.bot, guild_id, member, housing_action_stats("derrama_fondo"))
+
     def _channel(self, guild_id: int) -> discord.abc.Messageable | None:
         guild = self.bot.get_guild(guild_id)
         if guild is None:
@@ -2590,11 +2867,18 @@ class Pisos(commands.Cog):
         listing = listing or LISTING_BY_KEY.get(auction.listing)
         if channel is None or listing is None:
             return
-        kind = "⚖️ Subasta judicial" if auction.judicial else "🔨 Subasta"
+        kind = (
+            "⚖️ Acción de división"
+            if auction.division
+            else "⚖️ Subasta judicial"
+            if auction.judicial
+            else "🔨 Subasta"
+        )
         embed = discord.Embed(
             title=f"{kind}: {listing.title}",
             description=(
-                f"{auction.shares} participaciones en {BARRIO_BY_KEY[listing.barrio].name}, "
+                ("El inmueble entero" if auction.division else f"{auction.shares} participaciones")
+                + f" en {BARRIO_BY_KEY[listing.barrio].name}, "
                 f"desde {format_amount(auction.min_bid)}. Acaba <t:{int(auction.ends_at)}:R>. "
                 "Se puja desde `pisos` → 🔨 Subastas; si alguien puja en la última hora, se "
                 "alarga una hora."
@@ -2622,6 +2906,8 @@ class Pisos(commands.Cog):
             )
         elif result.bank:
             text = "Sin puja que valga: el banco se lo queda al 70 % y vuelve al mercado."
+        elif auction.division:
+            text = "Nadie ha pujado: cada dueño vende lo suyo al mercado y se reparte."
         else:
             text = "Desierta: nadie ha pujado. Las participaciones siguen con su dueño."
         try:

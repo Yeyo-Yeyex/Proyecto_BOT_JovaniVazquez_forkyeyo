@@ -31,8 +31,10 @@ from bot.repositories.housing import (
     Sale,
     Signing,
     TenantDeal,
+    VoteResult,
     VpoDeal,
 )
+from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
 from bot.services.economy import EconomyService
@@ -388,6 +390,42 @@ class HousingService:
         result, _balances = await self.economy.housing(guild_id, run)
         return result
 
+    async def propose(
+        self, guild_id: int, user_id: int, key: str, kind: str, value: str = "", amount: int = 0
+    ) -> Vote:
+        """Propone algo a la junta del inmueble (vota sí al proponerlo).
+
+        Raises:
+            HousingError: Si no hay junta, ya se vota eso o la propuesta no vale.
+        """
+        return await self.repository.propose(
+            guild_id, user_id, key, kind, value, amount, self._clock()
+        )
+
+    async def vote(self, guild_id: int, user_id: int, vote_id: int, yes: bool) -> VoteResult:
+        """Vota en la junta; si ya han votado todos, se cierra y se hace lo aprobado.
+
+        Raises:
+            HousingError: Si la votación ya se cerró o no es dueño.
+        """
+        run = self.repository.vote(guild_id, user_id, vote_id, yes, self._clock(), self.rng)
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
+
+    async def close_votes(self, guild_id: int) -> list[VoteResult]:
+        """Cierra las votaciones de la junta que han llegado a su hora (cada 10 minutos)."""
+        run = self.repository.close_votes(guild_id, self._clock(), self.rng)
+        results, _balances = await self.economy.housing(guild_id, run)
+        return results
+
+    async def divide(self, guild_id: int, user_id: int, key: str) -> Auction:
+        """Acción de división: saca el inmueble entero a subasta un día.
+
+        Raises:
+            HousingError: Si no hay varios dueños o ya está en subasta.
+        """
+        return await self.repository.divide(guild_id, user_id, key, self._clock())
+
     async def close_days(
         self,
         guild_id: int,
@@ -415,7 +453,7 @@ class HousingService:
         if furniture is not None and first < today:
             market = await self.repository.market(guild_id)
             for key, lease in market.leases.items():
-                boss = rules.manager(market.shares_of(key))
+                boss = market.manager(key)
                 if boss is not None and boss not in owned and lease.level in (
                     rules.VACATION_LEVEL, rules.NOMAD_LEVEL,
                 ):  # fmt: skip

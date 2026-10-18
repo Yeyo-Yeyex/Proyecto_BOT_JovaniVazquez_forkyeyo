@@ -2004,3 +2004,70 @@ def license_problem(listing: Listing, *, index: float, promotion: bool) -> str |
 def needs_neighbours(listing: Listing) -> bool:
     """Si la licencia la tiene que aprobar la comunidad (un piso en un bloque, no el edificio)."""
     return listing.kind in _BLOCKS and listing.kind not in ("edificio", "local")
+
+
+# -- Ampliación, fase 6: junta de copropietarios ------------------------------------------
+
+#: Lo que dura una votación de la junta. Si votan todos antes, se cierra en el momento.
+VOTE_SECONDS = 24 * 3600
+#: Mayorías, en tanto por uno de las participaciones de los miembros. Quien no vota cuenta a
+#: favor (art. 17.8 LPH: el silencio vale como sí).
+MAJORITY = "mayoria"
+THREE_FIFTHS = "tres_quintos"
+UNANIMITY = "unanimidad"
+
+
+@dataclass(frozen=True, slots=True)
+class Motion:
+    """Algo que se puede votar en la junta.
+
+    Attributes:
+        key: Su clave (`housing_votes.kind`).
+        emoji: Para los botones y la pantalla.
+        name: Cómo se llama.
+        threshold: La mayoría que pide (`MAJORITY`, `THREE_FIFTHS` o `UNANIMITY`).
+        law: La norma de esa mayoría.
+    """
+
+    key: str
+    emoji: str
+    name: str
+    threshold: str
+    law: str
+
+
+MOTIONS: tuple[Motion, ...] = (
+    Motion("renta", "💶", "La renta que se pide", MAJORITY, "art. 398 CC"),
+    Motion("seguro", "🛡️", "El seguro de impago", MAJORITY, "art. 398 CC"),
+    Motion("eleccion", "✋", "Quién elige al inquilino", MAJORITY, "art. 398 CC"),
+    Motion("administra", "🧑‍💼", "Quién administra", MAJORITY, "art. 398 CC"),
+    Motion("derrama", "🏦", "Derrama al fondo de reserva", MAJORITY, "art. 17.7 LPH"),
+    Motion("reforma", "🏗️", "Una reforma", THREE_FIFTHS, "art. 17.4 LPH"),
+    Motion("licencia", "🏖️", "La licencia vacacional", THREE_FIFTHS, "art. 17.12 LPH"),
+    Motion("venta", "🤝", "Vender el inmueble entero", UNANIMITY, "art. 397 CC"),
+)
+MOTION_BY_KEY: dict[str, Motion] = {m.key: m for m in MOTIONS}
+#: Fondo de reserva (art. 9.1.f LPH): el 10 % de la comunidad se guarda y paga las derramas y
+#: la ITE. Es un número del inmueble: la comunidad ya desaparece al pagarse.
+RESERVE_SHARE = 0.10
+RESERVE_EVENTS = frozenset({"derrama", "ite"})
+#: Tipos de inmueble que están en un bloque con comunidad (los que tienen derramas e ITE).
+BLOCK_KINDS = _BLOCKS
+#: Derrama al fondo de reserva que se puede votar, en Y$.
+LEVY_MIN = 1_000
+LEVY_MAX = 1_000_000
+
+
+def passes(threshold: str, total: int, against: int) -> bool:
+    """Si una votación sale adelante: `against` son las participaciones que votan que no."""
+    yes = total - against
+    if threshold == UNANIMITY:
+        return against == 0
+    if threshold == THREE_FIFTHS:
+        return yes * 5 >= total * 3
+    return yes * 2 > total
+
+
+def division_minimum(values: list[int]) -> int:
+    """Puja mínima de la acción de división: el valor de mercado de todo (arts. 400 y 404 CC)."""
+    return max(1, sum(values))

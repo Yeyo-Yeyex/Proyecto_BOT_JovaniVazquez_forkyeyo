@@ -8226,6 +8226,46 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_news_famoso", "Vecino de un crack",
          "Ten un piso en el barrio donde se compra el chalet un futbolista famoso.", R, True),
     ])  # fmt: skip
+    # Fase 6 de la ampliación (8.5.0): junta de copropietarios y acción de división
+    a += _tiers("pisos", "pisos_proposals", [
+        (1, "pisos_proposals_1", "Ruegos y preguntas", "Propón algo en una junta.", C),
+        (10, "pisos_proposals_10", "Orden del día interminable",
+         "Propón 10 cosas en juntas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_votes", [
+        (1, "pisos_votes_1", "Voto en conciencia", "Vota en una junta.", C),
+        (25, "pisos_votes_25", "Presidencia de la escalera", "Vota 25 veces en juntas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_motions_won", [
+        (1, "pisos_motion_won_1", "Aprobado por asentimiento",
+         "Que la junta apruebe una propuesta tuya.", C),
+        (10, "pisos_motion_won_10", "Mayoría absoluta de rellano",
+         "Que la junta apruebe 10 propuestas tuyas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_motions_lost", [
+        (1, "pisos_motion_lost_1", "Derrotado en el rellano",
+         "Que la junta rechace una propuesta tuya.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_silence", [
+        (1, "pisos_silence_1", "El que calla otorga",
+         "Que la junta apruebe una propuesta tuya sin que vote nadie más.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_admin", [
+        (1, "pisos_admin_1", "Administrador de fincas sin colegiar",
+         "Que la junta te elija para administrar un inmueble.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_levies", [
+        (1, "pisos_reserve_levy_1", "Hucha comunitaria",
+         "Paga una derrama al fondo de reserva.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}fondo_reserva", [
+        (1, "pisos_reserve_1", "Para eso estaba la hucha",
+         "Que el fondo de reserva pague una derrama o la ITE.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_divisions", [
+        (1, "pisos_division_1", "Divorcio inmobiliario", "Pide una acción de división.", R,
+         True),
+    ])  # fmt: skip
     # Fase 5 de la ampliación (8.4.0): vacacional con reseñas y la Ley 6/2025
     a += _tiers("pisos", "pisos_reviews", [
         (1, "pisos_reviews_1", "Me lo apunto en TripAdvisor",
@@ -23142,6 +23182,13 @@ HOUSING_ACTIONS = {
     "reforma": "pisos_reforms",
     "decide": "pisos_decisions",
     "licencia_denegada": "pisos_license_denied",
+    "propone": "pisos_proposals",
+    "vota": "pisos_votes",
+    "junta_aprobada": "pisos_motions_won",
+    "junta_rechazada": "pisos_motions_lost",
+    "administra": "pisos_admin",
+    "derrama_fondo": "pisos_levies",
+    "division": "pisos_divisions",
 }
 
 
@@ -23169,8 +23216,9 @@ def housing_action_stats(
     reform: str = "",
     rehab: bool = False,
     choice: str = "",
+    silent: bool = False,
 ) -> StatDelta:
-    """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
+    """Estadísticas de una acción de las fases 2 a 6 (`HOUSING_ACTIONS`, o `hipoteca`).
 
     Args:
         loan: Lo prestado, con `hipoteca`.
@@ -23195,6 +23243,7 @@ def housing_action_stats(
         overpaid: Con `compra_miembro`, si pagó más de un 20 % sobre el valor.
         reform: Con `reforma`, cuál (`amount`, lo que costó con impuestos).
         rehab: Con `reforma`, si cuenta como rehabilitación.
+        silent: Con `junta_aprobada`, si nadie más votó (el silencio vale como sí).
         choice: Con `decide`, la forma elegida (no cuenta nada más: los logros de cada forma
             salen al resolverse, con el cierre de la noche).
     """
@@ -23236,6 +23285,8 @@ def housing_action_stats(
             delta.add[stat] = 1
     if action == "gana_subasta" and amount:
         delta.peak["pisos_auction_max"] = amount
+    if action == "junta_aprobada" and silent:
+        delta.add["pisos_silence"] = 1
     if action == "reforma":
         delta.add["pisos_reform_spent"] = amount
         if reform:
