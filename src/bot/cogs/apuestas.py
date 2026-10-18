@@ -49,7 +49,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.repositories.casino_stats import CasinoStatsRepository
-from bot.services.achievements import apuestas_stats
+from bot.services.achievements import apuestas_stats, casino_record_stats
 from bot.services.casino_stats import (
     GAMES,
     MIN_PLAYS_FOR_RATES,
@@ -892,6 +892,9 @@ async def record(
         details=details,
     )
     await porras.observe(bot, guild_id, user.id, play)
+    logros.note(
+        bot, guild_id, user.id, casino_record_stats(game, net=net, when=datetime.now(TIMEZONE))
+    )
     cog = find_cog(bot, Apuestas)
     if cog is None:
         return

@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.27.0 · 2026-10-18
+
+- Logros: 115 nuevos. Partidas en el casino y juegos distintos, fechas en cada juego (madrugada, viernes 13, Día de Canarias, Nochevieja) y en el casino entero, escalones más altos en chat, voz, música, memes, lista y juegos, y secretos con cifras con guasa. Seis logros que dependen de otros suben de rareza
+
 ### 7.26.1 · 2026-10-18
 
 - Logros: los de Coleccionista por número de logros y por puntos bajan de rareza; con más de 4.000 logros en el catálogo, 400 ya no es mítico

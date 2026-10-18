@@ -77,6 +77,7 @@ from bot.services.bus import Pick as BusPick
 from bot.services.bus import Status as BusStatus
 from bot.services.bus import chance as bus_chance
 from bot.services.bus import picks_for as bus_picks_for
+from bot.services.casino_stats import GAMES as CASINO_GAMES
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
 from bot.services.coin import MAX_FLIPS as COIN_MAX_FLIPS
@@ -426,6 +427,27 @@ PERFIL_SECTIONS = (
 )
 #: Apuestas exactas con logro secreto propio (`casino_bet_<cifra>`), en cualquier juego.
 SECRET_STAKES = (1, 23, 33, 44, 47, 69, 87, 176, 600, 777, 1975, 1978)
+#: `apuestas.record` (`casino_record_stats`): jugadas por juego (`casino_game_ruleta`) y
+#: fechas por juego (`casino_night_ruleta`…). Los recuentos de juegos distintos salen en
+#: `with_derived`.
+CASINO_GAME_PREFIX = "casino_game_"
+CASINO_NIGHT_PREFIX = "casino_night_"
+CASINO_FRIDAY13_PREFIX = "casino_friday13_"
+CASINO_CANARIAS_PREFIX = "casino_canarias_"
+CASINO_NOCHEVIEJA_PREFIX = "casino_nochevieja_"
+CASINO_GAMES_STAT = "casino_games_played"
+CASINO_GAMES_100_STAT = "casino_games_100"
+CASINO_GAMES_1000_STAT = "casino_games_1000"
+CASINO_NIGHT_GAMES_STAT = "casino_night_games"
+#: Días del año en que cuenta jugar a cualquier juego del casino, `(mes, día)`.
+CASINO_DATES = {
+    (12, 25): "casino_navidad",
+    (1, 6): "casino_reyes",
+    (10, 31): "casino_halloween",
+    (12, 28): "casino_inocentes",
+    (2, 14): "casino_san_valentin",
+    (9, 8): "casino_pino",
+}
 #: Prefijo de los plenos acertados en cada número de la ruleta (`roulette_hit_17`).
 ROULETTE_HIT_PREFIX = "roulette_hit_"
 #: Contador de cada palo que ha salido en el doble o nada de la tragaperras
@@ -955,10 +977,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "chat_100", "Ya no hay quien te calle", "Escribe 100 mensajes.", C),
         (500, "chat_500", "Tertuliano", "Escribe 500 mensajes.", C),
         (1_000, "chat_1k", "Cotorra de tertulia de La Sexta", "Escribe 1.000 mensajes.", R),
+        (1_337, "chat_1337", "H4x0r del chat", "Escribe 1.337 mensajes.", R, True),
         (5_000, "chat_5k", "Lengua de trapo", "Escribe 5.000 mensajes.", R),
         (10_000, "chat_10k", "Yapper certificado", "Escribe 10.000 mensajes.", E),
         (25_000, "chat_25k", "Teclado en llamas", "Escribe 25.000 mensajes.", E),
         (50_000, "chat_50k", "¿Tú no trabajas?", "Escribe 50.000 mensajes.", L),
+        (69_420, "chat_69420", "El número más gracioso de internet",
+         "Escribe 69.420 mensajes.", L, True),
         (100_000, "chat_100k", "Más pesado que una vaca en brazos", "Escribe 100.000 mensajes.", L),
         (250_000, "chat_250k", "Yapper supremo", "Escribe 250.000 mensajes.", M),
     ])  # fmt: skip
@@ -969,6 +994,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5_000, "reply_5k", "Tertulia de bar", "Responde a 5.000 mensajes.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_questions", [
+        (42, "ask_42", "¿Cuál era la pregunta?", "Haz 42 preguntas.", C, True),
         (50, "ask_50", "La curiosidad mató al gato",
          "Haz 50 preguntas (mensajes que acaban en ?).", C),
         (500, "ask_500", "Pregúntale a Google", "Haz 500 preguntas.", R),
@@ -1207,7 +1233,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "laughed_25", "Chiquito de la Calzada en potencia",
          "Recibe 25 reacciones de risa.", C),
         (250, "laughed_250", "Graciosillo de guardia",
-         "Recibe 250 reacciones de risa.", R),
+         "Recibe 250 reacciones de risa.", E),
         (2_500, "laughed_2500", "Monologuista de la tele", "Recibe 2.500 reacciones de risa.", L),
     ])  # fmt: skip
     a += _tiers("funny", "laugh_reacts_on_message_max", [
@@ -1426,7 +1452,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("convo", "msg_first_of_day", [
         (1, "first_1", "Abre la persiana",
          "Escribe el primer mensaje del día del servidor.", C),
-        (30, "first_30", "Primero en fichar", "Abre el chat del día 30 veces.", E),
+        (30, "first_30", "Primero en fichar", "Abre el chat del día 30 veces.", L),
         (200, "first_200", "Funcionario de ventanilla", "Abre el chat del día 200 veces.", L),
     ])  # fmt: skip
     a += _tiers("convo", "msg_echo", [
@@ -1793,6 +1819,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("memes", "img_made", [
         (1, "img_1", "Fotoshopero", "Genera tu primera imagen con un efecto (`memes`).", C),
         (50, "img_50", "Fábrica de memes", "Genera 50 imágenes.", R),
+        (420, "img_420", "Photoshop a las cuatro y veinte", "Genera 420 imágenes.", E, True),
         (500, "img_500", "Ministerio de Propaganda", "Genera 500 imágenes.", E),
     ])  # fmt: skip
     a += _tiers("memes", "img_magik", [
@@ -1844,6 +1871,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("social", "reactions_given", [
         (50, "react_50", "Me gusta tu me gusta",
          "Reacciona a 50 mensajes de otros.", C),
+        (69, "react_69", "Sesenta y nueve pulgares", "Reacciona a 69 mensajes de otros.", C, True),
         (500, "react_500", "Dedo rápido de votación telemática",
          "Reacciona a 500 mensajes de otros.", R),
         (5_000, "react_5k", "Reaccionador compulsivo", "Reacciona a 5.000 mensajes.", E),
@@ -1852,7 +1880,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (50, "liked_50", "Dando la nota",
          "Recibe 50 reacciones de otras personas.", C),
         (500, "liked_500", "Carisma de estrella de rock", "Recibe 500 reacciones.", R),
-        (5_000, "liked_5k", "Ídolo de masas", "Recibe 5.000 reacciones.", E),
+        (5_000, "liked_5k", "Ídolo de masas", "Recibe 5.000 reacciones.", L),
     ])  # fmt: skip
     a += _tiers("social", "reactions_on_message_max", [
         (5, "viral_5", "Se me ha ido de las manos",
@@ -1869,12 +1897,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5, "greeted_5", "Cumpleaños feliz, te deseamos a ti",
          "Recibe 5 felicitaciones de cumpleaños.", C),
         (20, "greeted_20", "Más felicitado que un Rey Mago",
-         "Recibe 20 felicitaciones de cumpleaños.", R),
+         "Recibe 20 felicitaciones de cumpleaños.", E),
     ])  # fmt: skip
     a += _tiers("social", "welcomes_given", [
         (1, "welcome_1", "Comité de bienvenida", "Dale la bienvenida a alguien nuevo.", C),
         (5, "welcome_5", "Relaciones públicas de discoteca", "Da la bienvenida a 5 personas.", R),
-        (20, "welcome_20", "Portero de discoteca", "Da la bienvenida a 20 personas.", E),
+        (20, "welcome_20", "Portero de discoteca", "Da la bienvenida a 20 personas.", L),
     ])  # fmt: skip
     a += _tiers("social", "welcomes_fast", [
         (1, "welcome_fast", "Más rápido que el wifi del vecino",
@@ -1898,7 +1926,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("social", "greetings_received", [
         (50, "greeted_50", "Rey del cumpleaños",
-         "Recibe 50 felicitaciones de cumpleaños.", E),
+         "Recibe 50 felicitaciones de cumpleaños.", L),
     ])  # fmt: skip
     a += _tiers("social", "welcomes_given", [
         (50, "welcome_50", "Ministerio de Inclusión", "Da la bienvenida a 50 personas.", L),
@@ -1917,6 +1945,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apunta tu primera tarea con `lista`.", C),
         (5, "todo_add_5", "Pósit en la nevera", "Apunta 5 tareas en la lista.", C),
         (25, "todo_add_25", "Agenda de Mary Poppins", "Apunta 25 tareas en la lista.", R),
+        (69, "todo_add_69", "Lista de posturas pendientes",
+         "Apunta 69 tareas en la lista.", R, True),
         (100, "todo_add_100", "Jefe de proyecto", "Apunta 100 tareas en la lista.", E),
     ])  # fmt: skip
     a += _tiers("todo", "todo_done", [
@@ -1934,6 +1964,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apunta 500 tareas en la lista.", L),
     ])  # fmt: skip
     a += _tiers("todo", "todo_done", [
+        (404, "todo_done_404", "Error 404: tarea no encontrada",
+         "Tacha 404 tareas de la lista.", E, True),
         (500, "todo_done_500", "Productividad alemana", "Tacha 500 tareas de la lista.", L),
     ])  # fmt: skip
     a += _tiers("todo", "todo_done_batch_max", [
@@ -3353,6 +3385,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          C),
         (100, "botes_100", "Tío Gilito en prácticas",
          "Juega 100 tiradas en los botes.", C),
+        (777, "botes_777", "Tres sietes en el contador",
+         "Juega 777 tiradas en los botes.", R, True),
         (1_000, "botes_1k", "Maletín al hombro", "Juega 1.000 tiradas en los botes.",
          R),
         (10_000, "botes_10k", "Socio de la casa", "Juega 10.000 tiradas en los botes.",
@@ -3744,6 +3778,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "minesc_1k", "Artificiero jefe del CNI", "Cobra 1.000 partidas de Minas.", L),
     ])  # fmt: skip
     a += _tiers("mines", "mines_booms", [
+        (666, "boom_666", "Traca satánica", "Pisa 666 minas.", E, True),
         (1_000, "boom_1k", "Fuegos artificiales de las fiestas",
          "Pisa 1.000 minas.", E),
     ])  # fmt: skip
@@ -9284,6 +9319,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Deja la cola con 25 canciones o más.", E),
     ])  # fmt: skip
     a += more("memes", "img_made", [
+        (666, "img_666", "Filtro de la bestia", "Genera 666 imágenes.", E, True),
         (2_000, "img_2k", "Fábrica de bulos",
          "Genera 2.000 imágenes con efectos.", L),
     ])  # fmt: skip
@@ -9615,6 +9651,813 @@ def _build_catalog() -> tuple[Achievement, ...]:
               "voice_moves", R, (("entrance_played", 100), ("music_queued", 50))),
     ]  # fmt: skip
 
+    # ⬆️ Escalones de más arriba para contadores que se quedaban a medio camino.
+    for category, stat, rows in (
+        (
+            "chat",
+            "msg_questions",
+            [(25_000, "ask_25k", "Niño de los porqués", "Haz 25.000 preguntas.", M)],
+        ),
+        (
+            "chat",
+            "msg_mentions",
+            [
+                (
+                    25_000,
+                    "ping_25k",
+                    "Centralita de la Telefónica",
+                    "Menciona a alguien en 25.000 mensajes.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "chat",
+            "msg_links",
+            [(10_000, "link_10k", "Menéame en persona", "Comparte 10.000 enlaces.", M)],
+        ),
+        (
+            "chat",
+            "msg_stickers",
+            [(5_000, "sticker_5k", "Pegatinas hasta en la nevera", "Manda 5.000 stickers.", M)],
+        ),
+        (
+            "style",
+            "msg_short",
+            [
+                (
+                    50_000,
+                    "short_50k",
+                    "Ok. Vale. Ya.",
+                    "Manda 50.000 mensajes de 3 caracteres o menos.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "memes",
+            "img_magik",
+            [
+                (
+                    5_000,
+                    "magik_5k",
+                    "Hechicero de Photoshop",
+                    "Deforma 5.000 imágenes con `magik`.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "memes",
+            "img_self",
+            [
+                (
+                    1_000,
+                    "img_self_1k",
+                    "Frida Kahlo en bucle",
+                    "Aplica un efecto a tu propio avatar 1.000 veces.",
+                    E,
+                )
+            ],
+        ),
+        (
+            "memes",
+            "babel_renames",
+            [
+                (
+                    1_000,
+                    "babel_renames_1k",
+                    "Bautizador en serie",
+                    "Cámbiale el apodo a alguien con `babel` 1.000 veces.",
+                    L,
+                )
+            ],
+        ),
+        (
+            "voice_mic",
+            "voice_stream_starts",
+            [
+                (
+                    5_000,
+                    "stream_starts_5k",
+                    "Twitch de barrio",
+                    "Empieza a compartir pantalla 5.000 veces.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice_mic",
+            "voice_muted",
+            [
+                (
+                    30_000,
+                    "muted_30k",
+                    "El mimo de la llamada",
+                    "Pasa 500 horas en llamada con el micro silenciado.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice_mic",
+            "voice_video",
+            [
+                (
+                    12_000,
+                    "video_12k",
+                    "Webcam de guardia",
+                    "Pon la cámara durante 200 horas.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice",
+            "voice_alone",
+            [
+                (
+                    12_000,
+                    "alone_200h",
+                    "Faro de Maspalomas",
+                    "Pasa 200 horas solo en un canal de voz.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice",
+            "voice_deaf",
+            [
+                (
+                    30_000,
+                    "deaf_30k",
+                    "Oídos sordos a jornada completa",
+                    "Pasa 500 horas en llamada con el sonido quitado.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice",
+            "voice_morning",
+            [
+                (
+                    12_000,
+                    "voice_morning_12k",
+                    "Carrusel matinal",
+                    "Pasa 200 horas en llamada entre las 6:00 y las 8:00.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "voice",
+            "voice_siesta",
+            [
+                (
+                    30_000,
+                    "voice_siesta_30k",
+                    "Siesta de récord Guinness",
+                    "Pasa 500 horas en llamada a la hora de la siesta.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "music",
+            "music_skips",
+            [(5_000, "skips_5k", "Zapping compulsivo", "Salta 5.000 canciones.", M)],
+        ),
+        (
+            "music",
+            "music_stops",
+            [(500, "stops_500", "Plomos fundidos", "Para la música con `parar` 500 veces.", L)],
+        ),
+        (
+            "music",
+            "music_removes",
+            [(500, "removes_500", "Inquisidor musical", "Quita 500 canciones de la cola.", L)],
+        ),
+        (
+            "todo",
+            "todo_added",
+            [
+                (
+                    2_000,
+                    "todo_add_2k",
+                    "Lista más larga que un día sin pan",
+                    "Apunta 2.000 tareas en la lista.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "todo",
+            "todo_done",
+            [(2_000, "todo_done_2k", "Bolígrafo sin tinta", "Tacha 2.000 tareas de la lista.", M)],
+        ),
+        (
+            "mines",
+            "mines_booms",
+            [(5_000, "boom_5k", "Más explosiones que Michael Bay", "Pisa 5.000 minas.", L)],
+        ),
+        (
+            "mines",
+            "mines_cashouts",
+            [(5_000, "minesc_5k", "TEDAX de vocación", "Cobra 5.000 partidas de Minas.", M)],
+        ),
+        (
+            "tower",
+            "tower_burns",
+            [(5_000, "tower_burn_5k", "A la brasa y con patatas", "Que te quemen 5.000 veces.", L)],
+        ),
+        (
+            "tower",
+            "tower_cashouts",
+            [
+                (
+                    5_000,
+                    "tower_cash_5k",
+                    "Sherpa del dragón",
+                    "Cobra 5.000 partidas de la Torre del dragón.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "chicken",
+            "chicken_games",
+            [
+                (
+                    50_000,
+                    "pollo_50k",
+                    "Macrogranja",
+                    "Juega 50.000 partidas del Pollo.",
+                    M,
+                )
+            ],
+        ),
+        (
+            "chicken",
+            "chicken_splats",
+            [(10_000, "pollos_10k", "Asfalto con plumas", "Que te atropellen 10.000 veces.", M)],
+        ),
+        (
+            "crash",
+            "crash_cashouts",
+            [(10_000, "crashc_10k", "Eyección de manual", "Retírate a tiempo 10.000 veces.", M)],
+        ),
+        (
+            "botes",
+            "botes_spins_mina",
+            [
+                (
+                    10_000,
+                    "botes_mina_10k",
+                    "Picador de la cuenca",
+                    "Juega 10.000 tiradas en la Mina.",
+                    L,
+                )
+            ],
+        ),
+        (
+            "botes",
+            "botes_spins_olimpo",
+            [
+                (
+                    10_000,
+                    "botes_olimpo_10k",
+                    "Empadronado en el Olimpo",
+                    "Juega 10.000 tiradas en el Olimpo.",
+                    L,
+                )
+            ],
+        ),
+        (
+            "botes",
+            "botes_near_miss",
+            [
+                (
+                    2_500,
+                    "botes_near_2500",
+                    "Se me escurren entre los dedos",
+                    "Deja 2.500 puñados de monedas sin recoger.",
+                    E,
+                )
+            ],
+        ),
+        (
+            "botes",
+            "botes_wild_wins",
+            [
+                (
+                    5_000,
+                    "botes_wild_5k",
+                    "Más comodines que una baraja",
+                    "Gana 5.000 tiradas con ayuda del comodín.",
+                    E,
+                )
+            ],
+        ),
+    ):
+        a += _tiers(category, stat, rows)
+
+    # 🎰 Casino entero, desde `apuestas.record` (`casino_record_stats`) ---------------------
+    a += _tiers("casino", "casino_plays", [
+        (100, "plays_100", "Habitual de la barra", "Juega 100 partidas en el casino.", C),
+        (1_000, "plays_1k", "Tarjeta de cliente fiel", "Juega 1.000 partidas en el casino.", R),
+        (10_000, "plays_10k", "Ya eres parte de la decoración",
+         "Juega 10.000 partidas en el casino.", E),
+        (50_000, "plays_50k", "Más horas que el croupier",
+         "Juega 50.000 partidas en el casino.", L),
+        (250_000, "plays_250k", "Ciudad del pecado",
+         "Juega 250.000 partidas en el casino.", M),
+    ])  # fmt: skip
+    a += _tiers("casino", CASINO_GAMES_STAT, [
+        (5, "games_5", "Picoteo", "Juega a 5 juegos distintos del casino.", C),
+        (10, "games_10", "Menú degustación", "Juega a 10 juegos distintos del casino.", C),
+        (15, "games_15", "Buffet libre del tapete", "Juega a 15 juegos distintos del casino.", R),
+        (len(CASINO_GAMES), "games_all", "Pasaporte del casino sellado",
+         "Juega a todos los juegos del casino, porras incluidas.", R),
+    ])  # fmt: skip
+    a += _tiers("casino", CASINO_GAMES_100_STAT, [
+        (5, "games100_5", "Cinco mesas, cinco vicios",
+         "Juega 100 partidas en 5 juegos distintos.", R),
+        (10, "games100_10", "Diez fuegos encendidos",
+         "Juega 100 partidas en 10 juegos distintos.", E),
+        (len(CASINO_GAMES), "games100_all", "Veterano de todas las mesas",
+         "Juega 100 partidas en cada juego del casino.", L),
+    ])  # fmt: skip
+    a += _tiers("casino", CASINO_GAMES_1000_STAT, [
+        (3, "games1000_3", "Triple licenciatura",
+         "Juega 1.000 partidas en 3 juegos distintos.", E),
+        (10, "games1000_10", "Cum laude de las fichas",
+         "Juega 1.000 partidas en 10 juegos distintos.", L),
+        (len(CASINO_GAMES), "games1000_all", "Doctor honoris causa en ludopatía",
+         "Juega 1.000 partidas en cada juego del casino.", M),
+    ])  # fmt: skip
+    a += _tiers("casino", CASINO_NIGHT_GAMES_STAT, [
+        (5, "night_games_5", "Ruta del bakalao",
+         "Juega de madrugada (de 2 a 6) a 5 juegos distintos.", R),
+        (10, "night_games_10", "Drácula de tapete",
+         "Juega de madrugada (de 2 a 6) a 10 juegos distintos.", E),
+    ])  # fmt: skip
+    for stat, achievement_id, name, description in (
+        (
+            "casino_navidad",
+            "casino_navidad",
+            "Villancico con fichas",
+            "Juega en el casino el 25 de diciembre.",
+        ),
+        (
+            "casino_reyes",
+            "casino_reyes",
+            "Roscón con sorpresa de fichas",
+            "Juega en el casino el 6 de enero, día de Reyes.",
+        ),
+        (
+            "casino_halloween",
+            "Calabaza de fichas",
+            "Truco o apuesta",
+            "Juega en el casino el 31 de octubre.",
+        ),
+        (
+            "casino_inocentes",
+            "Monigote en la espalda",
+            "La inocentada del croupier",
+            "Juega en el casino el 28 de diciembre, día de los Inocentes.",
+        ),
+        (
+            "casino_san_valentin",
+            "casino_san_valentin",
+            "Cupido apuesta al rojo",
+            "Juega en el casino el 14 de febrero.",
+        ),
+        (
+            "casino_pino",
+            "Camino de Teror",
+            "Romería al tapete",
+            "Juega en el casino el 8 de septiembre, día del Pino.",
+        ),
+    ):
+        a += _tiers("casino", stat, [(1, achievement_id, name, description, C)])
+    # 📅 Fechas de cada juego (`casino_record_stats`): solo las que el juego no tenía ya.
+    for category, prefix, game, achievement_id, name, description in (
+        (
+            "roulette",
+            CASINO_NIGHT_PREFIX,
+            "ruleta",
+            "ruleta_madrugada",
+            "La bola no duerme",
+            "Juega a la ruleta de madrugada (de 2 a 6).",
+        ),
+        (
+            "roulette",
+            CASINO_FRIDAY13_PREFIX,
+            "ruleta",
+            "ruleta_viernes13",
+            "Negro el trece",
+            "Pierde a la ruleta un viernes 13.",
+        ),
+        (
+            "roulette",
+            CASINO_CANARIAS_PREFIX,
+            "ruleta",
+            "ruleta_canarias",
+            "Hagan juego, mi niño",
+            "Juega a la ruleta el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "roulette",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "ruleta",
+            "ruleta_nochevieja",
+            "La bola de las campanadas",
+            "Juega a la ruleta en Nochevieja.",
+        ),
+        (
+            "blackjack",
+            CASINO_NIGHT_PREFIX,
+            "blackjack",
+            "bj_madrugada",
+            "Blackjack con ojeras",
+            "Juega al blackjack de madrugada (de 2 a 6).",
+        ),
+        (
+            "blackjack",
+            CASINO_FRIDAY13_PREFIX,
+            "blackjack",
+            "bj_viernes13",
+            "Me paso de trece",
+            "Pierde al blackjack un viernes 13.",
+        ),
+        (
+            "blackjack",
+            CASINO_CANARIAS_PREFIX,
+            "blackjack",
+            "bj_canarias",
+            "Blackjack en Las Canteras",
+            "Juega al blackjack el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "blackjack",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "blackjack",
+            "bj_nochevieja",
+            "Las uvas me las pasé",
+            "Juega al blackjack en Nochevieja.",
+        ),
+        (
+            "slots",
+            CASINO_FRIDAY13_PREFIX,
+            "tragaperras",
+            "slots_viernes13",
+            "Trece cerezas negras",
+            "Pierde a la tragaperras un viernes 13.",
+        ),
+        (
+            "slots",
+            CASINO_CANARIAS_PREFIX,
+            "tragaperras",
+            "slots_canarias",
+            "Tragaperras con timple",
+            "Juega a la tragaperras el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "slots",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "tragaperras",
+            "slots_nochevieja",
+            "Feliz año, tilín tilín",
+            "Juega a la tragaperras en Nochevieja.",
+        ),
+        (
+            "botes",
+            CASINO_FRIDAY13_PREFIX,
+            "botes",
+            "botes_viernes13",
+            "Volcán gafado",
+            "Pierde en Botes un viernes 13.",
+        ),
+        (
+            "botes",
+            CASINO_CANARIAS_PREFIX,
+            "botes",
+            "botes_canarias",
+            "Bote de siete estrellas",
+            "Juega a Botes el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "botes",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "botes",
+            "botes_nochevieja",
+            "Cotillón con bote",
+            "Juega a Botes en Nochevieja.",
+        ),
+        (
+            "crash",
+            CASINO_NIGHT_PREFIX,
+            "crash",
+            "crash_madrugada",
+            "Vuelo de madrugada low cost",
+            "Juega al Crash de madrugada (de 2 a 6).",
+        ),
+        (
+            "crash",
+            CASINO_FRIDAY13_PREFIX,
+            "crash",
+            "crash_viernes13",
+            "Vuelo 13 cancelado",
+            "Pierde al Crash un viernes 13.",
+        ),
+        (
+            "crash",
+            CASINO_CANARIAS_PREFIX,
+            "crash",
+            "crash_canarias",
+            "Rumbo a Gando",
+            "Juega al Crash el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "crash",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "crash",
+            "crash_nochevieja",
+            "Cohete de fin de año",
+            "Juega al Crash en Nochevieja.",
+        ),
+        (
+            "mines",
+            CASINO_NIGHT_PREFIX,
+            "minas",
+            "minas_madrugada",
+            "Zapador nocturno",
+            "Juega a Minas de madrugada (de 2 a 6).",
+        ),
+        (
+            "mines",
+            CASINO_FRIDAY13_PREFIX,
+            "minas",
+            "minas_viernes13",
+            "Pisar con el pie izquierdo",
+            "Pierde a Minas un viernes 13.",
+        ),
+        (
+            "mines",
+            CASINO_CANARIAS_PREFIX,
+            "minas",
+            "minas_canarias",
+            "Campo de picón",
+            "Juega a Minas el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "mines",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "minas",
+            "minas_nochevieja",
+            "Traca final del año",
+            "Juega a Minas en Nochevieja.",
+        ),
+        (
+            "tower",
+            CASINO_NIGHT_PREFIX,
+            "torre",
+            "torre_madrugada",
+            "Princesa insomne en la torre",
+            "Juega a la Torre del dragón de madrugada (de 2 a 6).",
+        ),
+        (
+            "tower",
+            CASINO_FRIDAY13_PREFIX,
+            "torre",
+            "torre_viernes13",
+            "Dragón de mal agüero",
+            "Pierde en la Torre del dragón un viernes 13.",
+        ),
+        (
+            "tower",
+            CASINO_CANARIAS_PREFIX,
+            "torre",
+            "torre_canarias",
+            "Más alto que el Roque Nublo",
+            "Juega a la Torre del dragón el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "tower",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "torre",
+            "torre_nochevieja",
+            "Brindis en lo alto de la torre",
+            "Juega a la Torre del dragón en Nochevieja.",
+        ),
+        (
+            "war",
+            CASINO_NIGHT_PREFIX,
+            "guerra",
+            "guerra_madrugada",
+            "Desembarco al amanecer",
+            "Juega a la Guerra de madrugada (de 2 a 6).",
+        ),
+        (
+            "war",
+            CASINO_FRIDAY13_PREFIX,
+            "guerra",
+            "guerra_viernes13",
+            "Trafalgar de viernes",
+            "Pierde a la Guerra un viernes 13.",
+        ),
+        (
+            "war",
+            CASINO_CANARIAS_PREFIX,
+            "guerra",
+            "guerra_canarias",
+            "Batalla de Acentejo",
+            "Juega a la Guerra el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "war",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "guerra",
+            "guerra_nochevieja",
+            "Guerra de las uvas",
+            "Juega a la Guerra en Nochevieja.",
+        ),
+        (
+            "chicken",
+            CASINO_NIGHT_PREFIX,
+            "pollo",
+            "pollo_madrugada",
+            "Cruzar con las largas",
+            "Juega al Pollo de madrugada (de 2 a 6).",
+        ),
+        (
+            "chicken",
+            CASINO_FRIDAY13_PREFIX,
+            "pollo",
+            "pollo_viernes13",
+            "Pollo con la negra",
+            "Pierde al Pollo un viernes 13.",
+        ),
+        (
+            "chicken",
+            CASINO_CANARIAS_PREFIX,
+            "pollo",
+            "pollo_canarias",
+            "Pollo al mojo",
+            "Juega al Pollo el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "chicken",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "pollo",
+            "pollo_nochevieja",
+            "¿Por qué cruzó el pollo el año?",
+            "Juega al Pollo en Nochevieja.",
+        ),
+        (
+            "coin",
+            CASINO_CANARIAS_PREFIX,
+            "moneda",
+            "moneda_canarias",
+            "Cara, cruz o papa arrugada",
+            "Juega a cara o cruz el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "bus",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "autobus",
+            "bus_nochevieja",
+            "Último búho del año",
+            "Juega al autobús en Nochevieja.",
+        ),
+        (
+            "allatu",
+            CASINO_NIGHT_PREFIX,
+            "allatu",
+            "allatu_madrugada",
+            "Abrir cajas a deshoras",
+            "Juega a Allá tú de madrugada (de 2 a 6).",
+        ),
+        (
+            "allatu",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "allatu",
+            "allatu_nochevieja",
+            "Abrir los regalos antes de tiempo",
+            "Juega a Allá tú en Nochevieja.",
+        ),
+        (
+            "poker",
+            CASINO_CANARIAS_PREFIX,
+            "poker",
+            "poker_canarias",
+            "Póker de guanches",
+            "Juega al póker el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "poker",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "poker",
+            "poker_nochevieja",
+            "Escalera hacia el año nuevo",
+            "Juega al póker en Nochevieja.",
+        ),
+        (
+            "timba",
+            CASINO_CANARIAS_PREFIX,
+            "timba",
+            "timba_canarias",
+            "Timba en el guachinche",
+            "Juega a la timba el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "timba",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "timba",
+            "timba_nochevieja",
+            "Timba de fin de año",
+            "Juega a la timba en Nochevieja.",
+        ),
+        (
+            "pachinko",
+            CASINO_FRIDAY13_PREFIX,
+            "pachinko",
+            "pachinko_viernes13",
+            "Bola trece",
+            "Pierde al pachinko un viernes 13.",
+        ),
+        (
+            "pachinko",
+            CASINO_CANARIAS_PREFIX,
+            "pachinko",
+            "pachinko_canarias",
+            "Bolas por el Puerto de la Cruz",
+            "Juega al pachinko el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "pachinko",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "pachinko",
+            "pachinko_nochevieja",
+            "Las 108 campanadas",
+            "Juega al pachinko en Nochevieja.",
+        ),
+        (
+            "horses",
+            CASINO_FRIDAY13_PREFIX,
+            "caballos",
+            "caballos_viernes13",
+            "Herradura del revés",
+            "Pierde un boleto de caballos un viernes 13.",
+        ),
+        (
+            "horses",
+            CASINO_CANARIAS_PREFIX,
+            "caballos",
+            "caballos_canarias",
+            "Carrera en la playa de Famara",
+            "Apuesta a los caballos el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "horses",
+            CASINO_NOCHEVIEJA_PREFIX,
+            "caballos",
+            "caballos_nochevieja",
+            "Gran Premio de San Silvestre",
+            "Apuesta a los caballos en Nochevieja.",
+        ),
+        (
+            "baccarat",
+            CASINO_CANARIAS_PREFIX,
+            "bacara",
+            "bacara_canarias",
+            "Punto y banca en Vegueta",
+            "Juega al bacará el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "gallos",
+            CASINO_CANARIAS_PREFIX,
+            "gallos",
+            "gallos_canarias",
+            "Gallo de la Vega lagunera",
+            "Pelea o apuesta en el reñidero el 30 de mayo, Día de Canarias.",
+        ),
+        (
+            "porras",
+            CASINO_NIGHT_PREFIX,
+            "porra",
+            "porra_madrugada",
+            "Apostar con legañas",
+            "Juega una porra de madrugada (de 2 a 6).",
+        ),
+    ):
+        secret = prefix == CASINO_FRIDAY13_PREFIX
+        a += _tiers(category, f"{prefix}{game}", [
+            (1, achievement_id, name, description, C, secret),
+        ])  # fmt: skip
+
     # 🏆 Coleccionista --------------------------------------------------------------------
     # Se miden con estadísticas virtuales que salen de los logros ya conseguidos
     # (`meta_stats`), nunca de contadores guardados.
@@ -9635,14 +10478,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (666, "meta_666", "La bestia de la vitrina", "Desbloquea 666 logros.", L, True),
         (800, "meta_800", "Más medallas que Phelps", "Desbloquea 800 logros.", L),
         (1_000, "meta_1000", "Las mil y una vitrinas", "Desbloquea 1.000 logros.", L),
-        (1_250, "meta_1250", "El Rastro un domingo", "Desbloquea 1.250 logros.", M),
+        (1_250, "meta_1250", "Feria de muestras", "Desbloquea 1.250 logros.", M),
         (1_337, "meta_1337", "L33t c0l3c710n15t4", "Desbloquea 1.337 logros.", M, True),
-        (1_500, "meta_1500", "Diógenes de las medallas", "Desbloquea 1.500 logros.", M),
+        (1_500, "meta_1500", "Acumulador compulsivo", "Desbloquea 1.500 logros.", M),
         (2_000, "meta_2000", "Efecto 2000", "Desbloquea 2.000 logros.", M),
         (2_500, "meta_2500", "Más chapas que un general norcoreano",
          "Desbloquea 2.500 logros.", M),
-        (3_000, "meta_3000", "Almacén de IKEA", "Desbloquea 3.000 logros.", M),
-        (3_500, "meta_3500", "Ni El Corte Inglés tiene tanto", "Desbloquea 3.500 logros.", M),
+        (3_000, "meta_3000", "Trastienda sin fondo", "Desbloquea 3.000 logros.", M),
+        (3_500, "meta_3500", "La cueva de Alí Babá", "Desbloquea 3.500 logros.", M),
         (4_000, "meta_4000", "A un pelo del cien por cien", "Desbloquea 4.000 logros.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_common", [
@@ -9666,7 +10509,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "meta_epic_10", "Épica de película", "Desbloquea 10 logros épicos.", E),
         (50, "meta_epic_50", "Cantar de gesta", "Desbloquea 50 logros épicos.", L),
         (100, "meta_epic_100", "La Odisea", "Desbloquea 100 logros épicos.", L),
-        (250, "meta_epic_250", "El Señor de los Logros", "Desbloquea 250 logros épicos.", M),
+        (250, "meta_epic_250", "Juego de Tronos con final digno",
+         "Desbloquea 250 logros épicos.", M),
         (500, "meta_epic_500", "Ben-Hur en cuadriga", "Desbloquea 500 logros épicos.", M),
         (900, "meta_epic_900", "Tres horas y media de metraje",
          "Desbloquea 900 logros épicos.", M),
@@ -9676,7 +10520,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (3, "meta_legend_3", "Leyenda de barrio", "Desbloquea 3 logros legendarios.", E),
         (15, "meta_legend_15", "Leyenda viva", "Desbloquea 15 logros legendarios.", L),
         (50, "meta_legend_50", "Leyendas de Bécquer", "Desbloquea 50 logros legendarios.", L),
-        (100, "meta_legend_100", "Salón de la Fama", "Desbloquea 100 logros legendarios.", M),
+        (100, "meta_legend_100", "Paseo de la Fama", "Desbloquea 100 logros legendarios.", M),
         (250, "meta_legend_250", "Ganar batallas después de muerto",
          "Desbloquea 250 logros legendarios.", M),
         (500, "meta_legend_500", "Más leyenda que San Borondón",
@@ -9704,7 +10548,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     normal_categories = [c for c in CATEGORIES if c.key != "meta" and not c.upcoming]
     a += _tiers("meta", "achievements_categories", [
         (10, "meta_cats_10", "Tocando todos los palos", "Consigue logros en 10 categorías.", R),
-        (25, "meta_cats_25", "Erasmus de categorías", "Consigue logros en 25 categorías.", R),
+        (25, "meta_cats_25", "Mochilero de categorías", "Consigue logros en 25 categorías.", R),
         (40, "meta_cats_40", "Interrail", "Consigue logros en 40 categorías.", E),
         (len(normal_categories), "meta_cats_all", "Hombre del Renacimiento",
          "Consigue al menos un logro en cada categoría.", E),
@@ -9712,7 +10556,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "achievements_categories_done", [
         (1, "meta_done_1", "Perfeccionista", "Completa una categoría entera.", E),
         (5, "meta_done_5", "TOC", "Completa 5 categorías enteras.", L),
-        (10, "meta_done_10", "Marie Kondo aprueba", "Completa 10 categorías enteras.", M),
+        (10, "meta_done_10", "Todo en su sitio", "Completa 10 categorías enteras.", M),
         (25, "meta_done_25", "Enciclopedia Espasa", "Completa 25 categorías enteras.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievement_points", [
@@ -9723,7 +10567,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (30_000, "meta_pts_30k", "Tarjeta Travel Club", "Suma 30.000 puntos de logros.", L),
         (60_000, "meta_pts_60k", "Récord del Tetris", "Suma 60.000 puntos de logros.", M),
         (100_000, "meta_pts_100k", "Douze points", "Suma 100.000 puntos de logros.", M),
-        (150_000, "meta_pts_150k", "Pinball de bar con todas las luces",
+        (150_000, "meta_pts_150k", "Récord en la recreativa",
          "Suma 150.000 puntos de logros.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_earned", [
@@ -9733,22 +10577,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (500_000, "meta_money_500k", "Vivir del cuento", "Cobra 500.000 Y$ en premios.", L),
         (1_000_000, "meta_money_1m", "Lotería sin comprar décimo",
          "Cobra 1.000.000 Y$ en premios de logros.", M),
-        (2_000_000, "meta_money_2m", "Rey Midas de las medallas",
+        (2_000_000, "meta_money_2m", "Autónomo de los logros",
          "Cobra 2.000.000 Y$ en premios de logros.", M),
-        (4_000_000, "meta_money_4m", "Tío Gilito en la piscina de monedas",
+        (4_000_000, "meta_money_4m", "Fort Knox de los logros",
          "Cobra 4.000.000 Y$ en premios de logros.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("meta", "achievements_batch", [
         (3, "meta_combo_3", "C-C-C-Combo breaker", "Desbloquea 3 logros de golpe.", R, True),
         (5, "meta_combo_5", "Pleno al quince", "Desbloquea 5 logros de golpe.", E, True),
-        (10, "meta_combo_10", "Lluvia de estrellas", "Desbloquea 10 logros de golpe.", L, True),
+        (10, "meta_combo_10", "Avalancha", "Desbloquea 10 logros de golpe.", L, True),
     ])  # fmt: skip
     a += _tiers("meta", "logros_views", [
         (1, "views_1", "Primera visita al trastero", "Abre tus logros en `perfil`.", C),
         (10, "views_10", "Espejito, espejito",
          "Abre tus logros en `perfil` 10 veces.", C),
         (100, "views_100", "Narciso de vitrina", "Abre tus logros en `perfil` 100 veces.", R),
-        (1_000, "views_1000", "Contar medallas para dormir",
+        (1_000, "views_1000", "Contar logros para dormir",
          "Abre tus logros en `perfil` 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("meta", "logros_others", [
@@ -13946,6 +14790,13 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[HORSE_BACKED_KINDS_STAT] = len(backed)
     full[HORSE_BACKED_MAX_STAT] = max(backed, default=0)
+    plays = [stats.get(f"{CASINO_GAME_PREFIX}{game}", 0) for game in CASINO_GAMES]
+    full[CASINO_GAMES_STAT] = sum(1 for n in plays if n > 0)
+    full[CASINO_GAMES_100_STAT] = sum(1 for n in plays if n >= 100)
+    full[CASINO_GAMES_1000_STAT] = sum(1 for n in plays if n >= 1_000)
+    full[CASINO_NIGHT_GAMES_STAT] = sum(
+        1 for game in CASINO_GAMES if stats.get(f"{CASINO_NIGHT_PREFIX}{game}", 0) > 0
+    )
     full[PISOS_BARRIOS_STAT] = sum(
         1 for key in BARRIO_BY_KEY if stats.get(f"{PISOS_BARRIO_PREFIX}{key}", 0) > 0
     )
@@ -14861,6 +15712,28 @@ def casino_stats(*, stake: int, net: int, balance_after: int, tax_delta: int = 0
     elif tax_delta < 0:
         delta.add["tax_refunds"] = 1
     return delta
+
+
+def casino_record_stats(game: str, *, net: int, when: datetime) -> StatDelta:
+    """Lo que cuenta cualquier jugada que llega a `apuestas.record`, sea del juego que sea.
+
+    Args:
+        game: Clave de `casino_stats.GAMES`.
+        net: Ganancia (positiva) o pérdida (negativa) neta.
+        when: Hora local.
+    """
+    add = {"casino_plays": 1, f"{CASINO_GAME_PREFIX}{game}": 1}
+    if 2 <= when.hour < 6:
+        add[f"{CASINO_NIGHT_PREFIX}{game}"] = 1
+    if net < 0 and when.weekday() == 4 and when.day == 13:
+        add[f"{CASINO_FRIDAY13_PREFIX}{game}"] = 1
+    if (when.month, when.day) == (5, 30):
+        add[f"{CASINO_CANARIAS_PREFIX}{game}"] = 1
+    if (when.month, when.day) == (12, 31):
+        add[f"{CASINO_NOCHEVIEJA_PREFIX}{game}"] = 1
+    if stat := CASINO_DATES.get((when.month, when.day)):
+        add[stat] = 1
+    return StatDelta(add=add)
 
 
 def roulette_stats(

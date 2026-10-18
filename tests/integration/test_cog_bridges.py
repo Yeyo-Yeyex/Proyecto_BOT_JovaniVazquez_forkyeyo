@@ -133,6 +133,10 @@ async def test_los_juegos_que_cargan_antes_apuntan_sus_jugadas_en_apuestas(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.total.plays == len(GAMES) - 1
+        # Y cada jugada cuenta también para los logros del casino entero.
+        pending = client.get_cog("Achievements")._pending[GUILD_ID][OWNER_ID]
+        assert pending.add["casino_plays"] == len(GAMES) - 1
+        assert pending.add["casino_game_ruleta"] == len(GAMES) - 1
     finally:
         await client.close()
 

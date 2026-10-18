@@ -33,7 +33,12 @@ from bot.services.achievements import (
     BJ_HIGH_STAKE,
     BUS_WIN_PREFIX,
     BY_ID,
+    CASINO_DATES,
+    CASINO_GAMES_100_STAT,
+    CASINO_GAMES_1000_STAT,
+    CASINO_GAMES_STAT,
     CASINO_GROUP,
+    CASINO_NIGHT_GAMES_STAT,
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
@@ -81,6 +86,7 @@ from bot.services.achievements import (
     beernight_drink_stats,
     blackjack_shoe_stats,
     blackjack_stats,
+    casino_record_stats,
     casino_stats,
     group_sections,
     housing_purchase_stats,
@@ -104,6 +110,7 @@ from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
 from bot.services.beernight import Reason as BeerReason
 from bot.services.blackjack import PIT_BOSS_SPREAD, BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
+from bot.services.casino_stats import GAMES as CASINO_GAMES
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.enraya import LEVELS as ENRAYA_LEVELS
@@ -673,6 +680,15 @@ PRODUCED_STATS = {
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
     *(f"apuestas_page_{page}" for page in APUESTAS_PAGES),
     *(f"apuestas_period_{period}" for period in APUESTAS_PERIODS),
+    # Cualquier jugada del casino (cogs/apuestas.py: casino_record_stats)
+    "casino_plays", *CASINO_DATES.values(),
+    *(
+        f"{prefix}{game}"
+        for prefix in ("casino_game_", "casino_night_", "casino_friday13_",
+                       "casino_canarias_", "casino_nochevieja_")
+        for game in CASINO_GAMES
+    ),
+    CASINO_GAMES_STAT, CASINO_GAMES_100_STAT, CASINO_GAMES_1000_STAT, CASINO_NIGHT_GAMES_STAT,
     # Porras (cogs/porras.py; test_porras.py comprueba que cada una sale de verdad)
     *PORRA_STATS,
     *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
@@ -1703,3 +1719,41 @@ def test_pisos_cuenta_los_tipos_de_barrio_la_zona_tensionada_y_el_barrio_entero(
     )  # fmt: skip
     assert delta.add["pisos_tensed"] == delta.add["pisos_barrio_whole"] == 1
     assert delta.add[f"{PISOS_KIND_PREFIX}cueva"] == 1
+
+
+def test_cualquier_jugada_del_casino_cuenta_el_juego_y_la_fecha() -> None:
+    viernes13 = datetime(2026, 2, 13, 3, 0, tzinfo=TIMEZONE)
+    delta = casino_record_stats("minas", net=-50, when=viernes13)
+    assert delta.add == {
+        "casino_plays": 1,
+        "casino_game_minas": 1,
+        "casino_night_minas": 1,
+        "casino_friday13_minas": 1,
+    }
+    ganando = casino_record_stats("minas", net=50, when=viernes13)
+    assert "casino_friday13_minas" not in ganando.add
+    nochevieja = casino_record_stats(
+        "ruleta", net=0, when=datetime(2026, 12, 31, 20, tzinfo=TIMEZONE)
+    )
+    assert nochevieja.add["casino_nochevieja_ruleta"] == 1
+    assert (
+        casino_record_stats("pollo", net=0, when=datetime(2026, 12, 25, 12, tzinfo=TIMEZONE)).add[
+            "casino_navidad"
+        ]
+        == 1
+    )
+
+
+def test_los_juegos_distintos_del_casino_salen_de_los_contadores_por_juego() -> None:
+    stats = {
+        "casino_game_ruleta": 1_000,
+        "casino_game_minas": 100,
+        "casino_game_pollo": 1,
+        "casino_game_inventado": 5_000,
+        "casino_night_pollo": 1,
+    }
+    full = with_derived(stats)
+    assert full[CASINO_GAMES_STAT] == 3
+    assert full[CASINO_GAMES_100_STAT] == 2
+    assert full[CASINO_GAMES_1000_STAT] == 1
+    assert full[CASINO_NIGHT_GAMES_STAT] == 1
