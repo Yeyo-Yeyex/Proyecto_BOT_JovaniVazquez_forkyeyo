@@ -5,7 +5,8 @@ La pinta Node con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium s
 ventana (ver bot/services/housing_scene.py).
 
 No decide nada: Python le pasa cada pantalla ya formateada (bot/services/housing_view.py:
-map_state, barrio_state, listing_state, portfolio_state, checkout_state y vpo_state) y aquí solo se
+map_state, barrio_state, listing_state, portfolio_state, checkout_state, vpo_state, gestion_state y
+candidates_state) y aquí solo se
 pinta. Las cifras llegan como texto: la escena nunca calcula dinero. Funciones que llama
 Python:
 
@@ -13,7 +14,7 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja y vpo. Miden 1000 × 640, salvo el barrio
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion y candidatos. Miden 1000 × 640, salvo el barrio
 (diez tarjetas en dos filas), que mide 1000 × 760 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
 lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
@@ -483,6 +484,9 @@ function levelIcon(key, cx, cy, sz, color) {
 }
 
 // El inquilino, un busto de color con algo que lo delata según su clave.
+const BUSINESS_KEYS = new Set(["franquicia", "apuestas", "coworking", "ferreteria", "taller", "logistica", "pescador", "excursiones",
+  "yate_charter", "bar", "peluqueria", "academia", "souvenirs", "dentista", "bodega", "vela"]);
+const GROUP_KEYS = new Set(["britanicos", "despedida", "nordicos", "surferos", "senderistas", "luna_miel", "ciclistas", "buceo", "amigas", "numerosa"]);
 function tenantIcon(key, cx, cy, r) {
   const hues = { enfermeros: 190, familia: 28, opositor: 250, rider: 160, profesora: 330, ingles: 45,
     medico: 205, funcionario: 220, aleman: 100, influencer: 300, erasmus: 130, cripto: 40 };
@@ -493,10 +497,21 @@ function tenantIcon(key, cx, cy, r) {
   g.save(); circle(0, 0, r); g.clip();
   const skin = "#f0c9a4", cloth = `hsl(${hue},50%,42%)`, k = r / 30;
   g.scale(k, k);
+  if (BUSINESS_KEYS.has(key)) { // un negocio no tiene cara: su escaparate con el toldo a rayas
+    const base = hsl(hue, 50, 42);
+    rect(-20, -6, 40, 32, "#fffaf0"); rect(-20, 22, 40, 6, shade(base, -0.25));
+    for (let i = 0; i < 6; i++) poly([[-22 + i * 7.4, -8], [-14.6 + i * 7.4, -8], [-15.6 + i * 7.4, 4], [-23 + i * 7.4, 4]], i % 2 ? "#fff" : base);
+    rect(-16, 8, 15, 14, "#cfe6f0"); rect(2, 8, 12, 20, shade(base, -0.1)); dot(11, 19, 1.2, C.gold);
+    g.restore(); g.restore(); return;
+  }
+  if (GROUP_KEYS.has(key)) for (const sx of [-1, 1]) { // un grupo: dos más detrás
+    g.beginPath(); g.ellipse(sx * 20, 28, 12, 12, 0, 0, TAU); g.fillStyle = `hsl(${(hue + sx * 40 + 360) % 360},45%,50%)`; g.fill();
+    circle(sx * 19, 2, 8); g.fillStyle = skin; g.fill();
+  }
   // hombros y cabeza
   g.beginPath(); g.ellipse(0, 27, 21, 15, 0, 0, TAU); g.fillStyle = cloth; g.fill();
   circle(0, -5, 11); g.fillStyle = skin; g.fill();
-  g.beginPath(); g.arc(0, -8, 11.5, Math.PI, TAU); g.fillStyle = key === "ingles" ? "#d9d9d9" : "#4a3426"; g.fill();
+  g.beginPath(); g.arc(0, -8, 11.5, Math.PI, TAU); g.fillStyle = key === "ingles" || key === "abuela" ? "#d9d9d9" : "#4a3426"; g.fill();
   const acc = {
     enfermeros() { circle(-16, -2, 7); g.fillStyle = skin; g.fill(); circle(15, 14, 7); g.fillStyle = "#fff"; g.fill();
       g.fillStyle = C.red; g.fillRect(12, 13, 6, 2); g.fillRect(14.5, 10.5, 1.5, 7); },
@@ -516,6 +531,21 @@ function tenantIcon(key, cx, cy, r) {
     erasmus() { g.fillStyle = "#222"; g.fillRect(-15, 10, 5, 22); g.fillRect(10, 10, 5, 22); g.fillStyle = "#009246"; g.fillRect(-26, -22, 7, 12);
       g.fillStyle = "#fff"; g.fillRect(-19, -22, 7, 12); g.fillStyle = "#ce2b37"; g.fillRect(-12, -22, 7, 12); },
     cripto() { circle(14, 14, 9); g.fillStyle = "#f2a900"; g.fill(); T("B", 14, 15, { font: F.d(13), color: "#fff", align: "center" }); },
+    abuela() { circle(0, -20, 5.5); g.fillStyle = "#d9d9d9"; g.fill(); // moño y bastón
+      g.strokeStyle = "#7a5230"; g.lineWidth = 2.2; g.lineCap = "round"; g.beginPath(); g.moveTo(17, 32); g.lineTo(17, 12); g.arc(13.5, 12, 3.5, 0, Math.PI, true); g.stroke(); },
+    cajera() { fillRR(5, 12, 15, 10, 2, "#fff"); g.fillStyle = "#222"; for (let i = 0; i < 5; i++) g.fillRect(7 + i * 2.6, 14, i % 2 ? 1 : 1.8, 6);
+      g.fillStyle = C.red; g.fillRect(-20, 16, 10, 3); },
+    guagua() { g.beginPath(); g.arc(0, -9, 12.5, Math.PI, TAU); g.fillStyle = "#1f6fb2"; g.fill(); g.fillRect(-13, -10, 26, 3); g.fillStyle = "#0e3d68"; g.fillRect(-6, -10, 20, 2.4);
+      g.strokeStyle = "#2a2f36"; g.lineWidth = 2.4; circle(-8, 27, 9); g.stroke(); },
+    policia() { g.beginPath(); g.arc(0, -10, 12.5, Math.PI, TAU); g.fillStyle = "#1d3557"; g.fill(); g.fillRect(-14, -11, 28, 3.5); g.fillStyle = "#0e1c33"; g.fillRect(-9, -9, 22, 2);
+      starPath(0, -15, 3.6, C.gold); starPath(10, 17, 4, C.gold); },
+    bombera() { g.beginPath(); g.arc(0, -9, 14, Math.PI, TAU); g.fillStyle = C.red; g.fill(); g.fillRect(-17, -10, 34, 4); g.fillStyle = "#b3261e"; g.fillRect(-2, -22, 4, 13);
+      poly([[-4, -17], [4, -17], [3, -11], [0, -9], [-3, -11]], C.gold); },
+    piloto() { g.beginPath(); g.arc(0, -9, 12.5, Math.PI, TAU); g.fillStyle = "#14213d"; g.fill(); g.fillRect(-13, -10, 26, 3); poly([[-4, -15], [0, -19], [4, -15], [0, -12]], C.gold);
+      g.fillStyle = C.gold; g.fillRect(-18, 14, 8, 3); g.fillRect(-18, 19, 8, 3); g.fillRect(10, 14, 8, 3); g.fillRect(10, 19, 8, 3); },
+    directivo() { poly([[-6, 13], [6, 13], [0, 24]], "#fff"); poly([[-2, 14], [2, 14], [3, 30], [0, 33], [-3, 30]], "#1f2a44"); g.fillStyle = "#1f2a44"; g.fillRect(-21, 14, 7, 18); g.fillRect(14, 14, 7, 18); },
+    estudiantes() { poly([[-17, -17], [0, -24], [17, -17], [0, -10]], "#222"); g.fillStyle = "#222"; g.fillRect(-8, -16, 16, 6); g.strokeStyle = C.gold; g.lineWidth = 1.6; g.beginPath(); g.moveTo(15, -17); g.lineTo(15, -9); g.stroke(); dot(15, -8, 2, C.gold);
+      g.fillStyle = "#b3261e"; g.fillRect(-24, 12, 14, 18); g.fillStyle = "#fff"; g.fillRect(-22, 15, 10, 2); },
   };
   (acc[key] || (() => {}))();
   g.restore();
@@ -554,6 +584,16 @@ function smallIcon(key, cx, cy, r, color) {
     g.beginPath(); g.moveTo(0, -r * 0.85); g.lineTo(r * 0.9, r * 0.6); g.lineTo(-r * 0.9, r * 0.6); g.closePath(); g.fill();
   } else if (key === "down") {
     g.beginPath(); g.moveTo(0, r * 0.85); g.lineTo(r * 0.9, -r * 0.6); g.lineTo(-r * 0.9, -r * 0.6); g.closePath(); g.fill();
+  } else if (key === "news") { // un periódico: la hoja, el titular y tres líneas
+    fillRR(-r, -r * 0.8, r * 2, r * 1.6, r * 0.2, color);
+    g.fillStyle = "rgba(0,0,0,0.55)"; g.fillRect(-r * 0.7, -r * 0.5, r * 1.4, r * 0.34);
+    for (let i = 0; i < 3; i++) g.fillRect(-r * 0.7, -r * 0.02 + i * r * 0.28, i === 2 ? r * 0.8 : r * 1.4, r * 0.13);
+  } else if (key === "people") {
+    for (const sx of [-1, 1]) { circle(sx * r * 0.45, -r * 0.4, r * 0.33); g.fill(); g.beginPath(); g.ellipse(sx * r * 0.45, r * 0.75, r * 0.55, r * 0.7, 0, Math.PI, TAU); g.fill(); }
+  } else if (key === "hand") { // la mano levantada: eliges tú
+    fillRR(-r * 0.55, -r * 0.05, r * 1.1, r * 0.95, r * 0.3, color);
+    for (let i = 0; i < 4; i++) fillRR(-r * 0.55 + i * r * 0.28, -r * (i === 1 || i === 2 ? 0.95 : 0.8), r * 0.22, r * 1.0, r * 0.11, color);
+    g.save(); g.rotate(-0.8); fillRR(-r * 0.95, r * 0.05, r * 0.5, r * 0.24, r * 0.12, color); g.restore();
   }
   g.restore();
 }
@@ -2196,7 +2236,9 @@ function pin(px, py, n, b) {
   if (b.owned) { dot(px + 11, py - 11, 8, "#fff"); dot(px + 11, py - 11, 6.5, C.blue); house(px + 11, py - 11.5, 4.4, "#fff"); }
   if (b.tense) { poly([[px - 11, py + 4], [px - 4, py + 4], [px - 7.5, py - 3]], "rgba(0,0,0,0.3)"); smallIcon("warn", px - 12, py + 11, 6, C.amber); }
   if (b.theme) themeBadge(b.theme, px + 10, py + 10, 6.5);
+  if (b.news) newsBadge(px - 11, py - 11, 8.5); // hay noticia en el barrio
 }
+function newsBadge(cx, cy, r) { dot(cx, cy, r + 1.5, "#fff"); dot(cx, cy, r, C.ink); smallIcon("news", cx, cy, r * 0.62, "#fff"); }
 
 const MAP_H = 354; // la parte de la isla; debajo va la leyenda
 
@@ -2228,12 +2270,13 @@ function drawIsland(isl, bx, by, bw, bh) {
   rr(bx + 1, by + 1, bw - 2, bh - 2, 16); g.strokeStyle = "rgba(255,255,255,0.6)"; g.lineWidth = 2; g.stroke();
 }
 // La clave de los discos de las chinchetas: una tira con los siete tipos de barrio.
-function themeKey(y) {
-  const keys = Object.keys(THEME_NAME), font = F.m(16);
-  let x = 24; const total = keys.reduce((a, k) => a + 22 + width(THEME_NAME[k], font) + 22, 0) + width("Tipo de barrio", F.d(15)) + 14;
+function themeKey(y, news) {
+  const keys = Object.keys(THEME_NAME), font = F.m(16), more = news ? 30 + width("Hay noticia", font) : 0;
+  let x = 24; const total = keys.reduce((a, k) => a + 22 + width(THEME_NAME[k], font) + 22, 0) + width("Tipo de barrio", F.d(15)) + 14 + more;
   fillRR(16, y - 14, Math.min(968, total + 24), 28, 14, "rgba(255,250,240,0.85)");
   T("Tipo de barrio", x, y, { font: F.d(15), color: C.mute }); x += width("Tipo de barrio", F.d(15)) + 22;
   for (const k of keys) { themeBadge(k, x + 8, y, 8); T(THEME_NAME[k], x + 22, y, { font, color: C.ink }); x += 22 + width(THEME_NAME[k], font) + 22; }
+  if (news) { newsBadge(x + 8, y, 8); T("Hay noticia", x + 22, y, { font, color: C.ink }); }
 }
 
 // -- Pantallas ----------------------------------------------------------------------------
@@ -2261,7 +2304,9 @@ function paintMapa(st) {
   } });
   const bw = 476, bh = 486, by = 98; // abajo queda la tira con la clave de los tipos de barrio
   st.islands.forEach((isl, i) => drawIsland(isl, 16 + i * (bw + 16), by, bw, bh));
-  themeKey(600);
+  // Los titulares (`st.headlines`) no se pintan: la imagen va llena y el pin 📰 ya dice dónde hay noticia;
+  // el texto sale en el `fallback`, que lee quien no ve la imagen.
+  themeKey(600, st.islands.some((isl) => isl.barrios.some((b) => b.news)));
 }
 
 // BARRIO --------------------------------------------------------------------------------
@@ -2310,7 +2355,9 @@ function paintBarrio(st) {
     T(b.index, W - 258, 56, { font: F.d(26), color: "#fff" });
     T(b.change, W - 32, 52, { font: F.d(28), color: b.up ? "#7df0ac" : b.down ? "#ffa09a" : "#e3eaf0", align: "right" });
   } });
-  paragraph(b.blurb, 20, 112, 545, F.m(21), 26, 2, { color: C.ink });
+  // con noticia, la descripción pasa a una línea y la noticia ocupa la de debajo (el alto es fijo: 760)
+  if (st.news) { paragraph(b.blurb, 20, 110, 545, F.m(20), 24, 1, { color: C.ink }); newsStrip(st.news, 16, 123, 560, 32, { line: true }); }
+  else paragraph(b.blurb, 20, 112, 545, F.m(21), 26, 2, { color: C.ink });
   card(678, 98, 306, 56, { r: 12, fill: "#e9f3f4" });
   T("Precio medio", 694, 114, { font: F.m(19), color: C.mute });
   fitText(b.price_m2, 694, 138, 280, F.d, 28, 22, { color: C.ink });
@@ -2412,18 +2459,24 @@ function paintFicha(st) {
   if (st.bono) tags.push({ text: "Bono Alquiler Joven", kind: "green", icon: "heart" });
   if (st.license) tags.push({ text: "Licencia vacacional", kind: "orange", icon: "sun" });
   if (st.tense) tags.push({ text: "Zona tensionada", kind: "amber", icon: "warn" });
+  if (st.pick === "yo") tags.push({ text: "Eliges tú", kind: "turq", icon: "hand" });
+  if (st.waiting > 0) tags.push({ text: `${st.waiting} ${st.waiting === 1 ? "candidato esperando" : "candidatos esperando"}`, kind: "orange", icon: "people" });
   let cy = y0;
   if (st.offer) { offerBanner(st.offer, colC, cy, wC, 60); cy += 70; }
   const memberRent = !st.tenant && st.contract_rent;
   const extra = (st.eviction_at ? 1 : 0) + (st.arrears ? 1 : 0) + (memberRent ? 1 : 0);
-  const lh = !st.lease_status ? 62 : st.tenant ? (extra ? 122 + extra * 28 : 114) : extra ? 60 + extra * 28 : 56;
+  // con la tarjeta del inquilino (riesgo y rasgos) la caja del contrato crece 54 px
+  const tc = st.tenant && st.tenant_card ? st.tenant_card : null, tcH = tc ? 54 : 0;
+  const lh = (!st.lease_status ? 62 : st.tenant ? (extra ? 122 + extra * 28 : 114) : extra ? 60 + extra * 28 : 56) + (st.lease_status ? tcH : 0);
   card(colC, cy, wC, lh);
   if (st.lease_status) {
-    const lw = chip(st.lease, colC + 14, cy + 12, STATUS_COLOR[st.lease_status] || "grey", { size: 17, maxW: wC - 28 });
+    const shieldW = st.insured ? 36 : 0; // el escudo del seguro, arriba a la derecha
+    const lw = chip(st.lease, colC + 14, cy + 12, STATUS_COLOR[st.lease_status] || "grey", { size: 17, maxW: wC - 28 - shieldW });
+    if (st.insured) shield(colC + wC - 26, cy + 28, 11, st.covered ? "on" : "off");
     // la casa donde vive alguien va junto al estado si cabe; si no, con las demás etiquetas
     if (st.home) {
-      const room = wC - 28 - lw - 8;
-      if (tagW(st.home, 15, "house") <= room) tag(st.home, colC + wC - 14 - tagW(st.home, 15, "house"), cy + 14, "blue", "house", 15, room);
+      const room = wC - 28 - lw - 8 - shieldW;
+      if (tagW(st.home, 15, "house") <= room) tag(st.home, colC + wC - 14 - shieldW - tagW(st.home, 15, "house"), cy + 14, "blue", "house", 15, room);
       else tags.unshift({ text: st.home, kind: "blue", icon: "house" });
     }
     if (st.tenant) {
@@ -2431,7 +2484,13 @@ function paintFicha(st) {
       fitText(st.tenant, colC + 72, cy + 62, wC - 86, F.d, 22, 14, { color: C.ink });
       fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + 72, cy + 88, wC - 86, F.m, 20, 13, { color: C.mute });
     }
-    let ry = st.tenant ? cy + 124 : cy + 64;
+    if (tc) { // cómo es: el semáforo de impago y un par de rasgos
+      rect(colC + 14, cy + 106, wC - 28, 1.2, C.line);
+      const tw_ = riskLight(tc.risk, colC + 14, cy + 124);
+      fitText(tc.risk_text, colC + 14 + tw_ + 10, cy + 124, wC - 28 - tw_ - 10, F.d, 17, 12, { color: RISK_INK[tc.risk] });
+      if (tc.traits.length) fitText(tc.traits.slice(0, 2).join(" · "), colC + 14, cy + 150, wC - 28, F.r, 18, 12, { color: C.mute });
+    }
+    let ry = (st.tenant ? cy + 124 : cy + 64) + tcH;
     if (memberRent) { T("Renta", colC + 14, ry, { font: F.m(20), color: C.mute }); fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + wC - 14, ry, wC - 100, F.d, 20, 13, { color: C.ink, align: "right" }); ry += 28; }
     if (st.eviction_at) { T("Juicio", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.eviction_at, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); ry += 28; }
     if (st.arrears) { T("Debe", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.arrears, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); }
@@ -2489,8 +2548,10 @@ function paintFicha(st) {
   let tx = 16;
   tags.forEach((t, i) => { tx += tag(t.text, tx, 534, t.kind, t.icon, tagSize, tagCap[i]) + 8; });
   // letra pequeña del anuncio
-  const bl = wrap(st.blurb, 960, F.r(21), 2);
+  // con noticia en el barrio, el anuncio se queda en una línea y la noticia va en la de debajo
+  const bn = st.barrio_news, bl = wrap(st.blurb, 960, F.r(21), bn ? 1 : 2);
   bl.forEach((l, i) => T(l, 20, 576 + i * 25, { font: F.r(21), color: C.mute, skew: true }));
+  if (bn) newsLine(bn, 20, 599, 960);
 }
 
 // CARTERA -------------------------------------------------------------------------------
@@ -2555,6 +2616,12 @@ function itemRow(it, x, y, w, h, compact) {
     dot(fx + 6, fy + 6, 11, "#fff"); dot(fx + 6, fy + 6, 9, C.blue); house(fx + 6, fy + 5, 5, "#fff");
   }
   if (!compact && (it.badges || []).includes("vpo")) sticker("vpo", fx + iw - 22, fy + ih - 6, -0.1, 0.5);
+  if (it.insured) { dot(fx + iw - 8, fy + 8, 10, "#fff"); shield(fx + iw - 8, fy + 8, 7, "on"); } // seguro de impago
+  if (it.waiting > 0) { // candidatos esperando: la pastilla naranja con la gente y el número
+    const nw = width(String(it.waiting), F.d(13)), pw_ = 22 + nw;
+    fillRR(fx + 2, fy + ih - 19, pw_, 17, 8.5, "#fff"); fillRR(fx + 3, fy + ih - 18, pw_ - 2, 15, 7.5, C.orange);
+    smallIcon("people", fx + 11, fy + ih - 10, 4.6, "#fff"); T(String(it.waiting), fx + 19, fy + ih - 9.5, { font: F.d(13), color: "#fff" });
+  }
   const tx = fx + iw + 14, right = x + w - 14, vw = compact ? 128 : 160;
   const csize = compact ? 14 : 16, room = compact ? 150 : w - iw - 40;
   const label = it.status && width(it.status, F.d(csize)) + 24 > room ? SHORT[it.status_kind] || it.status : it.status;
@@ -2583,9 +2650,11 @@ function paintCartera(st) {
   const pills = [];
   if (st.bank_debt) pills.push({ text: `Tras la ejecución debes ${st.bank_debt}`, kind: "red" });
   if (st.socimi) pills.push({ text: "SOCIMI", kind: "grey" });
-  const pw = Math.max(0, ...pills.map((p) => width(p.text, F.d(17)) + 22));
+  if (st.waiting > 0) pills.push({ text: `${st.waiting} ${st.waiting === 1 ? "piso con candidatos" : "pisos con candidatos"}`, kind: "orange" });
+  const psz = pills.length > 2 ? 14 : 17, pstep = pills.length > 2 ? 28 : 36; // con tres, más pequeñas para que quepan en la cabecera
+  const pw = Math.max(0, ...pills.map((p) => width(p.text, F.d(psz)) + 22));
   header(`Los pisos de ${u.name}`, st.living || "Tu cartera de ladrillo", pills.length ? { rightW: pw, shark: 560, right() {
-    pills.forEach((p, i) => chip(p.text, W - 20, pills.length === 1 ? 30 : 12 + i * 36, p.kind, { size: 17, align: "right", maxW: 500 }));
+    pills.forEach((p, i) => chip(p.text, W - 20, pills.length === 1 ? 30 : pills.length === 2 ? 12 + i * pstep : 1 + i * pstep, p.kind, { size: psz, align: "right", maxW: 500 }));
   } } : { shark: 560, tagline: "tu cartera, tu tiburón" });
   const debt = !!st.debt, lw0 = debt ? 470 : 400;
   card(16, 100, lw0, 78);
@@ -2855,9 +2924,188 @@ function paintCaja(st) {
   }
 }
 
+// -- Gestión y candidatos (fase 2) ---------------------------------------------------------
+
+// Un escudo: verde con visto si el seguro cubre; gris y tachado si no.
+function shield(cx, cy, s, tone) {
+  const on = tone === "on";
+  g.save(); g.translate(cx, cy); g.lineJoin = "round";
+  const path = (dy) => {
+    g.beginPath(); g.moveTo(-s * 0.9, -s * 0.75 + dy); g.quadraticCurveTo(-s * 0.35, -s * 0.7 + dy, 0, -s * 1.05 + dy); g.quadraticCurveTo(s * 0.35, -s * 0.7 + dy, s * 0.9, -s * 0.75 + dy);
+    g.lineTo(s * 0.9, s * 0.1 + dy); g.quadraticCurveTo(s * 0.8, s * 0.75 + dy, 0, s * 1.1 + dy); g.quadraticCurveTo(-s * 0.8, s * 0.75 + dy, -s * 0.9, s * 0.1 + dy); g.closePath();
+  };
+  path(s * 0.1); g.fillStyle = "rgba(0,0,0,0.2)"; g.fill();
+  path(0); g.fillStyle = on ? C.green : "#aab3bd"; g.fill(); g.strokeStyle = on ? C.greenDk : "#7d8791"; g.lineWidth = Math.max(1, s * 0.16); g.stroke();
+  if (on) smallIcon("check", 0, -s * 0.05, s * 0.52, "#fff");
+  else { line(-s * 0.62, s * 0.7, s * 0.62, -s * 0.7, "#fff", s * 0.44); line(-s * 0.62, s * 0.7, s * 0.62, -s * 0.7, C.redDk, s * 0.24); }
+  g.restore();
+}
+function lupa(cx, cy, s, color) { // la lupa de quien elige a mano
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.lineCap = "round"; g.lineWidth = s * 0.22;
+  g.beginPath(); g.arc(-s * 0.18, -s * 0.18, s * 0.58, 0, TAU); g.stroke(); line(s * 0.26, s * 0.26, s * 0.85, s * 0.85, color, s * 0.3); g.restore();
+}
+function robot(cx, cy, s, color) { // la gestora: un robot con antena
+  g.save(); g.translate(cx, cy); line(0, -s * 0.5, 0, -s * 0.85, color, s * 0.14); dot(0, -s * 0.9, s * 0.15, color);
+  fillRR(-s * 0.78, -s * 0.5, s * 1.56, s * 1.2, s * 0.28, color); fillRR(-s * 0.95, -s * 0.02, s * 0.17, s * 0.4, s * 0.06, color); fillRR(s * 0.78, -s * 0.02, s * 0.17, s * 0.4, s * 0.06, color);
+  dot(-s * 0.3, -s * 0.05, s * 0.19, "#fff"); dot(s * 0.3, -s * 0.05, s * 0.19, "#fff"); rect(-s * 0.35, s * 0.35, s * 0.7, s * 0.12, "#fff"); g.restore();
+}
+function gavel(cx, cy, s, color) { // el mazo del juzgado
+  g.save(); g.translate(cx, cy); g.save(); g.rotate(-0.6); fillRR(-s * 0.7, -s * 0.85, s * 1.4, s * 0.55, s * 0.12, color); fillRR(-s * 0.1, -s * 0.35, s * 0.2, s * 1.3, s * 0.08, color); g.restore();
+  fillRR(-s * 0.95, s * 0.72, s * 1.9, s * 0.28, s * 0.08, color); g.restore();
+}
+function chair(cx, cy, s, color) { // una silla vacía
+  fillRR(cx - s * 0.5, cy - s * 1.15, s, s * 1.0, s * 0.14, color); fillRR(cx - s * 0.7, cy - s * 0.15, s * 1.4, s * 0.3, s * 0.1, shade(color, -0.12));
+  line(cx - s * 0.55, cy + s * 0.1, cx - s * 0.6, cy + s * 0.95, shade(color, -0.25), s * 0.16); line(cx + s * 0.55, cy + s * 0.1, cx + s * 0.6, cy + s * 0.95, shade(color, -0.25), s * 0.16);
+}
+
+// El semáforo de riesgo: tres luces y la encendida lleva su signo (visto, aviso o cruz), no solo el color.
+const RISK_INK = { bajo: C.greenDk, medio: "#9a6200", alto: C.redDk };
+function riskLight(risk, x, cy) {
+  fillRR(x, cy - 11, 62, 22, 11, "#e9e3d3");
+  [["bajo", C.green], ["medio", C.amber], ["alto", C.red]].forEach(([k, col], i) => {
+    const px = x + 13 + i * 18;
+    if (k !== risk) { dot(px, cy, 5.5, "#cdc5ae"); return; }
+    dot(px, cy, 9.5, col);
+    if (k === "medio") T("!", px, cy + 0.5, { font: F.d(15), color: "#3a2800", align: "center" });
+    else smallIcon(k === "bajo" ? "check" : "cross", px, cy, 5.5, "#fff");
+  });
+  return 62;
+}
+
+// Una noticia de barrio en una línea: el periódico, el titular y, si cabe, la letra pequeña. `y` es el centro.
+function newsLine(n, x, y, w) {
+  smallIcon("news", x + 9, y, 9, C.ink);
+  const [t, z] = fit(n.title, w - 26, F.d, 18, 13), used = width(t, F.d(z)) + 10;
+  T(t, x + 26, y, { font: F.d(z), color: C.ink });
+  if (w - 26 - used > 90) T(ellipsize("· " + n.blurb, w - 26 - used, F.r(18)), x + 26 + used, y, { font: F.r(18), color: C.mute });
+}
+// Una cinta de periódico: a la izquierda la solapa oscura «NOTICIA»; a la derecha el titular y la letra pequeña.
+// `line`: solo una línea de papel (para el hueco de la cabecera del barrio).
+function newsStrip(n, x, y, w, h, o = {}) {
+  card(x, y, w, h, { r: 10, fill: "#f7f1e1", stroke: "#bfae88" });
+  if (o.line) { newsLine(n, x + 10, y + h / 2 + 1, w - 20); return; }
+  g.save(); rr(x, y, w, h, 10); g.clip(); rect(x, y, 128, h, C.pico); rect(x + 128, y, 3, h, C.gold); g.restore();
+  smallIcon("news", x + 24, y + h / 2, 11, "#f7f1e1");
+  TX("NOTICIA", x + 42, y + h / 2 + 1, { font: F.t(19), color: C.gold });
+  const tx = x + 148, mw = w - 148 - 16, lines = clamp(Math.floor((h - 38) / 23), 1, 3);
+  fitText(n.title, tx, y + (h < 70 ? 20 : 26), mw, F.d, 24, 15, { color: C.ink });
+  paragraph(n.blurb, tx, y + (h < 70 ? 44 : 56), mw, F.r(19), 23, lines, { color: C.mute });
+}
+
+// GESTIÓN --------------------------------------------------------------------------------
+
+function paintGestion(st) {
+  header(st.title, `${st.barrio} · Gestionar`, { size: 30, wordmark: false });
+  const cw = 312, gap = 16, ch = 256, tips = st.tips || [], below = tips.length > 0 || !!st.news, y0 = below ? 104 : 150;
+  const xs = [16, 16 + cw + gap, 16 + 2 * (cw + gap)];
+  const head = (i, tone, title, icon) => { // la tarjeta: franja, disco con icono, título y raya
+    const x = xs[i];
+    card(x, y0, cw, ch, { r: 14, top: 5, topColor: tone });
+    dot(x + 40, y0 + 46, 27, tone); dot(x + 40, y0 + 46, 24, "#fff"); icon(x + 40, y0 + 46);
+    const lines = wrap(title, cw - 92, F.d(20), 2);
+    lines.forEach((l, k) => T(l, x + 78, y0 + (lines.length === 1 ? 46 : 36 + k * 24), { font: F.d(20), color: C.ink }));
+    rect(x + 14, y0 + 84, cw - 28, 1.4, C.line);
+    return x;
+  };
+  // 1. quién elige al inquilino
+  let x = head(0, C.blue, "¿Quién elige al inquilino?", (cx, cy) => (st.pick === "yo" ? lupa(cx, cy, 13, C.blue) : robot(cx, cy, 13, C.blue)));
+  const n = paragraph(st.pick_text, x + 16, y0 + 108, cw - 32, F.m(20), 24, 2, { color: C.ink }), cy1 = y0 + 108 + (n - 1) * 24 + 20;
+  if (st.decides) chip("Decides tú", x + 16, cy1, "green", { size: 17 });
+  else if (st.boss) { // quien decide: la etiqueta y, debajo, su nombre (puede ser larguísimo)
+    chip("Decide", x + 16, cy1 - 8, "grey", { size: 15 });
+    fitText(st.boss, x + 16, cy1 + 34, cw - 32, F.d, 20, 13, { color: C.ink });
+  }
+  if (st.waiting > 0) {
+    smallIcon("people", x + 30, y0 + ch - 42, 10, C.orange);
+    fitText(`${st.waiting} ${st.waiting === 1 ? "candidato esperando" : "candidatos esperando"}`, x + 50, y0 + ch - 42, cw - 66, F.d, 19, 13, { color: C.sunDk });
+  } else T("Nadie espera ahora", x + 16, y0 + ch - 42, { font: F.m(18), color: C.mute });
+  fitText(st.dwelling ? st.status : `${st.status} · no es vivienda`, x + 16, y0 + ch - 18, cw - 32, F.r, 17, 12, { color: C.mute });
+  // 2. el seguro de impago
+  const tone2 = st.insured ? (st.covered ? C.green : C.amber) : C.grey;
+  x = head(1, tone2, "Seguro de impago", (cx, cy) => shield(cx, cy, 15, st.insured && st.covered ? "on" : "off"));
+  paragraph(st.insurance, x + 16, y0 + 108, cw - 32, F.m(18), 21, 3, { color: C.ink });
+  if (!st.dwelling && !st.insured) { // el seguro solo cubre vivienda habitual (housing.insurable): sin prima que enseñar
+    paragraph("El seguro de impago solo cubre vivienda habitual, no negocios.", x + 16, y0 + ch - 58, cw - 32, F.r(17), 21, 2, { color: C.mute });
+  } else {
+    row2(st.insured ? "Prima" : "Si lo contratas", st.premium, x + 16, y0 + ch - 58, cw - 32, { size: 20, vsize: 21 });
+    fitText(`${st.premium_rate} de la renta + 8 % de primas`, x + 16, y0 + ch - 26, cw - 32, F.r, 17, 12, { color: C.mute });
+  }
+  // 3. si hay que desahuciar
+  x = head(2, C.sunDk, "Si hay que desahuciar", (cx, cy) => gavel(cx, cy, 14, C.sunDk));
+  T("Abogado y procurador", x + 16, y0 + 108, { font: F.m(19), color: C.mute });
+  fitText(st.fee, x + 16, y0 + 150, cw - 100, F.d, 38, 22, { color: C.ink });
+  T("+ IGIC", x + cw - 16, y0 + 156, { font: F.m(18), color: C.mute, align: "right" });
+  if (st.fee_covered) { shield(x + 32, y0 + ch - 50, 13, "on"); chip("Lo paga el seguro", x + 54, y0 + ch - 66, "green", { size: 17, maxW: cw - 70 }); }
+  else T("Lo pagas tú", x + 16, y0 + ch - 50, { font: F.d(19), color: C.mute });
+  // debajo, las notas (consejos de la gestión) y la noticia del barrio
+  if (tips.length) {
+    const pw = tips.length === 1 ? 600 : 476, total = tips.length * pw + (tips.length - 1) * 16, nx = (W - total) / 2;
+    tips.forEach((t, i) => postIt(t, nx + i * (pw + 16), y0 + ch + 16, pw, st.news ? 146 : 150, (hash(st.key + i) % 2 ? 1 : -1) * 0.012));
+  }
+  if (st.news) tips.length ? newsStrip(st.news, 16, 536, 968, 60) : newsStrip(st.news, 16, y0 + ch + 20, 968, 96);
+}
+
+// CANDIDATOS -----------------------------------------------------------------------------
+
+// Un candidato: el número del botón, el retrato, quién es, el semáforo de riesgo, lo que cuesta y lo que dice.
+function candidateCard(c, x, y, w, h) {
+  const pad = 16, mx = x + w / 2, inner = w - 2 * pad;
+  card(x, y, w, h, { r: 16, top: 6, topColor: C.sun });
+  dot(x + 36, y + 45, 25, "rgba(0,0,0,0.22)"); dot(x + 36, y + 42, 25, "#fff"); dot(x + 36, y + 42, 21.5, C.sun);
+  TX(String(c.slot), x + 36, y + 42, { font: F.t(34), color: "#fff", align: "center", stroke: "rgba(0,0,0,0.25)", sw: 3 });
+  if (c.until) { T("Espera hasta", x + w - pad, y + 36, { font: F.m(15), color: C.mute, align: "right" }); T(`el ${c.until}`, x + w - pad, y + 55, { font: F.d(16), color: C.mute, align: "right" }); }
+  tenantIcon(c.key, mx, y + 60, 32);
+  fitText(c.name, mx, y + 108, inner, F.d, 23, 14, { color: C.ink, align: "center" });
+  let cy = y + 126;
+  if (c.age) { // la edad y, si es joven, su etiqueta (cuenta para la reducción en zona tensionada)
+    const aw = width(c.age, F.m(17)), jw = c.young ? tagW("Joven", 13, null) + 8 : 0, sx = mx - (aw + jw) / 2;
+    T(c.age, sx, cy + 11, { font: F.m(17), color: C.mute });
+    if (c.young) tag("Joven", sx + aw + 8, cy, "blue", null, 13);
+    cy += 30;
+  } else cy += 30; // sin edad (un negocio o un grupo) el hueco se queda, para que las filas casen entre tarjetas
+  const shown = c.traits.slice(0, 3);
+  shown.forEach((t, i) => chip(t, mx, cy + i * 30, "blue", { size: 14, align: "center", maxW: inner, outline: true }));
+  cy += 30 * Math.max(2, shown.length) + 2;
+  const tw_ = riskLight(c.risk, x + pad, cy + 12);
+  fitText(c.risk_text, x + pad + tw_ + 10, cy + 12, inner - tw_ - 10, F.d, 17, 12, { color: RISK_INK[c.risk] });
+  smallIcon("house", x + pad + 9, cy + 40, 7, C.mute); fitText(c.stay, x + pad + 26, cy + 40, inner - 26, F.m, 18, 13, { color: C.ink });
+  smallIcon("heart", x + pad + 9, cy + 62, 7, C.mute); fitText(c.wear, x + pad + 26, cy + 62, inner - 26, F.m, 18, 13, { color: C.ink });
+  cy += 80;
+  shield(x + pad + 11, cy + 12, 11, c.insurable ? "on" : "off");
+  fitText(c.insurable ? "El seguro le cubre" : "Sin seguro posible", x + pad + 32, cy + 12, inner - 32, F.d, 17, 12, { color: c.insurable ? C.greenDk : C.mute });
+  cy += 32; rect(x + pad, cy, inner, 1.4, C.line); cy += 6;
+  fitText(c.rent, mx, cy + 18, inner, F.d, 30, 18, { color: C.ink, align: "center" }); cy += 36;
+  if (c.reduction) { const label = `Reducción ${c.reduction}`, lw = tagW(label, 14, null); tag(label, mx - lw / 2, cy, "green", null, 14); cy += 28; }
+  // la frase, abajo, en un cuadro: tres líneas como mucho (dos si no queda sitio)
+  const qf = F.r(18), qw = inner - 20, text = `«${c.line}»`;
+  let lines = wrap(text, qw, qf, 3);
+  const boxH = (k) => k * 22 + 16;
+  while (lines.length > 1 && y + h - 14 - boxH(lines.length) < cy + 2) lines = wrap(text, qw, qf, lines.length - 1);
+  const by = y + h - 14 - boxH(lines.length);
+  fillRR(x + pad, by, inner, boxH(lines.length), 10, "#f3ead2");
+  lines.forEach((l, i) => T(l, x + pad + 10, by + 19 + i * 22, { font: qf, color: "#4a3f26", skew: true }));
+}
+
+function paintCandidatos(st) {
+  header(st.title, `Candidatos · ${st.barrio} · renta: ${st.level}`, { size: 30, wordmark: false });
+  const n = st.cards.length;
+  if (st.empty || !n) { // nadie espera: tres sillas vacías y qué hacer
+    card(170, 120, 660, 440, { r: 18 });
+    [-1, 0, 1].forEach((k) => chair(500 + k * 120, 300, 36, "#d8c9a0"));
+    TX("?", 500, 210, { font: F.t(54), color: C.sun, align: "center", stroke: "#fff8ea", sw: 5 });
+    TX("NADIE ESPERA TODAVÍA", 500, 395, { font: F.t(44), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6, shadow: "rgba(170,100,30,0.35)" });
+    wrap("Los candidatos llegan cada noche al piso vacío. Vuelve mañana y elige con calma.", 560, F.m(23), 3)
+      .forEach((l, i) => T(l, 500, 450 + i * 30, { font: F.m(23), color: C.mute, align: "center" }));
+    return;
+  }
+  const cw = 304, gap = 24, total = n * cw + (n - 1) * gap, x0 = (W - total) / 2;
+  st.cards.forEach((c, i) => candidateCard(c, x0 + i * (cw + gap), 100, cw, 504));
+}
+
 // -- Entrada ------------------------------------------------------------------------------
 
-const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo };
+const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
+  gestion: paintGestion, candidatos: paintCandidatos };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

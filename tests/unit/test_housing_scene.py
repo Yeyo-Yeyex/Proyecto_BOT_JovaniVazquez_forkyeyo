@@ -29,10 +29,12 @@ from bot.services import housing_view as view
 from bot.services.browser_scene import BrowserScene
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
+    BARRIO_NEWS,
     BARRIOS,
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
+    TENANTS,
     THEMES,
 )
 from bot.services.housing_scene import SCENE, SCREEN_H, H, HousingScene, W
@@ -269,12 +271,148 @@ def facade_samples() -> dict[str, dict[str, Any]]:
     }
 
 
+#: Hoy, para los candidatos y las noticias de barrio de las muestras de la fase 2.
+TODAY = date(2026, 10, 15)
+PISO, LOCAL = BY_KIND["piso2"], BY_KIND["local"]
+LONGEST_NEWS = max(BARRIO_NEWS, key=lambda n: len(n.title) + len(n.blurb))
+LONGEST_LINE = max(TENANTS, key=lambda t: len(t.line))
+BUSINESSES = [t.key for t in TENANTS if "local" in t.kinds][:3]
+
+
+def waiting(*tenants: str) -> tuple[tuple[str, date], ...]:
+    """Candidatos que esperan: el primero hasta mañana, los demás unos días más."""
+    return tuple((t, date(2026, 10, 16 + 3 * n)) for n, t in enumerate(tenants))
+
+
+def phase2_market(
+    leases: dict[str, rules.Lease],
+    candidates: dict[str, tuple[tuple[str, date], ...]] | None = None,
+    *,
+    news: bool = True,
+) -> Market:
+    """Pisos de `user 10` con los contratos dados, candidatos y noticias de barrio (o sin ellas)."""
+    holdings = {key: {10: Holding(key, 10, 100, 1, 1, 0)} for key in leases}
+    if LONGEST.key in holdings:  # el que decide es otro, con un nombre larguísimo
+        holdings[LONGEST.key] = {
+            10: Holding(LONGEST.key, 10, 30, 1, 1, 0),
+            40: Holding(LONGEST.key, 40, 70, 1, 1, 0),
+        }
+    span = (date(2026, 10, 12), date(2026, 10, 20))
+    barrio_news = (
+        {
+            "isleta": (LONGEST_NEWS.key, *span),
+            "schamann": (LONGEST_NEWS.key, *span),
+            "telde": (BARRIO_NEWS[0].key, *span),
+            "vegueta": (BARRIO_NEWS[1].key, *span),
+            LONGEST.barrio: (LONGEST_NEWS.key, *span),
+        }
+        if news
+        else {}
+    )
+    return Market(
+        indexes={"isleta": 1.2, "schamann": 1.15, LONGEST.barrio: 1.2},
+        holdings=holdings,
+        leases=leases,
+        candidates=candidates or {},
+        barrio_news=barrio_news,
+        socimi=frozenset({10}),
+    )
+
+
+def phase2_samples() -> dict[str, dict[str, Any]]:
+    """Las pantallas nuevas (gestión y candidatos) y las claves nuevas de las de siempre."""
+    vacio_yo = rules.Lease(status="vacio", pick="yo", level="mercado", insured=True)
+    m = phase2_market(
+        {
+            PISO: vacio_yo,
+            LOCAL: rules.Lease(status="vacio"),
+            LONGEST.key: rules.Lease(status="vacio", pick="yo", insured=True, last_rent=5000),
+            "schamann_bajo": rules.Lease(
+                status="alquilado",
+                tenant="abuela",
+                rent=4300,
+                until=date(2026, 12, 14),
+                insured=True,
+            ),
+            "schamann_piso2": rules.Lease(
+                status="impago",
+                tenant="cripto",
+                rent=5200,
+                until=date(2026, 12, 14),
+                insured=True,
+                arrears=2000,
+            ),
+            "vegueta_edificio": rules.Lease(
+                status="alquilado", tenant="policia", rent=90000, until=date(2026, 12, 14)
+            ),
+        },
+        {
+            PISO: waiting("enfermeros", "estudiantes", "abuela"),
+            LONGEST.key: waiting(LONGEST_LINE.key, "policia", "britanicos"),
+        },
+    )
+    bare = phase2_market({PISO: rules.Lease(status="vacio")}, news=False)
+    empty = phase2_market({PISO: rules.Lease(status="vacio", pick="yo")}, news=False)
+    one = phase2_market(
+        {PISO: rules.Lease(status="vacio", pick="yo")}, {PISO: waiting(LONGEST_LINE.key)}
+    )
+    shop = phase2_market(
+        {LOCAL: rules.Lease(status="vacio", pick="yo")}, {LOCAL: waiting(*BUSINESSES)}
+    )
+
+    def lineup(*tenants: str) -> Market:
+        lease = rules.Lease(status="vacio", pick="yo")
+        return phase2_market({PISO: lease}, {PISO: waiting(*tenants)}, news=False)
+
+    week = MemberDay(30000, 1200, 4000)
+    gestion = {
+        "gestion_seguro_candidatos": view.gestion_state(m, PISO, 10, NAMES, TODAY),
+        "gestion_sin_seguro": view.gestion_state(bare, PISO, 10, NAMES, TODAY),
+        "gestion_cubierto": view.gestion_state(m, "schamann_bajo", 10, NAMES, TODAY),
+        "gestion_no_cubre": view.gestion_state(m, "schamann_piso2", 10, NAMES, TODAY),
+        "gestion_negocio": view.gestion_state(shop, LOCAL, 10, NAMES, TODAY),
+        "gestion_larga": view.gestion_state(m, LONGEST.key, 10, NAMES, TODAY),
+    }
+    candidatos = {
+        "candidatos_tres": view.candidates_state(m, PISO, TODAY),
+        "candidatos_uno": view.candidates_state(one, PISO, TODAY),
+        "candidatos_vacia": view.candidates_state(empty, PISO, TODAY),
+        "candidatos_frase_larga": view.candidates_state(m, LONGEST.key, TODAY),
+        "candidatos_negocios": view.candidates_state(shop, LOCAL, TODAY),
+        "candidatos_uniformes": view.candidates_state(
+            lineup("policia", "bombera", "piloto"), PISO, TODAY
+        ),
+        "candidatos_oficios": view.candidates_state(
+            lineup("cajera", "guagua", "directivo"), PISO, TODAY
+        ),
+        "candidatos_gente": view.candidates_state(
+            lineup("abuela", "estudiantes", "britanicos"), PISO, TODAY
+        ),
+    }
+    cartera = view.portfolio_state(m, 10, "Ana", 120000, week, NEWS, NAMES, today=TODAY)
+    others = {
+        "ficha_candidatos_noticia": view.listing_state(m, PISO, 10, NAMES, [], TODAY),
+        "ficha_inquilino_cubierto": view.listing_state(m, "schamann_bajo", 10, NAMES, NEWS, TODAY),
+        "ficha_inquilino_no_cubre": view.listing_state(m, "schamann_piso2", 10, NAMES, [], TODAY),
+        "ficha_inquilino_sin_seguro": view.listing_state(
+            m, "vegueta_edificio", 10, NAMES, [], TODAY
+        ),
+        "ficha_candidatos_peor": view.listing_state(m, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "barrio_noticia": view.barrio_state(m, "isleta", 10, NAMES, TODAY),
+        "barrio_noticia_corta": view.barrio_state(m, "vegueta", 10, NAMES, TODAY),
+        "mapa_noticias": view.map_state(m, 10, "Ana", 120000, TODAY),
+        "cartera_seguro_candidatos": cartera,
+        "cartera_tres_pastillas": cartera | {"bank_debt": "25.000 Y$"},
+    }
+    return {**gestion, **candidatos, **others}
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
 
 def samples() -> dict[str, dict[str, Any]]:
-    """Las pantallas de muestra: las seis, con casos largos, vacíos y de todos los tipos."""
+    """Las pantallas de muestra: las ocho, con casos largos, vacíos y de todos los tipos."""
     m = market()
     week = MemberDay(30000, 1200, 4000)
     out: dict[str, dict[str, Any]] = {
@@ -357,6 +495,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(money_samples())
     out.update(mood_samples())
     out.update(facade_samples())
+    out.update(phase2_samples())
     return out
 
 
@@ -378,6 +517,15 @@ CORE = [
         "cartera_finanzas",
         "vpo_apuntada",
         "vpo_no",
+        "gestion_seguro_candidatos",
+        "gestion_negocio",
+        "candidatos_tres",
+        "candidatos_vacia",
+        "ficha_candidatos_noticia",
+        "ficha_inquilino_cubierto",
+        "barrio_noticia",
+        "mapa_noticias",
+        "cartera_tres_pastillas",
     }
 ]
 
@@ -453,6 +601,26 @@ def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
     assert (W, H) == (1000, 640) and SCREEN_H == {"barrio": 760}
     assert size_of({"screen": "barrio"}) == (1000, 760)
     assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
+
+
+def test_las_muestras_cubren_las_ocho_pantallas_y_las_claves_de_la_fase_2() -> None:
+    states = samples()
+    assert {s["screen"] for s in states.values()} == {
+        "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
+    }  # fmt: skip
+    assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
+    assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
+    assert states["gestion_negocio"]["dwelling"] is False and states["gestion_sin_seguro"]["tips"]
+    assert (
+        states["ficha_inquilino_no_cubre"]["insured"]
+        and not states["ficha_inquilino_no_cubre"]["covered"]
+    )
+    assert states["ficha_candidatos_noticia"]["waiting"] == 3
+    assert states["ficha_candidatos_noticia"]["barrio_news"]
+    assert states["barrio_noticia"]["news"] and states["cartera_seguro_candidatos"]["waiting"] == 2
+    assert any(p["news"] for i in states["mapa_noticias"]["islands"] for p in i["barrios"])
+    longest = states["candidatos_frase_larga"]["cards"][0]
+    assert longest["line"] == LONGEST_LINE.line
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------
