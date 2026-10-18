@@ -1395,7 +1395,8 @@ class Panel(ui.View):
         if "reforma" not in busy:
             for reform in REFORMS:
                 if listing.kind in reform.kinds and reform.key not in market.reforms.get(key, {}):
-                    add(f"reforma:{reform.key}", f"Reforma: {reform.name}", reform.emoji,
+                    label = view.motion_text("reforma", reform.key, 0, {})
+                    add(f"reforma:{reform.key}", label, reform.emoji,
                         "3/5 de participaciones (art. 17.4 LPH)")  # fmt: skip
         if "licencia" not in busy and listing.kind in rules.HOME_KINDS and not lease.license:
             add("licencia", f"Licencia vacacional ({format_amount(rules.LICENSE_FEE)})", "🏖️",

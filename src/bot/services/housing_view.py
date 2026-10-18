@@ -1287,7 +1287,11 @@ def motion_text(kind: str, value: str, amount: int, names: dict[int, str]) -> st
         return f"Derrama de {format_amount(amount)} al fondo de reserva"
     if kind == "reforma":
         reform = next((r for r in REFORMS if r.key == value), None)
-        return f"Reforma: {reform.name}" if reform else "Una reforma"
+        if reform is None:
+            return "Una reforma"
+        return (
+            reform.name if reform.name.lower().startswith("reforma") else f"Reforma: {reform.name}"
+        )
     if kind == "licencia":
         return f"Pedir la licencia vacacional ({format_amount(rules.LICENSE_FEE)})"
     return "Vender el inmueble entero al mercado"
