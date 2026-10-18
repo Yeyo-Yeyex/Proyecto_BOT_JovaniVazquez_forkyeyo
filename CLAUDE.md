@@ -22,12 +22,13 @@ Lo que más se olvida:
   qué pide un logro) va normal y claro. En las listas de frases, al menos la mitad son
   normales y las bromas se espacian. Todas las fuentes tienen el mismo protagonismo
   (política, vida cotidiana, deporte, cine y series, cultura popular y friki, videojuegos,
-  tecnología, comida, Canarias y Puerto Rico, historia, el propio bot, el absurdo): ninguna
+  tecnología, comida, Canarias, historia, el propio bot, el absurdo): ninguna
   manda ni se aparta, y una buena broma se hace aunque su tema no venga muy a cuento. Lo
   que cansa es repetir el mismo tema o la misma figura (Sánchez). Los nombres de los logros son siempre un juego de palabras o una broma ligada
   al logro, nunca literales ni con la coletilla «X, como [referencia]»; su descripción,
   neutral. Las coletillas de
-  Jovani son su voz y salen a menudo (hasta la mitad de una lista). El servidor es +18 verificado: valen las bromas de adultos y
+  Jovani (las frases del cantante, no lo típico de Puerto Rico: nada de «¡Wepa!» ni «mi
+  amor») son su voz y salen a menudo (hasta la mitad de una lista). El servidor es +18 verificado: valen las bromas de adultos y
   las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
   (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
   auditoría de tono pendiente (commits solo de texto y sin tocar claves, para poder

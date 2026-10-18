@@ -151,9 +151,9 @@ WIN_LINES = (
     "¡Cobras",
     "¡Dentro!",
     "¡Bingo!",
-    "¡Wepa!",
+    "¡Eso es!",
     "La bola te quiere.",
-    "¡Eso es, mi amor!",
+    "Desayuna con huevo y jugo de china del bueno.",
     "La bola se ha portado.",
     "¿Qué? ¿Qué? ¡Toma mangó!",
     "Rien ne va plus… y va todo para ti.",
@@ -165,9 +165,9 @@ BIG_WIN_LINES = (
     "💥 ¡PLENAZO!",
     "💥 ¡REVIENTAS LA BANCA!",
     "💥 ¡LOCURA!",
-    "💥 ¡TOMA MANGÓ, MI AMOR!",
+    "💥 ¡TOMA MANGÓ!",
     "💥 ¡PLENO Y A LA SACA!",
-    "💥 ¡WEPAAA!",
+    "💥 ¡JOTA UVE! ¡PRE!",
     "💥 ¡EL CRUPIER PIDE LA BAJA!",
     "💥 ¡QUE LO CANTE EL NIÑO DE SAN ILDEFONSO!",
     "💥 ¡ESTO ES MÁS GORDO QUE EL GORDO!",
@@ -175,18 +175,18 @@ BIG_WIN_LINES = (
 )
 LOSS_LINES = (
     "Casi.",
-    "A la siguiente vuelta, papi.",
+    "A la siguiente vuelta.",
     "La bola no quiso.",
     "Uf, por poco.",
     "Otra vez será.",
-    "Ay, bendito.",
+    "Quisiera ser una mosca para ver adónde va la bola.",
     "Quiero café. Y otra ficha.",
     "Sofía, cállate… que la bola no quiso.",
     "Gracias por tu donativo a la casa.",
     "La bola tenía otros planes.",
     "Hacienda apostó al cero y ganó.",
     "La bola se ha ido a por tabaco.",
-    "Ni con el Halcón Milenario la alcanzas.",
+    "La bola dimite. Ah, no, que aquí no dimite nadie.",
     "La bola ha hecho ghosting.",
     "Estoy destruido, pero por dentro estoy nuevo.",
 )
@@ -1314,7 +1314,7 @@ class Casino(commands.Cog):
         next_at = f"<t:{int(result.next_claim_at)}:R>"
         if result.abroad:
             await responder.send_error(
-                "🇭🇰 Vives en Hong Kong, mi amor: el IMV es para quien reside en España "
+                "🇭🇰 Vives en Hong Kong: el IMV es para quien reside en España "
                 "(arts. 10 y 36.e de la Ley 19/2021). Vuelve con `pala` y hablamos."
             )
             await logros.track(
@@ -1328,7 +1328,7 @@ class Casino(commands.Cog):
         if result.suspended_until:
             await responder.send_error(
                 f"🕵️ La Inspección de Trabajo te pilló cobrando en negro y te ha suspendido "
-                f"el IMV. Vuelve {next_at}, mi amor, y esta vez declara."
+                f"el IMV. Vuelve {next_at} y esta vez declara."
             )
             return
         if not result.claimed:

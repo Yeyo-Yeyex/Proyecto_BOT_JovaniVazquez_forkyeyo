@@ -114,7 +114,7 @@ COLOR_EDGE = discord.Color.from_rgb(123, 75, 214)
 # Textos en el tono de Jovani Vázquez.
 WIN_LINES = (
     "¡Wepa!",
-    "¡Eso es, mi amor!",
+    "¡Eso es!",
     "¡Acertaste!",
     "¡Dale!",
     "¡Más suerte que Bibi en las urnas!",

@@ -182,7 +182,7 @@ BONUS_TIER = {BonusKind.GREEN: Tier.GREEN, BonusKind.BLUE: Tier.BLUE, BonusKind.
 WIN_TITLES = {1: "¡GRAN PREMIO!", 2: "¡MEGA PREMIO!", 3: "¡PREMIO ÉPICO!"}
 WIN_LINES = (
     "¡Wepa!",
-    "¡Eso es, mi amor!",
+    "¡Eso es!",
     "¡Cobras!",
     "¡Tilín, tilín!",
     "¡Acho, qué bueno!",

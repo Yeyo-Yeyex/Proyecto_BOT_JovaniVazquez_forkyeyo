@@ -177,17 +177,17 @@ COLOR_HOT = discord.Color.from_rgb(255, 110, 40)
 JACKPOT_LINES = (
     "🃏🃏🃏 ¡JOVANAZO!",
     "🃏🃏🃏 ¡EL BOTE ES TUYO!",
-    "🃏🃏🃏 ¡WEPAAA!",
-    "🃏🃏🃏 ¡TOMA MANGÓ, MI AMOR!",
+    "🃏🃏🃏 ¡JOTA UVE! ¡PRE!",
+    "🃏🃏🃏 ¿QUÉ? ¿QUÉ? ¡TOMA MANGÓ!",
     "🃏🃏🃏 ¡NI FABRA TIENE TANTA SUERTE!",
     "🃏🃏🃏 ¡LA MÁQUINA HA PERDIDO LA CABEZA!",
-    "🃏🃏🃏 ¡AY, BENDITO, QUÉ BOTE!",
+    "🃏🃏🃏 ¡AZUL, AZUL, COMO EL MAR AZUL!",
 )
 MYSTERY_LINES = (
     "💰 ¡HA CAÍDO EL BOTE!",
     "💰 ¡LE TOCABA!",
     "💰 ¡BOTE MISTERIOSO!",
-    "💰 ¡WEPA, BOTE SORPRESA!",
+    "💰 ¡BOTE SORPRESA!",
     "💰 ¡LA MÁQUINA SE HA ABIERTO DE PIERNAS!",
     "💰 ¡NI LO VISTE VENIR!",
 )
@@ -196,16 +196,16 @@ TIER_LINES = {
         "🌋 ¡ÉPICO!",
         "🌋 ¡REVIENTAS LA MÁQUINA!",
         "🌋 ¡ESTO NO SE VE NUNCA!",
-        "🌋 ¡TOMA MANGÓ, MI AMOR!",
+        "🌋 ¡EVERYBODY WANT MANGO!",
         "🌋 ¡EL TEIDE SE PONE CELOSO!",
     ),
     WinTier.MEGA: (
         "💥 ¡MEGAPREMIO!",
         "💥 ¡QUÉ LOCURA!",
-        "💥 ¡AY, BENDITO, QUÉ PREMIO!",
+        "💥 ¡QUÉ PREMIO!",
         "💥 ¡TREMENDO, TREMENDO!",
         "💥 ¡TOMA MANGÓ!",
-        "💥 ¡ES MÁS DE 9.000!",
+        "💥 ¡HACIENDA YA ESTÁ AFILANDO EL LÁPIZ!",
         "💥 ¡LA MÁQUINA ESCUPE BILLETES!",
         "💥 ¡ESTO SE CELEBRA CON BARRAQUITO!",
     ),
@@ -213,16 +213,15 @@ TIER_LINES = {
         "✨ ¡GRAN PREMIO!",
         "✨ ¡TOMA YA!",
         "✨ ¡ESO ES CALIDAD!",
-        "✨ ¡WEPA!",
+        "✨ ¡TOMA MANGÓ!",
         "✨ ¡A LA SACA!",
     ),
 }
 WIN_LINES = (
-    "¡Wepa!",
     "¡Eso es!",
-    "¡Cobras, mi amor!",
+    "¡Cobras!",
     "¡Tilín, tilín!",
-    "¡Acho, qué bueno!",
+    "¿Con pulpa? ¡Sin pulpa!",
     "¡Toma mangó!",
     "¡A la saca!",
     "La máquina se ha puesto tierna.",
@@ -239,7 +238,7 @@ SMALL_WIN_LINES = (
     "🍒 ¡Calderilla, pero calderilla tuya!",
 )
 NEAR_MISS_LINES = (
-    "¡Ay, bendito! Por un pelo.",
+    "¡Por un pelo!",
     "¡Uff! Lo tenías ahí.",
     "Casi, casi… la próxima es la buena.",
     "¡Casi! Faltó uno.",
@@ -249,11 +248,11 @@ NEAR_MISS_LINES = (
 )
 LOSS_LINES = (
     "La próxima es la buena.",
-    "Nada, mi amor. Otra.",
+    "Nada. Otra.",
     "La máquina se hace la difícil.",
     "Calentando motores…",
     "Quiero café.",
-    "Ay, bendito.",
+    "Quisiera ser una mosca para ver qué tiene esta máquina dentro.",
     "Nada por aquí, nada por allá.",
     "Estoy destruido, pero por fuera. Por dentro, como un coco.",
     "La máquina hoy está de morros.",
@@ -266,14 +265,14 @@ DOUBLE_WIN_LINES = (
     "¡Lo sabía!",
     "¡Olfato de casino!",
     "¡Tienes el don!",
-    "¡Wepa, doblado!",
-    "¡Bruja Lola, ¿eres tú?!",
+    "¡Doblado!",
+    "¡Ni Tezanos acierta así!",
 )
 DOUBLE_LOSS_LINES = (
     "La casa agradece tu aportación.",
     "Era el otro color, obviamente.",
     "Doble o nada. Ha salido nada.",
-    "Ay, bendito.",
+    "Sofía, cállate, que me pones nervioso.",
     "La carta te ha hecho la cobra.",
     "Lo tenías y lo soltaste.",
 )
@@ -281,10 +280,10 @@ TICKET_LINES = (
     "Gracias por su visita. Vuelva pronto.",
     "Hacienda ya tiene una copia.",
     "Conserve este ticket para su psicólogo.",
-    "Gracias por jugar, mi amor.",
+    "Gracias por jugar.",
     "No canjeable por dignidad.",
     "Vuelva pronto, la máquina le echará de menos.",
-    "Válido para presumir delante de los colegas.",
+    "Ticket sellado por la UCO.",
 )
 #: Colores del doble o nada. Da igual cuál se elija: es cara o cruz.
 RED = "red"

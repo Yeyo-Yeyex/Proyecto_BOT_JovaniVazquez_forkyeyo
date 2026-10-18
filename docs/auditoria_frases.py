@@ -35,9 +35,6 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "bot"
 
 #: Coletillas de Jovani (sección «Personalidad» de la Biblia), como expresiones.
 CATCHPHRASES: dict[str, str] = {
-    "Wepa": r"wepa",
-    "Ay, bendito": r"ay,? bendito",
-    "mi amor": r"mi amor",
     "Toma mangó": r"toma mang[oó]",
     "mango": r"want mango",
     "Quiero café": r"quiero caf[eé]",

@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.12 · 2026-10-18
+
+- Ruleta, blackjack y tragaperras: fuera el «¡Wepa!» y el «mi amor»; solo frases del cantante Jovani
+
 ### 7.25.11 · 2026-10-18
 
 - Ruleta, blackjack y tragaperras: frases nuevas, más normales, más Jovani y de temas variados

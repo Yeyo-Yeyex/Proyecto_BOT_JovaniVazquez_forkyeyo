@@ -108,7 +108,7 @@ COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 # Textos en el tono de Jovani Vázquez.
 WIN_LINES = (
     "¡Wepa!",
-    "¡Eso es, mi amor!",
+    "¡Eso es!",
     "¡Acertaste!",
     "¡Dale!",
     "¡Siguiente parada!",
