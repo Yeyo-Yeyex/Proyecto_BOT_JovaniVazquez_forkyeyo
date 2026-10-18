@@ -221,10 +221,10 @@ function card(x, y, w, h, o = {}) {
 const CHIP = {
   green: [C.green, "#fff"], blue: [C.blue, "#fff"], amber: [C.amber, "#3a2800"],
   red: [C.red, "#fff"], grey: [C.grey, "#fff"], orange: [C.orange, "#fff"], ink: [C.ink, "#fff"],
-  bug: [C.bug, "#fff"], turq: [C.turqDk, "#fff"],
+  bug: [C.bug, "#fff"], turq: [C.turqDk, "#fff"], steel: ["#44546a", "#fff"],
 };
 const STATUS_COLOR = { venta: "green", tuyo: "blue", compartido: "blue", parcial: "amber", ajeno: "grey",
-  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue" };
+  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber" };
 // Una etiqueta de color, con brillo arriba y canto abajo. Devuelve su ancho. `align`: left | right | center.
 // `outline`: borde y sin relleno.
 function chip(text, x, y, kind, o = {}) {
@@ -590,6 +590,8 @@ function smallIcon(key, cx, cy, r, color) {
     for (let i = 0; i < 3; i++) g.fillRect(-r * 0.7, -r * 0.02 + i * r * 0.28, i === 2 ? r * 0.8 : r * 1.4, r * 0.13);
   } else if (key === "people") {
     for (const sx of [-1, 1]) { circle(sx * r * 0.45, -r * 0.4, r * 0.33); g.fill(); g.beginPath(); g.ellipse(sx * r * 0.45, r * 0.75, r * 0.55, r * 0.7, 0, Math.PI, TAU); g.fill(); }
+  } else if (key === "tools") { // una llave inglesa: obras y reformas
+    wrench(0, 0, r * 0.95, color);
   } else if (key === "hand") { // la mano levantada: eliges tú
     fillRR(-r * 0.55, -r * 0.05, r * 1.1, r * 0.95, r * 0.3, color);
     for (let i = 0; i < 4; i++) fillRR(-r * 0.55 + i * r * 0.28, -r * (i === 1 || i === 2 ? 0.95 : 0.8), r * 0.22, r * 1.0, r * 0.11, color);
@@ -1681,7 +1683,7 @@ const OVERLAY = {
 // Cinta en diagonal en la esquina de arriba a la izquierda (en píxeles de pantalla, sin escalar).
 const RIBBON = {
   alquilado: ["ALQUILADO", "#1f9d55"], impago: ["NO PAGA", "#c9302c"], desahucio: ["DESAHUCIO", "#8a1c14"],
-  okupa: ["OKUPADO", "#b3261e"], vacio: ["VACÍO", "#6b7a8a"], habitual: ["HOGAR", "#1f6fb2"],
+  okupa: ["OKUPADO", "#b3261e"], vacio: ["VACÍO", "#6b7a8a"], habitual: ["HOGAR", "#1f6fb2"], obras: ["EN OBRAS", "#c98a00"],
 };
 function ribbon(status, x, y) {
   const rb = RIBBON[status]; if (!rb) return;
@@ -2319,7 +2321,7 @@ const BARRIO_COLS = 5, CARD_W = 186, CARD_H = 278, CARD_GAP = 10, GRID_TOP = 162
 
 // Lo que no cabe a 19 px se dice más corto (la ficha lo lleva entero).
 const shortStatus = (s) => s.replace(/^Tienes el (\d+) %$/, "Tienes $1 %").replace(/^Queda el (\d+) % libre$/, "$1 % libre");
-const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar" };
+const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras" };
 function kindLabel(name, maxW) { return width(name, F.m(20)) > maxW ? name.replace("dormitorios", "dorm.") : name; }
 
 // El número de la tarjeta, el mismo que el de su botón (apagado si es un solar).
@@ -2461,10 +2463,12 @@ function paintFicha(st) {
   if (st.tense) tags.push({ text: "Zona tensionada", kind: "amber", icon: "warn" });
   if (st.pick === "yo") tags.push({ text: "Eliges tú", kind: "turq", icon: "hand" });
   if (st.waiting > 0) tags.push({ text: `${st.waiting} ${st.waiting === 1 ? "candidato esperando" : "candidatos esperando"}`, kind: "orange", icon: "people" });
+  if (st.decisions > 0) tags.push({ text: `${st.decisions} ${st.decisions === 1 ? "imprevisto" : "imprevistos"}`, kind: "red", icon: "warn" });
+  if (st.reformed) tags.push({ text: "Reformado", kind: "green", icon: "tools" });
   let cy = y0;
   if (st.offer) { offerBanner(st.offer, colC, cy, wC, 60); cy += 70; }
   const memberRent = !st.tenant && st.contract_rent;
-  const extra = (st.eviction_at ? 1 : 0) + (st.arrears ? 1 : 0) + (memberRent ? 1 : 0);
+  const extra = (st.eviction_at ? 1 : 0) + (st.arrears ? 1 : 0) + (memberRent ? 1 : 0) + (st.works_until ? 1 : 0);
   // con la tarjeta del inquilino (riesgo y rasgos) la caja del contrato crece 54 px
   const tc = st.tenant && st.tenant_card ? st.tenant_card : null, tcH = tc ? 54 : 0;
   const lh = (!st.lease_status ? 62 : st.tenant ? (extra ? 122 + extra * 28 : 114) : extra ? 60 + extra * 28 : 56) + (st.lease_status ? tcH : 0);
@@ -2481,8 +2485,10 @@ function paintFicha(st) {
     }
     if (st.tenant) {
       tenantIcon(st.tenant_key, colC + 38, cy + 70, 24);
+      const mw = st.mood ? width(st.mood, F.d(15)) + 38 : 0; // el humor, a la derecha de la renta
       fitText(st.tenant, colC + 72, cy + 62, wC - 86, F.d, 22, 14, { color: C.ink });
-      fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + 72, cy + 88, wC - 86, F.m, 20, 13, { color: C.mute });
+      fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + 72, cy + 88, wC - 86 - mw, F.m, 20, 13, { color: C.mute });
+      if (st.mood) { moodFace(colC + wC - 24, cy + 88, 10, st.mood_value); T(st.mood, colC + wC - 42, cy + 88, { font: F.d(15), color: C.mute, align: "right" }); }
     }
     if (tc) { // cómo es: el semáforo de impago y un par de rasgos
       rect(colC + 14, cy + 106, wC - 28, 1.2, C.line);
@@ -2492,6 +2498,7 @@ function paintFicha(st) {
     }
     let ry = (st.tenant ? cy + 124 : cy + 64) + tcH;
     if (memberRent) { T("Renta", colC + 14, ry, { font: F.m(20), color: C.mute }); fitText(`${st.contract_rent}${st.until ? " · hasta " + st.until : ""}`, colC + wC - 14, ry, wC - 100, F.d, 20, 13, { color: C.ink, align: "right" }); ry += 28; }
+    if (st.works_until) { T("En obras hasta", colC + 14, ry, { font: F.m(20), color: "#9a6200" }); T(st.works_until, colC + wC - 14, ry, { font: F.d(20), color: "#9a6200", align: "right" }); ry += 28; }
     if (st.eviction_at) { T("Juicio", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.eviction_at, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); ry += 28; }
     if (st.arrears) { T("Debe", colC + 14, ry, { font: F.m(20), color: C.redDk }); T(st.arrears, colC + wC - 14, ry, { font: F.d(20), color: C.redDk, align: "right" }); }
   } else T("Sin inquilino", colC + 14, cy + 31, { font: F.m(22), color: C.mute });
@@ -2500,9 +2507,13 @@ function paintFicha(st) {
   // las etiquetas van en una fila a lo ancho; si llegan hasta debajo de esta columna, esta acaba antes
   // Todas a 16 px; si no caben en una fila, la más larga se encoge (o se recorta) y las demás se quedan como están.
   const tagSize = 16, tagCap = tags.map(() => 968);
-  const nat = tags.map((t) => tagW(t.text, tagSize, t.icon)), over = nat.reduce((a, b) => a + b + 8, -8) - 968;
-  if (over > 0) { const k = nat.indexOf(Math.max(...nat)); tagCap[k] = Math.max(150, nat[k] - over); }
-  const tagsEnd = 16 + tags.reduce((a, t, i) => a + Math.min(nat[i], tagCap[i]) + 8, -8);
+  const tagWs = () => tags.map((t, i) => tagW(t.text, tagSize, t.icon, tagCap[i]));
+  for (let pass = 0; pass < 12; pass++) { // si no caben, se encoge la más larga, una y otra vez
+    const ws = tagWs(), over = ws.reduce((a, b) => a + b + 8, -8) - 968, k = ws.indexOf(Math.max(...ws));
+    if (over <= 0 || ws[k] <= 110) break;
+    tagCap[k] = Math.max(110, ws[k] - over);
+  }
+  const tagsEnd = 16 + tagWs().reduce((a, b) => a + b + 8, -8);
   const limit = tags.length && tagsEnd > colC - 10 ? 526 : 560;
   if (st.mine) {
     const m = st.mine, tight = st.mortgage || st.offer, avail = limit - cy;
@@ -2603,7 +2614,7 @@ function sofaRoom(x, y, w, h) {
 }
 
 // Lo que cabe en la etiqueta de una fila: la frase entera y, si no entra, una más corta.
-const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí" };
+const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras" };
 // `compact`: dos líneas y la etiqueta a la derecha; con hipoteca lleva además una tercera con la deuda.
 function itemRow(it, x, y, w, h, compact) {
   card(x, y, w, h, { r: 12 });
@@ -3102,10 +3113,342 @@ function paintCandidatos(st) {
   st.cards.forEach((c, i) => candidateCard(c, x0 + i * (cw + gap), 100, cw, 504));
 }
 
+// SUBASTAS, REFORMAS E IMPREVISTOS -------------------------------------------------------
+
+// Dibujos sueltos: herramientas, un reloj, la balanza y las caras del humor. Todos en (cx, cy) con "tamaño" s.
+function clockIcon(cx, cy, r, color) {
+  g.save(); circle(cx, cy, r); g.strokeStyle = color; g.lineWidth = Math.max(1.4, r * 0.2); g.stroke();
+  g.lineCap = "round"; g.lineJoin = "round"; g.beginPath(); g.moveTo(cx, cy - r * 0.6); g.lineTo(cx, cy); g.lineTo(cx + r * 0.45, cy + r * 0.25); g.stroke(); g.restore();
+}
+function scales(cx, cy, s, color) { // la balanza de la justicia
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.fillStyle = color; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = s * 0.14;
+  g.beginPath(); g.moveTo(0, -s * 0.9); g.lineTo(0, s * 0.8); g.moveTo(-s * 0.5, s * 0.85); g.lineTo(s * 0.5, s * 0.85); g.moveTo(-s * 0.9, -s * 0.55); g.lineTo(s * 0.9, -s * 0.55); g.stroke();
+  g.lineWidth = s * 0.08;
+  for (const d of [-1, 1]) {
+    g.beginPath(); g.moveTo(d * s * 0.9, -s * 0.55); g.lineTo(d * s * 1.25, s * 0.2); g.moveTo(d * s * 0.9, -s * 0.55); g.lineTo(d * s * 0.55, s * 0.2); g.stroke();
+    g.beginPath(); g.arc(d * s * 0.9, s * 0.2, s * 0.35, 0, Math.PI); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+function roller(cx, cy, s, color) { // un rodillo de pintura
+  g.save(); g.translate(cx, cy); g.lineCap = "round"; g.lineJoin = "round";
+  fillRR(-s * 0.95, -s * 0.85, s * 1.7, s * 0.6, s * 0.2, color);
+  g.strokeStyle = color; g.lineWidth = s * 0.16; g.beginPath(); g.moveTo(s * 0.75, -s * 0.55); g.lineTo(s * 1.0, -s * 0.55); g.lineTo(s * 1.0, -s * 0.05); g.lineTo(0, -s * 0.05); g.lineTo(0, s * 0.2); g.stroke();
+  fillRR(-s * 0.18, s * 0.2, s * 0.36, s * 0.7, s * 0.1, color);
+  g.restore();
+}
+function wrench(cx, cy, s, color) { // una llave inglesa en diagonal
+  g.save(); g.translate(cx, cy); g.rotate(-Math.PI / 4);
+  fillRR(-s * 0.16, -s * 0.3, s * 0.32, s * 1.3, s * 0.14, color);
+  g.beginPath(); g.arc(0, -s * 0.62, s * 0.45, -Math.PI / 2 + 0.55, -Math.PI / 2 - 0.55 + TAU); g.lineTo(0, -s * 0.62); g.closePath(); g.fillStyle = color; g.fill();
+  g.restore();
+}
+function hammer(cx, cy, s, color) {
+  g.save(); g.translate(cx, cy); g.rotate(0.6);
+  fillRR(-s * 0.14, -s * 0.4, s * 0.28, s * 1.4, s * 0.1, color); fillRR(-s * 0.75, -s * 0.85, s * 1.5, s * 0.5, s * 0.12, color);
+  g.restore();
+}
+function hourglass(cx, cy, s, color) {
+  rect(cx - s * 0.7, cy - s * 0.95, s * 1.4, s * 0.2, color); rect(cx - s * 0.7, cy + s * 0.75, s * 1.4, s * 0.2, color);
+  g.beginPath(); g.moveTo(cx - s * 0.55, cy - s * 0.75); g.lineTo(cx + s * 0.55, cy - s * 0.75); g.lineTo(cx + s * 0.08, cy); g.lineTo(cx + s * 0.55, cy + s * 0.75);
+  g.lineTo(cx - s * 0.55, cy + s * 0.75); g.lineTo(cx - s * 0.08, cy); g.closePath(); g.fillStyle = color; g.fill();
+}
+function keyIcon(cx, cy, s, color) {
+  g.save(); g.translate(cx, cy); g.rotate(-Math.PI / 4); g.strokeStyle = color; g.lineWidth = s * 0.2; g.lineCap = "round";
+  g.beginPath(); g.arc(0, -s * 0.55, s * 0.38, 0, TAU); g.stroke();
+  line(0, -s * 0.17, 0, s * 0.95, color, s * 0.2); line(0, s * 0.55, s * 0.36, s * 0.55, color, s * 0.18); line(0, s * 0.85, s * 0.3, s * 0.85, color, s * 0.18);
+  g.restore();
+}
+function bubble(cx, cy, s, color) { // un bocadillo de charla
+  fillRR(cx - s * 0.95, cy - s * 0.8, s * 1.9, s * 1.25, s * 0.3, color);
+  poly([[cx - s * 0.4, cy + s * 0.4], [cx - s * 0.55, cy + s * 0.95], [cx + s * 0.1, cy + s * 0.4]], color);
+}
+function pot(cx, cy, s, color) { // una olla con vapor
+  fillRR(cx - s * 0.7, cy - s * 0.1, s * 1.4, s * 0.9, s * 0.18, color);
+  rect(cx - s * 0.95, cy - s * 0.05, s * 0.25, s * 0.16, color); rect(cx + s * 0.7, cy - s * 0.05, s * 0.25, s * 0.16, color);
+  g.save(); g.strokeStyle = color; g.lineWidth = s * 0.12; g.lineCap = "round";
+  for (const d of [-0.35, 0, 0.35]) { g.beginPath(); g.moveTo(cx + d * s, cy - s * 0.3); g.quadraticCurveTo(cx + d * s + s * 0.2, cy - s * 0.55, cx + d * s, cy - s * 0.8); g.stroke(); }
+  g.restore();
+}
+function shower(cx, cy, s, color) { // una ducha con su tubo y sus gotas
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.fillStyle = color; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = s * 0.16;
+  g.beginPath(); g.moveTo(-s * 0.85, s * 0.9); g.lineTo(-s * 0.85, -s * 0.7); g.quadraticCurveTo(-s * 0.85, -s * 0.95, -s * 0.55, -s * 0.95); g.lineTo(s * 0.25, -s * 0.95); g.lineTo(s * 0.25, -s * 0.55); g.stroke();
+  g.beginPath(); g.arc(s * 0.25, -s * 0.55, s * 0.6, 0, Math.PI); g.closePath(); g.fill();
+  for (const [d, k] of [[-0.1, 0], [0.25, 1], [0.6, 0]]) line(s * d, s * (0.25 + k * 0.3), s * d, s * (0.45 + k * 0.3), color, s * 0.1);
+  g.restore();
+}
+function windowSun(cx, cy, s, color) { // una ventana nueva con sol
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.lineWidth = s * 0.16; rr(-s * 0.85, -s * 0.3, s * 1.2, s * 1.2, s * 0.1); g.stroke();
+  line(-s * 0.25, -s * 0.3, -s * 0.25, s * 0.9, color, s * 0.12); line(-s * 0.85, s * 0.3, s * 0.35, s * 0.3, color, s * 0.12);
+  smallIcon("sun", s * 0.55, -s * 0.55, s * 0.5, color);
+  g.restore();
+}
+function crane(cx, cy, s, color) { // una grúa de obra
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = s * 0.13;
+  g.beginPath(); g.moveTo(-s * 0.5, s * 0.95); g.lineTo(-s * 0.5, -s * 0.8); g.moveTo(-s * 0.1, s * 0.95); g.lineTo(-s * 0.1, -s * 0.8);
+  for (let i = 0; i < 4; i++) { const y = s * 0.95 - i * s * 0.44; g.moveTo(-s * 0.5, y); g.lineTo(-s * 0.1, y - s * 0.44); }
+  g.stroke();
+  line(-s * 0.8, -s * 0.8, s * 0.95, -s * 0.8, color, s * 0.18); line(s * 0.7, -s * 0.8, s * 0.7, -s * 0.15, color, s * 0.07);
+  rect(s * 0.54, -s * 0.15, s * 0.32, s * 0.28, color); fillRR(-s * 0.95, -s * 0.72, s * 0.3, s * 0.32, s * 0.04, color);
+  g.restore();
+}
+function termo(cx, cy, s, color) { // el termo roto, con su rayo
+  fillRR(cx - s * 0.6, cy - s * 0.8, s * 1.2, s * 1.7, s * 0.32, color);
+  rect(cx - s * 0.38, cy - s * 1.05, s * 0.18, s * 0.3, color); rect(cx + s * 0.2, cy - s * 1.05, s * 0.18, s * 0.3, color);
+  poly([[cx + s * 0.12, cy - s * 0.5], [cx - s * 0.3, cy + s * 0.12], [cx - s * 0.02, cy + s * 0.12], [cx - s * 0.14, cy + s * 0.6], [cx + s * 0.3, cy - s * 0.1], [cx + s * 0.02, cy - s * 0.1]], "#fff");
+}
+function drop(cx, cy, s, color) { // una gota de humedad
+  g.beginPath(); g.moveTo(cx, cy - s * 0.95); g.bezierCurveTo(cx + s * 0.2, cy - s * 0.5, cx + s * 0.75, cy + s * 0.05, cx + s * 0.75, cy + s * 0.3);
+  g.arc(cx, cy + s * 0.3, s * 0.75, 0, Math.PI); g.bezierCurveTo(cx - s * 0.75, cy + s * 0.05, cx - s * 0.2, cy - s * 0.5, cx, cy - s * 0.95);
+  g.fillStyle = color; g.fill(); ell(cx - s * 0.28, cy + s * 0.3, s * 0.12, s * 0.24, "rgba(255,255,255,0.55)", 0.4);
+}
+function angry(cx, cy, s, color) { // el vecino enfadado
+  dot(cx, cy, s * 0.95, color);
+  dot(cx - s * 0.33, cy - s * 0.05, s * 0.11, "#fff"); dot(cx + s * 0.33, cy - s * 0.05, s * 0.11, "#fff");
+  line(cx - s * 0.6, cy - s * 0.5, cx - s * 0.12, cy - s * 0.26, "#fff", s * 0.16); line(cx + s * 0.6, cy - s * 0.5, cx + s * 0.12, cy - s * 0.26, "#fff", s * 0.16);
+  g.save(); g.beginPath(); g.moveTo(cx - s * 0.4, cy + s * 0.58); g.quadraticCurveTo(cx, cy + s * 0.2, cx + s * 0.4, cy + s * 0.58); g.strokeStyle = "#fff"; g.lineWidth = s * 0.16; g.lineCap = "round"; g.stroke(); g.restore();
+}
+
+const EVENT_TONE = { averia: C.orange, humedades: C.blue, cerradura: "#b07a00", vecino: C.bugDk };
+const EVENT_ICON = { averia: termo, humedades: drop, cerradura: keyIcon, vecino: angry };
+// El icono de cada forma de arreglarlo (`key` de `housing.DECISIONS`).
+const OPTION_ICON = {
+  tecnico: wrench, cunado: hammer, espera: hourglass, reparar: wrench, pintar: roller, parte: (cx, cy, s) => shield(cx, cy, s * 0.8, "on"),
+  urgencia: keyIcon, manana: (cx, cy, s, c) => clockIcon(cx, cy, s * 0.85, c), hablar: bubble, mediacion: (cx, cy, s, c) => smallIcon("people", cx, cy, s, c),
+  ignorar: (cx, cy, s, c) => smallIcon("cross", cx, cy, s, c),
+};
+const REFORM_ICON = { pintura: roller, cocina: pot, bano: shower, energia: windowSun, integral: crane, negocio: wrench };
+const REFORM_TINT = { pintura: C.bug, cocina: C.sun, bano: C.turqDk, energia: "#c98a00", integral: C.atl, negocio: C.laurel };
+
+// El humor del inquilino: una cara que sonríe o frunce el ceño y una barra del mismo color.
+const moodColor = (v) => (v >= 85 ? "#2fae5f" : v >= 60 ? "#8dc63f" : v >= 40 ? "#f2b81c" : v >= 20 ? "#f08a24" : "#d23a3a");
+function moodFace(cx, cy, r, v, ring = "rgba(0,0,0,0.25)") {
+  dot(cx, cy + 1, r + 1.5, "rgba(0,0,0,0.22)"); dot(cx, cy, r, moodColor(v));
+  circle(cx, cy, r); g.strokeStyle = ring; g.lineWidth = Math.max(1, r * 0.12); g.stroke();
+  dot(cx - r * 0.35, cy - r * 0.2, r * 0.12, "#1b2a35"); dot(cx + r * 0.35, cy - r * 0.2, r * 0.12, "#1b2a35");
+  const k = clamp((v - 50) / 40, -1, 1);
+  g.save(); g.beginPath(); g.moveTo(cx - r * 0.42, cy + r * 0.38); g.quadraticCurveTo(cx, cy + r * 0.38 + k * r * 0.55, cx + r * 0.42, cy + r * 0.38);
+  g.strokeStyle = "#1b2a35"; g.lineWidth = Math.max(1.2, r * 0.14); g.lineCap = "round"; g.stroke(); g.restore();
+  if (v < 25) { line(cx - r * 0.6, cy - r * 0.55, cx - r * 0.15, cy - r * 0.4, "#1b2a35", Math.max(1.2, r * 0.13)); line(cx + r * 0.6, cy - r * 0.55, cx + r * 0.15, cy - r * 0.4, "#1b2a35", Math.max(1.2, r * 0.13)); }
+}
+function moodBar(x, y, w, h, v) {
+  fillRR(x, y, w, h, h / 2, "rgba(255,255,255,0.3)");
+  fillRR(x, y, Math.max(h, w * clamp(v, 0, 100) / 100), h, h / 2, moodColor(v));
+}
+// Cinta de obra: rayas amarillas y negras en diagonal.
+function hazard(x, y, w, h, r) {
+  g.save(); rr(x, y, w, h, r); g.clip(); rect(x, y, w, h, C.gold); g.fillStyle = C.ink;
+  for (let sx = x - h; sx < x + w + h; sx += 36) { g.beginPath(); g.moveTo(sx, y + h); g.lineTo(sx + 18, y + h); g.lineTo(sx + 18 + h, y); g.lineTo(sx + h, y); g.closePath(); g.fill(); }
+  g.restore();
+}
+
+// SUBASTAS --------------------------------------------------------------------------------
+
+// Un cartel de subasta. La judicial va en gris acero con su balanza; la elegida, con el borde azul.
+function auctionCard(a, x, y, w, h) {
+  const jud = a.judicial, x0 = x + 128, iw = w - 128 - 14, right = x + w - 14;
+  card(x, y, w, h, { r: 14, top: 5, topColor: jud ? "#44546a" : C.sun, fill: jud ? "#eef0f4" : C.card, stroke: a.selected ? C.blue : jud ? "#9aa5b4" : undefined });
+  if (a.selected) { rr(x + 2, y + 2, w - 4, h - 4, 12); g.strokeStyle = C.blue; g.lineWidth = 2.5; g.stroke(); }
+  facade(a.kind, x + 12, y + 16, 104, 76, { key: a.key, barrio: a.barrio_key, theme: a.theme, r: 10 });
+  rr(x + 12, y + 16, 104, 76, 10); g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = 1.2; g.stroke();
+  if (jud) {
+    dot(x + 102, y + 82, 15, "#fff"); dot(x + 102, y + 82, 12.5, "#44546a"); scales(x + 102, y + 82, 8, "#fff");
+    chip("JUDICIAL", x + 64, y + 100, "steel", { size: 12, align: "center", maxW: 112 });
+  } else TX(`${a.shares} %`, x + 64, y + 114, { font: F.t(26), color: C.sunDk, align: "center", stroke: "#fff8ea", sw: 4 });
+  fitText(a.title, x0, y + 28, iw, F.d, 21, 14, { color: C.ink });
+  fitText(`${a.barrio} · ${a.shares} % · ${jud ? "ejecutado" : "vende"} ${a.seller}`, x0, y + 50, iw, F.m, 16, 11, { color: C.mute });
+  const rw = 124;
+  if (a.best_bid) {
+    fitText(a.best_bid, x0, y + 80, iw - rw - 8, F.d, 30, 16, { color: C.ink });
+    fitText(`vale ${a.value}`, right, y + 71, rw, F.m, 15, 10, { color: C.mute, align: "right" });
+    if (a.pct) fitText(`${a.pct} de su valor`, right, y + 91, rw + 20, F.d, 17, 10, { color: C.sunDk, align: "right" });
+  } else {
+    T("Sin pujas", x0, y + 80, { font: F.d(26), color: C.mute });
+    fitText(`vale ${a.value}`, right, y + 80, rw + 20, F.m, 16, 10, { color: C.mute, align: "right" });
+  }
+  const bids = `${a.bids} ${a.bids === 1 ? "puja" : "pujas"}`, bw = width(bids, F.d(16));
+  if (a.leading) chip("Vas ganando", x0, y + 97, "green", { size: 13 });
+  else if (a.best_bidder) fitText(`Va ganando ${a.best_bidder}`, x0, y + 110, iw - bw - 12, F.d, 16, 11, { color: C.ink });
+  else T("Nadie ha pujado todavía", x0, y + 110, { font: F.r(16), color: C.mute });
+  T(bids, right, y + 110, { font: F.d(16), color: C.mute, align: "right" });
+  clockIcon(x0 + 9, y + 134, 8.5, C.mute);
+  fitText(a.left, x0 + 25, y + 134, 120, F.d, 17, 11, { color: a.left.includes("h") ? C.ink : C.redDk });
+  fitText(`Mínima ${a.next_bid}`, right, y + 134, iw - 160, F.d, 17, 11, { color: C.ink, align: "right" });
+  // las marcas que cuelgan del borde de arriba
+  let tx = right;
+  if (a.selected) { const t = tagW("ELEGIDA", 12, "check"); tag("ELEGIDA", tx - t, y - 10, "blue", "check", 12); tx -= t + 6; }
+  if (a.mine) { const t = tagW("TUYA", 12, null); tag("TUYA", tx - t, y - 10, "ink", null, 12); }
+}
+
+function paintSubastas(st) {
+  header(st.title, st.subtitle, { size: 30, wordmark: false });
+  const items = st.items || [];
+  if (st.empty || !items.length) {
+    card(170, 120, 660, 440, { r: 18 });
+    gavel(500, 270, 66, C.sunDk); rect(420, 345, 160, 12, "#c79e6a"); fillRR(430, 357, 140, 10, 4, "#a37e4a");
+    TX("NO HAY SUBASTAS ABIERTAS", 500, 420, { font: F.t(40), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6, shadow: "rgba(170,100,30,0.35)" });
+    wrap("Un miembro puede subastar sus participaciones y el juzgado subasta las hipotecas ejecutadas. Cuando haya alguna, saldrá aquí.", 540, F.m(22), 3)
+      .forEach((l, i) => T(l, 500, 468 + i * 29, { font: F.m(22), color: C.mute, align: "center" }));
+    return;
+  }
+  const grid = items.length > 3, cw = grid ? 484 : 968, ch = 150;
+  items.forEach((a, i) => auctionCard(a, grid ? 16 + (i % 2) * 500 : 16, grid ? 106 + Math.floor(i / 2) * 162 : 106 + i * 160, cw, ch));
+  if (st.more > 0) T(`y ${st.more} más sin enseñar`, W / 2, 594, { font: F.d(18), color: C.mute, align: "center" });
+  if (items.length <= 2) postIt("Gana la puja más alta cuando se acaba el tiempo. Pujar en la última hora alarga la subasta una hora, y a quien te supera se le devuelve lo suyo.",
+    (W - 620) / 2, 106 + items.length * 160 + 22, 620, 130, hash(items[0].key) % 2 ? 0.012 : -0.012, "CÓMO SE PUJA");
+}
+
+// REFORMAS --------------------------------------------------------------------------------
+
+// Una reforma: icono, lo que da, lo que cuesta; las hechas y las que están en obras, veladas y con su sello.
+function reformCard(r, x, y, w, h) {
+  const tone = REFORM_TINT[r.key] || C.blue;
+  card(x, y, w, h, { r: 14, top: 5, topColor: tone });
+  dot(x + 38, y + 44, 27, tone); dot(x + 38, y + 44, 24, "#fff"); (REFORM_ICON[r.key] || wrench)(x + 38, y + 44, 14, tone);
+  fitText(r.name, x + 76, y + 32, w - 90, F.d, 20, 13, { color: C.ink });
+  fitText(`${r.days} · ${r.rent}`, x + 76, y + 55, w - 90, F.m, 16, 11, { color: C.greenDk });
+  paragraph(r.blurb, x + 14, y + 84, w - 28, F.r(16), 19, 2, { color: C.mute });
+  const chips = [];
+  if (r.breakdowns) chips.push(["Menos averías", "blue"]);
+  if (r.energy) chips.push([`Certificado ${r.energy}`, "turq"]);
+  if (r.rehab) chips.push(["60 % IRPF", "green"]);
+  let tx = x + 14;
+  for (const [t, k] of chips) { const tw_ = tagW(t, 12, null); if (tx + tw_ > x + w - 12) break; tag(t, tx, y + h - 62, k, null, 12); tx += tw_ + 6; }
+  const side = Math.min(125, w * 0.4);
+  fitText(r.total, x + 14, y + h - 24, w - 28 - side - 6, F.d, 28, 16, { color: C.ink });
+  fitText(`obra ${r.cost}`, x + w - 14, y + h - 32, side, F.m, 14, 10, { color: C.mute, align: "right" });
+  fitText(`impuestos ${r.taxes}`, x + w - 14, y + h - 14, side, F.m, 14, 10, { color: C.mute, align: "right" });
+  if (r.status === "available") return;
+  g.save(); rr(x, y, w, h, 14); g.fillStyle = "rgba(251,243,224,0.8)"; g.fill(); g.restore();
+  if (r.status === "done") {
+    rubberStamp("HECHA", x + w / 2, y + h / 2 - 6, -0.16, C.greenDk, 40, { maxW: w - 40 });
+    if (r.until) chip(`terminada el ${r.until}`, x + w / 2, y + h / 2 + 34, "green", { size: 15, align: "center", maxW: w - 30, outline: true });
+  } else {
+    rubberStamp("EN OBRAS", x + w / 2, y + h / 2 - 12, -0.1, "#a86a00", 34, { maxW: w - 40 });
+    if (r.until) chip(`hasta el ${r.until}`, x + w / 2, y + h / 2 + 24, "amber", { size: 16, align: "center", maxW: w - 30 });
+  }
+}
+
+function paintReformas(st) {
+  header(st.title, `${st.barrio} · Reformas`, { size: 30, wordmark: false });
+  const py = 100, ph = 72, none = (s) => /^\+0(\D|$)/.test(s);
+  card(16, py, 968, ph, { r: 14 });
+  [[34, "Renta", st.rent_bonus], [214, "Valor", st.value_bonus]].forEach(([cx, label, v]) => {
+    T(label, cx, py + 22, { font: F.m(16), color: C.mute });
+    fitText(v, cx, py + 49, 150, F.d, 30, 18, { color: none(v) ? C.mute : C.greenDk });
+  });
+  rect(196, py + 14, 1.4, ph - 28, C.line); rect(376, py + 14, 1.4, ph - 28, C.line); rect(590, py + 14, 1.4, ph - 28, C.line);
+  T("Certificado energético", 396, py + 22, { font: F.m(16), color: C.mute });
+  energyBadge(st.energy, 396, py + 33, 66, 30);
+  T("Rehabilitación", 610, py + 22, { font: F.m(16), color: C.mute });
+  if (st.rehab_until) tag(`Rehabilitado: 60 % hasta ${st.rehab_until}`, 610, py + 34, "green", "check", 16, 360);
+  else T("Ninguna cuenta como rehabilitación", 610, py + 49, { font: F.r(17), color: C.mute });
+  let gy = py + ph + 10;
+  if (st.works) {
+    hazard(16, gy, 968, 40, 10);
+    const msg = `EN OBRAS${st.works_until ? " hasta el " + st.works_until : ""} · el piso no se alquila hasta que acaben`;
+    const [t, z] = fit(msg, 780, F.d, 18, 12), pw = width(t, F.d(z)) + 36;
+    fillRR(W / 2 - pw / 2, gy + 6, pw, 28, 14, C.card); T(t, W / 2, gy + 20, { font: F.d(z), color: C.ink, align: "center" });
+    gy += 50;
+  } else if (!st.whole || !st.vacant) {
+    card(16, gy, 968, 40, { r: 10, fill: "#fff3d6", stroke: C.amber });
+    smallIcon("warn", 42, gy + 20, 13, C.amber);
+    const detail = !st.whole && !st.vacant ? " Ahora ni lo tienes entero ni está vacío." : !st.whole ? " Aún no lo tienes entero." : " Ahora no está vacío.";
+    fitText("Solo reforma quien lo tiene entero, con el piso vacío." + detail, 66, gy + 20, 968 - 66 - 16, F.d, 18, 12, { color: "#6a4500" });
+    gy += 50;
+  }
+  const items = st.items || [];
+  if (!items.length) {
+    card(170, gy + 30, 660, 150, { r: 18 });
+    TX("SIN REFORMAS", 500, gy + 80, { font: F.t(40), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6 });
+    T("Este tipo de inmueble no admite reformas.", 500, gy + 130, { font: F.m(22), color: C.mute, align: "center" });
+    return;
+  }
+  const rows = Math.ceil(items.length / 3), ch = Math.min(190, Math.floor((592 - gy - (rows - 1) * 14) / rows));
+  const cols = Math.min(items.length, 3), cw = cols === 3 ? 313 : cols === 2 ? 400 : 440;
+  items.forEach((r, i) => {
+    const row = Math.floor(i / 3), inRow = Math.min(3, items.length - row * 3), x0 = (W - (inRow * cw + (inRow - 1) * 14)) / 2;
+    reformCard(r, x0 + (i % 3) * (cw + 14), gy + row * (ch + 14), cw, ch);
+  });
+  if (items.length <= 2) postIt("Mientras duran las obras el piso no se puede alquilar. Al acabar, la renta y el valor suben y el certificado mejora si la reforma lo da.",
+    (W - 620) / 2, gy + ch + 26, 620, 118, hash(st.key) % 2 ? 0.012 : -0.012, "QUÉ PASA AL REFORMAR");
+}
+
+// IMPREVISTOS -----------------------------------------------------------------------------
+
+// Un parte de incidencias: el número del botón, qué ha pasado, lo que dice el inquilino y las formas de arreglarlo.
+function incidentRow(it, x, y, w, h) {
+  const tone = EVENT_TONE[it.event] || C.sun, lx = x + 14, lb = 336;
+  card(x, y, w, h, { r: 14, top: 5, topColor: tone });
+  dot(x + 38, y + 40, 25, "rgba(0,0,0,0.22)"); dot(x + 38, y + 37, 25, "#fff"); dot(x + 38, y + 37, 21.5, tone);
+  TX(String(it.slot), x + 38, y + 37, { font: F.t(34), color: "#fff", align: "center", stroke: "rgba(0,0,0,0.25)", sw: 3 });
+  fillRR(x + 76, y + 12, 58, 58, 14, mix(tone, "#ffffff", 0.84)); rr(x + 76.5, y + 12.5, 57, 57, 14); g.strokeStyle = tone; g.lineWidth = 1.5; g.stroke();
+  (EVENT_ICON[it.event] || termo)(x + 105, y + 41, 20, tone);
+  let tz = 19, tl = wrap(it.title, lb - 150, F.d(tz), 2);
+  while (tz > 15 && tl[tl.length - 1].endsWith("…")) tl = wrap(it.title, lb - 150, F.d(--tz), 2); // el título entero, con la letra más pequeña si hace falta
+  tl.forEach((l, k) => T(l, x + 148, y + 24 + k * 21, { font: F.d(tz), color: C.ink }));
+  clockIcon(x + 156, y + 64, 7.5, C.mute);
+  fitText(`Decide antes del ${it.until}`, x + 170, y + 64, lb - 170, F.m, 15, 10, { color: C.mute });
+  if (it.complaint) { // lo que dice el inquilino, en un cuadro como el de los candidatos
+    const qf = F.r(17), qw = lb - 30 - 14, top = y + 80, room = Math.floor((h - 80 - 10 - 14) / 21);
+    const lines = wrap(`«${it.complaint}»`, qw, qf, clamp(room, 1, 3)), bh = lines.length * 21 + 14;
+    fillRR(lx, top, lb - 14, bh, 10, "#f3ead2");
+    lines.forEach((l, k) => T(l, lx + 10, top + 17 + k * 21, { font: qf, color: "#4a3f26", skew: true }));
+  }
+  rect(x + lb + 4, y + 16, 1.4, h - 32, C.line);
+  const n = it.options.length, ox0 = x + lb + 16, gap = 10, ow = (w - (lb + 16) - 14 - (n - 1) * gap) / n, oh = h - 24, oy = y + 12, f = Math.max(0, oh - 126);
+  it.options.forEach((o, i) => {
+    const ox = ox0 + i * (ow + gap), good = o.mood > 0, bad = o.mood < 0;
+    fillRR(ox, oy, ow, oh, 12, o.chosen ? "#e9f2fb" : "#fbf6e8");
+    rr(ox + 0.5, oy + 0.5, ow - 1, oh - 1, 12); g.strokeStyle = o.chosen ? C.blue : C.line; g.lineWidth = o.chosen ? 3 : 1.4; g.stroke();
+    dot(ox + 28, oy + 30, 18, "#fff"); circle(ox + 28, oy + 30, 18); g.strokeStyle = tone; g.lineWidth = 1.4; g.stroke();
+    (OPTION_ICON[o.key] || wrench)(ox + 28, oy + 30, 10, tone);
+    const label = String(o.label).replace(/^[^\p{L}\p{N}]+/u, ""), lines = wrap(label, ow - 62, F.d(16), 2);
+    lines.forEach((l, k) => T(l, ox + 54, oy + (lines.length === 1 ? 30 : 21 + k * 19), { font: F.d(16), color: C.ink }));
+    const cy_ = oy + 74 + f * 0.3;
+    fitText(o.cost, ox + 12, cy_, ow - 24 - (o.chosen ? 96 : 0), F.d, 24, 14, { color: C.ink });
+    if (o.chosen) tag("Elegida", ox + ow - 10 - tagW("Elegida", 12, "check"), cy_ - 11, "blue", "check", 12);
+    const my = oy + 98 + f * 0.6;
+    if (good || bad) smallIcon(good ? "up" : "down", ox + 20, my, 7, good ? C.green : C.red);
+    else rect(ox + 13, my - 1.5, 14, 3, C.grey);
+    T(good ? `Humor +${o.mood}` : bad ? `Humor -${-o.mood}` : "Humor igual", ox + 34, my, { font: F.d(16), color: good ? C.greenDk : bad ? C.redDk : C.mute });
+    if (o.relapse) fitText(`Vuelve a romperse el ${o.relapse}`, ox + 12, oy + 118 + f * 0.9, ow - 20, F.m, 14, 10, { color: C.redDk });
+  });
+}
+
+function paintImprevistos(st) {
+  const sub = `${st.barrio} · Imprevistos`;
+  if (st.mood) {
+    const rx = W - 24 - 250;
+    header(st.title, sub, { size: 30, right: () => {
+      moodFace(rx + 22, 45, 22, st.mood_value, "#fff");
+      fitText(st.tenant, rx + 56, 24, 194, F.d, 17, 11, { color: "#d6ecf5" });
+      T(st.mood, rx + 56, 46, { font: F.t(22), color: "#fff" });
+      T(`${st.mood_value}/100`, rx + 250, 46, { font: F.d(16), color: "#d6ecf5", align: "right" });
+      moodBar(rx + 56, 60, 194, 10, st.mood_value);
+    }, rightW: 250 });
+  } else header(st.title, sub, { size: 30, wordmark: false });
+  const items = st.items || [];
+  if (st.empty || !items.length) {
+    card(170, 120, 660, 440, { r: 18 });
+    circle(500, 260, 62); g.fillStyle = C.green; g.fill(); smallIcon("check", 500, 260, 42, "#fff");
+    TX("TODO EN ORDEN", 500, 380, { font: F.t(46), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6, shadow: "rgba(170,100,30,0.35)" });
+    wrap("Ningún imprevisto espera decisión en este piso. Si se rompe algo, aparecerá aquí para que elijas cómo arreglarlo.", 540, F.m(22), 3)
+      .forEach((l, i) => T(l, 500, 430 + i * 29, { font: F.m(22), color: C.mute, align: "center" }));
+    return;
+  }
+  const n = items.length, h = n === 1 ? 190 : n === 2 ? 170 : 150;
+  items.forEach((it, i) => incidentRow(it, 16, 102 + i * (h + 10), 968, h));
+  if (n <= 2) postIt("Si no eliges antes de la fecha, la gestora lo arregla bien. Lo que elijas se cobra por la noche, con su IGIC.",
+    (W - 620) / 2, 102 + n * (h + 10) + 14, 620, 112, hash(st.key) % 2 ? 0.012 : -0.012, "SI NO DECIDES");
+  if (!st.decides) tag("Decide otro dueño", 16, 578, "grey", "people", 15);
+}
+
 // -- Entrada ------------------------------------------------------------------------------
 
 const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
-  gestion: paintGestion, candidatos: paintCandidatos };
+  gestion: paintGestion, candidatos: paintCandidatos, subastas: paintSubastas, reformas: paintReformas,
+  imprevistos: paintImprevistos };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

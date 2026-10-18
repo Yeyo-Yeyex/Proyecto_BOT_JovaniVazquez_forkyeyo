@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import dataclasses
 import io
 import itertools
 import json
@@ -21,8 +22,9 @@ import pytest_asyncio
 from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
-from bot.repositories.housing import Holding, Market, MemberDay, News
+from bot.repositories.housing import Decision, Holding, Market, MemberDay, News
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
+from bot.repositories.housing_trade import Auction
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
 from bot.services import housing_view as view
@@ -407,12 +409,133 @@ def phase2_samples() -> dict[str, dict[str, Any]]:
     return {**gestion, **candidatos, **others}
 
 
+NOW = 1_760_000_000.0
+LONGEST_COMPLAINT = max(TENANTS, key=lambda t: len(t.complaint))
+
+
+def auction(number: int, key: str, **kwargs: Any) -> Auction:
+    """Una subasta de muestra: del vendedor 20, sin pujas y con tres horas por delante."""
+    fields: dict[str, Any] = {
+        "id": number, "listing": key, "seller": 20, "shares": 25, "min_bid": 40000,
+        "ends_at": NOW + 3 * 3600 + 300, "judicial": False, "mortgage_id": None,
+        "best_bid": 0, "best_bidder": None, "escrow": 0, "bids": 0, "created_at": NOW - 3600,
+    }  # fmt: skip
+    return Auction(**{**fields, **kwargs})
+
+
+def phase34_market(
+    leases: dict[str, rules.Lease],
+    *,
+    reforms: dict[str, dict[str, tuple[int, date, bool, bool]]] | None = None,
+    decisions: dict[str, tuple[Decision, ...]] | None = None,
+    candidates: dict[str, tuple[tuple[str, date], ...]] | None = None,
+) -> Market:
+    """Pisos del usuario 10 (enteros) con sus reformas e imprevistos."""
+    market = phase2_market(leases, candidates)
+    return dataclasses.replace(market, reforms=reforms or {}, decisions=decisions or {})
+
+
+def problem(number: int, key: str, event: str, cost: int, choice: str | None = None) -> Decision:
+    return Decision(number, key, event, cost, date(2026, 10, 14), date(2026, 10, 17), choice)
+
+
+def phase34_samples() -> dict[str, dict[str, Any]]:
+    """Subastas, reformas, imprevistos y lo nuevo de la ficha (humor, obras, reformado)."""
+    keys = [item.key for item in LISTINGS]
+    many = Market(
+        auctions=(
+            auction(1, keys[0], best_bid=41000, best_bidder=30, bids=3, seller=10),
+            auction(2, LONGEST.key, judicial=True, seller=40, shares=100, min_bid=900000,
+                    best_bid=1_234_000, best_bidder=40, bids=11, ends_at=NOW + 1500),
+            auction(3, keys[3], best_bid=52000, best_bidder=10, bids=2, shares=40),
+            auction(4, LOCAL, min_bid=15000, ends_at=NOW + 20 * 3600),
+            auction(5, keys[5], judicial=True, seller=30, shares=60, best_bid=70000,
+                    best_bidder=20, bids=1),
+            auction(6, BY_KIND["chalet"], best_bid=99000, best_bidder=60, bids=7, seller=50),
+            auction(7, keys[8]),
+            auction(8, keys[9]),
+        ),
+    )  # fmt: skip
+    pair = dataclasses.replace(many, auctions=many.auctions[1:3])
+    one = dataclasses.replace(many, auctions=many.auctions[2:3])
+    subastas = {
+        "subastas_seis_y_mas": view.auctions_state(many, 10, NAMES, NOW, 2),
+        "subastas_judicial_elegida": view.auctions_state(pair, 10, NAMES, NOW, 2),
+        "subastas_voy_ganando": view.auctions_state(one, 10, NAMES, NOW, None),
+        "subastas_vacia": view.auctions_state(Market(), 10, NAMES, NOW),
+    }
+    day = date(2026, 10, 10)
+    done = {
+        PISO: {
+            "pintura": (7000, day, True, False),
+            "cocina": (9000, day, True, False),
+            "bano": (6000, date(2026, 10, 25), False, False),
+        }
+    }
+    reformada = {PISO: {"integral": (80000, day, True, True), "energia": (40000, day, True, False)}}
+    tenant = rules.Lease(status="alquilado", tenant="enfermeros", rent=4300, mood=85)
+    obras = rules.Lease(status="obras", works_until=date(2026, 10, 25))
+    vacio = rules.Lease(status="vacio")
+    clean = phase34_market({PISO: vacio, LOCAL: vacio})
+    reformas = {
+        "reformas_nada": view.reforms_state(clean, PISO, 10),
+        "reformas_en_obras": view.reforms_state(
+            phase34_market({PISO: obras}, reforms=done), PISO, 10
+        ),
+        "reformas_rehabilitado": view.reforms_state(
+            phase34_market({PISO: vacio}, reforms=reformada), PISO, 10
+        ),
+        "reformas_local": view.reforms_state(clean, LOCAL, 10),
+        "reformas_no_entero": view.reforms_state(
+            phase34_market({LONGEST.key: vacio}), LONGEST.key, 10
+        ),
+        "reformas_no_vacio": view.reforms_state(phase34_market({PISO: tenant}), PISO, 10),
+    }
+    problems = {
+        PISO: (
+            problem(1, PISO, "averia", 320_000),
+            problem(2, PISO, "humedades", 80_000),
+            problem(3, PISO, "vecino", 0),
+        ),
+        LONGEST.key: (problem(4, LONGEST.key, "cerradura", 45_000),),
+        LOCAL: (problem(5, LOCAL, "averia", 15_000, "cunado"),),
+    }
+    angry = rules.Lease(status="alquilado", tenant=LONGEST_COMPLAINT.key, rent=5000, mood=12)
+    pending = phase34_market({PISO: tenant, LONGEST.key: angry, LOCAL: vacio}, decisions=problems)
+    imprevistos = {
+        "imprevistos_tres": view.decisions_state(pending, PISO, 10),
+        "imprevistos_una_elegida": view.decisions_state(pending, LOCAL, 10),
+        "imprevistos_larga_ajeno": view.decisions_state(pending, LONGEST.key, 10),
+        "imprevistos_vacia": view.decisions_state(clean, PISO, 10),
+    }
+    full = phase34_market(
+        {PISO: tenant},
+        reforms=reformada,
+        decisions={PISO: problems[PISO][:2]},
+        candidates={PISO: waiting("estudiantes", "abuela")},
+    )
+    upset = phase34_market({LONGEST.key: angry}, decisions={LONGEST.key: problems[LONGEST.key]})
+    fresh = phase34_market(
+        {PISO: rules.Lease(status="vacio", pick="yo")},
+        reforms=reformada,
+        candidates={PISO: waiting("policia", "britanicos", "abuela")},
+    )
+    working = phase34_market({PISO: obras}, reforms=done)
+    fichas = {
+        "ficha_humor_imprevistos": view.listing_state(full, PISO, 10, NAMES, NEWS, TODAY),
+        "ficha_harto_un_imprevisto": view.listing_state(upset, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "ficha_en_obras": view.listing_state(working, PISO, 10, NAMES, [], TODAY),
+        "ficha_reformada": view.listing_state(fresh, PISO, 10, NAMES, NEWS, TODAY),
+    }
+    return {**subastas, **reformas, **imprevistos, **fichas}
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
 
 def samples() -> dict[str, dict[str, Any]]:
-    """Las pantallas de muestra: las ocho, con casos largos, vacíos y de todos los tipos."""
+    """Las pantallas de muestra: las once, con casos largos, vacíos y de todos los tipos."""
     m = market()
     week = MemberDay(30000, 1200, 4000)
     out: dict[str, dict[str, Any]] = {
@@ -496,6 +619,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(mood_samples())
     out.update(facade_samples())
     out.update(phase2_samples())
+    out.update(phase34_samples())
     return out
 
 
@@ -526,6 +650,13 @@ CORE = [
         "barrio_noticia",
         "mapa_noticias",
         "cartera_tres_pastillas",
+        "subastas_seis_y_mas",
+        "subastas_vacia",
+        "reformas_en_obras",
+        "reformas_local",
+        "imprevistos_tres",
+        "imprevistos_vacia",
+        "ficha_humor_imprevistos",
     }
 ]
 
@@ -603,10 +734,11 @@ def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
     assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
 
 
-def test_las_muestras_cubren_las_ocho_pantallas_y_las_claves_de_la_fase_2() -> None:
+def test_las_muestras_cubren_las_once_pantallas_y_las_claves_de_las_fases_2_a_4() -> None:
     states = samples()
     assert {s["screen"] for s in states.values()} == {
         "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
+        "subastas", "reformas", "imprevistos",
     }  # fmt: skip
     assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
     assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
@@ -621,6 +753,27 @@ def test_las_muestras_cubren_las_ocho_pantallas_y_las_claves_de_la_fase_2() -> N
     assert any(p["news"] for i in states["mapa_noticias"]["islands"] for p in i["barrios"])
     longest = states["candidatos_frase_larga"]["cards"][0]
     assert longest["line"] == LONGEST_LINE.line
+    seis = states["subastas_seis_y_mas"]
+    assert (len(seis["items"]), seis["more"]) == (6, 2) and states["subastas_vacia"]["empty"]
+    assert any(i["judicial"] and i["selected"] for i in seis["items"])
+    assert states["subastas_voy_ganando"]["items"][0]["leading"]
+    nada, obras = states["reformas_nada"], states["reformas_en_obras"]
+    assert nada["whole"] and nada["vacant"]
+    assert {i["status"] for i in nada["items"]} == {"available"}
+    made = sorted(i["status"] for i in obras["items"] if i["status"] != "available")
+    assert made == ["done", "done", "works"] and obras["works"]
+    assert [i["key"] for i in states["reformas_local"]["items"]] == ["negocio"]
+    assert not states["reformas_no_entero"]["whole"] and not states["reformas_no_vacio"]["vacant"]
+    assert states["reformas_rehabilitado"]["rehab_until"]
+    tres = states["imprevistos_tres"]
+    assert [i["slot"] for i in tres["items"]] == [1, 2, 3] and tres["decides"] and tres["mood"]
+    elegida = states["imprevistos_una_elegida"]["items"]
+    assert any(o["chosen"] for i in elegida for o in i["options"])
+    assert states["imprevistos_vacia"]["empty"] and not states["imprevistos_larga_ajeno"]["decides"]
+    humor = states["ficha_humor_imprevistos"]
+    assert humor["mood"] and humor["decisions"] == 2 and humor["reformed"]
+    assert states["ficha_reformada"]["waiting"] == 3
+    assert states["ficha_en_obras"]["works_until"] == "25/10"
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------
