@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.26.0 · 2026-10-18
+
+- Logros: 57 de Coleccionista que faltaban (hasta 4.000 logros, más escalones por rareza, secretos, puntos, premios y categorías, y uno nuevo por logros comunes)
+
 ### 7.25.31 · 2026-10-18
 
 - Interno: las pruebas vigilan las reglas de tono (frases normales, lo boricua y la muleta «como»)

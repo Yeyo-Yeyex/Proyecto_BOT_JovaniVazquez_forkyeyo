@@ -9622,69 +9622,137 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "meta_10", "Hazte con todos", "Desbloquea 10 logros.", C),
         (25, "meta_25", "Coleccionista de relojes de Camps", "Desbloquea 25 logros.", R),
         (50, "meta_50", "Vitrina llena", "Desbloquea 50 logros.", E),
+        (69, "meta_69", "Postura de coleccionista", "Desbloquea 69 logros.", E, True),
         (100, "meta_100", "Noche en el museo", "Desbloquea 100 logros.", L),
         (150, "meta_150", "Hemeroteca", "Desbloquea 150 logros.", L),
         (250, "meta_250", "Patrimonio de la Humanidad", "Desbloquea 250 logros.", L),
         (400, "meta_400", "Álbum de Panini casi completo", "Desbloquea 400 logros.", M),
         (600, "meta_600", "Ministerio de Logros",
          "Desbloquea 600 logros.", M),
+        (666, "meta_666", "La bestia de la vitrina", "Desbloquea 666 logros.", M, True),
+        (800, "meta_800", "Más medallas que Phelps", "Desbloquea 800 logros.", M),
+        (1_000, "meta_1000", "Las mil y una vitrinas", "Desbloquea 1.000 logros.", M),
+        (1_250, "meta_1250", "El Rastro un domingo", "Desbloquea 1.250 logros.", M),
+        (1_337, "meta_1337", "L33t c0l3c710n15t4", "Desbloquea 1.337 logros.", M, True),
+        (1_500, "meta_1500", "Diógenes de las medallas", "Desbloquea 1.500 logros.", M),
+        (2_000, "meta_2000", "Efecto 2000", "Desbloquea 2.000 logros.", M),
+        (2_500, "meta_2500", "Más chapas que un general norcoreano",
+         "Desbloquea 2.500 logros.", M),
+        (3_000, "meta_3000", "Almacén de IKEA", "Desbloquea 3.000 logros.", M),
+        (3_500, "meta_3500", "Ni El Corte Inglés tiene tanto", "Desbloquea 3.500 logros.", M),
+        (4_000, "meta_4000", "A un pelo del cien por cien", "Desbloquea 4.000 logros.", M),
+    ])  # fmt: skip
+    a += _tiers("meta", "achievements_common", [
+        (10, "meta_common_10", "Normal y corriente", "Desbloquea 10 logros comunes.", C),
+        (50, "meta_common_50", "Del montón", "Desbloquea 50 logros comunes.", R),
+        (200, "meta_common_200", "El pan de cada día", "Desbloquea 200 logros comunes.", E),
+        (500, "meta_common_500", "Clase media", "Desbloquea 500 logros comunes.", L),
+        (1_000, "meta_common_1000", "Ciudadano de a pie", "Desbloquea 1.000 logros comunes.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_rare", [
+        (1, "meta_rare_1", "Rara avis", "Desbloquea un logro raro.", R),
         (25, "meta_rare_25", "Raro, raro", "Desbloquea 25 logros raros.", R),
         (100, "meta_rare_100", "Bicho raro", "Desbloquea 100 logros raros.", E),
+        (250, "meta_rare_250", "Gabinete de curiosidades", "Desbloquea 250 logros raros.", L),
+        (500, "meta_rare_500", "Iker Jiménez lo investiga", "Desbloquea 500 logros raros.", M),
+        (1_000, "meta_rare_1000", "Más raro que un perro verde",
+         "Desbloquea 1.000 logros raros.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_epic", [
+        (1, "meta_epic_1", "Érase una vez", "Desbloquea un logro épico.", R),
         (10, "meta_epic_10", "Épica de película", "Desbloquea 10 logros épicos.", E),
         (50, "meta_epic_50", "Cantar de gesta", "Desbloquea 50 logros épicos.", L),
+        (100, "meta_epic_100", "La Odisea", "Desbloquea 100 logros épicos.", L),
+        (250, "meta_epic_250", "El Señor de los Logros", "Desbloquea 250 logros épicos.", M),
+        (500, "meta_epic_500", "Ben-Hur en cuadriga", "Desbloquea 500 logros épicos.", M),
+        (900, "meta_epic_900", "Tres horas y media de metraje",
+         "Desbloquea 900 logros épicos.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_legendary", [
+        (1, "meta_legend_1", "Leyenda urbana", "Desbloquea un logro legendario.", E),
         (3, "meta_legend_3", "Leyenda de barrio", "Desbloquea 3 logros legendarios.", E),
         (15, "meta_legend_15", "Leyenda viva", "Desbloquea 15 logros legendarios.", L),
+        (50, "meta_legend_50", "Leyendas de Bécquer", "Desbloquea 50 logros legendarios.", L),
+        (100, "meta_legend_100", "Salón de la Fama", "Desbloquea 100 logros legendarios.", M),
+        (250, "meta_legend_250", "Ganar batallas después de muerto",
+         "Desbloquea 250 logros legendarios.", M),
+        (500, "meta_legend_500", "Más leyenda que San Borondón",
+         "Desbloquea 500 logros legendarios.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_mythic", [
         (1, "meta_mythic_1", "Mito andante", "Desbloquea un logro mítico.", L),
         (5, "meta_mythic_5", "Olimpo", "Desbloquea 5 logros míticos.", M),
+        (10, "meta_mythic_10", "Mitómano", "Desbloquea 10 logros míticos.", M),
+        (25, "meta_mythic_25", "Ragnarök", "Desbloquea 25 logros míticos.", M),
+        (50, "meta_mythic_50", "El mito de la caverna", "Desbloquea 50 logros míticos.", M),
+        (100, "meta_mythic_100", "Mitificado en vida", "Desbloquea 100 logros míticos.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_secret", [
         (5, "meta_secret_5", "Agente del CNI", "Desbloquea 5 logros secretos.", R),
         (20, "meta_secret_20", "Pegasus",
          "Desbloquea 20 logros secretos.", E),
         (50, "meta_secret_50", "Mulder y Scully", "Desbloquea 50 logros secretos.", L),
+        (100, "meta_secret_100", "Wikileaks", "Desbloquea 100 logros secretos.", L),
+        (200, "meta_secret_200", "La fórmula de la Coca-Cola",
+         "Desbloquea 200 logros secretos.", M),
+        (400, "meta_secret_400", "Los archivos del Vaticano", "Desbloquea 400 logros secretos.", M),
+        (700, "meta_secret_700", "Secreto de sumario", "Desbloquea 700 logros secretos.", M),
     ])  # fmt: skip
     normal_categories = [c for c in CATEGORIES if c.key != "meta" and not c.upcoming]
     a += _tiers("meta", "achievements_categories", [
         (10, "meta_cats_10", "Tocando todos los palos", "Consigue logros en 10 categorías.", R),
+        (25, "meta_cats_25", "Erasmus de categorías", "Consigue logros en 25 categorías.", R),
+        (40, "meta_cats_40", "Interrail", "Consigue logros en 40 categorías.", E),
         (len(normal_categories), "meta_cats_all", "Hombre del Renacimiento",
          "Consigue al menos un logro en cada categoría.", E),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_categories_done", [
         (1, "meta_done_1", "Perfeccionista", "Completa una categoría entera.", E),
         (5, "meta_done_5", "TOC", "Completa 5 categorías enteras.", L),
+        (10, "meta_done_10", "Marie Kondo aprueba", "Completa 10 categorías enteras.", M),
+        (25, "meta_done_25", "Enciclopedia Espasa", "Completa 25 categorías enteras.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievement_points", [
         (1_000, "meta_pts_1k", "Mil puntos y sumando",
          "Suma 1.000 puntos de logros.", R),
         (5_000, "meta_pts_5k", "Carné por puntos impecable", "Suma 5.000 puntos.", E),
         (15_000, "meta_pts_15k", "Matrícula de honor", "Suma 15.000 puntos de logros.", L),
+        (30_000, "meta_pts_30k", "Tarjeta Travel Club", "Suma 30.000 puntos de logros.", M),
+        (60_000, "meta_pts_60k", "Récord del Tetris", "Suma 60.000 puntos de logros.", M),
+        (100_000, "meta_pts_100k", "Douze points", "Suma 100.000 puntos de logros.", M),
+        (150_000, "meta_pts_150k", "Pinball de bar con todas las luces",
+         "Suma 150.000 puntos de logros.", M),
     ])  # fmt: skip
     a += _tiers("meta", "achievements_earned", [
         (25_000, "meta_money_25k", "Subvencionado",
          "Cobra 25.000 Y$ brutos en premios de logros.", R),
         (100_000, "meta_money_100k", "Chiringuito de logros", "Cobra 100.000 Y$ en premios.", E),
         (500_000, "meta_money_500k", "Vivir del cuento", "Cobra 500.000 Y$ en premios.", L),
+        (1_000_000, "meta_money_1m", "Lotería sin comprar décimo",
+         "Cobra 1.000.000 Y$ en premios de logros.", M),
+        (2_000_000, "meta_money_2m", "Rey Midas de las medallas",
+         "Cobra 2.000.000 Y$ en premios de logros.", M),
+        (4_000_000, "meta_money_4m", "Tío Gilito en la piscina de monedas",
+         "Cobra 4.000.000 Y$ en premios de logros.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("meta", "achievements_batch", [
         (3, "meta_combo_3", "C-C-C-Combo breaker", "Desbloquea 3 logros de golpe.", R, True),
         (5, "meta_combo_5", "Pleno al quince", "Desbloquea 5 logros de golpe.", E, True),
+        (10, "meta_combo_10", "Lluvia de estrellas", "Desbloquea 10 logros de golpe.", L, True),
     ])  # fmt: skip
     a += _tiers("meta", "logros_views", [
+        (1, "views_1", "Primera visita al trastero", "Abre tus logros en `perfil`.", C),
         (10, "views_10", "Espejito, espejito",
          "Abre tus logros en `perfil` 10 veces.", C),
         (100, "views_100", "Narciso de vitrina", "Abre tus logros en `perfil` 100 veces.", R),
+        (1_000, "views_1000", "Contar medallas para dormir",
+         "Abre tus logros en `perfil` 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("meta", "logros_others", [
+        (1, "others_1", "Por el ojo de la cerradura", "Mira los logros de otra persona.", C),
         (10, "others_10", "Cotilla", "Mira los logros de otra persona 10 veces.", C),
         (100, "others_100", "Portera del edificio", "Mira los logros de otros 100 veces.", R),
+        (1_000, "others_1000", "La vecina del quinto", "Mira los logros de otros 1.000 veces.", E),
     ])  # fmt: skip
     # 👤 Perfil: mirarse y mirar a otros es una decisión, nada pasa de Épico.
     a += _tiers("meta", "perfil_views", [
@@ -9711,8 +9779,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mírate el `perfil` entre las 3 y las 5 de la mañana.", C, True),
     ])  # fmt: skip
     a += _tiers("meta", "logros_ranking", [
+        (1, "ranking_1", "¿Cómo voy?", "Mira el ranking de logros.", C),
         (25, "ranking_25", "Obsesionado con la clasificación",
          "Mira el ranking de logros 25 veces.", R),
+        (250, "ranking_250", "Pegado a la tabla de la Liga",
+         "Mira el ranking de logros 250 veces.", E),
     ])  # fmt: skip
     # 📊 Estadísticas del casino (`apuestas`) ------------------------------------------
     # Mirar las cuentas es una decisión, no suerte: nada pasa de Raro
@@ -13935,6 +14006,7 @@ def meta_stats(unlocked: Iterable[str], *, batch: int = 0) -> dict[str, int]:
         by_rarity[achievement.rarity] += 1
     return {
         UNLOCKED_STAT: len(normal),
+        "achievements_common": by_rarity[Rarity.COMMON],
         "achievements_rare": by_rarity[Rarity.RARE],
         "achievements_epic": by_rarity[Rarity.EPIC],
         "achievements_legendary": by_rarity[Rarity.LEGENDARY],
