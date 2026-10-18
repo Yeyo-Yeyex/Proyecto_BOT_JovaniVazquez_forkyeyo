@@ -39,7 +39,7 @@ def test_la_auditoria_encuentra_las_listas_de_frases() -> None:
     places = {pl.where for pl in lists}
     assert "cogs/errors:EXPIRED_CLICK" in places
     assert "services/pets:CARE_LINES[Care.PET]" in places
-    assert sources["Netanyahu (Bibi)"] > 0 and sources["Groypers (Nick Fuentes)"] > 0
+    assert sources["Netanyahu (Bibi)"] > 0 and "Groypers (Nick Fuentes)" in sources
 
 
 def test_cuenta_las_coletillas_de_jovani() -> None:

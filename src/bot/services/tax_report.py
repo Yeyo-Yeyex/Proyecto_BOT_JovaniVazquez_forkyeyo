@@ -199,7 +199,7 @@ def verdict(bill: TaxBill, share: float) -> str:
         share: Parte de lo recaudado en el servidor que ha pagado (0–1).
     """
     if bill.total <= 0:
-        return "Ni un Y$ para Sanxe. O eres muy listo o no haces nada, papi."
+        return "Ni un Y$ para Sanxe. O eres muy listo o no haces nada."
     if share >= 0.5:
         return "Tú solo sostienes el Estado. El Falcon va con tu gasolina."
     if bill.indirect > bill.direct:

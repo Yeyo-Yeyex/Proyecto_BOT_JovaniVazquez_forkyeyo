@@ -83,27 +83,27 @@ COLOR = discord.Color.from_rgb(255, 140, 190)
 BIRTHDAY_LINES = (
     "Desayuno con huevo y jugo de china del bueno para celebrarlo.",
     "Un año más y Hacienda todavía no cobra por cumplirlos. De momento.",
-    "Kim le dedica un desfile y un misil.",
-    "Trump dice que es el mejor cumpleaños de la historia. Tremendo.",
-    "La Moncloa manda el Falcon a por la tarta.",
+    "¡Feliz cumpleaños!",
+    "Que cumplas muchos más.",
     "Hazme café… ¡quiero café! Y tarta.",
     "Las velas, al precio de la factura de la luz.",
-    "Putin le felicita desde la otra punta de la mesa larga.",
-    "Feijóo dice que la tarta la ha pagado el PP.",
+    "Trump dice que es el mejor cumpleaños de la historia. Tremendo.",
     "Lagartijo, iguana, lagarto: todo el zoo le canta el cumpleaños feliz.",
+    "Un año más sabio. O eso dicen.",
+    "Hoy invita a la ronda, que es tradición.",
 )
 #: Coletilla del anuncio del aniversario del servidor.
 ANNIVERSARY_LINES = (
-    "Más años que una legislatura de Sánchez, y sin presupuestos nuevos.",
-    "Kim lo celebra con un desfile y Putin, con una mesa larguísima.",
-    "Ni Bibi ha durado tanto en el cargo. Bueno, sí. Pero casi.",
-    "El NO-DO lo anuncia: el servidor sigue vivo, como Franco no.",
+    "¡Feliz aniversario al servidor!",
+    "Un año más juntos.",
     "Perro Sanxe ya está calculando el IRPF de la tarta.",
     "Hazme café… ¡quiero café! Y tarta para todo el servidor.",
-    "Trump dice que es el mejor servidor de la historia. Tremendo, tremendo.",
-    "Puigdemont lo celebra desde Waterloo, por videollamada.",
+    "Más años que una legislatura, y sin presupuestos nuevos.",
+    "El servidor sopla las velas y pide otro año igual de bueno.",
+    "¿Qué? ¿Qué? ¡Toma mangó! El servidor está de cumpleaños.",
+    "Gracias por seguir aquí.",
+    "Otro año de casino, beernights y memes.",
     "Ni el juicio de Netanyahu ha dado tanto que hablar.",
-    "Bruselas exige que la tarta lleve el tapón pegado.",
 )
 
 

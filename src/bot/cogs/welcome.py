@@ -339,8 +339,8 @@ class Welcome(commands.Cog):
         check = check_greeting(newcomer_id, greeter.id, joined_at=joined_at, now=now)
         if check is GreetCheck.SELF:
             await interaction.response.send_message(
-                "¡Ay, bendito! No te puedes dar la bienvenida a ti mismo. Ya estás dentro, "
-                "mi amor, relájate y tómate un cafecito.",
+                "No te puedes dar la bienvenida a ti mismo. Ya estás dentro: "
+                "relájate y tómate un cafecito.",
                 ephemeral=True,
             )
             return
@@ -375,7 +375,7 @@ class Welcome(commands.Cog):
         if incomes is not None:
             mine, theirs = incomes
             text = (
-                f"👋 ¡Wepa! Saludo entregado. {CURRENCY_EMOJI} +{format_amount(GREETER_GIFT)} "
+                f"👋 Saludo entregado. {CURRENCY_EMOJI} +{format_amount(GREETER_GIFT)} "
                 f"brutos para ti y +{format_amount(WELCOMED_GIFT)} para <@{newcomer_id}>, "
                 "para que se estrene en la ruleta.\n"
                 f"{tax_line(mine.gross, mine.tax, mine.rate)}"

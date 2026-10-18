@@ -29,7 +29,7 @@ ROBUSO_SCHEDULE: tuple[tuple[int, str], ...] = (
     (10, "💼 Robuso está en la oficina, dándolo todo."),
     (12, "🍜 Robuso está almorzando en un cha chaan teng. Arroz, té con leche y pa'lante."),
     (14, "💼 Robuso sigue currando. Ya mismo sale, tranquilo."),
-    (19, "🌃 Robuso está cenando con vistas a Victoria Harbour. Qué vida, mi amor."),
+    (19, "🌃 Robuso está cenando con vistas a Victoria Harbour. Qué vida."),
     (22, "🎤 Robuso puede que esté en un karaoke de Lan Kwai Fong. Escríbele, que contesta."),
 )
 

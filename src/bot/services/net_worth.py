@@ -158,7 +158,7 @@ def holding_line(item: Holding) -> str:
 def verdict(worth: NetWorth, rank: int, total_people: int) -> str:
     """Frase con guasa según lo que tiene alguien."""
     if worth.total <= 0:
-        return "Patrimonio cero. Ni Sanxe se molesta en mirarte, papi."
+        return "Patrimonio cero. Ni Sanxe se molesta en mirarte."
     if rank == 1 and total_people > 1:
         return "El Amancio Ortega del servidor. Sanxe ya ha preguntado por ti."
     if worth.illiquid_share >= 0.5:

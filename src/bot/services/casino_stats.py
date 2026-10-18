@@ -564,7 +564,7 @@ def verdict(totals: Totals) -> str:
         return "Lo normal: la casa se lleva lo suyo, despacito, como un IBI."
     if rtp >= 0.7:
         return "Cliente preferente. El casino ya te manda felicitaciones por Navidad."
-    return "Has financiado medio casino. Que te pongan una placa en la entrada, papi."
+    return "Has financiado medio casino. Que te pongan una placa en la entrada."
 
 
 def sanxe_line(withheld: int, refunded: int) -> str:

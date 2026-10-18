@@ -434,7 +434,7 @@ class MarketRepository:
         def run(connection: sqlite3.Connection) -> tuple[Bid, MarketMove]:
             listing = _open_listing_in(connection, guild_id, listing_id)
             if now >= listing.deadline:
-                raise MarketError("Ese puesto ya ha cerrado. ¡Adjudicado a otro, mi amor!")
+                raise MarketError("Ese puesto ya ha cerrado. ¡Adjudicado a otro!")
             if bidder_id == listing.seller_id:
                 raise MarketError(
                     "Pujar por lo tuyo para inflar el precio es de la Gürtel. Aquí no."

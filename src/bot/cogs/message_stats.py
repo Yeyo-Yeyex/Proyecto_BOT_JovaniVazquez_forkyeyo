@@ -173,47 +173,38 @@ def _describe_import(status: ImportStatus | None, *, running: bool) -> str:
 
 #: Coletilla del aviso de subir de nivel.
 LEVEL_LINES = (
-    "¡Wepa!",
-    "Ni Sánchez sube tan rápido en el CIS.",
-    "Ascenso exprés, como un cuñado en una empresa pública.",
-    "Sale mañana en el BOE.",
-    "Trump ya dice que el mérito es suyo.",
-    "Kim decreta tres días de aplausos.",
-    "Putin lo aprueba con el 87 % de los votos.",
-    "Yes you can, que diría Obama.",
+    "¡Enhorabuena!",
+    "¡Toma mangó!",
     "Sube más que el alquiler.",
-    "Escalafón de funcionario, pero sin oposición.",
+    "Sale mañana en el BOE.",
+    "Así se hace.",
+    "Un nivel más, y los que quedan.",
     "Hacienda ya ha subido su parte.",
     "Estoy destruido, pero por fuera… ¡por dentro estoy nuevo!",
     "¡Jota Uve! ¡Pre!",
     "Desayuna con huevo y jugo de china del bueno: hoy se celebra.",
+    "Trump ya dice que el mérito es suyo.",
+    "Cada mensaje cuenta.",
+    "¡Arriba, arriba!",
+    "Escalafón de funcionario, pero sin oposición.",
 )
 
 IMPORT_DONE_LINES = (
-    "Me he leído {mensajes} mensajes de {canales} canales sin pedir el indulto, como Bibi. "
-    "Niveles encendidos: cada mensaje y cada rato en voz suma.",
-    "Contados {mensajes} mensajes en {canales} canales. Ni un groyper se lee tanto chat en su "
-    "sótano. `.ranking` y a presumir.",
+    "Me he leído {mensajes} mensajes de {canales} canales. Niveles encendidos: cada mensaje y "
+    "cada rato en voz suma.",
+    "Contados {mensajes} mensajes en {canales} canales. `.ranking` y a presumir.",
     "Hecho: {mensajes} mensajes de {canales} canales, archivados mejor que el NO-DO. Los "
     "niveles ya cuentan; `.perfil` para ver el tuyo.",
     "{mensajes} mensajes en {canales} canales: más horas de lectura que un discurso de Fidel. "
     "Niveles encendidos; `.ranking` para ver quién manda.",
-    "Leídos {mensajes} mensajes de {canales} canales. Más papeles que los archivos Epstein, y "
-    "estos sin tachar. Niveles encendidos: `.ranking` y a presumir.",
-    "{mensajes} mensajes en {canales} canales, contados uno a uno como los votos de la "
-    "Knesset. Cada mensaje suma XP desde ya; mirad `.perfil`.",
-    "Recuento terminado: {mensajes} mensajes en {canales} canales. Ni el CIS de Tezanos "
-    "cuenta tan rápido. Niveles encendidos, y cada nivel paga yapdollars.",
-    "¡Wepaaa! Ya me leí {mensajes} mensajes de {canales} canales y cada uno tiene su XP. Mirad "
-    "dónde estáis con `.perfil` y `.ranking`, mi gente.",
-    "Ay, bendito, qué de mensajes: {mensajes} en {canales} canales. Los niveles están encendidos; "
-    "a partir de ya, cada mensaje y cada rato en voz suma. `.ranking` pa' ver quién manda.",
-    "Acho, esto ya es oficial: niveles encendidos. Conté {mensajes} mensajes en {canales} canales "
-    "con mi cafecito al lado. Subid de nivel, que cada nivel paga yapdollars.",
-    "¡Jota Uve! ¡Pre! Me he leído {mensajes} mensajes de {canales} canales. Ni la UCO lee tanto. "
-    "`.ranking` y a presumir, mi gente.",
-    "Hazme café… ¡quiero café!, que me he leído {mensajes} mensajes en {canales} canales. Niveles "
-    "encendidos: cada mensaje suma.",
+    "Recuento terminado: {mensajes} mensajes en {canales} canales. Niveles encendidos, y cada "
+    "nivel paga yapdollars.",
+    "¿Qué? ¿Qué? ¡Toma mangó! Ya me leí {mensajes} mensajes de {canales} canales y cada uno "
+    "tiene su XP. Mirad dónde estáis con `.perfil` y `.ranking`.",
+    "¡Jota Uve! ¡Pre! Me he leído {mensajes} mensajes de {canales} canales. `.ranking` y a "
+    "presumir.",
+    "Hazme café… ¡quiero café!, que me he leído {mensajes} mensajes en {canales} canales. "
+    "Niveles encendidos: cada mensaje suma.",
 )
 
 

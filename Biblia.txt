@@ -226,6 +226,7 @@ Partes hechas:
 - Aviso de logros: la retención de Hacienda va en la línea del premio, sin frase de Perro Sanxe (`8d65d12`).
 - Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). - Logros, segunda pasada: los 4.089 leídos uno a uno con la regla nueva; 190 nombres sosos, repetidos o con el mismo tema una y otra vez (los rescates bancarios, el Manual de resistencia, Pegasus, los fondos europeos) cambiados y 28 descripciones neutras (ver `git log --grep "Logros: segunda pasada"`).
 
+- Comunidad: cumpleaños, aniversario, subidas de nivel e importación de mensajes del 5 % al 48 % de frases normales; bienvenidas y despedidas, la mitad normales y con las frases de Jovani; los errores de botones, en claro y sin broma. Fuera lo boricua que quedaba fuera de los logros; se quedan el caballo «Wepa Boricua», el «Premio Wepa de San Juan» y las reglas de la beernight con «wepa», que son contenido (ver `git log --grep "Comunidad: bienvenidas"`).
 - Tienda, Rastro y mascotas: del 64 % al 76 % de frases normales (anuncios de compra, gritos del Rastro, cajas, lo que dicen las mascotas, el bot cuando le tiran objetos); fuera unos 40 «mi amor», «¡Wepa!» y «¡Ay, bendito!». Las frases de cada especie (su personalidad) y el contenido boricua (tapete, gallo, bandera, Rincón boricua) se quedan (ver `git log --grep "Tienda, Rastro y mascotas"`).
 - Trabajo y dinero: las líneas de impuestos de cada cobro (premios, casino, nóminas) pasan a «🐶 IRPF: −X (Y %)»; Perro Sanxe se queda en la Renta, el Patrimonio, los intereses y el IMV. Fuera lo boricua de pala, Bizum, donaciones y Patrimonio. Los marrones y minijuegos de los oficios (9 % de política, casi toda en las ramas de política y funcionariado) se quedan: son contenido (ver `git log --grep "Hacienda: las líneas"`).
 - Frases del casino, Botes y Caballos: al 61 % de frases normales; los nombres de los caballos se quedan (ver `git log --grep "Botes y Caballos"`). Con esto, todas las listas de frases del casino están revisadas.
@@ -242,7 +243,7 @@ Partes hechas:
 - Logros, cuarta pasada: 83 nombres con «X (coletilla)», «X, versión Y» u otras muletas, y 11 descripciones con broma pegada (ver `git log --grep "Logros: fuera las coletillas"`).
 - Logros, tercera pasada: 152 nombres con la coletilla «X, como [referencia]» pasan a juegos de palabras (ver `git log --grep "Logros: fuera"`).
 
-Pendiente en todo el bot: quitar «¡Wepa!», «¡Ay, bendito!», «mi amor», «papi», «acho» y los guiños boricuas que no son de Jovani (unas 250 apariciones, sobre todo en tienda, logros y bienvenidas), a medida que se revisa cada parte.
+Lo boricua genérico que no es de Jovani ya está fuera de todo el bot salvo el contenido (caballo, premio, tapete, gallo, bandera, Rincón boricua, reglas de la beernight) y la detección de «hablar en boricua».
 
 Pendiente de los logros (de la primera pasada; resuelto en la segunda):
   - Los 1.365 de oficios (obra, política, hostelería, sanidad, oficina, reparto, funcionariado, influencer), economía, tienda, pisos, Hong Kong y lengua: nombres sin revisar.
