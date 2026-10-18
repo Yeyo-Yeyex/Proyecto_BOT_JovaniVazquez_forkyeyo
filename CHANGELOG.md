@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.21 · 2026-10-18
+
+- Póker, Timba y Bacará: frases nuevas, más normales y con Jovani
+
 ### 7.25.20 · 2026-10-18
 
 - 4 en raya y Backgammon: Jovani habla como Jovani y deja de copiar los chistes de un juego a otro

@@ -116,9 +116,9 @@ NO_MENTIONS = discord.AllowedMentions.none()
 QUIPS = (
     "Aquí no hay banca: solo colegas y Hacienda.",
     "Lo que pasa en la timba se queda en la timba (y en el libro de Hacienda).",
-    "Timba de trastienda, como las de la Transición.",
-    "Ni la UCO entra aquí sin ciega grande.",
-    "Cara de póker, como en una rueda de prensa sin preguntas.",
+    "Timba de trastienda.",
+    "Cara de póker y a callar.",
+    "Hazme café, que esta mano va para largo. ¡Quiero café!",
 )
 
 
