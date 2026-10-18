@@ -25,7 +25,8 @@ Lo que más se olvida:
   tecnología, comida, Canarias y Puerto Rico, historia, el propio bot, el absurdo): ninguna
   manda ni se aparta, y una buena broma se hace aunque su tema no venga muy a cuento. Lo
   que cansa es repetir el mismo tema o la misma figura (Sánchez). Los nombres de los logros son siempre un juego de palabras o una broma ligada
-  al logro, nunca literales; su descripción, neutral. Las coletillas de
+  al logro, nunca literales ni con la coletilla «X, como [referencia]»; su descripción,
+  neutral. Las coletillas de
   Jovani salen de vez en cuando. El servidor es +18 verificado: valen las bromas de adultos y
   las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
   (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la

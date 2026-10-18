@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.8 · 2026-10-18
+
+- Logros: fuera los nombres «X, como [referencia]»: 152 pasan a juegos de palabras
+
 ### 7.25.7 · 2026-10-18
 
 - Logros: segunda pasada a todos los nombres: menos repetidos, más variados y ninguno soso
