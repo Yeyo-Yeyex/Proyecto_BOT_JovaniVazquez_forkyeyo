@@ -247,10 +247,12 @@ class HousingService:
         return deal
 
     async def buy_license(self, guild_id: int, user_id: int, key: str) -> tuple[int, int]:
-        """Pide la licencia vacacional. Devuelve `(tasa, saldo)`."""
+        """Pide la licencia vacacional. Devuelve `(tasa, saldo)`; tasa 0 si la comunidad dice no."""
         now = self._clock()
-        run = self.repository.buy_license(guild_id, user_id, key, local_day(now), now)
+        run = self.repository.buy_license(guild_id, user_id, key, local_day(now), now, self.rng)
         fee, balances = await self.economy.housing(guild_id, run)
+        if user_id not in balances:  # la comunidad dijo que no: no se ha movido dinero
+            return fee, await self.economy.balance(guild_id, user_id)
         return fee, balances[user_id]
 
     async def found_socimi(self, guild_id: int, user_id: int) -> tuple[int, int]:
@@ -390,6 +392,7 @@ class HousingService:
         self,
         guild_id: int,
         builders: Callable[[], Awaitable[tuple[int, ...]]] | None = None,
+        furniture: Callable[[int], Awaitable[frozenset[str]]] | None = None,
     ) -> list[DayRun]:
         """Cierra los días que falten hasta ayer (como mucho `CATCH_UP_DAYS`).
 
@@ -399,18 +402,30 @@ class HousingService:
         Args:
             builders: Devuelve quienes fichan en la rama Ladrillo de `pala` (la obra nueva
                 del lunes). Solo se llama si hay que cerrar un lunes.
+            furniture: Devuelve las claves de la tienda que tiene un miembro (los muebles del
+                vacacional). Se pregunta una vez por cada quien decide un vacacional o un
+                piso de nómadas.
         """
         now = self._clock()
         today = local_day(now)
         last = await self.repository.last_day(guild_id)
         first = today - timedelta(days=1) if last is None else last + timedelta(days=1)
         first = max(first, today - timedelta(days=CATCH_UP_DAYS))
+        owned: dict[int, frozenset[str]] = {}
+        if furniture is not None and first < today:
+            market = await self.repository.market(guild_id)
+            for key, lease in market.leases.items():
+                boss = rules.manager(market.shares_of(key))
+                if boss is not None and boss not in owned and lease.level in (
+                    rules.VACATION_LEVEL, rules.NOMAD_LEVEL,
+                ):  # fmt: skip
+                    owned[boss] = await furniture(boss)
         runs = []
         day = first
         while day < today:
             who = await builders() if builders is not None and day.weekday() == 0 else ()
             run, _balances = await self.economy.housing(
-                guild_id, self.repository.close_day(guild_id, day, now, self.rng, who)
+                guild_id, self.repository.close_day(guild_id, day, now, self.rng, who, owned)
             )
             if not run.done_before:
                 runs.append(run)

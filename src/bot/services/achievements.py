@@ -8226,6 +8226,45 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_news_famoso", "Vecino de un crack",
          "Ten un piso en el barrio donde se compra el chalet un futbolista famoso.", R, True),
     ])  # fmt: skip
+    # Fase 5 de la ampliación (8.4.0): vacacional con reseñas y la Ley 6/2025
+    a += _tiers("pisos", "pisos_reviews", [
+        (1, "pisos_reviews_1", "Me lo apunto en TripAdvisor",
+         "Recibe una reseña en una vivienda vacacional.", C),
+        (25, "pisos_reviews_25", "Influencer de la sábana bajera", "Recibe 25 reseñas.", R),
+        (100, "pisos_reviews_100", "Cien huéspedes y un destino", "Recibe 100 reseñas.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_five_stars", [
+        (1, "pisos_five_1", "Cinco estrellas y sin Michelin",
+         "Recibe una reseña de 5 estrellas.", C),
+        (25, "pisos_five_25", "Lluvia de estrellas", "Recibe 25 reseñas de 5 estrellas.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_one_star", [
+        (1, "pisos_one_star_1", "Una estrella y gracias", "Recibe una reseña de 1 estrella.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}superanfitrion_logrado", [
+        (1, "pisos_superhost_1", "Superanfitrión sin capa",
+         "Llega a Superanfitrión en una vivienda vacacional.", R),
+        (3, "pisos_superhost_3", "La Liga de los Anfitriones Extraordinarios",
+         "Llega a Superanfitrión 3 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}limpieza", [
+        (10, "pisos_cleanings_10", "Cambio de sábanas", "Paga 10 limpiezas de fin de estancia.",
+         C),
+        (100, "pisos_cleanings_100", "La Kelly de confianza", "Paga 100 limpiezas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}licencia_renovada", [
+        (1, "pisos_license_renewed_1", "Otros cinco añitos",
+         "Renueva una licencia vacacional.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}licencia_caduca", [
+        (1, "pisos_license_lost_1", "Se acabó la fiesta del guiri",
+         "Pierde una licencia vacacional por estar en zona tensionada.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_license_denied", [
+        (1, "pisos_license_denied_1", "El del cuarto vota que no",
+         "Que la comunidad de vecinos rechace tu licencia vacacional.", C, True),
+    ])  # fmt: skip
     # Fase 4 de la ampliación (8.3.0): reformas, imprevistos que se deciden y humor
     a += _tiers("pisos", "pisos_reforms", [
         (1, "pisos_reforms_1", "Bricomanía", "Haz una reforma.", C),
@@ -23102,6 +23141,7 @@ HOUSING_ACTIONS = {
     "compra_miembro": "pisos_bought_member",
     "reforma": "pisos_reforms",
     "decide": "pisos_decisions",
+    "licencia_denegada": "pisos_license_denied",
 }
 
 
@@ -23227,6 +23267,7 @@ def housing_day_stats(
     news: tuple[str, ...] = (),
     young: int = 0,
     moods: tuple[int, ...] = (),
+    reviews: tuple[int, ...] = (),
 ) -> StatDelta:
     """Estadísticas de un día cerrado de los pisos de un miembro.
 
@@ -23243,9 +23284,16 @@ def housing_day_stats(
         news: Noticias de barrio que salen hoy donde tiene pisos.
         young: Contratos de hoy con la reducción del 70 %.
         moods: Humor de sus inquilinos al cerrar el día.
+        reviews: Estrellas de cada reseña que han dejado hoy en sus vacacionales.
     """
     add: dict[str, int] = {}
     peak: dict[str, int] = {}
+    if reviews:
+        add["pisos_reviews"] = len(reviews)
+        if fives := sum(1 for s in reviews if s == 5):
+            add["pisos_five_stars"] = fives
+        if ones := sum(1 for s in reviews if s == 1):
+            add["pisos_one_star"] = ones
     if moods:
         peak["pisos_mood_max"] = max(moods)
         if min(moods) <= 20:

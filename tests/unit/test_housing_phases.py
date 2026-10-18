@@ -601,6 +601,7 @@ async def test_la_licencia_vacacional_es_una_por_barrio_y_su_tasa_va_al_estado(
     with pytest.raises(HousingError, match="licencia"):
         await service.set_level(GUILD, ANA, BAJO.key, "vacacional")
     state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    service.rng = random.Random(1)  # su primer random() es 0,13: la comunidad dice que sí
     fee, _balance = await service.buy_license(GUILD, ANA, BAJO.key)
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == fee == rules.LICENSE_FEE
     await service.set_level(GUILD, ANA, BAJO.key, "vacacional")

@@ -70,6 +70,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
+from bot.cogs import shop as tienda
 from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
 from bot.repositories.housing import (
@@ -140,7 +141,7 @@ MAX_OPTIONS = 25
 
 MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", "caja", "vpo"
 GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
-REFORMAS, IMPREVISTOS = "reformas", "imprevistos"
+REFORMAS, IMPREVISTOS, RESENAS = "reformas", "imprevistos", "resenas"
 #: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
 #: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
 PREFERENCE_SECONDS = 10 * 60
@@ -156,6 +157,8 @@ PERSONAL_EVENTS = frozenset(
         "oferta_fondo",
         "fianza_devuelta",
         "fianza_incautada",
+        "licencia_renovada",
+        "licencia_caduca",
     }
 )
 #: Canal del anuncio del BCE de los lunes (el mismo que el del Patrimonio).
@@ -533,6 +536,9 @@ class Panel(ui.View):
             return view.reforms_state(market, listing or self.listing, me)
         if screen == IMPREVISTOS:
             return view.decisions_state(market, listing or self.listing, me)
+        if screen == RESENAS:
+            owned = await tienda.owned_keys(self.cog.bot, self.guild.id, me)
+            return view.reviews_state(market, listing or self.listing, owned)
         if screen == SUBASTAS:
             return view.auctions_state(market, me, names, self.cog.service.now(), self.auction_id)
         if screen == CARTERA:
@@ -696,7 +702,7 @@ class Panel(ui.View):
             ]
         if self.screen == CANDIDATOS:
             return [(GESTION, {"listing": self.listing}), (FICHA, {"listing": self.listing})]
-        if self.screen in (REFORMAS, IMPREVISTOS):
+        if self.screen in (REFORMAS, IMPREVISTOS, RESENAS):
             return [(FICHA, {"listing": self.listing}), (GESTION, {"listing": self.listing})]
         if self.screen == CARTERA:
             mine = self.market.of_member(me)[:6]
@@ -871,6 +877,10 @@ class Panel(ui.View):
             self._reform_buttons()
         elif self.screen == IMPREVISTOS:
             self._decision_buttons()
+        elif self.screen == RESENAS:
+            self._button("◀ La ficha", "ficha", self._back_to_listing, row=1)
+            self._button("🧰 Gestionar", "gestion", self._go_gestion, row=1)
+            self._button("🗺️ Mapa", "mapa", self._go_map, row=1)
         else:
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=1)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=1)
@@ -1043,6 +1053,8 @@ class Panel(ui.View):
         self._button("◀ La ficha", "ficha", self._back_to_listing, row=2)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+        if lease is not None and (lease.license or market.reviews.get(key)):
+            self._button("⭐ Reseñas", "resenas", self._go_reviews, row=2)
         held = market.holdings.get(key, {}).get(me)
         if held is not None and market.auction_of(key, me) is None:
             if self.confirm == "comprador":
@@ -1260,6 +1272,9 @@ class Panel(ui.View):
 
     async def _go_decisions(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, IMPREVISTOS)
+
+    async def _go_reviews(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, RESENAS)
 
     async def _reform(self, interaction: discord.Interaction) -> None:
         """Empieza una reforma (segundo clic): paga la obra y el piso entra en obras."""
@@ -1690,7 +1705,18 @@ class Panel(ui.View):
         async def run() -> tuple[int, int]:
             return await self.cog.service.buy_license(self.guild.id, self.owner.id, self.listing)
 
-        if await self._money(interaction, run) is None:
+        if (done := await self._money(interaction, run)) is None:
+            return
+        if done[0] == 0:
+            # La comunidad votó que no (Ley 6/2025 y art. 17.12 LPH): no se paga la tasa.
+            await self.show(interaction)
+            await notify(
+                interaction,
+                "🗳️ La comunidad de vecinos ha votado que no a la vivienda vacacional (hacen "
+                "falta 3/5). No pagas la tasa; puedes volver a pedirla dentro de una semana.",
+            )
+            await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                               housing_action_stats("licencia_denegada"))  # fmt: skip
             return
         await self._done(interaction, Event.BUY, housing_action_stats("licencia"))
 
@@ -2394,7 +2420,9 @@ class Pisos(commands.Cog):
         """Cierra los días que falten en un servidor y apunta sus logros. Nunca lanza."""
         try:
             runs = await self.service.close_days(
-                guild_id, lambda: curro.ladrillo_builders(self.bot, guild_id)
+                guild_id,
+                lambda: curro.ladrillo_builders(self.bot, guild_id),
+                lambda member: tienda.owned_keys(self.bot, guild_id, member),
             )
         except (OSError, sqlite3.Error):
             logger.exception("No se pudieron cerrar los días de pisos en %s", guild_id)
@@ -2437,6 +2465,16 @@ class Pisos(commands.Cog):
             for owners, _key in run.works:
                 for member in owners:
                     events.setdefault(member, []).append("obra_terminada")
+            stars: dict[int, list[int]] = {}
+            for owners, _key, given in run.reviews:
+                for member in owners:
+                    stars.setdefault(member, []).append(given)
+            for owners, _key in run.superhosts:
+                for member in owners:
+                    events.setdefault(member, []).append("superanfitrion_logrado")
+            for owners, _key in run.cleanings:
+                for member in owners:
+                    events.setdefault(member, []).append("limpieza")
             young: dict[int, int] = {}
             for key in run.young:
                 for member in run.owners.get(key, ()):
@@ -2455,7 +2493,9 @@ class Pisos(commands.Cog):
             for member in run.aval_executions:
                 await curro.parents_lose_home(self.bot, guild_id, member)
                 events.setdefault(member, []).append("ejecucion_aval")
-            everyone = set(run.members) | set(events) | set(run.bono) | set(run.installments)
+            everyone = (
+                set(run.members) | set(events) | set(run.bono) | set(run.installments) | set(stars)
+            )
             for member in everyone | set(run.insurer) | set(run.bonus):
                 day = run.members.get(member)
                 logros.note(
@@ -2474,6 +2514,7 @@ class Pisos(commands.Cog):
                         news=tuple(news.get(member, ())),
                         young=young.get(member, 0),
                         moods=tuple(run.moods.get(member, ())),
+                        reviews=tuple(stars.get(member, ())),
                     ),
                 )
         return runs

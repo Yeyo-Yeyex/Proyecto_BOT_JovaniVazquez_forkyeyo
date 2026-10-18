@@ -184,7 +184,8 @@ HOUSING_EVENT_KEYS = (
     "tope_ley", "recargo_ibi", "oferta_fondo", "ejecucion_aval", "fianza_devuelta",
     "fianza_incautada", "firma_negocio", "candidato", "seguro", "noticia", "obra_terminada",
     "decision_cunado", "decision_vuelve", "decision_espera", "decision_parte",
-    "decision_mediacion",
+    "decision_mediacion", "superanfitrion_logrado", "limpieza", "licencia_renovada",
+    "licencia_caduca",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -304,6 +305,8 @@ PRODUCED_STATS = {
     "pisos_member_reference", "pisos_moved_in", "pisos_member_overpaid", "pisos_auction_max",
     # Fase 4 (housing_action_stats de la reforma y housing_day_stats con el humor)
     "pisos_reform_spent", "pisos_rehab", "pisos_mood_max", "pisos_mood_low",
+    # Fase 5 (housing_day_stats con las reseñas)
+    "pisos_reviews", "pisos_five_stars", "pisos_one_star",
     PISOS_REFORM_KINDS_STAT, *(f"{PISOS_REFORM_PREFIX}{r.key}" for r in HOUSING_REFORM_LIST),
     *(f"{PISOS_TENANT_PREFIX}{t.key}" for t in HOUSING_TENANT_LIST),
     *(f"{PISOS_NEWS_PREFIX}{n.key}" for n in HOUSING_NEWS_LIST),

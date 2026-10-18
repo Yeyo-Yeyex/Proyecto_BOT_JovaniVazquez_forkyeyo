@@ -3310,3 +3310,43 @@ REFORMS: tuple[Reform, ...] = (
 )  # fmt: skip
 
 REFORM_BY_KEY: dict[str, Reform] = {r.key: r for r in REFORMS}
+
+
+#: Frases de las reseñas del vacacional, por estrellas (`housing_reviews.line` es el índice).
+REVIEW_LINES: dict[int, tuple[str, ...]] = {
+    5: (
+        "Todo perfecto. Volveremos.",
+        "Limpio, cómodo y bien situado.",
+        "El anfitrión contesta enseguida y la casa es como en las fotos.",
+        "Diez de diez. Nos llevamos hasta las chanclas del recibidor, perdón.",
+        "Mejor que el hotel del año pasado y sin pulsera de todo incluido.",
+    ),
+    4: (
+        "Muy bien, aunque la ducha tarda en calentar.",
+        "Buena casa y buena zona. Repetiríamos.",
+        "Todo correcto. Faltaba sal en la cocina.",
+        "Un cuatro porque el cinco se lo damos solo a mi madre.",
+        "La cama, de lujo. El gallo del vecino, a las seis en punto.",
+    ),
+    3: (
+        "Cumple, sin más.",
+        "Bien para dormir; para pasar el día, se queda corto.",
+        "Las fotos son de hace unos años.",
+        "El wifi llegaba al salón si te ponías de puntillas.",
+        "Correcto, aunque la cocina va justa de cacharros.",
+    ),
+    2: (
+        "Había cosas sin arreglar y nadie vino.",
+        "Ruido toda la noche.",
+        "No era como en el anuncio.",
+        "La «vista al mar» era al mar de tejados.",
+        "Nos fuimos un día antes. Al aeropuerto se duerme mejor.",
+    ),
+    1: (
+        "No lo recomiendo.",
+        "Sucio y con averías.",
+        "Pedimos el reembolso.",
+        "He visto pisos patera con mejor reseña.",
+        "Ni el Imserso nos habría mandado aquí.",
+    ),
+}

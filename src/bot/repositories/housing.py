@@ -26,6 +26,8 @@ Tablas del mercado (en el mismo archivo SQLite que el resto del bot):
   devuelve mejorado).
 - `housing_decisions`: los imprevistos que espera decidir el dueño (averías, humedades,
   cerraduras y el vecino) y lo que eligió; si no elige en dos días, los arregla la gestora.
+- `housing_reviews`: las últimas reseñas de cada vivienda vacacional (`REVIEW_WINDOW`); la
+  media va en `housing_leases.rating`. Se borran si el inmueble vuelve al mercado.
 
 Hipotecas, banco, Euríbor, VPO, vivienda habitual, ofertas del fondo buitre y SOCIMI
 están en `bot.repositories.housing_finance`, y las subastas y sus pujas en
@@ -53,7 +55,7 @@ from __future__ import annotations
 import asyncio
 import random
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from functools import partial
@@ -79,18 +81,21 @@ from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
+    BARRIO_BY_KEY,
     BARRIO_NEWS_BY_KEY,
     BARRIOS,
     DEFAULT_RENT_LEVEL,
     LISTING_BY_KEY,
     REFORM_BY_KEY,
     RENT_LEVELS,
+    REVIEW_LINES,
     VPO_BY_KEY,
     VPO_UNITS,
     BarrioNews,
     Listing,
     listings_of,
 )
+from bot.services.housing_furniture import furniture_stars, nomad_boost
 from bot.services.levels import local_day
 from bot.services.taxes import (
     INCOME_BUSINESS,
@@ -191,6 +196,7 @@ class Market:
         auctions: Las subastas abiertas.
         reforms: `{inmueble: {reforma: (coste, día que acaba, terminada, rehabilitación)}}`.
         decisions: Imprevistos que esperan decisión, por inmueble.
+        reviews: Las últimas reseñas de cada vacacional, de la más nueva a la más vieja.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -212,6 +218,7 @@ class Market:
     auctions: tuple[Auction, ...] = ()
     reforms: dict[str, dict[str, tuple[int, date, bool, bool]]] = field(default_factory=dict)
     decisions: dict[str, tuple[Decision, ...]] = field(default_factory=dict)
+    reviews: dict[str, tuple[Review, ...]] = field(default_factory=dict)
 
     def auction_of(self, key: str, seller: int) -> Auction | None:
         """La subasta abierta de las participaciones de alguien en un inmueble, si hay."""
@@ -333,6 +340,23 @@ class Market:
         """El tipo de un inmueble del servidor (vacío si la clave ya no existe)."""
         listing = self.listing(key)
         return listing.kind if listing is not None else ""
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """La reseña de una estancia vacacional.
+
+    Attributes:
+        day: Cuándo se fue el huésped.
+        guest: Quién era (clave del catálogo de inquilinos).
+        stars: De 1 a 5.
+        line: Su frase (`housing_catalog.REVIEW_LINES[stars][line]`).
+    """
+
+    day: date
+    guest: str
+    stars: int
+    line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -622,6 +646,9 @@ class DayRun:
         resolved: `(dueños, imprevisto, forma)` de los imprevistos resueltos hoy.
         works: `(dueños, inmueble)` de las obras que acaban hoy.
         moods: Humor de los inquilinos de cada dueño al cerrar el día.
+        reviews: `(dueños, inmueble, estrellas)` de cada reseña de hoy.
+        superhosts: `(dueños, inmueble)` de los vacacionales que hoy llegan a Superanfitrión.
+        cleanings: `(dueños, inmueble)` de cada limpieza de hoy (un huésped que se va).
     """
 
     day: date
@@ -648,6 +675,9 @@ class DayRun:
     resolved: list[tuple[tuple[int, ...], str, str]] = field(default_factory=list)
     works: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
     moods: dict[int, list[int]] = field(default_factory=dict)
+    reviews: list[tuple[tuple[int, ...], str, int]] = field(default_factory=list)
+    superhosts: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
+    cleanings: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
 
 
 def _date(text: str | None) -> date | None:
@@ -690,6 +720,10 @@ def _lease_from(row: sqlite3.Row) -> rules.Lease:
         works_until=_date(row["works_until"]),
         mood=int(row["mood"]),
         home_claim_until=_date(row["home_claim_until"]),
+        rating=float(row["rating"]),
+        reviews=int(row["reviews"]),
+        license_until=_date(row["license_until"]),
+        license_denied_until=_date(row["license_denied_until"]),
     )
 
 
@@ -701,8 +735,10 @@ def _save_lease_in(
         INSERT INTO housing_leases
             (guild_id, listing, status, level, tenant, rent, until, since, unpaid,
              eviction_at, arrears, arrears_ibi, member, bono, license, last_rent, reduction,
-             pick, insured, claims, solvent, bonus, works_until, mood, home_claim_until)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             pick, insured, claims, solvent, bonus, works_until, mood, home_claim_until,
+             rating, reviews, license_until, license_denied_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?)
         ON CONFLICT (guild_id, listing) DO UPDATE SET
             status = excluded.status, level = excluded.level, tenant = excluded.tenant,
             rent = excluded.rent, until = excluded.until, since = excluded.since,
@@ -713,7 +749,9 @@ def _save_lease_in(
             pick = excluded.pick, insured = excluded.insured, claims = excluded.claims,
             solvent = excluded.solvent, bonus = excluded.bonus,
             works_until = excluded.works_until, mood = excluded.mood,
-            home_claim_until = excluded.home_claim_until
+            home_claim_until = excluded.home_claim_until, rating = excluded.rating,
+            reviews = excluded.reviews, license_until = excluded.license_until,
+            license_denied_until = excluded.license_denied_until
         """,
         (
             guild_id, listing, lease.status, lease.level, lease.tenant, lease.rent,
@@ -721,7 +759,8 @@ def _save_lease_in(
             lease.arrears, lease.arrears_ibi, lease.member, int(lease.bono), int(lease.license),
             lease.last_rent, lease.reduction, lease.pick, int(lease.insured), lease.claims,
             int(lease.solvent), int(lease.bonus), _iso(lease.works_until), lease.mood,
-            _iso(lease.home_claim_until),
+            _iso(lease.home_claim_until), lease.rating, lease.reviews, _iso(lease.license_until),
+            _iso(lease.license_denied_until),
         ),
     )  # fmt: skip
 
@@ -781,6 +820,13 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
             bool(r["finished"]),
             bool(r["rehab"]),
         )
+    reviews: dict[str, list[Review]] = {}
+    for r in connection.execute(
+        "SELECT * FROM housing_reviews WHERE guild_id = ? ORDER BY id DESC", (guild_id,)
+    ):
+        reviews.setdefault(str(r["listing"]), []).append(
+            Review(date.fromisoformat(r["day"]), str(r["guest"]), int(r["stars"]), int(r["line"]))
+        )
     decisions: dict[str, list[Decision]] = {}
     for r in connection.execute(
         "SELECT * FROM housing_decisions WHERE guild_id = ? ORDER BY id", (guild_id,)
@@ -811,7 +857,38 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
         auctions=trade.auctions_in(connection, guild_id),
         reforms=reforms,
         decisions={k: tuple(v) for k, v in decisions.items()},
+        reviews={k: tuple(v) for k, v in reviews.items()},
     )
+
+
+def _clear_reviews_in(connection: sqlite3.Connection, guild_id: int, key: str) -> None:
+    connection.execute(
+        "DELETE FROM housing_reviews WHERE guild_id = ? AND listing = ?", (guild_id, key)
+    )
+
+
+def _review_in(
+    connection: sqlite3.Connection, guild_id: int, key: str, day: date, guest: str, stars: int,
+    line: int,
+) -> tuple[float, int]:  # fmt: skip
+    """Guarda una reseña, deja las últimas `REVIEW_WINDOW` y devuelve `(media, cuántas)`."""
+    connection.execute(
+        "INSERT INTO housing_reviews (guild_id, listing, day, guest, stars, line) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (guild_id, key, day.isoformat(), guest, stars, line),
+    )
+    connection.execute(
+        "DELETE FROM housing_reviews WHERE guild_id = ? AND listing = ? AND id NOT IN "
+        "(SELECT id FROM housing_reviews WHERE guild_id = ? AND listing = ? "
+        "ORDER BY id DESC LIMIT ?)",
+        (guild_id, key, guild_id, key, rules.REVIEW_WINDOW),
+    )
+    count, total = connection.execute(
+        "SELECT COUNT(*), COALESCE(SUM(stars), 0) FROM housing_reviews "
+        "WHERE guild_id = ? AND listing = ?",
+        (guild_id, key),
+    ).fetchone()
+    return (round(total / count, 2) if count else 0.0), int(count)
 
 
 def _set_index_in(connection: sqlite3.Connection, guild_id: int, barrio: str, value: float) -> None:
@@ -1232,6 +1309,19 @@ class HousingRepository:
                 CREATE INDEX IF NOT EXISTS housing_decisions_listing
                     ON housing_decisions (guild_id, listing);
 
+                CREATE TABLE IF NOT EXISTS housing_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    guest TEXT NOT NULL,
+                    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+                    line INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS housing_reviews_listing
+                    ON housing_reviews (guild_id, listing, id);
+
                 CREATE TABLE IF NOT EXISTS housing_rent_bonus (
                     guild_id INTEGER NOT NULL,
                     user_id INTEGER NOT NULL,
@@ -1262,6 +1352,11 @@ class HousingRepository:
                 ("works_until", "works_until TEXT"),
                 ("mood", f"mood INTEGER NOT NULL DEFAULT {rules.MOOD_BASE}"),
                 ("home_claim_until", "home_claim_until TEXT"),
+                # 8.4.0: la nota del vacacional y la licencia que caduca (Ley 6/2025).
+                ("rating", "rating REAL NOT NULL DEFAULT 0"),
+                ("reviews", "reviews INTEGER NOT NULL DEFAULT 0"),
+                ("license_until", "license_until TEXT"),
+                ("license_denied_until", "license_denied_until TEXT"),
             ):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE housing_leases ADD COLUMN {ddl}")
@@ -1607,6 +1702,7 @@ class HousingRepository:
                 connection.execute(
                     "DELETE FROM housing_leases WHERE guild_id = ? AND listing = ?", (guild_id, key)
                 )
+                _clear_reviews_in(connection, guild_id, key)
                 connection.execute(
                     "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
                     (guild_id, key),
@@ -1685,6 +1781,7 @@ class HousingRepository:
         now: float,
         rng: random.Random,
         builders: tuple[int, ...] = (),
+        furniture: Mapping[int, frozenset[str]] | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[DayRun, HousingMove]]:
         """Cierra un día (un mes del juego) entero.
 
@@ -1698,7 +1795,10 @@ class HousingRepository:
             builders: Quienes han fichado esta semana en la rama Ladrillo de `pala`, del
                 puesto más alto al más bajo: el lunes, uno de ellos (por turnos) levanta
                 una promoción.
+            furniture: Los muebles del vacacional (claves de la tienda) de cada miembro que
+                decide un vacacional o un piso de nómadas.
         """
+        owned = furniture or {}
 
         def run(connection: sqlite3.Connection) -> tuple[DayRun, HousingMove]:
             done = connection.execute(
@@ -1736,7 +1836,7 @@ class HousingRepository:
             )
 
             def then(conn: sqlite3.Connection, paid: frozenset[str]) -> HousingMove:
-                return self._close_rest_in(conn, guild_id, day, now, rng, paid, result)
+                return self._close_rest_in(conn, guild_id, day, now, rng, paid, result, owned)
 
             return result, HousingMove(pulls=pulls, then=then)
 
@@ -1958,6 +2058,7 @@ class HousingRepository:
                         "DELETE FROM housing_leases WHERE guild_id = ? AND listing = ?",
                         (guild_id, mortgage.listing),
                     )
+                    _clear_reviews_in(connection, guild_id, mortgage.listing)
                 _set_index_in(
                     connection, guild_id, listing.barrio,
                     rules.index_after(index, listing, held.shares, bought=False),
@@ -1991,6 +2092,7 @@ class HousingRepository:
         rng: random.Random,
         paid: frozenset[str],
         result: DayRun,
+        furniture: Mapping[int, frozenset[str]],
     ) -> HousingMove:
         """El cierre del día una vez se sabe qué miembros de alquiler pagaron."""
         rents: list[HousingRent] = []
@@ -2071,7 +2173,7 @@ class HousingRepository:
                 continue
             self._close_listing_in(
                 connection, guild_id, day, now, rng, market, key, lease, paid, interest,
-                rents, grants, taxes, entries, debits, imputations, result,
+                rents, grants, taxes, entries, debits, imputations, result, furniture,
             )  # fmt: skip
         horizon = (day - timedelta(days=NEWS_DAYS)).isoformat()
         connection.execute(
@@ -2164,6 +2266,7 @@ class HousingRepository:
         debits: list[HousingDebit],
         imputations: list[tuple[int, str, int]],
         result: DayRun,
+        furniture: Mapping[int, frozenset[str]],
     ) -> None:
         """Un mes de un inmueble con dueño: estado, renta, impuestos y recibos."""
         listing = _listing(market, key)
@@ -2171,14 +2274,29 @@ class HousingRepository:
         news: list[News] = []
         all_holders = market.shares_of(key)
         boss = rules.manager(all_holders)
+        mine = furniture.get(boss, frozenset()) if boss is not None else frozenset()
+        # La licencia vacacional dura 5 años (60 días) y se renueva si el barrio no está
+        # tensionado (Ley 6/2025 de Canarias). Las de antes de la 8.4.0 empiezan a contar hoy.
+        if lease.license and lease.license_until is None:
+            lease = replace(lease, license_until=day + timedelta(days=rules.LICENSE_DAYS))
+        elif lease.license and lease.license_until is not None and day >= lease.license_until:
+            if rules.tense(index):
+                lease = replace(lease, license=False, license_until=None)
+                news.append(News(key, day, "licencia_caduca", 0, boss, None))
+            else:
+                lease = replace(
+                    lease, license_until=lease.license_until + timedelta(days=rules.LICENSE_DAYS)
+                )
+                news.append(News(key, day, "licencia_renovada", 0, boss, None))
         # La renta que se pide tiene que estar permitida: la vacacional pide licencia y
         # el gran tenedor tiene tope en zona tensionada (Ley 12/2023).
         if not rules.level_allowed(
             lease.level, index=index, whole_homes=market.whole_homes(boss) if boss else 0,
             license=lease.license,
         ):  # fmt: skip
+            if lease.license or lease.level != rules.VACATION_LEVEL:
+                news.append(News(key, day, "tope_ley", 0, boss, None))
             lease = replace(lease, level="referencia")
-            news.append(News(key, day, "tope_ley", 0, boss, None))
         # Solo cobra y paga ese mes quien ya era dueño ese día.
         holders = {
             member: holding.shares
@@ -2196,7 +2314,13 @@ class HousingRepository:
                     connection, guild_id, key, lease.member, lease.unpaid * lease.rent
                 )
         else:
-            outcome = rules.advance_day(listing, lease, day, index, rng, barrio_news)
+            # La nota de las reseñas mueve la ocupación del vacacional; la fibra atrae nómadas.
+            boost = 1.0
+            if lease.level == rules.VACATION_LEVEL:
+                boost = rules.rating_factor(lease.rating, lease.reviews)
+            elif lease.level == rules.NOMAD_LEVEL:
+                boost = nomad_boost(mine)
+            outcome = rules.advance_day(listing, lease, day, index, rng, barrio_news, boost)
         # Los imprevistos que se deciden no se pagan hoy: esperan al dueño (o a la gestora).
         deferred = [e for e in outcome.events if e.key in rules.DECISIONS]
         for event in deferred:
@@ -2228,7 +2352,34 @@ class HousingRepository:
                 (guild_id, key),
             )
             result.works.append((tuple(market.shares_of(key)), key))
-        extra_today = outcome.extra - sum(e.cost for e in deferred) + paid_now
+        # Cada día de estancia vacacional paga la comisión de la plataforma y, si el huésped
+        # se va, la limpieza; al irse, deja reseña (7 de cada 10).
+        stay = 0
+        if lease.level == rules.VACATION_LEVEL and outcome.rent > 0:
+            out = any(e.key == "se_va" for e in outcome.events)
+            stay = rules.stay_costs(outcome.rent, out=out)
+            if out:
+                result.cleanings.append((tuple(all_holders), key))
+            if out and lease.tenant is not None and rng.random() < rules.REVIEW_CHANCE:
+                guest = lease.tenant
+                stars = rules.review_stars(
+                    listing, guest,
+                    furniture=furniture_stars(mine, BARRIO_BY_KEY[listing.barrio].theme, guest),
+                    pending=len(market.decisions.get(key, ())) + len(deferred),
+                    noisy=any(e.key == "vecino" for e in outcome.events)
+                    or (barrio_news is not None and barrio_news.neighbour > 1),
+                    rng=rng,
+                )  # fmt: skip
+                line = rng.randrange(len(REVIEW_LINES[stars]))
+                rating, count = _review_in(connection, guild_id, key, day, guest, stars, line)
+                result.reviews.append((tuple(all_holders), key, stars))
+                if not rules.superhost(lease.rating, lease.reviews) and rules.superhost(
+                    rating, count
+                ):
+                    result.superhosts.append((tuple(all_holders), key))
+                    news.append(News(key, day, "superanfitrion", 0, None, None))
+                lease_after = replace(lease_after, rating=rating, reviews=count)
+        extra_today = outcome.extra - sum(e.cost for e in deferred) + paid_now + stay
         if lease_after.tenant is not None and lease_after.status in (
             rules.RENTED,
             rules.DEFAULTING,
@@ -2267,7 +2418,8 @@ class HousingRepository:
             home = round(home * rules.HOME_CLAIM_SURCHARGE)  # el parte recarga la prima
         insurance = home + cover
         ips = round(home * rules.IPS_RATE) + round(cover * rules.IPS_RATE)
-        repair_igic = igic(paid_now, rules.SERVICES_IGIC)
+        stay_igic = igic(stay, rules.SERVICES_IGIC)
+        repair_igic = igic(paid_now, rules.SERVICES_IGIC) + stay_igic
         costs_owned = rules.MonthlyCosts(
             part(outcome.costs.community), part(insurance), part(ibi_month)
         )
@@ -2330,7 +2482,10 @@ class HousingRepository:
         month_ibi = rules.split(costs_owned.ibi, holders)
         community = rules.split(costs_owned.community, holders)
         insurances = rules.split(costs_owned.insurance + part(ips), holders)
-        repairs = rules.split(part(extra_today) + part(repair_igic), holders)
+        # La limpieza y la plataforma son servicios de terceros (art. 13.d del Reglamento del
+        # IRPF): gasto sin el tope de intereses y reparaciones.
+        repairs = rules.split(part(extra_today - stay) + part(repair_igic - stay_igic), holders)
+        services = rules.split(part(stay) + part(stay_igic), holders)
         premiums = rules.split(part(cover) + part(round(cover * rules.IPS_RATE)), holders)
         cheap = lease_after.rent <= INSURANCE_DEDUCTION_RENT_MAX
         reduction = rules.lease_reduction(listing, lease_after)
@@ -2378,7 +2533,7 @@ class HousingRepository:
                         finance=interest.get((member, key), 0) + repairs[member],
                         costs=(
                             month_ibi[member] + community[member] + insurances[member]
-                            + rules.amortization(held.paid)
+                            + services[member] + rules.amortization(held.paid)
                         ),
                         upkeep=repairs[member] + insurances[member] if dwelling else 0,
                         premium=premiums[member] if dwelling and cheap else 0,
@@ -2895,14 +3050,26 @@ class HousingRepository:
     # -- Fase 4: licencias, SOCIMI ------------------------------------------------------
 
     def buy_license(
-        self, guild_id: int, user_id: int, key: str, day: date, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        day: date,
+        now: float,
+        rng: random.Random | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[int, HousingMove]]:
         """Pide la licencia de vivienda vacacional (una por barrio); la tasa va al Estado.
 
+        Ley 6/2025 de Canarias: no hay licencias nuevas en zona tensionada ni en obra nueva, y
+        un piso en un bloque necesita que lo apruebe la comunidad (3/5, art. 17.12 LPH). Los
+        vecinos votan al pedirla: si dicen que no, no se paga la tasa y no se puede volver a
+        pedir en una semana. Devuelve la tasa pagada (0 si la comunidad dijo que no).
+
         Raises (dentro de la transacción):
-            HousingError: Si no lo decide él, no es vivienda, vive alguien o el barrio ya
-                no tiene plazas.
+            HousingError: Si no lo decide él, no es vivienda, vive alguien, la ley no deja o
+                el barrio ya no tiene plazas.
         """
+        dice = rng or random.Random()
 
         def run(connection: sqlite3.Connection) -> tuple[int, HousingMove]:
             market = _market_in(connection, guild_id)
@@ -2921,7 +3088,28 @@ class HousingRepository:
                     "El barrio ya no tiene plazas vacacionales: está saturado. Canarias tiene "
                     "un límite (y este barrio, también)."
                 )
-            _save_lease_in(connection, guild_id, key, replace(lease, license=True))
+            problem = rules.license_problem(
+                listing, index=market.index(listing.barrio), promotion=rules.is_promotion(key)
+            )
+            if problem is not None:
+                raise HousingError(problem)
+            if lease.license_denied_until is not None and day < lease.license_denied_until:
+                raise HousingError(
+                    "La comunidad ya votó que no. Hasta el "
+                    f"{lease.license_denied_until.strftime('%d/%m')} no se vuelve a votar."
+                )
+            if rules.needs_neighbours(listing) and dice.random() >= rules.NEIGHBOURS_APPROVE:
+                until = day + timedelta(days=rules.LICENSE_RETRY_DAYS)
+                denied = replace(lease, license_denied_until=until)
+                _save_lease_in(connection, guild_id, key, denied)
+                _news_in(connection, guild_id, News(key, day, "licencia_denegada", 0, user_id,
+                                                    None), now)  # fmt: skip
+                return 0, HousingMove()
+            _save_lease_in(
+                connection, guild_id, key,
+                replace(lease, license=True, license_until=day + timedelta(days=rules.LICENSE_DAYS),
+                        license_denied_until=None),
+            )  # fmt: skip
             _news_in(connection, guild_id, News(key, day, "licencia", rules.LICENSE_FEE,
                                                 user_id, None), now)  # fmt: skip
             fee = rules.LICENSE_FEE
@@ -3598,6 +3786,7 @@ class HousingRepository:
                 "housing_rent_bonus",
                 "housing_reforms",
                 "housing_decisions",
+                "housing_reviews",
                 *finance.TABLES,
                 *trade.TABLES,
             ):

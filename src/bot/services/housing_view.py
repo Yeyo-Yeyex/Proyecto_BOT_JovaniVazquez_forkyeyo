@@ -37,6 +37,7 @@ from bot.services.housing_catalog import (
     KINDS,
     REFORMS,
     RENT_LEVELS,
+    REVIEW_LINES,
     TENANT_BY_KEY,
     THEMES,
     VPO_BY_KEY,
@@ -44,6 +45,7 @@ from bot.services.housing_catalog import (
     BarrioNews,
     Listing,
 )
+from bot.services.housing_furniture import FURNITURE, furniture_stars
 
 State = dict[str, Any]
 
@@ -111,6 +113,10 @@ NEWS_TEXT = {
     "ejecucion_subasta": "Remate de la subasta judicial de {who}: {amount}",
     "obras": "{who} empieza una reforma de {amount}",
     "obra_terminada": "Se acaban las obras: el piso está como nuevo",
+    "licencia_renovada": "Se renueva la licencia vacacional: 5 años más",
+    "licencia_caduca": "Caduca la licencia vacacional: en zona tensionada no se renueva",
+    "licencia_denegada": "La comunidad vota que no a la licencia vacacional",
+    "superanfitrion": "Superanfitrión: 4,8 de media, cobra un 10 % más",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -548,6 +554,14 @@ def listing_state(
         lease.works_until.strftime("%d/%m") if lease is not None and lease.works_until else ""
     )
     state["reformed"] = bool(market.reforms.get(key))
+    # Fase 5: la nota del vacacional y hasta cuándo vale la licencia.
+    state["rating"] = rating_text(lease) if lease is not None else ""
+    state["superhost"] = bool(lease and rules.superhost(lease.rating, lease.reviews))
+    state["license_until"] = (
+        lease.license_until.strftime("%d/%m/%Y")
+        if lease is not None and lease.license and lease.license_until
+        else ""
+    )
     state["fallback"] = [
         f"{listing.title} ({card['m2']}, {listing.floor})",
         f"{state['barrio']}: {card['price']} · {card['share_price']} la participación",
@@ -1160,4 +1174,79 @@ def decisions_state(market: Market, key: str, user_id: int) -> State:
             for i in items
         ),
     ] if items else ["No hay nada pendiente en este piso."]  # fmt: skip
+    return state
+
+
+# -- Fase 5: reseñas del vacacional --------------------------------------------------------
+
+
+def rating_text(lease: rules.Lease) -> str:
+    """La nota media del vacacional («4,6 ★ · 12 reseñas»), o vacío si no hay reseñas."""
+    if not lease.reviews:
+        return ""
+    count = "1 reseña" if lease.reviews == 1 else f"{lease.reviews} reseñas"
+    return f"{lease.rating:.1f}".replace(".", ",") + f" ★ · {count}"
+
+
+def reviews_state(market: Market, key: str, furniture: frozenset[str]) -> State:
+    """⭐ Reseñas: la nota del vacacional, lo que mueve la ocupación y las últimas reseñas.
+
+    Args:
+        furniture: Los muebles del vacacional de quien mira (valen si es quien decide).
+    """
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    lease = market.leases.get(key, rules.Lease())
+    theme = BARRIO_BY_KEY[listing.barrio].theme
+    reviews = []
+    for review in market.reviews.get(key, ())[:5]:
+        guest = TENANT_BY_KEY.get(review.guest)
+        lines = REVIEW_LINES[review.stars]
+        reviews.append(
+            {
+                "stars": review.stars,
+                "guest": guest.name if guest else review.guest,
+                "emoji": guest.emoji if guest else "🧳",
+                "line": lines[review.line % len(lines)],
+                "day": review.day.strftime("%d/%m"),
+            }
+        )
+    factor = rules.rating_factor(lease.rating, lease.reviews)
+    state: State = {
+        "screen": "resenas",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "rating": rating_text(lease),
+        "rating_value": lease.rating,
+        "count": lease.reviews,
+        "superhost": rules.superhost(lease.rating, lease.reviews),
+        "occupancy": "×" + f"{factor:.2f}".replace(".", ","),
+        "license": lease.license,
+        "license_until": lease.license_until.strftime("%d/%m/%Y")
+        if lease.license and lease.license_until
+        else "",
+        "reviews": reviews,
+        "furniture": [
+            {"emoji": item.emoji, "name": item.name, "owned": item.key in furniture}
+            for item in FURNITURE
+        ],
+        "furniture_stars": "+"
+        + f"{furniture_stars(furniture, theme, None):.2f}".replace(".", ",")
+        + " ★",
+        "footer": (
+            f"Superanfitrión: {rules.SUPERHOST_RATING:.1f}".replace(".", ",")
+            + f" de media con {rules.SUPERHOST_REVIEWS} reseñas, +10 % de precio · "
+            "limpieza y 15 % de plataforma por estancia"
+        ),
+    }
+    state["fallback"] = [
+        f"Reseñas: {listing.title}",
+        state["rating"] or "Aún sin reseñas.",
+        *(f"{'★' * r['stars']} {r['guest']}: {r['line']}" for r in reviews),
+    ]
     return state

@@ -543,6 +543,11 @@ class Lease:
             bien lo sube y lo que se deja o se arregla mal lo baja (`mood_factor`).
         home_claim_until: Hasta qué día la prima del seguro del hogar va recargada por un
             parte (`HOME_CLAIM_SURCHARGE`).
+        rating: Nota media de las últimas reseñas del vacacional (0 si no hay).
+        reviews: Cuántas reseñas cuentan en esa media (las últimas `REVIEW_WINDOW`).
+        license_until: Último día de la licencia vacacional (se renueva si se puede).
+        license_denied_until: Hasta qué día no se puede volver a pedir la licencia (la
+            comunidad votó que no).
     """
 
     status: str = VACANT
@@ -568,6 +573,10 @@ class Lease:
     works_until: date | None = None
     mood: int = 70
     home_claim_until: date | None = None
+    rating: float = 0.0
+    reviews: int = 0
+    license_until: date | None = None
+    license_denied_until: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -889,6 +898,8 @@ def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -
     """
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
     rent = asking_rent(listing, level, index)
+    if level.key == VACATION_LEVEL and superhost(lease.rating, lease.reviews):
+        rent = round(rent * (1 + SUPERHOST_PREMIUM), -1)
     return replace(
         lease,
         status=RENTED,
@@ -921,6 +932,7 @@ def advance_day(
     index: float,
     rng: random.Random,
     news: BarrioNews | None = None,
+    boost: float = 1.0,
 ) -> DayOutcome:
     """Un mes de la vida de un inmueble con dueño (un día del bot).
 
@@ -937,6 +949,8 @@ def advance_day(
         index: Índice del barrio (para la renta de un contrato nuevo).
         rng: Azar inyectable.
         news: La noticia del barrio en marcha, si hay.
+        boost: Lo que multiplica encontrar inquilino por otras razones: la nota de las
+            reseñas del vacacional (`rating_factor`) o la fibra para los nómadas.
     """
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
     factors = tenant_factors(lease.tenant, lease.level, listing.kind)
@@ -992,7 +1006,7 @@ def advance_day(
             lease = replace(lease, unpaid=lease.unpaid + 1)
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
-        if rng.random() < find_chance(listing, level, day, news):
+        if rng.random() < min(1.0, find_chance(listing, level, day, news) * boost):
             tenant = _tenant_for(level.key, listing.kind, rng)
             if lease.pick == PICK_SELF:
                 events.append(Event("candidato", tenant=tenant))
@@ -1870,3 +1884,123 @@ def resolve(event: str, choice: str | None, cost: int, rng: random.Random) -> Re
         mood += picked.bad_mood[1]
     relapse = bool(picked.relapse) and rng.random() < picked.relapse
     return Resolution(pay=pay, mood=mood, relapse=relapse, claim=picked.claim)
+
+
+# -- Ampliación, fase 5: vacacional con reseñas -----------------------------------------
+
+#: Al acabar cada estancia vacacional, la probabilidad de que el huésped deje reseña; la
+#: media cuenta las últimas `REVIEW_WINDOW`.
+REVIEW_CHANCE = 0.7
+REVIEW_WINDOW = 20
+#: La nota de partida de una estancia normal. La ocupación va de ×0,5 con 1,5 estrellas o
+#: menos a ×1,3 con 4,8 o más, en línea recta (con menos de 3 reseñas, ×1).
+RATING_BASE = 4.0
+RATING_LOW = (1.5, 0.5)
+RATING_HIGH = (4.8, 1.3)
+RATING_MIN_REVIEWS = 3
+#: Superanfitrión: 4,8 de media con 10 reseñas o más. Cobra un 10 % más.
+SUPERHOST_RATING = 4.8
+SUPERHOST_REVIEWS = 10
+SUPERHOST_PREMIUM = 0.10
+#: Gastos de cada estancia: la limpieza (30 €) y la comisión de la plataforma (15 % de lo que
+#: paga el huésped), los dos con su IGIC. Desaparecen (ni la limpiadora ni la plataforma
+#: existen) y son gastos deducibles del alquiler (art. 13 del Reglamento del IRPF).
+CLEANING_FEE = 300
+PLATFORM_FEE = 0.15
+#: Ley 6/2025 de Canarias (uso turístico de viviendas): la declaración vale 5 años (60 días)
+#: y se renueva si el barrio no está tensionado; en zona tensionada no hay licencias nuevas
+#: (art. 5.1), la obra nueva no puede (pide 10 años de antigüedad) y en un bloque tiene que
+#: aprobarlo la comunidad: 3/5 de propietarios y cuotas (arts. 7.3 y 17.12 LPH). Aquí votan
+#: los vecinos ficticios: aprueban 6 de cada 10 veces; si dicen que no, una semana sin pedirla.
+LICENSE_DAYS = 60
+NEIGHBOURS_APPROVE = 0.6
+LICENSE_RETRY_DAYS = 7
+#: Lo que se quejan de más o de menos los huéspedes y los barrios que les gustan.
+GUEST_TASTE: dict[str, tuple[float, frozenset[str]]] = {
+    "britanicos": (0.0, frozenset({"playa", "lujo"})),
+    "despedida": (-0.4, frozenset({"centro", "playa"})),
+    "nordicos": (0.2, frozenset({"playa"})),
+    "surferos": (0.0, frozenset({"playa"})),
+    "senderistas": (0.0, frozenset({"rural", "historico"})),
+    "luna_miel": (-0.1, frozenset({"lujo", "playa"})),
+    "ciclistas": (0.0, frozenset({"rural", "lujo"})),
+    "buceo": (0.0, frozenset({"marinero", "playa"})),
+    "amigas": (0.0, frozenset({"centro", "playa"})),
+    "numerosa": (-0.2, frozenset({"playa"})),
+}
+#: Lo que se le nota a la reseña: barrio que le gusta, cada imprevisto sin arreglar, el ruido.
+LIKES_THEME = 0.3
+PENDING_STARS = 0.7
+NOISE_STARS = 0.5
+
+
+def review_stars(
+    listing: Listing,
+    guest: str | None,
+    *,
+    furniture: float,
+    pending: int,
+    noisy: bool,
+    rng: random.Random,
+) -> int:
+    """Las estrellas (de 1 a 5) de la reseña de una estancia vacacional.
+
+    Args:
+        guest: Quién se ha alojado (`GUEST_TASTE`).
+        furniture: Lo que suben los muebles del dueño (`housing_furniture.furniture_stars`).
+        pending: Imprevistos sin arreglar en el inmueble.
+        noisy: Si ha habido jaleo (el vecino, una noticia de ruido en el barrio).
+    """
+    taste, likes = GUEST_TASTE.get(guest or "", (0.0, frozenset()))
+    stars = RATING_BASE + taste + furniture
+    if BARRIO_BY_KEY[listing.barrio].theme in likes:
+        stars += LIKES_THEME
+    if listing.rent_bonus > 0:
+        stars += 0.2  # reformado: se nota en las fotos
+    stars -= min(2, pending) * PENDING_STARS
+    if noisy:
+        stars -= NOISE_STARS
+    stars += rng.uniform(-0.6, 0.6)
+    return max(1, min(5, round(stars)))
+
+
+def rating_factor(rating: float, reviews: int) -> float:
+    """Lo que la nota media multiplica la ocupación del vacacional (de ×0,5 a ×1,3)."""
+    if reviews < RATING_MIN_REVIEWS:
+        return 1.0
+    (low, at_low), (high, at_high) = RATING_LOW, RATING_HIGH
+    share = min(1.0, max(0.0, (rating - low) / (high - low)))
+    return round(at_low + share * (at_high - at_low), 3)
+
+
+def superhost(rating: float, reviews: int) -> bool:
+    """Si una vivienda vacacional es de Superanfitrión."""
+    return reviews >= SUPERHOST_REVIEWS and rating >= SUPERHOST_RATING
+
+
+def stay_costs(rent: int, *, out: bool) -> int:
+    """Comisión de la plataforma de un día de estancia y, si el huésped se va, la limpieza.
+
+    Sin IGIC (va aparte, `SERVICES_IGIC`).
+    """
+    return round(max(0, rent) * PLATFORM_FEE) + (CLEANING_FEE if out else 0)
+
+
+def license_problem(listing: Listing, *, index: float, promotion: bool) -> str | None:
+    """Por qué la Ley 6/2025 de Canarias no da licencia nueva a un inmueble, o `None`."""
+    if tense(index):
+        return (
+            "El barrio está en zona tensionada: la Ley 6/2025 de Canarias no da licencias "
+            "vacacionales nuevas ahí (art. 5.1)."
+        )
+    if promotion:
+        return (
+            "Es obra nueva: la Ley 6/2025 de Canarias pide 10 años de antigüedad para "
+            "convertir una vivienda en vacacional."
+        )
+    return None
+
+
+def needs_neighbours(listing: Listing) -> bool:
+    """Si la licencia la tiene que aprobar la comunidad (un piso en un bloque, no el edificio)."""
+    return listing.kind in _BLOCKS and listing.kind not in ("edificio", "local")
