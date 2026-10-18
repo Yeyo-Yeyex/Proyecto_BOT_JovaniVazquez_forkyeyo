@@ -13,6 +13,7 @@ import random
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -24,10 +25,12 @@ from render_fakes import use_fake_drawings
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
+from bot.services.achievements import StatDelta
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
 from bot.services.enraya import Board, Disc
 from bot.services.hold_win_render import Media
+from bot.services.robuso import ROBUSO_ID
 from bot.services.skins import SKIN_BY_KEY
 from bot.services.work import ShiftRecord
 
@@ -111,6 +114,37 @@ async def test_los_juegos_que_cargan_antes_encuentran_logros_y_renta(tmp_path: P
             module = importer(game, client)
             hint = await module.renta.hint(client, GUILD_ID, OWNER_ID)
             assert hint == "📬 Tienes la renta pendiente", game
+    finally:
+        await client.close()
+
+
+async def test_robuso_guarda_donde_esta_y_lo_suyo_llega_a_los_logros(tmp_path: Path) -> None:
+    """`robuso` de Admin llega al cog de Robuso, que lo apunta en sus logros, y lo de
+    Robuso suma su eco en 🎸 Robuso con los cogs cargados de verdad."""
+    client = await load_bot(tmp_path)
+    try:
+        responder = SimpleNamespace(
+            guild=SimpleNamespace(id=GUILD_ID),
+            channel=None,
+            start_progress=AsyncMock(),
+            finish=AsyncMock(),
+            send_error=AsyncMock(),
+        )
+        await client.get_cog("Admin")._robuso_impl(responder, True)
+        assert responder.finish.await_args.args[0] == "Hecho: Robuso está ahora en **Hong Kong**."
+        robuso = importer("Admin", client).robuso_logros
+        assert await robuso.in_hong_kong(client, GUILD_ID) is True
+        achievements = client.get_cog("Achievements")
+        achievements.note(GUILD_ID, ROBUSO_ID, StatDelta(add={"messages": 1}))
+        profile = await achievements.fresh_profile(GUILD_ID, ROBUSO_ID)
+        assert profile.stats["robuso_msgs"] == 1
+        assert profile.stats["robuso_trips"] == 1
+        assert {"robuso_hola", "robuso_viaje_1"} <= set(profile.unlocked)
+        # El cog de Robuso suma a los demás a través del puente de logros.
+        client.get_cog("Robuso")._note(GUILD_ID, OWNER_ID, {"robuso_pings": 1})
+        friend = await achievements.fresh_profile(GUILD_ID, OWNER_ID)
+        assert friend.stats["robuso_pings"] == 1
+        assert "robuso_mencion_1" in friend.unlocked
     finally:
         await client.close()
 

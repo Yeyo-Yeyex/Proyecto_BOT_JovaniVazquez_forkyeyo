@@ -54,10 +54,10 @@ from discord.ext import commands, tasks
 from bot.cogs import pets as mascotas
 from bot.repositories.achievements import AchievementRepository, Profile
 from bot.services.achievements import (
-    AVAILABLE,
     BY_ID,
     CATALOG,
     CATEGORY_BY_KEY,
+    COUNTED,
     GROUPS,
     Achievement,
     Category,
@@ -89,6 +89,8 @@ from bot.services.economy import (
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.pets import Event, Moment
+from bot.services.robuso import ROBUSO_ID
+from bot.services.robuso import echoes as robuso_echoes
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
@@ -334,9 +336,10 @@ def summary_embed(
 ) -> discord.Embed:
     """Portada de los logros (🏆 en `perfil`): total, puntos, categorías y los últimos."""
     unlocked = {i: t for i, t in profile.unlocked.items() if i in BY_ID}
-    available_ids = {a.id for a in AVAILABLE}
+    # Las categorías secretas van aparte del total (`Category.secret`).
+    available_ids = {a.id for a in COUNTED}
     done = sum(1 for i in unlocked if i in available_ids)
-    total = len(AVAILABLE)
+    total = len(COUNTED)
     embed = discord.Embed(
         title="🏆 Logros",
         description=(
@@ -348,7 +351,7 @@ def summary_embed(
     embed.set_author(name=name, icon_url=avatar_url)
 
     per_category = []
-    for key, title in menu_entries():
+    for key, title in menu_entries(unlocked):
         if key in GROUPS:
             keys = {c.key for c in group_sections(key) if not c.upcoming}
         elif CATEGORY_BY_KEY[key].upcoming:
@@ -373,7 +376,7 @@ def summary_embed(
 
     stats = with_unlocked_count(profile.stats, unlocked)
     candidates = []
-    for achievement in AVAILABLE:
+    for achievement in COUNTED:
         if achievement.id in unlocked or achievement.secret:
             continue
         current, goal = progress(achievement, stats)
@@ -420,6 +423,14 @@ def ranking_embed(entries: Sequence[tuple[str, int, int]]) -> discord.Embed:
     )
 
 
+def _with_echoes(user_id: int, delta: StatDelta) -> StatDelta:
+    """Lo de Robuso suma además su eco en 🎸 Robuso (`bot.services.robuso.ECHOES`)."""
+    extra = robuso_echoes(delta.add) if user_id == ROBUSO_ID else {}
+    if not extra:
+        return delta
+    return StatDelta(add={**delta.add, **extra}, peak=dict(delta.peak))
+
+
 # -- Vista de logros -------------------------------------------------------------------
 
 
@@ -428,7 +439,7 @@ class CategorySelect(discord.ui.Select):
 
     def __init__(self, view: AchievementsView) -> None:
         options = [discord.SelectOption(label="Resumen", value="summary", emoji="🏆")]
-        for key, full_title in menu_entries():
+        for key, full_title in menu_entries(view.profile.unlocked):
             emoji, _, title = full_title.partition(" ")
             options.append(discord.SelectOption(label=title, value=key, emoji=emoji))
         super().__init__(
@@ -664,7 +675,7 @@ class Achievements(commands.Cog):
                 sí; la voz solo si no había otro).
         """
         pending = self._pending.setdefault(guild_id, {})
-        pending.setdefault(user_id, StatDelta()).merge(delta)
+        pending.setdefault(user_id, StatDelta()).merge(_with_echoes(user_id, delta))
         if channel_id is not None:
             channels = self._pending_channels.setdefault(guild_id, {})
             if replace_channel or user_id not in channels:
@@ -683,7 +694,7 @@ class Achievements(commands.Cog):
             Ids de los logros recién conseguidos.
         """
         now = self._clock()
-        updates = {user_id: delta}
+        updates = {user_id: _with_echoes(user_id, delta)}
         await self._add_seeds(guild_id, updates)
         unlocked = await self.repository.record(guild_id, updates, newly_unlocked, now=now)
         ids = unlocked.get(user_id, [])

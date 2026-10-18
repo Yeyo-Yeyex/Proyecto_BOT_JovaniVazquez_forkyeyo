@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.30.0 · 2026-10-18
+
+- Logros: una categoría secreta con 132 logros
+
 ### 7.29.1 · 2026-10-18
 
 - Interno: una línea del catálogo de logros demasiado larga

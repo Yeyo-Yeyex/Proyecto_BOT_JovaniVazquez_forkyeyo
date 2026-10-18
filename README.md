@@ -75,7 +75,7 @@ python -m bot
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | ⚙️ General | `ayuda` · `latencia` |
-  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
 
   La ayuda es un menú desplegable, como el de `perfil`: una portada con las
   categorías y una página por categoría con cada comando y lo que hace (la
@@ -807,7 +807,11 @@ python -m bot
   conseguidos, los más cercanos y el más raro), un menú por categorías con
   el progreso de cada uno y el porcentaje del servidor que lo tiene (las
   largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos; el botón
-  🏆 de la sección los abre en un mensaje aparte.
+  🏆 de la sección los abre en un mensaje aparte. Hay además una categoría
+  secreta, 🎸 Robuso, que no sale en el menú hasta conseguir uno de sus logros
+  y va aparte del total y de Coleccionista: unos solo los consigue Robuso y
+  otros quien trata con él. Lo de Hong Kong solo cuenta mientras está allí, y
+  eso lo apunta un administrador con `robuso hongkong` o `robuso madrid`.
   - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
     minuto en una sola escritura por servidor. Del mensaje solo se miran
     propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.

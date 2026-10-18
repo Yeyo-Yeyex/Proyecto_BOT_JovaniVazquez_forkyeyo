@@ -94,6 +94,7 @@ ADMIN_COMMANDS = {
     "cambios",
     "catalogo",
     "tajo",
+    "robuso",
     "informe",
 }
 
