@@ -178,6 +178,7 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 - **Lo que informa va en serio.** Menús, botones, ayudas, reglas de un juego, precios, cifras, errores, avisos, confirmaciones y descripciones de lo que hace un artículo o un logro se escriben normales: qué pasa, qué hacer y cuánto. Sin chiste para rellenar. La broma, si la hay, va aparte (una frase de Jovani, un nombre) y nunca tapa la información.
 - **Bromas espaciadas.** En una lista de frases que el bot elige al azar, al menos la mitad son normales: celebran, animan o cuentan lo que ha pasado sin referencia graciosa («Buena mano.», «Te quedas a cero; mañana hay más.»). Las bromas se reparten entre ellas, no van todas seguidas ni en todos los mensajes de una misma jugada.
 - **Calidad antes que cantidad.** Una lista de frases no tiene cupo ni mínimo. Se mete la broma que sea buena y se deja fuera la que solo cambia el nombre de otra. Variado, con cariño y sin repetir la misma broma con otras palabras. Si un texto que se repite a menudo sale siempre igual, se convierte en una lista de frases (con frases normales y alguna broma) y se elige al azar.
+- **Humor de adultos.** El servidor es +18 y está verificado: valen las bromas de adultos, los dobles sentidos y las palabras fuertes (tacos incluidos) cuando suman gracia. Los límites de siempre no cambian: nada contra pueblos, etnias, religiones ni colectivos, ni insultos de ese tipo; nada contra personas reales que no sean figuras públicas, ni contra miembros del servidor que no han pedido la broma; y nada sexual que no sea entre adultos.
 - **Herramientas serias, sin bromas.** El panel de moderación `admin` (cog `Moderation`) y el resto de comandos de administración, la telemetría y los avisos de novedades son sobrios: ni bromas ni coletillas.
 
 **Variedad de temas.** En octubre de 2026, `docs/auditoria_frases.py` contaba 576 menciones de Sánchez y el PSOE, más de tres veces que la siguiente fuente, y todas las fuentes contadas eran políticas. Cansa, y no por la política: por tirar siempre de lo mismo. A partir de ahora:
@@ -223,7 +224,9 @@ Para revertir, se revierten los commits apuntados aquí del más nuevo al más v
 Partes hechas:
 
 - Aviso de logros: la retención de Hacienda va en la línea del premio, sin frase de Perro Sanxe (`8d65d12`).
-- Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). Pendiente de los logros:
+- Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). - Logros, segunda pasada: los 4.089 leídos uno a uno con la regla nueva; 190 nombres sosos, repetidos o con el mismo tema una y otra vez (los rescates bancarios, el Manual de resistencia, Pegasus, los fondos europeos) cambiados y 28 descripciones neutras (ver `git log --grep "Logros: segunda pasada"`).
+
+Pendiente de los logros (de la primera pasada; resuelto en la segunda):
   - Los 1.365 de oficios (obra, política, hostelería, sanidad, oficina, reparto, funcionariado, influencer), economía, tienda, pisos, Hong Kong y lengua: nombres sin revisar.
   - Los nombres que no se tocaron en la primera pasada (no eran políticos), leídos uno a uno: los literales o sosos («Mil veces», «Un año entero») pasan a broma.
   - Unas 60 descripciones con «: …» o «, como …»: casi todas informan, pero alguna lleva broma pegada.

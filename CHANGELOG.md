@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.7 · 2026-10-18
+
+- Logros: segunda pasada a todos los nombres: menos repetidos, más variados y ninguno soso
+
 ### 7.25.6 · 2026-10-18
 
 - Interno: la política vuelve a ser una fuente de bromas como las demás, al mismo nivel
