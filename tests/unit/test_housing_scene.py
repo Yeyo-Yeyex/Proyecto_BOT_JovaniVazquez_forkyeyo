@@ -24,6 +24,7 @@ from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
 from bot.repositories.housing import Decision, Holding, Market, MemberDay, News, Review
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
+from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
@@ -601,6 +602,71 @@ def phase5_samples() -> dict[str, dict[str, Any]]:
     return {**resenas, **fichas}
 
 
+def phase6_samples() -> dict[str, dict[str, Any]]:
+    """La junta de copropietarios, la acción de división y su subasta."""
+    keys = [item.key for item in LISTINGS]
+    (a, b, c, d, e) = (keys[0], BY_KIND["chalet"], LONGEST.key, PISO, keys[4])
+
+    def holds(key: str, shares: dict[int, int]) -> dict[int, Holding]:
+        return {m: Holding(key, m, s, 1, 1, 0) for m, s in shares.items()}
+
+    def vote(
+        number: int, key: str, kind: str, value: str, ballots: dict[int, bool], **kw: Any
+    ) -> Vote:
+        fields: dict[str, Any] = {
+            "id": number, "listing": key, "proposer": 20, "kind": kind, "value": value,
+            "amount": 0, "ends_at": NOW + 3 * 3600 + 300, "ballots": ballots,
+        }  # fmt: skip
+        return Vote(**{**fields, **kw})
+
+    holdings = {
+        a: holds(a, {10: 40, 20: 35, 30: 25}),
+        b: holds(b, {10: 50, 20: 50}),
+        c: holds(c, {40: 30, 10: 28, 50: 22, 60: 20}),
+        d: holds(d, {10: 55, 20: 45}),
+        e: holds(e, {10: 60, 20: 40}),
+    }
+    votes = (
+        vote(1, a, "renta", "mercado", {20: True, 10: True}),
+        vote(2, a, "reforma", "integral", {20: True, 30: False}, proposer=30),
+        vote(3, a, "venta", "", {20: True, 10: True, 30: False}, ends_at=NOW + 25 * 60),
+        vote(4, a, "derrama", "", {20: True}, amount=45000),
+        vote(5, b, "seguro", "1", {}, proposer=10),
+        vote(6, c, "administra", "40", {40: True, 10: False, 50: True}, proposer=40),
+        vote(7, e, "licencia", "", {20: True, 10: False}),
+    )
+    market = Market(
+        holdings=holdings,
+        votes=votes,
+        admins={c: 40, a: 20},
+        reserves={a: 1_240_000, c: 987_654_321},
+    )
+    division = auction(1, e, seller=20, shares=100, min_bid=2_400_000, ends_at=NOW + 70 * 3600)
+    division = dataclasses.replace(division, division=True)
+    split = dataclasses.replace(
+        market,
+        auctions=(dataclasses.replace(division, best_bid=2_700_000, best_bidder=30, bids=2),),
+    )
+    mixed = dataclasses.replace(
+        market,
+        auctions=(
+            division,
+            auction(2, LONGEST.key, judicial=True, seller=40, shares=100, best_bid=1_234_000,
+                    best_bidder=40, bids=11),
+            auction(3, keys[3], best_bid=52000, best_bidder=10, shares=40),
+        ),
+    )  # fmt: skip
+    return {
+        "junta_cuatro_votaciones": view.junta_state(market, a, 10, NAMES, NOW),
+        "junta_vacia": view.junta_state(market, d, 10, NAMES, NOW),
+        "junta_duenos_largos": view.junta_state(market, c, 10, NAMES, NOW),
+        "junta_division": view.junta_state(split, e, 10, NAMES, NOW),
+        "junta_division_sin_pujas": view.junta_state(mixed, e, 20, NAMES, NOW),
+        "junta_sin_mayoria": view.junta_state(market, b, 30, NAMES, NOW),
+        "subastas_division": view.auctions_state(mixed, 10, NAMES, NOW, 1),
+    }
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
@@ -692,6 +758,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(phase2_samples())
     out.update(phase34_samples())
     out.update(phase5_samples())
+    out.update(phase6_samples())
     return out
 
 
@@ -733,6 +800,11 @@ CORE = [
         "resenas_nota_baja_larga",
         "resenas_sin_licencia",
         "ficha_nota_superanfitrion",
+        "junta_cuatro_votaciones",
+        "junta_vacia",
+        "junta_duenos_largos",
+        "junta_division",
+        "subastas_division",
     }
 ]
 
@@ -810,11 +882,11 @@ def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
     assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
 
 
-def test_las_muestras_cubren_las_doce_pantallas_y_las_claves_de_las_fases_2_a_5() -> None:
+def test_las_muestras_cubren_las_trece_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
     states = samples()
     assert {s["screen"] for s in states.values()} == {
         "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
-        "subastas", "reformas", "imprevistos", "resenas",
+        "subastas", "reformas", "imprevistos", "resenas", "junta",
     }  # fmt: skip
     assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
     assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
@@ -865,6 +937,20 @@ def test_las_muestras_cubren_las_doce_pantallas_y_las_claves_de_las_fases_2_a_5(
     assert [states[k]["rating"] != "" for k in fichas] == [True, True, False]
     assert states[fichas[0]]["superhost"] and not states[fichas[1]]["superhost"]
     assert states[fichas[2]]["license_until"] == "02/03/2031"
+    four = states["junta_cuatro_votaciones"]
+    assert [v["slot"] for v in four["votes"]] == [1, 2, 3, 4] and four["more"] == 0
+    assert {v["passing"] for v in four["votes"]} == {True, False} and not four["division"]
+    assert [o["name"] for o in four["owners"]] == ["Ana", "Bea", "Perro Sanxe"]
+    assert four["elected"] and four["admin"] == "Bea" and four["reserve"]
+    assert {v["mine"] for v in four["votes"]} >= {True, None}
+    assert states["junta_vacia"]["empty"] and not states["junta_vacia"]["votes"]
+    long = states["junta_duenos_largos"]
+    assert len(long["owners"]) == 4 and long["elected"] and any(o["admin"] for o in long["owners"])
+    assert states["junta_sin_mayoria"]["admin"].startswith("Nadie")
+    assert states["junta_division"]["division"]["best_bid"]
+    assert not states["junta_division_sin_pujas"]["division"]["best_bid"]
+    items = states["subastas_division"]["items"]
+    assert [i["division"] for i in items] == [True, False, False] and items[1]["judicial"]
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------

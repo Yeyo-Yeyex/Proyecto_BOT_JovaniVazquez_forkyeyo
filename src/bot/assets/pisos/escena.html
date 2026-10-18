@@ -14,7 +14,7 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos y resenas. Miden 1000 × 640, salvo el barrio
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas y junta. Miden 1000 × 640, salvo el barrio
 (diez tarjetas en dos filas), que mide 1000 × 760 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
 lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
@@ -3250,17 +3250,22 @@ function hazard(x, y, w, h, r) {
 
 // Un cartel de subasta. La judicial va en gris acero con su balanza; la elegida, con el borde azul.
 function auctionCard(a, x, y, w, h) {
-  const jud = a.judicial, x0 = x + 128, iw = w - 128 - 14, right = x + w - 14;
-  card(x, y, w, h, { r: 14, top: 5, topColor: jud ? "#44546a" : C.sun, fill: jud ? "#eef0f4" : C.card, stroke: a.selected ? C.blue : jud ? "#9aa5b4" : undefined });
+  const jud = a.judicial, div = a.division, x0 = x + 128, iw = w - 128 - 14, right = x + w - 14;
+  card(x, y, w, h, { r: 14, top: 5, topColor: div ? C.bugDk : jud ? "#44546a" : C.sun, fill: div ? "#fbeef3" : jud ? "#eef0f4" : C.card,
+    stroke: a.selected ? C.blue : div ? "#d98ab0" : jud ? "#9aa5b4" : undefined });
   if (a.selected) { rr(x + 2, y + 2, w - 4, h - 4, 12); g.strokeStyle = C.blue; g.lineWidth = 2.5; g.stroke(); }
   facade(a.kind, x + 12, y + 16, 104, 76, { key: a.key, barrio: a.barrio_key, theme: a.theme, r: 10 });
   rr(x + 12, y + 16, 104, 76, 10); g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = 1.2; g.stroke();
-  if (jud) {
+  if (div) {
+    dot(x + 102, y + 82, 15, "#fff"); dot(x + 102, y + 82, 12.5, C.bugDk); smallIcon("house", x + 102, y + 82, 8, "#fff");
+    chip("DIVISIÓN", x + 64, y + 100, "bug", { size: 12, align: "center", maxW: 112 });
+  } else if (jud) {
     dot(x + 102, y + 82, 15, "#fff"); dot(x + 102, y + 82, 12.5, "#44546a"); scales(x + 102, y + 82, 8, "#fff");
     chip("JUDICIAL", x + 64, y + 100, "steel", { size: 12, align: "center", maxW: 112 });
   } else TX(`${a.shares} %`, x + 64, y + 114, { font: F.t(26), color: C.sunDk, align: "center", stroke: "#fff8ea", sw: 4 });
   fitText(a.title, x0, y + 28, iw, F.d, 21, 14, { color: C.ink });
-  fitText(`${a.barrio} · ${a.shares} % · ${jud ? "ejecutado" : "vende"} ${a.seller}`, x0, y + 50, iw, F.m, 16, 11, { color: C.mute });
+  fitText(div ? `${a.barrio} · 100 % · Acción de división · pide ${a.seller}` : `${a.barrio} · ${a.shares} % · ${jud ? "ejecutado" : "vende"} ${a.seller}`,
+    x0, y + 50, iw, F.m, 16, 11, { color: C.mute });
   const rw = 124;
   if (a.best_bid) {
     fitText(a.best_bid, x0, y + 80, iw - rw - 8, F.d, 30, 16, { color: C.ink });
@@ -3558,11 +3563,186 @@ function paintResenas(st) {
   });
 }
 
+// JUNTA -----------------------------------------------------------------------------------
+
+const JUNTA_PAL = [C.atl, C.turq, C.sun, C.bug, C.laurel, "#7a5aa8"];
+const MOTION_TONE = { renta: C.laurelDk, seguro: C.atl, eleccion: C.orange, administra: "#7a5aa8", derrama: C.turqDk,
+  reforma: C.sunDk, licencia: C.orange, venta: C.bugDk };
+const THRESHOLD_PCT = { "Mayoría": 50, "3/5": 60, "Unanimidad": 100 };
+
+function crown(cx, cy, r, color) {
+  g.save(); g.translate(cx, cy); g.fillStyle = color;
+  g.beginPath(); g.moveTo(-r, r * 0.6); g.lineTo(-r, -r * 0.5); g.lineTo(-r * 0.5, r * 0.05); g.lineTo(0, -r * 0.8); g.lineTo(r * 0.5, r * 0.05);
+  g.lineTo(r, -r * 0.5); g.lineTo(r, r * 0.6); g.closePath(); g.fill();
+  for (const dx of [-1, 0, 1]) dot(dx * r, dx ? -r * 0.55 : -r * 0.85, r * 0.16, color);
+  g.restore();
+}
+function shield(cx, cy, r, color) {
+  g.beginPath(); g.moveTo(cx - r * 0.85, cy - r * 0.8); g.lineTo(cx, cy - r); g.lineTo(cx + r * 0.85, cy - r * 0.8);
+  g.lineTo(cx + r * 0.85, cy + r * 0.1); g.quadraticCurveTo(cx + r * 0.8, cy + r * 0.7, cx, cy + r); g.quadraticCurveTo(cx - r * 0.8, cy + r * 0.7, cx - r * 0.85, cy + r * 0.1);
+  g.closePath(); g.fillStyle = color; g.fill();
+}
+// El icono de cada tipo de votación, en blanco sobre un círculo de color.
+function motionIcon(kind, cx, cy, r) {
+  const w = "#fff";
+  if (kind === "renta") { // un billete con su moneda
+    fillRR(cx - r * 0.95, cy - r * 0.55, r * 1.9, r * 1.1, r * 0.18, w); dot(cx, cy, r * 0.33, MOTION_TONE.renta);
+  } else if (kind === "seguro") {
+    shield(cx, cy, r, w); smallIcon("check", cx, cy + r * 0.05, r * 0.5, MOTION_TONE.seguro);
+  } else if (kind === "eleccion") smallIcon("hand", cx, cy, r * 0.95, w);
+  else if (kind === "administra") crown(cx, cy, r * 0.85, w);
+  else if (kind === "derrama") smallIcon("bank", cx, cy, r * 0.95, w);
+  else if (kind === "reforma") smallIcon("tools", cx, cy, r * 0.95, w);
+  else if (kind === "licencia") smallIcon("sun", cx, cy, r * 0.95, w);
+  else smallIcon("house", cx, cy, r * 0.95, w);
+}
+// La hucha del fondo de reserva: un cerdito rosa con una moneda entrando por la ranura.
+function piggy(cx, cy, s) {
+  g.save(); g.translate(cx, cy);
+  for (const dx of [-0.55, 0.45]) fillRR(dx * s - 0.17 * s, 0.5 * s, 0.34 * s, 0.4 * s, 0.1 * s, "#d9728f");
+  g.beginPath(); g.moveTo(-0.62 * s, -0.78 * s); g.lineTo(-0.42 * s, -1.08 * s); g.lineTo(-0.2 * s, -0.7 * s); g.closePath(); g.fillStyle = "#d9728f"; g.fill();
+  g.strokeStyle = "#d9728f"; g.lineWidth = 0.1 * s; g.lineCap = "round";
+  g.beginPath(); g.moveTo(-1.02 * s, -0.05 * s); g.quadraticCurveTo(-1.3 * s, -0.3 * s, -1.15 * s, -0.55 * s); g.stroke();
+  ell(0, 0, 1.0 * s, 0.78 * s, "#f29bb4");
+  ell(0.05 * s, -0.3 * s, 0.7 * s, 0.3 * s, "rgba(255,255,255,0.22)");
+  ell(0.98 * s, 0.1 * s, 0.3 * s, 0.26 * s, "#f6b6c8");
+  dot(0.92 * s, 0.1 * s, 0.05 * s, "#a8486a"); dot(1.06 * s, 0.1 * s, 0.05 * s, "#a8486a");
+  dot(0.55 * s, -0.25 * s, 0.07 * s, C.ink);
+  fillRR(-0.28 * s, -0.8 * s, 0.56 * s, 0.1 * s, 0.05 * s, "#a8486a");
+  ell(0, -1.2 * s, 0.3 * s, 0.34 * s, "#c98a0c"); ell(0, -1.23 * s, 0.26 * s, 0.3 * s, C.gold);
+  g.restore();
+}
+function ballotBox(cx, cy, s) { // la urna con su papeleta
+  fillRR(cx - s * 0.8, cy - s * 0.1, s * 1.6, s * 1.0, s * 0.12, C.atl);
+  fillRR(cx - s * 0.8, cy - s * 0.1, s * 1.6, s * 0.2, s * 0.08, C.atlDk);
+  fillRR(cx - s * 0.4, cy - s * 0.06, s * 0.8, s * 0.07, s * 0.03, "#0a1d33");
+  g.save(); g.translate(cx + s * 0.1, cy - s * 0.55); g.rotate(0.12);
+  fillRR(-s * 0.4, -s * 0.38, s * 0.8, s * 0.62, s * 0.05, "#fff"); g.strokeStyle = C.line; g.lineWidth = 1.5; rr(-s * 0.4, -s * 0.38, s * 0.8, s * 0.62, s * 0.05); g.stroke();
+  smallIcon("check", 0, -s * 0.07, s * 0.2, C.green);
+  g.restore();
+  sparkleDots(cx, cy, s);
+}
+function sparkleDots(cx, cy, s) { for (const [dx, dy] of [[-1.05, -0.4], [1.1, -0.2], [0.95, 0.7]]) dot(cx + dx * s, cy + dy * s, s * 0.05, C.gold); }
+
+// La barra de una votación: sí (verde), sin votar (rayado, cuenta como sí) y no (rojo), con la muesca del umbral.
+function voteBar(v, x, y, w, h, pct) {
+  const t = v.total || 1, yw = w * v.yes / t, sw = w * v.silent / t, nw = w * v.no / t;
+  g.save(); rr(x, y, w, h, h / 2); g.clip();
+  rect(x, y, w, h, "#e6dfcf");
+  rect(x, y, yw, h, C.green);
+  if (sw > 0) {
+    rect(x + yw, y, sw, h, "#dcd6c6");
+    g.save(); g.beginPath(); g.rect(x + yw, y, sw, h); g.clip();
+    for (let k = -h; k < sw; k += 7) line(x + yw + k, y + h, x + yw + k + h, y, "rgba(120,110,90,0.5)", 2);
+    g.restore();
+  }
+  rect(x + yw + sw, y, nw, h, C.red);
+  rect(x, y, w, h * 0.4, "rgba(255,255,255,0.22)");
+  g.restore();
+  rr(x + 0.5, y + 0.5, w - 1, h - 1, h / 2); g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = 1; g.stroke();
+  const mx = x + w * pct / 100;
+  line(mx, y - 4, mx, y + h + 4, C.ink, 2.5);
+  const lab = `${pct} %`;
+  T(lab, mx, y - 12, { font: F.d(12), color: C.ink, align: pct >= 100 ? "right" : "center" });
+}
+
+function voteCard(v, x, y, w, h) {
+  const tone = MOTION_TONE[v.kind] || C.blue, bx = x + 84, bw = w - 84 - 14;
+  card(x, y, w, h, { r: 14, top: 5, topColor: tone });
+  const icy = y + 36;
+  dot(x + 44, icy, 25, tone); dot(x + 44, icy, 22, "rgba(255,255,255,0.18)"); motionIcon(v.kind, x + 44, icy, 14);
+  wrap(v.name, 76, F.m(11), 3).forEach((l, i) => T(l, x + 44, y + 69 + i * 11.5, { font: F.m(11), color: C.mute, align: "center" }));
+  dot(x + 18, y + 22, 13, C.ink); T(String(v.slot), x + 18, y + 22, { font: F.d(17), color: "#fff", align: "center" });
+  const sale = v.passing, tw_ = tagW(sale ? "Sale adelante" : "No sale", 14, sale ? "check" : "cross");
+  fitText(v.what, bx, y + 22, bw - tw_ - 12, F.d, 21, 13, { color: C.ink });
+  tag(sale ? "Sale adelante" : "No sale", x + w - 14 - tw_, y + 9, sale ? "green" : "red", sale ? "check" : "cross", 14);
+  fitText(`Propone ${v.proposer} · pide ${v.threshold} (${v.law})`, bx, y + 43, bw, F.m, 15, 11, { color: C.mute });
+  const by = y + h - 34;
+  voteBar(v, bx, by, bw, 12, THRESHOLD_PCT[v.threshold] ?? 50);
+  // la leyenda: sí, sin votar y no, cada uno con su color
+  const ly = y + h - 11, items = [[C.green, `${v.yes} sí`], [C.grey, `${v.silent} sin votar${v.silent ? " (cuenta como sí)" : ""}`], [C.red, `${v.no} no`]];
+  const mine = v.mine === true ? ["Has votado sí", "green", "check"] : v.mine === false ? ["Has votado no", "red", "cross"] : ["Aún no has votado", "grey", null];
+  const mw = tagW(mine[0], 12, mine[2]), cw_ = 24 + width(v.left, F.d(15)) + 20;
+  const room = bw - mw - cw_ - 16;
+  let z = 15; const need = (s) => items.reduce((a, [, t]) => a + 16 + width(t, F.d(s)), 0) + 12 * (items.length - 1);
+  while (z > 10 && need(z) > room) z--;
+  let lx = bx;
+  for (const [c, t] of items) { dot(lx + 5, ly, 5, c); T(t, lx + 16, ly, { font: F.d(z), color: C.ink }); lx += 16 + width(t, F.d(z)) + 12; }
+  tag(mine[0], x + w - 14 - mw, ly - 11, mine[1], mine[2], 12);
+  const cx0 = x + w - 14 - mw - 18 - width(v.left, F.d(15)) - 20;
+  clockIcon(cx0 + 8, ly, 8, C.mute); T(v.left, cx0 + 22, ly, { font: F.d(15), color: C.ink });
+}
+
+function paintJunta(st) {
+  header(st.title, `${st.barrio} · Junta`, { size: 30, wordmark: false });
+  const div = st.division;
+  let y0 = 100;
+  if (div) { // la cinta de la acción de división
+    fillRR(16, 100, 968, 56, 14, "rgba(0,0,0,0.2)"); fillRR(16, 98, 968, 56, 14, C.bugDk);
+    g.save(); rr(16, 98, 968, 56, 14); g.clip();
+    for (let k = -60; k < 968; k += 26) line(16 + k, 154, 16 + k + 56, 98, "rgba(255,255,255,0.08)", 10);
+    rect(16, 98, 968, 22, "rgba(255,255,255,0.1)"); g.restore();
+    dot(48, 126, 21, "#fff"); gavel(48, 126, 17, C.bugDk);
+    fitText("ACCIÓN DE DIVISIÓN: el inmueble entero, en subasta", 82, 114, 884, F.t, 25, 16, { color: "#fff" });
+    fitText(`Mínima ${div.min_bid} · ${div.best_bid ? `mejor puja ${div.best_bid}` : "sin pujas todavía"} · quedan ${div.left}`, 82, 139, 884, F.d, 17, 12, { color: "#ffe3ee" });
+    y0 = 166;
+  }
+  const H0 = 592 - y0, lw = 280, rx = 312, rw = 672;
+  // -- los dueños
+  card(16, y0, lw, H0, { r: 14 });
+  T("Dueños", 32, y0 + 22, { font: F.d(21), color: C.ink });
+  const owners = st.owners || [], total = owners.reduce((a, o) => a + o.shares, 0) || 1;
+  g.save(); rr(32, y0 + 40, lw - 32, 16, 8); g.clip(); rect(32, y0 + 40, lw - 32, 16, "#eadfc8");
+  let cx = 32;
+  owners.forEach((o, i) => { const sw = (lw - 32) * o.shares / total; rect(cx, y0 + 40, sw, 16, JUNTA_PAL[i % JUNTA_PAL.length]); cx += sw; rect(cx - 1, y0 + 40, 1.5, 16, "#fff"); });
+  rect(32, y0 + 40, lw - 32, 6, "rgba(255,255,255,0.22)"); g.restore();
+  const shown = owners.slice(0, 5);
+  shown.forEach((o, i) => {
+    const ry = y0 + 82 + i * 28, col = JUNTA_PAL[i % JUNTA_PAL.length];
+    fillRR(32, ry - 7, 14, 14, 4, col);
+    if (o.me) { rr(26, ry - 14, lw - 20, 28, 8); g.strokeStyle = C.blue; g.lineWidth = 1.6; g.stroke(); }
+    const badge = (o.admin ? 24 : 0) + (o.me ? 38 : 0);
+    fitText(o.name, 54, ry, lw - 54 - 62 - badge, F.d, 17, 11, { color: C.ink });
+    T(`${o.shares} %`, lw - 6, ry, { font: F.d(18), color: C.ink, align: "right" });
+    let bx2 = lw - 6 - width(`${o.shares} %`, F.d(18)) - 8;
+    if (o.admin) { crown(bx2 - 10, ry, 9, C.gold); bx2 -= 24; }
+    if (o.me) T("TÚ", bx2 - 2, ry, { font: F.d(12), color: C.blue, align: "right" });
+  });
+  let cy = y0 + 82 + shown.length * 28 - 6;
+  if (owners.length > shown.length) { T(`y ${owners.length - shown.length} más`, 32, cy + 6, { font: F.m(15), color: C.mute }); cy += 22; }
+  rect(32, cy + 4, lw - 32, 1.4, C.line);
+  // quién administra
+  const nobody = !owners.some((o) => o.admin);
+  crown(46, cy + 34, 13, nobody ? "#c9bd9c" : C.gold);
+  T("Administra", 70, cy + 24, { font: F.d(14), color: C.mute });
+  fitText(st.admin, 70, cy + 46, lw - 70 - 18, F.d, 19, 12, { color: nobody ? C.redDk : C.ink });
+  if (!nobody) tag(st.elected ? "elegido por la junta" : "por mayoría", 32, cy + 62, st.elected ? "blue" : "grey", st.elected ? "check" : null, 12, lw - 48);
+  // la hucha, con el fondo de reserva
+  const py = cy + 98, bottom = y0 + H0;
+  piggy(lw / 2 - 20, (py + bottom) / 2 - 12, Math.min(34, (bottom - py) / 3.3));
+  T("Fondo de reserva", lw / 2 + 6 + 10, bottom - 32, { font: F.d(14), color: C.mute, align: "center" });
+  fitText(st.reserve, lw / 2 + 6 + 10, bottom - 12, lw - 30, F.d, 22, 13, { color: C.laurelDk, align: "center" });
+  // -- las votaciones
+  const votes = st.votes || [];
+  if (st.empty || !votes.length) {
+    card(rx, y0, rw, H0, { r: 18 });
+    ballotBox(rx + rw / 2, y0 + H0 * 0.3, 54);
+    const [t, z] = fit("NADA QUE VOTAR", rw - 60, F.t, 42, 24);
+    TX(t, rx + rw / 2, y0 + H0 * 0.6, { font: F.t(z), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6, shadow: "rgba(170,100,30,0.35)" });
+    wrap("Propón algo desde el desplegable: la renta, el seguro, una reforma, quién administra… Quien no vota cuenta a favor (art. 17.8 LPH).", rw - 120, F.m(21), 3)
+      .forEach((l, i) => T(l, rx + rw / 2, y0 + H0 * 0.6 + 50 + i * 28, { font: F.m(21), color: C.mute, align: "center" }));
+    return;
+  }
+  const gap = 4, ch = Math.min(116, Math.floor((H0 - gap * 3) / 4));
+  votes.slice(0, 4).forEach((v, i) => voteCard(v, rx, y0 + i * (ch + gap), rw, ch));
+  if (st.more > 0) T(`y ${st.more} más sin enseñar`, rx + rw / 2, y0 + H0 + 4 + (div ? 0 : 8), { font: F.d(16), color: C.mute, align: "center" });
+}
+
 // -- Entrada ------------------------------------------------------------------------------
 
 const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
   gestion: paintGestion, candidatos: paintCandidatos, subastas: paintSubastas, reformas: paintReformas,
-  imprevistos: paintImprevistos, resenas: paintResenas };
+  imprevistos: paintImprevistos, resenas: paintResenas, junta: paintJunta };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];
