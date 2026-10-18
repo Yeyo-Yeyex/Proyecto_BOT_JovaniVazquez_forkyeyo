@@ -8,7 +8,9 @@ guarda el estado laboral. Tablas:
 - `work_history`: el puesto (y la rama) en el que se quedó cada miembro en
   cada oficio y el más alto al que llegó. Al volver a un oficio se entra en ese
   puesto.
-- `work_retirements`: las ramas de las que se jubiló cada miembro (para siempre).
+- `work_retirements`: las ramas de las que se jubiló cada miembro (para siempre), con la
+  calidad de lo cotizado en cada una (`quality`, de 0 a 1) y si es de antes de la 8.0.0
+  (`legacy`: su pensión de entonces es el suelo).
 - `work_pension_claims`: el último día que cobró la pensión, para cobrarla una
   vez al día.
 - `work_training`: formaciones compradas (valen para siempre).
@@ -24,7 +26,7 @@ import asyncio
 import json
 import sqlite3
 from collections.abc import Callable
-from dataclasses import asdict, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import TypeVar
 
@@ -33,10 +35,28 @@ from bot.services.work import Career, Contract, ShiftRecord
 
 T = TypeVar("T")
 
-#: Turnos más antiguos que esto se borran (los ascensos piden como mucho 5 días).
-SHIFT_RETENTION_SECONDS = 35 * 86_400
+#: Turnos más antiguos que esto se borran. Los días en el puesto se cuentan con ellos: los
+#: puestos de rama piden hasta 21 días distintos, y quien no ficha a diario tarda más.
+SHIFT_RETENTION_SECONDS = 120 * 86_400
 
 _CONTRACT_FIELDS = tuple(f.name for f in fields(Contract))
+
+
+@dataclass(frozen=True, slots=True)
+class RetiredBranch:
+    """Una rama de la que se jubiló un miembro.
+
+    Attributes:
+        quality: Calidad de lo cotizado en ella (`work.contribution_quality`).
+        legacy: Si se jubiló antes de la 8.0.0: su pensión de entonces es el suelo.
+        retired_at: Cuándo (epoch).
+    """
+
+    job: str
+    branch: str
+    quality: float
+    legacy: bool
+    retired_at: float
 
 
 class WorkRepository:
@@ -134,6 +154,16 @@ class WorkRepository:
                 connection.execute(
                     "ALTER TABLE work_history ADD COLUMN branch TEXT NOT NULL DEFAULT ''"
                 )
+            # Jubilaciones de antes de la 8.0.0: calidad entera (no hay historial) y suelo.
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(work_retirements)")}
+            if "quality" not in columns:
+                connection.execute(
+                    "ALTER TABLE work_retirements ADD COLUMN quality REAL NOT NULL DEFAULT 1"
+                )
+            if "legacy" not in columns:
+                connection.execute(
+                    "ALTER TABLE work_retirements ADD COLUMN legacy INTEGER NOT NULL DEFAULT 1"
+                )
         finally:
             connection.close()
 
@@ -155,6 +185,8 @@ class WorkRepository:
         if row is None:
             return None
         data = json.loads(row["data"])
+        # Un contrato guardado antes de la 8.0.0 conserva los días de antes en su puesto.
+        data.setdefault("legacy_days", True)
         # Campos que no conoce esta versión se ignoran; los nuevos toman su valor
         # por defecto. Así añadir un campo a `Contract` no necesita migración.
         return Contract(**{k: v for k, v in data.items() if k in _CONTRACT_FIELDS})
@@ -233,19 +265,57 @@ class WorkRepository:
         finally:
             connection.close()
 
+    async def retired_branches(self, guild_id: int, user_id: int) -> list[RetiredBranch]:
+        """Las ramas de las que se jubiló, con su calidad, por orden de jubilación."""
+        return await self._run(self._retired_branches_sync, guild_id, user_id)
+
+    def _retired_branches_sync(self, guild_id: int, user_id: int) -> list[RetiredBranch]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT job, branch, quality, legacy, retired_at FROM work_retirements
+                WHERE guild_id = ? AND user_id = ? ORDER BY retired_at, rowid
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+            return [
+                RetiredBranch(
+                    r["job"], r["branch"], float(r["quality"]), bool(r["legacy"]), r["retired_at"]
+                )
+                for r in rows
+            ]
+        finally:
+            connection.close()
+
     async def retire(
-        self, guild_id: int, user_id: int, branch: str, contract: Contract, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        branch: str,
+        contract: Contract,
+        now: float,
+        quality: float = 1.0,
     ) -> None:
         """Apunta la jubilación de la rama `branch` del oficio del contrato y guarda
         el contrato nuevo (ya en la otra rama), todo en la misma transacción.
 
+        Args:
+            quality: Calidad de lo cotizado en la rama (`work.contribution_quality`).
+
         Raises:
             ValueError: Si ya estaba jubilado de esa rama; no se guarda nada.
         """
-        await self._run(self._retire_sync, guild_id, user_id, branch, contract, now)
+        await self._run(self._retire_sync, guild_id, user_id, branch, contract, now, quality)
 
     def _retire_sync(
-        self, guild_id: int, user_id: int, branch: str, contract: Contract, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        branch: str,
+        contract: Contract,
+        now: float,
+        quality: float,
     ) -> None:
         connection = self._connect()
         try:
@@ -253,10 +323,11 @@ class WorkRepository:
             try:
                 connection.execute(
                     """
-                    INSERT INTO work_retirements (guild_id, user_id, job, branch, retired_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO work_retirements
+                        (guild_id, user_id, job, branch, retired_at, quality, legacy)
+                    VALUES (?, ?, ?, ?, ?, ?, 0)
                     """,
-                    (guild_id, user_id, contract.job, branch, now),
+                    (guild_id, user_id, contract.job, branch, now, quality),
                 )
             except sqlite3.IntegrityError as error:
                 connection.execute("ROLLBACK")
@@ -403,6 +474,21 @@ class WorkRepository:
                 (guild_id, user_id, record.created_at - SHIFT_RETENTION_SECONDS),
             )
             connection.execute("COMMIT")
+        finally:
+            connection.close()
+
+    async def last_shift_at(self, guild_id: int, user_id: int) -> float | None:
+        """Cuándo fichó por última vez (epoch), en cualquier oficio; `None` si no consta."""
+        return await self._run(self._last_shift_sync, guild_id, user_id)
+
+    def _last_shift_sync(self, guild_id: int, user_id: int) -> float | None:
+        connection = self._connect()
+        try:
+            (last,) = connection.execute(
+                "SELECT MAX(created_at) FROM work_shifts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return float(last) if last is not None else None
         finally:
             connection.close()
 

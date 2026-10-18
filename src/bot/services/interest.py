@@ -22,7 +22,10 @@ Reglas (lógica pura, sin Discord ni base de datos):
   pago lleva la retención fija del 19 % (art. 101.4 LIRPF y art. 90.1 RIRPF) y
   cada lunes la semana se liquida con la escala del ahorro
   (`bot.services.taxes.savings_tax`, arts. 66.1 y 76 LIRPF): lo que falte para
-  la cuota se cobra entonces (`savings_settlement`).
+  la cuota se cobra entonces (`savings_settlement`). Con la vara del IRPF (250 Y$
+  por euro) y el tope diario, una semana a tope son ~730 € al año, muy lejos de
+  los 6.000 € del tramo del 21 %: la liquidación sale a cero (como mucho, algún
+  Y$ de redondeo) mientras no cambien la vara o el tope.
 - **De dónde sale el dinero:** de la nada. El banco no existe en el juego: es un
   grifo pequeño, como la cotización de la empresa en `pala`. No sale de la
   cuenta del Estado, que entonces vaciaría la lotería. Lo compensan la

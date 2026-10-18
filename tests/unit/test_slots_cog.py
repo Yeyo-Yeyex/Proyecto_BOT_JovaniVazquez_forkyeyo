@@ -60,6 +60,7 @@ from bot.services.slots import (
     spin_at,
 )
 from bot.services.slots_render import SlotsMedia
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -261,7 +262,9 @@ async def test_tirar_cobra_gira_y_paga(tmp_path: Path) -> None:
 
     await view.play(interaction)
 
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100 + 1_000
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE - 100 + 1_000 - gambling_day_tax(1_000 - 100)
+    )
     interaction.response.defer.assert_awaited_once()
     first, final = interaction.edit_original_response.await_args_list
     assert attachment_names(first) == [GIF_NAME]

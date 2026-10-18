@@ -163,7 +163,7 @@ def played(view: CrapsView) -> CrapsGame:
 
 
 def settle_tax(net: int) -> int:
-    return gambling_day_tax(net, 0)
+    return gambling_day_tax(net)
 
 
 # -- Abrir la mesa ----------------------------------------------------------------------
@@ -312,7 +312,8 @@ async def test_no_pase_gana_con_una_pifia_y_pierde_con_un_natural(tmp_path: Path
     assert won == STARTING_BALANCE - 100 + 200 - settle_tax(100)
     await press(view, "_dont")
     assert played(view).status is Status.LOST
-    assert await balance(cog) == won - 100
+    # El día queda a cero: se devuelve lo retenido en la primera.
+    assert await balance(cog) == won - 100 + settle_tax(100) - settle_tax(0)
 
 
 async def test_la_barra_del_12_con_no_pase_devuelve_la_apuesta(tmp_path: Path) -> None:

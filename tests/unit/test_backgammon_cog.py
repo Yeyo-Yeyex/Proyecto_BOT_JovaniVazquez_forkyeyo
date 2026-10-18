@@ -46,6 +46,7 @@ from bot.services.backgammon_render import Cube, Media
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.gallos import duel_prize
 from bot.services.levels import TIMEZONE
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -567,7 +568,8 @@ async def test_pasar_un_doblado_da_la_partida_sencilla_al_que_dobla(tmp_path: Pa
     await press(duel.view, "drop", duel.challenger)
     assert duel.phase is Phase.DONE
     risked = at_risk(STAKE, 1, 1)
-    assert await net(cog, RIVAL_ID) == duel_prize(risked) - risked
+    won = duel_prize(risked) - risked
+    assert await net(cog, RIVAL_ID) == won - gambling_day_tax(won)
     assert await net(cog, OWNER_ID) == -risked
     assert not cog.duels and not cog.busy
     record = await cog.repository.get(GUILD_ID, OWNER_ID)
@@ -608,7 +610,8 @@ async def test_ganar_un_gammon_con_el_cubo_a_dos_cobra_por_cuatro(tmp_path: Path
     await play_turn(duel)
     assert duel.phase is Phase.DONE
     risked = at_risk(STAKE, 2, 2)
-    assert await net(cog, OWNER_ID) == duel_prize(risked) - risked
+    won = duel_prize(risked) - risked
+    assert await net(cog, OWNER_ID) == won - gambling_day_tax(won)
     assert await net(cog, RIVAL_ID) == -risked
     assert (await cog.repository.get(GUILD_ID, OWNER_ID)).gammons == 1
 
@@ -620,7 +623,8 @@ async def test_quien_se_duerme_pierde(tmp_path: Path) -> None:
     await duel._turn_timeout(duel._key())
     assert duel.phase is Phase.DONE
     risked = at_risk(STAKE, 1, 1)
-    assert await net(cog, RIVAL_ID) == duel_prize(risked) - risked
+    won = duel_prize(risked) - risked
+    assert await net(cog, RIVAL_ID) == won - gambling_day_tax(won)
     assert await net(cog, OWNER_ID) == -risked
 
 
@@ -640,7 +644,8 @@ async def test_rendirse_en_un_duelo_da_el_premio_al_otro(tmp_path: Path) -> None
     duel = await start(cog)
     await press(duel.view, "resign", duel.rival)
     risked = at_risk(STAKE, 1, 1)
-    assert await net(cog, OWNER_ID) == duel_prize(risked) - risked
+    won = duel_prize(risked) - risked
+    assert await net(cog, OWNER_ID) == won - gambling_day_tax(won)
     assert await net(cog, RIVAL_ID) == -risked
 
 

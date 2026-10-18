@@ -188,7 +188,9 @@ def test_la_compra_paga_el_itp_de_inmuebles_y_la_notaria() -> None:
     assert quote.price == rules.share_price(BAJO) * 10
     assert quote.itp == round(quote.price * rules.ITP_RATE)
     assert quote.notary == round(quote.price * rules.NOTARY_RATE)
-    assert quote.total == quote.price + quote.itp + quote.notary
+    # La notaría es un servicio: paga el IGIC general, que va al Estado.
+    assert quote.notary_igic == round(quote.notary * rules.SERVICES_IGIC) > 0
+    assert quote.total == quote.price + quote.itp + quote.notary + quote.notary_igic
     with pytest.raises(ValueError):
         rules.purchase_quote(BAJO, 0)
     with pytest.raises(ValueError):
@@ -201,10 +203,13 @@ def test_vender_con_ganancia_paga_el_19_por_ciento_y_la_deuda_va_con_el_piso() -
         BAJO, 50, 50, cost, index=1.5, arrears=10_000, arrears_ibi=2_000, pool=100
     )
     assert quote.arrears == 5_000 and quote.arrears_ibi == 1_000
-    assert quote.gain == quote.price - quote.fee - quote.arrears - cost
+    # La comisión de la agencia paga el IGIC general y es gasto de la venta.
+    assert quote.fee_igic == round(quote.fee * rules.SERVICES_IGIC) > 0
+    selling = quote.fee + quote.fee_igic
+    assert quote.gain == quote.price - selling - quote.arrears - cost
     assert quote.gain > 0
     assert quote.gain_tax == rules.capital_gain_tax(quote.gain)
-    assert quote.received == quote.price - quote.fee - quote.arrears - quote.gain_tax
+    assert quote.received == quote.price - selling - quote.arrears - quote.gain_tax
 
 
 def test_vender_con_perdidas_no_paga_irpf() -> None:
@@ -233,11 +238,58 @@ def test_la_renta_paga_primero_el_ibi_y_lo_que_falta_queda_a_deber() -> None:
     assert (short.ibi, short.costs, short.net, short.arrears_ibi) == (200, 50, 0, 0)
 
 
-def test_la_renta_se_pasa_a_la_escala_de_la_retencion() -> None:
-    assert rules.rent_to_fiscal(365) == 12
-    assert rules.rent_to_fiscal(-5) == 0
-    assert rules.taxable_rent(1_000, 400) == 300
-    assert rules.taxable_rent(100, 400) == 0
+def test_solo_el_alquiler_de_vivienda_tiene_la_reduccion_del_23_2() -> None:
+    local = next(item for item in LISTINGS if item.kind not in rules.HOME_KINDS)
+    assert rules.is_dwelling(BAJO, "referencia")
+    assert not rules.is_dwelling(BAJO, rules.NOMAD_LEVEL)  # temporada (art. 3 LAU)
+    assert not rules.is_dwelling(BAJO, rules.VACATION_LEVEL)  # turístico
+    assert not rules.is_dwelling(local, "referencia")
+    calm = rules.contract_reduction(BAJO, "referencia", index=1.0, rent=900, last_rent=1_000)
+    assert calm == rules.RENT_REDUCTION
+    assert rules.contract_reduction(local, "referencia", index=1.0, rent=900, last_rent=0) == 0
+
+
+def test_el_90_es_para_quien_rebaja_mas_de_un_5_en_zona_tensionada() -> None:
+    tense = rules.TENSE_INDEX
+    cut = rules.contract_reduction(BAJO, "referencia", index=tense, rent=940, last_rent=1_000)
+    small = rules.contract_reduction(BAJO, "referencia", index=tense, rent=950, last_rent=1_000)
+    first = rules.contract_reduction(BAJO, "referencia", index=tense, rent=500, last_rent=0)
+    assert cut == rules.TENSE_RENT_REDUCTION
+    assert small == first == rules.RENT_REDUCTION
+
+
+def test_los_contratos_de_antes_de_la_8_tienen_la_reduccion_general() -> None:
+    old = rules.Lease(status=rules.RENTED, level="referencia", rent=1_000)
+    assert rules.lease_reduction(BAJO, old) == rules.RENT_REDUCTION
+    signed = rules.Lease(status=rules.RENTED, level="referencia", rent=1_000, reduction=0.9)
+    assert rules.lease_reduction(BAJO, signed) == 0.9
+
+
+def test_un_piso_vacio_imputa_el_1_1_por_ciento_del_catastral_al_ano() -> None:
+    monthly = rules.imputed_rent(BAJO, rules.SHARES)
+    assert monthly == round(rules.cadastral_value(BAJO) * 0.011 / 12)
+    assert rules.imputed_rent(BAJO, rules.SHARES // 2) == pytest.approx(monthly / 2, abs=1)
+
+
+def test_al_irse_el_inquilino_se_guarda_su_renta_para_el_siguiente_contrato() -> None:
+    lease = rules.Lease(
+        status=rules.RENTED, level="referencia", tenant="familia", rent=1_234,
+        until=date(2026, 10, 1), since=date(2026, 8, 1),
+    )  # fmt: skip
+
+    class NoRenew:
+        def random(self) -> float:
+            return 0.99
+
+        def choice(self, items):  # type: ignore[no-untyped-def]
+            return items[0]
+
+        def randint(self, low: int, high: int) -> int:
+            return low
+
+    outcome = rules.advance_day(BAJO, lease, date(2026, 10, 2), 1.0, NoRenew())  # type: ignore[arg-type]
+    assert outcome.lease.status == rules.VACANT
+    assert outcome.lease.last_rent == 1_234
 
 
 def test_comprar_sube_el_indice_segun_lo_que_pesa_y_vender_lo_deja_igual() -> None:
@@ -353,8 +405,9 @@ async def test_comprar_cobra_precio_itp_y_notaria_y_el_libro_cuadra(tmp_path: Pa
 
     assert trade.balance == STARTING_BALANCE + 1_000_000 - quote.total
     assert ledger_sum(tmp_path, ANA) == trade.balance
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == quote.itp
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == quote.itp + quote.notary_igic
     assert housing_taxes(tmp_path, "itp") == quote.itp
+    assert housing_taxes(tmp_path, "igic_gastos") == quote.notary_igic
     market = await service.market(GUILD)
     assert market.shares_of(BAJO.key) == {ANA: 40}
     assert market.free_shares(BAJO.key) == 60
@@ -513,7 +566,8 @@ async def test_un_dia_vacio_sin_dinero_deja_la_deuda_en_el_piso_y_se_descuenta_a
     assert quote.arrears == lease.arrears and quote.arrears_ibi == lease.arrears_ibi
     assert trade.balance == balance + quote.received
     assert ledger_sum(tmp_path, ANA) == trade.balance
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == quote.arrears_ibi + quote.gain_tax
+    state_gets = quote.arrears_ibi + quote.gain_tax + quote.fee_igic
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == state_gets
     market = await service.market(GUILD)
     assert BAJO.key not in market.leases and market.holdings == {}
 
@@ -612,7 +666,8 @@ async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> No
     assert taxes["ibi"] == rules.monthly_costs(BAJO).ibi
     assert taxes["alquiler"] > 0
     assert taxes["ganancia"] == sale.deal.quote.gain_tax
-    assert len(housing_lines(taxes)) == 4
+    assert taxes["igic_gastos"] == buy.deal.quote.notary_igic + sale.deal.quote.fee_igic
+    assert len(housing_lines(taxes)) == 5
     embed = discord.Embed()
     add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
     assert format_total(sum(taxes.values())) in embed.fields[0].name
@@ -664,7 +719,7 @@ async def test_quien_lo_tiene_todo_en_ladrillo_paga_el_patrimonio_con_un_embargo
     assert embargoed > 0
     assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
     breakdown = await economy.tax_breakdown(GUILD)
-    assert breakdown[ANA]["patrimonio"] == embargoed
+    assert breakdown[ANA]["deudas"] == embargoed
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state >= embargoed
 
 
@@ -694,3 +749,67 @@ async def test_al_salir_del_servidor_se_borran_sus_pisos(tmp_path: Path) -> None
     await service.repository.delete_guild_data(GUILD)
     market = await service.market(GUILD)
     assert market.holdings == {} and market.leases == {} and market.indexes == {}
+
+
+async def test_los_pisos_declaran_por_inmueble_imputan_los_vacios_y_la_casa_desgrava(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock)
+    await economy.close_irpf_weeks(GUILD)  # el servidor entra en la 8.0.0 esta semana
+    await give(economy, ANA, 10_000_000)
+    await economy.pay_salary(GUILD, ANA, gross=400_000, concept="pala:obra")  # para el banco
+    homes = sorted(
+        (x for x in listings_of(BAJO.barrio) if x.key != BAJO.key and x.kind in rules.HOME_KINDS),
+        key=rules.price,
+    )
+    empty, home = homes[-1], homes[0]
+    await service.buy(GUILD, ANA, BAJO.key, 100)
+    await service.buy(GUILD, ANA, empty.key, 100)
+    trade = await service.buy(GUILD, ANA, home.key, 100, financed=True)
+    assert trade.deal.loan > 0
+    await service.set_home(GUILD, ANA, home.key)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2027-01-01' WHERE listing = ?",
+            (BAJO.key,),
+        )
+    clock.now = at(15).timestamp()
+    await service.close_days(GUILD)
+
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        rows = {
+            ref: (kind, gross, costs, reduction)
+            for ref, kind, gross, costs, reduction in connection.execute(
+                "SELECT ref, kind, gross, costs, reduction FROM economy_tax_records "
+                "WHERE user_id = ? AND kind IN ('inmueble', 'imputacion')",
+                (ANA,),
+            )
+        }
+        home_paid = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras WHERE user_id = ? "
+            "AND kind = 'vivienda'",
+            (ANA,),
+        ).fetchone()[0]
+    # El alquilado, por inmueble: la renta entera, sus gastos y la reducción de vivienda.
+    kind, gross, costs, reduction = rows[BAJO.key]
+    month = rules.monthly_costs(BAJO)
+    assert (kind, gross, reduction) == ("inmueble", 8000, rules.RENT_REDUCTION)
+    assert costs >= month.ibi + month.community + month.insurance
+    # El vacío imputa el 1,1 % del catastral; la casa en la que vive, nada.
+    assert rows[empty.key][:2] == ("imputacion", rules.imputed_rent(empty, 100))
+    assert home.key not in rows
+    # La cuota de la hipoteca de la vivienda habitual queda para la deducción canaria.
+    assert home_paid == trade.deal.payment
+
+    clock.now = at(19, hour=0).timestamp()
+    await economy.close_irpf_weeks(GUILD)
+    statement = await economy.irpf_statement(GUILD, ANA)
+
+    assert statement is not None and statement.detail is not None
+    (item,) = statement.income.properties
+    assert (item.ref, item.income, item.reduction) == (BAJO.key, 8000, rules.RENT_REDUCTION)
+    assert statement.income.imputed == rules.imputed_rent(empty, 100)
+    assert statement.detail.tax.base == statement.filed.base
+    assert statement.detail.result == statement.filed.result

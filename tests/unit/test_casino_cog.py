@@ -192,7 +192,7 @@ async def test_apostar_cobra_gira_y_paga(tmp_path: Path) -> None:
     assert attachment_names(first) == [GIF_NAME]
     assert attachment_names(final) == [PNG_NAME]
     gain = 100 * STRAIGHT_PAYOUT
-    withheld = gambling_day_tax(gain, 0)
+    withheld = gambling_day_tax(gain)
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - withheld
     assert cog.history(GUILD_ID) == [17]
     assert table.streak == 1
@@ -271,8 +271,10 @@ async def test_doblar_juega_la_ultima_apuesta_con_el_doble(tmp_path: Path) -> No
     await table._double_and_repeat(make_interaction())
 
     assert table.stake == 200
-    # Gana 100 y luego 200 al rojo (el 1 es rojo).
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 300
+    # Gana 100 y luego 200 al rojo (el 1 es rojo); el casino retiene sobre el neto del día.
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE + 300 - gambling_day_tax(300)
+    )
 
 
 async def test_doblar_sin_saldo_suficiente_no_cambia_la_ficha(tmp_path: Path) -> None:
@@ -337,7 +339,7 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
     assert attachment_names(message.edit.await_args) == [PNG_NAME]
     # Gana 29 veces el saldo en el día: paga IRPF sobre ello y la mesa lo dice.
     gain = STARTING_BALANCE * STRAIGHT_PAYOUT
-    tax = gambling_day_tax(gain, 0)
+    tax = gambling_day_tax(gain)
     assert tax > 0
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - tax
     assert "🐶 IRPF: −" in message.edit.await_args.kwargs["embed"].description
@@ -516,8 +518,10 @@ async def test_doblar_dobla_todas_las_apuestas_de_la_ultima_tirada(tmp_path: Pat
     await table._double_and_repeat(make_interaction())
 
     assert [w.stake for w in table.last_wagers] == [200, 200]
-    # Primera tirada: +200. Segunda (doble): +400.
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 600
+    # Primera tirada: +200. Segunda (doble): +400. Retiene sobre el neto del día.
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE + 600 - gambling_day_tax(600)
+    )
 
 
 async def test_cambiar_de_modo_quita_las_fichas_puestas(tmp_path: Path) -> None:
@@ -543,7 +547,9 @@ async def test_comando_con_varias_apuestas_gira_y_deja_la_mesa_en_modo_varias(
     send_error.assert_not_awaited()
     table = send.await_args.kwargs["view"]
     assert table.multi
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + 200
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE + 200 - gambling_day_tax(200)
+    )
 
 
 async def test_comando_con_varias_apuestas_sin_saldo_avisa_del_total(tmp_path: Path) -> None:

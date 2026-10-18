@@ -26,6 +26,7 @@ from bot.cogs.timba import MAX_TIMEOUTS, Phase, Table, Timba
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
 from bot.services.blackjack import Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import gambling_day_tax
 from bot.services.timba import TimbaHand
 
 GUILD_ID = 1
@@ -188,8 +189,9 @@ async def test_retirarse_antes_del_flop_le_da_las_ciegas_al_otro_sin_comision(
     clock.script = [act(table, ANA, "fold")]
     await table.play_hand()
     assert await balance(cog, ANA) == STARTING_BALANCE - 10
-    assert await balance(cog, LEO) == STARTING_BALANCE + 10
-    assert state(tmp_path) == 0
+    assert await balance(cog, LEO) == STARTING_BALANCE + 10 - gambling_day_tax(10)
+    # Sin comisión: al Estado solo le llega lo que retiene el casino a Leo.
+    assert state(tmp_path) == gambling_day_tax(10)
     assert table.phase is Phase.LOBBY and table.hands == 1
     assert "Ana** se retira" in (table.lobby_embed().description or "")
 
@@ -206,9 +208,10 @@ async def test_enfrentamiento_gana_la_mejor_mano_y_la_comision_va_al_estado(
     assert hand is not None and hand.result is not None and hand.result.showdown
     rake = hand.result.rake
     assert rake > 0
-    assert await balance(cog, ANA) == STARTING_BALANCE + 100 - rake
+    withheld = gambling_day_tax(100 - rake)
+    assert await balance(cog, ANA) == STARTING_BALANCE + 100 - rake - withheld
     assert await balance(cog, LEO) == STARTING_BALANCE - 100
-    assert state(tmp_path) >= rake, "la comisión va al Estado (más el IRPF del juego)"
+    assert state(tmp_path) == rake + withheld, "la comisión va al Estado (más el IRPF del juego)"
     total = await balance(cog, ANA) + await balance(cog, LEO) + state(tmp_path)
     assert total == 2 * STARTING_BALANCE, "la mano no crea ni destruye dinero"
     text = table.lobby_embed().description or ""

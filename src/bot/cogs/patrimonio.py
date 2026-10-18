@@ -60,6 +60,7 @@ from bot.services.shop import Kind
 from bot.services.taxes import (
     SOLIDARITY_WEALTH_THRESHOLD,
     TAX_COLLECTOR,
+    WEALTH_MAX_REDUCTION,
     WEALTH_MINIMUM,
     wealth_quote,
 )
@@ -316,27 +317,24 @@ class Patrimonio(commands.Cog):
             embed.add_field(name="Bienes", value=text[:1_024], inline=False)
         objects = sum(item.value for item in worth.goods if item.kind == Kind.TROPHY.value)
         base = worth.cash + worth.homes_fiscal + objects
-        quote = wealth_quote(
-            base,
-            unproductive=objects,
-            weekly_income=await self.economy.weekly_taxable(guild.id, target.id),
-        )
+        irpf_base, irpf_quota = await self.economy.week_irpf(guild.id, target.id)
+        quote = wealth_quote(base, unproductive=objects, irpf_base=irpf_base, irpf_quota=irpf_quota)
         debt = await self.economy.tax_debt(guild.id, target.id)
         text = (
             f"El lunes te cobraría {format_amount(quote.due)} de Patrimonio (efectivo, pisos "
             f"a su valor fiscal y objetos de la tienda, por lo que pase de "
-            f"{format_amount(WEALTH_MINIMUM)}). Lo que no tengas en efectivo se embarga de "
-            "tus alquileres."
+            f"{format_amount(WEALTH_MINIMUM)}). Lo que no tengas en efectivo queda como "
+            "deuda: se cobra el lunes siguiente o se embarga de tus alquileres."
             if quote.due
             else f"No llegas al mínimo del Patrimonio ({format_amount(WEALTH_MINIMUM)} "
             "entre efectivo, pisos y objetos). Sanxe te perdona esta semana."
         )
         if quote.reduced:
             text += (
-                f"\nCon la renta de esta semana, el límite conjunto con el IRPF (art. 31) te "
-                f"rebaja {format_amount(quote.reduced)}: Patrimonio e IRPF no pasan del 60 % "
-                "de lo que ganas, y siempre pagas al menos la mitad."
-            )
+                f"\nCon tu IRPF de esta semana, el límite conjunto (art. 31) te rebaja "
+                f"{format_amount(quote.reduced)}: Patrimonio e IRPF no pasan del 60 % de lo "
+                f"que ganas, y siempre pagas al menos un {1 - WEALTH_MAX_REDUCTION:.0%}."
+            ).replace("%.", " %.")
         if quote.subject:
             text += (
                 f"\n💎 Pasas de {format_amount(SOLIDARITY_WEALTH_THRESHOLD)}: declaras las "
@@ -345,8 +343,8 @@ class Patrimonio(commands.Cog):
             )
         if debt:
             text += (
-                f"\nDebes {format_amount(debt)} de semanas anteriores: se cobran de lo "
-                "próximo que te den tus pisos."
+                f"\nDebes {format_amount(debt)} a Hacienda de semanas anteriores: se cobran "
+                "del monedero el lunes y de lo próximo que te den tus pisos."
             )
         embed.add_field(name=f"🐶 {TAX_COLLECTOR}", value=text, inline=False)
         embed.set_footer(

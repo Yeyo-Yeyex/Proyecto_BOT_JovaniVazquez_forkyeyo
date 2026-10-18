@@ -866,7 +866,8 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "y el examen se aprueba solo."),
     _t("seguro_rc_perro", "animales", "📋", "Seguro de responsabilidad civil canino", 1_500,
        "Lo pide la Ley 7/2023 para los perros. Cubre mordiscos y destrozos. Los seguros "
-       "están exentos de IGIC (art. 10.1.16 de la Ley 20/1991).", igic="cero"),
+       "no llevan IGIC, sino el 8 % del Impuesto sobre las Primas de Seguros (art. 12 de "
+       "la Ley 13/1996).", igic="primas"),
     # 🎖️ Títulos (se lucen junto al nombre) y caprichos caros, por pasillo de tema --------
     _title("titulo_eso", "ventanilla", "🎓", "ESO aprobada", 2_000,
        "Con el sello del instituto y una mancha de Tipp-Ex. Es una tasa académica, no una "
@@ -955,9 +956,9 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "Se te ve desde la caseta, así que el encargado te avisa antes de liarla. En "
        "`pala`, obra: un fallo gratis por turno.", per_user=1),
     _t("seguro_rc", "curro", "📄", "Seguro de responsabilidad civil", 8_000,
-       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros están "
-       "exentos de IGIC (art. 10.1.16 de la Ley 20/1991). En `pala`, cavar: romper "
-       "algo no resta.", igic="cero", per_user=1),
+       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros no llevan "
+       "IGIC, sino el 8 % de primas (art. 12 de la Ley 13/1996). En `pala`, cavar: romper "
+       "algo no resta.", igic="primas", per_user=1),
     _t("zuecos", "curro", "👞", "Zuecos antideslizantes", 4_000,
        "Suela de cocina profesional: el suelo puede estar como una pista de patinaje. "
        "En `pala`, hostelería: +15 % de tiempo.", per_user=1),
@@ -1085,6 +1086,16 @@ REVISED_PRICES: dict[str, int] = {
     "skin_tapete_israel": 400_000,
     # Pasó a ser el tapete más caro del casino, con tres copias numeradas.
     "skin_tapete_epstein": 50_000,
+}
+
+#: Artículos de serie que han cambiado de tipo de impuesto cuando ya estaban en los
+#: servidores, con el tipo que tenían antes (`taxes.IGIC_RATES`). Como con los precios,
+#: `ShopRepository.stock_catalog` les pone el de `CATALOG` (y su descripción) si aún
+#: tienen el de antes: si un administrador lo cambió a mano, se respeta.
+REVISED_TAXES: dict[str, str] = {
+    # 8.0.0: los seguros pagan el Impuesto sobre las Primas de Seguros, no IGIC.
+    "seguro_rc_perro": "cero",
+    "seguro_rc": "cero",
 }
 
 

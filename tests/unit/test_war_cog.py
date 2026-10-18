@@ -26,6 +26,7 @@ from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository
 from bot.services.bacara_render import Media
 from bot.services.blackjack import Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import gambling_day_tax
 from bot.services.war import TIE_PAYS, WAR_TIE_BONUS, Result, WarGame
 
 GUILD_ID = 1
@@ -131,7 +132,7 @@ async def test_guerra_reparte_al_momento_y_cobra_la_apuesta(tmp_path: Path) -> N
     assert table.game.result is Result.WIN
     assert not table.deal_button.disabled
     assert table.surrender_button.disabled and table.war_button.disabled
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
 
 
 async def test_los_botones_llevan_custom_id_fijo(tmp_path: Path) -> None:
@@ -215,7 +216,7 @@ async def test_ir_a_la_guerra_ganada_cobra_la_segunda_apuesta_y_paga_1_a_1(
 
     assert table.game.result is Result.WAR_WIN
     assert table.game.burned == [c(2), c(3), c(4)]
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
     interaction.response.defer.assert_awaited_once()
     # Primero la banca quema las cartas, luego sale el resultado.
     assert interaction.edit_original_response.await_count >= 2
@@ -239,7 +240,9 @@ async def test_la_guerra_empatada_paga_el_premio_extra(tmp_path: Path) -> None:
     await table._war(make_interaction())
 
     assert table.game.result is Result.WAR_TIE
-    assert await balance(cog) == STARTING_BALANCE + 100 + 100 * WAR_TIE_BONUS
+    assert await balance(cog) == (
+        STARTING_BALANCE + 100 + 100 * WAR_TIE_BONUS - gambling_day_tax(100 + 100 * WAR_TIE_BONUS)
+    )
 
 
 async def test_cada_jugada_pide_su_dibujo_a_la_escena(tmp_path: Path) -> None:
@@ -278,7 +281,7 @@ async def test_decidir_sin_empate_se_ignora(tmp_path: Path) -> None:
     await table._war(interaction)
 
     interaction.response.defer.assert_awaited_once()
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
 
 
 async def test_la_lateral_se_cobra_con_la_principal_y_paga_10_a_1(tmp_path: Path) -> None:
@@ -293,9 +296,10 @@ async def test_la_lateral_se_cobra_con_la_principal_y_paga_10_a_1(tmp_path: Path
 
     # Principal 100 + lateral 100 cobradas al repartir.
     assert table.game.side == 100
-    assert await balance(cog) == STARTING_BALANCE + 100 - 200
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100) - 200
     await table._surrender(make_interaction())
-    assert await balance(cog) == STARTING_BALANCE + 100 - 200 + 50 + 100 * (1 + TIE_PAYS)
+    day_net = 100 - 200 + 50 + 100 * (1 + TIE_PAYS)
+    assert await balance(cog) == STARTING_BALANCE + day_net - gambling_day_tax(day_net)
 
 
 async def test_la_lateral_fallada_se_pierde(tmp_path: Path) -> None:
@@ -306,7 +310,7 @@ async def test_la_lateral_fallada_se_pierde(tmp_path: Path) -> None:
     await table._deal_again(make_interaction())
 
     assert table.game.result is Result.WIN
-    assert await balance(cog) == STARTING_BALANCE + 100 + 100 - 100
+    assert await balance(cog) == STARTING_BALANCE + 100 + 100 - 100 - gambling_day_tax(100)
 
 
 async def test_quitar_la_lateral_vuelve_a_dejarla_en_cero(tmp_path: Path) -> None:
@@ -394,7 +398,7 @@ async def test_mesa_caducada_con_la_mano_ya_pagada_solo_apaga_los_botones(
     still.assert_not_awaited()
     assert "attachments" not in message.edit.await_args.kwargs
     assert all(b.disabled for b in table.children if isinstance(b, discord.ui.Button))
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
 
 
 async def test_apagar_el_bot_paga_los_empates_abiertos_una_sola_vez(tmp_path: Path) -> None:
@@ -538,7 +542,7 @@ async def test_al_acabar_la_mano_se_pinta_ya_repartir_con_y_sin_lateral(tmp_path
         ("deal", 100, 100, "serie"),
     ]
     # Nada se ha cobrado de la siguiente.
-    assert await balance(cog) == STARTING_BALANCE + 100
+    assert await balance(cog) == STARTING_BALANCE + 100 - gambling_day_tax(100)
 
     interaction = make_interaction()
     await table._deal_again(interaction)

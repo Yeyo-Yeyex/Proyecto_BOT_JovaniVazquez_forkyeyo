@@ -73,6 +73,7 @@ from bot.services.housing_catalog import (
     listings_of,
 )
 from bot.services.levels import local_day
+from bot.services.taxes import INCOME_BUSINESS, INCOME_PRIZE, igic
 
 T = TypeVar("T")
 
@@ -437,6 +438,8 @@ def _lease_from(row: sqlite3.Row) -> rules.Lease:
         member=row["member"],
         bono=bool(row["bono"]),
         license=bool(row["license"]),
+        last_rent=int(row["last_rent"]),
+        reduction=None if row["reduction"] is None else float(row["reduction"]),
     )
 
 
@@ -447,19 +450,21 @@ def _save_lease_in(
         """
         INSERT INTO housing_leases
             (guild_id, listing, status, level, tenant, rent, until, since, unpaid,
-             eviction_at, arrears, arrears_ibi, member, bono, license)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             eviction_at, arrears, arrears_ibi, member, bono, license, last_rent, reduction)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (guild_id, listing) DO UPDATE SET
             status = excluded.status, level = excluded.level, tenant = excluded.tenant,
             rent = excluded.rent, until = excluded.until, since = excluded.since,
             unpaid = excluded.unpaid, eviction_at = excluded.eviction_at,
             arrears = excluded.arrears, arrears_ibi = excluded.arrears_ibi,
-            member = excluded.member, bono = excluded.bono, license = excluded.license
+            member = excluded.member, bono = excluded.bono, license = excluded.license,
+            last_rent = excluded.last_rent, reduction = excluded.reduction
         """,
         (
             guild_id, listing, lease.status, lease.level, lease.tenant, lease.rent,
             _iso(lease.until), _iso(lease.since), lease.unpaid, _iso(lease.eviction_at),
             lease.arrears, lease.arrears_ibi, lease.member, int(lease.bono), int(lease.license),
+            lease.last_rent, lease.reduction,
         ),
     )  # fmt: skip
 
@@ -681,12 +686,15 @@ class HousingRepository:
                 + finance.SCHEMA
             )
             # Bases de datos de la primera versión de `pisos`: sin miembros de alquiler,
-            # bono ni licencias.
+            # bono ni licencias; y de antes de la 8.0.0, sin la renta del contrato anterior
+            # ni la reducción del art. 23.2 de cada contrato (NULL: la general).
             columns = {row[1] for row in connection.execute("PRAGMA table_info(housing_leases)")}
             for name, ddl in (
                 ("member", "member INTEGER"),
                 ("bono", "bono INTEGER NOT NULL DEFAULT 0"),
                 ("license", "license INTEGER NOT NULL DEFAULT 0"),
+                ("last_rent", "last_rent INTEGER NOT NULL DEFAULT 0"),
+                ("reduction", "reduction REAL"),
             ):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE housing_leases ADD COLUMN {ddl}")
@@ -917,7 +925,7 @@ class HousingRepository:
             # La comisión del promotor sale del precio, que si no desaparecería: no crea
             # dinero. Rendimiento de su actividad (art. 27 LIRPF), con retención a cuenta.
             fees = (
-                (HousingRent(promoter, fee, fee, fee, concept=PROMOTER_CONCEPT),)
+                (HousingRent(promoter, fee, kind=INCOME_BUSINESS, concept=PROMOTER_CONCEPT),)
                 if promoter is not None and fee
                 else ()
             )
@@ -927,7 +935,10 @@ class HousingRepository:
                     (user_id, LedgerEntry(-(quote.price - loan), "pisos:compra")),
                     (user_id, LedgerEntry(-quote.notary, "pisos:notaria")),
                 ),
-                taxes=(HousingTax(user_id, "itp", quote.price, quote.itp),),
+                taxes=(
+                    HousingTax(user_id, "itp", quote.price, quote.itp),
+                    HousingTax(user_id, "igic_gastos", quote.notary, quote.notary_igic),
+                ),
             )
             return purchase, move
 
@@ -1057,6 +1068,7 @@ class HousingRepository:
             ]
             taxes = (
                 HousingTax(user_id, "ibi", quote.arrears_ibi, quote.arrears_ibi),
+                HousingTax(user_id, "igic_gastos", quote.fee, quote.fee_igic),
                 HousingTax(user_id, "plusvalia", max(0, quote.gain), quote.gain_tax),
             )
             sale = Sale(key, quote, left, held_days, payoff=payoff, vulture=vulture)
@@ -1141,7 +1153,7 @@ class HousingRepository:
                     self._promotion_in(connection, guild_id, day, now, rng, market, builder,
                                        result)  # fmt: skip
             pulls = tuple(
-                HousingPull(lease.member, lease.rent, key, "pisos:alquiler")
+                HousingPull(lease.member, lease.rent, key, "pisos:alquiler", home=True)
                 for key, lease in market.leases.items()
                 if lease.member is not None
                 and lease.status in (rules.RENTED, rules.DEFAULTING)
@@ -1366,6 +1378,7 @@ class HousingRepository:
         entries: list[tuple[int, LedgerEntry]] = []
         taxes: list[HousingTax] = []
         debits: list[HousingDebit] = []
+        imputations: list[tuple[int, str, int]] = []
         market = _market_in(connection, guild_id)
         # Ejecuciones hipotecarias: con lo que se debía al empezar el día.
         executed = set()
@@ -1390,8 +1403,17 @@ class HousingRepository:
             interest[key] = interest.get(key, 0) + owed_interest
             due = pay + mortgage.unpaid_amount
             if due:
+                # La cuota de la hipoteca de la vivienda habitual cuenta para la deducción
+                # canaria por inversión en vivienda habitual (art. 14 del DL 1/2009).
+                # También la de una VPO (`vpo:<unidad>`), que es vivienda habitual a la fuerza.
+                place = market.homes.get(mortgage.user_id)
+                home = place == (finance.HOME_OWN, mortgage.listing) or (
+                    place is not None
+                    and place[0] == finance.HOME_VPO
+                    and finance.vpo_ref(place[1]) == mortgage.listing
+                )
                 debits.append(HousingDebit(mortgage.user_id, f"hipoteca:{mortgage.id}", 0, due,
-                                           "pisos:hipoteca"))  # fmt: skip
+                                           "pisos:hipoteca", home=home))  # fmt: skip
         for member, amount in market.bank_debts.items():
             debits.append(HousingDebit(member, f"banco:{member}", 0, amount, "pisos:deuda_banco"))
         for unit, owner in market.vpo.items():
@@ -1410,7 +1432,7 @@ class HousingRepository:
                 continue
             self._close_listing_in(
                 connection, guild_id, day, now, rng, market, key, lease, paid, interest,
-                rents, grants, taxes, entries, debits, result,
+                rents, grants, taxes, entries, debits, imputations, result,
             )  # fmt: skip
         horizon = (day - timedelta(days=NEWS_DAYS)).isoformat()
         connection.execute(
@@ -1481,6 +1503,7 @@ class HousingRepository:
             taxes=tuple(taxes),
             debits=tuple(debits),
             settle=settle,
+            imputations=tuple(imputations),
         )
 
     def _close_listing_in(
@@ -1500,6 +1523,7 @@ class HousingRepository:
         taxes: list[HousingTax],
         entries: list[tuple[int, LedgerEntry]],
         debits: list[HousingDebit],
+        imputations: list[tuple[int, str, int]],
         result: DayRun,
     ) -> None:
         """Un mes de un inmueble con dueño: estado, renta, impuestos y recibos."""
@@ -1575,32 +1599,56 @@ class HousingRepository:
         if lease_after.member is not None and lease_after.bono and key in paid:
             amount = rules.bono_amount(lease_after.rent)
             grants.append(
-                HousingRent(lease_after.member, amount, amount, rules.rent_to_fiscal(amount),
-                            concept="pisos:bono", tag=f"bono:{key}")
+                HousingRent(lease_after.member, amount, kind=INCOME_PRIZE, concept="pisos:bono",
+                            tag=f"bono:{key}")
             )  # fmt: skip
             result.bono[lease_after.member] = amount
         nets = rules.split(payout.net, holders)
         ibis = rules.split(payout.ibi, holders)
         costs = rules.split(payout.costs, holders)
         igics = rules.split(igic, holders)
+        # Para el IRPF, los gastos del mes que toca a cada uno, se paguen hoy o no (se
+        # imputan al periodo en que se devengan, art. 14 LIRPF).
+        month_ibi = rules.split(costs_owned.ibi, holders)
+        community = rules.split(costs_owned.community, holders)
+        insurance = rules.split(costs_owned.insurance, holders)
+        repairs = rules.split(part(outcome.extra), holders)
+        reduction = rules.lease_reduction(listing, lease_after)
+        dwelling = reduction > 0
         cadastral = rules.cadastral_value(listing)
         for member, shares in holders.items():
             gross = nets[member] + ibis[member] + costs[member] + igics[member]
             if gross <= 0:
+                # Un piso vacío que no es la casa de nadie imputa renta (art. 85 LIRPF).
+                if lease_after.status == rules.VACANT:
+                    imputations.append((member, key, rules.imputed_rent(listing, shares)))
                 continue
             held = market.holdings[key][member]
-            deductible = (
-                ibis[member] + costs[member] + igics[member] + rules.amortization(held.paid)
-                + interest.get((member, key), 0)
-            )  # fmt: skip
             if member in market.socimi:
                 # La SOCIMI tributa al 0 % y el dueño paga el 19 % del dividendo.
-                rents.append(HousingRent(member, gross, 0, 0))
+                deductible = (
+                    ibis[member] + costs[member] + igics[member] + rules.amortization(held.paid)
+                    + interest.get((member, key), 0)
+                )  # fmt: skip
+                rents.append(HousingRent(member, gross, kind=None))
                 profit = max(0, gross - deductible)
                 taxes.append(HousingTax(member, "socimi", profit, rules.socimi_tax(profit)))
             else:
-                taxable = rules.taxable_rent(gross, deductible)
-                rents.append(HousingRent(member, gross, taxable, rules.rent_to_fiscal(taxable)))
+                rents.append(
+                    HousingRent(
+                        member,
+                        gross,
+                        ref=key,
+                        income=gross - igics[member],
+                        finance=interest.get((member, key), 0) + repairs[member],
+                        costs=(
+                            month_ibi[member] + community[member] + insurance[member]
+                            + rules.amortization(held.paid)
+                        ),
+                        upkeep=repairs[member] + insurance[member] if dwelling else 0,
+                        reduction=reduction,
+                    )
+                )  # fmt: skip
             entries.append((member, LedgerEntry(-costs[member], "pisos:comunidad")))
             taxes.append(
                 HousingTax(member, "ibi", cadastral * shares // rules.SHARES, ibis[member])
@@ -1638,6 +1686,7 @@ class HousingRepository:
             if lease.eviction_at is not None and day >= lease.eviction_at:
                 news.append(News(key, day, "desahucio", 0, member, None))
                 lease = replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                                 until=None, since=day, unpaid=0, eviction_at=None)  # fmt: skip
         elif key in paid:
             rent = lease.rent
@@ -1732,6 +1781,7 @@ class HousingRepository:
                     _save_lease_in(
                         connection, guild_id, home[1],
                         replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                                 until=None, since=day, unpaid=0, eviction_at=None),
                     )  # fmt: skip
                     _news_in(connection, guild_id, News(home[1], day, "se_va", 0, user_id, None),
@@ -1765,11 +1815,13 @@ class HousingRepository:
                 News(finance.vpo_ref(unit), day, "compra_vpo", spec.price, user_id, None), now,
             )  # fmt: skip
             deal = VpoDeal(unit, spec.price, notary=notary, loan=loan, payment=payment)
+            notary_igic = igic(notary, rules.SERVICES_IGIC)
             return deal, HousingMove(
                 entries=(
                     (user_id, LedgerEntry(-notary, "pisos:notaria")),
                     (STATE_ACCOUNT_ID, LedgerEntry(spec.price, "vpo:venta")),
-                )
+                ),
+                taxes=(HousingTax(user_id, "igic_gastos", notary, notary_igic),),
             )
 
         return run
@@ -1878,6 +1930,7 @@ class HousingRepository:
             _save_lease_in(
                 connection, guild_id, ref,
                 replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                         until=None, since=day, unpaid=0, eviction_at=None),
             )  # fmt: skip
         finance.clear_home_in(connection, guild_id, user_id=user_id)
@@ -1935,9 +1988,14 @@ class HousingRepository:
             short = rules.needs_guarantee(rent, income, aval=False)
             guarantee = short and not aval
             deposit = rules.deposit_for(rent, guarantee=guarantee)
+            # Un miembro vive en él: es alquiler de vivienda aunque el dueño pidiera otra renta.
+            reduction = rules.contract_reduction(
+                listing, "referencia", index=market.index(listing.barrio), rent=rent,
+                last_rent=lease.last_rent,
+            )  # fmt: skip
             lease = replace(lease, status=rules.RENTED, tenant=None, member=member_id,
                             bono=bono, rent=rent, until=day + timedelta(days=60), since=day,
-                            unpaid=0)  # fmt: skip
+                            unpaid=0, reduction=reduction)  # fmt: skip
             _save_lease_in(connection, guild_id, key, lease)
             finance.set_home_in(connection, guild_id, member_id, finance.HOME_RENTED, key, now)
             finance.add_deposit_in(connection, guild_id, key, member_id, deposit, now)
@@ -1976,10 +2034,14 @@ class HousingRepository:
                 continue
             holders = market.shares_of(deposit.listing)
             kept = deposit.forfeit if holders else 0
+            # La renta que debía un miembro: vivienda, con la reducción general.
             for member, part in rules.split(kept, holders).items():
                 if part > 0:
-                    taxable = rules.taxable_rent(part, 0)
-                    rents.append(HousingRent(member, part, taxable, rules.rent_to_fiscal(taxable)))
+                    rents.append(
+                        HousingRent(
+                            member, part, ref=deposit.listing, reduction=rules.RENT_REDUCTION
+                        )
+                    )
             refund = deposit.amount - kept
             entries.append(
                 (HOUSING_DEPOSIT_ACCOUNT_ID, LedgerEntry(-deposit.amount, "pisos:fianza"))

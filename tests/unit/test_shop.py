@@ -117,7 +117,11 @@ def test_tipos_de_igic_son_los_de_la_ley_canaria() -> None:
         "general": 0.07,
         "incrementado": 0.095,
         "lujo": 0.15,
+        # Los seguros no llevan IGIC: Impuesto sobre las Primas de Seguros (8 %).
+        "primas": 0.08,
     }
+    assert IGIC_BY_KEY["primas"].tax == "IPS"
+    assert {r.tax for k, r in IGIC_BY_KEY.items() if k != "primas"} == {"IGIC"}
 
 
 @pytest.mark.parametrize(

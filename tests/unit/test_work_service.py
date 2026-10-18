@@ -6,6 +6,7 @@ cuándo hay accidente, inspección o evento.
 
 from __future__ import annotations
 
+import json
 import random
 import sqlite3
 from pathlib import Path
@@ -29,13 +30,17 @@ from bot.services.pala import NeedsBlack, WorkError, WorkService
 from bot.services.taxes import igic
 from bot.services.work import (
     ACCIDENT_ZOMBIE,
+    ACTIVE_SHARES,
     BATTERY_MAX,
+    BRANCH_DAYS,
     FLAT_RATE_FEE,
     FOLLOWERS_START,
     INSPECTION_SURCHARGE,
+    LEGACY_DAYS,
     LEGAL_EXTRAS_PER_WEEK,
     MEGAVIRAL,
     ORDINARY_SHIFTS,
+    PENSION_CAP,
     PERFORMANCE_START,
     RAIN_ACCIDENT,
     RAIN_PAY,
@@ -50,14 +55,17 @@ from bot.services.work import (
     WISH_BY_KEY,
     WISH_PAY,
     WISH_PERFORMANCE,
+    BranchKind,
     Career,
     Contract,
     ShiftKind,
     ShiftRecord,
     Wish,
     follower_gain,
+    pension_amount,
     rating_pay,
     shift_pay,
+    veteran_bonus,
 )
 from bot.services.work_catalog import (
     AVAL_EXECUTION_FAMILY,
@@ -1234,9 +1242,15 @@ async def test_jubilado_de_todas_las_ramas_se_queda_arriba(tmp_path: Path, dice:
     assert retirement.following is None
     contract = retirement.status.contract
     assert (contract.level, contract.branch) == (POLITICA.top, "bruselas")
+    await worked(service, START)
     pension = await service.pension(GUILD, USER)
-    assert pension.amount == sum(b.pension for b in POLITICA.branches)
-    assert [branch.key for _job, branch in pension.branches] == ["bruselas", "moncloa"]
+    # Sin turnos apuntados en las ramas, la calidad es entera; trabajando, la primera
+    # semana se cobra la primera parte de la jubilación activa.
+    assert pension.full == pension_amount([(BranchKind.SAFE, 1.0), (BranchKind.RISKY, 1.0)])
+    assert pension.share == ACTIVE_SHARES[0]
+    assert pension.amount == round(pension.full * ACTIVE_SHARES[0])
+    assert pension.floor == 0
+    assert [branch.key for _job, branch in pension.branches] == ["moncloa", "bruselas"]
 
 
 async def test_la_pension_se_cobra_una_vez_al_dia_con_irpf_y_sin_cotizar(
@@ -1249,13 +1263,13 @@ async def test_la_pension_se_cobra_una_vez_al_dia_con_irpf_y_sin_cotizar(
         await service.claim_pension(GUILD, USER)
     await at_level(service, POLITICA.top, "moncloa")
     await service.retire(GUILD, USER)
-    moncloa = POLITICA.branch("moncloa")
-    assert moncloa is not None
+    await worked(service, clock.now)
     pension = await service.pension(GUILD, USER)
-    assert pension.due and pension.amount == moncloa.pension
+    expected = round(pension_amount([(BranchKind.SAFE, 1.0)]) * ACTIVE_SHARES[0])
+    assert pension.due and pension.amount == expected
     state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
     slip, balance = await service.claim_pension(GUILD, USER)
-    assert slip.gross == moncloa.pension
+    assert slip.gross == expected
     assert slip.ss_worker == slip.ss_employer == 0
     assert slip.net == slip.gross - slip.irpf
     assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] - state_before == slip.irpf
@@ -1283,6 +1297,138 @@ async def test_si_el_pago_de_la_pension_falla_se_puede_volver_a_cobrar(
     with pytest.raises(RuntimeError):
         await service.claim_pension(GUILD, USER)
     assert (await service.pension(GUILD, USER)).due
+
+
+async def worked(service: WorkService, now: float) -> None:
+    """Un turno apuntado en `now`: la jubilación activa mira si ha fichado hace poco."""
+    record = ShiftRecord("politica", 10, "2026-10-06", now, 80, ShiftKind.ORDINARY.value, 1, 1)
+    await service.repository.add_shift(GUILD, USER, record)
+
+
+def old_retirement(tmp_path: Path, job: str, branch: str, *, legacy: bool = True) -> None:
+    """Una jubilación apuntada a mano; sin `legacy`, como las de antes de la 8.0.0."""
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        if legacy:
+            connection.execute(
+                "INSERT INTO work_retirements (guild_id, user_id, job, branch, retired_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (GUILD, USER, job, branch, START - 30 * DAY),
+            )
+        else:
+            connection.execute(
+                "INSERT INTO work_retirements (guild_id, user_id, job, branch, retired_at, "
+                "quality, legacy) VALUES (?, ?, ?, ?, ?, 1, 0)",
+                (GUILD, USER, job, branch, START),
+            )
+
+
+async def test_la_jubilacion_activa_sube_cada_semana_y_sin_trabajar_es_entera(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await at_level(service, POLITICA.top, "moncloa")
+    await service.retire(GUILD, USER)
+    full = pension_amount([(BranchKind.SAFE, 1.0)])
+    for week, share in enumerate(ACTIVE_SHARES):
+        clock.now = START + week * 7 * DAY
+        await worked(service, clock.now)
+        pension = await service.pension(GUILD, USER)
+        assert (pension.full, pension.share) == (full, share)
+        assert pension.amount == round(full * share)
+    # Una semana sin fichar (de excedencia o sin contrato): la pensión entera.
+    clock.now += 8 * DAY
+    pension = await service.pension(GUILD, USER)
+    assert pension.share == 1.0 and pension.amount == full
+
+
+async def test_quien_se_jubilo_antes_de_la_8_nunca_cobra_menos_que_entonces(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    moncloa = POLITICA.branch("moncloa")
+    assert moncloa is not None
+    old_retirement(tmp_path, "politica", "moncloa")
+    pension = await service.pension(GUILD, USER)
+    assert pension.floor == moncloa.pension
+    # Sin contrato, entera: la fórmula le da más que la de antes.
+    assert pension.amount == pension.full == pension_amount([(BranchKind.SAFE, 1.0)])
+    every = [(job.key, branch) for job in JOB_BY_KEY.values() for branch in job.branches]
+    for job_key, branch in every:
+        if (job_key, branch.key) != ("politica", "moncloa"):
+            old_retirement(tmp_path, job_key, branch.key)
+    pension = await service.pension(GUILD, USER)
+    floor = sum(branch.pension for _job, branch in every)
+    assert pension.floor == floor > PENSION_CAP
+    assert pension.full <= PENSION_CAP and pension.amount == floor
+    # Aunque siga fichando (jubilación activa), tampoco baja del suelo.
+    await worked(service, START)
+    assert (await service.pension(GUILD, USER)).amount == floor
+
+
+async def test_la_calidad_de_la_pension_sale_de_lo_cotizado_en_la_rama(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await at_level(service, 6, "moncloa")
+    outcome = await work(service)
+    contract = await service.repository.contract(GUILD, USER)
+    assert contract is not None and outcome.payslip is not None
+    assert (contract.branch_days, contract.branch_gross) == (1, outcome.payslip.gross)
+    # Media jornada flojita: 10.000 Y$ al día cotizados.
+    contract.level, contract.branch_gross, contract.branch_days = POLITICA.top, 20_000, 2
+    await service.repository.save_contract(GUILD, USER, contract)
+    await service.retire(GUILD, USER)
+    (record,) = await service.repository.retired_branches(GUILD, USER)
+    assert record.quality == pytest.approx(10_000 / PENSION_CAP)
+    assert not record.legacy
+    pension = await service.pension(GUILD, USER)
+    assert pension.full == pension_amount([(BranchKind.SAFE, record.quality)])
+    after = await service.repository.contract(GUILD, USER)
+    assert after is not None and (after.branch, after.branch_gross, after.branch_days) == (
+        "bruselas",
+        0,
+        0,
+    )
+
+
+async def test_la_veterania_sube_el_sueldo_y_la_experiencia_acorta_el_puesto(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    old_retirement(tmp_path, "politica", "moncloa", legacy=False)
+    await service.hire(GUILD, USER, "obra")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.veteran == 1
+    assert status.veteran_bonus == veteran_bonus(1)
+    # P1 pide 2 días; con una rama de otro oficio, el 40 %: uno.
+    assert any(line.startswith("Fichar 1 días") for line in status.blockers)
+    outcome = await work(service)
+    base = JOB_BY_KEY["obra"].position(1).base_pay
+    assert outcome.gross == round(shift_pay(base, 100, ShiftKind.ORDINARY) * (1 + veteran_bonus(1)))
+    # En el oficio de la rama completada no hay veteranía.
+    await service.hire(GUILD, USER, "politica")
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.veteran == 0
+
+
+async def test_un_contrato_de_antes_de_la_8_conserva_los_dias_de_su_puesto(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    await at_level(service, 7, "moncloa")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert any(f"Fichar {BRANCH_DAYS[7]} días" in line for line in status.blockers)
+    # Guardado por una versión sin el campo: es de antes.
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (data,) = connection.execute("SELECT data FROM work_contracts").fetchone()
+        stored = json.loads(data)
+        del stored["legacy_days"]
+        connection.execute("UPDATE work_contracts SET data = ?", (json.dumps(stored),))
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.contract.legacy_days
+    assert any(f"Fichar {LEGACY_DAYS[7]} días" in line for line in status.blockers)
 
 
 async def test_cumplir_el_deseo_del_dia_paga_mas_sube_la_barra_y_hace_racha(

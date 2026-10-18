@@ -9,7 +9,12 @@ from datetime import date, datetime
 import pytest
 
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import compute_pension_payslip, compute_self_employed_payslip
+from bot.services.taxes import (
+    Pace,
+    WeekIncome,
+    compute_pension_payslip,
+    compute_self_employed_payslip,
+)
 from bot.services.work import (
     BATTERY_MAX,
     BATTERY_MIN,
@@ -119,7 +124,9 @@ def test_las_ramas_salen_del_final_del_tronco_sin_formacion_y_con_pension() -> N
             # Al elegir rama no se puede comprar antes su formación: la entrada es gratis.
             assert branch.positions[0].training is None, (job.key, branch.key)
             assert branch.positions[0].level == job.trunk_top + 1
-            assert branch.pension > 0 and branch.retired_as
+            # La pensión de la rama solo es el suelo de quien se jubiló antes de la 8.0.0:
+            # un oficio nuevo pone 0 (la de verdad sale de `work.pension_amount`).
+            assert branch.pension >= 0 and branch.retired_as
     keys = [p.training.key for j in JOBS for p in j.all_positions if p.training]
     assert len(keys) == len(set(keys))  # una formación no sirve para dos puestos
 
@@ -815,12 +822,13 @@ def test_los_eventos_de_cada_rama_solo_salen_en_ella() -> None:
 
 
 def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:
-    gross, recent = 5_000, 5_000 * 6
-    pension = compute_pension_payslip(gross, recent)
+    gross = 20_000
+    pension = compute_pension_payslip(gross, Pace(current=WeekIncome(work=gross * 6)))
     assert pension.ss_worker == pension.ss_employer == 0
     assert 0 < pension.irpf < gross
     # Con los gastos y la reducción de los rendimientos del trabajo, retiene menos
     # que la misma cifra cobrada como autónomo.
-    assert pension.irpf <= compute_self_employed_payslip(gross, recent).irpf
+    business = compute_self_employed_payslip(gross, Pace(current=WeekIncome(business=gross * 6)))
+    assert pension.irpf <= business.irpf
     with pytest.raises(ValueError):
-        compute_pension_payslip(0, 0)
+        compute_pension_payslip(0, Pace())

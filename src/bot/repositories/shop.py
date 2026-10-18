@@ -1195,6 +1195,7 @@ class ShopRepository:
         restock: bool = False,
         revised: Mapping[str, int] | None = None,
         retired: Collection[str] = (),
+        retaxed: Mapping[str, str] | None = None,
     ) -> int:
         """Mete en el catálogo del servidor los artículos de serie que falten.
 
@@ -1213,6 +1214,9 @@ class ShopRepository:
                 (`shop_catalog.RETIRED_ITEMS`). Se ocultan una sola vez por servidor
                 (queda apuntado en `shop_seeded` como `retirado:<clave>`), así que un
                 administrador que los vuelva a enseñar no los ve ocultarse otra vez.
+            retaxed: Tipo de impuesto de antes de los artículos de serie que lo han
+                cambiado (`shop_catalog.REVISED_TAXES`). Los que aún lo tienen pasan al
+                tipo y la descripción de `entries`.
 
         Returns:
             Cuántos artículos ha añadido.
@@ -1225,6 +1229,7 @@ class ShopRepository:
             restock,
             dict(revised or {}),
             tuple(retired),
+            dict(retaxed or {}),
         )
 
     def _stock_sync(
@@ -1235,6 +1240,7 @@ class ShopRepository:
         restock: bool,
         revised: dict[str, int],
         retired: tuple[str, ...],
+        retaxed: dict[str, str],
     ) -> int:
         connection = self._connect()
         try:
@@ -1324,6 +1330,15 @@ class ShopRepository:
                             entry.key,
                             old_price,
                         ),
+                    )
+                for entry in entries:
+                    old_tax = retaxed.get(entry.key)
+                    if old_tax is None or old_tax == entry.igic:
+                        continue
+                    connection.execute(
+                        "UPDATE shop_items SET igic = ?, description = ? "
+                        "WHERE guild_id = ? AND catalog_key = ? AND igic = ?",
+                        (entry.igic, entry.description, guild_id, entry.key, old_tax),
                     )
         finally:
             connection.close()

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import random
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -30,8 +31,10 @@ from bot.services.work import (
     LEGAL_EXTRAS_PER_WEEK,
     MEGAVIRAL,
     ORDINARY_SHIFTS,
+    PENSION_CAP,
     Contract,
     Mechanic,
+    ShiftRecord,
     battery_eta,
     rested_at,
 )
@@ -623,6 +626,69 @@ async def test_jubilarse_y_cobrar_la_pension_desde_el_panel(tmp_path: Path) -> N
     assert "Ya cobraste" in again.followup.send.await_args.args[0]
     lines = await cog.career_lines(GUILD, OWNER)
     assert any("Jubilado de" in line and "Bruselas" in line for line in lines)
+
+
+async def test_jubilarse_cobrar_y_fichar_en_otro_oficio_alimentan_los_logros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    track = AsyncMock()
+    monkeypatch.setattr(work_cog.logros, "track", track)
+    cog, panel, _ = await politics_panel(tmp_path)
+    assert track.await_args.args[4].peak == {"work_veteran_max": 0}  # el primer curro
+    await set_career(cog, 10, "bruselas")
+    await panel.refresh(make_interaction())
+    await button(panel, "🏖️ Jubilarse").callback(make_interaction())
+    await button(panel, "✅ Me jubilo").callback(make_interaction())
+    retired = track.await_args.args[4]
+    assert retired.add == {"work_retired": 1}  # sin fichar en la rama, la calidad es entera
+    assert retired.peak == {
+        "work_retired_politica": 1,
+        "work_jobs_done": 0,
+        "work_veteran_max": 0,
+    }
+    # Ha fichado hace nada: la pensión va en jubilación activa.
+    await cog.service.repository.add_shift(
+        panel.guild_id,
+        panel.owner.id,
+        ShiftRecord("politica", 10, "2026-10-06", cog.service.now(), 80, "ordinario", 1, 1),
+    )
+    await button(panel, "💰 Cobrar pensión").callback(make_interaction())
+    claimed = track.await_args.args[4]
+    assert claimed.add["work_pensions"] == 1
+    assert claimed.add["work_pension_active"] == 1  # sigue fichando: jubilación activa
+    assert claimed.peak["work_pension_pct"] == 20  # una rama arriesgada con calidad entera
+    await panel._hire(make_interaction(), "obra")
+    hired = track.await_args.args[4]
+    assert hired.add == {"work_job_changes": 1}
+    assert hired.peak == {"work_veteran_max": 1}
+
+
+def test_las_estadisticas_de_jubilarse_cuentan_oficios_y_calidad() -> None:
+    politica = JOB_BY_KEY["politica"]
+    obra = JOB_BY_KEY["obra"]
+    pension = pala.Pension(
+        tuple((politica, branch) for branch in politica.branches) + ((obra, obra.branches[0]),),
+        30_000,
+        True,
+        full=30_000,
+        share=1.0,
+    )
+    assert work_cog.jobs_completed(pension) == 1
+    status = SimpleNamespace(retired=frozenset({"x", "y"}), veteran=1)
+    retirement = pala.Retirement(
+        politica,
+        politica.branches[1],
+        "Comisario",
+        None,
+        status,
+        quality=0.3,  # type: ignore[arg-type]
+    )
+    delta = work_cog.retire_stats(retirement, pension)
+    assert delta.add == {"work_retired": 1, "work_retired_low_quality": 1}
+    assert delta.peak == {"work_retired_politica": 2, "work_jobs_done": 1, "work_veteran_max": 1}
+    whole = work_cog.pension_stats(pension)
+    assert whole.add == {"work_pensions": 1, "work_pension_whole": 1}
+    assert whole.peak == {"work_pension_pct": 30_000 * 100 // PENSION_CAP}
 
 
 async def test_sin_curro_tambien_se_cobra_la_pension(tmp_path: Path) -> None:

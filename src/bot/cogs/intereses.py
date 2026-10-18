@@ -3,7 +3,9 @@
 Una tarea cada 10 minutos mira en cada servidor si ya se pagaron los intereses
 del día anterior; si no, los paga (`EconomyService.pay_interest`, reglas en
 `bot.services.interest`) a todos a la vez, también a los que no hacen nada. Los
-lunes, además, liquida la semana anterior con la escala del ahorro.
+lunes, además, liquida la semana anterior con la escala del ahorro: con el tope
+diario de la cuenta nunca se pasa del primer tramo (19 %), así que lo retenido
+cada día ya es la cuota y la liquidación sale a cero salvo algún Y$ de redondeo.
 
 No hay comando propio ni anuncio público diario (sería spam). El cobro se cuenta
 así:
@@ -115,7 +117,10 @@ def savings_stats(settlement: SavingsSettlement) -> StatDelta:
     """Estadísticas de logros de una liquidación semanal del ahorro."""
     return StatDelta(
         add={"interest_tax": settlement.charged} if settlement.charged else {},
-        peak={"savings_rate_max": round(settlement.rate * 100)},
+        peak={
+            "savings_rate_max": round(settlement.rate * 100),
+            "savings_week_max": settlement.gross,
+        },
     )
 
 
@@ -132,11 +137,11 @@ def notice_lines(notice: InterestNotice, today: date) -> list[str]:
                 f"-# 🏦 Mientras no mirabas, el banco te pagó {net} de intereses en "
                 f"{notice.days} días ({bite})."
             )
-    for week, charged, rate in notice.savings:
+    for week, charged, _rate in notice.savings:
+        # Con el tope de la cuenta no se sale del 19 %: lo que falte es redondeo.
         lines.append(
             f"-# 🐶 Liquidación del ahorro ({week_label(date.fromisoformat(week))}): "
-            f"{TAX_COLLECTOR} te cobra {format_amount(charged)} más"
-            + (f", que llegaste al tramo del {rate} %." if rate > 19 else " por el redondeo.")
+            f"{TAX_COLLECTOR} te cobra {format_amount(charged)} más por el redondeo."
         )
     return lines
 
@@ -256,7 +261,7 @@ class Intereses(commands.Cog):
         return (
             f"-# 🏦 Base del ahorro ({week_label(date.fromisoformat(week))}): "
             f"{format_amount(gross)} de intereses, cuota de {format_amount(quota)} "
-            f"(tramo del {rate} %), {format_amount(withheld)} ya retenidos y "
+            f"(al {rate} %, el primer tramo), {format_amount(withheld)} ya retenidos y "
             f"{format_amount(charged)} cobrados el lunes. No hay que presentarla."
         )
 
