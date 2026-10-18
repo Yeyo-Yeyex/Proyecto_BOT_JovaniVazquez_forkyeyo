@@ -167,43 +167,43 @@ COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 COLOR_DUEL = discord.Color.from_rgb(200, 30, 60)
 
 WIN_LINES = (
-    "¡Wepa!",
     "¡Kikirikí!",
     "¡Ese es mi gallo!",
     "¡Dale, campeón!",
-    "¡Gallo con mayoría absoluta!",
-    "¡Más gallo que Putin a caballo!",
-    "¡El gallo sale en el NO-DO!",
-    "¡Kikirikí, mi amor!",
     "¡Toma mangó!",
     "¡Yo soy yo, y así me tienes que soportar!",
-    "¡Más espolón que Bibi en campaña!",
-    "¡Desplumado el gallo groyper!",
     "¡Gallo de pelea con escolta, como un ministro!",
+    "¡El gallo con los huevos bien puestos!",
+    "¡Victoria en el reñidero!",
+    "¡Cresta alta y espolón afilado!",
+    "¡Rey del corral!",
+    "El rival se va con el rabo entre las plumas.",
+    "¡Ni Rocky subía así las escaleras!",
+    "¿Con pulpa? ¡Sin pulpa! ¡Con plumas!",
 )
 LOSE_LINES = (
-    "¡Ay, bendito!",
     "¡Caldo de gallina!",
     "¡Al puchero!",
     "¡Nooo!",
     "¡Gallo en pepitoria!",
     "¡El gallo dimite! Algo inédito.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
     "¡Más desplumado que un autónomo!",
-    "¡Caldito para Waterloo!",
-    "¡Pide aplazar la pelea, como Netanyahu su juicio!",
+    "Hoy no era su día.",
+    "El gallo rival pegaba más fuerte.",
 )
 WAITING_LINES = (
     "🐓 Los gallos salen al ruedo…",
     "📣 ¡Hagan sus apuestas… ya no!",
     "🥁 Se calienta el reñidero…",
     "👀 Todo el barrio mirando el reñidero…",
-    "🐸 Un groyper lo retransmite desde el sótano…",
-    "📣 Trump anuncia que su gallo es el más grande…",
-    "🐓 Kim asegura que su gallo ya ganó ayer…",
-    "☕ El barrio pide café y apuesta…",
-    "🎙️ El NO-DO ya tiene escrito el resultado…",
-    "🐎 Abascal llega a caballo a ver la pelea…",
+    "☕ El barrio pide café y apuesta… ¡Quiero café!",
     "🪰 Quisiera ser una mosca… para verla desde el palco…",
+    "🐓 Plumas al viento…",
+    "📣 Trump anuncia que su gallo es el más grande…",
+    "🔔 Suena la campana…",
+    "🐓 Los gallos se miran de reojo…",
+    "🦎 Lagartijo, iguana, lagarto… y gallo.",
 )
 
 
@@ -211,67 +211,54 @@ WAITING_LINES = (
 TRAIN_LINES: dict[Stat, tuple[str, ...]] = {
     Stat.STRENGTH: (
         "**{name}** sube la escalera de Filadelfia con un cubo de alpiste. Rocky llora de orgullo.",
-        "**{name}** levanta mancuernas como Putin a caballo: sin camiseta y con mucha propaganda.",
-        "**{name}** pasa por el gimnasio de Ayuso: pesas de ración y un batido de libertad.",
-        "**{name}** carga arancel sobre arancel hasta el 200 %: Trump firma, él levanta la barra.",
-        "**{name}** hace sentadillas con el peso de los Presupuestos prorrogados a la espalda.",
-        "**{name}** tira de la cuerda como la oposición de la moción de censura: mucho, y sin "
-        "que se rompa nada.",
-        "**{name}** empuja el Falcon por la pista de despegue. Pesa más que la paciencia de "
-        "Bruselas.",
+        "**{name}** levanta mancuernas hasta que le tiembla la cresta.",
+        "**{name}** hace sentadillas con un saco de pienso a la espalda.",
+        "**{name}** empuja un carro de la compra lleno cuesta arriba.",
+        "**{name}** tira de la cuerda contra tres gallinas. Gana él.",
+        "**{name}** levanta pesas y presume de pechuga en el espejo.",
         "**{name}** pide jugo de china de el bueno entre serie y serie. Sin pulpa.",
+        "**{name}** entrena fuerza. El saco de boxeo pide la baja.",
     ),
     Stat.SPEED: (
-        "**{name}** corre la vuelta ciclista al corral, en etapa llana y con viento de cola de "
-        "la Moncloa.",
+        "**{name}** corre la vuelta al corral con viento de cola.",
         "**{name}** persigue una lombriz más rápido de lo que un ministro huye de una pregunta.",
-        "**{name}** hace series de cien metros y Kim Jong-un anuncia que ha batido el récord "
-        "mundial. Él, personalmente.",
-        "**{name}** entrena con el pelotón de la Vuelta: llega primero y sin dopaje. Ni la UCO "
-        "encuentra nada.",
-        "**{name}** esquiva conos de obra como Puigdemont esquiva a los Mossos: maletero y a "
-        "correr.",
-        "**{name}** sprinta hasta el NO-DO: lo graban tres veces y siempre sale ganando.",
-        "**{name}** sube como la inflación argentina, pero en la dirección buena. Milei pide "
-        "la motosierra para que no se pase.",
+        "**{name}** hace series de cien metros y deja al Correcaminos en ridículo.",
+        "**{name}** esquiva conos de obra con más cintura que un torero.",
+        "**{name}** sprinta por el patio y se le vuelan dos plumas.",
+        "**{name}** entrena velocidad. Bip, bip.",
+        "**{name}** corre detrás del camión del pienso y casi lo alcanza.",
     ),
     Stat.ENDURANCE: (
-        "**{name}** aguanta una hora de discurso de Maduro sin pestañear. Es lo más duro que ha "
+        "**{name}** aguanta una hora de reunión de vecinos sin pestañear. Es lo más duro que ha "
         "hecho.",
-        "**{name}** resiste en el gimnasio como el Gobierno en minoría: en pie, sin aprobar "
-        "nada, pero en pie.",
-        "**{name}** hace fondo en el parque: más kilómetros que un juicio de Netanyahu y con "
-        "menos aplazamientos.",
+        "**{name}** hace fondo en el parque: diez kilómetros y ni una queja.",
         "**{name}** llega a Hacienda a las 14:59 y sale vivo. Ahora ya puede con todo.",
-        "**{name}** aguanta un desfile de Kim Jong-un en directo: tres horas de aplausos "
-        "obligatorios, de pie.",
+        "**{name}** aguanta un concierto de reguetón en primera fila.",
         "**{name}** hace plancha mientras suena un discurso de Rajoy: «un vaso es un vaso», y "
         "él, firme.",
-        "**{name}** aguanta como el Falcon con el depósito vacío: por inercia y con mucha cara.",
+        "**{name}** aguanta la siesta canaria sin dormirse. Héroe.",
+        "**{name}** entrena aguante. El sol del mediodía se rinde antes que él.",
         "**{name}** pide café entre series: ¡quiero café! Y se lo toma con la cresta bien alta.",
     ),
 }
 #: Líneas de luto cuando muere un gallo; `{name}` es su nombre. Cuentan la pena, sin regodearse.
 DEATH_LINES = (
-    "**{name}** cuelga el espolón. El NO-DO le dedica dos minutos y un himno.",
+    "**{name}** cuelga el espolón.",
     "Entierro de la sardina para **{name}**: bombo, capuchas de cartón y llanto de mentira.",
-    "Tres días de luto por **{name}**. Sánchez asistirá al funeral en el Falcon, claro.",
-    "**{name}** descansa en paz. Bruselas manda una directiva de condolencias de 400 páginas.",
+    "Tres días de luto por **{name}** en el reñidero.",
+    "**{name}** descansa en paz.",
     "Funeral de Estado para **{name}**: banda de música y un discurso de Rajoy que no entiende "
     "nadie.",
-    "**{name}** se va al corral grande. Putin guarda un minuto de silencio, a caballo y sin "
-    "camiseta.",
-    "Cae **{name}**. Feijóo asegura que con él en el gallinero esto no habría pasado.",
+    "**{name}** se va al corral grande.",
+    "Cae **{name}**. El gallinero entero guarda un minuto de silencio.",
     "**{name}** pasa a mejor corral. El cementerio de gallos ya tiene lista de espera, como "
     "la sanidad.",
-    "Luto por **{name}**: Ayuso decreta una semana de gallinero abierto, con cañas.",
+    "Adiós a **{name}**. Era un gallo de los de antes.",
+    "Estoy destruido, pero por fuera… **{name}**, por dentro, ya no.",
     "Muere **{name}** y Erdoğan ofrece un mausoleo de mil habitaciones. Lo rechazan por humilde.",
-    "Kim Jong-un declara tres días de luto por **{name}**. Los aplausos, obligatorios; las "
-    "lágrimas, también.",
-    "Biden intenta darle el pésame a **{name}** y se sube mal las escaleras de la capilla.",
+    "**{name}** se despide del reñidero con la cresta alta.",
     "Adiós a **{name}**. ¿Con pulpa? ¡Sin pulpa! Ni pulpa ni espolón. Descansa en paz.",
-    "**{name}** se despide del reñidero. El NO-DO ya prepara el «Franco sigue muerto» de la "
-    "ocasión.",
+    "**{name}** ya no cantará al amanecer. El barrio, por fin, duerme.",
 )
 #: Línea del entierro y del gallo nuevo; `{name}` es el caído y `{new}`, el que lo sustituye.
 BURIAL_LINES = (
@@ -282,9 +269,8 @@ BURIAL_LINES = (
     "**{new}** sale al corral.",
     "⚰️ Se inaugura la tumba de **{name}** con corte de cinta y sobrecoste. **{new}** ocupa la "
     "jaula vacía.",
-    "⚰️ El NO-DO cierra el funeral con «y España, un gallo menos». **{new}** empieza de cero.",
-    "⚰️ La exhumación de **{name}** queda pendiente de aprobación parlamentaria. Mientras, "
-    "**{new}** a entrenar.",
+    "⚰️ **{new}** llega al corral sin saber lo que le espera.",
+    "⚰️ Rey muerto, gallo puesto: **{new}** empieza de cero.",
     "⚰️ **{name}** ya es historia, y la ficha se la guardan en el cementerio. **{new}** nace "
     "sin deudas y sin músculos.",
 )

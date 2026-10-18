@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.19 · 2026-10-18
+
+- Gallos: frases nuevas para peleas, entrenos y funerales, con mucha menos política
+
 ### 7.25.18 · 2026-10-18
 
 - Allá tú: frases nuevas; Perro Sanxe sigue de presentador, con menos política alrededor
