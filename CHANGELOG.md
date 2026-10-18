@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.16 · 2026-10-18
+
+- Pollo, Minas y Crash: frases nuevas, más normales y con Jovani
+
 ### 7.25.15 · 2026-10-18
 
 - Torre: frases nuevas, más normales y con Jovani; menos Juego de Tronos y política

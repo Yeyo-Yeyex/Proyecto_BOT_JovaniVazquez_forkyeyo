@@ -97,30 +97,30 @@ COLOR_CASHED = discord.Color.from_rgb(255, 196, 0)
 
 # Textos en el tono de Jovani Vázquez.
 CASH_LINES = (
-    "¡Wepa!",
-    "¡Cobras, mi amor!",
+    "¡Cobras!",
     "¡Eso es!",
     "¡Qué olfato!",
     "¡Desminado con éxito!",
-    "¡Mina de litio sin multinacional!",
-    "¡Más fino que un ministro con información privilegiada!",
     "¡Toma mangó!",
     "¿Con pulpa? ¡Sin pulpa! ¡Con plata!",
-    "¡Pisas con más cuidado que Bibi ante el juez!",
-    "¡Te la llevas antes de que la vea un groyper!",
-    "¡Plata limpia, no como los puros de Netanyahu!",
+    "¡Plantado a tiempo!",
+    "Pies de plomo y bolsillo lleno.",
+    "¡Mina de litio sin multinacional!",
+    "Sabías cuándo parar.",
+    "¡Te la llevas antes de que la vea Hacienda!",
+    "¡Diamantes para el bolsillo!",
 )
 BOOM_LINES = (
     "¡BOOM!",
-    "¡Ay, bendito!",
     "¡Kaboom!",
     "¡Se acabó la fiesta!",
-    "¡Mina de Temu!",
+    "Esa casilla no era.",
     "¡Te pilló la UCO!",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "¡Pisaste donde no debías!",
     "¡Mina de carbón cerrada por Bruselas!",
-    "¡Era un campo de Hacienda!",
-    "¡Mina detectada por la Cúpula de Hierro… tarde!",
-    "¡Mina sembrada por Nick Fuentes desde su sótano!",
+    "La avaricia pisa minas.",
+    "¡Fuegos artificiales, pero de los caros!",
 )
 #: Estadística de logros con el récord de casillas en una partida.
 RECORD_STAT = "mines_streak_max"
