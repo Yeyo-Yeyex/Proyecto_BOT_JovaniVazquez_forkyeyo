@@ -44,9 +44,12 @@ import random
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from functools import cache
 
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
+    BARRIO_NEWS,
+    BUSINESS_KINDS,
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
@@ -55,11 +58,15 @@ from bot.services.housing_catalog import (
     PROMOTION_FLOORS,
     PROMOTION_NAMES,
     RENT_LEVELS,
+    TENANT_BY_KEY,
     TENANTS,
+    BarrioNews,
     Listing,
     RentLevel,
+    Tenant,
 )
 from bot.services.taxes import (
+    IGIC_BY_KEY,
     IGIC_GENERAL_RATE,
     IMPUTED_RATE,
     WAGE_YAPDOLLARS_PER_EURO,
@@ -90,8 +97,12 @@ CADASTRAL_SHARE = 0.5
 #: Tipo del IBI urbano. La ley deja a cada ayuntamiento entre el 0,4 % y el 1,1 %
 #: (art. 72.1 del RDL 2/2004); se usa uno intermedio para todos.
 IBI_RATE = 0.0055
-#: Seguro del hogar con impago: un 3 % de la renta de referencia al mes.
-INSURANCE_SHARE = 0.03
+#: Seguro del hogar (multirriesgo): un 1,5 % de la renta de referencia al mes. Hasta la 8.1.0
+#: era un 3 % «con impago» que no pagaba nada; el de impago va aparte (`premium`).
+INSURANCE_SHARE = 0.015
+#: Impuesto sobre las Primas de Seguros: el 8 % de la prima, que paga el tomador y va al
+#: Estado (art. 12 de la Ley 13/1996). Los seguros no llevan IGIC.
+IPS_RATE = IGIC_BY_KEY["primas"].rate
 #: Amortización deducible: el 3 % anual del valor de la construcción (art. 14.2.a
 #: del RIRPF), que se toma como el 60 % de lo pagado (el resto es suelo).
 AMORTIZATION_RATE = 0.03
@@ -102,6 +113,10 @@ CONSTRUCTION_SHARE = 0.6
 RENT_REDUCTION = 0.5
 TENSE_RENT_REDUCTION = 0.9
 TENSE_RENT_CUT = 0.05
+#: El 70 %: vivienda que se alquila por primera vez en zona tensionada a un inquilino de
+#: 18 a 35 años (art. 23.2.b.1.º LIRPF, Ley 12/2023).
+YOUNG_RENT_REDUCTION = 0.7
+YOUNG_AGES = (18, 35)
 
 #: Lo que se mueve el índice del barrio si se compra (o se vende) todo el barrio de
 #: golpe. Cada operación lo mueve en proporción a lo que pesa en el barrio
@@ -237,24 +252,35 @@ def is_dwelling(listing: Listing, level: str) -> bool:
 
 
 def contract_reduction(
-    listing: Listing, level: str, *, index: float, rent: int, last_rent: int
+    listing: Listing,
+    level: str,
+    *,
+    index: float,
+    rent: int,
+    last_rent: int,
+    young: bool = False,
 ) -> float:
     """Reducción del art. 23.2 LIRPF de un contrato, fijada al firmarlo (Ley 12/2023).
 
     - 90 %: vivienda en zona de mercado residencial tensionado con un contrato nuevo
       cuya renta baja más de un 5 % de la última del anterior (`TENSE_RENT_CUT`).
+    - 70 %: vivienda en zona tensionada que se alquila por primera vez, a un inquilino de
+      18 a 35 años (`young`).
     - 50 %: cualquier otro alquiler de vivienda.
     - 0: lo que no es vivienda (`is_dwelling`).
 
-    El 70 % (primer alquiler en zona tensionada a un inquilino de 18 a 35 años) y el 60 %
-    (vivienda rehabilitada en los dos años anteriores) llegarán con las fases de `pisos`
-    que traigan elegir inquilino y las reformas. Simplificación: no se mira si el casero
-    del contrato anterior era el mismo.
+    «Por primera vez» se mira en el propio inmueble: sin contrato anterior apuntado
+    (`last_rent` a 0; un inmueble que vuelve al mercado empieza de cero). El 60 % (vivienda
+    rehabilitada en los dos años anteriores) llegará con las reformas. Simplificación: no
+    se mira si el casero del contrato anterior era el mismo. La escala del RDL 29/2026, sin
+    convalidar, no se aplica (decisión del proyecto).
     """
     if not is_dwelling(listing, level):
         return 0.0
     if tense(index) and last_rent > 0 and rent < last_rent * (1 - TENSE_RENT_CUT):
         return TENSE_RENT_REDUCTION
+    if tense(index) and last_rent == 0 and young:
+        return YOUNG_RENT_REDUCTION
     return RENT_REDUCTION
 
 
@@ -263,6 +289,14 @@ def lease_reduction(listing: Listing, lease: Lease) -> float:
     if lease.reduction is not None:
         return lease.reduction
     return RENT_REDUCTION if is_dwelling(listing, lease.level) else 0.0
+
+
+#: Deducción canaria por alquilar una vivienda vacía (art. 16 del Decreto Legislativo
+#: 1/2009): la vivienda tiene que haber imputado renta el periodo anterior (aquí, una semana
+#: vacía, que es un año del IRPF) o alquilarse en los seis meses siguientes a comprarla sin
+#: inquilino (seis días). El importe y el tope, en `bot.services.taxes`.
+VACANT_BONUS_EMPTY_DAYS = 7
+VACANT_BONUS_BOUGHT_DAYS = 6
 
 
 def imputed_rent(listing: Listing, shares: int) -> int:
@@ -450,6 +484,14 @@ def index_next_day(index: float, level: float = 1.0) -> float:
 
 # -- El día a día de un inmueble --------------------------------------------------------
 
+#: Cómo se elige al inquilino: la gestora (al azar, como siempre) o el dueño entre los
+#: candidatos que van llegando (`PICK_SELF`).
+PICK_AGENCY = "gestora"
+PICK_SELF = "yo"
+#: Candidatos esperando a la vez en un piso vacío, y los días que espera cada uno.
+MAX_CANDIDATES = 3
+CANDIDATE_DAYS = 3
+
 
 @dataclass(frozen=True, slots=True)
 class Lease:
@@ -466,7 +508,9 @@ class Lease:
         unpaid: Meses que debe el inquilino.
         eviction_at: Día de la vista del desahucio.
         arrears: Gastos sin pagar del inmueble entero (comunidad, seguro e IBI).
-        arrears_ibi: La parte de `arrears` que es IBI.
+        arrears_ibi: La parte de `arrears` que se debe al Estado: el IBI y, desde la
+            8.1.0, el impuesto de primas y el IGIC de las reparaciones que no se pudieron
+            pagar (al cobrarse más tarde se apuntan como IBI).
         member: El miembro que vive de alquiler, si el inquilino es del servidor.
         bono: Si ese miembro cobra el Bono Alquiler Joven.
         license: Si tiene licencia de vivienda vacacional.
@@ -474,6 +518,13 @@ class Lease:
             reducción del 90 % de quien la rebaja en zona tensionada.
         reduction: Reducción del art. 23.2 del contrato en vigor, fijada al firmarlo;
             `None` en los de antes de la 8.0.0 (la general, `contract_reduction`).
+        pick: Quién elige al próximo inquilino (`PICK_AGENCY` o `PICK_SELF`).
+        insured: Si tiene contratado el seguro de impago (`covered`).
+        claims: Meses que el seguro ha pagado en el impago de ahora.
+        solvent: Si el miembro de alquiler pasó el estudio de solvencia al firmar (su
+            nómina llegaba a tres veces la renta): el seguro de impago le cubre.
+        bonus: Si el contrato en vigor da la deducción canaria por alquilar una vivienda
+            vacía (art. 16 del Decreto Legislativo 1/2009) y aún no se ha aplicado.
     """
 
     status: str = VACANT
@@ -491,6 +542,11 @@ class Lease:
     license: bool = False
     last_rent: int = 0
     reduction: float | None = None
+    pick: str = PICK_AGENCY
+    insured: bool = False
+    claims: int = 0
+    solvent: bool = False
+    bonus: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -500,10 +556,12 @@ class Event:
     Attributes:
         key: Clave estable (para las noticias y los logros).
         cost: Lo que cuesta al inmueble entero, en Y$ (0 si no cuesta nada).
+        tenant: El inquilino del que va (el candidato que llega, `candidato`).
     """
 
     key: str
     cost: int = 0
+    tenant: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -516,6 +574,7 @@ class EventKind:
         community_months: El coste en meses de comunidad (la derrama, la ITE).
         euros: El coste en euros, `(mínimo, máximo)` (las averías).
         kinds: Tipos de inmueble a los que les puede pasar (vacío: a todos).
+        worn: Si el desgaste del inquilino lo hace más probable (`Tenant.wear`).
     """
 
     key: str
@@ -523,6 +582,7 @@ class EventKind:
     community_months: int = 0
     euros: tuple[int, int] = (0, 0)
     kinds: frozenset[str] = frozenset()
+    worn: bool = False
 
 
 #: Lo que tiene instalaciones que se rompen (las viviendas y los negocios con techo).
@@ -539,13 +599,16 @@ _BLOCKS = frozenset(
 #: Imprevistos (los textos están en el cog). Una avería cada tres meses del juego
 #: y una derrama al año, más o menos.
 EVENTS: tuple[EventKind, ...] = (
-    EventKind("averia", 0.010, euros=(120, 450), kinds=_HOMES),
-    EventKind("humedades", 0.004, euros=(300, 900), kinds=_HOMES),
+    EventKind("averia", 0.010, euros=(120, 450), kinds=_HOMES, worn=True),
+    EventKind("humedades", 0.004, euros=(300, 900), kinds=_HOMES, worn=True),
     EventKind("derrama", 0.004, community_months=15, kinds=_BLOCKS),
     EventKind("ite", 0.002, community_months=30, kinds=_BLOCKS),
     EventKind("vecino", 0.010, kinds=_BLOCKS),
     EventKind("cerradura", 0.004, euros=(80, 200)),
 )
+#: Lo que se arregla (y paga IGIC en la factura): no la derrama ni la ITE, que son cuotas
+#: de la comunidad.
+REPAIR_EVENTS = frozenset({"averia", "humedades", "cerradura"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -558,8 +621,9 @@ class DayOutcome:
         costs: Gastos del mes del inmueble entero (sin los imprevistos).
         extra: Coste de los imprevistos del día.
         events: Imprevistos y cambios de estado del día, para las noticias
-            (`firma`, `renueva`, `se_va`, `impago`, `paga`, `okupa`, `desahucio`
-            y las claves de `EVENTS`).
+            (`firma`, `renueva`, `se_va`, `impago`, `paga`, `okupa`, `desahucio`,
+            `candidato`, `seguro` y las claves de `EVENTS`).
+        insurer: Lo que paga hoy el seguro de impago por la renta que no se cobra.
     """
 
     lease: Lease
@@ -567,6 +631,86 @@ class DayOutcome:
     costs: MonthlyCosts
     extra: int
     events: tuple[Event, ...]
+    insurer: int = 0
+
+
+# -- Inquilinos: cómo es cada uno ---------------------------------------------------
+
+#: Riesgo de impago (ya relativo a la media) por debajo del cual un inquilino es de riesgo
+#: «bajo», y por encima del cual es «alto». El seguro de impago no cubre a los de riesgo alto.
+RISK_LOW = 0.75
+RISK_HIGH = 1.25
+
+
+@dataclass(frozen=True, slots=True)
+class TenantFactors:
+    """Lo que un inquilino cambia del día a día, relativo a la media de su grupo.
+
+    Attributes:
+        risk: Multiplica la probabilidad de dejar de pagar.
+        stay: Multiplica la de irse antes y la de no renovar.
+        wear: Multiplica las averías y las humedades.
+    """
+
+    risk: float = 1.0
+    stay: float = 1.0
+    wear: float = 1.0
+
+
+NEUTRAL = TenantFactors()
+
+
+def _group(kind: str) -> str:
+    """El grupo de inquilinos de un tipo de inmueble: cada negocio, o las personas."""
+    return kind if kind in BUSINESS_KINDS else "vivienda"
+
+
+def tenant_pool(level: str, kind: str) -> tuple[Tenant, ...]:
+    """Los inquilinos que firmarían un contrato de `level` en un inmueble de tipo `kind`."""
+    return tuple(t for t in TENANTS if t.rents(level, kind))
+
+
+@cache
+def _pool_means(level: str, group: str) -> tuple[float, float, float]:
+    kind = "piso2" if group == "vivienda" else group
+    pool = tenant_pool(level, kind)
+    if not pool:
+        return (1.0, 1.0, 1.0)
+    n = len(pool)
+    return (
+        sum(t.risk for t in pool) / n,
+        sum(t.stay for t in pool) / n,
+        sum(t.wear for t in pool) / n,
+    )
+
+
+def tenant_factors(tenant: str | None, level: str, kind: str) -> TenantFactors:
+    """Cómo cambia el día a día un inquilino, dividido por la media de los que podían salir.
+
+    La gestora elige al azar entre los que encajan (`_tenant_for`), así que con ella la
+    media de cada factor es 1: los alquileres de quien no elige siguen como estaban. Un
+    inquilino que no está en el catálogo (o un miembro) es neutro.
+    """
+    item = TENANT_BY_KEY.get(tenant or "")
+    if item is None:
+        return NEUTRAL
+    risk, stay, wear = _pool_means(level, _group(kind))
+    return TenantFactors(risk=item.risk / risk, stay=item.stay / stay, wear=item.wear / wear)
+
+
+def risk_tier(factors: TenantFactors) -> str:
+    """`bajo`, `medio` o `alto`: lo que enseña la tarjeta del candidato."""
+    if factors.risk < RISK_LOW:
+        return "bajo"
+    if factors.risk > RISK_HIGH:
+        return "alto"
+    return "medio"
+
+
+def is_young(tenant: str | None) -> bool:
+    """Si un inquilino del catálogo tiene de 18 a 35 años (los negocios no tienen edad)."""
+    item = TENANT_BY_KEY.get(tenant or "")
+    return item is not None and YOUNG_AGES[0] <= item.age <= YOUNG_AGES[1]
 
 
 def _tenant_for(level: str, kind: str, rng: random.Random) -> str:
@@ -574,37 +718,211 @@ def _tenant_for(level: str, kind: str, rng: random.Random) -> str:
     return rng.choice(candidates)
 
 
-def find_chance(listing: Listing, level: RentLevel, day: date) -> float:
-    """Probabilidad de que un inmueble vacío encuentre inquilino hoy.
+# -- Seguro de impago y desahucio -----------------------------------------------------
+
+#: Prima del seguro de impago al mes con la renta de referencia: un 4 % de la renta (en la
+#: vida real, del 3 al 6 % de la renta de un año). Sube con lo que se deja de pagar en
+#: cada nivel de renta (`premium_rate`). Desaparece (la aseguradora no existe) y lleva el
+#: impuesto de primas (`IPS_RATE`).
+PREMIUM_RATE = 0.04
+#: Paga la renta desde el segundo mes sin pagar (el primero es la franquicia) y hasta 12
+#: meses por impago.
+COVER_FROM = 2
+COVER_MONTHS = 12
+#: Abogado y procurador del desahucio, que son obligatorios (art. 23 LEC): tres meses de
+#: renta, entre 3.000 y 15.000 Y$, más el IGIC de los servicios. Si el seguro de impago
+#: cubre al inquilino, los paga él.
+EVICTION_FEE_MONTHS = 3
+EVICTION_FEE_MIN = 3_000
+EVICTION_FEE_MAX = 15_000
+
+
+#: Cómo sube la prima con el impago de cada nivel (exponente sobre la proporción de impago).
+#: Medido con el código real (60 caseros, 1.500 días, desahucio al tercer mes): la aseguradora
+#: paga, con los abogados, un 81 % de lo que cobra con la renta asequible, un 75 % con la de
+#: referencia y un 83 % con la de mercado. Gana algo, como en la vida real: asegurarse no es
+#: un negocio, quita el susto.
+PREMIUM_CURVE = 0.85
+
+
+def premium_rate(level: str) -> float:
+    """Prima mensual del seguro de impago sobre la renta, según lo que se impaga con ese nivel."""
+    base = RENT_LEVELS["referencia"].default
+    rent_level = RENT_LEVELS.get(level, RENT_LEVELS["referencia"])
+    return PREMIUM_RATE * (rent_level.default / base) ** PREMIUM_CURVE
+
+
+def insurable(listing: Listing, lease: Lease) -> bool:
+    """Si la aseguradora cubre el contrato en vigor (aunque no esté contratado el seguro).
+
+    Solo vivienda habitual (ni temporada, ni vacacional, ni negocios) y solo inquilinos
+    que pasan el estudio de solvencia: los del catálogo de riesgo bajo o medio y los
+    miembros cuya nómina llegaba a tres veces la renta al firmar.
+    """
+    if not is_dwelling(listing, lease.level):
+        return False
+    if lease.member is not None:
+        return lease.solvent
+    if lease.tenant is None:
+        return False
+    return risk_tier(tenant_factors(lease.tenant, lease.level, listing.kind)) != "alto"
+
+
+def covered(listing: Listing, lease: Lease) -> bool:
+    """Si el seguro de impago está contratado y cubre a este inquilino."""
+    return lease.insured and insurable(listing, lease)
+
+
+def premium(listing: Listing, lease: Lease) -> int:
+    """Prima de un mes del seguro de impago (sin el impuesto de primas), o 0 si no cubre."""
+    if not covered(listing, lease) or lease.status not in (RENTED, DEFAULTING, EVICTING):
+        return 0
+    return round(lease.rent * premium_rate(lease.level))
+
+
+def insure_month(listing: Listing, lease: Lease) -> tuple[int, Lease]:
+    """Lo que paga hoy el seguro por la renta que no llega, y el contrato con ese mes contado.
+
+    Paga desde el segundo mes de impago y mientras dura el juicio, hasta `COVER_MONTHS`.
+    """
+    if not covered(listing, lease) or lease.status not in (DEFAULTING, EVICTING):
+        return 0, lease
+    if lease.claims >= COVER_MONTHS:
+        return 0, lease
+    if lease.status == DEFAULTING and lease.unpaid < COVER_FROM:
+        return 0, lease
+    return lease.rent, replace(lease, claims=lease.claims + 1)
+
+
+def eviction_fee(rent: int) -> int:
+    """Abogado y procurador de un desahucio (sin IGIC)."""
+    return min(EVICTION_FEE_MAX, max(EVICTION_FEE_MIN, rent * EVICTION_FEE_MONTHS))
+
+
+# -- Noticias de barrio ---------------------------------------------------------------
+
+#: Probabilidad de que un barrio sin noticia salga en las de un lunes, y cuántas salen como
+#: mucho a la vez. Cada una dura una semana.
+NEWS_CHANCE = 0.12
+NEWS_MAX = 3
+NEWS_DAYS = 7
+
+
+def news_fits(news: BarrioNews, barrio: str, day: date) -> bool:
+    """Si una noticia puede salir en un barrio ese día (tipo de barrio, isla y mes)."""
+    spec = BARRIO_BY_KEY[barrio]
+    return (
+        (not news.themes or spec.theme in news.themes)
+        and (not news.islands or spec.island in news.islands)
+        and (not news.months or day.month in news.months)
+    )
+
+
+def monday_news(day: date, busy: set[str], rng: random.Random) -> list[tuple[str, str]]:
+    """Las noticias de barrio de un lunes: `(barrio, noticia)`.
+
+    Args:
+        busy: Barrios que aún tienen una noticia en marcha (no salen en otra).
+    """
+    out: list[tuple[str, str]] = []
+    for barrio in sorted(BARRIO_BY_KEY):
+        if len(out) >= NEWS_MAX:
+            break
+        if barrio in busy or rng.random() >= NEWS_CHANCE:
+            continue
+        pool = [n for n in BARRIO_NEWS if news_fits(n, barrio, day)]
+        if not pool:
+            continue
+        news = rng.choices(pool, weights=[n.weight for n in pool])[0]
+        out.append((barrio, news.key))
+    return out
+
+
+def find_chance(
+    listing: Listing, level: RentLevel, day: date, news: BarrioNews | None = None
+) -> float:
+    """Probabilidad de que un inmueble vacío encuentre inquilino (o un candidato) hoy.
 
     La vacacional depende de la temporada (`season_factor`) y los nómadas, del tipo de
-    barrio (`NOMAD_DEMAND`): buscan playa y fibra, no un polígono.
+    barrio (`NOMAD_DEMAND`): buscan playa y fibra, no un polígono. La noticia del barrio,
+    si la hay, la sube o la baja.
     """
     find = level.find
     if level.key == VACATION_LEVEL:
         find *= season_factor(day)
     elif level.key == NOMAD_LEVEL:
         find *= NOMAD_DEMAND[BARRIO_BY_KEY[listing.barrio].theme]
-    return find
+    if news is not None:
+        find *= news.find
+        if level.key == VACATION_LEVEL:
+            find *= news.vacation
+        elif level.key == NOMAD_LEVEL:
+            find *= news.nomad
+    return min(1.0, find)
+
+
+def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -> Lease:
+    """El contrato que firma un inquilino del catálogo con la renta que pide el inmueble.
+
+    Lo usan la gestora (`advance_day`) y el dueño que elige entre los candidatos.
+    """
+    level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
+    rent = asking_rent(listing, level, index)
+    return replace(
+        lease,
+        status=RENTED,
+        tenant=tenant,
+        rent=rent,
+        until=day + timedelta(days=level.months),
+        since=day,
+        unpaid=0,
+        claims=0,
+        reduction=contract_reduction(
+            listing, level.key, index=index, rent=rent, last_rent=lease.last_rent,
+            young=is_young(tenant),
+        ),
+    )  # fmt: skip
+
+
+def _vacated(lease: Lease, day: date) -> Lease:
+    """El inmueble se queda vacío: sin inquilino, ni contrato, ni impago que cubrir."""
+    return replace(
+        lease, status=VACANT, tenant=None, rent=0, until=None, since=day, unpaid=0,
+        eviction_at=None, claims=0, last_rent=lease.rent, bonus=False,
+    )  # fmt: skip
 
 
 def advance_day(
-    listing: Listing, lease: Lease, day: date, index: float, rng: random.Random
+    listing: Listing,
+    lease: Lease,
+    day: date,
+    index: float,
+    rng: random.Random,
+    news: BarrioNews | None = None,
 ) -> DayOutcome:
     """Un mes de la vida de un inmueble con dueño (un día del bot).
 
     Orden: imprevistos, desahucio que llega a su fecha, el inquilino paga o no,
     se va, renueva o deja de pagar, y si está vacío, se busca inquilino (o entran
-    okupas). La renta solo se cobra si hay inquilino al día al empezar.
+    okupas). La renta solo se cobra si hay inquilino al día al empezar. Cómo es el
+    inquilino (`tenant_factors`) y la noticia del barrio cambian las probabilidades. Si
+    el dueño elige al inquilino, lo que llega es un candidato (`candidato`) y el piso
+    sigue vacío. Al final, el seguro de impago paga lo que toque (`insure_month`).
 
     Args:
         lease: Cómo estaba ayer.
         day: El día que se cierra.
         index: Índice del barrio (para la renta de un contrato nuevo).
         rng: Azar inyectable.
+        news: La noticia del barrio en marcha, si hay.
     """
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
-    extra, rolled = roll_events(listing, rng)
+    factors = tenant_factors(lease.tenant, lease.level, listing.kind)
+    living = lease.status in (RENTED, DEFAULTING)
+    extra, rolled = roll_events(
+        listing, rng, wear=factors.wear if living else 1.0,
+        repairs=news.repairs if news else 1.0, neighbour=news.neighbour if news else 1.0,
+    )  # fmt: skip
     events = list(rolled)
 
     rent = 0
@@ -615,80 +933,87 @@ def advance_day(
         return DayOutcome(lease=lease, rent=0, costs=monthly_costs(listing), extra=extra,
                           events=tuple(events))  # fmt: skip
     if status == EVICTING and lease.eviction_at is not None and day >= lease.eviction_at:
-        lease = replace(
-            lease,
-            status=VACANT,
-            tenant=None,
-            rent=0,
-            until=None,
-            since=day,
-            unpaid=0,
-            eviction_at=None,
-            last_rent=lease.rent,
-        )
+        lease = _vacated(lease, day)
         events.append(Event("desahucio"))
     elif status == RENTED:
         rent = lease.rent
         if lease.until is not None and day >= lease.until:
-            if rng.random() < RENEWAL:
+            if rng.random() < max(0.0, 1 - (1 - RENEWAL) * factors.stay):
                 lease = replace(lease, until=day + timedelta(days=level.months))
                 events.append(Event("renueva"))
             else:
-                lease = replace(
-                    lease, status=VACANT, tenant=None, rent=0, until=None, since=day,
-                    last_rent=lease.rent,
-                )  # fmt: skip
+                lease = _vacated(lease, day)
                 events.append(Event("se_va"))
-        elif rng.random() < level.default:
+        elif rng.random() < level.default * factors.risk * (news.default if news else 1.0):
             lease = replace(lease, status=DEFAULTING, since=day, unpaid=1)
             rent = 0
             events.append(Event("impago"))
-        elif rng.random() < EARLY_LEAVE:
-            lease = replace(
-                lease, status=VACANT, tenant=None, rent=0, until=None, since=day,
-                last_rent=lease.rent,
-            )  # fmt: skip
+        elif rng.random() < EARLY_LEAVE * factors.stay:
+            lease = _vacated(lease, day)
             events.append(Event("se_va"))
     elif status == DEFAULTING:
         if rng.random() < PAY_BACK:
-            rent = lease.rent * (lease.unpaid + 1)
-            lease = replace(lease, status=RENTED, unpaid=0, since=day)
+            # Lo que el seguro ya adelantó lo recupera él (se subroga en la deuda).
+            rent = lease.rent * (lease.unpaid + 1 - lease.claims)
+            lease = replace(lease, status=RENTED, unpaid=0, since=day, claims=0)
             events.append(Event("paga"))
         else:
             lease = replace(lease, unpaid=lease.unpaid + 1)
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
-        if rng.random() < find_chance(listing, level, day):
-            new_rent = asking_rent(listing, level, index)
-            lease = replace(
-                lease,
-                status=RENTED,
-                tenant=_tenant_for(level.key, listing.kind, rng),
-                rent=new_rent,
-                until=day + timedelta(days=level.months),
-                since=day,
-                unpaid=0,
-                reduction=contract_reduction(
-                    listing, level.key, index=index, rent=new_rent, last_rent=lease.last_rent
-                ),
-            )
-            events.append(Event("firma"))
-        elif vacant_for >= SQUAT_AFTER_DAYS and rng.random() < SQUAT:
+        if rng.random() < find_chance(listing, level, day, news):
+            tenant = _tenant_for(level.key, listing.kind, rng)
+            if lease.pick == PICK_SELF:
+                events.append(Event("candidato", tenant=tenant))
+            else:
+                lease = sign(listing, lease, tenant, day, index)
+                events.append(Event("firma"))
+        elif vacant_for >= SQUAT_AFTER_DAYS and rng.random() < SQUAT * (
+            news.squat if news else 1.0
+        ):
             lease = replace(lease, status=SQUATTED, tenant=None, rent=0, since=day)
             events.append(Event("okupa"))
+    insurer, lease = insure_month(listing, lease)
+    if insurer:
+        events.append(Event("seguro", insurer))
     return DayOutcome(
-        lease=lease, rent=rent, costs=monthly_costs(listing), extra=extra, events=tuple(events)
+        lease=lease,
+        rent=rent,
+        costs=monthly_costs(listing),
+        extra=extra,
+        events=tuple(events),
+        insurer=insurer,
     )
 
 
-def roll_events(listing: Listing, rng: random.Random) -> tuple[int, tuple[Event, ...]]:
-    """Los imprevistos de un mes: `(lo que cuestan, cuáles)`."""
+def roll_events(
+    listing: Listing,
+    rng: random.Random,
+    *,
+    wear: float = 1.0,
+    repairs: float = 1.0,
+    neighbour: float = 1.0,
+) -> tuple[int, tuple[Event, ...]]:
+    """Los imprevistos de un mes: `(lo que cuestan, cuáles)`.
+
+    Args:
+        wear: Desgaste del inquilino (`TenantFactors.wear`): averías y humedades.
+        repairs: Lo que la noticia del barrio cambia averías, humedades y cerraduras.
+        neighbour: Lo que cambia las quejas del vecino.
+    """
     events: list[Event] = []
     extra = 0
     for kind in EVENTS:
         if kind.kinds and listing.kind not in kind.kinds:
             continue
-        if rng.random() >= kind.chance:
+        chance = kind.chance
+        if kind.worn:
+            chance *= wear
+        if kind.key in REPAIR_EVENTS:
+            chance *= repairs
+        elif kind.key == "vecino":
+            chance *= neighbour
+        if rng.random() >= chance:
             continue
         cost = _euros(KINDS[listing.kind].community * kind.community_months)
         if kind.euros[1]:
@@ -696,6 +1021,11 @@ def roll_events(listing: Listing, rng: random.Random) -> tuple[int, tuple[Event,
         extra += cost
         events.append(Event(kind.key, cost))
     return extra, tuple(events)
+
+
+def repairs_of(events: Iterable[Event]) -> int:
+    """Lo que cuestan las reparaciones de unos imprevistos (las que llevan IGIC)."""
+    return sum(e.cost for e in events if e.key in REPAIR_EVENTS)
 
 
 def start_eviction(lease: Lease, day: date, rng: random.Random) -> Lease:
@@ -723,11 +1053,13 @@ class Payout:
     `split`.
 
     Attributes:
-        ibi: IBI pagado hoy (del mes y del atrasado). Va al Estado.
-        costs: Comunidad, seguro e imprevistos pagados hoy. Desaparecen.
+        ibi: IBI pagado hoy (del mes y el atrasado). Va al Estado.
+        costs: Comunidad, seguros e imprevistos pagados hoy. Desaparecen.
         net: Lo que queda para los dueños.
         arrears: Deuda que queda.
-        arrears_ibi: La parte de `arrears` que es IBI.
+        arrears_ibi: La parte de `arrears` que se debe al Estado.
+        taxes: Impuesto de primas e IGIC de las reparaciones pagados hoy. Van al Estado.
+        taxes_left: La parte de `arrears_ibi` que son esos impuestos de hoy (el resto es IBI).
     """
 
     ibi: int
@@ -735,30 +1067,42 @@ class Payout:
     net: int
     arrears: int
     arrears_ibi: int
+    taxes: int = 0
+    taxes_left: int = 0
 
 
 def settle_day(
-    rent: int, costs: MonthlyCosts, extra: int, arrears: int, arrears_ibi: int
+    rent: int,
+    costs: MonthlyCosts,
+    extra: int,
+    arrears: int,
+    arrears_ibi: int,
+    taxes: int = 0,
 ) -> Payout:
     """Paga con la renta del día lo que se debe, por orden, y deja el resto a deber.
 
-    Primero el IBI (del mes y el atrasado), luego la comunidad, el seguro y los
-    imprevistos (del día y los atrasados). Lo que la renta no cubre se intenta cobrar
-    del monedero de los dueños (`HousingDebit`, un recibo domiciliado) y lo que no
-    llegue queda como deuda del inmueble: se paga después o se descuenta al vender.
+    Primero lo del Estado: el IBI (del mes y el atrasado) y los impuestos del día
+    (`taxes`: el de primas de los seguros y el IGIC de las reparaciones). Luego la
+    comunidad, los seguros y los imprevistos (del día y los atrasados). Lo que la renta no
+    cubre se intenta cobrar del monedero de los dueños (`HousingDebit`, un recibo
+    domiciliado) y lo que no llegue queda como deuda del inmueble: se paga después o se
+    descuenta al vender. Lo que se queda debiendo al Estado va con el IBI atrasado.
     """
     owed_ibi = costs.ibi + arrears_ibi
     owed_other = costs.community + costs.insurance + extra + (arrears - arrears_ibi)
     pay_ibi = min(rent, owed_ibi)
-    pay_other = min(rent - pay_ibi, owed_other)
-    left_ibi = owed_ibi - pay_ibi
+    pay_taxes = min(rent - pay_ibi, max(0, taxes))
+    pay_other = min(rent - pay_ibi - pay_taxes, owed_other)
+    left_ibi = owed_ibi - pay_ibi + max(0, taxes) - pay_taxes
     left_other = owed_other - pay_other
     return Payout(
         ibi=pay_ibi,
         costs=pay_other,
-        net=rent - pay_ibi - pay_other,
+        net=rent - pay_ibi - pay_taxes - pay_other,
         arrears=left_ibi + left_other,
         arrears_ibi=left_ibi,
+        taxes=pay_taxes,
+        taxes_left=max(0, taxes) - pay_taxes,
     )
 
 

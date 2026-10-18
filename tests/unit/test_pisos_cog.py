@@ -18,8 +18,10 @@ from bot.cogs.pisos import (
     BARRIO,
     CACHE_SIZE,
     CAJA,
+    CANDIDATOS,
     CARTERA,
     FICHA,
+    GESTION,
     MAPA,
     VPO,
     Painter,
@@ -29,6 +31,7 @@ from bot.cogs.pisos import (
     TenantOffer,
     ecb_embed,
     effort_text,
+    news_embed,
     promotion_embed,
     requirements_text,
 )
@@ -516,10 +519,22 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
         await cog.service.buy(GUILD, ana.id, listing.key, 60)
     with sqlite3.connect(tmp_path / "bot.db") as connection:
         connection.execute("UPDATE housing_leases SET status = 'impago', tenant = 'familia'")
+        # Un piso vacío con tres candidatos: la pantalla con más botones de la fase 2.
+        connection.execute(
+            "UPDATE housing_leases SET status = 'vacio', tenant = NULL, pick = 'yo' "
+            "WHERE listing = 'vegueta_edificio'"
+        )
+        for tenant in ("medico", "abuela", "familia"):
+            connection.execute(
+                "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+                "VALUES (?, 'vegueta_edificio', ?, '2026-12-31')",
+                (GUILD, tenant),
+            )
     panel = await open_panel(cog, ana, guild_with(ana))
     await panel.refresh()
     for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
-                            (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None)):  # fmt: skip
+                            (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None),
+                            (GESTION, None), (CANDIDATOS, None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -817,3 +832,99 @@ async def test_la_obra_nueva_se_anuncia_y_apunta_el_logro_del_promotor(
     listing = (await cog.service.market(GUILD)).listing(run.promotions[0][1])
     assert listing is not None
     assert promotion_embed(listing, 1.0, "Ana").title.endswith(listing.title.split(": ")[1])
+
+
+# -- Fase 2 de la ampliación (8.1.0) ------------------------------------------------------
+
+
+async def test_gestionar_elige_inquilino_entre_candidatos_y_firma(tmp_path: Path) -> None:
+    cog, _scene, clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.barrio, panel.listing = "taco", "taco_bajo"
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:gestion" in ids(panel)
+    await panel._go_gestion(clicked(ana, []))
+    assert panel.screen == GESTION and "pisos:elegir" in ids(panel)
+    assert "pisos:seguro" in ids(panel)
+
+    events: list[str] = []
+    await panel._toggle_pick(clicked(ana, events))
+    assert events[0] == "response.defer"  # contesta antes de tocar la base de datos
+    market = await cog.service.market(GUILD)
+    assert market.leases["taco_bajo"].pick == rules.PICK_SELF
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+            "VALUES (?, 'taco_bajo', 'medico', '2026-10-17')",
+            (GUILD,),
+        )
+    await panel._go_candidates(clicked(ana, []))
+    assert panel.screen == CANDIDATOS
+    assert {"pisos:firmar:1", "pisos:descartar:1"} <= set(ids(panel))
+
+    sign = clicked(ana, [], custom_id="pisos:firmar:1")
+    await panel._sign(sign)
+    lease = (await cog.service.market(GUILD)).leases["taco_bajo"]
+    assert lease.status == rules.RENTED and lease.tenant == "medico"
+    assert panel.screen == FICHA
+
+
+async def test_el_seguro_se_contrata_con_dos_clics(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "taco_bajo"
+    await panel._go_gestion(clicked(ana, []))
+    await panel._arm(clicked(ana, [], custom_id="pisos:seguro"))
+    assert "pisos:seguro:si" in ids(panel)
+    await panel._toggle_insurance(clicked(ana, []))
+    assert (await cog.service.market(GUILD)).leases["taco_bajo"].insured
+
+
+async def test_desahuciar_cobra_el_abogado_y_sin_dinero_avisa(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'impago', tenant = 'rider', rent = 3000, unpaid = 3"
+        )
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing, panel.screen = "taco_bajo", FICHA
+    await panel.refresh()
+    balance = await cog.economy.balance(GUILD, ana.id)
+    press = clicked(ana, [])
+    await panel._evict(press)
+    fee = rules.eviction_fee(3_000)
+    assert await cog.economy.balance(GUILD, ana.id) == balance - fee - round(
+        fee * rules.SERVICES_IGIC
+    )
+    assert (await cog.service.market(GUILD)).leases["taco_bajo"].status == rules.EVICTING
+
+    # Otro piso, sin dinero para el abogado: avisa y no pide nada.
+    await cog.service.buy(GUILD, ana.id, "taco_trastero", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'okupa' WHERE listing = 'taco_trastero'"
+        )
+    left = await cog.economy.balance(GUILD, ana.id)
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(-left, "prueba")])
+    panel.listing = "taco_trastero"
+    await panel.refresh()
+    broke = clicked(ana, [])
+    await panel._evict(broke)
+    text = " ".join(str(c) for c in broke.followup.send.await_args_list)
+    assert "abogado" in text
+    assert (await cog.service.market(GUILD)).leases["taco_trastero"].status == rules.SQUATTED
+
+
+def test_las_noticias_de_barrio_salen_en_un_mensaje() -> None:
+    embed = news_embed([("taco", "fabrica"), ("canteras", "bandera_azul")])
+    assert "Taco" in embed.description and "Las Canteras" in embed.description
+    assert "fábrica" in embed.description

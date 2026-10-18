@@ -683,7 +683,8 @@ class HousingTax:
     Attributes:
         user_id: Quien paga.
         kind: `itp`, `ibi`, `plusvalia`, `socimi`, `licencia`, `igic` (estancias
-            vacacionales) o `igic_gastos` (IGIC de la notaría y de la agencia).
+            vacacionales), `igic_gastos` (IGIC de la notaría, la agencia, las reparaciones
+            y el abogado del desahucio) o `ips` (impuesto de primas de los seguros).
         base: Base imponible.
         tax: Cuota; positiva.
     """
@@ -710,6 +711,9 @@ class HousingRent:
         finance: Intereses de la hipoteca y reparaciones del mes (con tope en la declaración).
         costs: IBI, comunidad, seguro y amortización del mes.
         upkeep: Reparaciones y seguro de una vivienda alquilada (deducción del casero).
+        premium: Primas del seguro de impago con su impuesto, si la renta no pasa de 800 €
+            al mes (deducción del art. 15 quater).
+        bonus: Deducción por alquilar una vivienda vacía (art. 16), la vez que se aplica.
         reduction: Reducción del art. 23.2 de este contrato (0 si no es vivienda).
         concept: Motivo del libro y concepto en `economy_tax_records`.
         tag: Para qué es (un inmueble); si un pago del Estado no se hace, se avisa
@@ -724,6 +728,8 @@ class HousingRent:
     finance: int = 0
     costs: int = 0
     upkeep: int = 0
+    premium: int = 0
+    bonus: int = 0
     reduction: float = 0.0
     concept: str = HOUSING_RENT_CONCEPT
     tag: str = ""
@@ -738,6 +744,8 @@ class HousingRent:
             costs=self.costs,
             reduction=self.reduction,
             upkeep=self.upkeep,
+            premium=self.premium,
+            bonus=self.bonus,
         )
 
 
@@ -777,6 +785,9 @@ class HousingDebit:
         reason: Motivo del libro de `other`.
         home: Si es la cuota de la hipoteca de su vivienda habitual: lo pagado cuenta
             para la deducción canaria por inversión en vivienda habitual.
+        taxes: `(clase, cuota)` de otros impuestos del día que van al Estado (el de primas
+            de los seguros, el IGIC de las reparaciones): se cobran después del IBI y
+            antes que `other`, y lo que no llegue se debe con el IBI.
     """
 
     user_id: int
@@ -785,6 +796,7 @@ class HousingDebit:
     other: int
     reason: str = "pisos:comunidad"
     home: bool = False
+    taxes: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -807,6 +819,9 @@ class HousingMove:
             cuenta del Estado llega; si no, «partida agotada».
         imputations: `(miembro, inmueble, renta imputada)` de los pisos vacíos (art. 85
             LIRPF): no mueven dinero, solo suman a su base de la semana.
+        expenses: `(miembro, inmueble, gasto)` deducibles de un inmueble que no llegan con
+            una renta (el abogado y el procurador de un desahucio, art. 13.c RIRPF): no
+            mueven dinero aquí (se pagan en `entries` o `taxes`), solo restan en su base.
     """
 
     rents: tuple[HousingRent, ...] = ()
@@ -818,6 +833,7 @@ class HousingMove:
     then: Callable[[sqlite3.Connection, frozenset[str]], HousingMove] | None = None
     grants: tuple[HousingRent, ...] = ()
     imputations: tuple[tuple[int, str, int], ...] = ()
+    expenses: tuple[tuple[int, str, int], ...] = ()
 
 
 class EconomyRepository:
@@ -1275,6 +1291,9 @@ class EconomyRepository:
                     "ref": "TEXT NOT NULL DEFAULT ''",
                     "reduction": "REAL NOT NULL DEFAULT 0",
                     "credit": "INTEGER NOT NULL DEFAULT 0",
+                    # 8.1.0: deducciones canarias del seguro de impago y de la vivienda vacía.
+                    "premium": "INTEGER NOT NULL DEFAULT 0",
+                    "bonus": "INTEGER NOT NULL DEFAULT 0",
                 },
             )
             # Semana (lunes ISO) en que se cerró la declaración: el plazo para presentarla
@@ -1490,6 +1509,8 @@ class EconomyRepository:
         ref: str = "",
         reduction: float = 0.0,
         credit: int = 0,
+        premium: int = 0,
+        bonus: int = 0,
     ) -> None:
         """Apunta un ingreso sujeto con su clase de renta en `economy_tax_records`.
 
@@ -1500,12 +1521,12 @@ class EconomyRepository:
             """
             INSERT INTO economy_tax_records
                 (guild_id, user_id, created_at, concept, gross, withheld, kind, costs,
-                 finance, upkeep, ref, reduction, credit)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 finance, upkeep, ref, reduction, credit, premium, bonus)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 guild_id, user_id, now, concept, gross, withheld, kind, costs, finance,
-                upkeep, ref, reduction, credit,
+                upkeep, ref, reduction, credit, premium, bonus,
             ),
         )  # fmt: skip
 
@@ -1624,6 +1645,7 @@ class EconomyRepository:
             """
             SELECT kind, ref, SUM(gross) AS gross, SUM(costs) AS costs,
                    SUM(finance) AS finance, SUM(upkeep) AS upkeep,
+                   SUM(premium) AS premium, SUM(bonus) AS bonus,
                    SUM(gross * reduction) AS reduced
             FROM economy_tax_records
             WHERE guild_id = ? AND user_id = ? AND kind IS NOT NULL
@@ -1647,6 +1669,8 @@ class EconomyRepository:
                         reduction=float(row["reduced"]) / gross if gross > 0 else 0.0,
                         carry=carry.get(ref, 0),
                         upkeep=int(row["upkeep"]),
+                        premium=int(row["premium"]),
+                        bonus=int(row["bonus"]),
                     )
                 )
                 continue
@@ -3135,7 +3159,7 @@ class EconomyRepository:
             SELECT user_id,
                    CASE kind WHEN 'itp' THEN 'itp_pisos' WHEN 'ibi' THEN 'ibi'
                         WHEN 'igic' THEN 'igic' WHEN 'igic_gastos' THEN 'igic'
-                        WHEN 'licencia' THEN 'tasas'
+                        WHEN 'ips' THEN 'igic' WHEN 'licencia' THEN 'tasas'
                         ELSE 'irpf_ahorro' END,
                    tax, created_at
             FROM economy_housing_tax WHERE guild_id = :guild
@@ -4805,7 +4829,7 @@ class EconomyRepository:
                     connection, guild_id, rent.user_id, now=now, concept=rent.concept,
                     kind=rent.kind, gross=item.income, withheld=tax, costs=rent.costs,
                     finance=rent.finance, upkeep=rent.upkeep, ref=rent.ref,
-                    reduction=rent.reduction,
+                    reduction=rent.reduction, premium=rent.premium, bonus=rent.bonus,
                 )  # fmt: skip
 
         for member, ref, amount in move.imputations:
@@ -4813,6 +4837,12 @@ class EconomyRepository:
                 self._record_in(
                     connection, guild_id, member, now=now, concept="pisos:imputacion",
                     kind=INCOME_IMPUTED, gross=amount, withheld=0, ref=ref,
+                )  # fmt: skip
+        for member, ref, amount in move.expenses:
+            if amount > 0:
+                self._record_in(
+                    connection, guild_id, member, now=now, concept=HOUSING_RENT_CONCEPT,
+                    kind=INCOME_PROPERTY, gross=0, withheld=0, costs=amount, ref=ref,
                 )  # fmt: skip
         paid_tags: set[str] = set()
         for pull in move.pulls:
@@ -4868,8 +4898,27 @@ class EconomyRepository:
         for debit in move.debits:
             balance = touch(debit.user_id)
             ibi = min(balance, max(0, debit.ibi))
-            other = min(balance - ibi, max(0, debit.other))
             charges = [LedgerEntry(-ibi, "pisos:ibi")] if ibi else []
+            room = balance - ibi
+            owed_taxes = paid_taxes = 0
+            for kind, due in debit.taxes:
+                owed_taxes += max(0, due)
+                cut = min(room, max(0, due))
+                if not cut:
+                    continue
+                room -= cut
+                paid_taxes += cut
+                charges.append(LedgerEntry(-cut, f"pisos:{kind}"))
+                self._credit_state_in(connection, guild_id, cut, f"pisos:{kind}")
+                connection.execute(
+                    """
+                    INSERT INTO economy_housing_tax
+                        (guild_id, user_id, kind, base, tax, created_at)
+                    VALUES (?, ?, ?, 0, ?, ?)
+                    """,
+                    (guild_id, debit.user_id, kind, cut, now),
+                )
+            other = min(room, max(0, debit.other))
             if other:
                 charges.append(LedgerEntry(-other, debit.reason))
             if charges:
@@ -4890,7 +4939,7 @@ class EconomyRepository:
                 extra(debit.user_id, EXTRA_HOME, other)
             left = unpaid.get(debit.tag, (0, 0))
             unpaid[debit.tag] = (
-                left[0] + max(0, debit.ibi) - ibi,
+                left[0] + max(0, debit.ibi) - ibi + owed_taxes - paid_taxes,
                 left[1] + max(0, debit.other) - other,
             )
         if move.settle is not None:

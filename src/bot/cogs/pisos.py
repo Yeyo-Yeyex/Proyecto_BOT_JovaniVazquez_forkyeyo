@@ -14,6 +14,12 @@ pide la licencia vacacional o vende al fondo buitre; desde la cartera monta su S
 o deja su casa, y en la pantalla 🏛️ VPO se apunta al sorteo, compra la que le toca o
 la devuelve. Lo que cuesta dinero pide un segundo clic (⚠️ ¿Seguro?).
 
+Ampliación, fase 2 (8.1.0): la ficha abre 🧰 Gestionar, donde quien decide cambia quién
+elige al inquilino (la gestora o él), contrata el seguro de impago y ve lo que costaría un
+desahucio; si elige él, la pantalla 👥 Candidatos enseña a los que esperan y se firma con
+uno o se descartan. Desahuciar paga el abogado y el procurador (salvo con seguro). Los
+lunes, las noticias de barrio salen en `#chat-general` si alguien tiene pisos.
+
 Dinero (todo por `EconomyService.housing`, impuestos en su docstring): comprar
 participaciones (ITP del 6,5 % al Estado, notaría que desaparece), venderlas al
 mercado (agencia, deudas del piso e IRPF de la ganancia) y, cada noche, la renta de
@@ -56,11 +62,13 @@ from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
 from bot.repositories.housing import (
     DayRun,
+    Eviction,
     HousingError,
     HousingRepository,
     Market,
@@ -84,6 +92,7 @@ from bot.services.achievements import (
 from bot.services.economy import EconomyService, format_amount
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
+    BARRIO_NEWS_BY_KEY,
     BARRIOS,
     ISLANDS,
     KINDS,
@@ -120,6 +129,7 @@ BARRIO_COLS = 5
 MAX_OPTIONS = 25
 
 MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", "caja", "vpo"
+GESTION, CANDIDATOS = "gestion", "candidatos"
 #: La oferta de alquiler a un miembro caduca tras este rato.
 OFFER_TIMEOUT = 30 * 60
 #: Lo que le pasa a un miembro y no al inmueble: sus logros van solo a él, no a los dueños.
@@ -203,6 +213,19 @@ def promotion_embed(listing: Listing, index: float, builder: str) -> discord.Emb
     )
     embed.set_footer(text="Obra nueva de la rama Ladrillo de pala: una por barrio, cada lunes.")
     return embed
+
+
+def news_embed(items: list[tuple[str, str]]) -> discord.Embed:
+    """Las noticias de barrio del lunes: una línea por barrio, con lo que cambia esta semana."""
+    lines = []
+    for barrio, key in items:
+        news = BARRIO_NEWS_BY_KEY[key]
+        lines.append(f"**{BARRIO_BY_KEY[barrio].name}:** {news.title}. {news.blurb}")
+    return discord.Embed(
+        title="📰 Noticias de barrio",
+        description="\n".join(lines),
+        color=discord.Color.dark_gold(),
+    ).set_footer(text="Durante una semana cambian la demanda, el impago o las averías allí.")
 
 
 def ecb_embed(before: float, after: float, week: date) -> discord.Embed:
@@ -409,12 +432,17 @@ class Panel(ui.View):
     ) -> dict[str, Any]:
         market, me = self.market, self.owner.id
         names = self._names(market)
+        today = self.cog.service.today()
         if screen == BARRIO:
-            return view.barrio_state(market, barrio or self.barrio, me, names)
+            return view.barrio_state(market, barrio or self.barrio, me, names, today)
         if screen == FICHA:
             key = listing or self.listing
             news = await self.cog.service.news(self.guild.id, (key,), 4)
-            return view.listing_state(market, key, me, names, news)
+            return view.listing_state(market, key, me, names, news, today)
+        if screen == GESTION:
+            return view.gestion_state(market, listing or self.listing, me, names, today)
+        if screen == CANDIDATOS:
+            return view.candidates_state(market, listing or self.listing, today)
         if screen == CARTERA:
             mine = tuple(h.listing for h in market.of_member(me))
             news = await self.cog.service.news(self.guild.id, mine, 6)
@@ -425,13 +453,13 @@ class Panel(ui.View):
                 income = await self.cog.service.work_income(self.guild.id, me)
                 effort = rules.effort(market.leases[home[1]].rent, income)
             return view.portfolio_state(
-                market, me, self.owner.display_name, self.cash, week, news, names, effort
+                market, me, self.owner.display_name, self.cash, week, news, names, effort, today
             )
         if screen == CAJA:
             return self._checkout_state()
         if screen == VPO:
             return await self._vpo_state()
-        return view.map_state(market, me, self.owner.display_name, self.cash)
+        return view.map_state(market, me, self.owner.display_name, self.cash, today)
 
     async def _vpo_state(self) -> dict[str, Any]:
         market, me = self.market, self.owner.id
@@ -564,7 +592,18 @@ class Panel(ui.View):
             return [*fichas, (MAPA, {}), (CARTERA, {})]
         if self.screen == FICHA:
             barrio = self._at(self.listing).barrio
-            return [(BARRIO, {"barrio": barrio}), (CARTERA, {}), (MAPA, {})]
+            mine = me in self.market.shares_of(self.listing)
+            extra = [(GESTION, {"listing": self.listing})] if mine else []
+            return [*extra, (BARRIO, {"barrio": barrio}), (CARTERA, {}), (MAPA, {})]
+        if self.screen == GESTION:
+            return [
+                (CANDIDATOS, {"listing": self.listing}),
+                (FICHA, {"listing": self.listing}),
+                (CARTERA, {}),
+                (MAPA, {}),
+            ]
+        if self.screen == CANDIDATOS:
+            return [(GESTION, {"listing": self.listing}), (FICHA, {"listing": self.listing})]
         if self.screen == CARTERA:
             mine = self.market.of_member(me)[:6]
             return [(FICHA, {"listing": h.listing}) for h in mine] + [(MAPA, {}), (VPO, {})]
@@ -725,6 +764,10 @@ class Panel(ui.View):
             self._portfolio_buttons()
         elif self.screen == VPO:
             self._vpo_buttons()
+        elif self.screen == GESTION:
+            self._gestion_buttons()
+        elif self.screen == CANDIDATOS:
+            self._candidate_buttons()
         else:
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=1)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=1)
@@ -855,7 +898,61 @@ class Panel(ui.View):
         self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+        if mine:
+            waiting = len(self.market.candidates_of(key, self.cog.service.today()))
+            label = f"🧰 Gestionar ({waiting} 👥)" if waiting else "🧰 Gestionar"
+            self._button(label, "gestion", self._go_gestion, row=3,
+                         style=discord.ButtonStyle.primary)  # fmt: skip
         self._owner_buttons()
+
+    def _gestion_buttons(self) -> None:
+        """🧰 Gestionar: quién elige al inquilino, el seguro y los candidatos."""
+        key, me, market = self.listing, self.owner.id, self.market
+        listing = self._at(key)
+        lease = market.leases.get(key)
+        boss = rules.manager(market.shares_of(key)) == me
+        if boss and lease is not None:
+            if lease.pick == rules.PICK_SELF:
+                self._button("🤖 Que elija la gestora", "elegir", self._toggle_pick, row=1)
+            else:
+                self._button(
+                    "✋ Elegir yo al inquilino", "elegir", self._toggle_pick, row=1,
+                    style=discord.ButtonStyle.success,
+                )  # fmt: skip
+            if listing.kind in rules.HOME_KINDS:
+                if lease.insured:
+                    self._confirmable("🛡️ Quitar el seguro", "seguro", self._toggle_insurance, row=1)
+                else:
+                    self._confirmable(
+                        "🛡️ Contratar seguro de impago", "seguro", self._toggle_insurance, row=1
+                    )
+        if lease is not None and lease.pick == rules.PICK_SELF:
+            waiting = len(market.candidates_of(key, self.cog.service.today()))
+            self._button(
+                f"👥 Candidatos ({waiting})", "candidatos", self._go_candidates, row=1,
+                style=discord.ButtonStyle.primary, disabled=not waiting,
+            )  # fmt: skip
+        self._button("◀ La ficha", "ficha", self._back_to_listing, row=2)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+
+    def _candidate_buttons(self) -> None:
+        """👥 Candidatos: firmar con uno o descartarlo (lo decide quien tiene la mayoría)."""
+        key, me, market = self.listing, self.owner.id, self.market
+        boss = rules.manager(market.shares_of(key)) == me
+        waiting = market.candidates_of(key, self.cog.service.today())
+        for slot, _tenant in enumerate(waiting, start=1):
+            self._button(
+                f"✍️ Firmar con el {slot}", f"firmar:{slot}", self._sign, row=1,
+                style=discord.ButtonStyle.success, disabled=not boss,
+            )  # fmt: skip
+            self._button(
+                f"✖️ Descartar al {slot}", f"descartar:{slot}", self._discard, row=2,
+                disabled=not boss,
+            )  # fmt: skip
+        self._button("◀ Gestionar", "gestion", self._go_gestion, row=3)
+        self._button("🏠 La ficha", "ficha", self._back_to_listing, row=3)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
 
     def _caja_buttons(self) -> None:
         if self.done is not None:
@@ -952,6 +1049,16 @@ class Panel(ui.View):
 
     async def _go_vpo(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, VPO)
+
+    async def _go_gestion(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, GESTION)
+
+    async def _go_candidates(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, CANDIDATOS)
+        logros.note(
+            self.cog.bot, self.guild.id, self.owner.id, housing_panel_stats(screen="candidatos"),
+            getattr(interaction.channel, "id", None),
+        )  # fmt: skip
 
     async def _arm(self, interaction: discord.Interaction) -> None:
         """Primer clic de un botón que pide confirmar: solo cambia los botones (memoria)."""
@@ -1344,20 +1451,145 @@ class Panel(ui.View):
         )
 
     async def _evict(self, interaction: discord.Interaction) -> None:
+        """Pide el desahucio: paga el abogado y el procurador (salvo que cubra el seguro)."""
+
+        async def run() -> tuple[Eviction, int]:
+            return await self.cog.service.evict(self.guild.id, self.owner.id, self.listing)
+
+        fee = rules.eviction_fee(
+            self.market.leases.get(self.listing, rules.Lease()).rent
+            or rules.reference_rent(
+                self._at(self.listing), self.market.index(self._at(self.listing).barrio)
+            )
+        )
+        broke = (
+            f"No te llega para el abogado y el procurador ({format_amount(fee)} más IGIC). Sin "
+            "ellos el juzgado no admite la demanda."
+        )
+        result = await self._money(interaction, run, broke=broke)
+        if result is None:
+            return
+        eviction, _balance = result
+        await self._done(interaction, Event.HOME, None)
+        if eviction.fee:
+            await notify(
+                interaction,
+                f"⚖️ Demanda presentada: abogado y procurador {format_amount(eviction.fee)} y "
+                f"{format_amount(eviction.fee_igic)} de IGIC. El juicio, el "
+                f"{eviction.lease.eviction_at:%d/%m}.",
+            )
+        elif eviction.insured:
+            await notify(
+                interaction,
+                f"⚖️ Demanda presentada: el abogado lo paga el seguro de impago. El juicio, el "
+                f"{eviction.lease.eviction_at:%d/%m}.",
+            )
+        delta = housing_panel_stats(screen="desahucio", squatters=eviction.squatters)
+        delta.merge(housing_action_stats("desahucio", fee=eviction.fee + eviction.fee_igic))
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel, delta)
+
+    async def _toggle_pick(self, interaction: discord.Interaction) -> None:
+        """Cambia quién elige al inquilino: la gestora o el dueño. No mueve dinero."""
         await ack(interaction)
+        lease = self.market.leases.get(self.listing, rules.Lease())
+        pick = rules.PICK_AGENCY if lease.pick == rules.PICK_SELF else rules.PICK_SELF
         try:
-            lease = await self.cog.service.evict(self.guild.id, self.owner.id, self.listing)
+            await self.cog.service.set_pick(self.guild.id, self.owner.id, self.listing, pick)
         except HousingError as error:
             await notify(interaction, str(error))
             return
         await self.show(interaction)
-        await logros.track(
-            self.cog.bot,
-            self.guild.id,
-            self.owner,
-            interaction.channel,
-            housing_panel_stats(screen="desahucio", squatters=lease.unpaid == 0),
+        if pick == rules.PICK_SELF:
+            await notify(
+                interaction,
+                "✋ Desde esta noche, cuando el piso esté vacío llegarán candidatos (hasta tres; "
+                f"cada uno espera {rules.CANDIDATE_DAYS} días). Si no eliges, el piso sigue vacío.",
+            )
+            await logros.track(
+                self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                housing_action_stats("elige_inquilino"),
+            )  # fmt: skip
+
+    async def _toggle_insurance(self, interaction: discord.Interaction) -> None:
+        """Contrata o quita el seguro de impago (la prima se paga cada noche)."""
+        await ack(interaction)
+        self.confirm = None
+        lease = self.market.leases.get(self.listing, rules.Lease())
+        on = not lease.insured
+        try:
+            await self.cog.service.set_insurance(self.guild.id, self.owner.id, self.listing, on)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        if on:
+            await logros.track(
+                self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                housing_action_stats("seguro"),
+            )  # fmt: skip
+
+    def _slot_tenant(self, interaction: discord.Interaction) -> str | None:
+        """El candidato del botón pulsado (`firmar:2` → el segundo que espera)."""
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        slot = custom_id.rsplit(":", 1)[-1]
+        waiting = self.market.candidates_of(self.listing, self.cog.service.today())
+        if not slot.isdigit() or not 1 <= int(slot) <= len(waiting):
+            return None
+        return waiting[int(slot) - 1]
+
+    async def _sign(self, interaction: discord.Interaction) -> None:
+        """Firma con un candidato. No mueve dinero: la renta llega con el cierre de la noche."""
+        tenant = self._slot_tenant(interaction)
+        await ack(interaction)
+        if tenant is None:
+            return
+        try:
+            signing = await self.cog.service.sign_candidate(
+                self.guild.id, self.owner.id, self.listing, tenant
+            )
+        except HousingError as error:
+            await notify(interaction, str(error))
+            await self.show(interaction)
+            return
+        self.screen = FICHA
+        line = await mascotas.cameo(self.cog.bot, self.guild.id, self.owner.id, Moment(Event.HOME))
+        await self.show(interaction, content=line)
+        person = TENANT_BY_KEY[tenant]
+        reduction = signing.lease.reduction or 0
+        await notify(
+            interaction,
+            f"✍️ {person.emoji} **{person.name}** firma por {format_amount(signing.lease.rent)} al "
+            f"mes: «{person.line}»"
+            + (f" Reducción del {round(reduction * 100)} % en el IRPF." if reduction else ""),
         )
+        await logros.track(
+            self.cog.bot, self.guild.id, self.owner, interaction.channel,
+            housing_action_stats(
+                "firma_candidato", tenant=tenant, risk=signing.risk,
+                young=reduction == rules.YOUNG_RENT_REDUCTION,
+            ),
+        )  # fmt: skip
+
+    async def _discard(self, interaction: discord.Interaction) -> None:
+        """Descarta a un candidato."""
+        tenant = self._slot_tenant(interaction)
+        await ack(interaction)
+        if tenant is None:
+            return
+        try:
+            await self.cog.service.discard_candidate(
+                self.guild.id, self.owner.id, self.listing, tenant
+            )
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        if not self.market.candidates_of(self.listing, self.cog.service.today())[1:]:
+            self.screen = GESTION
+        await self.show(interaction)
+        logros.note(
+            self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("descarta"),
+            getattr(interaction.channel, "id", None),
+        )  # fmt: skip
 
 
 class TenantOffer(ui.View):
@@ -1579,10 +1811,13 @@ class Pisos(commands.Cog):
         for run in runs:
             if run.euribor is not None:
                 await self._announce_ecb(guild_id, run.day, *run.euribor)
+            if run.barrio_news:
+                await self._announce_news(guild_id, run.barrio_news)
             for builder, key in run.promotions:
                 await self._announce_promotion(guild_id, builder, key)
                 logros.note(self.bot, guild_id, builder, StatDelta(add={"pisos_promotions": 1}))
             events: dict[int, list[str]] = {}
+            signed: dict[int, list[str]] = {}
             for item in run.news:
                 if item.kind in PERSONAL_EVENTS:
                     who: tuple[int, ...] = (item.user_id,) if item.user_id is not None else ()
@@ -1594,12 +1829,28 @@ class Pisos(commands.Cog):
                     events.setdefault(member, []).append(item.kind)
                     if business:
                         events[member].append("firma_negocio")
+                    if item.kind == "firma" and tenant is not None:
+                        signed.setdefault(member, []).append(tenant.key)
+            young: dict[int, int] = {}
+            for key in run.young:
+                for member in run.owners.get(key, ()):
+                    young[member] = young.get(member, 0) + 1
+            news: dict[int, list[str]] = {}
+            market = await self.service.market(guild_id) if run.barrio_news else Market()
+            for barrio, key in run.barrio_news:
+                owners = {
+                    m for item in market.listings_of(barrio) for m in market.shares_of(item.key)
+                }
+                for member in owners:
+                    news.setdefault(member, []).append(key)
+                    events.setdefault(member, []).append("noticia")
             for member in set(run.mortgage_unpaid):
                 events.setdefault(member, []).append("cuota_impagada")
             for member in run.aval_executions:
                 await curro.parents_lose_home(self.bot, guild_id, member)
                 events.setdefault(member, []).append("ejecucion_aval")
-            for member in set(run.members) | set(events) | set(run.bono) | set(run.installments):
+            everyone = set(run.members) | set(events) | set(run.bono) | set(run.installments)
+            for member in everyone | set(run.insurer) | set(run.bonus):
                 day = run.members.get(member)
                 logros.note(
                     self.bot,
@@ -1611,6 +1862,11 @@ class Pisos(commands.Cog):
                         events=tuple(events.get(member, ())),
                         bono=run.bono.get(member, 0),
                         installments=run.installments.get(member, 0),
+                        insurer=run.insurer.get(member, 0),
+                        bonus=run.bonus.get(member, 0),
+                        tenants=tuple(signed.get(member, ())),
+                        news=tuple(news.get(member, ())),
+                        young=young.get(member, 0),
                     ),
                 )
         return runs
@@ -1643,6 +1899,35 @@ class Pisos(commands.Cog):
             )
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo anunciar el Euríbor en %s", guild_id, exc_info=True)
+
+    async def _announce_news(self, guild_id: int, items: list[tuple[str, str]]) -> None:
+        """Publica las noticias de barrio del lunes si en el servidor alguien tiene pisos.
+
+        Nunca lanza.
+        """
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return
+        try:
+            market = await self.service.market(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo leer el mercado para las noticias de barrio")
+            return
+        if not market.holdings:
+            return
+        channel = (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+        if channel is None:
+            return
+        try:
+            await channel.send(
+                embed=news_embed(items), allowed_mentions=discord.AllowedMentions.none()
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning("No se pudieron anunciar las noticias de barrio en %s", guild_id,
+                           exc_info=True)  # fmt: skip
 
     async def _announce_promotion(self, guild_id: int, builder: int, key: str) -> None:
         """Publica la obra nueva del lunes con su promotor. Nunca lanza."""

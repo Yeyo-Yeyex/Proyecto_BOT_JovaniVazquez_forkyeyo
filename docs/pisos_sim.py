@@ -5,7 +5,8 @@ Simula cada inmueble del catálogo durante `DAYS` días (meses del juego) con
 dueño que solo tiene ese piso, y saca la renta neta media al día (después de vacíos,
 imprevistos, IBI, comunidad, seguro e IRPF) y los días que tarda en pagar lo que costó
 (precio, ITP y notaría). El IRPF es el de la declaración de cada semana
-(`taxes.week_tax`), como en el bot desde la 8.0.0.
+(`taxes.week_tax`), como en el bot desde la 8.0.0. Desde la 8.1.0 el seguro del hogar paga
+el impuesto de primas, las reparaciones su IGIC y cada desahucio el abogado y el procurador.
 
 Además dice cuánto dinero se crea de la nada si todo el servidor tiene alquilados los
 inmuebles más baratos, para compararlo con lo que pagan las nóminas de `pala` (Biblia,
@@ -64,11 +65,19 @@ def simulate(listing: Listing, seed: int) -> float:
     for offset in range(DAYS):
         day = start + timedelta(days=offset)
         out = housing.advance_day(listing, lease, day, 1.0, rng)
+        taxes = round(out.costs.insurance * housing.IPS_RATE) + round(
+            housing.repairs_of(out.events) * housing.SERVICES_IGIC
+        )
         payout = housing.settle_day(out.rent, out.costs, out.extra, lease.arrears,
-                                    lease.arrears_ibi)  # fmt: skip
+                                    lease.arrears_ibi, taxes=taxes)  # fmt: skip
         lease = replace(out.lease, arrears=payout.arrears, arrears_ibi=payout.arrears_ibi)
+        evicting = lease.status == housing.EVICTING
         lease = _evict(lease, day, rng)
-        gross = payout.net + payout.ibi + payout.costs
+        if lease.status == housing.EVICTING and not evicting:
+            # Abogado y procurador (sin seguro de impago), con su IGIC: un gasto deducible.
+            fee = housing.eviction_fee(lease.rent or housing.reference_rent(listing))
+            total -= fee + round(fee * housing.SERVICES_IGIC)
+        gross = payout.net + payout.ibi + payout.costs + payout.taxes
         week = week.merged(
             PropertyWeek(
                 ref=listing.key,

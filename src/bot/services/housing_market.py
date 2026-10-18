@@ -1,4 +1,4 @@
-"""Casos de uso de `pisos`: comprar, vender, cambiar la renta, desahuciar y cerrar los días.
+"""Casos de uso de `pisos`: comprar, vender, la renta, el inquilino, desahuciar y cerrar los días.
 
 Junta las reglas (`bot.services.housing`), la persistencia
 (`bot.repositories.housing`) y el dinero (`EconomyService.housing`). No sabe nada de
@@ -16,6 +16,7 @@ from datetime import date, timedelta
 
 from bot.repositories.housing import (
     DayRun,
+    Eviction,
     HousingError,
     HousingRepository,
     Market,
@@ -23,6 +24,7 @@ from bot.repositories.housing import (
     News,
     Purchase,
     Sale,
+    Signing,
     TenantDeal,
     VpoDeal,
 )
@@ -265,10 +267,36 @@ class HousingService:
         """Cambia la renta que pide un inmueble (para el próximo contrato)."""
         return await self.repository.set_level(guild_id, user_id, key, level)
 
-    async def evict(self, guild_id: int, user_id: int, key: str) -> Lease:
-        """Pide el desahucio de quien no paga o de los okupas."""
+    async def evict(self, guild_id: int, user_id: int, key: str) -> tuple[Eviction, int]:
+        """Pide el desahucio de quien no paga o de los okupas. Devuelve `(desahucio, saldo)`.
+
+        Raises:
+            HousingError: Si no le toca o no hay a quién desahuciar.
+            InsufficientFundsError: Si no le llega para el abogado y el procurador.
+        """
         now = self._clock()
-        return await self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
+        run = self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
+        eviction, balances = await self.economy.housing(guild_id, run)
+        return eviction, balances.get(user_id, await self.economy.balance(guild_id, user_id))
+
+    async def set_pick(self, guild_id: int, user_id: int, key: str, pick: str) -> Lease:
+        """Cambia quién elige al próximo inquilino (`housing.PICK_AGENCY` o `PICK_SELF`)."""
+        return await self.repository.set_pick(guild_id, user_id, key, pick)
+
+    async def set_insurance(self, guild_id: int, user_id: int, key: str, on: bool) -> Lease:
+        """Contrata o da de baja el seguro de impago de un inmueble."""
+        return await self.repository.set_insurance(guild_id, user_id, key, on)
+
+    async def sign_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> Signing:
+        """Firma con uno de los candidatos que esperan en un piso."""
+        now = self._clock()
+        return await self.repository.sign_candidate(
+            guild_id, user_id, key, tenant, local_day(now), now
+        )
+
+    async def discard_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> None:
+        """Descarta a un candidato."""
+        await self.repository.discard_candidate(guild_id, user_id, key, tenant)
 
     async def close_days(
         self,

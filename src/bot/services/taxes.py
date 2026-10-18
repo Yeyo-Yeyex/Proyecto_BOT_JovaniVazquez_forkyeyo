@@ -229,6 +229,10 @@ class PropertyWeek:
         upkeep: Reparaciones y seguro de una vivienda alquilada (ya dentro de `finance` y
             `costs`): la base de la deducción canaria del casero (art. 15 ter del Decreto
             Legislativo 1/2009).
+        premium: Primas del seguro de impago con su impuesto, si la renta no pasa de 800 €
+            al mes: la base de la del art. 15 quater (ya dentro de `costs`).
+        bonus: La deducción por alquilar una vivienda vacía (art. 16), en Y$, la semana en
+            que se aplica (una vez por inmueble).
     """
 
     ref: str
@@ -238,6 +242,8 @@ class PropertyWeek:
     reduction: float = 0.0
     carry: int = 0
     upkeep: int = 0
+    premium: int = 0
+    bonus: int = 0
 
     def merged(self, other: PropertyWeek) -> PropertyWeek:
         """Suma dos tramos del mismo inmueble; la reducción, ponderada por la renta."""
@@ -254,6 +260,8 @@ class PropertyWeek:
             reduction=reduction,
             carry=max(self.carry, other.carry),
             upkeep=self.upkeep + other.upkeep,
+            premium=self.premium + other.premium,
+            bonus=self.bonus + other.bonus,
         )
 
     def settle(self) -> PropertySettlement:
@@ -635,8 +643,14 @@ def home_deduction(invested: int, *, income: int, regional: int) -> int:
 #   menores de 40 y los mayores de 75.
 # - Casero (art. 15 ter): el 10 % de lo que se gasta en una vivienda alquilada en
 #   reparaciones, conservación y seguros, hasta 150 € por inmueble y año.
+# - Casero con seguro de impago (art. 15 quater): el 75 % de las primas, hasta 150 € al
+#   año, si la renta no pasa de 800 € al mes. Incompatible con la 15 ter en el mismo
+#   inmueble.
+# - Casero que alquila una vivienda vacía (art. 16): 1.000 € por inmueble, una sola vez y
+#   como mucho en 5 (lo controla `pisos`, que lo apunta en `PropertyWeek.bonus`).
 #
-# Todas las autonómicas juntas no pasan de la cuota íntegra autonómica (art. 18).
+# No se puede aplicar más de una deducción del casero sobre el mismo inmueble (art. 18):
+# se aplica la mayor. Todas las autonómicas juntas no pasan de la cuota íntegra autonómica.
 
 TENANT_DEDUCTION_RATE = 0.24
 TENANT_DEDUCTION_MAX_EUR = 740.0
@@ -644,6 +658,12 @@ TENANT_INCOME_MAX_EUR = 46_455.0
 TENANT_RENT_SHARE = 0.10
 LANDLORD_DEDUCTION_RATE = 0.10
 LANDLORD_DEDUCTION_MAX_EUR = 150.0
+INSURANCE_DEDUCTION_RATE = 0.75
+INSURANCE_DEDUCTION_MAX_EUR = 150.0
+#: Renta mensual máxima para la del seguro de impago: 800 € a la escala de los precios.
+INSURANCE_DEDUCTION_RENT_MAX = 800 * YAPDOLLARS_PER_EURO
+VACANT_RENTAL_DEDUCTION_EUR = 1_000.0
+VACANT_RENTAL_DEDUCTION_MAX = 5
 
 
 def tenant_deduction(rent_paid: int, *, income: int) -> int:
@@ -661,9 +681,26 @@ def tenant_deduction(rent_paid: int, *, income: int) -> int:
 
 
 def landlord_deduction(properties: tuple[PropertyWeek, ...]) -> int:
-    """Deducción canaria del casero por reparaciones y seguros de una semana (art. 15 ter)."""
-    cap = round(weekly_yd(LANDLORD_DEDUCTION_MAX_EUR))
-    return sum(min(round(p.upkeep * LANDLORD_DEDUCTION_RATE), cap) for p in properties)
+    """Deducciones canarias del casero de una semana: la mayor de cada inmueble (art. 18).
+
+    Por inmueble, la mayor entre la de reparaciones y seguros (art. 15 ter), la del seguro de
+    impago (art. 15 quater) y la de alquilar una vivienda vacía (art. 16).
+    """
+    upkeep_cap = round(weekly_yd(LANDLORD_DEDUCTION_MAX_EUR))
+    premium_cap = round(weekly_yd(INSURANCE_DEDUCTION_MAX_EUR))
+    return sum(
+        max(
+            min(round(p.upkeep * LANDLORD_DEDUCTION_RATE), upkeep_cap),
+            min(round(p.premium * INSURANCE_DEDUCTION_RATE), premium_cap),
+            max(0, p.bonus),
+        )
+        for p in properties
+    )
+
+
+def vacant_rental_deduction(shares: int, total: int = 100) -> int:
+    """La deducción del art. 16 de un copropietario, en Y$: la parte de sus participaciones."""
+    return round(weekly_yd(VACANT_RENTAL_DEDUCTION_EUR) * shares / total)
 
 
 @dataclass(frozen=True, slots=True)

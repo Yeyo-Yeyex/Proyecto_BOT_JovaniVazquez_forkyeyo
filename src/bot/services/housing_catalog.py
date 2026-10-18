@@ -2291,7 +2291,12 @@ DEFAULT_RENT_LEVEL = "referencia"
 
 @dataclass(frozen=True, slots=True)
 class Tenant:
-    """Un inquilino ficticio: quién vive en tu piso.
+    """Un inquilino ficticio: quién vive en tu piso (o qué negocio ocupa tu local).
+
+    Los multiplicadores son relativos: la gestora elige al azar entre los que encajan y
+    `bot.services.housing.tenant_factors` los divide por la media de los que podían
+    salir con esa renta y ese tipo de inmueble. Así la media de la gestora deja el
+    impago, las marchas y las averías como estaban: quien elige al inquilino gana algo.
 
     Attributes:
         key: Clave estable.
@@ -2301,6 +2306,17 @@ class Tenant:
         kinds: Si no está vacío, solo alquila estos tipos de inmueble. Los negocios
             (`BUSINESS_KINDS`) solo los alquila quien los lleva en `kinds`, y una persona
             (sin `kinds`) no se mete a vivir en un local, una nave o un amarre.
+        age: Años (0 en un negocio o un grupo de turistas). De 18 a 35 da la reducción
+            del 70 % en zona tensionada si el piso se alquila por primera vez (art. 23.2
+            LIRPF).
+        risk: Lo que multiplica la probabilidad de dejar de pagar.
+        stay: Lo que multiplica la de irse antes y la de no renovar.
+        wear: Lo que multiplica las averías y las humedades (niños, perro, fiestas).
+        traits: Rasgos que se ven en su tarjeta de candidato.
+        renew: Lo que dice al renovar.
+        leave: Lo que dice al irse.
+        unpaid: Lo que dice cuando deja de pagar.
+        complaint: Lo que dice cuando algo se rompe.
     """
 
     key: str
@@ -2309,6 +2325,15 @@ class Tenant:
     levels: tuple[str, ...]
     line: str
     kinds: frozenset[str] = frozenset()
+    age: int = 0
+    risk: float = 1.0
+    stay: float = 1.0
+    wear: float = 1.0
+    traits: tuple[str, ...] = ()
+    renew: str = ""
+    leave: str = ""
+    unpaid: str = ""
+    complaint: str = ""
 
     def rents(self, level: str, kind: str) -> bool:
         """Si firmaría un contrato de `level` en un inmueble de tipo `kind`."""
@@ -2319,193 +2344,521 @@ class Tenant:
         return kind not in BUSINESS_KINDS
 
 
+_SOCIAL_REF = ("social", "referencia")
+_LOW_MID = ("social", "referencia", "mercado")
+_MID = ("referencia", "mercado")
+_NOMAD = ("mercado", "nomadas")
+
 TENANTS: tuple[Tenant, ...] = (
+    # -- Personas: vivienda habitual ----------------------------------------------------
     Tenant(
-        "enfermeros",
-        "Pareja de enfermeros",
-        "🩺",
-        ("social", "referencia", "mercado"),
+        "enfermeros", "Pareja de enfermeros", "🩺", _LOW_MID,
         "Pagamos el 60 % del sueldo, pero por lo menos no vivimos con mis suegros.",
+        age=31, risk=0.6, stay=0.9, wear=0.9, traits=("Dos nóminas", "Turnos de noche"),
+        renew="Renovamos. Mudarse con turnos de noche no lo aguanta nadie.",
+        leave="Nos han dado plaza en otra isla. Gracias por todo.",
+        unpaid="Nos han pagado tarde las guardias. En cuanto entren, te pagamos.",
+        complaint="Se ha roto el termo justo al salir de una guardia de doce horas.",
     ),
     Tenant(
-        "familia",
-        "Familia con dos niños",
-        "👨‍👩‍👧‍👦",
-        ("social", "referencia"),
+        "familia", "Familia con dos niños", "👨‍👩‍👧‍👦", _SOCIAL_REF,
         "¿El colegio está cerca? Da igual, firmamos ya antes de que lo coja otro.",
+        age=38, risk=1.0, stay=0.6, wear=1.5, traits=("Dos niños", "Buscan colegio cerca"),
+        renew="Los niños ya tienen amigos en el barrio: nos quedamos.",
+        leave="Viene el tercero y aquí ya no cabemos.",
+        unpaid="Septiembre: libros, uniformes y la renta. Algo no llega.",
+        complaint="Los niños han descubierto que el bidé hace de fuente.",
     ),
     Tenant(
-        "opositor",
-        "Opositor a notarías",
-        "📚",
-        ("social", "referencia"),
+        "opositor", "Opositor a notarías", "📚", _SOCIAL_REF,
         "Pagan mis padres. Llevo siete años estudiando, el octavo es el bueno.",
+        age=29, risk=0.8, stay=0.7, wear=0.6, traits=("Pagan sus padres", "Siempre en casa"),
+        renew="Me quedo: aquí he memorizado medio Código Civil.",
+        leave="¡He aprobado! Me voy a una notaría en Soria.",
+        unpaid="Mis padres dicen que este mes me lo pague el temario.",
+        complaint="El vecino taladra justo cuando repaso Hipotecaria.",
     ),
     Tenant(
-        "rider",
-        "Rider con contrato",
-        "🛵",
-        ("social", "referencia"),
+        "rider", "Rider con contrato", "🛵", _SOCIAL_REF,
         "Con la Ley Rider ya tengo nómina. Bueno, media nómina.",
+        age=26, risk=1.6, stay=1.3, wear=1.0, traits=("Contrato temporal", "Media jornada"),
+        renew="Renuevo. Total, el reparto no me deja tiempo ni para mudarme.",
+        leave="Me voy a repartir a Madrid, que allí piden más.",
+        unpaid="La aplicación me ha bajado las horas. Te pago cuando haya más pedidos.",
+        complaint="Se ha roto la cerradura y tengo la moto dentro del salón.",
     ),
     Tenant(
-        "profesora",
-        "Profesora interina",
-        "🍎",
-        ("social", "referencia", "mercado"),
+        "profesora", "Profesora interina", "🍎", _LOW_MID,
         "Este año me tocó esta isla. El que viene, ya veremos.",
+        age=33, risk=0.8, stay=1.5, wear=0.8, traits=("Plaza en el aire", "Nómina fija"),
+        renew="Me han vuelto a dar esta isla. Renuevo antes de que cambien de idea.",
+        leave="Han salido las listas: me voy a Fuerteventura.",
+        unpaid="Las interinas cobramos tarde en septiembre. Ya llegará.",
+        complaint="Corrigiendo exámenes se me ha ido la luz. Otra vez.",
     ),
     Tenant(
-        "ingles",
-        "Jubilado inglés",
-        "🫖",
-        ("referencia", "mercado"),
-        "Lovely. I'll pay six months in advance, darling.",
+        "ingles", "Jubilado inglés", "🫖", _MID,
+        "Vine una semana en 1994 y aquí sigo. Pago seis meses por adelantado.",
+        age=71, risk=0.3, stay=0.5, wear=0.6, traits=("Paga por adelantado", "Pensión fija"),
+        renew="Otros cinco años, por favor. Aquí no llueve nunca.",
+        leave="Me vuelvo con mi hija: los nietos me reclaman.",
+        unpaid="El banco de allí ha bloqueado la transferencia. Ya lo arreglo.",
+        complaint="La tetera eléctrica ha hecho saltar los plomos.",
     ),
     Tenant(
-        "medico",
-        "Médica residente",
-        "🥼",
-        ("referencia", "mercado"),
+        "medico", "Médica residente", "🥼", _MID,
         "Con las guardias casi ni piso la casa, así que me vale cualquier cosa.",
+        age=28, risk=0.5, stay=1.2, wear=0.6, traits=("Nómina fija", "Guardias"),
+        renew="Me quedan dos años de residencia: renuevo.",
+        leave="Acabo la residencia y me voy de adjunta a otro hospital.",
+        unpaid="Me he despistado entre guardia y guardia. Mañana te pago.",
+        complaint="El aire acondicionado gotea encima de la cama.",
     ),
     Tenant(
-        "funcionario",
-        "Funcionario del Cabildo",
-        "🗂️",
-        ("referencia", "mercado"),
+        "funcionario", "Funcionario del Cabildo", "🗂️", _MID,
         "Plaza fija, nómina fija y siesta fija. El inquilino perfecto.",
+        age=45, risk=0.3, stay=0.6, wear=0.8, traits=("Plaza fija", "Nómina fija"),
+        renew="Renuevo, por supuesto. Por triplicado.",
+        leave="Me ha salido el traslado a la otra isla.",
+        unpaid="Ha habido un retraso administrativo. Ya sabe cómo va esto.",
+        complaint="He presentado una queja por registro: la persiana no baja.",
     ),
     Tenant(
-        "aleman",
-        "Teletrabajador alemán",
-        "💻",
-        ("mercado", "nomadas"),
-        "In Berlin I pay double. Ist sehr billig! ¿Tiene fibra?",
+        "cajera", "Cajera del supermercado", "🛒", _LOW_MID,
+        "Contrato indefinido y turno de mañana. Mejor que eso, solo el de tarde.",
+        age=32, risk=0.6, stay=0.8, wear=0.9, traits=("Contrato indefinido", "Nómina fija"),
+        renew="Renuevo. El súper está a cinco minutos andando.",
+        leave="Me voy a vivir con mi pareja. Te dejo el piso limpio.",
+        unpaid="Me han cambiado el día de cobro. La semana que viene te pago.",
+        complaint="Ha salido agua debajo del fregadero.",
     ),
     Tenant(
-        "influencer",
-        "Influencer de viajes",
-        "🤳",
-        ("nomadas",),
+        "guagua", "Conductor de guagua", "🚌", _SOCIAL_REF,
+        "Treinta años en la misma línea. Puntual con la renta, más que la guagua.",
+        age=47, risk=0.4, stay=0.6, wear=0.8, traits=("Plaza fija", "Madruga"),
+        renew="Renuevo. La parada está en la puerta: no me muevo de aquí.",
+        leave="Me jubilo y me vuelvo al pueblo.",
+        unpaid="Huelga de transporte: este mes cobramos menos.",
+        complaint="El termo hace un ruido como el motor de la 12.",
+    ),
+    Tenant(
+        "abuela", "Abuela con su pensión", "👵", _SOCIAL_REF,
+        "Llevo cincuenta años en el barrio. Al casero le hago potaje los domingos.",
+        age=79, risk=0.3, stay=0.4, wear=0.5, traits=("Pensión fija", "No se mueve del barrio"),
+        renew="¿Irme yo? De aquí no me saca nadie.",
+        leave="Me voy a vivir con mi hija. Le dejo la llave a la vecina.",
+        unpaid="Con lo que ha subido la luz, este mes no llego.",
+        complaint="La lavadora hace un ruido que no es normal.",
+    ),
+    Tenant(
+        "estudiantes", "Tres estudiantes compartiendo piso", "🎓", _LOW_MID,
+        "Somos tres y pagamos a medias. La limpieza, ya veremos.",
+        age=21, risk=1.2, stay=1.5, wear=1.7, traits=("Pagan sus padres", "Fiestas"),
+        renew="Nos quedamos otro curso. Bueno, dos, que hay asignaturas pendientes.",
+        leave="Acabamos la carrera: cada uno se vuelve a su casa.",
+        unpaid="Uno de los tres se ha ido sin pagar su parte.",
+        complaint="Se ha roto la puerta del baño. No preguntes cómo.",
+    ),
+    Tenant(
+        "camarero", "Camarero fijo discontinuo", "🍽️", _SOCIAL_REF,
+        "En temporada alta, ningún problema. En temporada baja, hablamos.",
+        age=27, risk=1.5, stay=1.3, wear=1.0, traits=("Fijo discontinuo", "Trabaja de noche"),
+        renew="Renuevo. El hotel me vuelve a llamar en noviembre.",
+        leave="Me han ofrecido la temporada en otra isla.",
+        unpaid="Temporada baja: el hotel ha cerrado hasta noviembre.",
+        complaint="Llego a las dos de la mañana y no hay agua caliente.",
+    ),
+    Tenant(
+        "policia", "Policía local recién destinado", "👮", _MID,
+        "Me han destinado aquí dos años. Luego, concurso de traslados.",
+        age=28, risk=0.4, stay=1.6, wear=0.8, traits=("Plaza fija", "Destino temporal"),
+        renew="Sigo destinado aquí. Renuevo.",
+        leave="Ha salido el concurso de traslados: vuelvo a mi isla.",
+        unpaid="Se me ha pasado. Ahora mismo lo pago, que no quiero líos.",
+        complaint="Han forzado la cerradura del portal. Lo he denunciado yo mismo.",
+    ),
+    Tenant(
+        "bombera", "Bombera del consorcio", "🚒", _MID,
+        "Si se quema algo, lo apago yo. Si se rompe, te aviso.",
+        age=36, risk=0.4, stay=0.7, wear=0.7, traits=("Plaza fija", "Turnos de 24 horas"),
+        renew="Renuevo. El parque está a diez minutos.",
+        leave="Me voy a una casa con jardín para el perro.",
+        unpaid="Un despiste con la transferencia. Ya está hecha.",
+        complaint="El enchufe de la cocina echa chispas. Por suerte, entiendo de esto.",
+    ),
+    Tenant(
+        "madre", "Madre con un hijo", "🧒", _SOCIAL_REF,
+        "Me hace falta un sitio cerca del colegio y del trabajo. Esto es las dos cosas.",
+        age=34, risk=1.0, stay=0.7, wear=1.2, traits=("Una nómina", "Un niño"),
+        renew="El niño está contento en el colegio: renovamos.",
+        leave="Me han ofrecido un trabajo mejor en el sur.",
+        unpaid="El padre no ha pagado la pensión este mes. En cuanto pague, te pago.",
+        complaint="Se ha roto la cisterna y no para de correr el agua.",
+    ),
+    Tenant(
+        "divorciado", "Recién divorciado", "💔", _LOW_MID,
+        "Me ha tocado el sofá y el perro. El piso, a ella.",
+        age=46, risk=1.3, stay=1.2, wear=1.2, traits=("Pensión de alimentos", "Con perro"),
+        renew="Renuevo. Ya me he acostumbrado a cocinar solo.",
+        leave="Hemos vuelto. Lo sé, lo sé.",
+        unpaid="Entre el abogado y la pensión de los niños, este mes no llego.",
+        complaint="El perro ha mordido la puerta. Lo pago yo, tranquilo.",
+    ),
+    Tenant(
+        "musico", "Músico de orquesta de verbenas", "🎺", _SOCIAL_REF,
+        "En verano no paro: fiestas del Pino, del Carmen y de lo que sea. En invierno, ensayo.",
+        age=41, risk=1.8, stay=1.0, wear=1.1, traits=("Autónomo", "Ensaya en casa"),
+        renew="Renuevo. Los vecinos ya se saben el repertorio.",
+        leave="Nos han contratado para una gira por Venezuela.",
+        unpaid="En invierno no hay verbenas. En junio te lo pago todo.",
+        complaint="Se ha ido la luz en mitad del ensayo.",
+    ),
+    Tenant(
+        "graduados", "Pareja de recién graduados", "🥂", _SOCIAL_REF,
+        "Primer piso sin compañeros. La nevera, por fin, es nuestra.",
+        age=25, risk=1.3, stay=1.2, wear=0.9,
+        traits=("Contrato en prácticas", "Dos sueldos pequeños"),
+        renew="Nos han hecho fijos a los dos: renovamos.",
+        leave="Nos vamos a Dublín, que allí pagan más.",
+        unpaid="Se han acabado las prácticas y el contrato nuevo no ha llegado.",
+        complaint="El horno no calienta. Lo hemos descubierto el día de la cena con los suegros.",
+    ),
+    Tenant(
+        "arquitectos", "Pareja de arquitectos", "📐", _MID,
+        "¿Esa pared es de carga? Lo digo por nada.",
+        age=34, risk=1.1, stay=0.9, wear=0.8, traits=("Autónomos", "Teletrabajan"),
+        renew="Renovamos. Ya hemos hecho los planos de cómo quedaría reformado.",
+        leave="Nos vamos a una casa que hemos diseñado nosotros. Tardaremos diez años.",
+        unpaid="El cliente no nos ha pagado el proyecto. Ya cobraremos.",
+        complaint="Hay humedades en el techo. Es la cubierta, te lo digo yo.",
+    ),
+    Tenant(
+        "futbolista", "Futbolista del filial", "⚽", _MID,
+        "Si subo al primer equipo, te compro el piso. Si no, me ceden a otro club.",
+        age=20, risk=0.9, stay=1.6, wear=1.2, traits=("Contrato federativo", "Lo paga el club"),
+        renew="Me han renovado en el club. Y yo te renuevo a ti.",
+        leave="Me ceden a un equipo de Segunda.",
+        unpaid="El club paga tarde este mes. Cosas del fútbol.",
+        complaint="La tele se ha caído celebrando un gol. Un gol mío, eso sí.",
+    ),
+    Tenant(
+        "abogada", "Abogada de un bufete", "⚖️", ("mercado",),
+        "He leído el contrato tres veces. La cláusula siete, mejor la hablamos.",
+        age=37, risk=0.5, stay=0.9, wear=0.7, traits=("Nómina alta", "Lee la letra pequeña"),
+        renew="Renuevo, con la cláusula siete corregida.",
+        leave="Me he comprado un ático. Con hipoteca, como todo el mundo.",
+        unpaid="No pago hasta que arregles la avería. Te lo mando por burofax.",
+        complaint="Te mando por burofax la lista de desperfectos.",
+    ),
+    Tenant(
+        "piloto", "Piloto de Binter", "✈️", ("mercado",),
+        "Duermo entre islas tres noches de cada cuatro. El piso estará impecable.",
+        age=39, risk=0.3, stay=0.8, wear=0.6, traits=("Nómina alta", "Casi nunca está"),
+        renew="Renuevo. Aterrizo, duermo y despego: no hay mejor inquilino.",
+        leave="Me han ascendido a comandante en otra base.",
+        unpaid="Se me ha pasado entre vuelo y vuelo. Pago al aterrizar.",
+        complaint="Vuelvo de tres días fuera y la nevera se ha apagado.",
+    ),
+    Tenant(
+        "directivo", "Directivo trasladado de Madrid", "💼", ("mercado",),
+        "Lo paga la empresa. Dos años de destino y vuelta a la Castellana.",
+        age=52, risk=0.2, stay=1.4, wear=0.7, traits=("Lo paga la empresa", "Destino temporal"),
+        renew="La empresa me alarga el destino: renuevo.",
+        leave="Fin del destino. Vuelvo a Madrid con muy buen color.",
+        unpaid="Recursos humanos ha cambiado de proveedor. Ya está solucionado.",
+        complaint="Mi asistente te llamará por lo del aire acondicionado.",
+    ),
+    Tenant(
+        "ingeniera", "Ingeniera de una startup", "👩‍💻", _NOMAD,
+        "Si sale bien la ronda de financiación, te pago un año por adelantado.",
+        age=30, risk=0.7, stay=1.4, wear=0.7, traits=("Teletrabaja", "Sueldo en acciones"),
+        renew="Ha salido la ronda: renuevo.",
+        leave="Nos ha comprado una empresa de Silicon Valley. Me mudo.",
+        unpaid="La startup ha cerrado. Me han pagado en acciones que no valen nada.",
+        complaint="Se ha caído la fibra en plena reunión con los inversores.",
+    ),
+    # -- Personas: temporada (nómadas digitales) ---------------------------------------
+    Tenant(
+        "aleman", "Teletrabajador alemán", "💻", _NOMAD,
+        "En Berlín pago el doble por la mitad de sol. ¿La fibra llega bien al balcón?",
+        age=34, risk=0.7, stay=1.2, wear=0.7, traits=("Teletrabaja", "Empresa extranjera"),
+        renew="Me quedo otra temporada. En casa ya están a dos grados.",
+        leave="Se acaba el invierno: vuelvo a casa hasta noviembre.",
+        unpaid="Mi banco no reconoce la cuenta. Ya lo arreglo.",
+        complaint="El wifi se corta cada vez que llueve. Aquí no llueve y se corta igual.",
+    ),
+    Tenant(
+        "influencer", "Influencer de viajes", "🤳", ("nomadas",),
         "¿Me haces precio si te etiqueto en las stories?",
+        age=24, risk=1.4, stay=1.4, wear=1.1, traits=("Ingresos variables", "Graba en casa"),
+        renew="Me quedo: el piso tiene muy buena luz para los vídeos.",
+        leave="Me ha salido una colaboración en Bali.",
+        unpaid="La marca no me ha pagado la campaña. Te pago en visibilidad.",
+        complaint="Se ha roto la persiana y no puedo grabar a contraluz.",
     ),
     Tenant(
-        "erasmus",
-        "Erasmus italiano",
-        "🍕",
-        ("mercado", "nomadas"),
-        "Mamma mia, che sole. Pagan mis padres, tranquilo.",
+        "erasmus", "Erasmus italiano", "🍕", _NOMAD,
+        "Vengo de Bolonia para un cuatrimestre. Pagan mis padres, tranquilo.",
+        age=22, risk=1.1, stay=1.3, wear=1.4, traits=("Pagan sus padres", "Fiestas"),
+        renew="Alargo la beca un cuatrimestre más.",
+        leave="Se acaba el Erasmus. Me llevo el gofio en la maleta.",
+        unpaid="Mis padres están de viaje y no miran el móvil.",
+        complaint="Hicimos una cena y la vitrocerámica no ha sobrevivido.",
     ),
     Tenant(
-        "cripto",
-        "Nómada cripto",
-        "🪙",
-        ("nomadas",),
+        "cripto", "Nómada cripto", "🪙", ("nomadas",),
         "¿Aceptas el pago en mi moneda? Mañana vale el doble, seguro.",
+        age=30, risk=1.9, stay=1.2, wear=1.0, traits=("Ingresos variables", "Teletrabaja"),
+        renew="Renuevo. Y te pago en euros, que la moneda ha bajado un poco.",
+        leave="Me voy a Dubái. Allí no se pagan impuestos, dicen.",
+        unpaid="Mi moneda ha caído un 90 %. Pero va a volver a subir.",
+        complaint="Se ha ido la luz y se me han apagado los ordenadores de minar.",
     ),
     Tenant(
-        "britanicos",
-        "Familia británica de vacaciones",
-        "☀️",
-        ("vacacional",),
-        "Lovely! Where is the full English breakfast?",
+        "disenadora", "Diseñadora freelance", "🎨", _NOMAD,
+        "Trabajo desde cualquier sitio con enchufe y buena luz. Esto tiene las dos.",
+        age=29, risk=1.2, stay=1.3, wear=0.8, traits=("Autónoma", "Teletrabaja"),
+        renew="Me quedo otra temporada: aquí me salen mejor los encargos.",
+        leave="Me voy a Lisboa a probar otro invierno.",
+        unpaid="Tengo tres facturas sin cobrar. Cuando paguen ellos, pago yo.",
+        complaint="La silla del escritorio se ha roto. Bueno, esa era mía.",
     ),
     Tenant(
-        "despedida",
-        "Despedida de soltero alemana",
-        "🍻",
-        ("vacacional",),
-        "Prost! ¿El balcón aguanta a ocho?",
+        "desarrollador", "Desarrollador de videojuegos", "🎮", _NOMAD,
+        "Necesito fibra simétrica. Lo demás me da igual: casi no salgo.",
+        age=27, risk=1.0, stay=1.1, wear=0.8, traits=("Teletrabaja", "Siempre en casa"),
+        renew="Renuevo. Me queda mucho para terminar el juego.",
+        leave="Hemos sacado el juego y me voy a celebrarlo a Japón.",
+        unpaid="Han retrasado la salida del juego y no cobro hasta entonces.",
+        complaint="Se ha cortado la fibra en mitad de una partida clasificatoria.",
     ),
     Tenant(
-        "nordicos",
-        "Pareja nórdica jubilada",
-        "🧓",
-        ("vacacional",),
+        "furgoneta", "Pareja de viajeros en furgoneta", "🚐", ("nomadas",),
+        "Se nos ha roto la furgoneta en Mogán, así que nos quedamos unos meses.",
+        age=31, risk=1.5, stay=1.6, wear=0.9, traits=("Ingresos variables", "Con perro"),
+        renew="El taller dice que la furgoneta tardará otra temporada.",
+        leave="Ya está arreglada la furgoneta. ¡Nos vamos!",
+        unpaid="Hemos gastado lo del alquiler en el motor nuevo.",
+        complaint="El perro ha descubierto que la puerta de la terraza se abre sola.",
+    ),
+    Tenant(
+        "escritor", "Escritor buscando inspiración", "✍️", _NOMAD,
+        "Vengo a terminar la novela. Llevo cuatro años con el primer capítulo.",
+        age=55, risk=1.0, stay=1.0, wear=0.6, traits=("Ingresos variables", "Siempre en casa"),
+        renew="Me quedo. Ya voy por el segundo capítulo.",
+        leave="He terminado la novela. Sales en el capítulo doce.",
+        unpaid="La editorial no ha pagado el adelanto.",
+        complaint="El vecino del tercero ensaya con la batería y no me deja escribir.",
+    ),
+    # -- Turistas (vivienda vacacional) -------------------------------------------------
+    Tenant(
+        "britanicos", "Familia británica de vacaciones", "☀️", ("vacacional",),
+        "¿La piscina tiene sombra? Los niños ya se han quemado en el aeropuerto.",
+        wear=1.3,
+    ),
+    Tenant(
+        "despedida", "Despedida de soltero", "🍻", ("vacacional",),
+        "Somos ocho y un novio. ¿El balcón aguanta?",
+        wear=2.0,
+    ),
+    Tenant(
+        "nordicos", "Pareja nórdica jubilada", "🧓", ("vacacional",),
         "Venimos de noviembre a marzo desde 1998. Nos quedamos con el piso.",
+        wear=0.5,
     ),
     Tenant(
-        "surferos",
-        "Grupo de surferos",
-        "🏄",
-        ("vacacional",),
+        "surferos", "Grupo de surferos", "🏄", ("vacacional",),
         "¿Hay sitio para seis tablas en el salón?",
+        wear=1.2,
     ),
-    # Negocios: alquilan locales, naves y amarres (7.22).
     Tenant(
-        "franquicia",
-        "Franquicia de cafeterías",
-        "☕",
-        ("referencia", "mercado"),
+        "senderistas", "Senderistas del Teide", "🥾", ("vacacional",),
+        "Salimos a las cinco de la mañana y volvemos reventados: ducha y cama.",
+        wear=0.7,
+    ),
+    Tenant(
+        "luna_miel", "Pareja de luna de miel", "💍", ("vacacional",),
+        "¿Hay vistas al mar? Se lo hemos prometido a su madre.",
+        wear=0.6,
+    ),
+    Tenant(
+        "ciclistas", "Equipo ciclista de pretemporada", "🚴", ("vacacional",),
+        "Venimos a entrenar en invierno, como los profesionales. ¿Dónde dejamos las bicis?",
+        wear=1.1,
+    ),
+    Tenant(
+        "buceo", "Grupo de buceo", "🤿", ("vacacional",),
+        "Los trajes de neopreno se secan en el balcón, si no le importa.",
+        wear=1.0,
+    ),
+    Tenant(
+        "amigas", "Viaje de amigas", "👯", ("vacacional",),
+        "Cinco amigas, siete días y un plan: no tener ningún plan.",
+        wear=1.0,
+    ),
+    Tenant(
+        "numerosa", "Familia numerosa de vacaciones", "🏖️", ("vacacional",),
+        "Somos cinco y la abuela. ¿El sofá cama es de verdad?",
+        wear=1.5,
+    ),
+    # -- Negocios: locales, naves y amarres (7.22 y fase 2 de la ampliación) -------------
+    Tenant(
+        "franquicia", "Franquicia de cafeterías", "☕", _MID,
         "Abrimos el local trescientos de la isla. Pagamos puntual y cerramos sin avisar.",
-        frozenset({"local"}),
+        frozenset({"local"}), risk=0.5, stay=1.3, wear=0.9, traits=("Cadena", "Paga puntual"),
+        renew="Renovamos el local. El de enfrente lo cerramos.",
+        leave="La central ha decidido cerrar el local. Sin explicaciones.",
+        unpaid="Los pagos salen de la central y este mes van con retraso.",
+        complaint="La cafetera industrial ha reventado la instalación.",
     ),
     Tenant(
-        "apuestas",
-        "Casa de apuestas",
-        "🎰",
-        ("mercado", "nomadas"),
+        "apuestas", "Casa de apuestas", "🎰", _NOMAD,
         "Pagamos el doble que cualquiera. No pregunte de dónde sale.",
-        frozenset({"local"}),
+        frozenset({"local"}), risk=0.7, stay=1.4, wear=1.1, traits=("Paga bien", "Mala fama"),
+        renew="Renovamos, aunque el Ayuntamiento quiera echarnos.",
+        leave="Nueva ordenanza: no podemos estar a menos de 500 metros del colegio.",
+        unpaid="La casa siempre gana, pero este mes ha perdido.",
+        complaint="Un cliente se ha enfadado con la máquina y la máquina ha perdido.",
     ),
     Tenant(
-        "coworking",
-        "Coworking con kombucha",
-        "🧋",
-        ("referencia", "mercado", "nomadas"),
+        "coworking", "Coworking con kombucha", "🧋", ("referencia", "mercado", "nomadas"),
         "Alquilamos mesas por horas a nómadas digitales. Como tú, pero con café.",
-        frozenset({"local", "nave"}),
+        frozenset({"local", "nave"}), risk=1.2, stay=1.2, wear=0.9,
+        traits=("Startup", "Ingresos variables"),
+        renew="Renovamos: tenemos lista de espera para las mesas de la ventana.",
+        leave="Pivotamos: ahora somos una plataforma, sin local.",
+        unpaid="Estamos esperando la siguiente ronda de financiación.",
+        complaint="El aire acondicionado no puede con cuarenta portátiles.",
     ),
     Tenant(
-        "ferreteria",
-        "Ferretería de toda la vida",
-        "🔩",
-        ("social", "referencia"),
+        "ferreteria", "Ferretería de toda la vida", "🔩", _SOCIAL_REF,
         "Llevamos sesenta años en el barrio. El contrato, que sea de los de antes.",
-        frozenset({"local"}),
+        frozenset({"local"}), risk=0.6, stay=0.5, wear=0.8,
+        traits=("Negocio familiar", "Sesenta años en el barrio"),
+        renew="Renovamos. Mi padre ya renovaba con el tuyo.",
+        leave="Nos jubilamos. Con nosotros cierra la última ferretería del barrio.",
+        unpaid="Con las grandes superficies cerca, este mes se ha vendido poco.",
+        complaint="La persiana metálica se ha atascado a media altura.",
     ),
     Tenant(
-        "taller",
-        "Taller mecánico",
-        "🔧",
-        ("social", "referencia", "mercado"),
+        "taller", "Taller mecánico", "🔧", _LOW_MID,
         "La ITV se la pasamos a cualquiera. Bueno, a casi cualquiera.",
-        frozenset({"nave", "local"}),
+        frozenset({"nave", "local"}), risk=1.0, stay=0.8, wear=1.6,
+        traits=("Autónomo", "Mucho trajín"),
+        renew="Renovamos. Ya tenemos clientes de tres generaciones.",
+        leave="Nos mudamos al polígono, que allí cabe la grúa.",
+        unpaid="Me deben tres reparaciones. Cuando las cobre, pago.",
+        complaint="Hay una mancha de aceite en el suelo. Lleva ahí desde 1990.",
     ),
     Tenant(
-        "logistica",
-        "Almacén de reparto de una multinacional",
-        "📦",
+        "logistica", "Almacén de reparto de una multinacional", "📦",
         ("referencia", "mercado", "nomadas"),
         "Necesitamos la nave para ayer. Los impuestos los pagamos en Irlanda.",
-        frozenset({"nave"}),
+        frozenset({"nave"}), risk=0.4, stay=1.3, wear=1.3,
+        traits=("Multinacional", "Mucho tráfico de furgonetas"),
+        renew="Renovamos. Nos sale más barato que construir.",
+        leave="Hemos automatizado el reparto: nos vamos a una nave más grande.",
+        unpaid="El pago está en revisión en la sede europea.",
+        complaint="Una carretilla ha chocado con una columna. Mandamos un perito.",
     ),
     Tenant(
-        "pescador",
-        "Pescador artesanal",
-        "🎣",
-        ("social", "referencia"),
+        "pescador", "Pescador artesanal", "🎣", _SOCIAL_REF,
         "La barquilla es de mi abuelo. La cuota de pesca, de Bruselas.",
-        frozenset({"amarre"}),
+        frozenset({"amarre"}), risk=1.2, stay=0.5, wear=0.9,
+        traits=("Autónomo", "Toda la vida en el muelle"),
+        renew="Renuevo. Sin amarre no hay pesca.",
+        leave="Vendo la barquilla. Los nietos no quieren saber nada del mar.",
+        unpaid="Han cerrado la pesquería del atún: este mes no hay ingresos.",
+        complaint="Se ha soltado una defensa y la barquilla ha rozado el muelle.",
     ),
     Tenant(
-        "excursiones",
-        "Excursiones para ver ballenas",
-        "🐋",
+        "excursiones", "Excursiones para ver ballenas", "🐋",
         ("referencia", "mercado", "nomadas"),
         "Ballenas garantizadas o le devolvemos la ilusión.",
-        frozenset({"amarre"}),
+        frozenset({"amarre"}), risk=0.9, stay=1.0, wear=1.0, traits=("Turismo", "Temporada"),
+        renew="Renovamos el amarre: las ballenas siguen viniendo.",
+        leave="Nos vamos a otro puerto con más cruceros.",
+        unpaid="Temporada baja: ni turistas ni ballenas.",
+        complaint="Un turista ha tirado el móvil al agua y ha atascado la bomba de achique.",
     ),
     Tenant(
-        "yate_charter",
-        "Yate de alquiler para despedidas",
-        "🛥️",
-        ("mercado", "nomadas"),
+        "yate_charter", "Yate de alquiler para despedidas", "🛥️", _NOMAD,
         "Fiesta en barco de diez a seis. El capitán es el único sobrio.",
-        frozenset({"amarre"}),
+        frozenset({"amarre"}), risk=1.3, stay=1.2, wear=1.7, traits=("Turismo", "Fiestas"),
+        renew="Renovamos. Este verano tenemos todos los sábados reservados.",
+        leave="Nos llevamos el barco a Ibiza.",
+        unpaid="Nos han cancelado tres despedidas seguidas.",
+        complaint="La fiesta del sábado ha dejado el pantalán hecho un desastre.",
     ),
-)
+    Tenant(
+        "bar", "Bar de toda la vida", "🍺", _SOCIAL_REF,
+        "Café, barraquito y el partido. Abrimos a las siete, como siempre.",
+        frozenset({"local"}), risk=1.0, stay=0.6, wear=1.3,
+        traits=("Negocio familiar", "Abre a las siete"),
+        renew="Renovamos. Aquí se han visto todas las finales desde 1982.",
+        leave="Nos jubilamos. El último barraquito, por cuenta de la casa.",
+        unpaid="Han abierto una franquicia enfrente y ha bajado la caja.",
+        complaint="Se ha roto la cámara frigorífica en pleno partido.",
+    ),
+    Tenant(
+        "peluqueria", "Peluquería de barrio", "💇", _LOW_MID,
+        "Aquí una se entera de todo lo que pasa en el barrio, y además se corta el pelo.",
+        frozenset({"local"}), risk=0.8, stay=0.7, wear=1.0, traits=("Autónoma", "Clientela fija"),
+        renew="Renuevo. Las clientas no me dejarían irme.",
+        leave="Me voy a un local más grande, con dos sillones más.",
+        unpaid="Agosto: medio barrio de vacaciones y el otro medio, sin dinero.",
+        complaint="El calentador no da para tantos lavados.",
+    ),
+    Tenant(
+        "academia", "Academia de inglés", "🗣️", _MID,
+        "Clases de repaso por las tardes y preparación de exámenes en verano.",
+        frozenset({"local"}), risk=0.7, stay=0.9, wear=1.1,
+        traits=("Pyme", "Niños por las tardes"),
+        renew="Renovamos. Se nos han apuntado todos los del colegio de al lado.",
+        leave="Nos pasamos a dar las clases por internet.",
+        unpaid="Los padres pagan el curso en septiembre. Hasta entonces, vamos justos.",
+        complaint="Los niños han atascado el váter con una pelota de goma.",
+    ),
+    Tenant(
+        "souvenirs", "Tienda de recuerdos", "🧲", _NOMAD,
+        "Imanes del Teide hechos muy lejos del Teide.",
+        frozenset({"local"}), risk=1.1, stay=1.1, wear=0.8, traits=("Turismo", "Temporada"),
+        renew="Renovamos. Los cruceros han vuelto a parar aquí.",
+        leave="Han cambiado la ruta de los cruceros y aquí ya no pasa nadie.",
+        unpaid="Sin cruceros no se vende ni un imán.",
+        complaint="Ha entrado agua por el escaparate con la última tormenta.",
+    ),
+    Tenant(
+        "dentista", "Clínica dental de una cadena", "🦷", ("mercado",),
+        "Primera visita gratis. La segunda, ya veremos.",
+        frozenset({"local"}), risk=1.4, stay=1.3, wear=0.9,
+        traits=("Cadena", "Financia los tratamientos"),
+        renew="Renovamos. Tenemos la agenda llena hasta el año que viene.",
+        leave="La cadena ha quebrado y los clientes se han quedado sin sus implantes.",
+        unpaid="La financiera que cobraba los tratamientos ha cerrado.",
+        complaint="El compresor de la clínica ha hecho saltar la luz de todo el edificio.",
+    ),
+    Tenant(
+        "bodega", "Bodega de vino de la tierra", "🍷", _LOW_MID,
+        "Malvasía de la isla. La crianza, en tu nave.",
+        frozenset({"nave"}), risk=0.8, stay=0.6, wear=1.0,
+        traits=("Negocio familiar", "Vendimia en agosto"),
+        renew="Renovamos. La nave tiene la temperatura perfecta para las barricas.",
+        leave="Nos vamos a una nave junto a las viñas.",
+        unpaid="Mala cosecha por la calima: este año vendemos poco.",
+        complaint="Se ha roto la máquina de frío y las barricas sufren.",
+    ),
+    Tenant(
+        "vela", "Escuela de vela", "⛵", _MID,
+        "Cursos para niños en verano y regatas los domingos.",
+        frozenset({"amarre"}), risk=0.6, stay=0.7, wear=1.1,
+        traits=("Club deportivo", "Temporada"),
+        renew="Renovamos el amarre. Este año tenemos el doble de alumnos.",
+        leave="El club ha conseguido un pantalán propio.",
+        unpaid="Esperamos la subvención del Cabildo, que llega tarde.",
+        complaint="Un optimist ha chocado con el pantalán. El niño está bien.",
+    ),
+)  # fmt: skip
 
 TENANT_BY_KEY: dict[str, Tenant] = {t.key: t for t in TENANTS}
 
@@ -2612,3 +2965,266 @@ PROMOTION_FLOORS: dict[str, tuple[str, ...]] = {
     "piso3": ("2.º con ascensor", "4.º con ascensor", "Bajo con jardín"),
     "atico": ("Ático con solárium", "Ático dúplex"),
 }
+
+
+# -- Noticias de barrio (fase 2 de la ampliación) -------------------------------------------
+#
+# Cada lunes algún barrio sale en las noticias (`housing.monday_news`). Durante 7 días la
+# noticia cambia lo que pasa allí: lo que cuesta encontrar inquilino, los nómadas y los
+# turistas, el impago, las averías, las quejas del vecino o los okupas. Alguna mueve el
+# índice del barrio un 1-2 % de una vez: muy por debajo de lo que cuesta comprar y vender
+# (~11 %), así que no se puede especular con ellas (y no se saben hasta que salen).
+
+
+@dataclass(frozen=True, slots=True)
+class BarrioNews:
+    """Una noticia que puede salir en un barrio.
+
+    Attributes:
+        key: Clave estable.
+        title: El titular, en claro.
+        blurb: Una línea más (a veces con guasa).
+        themes: Tipos de barrio donde puede salir (vacío: en todos).
+        islands: Islas donde puede salir (vacío: en las dos).
+        months: Meses en que puede salir (vacío: todo el año).
+        find: Multiplica la probabilidad de encontrar inquilino (y candidatos).
+        nomad: Multiplica, además, la de los nómadas digitales.
+        vacation: Multiplica, además, la de los turistas.
+        default: Multiplica la de dejar de pagar.
+        repairs: Multiplica averías, humedades y cerraduras.
+        neighbour: Multiplica las quejas del vecino.
+        squat: Multiplica la entrada de okupas.
+        index: Lo que multiplica el índice del barrio, una vez, el día que sale.
+        weight: Lo probable que es frente a las demás.
+    """
+
+    key: str
+    title: str
+    blurb: str
+    themes: frozenset[str] = frozenset()
+    islands: frozenset[str] = frozenset()
+    months: frozenset[int] = frozenset()
+    find: float = 1.0
+    nomad: float = 1.0
+    vacation: float = 1.0
+    default: float = 1.0
+    repairs: float = 1.0
+    neighbour: float = 1.0
+    squat: float = 1.0
+    index: float = 1.0
+    weight: float = 1.0
+
+
+#: Sin límite (cualquier barrio, isla o mes).
+_ANY: frozenset = frozenset()
+_SUMMER = frozenset({6, 7, 8, 9})
+_WINTER = frozenset({11, 12, 1, 2, 3})
+_COAST = frozenset({"playa", "marinero"})
+_TOURIST = frozenset({"playa", "lujo", "centro", "historico", "marinero"})
+
+BARRIO_NEWS: tuple[BarrioNews, ...] = (
+    BarrioNews(
+        "supermercado", "Abre un supermercado nuevo en el barrio",
+        "Con parking y todo. Media isla viene a comprar aquí.",
+        find=1.15,
+    ),
+    BarrioNews(
+        "centro_salud", "Inauguran un centro de salud",
+        "Por fin no hay que coger la guagua para ir al médico.",
+        frozenset({"obrero", "rural", "centro", "marinero"}), find=1.1, index=1.01,
+    ),
+    BarrioNews(
+        "sin_medicos", "El centro de salud cierra por las tardes",
+        "Faltan médicos: la cola empieza a las siete de la mañana.",
+        find=0.9,
+    ),
+    BarrioNews(
+        "metroguagua", "Obras de la MetroGuagua en la avenida",
+        "Dos carriles cortados y un ruido de taladro que no para.",
+        frozenset({"centro", "obrero", "playa"}), frozenset({"gc"}), find=0.85, neighbour=1.5,
+    ),
+    BarrioNews(
+        "tranvia", "Amplían la línea del tranvía",
+        "La parada nueva está a cinco minutos andando.",
+        frozenset({"centro", "historico", "obrero"}), frozenset({"tf"}), find=1.15, index=1.02,
+    ),
+    BarrioNews(
+        "fibra", "Llega la fibra de 1 Gb al barrio",
+        "Los nómadas digitales ya lo saben. Ellos siempre lo saben antes.",
+        nomad=1.3,
+    ),
+    BarrioNews(
+        "rodaje", "Rodaje de una serie en las calles del barrio",
+        "Han cortado la calle tres días para grabar una escena de cuatro segundos.",
+        frozenset({"historico", "centro", "playa", "marinero"}), nomad=1.2, vacation=1.2,
+        neighbour=1.3,
+    ),
+    BarrioNews(
+        "festival", "Festival de música el fin de semana",
+        "Tres escenarios y cuarenta mil personas. Los vecinos, despiertos hasta las seis.",
+        frozenset({"playa", "centro"}), _ANY, _SUMMER, vacation=1.3, neighbour=1.8,
+    ),
+    BarrioNews(
+        "botellon", "Botellón todos los viernes en la plaza",
+        "La policía pasa, mira y se va.",
+        find=0.9, neighbour=2.0,
+    ),
+    BarrioNews(
+        "fabrica", "Cierra la fábrica de toda la vida",
+        "Doscientos despidos. En el bar de la esquina no se habla de otra cosa.",
+        frozenset({"obrero"}), default=1.5, find=0.85, index=0.98,
+    ),
+    BarrioNews(
+        "logistica", "Abre un centro logístico en el polígono",
+        "Trescientos empleos nuevos, casi todos de madrugada.",
+        frozenset({"obrero"}), find=1.15, default=0.9,
+    ),
+    BarrioNews(
+        "tiburon", "Bandera roja: avistan un tiburón cerca de la orilla",
+        "Era un tronco. Pero la bandera roja se ha quedado toda la semana.",
+        _COAST, vacation=0.7,
+    ),
+    BarrioNews(
+        "ballena", "Una ballena se deja ver frente a la costa",
+        "Media isla está en el muelle con el móvil en alto.",
+        _COAST, vacation=1.2,
+    ),
+    BarrioNews(
+        "calima", "Calima: polvo en suspensión y cuarenta grados",
+        "Los aires acondicionados no dan abasto y las terrazas, color naranja.",
+        repairs=1.4, vacation=0.8,
+    ),
+    BarrioNews(
+        "carnaval", "Carnaval: el barrio no duerme",
+        "Murgas, comparsas y una ciudad entera disfrazada.",
+        frozenset({"centro", "historico", "marinero"}), _ANY, frozenset({2, 3}),
+        vacation=1.5, neighbour=2.0,
+    ),
+    BarrioNews(
+        "romeria", "Romería del barrio",
+        "Carretas, trajes típicos y papas con mojo para todos.",
+        frozenset({"rural", "historico"}), vacation=1.1, neighbour=1.3,
+    ),
+    BarrioNews(
+        "bandera_azul", "La playa recibe la bandera azul",
+        "Agua limpia, socorristas y duchas que funcionan.",
+        frozenset({"playa"}), vacation=1.25, index=1.01,
+    ),
+    BarrioNews(
+        "vertido", "Vertido de aguas residuales en la playa",
+        "Prohibido el baño hasta nuevo aviso. Huele hasta en la avenida.",
+        _COAST, vacation=0.6, find=0.95,
+    ),
+    BarrioNews(
+        "hotel_lujo", "Abre un hotel de cinco estrellas",
+        "Con spa, helipuerto y una suite que cuesta lo que tu alquiler de un año.",
+        frozenset({"playa", "lujo"}), vacation=0.85, find=1.05, index=1.02,
+    ),
+    BarrioNews(
+        "cruceros", "Llegan más cruceros al puerto",
+        "Seis mil turistas bajan a la vez y suben a las cinco.",
+        frozenset({"marinero", "centro"}), vacation=1.15,
+    ),
+    BarrioNews(
+        "peatonal", "Peatonalizan la calle principal",
+        "Más terrazas, menos coches y el precio del metro cuadrado, para arriba.",
+        frozenset({"centro", "historico"}), find=1.1, index=1.02,
+    ),
+    BarrioNews(
+        "colegio", "Abre un colegio nuevo",
+        "Las familias del barrio de al lado ya buscan piso aquí.",
+        frozenset({"obrero", "rural", "centro"}), find=1.15,
+    ),
+    BarrioNews(
+        "residencia", "Abre una residencia de estudiantes",
+        "Trescientos estudiantes más. Los bares, encantados.",
+        frozenset({"historico", "centro"}), find=1.1, nomad=1.1, neighbour=1.2,
+    ),
+    BarrioNews(
+        "robos", "Ola de robos en los portales",
+        "La comunidad de propietarios se plantea poner cámaras.",
+        find=0.85, repairs=1.3, squat=1.3,
+    ),
+    BarrioNews(
+        "apagon", "Apagón de una noche entera",
+        "Se fundieron neveras, routers y la paciencia de todo el barrio.",
+        repairs=1.3,
+    ),
+    BarrioNews(
+        "sequia", "Restricciones de agua por la sequía",
+        "Cortes de agua de diez a seis. Las piscinas, vacías.",
+        frozenset({"rural", "lujo"}), find=0.9, vacation=0.9,
+    ),
+    BarrioNews(
+        "mercadillo", "Mercadillo del agricultor los sábados",
+        "Papas, quesos y mojo de la zona. Los domingos, sin pan.",
+        frozenset({"rural", "historico"}), find=1.05, vacation=1.1,
+    ),
+    BarrioNews(
+        "cafeteria", "Abre la tercera cafetería de especialidad del barrio",
+        "El café cuesta cuatro euros y el wifi va muy rápido.",
+        frozenset({"centro", "marinero", "historico"}), nomad=1.25, find=1.05, index=1.02,
+    ),
+    BarrioNews(
+        "pintadas", "Pintadas contra el turismo en las fachadas",
+        "«Tu paraíso, nuestra miseria», en tres idiomas.",
+        _TOURIST, vacation=0.85,
+    ),
+    BarrioNews(
+        "triatlon", "Pasa el triatlón por el barrio",
+        "Calles cortadas, bicis de cinco mil euros y gente en mallas a las siete.",
+        frozenset({"playa", "lujo"}), vacation=1.15, neighbour=1.2,
+    ),
+    BarrioNews(
+        "tormenta", "Tormenta: la lluvia de un mes en una semana",
+        "Goteras, garajes inundados y el termo de la azotea, en la calle de abajo.",
+        _ANY, _ANY, frozenset({10, 11, 12, 1, 2}), repairs=1.6,
+    ),
+    BarrioNews(
+        "parque", "Inauguran un parque con zona para perros",
+        "Columpios nuevos, árboles nuevos y un pipicán con césped artificial.",
+        find=1.1,
+    ),
+    BarrioNews(
+        "zona_azul", "Zona azul en todo el barrio",
+        "Aparcar cuesta dos euros la hora. Los vecinos, indignados.",
+        frozenset({"centro", "playa"}), find=0.95,
+    ),
+    BarrioNews(
+        "fiestas", "Fiestas patronales con verbena hasta las seis",
+        "La orquesta toca lo mismo que el año pasado, y se baila igual.",
+        _ANY, _ANY, _SUMMER, neighbour=1.8, vacation=1.1,
+    ),
+    BarrioNews(
+        "incendio", "Incendio forestal en el monte cercano",
+        "Controlado, pero el humo llega a todas las casas.",
+        frozenset({"rural"}), _ANY, _SUMMER, find=0.85, vacation=0.6,
+    ),
+    BarrioNews(
+        "nomadas", "El barrio se pone de moda entre los nómadas digitales",
+        "Sale en un vídeo con dos millones de visitas. El alquiler, también de moda.",
+        frozenset({"playa", "centro", "marinero"}), nomad=1.4, index=1.01,
+    ),
+    BarrioNews(
+        "zanja", "El Ayuntamiento levanta la calle por tercera vez este año",
+        "Primero el agua, luego la luz y ahora la fibra. La misma zanja, tres veces.",
+        find=0.9, neighbour=1.4,
+    ),
+    BarrioNews(
+        "famoso", "Un futbolista famoso se compra un chalet en el barrio",
+        "Los vecinos ya saben a qué hora sale a correr.",
+        frozenset({"lujo", "playa"}), index=1.02, vacation=1.1,
+    ),
+    BarrioNews(
+        "atun", "Vuelve el atún al muelle",
+        "Buena temporada: los barcos vuelven llenos y en la cofradía se respira.",
+        frozenset({"marinero"}), default=0.85, find=1.05,
+    ),
+    BarrioNews(
+        "okupas_tele", "La tele dice que hay okupas en el barrio",
+        "Un reportaje de cinco minutos. En la calle no ha visto nadie a ninguno.",
+        find=0.95, squat=1.3, weight=0.6,
+    ),
+)  # fmt: skip
+
+BARRIO_NEWS_BY_KEY: dict[str, BarrioNews] = {n.key: n for n in BARRIO_NEWS}

@@ -1246,6 +1246,50 @@ async def press_pisos_license(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def pisos_owned(client: BotClient, key: str) -> None:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+    await client.get_cog("Pisos").service.buy(GUILD_ID, OWNER_ID, key, 100)
+
+
+async def press_pisos_pick(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "gestion"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_pick(interaction)
+
+    return click
+
+
+async def press_pisos_insurance(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "gestion", "seguro"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_insurance(interaction)
+
+    return click
+
+
+async def press_pisos_evict(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    with sqlite3.connect(client.database_path) as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'impago', tenant = 'rider', rent = 3000, unpaid = 3"
+        )
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "ficha"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._evict(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1586,6 +1630,9 @@ CASES: dict[str, Press] = {
     "pisos: caja con hipoteca": press_pisos_mortgage,
     "pisos: apuntarse a la VPO": press_pisos_vpo_signup,
     "pisos: pedir la licencia": press_pisos_license,
+    "pisos: elegir yo al inquilino": press_pisos_pick,
+    "pisos: contratar el seguro": press_pisos_insurance,
+    "pisos: desahuciar con abogado": press_pisos_evict,
     "tienda: lucir un título": press_wear_title,
     "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,

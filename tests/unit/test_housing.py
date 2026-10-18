@@ -473,9 +473,11 @@ async def test_un_dia_alquilado_reparte_la_renta_y_hacienda_cobra_lo_suyo(tmp_pa
             "WHERE user_id > 0 AND reason = 'irpf:pisos:renta'"
         ).fetchone()
     ibi = housing_taxes(tmp_path, "ibi")
+    ips = housing_taxes(tmp_path, "ips")
     assert irpf > 0
     assert ibi == costs.ibi
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state_before == irpf + ibi
+    assert ips == round(costs.insurance * rules.IPS_RATE)  # impuesto de primas del seguro
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state_before == irpf + ibi + ips
     breakdown = await economy.tax_breakdown(GUILD)
     assert breakdown[ANA]["ibi"] > 0 and "itp_pisos" in breakdown[ANA]
     assert breakdown[ANA]["irpf_alquiler"] > 0
@@ -512,12 +514,12 @@ async def test_un_piso_vacio_paga_sus_recibos_del_monedero(tmp_path: Path) -> No
     costs = rules.monthly_costs(BAJO)
     lease = (await service.market(GUILD)).leases[BAJO.key]
     assert lease.status == rules.VACANT and lease.arrears == 0
-    assert await economy.balance(GUILD, ANA) <= balance - costs.total
-    assert (
-        ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state
-        == costs.ibi
-        == housing_taxes(tmp_path, "ibi")
-    )
+    ips = round(costs.insurance * rules.IPS_RATE)
+    assert await economy.balance(GUILD, ANA) <= balance - costs.total - ips
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == costs.ibi + ips
+    # Cada impuesto con su nombre: el de primas del seguro no se apunta como IBI.
+    assert housing_taxes(tmp_path, "ibi") == costs.ibi
+    assert housing_taxes(tmp_path, "ips") == ips
     assert ledger_sum(tmp_path, ANA) == await economy.balance(GUILD, ANA)
 
 
@@ -667,7 +669,8 @@ async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> No
     assert taxes["alquiler"] > 0
     assert taxes["ganancia"] == sale.deal.quote.gain_tax
     assert taxes["igic_gastos"] == buy.deal.quote.notary_igic + sale.deal.quote.fee_igic
-    assert len(housing_lines(taxes)) == 5
+    assert taxes["ips"] == round(rules.monthly_costs(BAJO).insurance * rules.IPS_RATE)
+    assert len(housing_lines(taxes)) == 6
     embed = discord.Embed()
     add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
     assert format_total(sum(taxes.values())) in embed.fields[0].name

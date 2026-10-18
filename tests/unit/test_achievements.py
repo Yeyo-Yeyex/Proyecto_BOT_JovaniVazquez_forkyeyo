@@ -72,6 +72,10 @@ from bot.services.achievements import (
     PISOS_KIND_PREFIX,
     PISOS_KINDS_STAT,
     PISOS_LEVEL_PREFIX,
+    PISOS_NEWS_PREFIX,
+    PISOS_NEWS_STAT,
+    PISOS_TENANT_PREFIX,
+    PISOS_TENANTS_STAT,
     PISOS_THEMES_STAT,
     POKER_MADE_PREFIX,
     PORRA_GAME_PREFIX,
@@ -136,8 +140,10 @@ from bot.services.enraya import LEVELS as ENRAYA_LEVELS
 from bot.services.gallos import HOUSE as GALLOS_HOUSE
 from bot.services.housing import EVENTS as _HOUSING_EVENTS
 from bot.services.housing_catalog import BARRIO_BY_KEY as HOUSING_BARRIOS
+from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS_LIST
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.housing_catalog import RENT_LEVELS as HOUSING_LEVELS
+from bot.services.housing_catalog import TENANTS as HOUSING_TENANT_LIST
 from bot.services.levels import TIMEZONE
 from bot.services.lootboxes import BOXES as LOOTBOXES
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
@@ -173,7 +179,7 @@ HOUSING_EVENT_KEYS = (
     "firma", "renueva", "se_va", "impago", "paga", "okupa", "desahucio",
     "cuota_impagada", "ejecucion", "sorteo_vpo", "vpo_caducada", "partida_agotada",
     "tope_ley", "recargo_ibi", "oferta_fondo", "ejecucion_aval", "fianza_devuelta",
-    "fianza_incautada", "firma_negocio",
+    "fianza_incautada", "firma_negocio", "candidato", "seguro", "noticia",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -284,6 +290,12 @@ PRODUCED_STATS = {
     "pisos_flip", "pisos_loss", "pisos_arrears_paid", "pisos_gain_max", "pisos_rent",
     "pisos_rent_days", "pisos_ibi", PISOS_BARRIOS_STAT, PISOS_KINDS_STAT, PISOS_THEMES_STAT,
     "pisos_tensed", "pisos_barrio_whole",
+    # Fase 2 de la ampliación (cogs/pisos.py: housing_day_stats y housing_action_stats)
+    "pisos_candidates_seen", "pisos_chose_risky", "pisos_chose_safe", "pisos_young70",
+    "pisos_insurer_paid", "pisos_lawyer_free", "pisos_vacant_bonus", PISOS_TENANTS_STAT,
+    PISOS_NEWS_STAT,
+    *(f"{PISOS_TENANT_PREFIX}{t.key}" for t in HOUSING_TENANT_LIST),
+    *(f"{PISOS_NEWS_PREFIX}{n.key}" for n in HOUSING_NEWS_LIST),
     *(f"{PISOS_KIND_PREFIX}{kind}" for kind in HOUSING_KINDS),
     *(f"{PISOS_BARRIO_PREFIX}{barrio}" for barrio in HOUSING_BARRIOS),
     *(f"{PISOS_LEVEL_PREFIX}{level}" for level in HOUSING_LEVELS),

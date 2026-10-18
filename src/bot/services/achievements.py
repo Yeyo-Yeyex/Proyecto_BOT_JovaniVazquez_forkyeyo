@@ -122,7 +122,9 @@ from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
 from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
 from bot.services.housing_catalog import BARRIO_BY_KEY
+from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
+from bot.services.housing_catalog import TENANTS as HOUSING_TENANTS
 from bot.services.housing_catalog import THEMES as HOUSING_THEMES
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
@@ -616,6 +618,12 @@ PISOS_KIND_PREFIX = "pisos_kind_"
 PISOS_EVENT_PREFIX = "pisos_ev_"
 PISOS_LEVEL_PREFIX = "pisos_level_"
 PISOS_BARRIOS_STAT = "pisos_barrios"
+#: Fase 2 de la ampliación: un contador por inquilino con el que se firma y por noticia de
+#: barrio vivida (`housing_day_stats`, `housing_action_stats`). Los distintos, en `with_derived`.
+PISOS_TENANT_PREFIX = "pisos_tenant_"
+PISOS_NEWS_PREFIX = "pisos_news_"
+PISOS_TENANTS_STAT = "pisos_tenants"
+PISOS_NEWS_STAT = "pisos_news"
 PISOS_KINDS_STAT = "pisos_kinds"
 PISOS_THEMES_STAT = "pisos_themes"
 #: Saldo por debajo del cual comprar te deja «todo en ladrillo».
@@ -731,6 +739,33 @@ RASTRO_GAIN_STORY = (
     "ganancia patrimonial: tributa en la base del ahorro. La Renta de los lunes no la "
     "espera: Hacienda se queda el 19 % de lo que has ganado en el momento. Gil y Gil lo "
     "hacía con solares; tú, con coleccionables. Mismo espíritu, menos Marbella."
+)
+
+#: Discurso del primer seguro de impago de `pisos` (`pisos_insured_1`).
+PISOS_INSURANCE_STORY = (
+    "🛡️ **Seguro de impago contratado.** Si el inquilino deja de pagar, la aseguradora te "
+    "paga la renta desde el segundo mes (el primero es la franquicia) y hasta doce, y el "
+    "abogado y el procurador del desahucio. Solo cubre a quien pasa su estudio de solvencia. "
+    "La prima lleva el Impuesto sobre las Primas de Seguros, un 8 % (art. 12 de la Ley "
+    "13/1996), y en Canarias desgrava: el 75 % de la prima, hasta 150 € al año, si la renta "
+    "no pasa de 800 € al mes (art. 15 quater del Decreto Legislativo 1/2009)."
+)
+
+#: Discurso del primer contrato con el 70 % de reducción (`pisos_young70_1`).
+PISOS_YOUNG_STORY = (
+    "🧑‍🎓 **Reducción del 70 %.** Alquilar por primera vez una vivienda en zona tensionada a "
+    "alguien de 18 a 35 años deja la renta del alquiler con una reducción del 70 % en el IRPF "
+    "(art. 23.2.b LIRPF, redacción de la Ley 12/2023), en vez del 50 % de siempre. Solo "
+    "sobre el rendimiento positivo, y mientras dure este contrato."
+)
+
+#: Discurso de la primera deducción por alquilar una vivienda vacía (`pisos_bonus16_1`).
+PISOS_VACANT_STORY = (
+    "🏚️ **Una vivienda vacía menos.** Canarias premia sacar al alquiler una vivienda que "
+    "estaba vacía: 1.000 € de deducción en la cuota autonómica, una sola vez por inmueble y "
+    "como mucho en cinco (art. 16 del Decreto Legislativo 1/2009). Tiene que llevar vacía "
+    "el año anterior o alquilarse en los seis meses siguientes a comprarla. Aquí, una semana "
+    "vacía o seis días desde la compra. Se aplica el lunes, en tu Renta."
 )
 
 #: Discurso de la primera renta de `pisos` (`pisos_rent_1`).
@@ -8042,6 +8077,140 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_own_build", [
         (1, "pisos_ownbuild_1", "Me lo guiso, me lo como",
          "Compra en tu propia promoción: sin comisión, que el promotor eres tú.", R, True),
+    ])  # fmt: skip
+    # Fase 2 de la ampliación (8.1.0): elegir inquilino, seguro de impago y noticias de barrio
+    a += _tiers("pisos", "pisos_pick_self", [
+        (1, "pisos_pick_self_1", "Casting de inquilinos",
+         "Elige tú al inquilino de un piso en vez de la gestora.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}candidato", [
+        (1, "pisos_candidate_1", "Llaman al timbre", "Recibe a tu primer candidato.", C),
+        (25, "pisos_candidate_25", "Cola en el portal", "Recibe 25 candidatos.", R),
+        (200, "pisos_candidate_200", "Más solicitudes que una plaza de funcionario",
+         "Recibe 200 candidatos.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_candidates_seen", [
+        (1, "pisos_seen_1", "Pasen y vean", "Mira los candidatos de un piso.", C),
+        (50, "pisos_seen_50", "Ojeador de inquilinos", "Mira los candidatos 50 veces.", R),
+        (300, "pisos_seen_300", "Director de casting", "Mira los candidatos 300 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_chosen", [
+        (1, "pisos_chosen_1", "¡Te elijo a ti!", "Firma con un candidato que has elegido.", C),
+        (10, "pisos_chosen_10", "Selección natural", "Firma con 10 candidatos elegidos.", R),
+        (50, "pisos_chosen_50", "Recursos humanos del ladrillo",
+         "Firma con 50 candidatos elegidos.", E),
+        (200, "pisos_chosen_200", "Gran Hermano de los inquilinos",
+         "Firma con 200 candidatos elegidos.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_discarded", [
+        (1, "pisos_discarded_1", "No eres tú, soy yo", "Descarta a un candidato.", C),
+        (25, "pisos_discarded_25", "Deslizar a la izquierda", "Descarta a 25 candidatos.", R),
+        (100, "pisos_discarded_100", "Jurado más duro que el de Operación Triunfo",
+         "Descarta a 100 candidatos.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_chose_risky", [
+        (1, "pisos_risky_1", "A mí me gusta el riesgo",
+         "Firma con un candidato de riesgo de impago alto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_chose_safe", [
+        (10, "pisos_safe_10", "Inquilino de manual",
+         "Firma con 10 candidatos elegidos de riesgo de impago bajo.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_TENANTS_STAT, [
+        (5, "pisos_tenants_5", "Comunidad de vecinos",
+         "Ten contrato con 5 inquilinos distintos.", R),
+        (15, "pisos_tenants_15", "Censo del barrio",
+         "Ten contrato con 15 inquilinos distintos.", E),
+        (30, "pisos_tenants_30", "Padrón municipal",
+         "Ten contrato con 30 inquilinos distintos.", L),
+        (len(HOUSING_TENANTS), "pisos_tenants_all", "Pokédex del alquiler",
+         f"Ten contrato con los {len(HOUSING_TENANTS)} inquilinos del catálogo, turistas y "
+         "negocios incluidos.", M),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}abuela", [
+        (1, "pisos_tenant_abuela", "Potaje los domingos",
+         "Alquila un piso a la abuela con su pensión.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}cripto", [
+        (1, "pisos_tenant_cripto", "Cobro en criptos, pago en euros",
+         "Alquila un piso al nómada cripto.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}despedida", [
+        (1, "pisos_tenant_despedida", "El balcón aguantó",
+         "Alquila tu vacacional a una despedida de soltero.", R, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_young70_1", name="Generación Z, reducción del 70",
+        description="Firma un contrato con la reducción del 70 %: primer alquiler en zona "
+        "tensionada a alguien de 18 a 35 años.",
+        category="pisos", rarity=R, conditions=(("pisos_young70", 1),), story=PISOS_YOUNG_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_young70", [
+        (5, "pisos_young70_5", "Casero de la generación inquilina",
+         "Firma 5 contratos con la reducción del 70 %.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_insured_1", name="Póliza y a dormir",
+        description="Contrata el seguro de impago de un piso.",
+        category="pisos", rarity=C, conditions=(("pisos_insured", 1),),
+        story=PISOS_INSURANCE_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}seguro", [
+        (1, "pisos_claim_1", "Mi seguro me cubre",
+         "Que el seguro de impago te pague un mes de renta.", R),
+        (12, "pisos_claim_12", "Un año a cuenta de la póliza",
+         "Que el seguro de impago te pague 12 meses de renta.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_insurer_paid", [
+        (100_000, "pisos_insurer_100k", "Siniestro con final feliz",
+         "Que el seguro de impago te pague 100.000 Y$.", E),
+        (1_000_000, "pisos_insurer_1m", "En la lista negra de la aseguradora",
+         "Que el seguro de impago te pague 1.000.000 Y$.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_lawyer", [
+        (10_000, "pisos_lawyer_10k", "Abogado de familia",
+         "Paga 10.000 Y$ en abogados y procuradores de desahucios.", R),
+        (100_000, "pisos_lawyer_100k", "Bufete en nómina",
+         "Paga 100.000 Y$ en abogados y procuradores de desahucios.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_lawyer_free", [
+        (1, "pisos_lawyer_free_1", "Defensa jurídica incluida",
+         "Pide un desahucio con el abogado pagado por el seguro de impago.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_bonus16_1", name="Vacía no, gracias",
+        description="Deduce en la Renta por alquilar una vivienda que estaba vacía.",
+        category="pisos", rarity=R, conditions=(("pisos_vacant_bonus", 1),),
+        story=PISOS_VACANT_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_vacant_bonus", [
+        (5, "pisos_bonus16_5", "Las cinco de la Agencia Tributaria Canaria",
+         "Deduce por alquilar 5 viviendas vacías: el máximo.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}noticia", [
+        (1, "pisos_news_1", "Mi barrio sale en la tele",
+         "Ten un piso en un barrio que sale en las noticias.", C),
+        (10, "pisos_news_10", "Corresponsal de barrio",
+         "Ten pisos en barrios que salen en las noticias 10 veces.", R),
+        (50, "pisos_news_50", "Telediario local", "Vive 50 noticias de barrio con pisos allí.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_NEWS_STAT, [
+        (10, "pisos_newskinds_10", "Hemeroteca del barrio",
+         "Vive 10 noticias de barrio distintas con pisos allí.", E),
+        (len(HOUSING_NEWS), "pisos_newskinds_all", "Todas las portadas",
+         f"Vive las {len(HOUSING_NEWS)} noticias de barrio distintas con pisos allí.", M),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_NEWS_PREFIX}tiburon", [
+        (1, "pisos_news_tiburon", "Tiburón a la vista (era un tronco)",
+         "Ten un piso en la playa la semana de la bandera roja por el tiburón.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_NEWS_PREFIX}okupas_tele", [
+        (1, "pisos_news_okupas", "Lo ha dicho la tele",
+         "Ten un piso en un barrio del que la tele dice que tiene okupas.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_NEWS_PREFIX}famoso", [
+        (1, "pisos_news_famoso", "Vecino de un crack",
+         "Ten un piso en el barrio donde se compra el chalet un futbolista famoso.", R, True),
     ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
@@ -18660,6 +18829,12 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     full[PISOS_KINDS_STAT] = sum(
         1 for key in HOUSING_KINDS if stats.get(f"{PISOS_KIND_PREFIX}{key}", 0) > 0
     )
+    full[PISOS_TENANTS_STAT] = sum(
+        1 for t in HOUSING_TENANTS if stats.get(f"{PISOS_TENANT_PREFIX}{t.key}", 0) > 0
+    )
+    full[PISOS_NEWS_STAT] = sum(
+        1 for n in HOUSING_NEWS if stats.get(f"{PISOS_NEWS_PREFIX}{n.key}", 0) > 0
+    )
     full[PISOS_THEMES_STAT] = len(
         {
             barrio.theme
@@ -22636,6 +22811,8 @@ def housing_panel_stats(
         add["pisos_evictions"] = 1
         if squatters:
             add["pisos_squatters_evicted"] = 1
+    elif screen == "candidatos":
+        add["pisos_candidates_seen"] = 1
     return StatDelta(add=add)
 
 
@@ -22761,6 +22938,11 @@ HOUSING_ACTIONS = {
     "licencia": "pisos_licenses",
     "venta_fondo": "pisos_vulture_sold",
     "socimi": "pisos_socimi",
+    "elige_inquilino": "pisos_pick_self",
+    "firma_candidato": "pisos_chosen",
+    "descarta": "pisos_discarded",
+    "seguro": "pisos_insured",
+    "desahucio": "pisos_lawyer",
 }
 
 
@@ -22773,6 +22955,10 @@ def housing_action_stats(
     aval: bool = False,
     effort: float | None = None,
     guarantee: bool = False,
+    tenant: str | None = None,
+    risk: str | None = None,
+    young: bool = False,
+    fee: int = 0,
 ) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
 
@@ -22785,7 +22971,13 @@ def housing_action_stats(
         effort: Con `inquilino_miembro`, la parte del sueldo que se lleva la renta
             (`housing.effort`; `None` sin nómina).
         guarantee: Con `inquilino_miembro`, si dejó la garantía adicional.
+        tenant: Con `firma_candidato`, el inquilino.
+        risk: Con `firma_candidato`, su riesgo de impago (`bajo`, `medio`, `alto`).
+        young: Con `firma_candidato`, si el contrato tiene la reducción del 70 %.
+        fee: Con `desahucio`, lo pagado en abogado y procurador (0 si lo pagó el seguro).
     """
+    if action == "desahucio":
+        return StatDelta(add={"pisos_lawyer": fee} if fee else {"pisos_lawyer_free": 1})
     if action == "hipoteca":
         add = {"pisos_mortgages": 1}
         for stat, hit in (
@@ -22809,11 +23001,30 @@ def housing_action_stats(
             delta.add["pisos_guarantee"] = 1
         if aval:
             delta.add["pisos_aval_rent"] = 1
+    if action == "firma_candidato":
+        if tenant:
+            delta.add[f"{PISOS_TENANT_PREFIX}{tenant}"] = 1
+        if risk == "alto":
+            delta.add["pisos_chose_risky"] = 1
+        elif risk == "bajo":
+            delta.add["pisos_chose_safe"] = 1
+        if young:
+            delta.add["pisos_young70"] = 1
     return delta
 
 
 def housing_day_stats(
-    *, rent: int, ibi: int, events: tuple[str, ...], bono: int = 0, installments: int = 0
+    *,
+    rent: int,
+    ibi: int,
+    events: tuple[str, ...],
+    bono: int = 0,
+    installments: int = 0,
+    insurer: int = 0,
+    bonus: int = 0,
+    tenants: tuple[str, ...] = (),
+    news: tuple[str, ...] = (),
+    young: int = 0,
 ) -> StatDelta:
     """Estadísticas de un día cerrado de los pisos de un miembro.
 
@@ -22821,11 +23032,26 @@ def housing_day_stats(
         rent: Renta cobrada (antes del IRPF).
         ibi: IBI pagado.
         events: Lo que ha pasado en sus inmuebles o le ha pasado a él
-            (`housing.Event.key`, `ejecucion`, `sorteo_vpo`, `cuota_impagada`…).
+            (`housing.Event.key`, `ejecucion`, `sorteo_vpo`, `cuota_impagada`, `noticia`…).
         bono: Bono Alquiler Joven cobrado.
         installments: Cuotas de hipoteca pagadas enteras.
+        insurer: Lo que le ha pagado el seguro de impago.
+        bonus: Lo que deduce por alquilar una vivienda vacía (art. 16).
+        tenants: Inquilinos del catálogo que han firmado hoy en sus pisos.
+        news: Noticias de barrio que salen hoy donde tiene pisos.
+        young: Contratos de hoy con la reducción del 70 %.
     """
     add: dict[str, int] = {}
+    if insurer > 0:
+        add["pisos_insurer_paid"] = insurer
+    if bonus > 0:
+        add["pisos_vacant_bonus"] = 1
+    if young > 0:
+        add["pisos_young70"] = young
+    for tenant in tenants:
+        add[f"{PISOS_TENANT_PREFIX}{tenant}"] = 1
+    for key in news:
+        add[f"{PISOS_NEWS_PREFIX}{key}"] = 1
     if bono > 0:
         add["pisos_bono"] = bono
     if installments > 0:
