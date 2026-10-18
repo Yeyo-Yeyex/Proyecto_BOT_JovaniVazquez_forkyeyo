@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.30.1 · 2026-10-18
+
+- Logros: el aviso enseña todos los que desbloqueas a la vez, no solo los ocho primeros
+
 ### 7.30.0 · 2026-10-18
 
 - Logros: una categoría secreta con 132 logros
