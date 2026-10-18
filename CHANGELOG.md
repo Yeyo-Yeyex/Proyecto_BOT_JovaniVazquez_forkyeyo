@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.20 · 2026-10-18
+
+- 4 en raya y Backgammon: Jovani habla como Jovani y deja de copiar los chistes de un juego a otro
+
 ### 7.25.19 · 2026-10-18
 
 - Gallos: frases nuevas para peleas, entrenos y funerales, con mucha menos política

@@ -47,7 +47,7 @@ CATCHPHRASES: dict[str, str] = {
     "jugo de china": r"jugo de china",
     "lagartijo": r"lagartijo",
     "mosca": r"ser una mosca",
-    "motora": r"motora",
+    "motora": r"motora|v[ií]ctor le dijo a joel",
     "Yo soy yo": r"yo soy yo",
     "Jota Uve": r"jota uve",
     "destruido": r"estoy destruido",
