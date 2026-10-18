@@ -14,7 +14,7 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion y candidatos. Miden 1000 × 640, salvo el barrio
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos y resenas. Miden 1000 × 640, salvo el barrio
 (diez tarjetas en dos filas), que mide 1000 × 760 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
 lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
@@ -592,6 +592,8 @@ function smallIcon(key, cx, cy, r, color) {
     for (const sx of [-1, 1]) { circle(sx * r * 0.45, -r * 0.4, r * 0.33); g.fill(); g.beginPath(); g.ellipse(sx * r * 0.45, r * 0.75, r * 0.55, r * 0.7, 0, Math.PI, TAU); g.fill(); }
   } else if (key === "tools") { // una llave inglesa: obras y reformas
     wrench(0, 0, r * 0.95, color);
+  } else if (key === "star") {
+    starPath(0, 0, r * 1.15, color);
   } else if (key === "hand") { // la mano levantada: eliges tú
     fillRR(-r * 0.55, -r * 0.05, r * 1.1, r * 0.95, r * 0.3, color);
     for (let i = 0; i < 4; i++) fillRR(-r * 0.55 + i * r * 0.28, -r * (i === 1 || i === 2 ? 0.95 : 0.8), r * 0.22, r * 1.0, r * 0.11, color);
@@ -2459,7 +2461,9 @@ function paintFicha(st) {
   // -- columna C: la oferta del fondo, inquilino, hipoteca, lo tuyo y noticias
   const tags = [];
   if (st.bono) tags.push({ text: "Bono Alquiler Joven", kind: "green", icon: "heart" });
-  if (st.license) tags.push({ text: "Licencia vacacional", kind: "orange", icon: "sun" });
+  if (st.license) tags.push({ text: st.license_until ? `Licencia hasta ${st.license_until}` : "Licencia vacacional", kind: "orange", icon: "sun" });
+  if (st.rating) tags.push({ text: st.rating.replace(" ★", ""), kind: "amber", icon: "star" });
+  if (st.superhost) tags.push({ text: "Superanfitrión", kind: "green", icon: "star" });
   if (st.tense) tags.push({ text: "Zona tensionada", kind: "amber", icon: "warn" });
   if (st.pick === "yo") tags.push({ text: "Eliges tú", kind: "turq", icon: "hand" });
   if (st.waiting > 0) tags.push({ text: `${st.waiting} ${st.waiting === 1 ? "candidato esperando" : "candidatos esperando"}`, kind: "orange", icon: "people" });
@@ -3444,11 +3448,121 @@ function paintImprevistos(st) {
   if (!st.decides) tag("Decide otro dueño", 16, 578, "grey", "people", 15);
 }
 
+// RESEÑAS ---------------------------------------------------------------------------------
+
+// Una estrella con relleno parcial (`frac` de 0 a 1, de izquierda a derecha) sobre otra apagada.
+function starFrac(cx, cy, r, frac, on = C.gold, off = "#e3d8bc") {
+  starPath(cx, cy, r, off);
+  if (frac > 0) {
+    g.save(); g.beginPath(); g.rect(cx - r - 1, cy - r - 1, (2 * r + 2) * frac, 2 * r + 2); g.clip();
+    starPath(cx, cy, r, on); g.restore();
+  }
+  g.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * 0.45 : r; g.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q); }
+  g.closePath(); g.strokeStyle = "rgba(160,110,10,0.45)"; g.lineWidth = Math.max(1, r * 0.08); g.stroke();
+}
+// Cinco estrellas en fila, centradas en `x`; `value` de 0 a 5.
+function starRow(x, cy, r, gap, value) {
+  const x0 = x - (4 * gap) / 2;
+  for (let i = 0; i < 5; i++) starFrac(x0 + i * gap, cy, r, clamp(value - i, 0, 1));
+}
+// Una maleta: el icono de quien viaja (no hay fuente de emoji en Node).
+function suitcase(cx, cy, s, color, trim = "#fff") {
+  g.save(); g.translate(cx, cy); g.strokeStyle = color; g.lineWidth = s * 0.16; g.lineJoin = "round";
+  g.beginPath(); g.moveTo(-s * 0.28, -s * 0.5); g.lineTo(-s * 0.28, -s * 0.85); g.lineTo(s * 0.28, -s * 0.85); g.lineTo(s * 0.28, -s * 0.5); g.stroke();
+  fillRR(-s * 0.9, -s * 0.5, s * 1.8, s * 1.3, s * 0.2, color);
+  rect(-s * 0.9, -s * 0.05, s * 1.8, s * 0.12, trim); rect(-s * 0.08, -s * 0.12, s * 0.16, s * 0.26, trim);
+  g.restore();
+}
+// Una medalla de Superanfitrión: roseta dorada con su estrella y las dos cintas.
+function medal(cx, cy, r) {
+  poly([[cx - r * 0.55, cy + r * 0.5], [cx - r * 0.1, cy + r * 0.7], [cx - r * 0.45, cy + r * 1.55], [cx - r * 0.7, cy + r * 1.2], [cx - r * 1.05, cy + r * 1.3]], C.red);
+  poly([[cx + r * 0.55, cy + r * 0.5], [cx + r * 0.1, cy + r * 0.7], [cx + r * 0.45, cy + r * 1.55], [cx + r * 0.7, cy + r * 1.2], [cx + r * 1.05, cy + r * 1.3]], C.redDk);
+  burst(cx, cy, r, 14, 0.88, "#d99a10"); dot(cx, cy, r * 0.82, C.gold); dot(cx, cy, r * 0.66, "#ffd75a");
+  circle(cx, cy, r * 0.66); g.strokeStyle = "#d99a10"; g.lineWidth = 1.6; g.stroke();
+  starPath(cx, cy + 1, r * 0.46, "#fff"); starPath(cx, cy + 1, r * 0.32, "#d99a10");
+}
+function reviewCard(r, x, y, w, h) {
+  const bad = r.stars <= 2, top = r.stars === 5;
+  card(x, y, w, h, { r: 12, fill: bad ? "#fcefec" : top ? "#fff8e1" : C.card, stroke: bad ? "#efb9b4" : top ? "#ecc860" : undefined });
+  const hue = hash(r.guest) % 360;
+  dot(x + 34, y + h / 2, 23, "#fff"); dot(x + 34, y + h / 2, 21, `hsl(${hue},55%,84%)`);
+  suitcase(x + 34, y + h / 2 + 2, 11, `hsl(${hue},50%,38%)`);
+  const sx = x + w - 14 - 4 * 17 - 8;
+  fitText(r.guest, x + 70, y + 17, sx - 70 - 14, F.d, 17, 12, { color: C.ink });
+  for (let i = 0; i < 5; i++) starFrac(sx + i * 17 + 1, y + 17, 7.5, i < r.stars ? 1 : 0, bad ? C.red : C.gold);
+  T(r.day, x + w - 14, y + 42, { font: F.d(15), color: C.mute, align: "right" });
+  wrap(`«${r.line}»`, w - 70 - 70, F.r(16), 2).forEach((l, k) => T(l, x + 70, y + 37 + k * 18, { font: F.r(16), color: "#4a3f26", skew: true }));
+}
+function paintResenas(st) {
+  header(st.title, `${st.barrio} · Reseñas`, { size: 30, wordmark: false });
+  const y0 = 100, has = st.count > 0, parts = String(st.rating || "").split(" ★ · ");
+  // -- la nota
+  card(16, y0, 600, 150);
+  if (has) {
+    fitText(parts[0], 34, y0 + 52, 120, F.t, 66, 36, { color: C.ink, fancy: true, stroke: "#fff8ea", sw: 5 });
+    T("de 5", 34, y0 + 100, { font: F.m(18), color: C.mute });
+    starRow(272, y0 + 38, 22, 52, st.rating_value);
+    fitText(parts[1] || st.rating, 272, y0 + 82, 260, F.d, 22, 14, { color: C.mute, align: "center" });
+    rect(34, y0 + 116, 560, 1.4, C.line);
+    T("Ocupación", 34, y0 + 134, { font: F.m(19), color: C.mute });
+    fitText(st.occupancy, 34 + width("Ocupación", F.m(19)) + 10, y0 + 134, 90, F.d, 22, 14, { color: C.greenDk });
+  } else {
+    starRow(272, y0 + 38, 22, 52, 0);
+    fitText("Aún sin reseñas", 34, y0 + 90, 520, F.t, 40, 24, { color: C.mute, fancy: true, stroke: "#fff8ea", sw: 5 });
+    rect(34, y0 + 108, 560, 1.4, C.line);
+    fitText("La nota empieza a contar con 3 reseñas.", 34, y0 + 130, 560, F.m, 20, 13, { color: C.mute });
+  }
+  if (st.superhost) {
+    medal(526, y0 + 52, 32);
+    fitText("SUPERANFITRIÓN", 526, y0 + 118, 130, F.t, 17, 11, { color: C.sunDk, align: "center" });
+    fitText("+10 % de precio", 526, y0 + 137, 130, F.d, 14, 10, { color: C.greenDk, align: "center" });
+  }
+  // -- la licencia
+  const lic = st.license, lx = 632, lw = 352;
+  card(lx, y0, lw, 150, { fill: lic ? "#fff" : "#fdf0ec", stroke: lic ? undefined : "#efb9b4" });
+  dot(lx + 36, y0 + 40, 24, lic ? C.orange : C.red); smallIcon(lic ? "sun" : "cross", lx + 36, y0 + 40, 14, "#fff");
+  fitText(lic ? "Licencia vacacional" : "Sin licencia vacacional", lx + 72, y0 + 30, lw - 86, F.d, 21, 13, { color: lic ? C.ink : C.redDk });
+  fitText(lic && st.license_until ? `Licencia hasta ${st.license_until}` : lic ? "En vigor" : "No puedes alquilar a turistas", lx + 72, y0 + 56, lw - 86, F.m, 18, 12, { color: C.mute });
+  rect(lx + 14, y0 + 80, lw - 28, 1.4, C.line);
+  paragraph(lic ? "Se renueva cada 5 años si el barrio no está tensionado." : "Sin ella, el piso no admite estancias de turistas ni reseñas.", lx + 14, y0 + 104, lw - 28, F.r(17), 21, 2, { color: C.mute });
+  // -- las reseñas
+  const ry = 264, rw = 600, rh = 64, gap = 5, list = st.reviews || [];
+  if (!list.length) {
+    card(16, ry, rw, 340, { r: 18 });
+    const sad = !lic;
+    suitcase(316, ry + 100, 46, sad ? C.grey : C.sunDk);
+    if (sad) line(262, ry + 150, 370, ry + 52, C.red, 7);
+    const [t, z] = fit(sad ? "SIN LICENCIA, SIN TURISTAS" : "TODAVÍA NO HA VENIDO NADIE", 560, F.t, 36, 22);
+    TX(t, 316, ry + 214, { font: F.t(z), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6, shadow: "rgba(170,100,30,0.35)" });
+    wrap(sad ? "Para alquilar a turistas hace falta la licencia de vivienda vacacional, y en una zona tensionada no se renueva. Con ella llegan los huéspedes y sus reseñas."
+      : "Cada estancia termina con una reseña del huésped. Con 3 empieza a contar la nota y la ocupación sube o baja con ella.", 520, F.m(20), 4)
+      .forEach((l, i) => T(l, 316, ry + 262 + i * 27, { font: F.m(20), color: C.mute, align: "center" }));
+  } else list.slice(0, 5).forEach((r, i) => reviewCard(r, 16, ry + i * (rh + gap), rw, rh));
+  // -- los muebles
+  card(lx, ry, lw, 340);
+  T("Muebles", lx + 14, ry + 22, { font: F.d(20), color: C.ink });
+  const fs = String(st.furniture_stars).replace(" ★", ""), none = /^\+0(\D|$)/.test(fs);
+  fitText(`${fs} a la nota`, lx + lw - 38, ry + 22, lw - 140, F.d, 18, 12, { color: none ? C.mute : C.greenDk, align: "right" });
+  starPath(lx + lw - 24, ry + 21, 9, none ? "#d9ceb0" : C.gold);
+  const cw = (lw - 28 - 8) / 2, ch = 52;
+  (st.furniture || []).slice(0, 10).forEach((f, i) => {
+    const cx = lx + 14 + (i % 2) * (cw + 8), cy = ry + 40 + Math.floor(i / 2) * (ch + 6);
+    fillRR(cx, cy, cw, ch, 10, f.owned ? "#e4f4e9" : "#f4efe2");
+    rr(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 10); g.strokeStyle = f.owned ? C.green : C.line; g.lineWidth = f.owned ? 2 : 1.2; g.stroke();
+    if (f.owned) tick(true, cx + 22, cy + ch / 2, 12);
+    else { circle(cx + 22, cy + ch / 2, 12); g.strokeStyle = "#c9bd9c"; g.lineWidth = 2; g.stroke(); }
+    let nz = 14, lines = wrap(f.name, cw - 52 - 6, F.d(nz), 2);
+    while (nz > 10 && lines[lines.length - 1].endsWith("…")) lines = wrap(f.name, cw - 52 - 6, F.d(--nz), 2); // el nombre entero, con letra más pequeña si hace falta
+    lines.forEach((l, k) => T(l, cx + 42, cy + ch / 2 + (lines.length === 1 ? 0 : (k - 0.5) * (nz + 3)), { font: F.d(nz), color: f.owned ? C.ink : "#8a8070" }));
+  });
+}
+
 // -- Entrada ------------------------------------------------------------------------------
 
 const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
   gestion: paintGestion, candidatos: paintCandidatos, subastas: paintSubastas, reformas: paintReformas,
-  imprevistos: paintImprevistos };
+  imprevistos: paintImprevistos, resenas: paintResenas };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];
