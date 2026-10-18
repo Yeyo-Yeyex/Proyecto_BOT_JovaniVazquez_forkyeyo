@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.26 · 2026-10-18
+
+- Tienda, Rastro y mascotas: frases nuevas, menos política y sin lo boricua genérico
+
 ### 7.25.25 · 2026-10-18
 
 - Hacienda: las líneas de impuestos de cada cobro dicen la cifra con el 🐶, sin la frase de Perro Sanxe

@@ -190,26 +190,26 @@ EXPIRY_MINUTES = 5
 
 ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
     Kind.ROLE: (
-        "{who} estrena {item}. ¡Qué flow, bebé!",
+        "{who} estrena {item}.",
         "{who} se ha comprado {item}. Ahora sí que brilla.",
         "{who} sale del colmado con {item} puesto. Mírala, mírala.",
         "{who} luce {item}. Yo soy yo, y así me tienes que soportar.",
-        "{who} se pone {item} y sale en el NO-DO de esta semana.",
-        "{who} estrena {item} con más orgullo que Ayuso en la Puerta del Sol.",
+        "{who} estrena {item} y ya no saluda igual.",
+        "{who} se pone {item} y sale a pasearlo.",
     ),
     Kind.BOOST: (
         "{who} se mete un {item} en vena. A yapear se ha dicho.",
         "{who} pilla {item}: ojo, que viene con turbo.",
-        "{who} compra {item}. El XP no se va a ganar solo, mi amor.",
+        "{who} compra {item}. El XP no se va a ganar solo.",
         "{who} se toma {item}. Más chute que un decreto ley.",
-        "{who} activa {item}: crecimiento a la china, sin crédito social.",
+        "{who} activa {item}. Hazme café… ¡quiero café!",
     ),
     Kind.TROPHY: (
-        "{who} se lleva {item} pa' la casa. ¡Wepa!",
+        "{who} se lleva {item} pa' la casa.",
         "{who} compra {item}. Pa' presumir, que pa' eso está.",
         "{who} añade {item} a la vitrina. Qué nivel.",
         "{who} pone {item} en la vitrina, al lado del Nobel de la Paz de Obama.",
-        "{who} se lleva {item}. Trump ya ha preguntado si se lo pueden regalar a él.",
+        "{who} se lleva {item}. ¿Qué? ¿Qué? ¡Toma mangó!",
     ),
     Kind.PET: (
         "{who} sale del colmado con {item} en brazos. Familia nueva.",
@@ -223,7 +223,7 @@ ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
 ANNOUNCE_USABLE: tuple[str, ...] = (
     "{who} sale del colmado con {item} en la mano. Alguien va a cobrar. 👀",
     "{who} se compra {item}. Yo que tú no le daba la espalda.",
-    "{who} pilla {item}. Esto no va a acabar bien, mi amor.",
+    "{who} pilla {item}. Esto no va a acabar bien.",
 )
 
 #: Aviso de compra de un título: se estrena puesto.
@@ -581,7 +581,8 @@ class Storefront(ui.LayoutView):
         container.add_item(
             ui.TextDisplay(
                 f"# 🛒 {SHOP_NAME}{where}\n"
-                f"¡Wepa, {_name(self.owner)}! Aquí se gasta lo que te dan el casino y el IMV. "
+                f"¡Bienvenido, {_name(self.owner)}! Aquí se gasta lo que te dan el casino "
+                f"y el IMV. "
                 f"Los precios van sin IGIC: {TAX_COLLECTOR} cobra en caja.\n"
                 f"-# {CURRENCY_EMOJI} Saldo de {_name(self.owner)}: {format_amount(self.balance)}"
             )
@@ -620,7 +621,7 @@ class Storefront(ui.LayoutView):
         if not page_items:
             container.add_item(
                 ui.TextDisplay(
-                    "El colmado está vacío, mi amor. Un admin tiene que llenarlo con `catalogo`."
+                    "El colmado está vacío. Un admin tiene que llenarlo con `catalogo`."
                     if not self.items_all
                     else "No hay nada por aquí. Prueba otro pasillo u otra pestaña."
                 )
@@ -874,7 +875,7 @@ class Checkout(ui.LayoutView):
         return interaction.user.id == self.buyer.id
 
     async def _cancel(self, interaction: discord.Interaction) -> None:
-        self.failed, self.result = True, "Compra cancelada. Aquí no ha pasado nada, mi amor."
+        self.failed, self.result = True, "Compra cancelada. Aquí no ha pasado nada."
         self.rebuild()
         self.stop()
         await interaction.response.edit_message(view=self)
@@ -1635,7 +1636,7 @@ class Tienda(commands.Cog):
         if role is None:
             return "Ese rol ya no existe en el servidor."
         if role.is_default():
-            return "@everyone no se vende, mi amor."
+            return "@everyone no se vende."
         if role.managed:
             return "Ese rol lo gestiona una integración (un bot o los boosts); no lo puedo dar."
         me = guild.me
@@ -1768,9 +1769,7 @@ class Tienda(commands.Cog):
         """
         entries = [e for e in backpack.entries if e.item_id == item_id and _usable(e)]
         if not entries:
-            await interaction.response.send_message(
-                "Eso ya no está en tu mochila, mi amor.", ephemeral=True
-            )
+            await interaction.response.send_message("Eso ya no está en tu mochila.", ephemeral=True)
             return
         entry = min(entries, key=lambda e: e.id)
         use = use_of(entry.catalog_key)
@@ -1815,7 +1814,7 @@ class Tienda(commands.Cog):
         now = self.clock()
         shout = ""
         if self.cooldown_left(guild.id, member.id, use, now):
-            await notify(interaction, "⏳ Todavía no, mi amor. Respira.")
+            await notify(interaction, "⏳ Todavía no. Respira.")
             return
 
         if use.special == "megaphone":
@@ -1835,7 +1834,7 @@ class Tienda(commands.Cog):
         if use.consumes and not await self.repository.consume(guild.id, member.id, entry.id):
             await notify(
                 interaction,
-                "Eso ya lo has gastado, mi amor. Mira tu mochila en `perfil`.",
+                "Eso ya lo has gastado. Mira tu mochila en `perfil`.",
                 ephemeral=True,
             )
             return
@@ -2130,7 +2129,7 @@ class Tienda(commands.Cog):
         """Por qué no se puede cambiar el apodo con el DNI falso, o `None`."""
         new = " ".join((text or "").split())
         if not new:
-            return "El DNI necesita un nombre, mi amor."
+            return "El DNI necesita un nombre."
         if len(new) > MAX_NICK:
             return f"Discord no deja apodos de más de {MAX_NICK} caracteres."
         if not isinstance(member, discord.Member):
@@ -2208,7 +2207,7 @@ class Tienda(commands.Cog):
         note = None
         if not on_sale(item, local_now(now)):
             season = season_name(item) or "su temporada"
-            return f"Eso solo se vende en {season}. Vuelve entonces, mi amor.", None
+            return f"Eso solo se vende en {season}. Vuelve entonces.", None
         if item.kind is Kind.ROLE:
             role = guild.get_role(item.role_id or 0)
             if (problem := self.role_problem(guild, role)) is not None:
@@ -2234,7 +2233,7 @@ class Tienda(commands.Cog):
         if item.min_level and level < item.min_level:
             return f"Hace falta nivel {item.min_level} y vas por el {level}. ¡A yapear!", None
         if item.sold_out:
-            return "Agotado, mi amor. Llegaste tarde.", None
+            return "Agotado. Llegaste tarde.", None
         return None, note
 
     async def complete_purchase(
@@ -2272,7 +2271,7 @@ class Tienda(commands.Cog):
         except InsufficientFundsError as error:
             view.failed = True
             view.result = (
-                f"❌ ¡Ay, bendito! No te llega: tienes {format_amount(error.balance)} "
+                f"❌ No te llega: tienes {format_amount(error.balance)} "
                 f"y son {format_amount(view.price.total)}."
             )
             return None
@@ -2369,7 +2368,7 @@ class Tienda(commands.Cog):
                     "cambias con su botón 🎨 o en la mochila."
                 )
         lines = [
-            "### ✅ ¡Wepa! Es tuyo",
+            "### ✅ ¡Es tuyo!",
             got,
             receipt(
                 item,

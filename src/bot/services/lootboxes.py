@@ -750,7 +750,7 @@ SHAKE_LINES: tuple[str, ...] = (
     "{who} sacude {box}. Dentro suena a algo duro y, con suerte, valioso.",
     "{who} abre {box} como quien abre un sobre de la Renta: con miedo.",
     "{who} le pega un meneo a {box}. Se oye un «tintineo» sospechoso.",
-    "{who} levanta {box} al oído: parece que hay algo. O que es Bruselas.",
+    "{who} levanta {box} al oído: parece que hay algo.",
 )
 
 #: Qué se dice al enseñar la pieza, según su rareza.
@@ -758,7 +758,7 @@ REVEAL_LINES: dict[Rarity, tuple[str, ...]] = {
     Rarity.COMMON: (
         "Bueno, es lo que hay: mucho cartón y poca sorpresa.",
         "Una pieza de las de siempre. Para hacer bulto en la vitrina.",
-        "Ni fu ni fa. Como un debate sobre el estado de la nación.",
+        "Ni fu ni fa.",
         "Sin pena ni gloria, pero ya la tienes.",
     ),
     Rarity.RARE: (
@@ -772,14 +772,14 @@ REVEAL_LINES: dict[Rarity, tuple[str, ...]] = {
         "Una pieza épica. Hasta el Cabildo lo notaría.",
     ),
     Rarity.LEGENDARY: (
-        "¡LEGENDARIA! ¡Qué suerte, mi amor!",
+        "¡LEGENDARIA! ¡Qué suerte!",
         "Legendaria. Las visitas se quitan el sombrero.",
         "Una pieza legendaria: solo un puñado de servidores la ha visto.",
     ),
     Rarity.MYTHIC: (
         "¡MÍTICA! ¡Toma mangó! Esto casi nunca pasa.",
         "¡Mítica! Hay que llamar a un notario para dar fe.",
-        "¡Mítica! Una pieza de las que salen en el NO-DO de la colección.",
+        "¡Mítica! Ni en sueños.",
     ),
 }
 
@@ -833,7 +833,7 @@ def reveal_frame(
     if drop.rerolled:
         lines.append("-# Te tocaba un tapete que ya tienes, así que he vuelto a sortear.")
     if dupe:
-        lines.append("Repetida, mi amor: te la puedes cambiar o vender en el Rastro.")
+        lines.append("Repetida: te la puedes cambiar o vender en el Rastro.")
     lines.append(progress_text(COLLECTION_BY_KEY[drop.piece.collection], owned))
     return "\n".join(lines)
 

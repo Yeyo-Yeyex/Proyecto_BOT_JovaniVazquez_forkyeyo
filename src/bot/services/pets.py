@@ -328,22 +328,22 @@ CARE_LINES: dict[Care, tuple[str, ...]] = {
         "{pet} se deja acariciar. «{sound}», dice.",
         "{pet} cierra los ojos mientras le rascas detrás de las orejas. O de donde toque.",
         "{pet} se acurruca en tu mano. Ni {collector} podría estropear este momento.",
-        "{pet} se deja acariciar más rato que una sesión de investidura. «{sound}».",
-        "{pet} recibe sus mimos. En el crédito social de la casa, +10 puntos.",
+        "{pet} se deja acariciar un buen rato. «{sound}».",
+        "{pet} recibe sus mimos y pide más.",
     ),
     Care.PLAY: (
         "{pet} corre, salta y lo tira todo. Ha sido un éxito.",
         "{pet} juega contigo hasta que no puede más. «{sound}».",
         "{pet} persigue algo que solo ve {pet}. Tú haces como que también.",
-        "{pet} juega como Putin al ajedrez: no te deja ganar ni una.",
-        "{pet} lanza la pelota y espera aplausos, como Kim con sus misiles.",
+        "{pet} no te deja ganar ni una.",
+        "{pet} lanza la pelota y espera aplausos.",
     ),
     Care.FEED: (
         "{pet} se come {food} en tres segundos. Ni las gracias.",
         "{pet} huele {food}, te mira y se lo come. Aprobado.",
         "{pet} se come {food} y se queda mirando por si hay más.",
         "«¿Con pulpa? ¡Sin pulpa!». {pet} se come {food} igual.",
-        "{pet} se come {food} y le pasa la factura a Bruselas.",
+        "{pet} se come {food} y pide la cuenta.",
     ),
 }
 FAVOURITE_LINE = "{pet} pierde la cabeza con {food}: ¡su comida favorita!"
@@ -427,7 +427,7 @@ def clean_name(text: str | None) -> str:
     """
     name = " ".join((text or "").split())
     if not name:
-        raise ValueError("El nombre no puede quedar vacío, mi amor.")
+        raise ValueError("El nombre no puede quedar vacío.")
     if len(name) > MAX_NAME:
         raise ValueError(f"Como mucho {MAX_NAME} caracteres. No es un DNI.")
     if any(c in _FORBIDDEN for c in name):
@@ -448,11 +448,11 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
     Event.BUST: (
         "{pet} mira tu saldo, te mira a ti y se va a buscar un dueño con IMV.",
         "{pet} se tumba encima de tu cartera vacía. Al menos está calentita.",
-        "{pet} te ofrece su comida para que no pases hambre. Qué vergüenza, mi amor.",
-        "{pet} te mira como Milei a un ministerio: con la motosierra preparada.",
+        "{pet} te ofrece su comida para que no pases hambre. Qué vergüenza.",
         "{pet} se pone a buscar trabajo. Alguien en esta casa tiene que traer pienso.",
         "{pet} recuerda la cartilla de racionamiento de los abuelos. Hoy la entiende.",
-        "{pet} se muda al sótano de Nick Fuentes. Allí, al menos, hay wifi.",
+        "{pet} te mira y dice: «Estoy destruido, pero por fuera». Tú, por dentro también.",
+        "{pet} esconde el pienso, por si acaso.",
     ),
     Event.BIG_WIN: (
         "{pet} se pone a dar vueltas de la emoción. {collector} también.",
@@ -460,52 +460,52 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} ya está mirando yates en la tienda.",
         "{pet} pide el Falcon para ir a celebrarlo.",
         "{pet} grita «¿qué? ¿qué? ¡toma mangó!» a su manera: {sound}.",
-        "{pet} le cuenta a Trump que el mérito es de {pet}. Trump dice que es suyo.",
-        "{pet} pide puros y champán, como los regalos de Bibi.",
+        "{pet} se sube a la mesa a celebrarlo.",
+        "{pet} pide puros y champán.",
     ),
     Event.WIN: (
         "{pet} aprueba la jugada con un {sound}.",
         "{pet} se acerca a oler las fichas ganadas.",
-        "{pet} aplaude como en Pyongyang: por si acaso.",
+        "{pet} mueve la cola.",
         "{pet} se mueve al ritmo de «¡Jota Uve! ¡Pre!».",
-        "{pet} apoya la barbilla en la pata, como la rana groyper, y asiente.",
+        "{pet} te mira con orgullo.",
     ),
     Event.LOSE: (
         "{pet} hace como que no ha visto nada.",
         "{pet} se acurruca a tu lado. Se nota que lo necesitas.",
         "{pet} suspira como Feijóo en la noche electoral.",
         "{pet} te recuerda que Trump quebró seis casinos y acabó en la Casa Blanca.",
-        "{pet} te recuerda que Bibi siempre vuelve. Tú también puedes.",
+        "{pet} te da un empujoncito con el hocico: la próxima.",
     ),
     Event.TAX: (
         "{pet} le gruñe a {collector}. {collector} le retiene el 19 % del gruñido.",
         "{pet} se esconde debajo del sofá cuando llega la carta de Hacienda.",
         "{pet} esconde sus chuches en Andorra antes de que llegue {collector}.",
         "{pet} le pide factura a {collector}. No se la dan.",
-        "{pet} le pide a {collector} el indulto, como Bibi a Herzog.",
+        "{pet} mira a {collector} con cara de pocos amigos.",
     ),
     Event.IMV: (
         "{pet} te acompaña a cobrar la paguita. Su parte, en pienso.",
         "{pet} hace cola contigo en la ventanilla del IMV.",
-        "{pet} pregunta si la paguita la paga Bruselas con los Next Generation.",
+        "{pet} pregunta si la paguita da para chuches.",
     ),
     Event.WORK: (
         "{pet} te espera en la puerta del curro.",
         "{pet} se ha dormido encima de tu nómina.",
         "{pet} desayuna con huevo y jugo de china del bueno mientras tú curras.",
-        "{pet} te despide en la puerta como un ministro despide al Falcon.",
+        "{pet} te despide en la puerta. «{sound}».",
     ),
     Event.LEVEL: (
         "{pet} celebra tu nivel nuevo como si fuera suyo. En parte lo es.",
         "{pet} te felicita por subir de nivel con un {sound} de los buenos.",
         "{pet} canta «¡azul, azul, como el mar azul!» por tu nivel nuevo.",
-        "{pet} lo anuncia en el NO-DO de la casa.",
+        "{pet} se pone a dar saltos.",
     ),
     Event.ACHIEVEMENT: (
         "{pet} pone cara de «ya era hora».",
         "{pet} se apunta el logro también. Trabajo en equipo.",
         "{pet} lo vende a la prensa como un logro del Gobierno.",
-        "{pet} lo pone en su currículum, al lado del máster de Cifuentes.",
+        "{pet} lo pone en su currículum.",
     ),
     Event.LOTTERY_WIN: (
         "{pet} intenta comerse el décimo premiado. Lo has salvado por los pelos.",
@@ -515,7 +515,7 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
     Event.LOTTERY_LOSE: (
         "{pet} rompe el décimo a mordiscos. Total, ya no servía.",
         "{pet} te mira como diciendo «la próxima, al cupón».",
-        "{pet} te consuela: a Fabra le tocaba todos los años y a ti nunca. Suerte de partido.",
+        "{pet} te consuela: a Fabra le tocaba todos los años y a ti nunca.",
     ),
     Event.BUY: (
         "{pet} olfatea la bolsa de la compra a ver si hay algo de comer.",
@@ -524,8 +524,8 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
     ),
     Event.USE: (
         "{pet} mira lo que acabas de hacer y no quiere saber nada.",
-        "{pet} se tapa los ojos. Prefiere no declarar ante la UCO.",
-        "{pet} hace como Rajoy: no sabe nada, no ha visto nada.",
+        "{pet} se tapa los ojos.",
+        "{pet} no sabe nada, no ha visto nada.",
     ),
     Event.LOOTBOX: (
         "{pet} mete la cabeza en la caja vacía. Le gusta más que lo que había dentro.",
@@ -549,8 +549,8 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} se apunta de voluntario. Quiere la langosta del patronato.",
     ),
     Event.TRADE: (
-        "{pet} regatea por ti: «¿último precio?». Tiene más cara que un ministro.",
-        "{pet} olisquea el objeto de segunda mano. Huele a trastero de Galapagar.",
+        "{pet} regatea por ti: «¿último precio?».",
+        "{pet} olisquea el objeto de segunda mano. Huele a trastero.",
         "{pet} pregunta si el ITP se puede pagar en chuches.",
         "{pet} mira el ticket: entre ITP y plusvalía, Hacienda ha hecho mejor negocio que tú.",
         "{pet} se sienta encima del trato como si fuera un notario. Firma con la pata.",
@@ -577,7 +577,7 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} lee tu vida laboral y suspira como un funcionario de la Seguridad Social.",
         "{pet} cree que tu perfil necesita más logros y menos casino.",
         "{pet} pide salir en el resumen. Lo ve justo: sin {pet} no eres nadie.",
-        "{pet} sale en tu perfil más que Sánchez en la tele.",
+        "{pet} se mira en tu perfil como en un espejo.",
     ),
 }
 

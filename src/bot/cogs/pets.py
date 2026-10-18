@@ -372,7 +372,7 @@ class PetPanel(ui.LayoutView):
 
             await ack(interaction, new_message=True)
             if not await tienda.open_aisle(self.cog.bot, interaction, aisle, tab=tab):
-                await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+                await edit(interaction, content="La tienda está cerrada ahora mismo.")
 
         return callback
 
@@ -686,7 +686,7 @@ class Mascotas(commands.Cog):
         food_label = None
         if action is Care.FEED and eats:
             if food is None or not await self.shop.consume(guild.id, member.id, food.id):
-                await notify(interaction, "Eso ya no está en tu mochila, mi amor.")
+                await notify(interaction, "Eso ya no está en tu mochila.")
                 return
             food_label = f"{food.emoji} {food.name}"
         favourite = food is not None and food.catalog_key in species.favourites

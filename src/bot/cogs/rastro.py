@@ -100,39 +100,39 @@ BID_CRIES = (
     "¡A la una!",
     "¡A la una, a las dos…!",
     "¿Quién da más? ¿Nadie? ¿Ni Florentino?",
-    "¡Esto sube más que la luz con Sánchez!",
-    "¡Más pujas que candidatos en las primarias del PSOE!",
-    "¡Qué subasta, mi amor! Ni la de los pisos de la SAREB.",
+    "¡Esto sube más que la luz!",
     "¡Toma mangó! ¡Esto se calienta!",
+    "¡Se pone interesante!",
     "¡La puja más alta desde el precio del aceite!",
     "¡Pujan como si Hacienda no mirara! (Mira.)",
+    "¡Qué subasta!",
 )
 #: Lo que dice al adjudicar.
 SOLD_CRIES = (
     "🔨 ¡Adjudicado!",
     "🔨 ¡A la una, a las dos y a las tres: adjudicado!",
+    "🔨 ¡Vendido!",
+    "🔨 ¡Adjudicado! Ni Sotheby's.",
     "🔨 ¡Vendido! Más rápido que una ley en el BOE un viernes por la tarde.",
-    "🔨 ¡Adjudicado! Ni Sotheby's, mi amor.",
-    "🔨 ¡Adjudicado! Esto en Waterloo no se ve.",
 )
 #: Lo que dice si un puesto cierra sin pujas.
 EXPIRED_CRIES = (
-    "Nadie lo ha querido, ni regalado. Como un programa electoral de hace cuatro años.",
-    "Una semana al sol y ni una puja. Ni en el Rastro de Cascorro, mi amor.",
-    "Ni una oferta. Ni Milei con la motosierra lo habría rebajado tanto.",
+    "Nadie lo ha querido, ni regalado.",
+    "Una semana al sol y ni una puja. Ni en el Rastro de Cascorro.",
+    "Ni una oferta. Vuelve a la mochila.",
 )
 #: Lo que dice al cerrar un trueque.
 SWAP_CRIES = (
     "🔄 ¡Trueque hecho!",
     "🔄 ¡Trueque hecho! Como los cromos del recreo, pero con ITP.",
-    "🔄 ¡Cambio cerrado! Ni el trueque de Sánchez con Junts fue tan rápido.",
+    "🔄 ¡Cambio cerrado!",
     "🔄 ¡Trato hecho! Hoy por ti, mañana por mí, y Hacienda por los dos.",
-    "🔄 ¡Cambiazo! Más limpio que un traspaso de cartera en el Consejo de Ministros.",
+    "🔄 ¡Cambiazo!",
 )
 #: Lo que dice al cerrar una venta directa.
 DEAL_CRIES = (
     "🤝 ¡Trato hecho!",
-    "🤝 ¡Trato hecho! Firmado y sin notario, como los pactos de investidura.",
+    "🤝 ¡Trato hecho, y sin notario!",
     "🤝 ¡Trato hecho! Hacienda ya se ha enterado, tranquilos.",
     "🤝 ¡Vendido! ¿Con pulpa? ¡Sin pulpa!",
 )
@@ -328,7 +328,7 @@ class Rastro(commands.Cog):
             Con embed es público: la oferta (que menciona a quien compra) o el puesto.
         """
         if buyer is not None and buyer.bot:
-            return "Los bots no compran nada, mi amor. Ni con el kit digital.", None, None
+            return "Los bots no compran nada. Ni con el kit digital.", None, None
         if buyer is not None and buyer.id == seller.id:
             return "Venderte algo a ti mismo es blanquear, no comerciar.", None, None
         entries = await self.shop.inventory(guild.id, seller.id, self.clock())
@@ -413,7 +413,7 @@ class Rastro(commands.Cog):
             con embed es la oferta pública, que menciona a quien la recibe.
         """
         if target.bot:
-            return "Los bots no cambian cromos, mi amor. Ni con el kit digital.", None, None
+            return "Los bots no cambian cromos. Ni con el kit digital.", None, None
         if target.id == proposer.id:
             return "Cambiarte algo contigo mismo es hacer limpieza, no trueque.", None, None
         now = self.clock()
@@ -487,7 +487,7 @@ class Rastro(commands.Cog):
         except InsufficientFundsError as error:
             await notify(
                 interaction,
-                f"¡Ay, bendito! A uno de los dos no le llega para el dinero y los impuestos "
+                f"A uno de los dos no le llega para el dinero y los impuestos "
                 f"(se quedaba en {format_amount(error.balance)}).",
             )
             return False
@@ -567,7 +567,7 @@ class Rastro(commands.Cog):
         except InsufficientFundsError as error:
             await notify(
                 interaction,
-                f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)} y hace falta "
+                f"No te llega: tienes {format_amount(error.balance)} y hace falta "
                 "el precio más el ITP.",
             )
             return False
@@ -664,7 +664,7 @@ class Rastro(commands.Cog):
         elif interaction.user.id == listing.top_bidder:
             problem = "Ya vas ganando: no te pujes a ti mismo, que no es el CIS."
         elif self.clock() >= listing.deadline:
-            problem = "Ese puesto ya ha cerrado. ¡Adjudicado a otro, mi amor!"
+            problem = "Ese puesto ya ha cerrado. ¡Adjudicado a otro!"
         if problem is not None:
             await interaction.response.send_message(problem, ephemeral=True)
             return
@@ -700,7 +700,7 @@ class Rastro(commands.Cog):
         except InsufficientFundsError as error:
             await notify(
                 interaction,
-                f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)} y se retiene "
+                f"No te llega: tienes {format_amount(error.balance)} y se retiene "
                 "la puja más su ITP.",
             )
             return
