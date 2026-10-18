@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.23 · 2026-10-18
+
+- Botes y Caballos: frases nuevas, más normales y con Jovani
+
 ### 7.25.22 · 2026-10-18
 
 - Dados y Pachinko: frases nuevas, más normales y con Jovani

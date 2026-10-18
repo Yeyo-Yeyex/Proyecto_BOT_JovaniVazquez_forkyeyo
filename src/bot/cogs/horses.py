@@ -173,18 +173,18 @@ COLOR_FINISH = discord.Color.from_rgb(43, 45, 49)
 NO_MENTIONS = discord.AllowedMentions.none()
 #: Coletilla del resultado en privado de un boleto.
 TICKET_WIN_LINES = (
-    "¡Wepa! Ese caballo lo monta Abascal.",
-    "Ni Putin a caballo y sin camiseta llega tan fresco.",
+    "¡Ese caballo vuela!",
     "Trump dice que el caballo lo entrenó él.",
-    "Más rápido que Puigdemont saliendo de Barcelona.",
+    "¡Boleto premiado!",
     "¿Qué? ¿Qué? ¡Toma mangó! Y el caballo, también.",
-    "Por la mínima, como una investidura.",
+    "Por la mínima, pero cobras.",
+    "Ojo de tratante.",
 )
 TICKET_LOSE_LINES = (
     "Tu caballo se paró a cobrar la paguita.",
-    "El caballo ha pedido asilo en Waterloo.",
+    "El caballo tenía otros planes.",
     "Más lento que una reforma de la Constitución.",
-    "Llegó cuando el AVE a Extremadura: nunca.",
+    "Boleto a la papelera.",
     "Estaba destruido por fuera… y por dentro también.",
     "Se quedó comiendo gofio en la curva.",
 )
