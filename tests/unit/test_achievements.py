@@ -294,6 +294,9 @@ PRODUCED_STATS = {
     "pisos_candidates_seen", "pisos_chose_risky", "pisos_chose_safe", "pisos_young70",
     "pisos_insurer_paid", "pisos_lawyer_free", "pisos_vacant_bonus", PISOS_TENANTS_STAT,
     PISOS_NEWS_STAT,
+    # Fase 3 (cogs/pisos.py: housing_action_stats de la venta, las pujas y las subastas)
+    "pisos_snipe", "pisos_judicial_won", "pisos_member_gift", "pisos_preference",
+    "pisos_member_reference", "pisos_moved_in", "pisos_member_overpaid", "pisos_auction_max",
     *(f"{PISOS_TENANT_PREFIX}{t.key}" for t in HOUSING_TENANT_LIST),
     *(f"{PISOS_NEWS_PREFIX}{n.key}" for n in HOUSING_NEWS_LIST),
     *(f"{PISOS_KIND_PREFIX}{kind}" for kind in HOUSING_KINDS),

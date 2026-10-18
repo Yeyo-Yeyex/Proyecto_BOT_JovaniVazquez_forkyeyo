@@ -1290,6 +1290,24 @@ async def press_pisos_evict(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pisos_bid(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+    cog = client.get_cog("Pisos")
+    seller = OWNER_ID + 1
+    await client.economy.repository.apply(GUILD_ID, seller, [LedgerEntry(10_000_000, "test")])
+    await cog.service.buy(GUILD_ID, seller, "taco_bajo", 100)
+    auction = await cog.service.create_auction(GUILD_ID, seller, "taco_bajo", 100, 10_000)
+    panel = pisos_panel(client, owner)
+    panel.screen = "subastas"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel.place_bid(interaction, auction.id, 20_000)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1633,6 +1651,7 @@ CASES: dict[str, Press] = {
     "pisos: elegir yo al inquilino": press_pisos_pick,
     "pisos: contratar el seguro": press_pisos_insurance,
     "pisos: desahuciar con abogado": press_pisos_evict,
+    "pisos: pujar en una subasta": press_pisos_bid,
     "tienda: lucir un título": press_wear_title,
     "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,

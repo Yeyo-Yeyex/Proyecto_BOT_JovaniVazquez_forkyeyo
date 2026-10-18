@@ -98,6 +98,8 @@ Modelo de datos:
 - `economy_wallets` con `user_id = HOUSING_DEPOSIT_ACCOUNT_ID`: el depósito de
   fianzas de `pisos`. Guarda la fianza de cada miembro de alquiler hasta que se va.
 - `economy_wallets` con `user_id = MARKET_ACCOUNT_ID`: el depósito del Rastro.
+- `economy_wallets` con `user_id = HOUSING_AUCTION_ACCOUNT_ID`: el depósito de las subastas
+  de `pisos`: la mejor puja de cada una (con su ITP y su notaría) espera aquí.
   Guarda la puja más alta de cada subasta (con su ITP) hasta que se adjudica, o
   hasta devolverla entera a quien es superado.
 - `economy_market_tax`: el ITP (de quien compra) y el IRPF de la plusvalía (de
@@ -189,6 +191,10 @@ MARKET_ACCOUNT_ID = -600
 #: miembro que alquila el piso de otro espera aquí hasta que se va, como el depósito que
 #: llevan las comunidades autónomas (disposición adicional 3.ª de la LAU).
 HOUSING_DEPOSIT_ACCOUNT_ID = -700
+
+#: `user_id` del depósito de las subastas de `pisos`: la mejor puja de cada subasta, con lo
+#: que pagará de ITP y notaría, espera aquí y se devuelve entera a quien superan.
+HOUSING_AUCTION_ACCOUNT_ID = -800
 
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"

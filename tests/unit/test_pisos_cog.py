@@ -530,11 +530,13 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
                 "VALUES (?, 'vegueta_edificio', ?, '2026-12-31')",
                 (GUILD, tenant),
             )
+    for listing in LISTINGS[:6]:
+        await cog.service.create_auction(GUILD, ana.id, listing.key, 10, 1_000)
     panel = await open_panel(cog, ana, guild_with(ana))
     await panel.refresh()
     for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
                             (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None),
-                            (GESTION, None), (CANDIDATOS, None)):  # fmt: skip
+                            (GESTION, None), (CANDIDATOS, None), ("subastas", None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -928,3 +930,76 @@ def test_las_noticias_de_barrio_salen_en_un_mensaje() -> None:
     embed = news_embed([("taco", "fabrica"), ("canteras", "bandera_azul")])
     assert "Taco" in embed.description and "Las Canteras" in embed.description
     assert "fábrica" in embed.description
+
+
+# -- Fase 3 de la ampliación (8.2.0) ------------------------------------------------------
+
+
+async def test_vender_a_un_miembro_respeta_el_derecho_preferente(tmp_path: Path) -> None:
+    from bot.cogs.pisos import PREFERENCE_SECONDS, MemberSaleOffer
+
+    cog, _scene, clock = await make(tmp_path)
+    ana, bea, carol = member(10, "Ana"), member(20, "Bea"), member(30, "Carol")
+    for user in (ana, bea, carol):
+        user.mention = f"<@{user.id}>"
+        await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", 60)
+    await cog.service.buy(GUILD, carol.id, "taco_bajo", 40)
+    guild = guild_with(ana, bea, carol)
+    panel = await open_panel(cog, ana, guild)
+    panel.listing = "taco_bajo"
+    await panel.choose_buyer(clicked(ana, []), 60, 300_000)
+    assert "pisos:comprador" in ids(panel)
+    pick = clicked(ana, [], values=[str(bea.id)])
+    await panel._pick_buyer(pick)
+    offer = pick.followup.send.await_args.kwargs["view"]
+    assert isinstance(offer, MemberSaleOffer)
+    assert [m.id for m in offer.preferred] == [carol.id]  # retracto de la copropietaria
+
+    early = clicked(bea, [])
+    await offer.cash.callback(early)  # type: ignore[attr-defined]
+    early.response.send_message.assert_awaited_once()  # Bea tiene que esperar
+    assert (await cog.service.market(GUILD)).shares_of("taco_bajo")[ana.id] == 60
+
+    clock.now += PREFERENCE_SECONDS + 1
+    buy = clicked(bea, [])
+    await offer.cash.callback(buy)  # type: ignore[attr-defined]
+    market = await cog.service.market(GUILD)
+    assert market.shares_of("taco_bajo") == {carol.id: 40, bea.id: 60}
+    assert offer.is_finished()
+
+
+async def test_subastar_pujar_y_cerrar_desde_el_panel(tmp_path: Path) -> None:
+    from bot.cogs.pisos import SUBASTAS
+
+    cog, _scene, clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    for user in (ana, bea):
+        await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = guild_with(ana, bea)
+    guild.text_channels = [channel]
+    cog.bot.get_guild = lambda _id: guild
+    panel = await open_panel(cog, ana, guild)
+    panel.listing = "taco_bajo"
+    await panel.refresh()
+    await panel.open_auction(clicked(ana, []), 100, 50_000)
+    assert "Subasta" in channel.send.await_args.kwargs["embed"].title
+    (auction,) = (await cog.service.market(GUILD)).auctions
+
+    other = await open_panel(cog, bea, guild)
+    await other._go_auctions(clicked(bea, []))
+    assert other.screen == SUBASTAS and "pisos:pujar" in ids(other)
+    events: list[str] = []
+    await other.place_bid(clicked(bea, events), auction.id, 60_000)
+    assert events[0] == "response.defer"
+    assert (await cog.service.market(GUILD)).auctions[0].best_bidder == bea.id
+
+    clock.now = auction.ends_at + 1
+    run = await cog.close_auctions(GUILD)
+    assert run is not None and run.results[0].winner == bea.id
+    assert "Fin de la subasta" in channel.send.await_args.kwargs["embed"].title
+    assert (await cog.service.market(GUILD)).shares_of("taco_bajo") == {bea.id: rules.SHARES}

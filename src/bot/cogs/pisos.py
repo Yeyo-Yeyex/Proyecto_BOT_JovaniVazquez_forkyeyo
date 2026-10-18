@@ -20,6 +20,12 @@ desahucio; si elige él, la pantalla 👥 Candidatos enseña a los que esperan y
 uno o se descartan. Desahuciar paga el abogado y el procurador (salvo con seguro). Los
 lunes, las noticias de barrio salen en `#chat-general` si alguien tiene pisos.
 
+Ampliación, fase 3 (8.2.0): desde 🧰 Gestionar se vende a otro miembro (una oferta pública
+que acepta, al contado o con hipoteca; el inquilino que es miembro y los copropietarios
+tienen derecho preferente unos minutos) o se saca a subasta un día. La pantalla 🔨 Subastas
+enseña las abiertas y se puja con un formulario. Las ejecuciones hipotecarias salen antes a
+subasta judicial. La tarea de cada 10 minutos cierra las que acaban y lo anuncia.
+
 Dinero (todo por `EconomyService.housing`, impuestos en su docstring): comprar
 participaciones (ITP del 6,5 % al Estado, notaría que desaparece), venderlas al
 mercado (agencia, deudas del piso e IRPF de la ganancia) y, cada noche, la renta de
@@ -67,11 +73,13 @@ from bot.cogs import renta
 from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
 from bot.repositories.housing import (
+    AuctionRun,
     DayRun,
     Eviction,
     HousingError,
     HousingRepository,
     Market,
+    MemberSale,
     PriceChanged,
     Purchase,
     Sale,
@@ -96,6 +104,7 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
+    LISTING_BY_KEY,
     RENT_LEVELS,
     TENANT_BY_KEY,
     Listing,
@@ -129,7 +138,10 @@ BARRIO_COLS = 5
 MAX_OPTIONS = 25
 
 MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", "caja", "vpo"
-GESTION, CANDIDATOS = "gestion", "candidatos"
+GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
+#: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
+#: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
+PREFERENCE_SECONDS = 10 * 60
 #: La oferta de alquiler a un miembro caduca tras este rato.
 OFFER_TIMEOUT = 30 * 60
 #: Lo que le pasa a un miembro y no al inmueble: sus logros van solo a él, no a los dueños.
@@ -380,6 +392,73 @@ class SharesModal(ui.Modal):
         await self.panel.open_checkout(interaction, selling=self.selling, shares=int(text))
 
 
+def _number(text: str) -> int | None:
+    """Un número escrito en un formulario («150.000», «150000» o «150 000»), o `None`."""
+    digits = text.strip().replace(".", "").replace(" ", "").replace("Y$", "").strip()
+    return int(digits) if digits.isdigit() else None
+
+
+class TradeModal(ui.Modal):
+    """Participaciones y precio: para vender a un miembro o para sacar a subasta."""
+
+    def __init__(self, panel: Panel, *, auction: bool, most: int, value: int) -> None:
+        super().__init__(title="Sacar a subasta" if auction else "Vender a un miembro")
+        self.panel = panel
+        self.auction = auction
+        self.most = most
+        self.shares: ui.TextInput = ui.TextInput(
+            label=f"Participaciones (1 a {most})", default=str(most), min_length=1, max_length=3
+        )
+        self.price: ui.TextInput = ui.TextInput(
+            label="Puja mínima (Y$)" if auction else "Precio de todas (Y$)",
+            placeholder=f"Valen {format_amount(value)} a precio de mercado",
+            default=str(value),
+            min_length=1,
+            max_length=15,
+        )
+        self.add_item(self.shares)
+        self.add_item(self.price)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Valida las cifras y sigue: elegir comprador o abrir la subasta."""
+        shares, price = _number(self.shares.value), _number(self.price.value)
+        if shares is None or not 1 <= shares <= self.most:
+            await notify(interaction, f"Pon un número de participaciones de 1 a {self.most}.")
+            return
+        if price is None or price < 1:
+            await notify(interaction, "Pon un precio en Y$, mayor que cero.")
+            return
+        if self.auction:
+            await self.panel.open_auction(interaction, shares, price)
+        else:
+            await self.panel.choose_buyer(interaction, shares, price)
+
+
+class BidModal(ui.Modal):
+    """Cuánto se puja en una subasta."""
+
+    def __init__(self, panel: Panel, auction_id: int, least: int) -> None:
+        super().__init__(title="Pujar en la subasta")
+        self.panel = panel
+        self.auction_id = auction_id
+        self.amount: ui.TextInput = ui.TextInput(
+            label="Tu puja (Y$)",
+            placeholder=f"Como poco {format_amount(least)}; además dejas el ITP y la notaría",
+            default=str(least),
+            min_length=1,
+            max_length=15,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Valida la cifra y puja."""
+        amount = _number(self.amount.value)
+        if amount is None or amount < 1:
+            await notify(interaction, "Pon la puja en Y$.")
+            return
+        await self.panel.place_bid(interaction, self.auction_id, amount)
+
+
 class Panel(ui.View):
     """El panel de `pisos` de un miembro: una pantalla a la vez, todas en imagen."""
 
@@ -399,6 +478,10 @@ class Panel(ui.View):
         self.confirm: str | None = None
         #: Sello de la caja tras pagar (`PAGADO`, `VENDIDO`) y su resultado.
         self.done: tuple[str, Purchase | Sale] | None = None
+        #: Venta a un miembro a medias: `(participaciones, precio)`, a falta del comprador.
+        self.sale_draft: tuple[int, int] | None = None
+        #: La subasta elegida en la pantalla 🔨 Subastas.
+        self.auction_id: int | None = None
         self.market = Market()
         self.cash = 0
         self.message: discord.Message | None = None
@@ -425,6 +508,7 @@ class Panel(ui.View):
         """Lee el mercado y el saldo (una consulta cada uno)."""
         service = self.cog.service
         self.market = await service.market(self.guild.id)
+        self.cog.market_cache[self.guild.id] = self.market
         self.cash = await self.cog.economy.balance(self.guild.id, self.owner.id)
 
     async def _state(
@@ -443,6 +527,8 @@ class Panel(ui.View):
             return view.gestion_state(market, listing or self.listing, me, names, today)
         if screen == CANDIDATOS:
             return view.candidates_state(market, listing or self.listing, today)
+        if screen == SUBASTAS:
+            return view.auctions_state(market, me, names, self.cog.service.now(), self.auction_id)
         if screen == CARTERA:
             mine = tuple(h.listing for h in market.of_member(me))
             news = await self.cog.service.news(self.guild.id, mine, 6)
@@ -609,6 +695,8 @@ class Panel(ui.View):
             return [(FICHA, {"listing": h.listing}) for h in mine] + [(MAPA, {}), (VPO, {})]
         if self.screen == VPO:
             return [(MAPA, {}), (CARTERA, {})]
+        if self.screen == SUBASTAS:
+            return [(MAPA, {}), (CARTERA, {})]
         if self.screen == CAJA:  # cancelar o «ver la ficha», y los atajos de siempre
             return [(FICHA, {"listing": self.listing}), (CARTERA, {}), (MAPA, {})]
         return []
@@ -761,6 +849,7 @@ class Panel(ui.View):
                 self.add_item(pick)
             self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=2)
+            self._auctions_button(row=2)
             self._portfolio_buttons()
         elif self.screen == VPO:
             self._vpo_buttons()
@@ -768,9 +857,12 @@ class Panel(ui.View):
             self._gestion_buttons()
         elif self.screen == CANDIDATOS:
             self._candidate_buttons()
+        elif self.screen == SUBASTAS:
+            self._auction_buttons()
         else:
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=1)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=1)
+            self._auctions_button(row=1)
 
     def _confirmable(
         self,
@@ -935,6 +1027,61 @@ class Panel(ui.View):
         self._button("◀ La ficha", "ficha", self._back_to_listing, row=2)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+        held = market.holdings.get(key, {}).get(me)
+        if held is not None and market.auction_of(key, me) is None:
+            if self.confirm == "comprador":
+                pick: ui.UserSelect = ui.UserSelect(
+                    placeholder="¿A qué miembro se lo vendes?", custom_id=f"{GAME}:comprador",
+                    row=3,
+                )  # fmt: skip
+                pick.callback = self._pick_buyer  # type: ignore[method-assign]
+                self.add_item(pick)
+            else:
+                self._button("🤝 Vender a un miembro", "vender_miembro", self._sell_member, row=3)
+                self._button("🔨 Subastar", "subastar", self._auction_form, row=3)
+
+    def _auctions_button(self, *, row: int) -> None:
+        """El botón que abre 🔨 Subastas, con cuántas hay abiertas."""
+        count = len(self.market.auctions)
+        label = f"🔨 Subastas ({count})" if count else "🔨 Subastas"
+        self._button(label, "subastas", self._go_auctions, row=row)
+
+    def _auction_buttons(self) -> None:
+        """🔨 Subastas: elegir una en el desplegable y pujar."""
+        auctions = list(self.market.auctions)[:MAX_OPTIONS]
+        if auctions:
+            if self.auction_id not in {a.id for a in auctions}:
+                self.auction_id = auctions[0].id
+            pick: ui.Select = ui.Select(
+                placeholder="Elige una subasta",
+                custom_id=f"{GAME}:subasta",
+                row=1,
+                options=[
+                    discord.SelectOption(
+                        label=f"{'⚖️ ' if a.judicial else ''}{self._title(a.listing)}"[:100],
+                        value=str(a.id),
+                        description=f"{a.shares} % · mejor puja "
+                        f"{format_amount(a.best_bid) if a.best_bid else 'ninguna'}"[:100],
+                        default=a.id == self.auction_id,
+                    )
+                    for a in auctions
+                ],
+            )
+            pick.callback = self._pick_auction  # type: ignore[method-assign]
+            self.add_item(pick)
+            chosen = next(a for a in auctions if a.id == self.auction_id)
+            least = rules.next_bid(chosen.best_bid, chosen.min_bid)
+            self._button(
+                f"🔨 Pujar (desde {format_amount(least)})",
+                "pujar", self._bid_form, row=2, style=discord.ButtonStyle.success,
+                disabled=chosen.seller == self.owner.id,
+            )  # fmt: skip
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+
+    def _title(self, key: str) -> str:
+        listing = self.market.listing(key)
+        return listing.title if listing is not None else key
 
     def _candidate_buttons(self) -> None:
         """👥 Candidatos: firmar con uno o descartarlo (lo decide quien tiene la mayoría)."""
@@ -1052,6 +1199,138 @@ class Panel(ui.View):
 
     async def _go_gestion(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, GESTION)
+
+    async def _go_auctions(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, SUBASTAS)
+
+    async def _pick_auction(self, interaction: discord.Interaction) -> None:
+        values = interaction.data.get("values", []) if interaction.data else []
+        if values and str(values[0]).isdigit():
+            self.auction_id = int(values[0])
+        await self._go(interaction, SUBASTAS)
+
+    async def _sell_member(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario de vender a un miembro. Solo memoria (el formulario va primero)."""
+        held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+        if held is None:
+            await notify(interaction, "No tienes nada en este inmueble.")
+            return
+        await interaction.response.send_modal(
+            TradeModal(self, auction=False, most=held.shares, value=self.market.value(held))
+        )
+
+    async def _auction_form(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario de sacar a subasta. Solo memoria."""
+        held = self.market.holdings.get(self.listing, {}).get(self.owner.id)
+        if held is None:
+            await notify(interaction, "No tienes nada en este inmueble.")
+            return
+        value = round(self.market.value(held) * 0.8)
+        await interaction.response.send_modal(
+            TradeModal(self, auction=True, most=held.shares, value=max(1, value))
+        )
+
+    async def _bid_form(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario de pujar en la subasta elegida. Solo memoria."""
+        auction = next((a for a in self.market.auctions if a.id == self.auction_id), None)
+        if auction is None:
+            await notify(interaction, "Esa subasta ya ha terminado.")
+            return
+        least = rules.next_bid(auction.best_bid, auction.min_bid)
+        await interaction.response.send_modal(BidModal(self, auction.id, least))
+
+    async def choose_buyer(self, interaction: discord.Interaction, shares: int, price: int) -> None:
+        """Tras el formulario: el desplegable para elegir a qué miembro se vende."""
+        await ack(interaction)
+        self.sale_draft = (shares, price)
+        self.screen, self.confirm = GESTION, "comprador"
+        await self.show(interaction)
+
+    async def _pick_buyer(self, interaction: discord.Interaction) -> None:
+        """Publica la oferta de venta: el comprador la acepta en un mensaje aparte."""
+        values = interaction.data.get("values", []) if interaction.data else []
+        await ack(interaction)
+        self.confirm = None
+        draft, self.sale_draft = self.sale_draft, None
+        buyer = None
+        if values and str(values[0]).isdigit():
+            buyer = self.guild.get_member(int(values[0]))
+            if buyer is None:
+                try:
+                    buyer = await self.guild.fetch_member(int(values[0]))
+                except discord.HTTPException:
+                    buyer = None
+        await self.show(interaction)
+        if draft is None or buyer is None:
+            await notify(interaction, "No encuentro a ese miembro.")
+            return
+        if buyer.bot or buyer.id == self.owner.id:
+            await notify(interaction, "Así no: elige a otro miembro del servidor.")
+            return
+        shares, price = draft
+        offer = MemberSaleOffer(
+            self.cog, self.guild, self.owner, buyer, self.listing, shares, price
+        )
+        if offer.quote is None:
+            await notify(interaction, "Ya no tienes esas participaciones.")
+            return
+        mention = [buyer, *offer.preferred]
+        offer.message = await interaction.followup.send(
+            content=" ".join(m.mention for m in mention),
+            embed=offer.embed(),
+            view=offer,
+            wait=True,
+            allowed_mentions=discord.AllowedMentions(users=mention),
+        )
+
+    async def open_auction(self, interaction: discord.Interaction, shares: int, price: int) -> None:
+        """Tras el formulario: abre la subasta y la anuncia. No mueve dinero."""
+        await ack(interaction)
+        try:
+            auction = await self.cog.service.create_auction(
+                self.guild.id, self.owner.id, self.listing, shares, price
+            )
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        await notify(
+            interaction,
+            f"🔨 Subasta abierta: {shares} participaciones de «{self._title(self.listing)}» desde "
+            f"{format_amount(price)}. Acaba en 24 horas; se puja desde 🔨 Subastas.",
+        )
+        await self.cog.announce_auction(self.guild.id, auction)
+        logros.note(
+            self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("subasta"),
+            getattr(interaction.channel, "id", None),
+        )  # fmt: skip
+
+    async def place_bid(
+        self, interaction: discord.Interaction, auction_id: int, amount: int
+    ) -> None:
+        """Puja: deja en el depósito la puja, su ITP y su notaría."""
+
+        async def run() -> Any:
+            return await self.cog.service.bid(self.guild.id, self.owner.id, auction_id, amount)
+
+        bid = await self._money(interaction, run)
+        if bid is None:
+            return
+        self.auction_id = auction_id
+        self.screen = SUBASTAS
+        await self._done(interaction, Event.HOME, None)
+        extra = " Alguien ha pujado en la última hora: la subasta se alarga una hora." if (
+            bid.extended
+        ) else ""  # fmt: skip
+        await notify(
+            interaction,
+            f"🔨 Pujas {format_amount(amount)}: dejas {format_amount(bid.escrow)} en el depósito "
+            f"(con el ITP y la notaría). Si te superan, te lo devuelven entero.{extra}",
+        )
+        delta = housing_action_stats("puja", extended=bid.extended)
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel, delta)
+        if bid.outbid is not None:
+            logros.note(self.cog.bot, self.guild.id, bid.outbid, housing_action_stats("superado"))
 
     async def _go_candidates(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, CANDIDATOS)
@@ -1592,6 +1871,208 @@ class Panel(ui.View):
         )  # fmt: skip
 
 
+class MemberSaleOffer(ui.View):
+    """Oferta pública de venta de participaciones a otro miembro.
+
+    El comprador la acepta al contado o con hipoteca, o la rechaza; el vendedor la retira.
+    Si se vende entera una vivienda en la que vive de alquiler otro miembro, él tiene el
+    tanteo (art. 25 LAU); si se vende a quien no es copropietario, los copropietarios tienen
+    el retracto (art. 1522 CC, que va antes). Durante `PREFERENCE_SECONDS` solo ellos pueden
+    comprar, al mismo precio, o renunciar; después, el comprador.
+    """
+
+    def __init__(
+        self,
+        cog: Pisos,
+        guild: discord.Guild,
+        seller: discord.abc.User,
+        buyer: discord.abc.User,
+        key: str,
+        shares: int,
+        price: int,
+    ) -> None:
+        super().__init__(timeout=OFFER_TIMEOUT)
+        self.cog = cog
+        self.guild = guild
+        self.seller = seller
+        self.buyer = buyer
+        self.key = key
+        self.shares = shares
+        self.price = price
+        self.message: discord.Message | None = None
+        self.busy = False
+        self.opened = cog.service.now()
+        market = cog.market_cache.get(guild.id) or Market()
+        self.listing = market.listing(key) or LISTING_BY_KEY.get(key)
+        held = market.holdings.get(key, {}).get(seller.id)
+        self.quote: rules.MemberSaleQuote | None = None
+        if held is not None and self.listing is not None and shares <= held.shares:
+            self.quote = rules.member_sale_quote(
+                self.listing, shares, held.shares, held.cost, price,
+                index=market.index(self.listing.barrio),
+            )  # fmt: skip
+        holders = market.shares_of(key)
+        lease = market.leases.get(key)
+        preferred: list[discord.abc.User] = []
+        if buyer.id not in holders:
+            preferred += [m for m in (guild.get_member(h) for h in holders if h != seller.id) if m]
+        whole = shares == holders.get(seller.id, 0) == rules.SHARES
+        if whole and lease is not None and lease.member not in (None, buyer.id):
+            tenant = guild.get_member(lease.member)
+            if tenant is not None:
+                preferred.append(tenant)
+        #: Quien tiene derecho preferente y aún no ha renunciado.
+        self.preferred = preferred
+        self.declined: set[int] = set()
+
+    def embed(self, text: str | None = None) -> discord.Embed:
+        quote = self.quote
+        title = self.listing.title if self.listing else self.key
+        if text is None and quote is not None:
+            lines = [
+                f"**{self.seller.display_name}** le vende a **{self.buyer.display_name}** "
+                f"{self.shares} participaciones de «{title}» por **{format_amount(self.price)}** "
+                f"(a precio de mercado valen {format_amount(quote.value)}).",
+                f"El comprador paga además el ITP, {format_amount(quote.itp)} (sobre el mayor "
+                "entre el precio y el valor de referencia, "
+                f"{format_amount(quote.reference)}), y la notaría, "
+                f"{format_amount(quote.notary + quote.notary_igic)} con IGIC.",
+                f"El vendedor tributa el 19 % de su ganancia: {format_amount(quote.gain_tax)}. Las "
+                "deudas y el inquilino siguen con el piso.",
+            ]
+            if self.preferred:
+                names = ", ".join(m.display_name for m in self.preferred)
+                lines.append(
+                    f"Derecho preferente: {names} pueden quedárselo al mismo precio durante "
+                    f"{PREFERENCE_SECONDS // 60} minutos o renunciar."
+                )
+            text = "\n".join(lines)
+        return discord.Embed(
+            title="🤝 Se vende (a un miembro)",
+            description=text or "La oferta ya no vale.",
+            color=discord.Color.gold(),
+        )
+
+    async def _close(self, interaction: discord.Interaction, text: str) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            content=None, embed=self.embed(text), view=None,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )  # fmt: skip
+
+    def _pending(self) -> list[discord.abc.User]:
+        """Quien tiene derecho preferente, no ha renunciado y aún está a tiempo."""
+        if self.cog.service.now() - self.opened >= PREFERENCE_SECONDS:
+            return []
+        return [m for m in self.preferred if m.id not in self.declined]
+
+    async def _buy(self, interaction: discord.Interaction, *, financed: bool) -> None:
+        user = interaction.user
+        preferred = {m.id for m in self.preferred}
+        if user.id != self.buyer.id and user.id not in preferred:
+            await interaction.response.send_message("Esa oferta no es para ti.", ephemeral=True)
+            return
+        if user.id == self.buyer.id and (waiting := self._pending()):
+            names = ", ".join(m.display_name for m in waiting)
+            await interaction.response.send_message(
+                f"Espera: {names} tienen derecho preferente unos minutos más.", ephemeral=True
+            )
+            return
+        if self.busy:
+            await interaction.response.send_message("Un momento, que lo está firmando.",
+                                                    ephemeral=True)  # fmt: skip
+            return
+        self.busy = True
+        await ack(interaction)
+        try:
+            aval = financed and await curro.parents_aval(self.cog.bot, self.guild.id, user.id)
+            sale, _balance = await self.cog.service.member_sale(
+                self.guild.id, self.seller.id, user.id, self.key, self.shares, self.price,
+                financed=financed, aval=aval,
+            )  # fmt: skip
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        except InsufficientFundsError as error:
+            tip = "" if financed else " Prueba con hipoteca: el banco pone el 80 %."
+            await notify(interaction, f"No te llega: tienes {format_amount(error.balance)}.{tip}")
+            return
+        except PriceChanged as error:
+            await notify(
+                interaction,
+                f"El barrio se ha movido y ahora te costaría {format_amount(error.amount)}. No se "
+                "ha firmado nada.",
+            )
+            return
+        except BalanceLimitError:
+            await notify(interaction, "No te cabe más dinero en el monedero. Ni a Amancio.")
+            return
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo cerrar una venta entre miembros")
+            await notify(interaction, "Se ha caído el notario. Prueba otra vez en un momento.")
+            return
+        finally:
+            self.busy = False
+        self.stop()
+        preference = user.id != self.buyer.id
+        how = " con el derecho preferente" if preference else ""
+        await edit(
+            interaction, content=None, view=None,
+            embed=self.embed(
+                f"🤝 **{user.display_name}** compra{how} {self.shares} participaciones a "
+                f"**{self.seller.display_name}** por {format_amount(self.price)}."
+                + (" Ahora vive en lo suyo." if sale.moved_in else "")
+            ),
+        )  # fmt: skip
+        if sale.aval:
+            await curro.spend_parents_aval(self.cog.bot, self.guild.id, user.id)
+        await renta.remind(self.cog.bot, interaction)
+        await self.cog.track_member_sale(self.guild.id, self.seller, user, interaction.channel,
+                                         sale, preference=preference)  # fmt: skip
+
+    @ui.button(label="Comprar al contado", emoji="🤝", style=discord.ButtonStyle.success,
+               custom_id="pisos:venta:contado")  # fmt: skip
+    async def cash(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        await self._buy(interaction, financed=False)
+
+    @ui.button(label="Con hipoteca", emoji="🏦", style=discord.ButtonStyle.primary,
+               custom_id="pisos:venta:hipoteca")  # fmt: skip
+    async def mortgage(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        await self._buy(interaction, financed=True)
+
+    @ui.button(label="Renuncio", emoji="🙅", style=discord.ButtonStyle.secondary,
+               custom_id="pisos:venta:renuncio")  # fmt: skip
+    async def decline(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id == self.buyer.id:
+            await self._close(interaction, f"✖️ {self.buyer.display_name} no lo quiere.")
+            return
+        if interaction.user.id not in {m.id for m in self.preferred}:
+            await interaction.response.send_message("Esa oferta no es para ti.", ephemeral=True)
+            return
+        self.declined.add(interaction.user.id)
+        await interaction.response.send_message("Renuncias a tu derecho preferente.",
+                                                ephemeral=True)  # fmt: skip
+
+    @ui.button(label="Retirar", emoji="↩️", style=discord.ButtonStyle.secondary,
+               custom_id="pisos:venta:retirar")  # fmt: skip
+    async def withdraw(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self.seller.id:
+            await interaction.response.send_message("Esa oferta no es tuya.", ephemeral=True)
+            return
+        await self._close(interaction, f"↩️ {self.seller.display_name} se lo ha pensado mejor.")
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(
+                content=None, embed=self.embed("⌛ La oferta de venta ha caducado."), view=None,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )  # fmt: skip
+        except discord.HTTPException:
+            pass
+
+
 class TenantOffer(ui.View):
     """Oferta pública de alquiler de un piso a otro miembro: él acepta o rechaza.
 
@@ -1769,6 +2250,9 @@ class Pisos(commands.Cog):
         self.panels: set[Panel] = set()
         #: `(servidor, miembro)` con una compra o venta en marcha: una a la vez.
         self.working: set[tuple[int, int]] = set()
+        #: El último mercado leído de cada servidor (el panel lo refresca): la oferta de venta
+        #: a un miembro sale de aquí sin volver a leer la base.
+        self.market_cache: dict[int, Market] = {}
 
     async def cog_load(self) -> None:
         self._nightly.start()
@@ -1787,6 +2271,7 @@ class Pisos(commands.Cog):
         for guild in self.bot.guilds:
             try:
                 await self.close_guild(guild.id)
+                await self.close_auctions(guild.id)
             except Exception:
                 # Un servidor roto no para la tarea: si saliera la excepción, `tasks.loop`
                 # se pararía para siempre y nadie cobraría más alquileres.
@@ -1813,6 +2298,12 @@ class Pisos(commands.Cog):
                 await self._announce_ecb(guild_id, run.day, *run.euribor)
             if run.barrio_news:
                 await self._announce_news(guild_id, run.barrio_news)
+            if run.auctions:
+                market = await self.service.market(guild_id)
+                self.market_cache[guild_id] = market
+                for auction in market.auctions:
+                    if any(number == auction.id for _m, _k, number in run.auctions):
+                        await self.announce_auction(guild_id, auction)
             for builder, key in run.promotions:
                 await self._announce_promotion(guild_id, builder, key)
                 logros.note(self.bot, guild_id, builder, StatDelta(add={"pisos_promotions": 1}))
@@ -1899,6 +2390,115 @@ class Pisos(commands.Cog):
             )
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo anunciar el Euríbor en %s", guild_id, exc_info=True)
+
+    async def close_auctions(self, guild_id: int) -> AuctionRun | None:
+        """Cierra las subastas que han acabado, lo anuncia y apunta sus logros. Nunca lanza."""
+        try:
+            run = await self.service.close_auctions(guild_id)
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron cerrar las subastas de pisos en %s", guild_id)
+            return None
+        for result in run.results:
+            await self._announce_result(guild_id, result)
+            auction = result.auction
+            if result.winner is not None:
+                logros.note(self.bot, guild_id, result.winner, housing_action_stats(
+                    "gana_subasta", judicial=auction.judicial, amount=result.price
+                ))  # fmt: skip
+            if not auction.judicial and result.winner is None and not result.cancelled:
+                logros.note(self.bot, guild_id, auction.seller,
+                            housing_action_stats("subasta_desierta"))  # fmt: skip
+        for member, _key in run.executions:
+            logros.note(self.bot, guild_id, member,
+                        housing_day_stats(rent=0, ibi=0, events=("ejecucion",)))  # fmt: skip
+        for member in run.aval_executions:
+            await curro.parents_lose_home(self.bot, guild_id, member)
+            logros.note(self.bot, guild_id, member,
+                        housing_day_stats(rent=0, ibi=0, events=("ejecucion_aval",)))  # fmt: skip
+        return run
+
+    def _channel(self, guild_id: int) -> discord.abc.Messageable | None:
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return None
+        return (
+            discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
+            or guild.system_channel
+        )
+
+    async def announce_auction(self, guild_id: int, auction: Any) -> None:
+        """Anuncia una subasta que se abre (voluntaria o judicial). Nunca lanza."""
+        channel = self._channel(guild_id)
+        listing = (self.market_cache.get(guild_id) or Market()).listing(auction.listing)
+        listing = listing or LISTING_BY_KEY.get(auction.listing)
+        if channel is None or listing is None:
+            return
+        kind = "⚖️ Subasta judicial" if auction.judicial else "🔨 Subasta"
+        embed = discord.Embed(
+            title=f"{kind}: {listing.title}",
+            description=(
+                f"{auction.shares} participaciones en {BARRIO_BY_KEY[listing.barrio].name}, "
+                f"desde {format_amount(auction.min_bid)}. Acaba <t:{int(auction.ends_at)}:R>. "
+                "Se puja desde `pisos` → 🔨 Subastas; si alguien puja en la última hora, se "
+                "alarga una hora."
+            ),
+            color=discord.Color.dark_red() if auction.judicial else discord.Color.orange(),
+        )
+        try:
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning("No se pudo anunciar una subasta en %s", guild_id, exc_info=True)
+
+    async def _announce_result(self, guild_id: int, result: Any) -> None:
+        """Anuncia cómo ha acabado una subasta. Nunca lanza."""
+        channel = self._channel(guild_id)
+        auction = result.auction
+        listing = LISTING_BY_KEY.get(auction.listing) or (
+            self.market_cache.get(guild_id) or Market()
+        ).listing(auction.listing)
+        guild = self.bot.get_guild(guild_id)
+        if channel is None or listing is None or guild is None or result.cancelled:
+            return
+        if result.winner is not None:
+            text = (
+                f"Se la lleva **{_name(guild, result.winner)}** por {format_amount(result.price)}."
+            )
+        elif result.bank:
+            text = "Sin puja que valga: el banco se lo queda al 70 % y vuelve al mercado."
+        else:
+            text = "Desierta: nadie ha pujado. Las participaciones siguen con su dueño."
+        try:
+            await channel.send(
+                embed=discord.Embed(
+                    title=f"🔨 Fin de la subasta: {listing.title}", description=text,
+                    color=discord.Color.dark_grey(),
+                ),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )  # fmt: skip
+        except (discord.Forbidden, discord.HTTPException):
+            logger.warning("No se pudo anunciar el fin de una subasta en %s", guild_id,
+                           exc_info=True)  # fmt: skip
+
+    async def track_member_sale(
+        self,
+        guild_id: int,
+        seller: discord.abc.User,
+        buyer: discord.abc.User,
+        channel: object,
+        sale: MemberSale,
+        *,
+        preference: bool,
+    ) -> None:
+        """Logros de una venta entre miembros (de los dos). Nunca lanza."""
+        quote = sale.quote
+        await logros.track(self.bot, guild_id, seller, channel, housing_action_stats(
+            "vende_miembro", amount=quote.price, gift=quote.gift > 0,
+        ))  # fmt: skip
+        await logros.track(self.bot, guild_id, buyer, channel, housing_action_stats(
+            "compra_miembro", amount=quote.price, preference=preference,
+            reference=quote.reference > quote.price, moved_in=sale.moved_in,
+            overpaid=quote.price > quote.value * 1.2,
+        ))  # fmt: skip
 
     async def _announce_news(self, guild_id: int, items: list[tuple[str, str]]) -> None:
         """Publica las noticias de barrio del lunes si en el servidor alguien tiene pisos.

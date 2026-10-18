@@ -1480,3 +1480,161 @@ def new_promotion(number: int, free_barrios: list[str], rng: random.Random) -> L
 def promoter_fee(price: int) -> int:
     """Lo que se lleva el promotor de una compra en su promoción."""
     return round(max(0, price) * PROMOTER_FEE)
+
+
+# -- Ampliación, fase 3: compraventa entre miembros y subastas -------------------------
+
+#: Valor de referencia del Catastro: el 90 % del valor de mercado (factor de minoración 0,9
+#: de la Orden HFP/1104/2021). Es la base mínima del ITP entre particulares (art. 10.2 del
+#: RDL 1/1993, tras la Ley 11/2021): vender barato no baja el impuesto.
+REFERENCE_SHARE = 0.9
+#: ITP de la adjudicación en subasta judicial de un inmueble en Canarias: 7 % (art. 31.f del
+#: Decreto Legislativo 1/2009). Su base, el mayor entre lo pujado y el valor de referencia
+#: (TSJ de Galicia, 2026: el Supremo aún no lo ha fijado).
+AUCTION_ITP_RATE = 0.07
+#: Las subastas duran un día del bot (en el Portal de Subastas del BOE son 20 días). Si alguien
+#: puja en la última hora, se alarga una hora: así no gana quien puja en el último segundo
+#: (regla del juego).
+AUCTION_SECONDS = 24 * 3600
+AUCTION_EXTEND_SECONDS = 3600
+#: Cada puja sube al menos un 1 % la anterior.
+AUCTION_STEP = 0.01
+#: Subasta judicial (art. 670 LEC, simplificado): puja mínima del 50 % del valor; gana la
+#: mejor si llega al 70 %; por debajo, solo si no es la vivienda habitual del ejecutado, o
+#: si cubre toda la deuda y llega al 60 %. Sin puja que valga, el banco se la queda al 70 %
+#: (`AUCTION_SHARE`, como hasta ahora: decisión del proyecto, aunque la LO 1/2025 cambió el
+#: art. 671).
+JUDICIAL_MIN_SHARE = 0.5
+JUDICIAL_HOME_MIN_SHARE = 0.6
+#: Lo adjudicado en una subasta judicial no se puede vender al mercado en 30 días (sí a otro
+#: miembro): si no, comprar al 70 % y revender al 100 % sería un pelotazo seguro.
+AUCTION_LOCK_DAYS = 30
+
+
+def reference_value(listing: Listing, shares: int, index: float = 1.0) -> int:
+    """Valor de referencia de unas participaciones: el 90 % de su valor de mercado de hoy."""
+    return round(share_price(listing, index) * shares * REFERENCE_SHARE)
+
+
+@dataclass(frozen=True, slots=True)
+class MemberSaleQuote:
+    """Las cuentas de una venta de participaciones a otro miembro (o en una subasta).
+
+    Attributes:
+        shares: Participaciones.
+        price: Lo que se paga.
+        value: Su valor de mercado de hoy.
+        reference: Su valor de referencia (`reference_value`).
+        itp: ITP que paga el comprador, sobre el mayor entre `price` y `reference`.
+        notary: Notaría, registro y gestoría del comprador (desaparecen).
+        notary_igic: Su IGIC (al Estado).
+        cost: Lo que le costaron al vendedor las que vende.
+        gain: Ganancia patrimonial del vendedor (puede ser negativa).
+        gain_tax: IRPF de esa ganancia (19 %).
+    """
+
+    shares: int
+    price: int
+    value: int
+    reference: int
+    itp: int
+    notary: int
+    notary_igic: int
+    cost: int
+    gain: int
+    gain_tax: int
+
+    @property
+    def buyer_total(self) -> int:
+        """Lo que sale del bolsillo del comprador (sin hipoteca)."""
+        return self.price + self.itp + self.notary + self.notary_igic
+
+    @property
+    def gift(self) -> int:
+        """Lo que se regala (precio por debajo del valor): exento de Donaciones (proyecto)."""
+        return max(0, self.value - self.price)
+
+
+def member_sale_quote(
+    listing: Listing,
+    shares: int,
+    owned: int,
+    cost: int,
+    price: int,
+    *,
+    index: float = 1.0,
+    itp_rate: float = ITP_RATE,
+    market_value_gain: bool = True,
+) -> MemberSaleQuote:
+    """Cuenta de una venta de participaciones entre miembros.
+
+    - El comprador paga el ITP sobre el mayor entre el precio y el valor de referencia
+      (art. 10.2 del RDL 1/1993) y la notaría con su IGIC. No hay agencia.
+    - El vendedor tributa la ganancia con el mayor entre el precio y el valor de mercado
+      (art. 35.2 LIRPF: si vende por debajo, Hacienda mira lo que valía). En una subasta, el
+      precio es el de mercado (`market_value_gain` falso).
+    - Las deudas del piso no se descuentan: siguen con el inmueble (art. 9.1.e LPH).
+
+    Args:
+        owned: Participaciones que tiene el vendedor (para repartir lo que le costaron).
+        cost: Lo que le costaron todas.
+        itp_rate: El tipo del ITP (7 % en una subasta judicial, `AUCTION_ITP_RATE`).
+
+    Raises:
+        ValueError: Si vende más de las que tiene o el precio no es positivo.
+    """
+    if not 1 <= shares <= owned <= SHARES:
+        raise ValueError("No puedes vender más participaciones de las que tienes.")
+    if price <= 0:
+        raise ValueError("El precio tiene que ser mayor que cero.")
+    value = share_price(listing, index) * shares
+    reference = reference_value(listing, shares, index)
+    notary = round(price * NOTARY_RATE)
+    part_cost = cost * shares // owned
+    transfer = max(price, value) if market_value_gain else price
+    gain = transfer - part_cost
+    return MemberSaleQuote(
+        shares=shares,
+        price=price,
+        value=value,
+        reference=reference,
+        itp=round(max(price, reference) * itp_rate),
+        notary=notary,
+        notary_igic=igic(notary, SERVICES_IGIC),
+        cost=part_cost,
+        gain=gain,
+        gain_tax=capital_gain_tax(gain),
+    )
+
+
+def next_bid(best: int, minimum: int) -> int:
+    """La puja más baja que se acepta: la mínima o un 1 % más que la mejor (y 1 Y$ más)."""
+    if best <= 0:
+        return minimum
+    return max(minimum, best + max(1, math.ceil(best * AUCTION_STEP)))
+
+
+def auction_end(ends_at: float, now: float) -> float:
+    """Cuándo acaba una subasta tras una puja: si quedaba menos de una hora, una hora más."""
+    return (
+        max(ends_at, now + AUCTION_EXTEND_SECONDS)
+        if ends_at - now < AUCTION_EXTEND_SECONDS
+        else ends_at
+    )
+
+
+def judicial_ok(bid: int, value: int, owed: int, *, habitual: bool) -> bool:
+    """Si la mejor puja de una subasta judicial se lleva el inmueble (art. 670 LEC simplificado).
+
+    Args:
+        value: Valor de lo subastado (el de mercado de hoy).
+        owed: Todo lo que debe el ejecutado por esa hipoteca y las deudas del piso.
+        habitual: Si es la vivienda habitual del ejecutado.
+    """
+    if bid < value * JUDICIAL_MIN_SHARE:
+        return False
+    if bid >= value * AUCTION_SHARE:
+        return True
+    if not habitual:
+        return True
+    return bid >= owed and bid >= value * JUDICIAL_HOME_MIN_SHARE

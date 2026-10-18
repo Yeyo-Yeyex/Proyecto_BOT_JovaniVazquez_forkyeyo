@@ -15,12 +15,15 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from bot.repositories.housing import (
+    AuctionRun,
+    Bid,
     DayRun,
     Eviction,
     HousingError,
     HousingRepository,
     Market,
     MemberDay,
+    MemberSale,
     News,
     Purchase,
     Sale,
@@ -28,6 +31,7 @@ from bot.repositories.housing import (
     TenantDeal,
     VpoDeal,
 )
+from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
 from bot.services.economy import EconomyService
 from bot.services.housing import Lease
@@ -72,6 +76,10 @@ class HousingService:
     def today(self) -> date:
         """Hoy en hora canaria."""
         return local_day(self._clock())
+
+    def now(self) -> float:
+        """Ahora (epoch), con el reloj del servicio (inyectable en pruebas)."""
+        return self._clock()
 
     async def market(self, guild_id: int) -> Market:
         """Todo el mercado del servidor."""
@@ -297,6 +305,66 @@ class HousingService:
     async def discard_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> None:
         """Descarta a un candidato."""
         await self.repository.discard_candidate(guild_id, user_id, key, tenant)
+
+    async def member_sale(
+        self,
+        guild_id: int,
+        seller: int,
+        buyer: int,
+        key: str,
+        shares: int,
+        price: int,
+        *,
+        expected: int | None = None,
+        financed: bool = False,
+        aval: bool = False,
+    ) -> tuple[MemberSale, int]:
+        """Vende participaciones a otro miembro. Devuelve `(la venta, saldo del comprador)`.
+
+        Args:
+            expected: Lo que la oferta dijo que pagaría el comprador de su bolsillo.
+            financed: Si el comprador paga con hipoteca (el banco mira sus ingresos).
+            aval: Si al comprador le avalan sus padres (`pala`).
+
+        Raises:
+            HousingError: Si no se puede.
+            PriceChanged: Si al comprador le costaría más de lo que decía la oferta.
+            InsufficientFundsError: Si al comprador no le llega.
+        """
+        now = self._clock()
+        income = await self.income(guild_id, buyer) if financed else 0
+        run = self.repository.member_sale(
+            guild_id, seller, buyer, key, shares, price, local_day(now), now,
+            expected=expected, financed=financed, income=income,
+            aval_income=rules.parents_income() if financed and aval else 0,
+        )  # fmt: skip
+        sale, balances = await self.economy.housing(guild_id, run)
+        return sale, balances.get(buyer, 0)
+
+    async def create_auction(
+        self, guild_id: int, seller: int, key: str, shares: int, min_bid: int
+    ) -> Auction:
+        """Saca a subasta unas participaciones durante un día."""
+        return await self.repository.create_auction(
+            guild_id, seller, key, shares, min_bid, self._clock()
+        )
+
+    async def bid(self, guild_id: int, user_id: int, auction_id: int, amount: int) -> Bid:
+        """Puja en una subasta (deja la puja, su ITP y su notaría en el depósito).
+
+        Raises:
+            HousingError: Si la subasta ha terminado o la puja no llega.
+            InsufficientFundsError: Si no le llega para el depósito.
+        """
+        run = self.repository.bid(guild_id, user_id, auction_id, amount, self._clock())
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
+
+    async def close_auctions(self, guild_id: int) -> AuctionRun:
+        """Cierra las subastas que han terminado (la tarea de cada 10 minutos)."""
+        run = self.repository.close_auctions(guild_id, self._clock())
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
 
     async def close_days(
         self,

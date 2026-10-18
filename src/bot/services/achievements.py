@@ -8212,6 +8212,74 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_news_famoso", "Vecino de un crack",
          "Ten un piso en el barrio donde se compra el chalet un futbolista famoso.", R, True),
     ])  # fmt: skip
+    # Fase 3 de la ampliación (8.2.0): compraventa entre miembros y subastas
+    a += _tiers("pisos", "pisos_sold_member", [
+        (1, "pisos_sold_member_1", "Se lo dejo a un colega",
+         "Vende participaciones a otro miembro.", C),
+        (10, "pisos_sold_member_10", "Inmobiliaria de confianza",
+         "Vende participaciones a otros miembros 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_bought_member", [
+        (1, "pisos_bought_member_1", "Segunda mano, primera vivienda",
+         "Compra participaciones a otro miembro.", C),
+        (10, "pisos_bought_member_10", "Cliente fijo del grupo",
+         "Compra participaciones a otros miembros 10 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_member_gift", [
+        (1, "pisos_member_gift_1", "Precio de amigo",
+         "Vende a otro miembro por debajo de lo que vale.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_member_reference", [
+        (1, "pisos_member_ref_1", "Hacienda no se cree tu precio",
+         "Compra a otro miembro por menos del valor de referencia: el ITP va sobre el valor.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_member_overpaid", [
+        (1, "pisos_member_over_1", "Te han visto la cara",
+         "Compra a otro miembro por más de un 20 % sobre lo que vale.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_preference", [
+        (1, "pisos_preference_1", "Tanteo y retracto",
+         "Quédate con tu derecho preferente lo que se vendía a otro.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_moved_in", [
+        (1, "pisos_moved_in_1", "De inquilino a propietario",
+         "Compra entero el piso en el que vives de alquiler.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_auctions", [
+        (1, "pisos_auctions_1", "Martillo en mano", "Saca participaciones a subasta.", C),
+        (10, "pisos_auctions_10", "Subastero del barrio", "Saca 10 subastas.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_bids", [
+        (1, "pisos_bids_1", "¿Quién da más?", "Puja en una subasta.", C),
+        (25, "pisos_bids_25", "La mano que se levanta", "Puja 25 veces.", R),
+        (100, "pisos_bids_100", "Adicto al martillo", "Puja 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_outbid", [
+        (1, "pisos_outbid_1", "Te han pisado la puja", "Que alguien supere tu puja.", C),
+        (25, "pisos_outbid_25", "Eterno segundo", "Que superen tu puja 25 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_snipe", [
+        (1, "pisos_snipe_1", "En el último minuto",
+         "Puja en la última hora y alarga una subasta.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_auctions_won", [
+        (1, "pisos_won_1", "Adjudicado al de la tercera fila", "Gana una subasta de pisos.", R),
+        (10, "pisos_won_10", "Coleccionista de remates", "Gana 10 subastas.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_judicial_won", [
+        (1, "pisos_judicial_1", "Cazador de gangas del BOE", "Gana una subasta judicial.", E),
+        (5, "pisos_judicial_5", "Buitre de juzgado", "Gana 5 subastas judiciales.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_auction_max", [
+        (1_000_000, "pisos_auction_1m", "Martillazo millonario",
+         "Gana una subasta de 1.000.000 Y$ o más.", E),
+        (10_000_000, "pisos_auction_10m", "Remate de Sotheby's",
+         "Gana una subasta de 10.000.000 Y$ o más.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_auction_deserted", [
+        (1, "pisos_deserted_1", "Nadie da un duro",
+         "Que tu subasta acabe sin una sola puja.", R, True),
+    ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
@@ -22943,6 +23011,13 @@ HOUSING_ACTIONS = {
     "descarta": "pisos_discarded",
     "seguro": "pisos_insured",
     "desahucio": "pisos_lawyer",
+    "subasta": "pisos_auctions",
+    "puja": "pisos_bids",
+    "superado": "pisos_outbid",
+    "gana_subasta": "pisos_auctions_won",
+    "subasta_desierta": "pisos_auction_deserted",
+    "vende_miembro": "pisos_sold_member",
+    "compra_miembro": "pisos_bought_member",
 }
 
 
@@ -22959,6 +23034,14 @@ def housing_action_stats(
     risk: str | None = None,
     young: bool = False,
     fee: int = 0,
+    amount: int = 0,
+    judicial: bool = False,
+    extended: bool = False,
+    gift: bool = False,
+    preference: bool = False,
+    reference: bool = False,
+    moved_in: bool = False,
+    overpaid: bool = False,
 ) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
 
@@ -22975,6 +23058,14 @@ def housing_action_stats(
         risk: Con `firma_candidato`, su riesgo de impago (`bajo`, `medio`, `alto`).
         young: Con `firma_candidato`, si el contrato tiene la reducción del 70 %.
         fee: Con `desahucio`, lo pagado en abogado y procurador (0 si lo pagó el seguro).
+        amount: Con `gana_subasta`, lo pagado.
+        judicial: Con `gana_subasta`, si era una subasta judicial.
+        extended: Con `puja`, si alargó la subasta (última hora).
+        gift: Con `vende_miembro`, si vendió por debajo del valor.
+        preference: Con `compra_miembro`, si compró con su derecho preferente.
+        reference: Con `compra_miembro`, si el ITP fue sobre el valor de referencia.
+        moved_in: Con `compra_miembro`, si era su piso de alquiler y ahora vive en lo suyo.
+        overpaid: Con `compra_miembro`, si pagó más de un 20 % sobre el valor.
     """
     if action == "desahucio":
         return StatDelta(add={"pisos_lawyer": fee} if fee else {"pisos_lawyer_free": 1})
@@ -23001,6 +23092,19 @@ def housing_action_stats(
             delta.add["pisos_guarantee"] = 1
         if aval:
             delta.add["pisos_aval_rent"] = 1
+    for stat, hit in (
+        ("pisos_snipe", action == "puja" and extended),
+        ("pisos_judicial_won", action == "gana_subasta" and judicial),
+        ("pisos_member_gift", action == "vende_miembro" and gift),
+        ("pisos_preference", action == "compra_miembro" and preference),
+        ("pisos_member_reference", action == "compra_miembro" and reference),
+        ("pisos_moved_in", action == "compra_miembro" and moved_in),
+        ("pisos_member_overpaid", action == "compra_miembro" and overpaid),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    if action == "gana_subasta" and amount:
+        delta.peak["pisos_auction_max"] = amount
     if action == "firma_candidato":
         if tenant:
             delta.add[f"{PISOS_TENANT_PREFIX}{tenant}"] = 1

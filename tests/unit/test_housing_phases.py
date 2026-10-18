@@ -196,10 +196,14 @@ async def test_las_cuotas_se_cobran_y_sin_pagar_doce_llega_la_ejecucion(tmp_path
     # Se queda sin un duro: las cuotas siguientes no se pagan.
     balance = await economy.balance(GUILD, ANA)
     await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
-    for d in range(3, 17):
+    # A las 12 cuotas sin pagar sale a subasta judicial; sin pujas, el banco se lo queda al 70 %.
+    closed = []
+    for d in range(3, 18):
         clock.to(d)
         await service.close_days(GUILD)
+        closed += (await service.close_auctions(GUILD)).results
 
+    assert [r.bank for r in closed] == [True]
     market = await service.market(GUILD)
     assert market.mortgages_of(ANA) == []
     assert BAJO.key not in market.holdings
@@ -209,7 +213,7 @@ async def test_las_cuotas_se_cobran_y_sin_pagar_doce_llega_la_ejecucion(tmp_path
     # La deuda con el banco se cobra de lo que vaya entrando.
     debt = market.bank_debts[ANA]
     await give(economy, ANA, debt + 1_000)
-    clock.to(17)
+    clock.to(18)
     await service.close_days(GUILD)
     assert (await service.market(GUILD)).bank_debts.get(ANA, 0) == 0
 
@@ -557,10 +561,11 @@ async def test_ejecutar_una_hipoteca_avalada_lo_paga_la_familia(tmp_path: Path) 
     balance = await economy.balance(GUILD, ANA)
     await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
     executed = []
-    for d in range(2, 17):
+    for d in range(2, 18):
         clock.to(d)
         for run in await service.close_days(GUILD):
             executed += run.aval_executions
+        executed += (await service.close_auctions(GUILD)).aval_executions
     assert executed == [ANA]
 
 

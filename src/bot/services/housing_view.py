@@ -100,6 +100,13 @@ NEWS_TEXT = {
     "vpo_caducada": "A {who} se le pasa el plazo de la VPO",
     "candidato": "Llega un candidato: {tenant}",
     "seguro": "El seguro de impago paga la renta: {amount}",
+    "venta_miembro": "{who} vende participaciones a otro miembro por {amount}",
+    "compra_miembro": "{who} compra participaciones a otro miembro por {amount}",
+    "subasta": "{who} saca participaciones a subasta desde {amount}",
+    "subasta_judicial": "Subasta judicial por la hipoteca de {who} (vale {amount})",
+    "subasta_adjudicada": "{who} se lleva la subasta por {amount}",
+    "subasta_desierta": "Subasta desierta: nadie puja (mínima {amount})",
+    "ejecucion_subasta": "Remate de la subasta judicial de {who}: {amount}",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -451,7 +458,7 @@ def listing_state(
         "level_key": level.key,
         "costs": [
             {"label": "Comunidad", "amount": format_amount(costs.community)},
-            {"label": "Seguro con impago", "amount": format_amount(costs.insurance)},
+            {"label": "Seguro del hogar", "amount": format_amount(costs.insurance)},
             {"label": "IBI", "amount": format_amount(costs.ibi)},
         ],
         "payback": f"{full / max(net, 1) / 30:.1f}".replace(".", ",") + " meses",
@@ -933,4 +940,73 @@ def candidates_state(market: Market, key: str, today: date) -> State:
             for c in cards
         ),
     ] if cards else [f"Nadie espera en {listing.title}: llegan cada noche."]  # fmt: skip
+    return state
+
+
+def _remaining(seconds: float) -> str:
+    """Lo que falta para que acabe una subasta, en horas y minutos («3 h 05 min»)."""
+    seconds = max(0, int(seconds))
+    hours, minutes = seconds // 3600, seconds % 3600 // 60
+    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+
+
+def auctions_state(
+    market: Market, user_id: int, names: dict[int, str], now: float, selected: int | None = None
+) -> State:
+    """🔨 Subastas: las abiertas del servidor, con la mejor puja y lo que falta.
+
+    Args:
+        now: Ahora (epoch), para lo que le queda a cada una.
+        selected: La subasta elegida en el desplegable (la de los botones).
+    """
+    items = []
+    for auction in market.auctions:
+        listing = market.listing(auction.listing)
+        if listing is None:
+            continue
+        index = market.index(listing.barrio)
+        value = rules.share_price(listing, index) * auction.shares
+        least = rules.next_bid(auction.best_bid, auction.min_bid)
+        items.append(
+            {
+                "id": auction.id,
+                "key": listing.key,
+                "barrio_key": listing.barrio,
+                "theme": BARRIO_BY_KEY[listing.barrio].theme,
+                "kind": listing.kind,
+                "title": listing.title,
+                "barrio": BARRIO_BY_KEY[listing.barrio].name,
+                "shares": auction.shares,
+                "judicial": auction.judicial,
+                "seller": _name(names, auction.seller),
+                "mine": auction.seller == user_id,
+                "value": format_amount(value),
+                "min_bid": format_amount(auction.min_bid),
+                "next_bid": format_amount(least),
+                "best_bid": format_amount(auction.best_bid) if auction.best_bid else "",
+                "best_bidder": _name(names, auction.best_bidder) if auction.best_bidder else "",
+                "leading": auction.best_bidder == user_id,
+                "bids": auction.bids,
+                "left": _remaining(auction.ends_at - now),
+                "selected": auction.id == selected,
+                "pct": _pct(auction.best_bid / value, 0) if auction.best_bid and value else "",
+            }
+        )
+    state: State = {
+        "screen": "subastas",
+        "title": "SUBASTAS",
+        "subtitle": "Entre miembros y judiciales · un día · la última hora alarga una hora",
+        "items": items[:6],
+        "more": max(0, len(items) - 6),
+        "empty": not items,
+        "footer": "Lo pujado espera en el depósito con su ITP y se devuelve a quien superan",
+    }
+    state["fallback"] = [
+        "Subastas de pisos",
+        *(
+            f"{'⚖️ ' if i['judicial'] else ''}{i['title']} ({i['shares']} %): "
+            f"{i['best_bid'] or 'sin pujas'} · mínima {i['next_bid']} · quedan {i['left']}"
+            for i in items
+        ),
+    ] if items else ["Ninguna subasta abierta ahora mismo."]  # fmt: skip
     return state
