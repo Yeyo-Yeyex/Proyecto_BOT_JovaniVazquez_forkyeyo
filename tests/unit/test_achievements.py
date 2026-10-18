@@ -44,6 +44,7 @@ from bot.services.achievements import (
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
+    COUNTED,
     ENRAYA_BEAT_PREFIX,
     FUNNY_TOPICS,
     GALLOS_BEAT_PREFIX,
@@ -96,6 +97,7 @@ from bot.services.achievements import (
     VOICE_GAMES_STAT,
     VOICE_PEOPLE_STAT,
     VOICE_STREAK_STAT,
+    VOICE_WITH_PREFIX,
     Rarity,
     StatDelta,
     beernight_close_stats,
@@ -145,6 +147,9 @@ from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko_motion import motion_for
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.poker import Rank as PokerRank
+from bot.services.robuso import DAILY as ROBUSO_DAILY
+from bot.services.robuso import ECHOES as ROBUSO_ECHOES
+from bot.services.robuso import ROBUSO_ID
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
@@ -721,6 +726,11 @@ PRODUCED_STATS = {
     *PORRA_STATS,
     *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
     *(f"{PORRA_PROP_PREFIX}{prop}" for prop in PORRA_PROPS),
+    # 🎸 Robuso (cogs/robuso.py y los ecos de services/robuso.py; test_robuso.py las suma)
+    *ROBUSO_ECHOES.values(), *ROBUSO_DAILY, f"{VOICE_WITH_PREFIX}{ROBUSO_ID}",
+    "robuso_hk_new_year", "robuso_silence_max", "robuso_voice_gap_max", "robuso_hk_vc_minutes",
+    "robuso_trips", "robuso_returns", "robuso_trip_days_max", "robuso_replies", "robuso_laughs",
+    "robuso_reacts", "robuso_reunions", "robuso_welcomes", "robuso_missed", "robuso_envy",
     UNLOCKED_STAT,
 }  # fmt: skip
 
@@ -749,9 +759,9 @@ def test_cada_pagina_de_cada_categoria_cabe_en_un_embed() -> None:
 
 
 def test_el_menu_de_logros_cabe_en_un_desplegable_de_discord() -> None:
-    # 25 opciones como mucho, y una es el Resumen.
-    assert len(menu_entries()) <= 24
-    keys = [key for key, _title in menu_entries()]
+    # 25 opciones como mucho, y una es el Resumen. Con las secretas a la vista.
+    assert len(menu_entries(BY_ID)) <= 24
+    keys = [key for key, _title in menu_entries(BY_ID)]
     assert len(keys) == len(set(keys))
 
 
@@ -783,7 +793,8 @@ def test_la_portada_del_casino_cabe_en_un_embed() -> None:
 
 
 def test_completista_pide_todos_los_logros_normales() -> None:
-    normal = [a for a in AVAILABLE if a.category != "meta"]
+    # Los de las categorías secretas (🎸 Robuso) van aparte: casi nadie puede tenerlos todos.
+    normal = [a for a in COUNTED if a.category != "meta"]
     assert BY_ID["completionist"].goal == len(normal)
 
 

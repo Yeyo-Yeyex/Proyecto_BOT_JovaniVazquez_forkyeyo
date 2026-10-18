@@ -58,8 +58,8 @@ from bot.cogs.patrimonio import Patrimonio
 from bot.cogs.shop import Tienda
 from bot.cogs.work import Work
 from bot.services.achievements import (
-    AVAILABLE,
     BY_ID,
+    COUNTED,
     PERFIL_SECTIONS,
     PERFIL_SEEN_PREFIX,
     StatDelta,
@@ -389,12 +389,12 @@ class Perfil(commands.Cog):
             profile = await achievements.fresh_profile(guild.id, target.id)
             stats = profile.stats
             unlocked = [i for i in profile.unlocked if i in BY_ID]
-            done = sum(1 for a in AVAILABLE if a.id in profile.unlocked)
+            done = sum(1 for a in COUNTED if a.id in profile.unlocked)
             lines.append(
-                f"🏆 **{done}/{len(AVAILABLE)}** logros · {points(unlocked):,} puntos".replace(
+                f"🏆 **{done}/{len(COUNTED)}** logros · {points(unlocked):,} puntos".replace(
                     ",", "."
                 )
-                + f"\n`{progress_bar(done, len(AVAILABLE), 16)}`"
+                + f"\n`{progress_bar(done, len(COUNTED), 16)}`"
             )
             # El mejor récord en días: minutos o casillas no se comparan con días.
             best = max(
