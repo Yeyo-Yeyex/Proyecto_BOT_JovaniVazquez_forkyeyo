@@ -74,7 +74,9 @@ from bot.services.achievements import (
     newly_unlocked,
     points,
     progress,
+    reaction_stats,
     total_reward,
+    voice_minute_stats,
     voice_move_stats,
 )
 from bot.services.economy import (
@@ -101,6 +103,8 @@ logger = logging.getLogger(__name__)
 REACTION_MEMORY = 5_000
 #: Derrotas seguidas en el casino para que reírse cuente como «Ríe por no llorar».
 LOSING_STREAK = 5
+#: Personas en un canal de voz para que quien lo abrió vacío cuente como anfitrión.
+VOICE_FULL_ROOM = 5
 #: Logros que se listan en un aviso; si se desbloquean más a la vez, se resumen.
 ANNOUNCE_LIMIT = 8
 #: Segundos que la vista de logros sigue respondiendo.
@@ -627,6 +631,10 @@ class Achievements(commands.Cog):
         self._mute_streaks: dict[tuple[int, int], int] = {}
         #: Cuándo entró cada miembro a voz, para pillar a los que entran y salen.
         self._voice_joined: dict[tuple[int, int], float] = {}
+        #: Emojis que ya ha puesto cada persona en cada mensaje (para no contarlos dos veces).
+        self._emoji_reactors: OrderedDict[int, set[int]] = OrderedDict()
+        #: Quién abrió cada canal de voz vacío y si ya se le ha contado la sala llena.
+        self._voice_openers: dict[int, tuple[int, bool]] = {}
 
     async def cog_load(self) -> None:
         """Arranca la tarea de cada minuto (voz y escritura de lo pendiente)."""
@@ -839,6 +847,22 @@ class Achievements(commands.Cog):
                         add["voice_duo"] = 1
                     if channel.id == music:
                         add["voice_music"] = 1
+                    games = [
+                        a.name
+                        for a in getattr(member, "activities", ())
+                        if a.type is discord.ActivityType.playing and a.name
+                    ]
+                    spotify = any(
+                        isinstance(a, discord.Spotify) for a in getattr(member, "activities", ())
+                    )
+                    add.update(
+                        voice_minute_stats(
+                            local,
+                            others=(m.id for m in listening if m.id != member.id),
+                            games=games,
+                            spotify=spotify,
+                        )
+                    )
                     self.note(
                         guild.id,
                         member.id,
@@ -983,6 +1007,10 @@ class Achievements(commands.Cog):
             own_birthday=own_birthday,
             mention_everyone=message.mention_everyone,
             people_mentioned=len(people),
+            files=[(a.content_type or "", a.filename, a.is_spoiler()) for a in message.attachments],
+            voice_note=message.flags.voice,
+            poll=getattr(message, "poll", None) is not None,
+            voice=self._voice_context(author, message.channel.id),
         )
         laughed = bool(delta.add.get("msg_laughs"))
         # Reírse con una racha de derrotas en el casino: ríe por no llorar.
@@ -1013,6 +1041,14 @@ class Achievements(commands.Cog):
             for user_id, extra in changes.items():
                 # Al gracioso o a los de la cadena se les avisa en el mismo canal.
                 self.note(guild_id, user_id, extra, message.channel.id, replace_channel=False)
+
+    @staticmethod
+    def _voice_context(author: object, channel_id: int) -> tuple[bool, bool, bool] | None:
+        """`(en el chat del canal de voz, compartiendo pantalla, con cámara)` si está en voz."""
+        voice = getattr(author, "voice", None)
+        if voice is None or voice.channel is None:
+            return None
+        return voice.channel.id == channel_id, bool(voice.self_stream), bool(voice.self_video)
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
@@ -1046,6 +1082,20 @@ class Achievements(commands.Cog):
         if emoji is not None and is_laugh_emoji(emoji.name or str(emoji)):
             self._note_laugh_reaction(payload, author_id)
         reactors = self._remember(self._reactors, payload.message_id)
+        seen = self._remember(self._emoji_reactors, payload.message_id)
+        if emoji is not None and hash((payload.user_id, str(emoji))) not in seen:
+            seen.add(hash((payload.user_id, str(emoji))))
+            custom = emoji.id is not None and guild is not None and guild.get_emoji(emoji.id)
+            given, received = reaction_stats(
+                str(emoji) if emoji.id is None else (emoji.name or ""),
+                custom=bool(custom),
+                first=not reactors,
+            )
+            self.note(payload.guild_id, payload.user_id, given)
+            if received.add:
+                self.note(
+                    payload.guild_id, author_id, received, payload.channel_id, replace_channel=False
+                )
         if payload.user_id in reactors:
             return
         reactors.add(payload.user_id)
@@ -1112,6 +1162,25 @@ class Achievements(commands.Cog):
             self._voice_joined.pop(key, None)
         elif before.channel is None:
             self._voice_joined[key] = self._clock()
+        if before.channel is not None and before.channel != after.channel:
+            if not [m for m in before.channel.members if not m.bot]:
+                self._voice_openers.pop(before.channel.id, None)
+                # Cerrar la llamada: el último en irse de una sala en la que había compañía.
+                if key in self._sessions:
+                    delta.add["voice_last_out"] = 1
+        if after.channel is not None and before.channel != after.channel:
+            humans = [m for m in after.channel.members if not m.bot]
+            opener = self._voice_openers.get(after.channel.id)
+            if len(humans) == 1:
+                self._voice_openers[after.channel.id] = (member.id, False)
+            elif opener is not None and not opener[1] and len(humans) >= VOICE_FULL_ROOM:
+                self._voice_openers[after.channel.id] = (opener[0], True)
+                self.note(
+                    member.guild.id,
+                    opener[0],
+                    StatDelta(add={"voice_host": 1}),
+                    replace_channel=False,
+                )
         if delta:
             self.note(member.guild.id, member.id, delta, replace_channel=False)
 

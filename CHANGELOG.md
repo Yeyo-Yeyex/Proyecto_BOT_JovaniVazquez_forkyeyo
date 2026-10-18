@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.29.0 · 2026-10-18
+
+- Logros de chat y voz: 384 nuevos. Enlaces y adjuntos, cifras y horas con guasa, temas con guasa (pizza con piña, la tortilla, ChatGPT, la 33…), ping-pong y respuestas rápidas, reacciones con emoji propio, racha de días en llamada, con quién hablas, abrir y cerrar llamadas, jugar en llamada, escribir desde la llamada y 84 de 🎭 Personajes
+
 ### 7.28.0 · 2026-10-18
 
 - Logros: 1.604 nuevos (5.865 en total). Escalones intermedios en casi todos los contadores (chat, voz, música, memes, casino, juegos, trabajo, tienda, pisos, loterías…) y nueve secretos más en Allá tú, el Rastro y la Torre

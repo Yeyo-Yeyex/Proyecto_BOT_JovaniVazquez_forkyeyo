@@ -276,10 +276,15 @@ CATEGORIES: tuple[Category, ...] = (
     Category("convo", "🧵 Conversación", group=_CH),
     Category("time", "🗓️ Horarios y fechas", group=_CH),
     Category("memes", "🖼️ Imágenes y Babel", group=_CH),
+    Category("format", "🔗 Enlaces y adjuntos", group=_CH),
+    Category("topics", "🍍 Temas con guasa", group=_CH),
+    Category("personajes", "🎭 Personajes", group=_CH),
     Category("voice", "🎙️ Llamada", group=_VG),
     Category("voice_mic", "🎚️ Micro, cámara y AFK", group=_VG),
     Category("voice_moves", "🚪 Entradas y salidas", group=_VG),
     Category("music", "🎵 Música", group=_VG),
+    Category("voice_games", "🎮 Jugando en llamada", group=_VG),
+    Category("voice_chat", "📞 Escribir desde la llamada", group=_VG),
     Category("social", "❤️ Social"),
     Category("todo", "📝 Lista"),
     Category("beernight", "🍻 Beernight"),
@@ -439,6 +444,20 @@ CASINO_GAMES_STAT = "casino_games_played"
 CASINO_GAMES_100_STAT = "casino_games_100"
 CASINO_GAMES_1000_STAT = "casino_games_1000"
 CASINO_NIGHT_GAMES_STAT = "casino_night_games"
+#: Chat y voz, segunda tanda: estadísticas por variante y sus recuentos (`with_derived`).
+LINK_KINDS_STAT = "msg_link_kinds"
+ATTACH_KINDS_STAT = "msg_attach_kinds"
+TOPIC_KINDS_STAT = "msg_topic_kinds"
+REACT_PREFIX = "react_"
+REACTED_PREFIX = "reacted_"
+REACT_KINDS_STAT = "react_kinds"
+VOICE_GAME_PREFIX = "voice_game_"
+VOICE_GAMES_STAT = "voice_games"
+VOICE_DAY_PREFIX = "voice_day_"
+VOICE_STREAK_STAT = "voice_streak_max"
+VOICE_WITH_PREFIX = "voice_with_"
+VOICE_PEOPLE_STAT = "voice_people"
+VOICE_BESTIE_STAT = "voice_bestie_max"
 #: Días del año en que cuenta jugar a cualquier juego del casino, `(mes, día)`.
 CASINO_DATES = {
     (12, 25): "casino_navidad",
@@ -11662,6 +11681,978 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ):
         a += _tiers(category, stat, rows)
 
+    # 💬🎙️ Chat y voz, segunda tanda: enlaces y adjuntos, cifras, temas con guasa,
+    # conversación, reacciones, voz con quién y a qué se juega, y escribir desde la llamada.
+    # Los personajes cruzan estadísticas de chat, voz y el resto del bot.
+    a += _tiers("format", "msg_youtube", [
+        (1, "yt_1", "Te dejo esto por aquí", "Comparte un vídeo de YouTube.", C),
+        (10, "yt_10", "Canal de YouTube ajeno", "Comparte 10 enlaces de YouTube.", C),
+        (50, "yt_50", "Algoritmo humano", "Comparte 50 enlaces de YouTube.", R),
+        (250, "yt_250", "Programación de YouTube propia", "Comparte 250 enlaces de YouTube.", E),
+        (1_000, "yt_1k", "YouTube Rewind del servidor", "Comparte 1.000 enlaces de YouTube.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_tiktok", [
+        (1, "tiktok_1", "Dime que tienes TikTok sin decírmelo", "Comparte un TikTok.", C),
+        (10, "tiktok_10", "Para ti, solo para ti", "Comparte 10 TikToks.", C),
+        (50, "tiktok_50", "Scroll infinito", "Comparte 50 TikToks.", R),
+        (250, "tiktok_250", "Cerebro de quince segundos", "Comparte 250 TikToks.", E),
+        (1_000, "tiktok_1k", "Atención de pez de colores", "Comparte 1.000 TikToks.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_twitter", [
+        (1, "tw_1", "Pajarito azul (ahora X)", "Comparte un enlace de Twitter o X.", C),
+        (10, "tw_10", "Hilo, hilo", "Comparte 10 enlaces de Twitter o X.", C),
+        (50, "tw_50", "Captura de tuit", "Comparte 50 enlaces de Twitter o X.", R),
+        (250, "tw_250", "Tuitero de cabecera", "Comparte 250 enlaces de Twitter o X.", E),
+        (1_000, "tw_1k", "Elon te debe dinero", "Comparte 1.000 enlaces de Twitter o X.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_instagram", [
+        (1, "ig_1", "Filtro Valencia", "Comparte un enlace de Instagram.", C),
+        (10, "ig_10", "Postureo compartido", "Comparte 10 enlaces de Instagram.", C),
+        (50, "ig_50", "Influencer por delegación", "Comparte 50 enlaces de Instagram.", R),
+        (250, "ig_250", "Stories ajenas", "Comparte 250 enlaces de Instagram.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_reddit", [
+        (1, "reddit_1", "Upvote", "Comparte un enlace de Reddit.", C),
+        (10, "reddit_10", "Redditor de sofá", "Comparte 10 enlaces de Reddit.", R),
+        (50, "reddit_50", "Karma infinito", "Comparte 50 enlaces de Reddit.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_wikipedia", [
+        (1, "wiki_1", "Según la Wikipedia…", "Comparte un artículo de la Wikipedia.", C),
+        (10, "wiki_10", "Sabelotodo con fuentes", "Comparte 10 artículos de la Wikipedia.", R),
+        (50, "wiki_50", "Donante de la Wikipedia", "Comparte 50 artículos de la Wikipedia.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_spotify", [
+        (1, "spoti_1", "Escucha esto", "Comparte un enlace de Spotify.", C),
+        (10, "spoti_10", "DJ por enlace", "Comparte 10 enlaces de Spotify.", C),
+        (50, "spoti_50", "Playlist compartida", "Comparte 50 enlaces de Spotify.", R),
+        (250, "spoti_250", "Spotify Wrapped del servidor", "Comparte 250 enlaces de Spotify.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_maps", [
+        (1, "maps_1", "Te mando la ubicación", "Comparte un enlace de Google Maps.", C),
+        (10, "maps_10", "GPS del grupo", "Comparte 10 enlaces de Google Maps.", R),
+        (50, "maps_50", "Guía Michelin del barrio", "Comparte 50 enlaces de Google Maps.", E),
+    ])  # fmt: skip
+    a += _tiers("format", LINK_KINDS_STAT, [
+        (4, "link_kinds_4", "Navegante",
+         "Comparte enlaces de 4 sitios distintos (YouTube, TikTok, X, Instagram, Reddit, "
+         "Wikipedia, Spotify o Maps).", C),
+        (8, "link_kinds_8", "Internet entero en el chat",
+         "Comparte enlaces de los 8 sitios: YouTube, TikTok, X, Instagram, Reddit, Wikipedia, "
+         "Spotify y Maps.", R),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_gif", [
+        (1, "gif_1", "Reacción en GIF", "Manda un GIF.", C),
+        (10, "gif_10", "GIF de cabecera", "Manda 10 GIFs.", C),
+        (100, "gif_100", "GIFero", "Manda 100 GIFs.", R),
+        (1_000, "gif_1k", "Tenor te paga comisión", "Manda 1.000 GIFs.", E),
+        (5_000, "gif_5k", "Hablo en GIF", "Manda 5.000 GIFs.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_images", [
+        (10, "imgs_10", "Foto de la comida", "Sube imágenes en 10 mensajes.", C),
+        (100, "imgs_100", "Galería compartida", "Sube imágenes en 100 mensajes.", R),
+        (1_000, "imgs_1k", "Reportero gráfico", "Sube imágenes en 1.000 mensajes.", E),
+        (5_000, "imgs_5k", "Fotógrafo de bodas del chat", "Sube imágenes en 5.000 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_videos", [
+        (1, "vids_1", "Videoaficionado", "Sube un vídeo.", C),
+        (10, "vids_10", "Vídeos de primera", "Sube vídeos en 10 mensajes.", C),
+        (100, "vids_100", "Cámara oculta", "Sube vídeos en 100 mensajes.", R),
+        (500, "vids_500", "Productora de vídeos caseros", "Sube vídeos en 500 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_audio_files", [
+        (1, "audiof_1", "Archivo de audio", "Sube un archivo de audio.", C),
+        (10, "audiof_10", "Podcast pirata", "Sube archivos de audio en 10 mensajes.", R),
+        (50, "audiof_50", "Discográfica independiente",
+         "Sube archivos de audio en 50 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_documents", [
+        (1, "docs_1", "Adjunto PDF", "Sube un documento.", C),
+        (10, "docs_10", "Papeleo por Discord", "Sube documentos en 10 mensajes.", R),
+        (50, "docs_50", "Notaría por Discord", "Sube documentos en 50 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_album", [
+        (1, "album_1", "Álbum de vacaciones", "Sube 4 imágenes o más en un mensaje.", C),
+        (10, "album_10", "Carrete entero", "Sube 4 imágenes o más en un mensaje, 10 veces.", R),
+        (100, "album_100", "Pase de diapositivas de tu tío",
+         "Sube 4 imágenes o más en un mensaje, 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_screenshot", [
+        (1, "shot_1", "Pantallazo", "Sube una captura de pantalla.", C),
+        (10, "shot_10", "Pruebas gráficas", "Sube capturas de pantalla en 10 mensajes.", C),
+        (100, "shot_100", "Capturas para el juicio",
+         "Sube capturas de pantalla en 100 mensajes.", R),
+        (500, "shot_500", "Archivo de capturas comprometedoras",
+         "Sube capturas de pantalla en 500 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_image_spoiler", [
+        (1, "imgspoiler_1", "Imagen tapada", "Sube una imagen marcada como spoiler.", C),
+        (10, "imgspoiler_10", "Contenido sensible",
+         "Sube imágenes marcadas como spoiler en 10 mensajes.", R),
+        (50, "imgspoiler_50", "Lo que pasa en Discord se queda en Discord",
+         "Sube imágenes marcadas como spoiler en 50 mensajes.", E, True),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_voice_note", [
+        (1, "vnote_1", "Te mando un audio", "Manda una nota de voz.", C),
+        (10, "vnote_10", "Audios de tu madre", "Manda 10 notas de voz.", C),
+        (100, "vnote_100", "Audio de siete minutos", "Manda 100 notas de voz.", R),
+        (500, "vnote_500", "Podcast por entregas", "Manda 500 notas de voz.", E),
+        (2_000, "vnote_2k", "Radionovela", "Manda 2.000 notas de voz.", L),
+    ])  # fmt: skip
+    a += _tiers("format", "msg_poll", [
+        (1, "poll_1", "Democracia participativa", "Crea una encuesta.", C),
+        (10, "poll_10", "Referéndum de bolsillo", "Crea 10 encuestas.", R),
+        (50, "poll_50", "Instituto de sondeos", "Crea 50 encuestas.", E),
+    ])  # fmt: skip
+    a += _tiers("format", ATTACH_KINDS_STAT, [
+        (4, "attach_kinds_4", "Multimedia",
+         "Manda 4 tipos de cosas: imágenes, vídeos, audios, documentos, GIFs, notas de voz o "
+         "encuestas.", C),
+        (7, "attach_kinds_7", "Kit completo de adjuntos",
+         "Manda imágenes, vídeos, audios, documentos, GIFs, notas de voz y encuestas.", R),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_len_69", [
+        (1, "len69_1", "Sesenta y nueve letras justas",
+         "Escribe un mensaje de exactamente 69 caracteres.", R, True),
+        (10, "len69_10", "Medida perfecta",
+         "Escribe 10 mensajes de exactamente 69 caracteres.", E, True),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_len_420", [
+        (1, "len420_1", "Mensaje fumado",
+         "Escribe un mensaje de exactamente 420 caracteres.", R, True),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_len_1", [
+        (1, "len1_1", "Monoletra", "Escribe un mensaje de un solo carácter.", C),
+        (100, "len1_100", "Una letra basta", "Escribe 100 mensajes de un solo carácter.", R),
+        (1_000, "len1_1k", "Telegrafista minimalista",
+         "Escribe 1.000 mensajes de un solo carácter.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_only_digits", [
+        (1, "digits_1", "Solo números", "Escribe un mensaje hecho solo de números.", C),
+        (50, "digits_50", "Contable del chat", "Escribe 50 mensajes hechos solo de números.", R),
+        (500, "digits_500", "Calculadora con patas",
+         "Escribe 500 mensajes hechos solo de números.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_only_question", [
+        (1, "onlyq_1", "?", "Manda un mensaje que sea solo «?».", C),
+        (50, "onlyq_50", "¿¿??", "Manda 50 mensajes que sean solo interrogaciones.", R),
+        (500, "onlyq_500", "Interrogación existencial",
+         "Manda 500 mensajes que sean solo interrogaciones.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_dots", [
+        (1, "dots_1", "...", "Manda un mensaje que sea solo puntos suspensivos.", C),
+        (50, "dots_50", "Silencio incómodo", "Manda 50 mensajes que sean solo puntos.", R),
+        (500, "dots_500", "Puntos suspensivos de oficio",
+         "Manda 500 mensajes que sean solo puntos.", E),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_no_vowels", [
+        (1, "novowels_1", "Sn vcls",
+         "Escribe un mensaje de 6 letras o más sin ninguna vocal.", C, True),
+        (25, "novowels_25", "Hblr sn vcls s m spcldd",
+         "Escribe 25 mensajes de 6 letras o más sin ninguna vocal.", R, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_1111", [
+        (1, "t1111_1", "Pide un deseo", "Escribe a las 11:11 o a las 23:11.", C, True),
+        (11, "t1111_11", "Once deseos y ninguno cumplido",
+         "Escribe a las 11:11 o a las 23:11 en 11 mensajes.", R, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_2222", [
+        (1, "t2222_1", "Dos patitos, dos veces", "Escribe a las 22:22.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_420", [
+        (1, "t420_1", "Cuatro y veinte", "Escribe a las 4:20 o a las 16:20.", C, True),
+        (20, "t420_20", "Reloj de Bob Marley",
+         "Escribe a las 4:20 o a las 16:20 en 20 mensajes.", R, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_pi", [
+        (1, "tpi_1", "Hora pi", "Escribe a las 3:14 o a las 15:14.", C, True),
+    ])  # fmt: skip
+    a += _tiers("time", "msg_2359", [
+        (1, "t2359_1", "Por los pelos del día", "Escribe a las 23:59.", C),
+        (25, "t2359_25", "Último en apagar la luz", "Escribe a las 23:59 en 25 mensajes.", R),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_pineapple", [
+        (1, "pina_1", "Hawaiano de corazón", "Habla de la pizza con piña.", C),
+        (10, "pina_10", "Debate eterno", "Habla de la pizza con piña en 10 mensajes.", R),
+        (50, "pina_50", "Piñatero militante", "Habla de la pizza con piña en 50 mensajes.", E),
+        (250, "pina_250", "Nápoles te declara la guerra",
+         "Habla de la pizza con piña en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_tortilla", [
+        (1, "tortilla_1", "Equipo cebolla", "Habla de la tortilla con o sin cebolla.", C),
+        (10, "tortilla_10", "Guerra civil de la tortilla",
+         "Habla de la tortilla con o sin cebolla en 10 mensajes.", R),
+        (50, "tortilla_50", "Tortillero de trinchera",
+         "Habla de la tortilla con o sin cebolla en 50 mensajes.", E),
+        (250, "tortilla_250", "Betanzos te vigila",
+         "Habla de la tortilla con o sin cebolla en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_flat_earth", [
+        (1, "flat_1", "El horizonte no miente", "Nombra la Tierra plana.", C, True),
+        (10, "flat_10", "Terraplanista de guardia", "Nombra la Tierra plana en 10 mensajes.", R),
+        (50, "flat_50", "Expedición al borde del mundo",
+         "Nombra la Tierra plana en 50 mensajes.", E),
+        (250, "flat_250", "Muro de hielo antártico", "Nombra la Tierra plana en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_chatgpt", [
+        (1, "gpt_1", "Traidor", "Nombra a ChatGPT delante de Jovani.", C, True),
+        (10, "gpt_10", "Le preguntas a la competencia", "Nombra a ChatGPT en 10 mensajes.", R),
+        (50, "gpt_50", "Infiel con otra IA", "Nombra a ChatGPT en 50 mensajes.", E),
+        (250, "gpt_250", "Jovani está celoso", "Nombra a ChatGPT en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_mercadona", [
+        (1, "merca_1", "Hacendado de corazón", "Nombra el Mercadona o Hacendado.", C),
+        (10, "merca_10", "Pasillo del Mercadona",
+         "Nombra el Mercadona o Hacendado en 10 mensajes.", R),
+        (50, "merca_50", "Socio de Juan Roig",
+         "Nombra el Mercadona o Hacendado en 50 mensajes.", E),
+        (250, "merca_250", "Mercadona es mi religión",
+         "Nombra el Mercadona o Hacendado en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_conspiracy", [
+        (1, "conspi_1", "Gorro de papel de aluminio",
+         "Habla de chemtrails, reptilianos o los illuminati.", C),
+        (10, "conspi_10", "Los reptilianos existen", "Habla de conspiraciones en 10 mensajes.", R),
+        (50, "conspi_50", "Programa de misterios de madrugada",
+         "Habla de conspiraciones en 50 mensajes.", E),
+        (250, "conspi_250", "El gran despertar", "Habla de conspiraciones en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_horoscope", [
+        (1, "horo_1", "Mercurio tiene la culpa",
+         "Habla del horóscopo o de Mercurio retrógrado.", C),
+        (10, "horo_10", "Carta astral", "Habla del horóscopo en 10 mensajes.", R),
+        (50, "horo_50", "Astróloga de guardia", "Habla del horóscopo en 50 mensajes.", E),
+        (250, "horo_250", "Rappel te imita", "Habla del horóscopo en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_crypto", [
+        (1, "crypto_1", "HODL", "Habla de bitcoin o de criptos.", C),
+        (10, "crypto_10", "To the moon", "Habla de criptos en 10 mensajes.", R),
+        (50, "crypto_50", "Criptobro", "Habla de criptos en 50 mensajes.", E),
+        (250, "crypto_250", "Inversor en monedas de perro", "Habla de criptos en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_gym", [
+        (1, "gym_1", "Hoy toca pierna", "Habla del gimnasio.", C),
+        (10, "gym_10", "Batido de proteína", "Habla del gimnasio en 10 mensajes.", R),
+        (50, "gym_50", "Gymbro", "Habla del gimnasio en 50 mensajes.", E),
+        (250, "gym_250", "Más horas en el gym que en el curro",
+         "Habla del gimnasio en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_diet", [
+        (1, "diet_1", "El lunes empiezo", "Di que empiezas la dieta.", C),
+        (10, "diet_10", "Dieta de los lunes", "Di que empiezas la dieta en 10 mensajes.", R),
+        (50, "diet_50", "Operación bikini permanente",
+         "Di que empiezas la dieta en 50 mensajes.", E),
+        (250, "diet_250", "Llevo diez años empezando",
+         "Di que empiezas la dieta en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_ex", [
+        (1, "ex_1", "Mi ex", "Habla de tu ex.", C, True),
+        (10, "ex_10", "Otra vez la ex", "Habla de tu ex en 10 mensajes.", R),
+        (50, "ex_50", "Superar a la ex: en proceso", "Habla de tu ex en 50 mensajes.", E),
+        (250, "ex_250", "Terapia gratis en el chat", "Habla de tu ex en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_hangover", [
+        (1, "resaca_1", "Ibuprofeno y agua", "Habla de la resaca.", C),
+        (10, "resaca_10", "Domingo de resaca", "Habla de la resaca en 10 mensajes.", R),
+        (50, "resaca_50", "Nunca más (hasta el sábado)", "Habla de la resaca en 50 mensajes.", E),
+        (250, "resaca_250", "Hígado con abono", "Habla de la resaca en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_alonso", [
+        (1, "alonso_1", "Nano, la 33", "Habla de Fernando Alonso o de la 33.", C),
+        (10, "alonso_10", "Fernandista", "Habla de Fernando Alonso en 10 mensajes.", R),
+        (50, "alonso_50", "Esperando la 33 desde 2013",
+         "Habla de Fernando Alonso en 50 mensajes.", E),
+        (250, "alonso_250", "Magic Alonso", "Habla de Fernando Alonso en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_boomer", [
+        (1, "boomer_1", "Ok boomer", "Escribe «ok boomer».", C, True),
+        (10, "boomer_10", "Brecha generacional", "Escribe «ok boomer» en 10 mensajes.", R),
+        (50, "boomer_50", "Guerra de generaciones", "Escribe «ok boomer» en 50 mensajes.", E),
+    ])  # fmt: skip
+    a += _tiers("topics", "msg_calima", [
+        (1, "calima_chat_1", "Polvo del Sáhara", "Habla de la calima.", C),
+        (10, "calima_chat_10", "Coche lleno de barro", "Habla de la calima en 10 mensajes.", R),
+        (50, "calima_chat_50", "Pulmones de arena", "Habla de la calima en 50 mensajes.", E),
+        (250, "calima_chat_250", "Beduino canario", "Habla de la calima en 250 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("topics", TOPIC_KINDS_STAT, [
+        (5, "topic_kinds_5", "Tertulia de bar con guasa",
+         "Saca 5 temas distintos de esta sección.", C),
+        (10, "topic_kinds_10", "Tema de conversación inagotable",
+         "Saca 10 temas distintos de esta sección.", R),
+        (15, "topic_kinds_15", "Opinas de todo, sabes de nada",
+         "Saca los 15 temas de esta sección.", E),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_rally_max", [
+        (4, "rally_4", "Peloteo",
+         "Contesta y te contesten 4 mensajes seguidos entre dos personas.", C),
+        (10, "rally_10", "Partido de tenis",
+         "Llega a 10 mensajes seguidos alternando con otra persona.", C),
+        (20, "rally_20", "Final de Wimbledon",
+         "Llega a 20 mensajes seguidos alternando con otra persona.", R),
+        (50, "rally_50", "Nadal contra Federer",
+         "Llega a 50 mensajes seguidos alternando con otra persona.", E),
+        (100, "rally_100", "Ping-pong olímpico",
+         "Llega a 100 mensajes seguidos alternando con otra persona.", L),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_quick", [
+        (10, "quick_10", "Gatillo fácil", "Contesta a otro en menos de 5 segundos, 10 veces.", C),
+        (100, "quick_100", "Respuesta exprés",
+         "Contesta a otro en menos de 5 segundos, 100 veces.", R),
+        (1_000, "quick_1k", "Más rápido que su sombra",
+         "Contesta a otro en menos de 5 segundos, 1.000 veces.", E),
+        (5_000, "quick_5k", "Lucky Luke del teclado",
+         "Contesta a otro en menos de 5 segundos, 5.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("convo", "msg_silence_break", [
+        (1, "silence_1", "Rompehielos", "Escribe en un canal que llevaba una hora callado.", C),
+        (10, "silence_10", "Toc, toc, ¿hay alguien?", "Rompe 10 silencios de una hora.", C),
+        (100, "silence_100", "Despertador del canal", "Rompe 100 silencios de una hora.", R),
+        (500, "silence_500", "Animador del grupo muerto", "Rompe 500 silencios de una hora.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "reactions_first", [
+        (10, "rfirst_10", "El primero en llegar", "Sé el primero en reaccionar a 10 mensajes.", C),
+        (100, "rfirst_100", "Pulgar de reflejos", "Sé el primero en reaccionar a 100 mensajes.", R),
+        (1_000, "rfirst_1k", "Reaccionador olímpico",
+         "Sé el primero en reaccionar a 1.000 mensajes.", E),
+        (5_000, "rfirst_5k", "Siempre el primero",
+         "Sé el primero en reaccionar a 5.000 mensajes.", L),
+    ])  # fmt: skip
+    a += _tiers("social", "reactions_custom", [
+        (10, "rcustom_10", "Emoji de la casa",
+         "Reacciona 10 veces con emojis propios del servidor.", C),
+        (100, "rcustom_100", "Patriota del servidor",
+         "Reacciona 100 veces con emojis propios del servidor.", R),
+        (1_000, "rcustom_1k", "Embajador de los emojis propios",
+         "Reacciona 1.000 veces con emojis propios del servidor.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_moai", [
+        (1, "rmoai_1", "Cara de moái", "Reacciona con 🗿.", C),
+        (50, "rmoai_50", "Isla de Pascua", "Reacciona con 🗿 50 veces.", R),
+        (500, "rmoai_500", "Consejo de moáis", "Reacciona con 🗿 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_clown", [
+        (1, "rclown_1", "Payasada detectada", "Reacciona con 🤡.", C),
+        (50, "rclown_50", "Carpa de circo", "Reacciona con 🤡 50 veces.", R),
+        (500, "rclown_500", "Domador de payasos", "Reacciona con 🤡 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_eyes", [
+        (1, "reyes_1", "Ojos como platos", "Reacciona con 👀.", C),
+        (50, "reyes_50", "Mirón de reacciones", "Reacciona con 👀 50 veces.", R),
+        (500, "reyes_500", "Prismáticos de vecina", "Reacciona con 👀 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_fire", [
+        (1, "rfire_1", "Esto está que arde", "Reacciona con 🔥.", C),
+        (50, "rfire_50", "Pirómano de reacciones", "Reacciona con 🔥 50 veces.", R),
+        (500, "rfire_500", "Bombero en huelga", "Reacciona con 🔥 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_heart", [
+        (1, "rheart_1", "Corazón contento", "Reacciona con ❤️.", C),
+        (50, "rheart_50", "Corazones a granel", "Reacciona con ❤️ 50 veces.", R),
+        (500, "rheart_500", "Cupido de Discord", "Reacciona con ❤️ 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_poop", [
+        (1, "rpoop_1", "Reacción de mierda", "Reacciona con 💩.", C, True),
+        (50, "rpoop_50", "Fertilizante", "Reacciona con 💩 50 veces.", R),
+        (500, "rpoop_500", "Depuradora", "Reacciona con 💩 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_goat", [
+        (1, "rgoat_1", "El GOAT", "Reacciona con 🐐.", C),
+        (50, "rgoat_50", "Pastor de cabras", "Reacciona con 🐐 50 veces.", R),
+        (500, "rgoat_500", "Rebaño de GOATs", "Reacciona con 🐐 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "react_cap", [
+        (1, "rcap_1", "Eso es mentira 🧢", "Reacciona con 🧢.", C),
+        (50, "rcap_50", "Detector de trolas", "Reacciona con 🧢 50 veces.", R),
+        (500, "rcap_500", "Polígrafo de barra", "Reacciona con 🧢 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", REACT_KINDS_STAT, [
+        (4, "rkinds_4", "Paleta de emojis", "Reacciona con 4 de estos: 🗿 🤡 👀 🔥 ❤️ 💩 🐐 🧢.", C),
+        (8, "rkinds_8", "Teclado de emojis completo",
+         "Reacciona con 🗿, 🤡, 👀, 🔥, ❤️, 💩, 🐐 y 🧢.", R),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_clown", [
+        (1, "gotclown_1", "Te han llamado payaso",
+         "Que reaccionen con 🤡 a un mensaje tuyo.", C, True),
+        (25, "gotclown_25", "Nariz roja",
+         "Que reaccionen con 🤡 a mensajes tuyos 25 veces.", R, True),
+        (100, "gotclown_100", "Payaso del servidor",
+         "Que reaccionen con 🤡 a mensajes tuyos 100 veces.", E, True),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_goat", [
+        (1, "gotgoat_1", "Te han llamado GOAT", "Que reaccionen con 🐐 a un mensaje tuyo.", R),
+        (25, "gotgoat_25", "GOAT reconocido",
+         "Que reaccionen con 🐐 a mensajes tuyos 25 veces.", E),
+        (100, "gotgoat_100", "Cabra legendaria",
+         "Que reaccionen con 🐐 a mensajes tuyos 100 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_heart", [
+        (10, "gotheart_10", "Querido", "Que reaccionen con ❤️ a mensajes tuyos 10 veces.", C),
+        (100, "gotheart_100", "Adorado", "Que reaccionen con ❤️ a mensajes tuyos 100 veces.", R),
+        (1_000, "gotheart_1k", "Amado por el pueblo",
+         "Que reaccionen con ❤️ a mensajes tuyos 1.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_fire", [
+        (10, "gotfire_10", "Mensaje caliente",
+         "Que reaccionen con 🔥 a mensajes tuyos 10 veces.", C),
+        (100, "gotfire_100", "Incendiario", "Que reaccionen con 🔥 a mensajes tuyos 100 veces.", R),
+        (1_000, "gotfire_1k", "Prendes fuego al chat",
+         "Que reaccionen con 🔥 a mensajes tuyos 1.000 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_poop", [
+        (1, "gotpoop_1", "Mensaje de mierda", "Que reaccionen con 💩 a un mensaje tuyo.", C, True),
+        (25, "gotpoop_25", "Abonado", "Que reaccionen con 💩 a mensajes tuyos 25 veces.", R, True),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_cap", [
+        (1, "gotcap_1", "Te han pillado", "Que reaccionen con 🧢 a un mensaje tuyo.", C, True),
+        (25, "gotcap_25", "Mentiroso compulsivo",
+         "Que reaccionen con 🧢 a mensajes tuyos 25 veces.", R, True),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_moai", [
+        (10, "gotmoai_10", "Comentario de piedra",
+         "Que reaccionen con 🗿 a mensajes tuyos 10 veces.", C),
+        (100, "gotmoai_100", "Monumento a la seriedad",
+         "Que reaccionen con 🗿 a mensajes tuyos 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("social", "reacted_eyes", [
+        (10, "goteyes_10", "Te están mirando",
+         "Que reaccionen con 👀 a mensajes tuyos 10 veces.", C),
+        (100, "goteyes_100", "Cotilleo asegurado",
+         "Que reaccionen con 👀 a mensajes tuyos 100 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("voice", VOICE_STREAK_STAT, [
+        (3, "vstreak_3", "Tres días de llamada", "Está en llamada con alguien 3 días seguidos.", C),
+        (7, "vstreak_7", "Semana al teléfono", "Está en llamada con alguien 7 días seguidos.", R),
+        (30, "vstreak_30", "Mes de llamadas", "Está en llamada con alguien 30 días seguidos.", E),
+        (100, "vstreak_100", "Cien días de voz",
+         "Está en llamada con alguien 100 días seguidos.", L),
+        (365, "vstreak_365", "Un año colgado del cable",
+         "Está en llamada con alguien 365 días seguidos.", M),
+    ])  # fmt: skip
+    a += _tiers("voice", VOICE_PEOPLE_STAT, [
+        (3, "vpeople_3", "Círculo íntimo", "Coincide en llamada con 3 personas distintas.", C),
+        (10, "vpeople_10", "Agenda de contactos",
+         "Coincide en llamada con 10 personas distintas.", R),
+        (25, "vpeople_25", "Medio servidor en llamada",
+         "Coincide en llamada con 25 personas distintas.", E),
+        (50, "vpeople_50", "Conoces a todo el mundo",
+         "Coincide en llamada con 50 personas distintas.", L),
+    ])  # fmt: skip
+    a += _tiers("voice", VOICE_BESTIE_STAT, [
+        (60, "vbestie_1h", "Compañero de llamada",
+         "Pasa 1 hora en llamada con la misma persona.", C),
+        (600, "vbestie_10h", "Más pegados que un sello", "Pasa 10 horas en llamada con la misma persona.", R),
+        (3_000, "vbestie_50h", "Pareja de hecho de voz",
+         "Pasa 50 horas en llamada con la misma persona.", E),
+        (12_000, "vbestie_200h", "Matrimonio de Discord",
+         "Pasa 200 horas en llamada con la misma persona.", L),
+        (60_000, "vbestie_1000h", "Bodas de oro de voz",
+         "Pasa 1.000 horas en llamada con la misma persona.", M),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_host", [
+        (1, "vhost_1", "Anfitrión", "Entra en un canal vacío y que acaben llegando 5 personas.", R),
+        (10, "vhost_10", "Organizador de quedadas",
+         "Abre 10 llamadas que acaban con 5 personas o más.", E),
+        (50, "vhost_50", "El que convoca", "Abre 50 llamadas que acaban con 5 personas o más.", L),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_last_out", [
+        (1, "vlast_1", "El último apaga la luz", "Sé el último en salir de una llamada.", C),
+        (25, "vlast_25", "Cierre de la llamada",
+         "Sé el último en salir de una llamada 25 veces.", R),
+        (250, "vlast_250", "Seguridad de la discoteca",
+         "Sé el último en salir de una llamada 250 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_midnight", [
+        (1, "vmidnight_1", "Llamada a medianoche",
+         "Está en llamada con alguien a las 00:00.", C, True),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_leet", [
+        (1, "vleet_1", "L33t en llamada", "Está en llamada con alguien a las 13:37.", C, True),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_420", [
+        (1, "v420_1", "Llamada fumada",
+         "Está en llamada con alguien a las 4:20 o a las 16:20.", C, True),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_1111", [
+        (1, "v1111_1", "Deseo en llamada",
+         "Está en llamada con alguien a las 11:11 o a las 23:11.", C, True),
+    ])  # fmt: skip
+    a += _tiers("voice_games", "voice_gaming", [
+        (60, "vgaming_1h", "Partida en compañía",
+         "Juega a algo 1 hora mientras estás en llamada.", C),
+        (600, "vgaming_10h", "Party de toda la vida",
+         "Juega a algo 10 horas mientras estás en llamada.", R),
+        (6_000, "vgaming_100h", "Clan de la llamada",
+         "Juega a algo 100 horas mientras estás en llamada.", E),
+        (30_000, "vgaming_500h", "Esports de barrio",
+         "Juega a algo 500 horas mientras estás en llamada.", L),
+    ])  # fmt: skip
+    a += _tiers("voice_games", VOICE_GAMES_STAT, [
+        (3, "vgames_3", "Multijugador", "Juega en llamada a 3 de los juegos de esta sección.", C),
+        (6, "vgames_6", "Ludoteca", "Juega en llamada a 6 de los juegos de esta sección.", R),
+        (12, "vgames_12", "Todos los juegos con todos",
+         "Juega en llamada a los 12 juegos de esta sección.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", "voice_spotify", [
+        (60, "vspoti_1h", "Música de fondo",
+         "Escucha Spotify 1 hora mientras estás en llamada.", C),
+        (600, "vspoti_10h", "Spotify y llamada",
+         "Escucha Spotify 10 horas mientras estás en llamada.", R),
+        (6_000, "vspoti_100h", "Banda sonora propia",
+         "Escucha Spotify 100 horas mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_chat", "msg_in_voice", [
+        (10, "invoice_10", "Hablo y escribo", "Escribe 10 mensajes mientras estás en llamada.", C),
+        (100, "invoice_100", "Multitarea verbal",
+         "Escribe 100 mensajes mientras estás en llamada.", R),
+        (1_000, "invoice_1k", "Dos canales a la vez",
+         "Escribe 1.000 mensajes mientras estás en llamada.", E),
+        (10_000, "invoice_10k", "Ubicuo", "Escribe 10.000 mensajes mientras estás en llamada.", L),
+    ])  # fmt: skip
+    a += _tiers("voice_chat", "msg_voice_text", [
+        (10, "vtext_10", "El chat de la llamada",
+         "Escribe 10 mensajes en el chat del canal de voz en el que estás.", C),
+        (100, "vtext_100", "Notas al margen",
+         "Escribe 100 mensajes en el chat del canal de voz en el que estás.", R),
+        (1_000, "vtext_1k", "Cronista de la llamada",
+         "Escribe 1.000 mensajes en el chat del canal de voz en el que estás.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_chat", "msg_while_streaming", [
+        (10, "wstream_10", "Comentarista de tu propio directo",
+         "Escribe 10 mensajes mientras compartes pantalla.", C),
+        (100, "wstream_100", "Streamer que lee el chat",
+         "Escribe 100 mensajes mientras compartes pantalla.", R),
+        (1_000, "wstream_1k", "Directo con subtítulos",
+         "Escribe 1.000 mensajes mientras compartes pantalla.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_chat", "msg_on_camera", [
+        (10, "oncam_10", "Escribiendo en cámara",
+         "Escribe 10 mensajes con la cámara encendida.", C),
+        (100, "oncam_100", "Cara de concentración",
+         "Escribe 100 mensajes con la cámara encendida.", R),
+        (1_000, "oncam_1k", "Teclado en primer plano",
+         "Escribe 1.000 mensajes con la cámara encendida.", E, True),
+    ])  # fmt: skip
+    a += _tiers("voice_chat", "laugh_in_voice", [
+        (10, "laughvoice_10", "Risa en estéreo",
+         "Ríete por escrito 10 veces mientras estás en llamada.", C),
+        (100, "laughvoice_100", "Me río por los dos canales",
+         "Ríete por escrito 100 veces mientras estás en llamada.", R),
+        (1_000, "laughvoice_1k", "Carcajada multicanal",
+         "Ríete por escrito 1.000 veces mientras estás en llamada.", E, True),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}minecraft", [
+        (60, "vgame_minecraft_1h", "Picando bloques",
+         "Juega 1 hora a Minecraft mientras estás en llamada.", C),
+        (3_000, "vgame_minecraft_50h", "Creeper en la llamada",
+         "Juega 50 horas a Minecraft mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}lol", [
+        (60, "vgame_lol_1h", "Sufridor de la Grieta",
+         "Juega 1 hora a League of Legends mientras estás en llamada.", C),
+        (3_000, "vgame_lol_50h", "Reportado por tóxico",
+         "Juega 50 horas a League of Legends mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}fortnite", [
+        (60, "vgame_fortnite_1h", "Bailecito de victoria",
+         "Juega 1 hora a Fortnite mientras estás en llamada.", C),
+        (3_000, "vgame_fortnite_50h", "Battle bus de los colegas",
+         "Juega 50 horas a Fortnite mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}valorant", [
+        (60, "vgame_valorant_1h", "Agente secreto",
+         "Juega 1 hora a Valorant mientras estás en llamada.", C),
+        (3_000, "vgame_valorant_50h", "Headshot en llamada",
+         "Juega 50 horas a Valorant mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}cs", [
+        (60, "vgame_cs_1h", "Counter de barrio",
+         "Juega 1 hora a Counter-Strike mientras estás en llamada.", C),
+        (3_000, "vgame_cs_50h", "Rush B sin parar",
+         "Juega 50 horas a Counter-Strike mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}gta", [
+        (60, "vgame_gta_1h", "Atraco en directo",
+         "Juega 1 hora a GTA mientras estás en llamada.", C),
+        (3_000, "vgame_gta_50h", "Los Santos en llamada",
+         "Juega 50 horas a GTA mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}futbol", [
+        (60, "vgame_futbol_1h", "FIFA con los colegas",
+         "Juega 1 hora a EA Sports FC (o FIFA) mientras estás en llamada.", C),
+        (3_000, "vgame_futbol_50h", "Ultimate Team de cabecera",
+         "Juega 50 horas a EA Sports FC (o FIFA) mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}rocket", [
+        (60, "vgame_rocket_1h", "Fútbol con coches",
+         "Juega 1 hora a Rocket League mientras estás en llamada.", C),
+        (3_000, "vgame_rocket_50h", "Aéreo imposible",
+         "Juega 50 horas a Rocket League mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}amongus", [
+        (60, "vgame_amongus_1h", "Ese es el impostor",
+         "Juega 1 hora a Among Us mientras estás en llamada.", C),
+        (3_000, "vgame_amongus_50h", "Votado por sospechoso",
+         "Juega 50 horas a Among Us mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}cod", [
+        (60, "vgame_cod_1h", "Soldado de sofá",
+         "Juega 1 hora a Call of Duty mientras estás en llamada.", C),
+        (3_000, "vgame_cod_50h", "Prestigio de llamada",
+         "Juega 50 horas a Call of Duty mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}roblox", [
+        (60, "vgame_roblox_1h", "Roblox con los primos",
+         "Juega 1 hora a Roblox mientras estás en llamada.", C),
+        (3_000, "vgame_roblox_50h", "Robux en llamada",
+         "Juega 50 horas a Roblox mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += _tiers("voice_games", f"{VOICE_GAME_PREFIX}sims", [
+        (60, "vgame_sims_1h", "Vida simulada",
+         "Juega 1 hora a Los Sims mientras estás en llamada.", C),
+        (3_000, "vgame_sims_50h", "Quitarle la escalera a la piscina",
+         "Juega 50 horas a Los Sims mientras estás en llamada.", E),
+    ])  # fmt: skip
+    a += [
+        combo("pj_abuela_1", "Abuela de WhatsApp",
+              "Da los buenos días 10 veces, manda 10 stickers y escribe 10 mensajes con 5 "
+              "emojis o más.",
+              "personajes", R,
+              (("msg_good_morning", 10), ("msg_stickers", 10), ("msg_emoji_heavy", 10),)),
+        combo("pj_abuela_2", "Abuela con nietos en el grupo",
+              "Da los buenos días 100 veces, manda 100 stickers y escribe 100 mensajes con 5 "
+              "emojis o más.",
+              "personajes", E,
+              (("msg_good_morning", 100), ("msg_stickers", 100), ("msg_emoji_heavy", 100),)),
+        combo("pj_abuela_3", "Matriarca de la familia",
+              "Da los buenos días 365 veces, manda 500 stickers y escribe 500 mensajes con 5 "
+              "emojis o más.",
+              "personajes", L,
+              (("msg_good_morning", 365), ("msg_stickers", 500), ("msg_emoji_heavy", 500),)),
+        combo("pj_tertuliano_1", "Tertuliano de bar",
+              "Haz 50 preguntas, habla de política en 20 mensajes y escribe 20 en mayúsculas.",
+              "personajes", R, (("msg_questions", 50), ("msg_politics", 20), ("msg_caps", 20),)),
+        combo("pj_tertuliano_2", "Tertuliano de la tele",
+              "Haz 500 preguntas, habla de política en 200 mensajes y escribe 200 en mayúsculas.",
+              "personajes", E, (("msg_questions", 500), ("msg_politics", 200), ("msg_caps", 200),)),
+        combo("pj_tertuliano_3", "Opinador profesional",
+              "Haz 2.000 preguntas, habla de política en 500 mensajes y escribe 500 en mayúsculas.",
+              "personajes", L,
+              (("msg_questions", 2_000), ("msg_politics", 500), ("msg_caps", 500),)),
+        combo("pj_troll_1", "Trol de foro",
+              "Escribe 20 mensajes en mayúsculas, suelta palabrotas en 50 y menciona a "
+              "alguien en 50.",
+              "personajes", R, (("msg_caps", 20), ("msg_swear", 50), ("msg_mentions", 50),)),
+        combo("pj_troll_2", "Trol de primera división",
+              "Escribe 200 mensajes en mayúsculas, suelta palabrotas en 500 y menciona a "
+              "alguien en 500.",
+              "personajes", E, (("msg_caps", 200), ("msg_swear", 500), ("msg_mentions", 500),)),
+        combo("pj_troll_3", "Rey de los trolls",
+              "Escribe 1.000 mensajes en mayúsculas, suelta palabrotas en 2.500 y menciona a "
+              "alguien en 2.500.",
+              "personajes", L,
+              (("msg_caps", 1_000), ("msg_swear", 2_500), ("msg_mentions", 2_500),)),
+        combo("pj_influencer_1", "Creador de contenido",
+              "Sube archivos en 50 mensajes, comparte 50 enlaces y recibe 500 reacciones.",
+              "personajes", R,
+              (("msg_attachments", 50), ("msg_links", 50), ("reactions_received", 500),)),
+        combo("pj_influencer_2", "Estrella de las redes",
+              "Sube archivos en 500 mensajes, comparte 500 enlaces y recibe 5.000 reacciones.",
+              "personajes", E,
+              (("msg_attachments", 500), ("msg_links", 500), ("reactions_received", 5_000),)),
+        combo("pj_influencer_3", "Celebrity del servidor",
+              "Sube archivos en 2.500 mensajes, comparte 2.500 enlaces y recibe 25.000 reacciones.",
+              "personajes", L,
+              (("msg_attachments", 2_500), ("msg_links", 2_500), ("reactions_received", 25_000),)),
+        combo("pj_streamer_1", "Streamer en prácticas",
+              "Comparte pantalla 10 horas, pon la cámara 1 hora y emite 1 hora con 5 personas "
+              "o más.",
+              "personajes", R,
+              (("voice_stream", 600), ("voice_video", 60), ("voice_stream_crowd", 60),)),
+        combo("pj_streamer_2", "Streamer con audiencia",
+              "Comparte pantalla 50 horas, pon la cámara 10 horas y emite 10 horas con 5 "
+              "personas o más.",
+              "personajes", E,
+              (("voice_stream", 3_000), ("voice_video", 600), ("voice_stream_crowd", 600),)),
+        combo("pj_streamer_3", "Estrella del directo",
+              "Comparte pantalla 200 horas, pon la cámara 50 horas y emite 50 horas con 5 "
+              "personas o más.",
+              "personajes", L,
+              (("voice_stream", 12_000), ("voice_video", 3_000), ("voice_stream_crowd", 3_000),)),
+        combo("pj_fantasma_1", "Fantasma de la ópera",
+              "Pasa 5 horas en el canal AFK, 10 horas silenciado y manda 100 mensajes de 3 "
+              "caracteres o menos.",
+              "personajes", R, (("voice_afk", 300), ("voice_muted", 600), ("msg_short", 100),)),
+        combo("pj_fantasma_2", "Presencia paranormal",
+              "Pasa 50 horas en el canal AFK, 100 horas silenciado y manda 1.000 mensajes de "
+              "3 caracteres o menos.",
+              "personajes", E,
+              (("voice_afk", 3_000), ("voice_muted", 6_000), ("msg_short", 1_000),)),
+        combo("pj_fantasma_3", "Espíritu del servidor",
+              "Pasa 250 horas en el canal AFK, 500 horas silenciado y manda 10.000 mensajes "
+              "de 3 caracteres o menos.",
+              "personajes", L,
+              (("voice_afk", 15_000), ("voice_muted", 30_000), ("msg_short", 10_000),)),
+        combo("pj_canario_1", "Canario de los de antes",
+              "Habla en canario en 50 mensajes, escribe el día del Pino y el Día de Canarias.",
+              "personajes", R, (("msg_canario", 50), ("msg_pino", 1), ("msg_canarias", 1),)),
+        combo("pj_canario_2", "Canario hasta la médula",
+              "Habla en canario en 500 mensajes, escribe el día del Pino y el Día de Canarias "
+              "y habla de la calima 10 veces.",
+              "personajes", E,
+              (("msg_canario", 500), ("msg_pino", 1), ("msg_canarias", 1), ("msg_calima", 10),)),
+        combo("pj_noche_1", "Criatura de la noche",
+              "Escribe 100 mensajes de madrugada, pasa 10 horas en llamada de madrugada y "
+              "ríete 25 veces a esas horas.",
+              "personajes", R, (("msg_night", 100), ("voice_night", 600), ("laugh_night", 25),)),
+        combo("pj_noche_2", "Señor de la noche",
+              "Escribe 1.000 mensajes de madrugada, pasa 100 horas en llamada de madrugada y "
+              "ríete 250 veces a esas horas.",
+              "personajes", E,
+              (("msg_night", 1_000), ("voice_night", 6_000), ("laugh_night", 250),)),
+        combo("pj_noche_3", "Rey de la madrugada",
+              "Escribe 5.000 mensajes de madrugada, pasa 500 horas en llamada de madrugada y "
+              "ríete 1.000 veces a esas horas.",
+              "personajes", L,
+              (("msg_night", 5_000), ("voice_night", 30_000), ("laugh_night", 1_000),)),
+        combo("pj_madrugador_1", "Pájaro madrugador",
+              "Escribe 100 mensajes antes de las 8, pasa 10 horas en llamada de 6 a 8 y abre "
+              "el chat del día 5 veces.",
+              "personajes", R,
+              (("msg_morning", 100), ("voice_morning", 600), ("msg_first_of_day", 5),)),
+        combo("pj_madrugador_2", "Gallo despertador",
+              "Escribe 1.000 mensajes antes de las 8, pasa 50 horas en llamada de 6 a 8 y "
+              "abre el chat del día 30 veces.",
+              "personajes", E,
+              (("msg_morning", 1_000), ("voice_morning", 3_000), ("msg_first_of_day", 30),)),
+        combo("pj_madrugador_3", "El sol sale por ti",
+              "Escribe 5.000 mensajes antes de las 8, pasa 200 horas en llamada de 6 a 8 y "
+              "abre el chat del día 100 veces.",
+              "personajes", L,
+              (("msg_morning", 5_000), ("voice_morning", 12_000), ("msg_first_of_day", 100),)),
+        combo("pj_cotilla_1", "Cotilla de escalera",
+              "Mira los logros de otros 25 veces, sus perfiles 25 veces y haz 100 preguntas.",
+              "personajes", R,
+              (("logros_others", 25), ("perfil_others", 25), ("msg_questions", 100),)),
+        combo("pj_cotilla_2", "Radio patio",
+              "Mira los logros de otros 250 veces, sus perfiles 250 veces y haz 1.000 preguntas.",
+              "personajes", E,
+              (("logros_others", 250), ("perfil_others", 250), ("msg_questions", 1_000),)),
+        combo("pj_cotilla_3", "Agencia de detectives",
+              "Mira los logros de otros 1.000 veces, sus perfiles 1.000 veces y haz 5.000 "
+              "preguntas.",
+              "personajes", L,
+              (("logros_others", 1_000), ("perfil_others", 1_000), ("msg_questions", 5_000),)),
+        combo("pj_pelota_1", "Pelota",
+              "Da las gracias en 50 mensajes, pide perdón en 10 y reacciona a 500 mensajes.",
+              "personajes", R, (("msg_thanks", 50), ("msg_sorry", 10), ("reactions_given", 500),)),
+        combo("pj_pelota_2", "Lameculos de manual",
+              "Da las gracias en 500 mensajes, pide perdón en 100 y reacciona a 5.000 mensajes.",
+              "personajes", E,
+              (("msg_thanks", 500), ("msg_sorry", 100), ("reactions_given", 5_000),)),
+        combo("pj_pelota_3", "Sí, bwana",
+              "Da las gracias en 2.000 mensajes, pide perdón en 250 y reacciona a 15.000 mensajes.",
+              "personajes", L,
+              (("msg_thanks", 2_000), ("msg_sorry", 250), ("reactions_given", 15_000),)),
+        combo("pj_cunado_1", "Cuñado de Nochebuena",
+              "Di que eso lo arreglas tú, habla de política en 50 mensajes y escribe 10 "
+              "mensajes largos.",
+              "personajes", R, (("msg_cuñado", 1), ("msg_politics", 50), ("msg_long", 10),)),
+        combo("pj_cunado_2", "Cuñado profesional",
+              "Di 10 veces que eso lo arreglas tú, habla de política en 500 mensajes y "
+              "escribe 100 mensajes largos.",
+              "personajes", E, (("msg_cuñado", 10), ("msg_politics", 500), ("msg_long", 100),)),
+        combo("pj_gamer_1", "Gamer de sofá",
+              "Juega 10 horas en llamada a 3 juegos distintos de la sección de juegos.",
+              "personajes", R, (("voice_gaming", 600), ("voice_games", 3),)),
+        combo("pj_gamer_2", "Gamer de verdad",
+              "Juega 100 horas en llamada a 6 juegos distintos de la sección de juegos.",
+              "personajes", E, (("voice_gaming", 6_000), ("voice_games", 6),)),
+        combo("pj_gamer_3", "Pro player",
+              "Juega 500 horas en llamada a 10 juegos distintos de la sección de juegos.",
+              "personajes", L, (("voice_gaming", 30_000), ("voice_games", 10),)),
+        combo("pj_dj_1", "DJ de guateque",
+              "Pon 50 canciones, pasa 10 horas en llamada con música y salta 50 canciones.",
+              "personajes", R, (("music_queued", 50), ("voice_music", 600), ("music_skips", 50),)),
+        combo("pj_dj_2", "DJ residente",
+              "Pon 500 canciones, pasa 50 horas en llamada con música y salta 500 canciones.",
+              "personajes", E,
+              (("music_queued", 500), ("voice_music", 3_000), ("music_skips", 500),)),
+        combo("pj_dj_3", "David Guetta de Discord",
+              "Pon 2.000 canciones, pasa 200 horas en llamada con música y salta 2.500 canciones.",
+              "personajes", L,
+              (("music_queued", 2_000), ("voice_music", 12_000), ("music_skips", 2_500),)),
+        combo("pj_memero_1", "Memero",
+              "Genera 50 imágenes, manda 50 GIFs y haz reír 50 veces.",
+              "personajes", R, (("img_made", 50), ("msg_gif", 50), ("laughs_caused", 50),)),
+        combo("pj_memero_2", "Fábrica de memes con patas",
+              "Genera 500 imágenes, manda 500 GIFs y haz reír 500 veces.",
+              "personajes", E, (("img_made", 500), ("msg_gif", 500), ("laughs_caused", 500),)),
+        combo("pj_memero_3", "Dios del meme",
+              "Genera 2.000 imágenes, manda 2.000 GIFs y haz reír 2.500 veces.",
+              "personajes", L,
+              (("img_made", 2_000), ("msg_gif", 2_000), ("laughs_caused", 2_500),)),
+        combo("pj_payaso_1", "Payaso con nariz",
+              "Haz reír 50 veces, recibe 50 reacciones de risa y que te pongan un 🤡.",
+              "personajes", R,
+              (("laughs_caused", 50), ("laugh_reacts_received", 50), ("reacted_clown", 1),)),
+        combo("pj_payaso_2", "El gracioso del grupo",
+              "Haz reír 500 veces, recibe 500 reacciones de risa y que te pongan 25 🤡.",
+              "personajes", E,
+              (("laughs_caused", 500), ("laugh_reacts_received", 500), ("reacted_clown", 25),)),
+        combo("pj_payaso_3", "Bufón real",
+              "Haz reír 2.500 veces, recibe 2.500 reacciones de risa y que te pongan 100 🤡.",
+              "personajes", L,
+              (("laughs_caused", 2_500), ("laugh_reacts_received", 2_500),
+               ("reacted_clown", 100))),
+        combo("pj_filosofo_1", "Filósofo de barra",
+              "Escribe 25 mensajes de 600 caracteres, haz 500 preguntas y empieza 100 "
+              "mensajes con ¿ o ¡.",
+              "personajes", R, (("msg_long", 25), ("msg_questions", 500), ("msg_rae", 100),)),
+        combo("pj_filosofo_2", "Pensador de Rodin",
+              "Escribe 100 mensajes de 600 caracteres, haz 5.000 preguntas y empieza 1.000 "
+              "mensajes con ¿ o ¡.",
+              "personajes", E, (("msg_long", 100), ("msg_questions", 5_000), ("msg_rae", 1_000),)),
+        combo("pj_ninja_1", "Ninja del chat",
+              "Edita 100 mensajes, entra y sal de voz en menos de 15 segundos 25 veces y tapa "
+              "10 imágenes con spoiler.",
+              "personajes", R,
+              (("msg_edits", 100), ("voice_ghost", 25), ("msg_image_spoiler", 10),)),
+        combo("pj_ninja_2", "Shinobi del servidor",
+              "Edita 1.000 mensajes, entra y sal de voz en menos de 15 segundos 100 veces y "
+              "tapa 50 imágenes con spoiler.",
+              "personajes", E,
+              (("msg_edits", 1_000), ("voice_ghost", 100), ("msg_image_spoiler", 50),)),
+        combo("pj_mundo_1", "Ciudadano del mundo",
+              "Ríete en inglés 50 veces, en otro idioma una vez y habla en boricua en 10 mensajes.",
+              "personajes", R, (("laugh_en", 50), ("laugh_intl", 1), ("msg_boricua", 10),)),
+        combo("pj_mundo_2", "Babel con patas",
+              "Ríete en inglés 500 veces, en otro idioma 50 veces y habla en boricua en 100 "
+              "mensajes.",
+              "personajes", E, (("laugh_en", 500), ("laugh_intl", 50), ("msg_boricua", 100),)),
+        combo("pj_conspi_1", "Conspiranoico de guardia",
+              "Habla de conspiraciones 5 veces, de la Tierra plana una vez y del horóscopo 5 "
+              "veces.",
+              "personajes", R,
+              (("msg_conspiracy", 5), ("msg_flat_earth", 1), ("msg_horoscope", 5),)),
+        combo("pj_conspi_2", "Investigador de lo oculto",
+              "Habla de conspiraciones 50 veces, de la Tierra plana 10 veces y del horóscopo "
+              "50 veces.",
+              "personajes", E,
+              (("msg_conspiracy", 50), ("msg_flat_earth", 10), ("msg_horoscope", 50),)),
+        combo("pj_sano_1", "Vida sana (los lunes)",
+              "Habla del gimnasio 10 veces, di 5 veces que empiezas la dieta y habla de la "
+              "resaca 5 veces.",
+              "personajes", C, (("msg_gym", 10), ("msg_diet", 5), ("msg_hangover", 5),)),
+        combo("pj_sano_2", "Gymbro con resaca",
+              "Habla del gimnasio 100 veces, di 50 veces que empiezas la dieta y habla de la "
+              "resaca 50 veces.",
+              "personajes", E, (("msg_gym", 100), ("msg_diet", 50), ("msg_hangover", 50),)),
+        combo("pj_guru_1", "Gurú financiero de YouTube",
+              "Habla de criptos 10 veces, comparte 100 enlaces y 50 vídeos de YouTube.",
+              "personajes", R, (("msg_crypto", 10), ("msg_links", 100), ("msg_youtube", 50),)),
+        combo("pj_guru_2", "Vendehumos",
+              "Habla de criptos 100 veces, comparte 1.000 enlaces y 250 vídeos de YouTube.",
+              "personajes", E, (("msg_crypto", 100), ("msg_links", 1_000), ("msg_youtube", 250),)),
+        combo("pj_chisme_1", "Chismoso de llamada",
+              "Pasa 10 horas en llamada a dos, escribe 100 mensajes desde la llamada y "
+              "coincide con 5 personas distintas.",
+              "personajes", R, (("voice_duo", 600), ("msg_in_voice", 100), ("voice_people", 5),)),
+        combo("pj_chisme_2", "Correveidile",
+              "Pasa 50 horas en llamada a dos, escribe 1.000 mensajes desde la llamada y "
+              "coincide con 15 personas distintas.",
+              "personajes", E,
+              (("voice_duo", 3_000), ("msg_in_voice", 1_000), ("voice_people", 15),)),
+        combo("pj_abuelo_1", "Abuelo Cebolleta",
+              "Escribe 25 mensajes de 600 caracteres, da los buenos días 50 veces y pasa 100 "
+              "horas en llamada.",
+              "personajes", R,
+              (("msg_long", 25), ("msg_good_morning", 50), ("voice_minutes", 6_000),)),
+        combo("pj_abuelo_2", "Batallitas de la mili",
+              "Escribe 100 mensajes de 600 caracteres, da los buenos días 365 veces y pasa "
+              "500 horas en llamada.",
+              "personajes", E,
+              (("msg_long", 100), ("msg_good_morning", 365), ("voice_minutes", 30_000),)),
+        combo("pj_casinollamada_1", "Casino con amigos en llamada",
+              "Juega 1.000 partidas en el casino y escribe 100 mensajes desde la llamada.",
+              "personajes", R, (("casino_plays", 1_000), ("msg_in_voice", 100),)),
+        combo("pj_casinollamada_2", "Las Vegas por Discord",
+              "Juega 10.000 partidas en el casino y escribe 1.000 mensajes desde la llamada.",
+              "personajes", E, (("casino_plays", 10_000), ("msg_in_voice", 1_000),)),
+        combo("pj_currante_1", "Currante que chatea",
+              "Ficha 100 turnos y escribe 1.000 mensajes en horario de oficina.",
+              "personajes", R, (("work_shifts", 100), ("msg_office", 1_000),)),
+        combo("pj_currante_2", "Teletrabajo bien entendido",
+              "Ficha 1.000 turnos y escribe 5.000 mensajes en horario de oficina.",
+              "personajes", E, (("work_shifts", 1_000), ("msg_office", 5_000),)),
+        combo("pj_fiestero_1", "Fiestero",
+              "Bebe 100 sorbos en beernights, pasa 10 horas en llamada de madrugada y habla "
+              "de la resaca 5 veces.",
+              "personajes", R, (("beer_sips", 100), ("voice_night", 600), ("msg_hangover", 5),)),
+        combo("pj_fiestero_2", "Noche loca de manual",
+              "Bebe 1.000 sorbos en beernights, pasa 100 horas en llamada de madrugada y "
+              "habla de la resaca 50 veces.",
+              "personajes", E,
+              (("beer_sips", 1_000), ("voice_night", 6_000), ("msg_hangover", 50),)),
+        combo("pj_audios_1", "Señor de los audios",
+              "Manda 50 notas de voz y pasa 50 horas en llamada.",
+              "personajes", R, (("msg_voice_note", 50), ("voice_minutes", 3_000),)),
+        combo("pj_audios_2", "Rey del audio de cinco minutos",
+              "Manda 500 notas de voz y pasa 250 horas en llamada.",
+              "personajes", E, (("msg_voice_note", 500), ("voice_minutes", 15_000),)),
+        combo("pj_fanbot_1", "Fan número uno de Jovani",
+              "Llama al bot 100 veces, ríete respondiéndole 25 veces y pon 50 canciones.",
+              "personajes", R,
+              (("msg_bot_call", 100), ("laugh_at_bot", 25), ("music_queued", 50),)),
+        combo("pj_fanbot_2", "Novio del bot",
+              "Llama al bot 1.000 veces, ríete respondiéndole 250 veces y pon 500 canciones.",
+              "personajes", E,
+              (("msg_bot_call", 1_000), ("laugh_at_bot", 250), ("music_queued", 500)),
+              secret=True),
+        combo("pj_foto_1", "Fotógrafo compulsivo",
+              "Sube 10 capturas, un álbum de 4 imágenes y imágenes en 50 mensajes.",
+              "personajes", R, (("msg_screenshot", 10), ("msg_album", 1), ("msg_images", 50),)),
+        combo("pj_foto_2", "Galería del Prado digital",
+              "Sube 100 capturas, 10 álbumes de 4 imágenes e imágenes en 500 mensajes.",
+              "personajes", E, (("msg_screenshot", 100), ("msg_album", 10), ("msg_images", 500),)),
+        combo("pj_detective_1", "Detective privado",
+              "Sube 25 capturas, contesta 100 veces en menos de 5 segundos y mira los logros "
+              "de otros 25 veces.",
+              "personajes", R,
+              (("msg_screenshot", 25), ("msg_quick", 100), ("logros_others", 25),)),
+        combo("pj_detective_2", "Sherlock del servidor",
+              "Sube 250 capturas, contesta 1.000 veces en menos de 5 segundos y mira los "
+              "logros de otros 250 veces.",
+              "personajes", E,
+              (("msg_screenshot", 250), ("msg_quick", 1_000), ("logros_others", 250),)),
+        combo("pj_diplomatico_1", "Diplomático",
+              "Da las gracias en 100 mensajes, pide perdón en 25 y da las buenas noches 50 veces.",
+              "personajes", R, (("msg_thanks", 100), ("msg_sorry", 25), ("msg_good_night", 50),)),
+        combo("pj_diplomatico_2", "Embajador de la paz",
+              "Da las gracias en 1.000 mensajes, pide perdón en 250 y da las buenas noches "
+              "500 veces.",
+              "personajes", E,
+              (("msg_thanks", 1_000), ("msg_sorry", 250), ("msg_good_night", 500),)),
+        combo("pj_gourmet_1", "Crítico gastronómico",
+              "Habla de la pizza con piña y de la tortilla con o sin cebolla.",
+              "personajes", C, (("msg_pineapple", 1), ("msg_tortilla", 1),)),
+        combo("pj_gourmet_2", "Guerra culinaria total",
+              "Habla de la pizza con piña 25 veces y de la tortilla con o sin cebolla 25 veces.",
+              "personajes", E, (("msg_pineapple", 25), ("msg_tortilla", 25),)),
+        combo("pj_nostalgico_1", "Nostálgico de 2012",
+              "Escribe «xd» en 100 mensajes, «ok boomer» una vez y estira letras en 100 mensajes.",
+              "personajes", R, (("msg_xd", 100), ("msg_boomer", 1), ("msg_stretch", 100),)),
+        combo("pj_nostalgico_2", "Abuelo de internet",
+              "Escribe «xd» en 1.000 mensajes, «ok boomer» 10 veces y estira letras en 1.000 "
+              "mensajes.",
+              "personajes", E, (("msg_xd", 1_000), ("msg_boomer", 10), ("msg_stretch", 1_000),)),
+        combo("pj_hincha_1", "Hincha de Alonso en llamada",
+              "Habla de Fernando Alonso 10 veces y pasa 10 horas en llamada el fin de semana.",
+              "personajes", R, (("msg_alonso", 10), ("voice_weekend", 600),)),
+        combo("pj_traidor_1", "Agente doble",
+              "Nombra a ChatGPT 10 veces y llama al bot 100 veces.",
+              "personajes", R, (("msg_chatgpt", 10), ("msg_bot_call", 100),), secret=True),
+    ]  # fmt: skip
+
     # 🎰 Casino entero, desde `apuestas.record` (`casino_record_stats`) ---------------------
     a += _tiers("casino", "casino_plays", [
         (100, "plays_100", "Habitual de la barra", "Juega 100 partidas en el casino.", C),
@@ -17099,6 +18090,29 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[HORSE_BACKED_KINDS_STAT] = len(backed)
     full[HORSE_BACKED_MAX_STAT] = max(backed, default=0)
+    full[LINK_KINDS_STAT] = sum(1 for stat in LINK_SITES if stats.get(stat, 0) > 0)
+    full[ATTACH_KINDS_STAT] = sum(1 for stat in ATTACH_KINDS if stats.get(stat, 0) > 0)
+    full[TOPIC_KINDS_STAT] = sum(1 for stat in FUNNY_TOPICS if stats.get(stat, 0) > 0)
+    full[REACT_KINDS_STAT] = sum(
+        1 for key in REACTION_EMOJIS.values() if stats.get(f"{REACT_PREFIX}{key}", 0) > 0
+    )
+    full[VOICE_GAMES_STAT] = sum(
+        1 for key in VOICE_GAMES if stats.get(f"{VOICE_GAME_PREFIX}{key}", 0) > 0
+    )
+    days = [
+        day
+        for stat, value in stats.items()
+        if stat.startswith(VOICE_DAY_PREFIX)
+        and value > 0
+        and len(day := stat[len(VOICE_DAY_PREFIX) :]) == 8
+        and day.isdigit()
+    ]
+    full[VOICE_STREAK_STAT] = _longest_run(days)
+    partners = [
+        value for stat, value in stats.items() if stat.startswith(VOICE_WITH_PREFIX) and value > 0
+    ]
+    full[VOICE_PEOPLE_STAT] = len(partners)
+    full[VOICE_BESTIE_STAT] = max(partners, default=0)
     plays = [stats.get(f"{CASINO_GAME_PREFIX}{game}", 0) for game in CASINO_GAMES]
     full[CASINO_GAMES_STAT] = sum(1 for n in plays if n > 0)
     full[CASINO_GAMES_100_STAT] = sum(1 for n in plays if n >= 100)
@@ -17489,6 +18503,49 @@ _NICE = re.compile(r"(?<!\d)69(?!\d)")
 _SPOILER = re.compile(r"\|\|.+?\|\|", re.DOTALL)
 _CODE = re.compile(r"```|`[^`\n]+`")
 _STRETCH = re.compile(r"([^\W\d_])\1{5,}")
+#: Enlaces por sitio: un contador por cada uno y cuántos distintos (`with_derived`).
+LINK_SITES: dict[str, re.Pattern[str]] = {
+    "msg_youtube": re.compile(r"https?://(?:www\.|m\.)?(?:youtube\.com|youtu\.be)/"),
+    "msg_tiktok": re.compile(r"https?://(?:www\.|vm\.)?tiktok\.com/"),
+    "msg_twitter": re.compile(r"https?://(?:www\.)?(?:twitter\.com|x\.com)/"),
+    "msg_instagram": re.compile(r"https?://(?:www\.)?instagram\.com/"),
+    "msg_reddit": re.compile(r"https?://(?:www\.|old\.)?reddit\.com/"),
+    "msg_wikipedia": re.compile(r"https?://[a-z]+\.(?:m\.)?wikipedia\.org/"),
+    "msg_spotify": re.compile(r"https?://open\.spotify\.com/"),
+    "msg_maps": re.compile(r"https?://(?:maps\.app\.goo\.gl|(?:www\.)?google\.[a-z.]+/maps)"),
+}
+_GIF_LINK = re.compile(r"https?://(?:www\.)?(?:tenor\.com|giphy\.com|media\.giphy\.com)/")
+_SCREENSHOT = re.compile(r"screenshot|screen_shot|captura|pantallazo|snip", re.IGNORECASE)
+#: Imágenes de un solo mensaje para que cuente como álbum.
+ALBUM_MIN = 4
+#: Lo que se adjunta, por tipo: cuántos distintos (`with_derived`).
+ATTACH_KINDS = ("msg_images", "msg_videos", "msg_audio_files", "msg_documents", "msg_gif",
+                "msg_voice_note", "msg_poll")  # fmt: skip
+#: Letras mínimas para que un mensaje sin vocales no sea un «ok» o un «xd».
+NO_VOWELS_MIN = 6
+_VOWELS = frozenset("aeiouáéíóúü")
+#: Temas con guasa: un contador por cada uno y cuántos distintos (texto sin tildes).
+FUNNY_TOPICS: dict[str, re.Pattern[str]] = {
+    "msg_pineapple": re.compile(
+        r"\bpizza con pi[ñn]a\b|\bpi[ñn]a en la pizza\b|\bpizza hawaiana\b"
+    ),
+    "msg_tortilla": re.compile(r"\btortilla (?:con|sin) cebolla\b|\b(?:sin)?cebollistas?\b"),
+    "msg_flat_earth": re.compile(r"\btierra plana\b|\bterraplanist"),
+    "msg_chatgpt": re.compile(r"\bchat ?gpt\b"),
+    "msg_mercadona": re.compile(r"\bmercadona\b|\bhacendado\b"),
+    "msg_conspiracy": re.compile(
+        r"\bchemtrails?\b|\breptilianos?\b|\billuminati\b|\bnuevo orden mundial\b"
+    ),
+    "msg_horoscope": re.compile(r"\bmercurio retrogrado\b|\bhoroscopo\b|\bmi signo\b"),
+    "msg_crypto": re.compile(r"\bbitcoin\b|\bto the moon\b|\bhodl\b|\bcriptos?\b"),
+    "msg_gym": re.compile(r"\bdia de pierna\b|\bgym\b|\bgimnasio\b|\bproteinas?\b"),
+    "msg_diet": re.compile(r"\bel lunes empiezo\b|\bempiezo la dieta\b|\bestoy a dieta\b"),
+    "msg_ex": re.compile(r"\bmi ex\b"),
+    "msg_hangover": re.compile(r"\bresaca\b"),
+    "msg_alonso": re.compile(r"\bla 33\b|\bel nano\b|\bfernando alonso\b"),
+    "msg_boomer": re.compile(r"\bok,? boomer\b"),
+    "msg_calima": re.compile(r"\bcalima\b"),
+}
 
 
 def _emoji_count(text: str) -> int:
@@ -17518,6 +18575,10 @@ def message_delta(
     own_birthday: bool = False,
     mention_everyone: bool = False,
     people_mentioned: int = 0,
+    files: Sequence[tuple[str, str, bool]] = (),
+    voice_note: bool = False,
+    poll: bool = False,
+    voice: tuple[bool, bool, bool] | None = None,
 ) -> StatDelta:
     """Lo que suma un mensaje a los logros. El contenido se mira y se olvida.
 
@@ -17526,6 +18587,11 @@ def message_delta(
         when: Hora local (Atlantic/Canary) del mensaje.
         mention_everyone: Si menciona a @everyone o @here.
         people_mentioned: Personas distintas (no bots) mencionadas.
+        files: Adjuntos como `(tipo MIME, nombre, spoiler)`; nada de su contenido.
+        voice_note: Si es una nota de voz.
+        poll: Si es una encuesta.
+        voice: Si el autor está en llamada, `(en el chat del canal de voz, compartiendo
+            pantalla, con cámara)`; `None` si no está en voz.
     """
     stats = {"messages": 1}
     text = content.strip()
@@ -17616,6 +18682,51 @@ def message_delta(
     bump("msg_inocentes", when.month == 12 and when.day == 28)
     bump("msg_friday13", weekday == 4 and when.day == 13)
     bump("msg_own_birthday", own_birthday)
+    bump("msg_1111", when.minute == 11 and when.hour in (11, 23))
+    bump("msg_2222", when.hour == 22 and when.minute == 22)
+    bump("msg_420", when.minute == 20 and when.hour in (4, 16))
+    bump("msg_pi", when.minute == 14 and when.hour in (3, 15))
+    bump("msg_2359", when.hour == 23 and when.minute == 59)
+    # Enlaces, adjuntos y formatos
+    for stat, pattern in LINK_SITES.items():
+        bump(stat, bool(pattern.search(lowered)))
+    kinds = [mime.split("/", 1)[0] for mime, _name, _spoiler in files]
+    gif = any(mime == "image/gif" or name.lower().endswith(".gif") for mime, name, _s in files)
+    bump("msg_gif", gif or bool(_GIF_LINK.search(lowered)))
+    bump("msg_images", "image" in kinds)
+    bump("msg_videos", "video" in kinds)
+    bump("msg_audio_files", "audio" in kinds and not voice_note)
+    bump("msg_documents", any(k not in ("image", "video", "audio") for k in kinds))
+    bump("msg_album", kinds.count("image") >= ALBUM_MIN)
+    bump("msg_screenshot", any(_SCREENSHOT.search(name) for _m, name, _s in files))
+    bump("msg_image_spoiler", any(spoiler for _m, _n, spoiler in files))
+    bump("msg_voice_note", voice_note)
+    bump("msg_poll", poll)
+    # Cifras y mensajes raros
+    bump("msg_len_69", len(text) == 69)
+    bump("msg_len_420", len(text) == 420)
+    bump("msg_len_1", len(text) == 1 and not _only_emoji(text))
+    bump("msg_only_digits", text.isdigit())
+    bump("msg_only_question", len(text) >= 1 and set(text) == {"?"})
+    bump("msg_dots", len(text) >= 3 and set(text) == {"."})
+    vowelless = [ch for ch in normalized if ch.isalpha()]
+    bump(
+        "msg_no_vowels",
+        len(vowelless) >= NO_VOWELS_MIN
+        and not _VOWELS & set(vowelless)
+        and not laugh.laughed
+        and not _XD.search(text),
+    )
+    for stat, pattern in FUNNY_TOPICS.items():
+        bump(stat, bool(pattern.search(normalized)))
+    # Escribir desde la llamada
+    if voice is not None:
+        voice_text, streaming, camera = voice
+        bump("msg_in_voice", True)
+        bump("msg_voice_text", voice_text)
+        bump("msg_while_streaming", streaming)
+        bump("msg_on_camera", camera)
+        bump("laugh_in_voice", laugh.laughed)
     # Los adjuntos y stickers cuentan uno por mensaje, no uno por archivo:
     # subir 10 imágenes de golpe no debería valer 10 veces más.
     peak = {}
@@ -17640,6 +18751,12 @@ NECRO_HOURS = 24
 CHANNEL_MEMORY = 500
 #: Hora (canaria) a partir de la cual el primer mensaje abre la persiana del día.
 OPENING_HOUR = 6
+#: Segundos para que contestar a otro cuente como respuesta rápida.
+QUICK_REPLY_SECONDS = 5
+#: Horas sin mensajes en un canal para que escribir en él rompa el silencio.
+SILENCE_HOURS = 1
+#: Mensajes alternos entre dos personas para que cuente como ping-pong.
+RALLY_MIN = 4
 
 
 @dataclass(slots=True)
@@ -17650,6 +18767,10 @@ class _ChannelState:
     content_hash: int
     laughing: bool
     laughers: set[int]
+    #: Autor del mensaje anterior al último, si era otra persona (ping-pong).
+    previous: int | None = None
+    #: Mensajes seguidos alternando entre las mismas dos personas.
+    rally: int = 1
 
 
 class ChatTracker:
@@ -17718,6 +18839,10 @@ class ChatTracker:
         else:
             if at - state.at >= NECRO_HOURS * 3600:
                 mine().add["msg_necro"] = 1
+            elif at - state.at >= SILENCE_HOURS * 3600:
+                mine().add["msg_silence_break"] = 1
+            if state.author != author_id and at - state.at <= QUICK_REPLY_SECONDS:
+                mine().add["msg_quick"] = 1
             if state.author != author_id and digest and digest == state.content_hash:
                 mine().add["msg_echo"] = 1
         streak = state.streak + 1 if state.author == author_id else 1
@@ -17733,7 +18858,19 @@ class ChatTracker:
                 for member in laughers:
                     out.setdefault(member, StatDelta()).peak["laugh_chain_max"] = len(laughers)
 
-        self._channels[channel_id] = _ChannelState(author_id, streak, at, digest, laughed, laughers)
+        # Ping-pong: dos personas que se contestan una y otra vez.
+        if state.author == author_id:
+            previous, rally = state.previous, 1
+        else:
+            previous = state.author
+            rally = state.rally + 1 if state.previous == author_id else 2
+            if rally >= RALLY_MIN:
+                for member in (author_id, state.author):
+                    out.setdefault(member, StatDelta()).peak["msg_rally_max"] = rally
+
+        self._channels[channel_id] = _ChannelState(
+            author_id, streak, at, digest, laughed, laughers, previous, rally
+        )
         self._channels.move_to_end(channel_id)
         while len(self._channels) > CHANNEL_MEMORY:
             self._channels.popitem(last=False)
@@ -17759,6 +18896,94 @@ def laugh_reply_stats(
     else:
         out[replied_author_id] = StatDelta(add={"laughs_caused": 1})
     return out
+
+
+#: Reacciones con contador propio: emoji (sin el selector de variante U+FE0F) → clave
+#: (`react_moai`…). Las recibidas van aparte (`reacted_moai`…).
+REACTION_EMOJIS = {
+    "🗿": "moai", "🤡": "clown", "👀": "eyes", "🔥": "fire", "\u2764": "heart", "💩": "poop",
+    "🐐": "goat", "🧢": "cap",
+}  # fmt: skip
+
+
+def reaction_stats(emoji: str, *, custom: bool, first: bool) -> tuple[StatDelta, StatDelta]:
+    """Lo que suma una reacción: `(a quien reacciona, al autor del mensaje)`.
+
+    Args:
+        emoji: El emoji en texto (`🗿`) o el nombre del propio.
+        custom: Si es un emoji propio de este servidor.
+        first: Si es la primera reacción de alguien al mensaje.
+    """
+    given, received = StatDelta(), StatDelta()
+    if first:
+        given.add["reactions_first"] = 1
+    if custom:
+        given.add["reactions_custom"] = 1
+    if key := REACTION_EMOJIS.get(emoji.replace("\ufe0f", "")):
+        given.add[f"{REACT_PREFIX}{key}"] = 1
+        received.add[f"{REACTED_PREFIX}{key}"] = 1
+    return given, received
+
+
+#: Juegos que se reconocen en llamada (por su nombre en Discord): clave → nombres.
+VOICE_GAMES: dict[str, tuple[str, ...]] = {
+    "minecraft": ("minecraft",),
+    "lol": ("league of legends",),
+    "fortnite": ("fortnite",),
+    "valorant": ("valorant",),
+    "cs": ("counter-strike", "counter strike"),
+    "gta": ("grand theft auto",),
+    "futbol": ("ea sports fc", "fifa"),
+    "rocket": ("rocket league",),
+    "amongus": ("among us",),
+    "cod": ("call of duty",),
+    "roblox": ("roblox",),
+    "sims": ("the sims", "los sims"),
+}
+
+
+def voice_minute_stats(
+    local: datetime, *, others: Iterable[int], games: Iterable[str], spotify: bool
+) -> dict[str, int]:
+    """Lo que suma, además de lo de siempre, un minuto en llamada con alguien.
+
+    Args:
+        local: Hora canaria del minuto.
+        others: Ids de los demás que escuchan en el canal.
+        games: Nombres de los juegos a los que está jugando (su actividad de Discord).
+        spotify: Si está escuchando Spotify.
+    """
+    add = {f"{VOICE_DAY_PREFIX}{local:%Y%m%d}": 1}
+    for other in others:
+        add[f"{VOICE_WITH_PREFIX}{other}"] = 1
+    hour, minute = local.hour, local.minute
+    if hour == 0 and minute == 0:
+        add["voice_midnight"] = 1
+    if hour == 13 and minute == 37:
+        add["voice_leet"] = 1
+    if minute == 20 and hour in (4, 16):
+        add["voice_420"] = 1
+    if minute == 11 and hour in (11, 23):
+        add["voice_1111"] = 1
+    names = [name.lower() for name in games]
+    if names:
+        add["voice_gaming"] = 1
+    for key, needles in VOICE_GAMES.items():
+        if any(needle in name for name in names for needle in needles):
+            add[f"{VOICE_GAME_PREFIX}{key}"] = 1
+    if spotify:
+        add["voice_spotify"] = 1
+    return add
+
+
+def _longest_run(days: Iterable[str]) -> int:
+    """Días seguidos más largos entre fechas `AAAAMMDD`."""
+    ordinals = sorted({date(int(d[:4]), int(d[4:6]), int(d[6:8])).toordinal() for d in days})
+    best = run = 0
+    for i, day in enumerate(ordinals):
+        run = run + 1 if i and day == ordinals[i - 1] + 1 else 1
+        best = max(best, run)
+    return best
 
 
 #: Segundos en voz por debajo de los cuales salir cuenta como «Visto y no visto».

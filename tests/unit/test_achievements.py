@@ -28,6 +28,8 @@ from bot.repositories.message_stats import MessageStatsRepository
 from bot.services.achievements import (
     APUESTAS_PAGES,
     APUESTAS_PERIODS,
+    ATTACH_KINDS,
+    ATTACH_KINDS_STAT,
     AVAILABLE,
     BACKGAMMON_BEAT_PREFIX,
     BJ_HIGH_STAKE,
@@ -43,6 +45,7 @@ from bot.services.achievements import (
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
     ENRAYA_BEAT_PREFIX,
+    FUNNY_TOPICS,
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
@@ -55,6 +58,8 @@ from bot.services.achievements import (
     IMG_EFFECTS_STAT,
     IRONY_PATTERNS,
     LAUGH_KINDS,
+    LINK_KINDS_STAT,
+    LINK_SITES,
     MESSAGES_TOTAL_STAT,
     PET_SPAWN_KINDS_STAT,
     PET_SPECIES_PREFIX,
@@ -72,6 +77,10 @@ from bot.services.achievements import (
     PORRA_PROP_PREFIX,
     PORRA_PROPS,
     PORRA_STATS,
+    REACT_KINDS_STAT,
+    REACT_PREFIX,
+    REACTED_PREFIX,
+    REACTION_EMOJIS,
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
@@ -79,7 +88,14 @@ from bot.services.achievements import (
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
     SHOP_USE_KINDS_STAT,
+    TOPIC_KINDS_STAT,
     UNLOCKED_STAT,
+    VOICE_BESTIE_STAT,
+    VOICE_GAME_PREFIX,
+    VOICE_GAMES,
+    VOICE_GAMES_STAT,
+    VOICE_PEOPLE_STAT,
+    VOICE_STREAK_STAT,
     Rarity,
     StatDelta,
     beernight_close_stats,
@@ -689,6 +705,18 @@ PRODUCED_STATS = {
         for game in CASINO_GAMES
     ),
     CASINO_GAMES_STAT, CASINO_GAMES_100_STAT, CASINO_GAMES_1000_STAT, CASINO_NIGHT_GAMES_STAT,
+    # Chat y voz, segunda tanda (message_delta, ChatTracker, reaction_stats y voz)
+    *LINK_SITES, *ATTACH_KINDS, *FUNNY_TOPICS, LINK_KINDS_STAT, ATTACH_KINDS_STAT,
+    TOPIC_KINDS_STAT, "msg_album", "msg_screenshot", "msg_image_spoiler", "msg_len_69",
+    "msg_len_420", "msg_len_1", "msg_only_digits", "msg_only_question", "msg_dots",
+    "msg_no_vowels", "msg_1111", "msg_2222", "msg_420", "msg_pi", "msg_2359", "msg_in_voice",
+    "msg_voice_text", "msg_while_streaming", "msg_on_camera", "laugh_in_voice",
+    "msg_rally_max", "msg_quick", "msg_silence_break", "reactions_first", "reactions_custom",
+    *(f"{prefix}{key}" for prefix in (REACT_PREFIX, REACTED_PREFIX)
+      for key in REACTION_EMOJIS.values()),
+    REACT_KINDS_STAT, "voice_midnight", "voice_leet", "voice_420", "voice_1111", "voice_gaming",
+    "voice_spotify", *(f"{VOICE_GAME_PREFIX}{key}" for key in VOICE_GAMES), VOICE_GAMES_STAT,
+    "voice_host", "voice_last_out", VOICE_STREAK_STAT, VOICE_PEOPLE_STAT, VOICE_BESTIE_STAT,
     # Porras (cogs/porras.py; test_porras.py comprueba que cada una sale de verdad)
     *PORRA_STATS,
     *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
@@ -1246,17 +1274,22 @@ async def test_voz_cuenta_minutos_con_gente_y_sesiones_seguidas(tmp_path: Path) 
     cog.collect_voice(NOON + 60)
 
     first = cog._pending[GUILD][1]
+    day = f"voice_day_{datetime.fromtimestamp(NOON, TIMEZONE):%Y%m%d}"
     # Dos escuchando: además de la llamada, cuenta como «cara a cara».
     assert first.add == {
         "voice_minutes": 2,
         "voice_muted": 2,
         "voice_stream": 2,
         "voice_duo": 2,
+        day: 2,
+        "voice_with_2": 2,
     }
     assert first.peak["voice_session_max"] == 2
     assert first.peak["voice_crowd_max"] == 2
     assert first.peak["voice_mute_streak_max"] == 2
-    assert cog._pending[GUILD][2].add == {"voice_minutes": 2, "voice_duo": 2}
+    assert cog._pending[GUILD][2].add == {
+        "voice_minutes": 2, "voice_duo": 2, day: 2, "voice_with_1": 2,
+    }  # fmt: skip
     # El ensordecido no suma llamada, solo «Estoy pero no estoy».
     assert cog._pending[GUILD][3].add == {"voice_deaf": 2}
     assert 4 not in cog._pending[GUILD]
