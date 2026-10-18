@@ -22,7 +22,7 @@ import pytest_asyncio
 from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
-from bot.repositories.housing import Decision, Holding, Market, MemberDay, News
+from bot.repositories.housing import Decision, Holding, Market, MemberDay, News, Review
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
 from bot.repositories.housing_trade import Auction
 from bot.services import browser_scene, node_scene
@@ -36,9 +36,11 @@ from bot.services.housing_catalog import (
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
+    REVIEW_LINES,
     TENANTS,
     THEMES,
 )
+from bot.services.housing_furniture import FURNITURE
 from bot.services.housing_scene import SCENE, SCREEN_H, H, HousingScene, W
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
@@ -530,6 +532,75 @@ def phase34_samples() -> dict[str, dict[str, Any]]:
     return {**subastas, **reformas, **imprevistos, **fichas}
 
 
+ALL_FURNITURE = frozenset(f.key for f in FURNITURE)
+TOURISTS = [t.key for t in TENANTS if "vacacional" in t.levels]
+LONGEST_GUEST = max(TOURISTS, key=lambda k: len(next(t.name for t in TENANTS if t.key == k)))
+
+
+def longest_line(stars: int) -> int:
+    lines = REVIEW_LINES[stars]
+    return max(range(len(lines)), key=lambda i: len(lines[i]))
+
+
+def stay(day: int, guest: str, stars: int, line: int | None = None) -> Review:
+    """Una reseña de octubre de 2026 (`line` por defecto, la más larga de esas estrellas)."""
+    return Review(date(2026, 10, day), guest, stars, longest_line(stars) if line is None else line)
+
+
+def phase5_market(
+    leases: dict[str, rules.Lease], reviews: dict[str, tuple[Review, ...]] | None = None
+) -> Market:
+    """Inmuebles del usuario 10 (enteros) con sus contratos vacacionales y reseñas."""
+    return dataclasses.replace(phase34_market(leases), reviews=reviews or {})
+
+
+def phase5_samples() -> dict[str, dict[str, Any]]:
+    """Reseñas del vacacional y lo nuevo de la ficha (nota, Superanfitrión y licencia)."""
+    chalet = BY_KIND["chalet"]
+    until = date(2031, 3, 2)
+
+    def holiday(rating: float, count: int, **kwargs: Any) -> rules.Lease:
+        fields: dict[str, Any] = {
+            "status": "alquilado", "tenant": TOURISTS[0], "rent": 9000, "level": "vacacional",
+            "license": True, "license_until": until, "rating": rating, "reviews": count,
+        }  # fmt: skip
+        return rules.Lease(**{**fields, **kwargs})
+
+    stars = (5, 5, 4, 5, 5)
+    top = tuple(stay(14 - i, TOURISTS[i % len(TOURISTS)], n, i % 5) for i, n in enumerate(stars))
+    low = tuple(stay(14 - i, LONGEST_GUEST, n) for i, n in enumerate((1, 2, 1, 3, 2)))
+    market = phase5_market(
+        {
+            PISO: holiday(4.8, 12),
+            LONGEST.key: holiday(2.1, 6),
+            chalet: holiday(0.0, 0, status="vacio", tenant=None),
+            LOCAL: rules.Lease(status="vacio"),
+        },
+        {PISO: top, LONGEST.key: low},
+    )
+    some = ALL_FURNITURE - {"mueble_aire", "mueble_playa", "mueble_juegos"}
+    one = Market(
+        reviews={PISO: top[:1]},
+        leases={PISO: holiday(4.0, 1)},
+        holdings=market.holdings,
+        indexes=market.indexes,
+    )
+    resenas = {
+        "resenas_superanfitrion": view.reviews_state(market, PISO, ALL_FURNITURE),
+        "resenas_nota_baja_larga": view.reviews_state(market, LONGEST.key, frozenset()),
+        "resenas_algunos_muebles": view.reviews_state(market, PISO, some),
+        "resenas_una": view.reviews_state(one, PISO, frozenset({"mueble_cuna"})),
+        "resenas_licencia_sin_resenas": view.reviews_state(market, chalet, some),
+        "resenas_sin_licencia": view.reviews_state(market, LOCAL, frozenset()),
+    }
+    fichas = {
+        "ficha_nota_superanfitrion": view.listing_state(market, PISO, 10, NAMES, NEWS, TODAY),
+        "ficha_nota_baja_larga": view.listing_state(market, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "ficha_vacacional_sin_resenas": view.listing_state(market, chalet, 10, NAMES, [], TODAY),
+    }
+    return {**resenas, **fichas}
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
@@ -620,6 +691,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(facade_samples())
     out.update(phase2_samples())
     out.update(phase34_samples())
+    out.update(phase5_samples())
     return out
 
 
@@ -657,6 +729,10 @@ CORE = [
         "imprevistos_tres",
         "imprevistos_vacia",
         "ficha_humor_imprevistos",
+        "resenas_superanfitrion",
+        "resenas_nota_baja_larga",
+        "resenas_sin_licencia",
+        "ficha_nota_superanfitrion",
     }
 ]
 
@@ -734,11 +810,11 @@ def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
     assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
 
 
-def test_las_muestras_cubren_las_once_pantallas_y_las_claves_de_las_fases_2_a_4() -> None:
+def test_las_muestras_cubren_las_doce_pantallas_y_las_claves_de_las_fases_2_a_5() -> None:
     states = samples()
     assert {s["screen"] for s in states.values()} == {
         "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
-        "subastas", "reformas", "imprevistos",
+        "subastas", "reformas", "imprevistos", "resenas",
     }  # fmt: skip
     assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
     assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
@@ -774,6 +850,21 @@ def test_las_muestras_cubren_las_once_pantallas_y_las_claves_de_las_fases_2_a_4(
     assert humor["mood"] and humor["decisions"] == 2 and humor["reformed"]
     assert states["ficha_reformada"]["waiting"] == 3
     assert states["ficha_en_obras"]["works_until"] == "25/10"
+    top = states["resenas_superanfitrion"]
+    assert top["superhost"] and top["license_until"] == "02/03/2031" and top["occupancy"]
+    assert len(top["reviews"]) == 5 and all(f["owned"] for f in top["furniture"])
+    assert len(top["furniture"]) == 10 and top["furniture_stars"].endswith("★")
+    low = states["resenas_nota_baja_larga"]
+    assert not low["superhost"] and {r["stars"] for r in low["reviews"]} >= {1, 2}
+    assert not any(f["owned"] for f in low["furniture"])
+    assert states["resenas_licencia_sin_resenas"]["license"]
+    assert not states["resenas_licencia_sin_resenas"]["reviews"]
+    nada = states["resenas_sin_licencia"]
+    assert not nada["license"] and not nada["reviews"] and nada["rating"] == ""
+    fichas = ("ficha_nota_superanfitrion", "ficha_nota_baja_larga", "ficha_vacacional_sin_resenas")
+    assert [states[k]["rating"] != "" for k in fichas] == [True, True, False]
+    assert states[fichas[0]]["superhost"] and not states[fichas[1]]["superhost"]
+    assert states[fichas[2]]["license_until"] == "02/03/2031"
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------
