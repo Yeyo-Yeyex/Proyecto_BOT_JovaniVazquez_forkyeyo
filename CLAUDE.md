@@ -27,7 +27,7 @@ Lo que más se olvida:
   que cansa es repetir el mismo tema o la misma figura (Sánchez). Los nombres de los logros son siempre un juego de palabras o una broma ligada
   al logro, nunca literales ni con la coletilla «X, como [referencia]»; su descripción,
   neutral. Las coletillas de
-  Jovani salen de vez en cuando. El servidor es +18 verificado: valen las bromas de adultos y
+  Jovani son su voz y salen a menudo (hasta la mitad de una lista). El servidor es +18 verificado: valen las bromas de adultos y
   las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
   (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
   auditoría de tono pendiente (commits solo de texto y sin tocar claves, para poder

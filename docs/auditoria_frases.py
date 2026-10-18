@@ -5,8 +5,8 @@ de tres o más textos que el bot elige al azar (`EXPIRED_CLICK`, `CARE_LINES`…
 también las que van dentro de un diccionario. Para cada una mide:
 
 - **Coletillas:** qué parte de sus frases lleva una de Jovani («¡Wepa!», «¡Toma
-  mangó!»…). La Biblia pide que salgan «de vez en cuando, no en cada frase»: una
-  lista por encima de `MAX_CATCHPHRASE_SHARE` se marca.
+  mangó!»…). Son la voz del bot y salen a menudo, pero la Biblia pide al menos la
+  mitad de frases normales: una lista por encima de `MAX_CATCHPHRASE_SHARE` se marca.
 - **Repeticiones:** frases idénticas en dos listas distintas (la misma broma con
   otro nombre de variable).
 - **Fuentes:** cuántas veces sale cada fuente de ironía de la Biblia en todo el
@@ -74,8 +74,8 @@ SOURCES: dict[str, str] = {
     "Epstein": r"epstein",
     "Charlie Kirk": r"kirk|prove me wrong",
 }
-#: Una lista con más coletillas que esto se marca (la Biblia: «de vez en cuando»).
-MAX_CATCHPHRASE_SHARE = 0.34
+#: Una lista con más coletillas que esto se marca: la otra mitad, frases normales (la Biblia).
+MAX_CATCHPHRASE_SHARE = 0.5
 #: Listas más cortas no se miran: con dos frases, una coletilla ya es la mitad.
 MIN_LIST = 3
 

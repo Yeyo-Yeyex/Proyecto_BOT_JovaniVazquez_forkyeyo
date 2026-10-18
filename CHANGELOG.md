@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.11 · 2026-10-18
+
+- Ruleta, blackjack y tragaperras: frases nuevas, más normales, más Jovani y de temas variados
+
 ### 7.25.10 · 2026-10-18
 
 - Logros: 24 nombres pasan a humor de adultos donde el logro lo pedía
