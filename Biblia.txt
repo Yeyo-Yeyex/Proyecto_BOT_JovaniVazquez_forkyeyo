@@ -226,6 +226,7 @@ Partes hechas:
 - Aviso de logros: la retención de Hacienda va en la línea del premio, sin frase de Perro Sanxe (`8d65d12`).
 - Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). - Logros, segunda pasada: los 4.089 leídos uno a uno con la regla nueva; 190 nombres sosos, repetidos o con el mismo tema una y otra vez (los rescates bancarios, el Manual de resistencia, Pegasus, los fondos europeos) cambiados y 28 descripciones neutras (ver `git log --grep "Logros: segunda pasada"`).
 
+- Frases del casino, Guerra, Cara o cruz y Autobús: al 76 % de frases normales (ver `git log --grep "Guerra, Cara o cruz y Autobús"`).
 - Frases del casino, Pollo, Minas y Crash: al 76 % de frases normales (ver `git log --grep "Pollo, Minas y Crash"`).
 - Frases del casino, Torre: del 17-42 % al 58 % de frases normales (ver `git log --grep "Torre: frases"`).
 - Frases del casino, ruleta, blackjack y tragaperras (ver `git log --grep "Ruleta, blackjack y tragaperras: frases"`).

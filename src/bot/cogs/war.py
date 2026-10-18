@@ -98,82 +98,82 @@ WIN_LINES = (
     "¡Tu carta manda!",
     "Carta más alta, bolsillo más lleno.",
     "La banca baja la cabeza.",
-    "Ganas por un rango, como las votaciones de la Mesa del Congreso.",
-    "Mayoría simple, y sin pactar con Junts.",
-    "Ganas, y sin pasar por la Moncloa.",
-    "Victoria por goleada de rango. Cobras, mi amor.",
-    "Trump diría que has ganado por mucho más. Tú cobras lo de verdad.",
+    "Ganas por un rango.",
+    "¡Toma mangó!",
+    "Victoria por goleada de rango.",
     "La banca pide un recuento. Cobras igual.",
-    "Ganas, y el CIS ya lo había visto venir.",
-    "Tu carta gobierna en solitario, sin hacer coaliciones.",
-    "Ganas la mano como Ayuso gana en Madrid: sin discusión.",
+    "Ganas, y sin pactar con nadie.",
+    "Tu carta gobierna en solitario.",
+    "¿Con pulpa? ¡Sin pulpa! Ganas tú.",
+    "La banca se queda mirando su carta, a ver si crece.",
+    "Ganas la mano y el respeto de la mesa.",
 )
 #: Al perder a la primera.
 LOSS_LINES = (
     "La banca tiene la carta más alta.",
-    "Tu carta se queda corta, como el presupuesto.",
+    "Tu carta se queda corta.",
     "Perdiste por una carta. Casi nada, o sea, todo.",
-    "La banca te pasa por encima como una directiva de Bruselas.",
     "Menos mal que no era a la guerra.",
-    "Derrota por mayoría simple de rangos.",
-    "Cartas como promesas electorales: altas las ajenas, bajas las tuyas.",
-    "Ni el Falcon te saca de esta.",
     "La banca saca más que tú. Y no hay recurso.",
-    "Perdiste. Pídele un recuento al Tribunal Supremo.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
     "La banca cobra y tú lo llamas aprendizaje.",
-    "Capítulo uno del «Manual de resistencia», edición de bolsillo.",
+    "Hoy la baraja no está de tu parte.",
+    "Sofía, cállate, que pierdo la concentración.",
+    "Perdiste. Pídele un recuento al Tribunal Supremo.",
+    "La guerra es así: unas veces se gana y otras se pierde.",
+    "La banca te ha pasado por encima.",
 )
 #: Al aparecer el empate, mientras eliges.
 TIE_LINES = (
     "Empate. Nadie parpadea.",
     "Mismo rango, distinto palo, igual problema.",
-    "Empate técnico, como las encuestas del CIS cuando no sale su amigo.",
-    "Dos cartas iguales y un dilema: la paz o la Guerra de las Galaxias.",
-    "Empate. ¿Pacto o guerra? Como en cada investidura.",
+    "Empate. ¿Pacto o guerra?",
     "Empate a todo, menos a nervios.",
-    "Cartas iguales: a ver quién tiene más cara, como Rajoy en la moción.",
+    "Dos cartas iguales y un dilema.",
     "Empate. La diplomacia no paga, pero tampoco quema.",
+    "Tablas. Toca decidir.",
+    "Empate. Esto huele a guerra.",
 )
 #: Al rendirse.
 SURRENDER_LINES = (
     "Bandera blanca, media ficha y a casa.",
     "Te rindes y recuperas la mitad. Dignidad, la justa.",
-    "Retirada a tiempo: Rajoy lo llamaría estrategia.",
+    "Retirada a tiempo.",
     "Te rindes. Gila ya había llamado al enemigo para avisar.",
     "Rendición con honores y con media ficha.",
     "Media ficha de vuelta. Puigdemont ha huido por menos.",
-    "Pacto de última hora: pierdes la mitad y todos dicen que ganan.",
-    "Te rindes como Sánchez ante los jueces: «ha sido un malentendido».",
+    "Mejor media ficha que ninguna.",
+    "Haz el amor y no la guerra.",
 )
 #: Al ir a la guerra, mientras la banca quema las cartas.
 WAR_LINES = (
     f"La banca quema {BURN_CARDS} cartas y reparte otras dos.",
     f"{BURN_CARDS} cartas al fuego, como los discos duros de Bárcenas.",
-    "Guerra declarada. Trump firma un arancel por si acaso.",
-    "Se declara la guerra. El CIS ya tiene la encuesta.",
-    f"{BURN_CARDS} cartas quemadas y cero explicaciones, como en Moncloa.",
-    "A la guerra, que el Falcon ya está calentando.",
+    "¡A la guerra!",
+    "Se declara la guerra. Que Dios reparta suerte.",
+    f"{BURN_CARDS} cartas quemadas y cero explicaciones.",
     "Se quema el mazo y se decide el honor.",
+    "Esto ya es personal.",
 )
 #: Al ganar la guerra.
 WAR_WIN_LINES = (
     "¡Ganas la guerra!",
-    "Victoria sin bajas: ni un láser, como la Guerra de las Galaxias de Reagan.",
     "Guerra ganada, y te devuelven la ficha original.",
+    "Victoria sin bajas.",
     "La guerra fría se calienta a tu favor.",
-    "Guerra ganada. Trump lo celebra como si fuera suyo.",
-    "Ganas la guerra cultural, que es la única que se gana sin leer.",
+    "¡Veni, vidi, vici!",
     "Ganas la guerra, y la banca firma el armisticio.",
+    "¡Toma mangó, y con medalla!",
 )
 #: Al perder la guerra.
 WAR_LOSE_LINES = (
     "Guerra perdida: las dos fichas, a la banca.",
-    "Guerra comercial perdida: arancel doble.",
-    "Pierdes la guerra de las cifras: el CIS dice que ganaste.",
     "Dos fichas menos y mil excusas más.",
-    "La banca arrasa. Ay, bendito.",
-    "Perdiste la guerra cultural y también la otra.",
+    "La banca arrasa.",
     "Guerra perdida. Si lo cuenta el NO-DO, es una victoria heroica.",
+    "Perdiste la batalla y la guerra.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "Retirada sin honores.",
 )
 #: Si la guerra vuelve a empatar.
 WAR_TIE_LINES = (
@@ -181,20 +181,20 @@ WAR_TIE_LINES = (
     "Empate en la guerra: cobras la guerra, la original y el premio.",
     "Guerra fría con premio: no gana nadie, pero cobras tú.",
     "Segundo empate y la banca te da un premio extra sin saber por qué.",
-    "Doble empate. Hasta Tezanos lo habría llamado mayoría absoluta.",
     "Tablas en la guerra, y tú con el botín.",
+    "¡Toma mangó, doble empate!",
 )
 #: Acierto y fallo de la lateral de empate.
 SIDE_HIT_LINES = (
     "¡La lateral acierta!",
     "Apostaste al empate y el empate vino.",
     "La lateral lo vio venir.",
-    "El empate paga como una recalificación.",
+    "El empate paga diez a uno.",
 )
 SIDE_MISS_LINES = (
     "Sin empate, la lateral se queda en la mesa.",
     "El empate no vino. La banca da las gracias.",
-    "Lateral perdida: ni tablas ni sobres.",
+    "Lateral perdida.",
 )
 
 EditFn = Callable[..., Awaitable[Any]]
