@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.30 · 2026-10-18
+
+- Interno: el informe de la auditoría de tono, al día, con las cifras de antes y después
+
 ### 7.25.29 · 2026-10-18
 
 - Logros: 51 nombres que repetían el chiste de otra categoría, cambiados, y las historias sin «mi amor»

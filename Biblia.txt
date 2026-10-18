@@ -211,7 +211,7 @@ El dinero del bot (yapdollars) imita la economía española: todo lo que se gana
 
   Las frases que van en un titular (`# … +500 Y$`) son cortas para que quepan en una línea y se leen bien con la cifra detrás.
 
-#### Auditoría de tono (pendiente)
+#### Auditoría de tono (hecha, 18/10/2026; cifras en `docs/auditoria-frases.md`)
 
 Los textos escritos antes de octubre de 2026 siguen la norma antigua («todo es jocoso») y hay que repasarlos (a esta actualización la llamamos «Aguafiestas»). Es un cambio grande y puede dividir a los miembros, así que se hace de forma que se pueda deshacer:
 

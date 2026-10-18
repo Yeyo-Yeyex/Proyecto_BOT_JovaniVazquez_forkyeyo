@@ -30,9 +30,9 @@ Lo que más se olvida:
   Jovani (las frases del cantante, no lo típico de Puerto Rico: nada de «¡Wepa!» ni «mi
   amor») son su voz y salen a menudo (hasta la mitad de una lista). El servidor es +18 verificado: valen las bromas de adultos y
   las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
-  (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`, con la
-  auditoría de tono pendiente (commits solo de texto y sin tocar claves, para poder
-  revertirla).
+  (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`; la
+  auditoría de tono hecha y sus cifras, en `docs/auditoria-frases.md`
+  (`docs/auditoria_frases.py --parte` para medir una parte antes y después).
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
   pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»
